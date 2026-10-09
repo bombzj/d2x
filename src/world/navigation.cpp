@@ -333,6 +333,32 @@ Vec Grid::nearest(Vec p, MovementCollisionRule rule) const {
                     return {x + .5f, y + .5f};
     return p;
 }
+std::optional<Vec> Grid::nativeSpawn(Vec p, int maxDistance, MovementCollisionRule rule) const {
+    if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.y < 0 ||
+        p.x >= width || p.y >= height || maxDistance <= 0) return {};
+    const int px = int(p.x), py = int(p.y);
+    if (walkable(px, py, rule)) return Vec{float(px), float(py)};
+    for (int radius = 1; radius < maxDistance; ++radius) {
+        std::optional<Vec> result;
+        int distance = std::numeric_limits<int>::max();
+        const auto consider = [&](int x, int y) {
+            const int candidate = std::abs(x - px) + std::abs(y - py);
+            if (candidate < distance && walkable(x, y, rule)) {
+                distance = candidate; result = Vec{float(x), float(y)};
+            }
+        };
+        // Native ties retain the first candidate: left/right sides from top
+        // to bottom, then top/bottom interiors from left to right.
+        for (int y = py - radius; y <= py + radius; ++y) {
+            consider(px - radius, y); consider(px + radius, y);
+        }
+        for (int x = px - radius + 1; x < px + radius; ++x) {
+            consider(x, py - radius); consider(x, py + radius);
+        }
+        if (result) return result;
+    }
+    return {};
+}
 Vec Grid::inspectionArrival() const {
     Bytes visited(blocked.size());
     std::vector<int> component;

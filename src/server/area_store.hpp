@@ -18,6 +18,7 @@ struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; };
 struct PortalRule { int definition{},range{},openingTicks{}; };
 struct AreaMetadata {
     int waypointIndex = -1;
+    std::optional<Vec> waypointAnchor; // Native spawn marker, resolved against current collision at travel commit.
     std::optional<Vec> portalArrival;
     std::optional<PortalRule> portalRule, specialPortalRule;
     RegionId id = RegionId::Encampment;

@@ -85,7 +85,7 @@ class RealmSession {
     bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {});
     bool close_npc(std::optional<OnlineIntentContext> context = {});
     bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
-    bool npc_travel(std::optional<OnlineIntentContext> context = {}); // Original entity action 0.
+    bool npc_travel(uint32_t parameter, std::optional<OnlineIntentContext> context = {}); // Original action 0, NPC-dependent parameter.
     bool create_town_portal(uint16_t skillId, std::optional<OnlineIntentContext> context = {}); // MPQ-resolved item skill.
     // MPQ consumer checks the native location, ownership, shape and operation eligibility.
     // No optimistic inventory changes; the original protocol has no generic transaction ACK.

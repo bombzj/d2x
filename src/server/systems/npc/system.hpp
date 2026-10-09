@@ -7,7 +7,7 @@
 namespace d2x::server::npc {
 using Intent = std::variant<TalkToNpc, EndNpcConversation>;
 struct Request { Intent intent; };
-struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; };
+struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; };
 struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; };
 struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; };
 class System {

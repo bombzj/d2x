@@ -298,7 +298,12 @@ struct RemoteUiClients::Impl {
                     }
                     return;
                 }
-                else if constexpr (std::is_same_v<T, CompleteActOne> || std::is_same_v<T, CompleteActTwo>) { o.session.npc_travel(o.context); return; }
+                else if constexpr (std::is_same_v<T, CompleteActOne> || std::is_same_v<T, CompleteActTwo>) {
+                    if(o.scene && o.scene->npcConversation && o.scene->npcConversation->travelDestination)
+                        o.session.npc_travel(*o.scene->npcConversation->travelDestination,o.context);
+                    return;
+                }
+                else if constexpr (std::is_same_v<T, ClaimAkaraRespec>) {o.session.npc_travel(0,o.context);return;}
                 else if constexpr (std::is_same_v<T, IdentifyWithCain>) request.action = OnlineItemAction::IdentifyAll;
                 else if constexpr (std::is_same_v<T, BuyVendorItem>) {
                     request.action = OnlineItemAction::Buy; request.item = v.slot;
@@ -877,7 +882,7 @@ struct RemoteUiClients::Impl {
             auto item = complete.value_or(itemInstance(native, di, location));
             const auto stats = resolveItemStats(data, item, characterView.level);
             const auto maximum = itemMaximumDurability(data, item, stats);
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,{}});
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,session.read().world.quests.cainStones.value_or(std::array<int,5>{})});
             if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
@@ -1212,6 +1217,7 @@ struct RemoteUiClients::Impl {
                 npcView.serviceHints.emplace(NpcMenuAction::Personalize,data.itemStrings.at("Rename Instruct"));
             }
             if(!d.travelLabel.empty()) add(d.travelLabel,NpcMenuAction::GoEast);
+            if(!d.respecLabel.empty()) add(d.respecLabel,NpcMenuAction::Respec);
             add("Cancel",NpcMenuAction::Cancel);
         }
         QuestProjectionInput questInput;

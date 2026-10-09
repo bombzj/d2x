@@ -54,6 +54,8 @@ struct DiagnosticSnapshot {
     std::string merchantDeferred;
     size_t craftingPending{}; std::string craftingDeferred;
     unsigned denRemaining{}; bool denCleared{};
+    size_t questPending{};std::string questDeferred,hirelingDeferred;
+    std::array<int,5> cainStones{};unsigned activatedStones{};
     std::vector<travel::Portal> portals;
     std::map<RegionId,float> waypoints;
     size_t healingQueued{}, manaQueued{}, lootPending{};

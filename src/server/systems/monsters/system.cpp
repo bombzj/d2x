@@ -44,7 +44,7 @@ std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId ar
         (void)key;if(p.actor==id && p.entered && p.area==area && p.persistent.player.hp>0) return std::pair{p.position,2};
     }
     const auto *m=find(id);
-    if(m && m->area==area && m->life>0 && (!m->owner || m->amazonPet)) return std::pair{m->position,m->rule.size};
+    if(m && m->area==area && m->life>0 && (!m->owner || m->amazonPet || m->hireling)) return std::pair{m->position,m->rule.size};
     return {};
 }
 DomainResult<> System::requestMove(const MoveRequest &request) {
@@ -79,7 +79,7 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || it->second.life <= 0 || (it->second.owner && !it->second.amazonPet) || amount < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || it->second.life <= 0 || (it->second.owner && !it->second.amazonPet && !it->second.hireling) || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
     const bool corpseUnavailable=actor.frozenUntil>tick;
@@ -164,7 +164,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!actor.owner && actor.life > 0 && !actor.poison && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {
             actor.life = std::min(actor.maximumLife, actor.life + actor.maximumLife * actor.rule.damageRegen / 4096); ++actor.revision;
         }
-        if(actor.amazonPet && actor.life>0 && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
+        if((actor.amazonPet || actor.hireling) && actor.life>0 && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
             actor.life=std::min(actor.maximumLife,actor.life+actor.maximumLife*actor.petStats.damageRegen/4096);++actor.revision;
         }
         if(actor.poison && actor.life>0) {

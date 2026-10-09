@@ -50,6 +50,15 @@ class GameInstance {
     const GameSettings &settings() const { return settings_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
     std::vector<RegionId> visibleAreas(PlayerId) const;
+    bool npcVisible(PlayerId player,std::string_view code,RegionId area) const {
+        const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area);
+    }
+    std::optional<uint16_t> npcQuestAlert(PlayerId player,const NpcRule &npc,RegionId area) const {
+        const auto *p=players_.find(player);const auto *a=areas_.find(area);
+        if(!p || !a || !systems_.quests.npcVisible(p->persistent.player,npc.code,area)) return {};
+        const auto message=systems_.quests.dialogue({player,p->actor,area,a->generation,0,tick_},npc);
+        return message && message->message.menu!=2?std::optional<uint16_t>{message->message.text}:std::nullopt;
+    }
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;
     std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
@@ -65,9 +74,13 @@ class GameInstance {
     std::vector<travel::Portal> visiblePortals(PlayerId) const;
     DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);
     auto pendingSummons() const {return systems_.companions.pending();}
+    auto pendingHirelings() const {return systems_.companions.pendingHirelings();}
+    DomainResult<> installHireling(companions::PreparedHireling prepared) {return systems_.companions.install(std::move(prepared));}
     DomainResult<> installSummon(companions::Prepared prepared) {return systems_.companions.install(std::move(prepared));}
     auto pendingMerchant() const { return systems_.merchant.pending(); }
     auto pendingCrafting() const { return systems_.crafting.pending(); }
+    auto pendingQuests() const { return systems_.quests.pending(); }
+    DomainResult<> installQuests(quests::Prepared prepared) { return systems_.quests.install(std::move(prepared)); }
     DomainResult<> installCrafting(crafting::Prepared prepared) { return systems_.crafting.install(std::move(prepared)); }
     DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
@@ -86,6 +99,7 @@ class GameInstance {
     DomainResult<> damagePlayer(PlayerId,uint32_t);
     DomainResult<> missileHit(PlayerId,EntityId,uint32_t,DamageType,bool returnFire);
     DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);
+    DomainResult<> relocate(PlayerId,RegionId,std::optional<Vec>);
     DomainResult<EntityId> spawnMonster(PlayerId, const PreparedMonster &);
     std::optional<DiagnosticSnapshot> diagnostics(PlayerId, size_t limit, uint64_t since, uint64_t commandSince,
                                                 std::optional<Vec> destination = {}) const;

@@ -13,7 +13,7 @@ namespace d2x::server::skills {
 DomainResult<> System::requestCast(const CastRequest &request) {
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || (monster->owner && (!monster->amazonPet || monster->amazonPet->decoy))) return {DomainStatus::InvalidActor, {}};
+    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || (monster->owner && !monster->hireling && (!monster->amazonPet || monster->amazonPet->decoy))) return {DomainStatus::InvalidActor, {}};
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonPet && !monster->amazonPet->decoy;
@@ -32,7 +32,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || (petAttack?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || !victim->amazonPet)) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || ((petAttack || monster->hireling)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || (!victim->amazonPet && !victim->hireling))) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if (area.definition.town || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
@@ -75,7 +75,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
         auto &pending=it->second;
         if (pending.due>tick.tick) {++it;continue;}
         const auto *source=ports_.monsters.find(it->first);const auto *area=ports_.areas.find(pending.area);
-        if (!source || source->owner || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->knockedUntil>tick.tick ||
+        if (!source || (source->owner && !source->hireling) || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->knockedUntil>tick.tick ||
             !area || area->generation!=pending.generation || area->definition.town) {it=monsterReleases_.erase(it);continue;}
         const auto &unit=std::get<UnitTarget>(pending.request.target);
         DomainResult<> specialResult;

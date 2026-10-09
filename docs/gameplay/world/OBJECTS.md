@@ -46,13 +46,38 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 原版静态CltDo25入口RVA73CB0→A0DB0确认64方向表；CltDo51入口585C0确认雕像轴向／枪口和原MonSeq事件；CltDo4入口BBE00→B9470确认烟团机会／数量／半径与末帧。仅实现视觉随机流，原服未传单位随机种子，烟团随机样本不保证逐帧相同。生命、状态、陷阱触发和概率不在表现层结算。
 
+## 自研第一幕任务物件
+
+树OperateFn12、石柱9、牢笼10、古书6、马勒斯21及塔箱InitFn47均从当前MPQ准备。objects管理模式／碰撞／时钟，通过quests、travel和loot窄入口提交实际任务物品、资格、门户及掉落；玩法不读取MPQ。原DS1 TileInfo11可编码为style30／sequence11，不只扫描style33。完成游戏的牢笼按原SPECIAL1（mode5）恢复，不能套普通宝箱mode2。具体范围及原交互冒烟只维护在[第一幕任务](../quests/ACT1.md)。其他幕机关与完整陷阱仍待迁入。
+
+## 自研传送点
+
+2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；本轮没有构建、打包或运行认证。现有运行包仍是基线所列第一幕任务批次。
+
+| 路径 | 当前源码规则与分工 |
+| --- | --- |
+| 目录与解锁 | hosting从当前Levels.Waypoint准备完整目录，检查重复编号及原112位容量；travel只接受目录内、本人当前难度已激活目的地。目录不依赖区域是否已生成，不硬编码39个目的地 |
+| 首次点击 | operation23先经人物事务激活个人记录；物件mode0→1，按Objects.FrameCnt1+1帧结束。首次启动只发送原0x0E，不发送0x63，不授予菜单授权 |
+| 再次点击 | mode1／2才能发送0x63并建立独立菜单代次；NPC、仓库、方块或玩家交易交互占用时拒绝打开。原MPQ的Selectable1=0不取消传送点原操作例外 |
+| 城镇与到达物件 | 城镇InitFn17初始mode2。传送到野外目的地时，中性的实际传送点进入mode1，按FrameCnt1帧结束；已开启物件不重启动。ENDANIM按原版静默衔接ON；重新进入视野时按当前模式指派 |
+| 原0x49 | 当前源GUID、区域／代次、活人及菜单授权必须相符；独立整数X／Y距离每轴≤10，女巫≤22，不使用普通物件射线或Telekinesis圆形距离。level0／源区域关闭并取消待换区；未解锁或非传送点目的地撤销授权；单纯距离不合格保留授权 |
+| 内容准备与提交 | world只准备地图；travel在提交时再次核对菜单代次、人物意图／存活／位置、源区域及目的地目录／解锁。关闭或重开旧菜单不能让旧换区继续提交；通知接受后才改玩家区域 |
+| 目的地落点 | hosting按原DS1预设、Objects.SubClass64与Levels.Position解析传送点房间；城镇、Canyon、Arcane使用原tile index13路径，其余当前MPQ传送点使用Position0路径。公共waypointSpawnAnchor完成tile→subtile转换；Grid.nativeSpawn用原size2／0x1c09、半径小于50的整数环、Manhattan优先及原扫描次序寻找当前碰撞上的落点，不回退到一般城镇出生点 |
+| 跨幕与保存 | Warriv1向东旅行、第一幕完成位与鲁高因传送点激活在同一事务提交。0x63使用0x102＋112位并保留必开bit0；D2S当前难度的WS段按相同容量读写，其他难度及未知映射位保留。格式与指纹见[存档](../../modules/SAVES.md) |
+
+客户端只补原版启动通知的等待处理：中性传送点收到0x0E/mode1后结束激活等待，下一次点击才能正常请求菜单；若多人先后点击引起随后0x63到达，只在同一交互代次接受该真实菜单。关闭、移动、换区等代次失效后不重新打开。两种服务端共用此处理，没有自研协议或自行解锁。
+
+依据：D2Game ObjMode::OperateFunction23／WAYPOINT、ObjRgn::InitFunction17、PlrMsg::Rcv0x49、SUnitNpc::WARRIV1；D2Common D2Waypoints、DrlgDrlgWarp::GetWaypointRoomExFromLevel、D2Dungeon::FindActSpawnLocationEx及D2Collision::GetFreeCoordinatesImpl。当前MPQ为39个传送点及16种OperateFn23物件；容量112是原布局，不代表新增传送点或解锁后续幕任务。
+
+尚有前置依赖：PvP敌意变更后的10秒禁用规则需要真实敌意时钟；其他幕NPC／任务跨幕入口的城镇解锁需随相应旅行模块实现。原WAYPOINT到达分支额外发送0x0D/action1、坐标+3的短动作通知，当前仍使用既有TravelFact／0x15位置同步；需先核实原客户端该动作的坐标／路径消费，不能直接追加一个会被当前客户端解释为新权威位置的包。精细房间生命周期与动态拥挤亦未完成一致性认证，不能据本轮源码核对宣称全路径与原服完全相同。调试观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
+
 ## 限制与证据
 
 宝箱上锁／钥匙、特殊箱掉落／陷阱、全部神坛效果、特殊任务物件及五幕全部变体未逐项实机认证。隐藏控制器、怪物陷阱和火焰物件都显示原服真实身份，不把中立控制物件替换成敌人。0x51不带原服sparklyChest标志，未核实的独立闪光层暂缓；原箱本体／特殊箱音仍沿当前MPQ。连锁闪电当前范围见[女巫技能](../skills/SORCERESS.md)，不据此宣称全部环境机关已接。本批源码完成，最终构建、包装及有限原服覆盖在下方交付记录维护。旧grant-shrine／本地宝箱生成入口已删除；保留world/chest与content掉落资料供独立分析，不作为联机结算器。
 
 本地D2MOO Objects／ObjMode／ObjRgn、ItemMode、Items、D2Collision及当前MPQ核对原语义。有限法力神坛、门／传送点／门户观察见[联网记录](../../modules/NETWORK.md#既有有限证据)，地形与生成限制见[地图](MAPS.md)。
 
-## 当前包与手动观察
+## 此前原服包与手动观察
 
 2026-10-07本批已完成Windows Release构建和dist/current更新，包身份及有限运行证据见[当前交付](../../modules/NETWORK.md#当前批交付)。已确认包内程序双账号同房、营地及Cold Plains地图就绪；实际箱子、踢桶及随机陷阱未操作验收，依用户要求交由用户继续观察。
 

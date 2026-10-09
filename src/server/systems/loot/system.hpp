@@ -15,7 +15,7 @@
 namespace d2x::server::loot {
 // Treasure selection only; a selected plan is not materialized or committed loot.
 struct ObjectSource { int definition{}, operation{}; std::optional<ChestState> chest; ItemHandle key; };
-struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant; };
+struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant; bool towerGold{}; };
 struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; };
 struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, bool> completed; };
 struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; };

@@ -47,23 +47,32 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value)); if(result) state_.portals.swap(portals); return result;
 }
-DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed) {
+DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed,std::optional<Vec> source) {
     const auto *p=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !origin || origin->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
-    if(!origin->definition.specialPortalRule) return {DomainStatus::Unavailable,{}};
+    const bool blue=kind==SpecialPortalKind::Andariel || kind==SpecialPortalKind::CainRescue;
+    const auto exists=[&](int destination) {return std::any_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.field==actor.area && int(entry.second.town)==destination;});};
+    const auto &rule=blue?origin->definition.portalRule:origin->definition.specialPortalRule;
+    if(!rule) return {DomainStatus::Unavailable,{}};
     int level=0;const auto difficulty=size_t(p->persistent.difficulty);
     if(kind==SpecialPortalKind::Cow) {
         if(int(actor.area)!=1 || p->persistent.player.cowKingKilled.at(difficulty) || p->persistent.player.quests.at(difficulty).at(questIndex(QuestId::EveOfDestruction)).stage<questCompletionStage(QuestId::EveOfDestruction)) return {DomainStatus::InvalidRequest,{}};
         level=39;
+    } else if(kind==SpecialPortalKind::Tristram) {
+        if(int(actor.area)!=4) return {DomainStatus::InvalidRequest,{}};
+        level=38;
+    } else if(blue) {
+        if(int(actor.area)!=(kind==SpecialPortalKind::CainRescue?38:37)) return {DomainStatus::InvalidRequest,{}};
+        level=1;
     } else {
         if(int(actor.area)!=109 || difficulty!=2) return {DomainStatus::InvalidRequest,{}};
         if(kind==SpecialPortalKind::Finale) level=136;
-        else {const int first=int(limitedRandom(seed,3));for(int offset=0;offset<3;++offset) if(!state_.specialPortals.contains(RegionId(133+(first+offset)%3))) {level=133+(first+offset)%3;break;}}
+        else {const int first=int(limitedRandom(seed,3));for(int offset=0;offset<3;++offset) if(!exists(133+(first+offset)%3)) {level=133+(first+offset)%3;break;}}
     }
-    if(!level || state_.specialPortals.contains(RegionId(level))) return {DomainStatus::Conflict,{}};
+    if(!level || exists(level)) return {DomainStatus::Conflict,{}};
     const auto *destination=ports_.areas.find(RegionId(level));
     if(!destination) {const auto request=ports_.world.request(RegionId(level));return {request?DomainStatus::Capacity:request.status,{}};}
-    if(!destination->definition.specialPortalRule) return {DomainStatus::Unavailable,{}};
+    if(!(blue?destination->definition.portalRule:destination->definition.specialPortalRule)) return {DomainStatus::Unavailable,{}};
     const auto freePoint=[&](const AreaState &area,Vec center)->std::optional<Vec> {
         for(int radius=0;radius<=4;++radius) for(int y=-radius;y<=radius;++y) for(int x=-radius;x<=radius;++x) {
             if(std::max(std::abs(x),std::abs(y))!=radius) continue;
@@ -76,12 +85,13 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
         }
         return {};
     };
-    const auto from=freePoint(*origin,p->position),to=freePoint(*destination,destination->definition.spawn);
+    if(!destination->definition.portalArrival) return {DomainStatus::Unavailable,{}};
+    const auto from=freePoint(*origin,source.value_or(p->position)),to=freePoint(*destination,*destination->definition.portalArrival);
     if(!from || !to) return {DomainStatus::Conflict,{}};
     if(!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity,{}};
     SpecialPortalPlan plan{state_.specialPortals};
-    Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},actor.area,RegionId(level),*from,*to,*origin->definition.specialPortalRule,actor.tick,1,true,true};
-    plan.next.emplace(RegionId(level),std::move(portal));return {DomainStatus::Applied,std::move(plan)};
+    Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},actor.area,RegionId(level),*from,*to,*rule,actor.tick,1,true,true};
+    plan.next.emplace(portal.fieldId,std::move(portal));return {DomainStatus::Applied,std::move(plan)};
 }
 
 }

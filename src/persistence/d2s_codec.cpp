@@ -6,6 +6,7 @@
 #include "d2s_skills.hpp"
 #include "d2s_quests.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/areas/waypoint.hpp"
 #include <algorithm>
 #include <cmath>
 #include <ctime>
@@ -48,11 +49,12 @@ void waypoints(CharacterSaveData &snapshot, D2sFixedSections &sections, const Cl
     const auto offset = 8 + size_t(snapshot.difficulty) * 24 + 2;
     for (size_t row = 0; row < levels.rows().size(); ++row) {
         const auto id = levels.number(row, "Id"), waypoint = levels.number(row, "Waypoint");
-        if (!id || !waypoint || *waypoint < 0 || *waypoint >= 39) continue;
+        if (!id || !waypoint || !nativeWaypointIndex(*waypoint)) continue;
         auto &value = sections.waypoints[offset + size_t(*waypoint) / 8];
         const auto bit = uint8_t(1u << (*waypoint % 8));
         if (writing) {
-            if (snapshot.waypoints.contains(RegionId(*id))) value |= bit;
+            if (*waypoint == 0 || snapshot.waypoints.contains(RegionId(*id))) value |= bit;
+            else value &= uint8_t(~bit);
         } else if ((value & bit) || *waypoint == 0) {
             require(*id >= 1 && *id < 137, "unknown waypoint level");
             // WAYPOINTS_CopyAndValidateWaypointData restores the mandatory

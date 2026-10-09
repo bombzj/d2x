@@ -178,9 +178,12 @@ target_sources(d2x_server PRIVATE
   src/server/systems/companions/amazon.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
+  src/server/systems/objects/tower.cpp
   src/server/systems/npc/system.cpp
   src/server/systems/merchant/system.cpp
   src/server/systems/quests/system.cpp
+  src/server/systems/quests/act_one.cpp
+  src/server/systems/quests/rewards.cpp
   src/server/systems/progression/system.cpp
   src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
   src/server/systems/social/system.cpp
@@ -294,7 +297,14 @@ target_sources(d2x_server PRIVATE src/server/systems/inventory/consumption.cpp s
 
 target_sources(d2x_server PRIVATE src/server/systems/death/settlement.cpp src/server/systems/death/recovery.cpp)
 
-target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp
+  src/gameplay/character/respec.cpp
+  src/gameplay/quest/burial_grounds.cpp src/gameplay/quest/search_for_cain.cpp
+  src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp
+  src/gameplay/quest/sisters_to_slaughter.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/quest_content.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/hireling_content.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/companions/hireling.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/enchantment_damage.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/effects/monster_enchantments.cpp)

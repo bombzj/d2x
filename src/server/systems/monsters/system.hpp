@@ -29,6 +29,7 @@ struct Actor {
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     MonsterRule rule;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
+    bool hireling{};
     UnitCombatStats petStats;
     std::optional<WeaponDamage> petWeapon;
     std::shared_ptr<const PersistentCharacter> equipment;
@@ -108,6 +109,7 @@ class System {
     void knockback(EntityId, Vec source, uint64_t tick);
     DomainResult<> remove(EntityId);
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraSpec &, Vec) const;
+    DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random) const;
     DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {}) const;
     void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;

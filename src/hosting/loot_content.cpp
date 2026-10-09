@@ -20,7 +20,15 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     auto &world = cache.worlds[request.request.source.difficulty];
     if (!world) world = std::make_shared<const WorldCatalog>(archives, request.request.source.difficulty);
     LootPlan plan;
-    if (request.request.object) {
+    if(request.request.towerGold) {
+        const auto level=world->levels().find(int(request.request.source.region));
+        if(level==world->levels().end() || level->second.population.level.at(size_t(request.request.source.difficulty))<=0) plan.deferred="Missing original tower gold area level";
+        else {
+            const auto ilvl=unsigned(level->second.population.level.at(size_t(request.request.source.difficulty)));
+            auto random=request.seed;rollRandom(random);
+            plan.drops.push_back({"gld",ilvl+uint32_t(random)%(5*ilvl),{},ilvl,{}});plan.randomState=random;
+        }
+    } else if (request.request.object) {
         const auto &object = *request.request.object;
         auto seed = request.seed;
         if(object.operation==19 || object.operation==20) {

@@ -1149,8 +1149,10 @@ struct RealmSession::Impl {
         // Retire only its wait/presentation target; late inventory packets still apply.
         finish_pickup(OnlineItemRequest::State::Interrupted);
         auto &world = view.world;
+        const auto activated = world.waypointActivation && world.waypointActivation->generation == world.interactionGeneration
+            ? std::optional<uint32_t>{world.waypointActivation->source} : std::nullopt;
         if (world.npcRequested || world.npcConversation || world.waypointSource || world.waypointRequested || world.shopRequested ||
-            world.shopSource || world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None)
+            world.shopSource || activated || world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None)
             ++world.interactionGeneration;
         const auto storage = world.storage.kind != OnlineStorageKind::None ? world.storage.kind : world.storage.requested;
         if (storage != OnlineStorageKind::None) {
@@ -1167,7 +1169,7 @@ struct RealmSession::Impl {
             close.u8(0x30); close.u32(1); close.u32(*world.npcRequested);
             sent(gs, close.release());
         }
-        const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested;
+        const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested ? world.waypointRequested : activated;
         if (waypoint) {
             Writer close;
             close.u8(0x49); close.u32(*waypoint); close.u32(0);
@@ -1175,6 +1177,7 @@ struct RealmSession::Impl {
         }
         world.npcRequested.reset(); world.npcConversation.reset(); world.waypointSource.reset();
         world.waypointRequested.reset(); waypointDeadline = {};
+        world.waypointActivation.reset();
         initializedNpc.reset();
         npcDeadline = {};
         ++world.revision;
@@ -1946,7 +1949,7 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
     }
 }
-bool RealmSession::npc_travel(std::optional<OnlineIntentContext> context) {
+bool RealmSession::npc_travel(uint32_t parameter,std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
@@ -1957,7 +1960,7 @@ bool RealmSession::npc_travel(std::optional<OnlineIntentContext> context) {
     }
     try {
         Writer out;
-        out.u8(0x38); out.u32(0); out.u32(conversation->source); out.u32(0);
+        out.u8(0x38); out.u32(0); out.u32(conversation->source); out.u32(parameter);
         p.sent(p.gs, out.release());
         p.close_interaction(); p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
@@ -2260,7 +2263,9 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
     auto &p = *impl_;
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto &world = p.view.world;
-    const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested;
+    const auto activated = !destination && world.waypointActivation && world.waypointActivation->generation == world.interactionGeneration
+        ? std::optional<uint32_t>{world.waypointActivation->source} : std::nullopt;
+    const auto waypoint = world.waypointSource ? world.waypointSource : world.waypointRequested ? world.waypointRequested : activated;
     if (!waypoint || (destination && (!world.waypointSource || !world.waypointHistory)) || !world.playerPosition ||
         !p.view.load.serverLoadComplete || onlinePlayerDead(world)) {
         p.error(OnlineErrorKind::Input, "No server waypoint menu is open");
@@ -2284,6 +2289,7 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.world.waypointSource.reset();
         p.view.world.waypointRequested.reset(); p.waypointDeadline = {};
+        p.view.world.waypointActivation.reset();
         ++p.view.world.interactionGeneration;
         ++p.view.world.revision;
         p.view.error.reset(); p.changed();

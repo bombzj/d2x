@@ -14,4 +14,18 @@ struct Prepared {
     Preparation source;PersistentCharacter equipment;SummonCastSpec summon;MonsterRule rule;
     WeaponDamage weapon;uint64_t random{};std::string deferred;
 };
+struct HirelingPreparation {
+    ActorContext actor;
+    HirelingRecord record;
+    int difficulty{};
+};
+struct HirelingAction {int skill{},rank{},chance{},mode{};std::optional<SkillCastSpec> magic;};
+struct PreparedHireling {
+    HirelingPreparation source;
+    std::string code;
+    MonsterRule rule;
+    std::vector<HirelingAction> actions;
+    int defaultChance{}, vision{}, follow{}, warp{}, think{};
+    std::string deferred;
+};
 }

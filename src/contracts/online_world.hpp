@@ -39,6 +39,7 @@ struct OnlineQuestState {
     std::array<std::optional<uint8_t>, 41> statuses;
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
+    std::optional<std::array<int,5>> cainStones; // Original 0x50 classes 17..21.
     uint64_t revision{};
 };
 struct OnlineCombatCommand {
@@ -234,6 +235,10 @@ struct OnlineWorldView {
     std::optional<std::array<uint16_t, 8>> waypointHistory; // Native 0x102 header + 112 bits.
     std::optional<uint32_t> waypointSource; // Only 0x63 authorizes an open menu.
     std::optional<uint32_t> waypointRequested; // Local 0x13 intent, never an open-menu confirmation.
+    struct WaypointActivation { uint32_t source; uint64_t generation; };
+    // Neutral->OP finishes the activation wait; a later0x63 can still
+    // authorize a menu in this same interaction (another player may activate first).
+    std::optional<WaypointActivation> waypointActivation;
     uint64_t lateWaypointReplies{};
     uint64_t ignoredPackets{};
 
@@ -298,6 +303,7 @@ struct OnlineWorldView {
         waypointHistory.reset();
         waypointSource.reset();
         waypointRequested.reset();
+        waypointActivation.reset();
         lateWaypointReplies = ignoredPackets = 0;
     }
 };

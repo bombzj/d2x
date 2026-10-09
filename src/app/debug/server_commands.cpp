@@ -185,7 +185,12 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             args=AdminMissile{unsignedValue(request.at("source"),UINT32_MAX),uint32_t(unsignedValue(request.at("amount"),INT32_MAX/256)),int(unsignedValue(request.at("missile"),UINT16_MAX))};break;
         case AdminArgumentKind::Unit:
             args = AdminUnit{unsignedValue(request.at("id")), request.contains("amount") ? signedValue(request.at("amount")) : 0}; break;
-        case AdminArgumentKind::Travel: args = AdminTravel{int(unsignedValue(request.at("level"), INT32_MAX))}; break;
+        case AdminArgumentKind::Travel: {
+            std::optional<Vec> position;
+            if(request.contains("x")!=request.contains("y")) throw std::invalid_argument("Travel coordinates require both x and y");
+            if(request.contains("x")) position=Vec{request.at("x").get<float>(),request.at("y").get<float>()};
+            args=AdminTravel{int(unsignedValue(request.at("level"),INT32_MAX)),position};break;
+        }
         }
         const auto result = execute({entry->operation, target, std::move(args)});
         auto refreshed = host->diagnostics();

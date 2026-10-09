@@ -72,7 +72,7 @@ class System {
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
-    DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &);
+    DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &,std::optional<EntityId> emitter = {});
     CharacterModifiers unitModifiers(EntityId, uint64_t tick) const;
     int unitDefense(EntityId,uint64_t tick) const;
     int unitResistance(EntityId,DamageType,uint64_t tick) const;

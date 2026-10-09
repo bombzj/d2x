@@ -6,6 +6,7 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/character/respec.hpp"
 #include <algorithm>
 namespace d2x::server::inventory {
 DomainResult<> System::consume(const ActorContext &actor, const UseItem &request, Source source) {
@@ -40,11 +41,8 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
             quest.flags|=iceScrollUsed;break;
         }
         case QuestConsumable::RespecToken: {
-            int64_t skills=record.unspentSkills,attributes=int64_t(record.unspentAttributes)+record.allocated.strength+record.allocated.dexterity+record.allocated.vitality+record.allocated.energy;
-            for(const auto &[id,rank]:record.skillRanks) {(void)id;skills+=rank;}
-            if(skills>INT32_MAX || attributes>INT32_MAX) return {DomainStatus::Capacity,{}};
-            record.unspentSkills=int(skills);record.unspentAttributes=int(attributes);record.skillRanks.clear();record.allocated={};
-            record.selectedSkills.fill(-1);record.selectedSkillOwners.fill(UINT32_MAX);record.skillHotkeys={};break;
+            if(!refundCharacterPoints(record)) return {DomainStatus::Capacity,{}};
+            break;
         }
         }
         draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});draft.edit.inventory.items.erase(item->id);

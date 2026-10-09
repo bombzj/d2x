@@ -31,7 +31,7 @@ RequestResult WithdrawGold(GameplayContext &, uint32_t amount);
 RequestResult DepositGold(GameplayContext &, uint32_t amount);
 RequestResult CloseCube(GameplayContext &, uint32_t amount);
 RequestResult Transmute(GameplayContext &, uint32_t amount);
-RequestResult NpcTravel(GameplayContext &, uint32_t npc);
+RequestResult NpcTravel(GameplayContext &, uint32_t npc, uint32_t destination);
 RequestResult OpenShop(GameplayContext &, uint32_t npc);
 RequestResult OpenGambleShop(GameplayContext &, uint32_t npc);
 RequestResult WalkPoint(GameplayContext &, net::protocol::Reader &);

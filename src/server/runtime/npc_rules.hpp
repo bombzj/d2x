@@ -12,7 +12,7 @@ struct NpcRule {
     bool vendor{}, repair{}, identify{}, heal{}, gamble{};
     std::map<std::string, uint16_t, std::less<>> introductions;
     std::vector<uint16_t> gossip;
-    std::set<uint16_t> denMessages;
+    std::set<uint16_t> questMessages;
 };
 struct AreaNpc { EntityId id; Vec position; NpcRule rule; };
 }

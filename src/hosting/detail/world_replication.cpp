@@ -126,6 +126,16 @@ void NativeRealmService::publishObjects() {
     for (const auto &object : host.visibleObjects(*binding)) {
         next.emplace(object.id, object.revision);
         const auto old = peer.objects.find(object.id); if (old != peer.objects.end() && old->second == object.revision) continue;
+        if(object.rule.operation==23 && old!=peer.objects.end()) {
+            // ObjMode::sub_6FC752A0 sends3/TARGETABLE/native mode. A waypoint
+            // keeps its initial target flag; ENDANIM writes ON silently.
+            if(object.mode==1) packets.push_back(encodeServerPacket(ServerMessage::UnitMode,[&](auto &out) {
+                const auto area=host.area(binding->game,object.area);
+                out.u8(2);out.u32(uint32_t(object.id.value));out.u8(3);
+                out.u8(object.rule.selectable[area->definition.town?2:0]?2:0);out.u32(object.mode);
+            }));
+            continue;
+        }
         const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
         packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
             out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
@@ -143,6 +153,7 @@ void NativeRealmService::publishNpcs() {
     for (const auto area : host.visibleAreas(*binding)) {
         const auto view=host.area(binding->game,area); if (!view) continue;
         for (const auto &npc : view->definition.npcs) {
+            if(!host.npcVisible(*binding,npc.rule.code,area)) continue;
             next.insert(npc.id);
             const bool fresh=!peer.npcs.contains(npc.id);
             if(fresh) {
@@ -153,12 +164,18 @@ void NativeRealmService::publishNpcs() {
             for(const int id:states) if(!previous.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::EnableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
             for(const int id:previous) if(!states.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::DisableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
             previous=states;
+            if(const auto message=host.npcQuestAlert(*binding,npc.rule,area)) {
+                if(!peer.npcQuestAlerts.contains(npc.id) || peer.npcQuestAlerts.at(npc.id)!=*message)
+                    packets.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));}));
+                peer.npcQuestAlerts.insert_or_assign(npc.id,*message);
+            } else peer.npcQuestAlerts.erase(npc.id);
         }
     }
     for (const auto id : peer.npcs) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(id.value));}));
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.npcs.swap(next);
     std::erase_if(peer.npcStates,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
+    std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
 }
 void NativeRealmService::publishShop() {
     const auto stock=host.shop(*binding); std::set<EntityId> next; std::vector<Bytes> packets;

@@ -26,6 +26,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     WorldCatalog catalog(archives, request.difficulty);
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
+    const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
     const auto groups = decodeTable(archives.read("data/global/excel/objgroup.txt"));
     const auto shrines = decodeTable(archives.read("data/global/excel/shrines.txt"));
     bool portalResources=true;
@@ -37,11 +38,16 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     }
     WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
     if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=server::PortalRule{60,int(redPortal.reach),0};
-    if(area.town) for(const auto &layer:prepared.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size();++index) {
-        const auto &cell=layer[index]; if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11) || ((cell.value>>20)&63)!=33) continue;
+    for(const auto &layer:prepared.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size();++index) {
+        const auto &cell=layer[index]; if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11)) continue;
+        // DRLGPRESET_LoadDrlgFile maps style30 to sequence, style31 to
+        // sequence+5, style32 to10 and style33 to11. Tristram uses30/11.
+        const auto style=(cell.value>>20)&63,sequence=(cell.value>>8)&255;
+        const unsigned tileInfo=style==30?sequence:style==31?sequence+5:style==32?10:style==33?11:UINT32_MAX;
+        if(tileInfo!=11) continue;
         const auto width=prepared.terrain.map->terrain.data.width;
         const Vec point{float(index%width*5+3),float(index/width*5+3)}; const auto arrival=area.collision.nearest(point,playerMovement);
-        if(area.collision.walkable(arrival,playerMovement) && (arrival-point).length()<=5) area.portalArrival=arrival;
+        if(area.collision.walkable(arrival,playerMovement) && (arrival-point).length()<=50) area.portalArrival=arrival;
     }
     Region region; region.definition.id = area.id; region.definition.safe = area.town;
     region.map = *prepared.terrain.map; region.objectSeed = initialRandom(request.seed + uint32_t(request.level));
@@ -74,9 +80,25 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         rule.operation = object.operateFn; rule.width = object.collisionWidth; rule.height = object.collisionHeight; rule.range = int(object.reach);
         rule.collisionMask = object.collisionMask; rule.collision = object.hasCollision; rule.light = object.blocksLight; rule.parameters = object.parameters;
         rule.door = object.interaction == Interaction::Door; rule.stash = object.interaction == Interaction::Stash; rule.chest = object.chest;
-        for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==object.objectClass) {rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;break;}
+        for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==object.objectClass && objectTable.number(row,"InitFn")==47) {
+            for(size_t m=0;m<missiles.rows().size();++m) if(missiles.value(m,"Missile")=="towerchestspawner" && missiles.number(m,"pSrvDoFunc")==18) {
+                TowerReward reward{missiles.number(m,"Range").value_or(0),missiles.number(m,"Param1").value_or(-1),std::max(1,4*missiles.number(m,"Param2").value_or(0)),missiles.number(m,"Param3").value_or(-1)};
+                if(reward.lifetimeFrames<=reward.openingFrame || reward.openingFrame<0 || reward.radius<0 || reward.radius>100) throw std::runtime_error("Invalid native tower reward parameters");
+                rule.towerReward=reward;
+            }
+            if(!rule.towerReward) throw std::runtime_error("Missing native tower chest missile");
+        }
+        for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==object.objectClass) {
+            rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;
+            for(size_t mode=0;mode<rule.selectable.size();++mode) {
+                const auto value=objectTable.number(row,"Selectable"+std::to_string(mode));
+                if(rule.operation==23 && !value) throw std::runtime_error("Missing native waypoint Selectable mode");
+                rule.selectable[mode]=value.value_or(0)!=0;
+            }
+            break;
+        }
         const auto &animation = object.animationRules[1];
-        rule.openingTicks = object.chest ? uint64_t(animation.frames + 1) : animation.fps > 0 ? uint64_t(std::ceil(animation.frames * 25.f / animation.fps)) : 0;
+        rule.openingTicks = object.chest || rule.operation==23 ? uint64_t(animation.frames + 1) : animation.fps > 0 ? uint64_t(std::ceil(animation.frames * 25.f / animation.fps)) : 0;
         if (object.shrineCode) {
             const auto &source = content.shrines.at(object.shrineCode);
             server::ShrineRule shrine{source.code, source.argument0, source.argument1, source.durationFrames, source.resetFrames, {}};

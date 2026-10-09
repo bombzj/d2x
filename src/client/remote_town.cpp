@@ -235,11 +235,14 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
                     ((*v.world.quests.playerFlags)[slot] & 1);
             };
             const char *label = nullptr;
-            if (id == "warriv1" && rewarded(6)) label = "WarrivMenu1b";
-            else if (id == "warriv2") label = "WarrivMenu1c";
-            else if (id == "meshif1" && rewarded(14)) label = "MeshifMenuEast";
-            else if (id == "meshif2") label = "MeshifMenuWest";
+            if (id == "warriv1" && v.world.quests.playerFlags && ((*v.world.quests.playerFlags)[6]&3u)) {label = "WarrivMenu1b";dialog.travelDestination=40;}
+            else if (id == "warriv2") {label = "WarrivMenu1c";dialog.travelDestination=1;}
+            else if (id == "meshif1" && rewarded(14)) {label = "MeshifMenuEast";dialog.travelDestination=75;}
+            else if (id == "meshif2") {label = "MeshifMenuWest";dialog.travelDestination=40;}
             if (label) dialog.travelLabel = strings_.find(label);
+            // Original 1.13c Akara menu: native quest slot 41, pending but unused.
+            if(id=="akara" && v.world.quests.playerFlags && ((*v.world.quests.playerFlags)[41]&3u)==2u)
+                dialog.respecLabel=strings_.speech(0x2ba0);
             view_.npcConversation = std::move(dialog);
         }
     }

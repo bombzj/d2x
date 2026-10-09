@@ -4,6 +4,7 @@
 #include "core/math.hpp"
 #include "core/id.hpp"
 #include <deque>
+#include <optional>
 namespace d2x {
 struct RoomBounds {
     int x, y, width, height;
@@ -90,6 +91,9 @@ struct Grid {
     bool lightSegment(Vec a, Vec b) const;
     Bytes reachableFrom(Vec origin, MovementCollisionRule rule = {}) const;
     Vec nearest(Vec p, MovementCollisionRule rule = {}) const;
+    // COLLISION_GetFreeCoordinatesImpl without a field mask: integer spawn,
+    // square rings, Manhattan priority and native scan order; no unbounded fallback.
+    std::optional<Vec> nativeSpawn(Vec p, int maxDistance, MovementCollisionRule rule) const;
     // Scene inspection arrival: an interior point of the largest walkable component.
     // Real level transitions must use the original linked warp coordinates instead.
     Vec inspectionArrival() const;

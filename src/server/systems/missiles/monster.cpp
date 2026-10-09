@@ -7,12 +7,13 @@
 #include "gameplay/monsters/enchantment_damage.hpp"
 #include "core/random.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/weapon_damage.hpp"
 #include "server/systems/effects/system.hpp"
 #include <algorithm>
 namespace d2x::server::missiles {
 DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     const auto *source=ports_.monsters.find(request.source);const auto *area=ports_.areas.find(request.area);
-    if(!source || source->owner || (source->life<=0 && !request.postMortem) || source->area!=request.area || !area || area->generation!=request.generation || area->definition.town ||
+    if(!source || (source->owner && !source->hireling) || (source->life<=0 && !request.postMortem) || source->area!=request.area || !area || area->generation!=request.generation || area->definition.town ||
         !request.attack.missile || !std::isfinite(request.target.x) || !std::isfinite(request.target.y)) return {DomainStatus::InvalidActor,{}};
     const auto &rule=*request.attack.missile;
     if(rule.definition<0 || rule.frames<=0 || rule.speed<0 || (rule.speed==0 && rule.behavior!=MonsterMissileRule::Behavior::SpiderGoo && rule.behavior!=MonsterMissileRule::Behavior::Fire) || request.extraQuills<0 || request.extraQuills>255) return {DomainStatus::InvalidRequest,{}};
@@ -40,6 +41,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         const Vec aim=aims[index];
         const auto &rule=firewall && !index?*request.attack.groundFire:index>=quillStart && request.attack.extraQuill?*request.attack.extraQuill:*request.attack.missile;
         Missile missile;missile.owner=request.source;missile.emitter=request.source;missile.emitterType=1;
+        if(source->hireling && source->owner) missile.player=*source->owner;
         missile.area=request.area;missile.generation=request.generation;missile.created=request.tick;
         missile.expires=request.tick+uint64_t(rule.frames);missile.lifetimeFrames=rule.frames;missile.definition=rule.definition;
         missile.position=request.position;missile.turnTarget=aim-request.position;
@@ -57,6 +59,12 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         hit.channels[0]+=roll(rule.minimum,rule.maximum);
         hit.channels[size_t(rule.element)]+=roll(rule.elementalMinimum,rule.elementalMaximum);
         hit.coldFrames+=rule.coldFrames;hit.poisonFrames+=rule.poisonFrames;
+        if(source->hireling && request.attack.weaponSkill) {
+            WeaponDamage weapon;weapon.ranged=true;weapon.weaponClass="bow";
+            weapon.projectileMinimum=request.attack.minimum*256;weapon.projectileMaximum=request.attack.maximum*256;
+            const auto snapshot=rollWeaponSkillDamage(weapon,buffs.combat,*request.attack.weaponSkill,request.level,true,missile.random);
+            hit.channels=targetWeaponChannels(snapshot,false,false);hit.coldFrames=snapshot.coldFrames;hit.poisonFrames=snapshot.poisonFrames;
+        }
         MonsterEnchantmentDamageState enchantmentDamage;
         if(source->rule.enchantment && !rule.noUniqueMod && !request.postMortem) addMonsterEnchantmentDamage(hit,*source->rule.enchantment,rule.sourceDamage,missile.random,enchantmentDamage);
         hit.knockback=source->rule.knockbackOnHit && !request.postMortem;
@@ -103,11 +111,12 @@ System::Advance System::advanceMonster(const Missile &original) const {
         missile.position=next;plan.finished=expired || bool(wall);++missile.revision;return plan;
     }
     struct Target {EntityId id;Vec position;int size;};std::vector<Target> targets;
-    if(enemy.rule.collidePlayers) for(const auto &[key,player]:ports_.players.all()) {
+    const bool friendly=missile.player.value!=0;
+    if(!friendly && enemy.rule.collidePlayers) for(const auto &[key,player]:ports_.players.all()) {
         (void)key;if(player.entered && player.area==missile.area && player.persistent.player.hp>0) targets.push_back({player.actor,player.position,2});
     }
-    if(enemy.rule.collideMonsters) for(const auto &[id,pet]:ports_.monsters.read().actors)
-        if(pet.amazonPet && pet.life>0 && pet.area==missile.area) targets.push_back({id,pet.position,pet.rule.size});
+    if(friendly || enemy.rule.collideMonsters) for(const auto &[id,pet]:ports_.monsters.read().actors)
+        if((friendly?!pet.owner:(bool(pet.amazonPet)||pet.hireling)) && pet.life>0 && pet.area==missile.area) targets.push_back({id,pet.position,pet.rule.size});
     std::vector<std::pair<float,EntityId>> contacts;
     if(missile.ageFrames>enemy.rule.activate && !expired) for(const auto &target:targets) {
         if(!goo && missile.weaponContacts.contains(target.id)) continue;

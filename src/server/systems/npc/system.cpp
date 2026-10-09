@@ -8,10 +8,10 @@
 namespace d2x::server::npc {
 const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool conversation) const {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
-    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration || !area->definition.town) return nullptr;
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration) return nullptr;
     const auto &npcs = area->definition.npcs;
     const auto found = std::find_if(npcs.begin(),npcs.end(),[&](const auto &entry){return entry.id == id;});
-    if (found == npcs.end() || (found->position-player->position).length() > 8 || !area->definition.collision.segment(player->position,found->position,id,{0x0801,1})) return nullptr;
+    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area) || (found->position-player->position).length() > 8 || !area->definition.collision.segment(player->position,found->position,id,{0x0801,1})) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return &*found;
 }
@@ -38,7 +38,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto current = state_.conversations.find(actor.player);
         if (!find(actor,npc->id,true) || current == state_.conversations.end() || !talk.message || current->second.pendingMessage != talk.message) return {DomainStatus::Stale,{}};
         if(current->second.quest) {
-            auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,QuestId::DenOfEvil,npc->id,talk.message});
+            auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,current->second.questId,npc->id,talk.message});
             if(result) current->second.pendingMessage.reset();
             return result;
         }
@@ -51,7 +51,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
     Conversation next{npc->id,actor.area,state_.next,{}}; NpcMessagesFact fact{npc->id,{}};
     next.actor=actor.actor; next.areaGeneration=actor.areaGeneration;
-    if(const auto message=ports_.quests.dialogue(actor,npc->rule)) { next.quest=true; next.pendingMessage=message->text; fact.messages.push_back(*message); }
+    if(const auto message=ports_.quests.dialogue(actor,npc->rule)) { next.quest=true; next.questId=message->quest; next.pendingMessage=message->message.text; fact.messages.push_back(message->message); }
     if (!next.pendingMessage && !record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc->rule.introduction)) {
         const auto intro = npc->rule.introductions.find(record.characterClass);
         if (intro != npc->rule.introductions.end()) { next.pendingMessage=intro->second; fact.messages.push_back({0,intro->second}); }

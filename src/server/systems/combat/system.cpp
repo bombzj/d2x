@@ -44,13 +44,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto *sourceMonster = ports_.monsters.find(damage.source), *targetMonster = ports_.monsters.find(damage.target);
         const bool petAttack=sourceMonster && sourceMonster->amazonPet && !sourceMonster->amazonPet->decoy && targetMonster && !targetMonster->owner;
         const bool playerAttack = sourcePlayer && targetMonster;
-        const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && targetMonster->amazonPet));
+        const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && (targetMonster->amazonPet || targetMonster->hireling)));
         const auto *area = ports_.areas.find(damage.area);
         bool valid = area && !area->definition.town && ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && damage.weapon));
         if (sourcePlayer) valid = valid && sourcePlayer->entered && sourcePlayer->area == damage.area && sourcePlayer->persistent.player.hp > 0;
         if (targetPlayer) valid = valid && targetPlayer->entered && targetPlayer->area == damage.area && targetPlayer->persistent.player.hp > 0;
         if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack);
-        if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && (!targetMonster->owner || (monsterAttack && targetMonster->amazonPet));
+        if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && (!targetMonster->owner || (monsterAttack && (targetMonster->amazonPet || targetMonster->hireling)));
         if (!valid) { it = state_.pending.erase(it); continue; }
         if(targetPlayer && !damage.reactionsStarted) {
             if(!ports_.effects.reactionCapacity()) {blocked=true;++it;continue;}

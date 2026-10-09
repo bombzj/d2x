@@ -26,6 +26,13 @@ DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMon
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions});
 }
+DomainResult<> GameInstance::relocate(PlayerId id,RegionId area,std::optional<Vec> position) {
+    const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
+    const ActorContext actor{id,p->actor,p->area,areas_.at(p->area).generation,0,tick_};
+    const auto result=systems_.travel.relocate(actor,area,position);
+    if(result) systems_.skills.cancel(id,p->actor);
+    return result;
+}
 std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t limit, uint64_t since,
     uint64_t commandSince, std::optional<Vec> destination) const {
     const auto *player = players_.find(id);
@@ -37,6 +44,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().denRemaining; result.denCleared=systems_.quests.read().denCleared; result.portals=visiblePortals(id);
     result.corpses=player->persistent.corpses; result.merchantDeferred=systems_.merchant.read().deferred;
     result.craftingPending=systems_.crafting.read().pending.size();result.craftingDeferred=systems_.crafting.read().deferred;
+    result.questPending=systems_.quests.read().pending.size();result.questDeferred=systems_.quests.read().deferred;
+    result.cainStones=systems_.quests.read().stones;result.activatedStones=systems_.quests.read().activatedStones;
+    result.hirelingDeferred=systems_.companions.hirelingDeferred(id);
     for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
     result.area = {area.definition, area.generation};

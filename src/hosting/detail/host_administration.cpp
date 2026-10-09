@@ -182,7 +182,13 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             publishEvents(); publishMonsters();
             return {AdminStatus::Applied, "Monster damage committed; normal death, rewards and loot run on the next fixed step"};
         }
-        case AdminOperation::Travel: return {AdminStatus::NotImplemented, "Travel administration is not implemented"};
+        case AdminOperation::Travel: {
+            const auto &destination=std::get<AdminTravel>(request.arguments);
+            if(destination.level<1 || destination.level>136) return {AdminStatus::InvalidArguments,"Original area must be 1..136"};
+            const auto result=host.relocate(*binding,RegionId(destination.level),destination.position);
+            if(!result) return {AdminStatus::Unavailable,"Area content is preparing, position is unavailable, or output capacity is blocked; retry after inspecting the host snapshot"};
+            publishEvents();return {AdminStatus::Applied,"Host relocated the player through prepared native collision and original travel facts; no task or waypoint was granted"};
+        }
         case AdminOperation::UnlockWaypoints: return {AdminStatus::NotImplemented, "Waypoint administration is not implemented"};
         case AdminOperation::GrantShrine: return {AdminStatus::NotImplemented, "Object administration is not implemented"};
         case AdminOperation::GrantHireling: return {AdminStatus::NotImplemented, "Hireling administration is not implemented"};

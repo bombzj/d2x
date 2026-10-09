@@ -4,6 +4,17 @@
 #include <cmath>
 #include "gameplay/combat/attack_timing.hpp"
 namespace d2x::server::monsters {
+DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContext &owner,const MonsterRule &rule,std::string_view code,Vec position,int64_t life,uint64_t random) const {
+    const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
+    if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || !area || area->generation!=owner.areaGeneration || life<=0 || rule.minimumLife<=0 || !area->definition.collision.walkable(position,rule.collision)) return {DomainStatus::InvalidActor,{}};
+    if(state_.actors.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
+    Actor actor;actor.id=EntityId{ports_.ids.cursor()};actor.area=owner.area;actor.position=actor.home=position;actor.revision=1;actor.owner=owner.player;
+    actor.identity.monster=std::string(code);actor.identity.spawnKey="hireling."+std::to_string(owner.player.value);actor.identity.origin=SpawnOrigin::Summoned;
+    actor.rule=rule;actor.hireling=true;actor.life=std::min(life,int64_t(rule.minimumLife)*256);actor.maximumLife=int64_t(rule.minimumLife)*256;
+    actor.petStats.damageRegen=rule.damageRegen;
+    actor.combatRandom=random;actor.rewardComplete=true;actor.components=chooseMonsterComponents(rule.componentCounts,{},random);
+    std::map<EntityId,Actor> result;result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+}
 DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner, const HydraSpec &spec, Vec center) const {
     const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
     if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || p->persistent.player.hp<=0 || !area ||
@@ -57,7 +68,7 @@ void System::commitAmazon(std::map<EntityId,Actor> &&actors,size_t items) noexce
 }
 DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec position) {
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
-    if(found==state_.actors.end() || !found->second.amazonPet || !found->second.amazonPet->warp || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }

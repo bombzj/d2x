@@ -8,4 +8,6 @@ enum class CainStage : uint32_t {
 };
 inline constexpr uint32_t cainStoneCountMask = 7;
 inline constexpr uint32_t cainRescuedByRogues = 8;
+bool cainAdvance(QuestRecord &record, CainStage stage);
+bool cainStoneActivated(QuestRecord &record, bool correct);
 } // namespace d2x

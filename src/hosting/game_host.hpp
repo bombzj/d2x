@@ -34,8 +34,12 @@ class GameHost {
     std::set<int> unitStates(GameHandle,EntityId) const;
     std::vector<server::companions::Preparation> pendingSummons(GameHandle) const;
     server::DomainResult<> installSummon(GameHandle,server::companions::Prepared);
+    std::vector<server::companions::HirelingPreparation> pendingHirelings(GameHandle) const;
+    server::DomainResult<> installHireling(GameHandle,server::companions::PreparedHireling);
     std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
     std::vector<server::crafting::Preparation> pendingCrafting(GameHandle) const;
+    std::vector<server::quests::Preparation> pendingQuests(GameHandle) const;
+    server::DomainResult<> installQuests(GameHandle,server::quests::Prepared);
     server::DomainResult<> installCrafting(GameHandle, server::crafting::Prepared);
     server::DomainResult<> installMerchant(GameHandle, server::merchant::Prepared);
     std::optional<PersistentCharacter> shop(PlayerBinding) const;
@@ -48,6 +52,9 @@ class GameHost {
     std::set<size_t> usedUniques(GameHandle) const;
     server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string);
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
+    bool npcVisible(PlayerBinding,std::string_view code,RegionId area) const;
+    server::DomainResult<> relocate(PlayerBinding,RegionId,std::optional<Vec>);
+    std::optional<uint16_t> npcQuestAlert(PlayerBinding,const server::NpcRule &,RegionId) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;

@@ -68,7 +68,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
             case 5: quest.stage = rewarded ? 5 : pending ? 3 : entered ? 2 : started ? 1 : 0; break;
             }
         }
-        if (sections.quests[10 + difficulty * 96 + 0x52]) {
+        if (word(sections.quests,10 + difficulty * 96 + 0x52) & 1u) {
             require(player.quests[difficulty][0].stage == uint32_t(DenStage::Rewarded), "respec without Den reward");
             player.quests[difficulty][0].flags |= denRespecUsed;
         }
@@ -158,7 +158,10 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
             putWord(sections.quests, at, (word(sections.quests, at) & ~1u) |
                 (player.questPreludes[difficulty][size_t(prelude.id)] ? 1u : 0u));
         }
-        sections.quests[10 + difficulty * 96 + 0x52] = (player.quests[difficulty][0].flags & denRespecUsed) ? 1 : 0;
+        const auto &den=player.quests[difficulty][0];
+        putWord(sections.quests,10 + difficulty * 96 + 0x52,
+            (word(sections.quests,10 + difficulty * 96 + 0x52)&~0x2003u) |
+            (den.stage==uint32_t(DenStage::Rewarded)?0x2000u|((den.flags&denRespecUsed)?1u:2u):0u));
         const auto &bird = player.quests[difficulty][questIndex(QuestId::GoldenBird)];
         const auto &izual = player.quests[difficulty][questIndex(QuestId::FallenAngel)];
         const auto &siege = player.quests[difficulty][questIndex(QuestId::SiegeOnHarrogath)];

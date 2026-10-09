@@ -20,7 +20,7 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::SpawnMonster, "monster-spawn", AdminArgumentKind::Spawn, true},
         {AdminOperation::DamageMonster, "monster-damage", AdminArgumentKind::Unit, true},
         {AdminOperation::KillMonster, "monster-kill", AdminArgumentKind::Unit, true},
-        {AdminOperation::Travel, "travel", AdminArgumentKind::Travel, false},
+        {AdminOperation::Travel, "travel", AdminArgumentKind::Travel, true},
         {AdminOperation::UnlockWaypoints, "unlock-waypoints", AdminArgumentKind::None, false},
         {AdminOperation::GrantShrine, "grant-shrine", AdminArgumentKind::Spawn, false},
         {AdminOperation::GrantHireling, "grant-hireling", AdminArgumentKind::Spawn, false},

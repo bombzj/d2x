@@ -3,6 +3,7 @@
 #include "skill_rules.hpp"
 #include "gameplay/consumables/potions.hpp"
 #include "core/id.hpp"
+#include "world/identity.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
@@ -51,6 +52,7 @@ enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    std::map<RegionId,int> waypointIndices; // Immutable MPQ Levels identities, including unloaded areas.
     std::set<int> innateSkills;
     std::map<std::string,ItemSkillRule,std::less<>> itemSkills;
     std::vector<uint64_t> experience;

@@ -6,6 +6,9 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/npc/system.hpp"
+#include "server/systems/objects/system.hpp"
+#include "gameplay/areas/waypoint.hpp"
+#include "gameplay/quest/sisters_to_slaughter.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
@@ -98,14 +101,32 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             pending = state_.transitions.erase(pending); continue;
         }
         auto &player = found->second;
+        if(transition.kind==Kind::Waypoint) {
+            const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
+            if(!waypointAccess(actor,transition.source,transition.waypointRevision) || !player.rules.character ||
+                !player.rules.character->waypointIndices.contains(transition.to) || !player.persistent.waypoints.contains(transition.to)) {
+                pending=state_.transitions.erase(pending);continue;
+            }
+        }
         if (!destination) {
             const ActorContext actor{player.player, player.actor, player.area, source->generation, transition.sequence, tick.tick};
-            if (!(transition.kind==Kind::Waypoint?ports_.world.requestWaypoint(actor,transition.to):ports_.world.requestArea(actor, transition.to))) { pending = state_.transitions.erase(pending); continue; }
+            const auto prepared = transition.kind == Kind::Waypoint ? ports_.world.requestWaypoint(actor, transition.to) :
+                transition.kind == Kind::Npc ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
+            if (!prepared) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
         }
         if (!player.route.empty()) { ++pending; continue; }
         if (!transition.crossing && (player.position - transition.approach).length() > .1f) { pending = state_.transitions.erase(pending); continue; }
         Vec arrival = transition.arrival;
+        if(transition.kind==Kind::Npc) {
+            const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
+            // The original client follows 0x38 travel with 0x30 close. The
+            // accepted travel retains its lease identity while content loads;
+            // a different conversation, movement, death or area invalidates it.
+            const auto *conversation=ports_.npc.conversation(player.player);
+            if(!ports_.npc.find(actor,transition.source) || (conversation && conversation->revision!=transition.npcConversation) || player.persistent.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) {pending=state_.transitions.erase(pending);continue;}
+            arrival=destination->definition.spawn;
+        }
         std::optional<Vec> exitWalk;
         if (transition.walking) {
             transition.crossing = true;
@@ -128,10 +149,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(portal==state_.portals.end() || (portal->second.fieldId!=transition.source && portal->second.townId!=transition.source)) { pending=state_.transitions.erase(pending); continue; }
         }
         if(transition.kind==Kind::Waypoint) {
-            const auto waypoint=std::find_if(destination->definition.objects.begin(),destination->definition.objects.end(),[](const auto &object){return object.rule.operation==23;});
-            if(waypoint==destination->definition.objects.end()) { pending=state_.transitions.erase(pending); continue; }
-            arrival=destination->definition.collision.nearest(waypoint->position,playerMovement);
-            if((arrival-waypoint->position).length()>8) { pending=state_.transitions.erase(pending); continue; }
+            const auto &definition=destination->definition;
+            if(!definition.waypointAnchor || !nativeWaypointIndex(definition.waypointIndex) ||
+                player.rules.character->waypointIndices.at(transition.to)!=definition.waypointIndex) {pending=state_.transitions.erase(pending);continue;}
+            const auto spawn=definition.collision.nativeSpawn(*definition.waypointAnchor,50,playerMovement);
+            if(!spawn) {pending=state_.transitions.erase(pending);continue;}
+            arrival=*spawn;
         }
         if (!transition.walking && transition.kind==Kind::Exit) {
             const AreaExit *back = nullptr;
@@ -146,13 +169,43 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (transition.walking || exitWalk) route = destination->definition.collision.path(arrival, exitWalk.value_or(transition.destination), true, playerMovement);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, transition.walking}}};
-        if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
+        if(transition.kind==Kind::Npc) {
+            transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
+            edit.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage=uint32_t(SlaughterStage::Completed);
+            edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(0)=true;
+            // SUnitNpc::WARRIV1 activates Lut Gholein after travelling east.
+            // Keep the waypoint, Act completion and travel in one transaction.
+            if(int(transition.to)==40 && nativeWaypointIndex(destination->definition.waypointIndex)) {
+                edit.waypoints=player.persistent.waypoints;
+                edit.waypoints->try_emplace(transition.to,float(tick.tick)*TickContext::seconds);
+            }
+            edit.facts.emplace_back(QuestFact{player.player,edit.player,player.persistent.difficulty,0});
+            edit.facts.emplace_back(TravelFact{player.player,player.actor,transition.from,transition.to,destination->generation,arrival,false});
+            auto plan=ports_.transactions.prepare(std::move(edit));
+            if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {++pending;continue;}
+        } else if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
         player.area = transition.to; player.position = arrival; player.route = std::move(route);
         player.routeRunning = player.running || transition.run; player.moving = transition.walking;
+        if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,tick);
         pending = state_.transitions.erase(pending);
     }
     return state_.transitions.empty() ? StepStatus::Complete : StepStatus::Blocked;
+}
+DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::optional<Vec> requested) {
+    const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(target);
+    if(!p || !p->entered || p->actor!=actor.actor || p->persistent.player.hp<=0 || int(target)<1 || int(target)>136) return {DomainStatus::InvalidActor,{}};
+    if(!area) {const auto result=ports_.world.request(target);return {result?DomainStatus::Unavailable:result.status,{}};}
+    const Vec desired=requested.value_or(area->definition.town?area->definition.spawn:
+        area->definition.portalArrival.value_or(area->definition.exits.empty()?area->definition.spawn:area->definition.exits.front().arrival));
+    if(!std::isfinite(desired.x) || !std::isfinite(desired.y) || desired.x<0 || desired.y<0 || desired.x>=area->definition.collision.width || desired.y>=area->definition.collision.height) return {DomainStatus::InvalidRequest,{}};
+    const Vec at=area->definition.collision.nearest(desired,playerMovement);
+    if(!area->definition.collision.walkable(at,playerMovement) || (at-desired).length()>8) return {DomainStatus::Unavailable,{}};
+    const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{TravelFact{actor.player,actor.actor,p->area,target,area->generation,at,false}}});
+    if(!sent) return {sent.status,{}};
+    ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);cancel(actor.player);
+    auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;player.area=target;player.position=at;
+    return {DomainStatus::Applied,std::monostate{}};
 }
 }

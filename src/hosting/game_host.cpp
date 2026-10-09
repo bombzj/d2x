@@ -69,6 +69,16 @@ std::vector<PlayerId> GameHost::visiblePlayers(PlayerBinding binding) const {
 std::vector<RegionId> GameHost::visibleAreas(PlayerBinding binding) const {
     const auto *slot = find(binding.game); return slot ? slot->game->visibleAreas(binding.player) : std::vector<RegionId>{};
 }
+bool GameHost::npcVisible(PlayerBinding binding,std::string_view code,RegionId area) const {
+    const auto *slot=find(binding.game);return slot && slot->game->npcVisible(binding.player,code,area);
+}
+server::DomainResult<> GameHost::relocate(PlayerBinding binding,RegionId area,std::optional<Vec> position) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->relocate(binding.player,area,position);if(result) publish(size_t(binding.game.slot));return result;
+}
+std::optional<uint16_t> GameHost::npcQuestAlert(PlayerBinding binding,const server::NpcRule &npc,RegionId area) const {
+    const auto *slot=find(binding.game);return slot?slot->game->npcQuestAlert(binding.player,npc,area):std::nullopt;
+}
 std::optional<server::AreaView> GameHost::area(GameHandle handle, RegionId id) const {
     const auto *slot = find(handle); const auto *area = slot ? slot->game->area(id) : nullptr;
     if (!area) return {};
@@ -244,6 +254,8 @@ server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, s
 namespace d2x {
 std::vector<server::merchant::Preparation> GameHost::pendingMerchant(GameHandle game) const { const auto *slot=find(game); return slot ? slot->game->pendingMerchant() : std::vector<server::merchant::Preparation>{}; }
 std::vector<server::crafting::Preparation> GameHost::pendingCrafting(GameHandle game) const { const auto *slot=find(game); return slot ? slot->game->pendingCrafting() : std::vector<server::crafting::Preparation>{}; }
+std::vector<server::quests::Preparation> GameHost::pendingQuests(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingQuests():std::vector<server::quests::Preparation>{};}
+server::DomainResult<> GameHost::installQuests(GameHandle game,server::quests::Prepared prepared) {auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};auto result=slot->game->installQuests(std::move(prepared));if(result) publish(game.slot);return result;}
 server::DomainResult<> GameHost::installCrafting(GameHandle game, server::crafting::Prepared prepared) { auto *slot=find(game); if(!slot) return {server::DomainStatus::Stale,{}}; auto result=slot->game->installCrafting(std::move(prepared)); if(result) publish(game.slot); return result; }
 server::DomainResult<> GameHost::installMerchant(GameHandle game,server::merchant::Prepared prepared) { auto *slot=find(game); if(!slot) return {server::DomainStatus::Stale,{}}; auto result=slot->game->installMerchant(std::move(prepared)); if(result) publish(size_t(game.slot)); return result; }
 std::optional<PersistentCharacter> GameHost::shop(PlayerBinding binding) const { const auto *slot=find(binding.game); return slot ? slot->game->shop(binding.player) : std::nullopt; }
@@ -275,4 +287,6 @@ server::DomainResult<> GameHost::damageMonster(PlayerBinding binding, EntityId t
 namespace d2x {
 std::vector<server::companions::Preparation> GameHost::pendingSummons(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingSummons():std::vector<server::companions::Preparation>{};}
 server::DomainResult<> GameHost::installSummon(GameHandle game,server::companions::Prepared prepared) {auto *slot=find(game);return slot?slot->game->installSummon(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
+std::vector<server::companions::HirelingPreparation> GameHost::pendingHirelings(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingHirelings():std::vector<server::companions::HirelingPreparation>{};}
+server::DomainResult<> GameHost::installHireling(GameHandle game,server::companions::PreparedHireling prepared) {auto *slot=find(game);return slot?slot->game->installHireling(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
 }

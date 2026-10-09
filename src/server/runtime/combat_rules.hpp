@@ -7,6 +7,7 @@
 #include "gameplay/monsters/unique_modifiers.hpp"
 #include "gameplay/skills/firewall_spec.hpp"
 #include "gameplay/combat/damage_type.hpp"
+#include "gameplay/skills/cast_spec.hpp"
 #include "world/navigation.hpp"
 #include <array>
 #include <map>
@@ -45,6 +46,7 @@ struct MonsterAttackRule {
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
     std::optional<MonsterMissileRule> groundFire{};
+    std::optional<SkillCastSpec> weaponSkill{};
 };
 struct MonsterWebRule {
     int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};

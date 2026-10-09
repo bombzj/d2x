@@ -60,6 +60,8 @@ StepStatus System::resolveSpells(TickContext tick) {
         }
         const auto *area = ports_.areas.find(impact.area);
         const auto *monsterSource=ports_.monsters.find(impact.source);
+        const bool hirelingSource=monsterSource && monsterSource->hireling && monsterSource->owner;
+        if(hirelingSource) owner=ports_.players.find(*monsterSource->owner);
         if ((!owner || !owner->entered || owner->area!=impact.area) && (!monsterSource || monsterSource->owner || monsterSource->area!=impact.area)) impact.next=impact.targets.size();
         if(!area || area->definition.town) impact.next=impact.targets.size();
         while (impact.next < impact.targets.size()) {
@@ -68,9 +70,9 @@ StepStatus System::resolveSpells(TickContext tick) {
                 for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==impact.targets[impact.next]) {player=&p;break;}}
                 const auto *pet=ports_.monsters.find(impact.targets[impact.next]);
                 if(player && (!player->entered || player->area!=impact.area || player->persistent.player.hp<=0)) player=nullptr;
-                if(pet && (!pet->amazonPet || pet->area!=impact.area || pet->life<=0)) pet=nullptr;
+                if(pet && ((!pet->amazonPet && !pet->hireling) || pet->area!=impact.area || pet->life<=0)) pet=nullptr;
                 if ((!player || !player->entered || player->area!=impact.area || player->persistent.player.hp<=0) &&
-                    (!pet || !pet->amazonPet || pet->area!=impact.area || pet->life<=0)) {++impact.next;continue;}
+                    (!pet || (!pet->amazonPet && !pet->hireling) || pet->area!=impact.area || pet->life<=0)) {++impact.next;continue;}
                 if(impact.nextDelay && ((player && !ports_.effects.missileHitAllowed(player->actor,tick.tick)) || (pet && pet->nextHitTick>tick.tick))) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
                 if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
@@ -132,6 +134,25 @@ StepStatus System::resolveSpells(TickContext tick) {
             const int resistance = impact.type == DamageType::Cold && raw < 100 ? std::max(-100, raw - impact.coldPierce) : raw;
             int64_t amount = impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next];
             auto random=ports_.random;
+            if(hirelingSource && impact.monsterHit) {
+                if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
+                random=impact.contactRandom.value_or(ports_.random);
+                const auto commitRandom=[&]{if(impact.contactRandom) impact.contactRandom=random;else ports_.random=random;};
+                if(impact.monsterToHit && int(limitedRandom(random,100))>=physicalHitChance(impact.monsterLevel,impact.monsterRating,target->rule.level,ports_.effects.unitDefense(target->id,tick.tick))) {commitRandom();++impact.next;continue;}
+                if((target->shield || target->rule.blockWithoutShield) && int(limitedRandom(random,100))<target->rule.blockChance) {
+                    const auto result=ports_.monsters.block(target->id,tick.tick);if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                    commitRandom();++impact.next;continue;
+                }
+                const auto &hit=*impact.monsterHit;amount=0;
+                for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(hit.channels[channel])/256.f,ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
+                const auto cold=hit.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(target->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(target->rule.coldDivisor));
+                std::optional<PoisonApplication> poison;
+                if(hit.poisonFrames && hit.channels[5]) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(hit.channels[5])/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),hit.poisonFrames,owner->rules.skills->poisonState};
+                const auto result=ports_.monsters.damage(target->id,owner->actor,amount,tick.tick,cold,false,impact.hitClass,poison);
+                if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                if(result && impact.nextDelay) ports_.monsters.hitDelay(target->id,tick.tick+impact.nextDelay);
+                if(result) commitRandom();++impact.next;continue;
+            }
             if(impact.weapon) {
                 const auto &attack=*impact.weapon;
                 if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}

@@ -11,6 +11,8 @@ Json area(const server::AreaView &value) {
     Json result{{"id", int(a.id)}, {"generation", value.generation}, {"act", a.act}, {"town", a.town},
         {"teleportAllowed", a.teleportAllowed}, {"origin", point(a.origin)}, {"spawn", point(a.spawn + a.origin)},
         {"boundaries", Json::array()}, {"exits", Json::array()}, {"objectDeferred", a.objectDeferred}};
+    result["waypointIndex"] = a.waypointIndex;
+    result["waypointAnchor"] = a.waypointAnchor ? point(*a.waypointAnchor + a.origin) : Json(nullptr);
     for (const auto &edge : a.boundaries) result["boundaries"].push_back({{"destination", int(edge.destination)}, {"side", edge.side},
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
         {"start", edge.start + (edge.side % 2 ? a.origin.y : a.origin.x)},
@@ -104,8 +106,13 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)}});
     result["merchantDeferred"]=s.merchantDeferred;
     result["crafting"]={{"pending",s.craftingPending},{"deferred",s.craftingDeferred}};
+    result["questExecution"]={{"pending",s.questPending},{"deferred",s.questDeferred},{"stones",s.cainStones},{"activatedStones",s.activatedStones},{"hirelingDeferred",s.hirelingDeferred}};
     result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
     for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
+    result["quests"]=Json::array();
+    for(const auto &book:s.record.quests) {Json entries=Json::array();for(size_t index=0;index<book.size();++index) entries.push_back({{"id",index},{"stage",book[index].stage},{"flags",book[index].flags}});result["quests"].push_back(std::move(entries));}
+    result["completedActs"]=s.record.completedActs;
+    result["hireling"]={{"sourceRow",s.record.hireling.sourceRow},{"class",s.record.hireling.classId},{"name",s.record.hireling.nameKey},{"level",s.record.hireling.level},{"life",s.record.hireling.hp}};
     result["waypoints"]=Json::array(); for(const auto &[region,time]:s.waypoints) { (void)time; result["waypoints"].push_back(int(region)); }
     result["portals"]=Json::array(); for(const auto &portal:s.portals) result["portals"].push_back({{"owner",portal.owner.value},{"fieldId",portal.fieldId.value},{"townId",portal.townId.value},{"field",int(portal.field)},{"town",int(portal.town)},{"opened",portal.opened},{"fieldPosition",point(portal.fieldPosition)},{"townPosition",point(portal.townPosition)}});
     for (const auto &event : s.events) result["eventHistory"]["records"].push_back({{"sequence", event.sequence}, {"batch", event.batch},

@@ -101,7 +101,8 @@ namespace d2x::server::world { void System::objectCollision(RegionId id, std::ve
 namespace d2x::server::world {
 DomainResult<uint64_t> System::requestWaypoint(const ActorContext &actor,RegionId destination) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
-    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || !p->persistent.waypoints.contains(destination)) return {DomainStatus::InvalidActor,{}};
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(!p->rules.character || !p->rules.character->waypointIndices.contains(destination) || !p->persistent.waypoints.contains(destination)) return {DomainStatus::InvalidRequest,{}};
     return request(destination);
 }
 }

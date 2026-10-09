@@ -3,6 +3,7 @@
 #include "content/skills/skill_eligibility.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
+#include "gameplay/areas/waypoint.hpp"
 #include <stdexcept>
 #include <algorithm>
 #include <set>
@@ -54,6 +55,16 @@ std::shared_ptr<const server::EquipmentRules> prepareEquipmentRules(const Classi
 void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data, const PersistentCharacter &saved) {
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
+    const auto &waypointTable=data.tables.at("levels");
+    std::set<int> waypointNumbers;
+    for(size_t row=0;row<waypointTable.rows().size();++row) {
+        const auto level=waypointTable.number(row,"Id"), index=waypointTable.number(row,"Waypoint");
+        if(!level || *level<=0 || !index || *index==255 || *index<0) continue;
+        if(*level>136 || !nativeWaypointIndex(*index) || !waypointNumbers.insert(*index).second ||
+            !character->waypointIndices.emplace(RegionId(*level),*index).second)
+            throw std::runtime_error("Invalid or duplicate native Levels.Waypoint identity");
+    }
+    if(!waypointNumbers.contains(0)) throw std::runtime_error("Missing mandatory native waypoint zero");
     character->experience = data.experienceByClass.at(saved.player.characterClass);
     character->resistancePenalty = data.resistancePenalty.at(size_t(saved.difficulty));
     for (const auto &[name, state] : data.states) {

@@ -9,11 +9,22 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::objects {
 DomainResult<EntityId> System::admit(const Admission &) { return {}; }
+void System::onWaypointArrival(RegionId area,TickContext tick) {
+    // ObjRgn::InitFunction17 starts the destination waypoint when the room
+    // is reached through waypoint travel; this is shared object state.
+    for(auto &[id,object]:state_.objects) {
+        (void)id;
+        if(object.area!=area || object.rule.operation!=23 || object.mode || object.revision==UINT64_MAX) continue;
+        object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks?object.rule.openingTicks-1:0);++object.revision;
+    }
+    collision(area);
+}
 void System::collision(RegionId area) {
     std::vector<Grid::Obstacle> values;
     for (const auto &[id, object] : state_.objects) {
@@ -50,8 +61,24 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) return {DomainStatus::InvalidRequest, {}};
     if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
-    if(rule.operation==23) { auto result=ports_.travel.openWaypoint(actor,object.id,remoteRange); if(result && object.mode!=2) {object.mode=2;++object.revision;collision(actor.area);} return result; }
+    if(rule.operation==23) {
+        if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
+        // Native operation23 first activates and animates; only an operating
+        // or opened waypoint offers the original0x63 menu.
+        auto result=ports_.travel.openWaypoint(actor,object.id,object.mode!=0,remoteRange);
+        if(result && object.mode==0) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;collision(actor.area);}
+        return result;
+    }
     if (rule.stash) return ports_.inventory.openStash(actor,object.id,remoteRange);
+    if(rule.operation==6 || rule.operation==9 || rule.operation==10 || rule.operation==12 || (rule.operation==21 && object.definition==108)) {
+        if(object.mode || object.pending) return {DomainStatus::Conflict,{}};
+        const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result) {
+            if(rule.operation==12 || rule.operation==21) object.pending=true;
+            else {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;collision(actor.area);}
+        }
+        return result;
+    }
     if (rule.door) {
         if (object.until > actor.tick) return {DomainStatus::Conflict, {}};
         if (object.mode) {
@@ -109,15 +136,26 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     for (const auto &[id, area] : ports_.areas.all()) for (const auto &source : area.definition.objects) {
         if (state_.objects.contains(source.id)) continue;
         Object object{source.id, source.type, id, source.position, 1, 0, source.rule, 0, 0, false, 2 * source.rule.parameters[2]};
+        if(source.rule.operation==23 && area.definition.town) object.mode=2; // ObjRgn::InitFunction17.
+        if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
+        if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().restoreCairnStones) object.mode=2;
+        if(object.mode) changed.insert(id);
         state_.objects.emplace(source.id, std::move(object));
     }
     for (auto &[id, object] : state_.objects) {
+        if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().restoreCairnStones && object.mode!=2) {
+            object.mode=2;object.until=0;++object.revision;changed.insert(object.area);
+        }
+        if(object.pending && (object.rule.operation==12 || object.rule.operation==21)) if(const auto result=ports_.quests.takeCompletion(id)) {
+            object.pending=false;
+            if(*result) {object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);++object.revision;changed.insert(object.area);}
+        }
         if (object.pending) if (const auto result = ports_.loot.takeCompletion(id)) {
             object.pending = false;
             if (*result) { object.mode = 1; object.until = tick.tick + std::max(uint64_t{1},object.rule.openingTicks); if (object.rule.chest) object.rule.chest->locked = false; ++object.revision; changed.insert(object.area); }
         }
         if (!object.rule.door && object.mode == 1 && object.until && tick.tick >= object.until) {
-            object.mode = 2; object.until = 0; ++object.revision; changed.insert(object.area);
+            object.mode = object.rule.operation==10 && int(object.area)==38?5:2; object.until = 0; ++object.revision; changed.insert(object.area);
         }
         if (object.reset && tick.tick >= object.reset) {
             if (object.rule.operation == 22) {
@@ -127,6 +165,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             ++object.revision; changed.insert(object.area);
         }
     }
+    towerStep(tick);
     for (const auto area : changed) collision(area);
     return StepStatus::Complete;
 }

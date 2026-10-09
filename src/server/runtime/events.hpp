@@ -33,7 +33,7 @@ struct InventoryFact {
     std::vector<ItemChange> changes;
     bool switchedWeapons{};
 };
-struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct CharacterFact {
     CharacterRecord before, after;

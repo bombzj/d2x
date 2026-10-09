@@ -49,7 +49,7 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
     return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
-    bool blocked=false;
+    bool blocked=synchronizeHirelings(tick)==StepStatus::Blocked;
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
         const auto *p=ports_.players.find(source.actor.player);
@@ -59,6 +59,11 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     for(auto it=state_.companions.begin();it!=state_.companions.end();) {
         auto &pet=it->second;const auto *p=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
         if(!body) {it=state_.companions.erase(it);continue;}
+        if(pet.kind==Kind::Hireling) {
+            if(!p || !p->entered) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);continue;}
+            if(hirelingStep(pet,tick)==StepStatus::Blocked) blocked=true;
+            ++it;continue;
+        }
         if(p && p->persistent.player.hp<=0 && !pet.ownerDeath) pet.ownerDeath=tick.tick;
         if(!pet.removeAt && (body->life<=0 || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || (pet.ownerDeath && tick.tick>=pet.ownerDeath+uint64_t(p->rules.character->deathTicks)) || tick.tick>pet.expires)) {
             pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;ports_.monsters.retire(pet.actor,tick.tick);

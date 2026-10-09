@@ -6,7 +6,35 @@
 #include "server/systems/transactions/system.hpp"
 #include <algorithm>
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/quest/search_for_cain.hpp"
+#include "gameplay/quest/tools_of_trade.hpp"
 namespace d2x::server::inventory {
+namespace {
+DomainStatus questPickup(const PlayerState &player, const ItemDefinition &base,
+    const ItemCatalog &catalog, unsigned difficulty) {
+    if (!base.questTag) return DomainStatus::Applied;
+    // ItemMode::sub_6FC425F0: the native quest tag is not a blanket pickup ban.
+    // Keep quests outside the implemented Act I/cube scope explicitly deferred.
+    if (!base.opensCube && base.code != "bks" && base.code != "bkd" &&
+        base.code != "hdm" && base.code != "leg") return DomainStatus::Unavailable;
+    const auto &quests = player.persistent.player.quests.at(difficulty);
+    if ((base.code == "bks" || base.code == "bkd") &&
+        quests.at(questIndex(QuestId::SearchForCain)).stage >= uint32_t(CainStage::Rewarded)) return DomainStatus::Conflict;
+    if (base.code == "hdm" &&
+        quests.at(questIndex(QuestId::ToolsOfTheTrade)).stage >= uint32_t(ToolsStage::Imbued)) return DomainStatus::Conflict;
+    // sub_6FC428F0 excludes the stash (InvPage 1), but checks carried items and
+    // corpse inventories. The MPQ-backed carry pairs include bark/translation.
+    for (const auto &[id, item] : player.persistent.inventory.items) {
+        (void)id;
+        const auto *at = std::get_if<ContainerLocation>(&item.location);
+        if (!at || player.persistent.inventory.containers.at(at->container).spec.kind == ContainerKind::Stash) continue;
+        const auto *other = catalog.find(item.definition);
+        if (other && other->questTag == base.questTag && (other->code == base.code ||
+            std::find(base.questCarryConflicts.begin(), base.questCarryConflicts.end(), other->code) != base.questCarryConflicts.end())) return DomainStatus::Conflict;
+    }
+    return DomainStatus::Applied;
+}
+}
 DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
     const auto &player = *ports_.players.find(actor.player);
     if (player.persistent.player.hp <= 0 || !amount || amount > player.persistent.player.gold) return {DomainStatus::InvalidRequest, {}};
@@ -44,7 +72,11 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     const auto &source = *resolved.value;
     if (source.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *definition = ports_.definitions->find(source.definition);
-    if (!definition || (definition->questTag && !definition->opensCube)) return {DomainStatus::Unavailable, {}};
+    if (!definition) return {DomainStatus::Unavailable, {}};
+    if (!request.drop) {
+        const auto status = questPickup(*player, *definition, *ports_.definitions, unsigned(player->persistent.difficulty));
+        if (status != DomainStatus::Applied) return {status, {}};
+    }
     auto world = ports_.items.read();
     if (world.revision == UINT64_MAX || (request.drop && world.world.items.size() >= 4096)) return {DomainStatus::Capacity, {}};
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);

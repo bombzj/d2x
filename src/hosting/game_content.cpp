@@ -9,6 +9,7 @@
 #include "content/character/character_attributes.hpp"
 #include "content/items/item_properties.hpp"
 #include "resources/data_table.hpp"
+#include "gameplay/areas/waypoint.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -35,7 +36,9 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     }
     for (const auto &exit : result.terrain.map->terrain.exits) {
         const auto arrival = area.collision.nearest(exit.position, playerMovement);
-        if (!area.collision.walkable(arrival, playerMovement) || (arrival - exit.position).length() > 2)
+        // SUNIT_WarpPlayer uses COLLISION_GetFreeCoordinates(..., 50, 1).
+        // Warp OffsetX/Y are already applied by the shared native generator.
+        if (!area.collision.walkable(arrival, playerMovement) || std::max(std::abs(arrival.x-exit.position.x),std::abs(arrival.y-exit.position.y)) >= 50)
             throw std::runtime_error("Original warp arrival is obstructed");
         // SUNIT_WarpPlayer delegates these destinations to QUESTS_LevelWarpCheck.
         // Quest gates stay closed until that authority is implemented.
@@ -46,6 +49,43 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     for (const auto &edge : result.terrain.recipe.boundaries)
         area.boundaries.push_back({RegionId(edge.destination), edge.side,
             edge.coordinate(result.terrain.recipe.width, result.terrain.recipe.height) * 5, edge.start * 5, edge.end * 5});
+    bool fixedPosition=true;
+    const auto &levelTable=content.tables.at("levels");
+    for(size_t row=0;row<levelTable.rows().size();++row) if(levelTable.number(row,"Id")==request.level) {
+        const auto value=levelTable.number(row,"Position");if(!value) throw std::runtime_error("Missing original Levels.Position");
+        fixedPosition=*value!=0;break;
+    }
+    if(nativeWaypointIndex(area.waypointIndex) && (!fixedPosition || level.town || request.level==46 || request.level==74)) {
+        // Position=0 resolves the waypoint room. Towns, Canyon and Arcane
+        // instead request tile index13, which resolves the same preset.
+        // Other fixed-position layouts require their actual tile marker.
+        const auto &objectTable=content.tables.at("objects");
+        for(const auto &preset:result.terrain.map->terrain.data.objects) {
+            if(preset.type!=2 || !preset.nativeIdentity || preset.id<0 || preset.id>=573) continue;
+            bool waypoint=false;
+            for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==preset.id) {
+                waypoint=(objectTable.number(row,"SubClass").value_or(0)&64)!=0;break;
+            }
+            if(waypoint) {area.waypointAnchor=waypointSpawnAnchor({float(preset.x),float(preset.y)});break;}
+        }
+    }
+    if(!area.portalArrival && !level.town && !fixedPosition) {
+        // DrlgDrlgWarp::sub_6FD788D0 for Position=0: waypoint room,
+        // warp room, then a room containing the level centre.
+        std::optional<Vec> marker;
+        for(const auto &object:area.objects) if(object.rule.operation==23) {marker=object.position;break;}
+        if(!marker) for(const auto &room:result.terrain.map->rooms) {
+            if(std::any_of(area.exits.begin(),area.exits.end(),[&](const auto &e){return e.position.x>=room.x && e.position.y>=room.y && e.position.x<room.x+room.width && e.position.y<room.y+room.height;})) {marker=Vec{float(room.x+room.width/2+3),float(room.y+room.height/2+3)};break;}
+        }
+        if(!marker) {
+            const Vec center{float(area.collision.width/2-7),float(area.collision.height/2-7)};
+            for(const auto &room:result.terrain.map->rooms) if(center.x>=room.x && center.y>=room.y && center.x<room.x+room.width && center.y<room.y+room.height) {marker=Vec{float(room.x+room.width/2+3),float(room.y+room.height/2+3)};break;}
+        }
+        if(marker) {
+            const auto arrival=area.collision.nearest(*marker,playerMovement);
+            if(area.collision.walkable(arrival,playerMovement) && std::max(std::abs(arrival.x-marker->x),std::abs(arrival.y-marker->y))<50) area.portalArrival=arrival;
+        }
+    }
     prepareCombatPopulation(archives, content, result);
     return result;
 }

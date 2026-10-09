@@ -1,37 +1,31 @@
-# NPC 与任务投影
+# NPC 与任务接口
 
-NPC、任务进度、资格、服务和奖励由所连接的服务端拥有；客户端只投影本人已知状态及原对白。LocalNpcClient／LocalQuestClient 和本地任务协调／奖励执行器已删除。
+NPC、任务进度、资格、服务和奖励由所连接的服务端拥有；原服与自研宿主共用客户端，客户端只投影本人已知状态及原对白。LocalNpcClient／LocalQuestClient与客户端本地任务执行器已删除；保留的纯规则由服务端调用。
 
-自研宿主已接普通NPC服务与邪恶洞穴；其余任务仍待迁入。公共资格／报价／旗标解释与服务端交互／奖励事务的提取方案见[参考设计](../architecture/REFERENCE_DESIGN.md#9-npc怪物任务与物品怎样拆)。没有因共享公式而恢复客户端任务执行器。
+任务领域、原消息编号和保存边界统一见[任务系统](../gameplay/quests/SYSTEM.md)，六项执行及运行证据见[第一幕](../gameplay/quests/ACT1.md)。共享资格／报价／旗标解释的依据见[参考设计](../architecture/REFERENCE_DESIGN.md#9-npc怪物任务与物品怎样拆)。
 
 ## 入口与所有权
 
 | 入口 | 职责 |
 | --- | --- |
-| [quest_projection.cpp](../../src/client/quest_projection.cpp) | QuestProjectionInput + 当前 MPQ → 唯一任务标题、说明、状态及原图槽 |
+| [quest_projection.cpp](../../src/client/quest_projection.cpp) | QuestProjectionInput与当前MPQ生成唯一任务标题、说明、状态及原图槽 |
 | [quest.hpp](../../src/contracts/quest.hpp)、[quest_client.hpp](../../src/client/quest_client.hpp) | 当前难度本人任务值视图，不传可写旗标／完整任务簿 |
 | [npc.hpp](../../src/contracts/npc.hpp)、[npc_client.hpp](../../src/client/npc_client.hpp) | 对白／菜单／服务及窄语义意图 |
 | [remote_ui_clients.cpp](../../src/client/remote_ui_clients.cpp) | 原任务、NPC提示、对白、货架适配公共端口 |
-| [remote_control.cpp](../../src/client/remote_control.cpp) | 原 GUID 靠近／交谈、对白确认、关闭与跨幕旅行 |
+| [remote_control.cpp](../../src/client/remote_control.cpp) | 原GUID靠近／交谈、对白确认、关闭与跨幕旅行 |
 | [quest_controller.cpp](../../src/presentation/hud/quest_controller.cpp)、[npc_controller.cpp](../../src/presentation/npc/npc_controller.cpp) | 共用任务／NPC面板手势与生命周期 |
-| [quest/catalog.hpp](../../src/gameplay/quest/catalog.hpp) | 内部 ID、幕／日志位置、原任务号、图像槽及 D2S 槽映射值 |
+| [quest/catalog.hpp](../../src/gameplay/quest/catalog.hpp) | 内部ID、幕／日志位置、原任务号、图像槽及D2S槽映射 |
 
-## 原数据与 UI
+## 客户端生命周期
 
-每局 ProtocolReady 后一次0x40请求日志。0x28本人私有48项任务字与0x29本局公共任务字分开；0x52全量、0x5D增量和0x50原进度消费各自编号语义。27项日志从本人状态选 MPQ文字；缺洞窟剩余数显示 `?`，不从地图种子、公共字或旧执行器推断。
+每局ProtocolReady后一次0x40请求日志；27项日志使用本人状态选择MPQ文字，缺洞穴剩余数显示`?`。已完成条目仍可查看说明。首次未知→已知建立动画基线，之后已知状态转换触发完成动画／newquestlog提示，不重播首次收到的旧完成记录。
 
-已完成条目仍能查看说明。首次未知→已知建立动画基线；之后已知状态转换触发完成动画／newquestlog提示，不重播首次收到的旧完成记录。NPC0x8A提示使用原 npcalert／高度，不能作为服务资格。
+交谈关闭、单位移除、换幕和死亡清理UI与未发送意图，网络继续推进。对白menu／确认、原菜单图形和NPC提示统一见[NPC交互](../gameplay/npc/INTERACTIONS.md)，服务请求与范围见[交易](../gameplay/npc/TRADE.md)。客户端不根据NPC提示、公共任务字或地图种子补造个人资格。
 
-NPC消息提交0x31，仅原0x27消息的menu=0自动显示，多段按未确认集合推进，不重复确认；menu=2任务评论保留在Talk话题中，普通再次点击直接显示服务菜单。首次介绍和任务自动对白仍由原服消息及PlrIntro旗标决定，不增加本地“已问候”状态。TBL首行数字是 a1npc SPEED 元数据，对白去除该行；通用字符串查询保留原文。交谈关闭、单位移除、换幕和死亡清理 UI 与未发送意图，网络继续推进。
+## 服务端交互边界
 
-## 未完成范围
+NPC交谈绑定人物身份、区域代次和交谈revision，持续复验距离／视线；关闭／重开同一NPC使旧准备失效。merchant把报价和货架绑定同一交谈，成交复验商品及人物／库存版本。治疗由effects准备补满、清毒／冻结与MPQ curable状态，随对白事务提交；新增治疗分支未单独认证。
 
-NPC服务／Talk菜单与发起／接收交易邀请共用[OriginalMenu](../../src/presentation/graphics/original_menu.hpp)的当前MPQ boxpieces、font16测宽／居中文字、Sky PL2金色标题和蓝色悬停、行命中区域。依据用户提供的Warriv、Akara及等待交易原版截图统一样式；NPC资格与命令仍由原服务副本及控制器处理。菜单锚点及完整状态未宣称逐像素认证；本批构建／运行证据见[联网交付](NETWORK.md#当前批交付)。
+已接受的原NPC旅行保留交谈身份，因为原客户端在0x38之后关闭对话；新交谈、移动、死亡和换区仍使旅行失效。旅行执行属于travel／world，任务只提交资格与幕完成记录，见[服务端系统](SERVER_SYSTEMS.md#第一幕任务与旅行)。
 
-商店报价、赌博及普通经济已接，完整原服逐整数认证仍有限。灌注／打孔／署名的原38／58与资格、加工和一次性阶段事务已接；它们依赖已有个人奖励资格，服务端其余任务尚未授予这些资格。雇佣／复活／装备、Akara免费重置／插杖等特殊服务未完整接入；没有生产者的旧插杖面板已删除。真墓符号、部分后续幕说明、五幕剧情／奖励／旅行资格及多人共享规则未认证。
-
-既有NPC陈旧位置靠近修正已随后续Release入包，具体截图超时未复现，见[联网模块](NETWORK.md#本批源码修正)。原任务身份与核对入口见[任务系统](../gameplay/quests/SYSTEM.md)，NPC操作见[交互](../gameplay/npc/INTERACTIONS.md)，服务范围见[交易](../gameplay/npc/TRADE.md)。
-
-当前自研普通商店、赌博、回购、批量、充能维修与任务加工的执行／原包／限制统一见[库存模块](INVENTORY.md#已接入的执行路径)。任务加工复验交谈revision与个人难度记录，材料、真实产物和领奖阶段一次提交；不能把加工接口完成算作前置任务已经可玩。
-
-P1源码中，NPC交谈绑定人物身份、区域代次和交谈revision，持续复验距离／视线；merchant把准备报价及打开货架绑定同一交谈。关闭／重开同一NPC也使旧准备失效，成交再复验商品及人物／库存版本。治疗由effects准备补满、清毒／冻结与MPQ curable状态，随对白一次提交。P1随P5及物品身份收尾统一构建打包；本批Charsi货架刷新／充能修理已有有限V2，任务加工及治疗新增分支仍未认证；本轮客户端仅补原任务加工请求／58确认和原充能技能来源，不增加自研宿主专用分支。
+普通商店、赌博、回购、充能维修及任务加工的执行与限制见[库存模块](INVENTORY.md#已接入的执行路径)。第一幕授予灌注、免费重置、Cain服务及罗格奖励；其他幕任务生产者、完整雇佣／复活／装备和插杖等特殊服务仍待接入。没有生产者的旧插杖面板已删除。五幕完整剧情、原服逐整数经济与多人共享均未完整认证。

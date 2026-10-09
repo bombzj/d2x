@@ -43,7 +43,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
-| `travel` | level；类型化stub |
+| `travel` | level（1–136），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作正常通行资格认证 |
 | `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
@@ -75,7 +75,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
-| `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。27种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
+| `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。28种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
 | `online-item-quote` | action=buy／sell／repair／repair-all；前三者需本局itemId，可选itemRevision。返回known及price，缺数据为null；复用UI报价，不发送询价包或推进待发库存操作。赌博购买报价取当前真实货架模式 |
 | `online-combat` / `online-skills` | 只读同一快照；combat.skills列MPQ技能名、基础／装备加成／有效等级、innate、左右键／城镇资格；combat.states列原服状态和原单位属性；world.itemTargetingSource为原3F来源（null表示无准备，不表示鉴定成功），itemSkillQuantities为原物品技能数量；combat.events为最多256条有序战斗事件，sequence递增，消费者自行检查缺口；0x73首路径点为missileDestination（旧missileOrigin名称已更正），不是飞弹出生点 |
 | `online-select-skill` | skillId（0–65535）、hand（left／right，默认right）；可选ownerId为已装备物品原GUID，省略为普通技能源FFFFFFFF；当前MPQ、原等级或已解码充能校验，原0x3C选择，等combat.request.state=Confirmed再施放 |
@@ -93,7 +93,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-npc-interact` | unitId、run（默认true）；online-interact的type1入口。只接MPQ允许交谈的实际NPC，远处先靠近；等待scene.npcConversation |
 | `online-npc-message` | stringId（0–65535）、可选npcRevision；必须为当前服务端对白列表且未确认，版本不符拒绝。发0x31，acknowledged只表示入队，不是任务成功回执 |
 | `online-npc-close` | 无参数；取消尚在靠近的交谈意图，或发0x30关闭当前NPC。取消靠近意图不会传送角色或撤销已提交的服务端寻路 |
-| `online-npc-travel` | 无参数；要求当前scene.npcConversation.travelLabel来自瓦瑞夫／马席夫真实身份和任务资格；发0x38 action=0并结束临时交谈，随后查询实际幕／位置 |
+| `online-npc-travel` | 无参数；要求当前scene.npcConversation.travelLabel与travelDestination来自瓦瑞夫／马席夫真实身份和任务资格；发原0x38 action=0、NPC、目的地并结束临时交谈，随后查询实际幕／位置 |
+| `online-npc-respec` | 无参数；要求原slot41 pending且Akara菜单有原重置选项；发送原0x38 action0、NPC、parameter0，随后核对属性／技能／热键与存档 |
 | `online-waypoint-travel` / `online-waypoint-close` | travel的level为原区域ID1–136，必须有当前服务端0x63菜单且目的地已解锁；close无参数，可取消当前待确认请求或关闭已确认菜单。发送原0x49，level=0为关闭，不解锁任务或传送点 |
 | `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
@@ -115,6 +116,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |
 
 ## 诊断与异步含义
+
+传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
 accepted仅入队或发送，不等待原服。online-status的ProtocolReady只表示协议初始化；另查scene.nativeMapReady／movementAvailable／playerDisplayed、原服坐标、请求状态与reason，不能以界面或命令成功代替实际结果。
 
@@ -160,6 +163,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 | repair | 本人可访问物品或装备itemId；当前原铁匠货架／交谈，最终资格由原服决定 |
 | repair-all | 无itemId；当前原铁匠货架／交谈及空Cursor |
 | identify-all | 无itemId；当前五幕凯恩交谈及空Cursor；任务资格／费用／效果由原服决定 |
+| quest-service | 本人Cursor itemId；真实Charsi／Larzuk／Anya交谈；复用原0x38 action0与0x58确认，服务器复验资格、一次性消耗及结果。取物到Cursor需先用take并等待位置更新 |
 
 `online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 

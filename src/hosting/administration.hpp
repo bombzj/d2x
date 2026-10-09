@@ -23,7 +23,7 @@ struct AdminStep { uint32_t frames = 1; };
 struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; std::string quality = "normal"; std::optional<unsigned> durability = {}; MonsterRank rank{MonsterRank::Normal}; std::string superUnique{}; std::optional<unsigned> sockets{}; };
 struct AdminMissile {uint64_t source{};uint32_t amount{};int missile{};};
 struct AdminUnit { uint64_t id{}; int64_t amount{}; };
-struct AdminTravel { int level{}; };
+struct AdminTravel { int level{}; std::optional<Vec> position; };
 using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel, AdminMissile>;
 struct AdminRequest {
     AdminOperation operation;

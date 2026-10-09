@@ -103,6 +103,7 @@ void playerMode(OnlineView &v, const OnlineUnit &u) {
         if (w.deathPhase != phase) { w.deathPhase = phase; w.deathRevision = w.revision; }
         w.movementRequest.reset(); w.npcRequested.reset(); w.npcConversation.reset(); w.waypointSource.reset();
         w.waypointRequested.reset();
+        w.waypointActivation.reset();
     } else if (w.deathPhase == OnlineDeathPhase::Unknown) {
         w.deathPhase = OnlineDeathPhase::Alive; w.deathRevision = w.revision;
     } else if (onlinePlayerDead(w) && w.respawnRequest && w.respawnRequest->sent && u.position &&
@@ -133,6 +134,7 @@ void removePlayer(OnlineWorldView &w) {
     w.playerTrade = {};
     w.waypointSource.reset();
     w.waypointRequested.reset();
+    w.waypointActivation.reset();
     w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
     w.townPortalPending = false;
     w.playerPosition.reset();
@@ -367,6 +369,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (k.type == 4) removeItem(w, k.id);
         if (k.type == 2 && w.waypointSource == k.id) w.waypointSource.reset();
         if (k.type == 2 && w.waypointRequested == k.id) w.waypointRequested.reset();
+        if (k.type == 2 && w.waypointActivation && w.waypointActivation->source == k.id) w.waypointActivation.reset();
         if (stashRemoved) w.storage = {};
         if (k.type == 1) {
             if (w.npcRequested == k.id) w.npcRequested.reset();
@@ -445,6 +448,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x0E: {
         auto &u = unit(w, key(r));
+        const bool wasNeutral=u.mode && *u.mode==0;
         const auto changes = r.u8(), flags = r.u8();
         if (u.key.type == 2 && changes == 3) u.objectTargetable = (flags & 2) != 0;
         const auto mode = r.u32();
@@ -459,6 +463,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds();
         }
         r.finish();
+        // Native operation23 on a neutral waypoint only starts OP; it does
+        // not send0x63. Treat that actual transition as activation completion,
+        // so both original D2GS and the host permit a later menu click.
+        if(u.key.type==2 && w.waypointRequested==u.key.id && wasNeutral && mode==1) {
+            w.waypointRequested.reset();++w.interactionGeneration;
+            w.waypointActivation=OnlineWorldView::WaypointActivation{u.key.id,w.interactionGeneration};
+        }
         playerMode(v, u);
         break;
     }
@@ -629,6 +640,14 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (id == 1) {
             w.quests.denRemaining = payload[0]; w.quests.staffTombOffset = payload[1];
             w.quests.rescuedBarbsRemaining = payload[2]; w.quests.revision = w.revision;
+        } else if(id==4) {
+            std::array<int,5> stones{};unsigned seen=0;
+            for(size_t index=0;index<stones.size();++index) {
+                const auto value=payload[index];
+                if(value>=5 || (seen&(1u<<value))) throw ProtocolError("Invalid native Cairn Stone order");
+                seen|=1u<<value;stones[index]=17+value;
+            }
+            w.quests.cainStones=stones;w.quests.revision=w.revision;
         }
         break;
     }
@@ -898,11 +917,14 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         if (history[0] != 0x102) throw ProtocolError("Unsupported native waypoint history");
         w.waypointHistory = history;
-        if ((w.waypointRequested == source || w.waypointSource == source) &&
+        const bool activated=w.waypointActivation && w.waypointActivation->source==source &&
+            w.waypointActivation->generation==w.interactionGeneration;
+        if ((w.waypointRequested == source || w.waypointSource == source || activated) &&
             w.playerPosition && !onlinePlayerDead(w) && w.units.contains({2, source})) {
             w.waypointSource = source;
             w.waypointRequested.reset();
         } else ++w.lateWaypointReplies;
+        w.waypointActivation.reset();
         break;
     }
     case 0x82: {
@@ -1011,6 +1033,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                 if (w.waypointSource || w.waypointRequested || w.npcRequested || w.npcConversation)
                     ++w.interactionGeneration;
                 w.waypointSource.reset(); w.waypointRequested.reset(); w.npcRequested.reset();
+                w.waypointActivation.reset();
                 w.npcConversation.reset(); w.movementRequest.reset();
                 w.townPortalPending = false;
             }

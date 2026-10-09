@@ -91,7 +91,7 @@ monsters持home、DS1技能位置、谱系、元素stat和死亡连锁；gamepla
 
 原AC的五位rank旗标、superunique hcIdx、词缀和nameSeed通过原SCmd布局投影。玩家MonProp击退用原0F/action20，PlrMsg确认为KB；客户端原生模式表一并按Player.h纠正，原服与自研服共用。Andariel／Gargoyle方向表及电强化八条充能路径共用纯函数；Clt参数／时序／轴向差异显式保留。
 
-血鸟与安达利尔死亡连锁采用QuestsFX的范围、延时和undead筛选；这不是任务奖励或首杀完成。状态、动作、出生单位、词缀和短时效果不写人物D2S，字符存档语义／指纹不变。A1无MissA1的技能使用原event1（安达利尔毒弹／伯爵夫人火墙），远程A1使用event2；Nest／Gargoyle及对应序列沿原事件。管理怪物准入及新增身份快照见[调试管道](../development/DEBUG_PIPE.md)。
+血鸟与安达利尔死亡连锁采用QuestsFX的范围、延时和undead筛选；连锁本身不授予任务奖励或首杀完成。自然身份死亡另由quests计算第一幕个人资格；当前范围见[ACT1](../gameplay/quests/ACT1.md)。状态、动作、出生单位、词缀和短时效果不写人物D2S，怪物批次本身未改变字符存档语义／指纹。A1无MissA1的技能使用原event1（安达利尔毒弹／伯爵夫人火墙），远程A1使用event2；Nest／Gargoyle及对应序列沿原事件。管理怪物准入及新增身份快照见[调试管道](../development/DEBUG_PIPE.md)。
 
 ## 生命周期与限制
 

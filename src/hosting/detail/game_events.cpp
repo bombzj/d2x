@@ -3,6 +3,7 @@
 #include "hosting/native_character_wire.hpp"
 #include "hosting/native_quest_wire.hpp"
 #include "hosting/native_combat_wire.hpp"
+#include "gameplay/areas/waypoint.hpp"
 #include <limits>
 #include <cmath>
 
@@ -152,9 +153,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if (merchant->refreshShop) peer.shopItems.clear();
             delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(uint32_t(merchant->item.value));out.u32(merchant->gold);}));
         } else if (const auto *waypoint=std::get_if<server::WaypointFact>(&fact)) {
-            std::array<uint16_t,8> history{}; history[0]=0x102; const auto &levels=content->tables.at("levels");
+            std::array<uint16_t,8> history{}; history[0]=0x102; history[1]=1; const auto &levels=content->tables.at("levels");
             for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {
-                const auto index=levels.number(row,"Waypoint").value_or(255); if(index>=0 && index<112) history[size_t(1+index/16)]|=uint16_t(1u<<(index%16));
+                const auto index=levels.number(row,"Waypoint").value_or(255); if(nativeWaypointIndex(index)) history[size_t(1+index/16)]|=uint16_t(1u<<(index%16));
             }
             delta.push_back(encodeServerPacket(ServerMessage::Waypoints,[&](auto &out){out.u32(uint32_t(waypoint->source.value));for(const auto word:history)out.u16(word);}));
         } else if (const auto *targeting=std::get_if<server::ItemTargetingFact>(&fact)) {

@@ -53,6 +53,15 @@ RequestResult RepairItems(GameplayContext &context, net::protocol::Reader &in) {
 }
 RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
     const auto action = in.u32(), npc = in.u32(), item = in.u32(); in.finish();
+    if(action==0) {
+        for(const auto area:context.host.visibleAreas(context.player)) {
+            const auto view=context.host.area(context.player.game,area);if(!view) continue;
+            for(const auto &unit:view->definition.npcs) if(unit.id==EntityId{npc}) {
+                if(unit.rule.code=="warriv1" || unit.rule.code=="warriv2") return NpcTravel(context,npc,item);
+                if(unit.rule.code=="akara" && !item) return submitGameplay(context,server::quests::Request{server::quests::Action::ClaimRespec,QuestId::DenOfEvil,EntityId{npc},{}});
+            }
+        }
+    }
     if(item) {
         if(action!=0) return {RequestStatus::Rejected};
         const auto input=context.host.inventoryInput(context.player);
@@ -60,7 +69,7 @@ RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
         return submitGameplay(context,server::crafting::Request{server::crafting::RewardItem{EntityId{npc},input->items.at(EntityId{item}).handle}});
     }
     switch (action) {
-    case 0: return NpcTravel(context, npc);
+    case 0: return {RequestStatus::Rejected};
     case 1: return OpenShop(context, npc);
     case 2: return OpenGambleShop(context, npc);
     default: return {RequestStatus::Rejected};
@@ -88,8 +97,9 @@ RequestResult UiAction(GameplayContext &context, net::protocol::Reader &in) {
     default: return {RequestStatus::Rejected};
     }
 }
-RequestResult NpcTravel(GameplayContext &, uint32_t) {
-    return {RequestStatus::NotImplemented, CommandStatus::Stale, "NpcTravel"};
+RequestResult NpcTravel(GameplayContext &context, uint32_t npc,uint32_t destination) {
+    if(destination>255) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::travel::Request{server::travel::Kind::Npc,{EntityId{npc},0},RegionId(destination)});
 }
 RequestResult OpenShop(GameplayContext &context, uint32_t npc) {
     return submitGameplay(context,server::merchant::Request{server::merchant::Action::Open,{EntityId{npc},0},{}});

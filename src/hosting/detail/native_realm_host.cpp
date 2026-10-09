@@ -4,6 +4,7 @@
 #include "hosting/loot_content.hpp"
 #include "hosting/merchant_content.hpp"
 #include "hosting/crafting_content.hpp"
+#include "hosting/quest_content.hpp"
 #include "hosting/companion_content.hpp"
 #include "content/world/world_catalog.hpp"
 #include <algorithm>
@@ -36,6 +37,8 @@ void NativeRealmHost::advance(double seconds) {
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
         prepareCrafting(host, game, *content);
+        prepareQuests(host,game,*content);
+        preparePendingHirelings(host,game,archives,*content,lootContent);
         for(const auto &issue:preparePendingSummons(host,game,archives,*content))
             for(auto *peer:peers) if(peer->binding && peer->binding->game==game) {
                 peer->counters.lastFailure=issue;++peer->counters.failures;

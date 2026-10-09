@@ -41,7 +41,8 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
     const auto &character=result.source.character; const auto &c=character.containers;
     if (result.source.npc.code.empty()) { result.deferred="NPC conversation expired"; return result; }
     if (request.action==Action::IdentifyAll) {
-        const bool free=character.player.quests.at(size_t(result.source.difficulty)).at(questIndex(QuestId::SearchForCain)).stage>=uint32_t(CainStage::Rescued);
+        const auto &cain=character.player.quests.at(size_t(result.source.difficulty)).at(questIndex(QuestId::SearchForCain));
+        const bool free=cain.stage>=uint32_t(CainStage::Rescued) && !(cain.flags&cainRescuedByRogues);
         for (const auto &[id,item] : character.inventory.items) {
             const auto *at=std::get_if<ContainerLocation>(&item.location);
             if (!item.identified && at && (at->container==c.backpack || at->container==c.equipment || at->container==c.beltEquipment)) result.prices.emplace(id,free?0:100);

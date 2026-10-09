@@ -33,8 +33,8 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 | IActorClient | RemoteUiClients 适配 RemoteControl／RemoteCombat／RemoteInventory；SceneController 统一移动、施放、交互、拾取、按住／松开／失焦手势 |
 | IInventoryClient | 原服物品解码形成 InventoryView，复用物品显示公式、面板、拖放与预览；提交原库存协议，客户端占格预览不结算物品 |
 | ICharacterClient | 原服已知属性／技能等级 → CharacterProjectionInput → projectCharacterDisplay；人物、技能树、提示和底栏读取同一结果 |
-| IQuestClient | 原服本人的状态／旗标／洞窟剩余数 → QuestProjectionInput → projectQuestDisplay；任务页、完成动画和新日志提示共用 SceneView／SceneController |
-| INpcClient | 原服对白、货架、NPC 提示 → 只读 NPC／Shop／Hireling 视图；共用菜单／交谈／商店／佣兵面板，语义命令由原服端口提交 |
+| IQuestClient | 原协议本人状态／旗标／洞穴剩余数 → QuestProjectionInput → projectQuestDisplay；任务页、完成动画和新日志提示共用 SceneView／SceneController |
+| INpcClient | 原协议对白、货架、NPC提示 → 只读NPC／Shop／Hireling视图；共用菜单／交谈／商店／佣兵面板，语义命令由原协议端口提交 |
 | IMapClient | 原服当前位置／旅行回执及共同地图 → MapSceneView／TravelMenuView；地图交互、传送点和面板共用控制器 |
 
 端口与投影只包含显示值和必要目标；视图按版本复制，UI 不保留权威引用。OnlineIntentContext 与物品 handle 保留投影时的场景／物品版本；切区、关闭交互等变化取消旧意图。报价未知与 canRequestSale 提交资格分开，客户端不自算原服价格、费用、奖励或保存。
@@ -45,17 +45,17 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 人物与任务投影编入 d2x_client，使用显式只读事实和当前 ClassicData／MPQ，不依赖 RealmSession、GameSession、设备、GPU 或本地执行器。RemoteUiClients 负责解码状态适配及协议命令，不再内嵌任务文字选择规则。未收到状态或缺必要输入保留未知；不把游戏共享旗标当成本人完成记录。
 
-任务完成记录可点击查看原说明；首次收到的每项状态建立完成动画基线，后续已知状态转换才排队动画／日志提示。洞窟剩余数缺失显示 ?，不代入零；真墓符号、全部后续幕特殊说明及缺失协议仍按未确认边界处理，不从地图种子或旧任务执行器推算。任务资格、NPC 服务和奖励全部由 D2GS 决定。
+任务显示、通知与未知状态规则统一见[任务系统](../gameplay/quests/SYSTEM.md#唯一显示链)，具体面板生命周期见[NPC／任务接口](NPC_QUEST.md)。任务资格、NPC服务和奖励由所连接服务端决定；客户端不从地图种子、公共旗标或旧执行器补推进。
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
 
-底栏只加载原联机 minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有 Local 备用实现。未接入的佣兵、赌博、任务物品服务或原服状态继续明确不可用，不调用本地服务补齐。帮助页移除旧本地 Save／Load、授予金币／经验等提示；原服调试暂停及在线 command 入口保留。
+底栏只加载原联机minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有Local备用实现。已接服务的范围见对应模块，未接服务或缺失原服状态明确不可用，不调用本地服务补齐。帮助页移除旧本地Save／Load、授予金币／经验等提示；原服调试暂停及在线command入口保留。
 
 ## 保留范围与限制
 
 局前使用同一RealmFrontend原图与MCP角色列表、分页、双击、建删选角。Single Player按钮仍用原3WideButtonBlank／TBL5106，组装层连接嵌入Realm并自动建单人房；客户端不读取D2S。首页TCP/IP Game使用原背景／Host、Join按钮／IP弹窗，Join默认127.0.0.1；RealmFrontend只发连接意图和显示应用提供的本机地址，Host／Join随后回到同一选角；Host自动建房跳过大厅，Join沿同一大厅加入。设备接口枚举和监听属于network／hosting，应用负责传输选择及返回菜单。自研尚未实现的玩法请求保留原协议，不通过本地执行器补齐。
 
-GameSession、Simulation、SkillRuntime、InventoryService、本地任务／AI／奖励执行源码及 d2x_session 目标已删除。gameplay／items 保留联机显示、地图、原资源报告与独立 D2S 工具所需纯函数和值；PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原服插杖流程仍未实现。原 MPQ、reference、旧包、mvp 和用户文件保留。
+GameSession、Simulation、SkillRuntime、InventoryService、客户端本地任务／AI／奖励执行源码及d2x_session目标已删除。gameplay／items保留两端适用的纯函数和值；服务端调用纯任务阶段规则，客户端不能调用它推进权威记录。PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原协议插杖流程仍未实现。原MPQ、reference、旧包、mvp和用户文件保留。
 
 完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据与源码／包差异统一见基线和联网模块。
 

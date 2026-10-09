@@ -222,7 +222,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["world"]["quests"]={{"revision",quests.revision}, {"playerFlags",optional(quests.playerFlags)},
         {"gameFlags",optional(quests.gameFlags)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
         {"denRemaining",optional(quests.denRemaining)}, {"staffTombOffset",optional(quests.staffTombOffset)},
-        {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}};
+        {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)}};
     Json roster = Json::array(), relations = Json::array(), chat = Json::array();
     for (const auto &[id, player] : social.players)
         roster.push_back({{"id", id}, {"listed", player.listed}, {"revision", player.revision},
@@ -532,7 +532,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
                 "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
-                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all"};
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service"};
             const auto action = text("action", 32);
             const auto selected = std::find(names.begin(), names.end(), action);
             if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
@@ -547,7 +547,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 return uint32_t(n);
             };
             const bool hasItem = intent.action <= OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeOpen ||
-                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair;
+                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService;
             intent.item = id("itemId", hasItem);
             intent.amount = id("amount", intent.action == OnlineItemAction::GoldDeposit ||
                 intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop);
@@ -643,7 +643,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             control.cancelApproach();
             accepted = session.read().world.npcRequested ? session.close_npc() : approaching;
             mutation = true;
-        } else if (command == "online-npc-message" || command == "online-npc-travel") {
+        } else if (command == "online-npc-message" || command == "online-npc-travel" || command=="online-npc-respec") {
             const auto scene = sceneSnapshot();
             if (!scene.npcConversation)
                 return Json{{"ok", false}, {"error", "No current server NPC conversation is open"}}.dump();
@@ -652,7 +652,11 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             if (command == "online-npc-travel") {
                 if (scene.npcConversation->travelLabel.empty())
                     return Json{{"ok", false}, {"error", "No verified server NPC travel option is available"}}.dump();
-                accepted = session.npc_travel();
+                if(!scene.npcConversation->travelDestination) return Json{{"ok",false},{"error","NPC travel destination is unavailable"}}.dump();
+                accepted = session.npc_travel(*scene.npcConversation->travelDestination);
+            } else if(command=="online-npc-respec") {
+                if(scene.npcConversation->respecLabel.empty()) return Json{{"ok",false},{"error","No original Akara respec option is available"}}.dump();
+                accepted=session.npc_travel(0);
             } else {
                 const auto &value = request.at("stringId");
                 if (!value.is_number_integer()) throw std::invalid_argument("NPC stringId must be an integer");
