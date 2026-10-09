@@ -9,6 +9,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/progression/system.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/companions/system.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "server/systems/loot/system.hpp"
 namespace d2x::server::death {
@@ -34,6 +35,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     const auto death = state_.transitions.find(actor.actor);
     if (player->persistent.player.hp > 0 || death == state_.transitions.end() || !death->second.finalized || actor.tick < death->second.ready) return {DomainStatus::Conflict, {}};
+    if (!death->second.companionsSettled) {
+        const auto result = ports_.companions.ownerDied(actor);
+        if (!result) return result;
+        death->second.companionsSettled = true;
+    }
     death->second.reviving = true;
     const auto townId = area->definition.townRegion;
     const auto *town = ports_.areas.find(townId);
@@ -86,6 +92,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!transition.finalized) {
             const auto result = settle(actor); transition.finalized = bool(result); blocked |= !result;
         }
+        if (transition.finalized && tick.tick >= transition.ready && !transition.companionsSettled) {
+            const auto result = ports_.companions.ownerDied(actor);
+            transition.companionsSettled = bool(result);
+            blocked |= !result;
+        }
         if (transition.reviving) execute(actor, {Action::Resurrect, {}});
     }
     advanceRecovery(tick);
@@ -110,6 +121,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             // Capture once: backpressure must not reroll rewards using a later
             // level, equipment set, or player that reused an old identifier.
             reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false,killer->persistent.player}).first;
+            reward->second.hireling=ports_.companions.experience(killer->player,monster);
         }
         const auto *killer = ports_.players.find(reward->second.player);
         if (!killer || !killer->entered || killer->actor != reward->second.actor || killer->persistent.player.hp <= 0 || killer->lastExperienceAward == UINT64_MAX) {
@@ -123,6 +135,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
             if(!result) {ports_.monsters.rewardComplete(id);state_.rewards.erase(reward);continue;}
             reward->second.restored=true;
+        }
+        if(!reward->second.hirelingAwarded) {
+            if(reward->second.hireling) {
+                const ActorContext actor{killer->player,killer->actor,killer->area,ports_.areas.at(killer->area).generation,0,tick.tick};
+                const auto result=ports_.companions.awardExperience(actor,*reward->second.hireling);
+                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+            }
+            reward->second.hirelingAwarded=true;
         }
         if (!reward->second.lootQueued) {
             LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true; source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);

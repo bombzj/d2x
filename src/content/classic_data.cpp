@@ -318,8 +318,10 @@ ClassicData loadClassicData(Archives &archives) {
             if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||
                 key.starts_with("qsts") || key == "noactivequest")
                 data.questStrings.emplace(key, value);
-            else if (key.starts_with("merc"))
+            else if (key.starts_with("merc")) {
                 data.hirelingStrings.emplace(key, value);
+                data.hirelingNameIds.emplace(key, strings.index(key));
+            }
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
         loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), archives);

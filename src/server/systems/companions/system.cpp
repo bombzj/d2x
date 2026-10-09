@@ -9,7 +9,32 @@
 #include <algorithm>
 namespace d2x::server::companions {
 DomainResult<EntityId> System::summon(const Summon &) {return {};}
-DomainResult<> System::execute(const ActorContext &, const Request &) {return {};}
+DomainResult<> System::ownerDied(const ActorContext &actor) {
+    const auto *player = ports_.players.find(actor.player);
+    const auto *area = ports_.areas.find(actor.area);
+    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area ||
+        player->persistent.player.hp > 0 || !area || area->generation != actor.areaGeneration)
+        return {DomainStatus::InvalidActor, {}};
+    if (player->persistent.player.hireling.sourceRow >= 0 && player->persistent.player.hireling.hp > 0) {
+        auto record = player->persistent.player;
+        record.hireling.hp = 0;
+        auto plan = ports_.transactions.prepare(transactions::CharacterEdit{
+            actor, player->inventoryRevision, player->characterRevision, std::move(record)});
+        if (!plan) return {plan.status, {}};
+        const auto committed = ports_.transactions.commit(std::move(*plan.value));
+        if (!committed) return committed;
+    }
+    for (auto &[id, pet] : state_.companions) {
+        if (pet.owner != actor.player) continue;
+        const auto *body = ports_.monsters.find(id);
+        if (!body) continue;
+        pet.release = 0;
+        if (body->life > 0) ports_.monsters.retire(id, actor.tick);
+        if (pet.kind != Kind::Hireling && !pet.removeAt)
+            pet.removeAt = actor.tick + uint64_t(body->rule.deathTicks);
+    }
+    return {DomainStatus::Applied, std::monostate{}};
+}
 bool System::canDismiss(const ActorContext &actor,EntityId id) const {
     const auto *p=ports_.players.find(actor.player);const auto pet=state_.companions.find(id);const auto *body=ports_.monsters.find(id);
     return p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 &&
@@ -64,8 +89,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             if(hirelingStep(pet,tick)==StepStatus::Blocked) blocked=true;
             ++it;continue;
         }
-        if(p && p->persistent.player.hp<=0 && !pet.ownerDeath) pet.ownerDeath=tick.tick;
-        if(!pet.removeAt && (body->life<=0 || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || (pet.ownerDeath && tick.tick>=pet.ownerDeath+uint64_t(p->rules.character->deathTicks)) || tick.tick>pet.expires)) {
+        if(!pet.removeAt && (body->life<=0 || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || tick.tick>pet.expires)) {
             pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;ports_.monsters.retire(pet.actor,tick.tick);
         }
         if(pet.removeAt) {

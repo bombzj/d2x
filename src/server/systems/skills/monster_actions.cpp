@@ -13,10 +13,10 @@ namespace d2x::server::skills {
 DomainResult<> System::requestCast(const CastRequest &request) {
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || (monster->owner && !monster->hireling && (!monster->amazonPet || monster->amazonPet->decoy))) return {DomainStatus::InvalidActor, {}};
+    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
-    const bool petAttack=monster->amazonPet && !monster->amazonPet->decoy;
+    const bool petAttack=monster->amazonAttacker();
     const auto &area=ports_.areas.at(monster->area);
     if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     const auto &rule = monster->rule;
@@ -32,7 +32,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || ((petAttack || monster->hireling)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || (!victim->amazonPet && !victim->hireling))) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || ((petAttack || monster->hireling)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || !victim->combatCompanion())) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if (area.definition.town || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};

@@ -35,6 +35,8 @@ class GameHost {
     std::vector<server::companions::Preparation> pendingSummons(GameHandle) const;
     server::DomainResult<> installSummon(GameHandle,server::companions::Prepared);
     std::vector<server::companions::HirelingPreparation> pendingHirelings(GameHandle) const;
+    std::vector<server::companions::HirelingListPreparation> pendingHirelingLists(GameHandle) const;
+    server::DomainResult<> installHirelingList(GameHandle,server::companions::PreparedHirelingList);
     server::DomainResult<> installHireling(GameHandle,server::companions::PreparedHireling);
     std::vector<server::merchant::Preparation> pendingMerchant(GameHandle) const;
     std::vector<server::crafting::Preparation> pendingCrafting(GameHandle) const;

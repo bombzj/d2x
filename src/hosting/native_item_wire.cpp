@@ -210,12 +210,13 @@ std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const Persist
     }
     return result;
 }
-std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentCharacter projection,EntityId owner) {
+std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentCharacter projection,EntityId owner,bool hide) {
     std::vector<Bytes> result;
     for(auto &[id,item]:projection.inventory.items) {
         (void)id;
         const auto conceal=[&](auto &&self,ItemInstance &value)->void {value.identified=false;value.nativeFlags&=~uint32_t(0x10);for(auto &child:value.socketedItems) self(self,child);};
-        conceal(conceal,item);
+        if(hide) conceal(conceal,item);
+        projection.player.weaponSet=0;
         emitItem(result,data,projection,item,ItemAction::Equip,true,1,uint32_t(owner.value));
     }
     return result;
@@ -237,6 +238,12 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
     std::vector<Bytes> result;
     for (const auto &change : fact.changes) {
         if (change.item.value > UINT32_MAX) throw std::runtime_error("Inventory delta GUID overflow");
+        const auto *destination=change.after?std::get_if<ContainerLocation>(&*change.after):nullptr;
+        if(destination && destination->container==state.containers.hirelingEquipment) {
+            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,
+                [&](auto &out){out.u8(4);out.u32(uint32_t(change.item.value));}));
+            continue;
+        }
         if (change.kind == ItemChangeKind::Removed) {
             result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,
                 [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); }));

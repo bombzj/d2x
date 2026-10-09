@@ -2,6 +2,7 @@
 #include "network/tcp_stream.hpp"
 #include "client/remote_world.hpp"
 #include "network/protocol/d2gs_stream.hpp"
+#include "network/protocol/message_schema.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
 #include <array>
@@ -302,6 +303,7 @@ struct RealmSession::Impl {
         changed();
     }
     void sent(ByteStream &stream, Bytes bytes) {
+        if (&stream == &gs) validateClientPacket(bytes);
         const auto byteCount = bytes.size();
         const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
         const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
@@ -933,6 +935,8 @@ struct RealmSession::Impl {
             fail(OnlineErrorKind::Protocol, error.what(), packet.id);
             return;
         }
+        if(packet.id==0x2A && view.world.hirelingService.result && *view.world.hirelingService.result>=7)
+            error(OnlineErrorKind::Server,"Original hireling transaction was rejected",0x2A,*view.world.hirelingService.result);
         if (auto &request = view.world.itemRequest; request && request->state == OnlineItemRequest::State::Pending) {
             const auto action = request->command.action;
             const bool merchant = action == OnlineItemAction::Buy || action == OnlineItemAction::Sell ||
@@ -1171,6 +1175,7 @@ struct RealmSession::Impl {
         }
         world.storage = {}; storageDeadline = {};
         world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
+        world.hirelingService = {};
         std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; });
         ++world.itemRevision;
         if(world.staffSource && view.load.playerUnitId) {
@@ -1205,6 +1210,15 @@ struct RealmSession::Impl {
         }
     }
     void tick() {
+        auto &hireling=view.world.hirelingService;
+        if(hireling.pending) {
+            const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+            if(hireling.interaction!=view.world.interactionGeneration || !view.world.npcConversation) hireling={};
+            else if(now-hireling.requestedMilliseconds>=uint64_t(options.timeout.count())) {
+                hireling.pending.reset();hireling.offers.clear();hireling.listReceived=false;
+                error(OnlineErrorKind::Timeout,"Hireling service timed out; result is unknown");
+            }
+        }
         pump_sid();
         if (view.stage == OnlineStage::Failed)
             return;
@@ -1693,9 +1707,7 @@ bool RealmSession::update_player_trade(OnlinePlayerTradeAction action, uint64_t 
         trade.phase != OnlinePlayerTrade::Phase::Open || !trade.peer || trade.revision != revision ||
         trade.response != OnlinePlayerTrade::Response::None ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
-        std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
-            return entry.second.ownerType == 0 && entry.second.owner == p.view.load.playerUnitId && entry.second.mode == 4;
-        })) {
+        onlineHasCursorItem(world.items, p.view.load.playerUnitId)) {
         p.error(OnlineErrorKind::Input, "Trade offer changed, has a cursor item, or is waiting for the server"); return false;
     }
     if ((action == OnlinePlayerTradeAction::Agree && (trade.ownAgreed || trade.agreementLocked)) ||
@@ -1973,6 +1985,37 @@ bool RealmSession::submit_staff(uint32_t source,std::optional<uint32_t> item,std
         p.sent(p.gs,out.release());p.view.error.reset();p.changed();return true;
     } catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Staff update could not be queued");return false;}
 }
+bool RealmSession::hireling_service(OnlineHirelingAction action, std::optional<uint16_t> name, std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &state = *impl_;
+    if (!state.require_intent(context.value_or(onlineIntentContext(snapshot_)),true)) return false;
+    auto &world = state.view.world;
+    const auto &conversation = world.npcConversation;
+    auto &service = world.hirelingService;
+    const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+    if (service.pending && now - service.requestedMilliseconds >= uint64_t(state.options.timeout.count())) {
+        service.pending.reset(); service.offers.clear(); service.listReceived=false;
+        state.error(OnlineErrorKind::Timeout,"Hireling service timed out; result is unknown");return false;
+    }
+    if (!conversation || world.npcRequested != conversation->source || !state.view.load.playerUnitId ||
+        onlinePlayerDead(world) || service.pending || onlineHasCursorItem(world.items,state.view.load.playerUnitId) ||
+        (world.itemRequest && world.itemRequest->state==OnlineItemRequest::State::Pending)) return false;
+    if (action==OnlineHirelingAction::Hire && (!name || service.source!=conversation->source ||
+        service.interaction!=world.interactionGeneration || !service.listReceived || !service.offers.contains(*name))) return false;
+    if (action==OnlineHirelingAction::Resurrect && !world.deadHirelingName) return false;
+    try {
+        Writer out;
+        if(action==OnlineHirelingAction::List) {out.u8(0x38);out.u32(3);out.u32(conversation->source);out.u32(0);}
+        else if(action==OnlineHirelingAction::Hire) {out.u8(0x36);out.u32(conversation->source);out.u32(*name);}
+        else {out.u8(0x62);out.u32(conversation->source);}
+        state.sent(state.gs,out.release());
+        if(action==OnlineHirelingAction::List) {service.offers.clear();service.listReceived=false;}
+        service.source=conversation->source;service.interaction=world.interactionGeneration;
+        service.pending=action;service.requestedMilliseconds=now;service.result.reset();
+        state.view.error.reset();state.changed();return true;
+    } catch(const std::exception &) {state.fail(OnlineErrorKind::Transport,"Hireling request could not be queued");return false;}
+}
 bool RealmSession::npc_travel(uint32_t parameter,std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
@@ -2071,7 +2114,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;
     }
     const bool hasItem = command.action <= OnlineItemAction::Identify || command.action == OnlineItemAction::CubeOpen ||
-        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService;
+        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService || command.action==OnlineItemAction::HirelingEquipment;
     const auto item = world.items.find(command.item);
     if (hasItem && (item == world.items.end() ||
         command.itemRevision != item->second.revision)) {
@@ -2084,7 +2127,8 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         }
     }
     if (hasItem && command.action != OnlineItemAction::Pickup && command.action != OnlineItemAction::Buy &&
-        (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId)) {
+        (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId) &&
+        !(command.action==OnlineItemAction::HirelingEquipment && world.hireling && item->second.ownerType==1 && item->second.owner==world.hireling->id)) {
         p.error(OnlineErrorKind::Input, "Item is not owned by this server player"); return false;
     }
     if (command.action == OnlineItemAction::Buy &&
@@ -2171,6 +2215,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             out.u16(0); out.u16(0); out.u32(command.action == OnlineItemAction::RepairAll ? UINT32_MAX : 0); break;
         case OnlineItemAction::IdentifyAll: out.u8(0x34); out.u32(command.npc); break;
         case OnlineItemAction::QuestService: out.u8(0x38);out.u32(0);out.u32(command.npc);out.u32(command.item);break;
+        case OnlineItemAction::HirelingEquipment:
+            if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4)) return false;
+            out.u8(0x61);out.u16(command.body);break;
         }
         p.sent(p.gs, out.release());
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::Pending};
@@ -2233,9 +2280,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
             p.error(OnlineErrorKind::Input, "Cast needs exactly one coordinate or assigned unit"); return false;
         }
         const auto selected = command.hand == OnlineSkillHand::Left ? world.leftSkill : world.rightSkill;
-        const bool cursor = std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
-            return entry.second.mode == 4 && entry.second.ownerType == 0 && entry.second.owner == p.view.load.playerUnitId;
-        });
+        const bool cursor = onlineHasCursorItem(world.items, p.view.load.playerUnitId);
         if (!selected || selected->skill != command.skill || selected->owner != command.owner || cursor ||
             world.npcRequested || world.waypointSource || world.waypointRequested ||
             world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None) {

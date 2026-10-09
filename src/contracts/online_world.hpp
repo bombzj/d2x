@@ -184,7 +184,26 @@ struct OnlineRespawnRequest {
     bool repositioned{};
 };
 struct OnlinePet { uint8_t type{}; uint16_t monsterClass{}; uint32_t owner{}; };
+enum class OnlineHirelingAction { List, Hire, Resurrect };
+struct OnlineHireling {
+    uint32_t id{},owner{},seed{},name{};
+    uint16_t monsterClass{};
+    std::map<uint8_t,uint32_t> attributes;
+};
+struct OnlineHirelingService {
+    std::optional<uint32_t> source;
+    uint64_t interaction{}, revision{};
+    std::map<uint16_t,uint32_t> offers;
+    std::optional<OnlineHirelingAction> pending;
+    uint64_t requestedMilliseconds{};
+    bool listReceived{};
+    std::optional<uint8_t> result;
+};
 struct OnlineWorldView {
+    OnlineHirelingService hirelingService;
+    std::optional<OnlineHireling> hireling;
+    std::optional<uint16_t> deadHirelingName;
+    std::optional<uint32_t> hirelingReviveCost;
     OnlineSocialView social;
     OnlinePlayerTrade playerTrade;
     OnlineDeathPhase deathPhase{OnlineDeathPhase::Unknown};
@@ -248,6 +267,7 @@ struct OnlineWorldView {
     uint64_t ignoredPackets{};
 
     void clear() {
+        hirelingService = {}; hireling.reset(); deadHirelingName.reset(); hirelingReviveCost.reset();
         playerTrade = {};
         social.revision = social.chatSequence = 0;
         social.players.clear();

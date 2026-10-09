@@ -1,6 +1,10 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult UpdatePosition(GameplayContext &, net::protocol::Reader &in) {
+    in.u16(); in.u16(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "UpdatePosition"};
+}
 namespace {
 RequestResult move(GameplayContext &context, net::protocol::Reader &in, bool run) {
     const auto x = in.u16(), y = in.u16(); in.finish();

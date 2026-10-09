@@ -8,6 +8,10 @@ RemoteCombat与RemoteScene目标选择统一核对原服alignment、真实单位
 
 当前按技能核对PvE敌怪／合格尸体、Enchant友方及Unsummon本人PetType许可的宠物；Telekinesis另有物件／地面物品目标。其余友方技能、佣兵及完整PvP资格未接。本人尸体取回是专门type0入口，不开放其他玩家loot权限。
 
+客户端type1目标分类明确保留Unknown：未知MonStats身份或未解码状态不自动成为友军，只有已知NonHostile才通过友方技能的该项检查，存活和目标位置仍另验。hostileSource=false仅表示未确认敌对，不能作为通用友方授权；宠物名册、NPC／中立表与alignment沿当前公开值处理。依据D2MOO SUnit的GetOwner／AreUnitsAligned分开职责，不新增队伍或PvP语义。
+
+服务端monsters::Actor能力谓词仅集中已有非玩家实体规则，不能以damageable推断敌对、以combatCompanion推断控制权限。AI目标威胁优先级、召唤归属与期限、NPC服务资格、伤害和物品事务仍由各领域持有。重构已随佣兵客户端构建，未运行认证，历史包不能证明此次修改通过。
+
 ## 关系副本与证据
 
 remote_social保存原名册／队伍／关系值，公开信息与本人私有状态分开；离开视野不等于退出名册。原服交易UI／发送及有限成交已接；组队、敌意及自研交易权威未完成，不能把原flags当已解释的服务权限。

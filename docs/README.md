@@ -11,7 +11,8 @@
 | 公共函数提取、技能／怪物／NPC／任务复用边界与D2MOO依据 | [参考设计](architecture/REFERENCE_DESIGN.md) |
 | 代码分工、实际链接与修改入口 | [架构](architecture/OVERVIEW.md)、[数据流](architecture/DATA_FLOW.md) |
 | 原协议、副本、适配与实际有限原服证据 | [联网模块](modules/NETWORK.md) |
-| 自研消息目录、领域处理器、stub状态与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |
+| 消息ID、编码格式、参数、分帧与预留状态 | [消息速查](modules/MESSAGES.md) |
+| 领域处理器、收发所有权、扩展顺序与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |

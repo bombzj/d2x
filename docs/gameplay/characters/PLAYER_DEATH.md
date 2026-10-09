@@ -12,6 +12,8 @@
 
 ## 编码与原版依据
 
+自研宿主的伙伴联动以death::Transition.ready为同一权威DT结束点：调用companions::ownerDied后，罗格写死亡位并开始自身DT，召唤物进入死亡／移除。复活与保存须等待companionsSettled，背压不提前清理或保存存活佣兵；怪物本身受伤或寿命到期仍可独立死亡。依据PlrModes::PLRMODE_StartXY_Dead → PlayerPets::D2GAME_KillPlayerPets／sub_6FC7CDC0，不能仅在玩家hp归零时立即杀伙伴。当前源码未做本批运行测试，详见[佣兵](HIRELINGS.md#主人死亡时序)。
+
 独立D2S工具保留原JM尸体段，编码支持最早非空尸体及物品位置；不提供产品恢复入口，详见[存档](../../modules/SAVES.md)。D2S没有客户端死亡动画、未完成施法或短时状态字段。
 
 本地D2MOO PlrModes尸体创建／回收与DT→DEAD、PlrMsg::sub_6FC828D0／Rcv0x41、PlayerPets死亡处理、ItemMode装备回收、Player::PLAYER_ApplyDeathPenalty与PlrSave2尸体段仅作原服规则／格式证据。客户端不移植损失结算。专家、多尸体、满背包部分回收和离开后死亡精确时序未完整认证；有限单人观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。

@@ -722,11 +722,59 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         combatEvent(w, std::move(event));
         break;
     }
+    case 0x4F: {
+        r.finish();
+        auto &service=w.hirelingService;
+        if(service.source && w.npcConversation && service.source==w.npcConversation->source && service.interaction==w.interactionGeneration) {
+            service.offers.clear();service.listReceived=true;service.revision=w.revision;
+            if(service.pending==OnlineHirelingAction::List) service.pending.reset();
+        }
+        break;
+    }
+    case 0x4E: {
+        const auto name=r.u16();const auto seed=r.u32();r.finish();
+        auto &service=w.hirelingService;
+        if(service.listReceived && service.source && w.npcConversation && service.source==w.npcConversation->source &&
+            service.interaction==w.interactionGeneration && service.offers.size()<64) {
+            service.offers.insert_or_assign(name,seed);service.revision=w.revision;
+        }
+        break;
+    }
+    case 0x81: {
+        const auto type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32(),seed=r.u32(),name=r.u32();r.finish();
+        if(type==7 && owner==v.load.playerUnitId) {
+            if(!w.hireling || w.hireling->id!=id) w.hireling=OnlineHireling{id,owner,seed,name,monsterClass,{}};
+            else {w.hireling->seed=seed;w.hireling->name=name;w.hireling->monsterClass=monsterClass;}
+        }
+        break;
+    }
+    case 0x9E: case 0x9F: case 0xA0: case 0xA1: case 0xA2: {
+        const auto stat=r.u8();const auto id=r.u32();
+        const uint32_t value=p.id==0x9E || p.id==0xA1?r.u8():p.id==0x9F || p.id==0xA2?r.u16():r.u32();r.finish();
+        if(w.hireling && w.hireling->id==id) {
+            if(p.id==0xA1 || p.id==0xA2) {
+                const auto previous=w.hireling->attributes.find(stat);
+                if(previous!=w.hireling->attributes.end() && value<=UINT32_MAX-previous->second) previous->second+=value;
+            } else w.hireling->attributes[stat]=value;
+        }
+        break;
+    }
+    case 0x9B: {
+        const auto name=r.u16();const auto cost=r.u32();r.finish();
+        w.deadHirelingName=name==UINT16_MAX?std::nullopt:std::optional{name};
+        w.hirelingReviveCost=name==UINT16_MAX?std::nullopt:std::optional{cost};
+        break;
+    }
     case 0x2A: {
         OnlineTradeResult result;
         result.flags = r.u8(); result.result = r.u8(); r.u32();
         result.item = r.u32(); result.gold = r.u32(); r.finish();
         result.revision = w.revision; w.tradeResult = result;
+        auto &service=w.hirelingService;
+        if(service.pending && *service.pending!=OnlineHirelingAction::List && service.interaction==w.interactionGeneration) {
+            service.result=result.result;service.pending.reset();service.revision=w.revision;
+            if(result.result==5) {service.offers.clear();service.listReceived=false;}
+        }
         // Wallet replication uses 0x19 / 0x1D-E-F. Applying this receipt as well
         // would count a following positive gold increment twice on a sale.
         // Sale sends REMOVEFROMCONTAINER with the old stored mode. The explicit
@@ -1109,7 +1157,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if ((target.type == 0 && target.id == v.load.playerUnitId) || target.type == 6) {
             std::vector<uint32_t> consumed;
             for (const auto &[id, item] : w.items)
-                if (item.mode == 4 && item.ownerType == 0 && item.owner == v.load.playerUnitId)
+                if (onlineCursorItem(item, v.load.playerUnitId))
                     consumed.push_back(id);
             for (auto id : consumed) removeItem(w, id);
         }

@@ -25,6 +25,28 @@ void NativeRealmService::publishMonsters() {
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;
         auto [entry, fresh] = peer.monsters.try_emplace(monster.id);
         if (fresh) packets.push_back(nativeMonsterAssignment(monster, origin));
+        if(monster.hireling) {
+            const auto &record=*monster.hireling;
+            const auto definition=std::find_if(content->hirelings.begin(),content->hirelings.end(),[&](const auto &entry){return entry.sourceRow==record.sourceRow;});
+            const auto name=content->hirelingNameIds.find(record.nameKey);
+            if(definition==content->hirelings.end() || name==content->hirelingNameIds.end()) throw std::runtime_error("Missing prepared hireling identity");
+            auto identity=encodeServerPacket(ServerMessage::HirelingIdentity,[&](auto &out){
+                out.u8(7);out.u16(uint16_t(record.classId));out.u32(uint32_t(monster.hirelingOwner.value));
+                out.u32(uint32_t(monster.id.value));out.u32(record.seed);out.u32(uint32_t(name->second));
+            });
+            if(identity!=entry->second.hirelingIdentity) {packets.push_back(identity);entry->second.hirelingIdentity=std::move(identity);}
+            const auto &values=monster.hirelingAttributes;
+            const auto &table=content->tables.at("itemstatcost");
+            for(size_t row=0;row<table.rows().size();++row) {
+                const auto value=values.find(table.value(row,"Stat"));if(value==values.end()) continue;
+                const auto stat=table.number(row,"ID");if(!stat || *stat<0 || *stat>255 || value->second<INT32_MIN || value->second>UINT32_MAX) throw std::runtime_error("Hireling stat exceeds wire capacity");
+                const auto encoded=uint32_t(value->second);
+                const auto prior=entry->second.hirelingStats.find(uint8_t(*stat));
+                if(prior!=entry->second.hirelingStats.end() && prior->second==encoded) continue;
+                packets.push_back(encodeServerPacket(ServerMessage::HirelingAttributeDword,[&](auto &out){out.u8(uint8_t(*stat));out.u32(uint32_t(monster.id.value));out.u32(encoded);}));
+                entry->second.hirelingStats[uint8_t(*stat)]=encoded;
+            }
+        }
         const auto statePacket = [&](int state, bool enabled) {
             const auto stats=monster.stateStats.find(state);
             return nativeState(*content,{monster.id,1,monster.area,state,enabled,enabled && stats!=monster.stateStats.end()?stats->second:std::vector<std::pair<int,int64_t>>{}});
@@ -33,9 +55,18 @@ void NativeRealmService::publishMonsters() {
         for (const int state : monster.states) if (!entry->second.states.contains(state) || (monster.stateStats.contains(state) ? entry->second.stateStats[state]!=monster.stateStats.at(state) : !entry->second.stateStats[state].empty())) packets.push_back(statePacket(state, true));
         entry->second.states = monster.states;
         entry->second.stateStats = monster.stateStats;
-        if(fresh && monster.equipment) {
-            auto gear=nativeMonsterEquipment(*content,*monster.equipment,monster.id);
-            packets.insert(packets.end(),std::make_move_iterator(gear.begin()),std::make_move_iterator(gear.end()));
+        if(monster.equipment) {
+            std::map<EntityId,uint64_t> equipment;
+            for(const auto &[id,item]:monster.equipment->inventory.items) equipment.emplace(id,item.revision);
+            if(fresh || equipment!=entry->second.equipment) {
+                if(!monster.hireling) for(const auto &[id,revision]:entry->second.equipment) {
+                    (void)revision;
+                    if(!equipment.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
+                }
+                auto gear=nativeMonsterEquipment(*content,*monster.equipment,monster.id,!monster.hireling.has_value());
+                packets.insert(packets.end(),std::make_move_iterator(gear.begin()),std::make_move_iterator(gear.end()));
+                entry->second.equipment=std::move(equipment);
+            }
         }
         if(fresh && monster.appearOverlay>=0) packets.push_back(encodeServerPacket(ServerMessage::Overlay,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));out.u16(uint16_t(monster.appearOverlay));}));
         // Reliable hit facts already begin GH/BL. A snapshot must not restart

@@ -44,6 +44,25 @@
 
 ## 技能迁入规范
 
+### 程序分派与扩展
+
+技能数量不等于程序数量。参考本地D2MOO `D2Game/src/SKILLS/Skills.cpp`的`gpSkillSrvStartFnTable_6FD408B0`与`gpSkillSrvDoFnTable_6FD40A20`：多个技能共用开始／执行程序；本项目沿当前MPQ准备类型化规则，不复制旧版程序编号或将每个技能做成独立运行时类。
+
+| 入口 | 分派职责 |
+| --- | --- |
+| [casting.cpp](../../../src/server/systems/skills/casting.cpp) | 开始资格、目标绑定、动作／引导、延迟释放及背压重试；activationProgram统一将已准备规则分类，普通释放使用成员函数策略表 |
+| [activation.cpp](../../../src/server/systems/skills/activation.cpp) | 具名效果处理器，通过窄领域端口执行物品、召唤、状态、旅行、直接命中和弹体；不持有另一份施法时钟 |
+| [weapon.cpp](../../../src/server/systems/skills/weapon.cpp) | 原武器资格、成本、多段／回滚时序及释放；运行时weapon优先于普通效果分类 |
+| [item_triggers.cpp](../../../src/server/systems/effects/item_triggers.cpp) | 装备触发队列、概率与目标解析、效果已执行／通知待发送状态；itemTrigger复用程序分类，但保留零消耗、死亡与目标限制 |
+| [client_missile_program.hpp](../../../src/presentation/world/client_missile_program.hpp) | 已支持CltDo能力目录，集中静止、创建来源配对和子弹体图形资格；程序号来自MPQ，不是技能ID |
+| [client_missile_view.cpp](../../../src/presentation/world/client_missile_view.cpp) | 按CltDo单次分派逐帧专用行为，之后共用运动、碰撞、子弹体队列和表现时钟；不运行权威命中 |
+
+服务端策略表用具名枚举绑定成员函数，编译期检查重复、遗漏和空入口；新增枚举必须登记处理器。未支持行为不再默认转交弹体：普通施放在创建动作前返回NotImplemented，释放也有显式Unsupported入口。弹体行为清单须与missiles/launch中已实现程序同时维护；增加字段或内容定义不自动授予执行支持。客户端能力表检查程序号唯一且有序，未知CltDo不创建弹体。
+
+普通释放与装备触发不可机械合并：Enchant接收者、Telekinesis物件扣费与背压、死亡触发、武器多段以及引导具有不同上下文。共享程序分类与确定性目标选择，不共享两端世界状态，不重新扣费、掷值或执行已接受的效果。MPQ解析器中核实公式／资源的条件不是热路径分派，保留明确校验；本轮不引入通用脚本解释器、动态注册或每技能虚类。
+
+新增技能若复用既有程序，只准备当前MPQ规则与资格；新增执行程序需登记策略并实现领域操作，新增CltDo需登记能力并实现其逐帧／接触／到期行为。数据、执行与表现支持分别维护，不能通过目录注册宣称新职业完成。本次已随佣兵客户端构建打包，未运行或测试；配置与产物身份见基线，以前的有限V2不认证此次重构。
+
 1. 先读master已实现的定义／执行与当前公共函数，复用可用规则；耦合GameSession的部分只迁规则和必要状态。
 2. 依据当前MPQ登记Skills的SrvSt／SrvDo、Missiles的Do／Hit／Dmg、动作事件和状态。用本地D2MOO定位职责与缺漏；1.10f重建、1.13c DLL和当前表的差异分别记录，参考附带参数不覆盖MPQ。
 3. 提取真正相同的纯计算，明确基础／有效等级、来源、取整、帧相位、种子归属和实体／区域代次；返回纯值、下一小状态或动作描述，两端分别创建权威／视觉对象。Clt／Srv参数、触发条件和随机顺序有原版差异时保留，不能为代码一致抹平。

@@ -49,7 +49,7 @@ std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId ar
         (void)key;if(p.actor==id && p.entered && p.area==area && p.persistent.player.hp>0) return std::pair{p.position,2};
     }
     const auto *m=find(id);
-    if(m && m->area==area && m->life>0 && (!m->owner || m->amazonPet || m->hireling)) return std::pair{m->position,m->rule.size};
+    if(m && m->area==area && m->life>0 && m->damageable()) return std::pair{m->position,m->rule.size};
     return {};
 }
 DomainResult<> System::requestMove(const MoveRequest &request) {
@@ -84,7 +84,7 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || it->second.life <= 0 || (it->second.owner && !it->second.amazonPet && !it->second.hireling) || amount < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
     const bool corpseUnavailable=actor.frozenUntil>tick;
@@ -166,6 +166,17 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (auto &[id, actor] : state_.actors) {
         (void)id; actor.moving = false;
+        if(actor.hireling) {
+            actor.potionEffects.expire(tick.tick);
+            if(actor.life<=0) {actor.healing.clear();actor.potionEffects.clear();}
+            else for(auto healing=actor.healing.begin();healing!=actor.healing.end();) {
+                const auto amount=advanceRestorationFrame(healing->second,tick.tick);
+                if(amount>0) {actor.life=std::min(actor.maximumLife,actor.life+amount);++actor.revision;}
+                if(tick.tick>=healing->second.until || actor.life>=actor.maximumLife) {
+                    actor.potionEffects.removeState(healing->first);healing=actor.healing.erase(healing);
+                } else ++healing;
+            }
+        }
         if (!actor.owner && actor.life > 0 && !actor.poison && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {
             actor.life = std::min(actor.maximumLife, actor.life + actor.maximumLife * actor.rule.damageRegen / 4096); ++actor.revision;
         }

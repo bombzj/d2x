@@ -91,5 +91,16 @@ RequestResult UiAction(GameplayContext &, net::protocol::Reader &);
 RequestResult DropGold(GameplayContext &, net::protocol::Reader &);
 RequestResult BindHotkey(GameplayContext &, net::protocol::Reader &);
 RequestResult SwitchWeapons(GameplayContext &, net::protocol::Reader &);
+RequestResult ItemToCube(GameplayContext &, net::protocol::Reader &);
+RequestResult HireMercenary(GameplayContext &, net::protocol::Reader &);
+RequestResult IdentifyGamble(GameplayContext &, net::protocol::Reader &);
+RequestResult QuestCompleted(GameplayContext &, net::protocol::Reader &);
+RequestResult MoveNpc(GameplayContext &, net::protocol::Reader &);
+RequestResult PlayerRelation(GameplayContext &, net::protocol::Reader &);
+RequestResult PartyAction(GameplayContext &, net::protocol::Reader &);
+RequestResult UpdatePosition(GameplayContext &, net::protocol::Reader &);
+RequestResult MercenaryItem(GameplayContext &, net::protocol::Reader &);
+RequestResult ResurrectMercenary(GameplayContext &, net::protocol::Reader &);
+RequestResult InventoryToBelt(GameplayContext &, net::protocol::Reader &);
 }
 }

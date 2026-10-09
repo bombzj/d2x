@@ -149,6 +149,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 std::optional<PoisonApplication> poison;
                 if(hit.poisonFrames && hit.channels[5]) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(hit.channels[5])/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),hit.poisonFrames,owner->rules.skills->poisonState};
                 const auto result=ports_.monsters.damage(target->id,owner->actor,amount,tick.tick,cold,false,impact.hitClass,poison);
+                if(result) ports_.monsters.recordHirelingKill(target->id,impact.source);
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                 if(result && impact.nextDelay) ports_.monsters.hitDelay(target->id,tick.tick+impact.nextDelay);
                 if(result) commitRandom();

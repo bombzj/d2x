@@ -16,7 +16,7 @@ RequestResult dispatchGameplay(std::span<const uint8_t> packet, GameplayContext 
     // Registration adds a real link to its named entry point. There is no
     // default stub that could hide a forgotten handler for a newly added packet.
     switch (ClientMessage(in.u8())) {
-#define ROUTE(name) case ClientMessage::name: return handlers::name(context, in);
+#define ROUTE(name) case ClientMessage::name: { const auto result = handlers::name(context, in); in.finish(); return result; }
 #define ROUTE_Movement(name) ROUTE(name)
 #define ROUTE_Combat(name) ROUTE(name)
 #define ROUTE_Inventory(name) ROUTE(name)

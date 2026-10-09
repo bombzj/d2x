@@ -27,6 +27,7 @@ struct State { std::map<EntityId,Stock> stocks; std::map<std::pair<PlayerId,Enti
 struct Ports { const PlayerStore &players; const npc::System &npc; items::System &items; transactions::System &transactions; EventOutbox &events; uint64_t &random; const ItemCatalog *definitions; const GameSettings &settings; loot::System &loot; };
 class System {
     State state_; const Ports ports_;
+    const Stock *stock(PlayerId, EntityId npc, bool gamble) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

@@ -14,23 +14,28 @@
 namespace d2x::server::companions {
 // Ownership and control for hirelings/summons; live actors belong to Monsters.
 enum class Kind { Hireling, Summon, IronGolem };
-enum class Action { Hire, Resurrect, Dismiss };
-struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; };
+enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion };
+struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; };
 struct Summon { PlayerId owner; Kind kind; monsters::Admission actor; std::optional<uint16_t> sourceSkill; };
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
-    int rank{}, attackSkill{}; uint64_t ownerDeath{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{}; uint64_t random{};
+    int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{}; uint64_t random{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; };
 class System {
     State state_;
     const Ports ports_;
     std::map<EntityId,Preparation> pending_;
     std::map<EntityId,Prepared> prepared_;
     std::map<PlayerId,PreparedHireling> hirelingRules_;
+    std::map<PlayerId,HirelingListPreparation> pendingLists_;
+    std::map<PlayerId,PreparedHirelingList> hirelingLists_;
+    uint64_t nextList_ = 1;
     StepStatus amazonStep(Companion &,TickContext);
     StepStatus hirelingStep(Companion &,TickContext);
     StepStatus synchronizeHirelings(TickContext);
+    DomainResult<> equipHireling(const ActorContext &, uint32_t body);
+    DomainResult<> drink(const ActorContext &,ItemHandle,bool belt);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
@@ -42,12 +47,17 @@ class System {
     DomainResult<> install(Prepared);
     std::vector<HirelingPreparation> pendingHirelings() const;
     DomainResult<> install(PreparedHireling);
+    std::vector<HirelingListPreparation> pendingHirelingLists() const;
+    DomainResult<> install(PreparedHirelingList);
     void cancel(EntityId);
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
     bool canDismiss(const ActorContext &, EntityId) const;
     DomainResult<> dismiss(const ActorContext &, EntityId);
+    DomainResult<> ownerDied(const ActorContext &);
+    std::optional<HirelingExperienceAward> experience(PlayerId,const monsters::Actor &) const;
+    DomainResult<> awardExperience(const ActorContext &,const HirelingExperienceAward &);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

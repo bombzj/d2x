@@ -259,7 +259,7 @@ void RemoteInventory::update(const OnlineView &online) {
     }
     for (const auto &[id, wire] : online.world.items) {
         view_.items.emplace(id, decode(wire));
-        if (wire.ownerType != 0 || wire.owner != online.load.playerUnitId) continue;
+        if (!onlineItemOwnedBy(wire, online.load.playerUnitId)) continue;
         if (wire.mode == 4) view_.cursor = id;
         if (wire.mode == 1 && wire.body == 8) {
             const int index = baseNumber(wire, "belt");
@@ -360,7 +360,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
     if (command.itemRevision && command.itemRevision != wire.revision) return reject("Stale item revision");
     command.itemRevision = wire.revision;
-    auto owned = [&](const OnlineItem &item) { return item.ownerType == 0 && item.owner == online.load.playerUnitId; };
+    auto owned = [&](const OnlineItem &item) { return onlineItemOwnedBy(item, online.load.playerUnitId); };
     auto backpack = [&](const OnlineItem &item) { return owned(item) && item.mode == 0 && item.page == 1; };
     auto accessible = [&](const OnlineItem &item) {
         return owned(item) && item.mode == 0 && (item.page == 1 ||
@@ -414,6 +414,16 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             {float(wire.groundX), float(wire.groundY)}, 1) > 50) return reject("Ground item exceeds native pickup range");
         break;
     }
+    case OnlineItemAction::HirelingEquipment:
+        if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4))
+            return reject("No living hireling or invalid equipment slot");
+        if(cursor()) {
+            if(command.mercenary && (isType(wire,"hpot") || isType(wire,"rpot") || isType(wire,"apot") || isType(wire,"wpot"))) break;
+            if(!decoded.identified || (decoded.maxDurability && *decoded.maxDurability && decoded.durability==0) ||
+                !(isType(wire,"helm") || isType(wire,"tors") || isType(wire,"bow"))) return reject("Item is not eligible Rogue equipment");
+        } else if(view_.cursor || wire.ownerType!=1 || wire.owner!=world.hireling->id || wire.mode!=1 || wire.body!=command.body)
+            return reject("Hireling equipment is no longer assigned");
+        break;
     case OnlineItemAction::Take:
         if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2 ||
             (wire.mode == 1 && wire.body >= 1 && wire.body <= 10))) return reject("Only this player's backpack, belt or active equipment can be taken");

@@ -26,11 +26,25 @@ struct OnlineItem {
     struct StatUpdate { uint32_t value{}; bool base{}; };
     std::map<std::pair<uint16_t, uint16_t>, StatUpdate> statUpdates;
 };
+inline bool onlineItemOwnedBy(const OnlineItem &item, std::optional<uint32_t> player) {
+    return player && item.ownerType == 0 && item.owner == player;
+}
+inline bool onlineCursorItem(const OnlineItem &item, std::optional<uint32_t> player) {
+    return item.mode == 4 && onlineItemOwnedBy(item, player);
+}
+inline bool onlineHasCursorItem(const std::map<uint32_t, OnlineItem> &items, std::optional<uint32_t> player) {
+    if (!player) return false;
+    for (const auto &[id, item] : items) {
+        (void)id;
+        if (onlineCursorItem(item, player)) return true;
+    }
+    return false;
+}
 enum class OnlineItemAction {
     Pickup, Take, Place, Drop, Equip, Unequip, Swap, Use, BeltPlace, BeltSwap,
     Stack, Book, Socket, Identify, SwitchWeapons,
     CubeOpen, StorageClose, Transmute, GoldDeposit, GoldWithdraw, GoldDrop,
-    TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService
+    TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService, HirelingEquipment
 };
 struct OnlineItemCommand {
     OnlineItemAction action{};

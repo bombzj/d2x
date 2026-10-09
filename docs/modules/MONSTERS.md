@@ -21,6 +21,8 @@
 
 combat拥有待命中计划，death／loot／progression分别提交死亡、掉落和经验；quests消费真实身份／出生来源与死亡事实。companions拥有主人与控制关系，monsters拥有活动实体。固定步、事务／可靠输出和调度统一见[SERVER_SYSTEMS](SERVER_SYSTEMS.md)，不将状态集中回会话。
 
+Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集中表达当前受伤、战斗伙伴和普通攻击入口能力，由monsters目标／伤害、skills怪物施法及combat命中复用。它们不包括生命、区域、距离、视线、动作或所有权授权，调用者仍逐次复验这些条件；不是完整阵营／PvP接口。Hydra保留专用施放和不可受伤路径，诱饵可受伤但不进入普通攻击，女武神和佣兵保留各自装备／AI规则。静态城镇NPC仍归AreaStore与npc服务，不因type1相同迁入敌怪AI；中立不可替换敌人。
+
 ## 客户端入口
 
 | 入口 | 职责 |
@@ -33,6 +35,8 @@ combat拥有待命中计划，death／loot／progression分别提交死亡、掉
 | [sound_catalog.cpp](../../src/content/audio/sound_catalog.cpp)、[scene_audio.cpp](../../src/presentation/audio/scene_audio.cpp) | 唯一MonSounds解释与播放 |
 
 RemoteCombat核对真实身份、原alignment及MPQ资格，RemoteScene不另推断敌我。onlineMonsterCorpse统一死亡模式与剥离触发位的生命刻度，供声音、弹体接触、光照和NPC读取。原服／自研使用同一客户端；修复与共享提取须有原版依据。
+
+RemoteCombat内部以Unknown／Hostile／NonHostile区分信息缺失与已知非敌对，保留hostileSource只读接口供表现使用。友方技能只接受明确NonHostile的type1单位；不存在MonStats身份或状态未解码不能因hostileSource=false而获准。原宠物归属和已知NPC／中立表记录仍沿既有优先级处理。实际关系与未实现PvP见[阵营](../gameplay/combat/FACTIONS.md)。
 
 ## 修改与文档归属
 

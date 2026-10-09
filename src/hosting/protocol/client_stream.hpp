@@ -7,7 +7,7 @@ class ClientPacketStream {
     size_t offset_{};
   public:
     void append(std::span<const uint8_t> bytes) {
-        if (bytes_.size() - offset_ + bytes.size() > 256 * 1024)
+        if (bytes.size() > 256 * 1024 || bytes_.size() - offset_ > 256 * 1024 - bytes.size())
             throw net::protocol::ProtocolError("Game input queue exceeds limit");
         if (offset_) { bytes_.erase(bytes_.begin(), bytes_.begin() + offset_); offset_ = 0; }
         bytes_.insert(bytes_.end(), bytes.begin(), bytes.end());

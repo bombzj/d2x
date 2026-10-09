@@ -117,6 +117,35 @@ HirelingStats deriveHirelingStats(const HirelingDefinition &d, int level) {
     s.nextExperience = level < 99 ? experience(uint64_t(level + 1)) : 0;
     return s;
 }
+std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefinition> &definitions,
+    int seller, int difficulty, int playerLevel, uint32_t seed, uint32_t slot) {
+    std::vector<const HirelingDefinition *> pool;
+    int firstLevel = -1;
+    for (const auto &entry : definitions) {
+        if (entry.seller != seller || entry.difficulty != difficulty + 1) continue;
+        if (firstLevel < 0) firstLevel = entry.level;
+        if (entry.level == firstLevel) pool.push_back(&entry);
+    }
+    if (pool.empty() || !slot || !seed || playerLevel < 1) return {};
+    const auto &firstKey = pool.front()->nameFirst;
+    const auto &lastKey = pool.front()->nameLast;
+    const auto prefix = firstKey.find_last_not_of("0123456789") + 1;
+    if (firstKey.size() < 2 || firstKey.size() != lastKey.size() || prefix >= firstKey.size()) return {};
+    int first = 0, last = 0;
+    const auto firstParsed = std::from_chars(firstKey.data() + prefix, firstKey.data() + firstKey.size(), first);
+    const auto lastParsed = std::from_chars(lastKey.data() + prefix, lastKey.data() + lastKey.size(), last);
+    if (firstParsed.ec != std::errc{} || lastParsed.ec != std::errc{} || first > last || slot > unsigned(last - first + 1)) return {};
+    auto random = initialRandom(seed);
+    rollRandom(random);
+    const auto &definition = *pool[uint32_t(random) % pool.size()];
+    rollRandom(random);
+    const int delta = std::min(int32_t(uint32_t(random)) % 5, playerLevel - definition.level);
+    const int level = std::max(1, definition.level + delta);
+    std::ostringstream key;
+    key << firstKey.substr(0, prefix) << std::setw(int(firstKey.size() - prefix))
+        << std::setfill('0') << first + int(slot - 1);
+    return HirelingOffer{slot, definition.sourceRow, level, key.str(), deriveHirelingStats(definition, level), seed};
+}
 std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefinition> &definitions,
     int seller, int difficulty, int playerLevel, uint64_t &seed) {
     std::vector<const HirelingDefinition *> pool;
@@ -152,14 +181,9 @@ std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefiniti
     std::vector<HirelingOffer> result;
     for (size_t index = 0; index < seeds.size(); ++index) {
         if (!available[index]) continue;
-        uint64_t local = initialRandom(seeds[index]);
-        const auto &d = *pool[random(local, unsigned(pool.size()))];
-        const int levelRoll = int32_t(random(local, 0)) % 5;
-        const int level = std::max(1, d.level + std::min(levelRoll, playerLevel - d.level));
-        std::ostringstream key;
-        key << firstKey.substr(0, prefix) << std::setw(int(firstKey.size() - prefix))
-            << std::setfill('0') << first + int(index);
-        result.push_back({uint32_t(index + 1), d.sourceRow, level, key.str(), deriveHirelingStats(d, level), seeds[index]});
+        const auto offer = resolveHirelingOffer(definitions, seller, difficulty, playerLevel, seeds[index], uint32_t(index + 1));
+        if (!offer) throw std::runtime_error("Invalid original hireling candidate");
+        result.push_back(*offer);
     }
     return result;
 }

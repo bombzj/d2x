@@ -75,6 +75,8 @@ class GameInstance {
     DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);
     auto pendingSummons() const {return systems_.companions.pending();}
     auto pendingHirelings() const {return systems_.companions.pendingHirelings();}
+    auto pendingHirelingLists() const {return systems_.companions.pendingHirelingLists();}
+    DomainResult<> installHirelingList(companions::PreparedHirelingList prepared) {return systems_.companions.install(std::move(prepared));}
     DomainResult<> installHireling(companions::PreparedHireling prepared) {return systems_.companions.install(std::move(prepared));}
     DomainResult<> installSummon(companions::Prepared prepared) {return systems_.companions.install(std::move(prepared));}
     auto pendingMerchant() const { return systems_.merchant.pending(); }

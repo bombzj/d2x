@@ -39,7 +39,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             changeArea(*travel); continue;
         }
         std::vector<Bytes> delta;
-        if (const auto *life = std::get_if<server::LifeFact>(&fact)) delta = nativeLife(*content, *life);
+        if (const auto *list = std::get_if<server::HirelingListFact>(&fact)) {
+            delta.push_back(encodeServerPacket(ServerMessage::HirelingListReset,[](auto &){}));
+            for(const auto &[name,seed]:list->offers)
+                delta.push_back(encodeServerPacket(ServerMessage::HirelingOffer,[&](auto &out){out.u16(name);out.u32(seed);}));
+        }
+        else if (const auto *life = std::get_if<server::LifeFact>(&fact)) delta = nativeLife(*content, *life);
         else if (const auto *mana = std::get_if<server::ManaFact>(&fact)) delta = nativeMana(*content, *mana);
         else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
             if (position->actor != host.read(*binding)->actor.id &&

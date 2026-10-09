@@ -2,6 +2,18 @@
 #include <optional>
 
 namespace d2x::hosting::handlers {
+RequestResult ItemToCube(GameplayContext &, net::protocol::Reader &in) {
+    in.u32(); in.u32(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "ItemToCube"};
+}
+RequestResult MercenaryItem(GameplayContext &context, net::protocol::Reader &in) {
+    const auto body=in.u16(); in.finish();
+    return submitGameplay(context,server::companions::Request{server::companions::Action::Equipment,{},body});
+}
+RequestResult InventoryToBelt(GameplayContext &, net::protocol::Reader &in) {
+    in.u32(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "InventoryToBelt"};
+}
 namespace {
 using namespace server::inventory;
 using net::protocol::Reader;

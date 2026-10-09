@@ -34,10 +34,12 @@ RequestResult DropItem(GameplayContext &context, net::protocol::Reader &reader) 
 namespace {
 RequestResult consume(GameplayContext &context, net::protocol::Reader &reader, bool belt) {
     const EntityId id{reader.u32()}; const auto first = reader.u32(), second = reader.u32();
-    if (belt && (first || second)) return {RequestStatus::NotImplemented};
+    reader.finish();
+    if (belt && (first>1 || second)) return {RequestStatus::Rejected};
     if (!belt && (first > UINT16_MAX || second > UINT16_MAX)) return {RequestStatus::Rejected};
     const auto input = context.host.inventoryInput(context.player);
     if (!input || !input->items.contains(id)) return {RequestStatus::Rejected};
+    if(belt && first) return submitGameplay(context,server::companions::Request{server::companions::Action::Potion,{}, {},input->items.at(id).handle,true});
     return submitGameplay(context, server::inventory::Request{d2x::UseItem{input->items.at(id).handle},
         belt ? server::inventory::Source::Belt : server::inventory::Source::Stored});
 }

@@ -57,7 +57,7 @@ std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id) co
     if (!player) return {};
     if (player->persistent.player.hp <= 0) {
         const auto death = systems_.death.read().transitions.find(player->actor);
-        if (death == systems_.death.read().transitions.end() || !death->second.finalized) return {};
+        if (death == systems_.death.read().transitions.end() || !death->second.finalized || !death->second.companionsSettled) return {};
     }
     auto result = player->persistent;
     result.nextEntityId = entities_.cursor();

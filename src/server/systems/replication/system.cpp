@@ -48,6 +48,16 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
+        if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner);owner && owner->player==id) {
+            result.back().hireling=owner->persistent.player.hireling;
+            result.back().hirelingOwner=owner->actor;
+            result.back().hirelingLife=monster.life;
+            result.back().hirelingAttributes={{"level",monster.rule.level},{"experience",int64_t(owner->persistent.player.hireling.experience)},
+                {"hitpoints",monster.life},{"maxhp",monster.maximumLife},{"strength",monster.hirelingStrength},{"dexterity",monster.hirelingDexterity},
+                {"armorclass",monster.rule.defense},{"mindamage",monster.rule.minimumDamage},{"maxdamage",monster.rule.maximumDamage},
+                {"fireresist",monster.rule.resistances[2]},{"lightresist",monster.rule.resistances[3]},
+                {"coldresist",monster.rule.resistances[4]},{"poisonresist",monster.rule.resistances[5]}};
+        }
         result.back().lightningReady=monster.lightningReady;
         result.back().components=monster.components;result.back().componentCounts=monster.rule.componentCounts;
         if(monster.rule.enchantment) {
@@ -63,6 +73,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             if(monster.amazonPet->decoy) result.back().modifiers.push_back(21); // SkillAma::SrvDo015 expiration UMod.
         }
         auto &states = result.back().states;
+        for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
         if(monster.poison) states.insert(monster.poison->damage.state);
         if(monster.webUntil>tick && monster.rule.web) states.insert(monster.rule.web->aura.id);

@@ -93,9 +93,9 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 
 证据为本地 PvPGN common/bnet_protocol.h、common/d2cs_protocol.h、bnetd/handle_bnet.cpp、d2cs/handle_d2cs.cpp／handle_bnetd.cpp；布局及动画参考本地 reference 和既有离线选择器，图形文案读取当前 MPQ；参考仓库不提交。
 
-## 协议覆盖目录（1.13c 当前源码）
+## 协议消费边界（1.13c 当前源码）
 
-下表区分能分帧、字段已消费和语义仍未知；没有以收发成功计为玩法成功。动态字段定义与取证入口见相应源码及[资料来源](../resources/THIRD_PARTY.md)。`online-status.protocol` 按 SID／MCP／game 分别返回包 ID、received／sent／unconsumed、协议逻辑字节数和 lastReceived，不保存或输出原始认证载荷。错误回执的 packetId 保留 dispatch 来源；未知流长度仍立即失败。
+消息ID、长度、参数与预留状态统一维护在[消息速查](MESSAGES.md)。下表仅记录客户端消费范围和缺口，不作为第二份编码规范；不会以收发成功计为玩法成功。`online-status.protocol`按SID／MCP／game分别返回包ID、received／sent／unconsumed、协议逻辑字节数和lastReceived，不保存原始认证载荷。未知流长度立即失败；共享分帧位于network/protocol，客户端不依赖宿主实现目录，原服同样适用。
 
 | 方向／包 | 长度／分帧 | 当前消费 | 字段／关键性与缺口 |
 | --- | --- | --- | --- |

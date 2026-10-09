@@ -26,6 +26,8 @@ LAN角色由宿主`--host-saves`目录持有，不读取或上传客户端D2S；
 
 ## 文件与值边界
 
+第一幕佣兵服务的当前准入规则升级至`d2x-character-admission-v28/native-wire113c/d2s96/act1-hireling`，磁盘仍为v96。雇佣替换／装备／经验和死亡位沿原字段，临时药水、AI、候选与当前生命不保存。人物死亡导出除尸体结算外还等待权威DT结束及伙伴死亡事务完成，不能在佣兵仍存活时退出绕过主人死亡；原租约／失败保留策略不变。旧规则不静默迁移，佣兵执行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
+
 | 入口 | 职责 |
 | --- | --- |
 | [character_save.hpp](../../src/persistence/character_save.hpp) | CharacterSaveData别名，实体值位于gameplay/character/persistent_character.hpp；字段和原v96格式不变 |

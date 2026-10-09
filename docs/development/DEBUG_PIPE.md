@@ -31,7 +31,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
 | `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
 | `server-status` | 只读phase、tick、paused、hostSlot／hostGeneration／hostPlayer、实际command序号／结果、最近分派和失败、characterIssues；command是最新诊断，不能作为可靠事务回执 |
-| `server-protocol` | 返回全部C2S／S2C／MCP和4F／38子命令目录；实现状态、领域、收发计数、queued／stub／rejected／malformed。入场编码标admission-only，不代表完整玩法 |
+| `server-protocol` | 返回已登记C2S／S2C／MCP和4F／38子命令；profile、阶段、分帧、固定长度或长度偏移／最低包长、实现状态、领域和收发／queued／stub／rejected／malformed计数。partial区分部分子操作；frameSupported独立于宿主实现。unknownGameRequests只列到达服务分派层的未知请求。定义见[消息速查](../modules/MESSAGES.md)，不输出原始载荷 |
 | `server-commands` | 当前管理命令、参数类别及implemented标志 |
 | `server-systems` | 28个内核目录项的name／phase／scope／lastStep；执行范围以各项scope和内核子系统文档为准。lastStep=null表示未调度或没有固定步入口，不表示实现；详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | `save` | 无参数；从服务端导出当前角色，校验租约版本并原子保存／备份。applied表示保存已完成，失败保留实例和租约 |

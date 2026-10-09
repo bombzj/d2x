@@ -1,6 +1,7 @@
 #pragma once
 #include "core/id.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "gameplay/character/record.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
@@ -94,5 +95,9 @@ struct MonsterSnapshot {
     uint8_t rankFlags{};
     uint16_t nameSeed{}, superUniqueIndex{};
     bool lightningReady{};
+    std::optional<HirelingRecord> hireling{};
+    EntityId hirelingOwner{};
+    int64_t hirelingLife{};
+    std::map<std::string,int64_t,std::less<>> hirelingAttributes{};
 };
 } // namespace d2x

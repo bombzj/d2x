@@ -15,6 +15,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 namespace d2x::server::skills {
 namespace {
@@ -82,6 +83,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
+    if (activationProgram(skill) == ActivationProgram::Unsupported) return {DomainStatus::NotImplemented,{}};
     if(owner!=UINT32_MAX) {skill.charge=SkillCharge{charged->item,charged->layer};skill.manaCost=skill.startMana=0;}
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
@@ -130,51 +132,72 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     } catch(...) {rollback();throw;}
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
+System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) {
+    switch (skill.effect) {
+    case SkillBehavior::ItemSkill: return ActivationProgram::Item;
+    case SkillBehavior::Unsummon: return ActivationProgram::Unsummon;
+    case SkillBehavior::Kick: return ActivationProgram::Kick;
+    default: break;
+    }
+    if (skill.summon && skill.summon->amazon) return ActivationProgram::AmazonSummon;
+    if (skill.amazonMagic) return ActivationProgram::AmazonMagic;
+    switch (skill.effect) {
+    case SkillBehavior::Teleport: return ActivationProgram::Teleport;
+    case SkillBehavior::Hydra: return ActivationProgram::Hydra;
+    default: break;
+    }
+    if (skill.appliedEffect) return ActivationProgram::Effect;
+    switch (skill.effect) {
+    case SkillBehavior::StaticField: return ActivationProgram::StaticField;
+    case SkillBehavior::Telekinesis: return ActivationProgram::Telekinesis;
+    case SkillBehavior::WeaponProjectile:
+    case SkillBehavior::FireBolt: case SkillBehavior::Fireball:
+    case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
+    case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor:
+    case SkillBehavior::ChargedBolt: case SkillBehavior::FrostNova:
+    case SkillBehavior::Nova: case SkillBehavior::GlacialSpike:
+    case SkillBehavior::FrozenOrb: case SkillBehavior::Blizzard:
+    case SkillBehavior::Lightning: case SkillBehavior::ChainLightning:
+    case SkillBehavior::FireWall: case SkillBehavior::Blaze:
+    case SkillBehavior::Meteor: return ActivationProgram::Missile;
+    default: return ActivationProgram::Unsupported;
+    }
+}
 DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec target) {
-    const auto &p=*ports_.players.find(actor.player);const auto &skill=pending.skill;
-    if(pending.weapon) return weaponRelease(pending,actor,target);
-    if(skill.effect==SkillBehavior::ItemSkill) return ports_.inventory.useSkill(actor,skill.sourceId).status;
-    if(skill.effect==SkillBehavior::Unsummon) return ports_.companions.dismiss(actor,pending.unit).status;
-    if(skill.effect==SkillBehavior::Kick) {
-        if(pending.unitType==2) return DomainStatus::Applied; // Barrel operation owns destruction/loot, not skill damage.
-        const auto *victim=ports_.monsters.find(pending.unit);const auto &area=ports_.areas.at(actor.area);
-        if(!victim || victim->owner || victim->life<=0 || victim->area!=actor.area ||
-            meleeDistance(p.position,2,victim->position,victim->rule.size)>1 || !area.definition.collision.segment(p.position,victim->position)) return DomainStatus::Unavailable;
-        return ports_.missiles.direct({actor,skill,{},target},{pending.unit}).status;
-    }
-    if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,target).status;
-    if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill).status;
-    if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,target},skill.manaCost,skill.charge).status;
-    if(skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,target).status;
-    if(skill.appliedEffect) {
-        if(skill.effect==SkillBehavior::Enchant && pending.unit && pending.unitType==1) return ports_.effects.skillUnit(actor,skill,pending.unit).status;
-        std::optional<PlayerId> recipient;
-        if(skill.effect==SkillBehavior::Enchant && pending.unit) for(const auto &[id,other]:ports_.players.all()) if(other.actor==pending.unit) {recipient=id;break;}
-        return ports_.effects.skill(actor,skill,recipient).status;
-    }
-    if(skill.effect==SkillBehavior::StaticField) {
-        std::vector<EntityId> targets;
-        for(const auto &[id,m]:ports_.monsters.read().actors) if(!m.owner && m.life>0 && m.area==actor.area &&
-            within(p.position,m.position,int(skill.staticRadius))) targets.push_back(id);
-        return ports_.missiles.direct({actor,skill,{},p.position},std::move(targets)).status;
-    }
-    if(skill.effect==SkillBehavior::Telekinesis) {
-        if(!within(p.position,target,skill.telekinesisRange)) return DomainStatus::InvalidRequest;
-        if(pending.unitType==1) return ports_.missiles.direct({actor,skill,{},target},{pending.unit}).status;
-        if(pending.unitType==4) {
-            const auto result=ports_.inventory.telekinesis(actor,pending.unit,skill);
-            return result.status;
+    using Handler = DomainStatus (System::*)(Release &, const ActorContext &, Vec);
+    struct Entry { ActivationProgram program; Handler handler; };
+    static constexpr std::array entries{
+        Entry{ActivationProgram::Weapon, &System::weaponRelease},
+        Entry{ActivationProgram::Item, &System::activateItem},
+        Entry{ActivationProgram::Unsummon, &System::activateUnsummon},
+        Entry{ActivationProgram::Kick, &System::activateKick},
+        Entry{ActivationProgram::AmazonSummon, &System::activateAmazonSummon},
+        Entry{ActivationProgram::AmazonMagic, &System::activateAmazonMagic},
+        Entry{ActivationProgram::Teleport, &System::activateTeleport},
+        Entry{ActivationProgram::Hydra, &System::activateHydra},
+        Entry{ActivationProgram::Effect, &System::activateEffect},
+        Entry{ActivationProgram::StaticField, &System::activateStaticField},
+        Entry{ActivationProgram::Telekinesis, &System::activateTelekinesis},
+        Entry{ActivationProgram::Missile, &System::activateMissile},
+        Entry{ActivationProgram::Unsupported, &System::activateUnsupported},
+    };
+    static_assert([] {
+        std::array<bool, size_t(ActivationProgram::Count)> present{};
+        for (const auto &entry : entries) {
+            const auto index = size_t(entry.program);
+            if (index >= present.size() || present[index] || !entry.handler) return false;
+            present[index] = true;
         }
-        if(pending.unitType==2) {
-            if(!pending.manaPaid) {
-                const auto debit=ports_.transactions.release(actor,p.characterRevision,skill.manaCost,{},skill.charge);if(!debit) return debit.status;pending.manaPaid=true;
-            }
-            if(ports_.travel.portalPosition(actor,pending.unit)) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{pending.unit,0},{}},skill.telekinesisRange).status;
-            return ports_.objects.execute(actor,{{pending.unit,0}},skill.telekinesisRange).status;
-        }
-        return DomainStatus::InvalidRequest;
-    }
-    return ports_.missiles.spawn({actor,skill,pending.collision,target}).status;
+        for (const bool registered : present) if (!registered) return false;
+        return true;
+    }());
+    static constexpr auto handlers = [] {
+        std::array<Handler, size_t(ActivationProgram::Count)> result{};
+        for (const auto &entry : entries) result[size_t(entry.program)] = entry.handler;
+        return result;
+    }();
+    const auto program = pending.weapon ? ActivationProgram::Weapon : activationProgram(pending.skill);
+    return (this->*handlers[size_t(program)])(pending, actor, target);
 }
 StepStatus System::release(TickContext tick) {
     bool blocked=false;
@@ -242,17 +265,22 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
         return ports_.effects.skill(actor,skill);
     }
     if(dead && (skill.appliedEffect || skill.summon || skill.effect==SkillBehavior::Teleport || skill.effect==SkillBehavior::Hydra)) return {DomainStatus::Unavailable,{}};
-    if(skill.summon && skill.summon->amazon) return ports_.companions.amazon(actor,skill,position);
-    if(skill.amazonMagic) return ports_.effects.amazonMagic(actor,skill);
-    if(skill.effect==SkillBehavior::Teleport) return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
-    if(skill.effect==SkillBehavior::Hydra) return ports_.companions.hydra(actor,skill,position);
-    missiles::Spawn spawn{actor,std::move(skill),collision,position,true};spawn.deathTrigger=dead;
-    if(spawn.skill.effect==SkillBehavior::StaticField) {
-        std::vector<EntityId> targets;for(const auto &[id,m]:ports_.monsters.read().actors) if(!m.owner && m.life>0 && m.area==actor.area && within(p->position,m.position,int(spawn.skill.staticRadius))) targets.push_back(id);
-        return ports_.missiles.direct(spawn,std::move(targets));
+    const auto program = activationProgram(skill);
+    switch (program) {
+    case ActivationProgram::AmazonSummon: return ports_.companions.amazon(actor,skill,position);
+    case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
+    case ActivationProgram::Teleport: return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
+    case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);
+    case ActivationProgram::StaticField:
+    case ActivationProgram::Telekinesis:
+    case ActivationProgram::Missile: {
+        missiles::Spawn spawn{actor,std::move(skill),collision,position,true};spawn.deathTrigger=dead;
+        if(program==ActivationProgram::StaticField) return ports_.missiles.direct(spawn,staticFieldTargets(actor,spawn.skill));
+        if(program==ActivationProgram::Telekinesis) return target?ports_.missiles.direct(spawn,{target}):DomainResult<>{DomainStatus::Unavailable,{}};
+        const auto result=ports_.missiles.spawn(spawn);return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
     }
-    if(spawn.skill.effect==SkillBehavior::Telekinesis) return target?ports_.missiles.direct(spawn,{target}):DomainResult<>{DomainStatus::Unavailable,{}};
-    const auto result=ports_.missiles.spawn(spawn);return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+    default: return {DomainStatus::NotImplemented,{}};
+    }
 }
 
 }

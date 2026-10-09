@@ -288,5 +288,7 @@ namespace d2x {
 std::vector<server::companions::Preparation> GameHost::pendingSummons(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingSummons():std::vector<server::companions::Preparation>{};}
 server::DomainResult<> GameHost::installSummon(GameHandle game,server::companions::Prepared prepared) {auto *slot=find(game);return slot?slot->game->installSummon(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
 std::vector<server::companions::HirelingPreparation> GameHost::pendingHirelings(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingHirelings():std::vector<server::companions::HirelingPreparation>{};}
+std::vector<server::companions::HirelingListPreparation> GameHost::pendingHirelingLists(GameHandle game) const {const auto *slot=find(game);return slot?slot->game->pendingHirelingLists():std::vector<server::companions::HirelingListPreparation>{};}
+server::DomainResult<> GameHost::installHirelingList(GameHandle game,server::companions::PreparedHirelingList prepared) {auto *slot=find(game);return slot?slot->game->installHirelingList(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
 server::DomainResult<> GameHost::installHireling(GameHandle game,server::companions::PreparedHireling prepared) {auto *slot=find(game);return slot?slot->game->installHireling(std::move(prepared)):server::DomainResult<>{server::DomainStatus::Stale,{}};}
 }

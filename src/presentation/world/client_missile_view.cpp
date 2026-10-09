@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "presentation/world/client_missile_program.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
@@ -27,8 +28,8 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
-    if (program.function != 1 && program.function != 3 && program.function != 4 && program.function != 5 && program.function != 6 && program.function != 9 &&
-        program.function != 7 && program.function != 13 && program.function != 8 && program.function != 18 && program.function != 19 && program.function != 20) return false;
+    const auto *capabilities = findClientMissileCapabilities(program.function);
+    if (!capabilities) return false;
     if (program.function==9)
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
     if (program.function == 4 && (program.children[0] < 0 || program.parameters[0] < 0 ||
@@ -38,22 +39,22 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         for (const int child:program.hitChildren) if (child<0 || !assets_.ensureProjectile(child)) return false;
     // Lightning's parent is deliberately invisible; its MPQ child is the art.
     if (!assets_.ensureProjectile(id) &&
-        !((program.function == 8 || program.function == 18 || program.function==13) && program.children[0] >= 0 &&
+        !(capabilities->allowChildArtwork && program.children[0] >= 0 &&
           assets_.ensureProjectile(program.children[0]))) return false;
     level = std::max(1, level);
     const auto nativeVelocity = missileVelocityFixed(program.velocity,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
-    const int velocity = program.function==5 || program.function==9 || program.function==13?0:*nativeVelocity;
+    const int velocity = capabilities->stationary ? 0 : *nativeVelocity;
     const float tableDuration = float(program.frames + level * program.framesPerLevel) / 25.f;
     const float fullDuration = tableDuration > 0 ? tableDuration : assets_.projectileVisuals.at(id).lifetime;
     const float duration = remaining.value_or(program.groundThrow?float(groundThrowFrames(start,target,velocity))/25.f:fullDuration);
     if (duration <= 0 || !std::isfinite(duration) || !std::isfinite(delay) ||
         !std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(target.x) || !std::isfinite(target.y)) return false;
     // Stationary 73 sends FirstX/FirstY = 0; these are not an aimed ray.
-    if (program.function == 5 || program.function == 9 || program.function == 13) target = start;
+    if (capabilities->stationary) target = start;
     const auto sources = uint8_t(source);
-    const bool reconstructed = program.function == 5 || program.function == 6 || program.function == 9 || program.function == 13;
+    const bool reconstructed = capabilities->pairCreationSources;
     if (sources && reconstructed) {
         // 73 has no missile GUID. Pair the two creation sources for the same
         // owner/class/origin/ray within the cast release and event freshness window.
@@ -222,17 +223,23 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             const int remainingFrames = int((effect.duration+effect.animationOffset)*25.f+.5f)-frame;
             const float childAge = std::max(0.f, effect.age + effect.animationOffset - float(frame) / 25.f);
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
-            if (program.function == 4 && !program.childServerSent &&
-                (!program.parameters[0] || limitedRandom(effect.random, uint32_t(program.parameters[0])) == 0)) {
+            switch (program.function) {
+            case 4:
+                if (!program.childServerSent &&
+                    (!program.parameters[0] || limitedRandom(effect.random, uint32_t(program.parameters[0])) == 0)) {
                 // Retail CltDo04 / RVA BBE00 -> B9470: chance per native tick,
                 // MPQ count and radius; smoke starts at the parent and drifts
                 // toward an integer offset. No poison or damage is applied here.
-                poisonSmoke(childAge);
-            }
+                    poisonSmoke(childAge);
+                }
+                break;
             // Retail CltDo03 RVA BBE60 creates CltSubMissile1 at the parent
             // each native tick (Poison Javelin's verified CltCalc1 is zero).
-            if(program.function==3 && program.children[0]>=0) emit(program.children[0],effect.pos,{},effect,childAge);
-            if(program.function==13 && program.blizzard) {
+            case 3:
+                if(program.children[0]>=0) emit(program.children[0],effect.pos,{},effect,childAge);
+                break;
+            case 13: {
+                if (!program.blizzard) break;
                 const auto &b=*program.blizzard;
                 // Retail RVA BBC10 / B8DF0: variant is chosen before the
                 // remaining-frame gate; placement reseeds from global X.
@@ -242,23 +249,28 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                     const Vec at=effect.pos+blizzardOffset(uint32_t(std::floor(effect.pos.x)),remainingFrames,b.radius,true);
                     if(grid.missileSegment(at-origin,at-origin,{4,1})) emit(variant,at,{},effect,childAge);
                 }
+                break;
             }
-            if (program.function == 19) {
+            case 19:
                 if (const auto emission = missileRingEmission(remainingFrames, program.parameters[0], effect.directionIndex, program.parameters[1])) {
                     const Vec anchor{std::floor(effect.pos.x) + .5f, std::floor(effect.pos.y) + .5f};
                     emit(program.children[0], anchor, emission->direction, effect, childAge);
                     effect.directionIndex = emission->nextIndex;
                 }
-            }
-            if (program.function == 20) {
+                break;
+            case 20:
                 if (const auto turn=missileOrbTurn(effect.turnTarget,remainingFrames,program.parameters[0],program.parameters[1])) {
                     effect.turnTarget = *turn;
                     effect.velocity = effect.turnTarget.unit() * (float(effect.velocityFixed) * 25.f / 4096.f);
                 }
-            }
-            if(program.function==7 && effect.guidance) {
+                break;
+            case 7: {
+                if (!effect.guidance) break;
                 const auto target=std::find_if(targets.begin(),targets.end(),[&](const auto &t){return t.id==effect.guidance;});
                 if(target!=targets.end()) if(const auto heading=missileGuidedDirection(effect.pos,target->position,remainingFrames,std::max(1,program.parameters[0]))) effect.velocity=*heading*effect.velocity.length();
+                break;
+            }
+            default: break;
             }
             // PathMisc::sub_6FD5CEB0 adjusts native fixed velocity every five ticks.
             if (const auto step=advanceMissileVelocity(effect.velocityFixed,effect.acceleration,program.maximumVelocity,frame+1)) {

@@ -10,11 +10,49 @@ constexpr MessageDescriptor clients[]{
 #include "client_messages.inc"
 #undef D2X_MESSAGE
 };
-constexpr MessageDescriptor servers[]{
+constexpr MessageDescriptor serverImplementations[]{
 #define D2X_MESSAGE(id, name, domain, support) {id, #name, MessageDomain::domain, MessageSupport::support},
 #include "server_messages.inc"
 #undef D2X_MESSAGE
 };
+constexpr auto servers = [] {
+    std::array<MessageDescriptor, std::size(net::protocol::serverWireMessages)> result{};
+    size_t index = 0;
+    for (const auto &wire : net::protocol::serverWireMessages) {
+        MessageDescriptor entry{uint8_t(wire.message), wire.name, MessageDomain::Reserved, MessageSupport::Stub, wire.fixedSize};
+        for (const auto &implementation : serverImplementations) {
+            if (implementation.id != entry.id) continue;
+            entry.domain = implementation.domain;
+            entry.support = implementation.support;
+        }
+        result[index++] = entry;
+    }
+    return result;
+}();
+consteval bool validCatalog(std::span<const MessageDescriptor> entries) {
+    std::array<bool, 256> present{};
+    for (const auto &entry : entries) {
+        if (present[entry.id] || entry.name.empty()) return false;
+        present[entry.id] = true;
+    }
+    return true;
+}
+static_assert(validCatalog(clients));
+static_assert(validCatalog(servers));
+static_assert(validCatalog(serverImplementations));
+static_assert([] {
+    if (std::size(clients) != std::size(net::protocol::clientWireMessages)) return false;
+    for (const auto &entry : clients) {
+        const auto *wire = net::protocol::findClientWireMessage(entry.id);
+        if (!wire || wire->name != entry.name || wire->fixedSize != entry.fixedSize) return false;
+    }
+    for (const auto &entry : serverImplementations) {
+        const auto *wire = net::protocol::findServerWireMessage(entry.id);
+        if (!wire || wire->name != entry.name) return false;
+        if (entry.support != MessageSupport::Stub && wire->framing == net::protocol::WireFraming::Unsupported) return false;
+    }
+    return true;
+}());
 constexpr MessageDescriptor realm[]{
     {0x01, "Startup", MessageDomain::Lifecycle, MessageSupport::Implemented},
     {0x02, "CreateCharacter", MessageDomain::Character, MessageSupport::Implemented},
@@ -57,6 +95,7 @@ std::span<const SubmessageDescriptor> submessages() {
         {ClientMessage::NpcService, 0, "NpcTravelOrReward", MessageDomain::Interaction, MessageSupport::Implemented},
         {ClientMessage::NpcService, 1, "OpenShop", MessageDomain::Interaction, MessageSupport::Implemented},
         {ClientMessage::NpcService, 2, "OpenGambleShop", MessageDomain::Interaction, MessageSupport::Implemented},
+        {ClientMessage::NpcService, 3, "ListHirelings", MessageDomain::Interaction, MessageSupport::Implemented},
     };
     return entries;
 }
@@ -66,7 +105,7 @@ std::string_view domainName(MessageDomain domain) {
     switch (domain) {
 #define DOMAIN(name) case MessageDomain::name: return #name;
     DOMAIN(Lifecycle) DOMAIN(Movement) DOMAIN(Combat) DOMAIN(Inventory) DOMAIN(Interaction)
-    DOMAIN(Progression) DOMAIN(Social) DOMAIN(World) DOMAIN(Character)
+    DOMAIN(Progression) DOMAIN(Social) DOMAIN(World) DOMAIN(Character) DOMAIN(Reserved)
 #undef DOMAIN
     }
     throw std::logic_error("Invalid message domain");
@@ -75,27 +114,22 @@ std::string_view supportName(MessageSupport support) {
     switch (support) {
     case MessageSupport::Stub: return "stub";
     case MessageSupport::AdmissionOnly: return "admission-only";
+    case MessageSupport::Partial: return "partial";
     case MessageSupport::Implemented: return "implemented";
     }
     throw std::logic_error("Invalid message support");
 }
-size_t clientPacketSize(std::span<const uint8_t> bytes) {
-    if (bytes.empty()) return 0;
-    const auto &entry = clientMessage(bytes[0]);
-    if (entry.fixedSize) return bytes.size() >= entry.fixedSize ? entry.fixedSize : 0;
-    if (entry.id != uint8_t(ClientMessage::Chat)) throw ProtocolError("Missing native packet framer");
-    if (bytes.size() < 3) return 0;
-    size_t at = 3;
-    for (int field = 0; field < 2; ++field) {
-        const auto start = at;
-        while (at < bytes.size() && bytes[at]) ++at;
-        if (at - start > (field == 0 ? 255u : 15u)) throw ProtocolError("Chat string exceeds native limit");
-        if (at == bytes.size()) return 0;
-        ++at;
+std::string_view phaseName(GamePhase phase) {
+    switch (phase) {
+    case GamePhase::Connected: return "connected";
+    case GamePhase::LoggedOn: return "logged-on-or-entered";
+    case GamePhase::Entered: return "entered";
+    case GamePhase::Closed: return "closed";
     }
-    if (at == bytes.size()) return 0;
-    const auto length = at + 1 + bytes[at];
-    return bytes.size() >= length ? length : 0;
+    throw std::logic_error("Invalid game phase");
+}
+size_t clientPacketSize(std::span<const uint8_t> bytes) {
+    return net::protocol::lod113c_client_packet_size(bytes);
 }
 void requirePhase(const MessageDescriptor &entry, GamePhase phase) {
     const bool valid = phase != GamePhase::Closed && (entry.phase == GamePhase::Connected

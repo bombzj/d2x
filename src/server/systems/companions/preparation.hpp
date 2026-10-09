@@ -26,6 +26,26 @@ struct PreparedHireling {
     MonsterRule rule;
     std::vector<HirelingAction> actions;
     int defaultChance{}, vision{}, follow{}, warp{}, think{};
+    int strength{}, dexterity{};
+    std::string weaponType;
+    uint64_t baseExperience{}, nextExperience{};
+    std::string deferred;
+};
+struct HirelingListPreparation {
+    ActorContext actor;
+    EntityId npc;
+    uint64_t conversation{}, token{}, seed{};
+    int seller{}, difficulty{}, level{};
+};
+struct HirelingCandidate {
+    uint16_t name{};
+    HirelingRecord record;
+    unsigned price{};
+};
+struct HirelingExperienceAward { HirelingRecord before, after; EntityId actor; };
+struct PreparedHirelingList {
+    HirelingListPreparation source;
+    std::vector<HirelingCandidate> offers;
     std::string deferred;
 };
 }

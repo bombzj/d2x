@@ -9,6 +9,16 @@
 namespace d2x {
 namespace {
 using Values = std::map<std::string, double, std::less<>>;
+void hirelingStatus(std::vector<Bytes> &packets, const ClassicData &data, const HirelingRecord &record) {
+    const bool dead=record.sourceRow>=0 && record.hp<=0;
+    const auto name=data.hirelingNameIds.find(record.nameKey);
+    if(dead && (name==data.hirelingNameIds.end() || name->second<0 || name->second>=UINT16_MAX))
+        throw std::runtime_error("Missing original hireling name index");
+    packets.push_back(hosting::encodeServerPacket(hosting::ServerMessage::HirelingResurrection,[&](auto &out){
+        out.u16(dead?uint16_t(name->second):UINT16_MAX);
+        out.u32(dead?uint32_t(std::min<int64_t>(50000,15LL*record.level*record.level/2)):0);
+    }));
+}
 Values values(const CharacterRecord &record, const server::attributes::Totals &totals) {
     const auto &a = totals.character;
     const auto &c = a.combat;
@@ -83,6 +93,7 @@ std::vector<Bytes> nativeLife(const ClassicData &data, const server::LifeFact &f
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
     emitAttributes(result, nativeValues(data, values(record, totals)));
+    hirelingStatus(result,data,record.hireling);
     if (record.id.value > UINT32_MAX || record.skillRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
     result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::BaseSkills, [&](auto &out) {
         out.u8(uint8_t(record.skillRanks.size())); out.u32(uint32_t(record.id.value));
@@ -97,6 +108,8 @@ std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const Charact
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::CharacterFact &fact) {
     std::vector<Bytes> result;
     emitAttributes(result, nativeValues(data, values(fact.after, fact.current)), nativeValues(data, values(fact.before, fact.previous)));
+    if((fact.before.hireling.hp>0)!=(fact.after.hireling.hp>0) || fact.before.hireling.seed!=fact.after.hireling.seed ||
+        fact.before.hireling.sourceRow!=fact.after.hireling.sourceRow) hirelingStatus(result,data,fact.after.hireling);
     std::set<int> ids;
     for (const auto &[id, value] : fact.previous.skillRanks) { (void)value; ids.insert(id); }
     for (const auto &[id, value] : fact.current.skillRanks) { (void)value; ids.insert(id); }

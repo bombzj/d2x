@@ -17,6 +17,11 @@ const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool convers
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return &*found;
 }
+std::optional<ServiceAccess> System::service(const ActorContext &actor, EntityId id) const {
+    const auto *target = find(actor, id, true);
+    if (!target) return std::nullopt;
+    return ServiceAccess{target, &state_.conversations.at(actor.player)};
+}
 const Conversation *System::conversation(PlayerId id) const {
     const auto current = state_.conversations.find(id);
     const auto *player = ports_.players.find(id);

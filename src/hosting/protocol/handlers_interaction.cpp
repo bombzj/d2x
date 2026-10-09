@@ -1,6 +1,23 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult HireMercenary(GameplayContext &context, net::protocol::Reader &in) {
+    const auto npc=in.u32(),name=in.u32(); in.finish();
+    if(name>UINT16_MAX) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::companions::Request{server::companions::Action::Hire,EntityId{npc},name});
+}
+RequestResult IdentifyGamble(GameplayContext &, net::protocol::Reader &in) {
+    in.u32(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "IdentifyGamble"};
+}
+RequestResult MoveNpc(GameplayContext &, net::protocol::Reader &in) {
+    in.u32(); in.u32(); in.u32(); in.u32(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "MoveNpc"};
+}
+RequestResult ResurrectMercenary(GameplayContext &context, net::protocol::Reader &in) {
+    const auto npc=in.u32(); in.finish();
+    return submitGameplay(context,server::companions::Request{server::companions::Action::Resurrect,EntityId{npc},{}});
+}
 RequestResult InteractUnit(GameplayContext &context, net::protocol::Reader &in) {
     const auto type = in.u32(), id = in.u32(); in.finish();
     if (type == 1) return submitGameplay(context, server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Talk,{}}});
@@ -73,6 +90,7 @@ RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
     case 0: return {RequestStatus::Rejected};
     case 1: return OpenShop(context, npc);
     case 2: return OpenGambleShop(context, npc);
+    case 3: return submitGameplay(context,server::companions::Request{server::companions::Action::List,EntityId{npc},{}});
     default: return {RequestStatus::Rejected};
     }
 }

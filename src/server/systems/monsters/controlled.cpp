@@ -74,8 +74,31 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
     stop(id);pet.area=owner.area;pet.position=position;pet.busyUntil=owner.tick;pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::updateHireling(EntityId id,MonsterRule rule,WeaponDamage weapon,CombatModifiers modifiers,int strength,int dexterity,int vitality,
+    std::shared_ptr<const PersistentCharacter> equipment,uint64_t inventoryRevision,uint64_t characterRevision) {
+    const auto found=state_.actors.find(id);
+    if(found==state_.actors.end() || !found->second.hireling) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    actor.rule=std::move(rule);actor.petWeapon=std::move(weapon);actor.petStats.attributes.combat=std::move(modifiers);
+    actor.maximumLife=int64_t(actor.rule.minimumLife)*256;actor.life=std::min(actor.life,actor.maximumLife);
+    actor.hirelingStrength=strength;actor.hirelingDexterity=dexterity;actor.hirelingVitality=vitality;
+    actor.equipment=std::move(equipment);actor.hirelingInventoryRevision=inventoryRevision;actor.hirelingCharacterRevision=characterRevision;
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+}
+void System::installHirelingPotion(EntityId id,std::map<int,TimedRestoration> healing,CombatEffectSet effects,int64_t life,bool curePoison,bool cureCold,uint64_t random) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.hireling) return;
+    auto &actor=found->second;actor.healing.swap(healing);actor.potionEffects=std::move(effects);
+    actor.life=std::clamp(life,int64_t(0),actor.maximumLife);actor.combatRandom=random;
+    if(curePoison) actor.poison.reset();
+    if(cureCold) actor.chilledUntil=actor.frozenUntil=0;
+    ++actor.revision;
+}
 void System::retire(EntityId id, uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.owner) return;
-    auto &actor=found->second;actor.life=0;actor.busyUntil=tick+uint64_t(actor.rule.deathTicks);actor.riseUntil=0;++actor.revision;
+    auto &actor=found->second;
+    if (actor.life <= 0) return;
+    stop(id);++actor.interruption;
+    actor.healing.clear();actor.potionEffects.clear();
+    actor.life=0;actor.busyUntil=tick+uint64_t(actor.rule.deathTicks);actor.riseUntil=0;++actor.revision;
 }
 }

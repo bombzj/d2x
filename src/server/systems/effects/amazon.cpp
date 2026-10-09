@@ -9,7 +9,9 @@
 namespace d2x::server::effects {
 DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {return ports_.skills.avoidance(actor,result,attacker);}
 CharacterModifiers System::unitModifiers(EntityId id,uint64_t tick) const {
-    const auto it=units_.find(id);return it==units_.end()?CharacterModifiers{}:it->second.states.modifiers(tick);
+    const auto it=units_.find(id);auto result=it==units_.end()?CharacterModifiers{}:it->second.states.modifiers(tick);
+    if(const auto *unit=ports_.monsters.find(id);unit && unit->hireling) mergeCharacterModifiers(result,unit->potionEffects.modifiers(tick));
+    return result;
 }
 int System::unitDefense(EntityId id,uint64_t tick) const {
     const auto *m=ports_.monsters.find(id);if(!m) return 0;

@@ -159,6 +159,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
+    src/server/systems/skills/activation.cpp
     src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp src/server/systems/inventory/replenishment.cpp
   src/server/systems/missiles/system.cpp
     src/server/systems/missiles/launch.cpp src/server/systems/missiles/monster.cpp

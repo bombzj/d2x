@@ -9,6 +9,14 @@
 #include <algorithm>
 
 namespace d2x::server::crafting {
+namespace {
+EntityId serviceNpc(const Intent &intent) {
+    return std::visit([](const auto &request) -> EntityId {
+        if constexpr (requires { request.npc; }) return request.npc;
+        else return {};
+    }, intent);
+}
+}
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *p = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
@@ -18,12 +26,12 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     uint64_t conversation=0;
     auto normalized=request;
     if (!std::holds_alternative<TransmuteCube>(request.intent) && !std::holds_alternative<SocketItem>(request.intent)) {
-        const auto *lease=ports_.npc.conversation(actor.player);
-        const auto target=std::visit([](const auto &r)->EntityId { if constexpr(requires {r.npc;}) return r.npc; else return {}; },request.intent);
-        if(!lease || lease->npc!=target) return {DomainStatus::InvalidRequest,{}};
-        conversation=lease->revision;
+        const auto target=serviceNpc(request.intent);
+        const auto access=ports_.npc.service(actor,target);
+        if(!access) return {DomainStatus::InvalidRequest,{}};
+        conversation=access->conversation->revision;
         if(const auto *reward=std::get_if<RewardItem>(&request.intent)) {
-            const auto *npc=ports_.npc.find(actor,target,true);if(!npc) return {DomainStatus::InvalidRequest,{}};
+            const auto *npc=access->npc;
             if(npc->rule.code=="charsi") normalized.intent=ImbueItem{target,reward->item};
             else if(npc->rule.code=="larzuk") normalized.intent=SocketQuestItem{target,reward->item};
             else if(npc->rule.code=="drehya") normalized.intent=PersonalizeQuestItem{target,reward->item};
@@ -48,11 +56,10 @@ std::vector<Preparation> System::pending() const {
             source.storage = ports_.inventory.storageAccess(id);
             source.cube = ports_.inventory.cubeAccess(id);
             if(pending.conversation) {
-                const auto *lease=ports_.npc.conversation(id);
-                if(!lease || lease->revision!=pending.conversation) continue;
-                const auto *npc=ports_.npc.find(pending.actor,lease->npc,true);
-                if(!npc) continue;
-                source.npc=npc->rule.code;
+                const auto target=serviceNpc(pending.request.intent);
+                const auto access=ports_.npc.service(pending.actor,target);
+                if(!access || access->conversation->revision!=pending.conversation) continue;
+                source.npc=access->npc->rule.code;
             }
         }
         result.push_back(std::move(source));
@@ -65,7 +72,7 @@ DomainResult<> System::install(Prepared prepared) {
     if (queued == state_.pending.end() || queued->second.token != source.pending.token) return {DomainStatus::Stale, {}};
     const auto fail = [&](DomainStatus status) -> DomainResult<> {
         if(source.pending.conversation) {
-            const auto npc=std::visit([](const auto &r)->EntityId {if constexpr(requires {r.npc;}) return r.npc;else return {};},source.pending.request.intent);
+            const auto npc=serviceNpc(source.pending.request.intent);
             const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{NpcServiceFact{npc,7}}});
             if(!output) return {output.status,{}};
         }
@@ -76,8 +83,9 @@ DomainResult<> System::install(Prepared prepared) {
     if (!p || !p->entered || p->actor != actor.actor || p->area != actor.area ||
         !area || area->generation != actor.areaGeneration || p->persistent.player.hp <= 0) return fail(DomainStatus::InvalidActor);
     if(source.pending.conversation) {
-        const auto *lease=ports_.npc.conversation(actor.player);
-        if(!lease || lease->revision!=source.pending.conversation) return fail(DomainStatus::Stale);
+        const auto target=serviceNpc(source.pending.request.intent);
+        const auto access=ports_.npc.service(actor,target);
+        if(!access || access->conversation->revision!=source.pending.conversation) return fail(DomainStatus::Stale);
     }
     if (p->inventoryRevision != source.inventoryRevision || p->characterRevision != source.characterRevision ||
         source.storage != ports_.inventory.storageAccess(actor.player) || source.cube!=ports_.inventory.cubeAccess(actor.player)) return fail(DomainStatus::Stale);
@@ -143,7 +151,7 @@ DomainResult<> System::install(Prepared prepared) {
     if(prepared.character) {
         edit.character=std::move(prepared.character);
         edit.facts.emplace_back(QuestFact{actor.player,*edit.character,ports_.settings.difficulty,0});
-        if(source.pending.conversation) edit.facts.emplace_back(NpcServiceFact{std::visit([](const auto &r)->EntityId {if constexpr(requires {r.npc;}) return r.npc;else return {};},source.pending.request.intent),6});
+        if(source.pending.conversation) edit.facts.emplace_back(NpcServiceFact{serviceNpc(source.pending.request.intent),6});
     }
     if(std::holds_alternative<TransmuteCube>(source.pending.request.intent)) edit.facts.emplace_back(SoundFact{p->actor,0,p->area,4});
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return fail(plan.status);

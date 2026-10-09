@@ -20,4 +20,6 @@
 
 交谈租约、距离／视线与治疗归npc／effects，商品与报价归merchant，加工归crafting，任务资格归quests，区域／门户／跨幕旅行归world／travel。实际所有权与提交顺序见[内核系统](SERVER_SYSTEMS.md#任务与旅行)；本页不复制任务奖励或原D2S编码规则。
 
+[npc::System::service](../../src/server/systems/npc/system.cpp)一次验证认证玩家、区域代次、NPC显隐／可交互、任务可见性、距离／视线及匹配交谈，返回只读NPC与Conversation借用。商店和任务加工在请求、内容准备、安装阶段分别调用并核对交谈revision；不得把借用指针存进异步准备或当永久权限。NPC仅提供交谈资格，维修／赌博／加工材料／任务奖励仍由所属领域复验。普通方块和镶嵌不要求NPC交谈，不与NPC加工混用。crafting的serviceNpc统一从类型化意图提取NPC身份。
+
 客户端的原对象滚动消息、插杖面板及NPC旅行同样用于D2GS，修复依据与运行范围见[第二幕](../gameplay/quests/ACT2.md)。完整佣兵服务、多人任务与原服逐整数经济仍有缺口，分别见[佣兵](../gameplay/characters/HIRELINGS.md)、[任务系统](../gameplay/quests/SYSTEM.md)和[物品经济](../gameplay/items/ECONOMY.md)。

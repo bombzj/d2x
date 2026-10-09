@@ -186,10 +186,7 @@ void RemoteControl::tick() {
             world.areaGeneration != movement_->area || !world.playerPosition ||
             !scene_.read().movementAvailable || onlinePlayerDead(world) ||
             world.npcRequested || world.waypointSource ||
-            std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
-                return entry.second.mode == 4 && entry.second.ownerType == 0 &&
-                    entry.second.owner == view.load.playerUnitId;
-            }) ||
+            onlineHasCursorItem(world.items, view.load.playerUnitId) ||
             !world.movementRequest || world.movementRequest->revision != movement_->requestRevision) {
             cancelMovement();
         } else {

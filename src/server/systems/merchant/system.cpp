@@ -8,10 +8,19 @@
 #include "server/systems/loot/system.hpp"
 #include <algorithm>
 namespace d2x::server::merchant {
+const Stock *System::stock(PlayerId player, EntityId npc, bool gamble) const {
+    if (gamble) {
+        const auto found = state_.gambles.find({player, npc});
+        return found == state_.gambles.end() ? nullptr : &found->second;
+    }
+    const auto found = state_.stocks.find(npc);
+    return found == state_.stocks.end() ? nullptr : &found->second;
+}
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {
-    const auto *npc = ports_.npc.find(actor,request.npc.id,true);
-    const auto *conversation = ports_.npc.conversation(actor.player);
-    if (!npc || !conversation) return {DomainStatus::InvalidRequest,{}};
+    const auto access = ports_.npc.service(actor, request.npc.id);
+    if (!access) return {DomainStatus::InvalidRequest,{}};
+    const auto *npc = access->npc;
+    const auto *conversation = access->conversation;
     if ((request.action==Action::Gamble || request.gamble) && !npc->rule.gamble) return {DomainStatus::InvalidRequest,{}};
     if ((request.action==Action::IdentifyAll && !npc->rule.identify) ||
         ((request.action==Action::Repair || request.action==Action::RepairAll) && !npc->rule.repair) ||
@@ -31,14 +40,15 @@ std::vector<Preparation> System::pending() const {
     std::vector<Preparation> result;
     for (const auto &[id, pending] : state_.pending) {
         Preparation request; request.pending=pending;
-        const auto *p=ports_.players.find(id); const auto *npc=ports_.npc.find(pending.actor,pending.request.npc.id,true);
-        const auto *conversation=ports_.npc.conversation(id);
-        if (!p || !npc || !conversation || conversation->revision!=pending.conversation) continue;
+        const auto *p=ports_.players.find(id);
+        const auto access=ports_.npc.service(pending.actor,pending.request.npc.id);
+        if (!p || !access || access->conversation->revision!=pending.conversation) continue;
+        const auto *npc=access->npc;
         request.npc=npc->rule; request.character=p->persistent; request.inventoryRevision=p->inventoryRevision; request.characterRevision=p->characterRevision; request.reducedPrices=p->totals.character.combat.reducedPrices;
         request.difficulty=ports_.settings.difficulty; request.seed=pending.seed;
         request.uniques=ports_.loot.read().uniques;
-        if(pending.request.gamble) { const auto stock=state_.gambles.find({id,pending.request.npc.id}); if(stock!=state_.gambles.end() && stock->second.conversation==pending.conversation) request.stock=stock->second; }
-        else if (const auto stock=state_.stocks.find(pending.request.npc.id); stock!=state_.stocks.end()) request.stock=stock->second;
+        if (const auto *current = stock(id, pending.request.npc.id, pending.request.gamble);
+            current && (!pending.request.gamble || current->conversation == pending.conversation)) request.stock = *current;
         if(pending.request.action==Action::Open && request.stock.refreshPending && std::count_if(ports_.npc.read().conversations.begin(),ports_.npc.read().conversations.end(),[&](const auto &entry){return entry.second.npc==pending.request.npc.id;})<=1) {request.stock.offers.clear();request.stock.generated=false;}
         result.push_back(std::move(request));
     }
@@ -49,9 +59,7 @@ std::optional<PersistentCharacter> System::shop(PlayerId id) const {
     if (!player || open==state_.opened.end()) return {};
     const auto *conversation=ports_.npc.conversation(id);
     if (!conversation || conversation->npc!=open->second.npc || conversation->revision!=open->second.conversation) return {};
-    const Stock *stock=nullptr;
-    if(state_.gambling.contains(id)) {const auto found=state_.gambles.find({id,open->second.npc});if(found!=state_.gambles.end()) stock=&found->second;}
-    else {const auto found=state_.stocks.find(open->second.npc);if(found!=state_.stocks.end()) stock=&found->second;}
+    const Stock *stock=this->stock(id,open->second.npc,state_.gambling.contains(id));
     if(!stock) return {};
     PersistentCharacter projection; projection.player=player->persistent.player; projection.player.id=open->second.npc;
     projection.containers.backpack=EntityId{1}; projection.inventory.containers.emplace(EntityId{1},ContainerState{EntityId{1},{open->second.npc,ContainerKind::Backpack,16,16}});
@@ -68,8 +76,8 @@ DomainResult<> System::install(Prepared prepared) {
         if (player && player->entered) { auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,player->area},{MerchantFact{request.npc.id,request.item?request.item->id:EntityId{},0,result,player->persistent.player.gold}}}); if (!sent) return {sent.status,{}}; }
         state_.pending.erase(queued); return {status,{}};
     };
-    const auto *conversation=ports_.npc.conversation(actor.player);
-    if (!player || !ports_.npc.find(actor,request.npc.id,true) || !conversation || conversation->revision!=pending.conversation) return failure(DomainStatus::InvalidActor);
+    const auto access=ports_.npc.service(actor,request.npc.id);
+    if (!player || !access || access->conversation->revision!=pending.conversation) return failure(DomainStatus::InvalidActor);
     if (source.inventoryRevision!=player->inventoryRevision || source.characterRevision!=player->characterRevision) return failure(DomainStatus::Stale);
     if (!prepared.deferred.empty()) { state_.deferred=std::move(prepared.deferred); return failure(DomainStatus::Unavailable); }
     // All shop transactions publish at most inventory, character and result.
@@ -108,9 +116,7 @@ DomainResult<> System::install(Prepared prepared) {
     std::optional<std::map<EntityId,Stock>> changedStocks;
     const auto accessible=[&](const ItemInstance &item) { const auto *at=std::get_if<ContainerLocation>(&item.location); const auto &c=player->persistent.containers; return at && (at->container==c.backpack || at->container==c.equipment || at->container==c.beltEquipment || (request.action==Action::Sell && at->container==c.cursor)); };
     if (request.action==Action::Buy) {
-        const Stock *stock=nullptr;
-        if(request.gamble) {const auto found=state_.gambles.find({actor.player,request.npc.id});if(found!=state_.gambles.end()) stock=&found->second;}
-        else {const auto found=state_.stocks.find(request.npc.id);if(found!=state_.stocks.end()) stock=&found->second;}
+        const Stock *stock=this->stock(actor.player,request.npc.id,request.gamble);
         if(!request.item || !stock) return failure(DomainStatus::Stale);
         if (stock->revision != source.stock.revision || stock->revision == UINT64_MAX) return failure(DomainStatus::Stale);
         const auto offer=stock->offers.find(request.item->id);

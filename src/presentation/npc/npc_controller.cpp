@@ -29,7 +29,10 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
             npcClient_.submit(OpenGamble{ui.dialogueObject});
             view_.openNpcShop(true);
         }
-        else if (action == NpcMenuAction::Hire) npcClient_.submit(OpenHirelingList{ui.dialogueObject});
+        else if (action == NpcMenuAction::Hire) {
+            npcClient_.submit(OpenHirelingList{ui.dialogueObject});
+            ui.npcMenu=false;ui.hireListOpen=true;ui.hireListScroll=0;
+        }
         else if (action == NpcMenuAction::Resurrect) npcClient_.submit(ResurrectHireling{ui.dialogueObject});
         else if (action == NpcMenuAction::Identify)
             npcClient_.submit(IdentifyWithCain{ui.dialogueObject});

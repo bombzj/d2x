@@ -59,11 +59,16 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         hit.channels[0]+=roll(rule.minimum,rule.maximum);
         hit.channels[size_t(rule.element)]+=roll(rule.elementalMinimum,rule.elementalMaximum);
         hit.coldFrames+=rule.coldFrames;hit.poisonFrames+=rule.poisonFrames;
-        if(source->hireling && request.attack.weaponSkill) {
-            WeaponDamage weapon;weapon.ranged=true;weapon.weaponClass="bow";
-            weapon.projectileMinimum=request.attack.minimum*256;weapon.projectileMaximum=request.attack.maximum*256;
-            const auto snapshot=rollWeaponSkillDamage(weapon,buffs.combat,*request.attack.weaponSkill,request.level,true,missile.random);
+        if(source->hireling && source->petWeapon) {
+            auto modifiers=source->petStats.attributes.combat;mergeCombatModifiers(modifiers,buffs.combat);
+            SkillCastSpec skill=request.attack.weaponSkill.value_or(SkillCastSpec{});
+            if(!skill.weapon) skill.weapon=WeaponSkillSpec{};
+            const auto snapshot=rollWeaponSkillDamage(*source->petWeapon,modifiers,skill,request.level,true,missile.random);
             hit.channels=targetWeaponChannels(snapshot,false,false);hit.coldFrames=snapshot.coldFrames;hit.poisonFrames=snapshot.poisonFrames;
+            if(!request.attack.weaponSkill) {
+                hit.channels[size_t(rule.element)]+=roll(rule.elementalMinimum,rule.elementalMaximum);
+                hit.coldFrames+=rule.coldFrames;hit.poisonFrames+=rule.poisonFrames;
+            }
         }
         MonsterEnchantmentDamageState enchantmentDamage;
         if(source->rule.enchantment && !rule.noUniqueMod && !request.postMortem) addMonsterEnchantmentDamage(hit,*source->rule.enchantment,rule.sourceDamage,missile.random,enchantmentDamage);
@@ -71,6 +76,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         monsterCritical(hit,request.critical,missile.random);
         if(request.web) {hit.slowFrames=unsigned(request.web->slowFrames);hit.slowPercent=request.web->slowPercent;}
         missile.enemy=EnemyProjectile{rule,hit,request.states,request.level,int(int64_t(request.attack.rating)*std::max(0,100+buffs.combat.attackRatingPercent+(source->rule.enchantment?source->rule.enchantment->attackRatingPercent:0))/100),request.web,request.attack.groundFire};
+        if(source->hireling && source->petWeapon) missile.enemy->rating=source->petWeapon->attackRating;
         if(rule.behavior==MonsterMissileRule::Behavior::Charged) {const auto path=chargedBoltPath(request.position,aim,int(index%2),rule.frames);missile.path.assign(path.begin(),path.end());}
         launched.push_back(std::move(missile));
     }

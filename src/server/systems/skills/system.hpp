@@ -58,6 +58,24 @@ class System {
     DomainStatus weaponRelease(Release &, const ActorContext &, Vec);
     StepStatus release(TickContext);
     DomainStatus activate(Release &, const ActorContext &, Vec);
+    enum class ActivationProgram {
+        Weapon, Item, Unsummon, Kick, AmazonSummon, AmazonMagic,
+        Teleport, Hydra, Effect, StaticField, Telekinesis, Missile, Unsupported, Count
+    };
+    static ActivationProgram activationProgram(const SkillCastSpec &);
+    DomainStatus activateItem(Release &, const ActorContext &, Vec);
+    DomainStatus activateUnsummon(Release &, const ActorContext &, Vec);
+    DomainStatus activateKick(Release &, const ActorContext &, Vec);
+    DomainStatus activateAmazonSummon(Release &, const ActorContext &, Vec);
+    DomainStatus activateAmazonMagic(Release &, const ActorContext &, Vec);
+    DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
+    DomainStatus activateHydra(Release &, const ActorContext &, Vec);
+    DomainStatus activateEffect(Release &, const ActorContext &, Vec);
+    DomainStatus activateStaticField(Release &, const ActorContext &, Vec);
+    DomainStatus activateTelekinesis(Release &, const ActorContext &, Vec);
+    DomainStatus activateMissile(Release &, const ActorContext &, Vec);
+    DomainStatus activateUnsupported(Release &, const ActorContext &, Vec);
+    std::vector<EntityId> staticFieldTargets(const ActorContext &, const SkillCastSpec &) const;
     std::optional<Vec> unitPosition(const ActorContext &, UnitTarget, SkillBehavior) const;
     DomainResult<> attack(const ActorContext &, const Request &, int selectedOverride = -1);
   public:

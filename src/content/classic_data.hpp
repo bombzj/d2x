@@ -89,6 +89,7 @@ struct ClassicData {
     QuestContentCatalog questContent;
     std::map<std::string, std::string, std::less<>> questStrings;
     std::map<std::string, std::string, std::less<>> hirelingStrings;
+    std::map<std::string, int, std::less<>> hirelingNameIds;
     std::map<std::string, std::string, std::less<>> itemStrings;
     std::vector<HirelingDefinition> hirelings;
     HirelingLayout hirelingLayout;

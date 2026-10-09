@@ -1,20 +1,13 @@
 #pragma once
 #include "network/protocol/wire.hpp"
+#include "network/protocol/message_schema.hpp"
 
 namespace d2x::hosting {
-enum class MessageDomain { Lifecycle, Movement, Combat, Inventory, Interaction, Progression, Social, World, Character };
-enum class MessageSupport { Stub, AdmissionOnly, Implemented };
+enum class MessageDomain { Lifecycle, Movement, Combat, Inventory, Interaction, Progression, Social, World, Character, Reserved };
+enum class MessageSupport { Stub, AdmissionOnly, Partial, Implemented };
 enum class GamePhase { Connected, LoggedOn, Entered, Closed };
-enum class ClientMessage : uint8_t {
-#define D2X_MESSAGE(id, name, length, domain, phase, support) name = id,
-#include "client_messages.inc"
-#undef D2X_MESSAGE
-};
-enum class ServerMessage : uint8_t {
-#define D2X_MESSAGE(id, name, domain, support) name = id,
-#include "server_messages.inc"
-#undef D2X_MESSAGE
-};
+using ClientMessage = net::protocol::ClientMessage;
+using ServerMessage = net::protocol::ServerMessage;
 struct MessageDescriptor {
     uint8_t id;
     std::string_view name;
@@ -39,6 +32,7 @@ const MessageDescriptor &clientMessage(uint8_t);
 const MessageDescriptor &serverMessage(uint8_t);
 std::string_view domainName(MessageDomain);
 std::string_view supportName(MessageSupport);
+std::string_view phaseName(GamePhase);
 // Zero means incomplete. Unregistered opcodes are errors, never guessed/skipped.
 size_t clientPacketSize(std::span<const uint8_t>);
 void requirePhase(const MessageDescriptor &, GamePhase);

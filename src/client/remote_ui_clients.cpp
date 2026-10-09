@@ -193,7 +193,14 @@ struct RemoteUiClients::Impl {
                         }
                     }
                 }
-                if constexpr (std::is_same_v<T, SplitStack> || std::is_same_v<T, EquipHirelingItem>)
+                if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                    const auto *item=o.inventoryView.item(c.item.id);
+                    if(!o.hirelingView.active || !item || item->revision!=c.item.revision) return InventoryError::AccessDenied;
+                    const auto *location=std::get_if<ContainerLocation>(&item->location);
+                    if(!location || (location->container!=o.inventoryView.containers.cursor && location->container!=o.inventoryView.containers.hirelingEquipment)) return InventoryError::AccessDenied;
+                    return InventoryError::None;
+                }
+                else if constexpr (std::is_same_v<T, SplitStack>)
                     return InventoryError::InvalidRequest;
                 else if constexpr (requires { c.item; }) {
                     const auto *item = o.inventoryView.item(c.item.id);
@@ -293,6 +300,18 @@ struct RemoteUiClients::Impl {
                 OnlineItemCommand request;
                 request.npc = o.context.npc.value_or(0);
                 if constexpr (std::is_same_v<T, EndNpcConversation>) { o.session.close_npc(o.context); return; }
+                else if constexpr (std::is_same_v<T, OpenHirelingList>) {
+                    if(!o.session.hireling_service(OnlineHirelingAction::List,{},o.context)) o.notice="Hireling list request is unavailable or pending.";
+                    return;
+                }
+                else if constexpr (std::is_same_v<T, HireMercenary>) {
+                    if(v.slot>UINT16_MAX || !o.session.hireling_service(OnlineHirelingAction::Hire,uint16_t(v.slot),o.context)) o.notice="Hireling offer changed or a request is pending.";
+                    return;
+                }
+                else if constexpr (std::is_same_v<T, ResurrectHireling>) {
+                    if(!o.session.hireling_service(OnlineHirelingAction::Resurrect,{},o.context)) o.notice="Hireling resurrection is unavailable or pending.";
+                    return;
+                }
                 else if constexpr (std::is_same_v<T, TalkToNpc>) {
                     if (v.action == TalkToNpc::Action::Acknowledge && v.message && *v.message <= UINT16_MAX) {
                         const auto &conversation = o.session.read().world.npcConversation;
@@ -454,11 +473,16 @@ struct RemoteUiClients::Impl {
                 target = {automatic->container,*cell};
             } else target = std::get<ContainerLocation>(destination);
             if (target.container == owned.cursor) {
-                next.action = OnlineItemAction::Take; next.itemRevision = handle.revision; enqueue(next); return;
+                const auto *origin=std::get_if<ContainerLocation>(&item->location);
+                next.action = origin && origin->container==owned.hirelingEquipment?OnlineItemAction::HirelingEquipment:OnlineItemAction::Take;
+                if(next.action==OnlineItemAction::HirelingEquipment) next.body=nativeBody(EquipmentSlot(origin->cell.x));
+                next.itemRevision = handle.revision; enqueue(next); return;
             }
             next.x = uint8_t(target.cell.x); next.y = uint8_t(target.cell.y);
             if (target.container == owned.belt) {
                 next.action = OnlineItemAction::BeltPlace; next.beltSlot = uint8_t(target.cell.y*4+target.cell.x);
+            } else if(target.container==owned.hirelingEquipment) {
+                next.action=OnlineItemAction::HirelingEquipment;next.body=nativeBody(EquipmentSlot(target.cell.x));
             } else if (target.container == owned.equipment || target.container == owned.beltEquipment) {
                 next.action = OnlineItemAction::Equip; next.body = target.container == owned.beltEquipment ? 8 : nativeBody(EquipmentSlot(target.cell.x));
             } else {
@@ -472,6 +496,9 @@ struct RemoteUiClients::Impl {
         if (waiting || !transactions.empty()) { notice = "Waiting for the previous server item response."; return; }
         if (items.read().cursor != next.item) {
             OnlineItemCommand take; take.action = OnlineItemAction::Take; take.item = next.item; take.itemRevision = handle.revision;
+            if(const auto *origin=std::get_if<ContainerLocation>(&item->location);origin && origin->container==owned.hirelingEquipment) {
+                take.action=OnlineItemAction::HirelingEquipment;take.body=nativeBody(EquipmentSlot(origin->cell.x));
+            }
             queue(std::move(take));
         } else next.itemRevision = handle.revision;
         queue(std::move(next)); pump();
@@ -498,6 +525,11 @@ struct RemoteUiClients::Impl {
                 return;
             } else if constexpr (std::is_same_v<T, MoveItem>) { moveItem(v.item,v.destination); return; }
             else if constexpr (std::is_same_v<T, TransferItem>) { moveItem(v.item,AutoPlace{v.destination}); return; }
+            else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                if(v.slot) moveItem(v.item,ContainerLocation{owned.hirelingEquipment,{int(*v.slot),0}});
+                else moveItem(v.item,v.destination.value_or(ItemDestination{ContainerLocation{owned.cursor,{}}}));
+                return;
+            }
             else if constexpr (std::is_same_v<T, EquipItem> || std::is_same_v<T, EquipBelt>) {
                 const auto *item = inventoryView.item(v.item.id); if (!item) return;
                 const auto *location = std::get_if<ContainerLocation>(&item->location);
@@ -529,7 +561,15 @@ struct RemoteUiClients::Impl {
                     }
                 }
                 c.action = OnlineItemAction::Use; c.item = guid(v.item.id); c.itemRevision = v.item.revision;
-                if constexpr (std::is_same_v<T, UseHirelingPotion>) c.mercenary = true;
+                if constexpr (std::is_same_v<T, UseHirelingPotion>) {
+                    c.mercenary=true;
+                    const auto native=session.read().world.items.find(c.item);
+                    if(native==session.read().world.items.end()) return;
+                    if(native->second.mode!=2) {
+                        c.action=OnlineItemAction::HirelingEquipment;c.body=1;
+                        if(items.read().cursor!=c.item) {compositeTake(c);return;}
+                    }
+                }
             } else if constexpr (std::is_same_v<T, UseBeltColumn>) {
                 for (int y=0;y<inventoryView.container(owned.belt)->rows;++y)
                     if (const auto *item = inventoryView.item(inventoryView.itemAt(owned.belt,{v.column,y}))) {
@@ -1101,12 +1141,14 @@ struct RemoteUiClients::Impl {
         if(w.playerPosition) v.dropLocation=GroundLocation{mapView.region,mapView.observer};
         for(const auto &[id,native]:w.items) {
             const bool ground=native.mode==3 || native.mode==5;
-            if(!ground && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;
+            const bool mercenary=w.hireling && native.ownerType==1 && native.owner==w.hireling->id && native.mode==1;
+            if(!ground && !mercenary && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;
             const auto d=decoded.items.find(id); const auto *definition=data.items.find(native.code);
             if(d==decoded.items.end() || !d->second.decoded || !definition) continue;
             const auto &di=d->second; ItemLocation location;
             if(ground && scene && scene->origin) location=GroundLocation{mapView.region,
                 {float(int(native.groundX)-scene->origin->x),float(int(native.groundY)-scene->origin->y)}};
+            else if(mercenary && (native.body==1 || native.body==3 || native.body==4)) location=ContainerLocation{owned.hirelingEquipment,{int(native.body)-1,0}};
             else if(native.mode==4) location=ContainerLocation{owned.cursor,{}};
             else if(native.mode==2) location=ContainerLocation{owned.belt,{native.x%4,native.x/4}};
             else if(native.mode==1 && native.body>=1 && native.body<=12) {
@@ -1213,6 +1255,10 @@ struct RemoteUiClients::Impl {
                 npcView.talkEntries.push_back({"Back",{NpcMenuAction::Back,{}}});
             }
             const auto identity=npcIdentity();
+            if(identity=="kashya") {
+                add("Hire",NpcMenuAction::Hire);
+                if(w.deadHirelingName && w.hirelingReviveCost) add("Resurrect: " + std::to_string(*w.hirelingReviveCost),NpcMenuAction::Resurrect);
+            }
             if(data.vendors.contains(identity) && identity!="nihlathak") add("Trade",NpcMenuAction::Trade);
             if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add("Gamble",NpcMenuAction::Gamble);
             if(identity.starts_with("cain")) add("Identify Items",NpcMenuAction::Identify);
@@ -1274,6 +1320,74 @@ struct RemoteUiClients::Impl {
         shopView.pricesKnown = !shopView.offers.empty() && std::all_of(shopView.offers.begin(), shopView.offers.end(), [](const auto &offer) { return offer.priceKnown; });
         shopView.repairAllPrice = repairAllQuote();
     }
+    void projectHireling() {
+        hirelingView={};hirelingView.revision=revision;hirelingView.actor=characterView.actor;
+        const auto &world=session.read().world;
+        if(!world.hireling) return;
+        const auto &merc=*world.hireling;
+        hirelingView.id=npcId(merc.id);hirelingView.classId=merc.monsterClass;
+        for(const auto &[key,index]:data.hirelingNameIds) if(index==int(merc.name)) {
+            const auto name=data.hirelingStrings.find(key);
+            if(name!=data.hirelingStrings.end()) hirelingView.name=name->second;
+            break;
+        }
+        const auto value=[&](std::string_view name)->std::optional<int64_t> {
+            const auto &table=data.tables.at("itemstatcost");
+            for(size_t row=0;row<table.rows().size();++row) if(table.value(row,"Stat")==name) {
+                const auto id=table.number(row,"ID");if(!id || *id<0 || *id>255) return {};
+                const auto stat=merc.attributes.find(uint8_t(*id));if(stat==merc.attributes.end()) return {};
+                return table.number(row,"Signed").value_or(0)?int64_t(int32_t(stat->second)):int64_t(stat->second);
+            }
+            return {};
+        };
+        const auto life=value("hitpoints"),maximum=value("maxhp"),level=value("level");
+        hirelingView.known=life && maximum && level && *maximum>0;
+        if(!hirelingView.known) return;
+        hirelingView.level=int(*level);hirelingView.life=float(*life)/256.f;hirelingView.maximumLife=int(*maximum/256);
+        hirelingView.active=*life>0 && !world.deadHirelingName;
+        hirelingView.strength=int(value("strength").value_or(0));hirelingView.dexterity=int(value("dexterity").value_or(0));
+        hirelingView.defense=int(value("armorclass").value_or(0));
+        hirelingView.damageMinimum=int(value("mindamage").value_or(0));hirelingView.damageMaximum=int(value("maxdamage").value_or(0));
+        hirelingView.experience=uint64_t(std::max<int64_t>(0,value("experience").value_or(0)));
+        std::optional<uint64_t> next;
+        bool consistent=true;
+        for(const auto &definition:data.hirelings) if(definition.classId==merc.monsterClass) {
+            const auto threshold=deriveHirelingStats(definition,hirelingView.level).nextExperience;
+            if(next && *next!=threshold) consistent=false;
+            next=threshold;
+        }
+        if(consistent && next) hirelingView.nextExperience=*next;
+        hirelingView.resistances={int(value("fireresist").value_or(0)),int(value("coldresist").value_or(0)),int(value("lightresist").value_or(0)),int(value("poisonresist").value_or(0))};
+        const auto unit=world.units.find({1,merc.id});
+        if(unit!=world.units.end() && unit->second.position && scene && scene->origin)
+            hirelingView.position={float(unit->second.position->x)-scene->origin->x,float(unit->second.position->y)-scene->origin->y};
+    }
+    void projectHirelingList() {
+        hirelingList={};hirelingList.revision=revision;hirelingList.actor=characterView.actor;
+        hirelingList.gold=inventoryView.gold;
+        const auto cancel=data.itemStrings.find("Cancel");
+        hirelingList.cancelLabel=cancel==data.itemStrings.end()?"Cancel":cancel->second;
+        const auto &online=session.read();const auto &world=online.world;const auto &service=world.hirelingService;
+        if(!service.source || !service.listReceived || !world.npcConversation || service.source!=world.npcConversation->source ||
+            service.interaction!=world.interactionGeneration || !online.load.difficulty) return;
+        hirelingList.npc=npcId(*service.source);
+        const auto npc=world.units.find({1,*service.source});
+        if(npc==world.units.end() || !npc->second.classId) return;
+        for(const auto &[name,seed]:service.offers) {
+            const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.seller==*npc->second.classId && entry.difficulty==*online.load.difficulty+1;});
+            if(definition==data.hirelings.end()) continue;
+            const auto first=data.hirelingNameIds.find(definition->nameFirst),last=data.hirelingNameIds.find(definition->nameLast);
+            if(first==data.hirelingNameIds.end() || last==data.hirelingNameIds.end() || name<first->second || name>last->second) continue;
+            const auto offer=resolveHirelingOffer(data.hirelings,*npc->second.classId,*online.load.difficulty,characterView.level,seed,uint32_t(name-first->second+1));
+            if(!offer) continue;
+            const auto text=data.hirelingStrings.find(offer->nameKey);
+            const auto row=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.sourceRow==offer->sourceRow;});
+            std::string description;
+            if(row!=data.hirelings.end()) if(const auto found=data.hirelingDescriptions.find(row->description);found!=data.hirelingDescriptions.end()) description=found->second;
+            hirelingList.offers.push_back({name,text==data.hirelingStrings.end()?offer->nameKey:text->second,description,
+                offer->level,offer->stats.life,offer->stats.defense,int(offer->stats.price)});
+        }
+    }
     void update(const OnlineSceneView &binding) {
         scene=&binding;
         context = onlineIntentContext(session.read());
@@ -1284,6 +1398,8 @@ struct RemoteUiClients::Impl {
             areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset(); waitingContext.reset();
         }
         ++revision; projectInteractions(); projectCharacter(); projectInventory(); projectInteractions();
+        projectHirelingList();
+        projectHireling();
         if (characterView.dead) { transactions.clear(); waiting.reset(); waitingContext.reset(); }
         else pump();
     }

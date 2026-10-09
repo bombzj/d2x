@@ -135,6 +135,29 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
                 result["mcpResponses"] = responses(realmResponses(), state.realmResponses);
                 result["gameRequests"] = requests(clientMessages(), state.gameRequests);
                 result["gameResponses"] = responses(serverMessages(), state.gameResponses);
+                result["profile"] = "lod-1.13c";
+                for (auto &value : result["gameRequests"]) {
+                    const auto &descriptor = clientMessage(value.at("id").get<uint8_t>());
+                    value["phase"] = phaseName(descriptor.phase);
+                    value["framing"] = descriptor.fixedSize ? "fixed" : "chat-strings";
+                }
+                for (auto &value : result["gameResponses"]) {
+                    const auto *wire = net::protocol::findServerWireMessage(value.at("id").get<uint8_t>());
+                    if (!wire) continue;
+                    value["bytes"] = wire->fixedSize;
+                    value["framing"] = net::protocol::framingName(wire->framing);
+                    value["frameSupported"] = wire->framing != net::protocol::WireFraming::Unsupported;
+                    if (wire->framing == net::protocol::WireFraming::ByteLength || wire->framing == net::protocol::WireFraming::WordLength) {
+                        value["lengthOffset"] = wire->lengthOffset;
+                        value["minimumBytes"] = wire->minimumSize;
+                    }
+                }
+                result["unknownGameRequests"] = Json::array();
+                for (size_t id = 0; id < state.gameRequests.size(); ++id) {
+                    const auto &count = state.gameRequests[id];
+                    if (!count.received || net::protocol::findClientWireMessage(uint8_t(id))) continue;
+                    result["unknownGameRequests"].push_back({{"id", id}, {"received", count.received}, {"malformed", count.malformed}});
+                }
                 result["gameSubcommands"] = Json::array();
                 for (const auto &sub : submessages())
                     result["gameSubcommands"].push_back({{"id", uint8_t(sub.packet)}, {"selector", sub.selector},

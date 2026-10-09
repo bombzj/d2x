@@ -1,6 +1,10 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
+RequestResult QuestCompleted(GameplayContext &, net::protocol::Reader &in) {
+    in.u16(); in.finish();
+    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "QuestCompleted"};
+}
 RequestResult SpendAttribute(GameplayContext &context, net::protocol::Reader &in) {
     const auto packed = in.u16(); in.finish();
     const auto attribute = packed & 0xFFu;

@@ -7,21 +7,44 @@
 #include "gameplay/skills/spec.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/archive.hpp"
+#include "content/string_table.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x {
 void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,const ClassicData &data,LootContent &cache) {
+    const auto lists=host.pendingHirelingLists(game);
+    if(!lists.empty()) {
+        ClassicStrings strings(archives);
+        for(const auto &source:lists) {
+            server::companions::PreparedHirelingList prepared;prepared.source=source;
+            try {
+                auto random=source.seed;
+                for(const auto &offer:planHirelingOffers(data.hirelings,source.seller,source.difficulty,source.level,random)) {
+                    const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.sourceRow==offer.sourceRow;});
+                    const int name=strings.index(offer.nameKey);
+                    if(definition==data.hirelings.end() || definition->act!=1 || name<0 || name>UINT16_MAX) throw std::runtime_error("Unsupported original Rogue candidate");
+                    prepared.offers.push_back({uint16_t(name),{offer.sourceRow,definition->classId,offer.nameKey,offer.level,float(offer.stats.life),offer.stats.experience,offer.seed},offer.stats.price});
+                }
+            } catch(const std::exception &error) {prepared.deferred=error.what();prepared.offers.clear();}
+            host.installHirelingList(game,std::move(prepared));
+        }
+    }
     const auto pending=host.pendingHirelings(game);if(pending.empty()) return;
     if(!cache.monsters) cache.monsters=std::make_shared<const MonsterCatalog>(archives,data.tables.at("monstats"));
     for(const auto &source:pending) {
         server::companions::PreparedHireling result;result.source=source;
         try {
-            const auto row=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &d){return d.sourceRow==source.record.sourceRow;});
+            auto row=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &d){return d.sourceRow==source.record.sourceRow;});
             if(row==data.hirelings.end() || row->act!=1 || row->classId!=source.record.classId) throw std::runtime_error("Only the original Act I Rogue reward is prepared");
+            const int identity=row->id;
+            for(auto candidate=data.hirelings.begin();candidate!=data.hirelings.end();++candidate)
+                if(candidate->id==identity && candidate->level<=source.record.level && candidate->level>row->level) row=candidate;
             const MonsterRecord *monster=nullptr;for(const auto &[id,m]:cache.monsters->monsters()) {(void)id;if(m.index==row->classId) {monster=&m;break;}}
             if(!monster || !monster->walkVelocity) throw std::runtime_error("Missing original Rogue MonStats");
             const auto stats=deriveHirelingStats(*row,source.record.level);
+            result.strength=stats.strength;result.dexterity=stats.dexterity;result.weaponType=row->weaponType1;
+            result.baseExperience=stats.experience;result.nextExperience=stats.nextExperience;
             auto &rule=result.rule;result.code=monster->id;rule.nativeClass=monster->index;rule.level=source.record.level;rule.difficulty=source.difficulty;
             rule.minimumLife=rule.maximumLife=stats.life;rule.defense=stats.defense;rule.attackRating=stats.attackRating;rule.minimumDamage=stats.damageMin;rule.maximumDamage=stats.damageMax;
             rule.resistances={0,0,stats.resist,stats.resist,stats.resist,stats.resist};rule.nativeVelocity=*monster->walkVelocity;rule.size=monster->collisionSize;

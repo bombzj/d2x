@@ -40,6 +40,8 @@ class RemoteCombat {
     bool reject(std::string);
     std::string_view classCode() const;
     bool innateSkill(uint16_t) const;
+    enum class MonsterDisposition { Unknown, Hostile, NonHostile };
+    MonsterDisposition monsterDisposition(const OnlineUnit &) const;
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand);

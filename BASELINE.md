@@ -37,15 +37,30 @@ P5物品侧新增原38／58任务加工、operation28组装、牛门／Pandemoni
 
 Single Player使用原MCP角色界面，选角后自动建普通单人房、跳过大厅；首页TCP/IP Game使用原MPQ Host／Join页面，本机IPv4由应用提供，Join默认选中127.0.0.1。Host选角后自动建角色名普通8人房，跳过大厅；Single Player／LAN选角不显示Realm控件。界面Host监听全部IPv4，默认MCP6113／GS4001；LAN Join同用4001，原服默认GS4000。自定义端口及`--host-lan`／`--lan`仍保留，加入回包使用连接实际到达的接口地址。返回菜单不停止其他玩家房间。连接失败显示实际IP／端口及底层原因，玩法不分连接类型。见[联网](docs/modules/NETWORK.md)。
 
-自研存档属hosting／persistence，D2S v96不变，当前源码规则指纹为`d2x-character-admission-v27/native-wire113c/d2s96/act3-5-quests`。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。技能选择／热键、扣费后的资源、弹药／书页沿原字段保存；派生总值、动作、弹体、召唤、门户及短时效果不写盘。限制见[存档](docs/modules/SAVES.md)。
+自研存档属hosting／persistence，D2S v96不变，当前源码规则指纹为`d2x-character-admission-v28/native-wire113c/d2s96/act1-hireling`，增加第一幕佣兵服务、装备、成长及主人死亡联动语义。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。佣兵身份、经验、死亡位与装备沿原字段保存，AI、药水恢复队列和名单不写盘。限制见[存档](docs/modules/SAVES.md)。
 
-Single Player的ESC菜单／失焦同时暂停单机宿主与世界表现，菜单仍可操作，恢复不补算暂停时间；共享房间／原服继续推进。世界表现时钟修复仅更新源码，未构建、测试或打包，当前运行包尚不包含。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
+Single Player的ESC菜单／失焦同时暂停单机宿主与世界表现，菜单仍可操作，恢复不补算暂停时间；共享房间／原服继续推进。世界表现时钟源码随本次完整构建入包，未专项运行认证。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
 <a id="当前运行包与有限冒烟"></a>
 
-## 当前运行包与有限冒烟
+## 当前运行包与验证边界
 
-2026-10-09通用施放表现修复已完成Windows Release构建、打包及有限自研／原D2GS冒烟，当前运行包位于`dist/current`，保存规则仍为v27／D2S v96。EXE SHA256为`BF767C41680FAD44DD825B8BD877D82D30629C03CCB0B45A79038243FD55A52A`，与`build/bin`一致；网络DLL仍为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据在忽略目录`artifacts/skill-presentation-20261009`，未新增测试程序或提交Git。
+2026-10-09第一幕佣兵及此前消息／技能／实体重构已完成Windows **Debug**客户端目标构建，修复新增佣兵名单事实遗漏调试事件名称导致的编译断言。沿共享构建配置交付，不标为Release；未构建独立PvPGN目标。客户端包为`dist/current`，EXE SHA256为`9A806F06906F31B28C5C4C1531CD24C6C9DF9A0292596295CC45C13D3773AEB4`，网络DLL为`72AD07696429BB5A1A35D1EAE9CBB97E7F91B828E02885933FAE0022C0B1274B`。未运行游戏或测试；既有任务内容／NPC视图警告仍在，不宣称零警告或运行验收。源码提交排除另一任务的独立PvPGN服务及端口变更，当前工作树构建包含并行共享入口改动，包不能视作仅由该提交重现的纯净产物。
+
+罗格当前已接卡夏雇佣名单／替换／复活、头盔／护甲／弓、腰带／光标喂药、经验升级、本人属性与装备原包投影。主人死亡由death在当前MPQ死亡动画结束帧统一触发佣兵／召唤物死亡，保留佣兵死亡记录；回城及死亡保存等待事务完成。旧master规则与reference核对入口、特殊装备效果及多人候选竞争限制见[佣兵](docs/gameplay/characters/HIRELINGS.md)。磁盘仍为D2S v96，当前规则v28，旧运行证据不认证新增路径。
+
+
+怪物／NPC／物品协作重构已随当前客户端构建：非玩家实体受伤／攻击能力由Actor集中表达并由技能和命中复用；商店／任务加工共用npc服务访问但每阶段复验租约，普通／个人赌博货架查询收敛；客户端阵营保留Unknown，未知不授予友方技能资格，物品主人／光标查询要求已知玩家GUID。未迁移静态NPC至敌怪AI，未运行认证；入口见[怪物](docs/modules/MONSTERS.md)、[NPC](docs/modules/NPC_QUEST.md)、[库存](docs/modules/INVENTORY.md)。
+
+技能分派重构已随当前客户端构建：服务端普通释放改为具名程序策略表，跨领域处理器独立到activation，装备触发复用分类但保留上下文资格／执行重试；客户端CltDo能力集中登记，互斥逐帧行为单次分派。未知技能行为明确NotImplemented，不增加技能；未运行认证。职责与扩展约定见[技能公共规范](docs/gameplay/skills/COMMON.md#程序分派与扩展)。
+
+此前消息系统重构Release包EXE SHA256为`0A7A103718F85D03DCD071E53EB07FD252E92B5D2541D3C0A92D7D563B76FF0C`，网络DLL为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`，当时规则v27／D2S v96。该包未运行游戏或测试，不代表当前佣兵交付。
+
+两端共享network/protocol的72项C2S和142项S2C身份／分帧定义；客户端发包与宿主收包共用C2S校验，宿主回包与客户端分帧共用S2C元数据。目录有编译期唯一性／完整性约束；新增11个C2S具名无副作用stub，补49项S2C身份预留；未知长度、Warden及B3仍拒绝，不能当作玩法完成。分派统一检查剩余字段，聊天扩展格式与未支持语义分开处理。server-protocol补阶段／分帧／长度元数据，4F为partial。消息列表、编码与参数唯一维护于[消息速查](docs/modules/MESSAGES.md)，结构边界归[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
+
+### 此前技能表现包
+
+2026-10-09此前通用施放表现包完成Windows Release构建、打包及有限自研／原D2GS冒烟，当时位于`dist/current`，保存规则为v27／D2S v96。历史EXE SHA256为`BF767C41680FAD44DD825B8BD877D82D30629C03CCB0B45A79038243FD55A52A`；网络DLL为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据在忽略目录`artifacts/skill-presentation-20261009`，未新增测试程序或提交Git，不认证后续包。
 
 按原Rcv0x12语义修复鼠标松开误删普通动作／待释放飞弹，并使背包开门已发送意图进入同一表现链；原函数、入口及所有权见[COMMON](docs/gameplay/skills/COMMON.md#定义来源与客户端状态)。不增加服务端类型分支或私有包。调试管道新增只读localCast／clientMissiles诊断。
 

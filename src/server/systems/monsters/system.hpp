@@ -11,6 +11,8 @@
 #include "gameplay/combat/poison.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/character/persistent_character.hpp"
+#include "gameplay/units/restoration.hpp"
+#include "gameplay/effects/state.hpp"
 #include <deque>
 #include <map>
 #include <set>
@@ -30,6 +32,11 @@ struct Actor {
     MonsterRule rule;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
     bool hireling{};
+    uint64_t hirelingInventoryRevision{}, hirelingCharacterRevision{};
+    int hirelingStrength{},hirelingDexterity{};
+    int hirelingVitality{};
+    std::map<int,TimedRestoration> healing;
+    CombatEffectSet potionEffects;
     UnitCombatStats petStats;
     std::optional<WeaponDamage> petWeapon;
     std::shared_ptr<const PersistentCharacter> equipment;
@@ -38,6 +45,7 @@ struct Actor {
     std::deque<Vec> route;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     EntityId killer, movementTarget;
+    EntityId hirelingKiller;
     Vec movementGoal;
     uint64_t hitOccurrence{};
     uint64_t combatRandom{};
@@ -69,6 +77,10 @@ struct Actor {
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
+    bool damageable() const { return !owner || amazonPet || hireling; }
+    bool combatCompanion() const { return bool(amazonPet) || hireling; }
+    bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
+    bool standardAttackSource() const { return !owner || hireling || amazonAttacker(); }
 };
 struct State {
     std::map<EntityId, Actor> actors;
@@ -98,6 +110,9 @@ class System {
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);
     void rewardComplete(EntityId);
+    void recordHirelingKill(EntityId victim,EntityId source) {
+        if(auto found=state_.actors.find(victim);found!=state_.actors.end() && found->second.life<=0) found->second.hirelingKiller=source;
+    }
     void commitCombatRandom(EntityId id, uint64_t value) { if (auto it=state_.actors.find(id); it!=state_.actors.end()) it->second.combatRandom=value; }
     void commitEnchantmentDamage(EntityId id,MonsterEnchantmentDamageState value) { if(auto it=state_.actors.find(id);it!=state_.actors.end()) it->second.enchantmentDamage=std::move(value); }
     DomainResult<> introduction(EntityId,uint64_t tick);
@@ -115,6 +130,9 @@ class System {
     void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;
     void retire(EntityId, uint64_t tick);
+    DomainResult<> updateHireling(EntityId,MonsterRule,WeaponDamage,CombatModifiers,int strength,int dexterity,int vitality,
+        std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision);
+    void installHirelingPotion(EntityId,std::map<int,TimedRestoration>,CombatEffectSet,int64_t life,bool curePoison,bool cureCold,uint64_t random);
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     StepStatus step(TickContext, FrameFacts &);

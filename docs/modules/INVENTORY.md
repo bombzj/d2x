@@ -22,6 +22,8 @@
 
 PlayerStore唯一持有人物持久库存及存档中的佣兵物品；items持不属于角色的地面值，merchant持货架。伙伴装备由hosting准备规则，活动实体归monsters，归属／控制关系归companions，不另建一份人物库存。attributes读取提交后的值，transactions统一提交；hosting只准备规则与实际掷值。技能拥有释放／扣费计划，effects持装备事件与恢复效果；任务和travel拥有奖励／门户资格。GameInstance不恢复万能库存／商店会话。
 
+merchant的stock只读查询统一选择普通NPC共享货架或按玩家／NPC隔离的赌博货架；刷新、报价、revision和提交仍由原事务路径控制，不用查询函数创建缺失货架。merchant／crafting经npc::System::service获取当前服务资格并在各阶段重新核对交谈revision，参见[NPC接口](NPC_QUEST.md)。
+
 ## 客户端入口
 
 | 入口 | 职责 |
@@ -33,6 +35,8 @@ PlayerStore唯一持有人物持久库存及存档中的佣兵物品；items持�
 | [presentation/inventory](../../src/presentation/inventory)／SoundCatalog／SceneAudio | 原图面板、手势与音效，不修改权威库存 |
 
 物品GUID／revision、交互与区域代次、地面generation属于不同层的条件；具体语义见[MODEL](../gameplay/items/MODEL.md)和[COMMON](../gameplay/items/COMMON.md)。原包成功条件、图形和拒绝边界见[PRESENTATION](../gameplay/items/PRESENTATION.md)，参数仅维护在[调试管道](../development/DEBUG_PIPE.md#联网物品操作)。
+
+[online_items.hpp](../../src/contracts/online_items.hpp)的onlineItemOwnedBy／onlineCursorItem／onlineHasCursorItem统一解释已知玩家归属与原mode4光标。移动、技能发送、交易、库存投影和42清光标消费复用；玩家GUID未知不等于物品owner未知时属于本人。这些是只读原包查询，不推断背包、仓库、交易或商店操作权限；各入口仍复验自己的容器、阶段和revision。
 
 ## 修改归属
 

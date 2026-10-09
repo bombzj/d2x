@@ -63,25 +63,29 @@ bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     return tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0;
 }
 bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
-    if (unit.key.type != 1 || !unit.classId) return false;
-    if(session_.read().world.pets.contains(unit.key.id)) return false;
+    return monsterDisposition(unit) == MonsterDisposition::Hostile;
+}
+RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUnit &unit) const {
+    if (unit.key.type != 1 || !unit.classId) return MonsterDisposition::Unknown;
+    if(session_.read().world.hireling && session_.read().world.hireling->id==unit.key.id) return MonsterDisposition::NonHostile;
+    if(session_.read().world.pets.contains(unit.key.id)) return MonsterDisposition::NonHostile;
     const auto monster = monsters_.find(*unit.classId);
-    if (monster == monsters_.end()) return false;
+    if (monster == monsters_.end()) return MonsterDisposition::Unknown;
     const auto &table = tables_.at("monstats");
     if (table.number(monster->second, "npc").value_or(0) ||
         table.number(monster->second, "interact").value_or(0) ||
-        table.number(monster->second, "Align").value_or(0)) return false;
+        table.number(monster->second, "Align").value_or(0)) return MonsterDisposition::NonHostile;
     if (const auto snapshot = unitStates_.find(unit.key); snapshot != unitStates_.end()) {
-        if (!snapshot->second.decoded) return false;
+        if (!snapshot->second.decoded) return MonsterDisposition::Unknown;
         for (const auto &[id, state] : snapshot->second.states) {
             (void)id;
             for (const auto &stat : state.stats)
                 if (const auto row = stats_.find(stat.id); row != stats_.end() &&
                     tables_.at("itemstatcost").value(row->second, "Stat") == "alignment" && stat.value != 0)
-                    return false;
+                    return MonsterDisposition::NonHostile;
         }
     }
-    return true;
+    return MonsterDisposition::Hostile;
 }
 bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
     return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&
@@ -104,7 +108,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     if(n("TargetAlly") && n("TargetPet")) {
         if(unit.key.type==0) return !session_.read().world.corpseOwners.contains(unit.key.id) &&
             (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);
-        return unit.key.type==1 && unit.classId && !hostileSource(unit) && !onlineMonsterCorpse(unit);
+        return monsterDisposition(unit)==MonsterDisposition::NonHostile && !onlineMonsterCorpse(unit);
     }
     if(n("srvstfunc")==12 && n("srvdofunc")==21 && (unit.key.type==2 || unit.key.type==4)) return true;
     return monsterTargetEligible(unit,n("TargetCorpse")!=0);
