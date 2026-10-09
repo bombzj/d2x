@@ -150,6 +150,11 @@ struct RemoteUiClients::Impl {
     struct Inventory final : IInventoryClient {
         Impl &o; explicit Inventory(Impl &owner) : o(owner) {}
         const InventoryView &read() const override { return o.inventoryView; }
+        bool submitStaff(EntityId source,std::optional<ItemHandle> item) override {
+            if(source!=o.inventoryView.staffSource) return false;
+            if(item) {const auto *value=o.inventoryView.item(item->id);if(!value || value->revision!=item->revision || value->definition!=o.data.staffRecipe.output) return false;}
+            return o.session.submit_staff(uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
+        }
         InventoryError preview(const InventoryIntent &intent) const override {
             if (o.inventoryView.dead) return InventoryError::AccessDenied;
             return std::visit([&](const auto &c) {
@@ -1135,6 +1140,14 @@ struct RemoteUiClients::Impl {
             v.pickupTarget=itemId(w.itemRequest->command.item);
         projectItemFeedback(v);
         v.targetingRevision=w.itemTargetingRevision;
+        v.staffRevision=w.staffRevision;v.staffResult=w.staffResult;
+        if(w.staffSource) {
+            const auto object=w.units.find({2,*w.staffSource});
+            if(object!=w.units.end() && object->second.classId) {
+                const auto &table=data.tables.at("objects");
+                for(size_t row=0;row<table.rows().size();++row) if(table.number(row,"Id")==*object->second.classId && table.number(row,"OperateFn")==25) v.staffSource=EntityId{(uint64_t{2}<<32)+*w.staffSource+1};
+            }
+        }
         v.targetingReady=!w.itemTargetingSource;
         if(w.itemTargetingSource) {
             const auto source=v.items.find(itemId(*w.itemTargetingSource));
@@ -1180,6 +1193,10 @@ struct RemoteUiClients::Impl {
         }
         if(scene && scene->npcConversation) {
             const auto &d=*scene->npcConversation; npcView.npc=npcId(d.source); npcView.valid=true; npcView.speaker=d.speaker;
+            if(d.type==2) {
+                npcView.npc=EntityId{(uint64_t{2}<<32)+d.source+1};
+                for(const auto &m:d.messages) if(!m.acknowledged && !m.text.empty()) {npcView.scrollMessage=m.stringId;npcView.introduction=m.text;break;}
+            }
             if(scene->origin) npcView.position={float(int(d.position.x)-scene->origin->x),float(int(d.position.y)-scene->origin->y)};
             for(const auto &m:d.messages) if(!m.text.empty()) {
                 if(m.menu==0 && !m.acknowledged && !npcView.introduction) npcView.introduction=m.text;
@@ -1223,6 +1240,7 @@ struct RemoteUiClients::Impl {
         QuestProjectionInput questInput;
         questInput.revision=revision; questInput.actor=characterView.actor; questInput.currentAct=mapView.act;
         questInput.denRemaining=w.quests.denRemaining;
+        questInput.staffTombOffset=w.quests.staffTombOffset;
         for (const auto &def:questDefinitions) {
             auto &entry=questInput.entries[questIndex(def.id)];
             entry.status=w.quests.statuses[def.nativeSlot];

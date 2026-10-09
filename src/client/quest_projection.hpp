@@ -14,6 +14,7 @@ struct QuestProjectionInput {
     int currentAct{};
     std::array<QuestDisplayState, size_t(QuestId::Count)> entries;
     std::optional<unsigned> denRemaining;
+    std::optional<unsigned> staffTombOffset;
 };
 QuestView projectQuestDisplay(const ClassicData &, const QuestProjectionInput &);
 } // namespace d2x

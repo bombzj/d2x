@@ -113,6 +113,16 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
         if(!data.items.find(code) || !data.items.find(code)->usable) throw std::runtime_error("Missing original quest consumable: "+code);
         character->questConsumables.emplace(code,action);
     }
+    character->actTwo.scroll=data.staffRecipe.scroll;
+    character->laterQuests={data.goldenBird.figurine,data.goldenBird.bird,data.goldenBird.potion,
+        data.gidbinnCode,data.lamTomeCode,data.soulstoneCode,data.hellforge.hammer,
+        data.prisonOfIce.potion,data.prisonOfIce.scroll,data.khalimRecipe.inputs,data.khalimRecipe.output};
+    character->actTwo.shaft=data.staffRecipe.inputs[0];
+    character->actTwo.amulet=data.staffRecipe.inputs[1];
+    character->actTwo.staff=data.staffRecipe.output;
+    for(const auto &[code,item]:data.items.entries()) if(item.opensCube) character->actTwo.cube=code;
+    for(const auto &[code,kind]:character->questConsumables) if(kind==server::QuestConsumable::SkillBook) character->actTwo.book=code;
+    if(character->actTwo.cube.empty() || character->actTwo.book.empty() || character->actTwo.scroll.empty() || character->actTwo.shaft.empty() || character->actTwo.amulet.empty() || character->actTwo.staff.empty()) throw std::runtime_error("Missing original Act II quest item identities");
     rules.character = std::move(character);
 }
 }

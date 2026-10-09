@@ -14,17 +14,24 @@ namespace world { class System; }
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
-struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; };
+struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; };
 struct PortalRule { int definition{},range{},openingTicks{}; };
+struct TerrainCell { size_t index{}; uint8_t blocked{},light{},terrain{}; uint16_t full{}; };
 struct AreaMetadata {
     int waypointIndex = -1;
     std::optional<Vec> waypointAnchor; // Native spawn marker, resolved against current collision at travel commit.
     std::optional<Vec> portalArrival;
+    std::optional<Vec> questArrival; // Original quest object warp spawn (tile 0/11).
     std::optional<PortalRule> portalRule, specialPortalRule;
+    std::map<int,PortalRule> questPortalRules;
+    std::map<int,uint16_t> questObjectMessages;
     RegionId id = RegionId::Encampment;
     Vec spawn, origin;
     RegionId townRegion{};
     int act{};
+    std::optional<int> staffTomb;
+    std::vector<TerrainCell> openedTombWall;
+    unsigned tombOpeningTicks{};
     bool town{}, teleportAllowed{};
     std::vector<AreaExit> exits;
     std::vector<AreaBoundary> boundaries;
@@ -36,11 +43,14 @@ struct AreaDefinition : AreaMetadata {
     Grid collision;
     RoomLayout activation;
     std::vector<PreparedMonster> population;
+    std::map<std::string,std::vector<PreparedMonster>,std::less<>> questGroups;
+    std::map<std::string,NpcRule,std::less<>> questNpcs;
     std::map<int, MonsterComponentPalette> componentPalettes;
     std::vector<std::string> populationDeferred;
     size_t populationMissing{};
+    std::vector<Vec> populationMissingPositions;
 };
-struct AreaView { AreaMetadata definition; uint64_t generation{}; };
+struct AreaView { AreaMetadata definition; uint64_t generation{}; std::vector<std::string> populationDeferred; size_t populationMissing{}; };
 struct AreaState {
     AreaDefinition definition;
     uint64_t generation = 1;
@@ -65,6 +75,8 @@ class AreaStore {
             throw std::runtime_error("Invalid prepared authority area");
         if (int(initial.id) < 1 || int(initial.id) > 255 || initial.act < 0 || initial.act > 4)
             throw std::runtime_error("Invalid native area identity");
+        for(const auto &cell:initial.openedTombWall) if(cell.index>=count)
+            throw std::runtime_error("Invalid prepared tomb collision patch");
     }
     explicit AreaStore(AreaDefinition initial) {
         validate(initial);

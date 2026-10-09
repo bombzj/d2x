@@ -7,6 +7,7 @@
 #include "server/systems/skills/system.hpp"
 #include <array>
 #include "server/systems/objects/system.hpp"
+#include "server/systems/quests/state.hpp"
 
 namespace d2x::server {
 // Scheduler-thread diagnostic values. Never used as client replication or saved.
@@ -56,6 +57,12 @@ struct DiagnosticSnapshot {
     unsigned denRemaining{}; bool denCleared{};
     size_t questPending{};std::string questDeferred,hirelingDeferred;
     std::array<int,5> cainStones{};unsigned activatedStones{};
+    bool eclipse{},altarDestroyed{},journalRead{},tombOpen{},durielSlain{};
+    uint64_t tombAt{};
+    std::optional<uint16_t> staffTombOffset;
+    quests::ActThreeState actThree;
+    quests::ActFourState actFour;
+    quests::ActFiveState actFive;
     std::vector<travel::Portal> portals;
     std::map<RegionId,float> waypoints;
     size_t healingQueued{}, manaQueued{}, lootPending{};

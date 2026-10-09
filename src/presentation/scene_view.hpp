@@ -73,6 +73,8 @@ struct ViewState {
     std::optional<uint32_t> dialogueTextTopic;
     EntityId dialogueObject;
     EntityId inventoryQuestNpc;
+    EntityId orificeObject;
+    std::optional<ItemHandle> orificeItem;
     NpcMenuAction inventoryNpcAction = NpcMenuAction::Imbue;
     std::vector<std::string> dialogueLines;
     float dialogueOffset = 0;
@@ -175,6 +177,7 @@ class SceneView {
     void drawHirelingList(Vec mouse) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;
+    void drawOrifice(Vec mouse) const;
     void drawPlayerTrade(Vec mouse) const;
     void drawContainerGrid(const ContainerGrid &grid, Vec mouse) const;
     void drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const;

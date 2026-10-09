@@ -68,7 +68,7 @@ bool SceneController::handleNpcDialogue(const FrameInput &input) {
             npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge, ui.dialogueTextTopic});
             view_.cancelNpcDialogue();
             const auto &conversation = npcClient_.read(ui.dialogueObject);
-            if (conversation.valid) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
+            if (conversation.valid && !conversation.scrollMessage) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
             return true;
         }
         if (input.escape) {

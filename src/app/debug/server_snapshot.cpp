@@ -12,6 +12,8 @@ Json area(const server::AreaView &value) {
         {"teleportAllowed", a.teleportAllowed}, {"origin", point(a.origin)}, {"spawn", point(a.spawn + a.origin)},
         {"boundaries", Json::array()}, {"exits", Json::array()}, {"objectDeferred", a.objectDeferred}};
     result["waypointIndex"] = a.waypointIndex;
+    result["populationDeferred"] = value.populationDeferred;
+    result["populationMissing"] = value.populationMissing;
     result["waypointAnchor"] = a.waypointAnchor ? point(*a.waypointAnchor + a.origin) : Json(nullptr);
     for (const auto &edge : a.boundaries) result["boundaries"].push_back({{"destination", int(edge.destination)}, {"side", edge.side},
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
@@ -103,10 +105,15 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["objects"]=Json::array();
     for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses}});
     result["npcs"]=Json::array();
-    for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)}});
+    for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)},{"hidden",npc.hidden},{"moving",npc.moving}});
     result["merchantDeferred"]=s.merchantDeferred;
     result["crafting"]={{"pending",s.craftingPending},{"deferred",s.craftingDeferred}};
     result["questExecution"]={{"pending",s.questPending},{"deferred",s.questDeferred},{"stones",s.cainStones},{"activatedStones",s.activatedStones},{"hirelingDeferred",s.hirelingDeferred}};
+    result["questExecution"]["actTwo"]={{"eclipse",s.eclipse},{"altarDestroyed",s.altarDestroyed},{"journalRead",s.journalRead},{"tombOpen",s.tombOpen},{"durielSlain",s.durielSlain},{"tombAt",s.tombAt},{"staffTombOffset",s.staffTombOffset?Json(*s.staffTombOffset):Json(nullptr)}};
+    const auto &a3=s.actThree;const auto &a4=s.actFour;const auto &a5=s.actFive;
+    result["questExecution"]["actThree"]={{"figurineSource",a3.figurineSource.value},{"figurineDropped",a3.figurineDropped},{"gidbinnSpawned",a3.gidbinnSpawned},{"gidbinnDropped",a3.gidbinnDropped},{"orbSmashed",a3.orbSmashed},{"orbHits",a3.orbHits},{"mephistoSlain",a3.mephistoSlain}};
+    result["questExecution"]["actFour"]={{"izualSlain",a4.izualSlain},{"ghostSpawned",a4.ghostSpawned},{"forgePlaced",a4.forgePlaced},{"forgeSmashed",a4.forgeSmashed},{"forgeHits",a4.forgeHits},{"seals",a4.seals},{"diabloSpawned",a4.diabloSpawned},{"diabloSlain",a4.diabloSlain}};
+    result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"ancientEligible",a5.ancientEligible.size()},{"wave",a5.wave},{"wavePrepared",a5.wavePrepared},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
     result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
     for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
     result["quests"]=Json::array();

@@ -180,6 +180,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             }
         }
         const int operation = number("OperateFn");
+        if(operation==43 && *unit.classId==100 && mode==2 && nativeTerrain_) nativeTerrain_->openTombWall({float(x),float(y)});
         // ObjMode::OperateFunction23 accepts both operating/opened waypoints.
         // Selectable1 is clear in MPQ, but the native handler still opens the
         // menu in mode 1 or 2. Targetability does not override that exception.
@@ -220,15 +221,16 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
     if (v.world.npcConversation) {
         const auto &conversation = *v.world.npcConversation;
         const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
-            [&](const auto &entry) { return entry.unit == OnlineUnitKey{1, conversation.source}; });
+            [&](const auto &entry) { return entry.unit == OnlineUnitKey{conversation.type, conversation.source}; });
         if (target != view_.mapTargets.end()) {
             OnlineNpcDialogView dialog{conversation.source, conversation.revision, target->position,
                 std::string(strings_.find(target->name)), {}, {}};
+            dialog.type=conversation.type;
             for (const auto &message : conversation.messages)
                 dialog.messages.push_back({message.stringId, message.menu,
                     std::string(strings_.speech(message.stringId)), conversation.acknowledged.contains(message.stringId)});
             const auto &unit = v.world.units.at(target->unit);
-            const auto id = monsters_.value(monsterRows_.at(*unit.classId), "Id");
+            const auto id = conversation.type==1?monsters_.value(monsterRows_.at(*unit.classId), "Id"):std::string_view{};
             auto rewarded = [&](size_t slot) {
                 // D2MOO QuestRecord: native slot*16 + QFLAG_REWARDGRANTED(0).
                 return v.world.quests.playerFlags && slot < v.world.quests.playerFlags->size() &&

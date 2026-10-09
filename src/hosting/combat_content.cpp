@@ -237,13 +237,25 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         auto preparedMonster=prepare(spawn.identity, spawn.position);
         // The authorized enemy substitute retains real identity for quest/loot.
         // Start with Den of Evil: otherwise skipped families would falsely clear it.
-        if (!preparedMonster && request.level==8) {
+        if (!preparedMonster && (request.level==8 || request.act>=1)) {
             auto substitute=spawn.identity; substitute.monster="fallen1"; substitute.rank=MonsterRank::Normal; substitute.superUnique.clear();
             preparedMonster=prepare(substitute, spawn.position);
-            if(preparedMonster) { preparedMonster->identity=spawn.identity; deferred.insert("Enemy substitute: "+spawn.identity.monster+" -> fallen1"); }
+            if(preparedMonster) {
+                preparedMonster->identity=spawn.identity;
+                // Keep the existing passive PrisonDoor authority even while
+                // its native combat profile still needs preparation support.
+                if(record->id=="prisondoor") preparedMonster->implementation=MonsterKind::PrisonDoor;
+                deferred.insert("Enemy substitute: "+spawn.identity.monster+" -> fallen1");
+            }
         }
-        if (!preparedMonster) { ++area.populationMissing; deferred.insert("Combat pending: "+spawn.identity.monster); continue; }
-        if (!area.collision.walkable(spawn.position,preparedMonster->rule.spawnCollision)) { ++area.populationMissing; deferred.insert("Spawn collision: "+spawn.identity.spawnKey); continue; }
+        if (!preparedMonster) { ++area.populationMissing; area.populationMissingPositions.push_back(spawn.position); deferred.insert("Combat pending: "+spawn.identity.monster); continue; }
+        if (!area.collision.walkable(spawn.position,preparedMonster->rule.spawnCollision)) {
+            // Prepared object collision and a permitted substitute's footprint
+            // can differ from the planner's native class. Recheck locally.
+            const auto adjusted=area.collision.nativeSpawn(spawn.position,5,preparedMonster->rule.spawnCollision);
+            if(!adjusted) {++area.populationMissing;area.populationMissingPositions.push_back(spawn.position);deferred.insert("Spawn collision: "+spawn.identity.spawnKey);continue;}
+            preparedMonster->position=*adjusted;
+        }
         preparedMonster->skillPositions=spawn.skillPositions;
         area.population.push_back(std::move(*preparedMonster));
     }

@@ -127,7 +127,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
             : radament.stage >= uint32_t(RadamentStage::Slain) ? radamentBookUsed : 0;
         const auto staffFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::HoradricStaff).nativeSlot * 2);
         auto &staff = player.quests[difficulty][questIndex(QuestId::HoradricStaff)];
-        staff.stage = staffFlags & 1 ? 6 : staffFlags & 0xC ? 1 : 0;
+        staff.stage = staffFlags & 1 ? 6 : staffFlags & 0x800 ? 5 : staffFlags & 0xC ? 1 : 0;
         staff.flags = (staffFlags & 8 ? staffScrollExplained : 0) |
             (staffFlags & 0x40 ? staffCubeExplained : 0) |
             (staffFlags & 0x10 ? staffHeadExplained : 0) |
@@ -137,6 +137,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
         player.quests[difficulty][questIndex(QuestId::TaintedSun)].stage = sunFlags & 1 ? 4 : sunFlags & 2 ? 3 : sunFlags & 8 ? 2 : sunFlags & 4 ? 1 : 0;
         const auto arcaneFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::ArcaneSanctuary).nativeSlot * 2);
         player.quests[difficulty][questIndex(QuestId::ArcaneSanctuary)].stage = arcaneFlags & 1 ? 4 : arcaneFlags & 0x10 ? 3 : arcaneFlags & 8 ? 2 : arcaneFlags & 4 ? 1 : 0;
+        player.quests[difficulty][questIndex(QuestId::ArcaneSanctuary)].flags = arcaneFlags & 2 ? arcaneCommentPending : 0;
         const auto summonerFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::Summoner).nativeSlot * 2);
         player.quests[difficulty][questIndex(QuestId::Summoner)].stage = summonerFlags & 1 ? 3 : summonerFlags & 2 ? 2 : summonerFlags & 4 ? 1 : 0;
         const auto tombsFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2);
@@ -249,20 +250,21 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
             (radament.flags & radamentBookPending ? 0x20 : 0));
         const auto &staff = player.quests[difficulty][questIndex(QuestId::HoradricStaff)];
         const auto staffOffset = 10 + difficulty * 96 + questDefinition(QuestId::HoradricStaff).nativeSlot * 2;
-        putWord(sections.quests, staffOffset, (word(sections.quests, staffOffset) & ~0x247Du) |
+        putWord(sections.quests, staffOffset, (word(sections.quests, staffOffset) & ~0x2C7Du) |
             (staff.stage >= 6 ? 0x2001 : staff.stage ? 4 : 0) | (staff.flags & staffScrollExplained ? 8 : 0) |
             (staff.flags & staffCubeExplained ? 0x40 : 0) |
             (staff.flags & staffHeadExplained ? 0x10 : 0) |
             (staff.flags & staffShaftExplained ? 0x20 : 0) |
-            (staff.flags & staffAssemblyExplained ? 0x400 : 0));
+            (staff.flags & staffAssemblyExplained ? 0x400 : 0) | (staff.stage >= 5 ? 0x800 : 0));
         const auto sun = player.quests[difficulty][questIndex(QuestId::TaintedSun)].stage;
         const auto sunOffset = 10 + difficulty * 96 + questDefinition(QuestId::TaintedSun).nativeSlot * 2;
         putWord(sections.quests, sunOffset, (word(sections.quests, sunOffset) & ~0x200Fu) |
             (sun >= 4 ? 0x2001 : sun == 3 ? 0x2002 : sun == 2 ? 0xC : sun == 1 ? 4 : 0));
-        const auto arcane = player.quests[difficulty][questIndex(QuestId::ArcaneSanctuary)].stage;
+        const auto &arcaneRecord = player.quests[difficulty][questIndex(QuestId::ArcaneSanctuary)];
+        const auto arcane = arcaneRecord.stage;
         const auto arcaneOffset = 10 + difficulty * 96 + questDefinition(QuestId::ArcaneSanctuary).nativeSlot * 2;
         putWord(sections.quests, arcaneOffset, (word(sections.quests, arcaneOffset) & ~0x200Fu & ~0x10u) |
-            (arcane >= 4 ? 0x2001 : arcane == 3 ? 0x1C : arcane == 2 ? 0xC : arcane == 1 ? 4 : 0));
+            (arcane >= 4 ? 0x2001 | (arcaneRecord.flags & arcaneCommentPending ? 2 : 0) : arcane == 3 ? 0x1C : arcane == 2 ? 0xC : arcane == 1 ? 4 : 0));
         const auto summoner = player.quests[difficulty][questIndex(QuestId::Summoner)].stage;
         const auto summonerOffset = 10 + difficulty * 96 + questDefinition(QuestId::Summoner).nativeSlot * 2;
         putWord(sections.quests, summonerOffset, (word(sections.quests, summonerOffset) & ~0x2007u) |
@@ -368,10 +370,12 @@ int validateD2sQuestRecords(const QuestBook &book) {
         require(difficulty[questIndex(QuestId::HoradricStaff)].stage <= 6 &&
             !(difficulty[questIndex(QuestId::HoradricStaff)].flags & ~staffExplanationMask), "Horadric Staff quest progress");
         for (const auto &[id, maximum] : {std::pair{QuestId::TaintedSun, 4u},
-             std::pair{QuestId::ArcaneSanctuary, 4u}, std::pair{QuestId::Summoner, 3u},
+             std::pair{QuestId::Summoner, 3u},
              std::pair{QuestId::SevenTombs, 5u}})
             require(difficulty[questIndex(id)].stage <= maximum && !difficulty[questIndex(id)].flags,
                 "Act II quest progress");
+        const auto &arcane = difficulty[questIndex(QuestId::ArcaneSanctuary)];
+        require(arcane.stage <= 4 && !(arcane.flags & ~arcaneCommentPending) && (!arcane.flags || arcane.stage == 4), "Arcane Sanctuary quest progress");
     }
     return rewards;
 }

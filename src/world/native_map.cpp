@@ -357,9 +357,9 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
     for (const auto index : rooms) {
         const auto &room = tiles_.rooms().at(index);
         for (const auto &unit : room.units) {
-            if (unit.type == 2) {
+            if (unit.type == 1 || unit.type == 2) {
                 MapObject object;
-                object.type = 2; object.id = unit.id; object.nativeIdentity = true;
+                object.type = unit.type; object.id = unit.id; object.nativeIdentity = true;
                 object.x = unit.x - x * 5; object.y = unit.y - y * 5;
                 terrain.data.objects.push_back(std::move(object));
             } else if (unit.type == 5) {

@@ -80,7 +80,11 @@ void SceneView::refreshUi(float dt) {
     const int left = p.selectedSkills[p.weaponSet * 2], right = p.selectedSkills[p.weaponSet * 2 + 1];
     view_.leftSkill = left < 0 ? std::nullopt : std::optional<int>{left};
     view_.rightSkill = right < 0 ? std::nullopt : std::optional<int>{right};
-    view_.inventory.syncCursor(inventoryView_);
+    if(view_.orificeObject!=inventoryView_.staffSource) {
+        view_.orificeObject=inventoryView_.staffSource;view_.orificeItem.reset();
+        if(view_.orificeObject) {view_.inventory.open=true;view_.inventory.cancelGesture();view_.npcMenu=false;}
+    }
+    view_.inventory.syncCursor(inventoryView_,view_.orificeItem?view_.orificeItem->id:EntityId{});
     view_.animationTime += dt;
     advanceUi(dt);
 }
@@ -176,6 +180,9 @@ void SceneView::refreshInteractions() {
     const auto &scene = npcClient_.scene();
     if (scene.revision != npcScene_.revision) npcScene_ = scene;
     refreshNpcView(view_.dialogueObject);
+    if(npcView_.scrollMessage && npcView_.introduction && view_.dialogue.empty()) {
+        openNpcDialogue(npcView_.npc,npcView_.speaker,*npcView_.introduction);view_.dialogueTextTopic=npcView_.scrollMessage;
+    }
 }
 void SceneView::refreshCharacterView() {
     const auto &snapshot = characterClient_.read();

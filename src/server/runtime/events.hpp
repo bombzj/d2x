@@ -33,7 +33,7 @@ struct InventoryFact {
     std::vector<ItemChange> changes;
     bool switchedWeapons{};
 };
-struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct CharacterFact {
     CharacterRecord before, after;
@@ -45,11 +45,11 @@ struct ObjectFact { EntityId object, actor; RegionId area; uint64_t revision{}; 
 struct ChatFact { EntityId actor; std::string name, text; std::vector<PlayerId> recipients; };
 struct CommandFact { PlayerId player; uint64_t sequence{}; CommandStatus result; };
 struct NpcMessage { uint8_t menu{}; uint16_t text{}; };
-struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; };
+struct NpcMessagesFact { EntityId npc; std::vector<NpcMessage> messages; uint8_t type=1; };
 struct MerchantFact { EntityId npc, item; uint8_t operation{}, result{}; uint32_t gold{}; bool refreshShop{}; };
 struct WaypointFact { EntityId source; std::vector<RegionId> unlocked; };
 struct UiFact { uint8_t action{}; };
-struct NpcServiceFact { EntityId npc; uint8_t result{}; };
+struct NpcServiceFact { EntityId npc; uint8_t result{}, state{}; };
 // Captured at the drop transaction; later visibility snapshots are not drops.
 struct GroundDropFact { ItemInstance item; };
 struct GroundRemoveFact { EntityId item; };

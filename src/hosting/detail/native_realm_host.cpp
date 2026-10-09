@@ -37,7 +37,7 @@ void NativeRealmHost::advance(double seconds) {
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
         prepareCrafting(host, game, *content);
-        prepareQuests(host,game,*content);
+        prepareQuests(host,game,archives,*content);
         preparePendingHirelings(host,game,archives,*content,lootContent);
         for(const auto &issue:preparePendingSummons(host,game,archives,*content))
             for(auto *peer:peers) if(peer->binding && peer->binding->game==game) {

@@ -365,6 +365,9 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
         if (cubePanel.frames.size() < 4)
             throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
     }
+    orificePanel=graphics_.single("data/global/ui/menu/horadricback.dc6");
+    orificeButtons=graphics_.single("data/global/ui/menu/okcancelbtn.dc6");
+    if(orificePanel.frames.empty() || orificeButtons.frames.size()<2) throw std::runtime_error("Original Horadric orifice artwork is missing");
     beltPanel = graphics_.single("data/global/ui/panel/ctrlpnl_popbelt.dc6");
     beltSocket = graphics_.single("data/global/ui/panel/inv_belt.dc6");
     orbs = uiGraphics_.single("data/global/ui/panel/hlthmana.dc6");

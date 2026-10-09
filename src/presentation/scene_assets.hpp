@@ -119,7 +119,7 @@ class SceneAssets {
         attributePoints, attributeSocket, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
-        storagePanel, cubePanel, beltPanel, beltSocket, orbs,
+        storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
         globeOverlap, runButton, button;
     std::string waypointTitle;
     std::string questNoticeLabel;

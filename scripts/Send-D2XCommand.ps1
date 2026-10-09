@@ -20,7 +20,7 @@ param(
         'online-waypoint-travel', 'online-waypoint-close', 'online-automap',
         'online-move-to-unit', 'online-town-portal', 'online-npc-interact',
         'online-resurrect', 'online-recover-corpse',
-        'online-npc-message', 'online-npc-close', 'online-npc-travel', 'online-npc-respec',
+        'online-npc-message', 'online-npc-close', 'online-npc-travel', 'online-npc-respec', 'online-staff-update',
         'online-items', 'online-ground', 'online-item-action', 'online-item-quote',
         'online-social', 'online-chat', 'online-send-chat', 'online-trade-respond', 'online-trade-offer',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',

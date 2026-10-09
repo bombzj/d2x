@@ -6,6 +6,8 @@
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/trade/system.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
+#include "server/systems/quests/system.hpp"
 #include "gameplay/areas/waypoint.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -65,8 +67,11 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         if(!npc || !request.destination) return {DomainStatus::InvalidRequest,{}};
         const bool east=npc->rule.code=="warriv1" && int(actor.area)==1 && int(*request.destination)==40;
         const bool west=npc->rule.code=="warriv2" && int(actor.area)==40 && int(*request.destination)==1;
-        if((!east && !west) ||
-            p->persistent.player.quests.at(size_t(p->persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) return {DomainStatus::InvalidRequest,{}};
+        const bool sail=npc->rule.code=="meshif1" && int(actor.area)==40 && int(*request.destination)==75;
+        const bool returnSail=npc->rule.code=="meshif2" && int(actor.area)==75 && int(*request.destination)==40;
+        const auto &book=p->persistent.player.quests.at(size_t(p->persistent.difficulty));
+        if((!east && !west && !sail && !returnSail) || ((east || west) && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
+            (sail && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) || (returnSail && !p->persistent.player.completedActs.at(size_t(p->persistent.difficulty)).at(1))) return {DomainStatus::InvalidRequest,{}};
         const auto prepared=ports_.world.request(*request.destination);if(!prepared) return {prepared.status,{}};
         Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,npc->id,p->position,{},{},false,false,false,0,0};next.kind=Kind::Npc;
         next.npcConversation=ports_.npc.conversation(actor.player)->revision;
@@ -86,11 +91,36 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
         return {DomainStatus::Applied,std::monostate{}};
     }
+    if(request.kind==Kind::QuestObject) {
+        const auto object=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[&](const auto &o){return o.id==request.source.id;});
+        if(object==area->definition.objects.end()) return {DomainStatus::Stale,{}};
+        int level=0;
+        if(area->definition.act==2 && object->rule.operation==44 && int(actor.area)==92) level=93;
+        if(area->definition.act==2 && object->rule.operation==46 && int(actor.area)==102) level=103;
+        if(area->definition.act==4 && object->rule.operation==66 && int(actor.area)==120) level=128;
+        if(area->definition.act==4 && object->rule.operation==70 && (int(actor.area)==131 || int(actor.area)==132)) level=int(actor.area)==131?132:131;
+        if(area->definition.act==4 && object->rule.operation==72 && int(actor.area)==132) level=109;
+        if(object->rule.operation==34 && (int(actor.area)==54 || int(actor.area)==74)) level=int(actor.area)==54?74:54;
+        if(object->rule.operation==43) {
+            if(int(actor.area)==73 && area->definition.staffTomb) level=*area->definition.staffTomb;
+            else if(ports_.quests.read().actTwo.tombOpen && ports_.quests.read().actTwo.tomb==actor.area) level=73;
+        }
+        if(!level || !ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
+        const auto prepared=ports_.world.request(RegionId(level));if(!prepared) return {prepared.status,{}};
+        Transition next{actor.area,RegionId(level),*prepared.value,actor.areaGeneration,actor.sequence,object->id,p->position,{},{},false,false,false,0,0};next.kind=Kind::QuestObject;
+        state_.transitions.insert_or_assign(actor.player,next);auto &player=ports_.players.players_.at(actor.player);
+        // This transition originates in Objects, so GameInstance's direct
+        // Travel-command branch has not bound its locomotion sequence.
+        player.locomotionSequence=actor.sequence;player.route.clear();player.moving=false;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if(request.kind!=Kind::Portal) return {};
     for(const auto &[destination,portal]:state_.specialPortals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
         (void)destination;
+        const auto target=returning?portal.field:portal.town;
+        if(!ports_.quests.allowsTravel(p->persistent.player,actor.area,target)) return {DomainStatus::Conflict,{}};
         if(int(portal.town)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         if((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement)) return {DomainStatus::InvalidRequest,{}};

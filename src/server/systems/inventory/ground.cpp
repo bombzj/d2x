@@ -8,16 +8,38 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 namespace d2x::server::inventory {
 namespace {
 DomainStatus questPickup(const PlayerState &player, const ItemDefinition &base,
     const ItemCatalog &catalog, unsigned difficulty) {
     if (!base.questTag) return DomainStatus::Applied;
     // ItemMode::sub_6FC425F0: the native quest tag is not a blanket pickup ban.
-    // Keep quests outside the implemented Act I/cube scope explicitly deferred.
+    const auto &actTwo=player.rules.character->actTwo;
+    const auto &later=player.rules.character->laterQuests;
+    const bool laterItem=base.code==later.figurine || base.code==later.bird || base.code==later.lifePotion || base.code==later.gidbinn || base.code==later.tome || base.code==later.soulstone || base.code==later.hammer || base.code==later.defrostPotion || base.code==later.resistanceScroll || base.code==later.khalimWill || std::find(later.khalimParts.begin(),later.khalimParts.end(),base.code)!=later.khalimParts.end();
     if (!base.opensCube && base.code != "bks" && base.code != "bkd" &&
-        base.code != "hdm" && base.code != "leg") return DomainStatus::Unavailable;
+        base.code != "hdm" && base.code != "leg" && !actTwo.artifact(base.code) && base.code!=actTwo.book && !laterItem) return DomainStatus::Unavailable;
     const auto &quests = player.persistent.player.quests.at(difficulty);
+    const auto &bird=quests.at(questIndex(QuestId::GoldenBird));
+    if(base.code==later.figurine && bird.stage>=6) return DomainStatus::Conflict;
+    if(base.code==later.lifePotion && !(bird.flags&goldenBirdPotionPending)) return DomainStatus::Conflict;
+    if(base.code==later.gidbinn && quests.at(questIndex(QuestId::BladeOfTheOldReligion)).stage>=4) return DomainStatus::Conflict;
+    const auto &ice=quests.at(questIndex(QuestId::PrisonOfIce));
+    if(base.code==later.resistanceScroll && (!(ice.flags&iceScrollGranted) || ice.flags&iceScrollUsed)) return DomainStatus::Conflict;
+    // ItemMode's original cross-quest tag guards. Tags stay the raw MPQ value;
+    // do not infer another tag from a journal slot or a host-only stage.
+    constexpr std::array guards{
+        std::pair{QuestId::KhalimsWill,QuestId::LamEsensTome},
+        std::pair{QuestId::BladeOfTheOldReligion,QuestId::KhalimsWill},
+        std::pair{QuestId::HellsForge,QuestId::FallenAngel}};
+    if(laterItem) for(const auto &[completed,tag]:guards)
+        if(base.questTag==int(questDefinition(tag).nativeSlot) && quests.at(questIndex(completed)).stage>=questCompletionStage(completed)) return DomainStatus::Conflict;
+    if(!base.opensCube && actTwo.artifact(base.code) && quests.at(questIndex(QuestId::HoradricStaff)).stage>=uint32_t(StaffStage::Submitted)) return DomainStatus::Conflict;
+    if(base.code==actTwo.book && (quests.at(questIndex(QuestId::RadamentsLair)).flags&radamentBookUsed)) return DomainStatus::Conflict;
     if ((base.code == "bks" || base.code == "bkd") &&
         quests.at(questIndex(QuestId::SearchForCain)).stage >= uint32_t(CainStage::Rewarded)) return DomainStatus::Conflict;
     if (base.code == "hdm" &&

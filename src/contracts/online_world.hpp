@@ -141,6 +141,7 @@ struct OnlineNpcConversation {
     uint64_t revision{};
     std::vector<OnlineNpcMessage> messages;
     std::set<uint16_t> acknowledged; // Enqueued 0x31 requests; never quest completion.
+    uint8_t type=1;
 };
 struct OnlineEquippedItem {
     uint32_t id{}, owner{};
@@ -221,6 +222,10 @@ struct OnlineWorldView {
     std::optional<OnlineMovementRequest> movementRequest;
     std::optional<uint32_t> npcRequested;
     std::optional<OnlineNpcConversation> npcConversation;
+    std::optional<bool> eclipse;
+    std::optional<uint32_t> staffSource;
+    uint64_t staffRevision{};
+    uint8_t staffResult{};
     std::map<uint16_t, uint16_t> playerSkills;
     std::map<uint16_t, uint8_t> playerBaseSkills, playerBonusSkills, itemSkillQuantities;
     bool playerBaseSkillsAssigned = false;
@@ -279,6 +284,7 @@ struct OnlineWorldView {
         movementRequest.reset();
         npcRequested.reset();
         npcConversation.reset();
+        eclipse.reset();staffSource.reset();staffRevision=0;staffResult=0;
         playerSkills.clear();
         playerBaseSkills.clear();
         playerBonusSkills.clear();

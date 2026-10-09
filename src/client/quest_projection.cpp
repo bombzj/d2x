@@ -37,6 +37,7 @@ QuestView projectQuestDisplay(const ClassicData &data, const QuestProjectionInpu
     const auto den=input.entries[questIndex(QuestId::DenOfEvil)].status;
     questView.showDenRemaining=den==4 && !questView.entry(QuestId::DenOfEvil).completed;
     if (questView.showDenRemaining) questView.denRemaining=input.denRemaining;
+    if(input.staffTombOffset && *input.staffTombOffset<7 && questView.entry(QuestId::SevenTombs).known) questView.entries[questIndex(QuestId::SevenTombs)].tombSymbol=*input.staffTombOffset;
     return questView;
 }
 } // namespace d2x

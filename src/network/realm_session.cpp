@@ -1018,7 +1018,7 @@ struct RealmSession::Impl {
                 sent(gs, close.release());
             }
         }
-        if (packet.id == 0x27 && view.world.npcConversation &&
+        if (packet.id == 0x27 && view.world.npcConversation && view.world.npcConversation->type==1 &&
             initializedNpc != view.world.npcConversation->source) {
             Writer init;
             init.u8(0x2F); init.u32(1); init.u32(view.world.npcConversation->source);
@@ -1164,6 +1164,9 @@ struct RealmSession::Impl {
         world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
         std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; });
         ++world.itemRevision;
+        if(world.staffSource && view.load.playerUnitId) {
+            Writer close;close.u8(0x44);close.u32(*view.load.playerUnitId);close.u32(*world.staffSource);close.u32(0);close.u16(2);close.u16(0);sent(gs,close.release());world.staffSource.reset();
+        }
         if (world.npcRequested) {
             Writer close;
             close.u8(0x30); close.u32(1); close.u32(*world.npcRequested);
@@ -1948,6 +1951,18 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
     }
+}
+bool RealmSession::submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context) {
+    std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
+    if(!p.require_intent(context.value_or(onlineIntentContext(snapshot_)),true) || !p.view.load.playerUnitId || p.view.world.staffSource!=source || onlinePlayerDead(p.view.world)) return false;
+    if(item) {
+        const auto found=p.view.world.items.find(*item);
+        if(found==p.view.world.items.end() || found->second.mode!=4 || found->second.ownerType!=0 || found->second.owner!=*p.view.load.playerUnitId) return false;
+    }
+    try {
+        Writer out;out.u8(0x44);out.u32(*p.view.load.playerUnitId);out.u32(source);out.u32(item.value_or(0));out.u16(item?3:2);out.u16(0);
+        p.sent(p.gs,out.release());p.view.error.reset();p.changed();return true;
+    } catch(const std::exception &) {p.fail(OnlineErrorKind::Transport,"Staff update could not be queued");return false;}
 }
 bool RealmSession::npc_travel(uint32_t parameter,std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);

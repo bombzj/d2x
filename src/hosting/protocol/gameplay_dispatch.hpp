@@ -75,6 +75,7 @@ RequestResult LoadBook(GameplayContext &, net::protocol::Reader &);
 RequestResult InitializeNpc(GameplayContext &, net::protocol::Reader &);
 RequestResult CloseNpc(GameplayContext &, net::protocol::Reader &);
 RequestResult NpcMessage(GameplayContext &, net::protocol::Reader &);
+RequestResult StaffUpdate(GameplayContext &, net::protocol::Reader &);
 RequestResult BuyItem(GameplayContext &, net::protocol::Reader &);
 RequestResult SellItem(GameplayContext &, net::protocol::Reader &);
 RequestResult IdentifyAll(GameplayContext &, net::protocol::Reader &);

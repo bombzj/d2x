@@ -49,6 +49,9 @@ struct InventoryLayoutView {
 // A client-owned projection of inventory, authorized storage/shop and visible ground items.
 // It contains no authority references, rolled native properties or random state.
 struct InventoryView {
+    EntityId staffSource;
+    uint64_t staffRevision{};
+    uint8_t staffResult{};
     uint64_t targetingRevision{};
     bool targetingReady{true};
     std::optional<ItemHandle> targetingSource;

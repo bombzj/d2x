@@ -223,6 +223,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"gameFlags",optional(quests.gameFlags)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
         {"denRemaining",optional(quests.denRemaining)}, {"staffTombOffset",optional(quests.staffTombOffset)},
         {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)}};
+    result["world"]["eclipse"]=optional(v.world.eclipse);
+    result["world"]["staffInteraction"]={{"source",optional(v.world.staffSource)},{"revision",v.world.staffRevision},{"result",v.world.staffResult}};
     Json roster = Json::array(), relations = Json::array(), chat = Json::array();
     for (const auto &[id, player] : social.players)
         roster.push_back({{"id", id}, {"listed", player.listed}, {"revision", player.revision},
@@ -638,6 +640,15 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted = control.townPortal();
             if (!accepted) return Json{{"ok", false}, {"accepted", false}, {"error", control.reason()}}.dump();
             mutation = true;
+        } else if(command=="online-staff-update") {
+            const auto &world=session.read().world;
+            if(!world.staffSource) return Json{{"ok",false},{"error","No native orifice interaction is open"}}.dump();
+            std::optional<uint32_t> item;
+            if(!request.value("cancel",false)) {
+                for(const auto &[id,value]:world.items) if(value.mode==4 && value.ownerType==0 && value.owner==session.read().load.playerUnitId) {item=id;break;}
+                if(!item) return Json{{"ok",false},{"error","No item is on the native cursor"}}.dump();
+            }
+            accepted=session.submit_staff(*world.staffSource,item);mutation=true;
         } else if (command == "online-npc-close") {
             const bool approaching = control.approaching().has_value();
             control.cancelApproach();

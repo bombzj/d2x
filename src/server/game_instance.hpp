@@ -50,12 +50,12 @@ class GameInstance {
     const GameSettings &settings() const { return settings_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
     std::vector<RegionId> visibleAreas(PlayerId) const;
-    bool npcVisible(PlayerId player,std::string_view code,RegionId area) const {
-        const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area);
+    bool npcVisible(PlayerId player,std::string_view code,RegionId area,int initFunction=0) const {
+        const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area,initFunction);
     }
     std::optional<uint16_t> npcQuestAlert(PlayerId player,const NpcRule &npc,RegionId area) const {
         const auto *p=players_.find(player);const auto *a=areas_.find(area);
-        if(!p || !a || !systems_.quests.npcVisible(p->persistent.player,npc.code,area)) return {};
+        if(!p || !a || !systems_.quests.npcVisible(p->persistent.player,npc.code,area,npc.questInitFunction)) return {};
         const auto message=systems_.quests.dialogue({player,p->actor,area,a->generation,0,tick_},npc);
         return message && message->message.menu!=2?std::optional<uint16_t>{message->message.text}:std::nullopt;
     }

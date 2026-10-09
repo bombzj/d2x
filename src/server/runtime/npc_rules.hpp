@@ -1,6 +1,8 @@
 #pragma once
 #include "core/id.hpp"
 #include "core/math.hpp"
+#include "gameplay/quest/id.hpp"
+#include "world/navigation.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -13,6 +15,11 @@ struct NpcRule {
     std::map<std::string, uint16_t, std::less<>> introductions;
     std::vector<uint16_t> gossip;
     std::set<uint16_t> questMessages;
+    std::map<std::pair<QuestId,std::string>,uint16_t> questSpeeches;
+    int questInitFunction{};
+    bool interactable=true;
+    int walkVelocity{};
+    MovementCollisionRule movement;
 };
-struct AreaNpc { EntityId id; Vec position; NpcRule rule; };
+struct AreaNpc { EntityId id; Vec position; NpcRule rule; bool hidden{},moving{}; Vec destination{}; };
 }

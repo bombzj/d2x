@@ -19,6 +19,7 @@ struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea>
 struct Ports { AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids; };
 class System {
     friend class travel::System;
+    friend class quests::System;
     State state_;
     const Ports ports_;
     uint64_t nextRequest_ = 1;
@@ -35,6 +36,9 @@ class System {
     DomainResult<> install(PreparedArea);
     void initialize();
     void objectCollision(RegionId, std::vector<Grid::Obstacle>);
+    void openTombWall(RegionId) noexcept;
+    DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec);
+    DomainResult<> moveQuestNpc(RegionId,EntityId,Vec,Vec,bool escaped);
     void fail(uint64_t request);
     std::vector<RegionId> visible(PlayerId) const;
     StepStatus step(TickContext, FrameFacts &);

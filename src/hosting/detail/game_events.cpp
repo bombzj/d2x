@@ -146,7 +146,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             }));
         } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::NpcMessages,[&](auto &out) {
-                out.u8(1); out.u32(uint32_t(npc->npc.value)); out.u8(uint8_t(npc->messages.size())); out.u8(0);
+                out.u8(npc->type); out.u32(uint32_t(npc->npc.value)); out.u8(uint8_t(npc->messages.size())); out.u8(0);
                 for (size_t i=0;i<8;++i) { const auto message=i<npc->messages.size()?npc->messages[i]:server::NpcMessage{}; out.u8(message.menu); out.u8(0); out.u16(message.text); }
             }));
         } else if (const auto *merchant = std::get_if<server::MerchantFact>(&fact)) {
@@ -161,7 +161,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         } else if (const auto *targeting=std::get_if<server::ItemTargetingFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::ItemTargeting,[&](auto &out){out.u8(uint8_t(targeting->cursor));out.u32(uint32_t(targeting->source.value));out.u16(uint16_t(targeting->skill));}));
         } else if (const auto *service = std::get_if<server::NpcServiceFact>(&fact)) {
-            delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(uint32_t(service->npc.value));out.u8(service->result);out.u8(0);}));
+            delta.push_back(encodeServerPacket(ServerMessage::NpcServiceResult,[&](auto &out){out.u32(uint32_t(service->npc.value));out.u8(service->result);out.u8(service->state);}));
         } else if (const auto *ui = std::get_if<server::UiFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(ui->action);}));
         } else throw std::logic_error("Native event encoder is not implemented for this fact");

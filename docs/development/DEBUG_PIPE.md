@@ -48,6 +48,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
+后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred／populationMissing提供原人口准备缺口诊断。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
+
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command server-protocol
 .\scripts\Send-D2XCommand.ps1 -Command server-systems
@@ -94,6 +96,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-npc-message` | stringId（0–65535）、可选npcRevision；必须为当前服务端对白列表且未确认，版本不符拒绝。发0x31，acknowledged只表示入队，不是任务成功回执 |
 | `online-npc-close` | 无参数；取消尚在靠近的交谈意图，或发0x30关闭当前NPC。取消靠近意图不会传送角色或撤销已提交的服务端寻路 |
 | `online-npc-travel` | 无参数；要求当前scene.npcConversation.travelLabel与travelDestination来自瓦瑞夫／马席夫真实身份和任务资格；发原0x38 action=0、NPC、目的地并结束临时交谈，随后查询实际幕／位置 |
+| `online-staff-update` | cancel布尔（默认false）；要求已收到原0x58的插杖来源，提交时只使用实际本人Cursor物品GUID，发送原0x44 state3；cancel发送state2。入队不代表材料消耗或古墓开墙，应核对库存、0x58结果和权威机关 |
 | `online-npc-respec` | 无参数；要求原slot41 pending且Akara菜单有原重置选项；发送原0x38 action0、NPC、parameter0，随后核对属性／技能／热键与存档 |
 | `online-waypoint-travel` / `online-waypoint-close` | travel的level为原区域ID1–136，必须有当前服务端0x63菜单且目的地已解锁；close无参数，可取消当前待确认请求或关闭已确认菜单。发送原0x49，level=0为关闭，不解锁任务或传送点 |
 | `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |

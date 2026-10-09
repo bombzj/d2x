@@ -40,6 +40,12 @@ bool Map::openTombWall(Vec position) {
         TombWall saved;
         saved.x = wallColumn;
         saved.y = wallRow;
+        for(size_t i=0;i<terrain.instances.size();++i) {
+            auto &instance=terrain.instances[i];
+            if(instance.x!=wallColumn || instance.y!=wallRow || instance.removed || instance.tile<0) continue;
+            const auto *tile=terrain.tiles.at(size_t(instance.tile));
+            if((tile->main==8 && tile->sub<=1 && instance.type>=1 && instance.type<=7) || (tile->main==6 && (tile->sub==8 || tile->sub==9) && instance.type==1)) {saved.instances.push_back(i);instance.removed=true;}
+        }
         for (auto &layer : terrain.data.walls) {
             auto &cell = layer[cellIndex];
             saved.walls.push_back(cell);
@@ -52,6 +58,7 @@ bool Map::openTombWall(Vec position) {
             for (int horizontal = 0; horizontal < 5; ++horizontal) {
                 const size_t index = size_t(wallRow * 5 + vertical) * grid.width + wallColumn * 5 + horizontal;
                 saved.collision[size_t(vertical * 5 + horizontal)] = grid.terrainCollision[index];
+                if(!grid.fullTerrainCollision.empty()) saved.fullCollision[size_t(vertical*5+horizontal)]=grid.fullTerrainCollision[index];
                 uint8_t flags = 0;
                 auto merge = [&](const MapCell &cell) {
                     if (!cell.occupied() || ((cell.orientation == 10 || cell.orientation == 11) &&
@@ -72,6 +79,7 @@ bool Map::openTombWall(Vec position) {
                 for (const auto &layer : terrain.data.floors) merge(layer[cellIndex]);
                 for (const auto &layer : terrain.data.walls) merge(layer[cellIndex]);
                 grid.terrainCollision[index] = flags;
+                if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[index]=uint16_t((grid.fullTerrainCollision[index]&~uint16_t(0xff))|flags);
                 grid.blocked[index] = (flags & 0x09) != 0;
                 grid.lightBlocked[index] = (flags & 0x22) != 0;
             }
@@ -83,6 +91,7 @@ bool Map::openTombWall(Vec position) {
 void Map::restoreTombWall() {
     if (tombWalls.empty()) return;
     for (const auto &saved : tombWalls) {
+        for(const auto index:saved.instances) terrain.instances.at(index).removed=false;
         const size_t cellIndex = size_t(saved.y) * terrain.data.width + saved.x;
         for (size_t layer = 0; layer < terrain.data.walls.size(); ++layer) terrain.data.walls[layer][cellIndex] = saved.walls[layer];
         for (int vertical = 0; vertical < 5; ++vertical)
@@ -90,6 +99,7 @@ void Map::restoreTombWall() {
                 const size_t index = size_t(saved.y * 5 + vertical) * grid.width + saved.x * 5 + horizontal;
                 const auto flags = saved.collision[size_t(vertical * 5 + horizontal)];
                 grid.terrainCollision[index] = flags;
+                if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[index]=saved.fullCollision[size_t(vertical*5+horizontal)];
                 grid.blocked[index] = (flags & 0x09) != 0;
                 grid.lightBlocked[index] = (flags & 0x22) != 0;
             }

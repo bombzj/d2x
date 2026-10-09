@@ -1,6 +1,6 @@
 # 地图物件与交互
 
-Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸、模式／动画、名称、AutoMap及灯光。静态地形物件与原服可交互GUID分开；操作、开门、井水、神坛、宝箱锁／陷阱、掉落和任务效果由原服执行。
+Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸、模式／动画、名称、AutoMap及灯光。静态地形物件与原服可交互GUID分开；操作、开门、井水、神坛、宝箱锁／陷阱、掉落和任务效果由所连接的服务端执行；自研实际范围见下文，不把原服支持当作自研已实现。
 
 ## 碰撞与靠近
 
@@ -46,13 +46,13 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 原版静态CltDo25入口RVA73CB0→A0DB0确认64方向表；CltDo51入口585C0确认雕像轴向／枪口和原MonSeq事件；CltDo4入口BBE00→B9470确认烟团机会／数量／半径与末帧。仅实现视觉随机流，原服未传单位随机种子，烟团随机样本不保证逐帧相同。生命、状态、陷阱触发和概率不在表现层结算。
 
-## 自研第一幕任务物件
+## 自研任务物件
 
-树OperateFn12、石柱9、牢笼10、古书6、马勒斯21及塔箱InitFn47均从当前MPQ准备。objects管理模式／碰撞／时钟，通过quests、travel和loot窄入口提交实际任务物品、资格、门户及掉落；玩法不读取MPQ。原DS1 TileInfo11可编码为style30／sequence11，不只扫描style33。完成游戏的牢笼按原SPECIAL1（mode5）恢复，不能套普通宝箱mode2。具体范围及原交互冒烟只维护在[第一幕任务](../quests/ACT1.md)。其他幕机关与完整陷阱仍待迁入。
+树OperateFn12、石柱9、牢笼10、古书6、马勒斯21及塔箱InitFn47均从当前MPQ准备。objects管理模式／碰撞／时钟，通过quests、travel和loot窄入口提交实际任务物品、资格、门户及掉落；玩法不读取MPQ。原DS1 TileInfo11可编码为style30／sequence11，不只扫描style33。完成游戏的牢笼按原SPECIAL1（mode5）恢复，不能套普通宝箱mode2。具体范围及原交互冒烟只维护在[第一幕任务](../quests/ACT1.md)。第二幕祭坛／箱子／日志／插杖／墓墙与后三幕祭坛／宝珠／熔炉／封印／冻结安雅／山顶机关已接，具体操作、恢复例外及缺口见[第二幕](../quests/ACT2.md)与[第三至第五幕](../quests/ACT3_5.md)。完整陷阱及全部特殊机关仍未完成。
 
 ## 自研传送点
 
-2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；本轮没有构建、打包或运行认证。现有运行包仍是基线所列第一幕任务批次。
+2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；已在历史v26第二幕任务包构建／打包，并包含于当前v27包。新增传送点边界未逐项运行认证，包与准确有限证据见基线。
 
 | 路径 | 当前源码规则与分工 |
 | --- | --- |
@@ -69,7 +69,7 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 依据：D2Game ObjMode::OperateFunction23／WAYPOINT、ObjRgn::InitFunction17、PlrMsg::Rcv0x49、SUnitNpc::WARRIV1；D2Common D2Waypoints、DrlgDrlgWarp::GetWaypointRoomExFromLevel、D2Dungeon::FindActSpawnLocationEx及D2Collision::GetFreeCoordinatesImpl。当前MPQ为39个传送点及16种OperateFn23物件；容量112是原布局，不代表新增传送点或解锁后续幕任务。
 
-尚有前置依赖：PvP敌意变更后的10秒禁用规则需要真实敌意时钟；其他幕NPC／任务跨幕入口的城镇解锁需随相应旅行模块实现。原WAYPOINT到达分支额外发送0x0D/action1、坐标+3的短动作通知，当前仍使用既有TravelFact／0x15位置同步；需先核实原客户端该动作的坐标／路径消费，不能直接追加一个会被当前客户端解释为新权威位置的包。精细房间生命周期与动态拥挤亦未完成一致性认证，不能据本轮源码核对宣称全路径与原服完全相同。调试观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
+尚有前置依赖：PvP敌意变更后的10秒禁用规则需要真实敌意时钟；五幕个人任务的城镇解锁已随旅行事务接入，完整组队／特殊旅行边界仍待补。原WAYPOINT到达分支额外发送0x0D/action1、坐标+3的短动作通知，当前仍使用既有TravelFact／0x15位置同步；需先核实原客户端该动作的坐标／路径消费，不能直接追加一个会被当前客户端解释为新权威位置的包。精细房间生命周期与动态拥挤亦未完成一致性认证，不能据本轮源码核对宣称全路径与原服完全相同。调试观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
 
 ## 限制与证据
 

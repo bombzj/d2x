@@ -2,13 +2,15 @@
 
 佣兵资格、费用、归属、同行、战斗与保存由所连接的服务端决定。自研宿主已实现第一幕血乌奖励的真实罗格伙伴，尚未完成完整雇佣、复活、装备、喂药与经验成长服务。佣兵面板存在不表示这些服务可用；旧客户端本地佣兵执行器与其历史冒烟不认证当前联机。
 
-## 第一幕奖励与运行态
+## 任务奖励与运行态
 
 [第一幕任务](../quests/ACT1.md)负责一次性奖励资格；hosting从当前Hireling表准备原Kashya奖励，已有佣兵（包括死亡记录）不被替换。异步准备复验人物身份、佣兵sourceRow与等级，缺原身份、动画或技能参数明确暂缓。
 
 [hireling_content.cpp](../../../src/hosting/hireling_content.cpp)目前只准备第一幕罗格，读取Hireling、MonStats／MonStats2、Skills、Missiles与AnimData等原数据，使用原成长、技能权重及Fn061同行／目标选择规则。[companions/hireling.cpp](../../../src/server/systems/companions/hireling.cpp)管理规则准备与归属、出生、同行／远距归位、射击及Inner Sight；伤害、弹体和死亡复用monsters／effects与事务。伙伴为真实owned monster，不使用敌对替身，不由客户端补造单位或技能。
 
-个人佣兵身份与死亡记录通过PlayerStore导出，原0x7A等消息投影归属。有限奖励、同行及新进程恢复证据只维护在[第一幕任务](../quests/ACT1.md#有限运行证据)，不据此认证全部AI分支或完整佣兵系统。
+第三幕基德宾的铁狼与第五幕囚犯救援的野蛮人奖励已由hosting/quest_content准备原Hireling身份并保存，保留已有佣兵；具体资格及证据见[第三至第五幕](../quests/ACT3_5.md)。这两类的完整活动实体／AI尚未迁入，不能把身份领奖／保存当作同行战斗支持。
+
+个人佣兵身份与死亡记录通过PlayerStore导出，原0x7A等消息投影归属。罗格奖励／同行／新进程恢复证据见[第一幕任务](../quests/ACT1.md#有限运行证据)，铁狼身份奖励／恢复与保留已有佣兵证据见ACT3–5，不据此认证全部AI分支或完整佣兵系统。
 
 ## 数据与保存
 

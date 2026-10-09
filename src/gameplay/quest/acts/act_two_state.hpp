@@ -17,4 +17,5 @@ inline constexpr uint32_t staffExplanationMask = staffScrollExplained | staffCub
     staffHeadExplained | staffShaftExplained | staffAssemblyExplained;
 inline constexpr uint32_t radamentBookPending = 1;
 inline constexpr uint32_t radamentBookUsed = 2;
+inline constexpr uint32_t arcaneCommentPending = 1;
 } // namespace d2x

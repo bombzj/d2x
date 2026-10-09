@@ -7,6 +7,7 @@
 #include "world/object_population.hpp"
 #include "world/maze.hpp"
 #include "core/random.hpp"
+#include "content/string_table.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
@@ -27,6 +28,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
+    if(request.act==4) {ClassicStrings strings(archives);if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);}
     const auto groups = decodeTable(archives.read("data/global/excel/objgroup.txt"));
     const auto shrines = decodeTable(archives.read("data/global/excel/shrines.txt"));
     bool portalResources=true;
@@ -38,17 +40,28 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     }
     WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
     if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=server::PortalRule{60,int(redPortal.reach),0};
+    for(const int code:{565,566}) {
+        WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
+        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,server::PortalRule{code,int(questPortal.reach),0});
+    }
+    std::optional<Vec> firstSpawnMarker;
     for(const auto &layer:prepared.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size();++index) {
         const auto &cell=layer[index]; if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11)) continue;
         // DRLGPRESET_LoadDrlgFile maps style30 to sequence, style31 to
         // sequence+5, style32 to10 and style33 to11. Tristram uses30/11.
         const auto style=(cell.value>>20)&63,sequence=(cell.value>>8)&255;
         const unsigned tileInfo=style==30?sequence:style==31?sequence+5:style==32?10:style==33?11:UINT32_MAX;
-        if(tileInfo!=11) continue;
         const auto width=prepared.terrain.map->terrain.data.width;
-        const Vec point{float(index%width*5+3),float(index/width*5+3)}; const auto arrival=area.collision.nearest(point,playerMovement);
+        const Vec point{float(index%width*5+3),float(index/width*5+3)};
+        if(tileInfo<=13 && !firstSpawnMarker) firstSpawnMarker=point;
+        if(tileInfo!=11) continue;
+        const auto arrival=area.collision.nearest(point,playerMovement);
         if(area.collision.walkable(arrival,playerMovement) && (arrival-point).length()<=50) area.portalArrival=arrival;
     }
+    // sub_6FD788D0 uses the first authored TileInfo when a fixed-position
+    // level has no matching tile11. Do not synthesize a town coordinate.
+    if(area.town && !area.portalArrival && firstSpawnMarker)
+        area.portalArrival=area.collision.nativeSpawn(*firstSpawnMarker,50,playerMovement);
     Region region; region.definition.id = area.id; region.definition.safe = area.town;
     region.map = *prepared.terrain.map; region.objectSeed = initialRandom(request.seed + uint32_t(request.level));
     EntityIds ids(uint64_t{1} << 32); size_t symbol = 0;
@@ -58,7 +71,8 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         object.objectClass = preset(source.id, area.act, request.level, region.objectSeed);
         if (source.id == 582) {
             if (request.level != 74) { area.objectDeferred.push_back(source.id); continue; }
-            const auto missing = size_t(actTwoTombs(request.seed)[0] - 66), offset = symbol++ % 6;
+            if(!area.staffTomb || *area.staffTomb<66 || *area.staffTomb>72) throw std::runtime_error("Missing generated true tomb for Arcane symbols");
+            const auto missing = size_t(*area.staffTomb - 66), offset = symbol++ % 6;
             object.objectClass = actTwoTombSymbols[offset >= missing ? offset + 1 : offset];
         }
         object.pos = {float(source.x), float(source.y)}; object.appearance.category = "objects"; object.appearance.mode = "nu";
@@ -72,7 +86,42 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         }
         region.objects.push_back(std::move(object));
     }
+    // ACT5Q3_SpawnFrozenDrehya creates OBJECT_FROZEN_ANYA at the
+    // authored Init67 marker; the invisible marker itself is not usable.
+    if(request.level==114) {
+        std::vector<Vec> frozenMarkers;
+        for(const auto &object:region.objects) for(size_t row=0;row<objectTable.rows().size();++row)
+            if(objectTable.number(row,"Id")==object.objectClass && objectTable.number(row,"InitFn")==67) frozenMarkers.push_back(object.pos);
+        for(const auto position:frozenMarkers) {
+            WorldObject frozen;frozen.id=ids.allocate();frozen.act=4;frozen.objectClass=558;frozen.pos=position;
+            frozen.appearance.category="objects";frozen.appearance.mode="op";configureWorldObject(frozen,rows);
+            if(frozen.operateFn!=67) throw std::runtime_error("Missing original Frozen Anya object rule");
+            region.objects.push_back(std::move(frozen));
+        }
+    }
     populateAct1WorldObjects(region, ids, catalog, rows, groups, request.seed + uint32_t(request.level));
+    // A2Q6 creates the original Duriel entrance relative to the authored
+    // orifice. It is prepared now and admitted only when its quest timer fires.
+    if(request.act==1) {
+        const auto orifice=std::find_if(region.objects.begin(),region.objects.end(),[](const auto &o){return o.operateFn==25;});
+        if(orifice!=region.objects.end()) {
+            WorldObject entrance;entrance.id=ids.allocate();entrance.act=1;entrance.objectClass=100;
+            entrance.pos=orifice->pos+Vec{-13,3};entrance.appearance.category="objects";entrance.appearance.mode="on";
+            configureWorldObject(entrance,rows);
+            auto opened=region.map;
+            if(!opened.openTombWall(entrance.pos)) throw std::runtime_error("Original tomb wall could not be resolved");
+            for(size_t i=0;i<opened.grid.terrainCollision.size();++i) if(opened.grid.terrainCollision[i]!=region.map.grid.terrainCollision[i]) {
+                const auto flags=opened.grid.terrainCollision[i];
+                const uint16_t full=region.map.grid.fullTerrainCollision.empty()?flags:uint16_t((region.map.grid.fullTerrainCollision[i]&~uint16_t(0xff))|flags);
+                area.openedTombWall.push_back({i,opened.grid.blocked[i],opened.grid.lightBlocked[i],flags,full});
+            }
+            for(size_t i=0;i<missiles.rows().size();++i) if(i==338) {
+                const auto range=missiles.number(i,"Range");if(range && *range>=75) area.tombOpeningTicks=unsigned((*range-75)/20+1)*20;break;
+            }
+            if(!area.tombOpeningTicks) throw std::runtime_error("Missing original Horadric staff missile timing");
+            region.objects.push_back(std::move(entrance));
+        }
+    }
     initializeChests(region, catalog, rows);
     for (auto &object : region.objects) {
         if (object.interaction == Interaction::Shrine && !object.shrineCode) assignShrine(object, shrines, request.level, region.objectSeed);
@@ -107,6 +156,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
             rule.shrine = shrine;
         }
         area.objects.push_back(std::move(entry));
+        if(object.objectClass==100 && !area.openedTombWall.empty()) area.objects.back().questSpawn=true;
     }
     region.refreshObjectCollision(0); area.collision.setObstacles(std::move(region.map.grid.obstacles));
 }

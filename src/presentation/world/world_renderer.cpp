@@ -19,6 +19,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         if (newGame) lighting_.resetEnvironment();
     }
     view_.camera = project(scene.observer);
+    if(scene.eclipse) lighting_.setEclipse(*scene.eclipse);
     lighting_.advance(scene.elapsed, level);
     lighting_.update(map.grid, level, scene.region, scene.observer, actorClient_.controlledActor().lightRadius);
     const auto &tiles = assets_.worldTileSprites(map, scene.palette);
@@ -57,6 +58,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if (map.terrain.preparedRooms) {
         for (size_t index = 0; index < map.terrain.instances.size(); ++index) {
             const auto &tile = map.terrain.instances[index];
+            if(tile.removed) continue;
             if (warps[index] == 1 || (warps[index] != 0 && (tile.flags & 8) && !(tile.flags & 0x200))) continue;
             const bool floor = tile.type == 0, shadow = tile.type == 13;
             const bool lower = tile.type >= 16 && tile.type <= 19;

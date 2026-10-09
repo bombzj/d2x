@@ -25,6 +25,7 @@ struct NpcMenuEntry {
 };
 struct NpcTopicView { QuestId quest; std::string title, text; };
 struct NpcConversationView {
+    std::optional<uint32_t> scrollMessage;
     uint64_t revision = 0;
     EntityId actor, npc;
     Vec position;

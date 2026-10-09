@@ -12,6 +12,7 @@ void NativeRealmService::publishAreas(RegionId region) {
     const auto &destination = areas.at(region);
     const auto crossAct = terrain.request.act != destination.request.act;
     if (crossAct) {
+        peer.npcMotion.clear();
         sendGame(encodeServerPacket(ServerMessage::UnloadAct, [](auto &) {}));
         sendGame(encodeServerPacket(ServerMessage::LoadAct, [&](auto &out) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
@@ -153,12 +154,18 @@ void NativeRealmService::publishNpcs() {
     for (const auto area : host.visibleAreas(*binding)) {
         const auto view=host.area(binding->game,area); if (!view) continue;
         for (const auto &npc : view->definition.npcs) {
-            if(!host.npcVisible(*binding,npc.rule.code,area)) continue;
+            if(npc.hidden) continue;
+            if(!host.npcVisible(*binding,npc.rule.code,area,npc.rule.questInitFunction)) continue;
             next.insert(npc.id);
             const bool fresh=!peer.npcs.contains(npc.id);
             if(fresh) {
             MonsterSnapshot snapshot; snapshot.id=npc.id; snapshot.area=area; snapshot.nativeClass=npc.rule.nativeClass; snapshot.position=npc.position; snapshot.life=128;
             packets.push_back(nativeMonsterAssignment(snapshot,shared.terrain.at(binding->game).at(area).origin));
+            }
+            if(npc.rule.code=="act5pow") {
+                MonsterSnapshot snapshot;snapshot.id=npc.id;snapshot.area=area;snapshot.position=npc.position;snapshot.destination=npc.destination;snapshot.life=128;snapshot.moving=npc.moving;
+                auto motion=nativeMonsterMotion(snapshot,shared.terrain.at(binding->game).at(area).origin);
+                if(fresh || peer.npcMotion[npc.id]!=motion) {peer.npcMotion[npc.id]=motion;packets.push_back(std::move(motion));}
             }
             const auto states=host.unitStates(binding->game,npc.id);auto &previous=peer.npcStates[npc.id];
             for(const int id:states) if(!previous.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::EnableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
@@ -174,6 +181,7 @@ void NativeRealmService::publishNpcs() {
     for (const auto id : peer.npcs) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(id.value));}));
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.npcs.swap(next);
+    std::erase_if(peer.npcMotion,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
     std::erase_if(peer.npcStates,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
     std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
 }

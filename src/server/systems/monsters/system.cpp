@@ -8,6 +8,11 @@
 #include <algorithm>
 
 namespace d2x::server::monsters {
+void System::withdrawQuestGroup(RegionId region,std::string_view name) {
+    const auto key="quest."+std::string(name);
+    std::erase_if(state_.actors,[&](const auto &entry){const auto &m=entry.second;return m.area==region && !m.owner && m.identity.origin==SpawnOrigin::Preset && (m.identity.spawnKey==key || m.identity.ownerSpawnKey==key);});
+    std::erase_if(state_.deathCascades,[&](const auto &entry){return !state_.actors.contains(entry.first) || !state_.actors.contains(entry.second.source);});
+}
 DomainResult<EntityId> System::admit(const Admission &request) {
     const auto *area = ports_.areas.find(request.area);
     if (!area || area->definition.town || !request.hostile || !request.rule || !request.implementation || request.identity.spawnKey.empty())

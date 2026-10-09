@@ -104,6 +104,7 @@ void playerMode(OnlineView &v, const OnlineUnit &u) {
         w.movementRequest.reset(); w.npcRequested.reset(); w.npcConversation.reset(); w.waypointSource.reset();
         w.waypointRequested.reset();
         w.waypointActivation.reset();
+        w.staffSource.reset();
     } else if (w.deathPhase == OnlineDeathPhase::Unknown) {
         w.deathPhase = OnlineDeathPhase::Alive; w.deathRevision = w.revision;
     } else if (onlinePlayerDead(w) && w.respawnRequest && w.respawnRequest->sent && u.position &&
@@ -136,6 +137,7 @@ void removePlayer(OnlineWorldView &w) {
     w.waypointRequested.reset();
     w.waypointActivation.reset();
     w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
+    w.staffSource.reset();
     w.townPortalPending = false;
     w.playerPosition.reset();
     mapEvent(w, OnlineMapEvent::Kind::RemovePlayer);
@@ -371,6 +373,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if (k.type == 2 && w.waypointRequested == k.id) w.waypointRequested.reset();
         if (k.type == 2 && w.waypointActivation && w.waypointActivation->source == k.id) w.waypointActivation.reset();
         if (stashRemoved) w.storage = {};
+        if(k.type==2 && w.staffSource==k.id) {w.staffSource.reset();++w.interactionGeneration;}
+        if(k.type==2 && w.npcConversation && w.npcConversation->type==2 && w.npcConversation->source==k.id) {w.npcConversation.reset();++w.interactionGeneration;}
         if (k.type == 1) {
             if (w.npcRequested == k.id) w.npcRequested.reset();
             if (w.npcConversation && w.npcConversation->source == k.id) w.npcConversation.reset();
@@ -651,7 +655,13 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         }
         break;
     }
-    case 0x58: {r.u32();r.u8();r.u8();r.finish();break;}
+    case 0x53: {const auto cycle=r.u32();r.u32();const auto tainted=r.u8();r.finish();if(cycle<=5) w.eclipse=tainted!=0;break;}
+    case 0x58: {
+        const auto source=r.u32();const auto result=r.u8();r.u8();r.finish();
+        if(result==0) {w.staffSource=source;w.staffResult=result;++w.staffRevision;}
+        else if(w.staffSource==source && (result==1 || result==4 || result==5)) {w.staffResult=result;++w.staffRevision;if(result!=4)w.staffSource.reset();}
+        break;
+    }
     case 0x7A: {
         const auto assign=r.u8(),type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32();r.finish();
         if(assign) {if(!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner});}
@@ -689,12 +699,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             if (i < count) messages.push_back({id, menu});
         }
         r.finish();
-        // Object scrolls and unsolicited quest notifications do not open an NPC menu.
-        if (target.type == 1 && w.npcRequested == target.id) {
+        if ((target.type == 1 && w.npcRequested == target.id) || (target.type==2 && w.units.contains(target))) {
             w.questAlerts.erase(target);
             if (!w.npcConversation || w.npcConversation->source != target.id)
                 w.npcConversation = OnlineNpcConversation{target.id, 0, {}, {}};
             auto &conversation = *w.npcConversation;
+            conversation.type=target.type;
             conversation.messages = std::move(messages);
             conversation.acknowledged.clear();
             conversation.revision = w.revision;

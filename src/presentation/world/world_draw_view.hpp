@@ -36,6 +36,7 @@ struct WorldDrawView {
     uint64_t gameGeneration = 0, areaGeneration = 0;
     Vec observer, roomObserver, terrainOrigin;
     float time = 0, elapsed = 0;
+    std::optional<bool> eclipse;
     std::optional<size_t> selectedExit;
     EntityId groundHighlight;
     std::vector<WorldDrawItem> items;

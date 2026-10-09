@@ -151,7 +151,8 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto result=ports_.monsters.damage(target->id,owner->actor,amount,tick.tick,cold,false,impact.hitClass,poison);
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                 if(result && impact.nextDelay) ports_.monsters.hitDelay(target->id,tick.tick+impact.nextDelay);
-                if(result) commitRandom();++impact.next;continue;
+                if(result) commitRandom();
+                ++impact.next;continue;
             }
             if(impact.weapon) {
                 const auto &attack=*impact.weapon;

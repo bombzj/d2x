@@ -4,12 +4,14 @@
 #include "server/runtime/events.hpp"
 #include "server/area_store.hpp"
 #include "gameplay/npc/intents.hpp"
+#include <deque>
 namespace d2x::server::npc {
 using Intent = std::variant<TalkToNpc, EndNpcConversation>;
 struct Request { Intent intent; };
 struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; };
-struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; };
+struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
+struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; };
 class System {
     State state_; const Ports ports_;
   public:
@@ -19,6 +21,7 @@ class System {
     const Conversation *conversation(PlayerId) const;
     DomainResult<> execute(const ActorContext &, const Request &);
     DomainResult<> close(PlayerId);
+    DomainResult<> escape(RegionId,EntityId,Vec);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

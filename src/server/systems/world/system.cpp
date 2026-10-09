@@ -2,6 +2,24 @@
 #include "server/player_store.hpp"
 #include <algorithm>
 namespace d2x::server::world {
+DomainResult<> System::moveQuestNpc(RegionId region,EntityId id,Vec position,Vec destination,bool escaped) {
+    const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
+    for(auto &npc:found->second.definition.npcs) if(npc.id==id && npc.rule.code=="act5pow") {
+        npc.position=position;npc.destination=destination;npc.moving=!escaped;npc.hidden=escaped;return {DomainStatus::Applied,std::monostate{}};
+    }
+    return {DomainStatus::Stale,{}};
+}
+DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view code,Vec position) {
+    const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
+    auto &area=found->second.definition;
+    for(const auto &npc:area.npcs) if(npc.rule.code==code) return {DomainStatus::Applied,npc.id};
+    const auto prepared=area.questNpcs.find(code);
+    if(prepared==area.questNpcs.end()) return {DomainStatus::Unavailable,{}};
+    const auto point=area.collision.nativeSpawn(position,15,prepared->second.movement);
+    if(!point) return {DomainStatus::Conflict,{}};
+    if(ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
+    const auto id=ports_.ids.allocate();area.npcs.push_back({id,*point,prepared->second});return {DomainStatus::Applied,id};
+}
 void System::assign(AreaDefinition &area) {
     for (auto &exit : area.exits) exit.id = ports_.ids.allocate();
     for (auto &npc : area.npcs) npc.id = ports_.ids.allocate();
@@ -67,6 +85,15 @@ void System::fail(uint64_t requestId) {
     auto &pending = state_.preparation;
     const auto found = std::find_if(pending.begin(), pending.end(), [&](const auto &p) { return p.request == requestId; });
     if (found != pending.end()) { failed_[found->destination] = requestId; pending.erase(found); }
+}
+void System::openTombWall(RegionId id) noexcept {
+    auto &grid=ports_.areas.areas_.at(id).definition.collision;
+    for(const auto &cell:ports_.areas.areas_.at(id).definition.openedTombWall) {
+        grid.blocked[cell.index]=cell.blocked;grid.lightBlocked[cell.index]=cell.light;
+        grid.terrainCollision[cell.index]=cell.terrain;
+        if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[cell.index]=cell.full;
+    }
+    ++grid.obstacleRevision;
 }
 std::vector<RegionId> System::visible(PlayerId id) const {
     const auto *player = ports_.players.find(id); if (!player || !player->entered) return {};

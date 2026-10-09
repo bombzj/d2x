@@ -5,35 +5,58 @@
 #include "server/runtime/npc_rules.hpp"
 #include "gameplay/quest/id.hpp"
 #include "preparation.hpp"
+#include "state.hpp"
 namespace d2x::server::quests {
-enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec };
-struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; };
+enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal };
+struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
-    bool denCleared{};
-    unsigned denRemaining{};
-    std::set<PlayerId> eligible;
-    std::map<PlayerId,unsigned> observed;
-    std::array<bool,6> objectives{};
-    std::map<QuestId,std::set<PlayerId>> goals;
-    std::array<int,5> stones{};
-    unsigned activatedStones{};
-    bool stonesOrdered{}, cainRescued{};
-    bool restoreCairnStones{}, cainPortalOpened{};
-    bool andarielPortal{};
-    uint64_t andarielPortalAt{};
+    ActOneState actOne;
+    ActTwoState actTwo;
+    ActThreeState actThree;
+    ActFourState actFour;
+    ActFiveState actFive;
+    std::array<bool,size_t(QuestId::Count)> objectives{};
+    std::map<QuestId,Goal> goals;
     std::map<PlayerId,Preparation> pending;
     uint64_t next=1;
     std::string deferred;
     std::map<EntityId,bool> completed;
+    std::map<EntityId,int> objectModes;
 };
-struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; const monsters::System &monsters; const npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; };
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
-    DomainResult<> commit(const ActorContext &,CharacterRecord);
-    DomainResult<> prepareReward(const ActorContext &,EntityId,RewardKind,bool conversation);
+    DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false);
+    QuestFact fact(PlayerId,const CharacterRecord &,RegionId) const;
+    DomainResult<> prepareReward(const ActorContext &,EntityId,RewardKind,bool conversation,std::optional<Vec> dropPosition = {});
     StepStatus denStep(TickContext);
     StepStatus actOneStep(TickContext);
+    StepStatus actTwoStep(TickContext);
+    StepStatus actThreeStep(TickContext);
+    StepStatus actFourStep(TickContext);
+    StepStatus actFiveStep(TickContext);
+    StepStatus ancientsStep(TickContext);
+    StepStatus baalStep(TickContext);
+    StepStatus flushGoals(TickContext);
+    void captureGoal(QuestId,uint32_t,RegionId);
+    std::optional<Dialogue> actOneDialogue(const ActorContext &,const NpcRule &) const;
+    std::optional<Dialogue> actTwoDialogue(const ActorContext &,const NpcRule &) const;
+    DomainResult<> acknowledgeActTwo(const ActorContext &,const Request &,const NpcRule &);
+    DomainResult<> operateActTwo(const ActorContext &,EntityId,int,int,Vec);
+    DomainResult<> submitStaff(const ActorContext &,EntityId,EntityId,unsigned);
+    std::optional<Dialogue> actThreeDialogue(const ActorContext &,const NpcRule &) const;
+    DomainResult<> acknowledgeActThree(const ActorContext &,const Request &,const NpcRule &);
+    std::optional<Dialogue> speech(const NpcRule &,QuestId,std::string_view,uint8_t menu=0) const;
+    DomainResult<> spawnQuestGroup(const ActorContext &,std::string_view);
+    DomainResult<> operateActThree(const ActorContext &,EntityId,int,int,Vec);
+    std::optional<Dialogue> actFourDialogue(const ActorContext &,const NpcRule &) const;
+    DomainResult<> acknowledgeActFour(const ActorContext &,const Request &,const NpcRule &);
+    DomainResult<> operateActFour(const ActorContext &,EntityId,int,int,Vec);
+    std::optional<Dialogue> actFiveDialogue(const ActorContext &,const NpcRule &) const;
+    DomainResult<> acknowledgeActFive(const ActorContext &,const Request &,const NpcRule &);
+    DomainResult<> operateActFive(const ActorContext &,EntityId,int,int,Vec);
+    void resetAncients();
     void orderStones();
   public:
     explicit System(Ports ports) : ports_(ports) {}
@@ -43,8 +66,11 @@ class System {
     std::vector<Preparation> pending() const;
     DomainResult<> install(Prepared);
     std::optional<bool> takeCompletion(EntityId);
-    bool npcVisible(const CharacterRecord &,std::string_view code,RegionId) const;
+    bool npcVisible(const CharacterRecord &,std::string_view code,RegionId,int initFunction=0) const;
     DomainResult<> execute(const ActorContext &,const Request &);
+    bool allowsTravel(const CharacterRecord &,RegionId,RegionId) const;
+    std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
+    void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}
     StepStatus step(TickContext,FrameFacts &);
 };
 }

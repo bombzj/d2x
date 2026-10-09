@@ -52,6 +52,15 @@ enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    struct ActTwoItems {
+        std::string cube, scroll, shaft, amulet, staff, book;
+        bool artifact(std::string_view code) const { return code==scroll || code==shaft || code==amulet || code==staff; }
+    } actTwo;
+    struct LaterQuestItems {
+        std::string figurine,bird,lifePotion,gidbinn,tome,soulstone,hammer,defrostPotion,resistanceScroll;
+        std::array<std::string,4> khalimParts;
+        std::string khalimWill;
+    } laterQuests;
     std::map<RegionId,int> waypointIndices; // Immutable MPQ Levels identities, including unloaded areas.
     std::set<int> innateSkills;
     std::map<std::string,ItemSkillRule,std::less<>> itemSkills;

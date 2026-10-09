@@ -11,6 +11,7 @@ struct GeneratedArea {
     Vec origin;
     MapRecipe recipe;
     int palette{};
+    std::optional<int> staffTomb;
     std::vector<std::pair<int, int>> rooms; // Original tile anchors, activation order.
     std::shared_ptr<const Map> map;
 };

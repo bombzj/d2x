@@ -69,8 +69,8 @@ std::vector<PlayerId> GameHost::visiblePlayers(PlayerBinding binding) const {
 std::vector<RegionId> GameHost::visibleAreas(PlayerBinding binding) const {
     const auto *slot = find(binding.game); return slot ? slot->game->visibleAreas(binding.player) : std::vector<RegionId>{};
 }
-bool GameHost::npcVisible(PlayerBinding binding,std::string_view code,RegionId area) const {
-    const auto *slot=find(binding.game);return slot && slot->game->npcVisible(binding.player,code,area);
+bool GameHost::npcVisible(PlayerBinding binding,std::string_view code,RegionId area,int initFunction) const {
+    const auto *slot=find(binding.game);return slot && slot->game->npcVisible(binding.player,code,area,initFunction);
 }
 server::DomainResult<> GameHost::relocate(PlayerBinding binding,RegionId area,std::optional<Vec> position) {
     auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
@@ -82,7 +82,7 @@ std::optional<uint16_t> GameHost::npcQuestAlert(PlayerBinding binding,const serv
 std::optional<server::AreaView> GameHost::area(GameHandle handle, RegionId id) const {
     const auto *slot = find(handle); const auto *area = slot ? slot->game->area(id) : nullptr;
     if (!area) return {};
-    return server::AreaView{area->definition, area->generation};
+    return server::AreaView{area->definition, area->generation, {}, 0};
 }
 std::optional<server::GameSettings> GameHost::settings(GameHandle handle) const {
     const auto *slot = find(handle); return slot ? std::optional{slot->game->settings()} : std::nullopt;

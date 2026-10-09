@@ -3,6 +3,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 namespace d2x::server::npc {
@@ -11,7 +12,8 @@ const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool convers
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration) return nullptr;
     const auto &npcs = area->definition.npcs;
     const auto found = std::find_if(npcs.begin(),npcs.end(),[&](const auto &entry){return entry.id == id;});
-    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area) || (found->position-player->position).length() > 8 || !area->definition.collision.segment(player->position,found->position,id,{0x0801,1})) return nullptr;
+    if(found!=npcs.end() && (found->hidden || !found->rule.interactable)) return nullptr;
+    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area,found->rule.questInitFunction) || (found->position-player->position).length() > 8 || !area->definition.collision.segment(player->position,found->position,id,{0x0801,1})) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return &*found;
 }
@@ -43,6 +45,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             return result;
         }
         record.npcIntroductions.at(size_t(ports_.settings.difficulty)).insert(npc->rule.introduction);
+        for(const auto &prelude:questPreludes) if(npc->rule.code==prelude.npcClass && ports_.areas.at(actor.area).definition.act==prelude.act) record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(prelude.id))=true;
         auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor,player.inventoryRevision,player.characterRevision,std::move(record)});
         if (!plan) return {plan.status,{}};
         auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) current->second.pendingMessage.reset(); return result;
@@ -73,7 +76,32 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) { if (healing) ports_.effects.commit(std::move(*healing)); state_.conversations.swap(conversations); ++state_.next; } return result;
 }
 DomainResult<> System::close(PlayerId player) { state_.conversations.erase(player); return {DomainStatus::Applied,std::monostate{}}; }
+DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
+    if(state_.escapes.contains(id)) return {DomainStatus::Applied,std::monostate{}};
+    const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
+    for(const auto &npc:area->definition.npcs) if(npc.id==id && npc.rule.code=="act5pow" && !npc.hidden && npc.rule.walkVelocity>0) {
+        const auto point=area->definition.collision.nearest(destination,npc.rule.movement);
+        auto route=area->definition.collision.path(npc.position,point,false,npc.rule.movement);
+        if(route.empty() && (npc.position-point).length()>1) return {DomainStatus::Unavailable,{}};
+        state_.escapes.emplace(id,Escape{region,point,std::move(route),false});return {DomainStatus::Applied,std::monostate{}};
+    }
+    return {DomainStatus::Stale,{}};
+}
 StepStatus System::step(TickContext, FrameFacts &) {
+    for(auto &[id,escape]:state_.escapes) {
+        if(escape.escaped) continue;
+        const auto *area=ports_.areas.find(escape.area);if(!area) continue;
+        const auto npc=std::find_if(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==id;});
+        if(npc==area->definition.npcs.end()) continue;
+        auto point=npc->position;
+        if(!escape.route.empty()) {
+            const auto delta=escape.route.front()-point;const auto distance=delta.length(),stride=float(npc->rule.walkVelocity)/16.f;
+            point=distance<=stride?escape.route.front():point+delta*(stride/distance);
+            if(distance<=stride) escape.route.pop_front();
+        }
+        const bool escaped=escape.route.empty() && (point-escape.destination).length()<=1;
+        if(ports_.world.moveQuestNpc(escape.area,id,point,escape.route.empty()?escape.destination:escape.route.front(),escaped)) escape.escaped=escaped;
+    }
     std::erase_if(state_.conversations,[&](const auto &entry){return !conversation(entry.first);});
     return StepStatus::Complete;
 }

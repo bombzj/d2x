@@ -43,6 +43,9 @@ struct InventoryUi {
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
 inline constexpr float inventoryScale = classicPanelScale, inventoryCellSize = 29 * inventoryScale;
+inline Rectangle orificeBounds() {return {106*inventoryScale,98*inventoryScale,108*inventoryScale,164*inventoryScale};}
+inline Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale,p.y+12*inventoryScale,76*inventoryScale,108*inventoryScale};}
+inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale,p.y+126*inventoryScale,32*inventoryScale,32*inventoryScale};}
 inline Rectangle inventoryBounds() {
     return classicPanelBounds(true);
 }

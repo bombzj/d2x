@@ -32,6 +32,7 @@ GeneratedArea generateArea(Archives &archives, AreaGenerationRequest request) {
     GeneratedArea result;
     result.request = request; result.origin = {float(snapshot.tileX * 5), float(snapshot.tileY * 5)};
     result.palette = level.palette;
+    result.staffTomb = generator.layout().staffTomb;
     result.recipe = generator.recipe(request.level);
     result.rooms = std::move(anchors);
     result.map = std::make_shared<const Map>(std::move(snapshot.map));

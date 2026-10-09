@@ -27,6 +27,7 @@ RequestResult CloseNpc(GameplayContext &context, net::protocol::Reader &in) {
 RequestResult NpcMessage(GameplayContext &context, net::protocol::Reader &in) {
     const auto id=in.u32(); const auto text=in.u16(), reserved=in.u16(); in.finish();
     if(reserved) return {RequestStatus::Rejected};
+    if(text==396) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadJournal,QuestId::ArcaneSanctuary,EntityId{id},text});
     return submitGameplay(context,server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Acknowledge,text}});
 }
 RequestResult BuyItem(GameplayContext &context, net::protocol::Reader &in) {
@@ -57,7 +58,7 @@ RequestResult NpcService(GameplayContext &context, net::protocol::Reader &in) {
         for(const auto area:context.host.visibleAreas(context.player)) {
             const auto view=context.host.area(context.player.game,area);if(!view) continue;
             for(const auto &unit:view->definition.npcs) if(unit.id==EntityId{npc}) {
-                if(unit.rule.code=="warriv1" || unit.rule.code=="warriv2") return NpcTravel(context,npc,item);
+                if(unit.rule.code=="warriv1" || unit.rule.code=="warriv2" || unit.rule.code=="meshif1" || unit.rule.code=="meshif2") return NpcTravel(context,npc,item);
                 if(unit.rule.code=="akara" && !item) return submitGameplay(context,server::quests::Request{server::quests::Action::ClaimRespec,QuestId::DenOfEvil,EntityId{npc},{}});
             }
         }
@@ -79,6 +80,12 @@ RequestResult Waypoint(GameplayContext &context, net::protocol::Reader &in) {
     const auto source=in.u32(), destination=in.u32(); in.finish();
     if(destination>255) return {RequestStatus::Rejected};
     return submitGameplay(context,server::travel::Request{server::travel::Kind::Waypoint,{EntityId{source},0},RegionId(destination)});
+}
+RequestResult StaffUpdate(GameplayContext &context,net::protocol::Reader &in) {
+    const auto player=in.u32(),object=in.u32(),item=in.u32();const auto state=in.u16(),reserved=in.u16();in.finish();
+    const auto view=context.host.read(context.player);
+    if(!view || view->actor.id!=EntityId{player} || reserved || (state!=2 && state!=3)) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::quests::Request{server::quests::Action::StaffUpdate,QuestId::HoradricStaff,EntityId{object},state,EntityId{item}});
 }
 RequestResult UiAction(GameplayContext &context, net::protocol::Reader &in) {
     const auto action = in.u16(), high = in.u16(), low = in.u16(); in.finish();

@@ -70,6 +70,35 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (rule.stash) return ports_.inventory.openStash(actor,object.id,remoteRange);
+    if(area->definition.act==4 && ((rule.operation>=62 && rule.operation<=67) || rule.operation==70 || rule.operation==72)) {
+        if(rule.operation==65 && object.mode) return {DomainStatus::Conflict,{}};
+        if((rule.operation==66 || rule.operation==70) && object.mode!=2) return {DomainStatus::Conflict,{}};
+        const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result) for(const auto &[player,pending]:ports_.quests.read().pending) {(void)player;if(pending.source==object.id && !pending.conversation) object.pending=true;}
+        return result;
+    }
+    if(area->definition.act==3 && (rule.operation==49 || (object.definition>=392 && object.definition<=396))) {
+        if(rule.operation==49?object.mode!=0 && object.mode!=2:object.mode!=0) return {DomainStatus::Conflict,{}};
+        const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result) for(const auto &[player,pending]:ports_.quests.read().pending) {(void)player;if(pending.source==object.id && !pending.conversation) object.pending=true;}
+        return result;
+    }
+    if(area->definition.act==2 && (rule.operation==28 || rule.operation==31 || rule.operation==44 || rule.operation==45 || rule.operation==46 || rule.operation==53 || (rule.operation>=57 && rule.operation<=59))) {
+        const bool travel=rule.operation==44 || rule.operation==46;
+        if(travel?object.mode!=2:object.mode!=0) return {DomainStatus::Conflict,{}};
+        const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result) for(const auto &[player,pending]:ports_.quests.read().pending) {(void)player;if(pending.source==object.id && !pending.conversation) object.pending=true;}
+        return result;
+    }
+    if(area->definition.act==1 && (rule.operation==24 || rule.operation==25 || rule.operation==34 || (rule.operation>=39 && rule.operation<=43))) {
+        const bool reusable=rule.operation==25 || rule.operation==34 || rule.operation==42 || rule.operation==43;
+        if(!reusable && object.mode) return {DomainStatus::Conflict,{}};
+        if(rule.operation==43 && object.mode!=2) return {DomainStatus::Conflict,{}};
+        const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result && !reusable) object.pending=true;
+        if(result && rule.operation==42 && !object.mode) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;}
+        return result;
+    }
     if(rule.operation==6 || rule.operation==9 || rule.operation==10 || rule.operation==12 || (rule.operation==21 && object.definition==108)) {
         if(object.mode || object.pending) return {DomainStatus::Conflict,{}};
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
@@ -135,20 +164,37 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     std::set<RegionId> changed;
     for (const auto &[id, area] : ports_.areas.all()) for (const auto &source : area.definition.objects) {
         if (state_.objects.contains(source.id)) continue;
+        if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=id || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
         Object object{source.id, source.type, id, source.position, 1, 0, source.rule, 0, 0, false, 2 * source.rule.parameters[2]};
+        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);changed.insert(id);}
         if(source.rule.operation==23 && area.definition.town) object.mode=2; // ObjRgn::InitFunction17.
-        if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
-        if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().restoreCairnStones) object.mode=2;
+        if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
+        if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
         if(object.mode) changed.insert(id);
         state_.objects.emplace(source.id, std::move(object));
     }
     for (auto &[id, object] : state_.objects) {
-        if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().restoreCairnStones && object.mode!=2) {
+        if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
+            object.mode=*mode;object.until=0;++object.revision;changed.insert(object.area);
+        }
+        if(object.rule.operation==25) {
+            const auto &quest=ports_.quests.read().actTwo;
+            const bool leased=std::any_of(quest.orifices.begin(),quest.orifices.end(),[&](const auto &entry){return entry.second==id;});
+            const int mode=quest.tombAt && quest.tomb==object.area?2:leased?1:0;
+            if(object.mode!=mode) {object.mode=mode;object.until=0;++object.revision;changed.insert(object.area);}
+        }
+        if(object.definition==318) {
+            // A2Q4 Harem blocker is a shared game object, not a client guess.
+            bool opened=false;for(const auto &[player,p]:ports_.players.all()) {(void)player;if(p.entered && p.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::ArcaneSanctuary)).stage>0) opened=true;}
+            if(opened && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}
+        }
+        if(object.definition==153 && int(object.area)==73 && ports_.quests.read().actTwo.durielSlain && object.mode!=2) {object.mode=2;++object.revision;changed.insert(object.area);}
+        if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().actOne.restoreCairnStones && object.mode!=2) {
             object.mode=2;object.until=0;++object.revision;changed.insert(object.area);
         }
-        if(object.pending && (object.rule.operation==12 || object.rule.operation==21)) if(const auto result=ports_.quests.takeCompletion(id)) {
+        if(object.pending) if(const auto result=ports_.quests.takeCompletion(id)) {
             object.pending=false;
-            if(*result) {object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);++object.revision;changed.insert(object.area);}
+            if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
         }
         if (object.pending) if (const auto result = ports_.loot.takeCompletion(id)) {
             object.pending = false;

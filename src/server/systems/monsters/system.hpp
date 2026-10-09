@@ -108,6 +108,7 @@ class System {
     void hitDelay(EntityId id, uint64_t until);
     void knockback(EntityId, Vec source, uint64_t tick);
     DomainResult<> remove(EntityId);
+    void withdrawQuestGroup(RegionId,std::string_view);
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraSpec &, Vec) const;
     DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random) const;
     DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {}) const;

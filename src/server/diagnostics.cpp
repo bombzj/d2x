@@ -41,17 +41,21 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     DiagnosticSnapshot result;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
     result.containers = player->persistent.containers;
-    result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().denRemaining; result.denCleared=systems_.quests.read().denCleared; result.portals=visiblePortals(id);
+    result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().actOne.denRemaining; result.denCleared=systems_.quests.read().actOne.denCleared; result.portals=visiblePortals(id);
     result.corpses=player->persistent.corpses; result.merchantDeferred=systems_.merchant.read().deferred;
     result.craftingPending=systems_.crafting.read().pending.size();result.craftingDeferred=systems_.crafting.read().deferred;
     result.questPending=systems_.quests.read().pending.size();result.questDeferred=systems_.quests.read().deferred;
-    result.cainStones=systems_.quests.read().stones;result.activatedStones=systems_.quests.read().activatedStones;
+    result.cainStones=systems_.quests.read().actOne.stones;result.activatedStones=systems_.quests.read().actOne.activatedStones;
+    const auto &actTwo=systems_.quests.read().actTwo;
+    result.eclipse=actTwo.dark;result.altarDestroyed=actTwo.altarDestroyed;result.journalRead=actTwo.journalRead;
+    result.tombOpen=actTwo.tombOpen;result.durielSlain=actTwo.durielSlain;result.tombAt=actTwo.tombAt;result.staffTombOffset=actTwo.tombOffset;
+    result.actThree=systems_.quests.read().actThree;result.actFour=systems_.quests.read().actFour;result.actFive=systems_.quests.read().actFive;
     result.hirelingDeferred=systems_.companions.hirelingDeferred(id);
     for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
-    result.area = {area.definition, area.generation};
+    result.area = {area.definition, area.generation, area.definition.populationDeferred, area.definition.populationMissing};
     for (const auto &[key, value] : areas_.all()) {
-        (void)key; result.areas.push_back({value.definition, value.generation});
+        (void)key; result.areas.push_back({value.definition, value.generation, value.definition.populationDeferred, value.definition.populationMissing});
     }
     result.commandsQueued = commands_.size(); result.eventsQueued = events_.pending().size();
     result.eventFirst = events_.historyFirst(); result.eventLast = events_.historyLast();

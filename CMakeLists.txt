@@ -183,6 +183,16 @@ target_sources(d2x_server PRIVATE
   src/server/systems/merchant/system.cpp
   src/server/systems/quests/system.cpp
   src/server/systems/quests/act_one.cpp
+  src/server/systems/quests/progress.cpp
+  src/server/systems/quests/act_two.cpp
+  src/server/systems/quests/act_three.cpp
+  src/server/systems/quests/act_four.cpp
+  src/server/systems/quests/act_five.cpp
+  src/server/systems/quests/ancients.cpp
+  src/server/systems/quests/baal.cpp
+  src/server/systems/quests/act_two_dialogue.cpp
+  src/server/systems/quests/act_two_objects.cpp
+  src/server/systems/quests/staff.cpp
   src/server/systems/quests/rewards.cpp
   src/server/systems/progression/system.cpp
   src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
@@ -303,6 +313,7 @@ target_sources(d2x_gameplay PRIVATE src/gameplay/quest/den_of_evil.cpp
   src/gameplay/quest/forgotten_tower.cpp src/gameplay/quest/tools_of_trade.cpp
   src/gameplay/quest/sisters_to_slaughter.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/quest_content.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/quest_world_content.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/hireling_content.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/companions/hireling.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)

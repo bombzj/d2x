@@ -187,6 +187,7 @@ void SceneView::drawUi(Vec mouse) const {
         painter_.centered(view_.lootNotice, H - HUD - 35, 14, view_.noticeError ? RED : parchment);
     drawStorage(mouse);
     drawCube(mouse);
+    drawOrifice(mouse);
     drawPlayerTrade(mouse);
     drawCharacter(mouse);
     drawHireling(mouse);

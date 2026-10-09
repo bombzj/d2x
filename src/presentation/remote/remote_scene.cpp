@@ -1346,6 +1346,7 @@ struct RemoteScene::Impl {
         worldScene.observer = camera; worldScene.roomObserver = local(*v.world.playerPosition);
         worldScene.terrainOrigin = {float(origin.x), float(origin.y)};
         worldScene.time = time; worldScene.elapsed = suspended ? 0.f : elapsed;
+        worldScene.eclipse=v.world.eclipse;
         worldScene.selectedExit = selectedExit; worldScene.groundHighlight = groundTarget ? groundTarget->id : EntityId{};
         auto &draw = worldScene.items;
         rendered = unavailable = 0;

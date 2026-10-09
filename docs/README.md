@@ -27,7 +27,7 @@
 | [库存](modules/INVENTORY.md) | 原物品、面板／预览、异步组合与服务限制 |
 | [地图](modules/MAP.md) | 原房间／地形、碰撞、地图UI与本局探索 |
 | [怪物](modules/MONSTERS.md) | 第一幕权威AI／精英／首领、原协议表现、公共函数与人口准备 |
-| [NPC／任务](modules/NPC_QUEST.md) | 本人任务／对白接口、UI生命周期、服务端交谈与旅行边界 |
+| [NPC／任务](modules/NPC_QUEST.md) | 客户端任务／对白端口及修改入口，规则与生命周期链接专题 |
 | [存档／偏好](modules/SAVES.md) | 独立D2S v96编码／拒绝、原服保存、客户端偏好／凭据 |
 
 ## 规则与表现专题
@@ -39,13 +39,13 @@
 | 技能 | [公共入口／规范](gameplay/skills/COMMON.md)、[通用攻击／卷轴／书本](gameplay/skills/GENERAL.md)、[女巫](gameplay/skills/SORCERESS.md)、[亚马逊](gameplay/skills/AMAZON.md)、[死灵法师](gameplay/skills/NECROMANCER.md)、[圣骑士](gameplay/skills/PALADIN.md) |
 | 物品 | [数据](gameplay/items/DATA.md)、[模型](gameplay/items/MODEL.md)、[支持／缺口](gameplay/items/SUPPORT.md)、[包裹](gameplay/items/INVENTORY_UI.md)、[腰带／使用](gameplay/items/BELT_AND_CONSUMABLES.md)、[箱子](gameplay/items/STORAGE.md)、[方块／金币](gameplay/items/CUBE_AND_GOLD.md) |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
-| 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕身份与缺口](gameplay/quests/ACT2.md)、[第三至第五幕身份与缺口](gameplay/quests/ACT3_5.md) |
+| 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕执行与证据](gameplay/quests/ACT2.md)、[第三至第五幕执行与缺口](gameplay/quests/ACT3_5.md) |
 | 世界 | [五幕地图](gameplay/world/MAPS.md)、[物件](gameplay/world/OBJECTS.md)、[人口报告](gameplay/world/POPULATION.md)、[怪物表现](gameplay/world/MONSTERS.md)、[自动地图](gameplay/world/AUTOMAP.md)、[照明](gameplay/world/LIGHTING.md) |
 | UI | [HUD／技能菜单／传送点](gameplay/ui/CLASSIC_HUD.md)；库存／NPC操作归对应专题 |
 
 ## 维护约定
 
-全局交付更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。README仅介绍启动／操作。
+任务通用边界更新SYSTEM，各幕规则／缺口／证据更新ACT专题，原编码与奖励位更新SAVES，客户端端口更新NPC_QUEST；不跨页面重复维护同一规则。全局交付更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。README仅介绍启动／操作。
 
 保留可追溯原版证据与明确未知项，删掉被替代的入口、兼容分支和历史完成宣称；已导入定义／已显示面板不等于联机服务完成。最新未构建源码不能沿用旧运行结论。资源、日志、截图与旧包留忽略目录，历史修改由Git追溯。
 

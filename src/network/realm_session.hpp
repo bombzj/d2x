@@ -90,6 +90,7 @@ class RealmSession {
     // MPQ consumer checks the native location, ownership, shape and operation eligibility.
     // No optimistic inventory changes; the original protocol has no generic transaction ACK.
     bool submit_item(OnlineItemCommand command);
+    bool submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context = {});
     // Caller validates current MPQ skill and target eligibility. Cast/stop have
     // no generic native ACK; damage, resources and skills remain server-owned.
     bool submit_combat(OnlineCombatCommand command);

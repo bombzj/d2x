@@ -6,6 +6,7 @@
 namespace d2x {
 void SceneController::toggleInventory() {
     auto &ui = view_.ui();
+    if(ui.orificeObject && ui.inventory.open) {inventoryClient_.submitStaff(ui.orificeObject,{});ui.orificeObject={};ui.orificeItem.reset();}
     ui.skillPicker.reset();
     ui.skillTreeOpen = false;
     if (!ui.inventory.open && !view_.inventoryView().container(view_.inventoryView().containers.backpack)) {
@@ -75,6 +76,29 @@ bool SceneController::handleInventory(const FrameInput &input) {
     auto &ui = view_.ui().inventory;
     ui.forceSwap = input.control;
     const auto &inventory = view_.inventoryView();
+    auto &panel=view_.ui();
+    if(panel.orificeObject) {
+        if(panel.orificeItem) {const auto *item=inventory.item(panel.orificeItem->id);if(!item || item->revision!=panel.orificeItem->revision) panel.orificeItem.reset();}
+        if(input.escape || (input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse),orificeButton(false)))) {
+            inventoryClient_.submitStaff(panel.orificeObject,{});panel.orificeItem.reset();inventoryClick_=true;return true;
+        }
+        if(input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse),orificeButton(true))) {
+            if(panel.orificeItem && !inventoryClient_.submitStaff(panel.orificeObject,panel.orificeItem)) view_.notice("The staff request could not be queued.",true);
+            inventoryClick_=true;return true;
+        }
+        if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeSlot()) && (input.leftPressed || input.leftReleased)) {
+            if(ui.drag) {
+                const auto *item=inventory.item(ui.drag->item.id);
+                const auto *at=item?std::get_if<ContainerLocation>(&item->location):nullptr;
+                if(item && at && at->container==inventory.containers.cursor && item->definition==inventory.staffRecipeOutput && item->revision==ui.drag->item.revision) {panel.orificeItem=item->handle();ui.drag.reset();}
+                else view_.notice("Only the complete Horadric Staff fits here.",true);
+            } else if(input.leftPressed && panel.orificeItem) {
+                panel.orificeItem.reset();ui.syncCursor(inventory);
+            }
+            inventoryClick_=true;return true;
+        }
+        if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeBounds())) return true;
+    }
     // Native 0x3F is preparation, never identification success. Repeated
     // preparation of the same source is an event even after Escape cancelled UI.
     if(ui.targetingGeneration!=inventory.gameGeneration) {

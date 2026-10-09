@@ -9,6 +9,8 @@
 #include "server/systems/objects/system.hpp"
 #include "gameplay/areas/waypoint.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
+#include "gameplay/quest/acts/act_two_state.hpp"
+#include "server/systems/quests/system.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
@@ -70,7 +72,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         !area || actor.areaGeneration != area->generation) return {DomainStatus::InvalidActor, {}};
     const auto found = std::find_if(area->definition.exits.begin(), area->definition.exits.end(), [&](const auto &e) { return e.id == request.source.id; });
     if (found == area->definition.exits.end() || (request.destination && *request.destination != found->destination)) return {DomainStatus::InvalidRequest, {}};
-    if (found->requiresQuest) return {DomainStatus::NotImplemented, {}};
+    if (!ports_.quests.allowsTravel(player->persistent.player,actor.area,found->destination)) return {DomainStatus::Conflict, {}};
     if ((found->position - player->position).length() > 50) return {DomainStatus::InvalidRequest, {}};
     auto route = area->definition.collision.path(player->position, found->arrival, false, playerMovement);
     if (route.empty()) return {DomainStatus::Unavailable, {}};
@@ -111,7 +113,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!destination) {
             const ActorContext actor{player.player, player.actor, player.area, source->generation, transition.sequence, tick.tick};
             const auto prepared = transition.kind == Kind::Waypoint ? ports_.world.requestWaypoint(actor, transition.to) :
-                transition.kind == Kind::Npc ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
+                (transition.kind == Kind::Npc || transition.kind==Kind::QuestObject) ? ports_.world.request(transition.to) : ports_.world.requestArea(actor, transition.to);
             if (!prepared) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
         }
@@ -124,7 +126,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             // accepted travel retains its lease identity while content loads;
             // a different conversation, movement, death or area invalidates it.
             const auto *conversation=ports_.npc.conversation(player.player);
-            if(!ports_.npc.find(actor,transition.source) || (conversation && conversation->revision!=transition.npcConversation) || player.persistent.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) {pending=state_.transitions.erase(pending);continue;}
+            const auto *npc=ports_.npc.find(actor,transition.source);
+            const auto &book=player.persistent.player.quests.at(size_t(player.persistent.difficulty));
+            if(!npc || (conversation && conversation->revision!=transition.npcConversation) ||
+                ((npc->rule.code=="warriv1" || npc->rule.code=="warriv2") && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
+                (npc->rule.code=="meshif1" && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) ||
+                (npc->rule.code=="meshif2" && !player.persistent.player.completedActs.at(size_t(player.persistent.difficulty)).at(1))) {pending=state_.transitions.erase(pending);continue;}
             arrival=destination->definition.spawn;
         }
         std::optional<Vec> exitWalk;
@@ -143,7 +150,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!crossed) { player.position = next; player.look = delta.unit(); player.moving = true; ++pending; continue; }
             arrival = next + offset;
         }
-        if(transition.kind==Kind::SpecialPortal && std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;})) {pending=state_.transitions.erase(pending);continue;}
+        if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind==Kind::Portal) {
             const auto portal=state_.portals.find(player.player);
             if(portal==state_.portals.end() || (portal->second.fieldId!=transition.source && portal->second.townId!=transition.source)) { pending=state_.transitions.erase(pending); continue; }
@@ -155,6 +162,20 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto spawn=definition.collision.nativeSpawn(*definition.waypointAnchor,50,playerMovement);
             if(!spawn) {pending=state_.transitions.erase(pending);continue;}
             arrival=*spawn;
+        }
+        if(transition.kind==Kind::QuestObject) {
+            const auto object=std::find_if(source->definition.objects.begin(),source->definition.objects.end(),[&](const auto &o){return o.id==transition.source;});
+            if(object==source->definition.objects.end() || !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {pending=state_.transitions.erase(pending);continue;}
+            const auto counterpart=std::find_if(destination->definition.objects.begin(),destination->definition.objects.end(),[&](const auto &o){return o.rule.operation==object->rule.operation;});
+            auto marker=destination->definition.questArrival;
+            if(!marker && counterpart!=destination->definition.objects.end() && source->definition.act==4) marker=counterpart->position;
+            if(!marker && source->definition.act>=2) marker=destination->definition.portalArrival;
+            if(!marker && (int(transition.to)==103 || int(transition.to)==109)) marker=destination->definition.spawn;
+            if(!marker && int(transition.from)==73 && counterpart!=destination->definition.objects.end()) marker=counterpart->position;
+            if(!marker) for(const auto &warp:destination->definition.exits) if(warp.destination==transition.from) {marker=warp.arrival;break;}
+            if(!marker) {pending=state_.transitions.erase(pending);continue;}
+            const auto point=destination->definition.collision.nativeSpawn(*marker,50,playerMovement);
+            if(!point) {pending=state_.transitions.erase(pending);continue;}arrival=*point;
         }
         if (!transition.walking && transition.kind==Kind::Exit) {
             const AreaExit *back = nullptr;
@@ -169,13 +190,23 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (transition.walking || exitWalk) route = destination->definition.collision.path(arrival, exitWalk.value_or(transition.destination), true, playerMovement);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, transition.walking}}};
-        if(transition.kind==Kind::Npc) {
+        if(transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
-            edit.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage=uint32_t(SlaughterStage::Completed);
-            edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(0)=true;
+            if(int(transition.to)==40 && int(transition.from)==1) {
+                edit.player.quests.at(size_t(player.persistent.difficulty)).at(questIndex(QuestId::SistersToTheSlaughter)).stage=uint32_t(SlaughterStage::Completed);
+                edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(0)=true;
+            }
+            if(int(transition.to)==75 && int(transition.from)==40) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(1)=true;
+            if(int(transition.to)==103 && int(transition.from)==102) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(2)=true;
+            if(int(transition.to)==109 && int(transition.from)==103) edit.player.completedActs.at(size_t(player.persistent.difficulty)).at(3)=true;
+            if(int(transition.to)==109 && int(transition.from)==132) {
+                // Expansion has four inter-act completion words. Final Act V
+                // completion is Baal's original bit/progression, not a fifth word.
+                edit.player.quests.at(size_t(player.persistent.difficulty))[questIndex(QuestId::EveOfDestruction)].flags|=64;
+            }
             // SUnitNpc::WARRIV1 activates Lut Gholein after travelling east.
             // Keep the waypoint, Act completion and travel in one transaction.
-            if(int(transition.to)==40 && nativeWaypointIndex(destination->definition.waypointIndex)) {
+            if((int(transition.to)==40 || int(transition.to)==75 || int(transition.to)==103 || int(transition.to)==109) && nativeWaypointIndex(destination->definition.waypointIndex)) {
                 edit.waypoints=player.persistent.waypoints;
                 edit.waypoints->try_emplace(transition.to,float(tick.tick)*TickContext::seconds);
             }

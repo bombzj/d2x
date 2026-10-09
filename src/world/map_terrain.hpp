@@ -31,6 +31,7 @@ struct MapTerrain {
         int speed{};
         size_t room{};
         bool wallArray{};
+        bool removed{}; // Quest tile replacement preserves stable room/warp indices.
         int renderTile(float seconds) const {
             if (frames.empty()) return tile;
             const auto ticks = uint64_t(std::max(0.f, seconds) * 25.f);

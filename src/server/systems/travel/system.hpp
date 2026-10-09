@@ -12,15 +12,15 @@
 
 namespace d2x::server::travel {
 // Travel/waypoint/portal transition preparation; destination content arrives through World.
-enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal };
-enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel };
+enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject };
+enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
 struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival, destination; bool walking{}, run{}, crossing{}; int side{}, plane{}; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; };
 struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{}; };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; };
+struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; };
 class System {
     State state_;
     const Ports ports_;
@@ -42,5 +42,6 @@ class System {
     DomainResult<> teleport(const ActorContext &, PointTarget, float manaCost,std::optional<SkillCharge> charge = {});
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
+    void closePortals(RegionId region) {std::erase_if(state_.portals,[&](const auto &entry){return entry.second.field==region;});std::erase_if(state_.specialPortals,[&](const auto &entry){return entry.second.field==region || entry.second.town==region;});}
 };
 }

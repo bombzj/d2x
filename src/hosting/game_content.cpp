@@ -23,6 +23,7 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     area.id = RegionId(request.level); area.waypointIndex=level.waypoint;
     area.townRegion = RegionId(actTownLevels.at(size_t(request.act)));
     area.act = request.act; area.town = level.town; area.origin = result.terrain.origin;
+    area.staffTomb=result.terrain.staffTomb;
     area.collision = result.terrain.map->grid;
     area.activation = result.terrain.map->activation;
     if (auto allowed = content.teleportByLevel.find(request.level); allowed != content.teleportByLevel.end()) area.teleportAllowed = allowed->second != 0;
@@ -69,7 +70,7 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
             if(waypoint) {area.waypointAnchor=waypointSpawnAnchor({float(preset.x),float(preset.y)});break;}
         }
     }
-    if(!area.portalArrival && !level.town && !fixedPosition) {
+    if(!area.portalArrival && !fixedPosition) {
         // DrlgDrlgWarp::sub_6FD788D0 for Position=0: waypoint room,
         // warp room, then a room containing the level centre.
         std::optional<Vec> marker;
@@ -86,7 +87,32 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
             if(area.collision.walkable(arrival,playerMovement) && std::max(std::abs(arrival.x-marker->x),std::abs(arrival.y-marker->y))<50) area.portalArrival=arrival;
         }
     }
+    if(request.level==54 || request.level==74 || request.level==73) {
+        // ObjMode operation34 uses tile11 in Arcane, tile0 in the cellar;
+        // operation43 requests DUNGEON_FindActSpawnLocationEx(..., 0).
+        const unsigned tile=request.level==74?11:0;
+        std::optional<Vec> firstMarker;
+        for(const auto &layer:result.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size() && !area.questArrival;++index) {
+            const auto &cell=layer[index];if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11)) continue;
+            const auto style=(cell.value>>20)&63,sequence=(cell.value>>8)&255;
+            const unsigned info=style==30?sequence:style==31?sequence+5:style==32?10:style==33?11:UINT32_MAX;
+            if(info==UINT32_MAX) continue;
+            const Vec marker{float(index%result.terrain.map->terrain.data.width*5+3),float(index/result.terrain.map->terrain.data.width*5+3)};
+            if(!firstMarker) firstMarker=marker;
+            // Original tile0 is the entrance family (indices0..4), not only
+            // index0; Duriel's preset uses another member of that family.
+            if(info!=tile && !(tile==0 && info<=4)) continue;
+            area.questArrival=area.collision.nativeSpawn(marker,50,playerMovement);
+        }
+        // sub_6FD788D0 leaves nRand=0 when no requested index matches,
+        // therefore selects the first real TileInfo entry. Current Duriel.ds1
+        // has style30/sequence11 while operation43 requests index0.
+        if(!area.questArrival && fixedPosition && firstMarker) area.questArrival=area.collision.nativeSpawn(*firstMarker,50,playerMovement);
+        if(!area.questArrival && !fixedPosition) area.questArrival=area.portalArrival;
+        if(!area.questArrival) throw std::runtime_error("Missing original quest warp spawn marker");
+    }
     prepareCombatPopulation(archives, content, result);
+    prepareQuestWorld(archives,content,result);
     return result;
 }
 server::GameDefinition prepareJoiningCharacter(const ClassicData &content, PersistentCharacter saved,
