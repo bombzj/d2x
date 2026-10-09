@@ -1,5 +1,7 @@
 # 包裹界面
 
+更新：2026-10-09。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
+
 I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提供原石框和I／II武器标签；格子、部位、物品图及说明按原表读取。面板只消费InventoryView和提交意图，不访问可写库存或会话。
 
 ## 操作
@@ -12,4 +14,4 @@ I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提
 
 UI命中区域消费手势；关闭／视口变化后等待松键，不把同次按下转成世界攻击。世界／网络继续运行。占格预览、提示颜色及需求不是原服事务结果。
 
-灌注／打孔／署名使用原38／58及既有Cursor移物序列；充能技能源选择和热键保留原GUID。任务资格与一次性奖励由服务端决定；Akara免费重置已按原服务与slot41接入，准确任务前置及缺口见[第一幕](../quests/ACT1.md)，不保留旧本地事务旁路。原服操作参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)，模型见[物品模型](MODEL.md)，加工边界见[库存](../../modules/INVENTORY.md)。
+灌注／打孔／署名使用原38／58及既有Cursor移物序列；充能技能源选择和热键保留原GUID。任务资格与一次性奖励由服务端决定；Akara免费重置已按原服务与slot41接入，准确任务前置及缺口见[第一幕](../quests/ACT1.md)，不保留旧本地事务旁路。原服操作参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)，模型见[物品模型](MODEL.md)，加工边界见[QUEST_ITEMS](QUEST_ITEMS.md)。

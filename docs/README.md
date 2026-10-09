@@ -24,9 +24,9 @@
 | --- | --- |
 | [客户端](modules/CLIENT.md) | I*Client值契约、消息连接、公共消费者与两类后端适配 |
 | [人物](modules/CHARACTER.md) | 原属性／技能、纯提示投影、请求／保存值边界 |
-| [库存](modules/INVENTORY.md) | 原物品、面板／预览、异步组合与服务限制 |
+| [库存](modules/INVENTORY.md) | 人物／世界物品、内容准备、事务、生成／商店／加工与原包消费者的代码入口 |
 | [地图](modules/MAP.md) | 原房间／地形、碰撞、地图UI与本局探索 |
-| [怪物](modules/MONSTERS.md) | 第一幕权威AI／精英／首领、原协议表现、公共函数与人口准备 |
+| [怪物](modules/MONSTERS.md) | 内容准备、人口／AI／实体／技能／效果及原包适配的代码入口与所有权 |
 | [NPC／任务](modules/NPC_QUEST.md) | 客户端任务／对白端口及修改入口，规则与生命周期链接专题 |
 | [存档／偏好](modules/SAVES.md) | 独立D2S v96编码／拒绝、原服保存、客户端偏好／凭据 |
 
@@ -36,14 +36,21 @@
 | --- | --- |
 | 角色 | [属性／成长](gameplay/characters/ATTRIBUTES.md)、[佣兵](gameplay/characters/HIRELINGS.md)、[死亡／尸体](gameplay/characters/PLAYER_DEATH.md) |
 | 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
-| 技能 | [公共入口／规范](gameplay/skills/COMMON.md)、[通用攻击／卷轴／书本](gameplay/skills/GENERAL.md)、[女巫](gameplay/skills/SORCERESS.md)、[亚马逊](gameplay/skills/AMAZON.md)、[死灵法师](gameplay/skills/NECROMANCER.md)、[圣骑士](gameplay/skills/PALADIN.md) |
-| 物品 | [数据](gameplay/items/DATA.md)、[模型](gameplay/items/MODEL.md)、[支持／缺口](gameplay/items/SUPPORT.md)、[包裹](gameplay/items/INVENTORY_UI.md)、[腰带／使用](gameplay/items/BELT_AND_CONSUMABLES.md)、[箱子](gameplay/items/STORAGE.md)、[方块／金币](gameplay/items/CUBE_AND_GOLD.md) |
+| 技能 | [全分类目录](gameplay/skills/README.md)、[公共规范／所有权／状态](gameplay/skills/COMMON.md)；目录包含七职业、通用、怪物／精英、佣兵／召唤物、物品技能与特殊／未归档条目 |
+| 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及历史证据 |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
 | 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕执行与证据](gameplay/quests/ACT2.md)、[第三至第五幕执行与缺口](gameplay/quests/ACT3_5.md) |
-| 世界 | [五幕地图](gameplay/world/MAPS.md)、[物件](gameplay/world/OBJECTS.md)、[人口报告](gameplay/world/POPULATION.md)、[怪物表现](gameplay/world/MONSTERS.md)、[自动地图](gameplay/world/AUTOMAP.md)、[照明](gameplay/world/LIGHTING.md) |
+| 怪物 | [全分类目录](gameplay/monsters/README.md)、[公共规范](gameplay/monsters/COMMON.md)；五幕台账、精英／固定身份、首领、人口、原包表现及特殊／未归档单位 |
+| 世界 | [五幕地图](gameplay/world/MAPS.md)、[物件](gameplay/world/OBJECTS.md)、[自动地图](gameplay/world/AUTOMAP.md)、[照明](gameplay/world/LIGHTING.md) |
 | UI | [HUD／技能菜单／传送点](gameplay/ui/CLASSIC_HUD.md)；库存／NPC操作归对应专题 |
 
 ## 维护约定
+
+技能分类与归属更新skills/README，公共规范／跨职业计算／状态更新COMMON；逐技能分派／专属Clt与Srv差异更新负责专题，复用同一技能只链接原页。MONSTERS登记怪物专用技能，COMPANIONS登记单位使用入口，ITEM_SKILLS登记物品来源与专用程序，SPECIAL保留未归档条目；详细运行证据链接所属职业或已有怪物／佣兵专题或[物品证据](gameplay/items/EVIDENCE.md)，不复制。原模块调用证据更新REFERENCE_DESIGN；保存、树／提示、协议分别链接SAVES、CHARACTER、NETWORK。
+
+怪物分类与归属更新monsters/README，公共规范／规则准备／生命周期更新COMMON；实际类型覆盖更新ACT页，专用策略更新BOSSES，rank／词缀更新ELITES，出生／房间更新POPULATION，原包／原图更新PRESENTATION，特殊身份更新SPECIAL。模块页只维护代码分工；具体技能、任务、佣兵与掉落链接原专题，运行证据归所属幕，当前第一幕证据集中ACT1，不复制第二份完成清单。
+
+物品分类更新items/README，COMMON维护公共规范，DATA／MODEL维护原表与身份，GENERATION／AFFIXES／EQUIPMENT分别维护生成／属性／贡献；操作、容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济更新对应专题。UI／原包分别归INVENTORY_UI／PRESENTATION，特殊条目归SPECIAL，物品历史记录归EVIDENCE；充能／触发、任务阶段、佣兵与D2S仍链接原负责页，模块只维护代码入口。
 
 任务通用边界更新SYSTEM，各幕规则／缺口／证据更新ACT专题，原编码与奖励位更新SAVES，客户端端口更新NPC_QUEST；不跨页面重复维护同一规则。全局交付更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。README仅介绍启动／操作。
 

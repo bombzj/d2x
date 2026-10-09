@@ -1,5 +1,7 @@
 # 腰带与消耗品
 
+更新：2026-10-09。本页维护腰带使用、药剂与原消耗效果；数量／缩容归[INVENTORY](INVENTORY.md)，永久奖励归[QUEST_ITEMS](QUEST_ITEMS.md)，卷轴／书本技能程序归[GENERAL](../skills/GENERAL.md)。
+
 容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。连接的服务端拥有自动入带、补位、消耗、回复、状态与持续时间；自研inventory／effects沿同一原协议执行，旧客户端本地执行器已删除。Shift商店购买按原multibuy位提交，服务器决定腰带／书本补满和费用。
 
 ## 操作
@@ -12,10 +14,10 @@
 
 原恢复量、长度、pSpell、cstate与stat／calc读取MPQ；职业倍率规则核对本地D2MOO Items::ITEMS_GetBonusLifeBasedOnClass／ManaBasedOnClass。SkillItem::pSpell03／09提供恢复合并与耐力／解毒／解冻原服规则证据，客户端不重新执行这些函数。
 
-自研生命／法力药水已纠正旧单机顺序队列，使用原healthpot／manapot状态、8.8恢复值和len：连续饮用合并剩余帧与剩余恢复值，再整数除法重算每帧率；按实际体力／精力及原随机判定双倍恢复，消费提交后才推进种子。生命超过上限移除Healthpot，法力恢复前已满移除Manapot，到期／死亡移除；补血与毒伤合并后限制至少一生命，毒伤不禁自然回蓝。定时状态、原回包与资源在同一提交边界更新，不保存药水时钟。
+自研生命／法力药水已纠正旧单机顺序队列，使用原healthpot／manapot状态、8.8恢复值和len：连续饮用合并剩余帧与剩余恢复值，再整数除法重算每帧率；按实际体力／精力及原随机判定双倍恢复，消费提交后才推进种子。生命超过上限移除Healthpot，法力恢复前已满移除Manapot，到期／死亡移除；补血与毒伤合并后限制至少一生命，毒伤不禁自然回蓝，原nomanaregen才抑制自然回蓝。定时状态、原回包与资源在同一提交边界更新，不保存药水时钟。
 
-腰带脱下／换小带／出售时，多余药剂先移背包，装不下按ItemMode::sub_6FC45930落地；不能只删除药剂或拒绝所有满背包脱带。NPC治疗遵循SUnitNpc::HealPlayer，只清毒／冻结与States.curable指定状态。P1随P5及物品身份收尾统一构建打包；本批未覆盖的药水／治疗分支仍无新运行认证，诊断healingQueued／manaQueued现在表示有恢复时钟的原状态数，不表示旧队列里的瓶数。
+腰带脱下／缩容／出售的安置规则只维护在[INVENTORY](INVENTORY.md)。NPC治疗遵循SUnitNpc::HealPlayer，只清毒／冻结与States.curable指定状态；effects准备、transactions提交，只实际治疗时发送原Sound10。诊断healingQueued／manaQueued表示有恢复时钟的原状态数，不表示旧队列瓶数。
 
-技能书／生命药剂／抗性卷轴沿inventory消费背包原件并复验当前难度的一次性奖励旗标，资源、奖励旗标和移除一次提交；未获得资格不消费，也不授予其他任务奖励。Token读取当前MPQ原代码及配方，退款已分配属性／基础技能、清除选择／热键并消费一枚；资格与原存档边界见[库存](../../modules/INVENTORY.md)和[存档](../../modules/SAVES.md)。这不是Akara免费任务重置接口。
+技能书／生命药剂／抗性卷轴及Token的资格、消耗与任务来源统一见[QUEST_ITEMS](QUEST_ITEMS.md)，原保存位见[存档](../../modules/SAVES.md)。不能从物品可用图标推断当前人物已获得永久奖励资格。
 
-临时加成和状态仅消费原状态／属性；不能自设清毒、冷却、叠加或耐力回复。喂佣兵、完整消耗品目标及组合未完成，有限药剂／卷轴原服观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。原资源／声音仍由公共加载与播放模块消费，许可见[资料来源](../../resources/THIRD_PARTY.md)。
+客户端仅消费原状态／属性，不自设清毒、冷却、叠加或耐力回复。喂佣兵、完整消耗品目标及组合未完成，有限药剂／卷轴原服观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。回复药水按原8.8上限百分比取整，耐力／解毒／解冻药水读取MPQ状态、长度、清除状态及属性，同状态延长剩余时间；资源上限、自然恢复与耐力耗用归人物／effects，不在物品消费写第二套计算。有限药水／治疗证据与未覆盖边界见[EVIDENCE](EVIDENCE.md)。原资源／声音仍由公共加载与播放模块消费，许可见[资料来源](../../resources/THIRD_PARTY.md)。

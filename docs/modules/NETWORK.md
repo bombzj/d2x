@@ -212,7 +212,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 - ClientSend只消费0x73原坐标、首路径目标、剩余帧、等级与穿透；无弹体GUID。已有程序1／5／6／8／9／18／19／20、原25Hz运动、充能弹／扇形／新星、部分拖尾与冰封球显示；接触只控制画面，未收到穿透次数不掷装备概率。
 - 原任务／NPC事件、技能、角色受伤／死亡和怪物动作转换成公共声音事件；SoundCatalog解释当前MPQ的Sounds／MonSounds／技能声音，SceneAudio消费选择、概率、延迟、脚步和待机间隔。SoundBank处理原声组、Compound及Stop／Defer；换区／打断／暂停恢复清过期事件。不维护两套MonSounds解释。
 
-限制：骨魂追踪、其余未接程序、完整速度状态、随机精英染色／首领专用死亡演出仍有缺口。技能与精英回调范围分别见职业文档及怪物模块。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/world/MONSTERS.md)与[资料来源](../resources/THIRD_PARTY.md)。
+限制：骨魂追踪、其余未接程序、完整速度状态、随机精英染色／首领专用死亡演出仍有缺口。技能与精英回调范围分别见职业文档及怪物模块。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/monsters/PRESENTATION.md)与[资料来源](../resources/THIRD_PARTY.md)。
 
 ## 当前批交付
 
@@ -263,9 +263,9 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 传送点中性启动按原0x0E/mode1结束激活等待，不再错误等待原版不会发送的0x63而超时；后续真实菜单仍必须由0x63授权。同一交互代次保留多人先后激活的回包关联，已关闭／移动后的旧回包不重开菜单。此修复同时用于原D2GS与自研宿主，没有新增协议。2026-10-09本轮未构建或运行；服务端规则与依据见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
-物品报价两端共用itemTradePrice／itemGamblePrice，原字段、整数证据和拒绝边界只维护在[库存模块](INVENTORY.md#客户端与原版依据)。此前有限原服证据不能认证本次AutoMagic索引修正及multibuy。
+物品报价两端共用itemTradePrice／itemGamblePrice，原字段、整数证据和拒绝边界只维护在[物品报价](../gameplay/items/ECONOMY.md#公共报价与原版依据)。此前有限原服证据不能认证本次AutoMagic索引修正及multibuy。
 
-无形图标／装备更新修正：原物品flags=0x00400000经已有InventoryItemView进入公共drawItemIcon，图标应用50% alpha，覆盖背包、装备槽、存储、拖拽及复用同一投影的货架。穿戴外观继续保留真实MPQ身体组件，不因无形隐藏人物；RemoteWorld原先先删除旧外观再仅接受少数装备动作，现除显式移除／卸装动作外按位流实际mode=1及身体槽重建，避免仍穿戴的物品更新丢失外观。依据D2MOO D2Constants的物品动作与SCmd的原位置序列化；未认证无形原客户端PL2选择，世界逐组件透明／染色仍未实现，限制见库存模块。本批未构建、运行、测试或打包，用户具体衣服可见性尚待运行验收。
+无形图标／装备更新修正：原物品flags=0x00400000经已有InventoryItemView进入公共drawItemIcon，图标应用50% alpha，覆盖背包、装备槽、存储、拖拽及复用同一投影的货架。穿戴外观继续保留真实MPQ身体组件，不因无形隐藏人物；RemoteWorld原先先删除旧外观再仅接受少数装备动作，现除显式移除／卸装动作外按位流实际mode=1及身体槽重建，避免仍穿戴的物品更新丢失外观。依据D2MOO D2Constants的物品动作与SCmd的原位置序列化；未认证无形原客户端PL2选择，世界逐组件透明／染色仍未实现，限制见[物品表现](../gameplay/items/PRESENTATION.md)。本批未构建、运行、测试或打包，用户具体衣服可见性尚待运行验收。
 
 近距离交互源码修正：拾取0x16及地图交互0x13原先无条件记录为向目标中心行走的显示请求，原服可直接交互时仍会预测多走一步。OnlineMovementRequest现区分普通行走与交互靠近；RemoteScene在连续显示位置已合格时清除本帧行走路线，不伪造原服站立模式、位置或成功回执。依据D2MOO PlrMsg::sub_6FC828D0，物品使用D2Common_10399距离≤4并检查原0x0804交互射线；物件复用UNITS_IsObjectInInteractRange对应几何和射线，尺寸来自当前MPQ；本人尸体距离≤8、出口距离≤4。RemoteTown同步补出口靠近资格，NPC仍沿既有≤6及新原服位置保护。远处／有阻挡时保留靠近预测，普通移动不提前停止；库存、对白、旅行及回收仍只消费原服结果。本批仅源码和差异审阅，未构建、测试、运行或打包，具体鼠标场景尚待用户验收。
 
@@ -273,13 +273,13 @@ NPC点击／靠近源码修正：原`interactionReady`只读最近原服坐标�
 
 传送点／怪物尸体消费：当前MPQ Objects的OperateFn=23条目均为Selectable1=0，但D2MOO `OBJECTS_OperateFunction23_Waypoint`接受mode=1／2开菜单。RemoteTown对这两个模式保留点击资格，普通物件继续核对Selectable及TARGETABLE；解锁历史、菜单和旅行仍等待原服。0x51物件分配记录动作接收时间；公共ActorAnimationCatalog按原FrameCnt1＋1个25Hz服务帧投影启动结束后的mode=2，复用原ON循环动画，并将同一显示模式交给公共光照。仅限Waypoint的表现衔接，不修改副本模式、碰撞或解锁位；缺少必要MPQ定义不推导完成状态。
 
-MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S与规则指纹不变；修正已入当前包；怪物有限验证见怪物模块，第二幕传送点鼠标／发光仍未专项认证。
+MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S与规则指纹不变；修正已入当前包；怪物有限验证见[第一幕证据](../gameplay/monsters/ACT1.md#有限运行证据)，第二幕传送点鼠标／发光仍未专项认证。
 
 技能／怪物只读资格：人物投影和 RemoteCombat 共用 skill_eligibility 的当前 MPQ 条件导入、Attack／CharStats 固有清单及学习／选择资格。未收到基础等级不按零授权学习，界面补齐原 reqstr／reqdex／reqvit／reqint 门槛；当前法力／装备提示仍使用已有只读输入，下一等级预览不写当前资格。RemoteCombat 集中 MonStats 敌我、原状态 alignment 及 corpseSel／hide／udead 目标校验，RemoteScene 的命中与锁定复用 monsterTargetEligible；声音、弹体、光照与 NPC 读取同一 onlineMonsterCorpse，不再各自判断死亡模式或漏剥离生命触发位。场景、owner、范围及地图绑定保留原协议校验，伤害、消耗和学习结果仍由 D2GS 决定。
 
-物品品质映射、原图、flippy及掉落事件使用公共客户端；当前支持和限制只维护在[物品支持](../gameplay/items/SUPPORT.md)。既有源码已随后续Release入包，旧“未构建／未打包”记录不作为当前状态。
+物品品质映射、原图、flippy及掉落事件使用公共客户端；当前支持和限制只维护在[物品表现](../gameplay/items/PRESENTATION.md)。既有源码已随后续Release入包，旧“未构建／未打包”记录不作为当前状态。
 
-掉落声音与数量反馈使用公共SoundCatalog／SceneAudio和原物品变化；参数与拒绝边界只维护在[物品支持](../gameplay/items/SUPPORT.md)。本批有限冒烟不替代全部音频时序听验。
+掉落声音与数量反馈使用公共SoundCatalog／SceneAudio和原物品变化；参数与拒绝边界只维护在[物品表现](../gameplay/items/PRESENTATION.md)。本批有限冒烟不替代全部音频时序听验。
 
 世界角色装备显示修正（2026-10-07，已随当前Release入包）：只读 bomb 的 SkillTestSor 99级女巫原服保存，当前躯干为 qui 绗缝甲，原品质4（魔法）、flags=0x00c00010（含无形0x00400000）。原 RealmPortraitCatalog 世界装备入口对品质>3或无形直接返回空，RemoteScene 因而放弃整个人物。对照 D2MOO D2Inventory 的 INVENTORY_GetCompositItem、旧 hero_assets 身体组件组装与当前 MPQ：qui 的四个主体组件为 ArmType 0、肩部为1，女巫对应原 DCC及城镇 COF存在。现在真实装备组件继续进入已有公共合成器，未知的组件染色／无形透明只作诊断，不再因品质或效果标志隐去人物；真实组件／动画缺失仍保持明确不可用，不替换裸装。选角肖像染色限制未改变，不改装备、存档、原服状态或 D2S 编码；该具体角色尚未运行复现或验收；构建入包不替代该样本认证。
 

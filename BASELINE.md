@@ -23,15 +23,15 @@ D2X提供Single Player、TCP/IP局域网宿主与既有原服入口。选角至�
 | 物件／NPC／任务 | 普通门箱桶、部分神殿／水井；静态NPC、普通买卖／回购、个人赌博／批量、鉴定／充能修理／仓库；五幕27项任务个人主流程的资格、机关／任务物品／奖励／旅行与存档 | 陷阱／爆炸桶／其他特殊机关、完整城镇AI、完整后三幕怪物、城镇演出与组队共享未实现；准确范围见[ACT1](docs/gameplay/quests/ACT1.md)、[ACT2](docs/gameplay/quests/ACT2.md)、[ACT3–5](docs/gameplay/quests/ACT3_5.md) |
 | 多人 | 1–8人同局名册、走跑／装备外观／聊天；GameHandle多实例、独立连接／租约及定向私有事实 | 队伍、交易权威、PvP、跨机器／长期稳定性未验收；嵌入宿主双房观察不能替代独立EXE多房验收 |
 
-所有暂缓意图显式拒绝／NotImplemented，不用普通攻击替代技能、不漏条件发奖。邪恶洞穴缺少敌对怪物规则时，仅用已授权沉沦魔替身并保留真实身份；中立不可替换。缺规则／无法放置的人口保留未完成数；清场资格仅给当时在洞内的人物。不因此宣称缺失类型完成；第一幕本轮新增范围及限制见怪物模块。
+所有暂缓意图显式拒绝／NotImplemented，不用普通攻击替代技能、不漏条件发奖。邪恶洞穴缺少敌对怪物规则时，仅用已授权沉沦魔替身并保留真实身份；中立不可替换。缺规则／无法放置的人口保留未完成数；清场资格仅给当时在洞内的人物。不因此宣称缺失类型完成；第一幕当前范围及限制见[第一幕台账](docs/gameplay/monsters/ACT1.md)。
 
-Kick（ID1）是原表隐藏通用程序，SkillDesc.ListRow=-1；各职业破普通木桶时自动KK，不是其他职业可学习的踢腿技能。刺客职业踢腿另属职业技能。木桶OperateFn5调用skills窄入口；objects／loot仍执行破坏与掉落。十项依据、公共武器／药瓶与物品技能入口见[GENERAL](docs/gameplay/skills/GENERAL.md)，全部技能状态及迁入规范见[COMMON](docs/gameplay/skills/COMMON.md)。定义／树／提示可用不等于职业执行或视觉完成。
+Kick（ID1）是原表隐藏通用程序，SkillDesc.ListRow=-1；各职业破普通木桶时自动KK，不是其他职业可学习的踢腿技能。刺客职业踢腿另属职业技能。木桶OperateFn5调用skills窄入口；objects／loot仍执行破坏与掉落。十项依据、公共武器／药瓶与物品技能入口见[GENERAL](docs/gameplay/skills/GENERAL.md)，全部技能状态及迁入规范见[COMMON](docs/gameplay/skills/COMMON.md)。[技能目录](docs/gameplay/skills/README.md)已建立七职业、怪物／精英、同行者、物品与特殊分类入口，未实现范围明确保留；完整MPQ逐ID台账仍待补。定义／树／提示或文档可用不等于职业执行或视觉完成。
 
 库存／人物事务同时复验revision，一次发布物品／人物事实后提交持久值、资源与总值。技能开始与释放分别复验装备、目标、区域及资源；背压重试不重复扣费或掷伤。伙伴内容准备在hosting，状态及种子由独立领域持有。详见[库存](docs/modules/INVENTORY.md)、[人物](docs/modules/CHARACTER.md)、[内核](docs/modules/SERVER_SYSTEMS.md)。
 
 P1日常操作已收敛：地面装书／部分合并／自动装备，脱带／卖带余药落地，方块目标鉴定，NPC距离／视线与交谈revision绑定，拾取／拾尸／复活背压等待、唯一物品限制与死亡落地；药水原8.8剩余值／帧合并及双倍判定、满值／到期／死亡清理、NPC按MPQ清毒／冻结／curable状态。尸体沿原回收与第一具非空尸体写档，热键补原清除编码。P1未改客户端，随P5统一构建打包；金币丢弃／拾取及自恢复物品的等待拾取已有下列有限V2，其余新增路径仍为V1。
 
-P5物品侧新增原38／58任务加工、operation28组装、牛门／Pandemonium真实地图及材料事务、任务消耗与Token、充能技能源／扣费、装备六类触发事件、商店周期、地面自恢复／过期与MonStats首杀TC选择。客户端仅补原协议已有的任务加工与充能来源／显示，同样用于D2GS；不增加自研宿主分支。公共恢复规则、按物品GUID持有的时钟、独立effects触发队列及原子事务保持领域分工。准确范围与依据见[库存](docs/modules/INVENTORY.md)。P5仍有前置任务／队伍／其他职业与专用触发程序依赖，未达到整体可玩和验收条件，不能标为全面完成。
+P5物品侧新增原38／58任务加工、operation28组装、牛门／Pandemonium真实地图及材料事务、任务消耗与Token、充能技能源／扣费、装备六类触发事件、商店周期、地面自恢复／过期与MonStats首杀TC选择。客户端仅补原协议已有的任务加工与充能来源／显示，同样用于D2GS；不增加自研宿主分支。公共恢复规则、按物品GUID持有的时钟、独立effects触发队列及原子事务保持领域分工。准确范围与依据由[物品目录](docs/gameplay/items/README.md)链接负责专题。P5仍有前置任务／队伍／其他职业与专用触发程序依赖，未达到整体可玩和验收条件，不能标为全面完成。
 
 ## 入口与保存
 
@@ -39,20 +39,25 @@ Single Player使用原MCP角色界面，选角后自动建普通单人房、跳�
 
 自研存档属hosting／persistence，D2S v96不变，当前源码规则指纹为`d2x-character-admission-v27/native-wire113c/d2s96/act3-5-quests`。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。技能选择／热键、扣费后的资源、弹药／书页沿原字段保存；派生总值、动作、弹体、召唤、门户及短时效果不写盘。限制见[存档](docs/modules/SAVES.md)。
 
-私有一人实例支持ESC／失焦自动暂停，共享房间／原服继续推进。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
+Single Player的ESC菜单／失焦同时暂停单机宿主与世界表现，菜单仍可操作，恢复不补算暂停时间；共享房间／原服继续推进。世界表现时钟修复仅更新源码，未构建、测试或打包，当前运行包尚不包含。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
 <a id="当前运行包与有限冒烟"></a>
 
 ## 当前运行包与有限冒烟
 
-2026-10-09第三至第五幕15项个人任务主流程及相关内容准备缺口已完成Windows Release构建、打包和普通单人有限冒烟，当前运行包为v27，位于`dist/current`。EXE SHA256为`9440CD86160F5635C2921F14AA37F2D053B75D91D84383C29C46675D96E8F5E4`，与`build/bin`一致；网络DLL仍为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终构建`build-14.log`及证据位于忽略目录`artifacts/act3-5-quests-20261009`。
+2026-10-09通用施放表现修复已完成Windows Release构建、打包及有限自研／原D2GS冒烟，当前运行包位于`dist/current`，保存规则仍为v27／D2S v96。EXE SHA256为`BF767C41680FAD44DD825B8BD877D82D30629C03CCB0B45A79038243FD55A52A`，与`build/bin`一致；网络DLL仍为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据在忽略目录`artifacts/skill-presentation-20261009`，未新增测试程序或提交Git。
 
-已验证第三幕古书／黄金鸟／基德宾奖励、意志破珠与Mephisto旅行，第四幕Izual／熔炉／五封印与跨幕，第五幕打孔／15囚犯／安雅双奖励／署名／古代人经验与回城重置／巴尔五波及最终出口；新进程恢复任务、永久奖励、加工物品和原progression。管理员换区、补材料与击杀仅准备条件，非正常战斗通关认证；完整材料链、多人、三难度及较大演出／AI缺口见[ACT3–5](docs/gameplay/quests/ACT3_5.md#依据与运行证据)。最终恢复入局ProtocolReady，地图／移动／玩家显示可用，host失败、存档问题、ignoredPackets、mapErrors和effectLimitations均为空或0。
+按原Rcv0x12语义修复鼠标松开误删普通动作／待释放飞弹，并使背包开门已发送意图进入同一表现链；原函数、入口及所有权见[COMMON](docs/gameplay/skills/COMMON.md#定义来源与客户端状态)。不增加服务端类型分支或私有包。调试管道新增只读localCast／clientMissiles诊断。
+
+最终包的Single Player用实际UI按下后立即松开，观察Fire Ball62、Ice Bolt59及Frozen Orb260／261生成、移动与散射，并有原图截图；火球命中管理入口准备的真实zombie1，生命7→0。Inferno开始后有10个视觉弹体，Stop后本人施法为空、视觉／权威弹体及pendingReleases清零。背包开门共用入口消费卷轴并生成蓝门。最终host failures=0，ignoredPackets=0，mapErrors／effectLimitations为空，stderr为空。
+
+同一最终包连接本机1.13c D2GS／PvPGN参考栈，在冰冷之原用实际UI快速点击复查Fire Ball／Ice Bolt，Stop后仍观察到原飞弹和截图；`online-town-portal`共用背包入口观察本人219施法、数量1→0、原59门对象及蓝门图形。原服既有ignoredPackets=16，mapErrors／effectLimitations为空、stderr为空。前一连接曾只收到AF后加载超时，重新选角建房恢复；未认定修复其原因。以上为代表路径有限V2，未认证全部职业／参数、多人、三难度、精确逐帧／像素或Linux；旧任务证据不因此扩大范围。
 
 ## 此前任务运行证据
 
 | 历史包 | 覆盖与证据入口 |
 | --- | --- |
+| v27第三至第五幕 | 15项个人任务主流程、加工奖励、旅行与新进程恢复；历史EXE为`9440CD86160F5635C2921F14AA37F2D053B75D91D84383C29C46675D96E8F5E4`，最终构建`build-14.log`及证据在`artifacts/act3-5-quests-20261009`。管理换区／补材料／击杀只准备条件，不是正常通关认证；范围与限制见[ACT3–5](docs/gameplay/quests/ACT3_5.md#依据与运行证据) |
 | v24第一幕 | 六项个人主流程、城镇奖励服务、Warriv往返与新进程恢复；原条件、包摘要与未覆盖范围见[ACT1](docs/gameplay/quests/ACT1.md#有限运行证据)，忽略目录`artifacts/act1-quests-20261009` |
 | v26第二幕 | 材料／技能书、日食、日志／真墓、插杖／开墙、救援／Meshif往返和新进程恢复；同包复验Cain339说明位及准备等待。原条件、包摘要与未覆盖范围见[ACT2](docs/gameplay/quests/ACT2.md#有限运行证据)，忽略目录`artifacts/act2-quests-20261009`及`artifacts/act2-recheck-20261009` |
 
@@ -60,30 +65,17 @@ Single Player使用原MCP角色界面，选角后自动建普通单人房、跳�
 
 ## 此前物品批次与有限冒烟
 
-2026-10-09 P1／P5及原生物品身份布局收尾已完成Windows Release构建，运行包在`dist/current`。EXE SHA256为`740E8E7B392BFBF0DB4E17F28A78AF4945439074058991E812AAA10D4094C3C8`，网络DLL为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`；包与`build/bin`一致。最终构建成功，证据在忽略目录`artifacts/items-economy-smoke-20261009`。打包曾因退局后进程尚未退出而失败，等待退出后成功，失败日志保留。没有新增测试脚本、用例或专用程序。
+历史v23物品经济包及v20物品收尾的包身份、角色条件、实际路径、失败样本与未覆盖范围统一见[物品证据](docs/gameplay/items/EVIDENCE.md)。该页保留充能Hydra、自恢复拾取、金币、商店周期／维修、过期、Token与保存的有限记录；旧包当时位于dist/current不能作为当前包身份。
 
-普通难度临时女巫Hero，地图种子3666265640；经验／金币和MPQ物品由既有管理入口准备，正常操作仍发原C2S。最终包的新进程实际验证如下，列出路径为有限V2，其余分支仍为V1：
-
-| 实际路径 | 有限证据 |
-| --- | --- |
-| 原充能技能源／施法／热键 | Hexfire鉴定装备后，Hydra为6级、36次；营地正常走跑到鲜血荒地施法，充能36→35，法力不变。保存后新进程把来源重新绑定至GUID16，右技能与热键2一起恢复。final-reloaded-snapshot／items |
-| 自恢复期间等待拾取 | Titan’s Revenge在地面自补充，人物靠近期间属性revision继续变化；原请求成功拾取，两端数量均为4。修复此前属性版本变化导致待拾取请求取消，改用独立的地面生命周期代次。final-restored-pickup／snapshot；旧失败样本保留 |
-| 金币丢弃／拾取 | 原C2S丢100金币并拾回，钱包恢复500000。final-gold-dropped／recovered |
-| 商店周期与充能修理 | Charsi货架63件在6000权威帧后重开为61件，与旧货架无GUID重叠；Hexfire报价6133，金币500000→493867，充能35→36。final-shop-before／after、final-repair-quote／repaired |
-| 地面过期边界 | 普通hp1超过15000帧后两端移除；任务方块仍在地面且可解码。final-expiry-before／after／snapshot。没有验证所有品质、金币阈值或区域卸载分支 |
-| Token与保存重入 | 学习Fire Bolt后使用Token，退回375属性点及75技能点，清基础技能、选择与16个热键；保存后新进程恢复同值，金币493867、Hexfire36次。final-token-before／after、final-save-info、reentry-snapshot／status |
-
-最终新进程ProtocolReady，8件物品均decoded=true；ignoredPackets=0、unavailableUnits=0、mapErrors为空；宿主failures=0、characterIssues为空、stderr为空。已有组件着色／无形透明表现限制仍在effectLimitations中，不把它记为空或归因于本次协议。构建后的`save-info`保留原只读检查，并增加耳朵／Realm／Tempered／普通身体部件数量摘要。
-
-此前物品批次指纹为v23，原磁盘版本仍为D2S v96。耳朵、身体部件、Realm尾部及Tempered布局已有源码支持，未取得符合准入条件的真实特殊身份存档进行往返；既有EpicSorc样本因Hardcore／dead／Ladder资格被拒绝，不能算布局验证。原38／58任务加工成功、全部方块配方、牛门／Pandemonium、首杀及特殊奖励、三难度、多人争用／背压、原D2GS与Linux均没有该批运行认证。第一幕资格／奖励及灌注本次证据见ACT1，其他幕、队伍NoDrop、其他职业及专用物品触发程序仍有依赖；[P5](docs/architecture/MULTIPLAYER.md#p5完整物品配方与城镇经济)保持未完成状态。
+任务物品／加工／永久消耗的后续v24／v26／v27证据链接各幕任务，不把管理准备当正常战斗通关。当前原D2S v96／规则指纹不变；完整物品／属性／配方、特殊身份样本、三难度与多人仍未全量验收，P5保持开放。
 
 ### 历史物品与掉落有限冒烟
 
-此前v20物品包的有限V2证据保留在忽略目录`artifacts/items-closeout-20261009`：普通方块／Crafted、Stealth镶嵌及回购、AutoMagic、个人赌博、批量书本／药水、耐久维修、自然普通掉落拾取与保存重入。其源码／包身份及失败样本留原日志；历史成功不认证本轮新增分支。当前功能、原规则依据与限制只维护在[库存模块](docs/modules/INVENTORY.md)，避免重复记录旧范围或把旧数值当作当前认证。
+v20自然普通掉落、普通方块／Crafted、Stealth／回购、AutoMagic、赌博／批量与维修、保存恢复的准确范围见[物品证据](docs/gameplay/items/EVIDENCE.md#历史物品与掉落有限冒烟)，不在基线复制历史台账。当前分类、规则与缺口见[物品目录](docs/gameplay/items/README.md)，模块仅维护入口。
 
 ### 历史第一幕全部怪物证据
 
-2026-10-09第一幕全部可击杀怪物收尾：63战斗类型／25类AI、十三SuperUniques、精英阶级／继承、首领技能与独立效果时钟。旧master提供迁入起点，当前MPQ、本地D2MOO及原1.13c客户端静态依据用于核对。修复A1技能释放事件、原生命触发位／GH生命槽及受击重复同步；补电／冰强化原客户端回调，两种服务端共用同一客户端。数据、共享函数、协议与未完成边界仅维护在[怪物模块](docs/modules/MONSTERS.md)。该怪物批次未改变当时v19准入规则，磁盘仍为D2S v96。
+2026-10-09第一幕全部可击杀怪物收尾：63战斗类型／25类AI、十三SuperUniques、精英阶级／继承、首领技能与独立效果时钟。旧master提供迁入起点，当前MPQ、本地D2MOO及原1.13c客户端静态依据用于核对。修复A1技能释放事件、原生命触发位／GH生命槽及受击重复同步；补电／冰强化原客户端回调，两种服务端共用同一客户端。数据、共享函数、协议与未完成边界由[怪物目录](docs/gameplay/monsters/README.md)链接唯一负责专题；模块页只维护代码入口。该怪物批次未改变当时v19准入规则，磁盘仍为D2S v96。
 
 Windows Release最终构建成功，运行包为`dist/current`。EXE SHA256为`95624C814123FCA8436F8C524D4A2E5843C4A3B53E7088DC8681924F8675E945`，网络DLL为`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无编译warning／error；早期诊断及修复日志仍保留，不能把整个批次概括为无warning。构建、准入、原包、截图及保存证据在忽略目录`artifacts/act1-all-monsters-closeout-20261009`，没有新增测试脚本、用例或程序。
 
@@ -91,15 +83,11 @@ Windows Release最终构建成功，运行包为`dist/current`。EXE SHA256为`9
 
 ### 历史普通怪物证据
 
-57普通身份／19类AI代表动作、复活／巢生／蛛网及普通原服样本保留在`artifacts/act1-monsters-20261008`与`artifacts/act1-monsters-closeout-20261009`。准确范围、失败样本及限制统一见[怪物模块](docs/modules/MONSTERS.md#有限运行证据)；历史V2不认证本次新增分支。
+57普通身份／19类AI代表动作、复活／巢生／蛛网及普通原服样本保留在`artifacts/act1-monsters-20261008`与`artifacts/act1-monsters-closeout-20261009`。准确范围、失败样本及限制统一见[第一幕怪物证据](docs/gameplay/monsters/ACT1.md#有限运行证据)；历史V2不认证本次新增分支。
 
 ### 历史通用十项有限冒烟
 
-2026-10-08通用十项收尾后，Windows Release最终构建成功并更新`dist/current`，包括此前未提交的局前／端口／连接错误详情。EXE SHA256：`122CE3973A21D2C258CADE81B737A106DD864710198144DA7F1E0E4E73C92866`；网络DLL：`9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error；早期构建的诊断及修复不删，不能把整个批次概括为无warning。构建及运行证据保留在忽略目录`artifacts/common-skills-smoke-20261008`；没有新增测试脚本、用例或程序。
-
-本批在临时存档副本上，以同一客户端原C2S完成普通近战／标枪投掷、普通弓箭最后一箭与空弹药拒绝、火／毒药瓶、本人女武神Unsummon、鉴定卷轴／书本原3F及27、书本转装、回城卷轴／书本消费和门户替换。保存后最新EXE新进程入局ProtocolReady，标枪58、箭347、两本书各5页及鉴定结果恢复；消耗品／召唤不恢复。最终宿主failures=0、characterIssues为空，客户端ignoredPackets=0、stderr为空。条件、数值和具体JSON名只维护在[通用技能证据](docs/gameplay/skills/GENERAL.md#有限运行证据)。
-
-普通桶KK和左手两项没有本批运行覆盖；自研地图本轮没有可操作普通桶样本，不制造物件。弩／全部投掷物、空书／多人／取消／背压、原服回归和Linux未认证。最新包仅复查Single Player保存自动入局，界面Host／Join改动已入包而未重跑。代表路径是有限V2，其余V1，不把全部十项或战斗整体标V3。
+2026-10-08通用十项包，EXE SHA256 `122CE3973A21D2C258CADE81B737A106DD864710198144DA7F1E0E4E73C92866`。普通难度41级临时亚马逊，有限验证普通近战／弓箭／标枪、火毒药瓶、本人女武神Unsummon、鉴定／回城卷轴与书本、保存新进程恢复；普通桶KK、左手及本批原服／多人没有运行认证。角色条件、具体JSON及未覆盖项只维护在[GENERAL](docs/gameplay/skills/GENERAL.md#有限运行证据)，证据保留在忽略目录 `artifacts/common-skills-smoke-20261008`。历史包不认证当前新增分支。
 
 ### 历史亚马逊有限冒烟与原服回归
 

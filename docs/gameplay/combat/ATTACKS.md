@@ -14,12 +14,10 @@ Skills、Missiles、AnimData、COF／DCC、ItemTypes和当前装备外观提供�
 
 部分25Hz直线／加速飞行、充能弹、整数扇形、闪电／骨矛拖尾及冰封球已接。当前野外物件批补CltDo25的64方向新星（包含Trap Nova／Nova／Frost Nova）、CltDo51喷火雕像及ClientSend毒云CltDo4烟团；当前MPQ决定图形与参数，原1.13c静态入口核对布局／节拍，范围见[物件](../world/OBJECTS.md#野外箱子破坏物与陷阱)。程序编号、数据消费与限制集中见[联网表现](../../modules/NETWORK.md#联机游玩表现与输入)。普通弓弩／Throw请求不等于全部武器效果验收。
 
-女巫批已补Inferno、连锁、暴风雪及地面程序；亚马逊批补原CltDo18–22的导引／充能／炮轰／Fend／闪电攻击、MissileCltDo3／4／7的尾迹／毒烟／引导，以及CltHit12／14／25的牺牲地面火／冻结碎片／闪电之怒分裂。公共sequence、weaponVolley、环形／圆盘／burst与GUID继任保留Clt／Srv参数差异；本人IAS及Pierce只用已知装备／属性。原依据与逐项边界见[亚马逊](../skills/AMAZON.md)。本批已构建打包，列出的路径有有限自研冒烟和原服回归；范围见基线。
-
-通用Attack／弓弩、Throw／Left Hand Throw、Left Hand Swing及六种药瓶已迁入统一武器管线；投掷药瓶由原CltDo2创建，地面寿命计算两端共用。逐项规则与未运行边界见[通用十项](../skills/GENERAL.md)。
+女巫及亚马逊Clt程序、专项公共函数和未认证差异分别见[女巫](../skills/SORCERESS.md)与[亚马逊](../skills/AMAZON.md)，通用Attack／弓弩／投掷／左手及药瓶见[GENERAL](../skills/GENERAL.md)。本页只维护表现入口和通用限制，逐技能分派与历史证据不重复维护。共享计算／权威与视觉所有权统一见[COMMON](../skills/COMMON.md#公共层与所有权)。
 
 骨魂、药瓶抛物线高度和其余客户端程序仍有缺口；RandStart指南存在冲突，暂缓。全效果密度／随机分布、空间音频、精确定点路径及像素一致性没有完整认证，不画自造替代效果。
 
 原规则入口：本地D2MOO PlrMsg／PlrModes、Missiles／MissMode、PathMisc、D2Skills；Diablerie Missile／MissileFunctions只交叉核对显示结构。当前MPQ始终决定原图与参数，参考服务端函数不代表完整D2Client视觉实现。
 
-怪物共用collision_spec／movement_math／projectile_math／damage／components的纯计算，AI、动态碰撞、生命周期和伤害分别归server领域。安达利尔／GargoyleTrap射线保留原Clt／Srv差异，电强化八条充能路径共用，冰强化采用各自环射步长。0C／69 GH生命高位是电强化触发位；GH方向槽为生命字节。完整MPQ契约、依据和验证仅维护在[怪物模块](../../modules/MONSTERS.md)及[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+怪物共用collision_spec／movement_math／projectile_math／damage／components的纯计算，AI、动态碰撞、生命周期和伤害分别归server领域。安达利尔／GargoyleTrap射线保留原Clt／Srv差异，电强化八条充能路径共用，冰强化采用各自环射步长。0C／69 GH生命高位是电强化触发位；GH方向槽为生命字节。MPQ契约见[怪物COMMON](../monsters/COMMON.md)，原包与运行边界见[表现](../monsters/PRESENTATION.md)及[第一幕证据](../monsters/ACT1.md#有限运行证据)，原函数依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。

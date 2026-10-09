@@ -1,17 +1,19 @@
-# 圣骑士技能资料与联机边界
+# 圣骑士技能边界
 
-当前MPQ战斗技能、20光环及30项技能树／提示定义继续保留。原服执行近战、突进、转换、治疗、格挡、光环范围／周期／互斥与伤害；旧本地圣骑士执行器已删除，历史30／30入口不代表完整联机视觉。
+更新：2026-10-09。自研服务端尚未迁入圣骑士30项职业主动／光环执行，已有部分基础被动数值不代表完整生命周期。当前MPQ技能树、战斗／20光环定义和纯提示仍保留；通用操作见[GENERAL](GENERAL.md)，迁入规范见[COMMON](COMMON.md)。
 
-自研服务端尚未迁入圣骑士30项职业主动／光环执行；已有基础被动数值不代表完整技能生命周期。普通攻击和物品技能范围见[通用技能](GENERAL.md)。
+## 当前客户端与自研缺口
 
-## 数据与边界
+| 范围 | 已保留内容 | 待补／待核实 |
+| --- | --- | --- |
+| 战斗／武器 | `weapon_skill_data`、纯伤害公式、通用请求／提示 | Holy Bolt友方、Conversion目标、Charge序列、Blessed Hammer螺旋及Fist of the Heavens分裂未完整接入；服务端职业执行未迁入 |
+| 光环／被动 | `aura_data`、`state_data`、`aura_resolve`／`passive`及部分基础贡献 | 服务端周期／目标筛选／范围／互斥及完整来源生命周期未迁入；宠物／多人／PvP目标与客户端全状态表现未认证 |
+| Holy Shield | 合格盾牌及纯提示规则 | 装备变化后的贡献与格挡生命周期未迁入；特殊盾图缺明确原版组件选择依据，不能由导入原表推断已还原 |
 
-content/skills/weapon_skill_data、aura_data、state_data和gameplay纯aura_resolve／passive／伤害公式供已知提示与资源分析；不足武器、盾牌、属性或光环输入时保持未知，不重算原服防御／格挡。
+提示缺武器、盾牌、属性或光环输入时保持未知；客户端不重算原服权威防御／格挡，不安装光环。原状态消费与Clt程序范围见[NETWORK](../../modules/NETWORK.md#联机游玩表现与输入)。没有本职业全30项原服／多人认证。
 
-普通技能原请求沿[公共技能](COMMON.md)。Holy Bolt友方、Conversion玩家／友军、宠物／多人光环目标与PvP尚未完整接入；Charge原序列、Blessed Hammer螺旋、Fist of the Heavens分裂及Holy Shield特殊盾图也不能以原表导入认定已还原。
+## 后续核对入口
 
-## 参考证据
+先读master的既有圣骑士规则和当前纯函数，再按MPQ核对。本地D2MOO SkillPal、D2Skills、Units::GetDefense／UpdateBlockAnimRateAndVelocity、SUnitDmg及事件／状态代码提供执行入口；光环实例／目标效果分工见[参考设计](../../architecture/REFERENCE_DESIGN.md#5-光环发射实例周期筛选目标效果)，来源见[资料来源](../../resources/THIRD_PARTY.md)。
 
-本地D2MOO SkillPal、D2Skills、Units::GetDefense／UpdateBlockAnimRateAndVelocity、SUnitDmg及事件／状态代码用于核对原服规则。Holy Shield必须有合格盾牌、装备变化与被动／光环贡献的生命周期仍归原服；当前MPQ没有可直接采用的特殊盾组件替换字段，不猜造原图。
-
-已有纯公式与原图共享，未认证七职业完整表现。状态／模式消费与客户端程序限制见[联网模块](../../modules/NETWORK.md#联机游玩表现与输入)，来源／许可见[资料来源](../../resources/THIRD_PARTY.md)。
+Holy Shield的盾牌资格、装备变化、被动和光环贡献分别建生命周期；当前MPQ未提供可直接采用的特殊盾组件替换规则，原图选择须继续核实。原服执行这些技能不等于客户端表现或自研对应程序已完成。

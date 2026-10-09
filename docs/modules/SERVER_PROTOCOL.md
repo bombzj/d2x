@@ -48,7 +48,7 @@ NativeRealmService是单个连接的生命周期编排，不是玩法容器。�
 
 0x0E已接传送点启动模式通知，首次中性点击不发0x63，ENDANIM按原版静默完成；0x63只用于mode1／2点击后打开菜单，使用原0x102＋112位历史。原0x49关闭／同区域／非法目的地及异步内容准备边界见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。此项为未构建的源码支持，不代表其他物件模式全部迁入或逐包运行认证。
 
-库存GUID在宿主端通过inventoryInput绑定服务端ItemHandle；原包不增加revision或请求ID。请求在固定步复验来源、位置、活动武器组和交换目标，成功经InventoryFact生成原9C／9D／0A，切组另发97及23；同笔CharacterFact发原1F／21人物增量；可靠通知与可覆盖的PlayerSnapshot.command分开。一次队列写入包含整笔原字节包，接收成功才确认Outbox；失败终止连接并保留实例／存档租约。无通用成功ACK或错误fallback；详细规则／暂缓范围见[库存](INVENTORY.md#已接入的执行路径)。
+库存GUID在宿主端通过inventoryInput绑定服务端ItemHandle；原包不增加revision或请求ID。请求在固定步复验来源、位置、活动武器组和交换目标，成功经InventoryFact生成原9C／9D／0A，切组另发97及23；同笔CharacterFact发原1F／21人物增量；可靠通知与可覆盖的PlayerSnapshot.command分开。一次队列写入包含整笔原字节包，接收成功才确认Outbox；失败终止连接并保留实例／存档租约。无通用成功ACK或错误fallback；详细规则／暂缓范围见[物品目录](../gameplay/items/README.md)。
 
 具名stub返回NotImplemented，由宿主按包号统计，不修改角色或世界，不发伪造成功包。普通客户端继续原协议超时／无确认语义；开发者通过server-protocol查询明确状态，不把私有错误塞进原包。stub目前只保证注册、帧边界、连接阶段和分派，尚不承诺完整字段或玩法资格校验。未知包长拒绝连接；已识别但未知的4F／38子操作拒绝执行。
 
@@ -66,7 +66,7 @@ GS接受TCP后发原AF00；收到68才凭hash／token寻找对应MCP入局会话
 
 13/type=5已接原UNIT_TILE旅行，原07／08／09／0A同步区域与出口，15位置包用于瓦片换区；自然边界沿移动连续过渡。5B／59／0D／0F／9D／0A／5C同步名册和区域可见玩家。公开9D只包含穿戴外观并隐藏属性列表；背包／Cursor／私人箱／人物成长增量仅发本人。15聊天请求及26同局广播已接；第一幕六项28／5D及石柱50、传送点63、本人门户51／60／82及物品技能数量22已接；Warriv／Meshif双向跨幕及第二幕六任务已接；第三至第五幕个人任务已接，队伍、敌意和玩家交易仍未实现；普通近战怪物使用AC／67／69／6C／6D及0C投影，67沿原走路action=1／跑动action=23携带当前速度百分比，玩家攻击及技能使用带真实技能ID／等级的4C／4D，生命／法力属性1F只发本人，同区域传送用公开15。火弹／火球已由客户端施法动作派生视觉，不再重复发送73。
 
-人物命中／生命修正沿PlrMsg使用0D动作19和整数生命0..100，不发怪物0C、不把19当GH；怪物0C沿MonsterMsg使用旗标19、0..128原比例大于1时减一及原命中类型。组件池、SH格挡、HitClass准备／公共计算和两个D2GS普通怪物的有限对照证据见[怪物模块](MONSTERS.md)。这些修正只改自研权威／hosting投影，本次没有修改客户端或增加自研协议。
+人物命中／生命修正沿PlrMsg使用0D动作19和整数生命0..100，不发怪物0C、不把19当GH；怪物0C沿MonsterMsg使用旗标19、0..128原比例大于1时减一及原命中类型。组件池、SH格挡、HitClass准备见[怪物COMMON](../gameplay/monsters/COMMON.md)，两个D2GS普通怪物有限对照见[第一幕证据](../gameplay/monsters/ACT1.md#有限运行证据)。这些修正只改自研权威／hosting投影，本次没有修改客户端或增加自研协议。
 
 玩家兴趣粒度为本人区域及已准备的直接自然邻区；怪物进一步以本区RoomLayout邻室／邻区距离过滤，尚非完整原版房间兴趣。当前没有BNCS账号与独立无图形宿主发行；LAN使用宿主共享角色目录，详见[联网入口](NETWORK.md#局域网自研宿主入口)。历史包有同机TCP双进程有限证据，本轮六项未复验多人／跨机器路径。
 
@@ -97,6 +97,6 @@ save、load、cancel-load、step、grant-experience／grant-gold、player-damage
 
 原4C／4D统一主动技能动作、Inferno转向和Hydra技能337；73只允许MPQ ClientSend弹体，静止弹体FirstX／Y为0；ClientSend是视野同步资格，并非强制创建广播。原服已核对的Blaze／FireWall／Meteor／Blizzard及其子火段常规创建由动作／状态重建，不重复发送73；本人普通动作省略4C／4D，其他可见客户端仍发送（原强制本人标志尚无执行入口）；A3编码ThunderStorm目标瞬时事件；A7／A9编码怪物／友方单位状态，11与2C编码原叠层／u16音效。67/action20使用原击退来源点、三格距离及pathType11。不存在自研专用客户端技能消息。具体执行和表现范围见[女巫技能](../gameplay/skills/SORCERESS.md)。
 
-当前怪物投影沿原AC的五位champion／unique／superunique／minion／ghostly、固定hcIdx、词缀终止和nameSeed；没有新增自研阶级包。人物MonProp击退使用原0F/action20（KB），命中／生命仍为0D/action19，隐藏Kick由原技能动作呈现。状态值经原ItemStatCost ID及A7／A9投影，敌对弹体仍尊重ClientSend／NoMultiShot／NoUniqueMod／NextHit。具体实现及未认证边界见[怪物模块](MONSTERS.md)。
+当前怪物投影沿原AC的五位champion／unique／superunique／minion／ghostly、固定hcIdx、词缀终止和nameSeed；没有新增自研阶级包。人物MonProp击退使用原0F/action20（KB），命中／生命仍为0D/action19，隐藏Kick由原技能动作呈现。状态值经原ItemStatCost ID及A7／A9投影，敌对弹体仍尊重ClientSend／NoMultiShot／NoUniqueMod／NextHit。具体实现及未认证边界见[精英](../gameplay/monsters/ELITES.md)及[原包表现](../gameplay/monsters/PRESENTATION.md)。
 
-怪物0C／19与69/action6生命最高位为电强化发射资格；69 GH方向槽为生命字节，阶级只由AC传输。ClientSend为空的194／195不强发73，公开触发位由effects／monsters投影，视觉由共用原包回调驱动。依据与分层见[怪物模块](MONSTERS.md)。
+怪物0C／19与69/action6生命最高位为电强化发射资格；69 GH方向槽为生命字节，阶级只由AC传输。ClientSend为空的194／195不强发73，公开触发位由effects／monsters投影，视觉由共用原包回调驱动。依据与分层见[原包表现](../gameplay/monsters/PRESENTATION.md)及[怪物模块](MONSTERS.md)。

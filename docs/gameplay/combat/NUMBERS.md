@@ -10,4 +10,4 @@ TXT列名统一ASCII忽略大小写；StrBonus／DexBonus保留原字段。原�
 
 ItemStatCost在不同协议／保存路径的位宽、符号、Save Add与ValShift分别处理，不把D2S编码偏移套到原状态发送位流。怪物生命0x0C及69 GH剥离电强化触发位后解释原0–128比例；GH的方向槽实际携带生命字节；不推造绝对生命。
 
-人物提示入口见[角色模块](../../modules/CHARACTER.md)，原物品参数与缺口见[数据](../items/DATA.md)和[支持](../items/SUPPORT.md)。本地D2MOO ItemsTbls、ItemMods、SUnitDmg用于规则／字段交叉核对；不能单独认证原客户端全部显示。
+人物提示入口见[角色模块](../../modules/CHARACTER.md)，原物品参数与缺口见[数据](../items/DATA.md)和[表现](../items/PRESENTATION.md)。本地D2MOO ItemsTbls、ItemMods、SUnitDmg用于规则／字段交叉核对；不能单独认证原客户端全部显示。

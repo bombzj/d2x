@@ -74,7 +74,6 @@ void SceneView::refreshUi(float dt) {
     const int palette=mapView().palette;
     if (itemGroundPalette_!=palette) { assets_.itemGround.clear(); itemGroundPalette_=palette; }
     assets_.loadInventoryArt(inventoryView_,palette);
-    advanceGroundAnimations(dt);
     const auto &p = characterView_;
     view_.skillClass = p.classCode; view_.displayedWeaponSet = p.weaponSet;
     const int left = p.selectedSkills[p.weaponSet * 2], right = p.selectedSkills[p.weaponSet * 2 + 1];
@@ -85,8 +84,13 @@ void SceneView::refreshUi(float dt) {
         if(view_.orificeObject) {view_.inventory.open=true;view_.inventory.cancelGesture();view_.npcMenu=false;}
     }
     view_.inventory.syncCursor(inventoryView_,view_.orificeItem?view_.orificeItem->id:EntityId{});
-    view_.animationTime += dt;
     advanceUi(dt);
+}
+void SceneView::advanceWorldPresentation(float dt) {
+    // World effects share the replica renderer's clock; menu UI keeps its own.
+    dt = std::clamp(dt, 0.f, .1f);
+    advanceGroundAnimations(dt);
+    view_.animationTime += dt;
 }
 SceneView::~SceneView() {
     if (highlightShader_.id)

@@ -20,6 +20,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 嵌入宿主管理命令
 
+`online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
+
 当前Windows包已通过现有脚本有限运行目录、save／load／step／grant-experience／grant-gold，以及伤害、物品／怪物生成和怪物击杀管理路径；具体证据及未运行边界见基线。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 
 | 命令 | 参数和当前结果 |
@@ -221,7 +223,7 @@ P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges
 
 冒烟使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照用于观察，不能代替逐只普通攻击或完整AI认证；本批证据与边界见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
 
-server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；实际验证范围见怪物模块。
+server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；实际验证范围见[第一幕怪物证据](../gameplay/monsters/ACT1.md#有限运行证据)，管理准备不能作为真实首领战斗认证。
 
 ### 女巫战斗诊断
 

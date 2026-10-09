@@ -58,6 +58,10 @@ struct OnlineSceneView {
     int width{}, height{}, candidates{}, landmarks{};
     int renderedUnits{}, unavailableUnits{};
     std::vector<std::string> effectLimitations;
+    struct MissileDisplay { int id{}; Vec position; float age{}, remaining{}; };
+    std::vector<MissileDisplay> clientMissiles;
+    std::optional<uint16_t> localCastSkill;
+    float localCastAge = -1;
     bool playerDisplayed{};
     std::optional<Vec> playerDisplayPosition; // Presentation coordinates; never used as authority.
     std::vector<OnlinePlayerDisplay> players;

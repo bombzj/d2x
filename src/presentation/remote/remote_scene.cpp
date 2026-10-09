@@ -133,9 +133,16 @@ struct RemoteScene::Impl {
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
     float time{};
     std::chrono::steady_clock::time_point lastFrame{};
+    bool wasPaused{};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
     std::vector<OnlinePlayerDisplay> players;
+    std::vector<OnlineSceneView::MissileDisplay> clientMissiles;
+    bool channelSkill(int id) const {
+        const auto row = skillRows.find(id);
+        return row != skillRows.end() && skills.number(row->second, "cltdofunc") == 24 &&
+            skills.number(row->second, "seqnum") == 6;
+    }
     bool playerDead(const OnlineUnit &u) const {
         return world().corpseOwners.contains(u.key.id) ||
             (u.nativeMode ? (u.mode == 0 || u.mode == 17) : (u.mode == 8 || u.mode == 9));
@@ -725,8 +732,18 @@ struct RemoteScene::Impl {
                     localCast = LocalCast{request->command, source->second.actionRevision, time,
                         -1, 0, request->revision};
             } else if(request->command.action==OnlineCombatCommand::Action::Stop) {
-                if(playerId) {channels.erase({0,*playerId});shared.cancelPendingClientMissiles(effectOwner({0,*playerId}));}
-                localCast.reset();
+                // Native Rcv0x12 only clears STATE_INFERNO. Mouse-up ends a
+                // held gesture, not a normal cast that has yet to release.
+                // Keep its pose and scheduled Clt missiles through the action
+                // frame; movement, hit recovery and death still interrupt below.
+                const bool localChannel = localCast && channelSkill(localCast->command.skill);
+                if (playerId) {
+                    const OnlineUnitKey owner{0, *playerId};
+                    const bool activeChannel = channels.erase(owner) != 0;
+                    if (localChannel || activeChannel)
+                        shared.cancelPendingClientMissiles(effectOwner(owner));
+                }
+                if (localChannel) localCast.reset();
             } else if (request->command.action != OnlineCombatCommand::Action::SelectSkill &&
                        request->command.action != OnlineCombatCommand::Action::BindHotkey &&
                        request->command.action != OnlineCombatCommand::Action::Stop)
@@ -823,7 +840,9 @@ struct RemoteScene::Impl {
             if(channel.next<time) channel.next=time; // Bound catch-up after a stalled render frame.
             ++it;
         }
-        if(localCast && localCast->command.skill==41 && localCast->started>=0 && playerId && !channels.contains({0,*playerId})) localCast.reset();
+        if(localCast && channelSkill(localCast->command.skill) && localCast->started>=0 && playerId && !channels.contains({0,*playerId})) localCast.reset();
+        if (localCast && localCast->started >= 0 && time >= localCast->started + localCast->duration)
+            localCast.reset(); // Released missiles have their own lifetime.
         std::erase_if(overlayVisuals, [&](const auto &effect) {
             return time >= effect.born + effect.duration || !v.world.units.contains(effect.unit);
         });
@@ -1222,7 +1241,7 @@ struct RemoteScene::Impl {
         return u.classId && u.mode ? shared.objectAnimation(*u.classId, *u.mode, artPalette) : nullptr;
     }
     RemoteSceneFrame draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
-                           SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand) {
+                           SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
         RemoteSceneFrame intent;
         players.clear();
         rendered = unavailable = 0;
@@ -1251,9 +1270,13 @@ struct RemoteScene::Impl {
             localObjectKickRevision = 0;
         }
         const auto now = std::chrono::steady_clock::now();
-        const float elapsed = lastFrame == std::chrono::steady_clock::time_point{} ? 0.f
+        // Refresh the wall-clock anchor while paused and on the resume frame.
+        // Menu time must never become world animation/prediction catch-up.
+        const float elapsed = paused || wasPaused || lastFrame == std::chrono::steady_clock::time_point{} ? 0.f
             : std::max(0.f, std::chrono::duration<float>(now - lastFrame).count());
         lastFrame = now;
+        wasPaused = paused;
+        shared.pauseWorldPresentation(paused);
         time += elapsed;
         // Long window/loading waits are presentation discontinuities. Restore the
         // latest replica and persistent states, never replay accumulated casts/audio.
@@ -1271,6 +1294,7 @@ struct RemoteScene::Impl {
         }
         if (!binding.origin || !v.world.playerPosition)
             return intent;
+        shared.advanceWorldPresentation(suspended ? 0.f : elapsed);
         observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
         std::erase_if(blazeTrails,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
         const auto origin = *binding.origin;
@@ -1296,6 +1320,9 @@ struct RemoteScene::Impl {
         }
         shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
             {float(origin.x), float(origin.y)}, missileTargets);
+        clientMissiles.clear();
+        for (const auto &missile : shared.clientMissiles())
+            clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});
         const bool waypointOpen = v.world.waypointSource.has_value();
         auto local = [&](OnlinePoint p) {
             return Vec{float(int(p.x) - origin.x), float(int(p.y) - origin.y)};
@@ -1718,8 +1745,8 @@ RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &displa
     : impl_(std::make_unique<Impl>(a, palette, display)) {}
 RemoteScene::~RemoteScene() = default;
 RemoteSceneFrame RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
-                                     SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand) {
-    return impl_->draw(v, m, s, shared, combat, uiConsumed, mouse, rightHand);
+                                     SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
+    return impl_->draw(v, m, s, shared, combat, uiConsumed, mouse, rightHand, paused);
 }
 int RemoteScene::renderedUnits() const {
     return impl_->rendered;
@@ -1739,5 +1766,10 @@ std::optional<Vec> RemoteScene::playerDisplayPosition() const {
 const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }
 std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};
+}
+void RemoteScene::effectStatus(OnlineSceneView &view) const {
+    view.clientMissiles = impl_->clientMissiles;
+    view.localCastSkill = impl_->localCast ? std::optional{impl_->localCast->command.skill} : std::nullopt;
+    view.localCastAge = impl_->localCast && impl_->localCast->started >= 0 ? impl_->time - impl_->localCast->started : -1;
 }
 } // namespace d2x

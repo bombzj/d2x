@@ -47,7 +47,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (request.action == Action::Stop) {
         const auto channel=releases_.find(actor.actor);
         if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);if(auto cast=state_.casts.find(actor.actor);cast!=state_.casts.end()) {cast->second.interrupted=true;cast->second.until=actor.tick;}}
-        if (pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
+        // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
+        // not cancel an ordinary attack's approach or pending action.
         return applied();
     }
     if (request.action == Action::Select || request.action == Action::Bind) {

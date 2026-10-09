@@ -154,6 +154,15 @@ struct RealmSession::Impl {
     }
 
     void changed() { ++view.revision; }
+    void record_combat(OnlineCombatRequest request) {
+        auto &current = view.world.combatRequest;
+        // Channel mouse-up cannot replace an outstanding learn/select/spend ACK.
+        if (request.command.action != OnlineCombatCommand::Action::Stop || !current ||
+            current->state != OnlineCombatRequest::State::Pending) {
+            current = std::move(request);
+            combatDeadline = Clock::now() + options.timeout;
+        }
+    }
     void stage(OnlineStage value) {
         view.stage = value;
         if (value != OnlineStage::Lobby && value != OnlineStage::ListingGames) {
@@ -2012,6 +2021,16 @@ bool RealmSession::create_town_portal(uint16_t skillId, std::optional<OnlineInte
         Writer cast;
         cast.u8(0x0C); cast.u16(point.x); cast.u16(point.y);
         p.sent(p.gs, cast.release());
+        // Inventory right-click sends the same native cast as the skill hand.
+        // The server normally omits its owner's 4C/4D; record this sent intent
+        // through the common presentation path rather than waiting for an echo.
+        OnlineCombatRequest castRequest;
+        castRequest.sequence = ++p.combatSequence; castRequest.revision = world.revision;
+        castRequest.state = OnlineCombatRequest::State::SentNoAck;
+        castRequest.command.action = OnlineCombatCommand::Action::Cast;
+        castRequest.command.skill = skillId; castRequest.command.point = point;
+        castRequest.command.context = onlineIntentContext(p.view);
+        p.record_combat(std::move(castRequest));
         p.portalRequest = std::move(request);
         p.view.world.townPortalPending = true;
         p.view.world.movementRequest.reset();
@@ -2260,12 +2279,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
                 }
             }
         }
-        // Releasing a channel must not erase an outstanding learn/select/spend acknowledgement.
-        if (command.action != Action::Stop || !world.combatRequest ||
-            world.combatRequest->state != OnlineCombatRequest::State::Pending) {
-            world.combatRequest = std::move(request);
-            p.combatDeadline = Clock::now() + p.options.timeout;
-        }
+        p.record_combat(std::move(request));
         if (command.action != Action::Stop) p.nextCombat = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {

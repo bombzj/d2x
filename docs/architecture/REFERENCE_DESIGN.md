@@ -1,6 +1,6 @@
 # 公共规则、领域执行与表现的参考设计
 
-依据：本地固定版本 `reference/` 源码阅读。更新：2026-10-08。本文维护公共函数的提取依据、具体边界和后续迁移方法。当前产品已有自研权威宿主与唯一原协议客户端；已实施范围见[内核子系统](../modules/SERVER_SYSTEMS.md)。以下明确区分已存在的代码、参考证据和后续设计，不据源码阅读认证运行表现。原规则与参数继续以当前 MPQ 和已核实证据为准。
+依据：本地固定版本 `reference/` 源码阅读。更新：2026-10-09。本文维护参考结构和公共提取的原版依据；技能规范／状态由COMMON、逐技能台账由职业专题维护。当前产品已有自研权威宿主与唯一原协议客户端；已实施范围见[内核子系统](../modules/SERVER_SYSTEMS.md)。以下明确区分已存在的代码、参考证据和后续设计，不据源码阅读认证运行表现。原规则与参数继续以当前 MPQ 和已核实证据为准。
 
 ## 1. 参考价值与限制
 
@@ -109,29 +109,23 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 | --- | --- | --- | --- |
 | 怪物 | 原身份、尺寸、动作、固定点速度、距离；家族决策可在服务端内部复用 | 人口、目标、仇恨、随机流、AI等待／冲锋／逃跑、攻击、复活、死亡奖励 | 旧master各家族`*_ai`优先；当前decision与家族纯决策覆盖第一幕19类普通AI，适配在server/ai/family_actions及nest_family |
 | NPC移动／交谈 | 原类型、服务定义、已知距离／资格条件、对白编号解释 | 交互租约、NPC占用、距离复验、介绍记录、特殊服务完成 | content准备服务纯值，server/npc协调；客户端仍消费原27／2F等，不运行商人AI |
-| 商店／维修／赌博 | 价格和减价公式、维修量、容量／装配条件 | 真实货架、物品掷值、刷新种子、金币扣除、买卖／维修事务 | 现有content/items/item_pricing仍依赖ClassicData；接server/merchant前先拆“表准备＋纯报价”，不能直接给内核传ClassicData |
+| 商店／维修／赌博 | 价格和减价公式、维修量、容量／装配条件 | 真实货架、物品掷值、刷新种子、金币扣除、买卖／维修事务 | 现有content/items/item_pricing仍依赖ClassicData，由客户端与hosting/merchant_content使用；hosting准备报价纯值，server/merchant复验并提交。后续可继续拆表准备与纯报价，不能给内核传ClassicData；实际规则见[经济](../gameplay/items/ECONOMY.md) |
 | 任务记录／面板 | 原编号／日志／D2S槽映射、旗标含义、已知记录的纯显示条件 | 按人按难度进度、本局公共状态、成员资格、世界条件 | 现有quest/catalog与client/quest_projection继续复用；UI中的TBL／绘制部分留客户端适配层 |
 | 任务推进／奖励 | 事件与快照到转移计划的纯规则可供服务端各任务复用 | 杀怪／物件／NPC事件认定、多人贡献、奖励唯一发生标识、保存及原子提交 | master纯阶段规则保留／迁入gameplay/quest，由server/quests调用；转移计划经transactions一次改记录／物品／成长，不能凭公共完成旗标给每个客户端发奖 |
-| 物品／装备／掉落 | 容量、需求、属性贡献、品质／词缀公式、已知实例报价 | 物品身份和归属、真实随机、拾取争用、掉落发生次数 | 已有items纯计算和inventory事务继续扩展；UI预览与真实库存修改分离 |
+| 物品／装备／掉落 | 容量、需求、属性贡献、品质／词缀公式、已知实例报价 | 物品身份和归属、真实随机、拾取争用、掉落发生次数 | 已有items公共计算和inventory事务继续扩展；UI预览与真实库存修改分离。实际函数依赖、随机／事务与迁入规范见[物品COMMON](../gameplay/items/COMMON.md)，不将依赖ClassicData的内容程序称为纯内核函数 |
 | 地图／物件 | 地图生成与碰撞、原身份／坐标、交互距离 | 动态门／箱／祭坛状态、掉落、任务资格、区域驻留 | NativeMapGenerator继续两端共用；客户端Reveal顺序与服务端世界状态分别拥有 |
 
 “任务资格条件可共用”只适用于输入完整且定义相同的条件。客户端没有世界怪物总数、队伍历史或其他人的任务记录时，结果应是未知，不能按空集合判成功。D2Common包含任务SetQuestState也不代表本项目允许客户端调用它写权威进度。
 
 ## 10. 迁移方法、批准范围与完成标准
 
-1. 先读master已实现的规则、行为分派及边界，再看当前content和公共计算是否仍在；能直接复用的纯代码不复制第二份。旧代码耦合Enemy／GameSession时只迁规则和必要局部状态。
-2. 记录具体证据与缺口：旧文件／函数、当前MPQ字段、Srv／Clt分工、事件先后及随机消耗。D2MOO用于公共层／执行层定位和旧实现缺失点；不因为新架构就重做一遍全部原版研究。
-3. 先界定纯函数输入／输出，尤其基础与有效等级、难度、状态来源、整数取整、帧起点、种子所有者、实体与区域代次。未准备数据明确拒绝，不造参数或静默降级成另一种技能／怪物。
-4. 服务端接运行状态、固定步、失败重试和提交点，再用原包编码结果。多个观察者只复制一次事实，不重复施法、死亡或奖励；输出容量不足不能消耗第二次随机或扣第二次资源。
-5. 两端都需要的计算再替换客户端调用；仅服务端需要的规则保持服务端调用。共享函数不能引入自研／原服分支，不能要求旧原服提供额外字段。
-6. 用户已授权有参考依据、匹配原版的公共纯函数提取及客户端修复；记录每处MPQ／原包／原函数证据。禁止为兼容自研宿主单独改客户端；证据不足或改变原版规则的方案仍须单独确认，不能扩大为任意改写许可。
-7. 更新本页的提取边界、SERVER_SYSTEMS的实际执行范围及MULTIPLAYER的迁移顺序。存档语义改变同步规则指纹与SAVES，不静默迁移旧档。不编写测试脚本／用例／专用程序；构建／打包／运行验证按当轮有效授权，不能把源码接线当作运行认证。
+技能的复用顺序、纯函数输入、事务／随机、客户端修改边界及证据口径统一见[COMMON规范](../gameplay/skills/COMMON.md#技能迁入规范)。其他领域同样先从master迁可用规则，再用当前MPQ与reference补证据；领域拥有运行状态，原包只投影一次已提交事实，不恢复万能会话。
 
-当前已落地：resolve／projectile_path／combat geometry等公共计算；原表准备与独立server领域；女巫26主动／4被动及亚马逊24主动／6被动、通用十项；周期／环射／连锁／射流、反击吸收与伙伴；第一幕普通／精英／首领家族、独立远程／复活／巢／蛛网／精英效果、固定点走跑与原碰撞。第一幕六项任务复用纯阶段规则并拆开任务、物件、奖励内容、同行者与旅行，公共Akara／Token退款归gameplay/character/respec；实际边界见[任务系统](../gameplay/quests/SYSTEM.md)。后续恢复按行为族推进：剩余职业、其他幕怪物、未支持的周期／散射和状态效果、NPC特殊服务及后续幕任务事件／奖励。该顺序是结构依赖建议，不表示这些功能已经完成。
+本页保留结构／原函数证据，不维护职业、任务或怪物的第二份完成清单。当前状态见[基线](../../BASELINE.md)，模块所有权见[SERVER_SYSTEMS](../modules/SERVER_SYSTEMS.md)，实施顺序见[MULTIPLAYER](MULTIPLAYER.md)，保存语义及指纹见[SAVES](../modules/SAVES.md)。
 
 ### 女巫公共计算落点
 
-当前projectile_path共用missileVelocityFixed、missileWallDirection（双方采用整数施法／目标射线的垂线）、chargedBoltPath、missileRingDirection、冰弹转向、missileChainSuccessor和blizzardOffset；cast_timing的playerCastSequence由两端共用seq12／seq6步序及释放步，普通SC／FCR时钟已供服务端及已知本人属性的客户端调用；rank_bonus共用四项被动线性值，geometry共用裁墙／交点及三格knockbackDestination。随机流由调用端持有，输出纯值，不共享实体或计时器。暴风雪客户端和服务端随机偏移符号有原版差异：D2Client 1.13c RVA BBC10／B8DF0证实客户端按remaining帧及globalX重种，半径−1反向偏移；D2MOO服务端保留正向偏移，函数参数显式区分。Inferno客户端24经74D50／74930选择原两种火图。火墙CltDo26经74770在目标点生成两侧maker及中心火，CltDo28经73DF0／A1540／AFF10在目标点生成中心弹体，均无ClientSend创建门槛；原服回归未见常规73，故自研同步删除其重复创建广播，普通本人4C／4D按PlrMsg省略。73保留可重建表现的有界不同来源配对，晚入视野的服务端重同步仍未接。执行／事件／MPQ规则所有权及尚未共享的调度／推进见[女巫技能](../gameplay/skills/SORCERESS.md#公共层及原版证据)，这些纯函数不承担资源或伤害权限。
+当前函数、调用者及两端仍独立的程序只维护在[女巫30项台账](../gameplay/skills/SORCERESS.md#30项公共职责核对)及[专项差异](../gameplay/skills/SORCERESS.md#公共层及原版证据)。下节保留模块调用证据，不能据D2Common导出或纯函数可用推断整个技能已共享。
 
 ### 女巫公共层的原版核对
 
@@ -145,20 +139,17 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 | Frozen Orb | [MissMode.cpp](../../reference/d2moo/source/D2Game/src/MISSILES/MissMode.cpp:1232)的SrvDo15自行判remaining周期并查64方向，SrvDo16自行转向；SrvHit29自行生成结束环射。这些主体不在D2Common | CltDo表索引19指向D2Client RVAB8840；它在本模块内判周期、查64方向并创建视觉子弹体。环表在本模块RVA D3F10；D2Game也有自己的环表。周期访问经D2Common ordinal10985（RVA6A240），函数为total-current的remaining；CltDo20亦使用该访问器 | 原版没有把整个散射程序抽成公共函数；可比原版进一步共享频率／方向／转向／动作描述，保留Clt／Srv参数。两端已按此证据修正remaining相位及子弹转向窗口；73已过帧前缀不得重复扣除 |
 | Blizzard | [MissMode.cpp](../../reference/d2moo/source/D2Game/src/MISSILES/MissMode.cpp:1020)的SrvDo10调用D2Common技能公式，再调用D2Game自己的CreateMissileWithCollisionCheck（:955）做周期、重种、落点、碰撞与准入 | D2Client RVABBC10经stub C316调用D2Common ordinal10786／RVA51BF0技能公式；随后调用本地RVAB8DF0做remaining周期、globalX重种、反向偏移及视觉碰撞。变体图选择也在D2Client | 公式和基础数据共用；调度／实体创建分别执行。相同整数落点可抽纯函数，但必须保留随机消耗次序、客户端反向符号／图像变体及服务端真实命中 |
 
-因此原版实际是“公共基础＋两端技能／弹体程序”，并非“公共完整技能＋客户端只加渲染”。本项目可以比原版去重更多：公共函数接收明确的小状态、规则值、时钟与随机，输出下一状态及Spawn／Turn／Expire等纯动作；客户端创建视觉对象，服务端创建权威弹体并结算伤害。不要把服务器世界查询、事务或AI装进公共执行器，也不要为追求完全一样而取消已证实的Clt／Srv差异。
+以上证明原版是公共基础加两端各自的技能／弹体程序；完整散射和实体创建并非一个共用函数。项目进一步抽取相同的纯计算时仍保留Clt／Srv差异，具体落点见职业台账，不把DLL依赖关系解释成客户端拥有权威伤害。
 
+数值补证：D2Common的GetManaCosts返回原定点曲线，D2Game消费再钳MinMana；SKILLS_GetMinElemDamage与MISSILE_GetMin/MaxElemDamage的HitShift／协同顺序不同。原1.13c D2Common RVA50460的EMin／ELevMin读取及cmp0x100分支确认固定最小值门槛，RVA6B330确认独立Missiles先协同后shift。当前取整接口及语义由[COMMON](../gameplay/skills/COMMON.md#跨职业公共计算)维护。
 
-女巫与亚马逊各30项的分派／公共函数／两端执行台账维护在[女巫技能](../gameplay/skills/SORCERESS.md#30项公共职责核对)和[亚马逊技能](../gameplay/skills/AMAZON.md#30项职责核对)，不重复记一份实现清单。职业迁入流程统一在[公共技能规范](../gameplay/skills/COMMON.md#技能迁入规范)。D2Common的SKILLS_GetManaCosts只返回原定点曲线；D2Game Skills.cpp的法力消费再钳MinMana。技能伤害与独立弹体伤害的取整顺序必须分开：SKILLS_GetMinElemDamage在HitShift后计算协同，且fixed<=256且首级增量为0时跳过；MISSILE_GetMin/MaxElemDamage在HitShift前计算协同。原1.13c D2Common RVA50460的EMin／ELevMin读取与cmp0x100分支、RVA6B330的Missiles EMin／ELevMin读取及先协同后shift进一步确认；当前公共damage_curve分别定义并执行，Meteor地面火不套用技能伤害顺序。
-
-FCR依据Units.cpp的UNITS_UpdateCastAnimRateAndVelocity：120*FCR/(120+FCR)，总速率上限175，再乘AnimData基础速率。OtherAnimationRate属于另一个mode分支，不叠加CAST；当前公共cast_timing已修正。PathMisc::sub_6FD5CEB0的每五tick加速／限速逻辑提取为advanceMissileVelocity，数值表示仍由两端适配。公共规则是SkillRuleSpec；原图／声音／绘制参数只留SkillSpec内容定义，通过rules()投影，不发布到server。
+Units.cpp的UNITS_UpdateCastAnimRateAndVelocity提供CAST／OtherAnimationRate分支证据；PathMisc::sub_6FD5CEB0提供五tick加速／限速证据。分别对应cast_timing及advanceMissileVelocity，不证明SC、SQ或两端坐标表示可以任意合并。
 
 ## 亚马逊公共层的原版核对
 
-SequenceTbls与SUnit动作回滚提供Jab／Impale序列及Strafe／Fend时钟证据；本项目提取为amazonWeaponSequence／weaponSequenceTick／weaponVolley，两端映射各自动作与释放事件。原D2Client CltDo18–22及MissileCltHit12／14／25的静态入口补足D2MOO没有客户端源码的部分，具体RVA见职业文档。
+D2Common SequenceTbls保存Jab／Impale序列，D2Game SUnit动作回滚提供Strafe／Fend执行时钟；相同的步序／事件可提取，目标筛选和动作状态仍各端持有。SkillAma／MissMode的伤害、消耗和实体创建主体属于服务端；D2Client CltDo18–22及MissileCltHit12／14／25只读证据补足客户端程序，具体RVA／Clt与Srv期限／计数差异见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
-原SkillAma／MissMode的主体仍属于D2Game。相同扇形、环形／整数圆盘、剩余帧转向、GUID继任及分裂候选可以提成纯函数，但Clt／Srv候选、期限与触发条件必须保留。武器六通道快照／转换和目标加成也是纯计算；当前权威掷值由服务端执行，不能让客户端重掷或据视觉接触结算。普通公式、近战范围修正后掷值、投射先掷值后目标ED的顺序分别表达。
-
-PlayerPets的0x7A归属广播和晚入局名册独立于房间可见性，因此replication提供单独的宠物归属投影，hosting只编码原包。召唤纯求值、MPQ／装备内容准备、companions生命周期／AI、monsters实体真值及客户端人物伪装分别归各层；不以共享为由恢复万能会话。本批已构建打包并补做有限运行，静态依据和代表技能观察不等于全职业原服认证。
+PlayerPets／SCmd的7A宠物名册独立于AC房间可见性及9D装备。SrvDo015与016、SkillNec的召唤数值及MonEquip说明纯求值、内容准备、伙伴生命周期和单位真值可以分开；不证明必须克隆主人库存或把伙伴状态塞入会话。逐项台账、实际入口与运行限制只维护在[AMAZON](../gameplay/skills/AMAZON.md)。
 
 ### 第一幕怪物公共计算依据
 
@@ -174,7 +165,7 @@ AiUtil::sub_6FCF2110的初次察觉与已察觉标记、DUNGEON／DRLGROOM_Check
 
 PlrMsg::sub_6FC81C00发送本人生命／命中修正0D动作19，UNITS_GetCurrentLifePercentage为整数生命的0..100比例。MonsterMode::sub_6FC62F50为整数生命的0..128；MonsterMsg::sub_6FC659E0发送0C旗标19且大于1时减一。两种比例公共纯函数位于combat/life.hpp，hosting编码不把人物更新当成怪物0C或虚构GH。本次原服两个普通样本暴露了该差异，只修自研投影，客户端不增加分支。
 
-SkillMonst::SrvDo085／091／097、SKILLS_CreateSpiderLayMissile、SkillSor::SrvDo023和MissMode::SrvHit01／15／16／31分别约束类链火弹、巢生NOXP／NOTC、复活、蛛网、火球范围与FireHead恢复。MonsterMsg原表用于修正自研A2=16、GH=6、BL=18；客户端无自研特例。PlrModes::EVENTS_HpRegen将玩家毒伤下限设为一生命；effects／transactions拥有毒及解毒，不写运行态到D2S。逐身份／MPQ覆盖集中见[怪物模块](../modules/MONSTERS.md)。
+SkillMonst::SrvDo085／091／097、SKILLS_CreateSpiderLayMissile、SkillSor::SrvDo023和MissMode::SrvHit01／15／16／31分别约束类链火弹、巢生NOXP／NOTC、复活、蛛网、火球范围与FireHead恢复。MonsterMsg原表用于修正自研A2=16、GH=6、BL=18；客户端无自研特例。PlrModes::EVENTS_HpRegen将玩家毒伤下限设为一生命；effects／transactions拥有毒及解毒，不写运行态到D2S。逐身份／MPQ覆盖由[怪物目录](../gameplay/monsters/README.md)链接负责页。
 
 第一幕精英／首领先查master的monster_special_ai／monster_enchantments／monster_element，再用D2MOO核对：AiThink的Smith、Griswold、Fn034 Andariel、Fn059 BloodRaven、Countess特殊状态13及sub_6FCF0E40；MonsterUnique的MonUMod数值、ApplyElementalDamage持久stat、范围Amplify Damage、Lightning／Cold／Fire事件和多发；QuestsFX的首领死亡范围／延时。首领策略仅是服务端纯决策，客户端不调用；可共享的方向／固定点／stat计算与表现、权威执行分开。
 
@@ -182,4 +173,4 @@ SkillMonst SrvDo088及原CltDo048的Andariel九射方向表合并到andarielSpra
 
 SCmd::sub_6FC3FC80给出AC的五rank位、固定hcIdx、九词缀＋终止及nameSeed；PlrMsg::sub_6FC81F60将Player.h的PLRMODE_KNOCKBACK19映射为0F/action20，客户端原生Player模式和wire模式按各自表解释，不能把action20当隐藏Kick。原表MonProp血鸟地狱knock在hosting准备。客户端只作有原版依据的修正／公共提取，不为自研服务端增加消息或玩法分支。
 
-原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。运行及完整随机流等限制统一见怪物模块。
+原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。运行证据见[第一幕](../gameplay/monsters/ACT1.md#有限运行证据)，完整随机流等限制统一见[怪物COMMON](../gameplay/monsters/COMMON.md)。

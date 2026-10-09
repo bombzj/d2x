@@ -1,6 +1,6 @@
 # 通用攻击与卷轴／书本技能
 
-当前 MPQ 对应十项：0–5，以及217–220；普通弓箭／弩箭属于 Attack 的武器分支，不额外定义技能。源码迁入先参考 master 单机动作、攻击、弹体及书本代码，再用当前 Skills／CharStats／Weapons／ItemTypes／Missiles／Books／PetType／AnimData 校对本地 D2MOO。十项都有源码入口并已构建；2026-10-08完成下列有限自研冒烟。未运行路径仍为V1，本批没有原服回归。
+更新：2026-10-09。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。2026-10-08历史有限自研证据见下节，该历史批没有原服回归。
 
 ## 逐项入口
 
@@ -25,7 +25,7 @@ Kick不是其他职业可学习或应展示在选择器中的踢腿技能；刺�
 
 `common_actions.hpp::commonAttackWeapon`迁用master的装备选择逻辑；`commonProjectileSkill`把物品弹体规则投影为同一施放规格，避免普通攻击恢复第二套伤害执行器。`weapon_damage`已有六通道、目标加成、物理转换、致命／双倍与显式随机；普通攻击和职业武器技能使用同一实现。
 
-Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀、弓／弩和六种投掷药瓶；不依物品名字猜等级。普通投掷按真实武器计算，弓弩按shoots匹配活动组的箭袋。开始时检查可用弹药，释放时重新选择并复验同一物品／手位／武器类型及数量；最后一发药瓶删除物品，普通投掷武器保留零数量以供补充。扣费、弹体快照、随机和输出仍经既有事务管线提交，最后一件删除后不再读取失效物品。
+Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀、弓／弩和六种投掷药瓶；不依物品名字猜等级。普通投掷按真实武器计算，弓弩按shoots匹配活动组的箭袋。开始时检查可用弹药，释放时重新选择并复验同一物品／手位／武器类型及数量；最后一发药瓶删除物品，普通投掷武器保留零数量以供补充。最后一件删除后不再读取失效物品；扣费与背压的公共要求见COMMON。
 
 药瓶遵循SrcDamage=0与原SrvHit2／3：火瓶采用原Missiles固定物理／火通道及范围；毒瓶生成原毒云子弹体并执行毒伤／期限。`rollPotionDamage`不继承装备元素、武器增强伤害或致命概率。地面目标不在沿途撞到单位时提前触发，地形或寿命结束时执行一次原命中程序。
 
@@ -33,20 +33,25 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 ## 原协议及客户端修复
 
-没有自研分支或私有消息。普通动作／技能沿原4C／4D，ClientSend弹体沿73；非ClientSend普通箭矢／投掷由原客户端程序创建。原3F固定8字节：cursor、source GUID、skill；取消为cursor FF、skill FFFF。服务端输出真实来源／技能，并在鉴定事务后清除目标光标，不发通用成功ACK。
+通用动作的本人通知省略及ClientSend原则沿COMMON；普通箭矢／投掷由原Clt程序创建，原73仍用于合格同步。原3F固定8字节：cursor、source GUID、skill；取消为cursor FF、skill FFFF。服务端输出真实来源／技能，并在鉴定事务后清除目标光标，不发通用成功ACK。
 
 公共客户端按原表修复：CltDo2不再排除药瓶，左手投掷按手位选择可见装备弹体；Unsummon目标按原7A本人归属及PetType.unsummon过滤；3F驱动鉴定准备视图。光标准备使用事件revision，支持Escape后再次选择同一来源、入局代次重置及来源物品迟到；界面只读取状态、提交原27，不自行消费或鉴定。原服和自研宿主走相同代码。普通桶另补本人KK预测；只读取真实物件身份、原OperateFn5和已发送的0x13交互，复用已有动作表现，不决定木桶破坏或掉落。
 
-## 证据与边界
+## 原版依据
 
 - master：`session/session_skills.cpp`的BasicSkillAction、`units/actions.cpp::selectAttackWeapon`、`combat/attacking.cpp`、`combat/physical_projectiles.cpp`及`items/books.cpp`。
 - 本地D2MOO：D2Game `SKILLS/Skills.cpp`的SrvSt01／02／03／65、SrvDo001／002／003／004／005；`SKILLS/SkillItem.cpp`的SrvDo113及pSpell01／02；`ITEMS/ItemMode.cpp`的书本数量处理；`MISSILES/Missiles.cpp`的创建标记、`MissMode.cpp`的SrvHit02／03；`PLAYER/PlayerPets.cpp`的归属删除及退役；`OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction05_Barrel`及PlrModes的KK动作／PlrMsg的本人通知省略；`GAME/SCmd.cpp`的3F编码。原表参数仍以当前MPQ为准。
-- D2Game的武器选择、扣数量、命中、门户、归属和库存事务属于服务端执行；不因抽取纯函数就要求客户端计算伤害。客户端只用已知装备／原消息计算显示。
-- 十项有源码入口，下列路径有有限运行证据；没有全参数或原版认证。普通PvE目标及已实现召唤物可进入现有系统；PvP、完整攻击触发、吸血／压碎／撕裂、完整耐久损耗与补充、佣兵／未实现职业召唤、复杂任务门户和药瓶高度表现仍依各模块未完成范围，不能据此宣称完整战斗规则。未知武器效果仍明确拒绝，不降级为普通无效果攻击。
+
+## 当前边界
+
+- 普通武器管线拒绝lifeLeech／manaLeech／crushingBlow／openWounds，不忽略后执行。完整双持、PvP、全职业武器效果仍未完成。
+- 普通近战武器／防具耐久、Impale磨损、投掷补充／自修复及充能扣费／维修已经接入；具体规则和装备六类事件框架由[库存](../../modules/INVENTORY.md)维护，不能笼统写成未实现。专用触发程序及ItemCltEffect仍有明确暂缓项。
+- Unsummon只对当前已实现且PetType允许的本人召唤物有效，不补齐其他职业召唤或完整佣兵；同行者与雇佣范围见[佣兵](../characters/HIRELINGS.md)。普通门户资格由travel负责，任务／队友门户范围由[物件](../world/OBJECTS.md)和[任务系统](../quests/SYSTEM.md)维护。
+- 药瓶地面寿命与伤害已接，不等于完整抛物线高度／阴影。普通桶KK、左手等未运行路径见下节，源码入口不是全参数认证。
 
 ## 有限运行证据
 
-2026-10-08，普通难度41级亚马逊Hero（临时存档副本），种子3739460588，当前MPQ；使用现有named pipe准备物品／普通怪物并推进固定步，普通操作仍发送原C2S包。记录位于忽略目录`artifacts/common-skills-smoke-20261008`，没有新测试脚本／用例／程序。
+历史2026-10-08通用十项包（EXE身份见[基线历史记录](../../../BASELINE.md#历史通用十项有限冒烟)），普通难度41级亚马逊Hero（临时存档副本），种子3739460588，当前MPQ；使用现有named pipe准备物品／普通怪物并推进固定步，普通操作仍发送原C2S包。记录位于忽略目录`artifacts/common-skills-smoke-20261008`，没有新测试脚本／用例／程序。
 
 | 路径 | 实际观察 |
 | --- | --- |
@@ -57,6 +62,6 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 | 回城219／220及书本转装 | 两种卷轴各装入匹配书本5→6并移除卷轴；回城卷轴16消耗后创建本人门户，回城书页6→5并替换本人门户。见books-filled、portal-scroll／portal-book |
 | 保存／入场 | 保存成功；新进程恢复标枪58、箭347、两本书各5页、两个已鉴定帽子；已消耗卷轴、药瓶和临时召唤不恢复。见final-client／final-server、delivery-reload*；最终包再次ProtocolReady入局并施放218，原3F来源19、书页仍5，见package-client／package-server |
 
-最终宿主failures=0、characterIssues为空，客户端ignoredPackets=0；截图final-field.png核对库存及门户。入场冒烟暴露并修复Kick空MinDam及无关怪物行scroll空白解析异常。最终Windows Release包见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。普通桶KK（包括城镇自动动作）、左手两项、弩及其他投掷武器、全部药瓶等级、空书／取消／背压／多人、原服回归和Linux没有本批运行认证；不要把代表路径推广为全部十项V3。
+最终宿主failures=0、characterIssues为空，客户端ignoredPackets=0；截图final-field.png核对库存及门户。这些记录属于该历史包，不认证当前新增分支。普通桶KK（包括城镇自动动作）、左手两项、弩及其他投掷武器、全部药瓶等级、空书／取消／背压／多人、原服回归和Linux没有本批运行认证；不要把代表路径推广为全部十项V3。
 
-D2S仍为v96；原选择／热键、弹药、卷轴数量和书本页数使用已有字段，固有资格及物品技能数量由表和库存重新推导。动作、弹体、毒云、宠物、门户及目标光标不保存。当前规则指纹以[存档](../../modules/SAVES.md)为准，不静默迁移旧规则租约。格式与限制见[存档](../../modules/SAVES.md)，职责见[公共技能](COMMON.md)。
+技能选择、热键、弹药和书页沿已有D2S字段；固有资格和可用物品技能数量重新推导，动作／弹体／宠物／门户／目标光标不保存。编码及当前指纹仅维护在[存档](../../modules/SAVES.md)。

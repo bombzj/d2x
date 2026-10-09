@@ -186,6 +186,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             status.renderedUnits = scene->renderedUnits();
             status.unavailableUnits = scene->unavailableUnits();
             status.effectLimitations = scene->effectLimitations();
+            scene->effectStatus(status);
             status.playerDisplayed = scene->playerDisplayed();
             status.playerDisplayPosition = scene->playerDisplayPosition();
             status.players = scene->players();
@@ -365,7 +366,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 });
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
-                if (sharedUi) sharedUi->pauseDebugPresentation(presentationPaused);
+                if (sharedUi) sharedUi->pauseWorldPresentation(presentationPaused ||
+                    (localConnection && !lanConnection && (!hostFocused || sharedUi->ui().gameMenuOpen)));
                 if (sharedController) sharedController->resetInput();
                 if (!presentationPaused) {
                     scene.reset();
@@ -485,7 +487,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             enterLocalGame = false;
         if (view.stage != OnlineStage::ProtocolReady && presentationPaused) {
             presentationPaused = false;
-            if (sharedUi) sharedUi->pauseDebugPresentation(false);
+            if (sharedUi) sharedUi->pauseWorldPresentation(false);
         }
         if (view.stage == OnlineStage::CharacterSelection && page != FrontendPage::CreateCharacter)
             page = FrontendPage::Characters;
@@ -676,7 +678,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,
-                        sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed);
+                        sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
+                        localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     sharedUi->drawUi(input.mouse);

@@ -1,8 +1,8 @@
 # 客户端契约与原协议基线
 
-更新：2026-10-08。原服与自研宿主共用完整客户端，只有连接选择不同。Windows Release已构建打包；单机有限冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
+更新：2026-10-09。原服与自研宿主共用完整客户端，只有连接选择不同。Windows Release已构建打包；有限自研／原服冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
 
-本轮亚马逊冒烟中的原版修复：匹配弓弩的箭袋不触发双手冲突移除，直接发原0x1A；人物伪装的死亡模式按 D2Common 使用 HTH。依据及有限原服／自研证据见[亚马逊](../gameplay/skills/AMAZON.md#有限运行证据)。
+技能客户端修改边界由[COMMON](../gameplay/skills/COMMON.md#技能迁入规范)维护；弓弩／箭袋及宠物投影的原版修复与死亡图未核实项见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
 ## 唯一客户端链
 
@@ -48,6 +48,8 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 任务显示、通知与未知状态规则统一见[任务系统](../gameplay/quests/SYSTEM.md#唯一显示链)，具体面板生命周期见[NPC／任务接口](NPC_QUEST.md)。任务资格、NPC服务和奖励由所连接服务端决定；客户端不从地图种子、公共旗标或旧执行器补推进。
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
+
+Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。此修复未构建、测试或打包。
 
 底栏只加载原联机minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有Local备用实现。已接服务的范围见对应模块，未接服务或缺失原服状态明确不可用，不调用本地服务补齐。帮助页移除旧本地Save／Load、授予金币／经验等提示；原服调试暂停及在线command入口保留。
 

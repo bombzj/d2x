@@ -106,17 +106,9 @@ EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保�
 
 ## 怪物战斗与生命周期
 
-hosting/combat_content复用planPopulation、旧单机战斗／词缀／经验导入及AnimData／COF／MonSeq，向AreaDefinition交付人口纯值、RoomLayout及populationDeferred。第一幕覆盖57普通池身份和固定预设所需六种额外类型，共63可击杀敌对类型／25类AI；范围、MPQ覆盖及共享依据集中见[怪物模块](MONSTERS.md)。普通／Boss可以按类型缓存未滚规则；冠军／暗金／超级暗金逐单位滚词缀，仆从按ownerSpawnKey继承。欠缺规则仍显式暂缓，只有邪恶洞穴允许保留真实身份的敌对沉沦魔替身，中立不替换。
+hosting交付人口纯值、RoomLayout、组件与populationDeferred；population按区域代次／spawn key准入，monsters唯一持活动实体、生命、路线和特殊运行值。ai只决策并提交窄动作，skills持开始／释放与中断代次，missiles／effects分别持运动／接触和状态时钟；combat最多4096待命中动作，每个来源最多一个。死亡、掉落、经验与任务仍由对应领域消费事实，不借AI代办。
 
-人口按区域代次与spawn key准入，不因离开视野重生。monsters唯一持有生命、组件、路线、动作间隔、home／真实DS1技能节点、Spectral Hit累计stat、出生计数、复活及死亡连锁；ai只决策，family_actions／boss_decision／unique_actions提交movement或skills窄请求，不扣血。skills持施法动作、独立MonSeq多次释放与中断代次；missiles持运动、多发／地面火／NextHit接触；effects持单位效果、光环／范围诅咒、Lightning受伤事件与Cold／Fire死亡时钟。运行态不写入D2S。
-
-combat至多4096待命中动作，每个来源至多一个，复用公共accuracy、damage及enchantment_damage纯计算；词缀和状态增伤相加后应用，暴击在元素附伤后执行。effects统一投影单位防御／抗性及动态免疫削弱，人物伤害经transactions提交。输出容量不足不重新掷伤；GH／冻结／击退／死亡取消未释放动作，已释放敌对弹体允许来源死亡但不换区。光环脉冲、死亡爆炸和每个弹体使用独立发生编号，队列重试不重复结算。
-
-death首次捕获活击杀者身份及XP，loot携带真实rank／固定TC／rewardModifiers；成功提交或经验封顶后才完成奖励，背压不重复。巢生和血鸟召唤NOXP／NOTC；死亡连锁没有凭空归属玩家。玩家死亡与尸体事务见对应小节。邪恶洞穴仍消费实际人口死亡／复活；任务目标资格由quests处理；完整首杀奖励、队伍NoDrop和组队经验仍有缺口，不能由怪物AI代办。
-
-hosting按原SCmd编码AC阶级／superunique／词缀／nameSeed，原MonsterMsg编码67／69／6C／6D及4C／4D技能；ClientSend仍决定73，其他视觉靠原客户端程序重建。人物命中0D／19使用原整数生命100比例，怪物0C使用128比例／减一及命中类型；MonProp人物击退沿原0F/action20。晚加入恢复当前位置、阶级与存活状态，不重播历史攻击。客户端只作有原版依据的模式／生命槽修正、公共方向提取及电／冰强化回调，原服／自研服共用。可靠命中事实驱动GH／BL，快照不重复启动受击；新进入视野仍恢复当前模式及生命／触发位。
-
-完整Vision、活动房间／动态拥挤、全局原随机调度、玩家完整受击恢复／格挡、全部武器触发／双持、其他幕／职业及佣兵尚未完成。电／冰强化与首领代表路径完成有限冒烟；精英染色／特殊死亡演出和全部随机战斗分支未完整认证。当前范围与历史普通证据见怪物模块，不把有限V2扩大为全部分支验收。
+源码入口见[怪物模块](MONSTERS.md)；规则准备、随机／事务／背压及生命周期见[怪物COMMON](../gameplay/monsters/COMMON.md)。[怪物目录](../gameplay/monsters/README.md)唯一链接五幕覆盖、精英／首领、人口、表现与证据，不在本页复制范围或历史运行清单。替身当前适用于邪恶洞穴及第二至第五幕的缺失敌对类型，真实身份保留，中立不替换；具体准入条件以COMMON及源码为准。
 
 ## 女巫全技能执行
 
@@ -160,23 +152,17 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 ## 地面物品与普通怪物掉落
 
-`loot`在死亡奖励结算时捕获原怪物身份、受益角色、MF/GF和独立种子；零经验死亡也会提交掉落准备。宿主内容适配复用旧单机`resolveMonsterLoot`／`planItemLoot`与原物品生成步骤，读取当前MPQ，不在内核持有Archive或回调。准备队列有界，同一来源只接受一次，失败不重新取种子；成功结果进入`items`统一持有的地面库存。地面不写角色D2S，拾取后的物品沿既有D2S v96编码保存。
+loot捕获来源、受益者与准备身份，hosting读取当前MPQ并迁用master的resolveMonsterLoot／planItemLoot；items持有安装后的世界物品，inventory规划拾取／丢弃，transactions同时提交人物和地面草稿。内核不读Archives，世界物品不写角色D2S；掉落选择与准备／安装语义见[LOOT](../gameplay/items/LOOT.md)，原图／回包见[PRESENTATION](../gameplay/items/PRESENTATION.md)。
 
-`inventory/ground`规划角色库存、金币和地面余量；`transactions`同时校验角色及世界revision，发布不可变事实后一次交换全部草稿。拾取校验同区、1.8格距离、原0x0801视线及空Cursor，支持Cursor、自动腰带、背包和既有合堆规则；空间不足保留地面剩余量。任务物品不绕过当前携带资格与互斥规则，未接任务来源仍明确暂缓。物品属性的各级准备值随所有权转移，新装备可沿现有属性汇总及装备资格检查工作。
-
-`items`独立持有地面生命周期代次、寿命与按GUID延续的自恢复时钟；`inventory`的接近拾取绑定落地代次，而非会被自恢复改变的属性revision。到达后复验人物、区域、走跑意图及同一次落地，再取最新句柄规划事务；移除／拾走后重丢／移位使旧请求失效。生命周期和时钟不进入协议或D2S，规则、原帧常数及有限运行证据见[库存](INVENTORY.md)和基线。
-
-怪物／物件新生掉落发布GroundDropFact并编码原9C action=2；宿主以原9C地面位流和0A清除同步可见集合，晚入局和换区重建基线；个人入包沿既有9C／9D。客户端未新增自研分支。`item-spawn`采用相同准备和地面安装入口。独立服务端多实例、近队友NoDrop贡献、任务专属掉落及全部精英／首领来源规则尚未完整实现。当前怪物批次的有限运行证据见基线；构建结果及历史六项证据不能替代所有新组合的运行验证。
+items维护落地代次、自恢复和过期；inventory接近拾取绑定落地代次，提交时读取最新属性句柄，不把自恢复造成的revision变化视为一次新落地。跨所有权时钟见[DURABILITY](../gameplay/items/DURABILITY.md)，距离／合并／生命周期见[GROUND](../gameplay/items/GROUND.md)，随机、容量和可靠输出边界见[物品COMMON](../gameplay/items/COMMON.md)。诊断item-spawn复用同一内容准备与安装入口；具体未完成范围与历史有限证据由物品专题维护。
 
 ## 资源、药水与效果
 
-迁回master的`gameplay/units/resources`／`restoration`、`CombatEffectSet`和药水职业倍率纯函数。`effects`按25Hz持有按原药水state分开的8.8恢复时钟及持续状态；资源上限、被动回蓝、装备生命恢复和耐力规则继续使用人物总值。跑动耗尽耐力后采用步行速度，命中／防御判断同步使用实际走跑状态。
+gameplay/units/resources／restoration、CombatEffectSet与职业药水倍率从master迁入；effects按25Hz拥有定时状态／恢复时钟，资源上限、装备恢复与被动回蓝读取人物总值。跑动耗尽耐力改用步行速度，命中／防御判断读取实际走跑状态；原nomanaregen才抑制自然回蓝，毒伤不代替该状态。人物总值职责见[属性](../gameplay/characters/ATTRIBUTES.md)。
 
-背包原20、腰带原26使用请求验证所有权与revision。`inventory/consumption`准备数量变化、腰带同列下移和效果计划；人物／物品事务成功后才交换预先分配的效果状态。生命／法力药水按D2MOO SkillItem::pSpell03修正旧顺序队列：公共combineRestoration合并剩余帧／值后整数除法取每帧率，rollPotionRestoration按职业及体力／精力判定双倍，消费成功才推进实例随机；不宣称复刻原单位随机流顺序。Misc导入healthpot／manapot状态及len；恢复、到期移除与资源一次提交，背压保留未结算帧。PlrModes规定生命溢出移除Healthpot，法力恢复前已满移除Manapot；毒伤与补血合并后限制至少一生命，不抑制回蓝，原nomanaregen才抑制自然回蓝。回复药水按原8.8上限百分比取整，耐力／解毒／解冻药水读取MPQ状态、长度、清除状态及属性；同状态延长剩余时间。死亡清理不复活死人；效果不写D2S，资源上限仍由transactions提交。
+inventory/consumption准备数量、腰带位置和效果计划；effects预先准备状态，transactions先发布完整事实再交换人物／物品／效果草稿。恢复计算、原状态与到期规则统一见[腰带与消耗品](../gameplay/items/BELT_AND_CONSUMABLES.md)，不在本页重复维护药剂参数。effects.heal同样规划NPC治疗；NPC请求入口见[城镇交互](../gameplay/npc/INTERACTIONS.md)，治疗规则与范围见消耗品页。
 
-NPC治疗通过effects.heal准备人物／状态，原子提交补满、清毒／冻结与MPQ curable状态，仅实际治疗时发送原Sound10。不清除原规则以外的增益；宠物／佣兵治疗仍属后续阶段。P1随P5统一构建打包，旧生命药水／神殿状态冒烟不能认证新恢复规则。
-
-宿主原1F同步资源／派生属性，原A7／A8／A9同步本人及可见玩家／单位状态，晚入视野重建；内核不持有客户端状态。通用效果入口对尚未接执行器的反击、物理护盾和诅咒AI明确拒绝，不能仅显示状态却遗漏效果；反应计算及完整持续伤害仍待后续切片。调试快照增加effects、restoration、loot待处理数／暂缓原因。当前包已有限运行生命药水恢复与神殿状态到期；其他恢复／药水边界仍待运行，证据见基线。
+hosting以原1F同步资源／派生属性，以A7／A8／A9同步已提交状态并为晚入视野者重建；effects不持客户端状态，运行时钟不写D2S。反击、护盾、诅咒与持续伤害按对应技能程序登记，未接执行器明确拒绝，不能仅显示状态当作完整效果；已接与未完成程序见[技能目录](../gameplay/skills/README.md)。调试快照提供effects、restoration、loot待处理数及暂缓原因；历史运行结论只见[物品证据](../gameplay/items/EVIDENCE.md)与基线。
 
 ## 死亡与尸体
 
@@ -194,11 +180,9 @@ hosting/object_content 沿用旧单机 configureWorldObject、Act 1 人口生成
 
 `hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，包括第一幕InitFn54凯恩标记；不生成敌对替身。NPC 子系统管理同区域、活人、距离／视线与交谈身份、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少文本则不编造。静态城镇NPC与五幕任务对白已接；第五幕囚犯使用独立逃离路径，动态任务NPC通过world窄入口准入。完整闲逛AI／中立战斗及雇佣服务未迁移。
 
-`content/npc/vendor_stock` 迁用 master 的 `planVendorStock` 和 `vendorItem`。内容工作位于宿主，商店库存由 merchant 持有，个人库存仍只有 PlayerStore 一份。请求先进入有界准备队列；宿主捕获当前库存／人物 revision、任务折扣与降价属性后准备报价，领域提交前再次复验。客户端报价不作为扣款依据。买入、售出、普通耐久／投掷堆叠修理、Cain 鉴定与金币变动经 transactions 原子提交，再发送原 9C／9D、属性包及 2A 回执；有限库存移除对所有看店者同步，永久货物保留。库存按实例内NPC首次打开等级生成，支持全部人离城刷新、回购、个人赌博、原multibuy批量及充能修理。内容／原包／限制统一见[库存](INVENTORY.md)。
+content/npc/vendor_stock迁用master的planVendorStock／vendorItem，hosting/merchant_content从MPQ准备物品与报价，merchant唯一拥有NPC货架／个人赌博及准备身份。NPC交谈与原请求复验后交transactions，先提交物品／金币事实再发送原回执；客户端报价不授权扣款。刷新、回购、批量、维修与鉴定规则见[经济](../gameplay/items/ECONOMY.md)，客户端手势见[NPC交易](../gameplay/npc/TRADE.md)，物品位流及2A成功码见[PRESENTATION](../gameplay/items/PRESENTATION.md)。NPC对话沿原AC／27／2F／31。
 
-NPC 对话使用原 AC／27／2F／31；商店回执布局及成功码核对本地 D2MOO `SCmd.cpp`、`SUnitNpc.cpp`，买入 result=0、卖出=1、修理=2。客户端代码不变。
-
-个人仓库授权归 inventory，打开真实 stash 物件后才允许原 page=4 的存取、交换、合堆与金币存取；关闭、死亡、离开区域或交互距离撤销授权。所有容量来自既有容器／MPQ，金币上限复用原 `stashGoldLimit`。未授权页面不能绕过领域校验。方块持有独立授权并接普通配方；玩家交易权威仍未实现。
+私人仓库与方块授权归inventory，由真实物件及原请求建立，关闭／死亡／换区／失去交互资格后撤销。容器权限见[STORAGE](../gameplay/items/STORAGE.md)与[CUBE](../gameplay/items/CUBE.md)，金币存取见[GOLD](../gameplay/items/GOLD.md)；不以页面打开代替服务端授权。玩家交易权威仍为独立trade scaffold。
 
 ## 任务与旅行
 
@@ -210,16 +194,14 @@ travel另持有带菜单代次的传送点授权与回城门对；objects独立�
 
 NPC旅行接受时捕获交谈身份，允许原客户端随后0x30关闭；目的地准备完成后再次复验真实NPC距离／视线、资格与新交谈身份，完成幕记录与TravelFact一起提交。已接五幕任务门禁与跨幕资格；古代人活动期间成功创建回城门会通知quests重置战斗。组队奖励传播、队友门户和完整特殊旅行仍有缺口，具体任务例外见各幕专题。
 
-## 库存等基础模块补充
+## 原请求与领域协作
 
-单件鉴定由 inventory 接收原 0x27，内容准备按 MPQ 的鉴定卷轴／Books 配对提供消耗规则。目标识别属性与卷轴数量／书本次数在同一库存事务提交，随后重算属性并沿原物品包更新。重复鉴定、无次数、非本人可访问目标及非空 Cursor 拒绝。
+原0x27由inventory规划来源、目标和消耗，鉴定属性及数量在同笔事务提交，规则见[IDENTIFICATION](../gameplay/items/IDENTIFICATION.md)。原0x50的钱包／地面共同提交见[GOLD](../gameplay/items/GOLD.md)。原0x51／0x7B的热键绑定、清除与技能来源见[通用技能](../gameplay/skills/GENERAL.md)；发送成功不能代替领域执行。
 
-原 0x50 丢金币同时规划钱包扣款与地面金堆；金堆类型和最大堆数从 ItemCatalog 准备，碰撞／地面容量失败不扣款。原 0x51 绑定已有 F1–F8 热键，复验技能／左右手资格，也接原无技能编码清除；内部-1为普通攻击、-2为未绑定，Attack ID0不代表清除。写人物记录并发送原 0x7B；入场及 D2S 恢复沿同一编码。绑定不取消当前施法，未实现的技能执行仍显式拒绝。
+merchant固定步清理已关闭／死亡／换区／离线交谈的货架与待准备状态，切换NPC发送旧货架移除；生命周期与成交复验见[经济](../gameplay/items/ECONOMY.md)。尸体公开装备缓存清理须跳过已恢复到本人或可见人物装备的GUID，避免地面缓存清理误删人物外观。掉落安装中的唯一物品记账／物件完成状态预分配见[LOOT](../gameplay/items/LOOT.md)，不得在权威提交后再分配导致半成状态。
 
-普通商店出售覆盖背包、装备及 Cursor 原件，修订号封顶拒绝；凯恩鉴定同步原 identified 标志。merchant固定步清理已关闭／死亡／换区／离线交谈的货架与待准备状态，切换NPC时发送旧货架移除；尸体公开装备缓存清理跳过已恢复到本人或可见人物装备的GUID。掉落安装预先分配唯一物品记账与物件完成状态，提交权威后仅交换已准备值，避免已扣钥匙／落地后才分配记账。
-
-宿主 monster-damage／monster-kill 复用 monsters.damage，并在正常固定步贯通 death／progression／loot／quests；限定存活参与者当前区域，原服不可使用。不绕过人口统计，不直接设置任务完成。
+宿主monster-damage／monster-kill复用monsters.damage，在正常固定步贯通death／progression／loot／quests；限定存活参与者当前区域，原服不可使用。不绕过人口统计，不直接设置任务完成。
 
 移动规划与玩家／怪物路线推进共用Grid.nativeMovementSegment的原生碰撞语义，避免路线可达却被另一套分段检查卡住；弹体及视线仍使用各自语义。门户准备显式使用objects类别，读取MPQ原59范围／模式／帧数；原13在hosting按已发布门户GUID提交TravelRequest，普通物件领域不以“找不到物件”猜测门户。
 
-公共item_properties与D2S额外属性校验补Properties函数13：按当前MPQ stat字段投影百分比最大耐久；本地D2MOO ItemMods::ITEMMODS_PropertyFunc13为依据。原网络已保存属性的客户端消费未改。实际包／运行证据及限制统一见[基线](../../BASELINE.md#当前运行包与有限冒烟)，本轮不是完整六项原版规则验收。
+公共属性准备与D2S校验的Properties函数13依据及百分比最大耐久规则见[AFFIXES](../gameplay/items/AFFIXES.md)，不在本页复制属性实现清单。当前包／有限运行证据见[基线](../../BASELINE.md#当前运行包与有限冒烟)，物品历史范围见[EVIDENCE](../gameplay/items/EVIDENCE.md)。

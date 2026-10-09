@@ -30,12 +30,13 @@ class RemoteScene {
     RemoteScene(Archives &, int palette, RemoteMapDisplayState &);
     ~RemoteScene();
     RemoteSceneFrame frame(const OnlineView &, const Map &, const OnlineSceneView &,
-                            SceneView &, const RemoteCombat &, bool uiConsumed, Vec mouse, bool rightHand);
+                            SceneView &, const RemoteCombat &, bool uiConsumed, Vec mouse, bool rightHand, bool paused);
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
     std::optional<Vec> playerDisplayPosition() const;
     const std::vector<OnlinePlayerDisplay> &players() const;
     std::vector<std::string> effectLimitations() const;
+    void effectStatus(OnlineSceneView &) const;
 };
 } // namespace d2x

@@ -262,6 +262,7 @@ class SceneView {
     void drawGroundItem(const InventoryItemView &, bool highlighted) const;
     void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
     void refreshUi(float dt);
+    void advanceWorldPresentation(float dt);
     ~SceneView();
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
@@ -286,7 +287,7 @@ class SceneView {
     std::optional<int> skillAt(Vec mouse) const;
     std::optional<ItemHandle> lootAt(Vec mouse, bool labelsOnly = false) const;
     void advanceUi(float dt);
-    void pauseDebugPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
+    void pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
     void notice(std::string text, bool error = false);
     void openNpcDialogue(EntityId object, std::string speaker, std::string text);
     void cancelNpcDialogue();

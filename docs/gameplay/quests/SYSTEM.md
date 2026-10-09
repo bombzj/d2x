@@ -12,7 +12,7 @@
 | 各任务身份、前置条件、事件／机关、奖励、恢复例外、未完成范围与有限证据 | ACT1、ACT2、ACT3_5 |
 | 客户端接口与修改入口 | [NPC／任务模块](../../modules/NPC_QUEST.md) |
 | 对白／菜单／提示显示、交谈生命周期 | [NPC交互](../npc/INTERACTIONS.md) |
-| 服务请求、加工与经济 | [NPC交易](../npc/TRADE.md)、[库存模块](../../modules/INVENTORY.md) |
+| 服务请求、加工与经济 | [NPC交易](../npc/TRADE.md)、[任务物品](../items/QUEST_ITEMS.md)、[物品经济](../items/ECONOMY.md) |
 | 原D2S任务槽／奖励位、progression及拒绝边界 | [存档](../../modules/SAVES.md#任务槽与奖励语义) |
 | 当前规则指纹／运行包、后续实施顺序 | [基线](../../../BASELINE.md)、[总计划](../../architecture/MULTIPLAYER.md) |
 
