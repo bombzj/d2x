@@ -256,8 +256,8 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         if (change.item.value > UINT32_MAX) throw std::runtime_error("Inventory delta GUID overflow");
         const auto *destination=change.after?std::get_if<ContainerLocation>(&*change.after):nullptr;
         if(destination && destination->container==state.containers.hirelingEquipment) {
-            result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,
-                [&](auto &out){out.u8(4);out.u32(uint32_t(change.item.value));}));
+            // The recipient baseline sends the native owned equipment packet
+            // before these facts. Removing the GUID here would erase that gear.
             continue;
         }
         if (change.kind == ItemChangeKind::Removed) {

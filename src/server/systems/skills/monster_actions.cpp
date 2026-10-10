@@ -16,7 +16,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto &monsterReleases_=runtime_->monsters;
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
+    if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || monster->stunnedUntil>request.tick || monster->knockedUntil>request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonAttacker();
@@ -24,7 +24,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     const auto &rule = monster->rule;
     const MonsterAttackRule *prepared=nullptr;
-    if(request.skill) {const auto found=rule.skillActions.find(request.skill);if(found!=rule.skillActions.end()) prepared=&found->second;}
+    if(request.skill || monster->hireling) {const auto found=rule.skillActions.find(request.skill);if(found!=rule.skillActions.end()) prepared=&found->second;}
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
     if((petAttack && request.skill) || (!petAttack && !prepared)) return {DomainStatus::Unavailable,{}};
     const auto slot=petAttack?MonsterAttackRule{rule.minimumDamage,rule.maximumDamage,rule.attackRating,rule.attackTicks,rule.impactTick,{}}:*prepared;
@@ -42,12 +42,13 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
     const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick);
-    const int speed=std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
+    const int speed=slot.casting?100:std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
     const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
     DamageType type = DamageType::Physical;
     combat::Damage damage{monster->id, target->id, type, int64_t(slot.minimum) * 256,
-        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + scaled(slot.release), slot.rating, rule.level, rule.meleeRange, rule.size, petAttack?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
-    if(petAttack && damage.weapon) {
+        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + scaled(slot.release), slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
+    damage.skill=slot.weaponSkill;
+    if((petAttack || monster->hireling) && damage.weapon) {
         const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick).combat;
         damage.attackModifiers=monster->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
         damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;
@@ -58,7 +59,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto reserved=monster->combatRandom;
     const auto actionRandom=childRandom(reserved);
     if(!petAttack) damage.actionRandom=actionRandom;
-    if (slot.missile || special) {
+    if (slot.missile || special || !slot.releaseFrames.empty()) {
         if (monsterReleases_.size() >= 4096) return {DomainStatus::Capacity,{}};
         MonsterRelease release{request,slot,monster->area,area.generation,request.tick+scaled(slot.release),actionRandom,monster->interruption,{}};
         release.started=request.tick;
@@ -88,6 +89,22 @@ StepStatus System::releaseMonsters(TickContext tick) {
         DomainResult<> specialResult;
         bool special=true;
         switch(pending.attack.action) {
+        case MonsterAttackRule::Action::Skill: {
+            if(!source->hireling || !source->owner || !pending.attack.spell) {specialResult={DomainStatus::InvalidActor,{}};break;}
+            const auto *owner=ports_.players.find(*source->owner);
+            if(!owner || !owner->entered || owner->area!=source->area || owner->persistent.player.hp<=0) {specialResult={DomainStatus::InvalidActor,{}};break;}
+            const ActorContext actor{owner->player,owner->actor,source->area,pending.generation,0,tick.tick};
+            const auto &cast=*pending.attack.spell;
+            if(cast.amazonMagic) specialResult=ports_.effects.amazonMagic(actor,cast,source->id);
+            else if(cast.appliedEffect) specialResult=ports_.effects.hirelingSkill(source->id,cast,tick.tick);
+            else {
+                const auto target=ports_.monsters.targetPosition(unit.id,source->area);
+                if(!target || !combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,unit.id)) {specialResult={DomainStatus::InvalidActor,{}};break;}
+                missiles::Spawn spawn{actor,cast,{},target->first,true,source->id,1,source->position};spawn.random=pending.random;
+                const auto result=ports_.missiles.spawn(spawn);specialResult={result.status,result?std::optional{std::monostate{}}:std::nullopt};
+            }
+            break;
+        }
         case MonsterAttackRule::Action::Resurrect: specialResult=ports_.monsters.resurrect(source->id,unit.id,tick.tick);break;
         case MonsterAttackRule::Action::Nest: {const auto spawned=pending.request.position?ports_.monsters.spawnNestChild(source->id,tick.tick,*pending.request.position):ports_.monsters.spawnNestChild(source->id,tick.tick);specialResult={spawned.status,spawned?std::optional{std::monostate{}}:std::nullopt};break;}
         case MonsterAttackRule::Action::Web: specialResult=ports_.monsters.activateWeb(source->id,tick.tick);break;
@@ -99,11 +116,24 @@ StepStatus System::releaseMonsters(TickContext tick) {
         }
         if(special) {
             if(specialResult.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {childRandom(pending.random);pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);
         if(!pending.launch && !combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,unit.id)) {it=monsterReleases_.erase(it);continue;}
         if (!target && !pending.launch) {it=monsterReleases_.erase(it);continue;}
+        if(!pending.attack.missile) {
+            combat::Damage damage{source->id,unit.id,DamageType::Physical,int64_t(pending.attack.minimum)*256,int64_t(pending.attack.maximum)*256,
+                pending.started+1,source->area,tick.tick,pending.attack.rating,source->rule.level,source->rule.meleeRange,source->rule.size,source->petWeapon};
+            damage.skill=pending.attack.weaponSkill;damage.sourceInterruption=pending.interruption;damage.actionRandom=pending.random;
+            const auto buffs=ports_.effects.unitModifiers(source->id,tick.tick).combat;
+            damage.attackModifiers=source->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
+            if(damage.weapon) {damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;}
+            const auto result=ports_.combat.enqueue(damage);
+            if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict) {blocked=true;++it;continue;}
+            if(result && ++pending.nextRelease<pending.releaseFrames.size()) {childRandom(pending.random);pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
+            it=monsterReleases_.erase(it);continue;
+        }
         if(!pending.launch) pending.launch=std::pair{source->position,target->first};
         const int quills=source->rule.ai.kind==MonsterAiKind::QuillRat && pending.request.monsterMode==5?source->rule.ai.params[2]:0;
         auto launch=*pending.launch;

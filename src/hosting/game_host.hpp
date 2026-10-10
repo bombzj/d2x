@@ -77,6 +77,7 @@ class GameHost {
     std::optional<std::vector<server::EventBatch>> pendingEvents(GameHandle) const;
     bool acknowledgeEvents(GameHandle, uint64_t sequence);
     server::DomainResult<> grantExperience(PlayerBinding, uint64_t amount);
+    server::DomainResult<> grantHireling(PlayerBinding,HirelingRecord);
     server::DomainResult<> restoreResources(PlayerBinding);
     server::DomainResult<> grantGold(PlayerBinding,uint32_t);
     server::DomainResult<> damagePlayer(PlayerBinding,uint32_t);

@@ -23,7 +23,7 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::Travel, "travel", AdminArgumentKind::Travel, true},
         {AdminOperation::UnlockWaypoints, "unlock-waypoints", AdminArgumentKind::None, false},
         {AdminOperation::GrantShrine, "grant-shrine", AdminArgumentKind::Spawn, false},
-        {AdminOperation::GrantHireling, "grant-hireling", AdminArgumentKind::Spawn, false},
+        {AdminOperation::GrantHireling, "grant-hireling", AdminArgumentKind::Spawn, true},
         {AdminOperation::ResetAttributes, "reset-attributes", AdminArgumentKind::None, false},
         {AdminOperation::ResetSkills, "reset-skills", AdminArgumentKind::None, false},
     };

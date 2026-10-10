@@ -79,8 +79,10 @@ DomainResult<> System::updateHireling(EntityId id,MonsterRule rule,WeaponDamage 
     const auto found=state_.actors.find(id);
     if(found==state_.actors.end() || !found->second.hireling) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
+    const bool levelUp=rule.level>actor.rule.level && actor.life>0;
     actor.rule=std::move(rule);actor.petWeapon=std::move(weapon);actor.petStats.attributes.combat=std::move(modifiers);
-    actor.maximumLife=int64_t(actor.rule.minimumLife)*256;actor.life=std::min(actor.life,actor.maximumLife);
+    actor.petStats.block=actor.rule.blockChance;
+    actor.maximumLife=int64_t(actor.rule.minimumLife)*256;actor.life=levelUp?actor.maximumLife:std::min(actor.life,actor.maximumLife);
     actor.hirelingStrength=strength;actor.hirelingDexterity=dexterity;actor.hirelingVitality=vitality;
     actor.equipment=std::move(equipment);actor.hirelingInventoryRevision=inventoryRevision;actor.hirelingCharacterRevision=characterRevision;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
@@ -100,5 +102,9 @@ void System::retire(EntityId id, uint64_t tick) {
     stop(id);++actor.interruption;
     actor.healing.clear();actor.potionEffects.clear();
     actor.life=0;actor.busyUntil=tick+uint64_t(actor.rule.deathTicks);actor.riseUntil=0;++actor.revision;
+}
+void System::healHireling(EntityId id) noexcept {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.hireling || found->second.life<=0) return;
+    auto &m=found->second;m.life=m.maximumLife;m.poison.reset();m.chilledUntil=m.frozenUntil=0;++m.revision;
 }
 }

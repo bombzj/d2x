@@ -198,7 +198,20 @@ struct RemoteUiClients::Impl {
                     const auto *item=o.inventoryView.item(c.item.id);
                     if(!o.hirelingView.active || !item || item->revision!=c.item.revision) return InventoryError::AccessDenied;
                     const auto *location=std::get_if<ContainerLocation>(&item->location);
-                    if(!location || (location->container!=o.inventoryView.containers.cursor && location->container!=o.inventoryView.containers.hirelingEquipment)) return InventoryError::AccessDenied;
+                    const auto &containers=o.inventoryView.containers;
+                    if(!location || (location->container!=containers.cursor && location->container!=containers.backpack &&
+                        location->container!=containers.hirelingEquipment && location->container!=containers.equipment && location->container!=o.inventoryView.storage)) return InventoryError::AccessDenied;
+                    if(c.slot) {
+                        const auto *definition=o.data.items.find(item->definition);
+                        const auto row=std::find_if(o.data.hirelings.begin(),o.data.hirelings.end(),[&](const auto &r){return r.classId==o.hirelingView.classId;});
+                        if(!definition || row==o.data.hirelings.end()) return InventoryError::UnknownDefinition;
+                        if(!item->identified) return InventoryError::Unidentified;
+                        const auto &equipment=definition->equipment;
+                        if((definition->maxDurability && !item->durability) || equipment.isType("ques")) return InventoryError::RestrictedItem;
+                        const bool shield=row->act==3 && *c.slot==EquipmentSlot::LeftHand && equipment.isType("shld");
+                        if(!equipment.fits(*c.slot) || (!shield && *c.slot!=EquipmentSlot::Head && *c.slot!=EquipmentSlot::Torso && *c.slot!=EquipmentSlot::RightHand)) return InventoryError::UnsupportedEquipment;
+                        if(*c.slot==EquipmentSlot::RightHand && ((!equipment.isType(row->weaponType1) && (row->weaponType2.empty() || !equipment.isType(row->weaponType2))) || (row->act==3 && equipment.twoHanded))) return InventoryError::UnsupportedEquipment;
+                    }
                     return InventoryError::None;
                 }
                 else if constexpr (std::is_same_v<T, LoadBook>) {
@@ -1161,7 +1174,7 @@ struct RemoteUiClients::Impl {
             const auto &di=d->second; ItemLocation location;
             if(ground && scene && scene->origin) location=GroundLocation{mapView.region,
                 {float(int(native.groundX)-scene->origin->x),float(int(native.groundY)-scene->origin->y)}};
-            else if(mercenary && (native.body==1 || native.body==3 || native.body==4)) location=ContainerLocation{owned.hirelingEquipment,{int(native.body)-1,0}};
+            else if(mercenary && (native.body==1 || native.body==3 || native.body==4 || native.body==5)) location=ContainerLocation{owned.hirelingEquipment,{int(native.body)-1,0}};
             else if(native.mode==4) location=ContainerLocation{owned.cursor,{}};
             else if(native.mode==2) location=ContainerLocation{owned.belt,{native.x%4,native.x/4}};
             else if(native.mode==1 && native.body>=1 && native.body<=12) {
@@ -1268,8 +1281,8 @@ struct RemoteUiClients::Impl {
                 npcView.talkEntries.push_back({"Back",{NpcMenuAction::Back,{}}});
             }
             const auto identity=npcIdentity();
-            if(identity=="kashya") {
-                add("Hire",NpcMenuAction::Hire);
+            if(identity=="kashya" || identity=="greiz" || identity=="asheara" || identity=="qual-kehk" || identity=="tyrael") {
+                if(identity!="tyrael") add("Hire",NpcMenuAction::Hire);
                 if(w.deadHirelingName && w.hirelingReviveCost) add("Resurrect: " + std::to_string(*w.hirelingReviveCost),NpcMenuAction::Resurrect);
             }
             if(data.vendors.contains(identity) && identity!="nihlathak") add("Trade",NpcMenuAction::Trade);
@@ -1360,16 +1373,23 @@ struct RemoteUiClients::Impl {
         hirelingView.active=*life>0 && !world.deadHirelingName;
         hirelingView.strength=int(value("strength").value_or(0));hirelingView.dexterity=int(value("dexterity").value_or(0));
         hirelingView.defense=int(value("armorclass").value_or(0));
+        for(const auto &[id,item]:world.items) {
+            if(item.ownerType!=1 || item.owner!=merc.id || item.mode!=1) continue;
+            const auto decoded=items.read().items.find(id);
+            if(decoded!=items.read().items.end() && decoded->second.decoded && decoded->second.defense.value_or(0)>0 &&
+                (!decoded->second.maxDurability.value_or(0) || decoded->second.durability.value_or(0)>0)) hirelingView.defenseImproved=true;
+        }
+        if(const auto states=combat.states().find({1,merc.id});states!=combat.states().end() && states->second.decoded) {
+            const auto &costs=data.tables.at("itemstatcost");
+            for(size_t row=0;row<costs.rows().size();++row) if(costs.value(row,"Stat")=="skill_armor_percent")
+                for(const auto &[state,list]:states->second.states) {
+                    (void)state;
+                    for(const auto &entry:list.stats) if(costs.number(row,"ID")==entry.id && entry.value>0) hirelingView.defenseImproved=true;
+                }
+        }
         hirelingView.damageMinimum=int(value("mindamage").value_or(0));hirelingView.damageMaximum=int(value("maxdamage").value_or(0));
         hirelingView.experience=uint64_t(std::max<int64_t>(0,value("experience").value_or(0)));
-        std::optional<uint64_t> next;
-        bool consistent=true;
-        for(const auto &definition:data.hirelings) if(definition.classId==merc.monsterClass) {
-            const auto threshold=deriveHirelingStats(definition,hirelingView.level).nextExperience;
-            if(next && *next!=threshold) consistent=false;
-            next=threshold;
-        }
-        if(consistent && next) hirelingView.nextExperience=*next;
+        hirelingView.nextExperience=uint64_t(std::max<int64_t>(0,value("nextexp").value_or(0)));
         hirelingView.resistances={int(value("fireresist").value_or(0)),int(value("coldresist").value_or(0)),int(value("lightresist").value_or(0)),int(value("poisonresist").value_or(0))};
         const auto unit=world.units.find({1,merc.id});
         if(unit!=world.units.end() && unit->second.position && scene && scene->origin)

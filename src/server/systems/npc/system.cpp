@@ -73,7 +73,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         healing = std::move(*prepared.value); record = healing->character;
     }
     transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)}; edit.facts.emplace_back(std::move(fact));
-    if (healing) edit.transient = healing->transient;
+    if (healing) {edit.transient = healing->transient;edit.publicFacts=healing->publicFacts;}
     if (healing && (healing->character.hp!=player.persistent.player.hp || healing->character.mana!=player.persistent.player.mana ||
         healing->character.stamina!=player.persistent.player.stamina || healing->transient.states!=player.transient.states))
         edit.publicFacts.emplace_back(SoundFact{npc->id,1,actor.area,10});

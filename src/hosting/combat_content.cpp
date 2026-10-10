@@ -99,6 +99,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.introduction=data.tables.at("monstats").number(record->sourceRow,"boss").value_or(0)!=0 || identity.rank==MonsterRank::Unique || identity.rank==MonsterRank::SuperUnique;
     rule.coldDivisor=data.monsterColdDivisor.at(size_t(request.difficulty));
     const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
+    rule.drain=data.tables.at("monstats").number(record->sourceRow,std::string("Drain")+suffix).value_or(0);
+    rule.openWoundsState=data.states.at("openwounds").definition.id;
     rule.blockChance=std::clamp(data.tables.at("monstats").number(record->sourceRow,std::string("ToBlock")+suffix).value_or(0),0,75);
     rule.blockWithoutShield=data.tables.at("monstats").number(record->sourceRow,"NoShldBlock").value_or(0)!=0;
     // MonStats2's xx sentinel is not an animation. MONSTERSPAWN_GetResurrectMode

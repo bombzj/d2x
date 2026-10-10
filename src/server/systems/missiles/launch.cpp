@@ -3,6 +3,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/projectile_path.hpp"
@@ -18,7 +19,10 @@ namespace { Vec cell(Vec p) { return {std::floor(p.x) + .5f, std::floor(p.y) + .
 Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int frames, float speed, Program program, uint64_t &random) const {
     const auto &rules = *ports_.players.find(r.actor.player)->rules.skills;
     Missile m; m.owner = r.actor.actor; m.player = r.actor.player; m.area = r.actor.area; m.generation = r.actor.areaGeneration;
-    m.binding=combat::Participants{ports_.players,ports_.monsters}.bind({ports_.players.find(r.actor.player),nullptr});
+    const auto *unit=r.emitterType==1?ports_.monsters.find(r.emitter):nullptr;
+    const bool hireling=unit && unit->hireling && unit->owner==r.actor.player;
+    if(hireling) m.owner=unit->id;
+    m.binding=combat::Participants{ports_.players,ports_.monsters}.bind(hireling?combat::ParticipantView{nullptr,unit}:combat::ParticipantView{ports_.players.find(r.actor.player),nullptr});
     m.definition = id; m.created = r.actor.tick; m.expires = r.actor.tick + uint64_t(frames);
     if(speed>0 && !direction.length()) direction={1,1};
     m.position = origin; m.velocity = direction.unit() * speed; m.turnTarget = direction;
@@ -35,7 +39,7 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
     }
     m.acceleration = r.skill.missileAcceleration; m.maximumVelocity = r.skill.missileMaxVelocity;
     if(r.weapon && r.weapon->weapon.potion) m.weapon=rollPotionDamage(r.weapon->weapon,r.weapon->level,m.random);
-    else if(r.weapon) m.weapon=rollWeaponSkillDamage(r.weapon->weapon,ports_.players.find(r.actor.player)->totals.character.combat,r.skill,r.weapon->level,true,m.random);
+    else if(r.weapon) m.weapon=rollWeaponSkillDamage(r.weapon->weapon,hireling?unit->petStats.attributes.combat:ports_.players.find(r.actor.player)->totals.character.combat,r.skill,r.weapon->level,true,m.random);
     if(m.weapon && rules.pierceableMissiles.contains(id)) m.pierces=missilePierceCount(m.weapon->pierceChance,0);
     m.guidance=r.guidedTarget;
     m.radius = r.skill.missileImpact ? r.skill.missileImpact->radius : 0;
@@ -150,7 +154,9 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
         !std::isfinite(r.skill.minimumDamage) || !std::isfinite(r.skill.maximumDamage) || r.skill.minimumDamage<0 ||
         r.skill.maximumDamage<r.skill.minimumDamage || double(r.skill.maximumDamage)*256>INT32_MAX)
         return {DomainStatus::InvalidRequest,{}};
-    auto random = ports_.random;
+    if(r.emitterType==1) if(const auto *unit=ports_.monsters.find(r.emitter);unit && unit->hireling &&
+        (unit->life<=0 || unit->owner!=r.actor.player || unit->area!=r.actor.area || !r.free)) return {DomainStatus::InvalidActor,{}};
+    auto random = r.random.value_or(ports_.random);
     auto launched = launch(r,random); if (launched.empty()) return {DomainStatus::NotImplemented,{}};
     if (launched.size()>4096-state_.missiles.size() || launched.size()>UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
     auto facts = visuals(launched);
@@ -163,7 +169,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     if (!released) return {released.status,{}};
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
     for (size_t i=0;i<prepared.size();++i) ports_.ids.allocate();
-    state_.missiles.merge(prepared); ports_.random=random;
+    state_.missiles.merge(prepared); if(!r.random) ports_.random=random;
     return {DomainStatus::Applied,id};
 }
 }

@@ -294,6 +294,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     worldBlocked_ = true;
     if (handleDeath(input)) return true;
     auto &ui = view_.ui();
+    if(ui.hirelingOpen && !view_.hirelingView().active) {ui.hirelingOpen=false;ui.inventory.cancelGesture();}
     ui.showLoot = input.focused && input.showLoot;
     if (!input.focused) {
         actorClient_.stopMoving();

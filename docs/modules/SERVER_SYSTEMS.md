@@ -138,7 +138,7 @@ AI、怪物施法、普通武器／范围目标、伙伴选敌、弹体、周期
 
 `skills/runtime.hpp`仅由技能实现文件包含，私有施法／怪物释放队列由单个Runtime持有；公共System头仅留接口及前置声明。求值逻辑在`evaluation.cpp`，参与者策略在`participants.cpp`，combat公共头不再引入整套MonsterRule。修改这些实现不应触发全部调用者编译；更改共享数据布局仍会重编译实际依赖者，不承诺零传播。没有为每技能引入虚类、服务定位器或独立堆对象。
 
-本批仅源码和编辑器诊断，未构建／运行／打包。现有快照提供阶段耗时、Blocked、队列与空间候选计数，见[调试管道](../development/DEBUG_PIPE.md)。运行验收仍需同地图／种子／人数的单人、2人、8人、密集弹体对照，以及转换往返、离队／断线、来源死亡、换区、背压、反伤／牺牲／耐久和击杀归功；没有p50／p95／p99或内存收益测量，不以结构改善代替性能结论。
+当前Windows Release已构建／打包，佣兵代表单机路径已运行；本节重构的完整运行与性能验收仍未完成。现有快照提供阶段耗时、Blocked、队列与空间候选计数，见[调试管道](../development/DEBUG_PIPE.md)。运行验收仍需同地图／种子／人数的单人、2人、8人、密集弹体对照，以及转换往返、离队／断线、来源死亡、换区、背压、反伤／牺牲／耐久和击杀归功；没有p50／p95／p99或内存收益测量，不以结构改善代替性能结论。
 
 ## 女巫全技能执行
 
@@ -208,7 +208,7 @@ hosting/object_content 沿用旧单机 configureWorldObject、Act 1 人口生成
 
 ## NPC 与城镇服务
 
-`hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，包括第一幕InitFn54凯恩标记；不生成敌对替身。NPC 子系统管理同区域、活人、距离／视线与交谈身份、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少文本则不编造。静态城镇NPC与五幕任务对白已接；第五幕囚犯使用独立逃离路径，动态任务NPC通过world窄入口准入。完整闲逛AI／中立战斗及雇佣服务未迁移。
+`hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，包括第一幕InitFn54凯恩标记；不生成敌对替身。NPC 子系统管理同区域、活人、距离／视线与交谈身份、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少文本则不编造。静态城镇NPC与五幕任务对白已接；第五幕囚犯使用独立逃离路径，动态任务NPC通过world窄入口准入。完整闲逛AI／中立战斗仍未迁移；四类佣兵服务和同行执行见佣兵专题。
 
 content/npc/vendor_stock迁用master的planVendorStock／vendorItem，hosting/merchant_content从MPQ准备物品与报价，merchant唯一拥有NPC货架／个人赌博及准备身份。NPC交谈与原请求复验后交transactions，先提交物品／金币事实再发送原回执；客户端报价不授权扣款。刷新、回购、批量、维修与鉴定规则见[经济](../gameplay/items/ECONOMY.md)，客户端手势见[NPC交易](../gameplay/npc/TRADE.md)，物品位流及2A成功码见[PRESENTATION](../gameplay/items/PRESENTATION.md)。NPC对话沿原AC／27／2F／31。
 

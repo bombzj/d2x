@@ -19,6 +19,7 @@ std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool 
         const auto raw=baseLow+(baseHigh>baseLow?attack.physicalRoll%uint32_t(baseHigh-baseLow):0);
         channels[0]=(raw+raw*percent/100)*(attack.critical?2:1);
     } else channels[0]=(low+(high>low?attack.physicalRoll%uint32_t(high-low):0))*(attack.critical?2:1);
+    channels[0]+=int64_t(attack.physicalFlat)*256;
     const auto converted=channels[0]*attack.conversionPercent/100;
     channels[0]-=converted;channels[size_t(attack.conversionElement)]+=converted;return channels;
 }
@@ -61,6 +62,11 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.physicalMaximum=projectile?weapon.projectileMaximum:weapon.meleeBaseMaximum;
     value.physicalRoll=rollRandom(random);
     auto own=mods.weapons.find(weapon.item);const WeaponModifiers extra=own==mods.weapons.end()?WeaponModifiers{}:own->second;
+    value.lifeLeech=std::max(0,mods.lifeLeech+extra.lifeLeech);
+    const int crushing=std::clamp(mods.crushingBlow+extra.crushingBlow,0,100),wounds=std::clamp(mods.openWounds+extra.openWounds,0,100);
+    value.crushing=crushing && limitedRandom(random,100)<unsigned(crushing);
+    value.openWounds=wounds && limitedRandom(random,100)<unsigned(wounds);
+    value.physicalFlat=skill.weapon->physicalFlat;value.stunFrames=skill.weapon->stunFrames;value.knockback=skill.weapon->knockback;
     const auto ranges=attackElementRanges(mods,weapon.item);
     value.channels[1]=roll(int64_t(ranges.magic.minimum)*256,int64_t(ranges.magic.maximum)*256);
     value.channels[2]=roll(int64_t(ranges.fire.minimum)*256,int64_t(ranges.fire.maximum)*256);

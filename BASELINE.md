@@ -18,15 +18,15 @@ Single Player、LAN与原服共用一套原MCP／D2GS客户端。自研宿主拥
 | 地图／旅行 | 五幕1–136原生成、碰撞、区域切换、传送点、门户及跨幕旅行 | 长绕墙／拥挤、完整活动房间与特殊内容；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存／装备／腰带、生成／掉落、商店／加工、经验／属性／技能、死亡／尸体 | 复杂争用、全属性／配方／奖励组合、硬核／多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻／投射／六通道、通用十项、女巫／亚马逊／圣骑士各30项 | 其他职业、完整双持与吸取／压碎／撕裂／触发、PvP；[技能](docs/gameplay/skills/README.md) |
-| 怪物／伙伴 | 第一幕63战斗类型／25类AI、精英／首领，Hydra、诱饵／女武神、罗格 | 其他幕与召唤、完整AI／伙伴服务与表现；罗格换装／喂药／自然射击有历史阻塞；[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
+| 怪物／伙伴 | 第一幕63战斗类型／25类AI、精英／首领，Hydra、诱饵／女武神、四类原佣兵 | 其他幕与召唤、完整AI／伙伴服务与表现；本批佣兵范围及运行边界见[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕27项个人任务主流程与保存 | 完整中立AI、剧情／机关及组队任务资格；[NPC／任务](docs/modules/NPC_QUEST.md) |
 | 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环 | 完整任务共享、敌意／PvP、尸体权限、八人背压与跨机器验收；[组队](docs/modules/NETWORK.md#组队邀请客户端)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
 
-## 未交付源码
+## 当前重构与佣兵交付
 
 战斗关系、来源与控制代次、重试后续阶段、武器目标局部随机和耐久防重复提交已改；技能私有运行态／求值实现移出公共头，活单位空间索引接入武器及通用法术直线碰撞。AI、范围爆炸及怪物弹体仍有遍历。详细范围见[战斗关系与提交](docs/modules/SERVER_SYSTEMS.md#战斗关系与提交)。
 
-上述源码尚未构建、运行或打包，未测量性能及增量编译收益。源码规则为**v33**，已记录运行包仍为**v32**；不能用旧包证据认证本次重构。
+上述源码已随本批Windows Release构建、打包；未测量性能及增量编译收益，重构的完整争用／背压边界未认证。四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，并完成代表单机路径的有限冒烟，详见佣兵专题。当前源码与运行包规则均为**v34**；历史证据不认证本批未覆盖路径。
 
 ## 保存边界
 
@@ -36,15 +36,15 @@ D2S磁盘格式仍为v96；当前源码准入指纹、拒绝条件、锁与恢�
 
 ## 当前运行包与验证边界
 
-最新已记录交付为2026-10-10启动优化批，Windows **Release**，规则v32／D2S v96；本页未重新核验磁盘包，不代表包含上述未交付源码。
+最新已记录交付为2026-10-10佣兵收尾批，Windows **Release**，规则v34／D2S v96；客户端和独立服务端均从本批构建更新，以下哈希已核验磁盘包。
 
 | 产物 | 目录 | SHA256 |
 | --- | --- | --- |
-| 客户端 | `dist/current/d2x.exe` | `BD304511433DFEAB2EDE6D68B234A5954EE40F853D1EF8C7CE731FB7A2D51B66` |
-| 独立服务端 | `dist/server/d2x_server.exe` | `12F8E748D10278B50DA803AD278AF67EA3DE2238C246A553D5BAC9C2B64530E9` |
+| 客户端 | `dist/current/d2x.exe` | `E9683216BB39179F7A7F76F640640EB7160AC28376332984AE2D9C9F5C1E9A96` |
+| 独立服务端 | `dist/server/d2x_server.exe` | `0EE16E60119695B333F432BD84D0EE8FEAC96461F5BD1EA74BFDC34C23AD8A9D` |
 | 网络DLL | 两包的`d2x_bncs_legacy.dll` | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
 
-该批有限验证菜单／单机／本机TCP启动、首帧、正常退出保存及资源枚举；启动测量条件、结果与限制见[开发指南](docs/development/BUILD_AND_RUN.md#启动测量)。未重新认证PvPGN后端互通、全部玩法、跨机器或Linux，既有编译警告仍保留。
+该批使用打包EXE有限验证佣兵内容准备、雇佣／换装／喂药／死亡复活、四类代表技能及独立经验、装备保存重入和原图界面；准确条件与证据见[佣兵](docs/gameplay/characters/HIRELINGS.md#当前包有限冒烟)。按用户要求未执行联机冒烟，未重新认证PvPGN后端互通、全部玩法、跨机器或Linux，既有编译警告仍保留。此前启动测量条件与结果保留在[开发指南](docs/development/BUILD_AND_RUN.md#启动测量)，不推定本批性能相同。
 
 ## 专题证据入口
 

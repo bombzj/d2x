@@ -192,6 +192,10 @@ server::DomainResult<> GameHost::grantExperience(PlayerBinding binding, uint64_t
 std::set<int> GameHost::unitStates(GameHandle game,EntityId id) const {
     const auto *slot=find(game);return slot?slot->game->unitStates(id):std::set<int>{};
 }
+server::DomainResult<> GameHost::grantHireling(PlayerBinding binding,HirelingRecord record) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->grantHireling(binding.player,std::move(record));if(result) publish(size_t(binding.game.slot));return result;
+}
 std::vector<MonsterSnapshot> GameHost::visibleMonsters(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
     return slot ? slot->game->visibleMonsters(binding.player) : std::vector<MonsterSnapshot>{};

@@ -10,6 +10,7 @@
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/monsters/damage.hpp"
 #include "gameplay/combat/poison.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
 #include <list>
 #include <initializer_list>
 #include <algorithm>
@@ -34,7 +35,7 @@ struct State { std::map<EntityId, Recovery> players; std::string itemDeferred; }
 struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; bool converted{}; };
 // Prepared before inventory consumption, installed without allocation only after
 // the character transaction succeeds. No callback can observe half a drink.
-struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<uint64_t> random{}; };
+struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<uint64_t> random{}; std::vector<EntityId> healedHirelings; std::vector<DomainFact> publicFacts; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; skills::System &skills;
     transactions::System &transactions; missiles::System &missiles; combat::System &combat; monsters::System &monsters; EventOutbox &events; uint64_t &random; const social::System &social;
@@ -52,9 +53,13 @@ class System {
         bool pending{}; uint64_t random{};
     };
     std::map<EntityId,PaladinCycle> paladinCycles_;
+    std::map<EntityId,PaladinCycle> hirelingCycles_;
+    struct UnitReaction {EntityId source,attacker; RegionId area; TriggeredCombatEffect effect;};
+    std::deque<UnitReaction> unitReactions_;
+    StepStatus advanceHirelings(uint64_t);
     uint64_t paladinOccurrence_{};
     StepStatus advancePaladinAuras(uint64_t);
-    DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false);
+    DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false,EntityId emitter={});
     DomainResult<> removeAura(const ActorContext &,int skill);
     struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{},random{};bool pending{};};
     std::map<EntityId,WebTrail> webTrails_;
@@ -78,16 +83,21 @@ class System {
     }
     DomainResult<PotionPlan> potion(const ActorContext &, const PotionDefinition &) const;
     DomainResult<PotionPlan> heal(const ActorContext &) const;
-    void commit(PotionPlan &&plan) noexcept { state_.players.swap(plan.next.players); if (plan.random) ports_.random = *plan.random; }
+    void commit(PotionPlan &&plan) noexcept;
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
+    DomainResult<> hirelingSkill(EntityId,const SkillCastSpec &,uint64_t);
+    DomainResult<> hirelingAura(EntityId,const AuraDefinition &,uint64_t);
+    bool hirelingAuraActive(EntityId,int skill,int rank) const;
+    void hirelingReact(EntityId,EntityId,CombatEffectEvent,uint64_t);
     DomainResult<> convert(const ActorContext &,EntityId,const WeaponSkillSpec &);
     DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &,std::optional<EntityId> emitter = {});
     CharacterModifiers unitModifiers(EntityId, uint64_t tick) const;
     CharacterModifiers stateModifiers(EntityId,int state,uint64_t tick) const;
     int unitDefense(EntityId,uint64_t tick) const;
     int unitResistance(EntityId,DamageType,uint64_t tick) const;
+    ResolvedDamage unitDamage(EntityId,int64_t,DamageType,uint64_t) const;
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);
     std::set<int> unitStates(EntityId, uint64_t tick) const;
     std::map<int,std::vector<std::pair<int,int64_t>>> unitStateStats(EntityId, uint64_t tick) const;
@@ -96,7 +106,7 @@ class System {
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);
-    bool reactionCapacity() const { return reactions_.size() <= 4096-128; }
+    bool reactionCapacity() const { return reactions_.size() <= 4096-128 && unitReactions_.size()<=4096-128; }
     void react(const ActorContext &, EntityId attacker, CombatEffectEvent, bool returnFire = true);
     StepStatus step(TickContext, FrameFacts &);
 };

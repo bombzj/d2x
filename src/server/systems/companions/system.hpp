@@ -19,6 +19,7 @@ struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std
 struct Summon { PlayerId owner; Kind kind; monsters::Admission actor; std::optional<uint16_t> sourceSkill; };
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{}; uint64_t random{};
+    uint64_t ownerTeleport{}; int attackBias{};
 };
 struct State { std::map<EntityId, Companion> companions; };
 struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; };
@@ -53,6 +54,7 @@ class System {
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
+    DomainResult<> grantHireling(const ActorContext &,HirelingRecord);
     bool canDismiss(const ActorContext &, EntityId) const;
     DomainResult<> dismiss(const ActorContext &, EntityId);
     DomainResult<> ownerDied(const ActorContext &);

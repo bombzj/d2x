@@ -9,6 +9,7 @@
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/combat/poison.hpp"
+#include "gameplay/combat/open_wounds.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
@@ -39,6 +40,9 @@ struct Actor {
     uint64_t hirelingInventoryRevision{}, hirelingCharacterRevision{};
     int hirelingStrength{},hirelingDexterity{};
     int hirelingVitality{};
+    uint64_t hirelingNextExperience{};
+    unsigned hirelingPassiveMask{};
+    int hirelingMovementPercent{};
     std::map<int,TimedRestoration> healing;
     CombatEffectSet potionEffects;
     UnitCombatStats petStats;
@@ -50,6 +54,7 @@ struct Actor {
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     EntityId killer, movementTarget;
     EntityId hirelingKiller;
+    std::optional<OpenWoundsApplication> wound;
     Vec movementGoal;
     uint64_t hitOccurrence{};
     uint64_t combatRandom{};
@@ -101,6 +106,9 @@ class System {
     State state_;
     const Ports ports_;
   public:
+    void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement) {
+        if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;}
+    }
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
@@ -116,7 +124,7 @@ class System {
     DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
     void holyFreeze(EntityId id,uint64_t until,bool shatter) {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.holyFreezeUntil=until;it->second.holyFreezeShatter=shatter;}}
     DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0);
     void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);
@@ -144,6 +152,7 @@ class System {
     DomainResult<> updateHireling(EntityId,MonsterRule,WeaponDamage,CombatModifiers,int strength,int dexterity,int vitality,
         std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision);
     void installHirelingPotion(EntityId,std::map<int,TimedRestoration>,CombatEffectSet,int64_t life,bool curePoison,bool cureCold,uint64_t random);
+    void healHireling(EntityId) noexcept;
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     StepStatus step(TickContext, FrameFacts &);

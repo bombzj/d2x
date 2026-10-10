@@ -218,6 +218,10 @@ DomainResult<> GameInstance::grantExperience(PlayerId id, uint64_t amount) {
     if (player->lastExperienceAward == UINT64_MAX) return {DomainStatus::Capacity, {}};
     return systems_.progression.award({id, player->lastExperienceAward + 1, amount, tick_});
 }
+DomainResult<> GameInstance::grantHireling(PlayerId id,HirelingRecord record) {
+    const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
+    return systems_.companions.grantHireling({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},std::move(record));
+}
 
 } // namespace d2x::server
 

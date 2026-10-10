@@ -26,6 +26,7 @@ struct Damage {
     uint64_t sourceInterruption{};
     std::optional<uint64_t> actionRandom{};
     SourceBinding binding{};
+    std::optional<SkillCastSpec> skill{};
 };
 // Targets are captured at missile impact, not looked up again by radius on retry.
 struct SpellImpact {

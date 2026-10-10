@@ -52,6 +52,7 @@ StepStatus System::advanceUnits(uint64_t tick) {
         const auto *m=ports_.monsters.find(it->first);const auto *area=ports_.areas.find(it->second.area);
         const bool npc=area && std::any_of(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==it->first;});
         if(!m && !npc) {it=units_.erase(it);continue;}
+        if(m && m->area!=it->second.area) {it=units_.erase(it);continue;}
         auto next=it->second.states;
         std::vector<RemovedCombatEffect> allegianceRemoved;
         if(it->second.converted && m && !m->conversion) {

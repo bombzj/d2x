@@ -27,6 +27,8 @@ struct WeaponSkillSpec {
     bool smite = false;
     std::string mode;
     int stunFrames = 0, stunPerLevel = 0;
+    int physicalFlat = 0;
+    bool knockback = false;
     int conversionMinimum = 0, conversionMaximum = 0, conversionChance = 0, conversionFrames = 0;
     CombatStateDefinition conversionState;
     int chargeVelocity = 0;

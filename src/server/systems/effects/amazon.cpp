@@ -26,6 +26,8 @@ int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
     // Conviction stores its immunity penalty when the recipient effect is
     // installed; applying it again here would divide the reduction twice.
     const int resistance=std::max(-100,base+additions[channel]);
+    if(m->hireling && channel==0) return std::min(resistance,50);
+    if(m->hireling && channel==1) return std::min(resistance,std::clamp(75+m->petStats.attributes.combat.magicMaxResist+mods.combat.magicMaxResist,0,95));
     if(m->hireling && channel>=2) {
         const auto &equipment=m->petStats.attributes.combat;
         const std::array maximum{equipment.fireMaxResist+mods.combat.fireMaxResist,equipment.lightningMaxResist+mods.combat.lightningMaxResist,
@@ -33,6 +35,15 @@ int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
         return std::min(resistance,std::clamp(75+maximum[channel-2],0,95));
     }
     return resistance;
+}
+ResolvedDamage System::unitDamage(EntityId id,int64_t amount,DamageType type,uint64_t tick) const {
+    const auto *m=ports_.monsters.find(id);const int resistance=unitResistance(id,type,tick);
+    if(!m || !m->hireling) return {mitigateMonsterDamage(float(amount)/256.f,resistance),0};
+    CharacterAttributes stats;stats.combat=m->petStats.attributes.combat;mergeCombatModifiers(stats.combat,unitModifiers(id,tick).combat);
+    stats.fireResist=unitResistance(id,DamageType::Fire,tick);stats.lightningResist=unitResistance(id,DamageType::Lightning,tick);
+    stats.coldResist=unitResistance(id,DamageType::Cold,tick);stats.poisonResist=unitResistance(id,DamageType::Poison,tick);
+    stats.combat.physicalResist=unitResistance(id,DamageType::Physical,tick);stats.combat.magicResist=unitResistance(id,DamageType::Magic,tick);
+    return mitigatePlayerDamage(float(amount)/256.f,type,stats);
 }
 std::map<int,std::vector<std::pair<int,int64_t>>> System::unitStateStats(EntityId id,uint64_t tick) const {
     const auto it=units_.find(id);if(it==units_.end()) return {};

@@ -20,7 +20,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, flo
         if(relocation) edit.publicFacts.emplace_back(RepositionFact{player.actor,player.area,relocation->position});
         auto plan=prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=commit(std::move(*plan.value));
-        if(result && relocation) {player.position=relocation->position;player.route.clear();player.moving=false;}
+        if(result && relocation) {player.position=relocation->position;player.route.clear();player.moving=false;++player.teleportRevision;}
         return result;
     }
     const float mana = player.persistent.player.mana - cost;
@@ -30,7 +30,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, flo
     auto result = ports_.events.publishGroup(std::move(events));
     if (!result) return {result.status, {}};
     player.persistent.player.mana = mana; ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
-    if (relocation) { player.position = relocation->position; player.route.clear(); player.moving = false; }
+    if (relocation) { player.position = relocation->position; player.route.clear(); player.moving = false; ++player.teleportRevision; }
     return {DomainStatus::Applied, std::monostate{}};
 }
 }

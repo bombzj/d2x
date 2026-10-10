@@ -13,4 +13,4 @@
 
 牢门和囚犯不可因为模型属于非玩家单位就套敌对追击程序；具体特殊分类见[SPECIAL](SPECIAL.md)。囚犯伤亡／失败分支与原蓝门演出、古代人和Baal任务的有限证据及其他限制唯一维护在[第三至第五幕任务](../quests/ACT3_5.md)，不将管理击杀流程作为真实Boss战斗认证。
 
-野蛮人佣兵奖励身份／保存已接但完整活动AI尚未迁入，见[佣兵](../characters/HIRELINGS.md)。后续先读master，再按当前MPQ与reference逐项核对；首领与精英差异分别归[BOSSES](BOSSES.md)和[ELITES](ELITES.md)。目前没有本幕全类型正常战斗／原服专项验收。
+野蛮人佣兵真实活动实体、AI、Bash／Stun、原服务及奖励／保存已接，代表单机路径取得有限运行证据，见[佣兵](../characters/HIRELINGS.md)。后续先读master，再按当前MPQ与reference逐项核对；首领与精英差异分别归[BOSSES](BOSSES.md)和[ELITES](ELITES.md)。目前没有本幕全类型正常战斗／原服专项验收。

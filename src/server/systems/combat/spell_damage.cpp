@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "hireling_hit.hpp"
 #include "participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -127,12 +128,12 @@ StepStatus System::resolveSpells(TickContext tick) {
                         if(result) commitRandom();
                         ++impact.next;continue;
                     }
-                    int64_t amount=0;
-                    for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(rolled.channels[channel])/256.f,ports_.effects.unitResistance(pet->id,DamageType(channel),tick.tick))*256.f);
+                    int64_t amount=0,absorbed=0;
+                    for(size_t channel=0;channel<5;++channel) {const auto resolved=ports_.effects.unitDamage(pet->id,rolled.channels[channel],DamageType(channel),tick.tick);amount+=int64_t(resolved.dealt*256.f);absorbed+=int64_t(resolved.absorbed*256.f);}
                     const auto cold=rolled.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(pet->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(pet->rule.coldDivisor));
                     std::optional<PoisonApplication> poison;
                     if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(pet->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
-                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
+                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,rolled.hitClass,poison,false,0,{},absorbed);
                     if(result && rolled.knockback) ports_.monsters.knockback(pet->id,monsterSource->position,tick.tick);
                 }
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
@@ -186,7 +187,10 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto &attack=*impact.weapon;
                 if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}
                 if(!impact.targetRandom || impact.plannedTarget!=impact.next) {
-                    impact.plannedTarget=impact.next;impact.targetRandom=childRandom(ports_.random);impact.wearApplied=false;
+                    impact.plannedTarget=impact.next;
+                    if(impact.contactRandom) impact.targetRandom=childRandom(*impact.contactRandom);
+                    else impact.targetRandom=childRandom(ports_.random);
+                    impact.wearApplied=false;
                 }
                 random=*impact.targetRandom;
                 if(!(impact.weaponHit.has_value()?*impact.weaponHit:weaponContact(attack,target->id,tick.tick,random))) {
@@ -199,7 +203,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 }
                 const auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
                 amount=0;
-                const bool sanctuary=target->rule.undead && owner->rules.skills && owner->rules.skills->auras.contains(119) && owner->transient.states.contains(owner->rules.skills->auras.at(119).spec.ownerState.id);
+                const bool sanctuary=!hirelingSource && target->rule.undead && owner->rules.skills && owner->rules.skills->auras.contains(119) && owner->transient.states.contains(owner->rules.skills->auras.at(119).spec.ownerState.id);
                 for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,sanctuary && channel==0?0:ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
             }
             if (impact.staticPercent) {
@@ -217,11 +221,13 @@ StepStatus System::resolveSpells(TickContext tick) {
             const auto rate=impact.weapon?impact.weapon->channels[5]:impact.type==DamageType::Poison?(impact.targetDamage.empty()?impact.damage:impact.targetDamage[impact.next]):0;
             const auto frames=impact.weapon?uint64_t(std::max(0,impact.weapon->poisonFrames)):impact.poisonFrames;
             if(rate>0 && frames) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rate)/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),frames,owner->rules.skills->poisonState};
+            const int hirelingPercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
+            amount=amount*hirelingPercent/100;if(poison) poison->rate=poison->rate*hirelingPercent/100;
             if(impact.type==DamageType::Poison) amount=0;
             const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-            auto itemEvents=impact.weapon?ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
+            auto itemEvents=hirelingSource?DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}}:impact.weapon?ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
             if(!itemEvents) {blocked=true;break;}
-            const bool wearRequired=impact.weapon && impact.weapon->wearChance>0 && limitedRandom(random,100)<unsigned(impact.weapon->wearChance);
+            const bool wearRequired=!hirelingSource && impact.weapon && impact.weapon->wearChance>0 && limitedRandom(random,100)<unsigned(impact.weapon->wearChance);
             if(wearRequired && !impact.wearApplied) {
                 const auto &attack=*impact.weapon;
                 const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
@@ -233,7 +239,15 @@ StepStatus System::resolveSpells(TickContext tick) {
             }
             const auto recoil=impact.weapon?std::min(target->life,targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])*impact.weapon->selfDamagePercent/100:0;
             const bool convert=impact.conversion && target->rule.convertible && target->life>amount && int(limitedRandom(random,100))<impact.conversion->conversionChance;
-            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):0);
+            HirelingHitEffects extras;
+            if(monsterSource && monsterSource->hireling && impact.weapon) {
+                const int resistance=ports_.effects.unitResistance(target->id,DamageType::Physical,tick.tick);
+                const auto physical=int64_t(mitigateMonsterDamage(float(targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])/256.f,resistance)*256.f)*hirelingPercent/100;
+                extras=hirelingHitEffects(*impact.weapon,*target,monsterSource->id,impact.binding.credit,resistance,physical,amount,tick.tick);amount+=extras.crushing;
+            }
+            if(poison && monsterSource && monsterSource->hireling) poison->actualSource=monsterSource->id;
+            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):0,extras.wound);
+            if(result && monsterSource && monsterSource->hireling) {ports_.monsters.recordHirelingKill(target->id,monsterSource->id);ports_.monsters.heal(monsterSource->id,extras.healing+(target->life<=0?int64_t(monsterSource->petStats.attributes.combat.lifeOnKill)*256:0));}
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
             if(result) ports_.effects.commitItemEvents(std::move(*itemEvents.value),target->life<=0);
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);

@@ -41,12 +41,14 @@ struct MonsterAttackRule {
     int minimum{}, maximum{}, rating{}, duration{}, release{};
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
-    enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap } action{Action::Damage};
+    enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
     std::optional<MonsterMissileRule> groundFire{};
     std::optional<SkillCastSpec> weaponSkill{};
+    std::optional<SkillCastSpec> spell{};
+    bool casting{};
 };
 struct MonsterWebRule {
     int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};
@@ -76,6 +78,8 @@ struct MonsterRule {
     std::map<uint8_t, MonsterAttackRule> attacks;
     MonsterHitStates hitStates;
     int damageRegen{};
+    int drain{},openWoundsState{-1};
+    int hirelingBossDamagePercent{100},hirelingRegeneration{};
     std::map<uint16_t,MonsterAttackRule> skillActions;
     std::array<uint16_t,4> skillIds{};
     std::shared_ptr<const PreparedMonster> nestChild;

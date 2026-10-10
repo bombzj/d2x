@@ -55,7 +55,8 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     result.coldFrames=uint64_t(std::max(0,int(std::lround(m.skill.coldDuration*25.f))));
     result.freeze=result.freeze || m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
     if (m.skill.freezingArea) result.coldFrames=uint64_t(m.skill.freezingArea->freezeFrames);
-    result.coldPierce=skills::coldPierce(owner); result.coldDivisor=rules.coldDivisor; result.freezeDivisor=rules.freezeDivisor;
+    const auto *unit=ports_.monsters.find(m.owner);
+    result.coldPierce=unit && unit->hireling?unit->petStats.attributes.combat.coldPierce:skills::coldPierce(owner); result.coldDivisor=rules.coldDivisor; result.freezeDivisor=rules.freezeDivisor;
     result.nextDelay=uint64_t(m.skill.arc ? m.skill.arc->nextDelay : std::max(0,int(std::lround(m.skill.missileNextDelay*25.f))));
     return result;
 }
@@ -65,10 +66,10 @@ System::Advance System::advance(const Missile &original) const {
     if(original.weapon) return advanceWeapon(original);
     Advance plan{original,{},{},false}; auto &m=plan.next;
     const auto &owner=*ports_.players.find(m.player); const auto &area=ports_.areas.at(m.area);
-    Spawn source{{m.player,m.owner,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
+    Spawn source{{m.player,owner.actor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
     const auto enemy = [&](const auto &target) { return target.life>0 && combat::ParticipantView{nullptr,&target}.hostileMonster() && target.area==m.area; };
     const auto child = [&](Vec at, Vec direction, int id, int frames, float speed, Program program, bool fresh=false) -> Missile & {
-        if(fresh) source.skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
+        if(fresh && m.owner==owner.actor) source.skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
         auto c=make(source,at,direction,id,frames,speed,program,m.random);
         c.created=m.created+uint64_t(m.ageFrames)+1; c.expires=c.created+uint64_t(frames);
         plan.children.push_back(std::move(c)); return plan.children.back();

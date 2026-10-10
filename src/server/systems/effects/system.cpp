@@ -2,6 +2,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/units/resources.hpp"
 #include "server/systems/attributes/calculation.hpp"
@@ -86,7 +87,19 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     plan.character.mana = float(player->totals.character.maxMana);
     plan.character.stamina = float(player->totals.character.maxStamina);
     plan.transient = projection(recovery.states, actor.tick);
+    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.hireling && m.owner==actor.player && m.life>0 && m.area==actor.area) {
+        plan.healedHirelings.push_back(id);
+        if(m.poison) plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.poison->damage.state,false});
+        if(m.chilledUntil || m.frozenUntil) {
+            plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.coldState,false});
+            plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState,false});
+        }
+    }
     return {DomainStatus::Applied, std::move(plan)};
+}
+void System::commit(PotionPlan &&plan) noexcept {
+    state_.players.swap(plan.next.players);if(plan.random) ports_.random=*plan.random;
+    for(const auto id:plan.healedHirelings) ports_.monsters.healHireling(id);
 }
 DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, bool restoreStamina) {
     const auto *player = ports_.players.find(actor.player);
@@ -193,6 +206,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     if (advanceUnits(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceMonsterSkills(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceMonsterEnchantments(tick.tick) == StepStatus::Blocked) blocked = true;
+    if (advanceHirelings(tick.tick) == StepStatus::Blocked) blocked = true;
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }
 }

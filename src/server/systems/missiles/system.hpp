@@ -19,6 +19,7 @@ struct Spawn { ActorContext actor; SkillCastSpec skill; MissileCollisionRule col
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
     bool deathTrigger{};
+    std::optional<uint64_t> random{};
 };
 struct MonsterSpawn {
     EntityId source; RegionId area; uint64_t generation{}, tick{};
@@ -32,7 +33,7 @@ struct MonsterSpawn {
     bool postMortem{};
 };
 struct MonsterLaunch { EntityId first; uint64_t random{}; };
-struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{}; };
+struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{};std::optional<WeaponSkillDamage> weapon{}; };
 enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow, Hammer, Heaven };
 struct Missile {
     EntityId id, owner;

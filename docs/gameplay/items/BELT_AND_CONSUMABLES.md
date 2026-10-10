@@ -1,6 +1,6 @@
 # 腰带与消耗品
 
-更新：2026-10-09。本页维护腰带使用、药剂与原消耗效果；数量／缩容归[INVENTORY](INVENTORY.md)，永久奖励归[QUEST_ITEMS](QUEST_ITEMS.md)，卷轴／书本技能程序归[GENERAL](../skills/GENERAL.md)。
+更新：2026-10-10。本页维护腰带使用、药剂与原消耗效果；数量／缩容归[INVENTORY](INVENTORY.md)，永久奖励归[QUEST_ITEMS](QUEST_ITEMS.md)，卷轴／书本技能程序归[GENERAL](../skills/GENERAL.md)。
 
 容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。连接的服务端拥有自动入带、补位、消耗、回复、状态与持续时间；自研inventory／effects沿同一原协议执行，旧客户端本地执行器已删除。Shift商店购买按原multibuy位提交，服务器决定腰带／书本补满和费用。
 
@@ -20,4 +20,4 @@
 
 技能书／生命药剂／抗性卷轴及Token的资格、消耗与任务来源统一见[QUEST_ITEMS](QUEST_ITEMS.md)，原保存位见[存档](../../modules/SAVES.md)。不能从物品可用图标推断当前人物已获得永久奖励资格。
 
-客户端仅消费原状态／属性，不自设清毒、冷却、叠加或耐力回复。喂佣兵、完整消耗品目标及组合未完成，有限药剂／卷轴原服观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。回复药水按原8.8上限百分比取整，耐力／解毒／解冻药水读取MPQ状态、长度、清除状态及属性，同状态延长剩余时间；资源上限、自然恢复与耐力耗用归人物／effects，不在物品消费写第二套计算。有限药水／治疗证据与未覆盖边界见[EVIDENCE](EVIDENCE.md)。原资源／声音仍由公共加载与播放模块消费，许可见[资料来源](../../resources/THIRD_PARTY.md)。
+客户端仅消费原状态／属性，不自设清毒、冷却、叠加或耐力回复。佣兵腰带／光标喂药与城镇治疗已接，范围见[佣兵](../characters/HIRELINGS.md)；完整消耗品目标及组合未认证，有限药剂／卷轴原服观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。回复药水按原8.8上限百分比取整，耐力／解毒／解冻药水读取MPQ状态、长度、清除状态及属性，同状态延长剩余时间；资源上限、自然恢复与耐力耗用归人物／effects，不在物品消费写第二套计算。有限药水／治疗证据与未覆盖边界见[EVIDENCE](EVIDENCE.md)。原资源／声音仍由公共加载与播放模块消费，许可见[资料来源](../../resources/THIRD_PARTY.md)。

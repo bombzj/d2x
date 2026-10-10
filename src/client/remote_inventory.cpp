@@ -10,7 +10,7 @@
 namespace d2x {
 using net::protocol::BitReader;
 RemoteInventory::RemoteInventory(Archives &archives) : strings_(archives) {
-    for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats"})
+    for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats", "hireling"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const char *name : {"weapons", "armor", "misc"}) {
         const auto &table = tables_.at(name);
@@ -414,16 +414,25 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             {float(wire.groundX), float(wire.groundY)}, 1) > 50) return reject("Ground item exceeds native pickup range");
         break;
     }
-    case OnlineItemAction::HirelingEquipment:
-        if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4))
+    case OnlineItemAction::HirelingEquipment: {
+        if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5))
             return reject("No living hireling or invalid equipment slot");
+        const auto &hirelings=tables_.at("hireling");
+        std::optional<size_t> row;
+        for(size_t i=0;i<hirelings.rows().size();++i) if(hirelings.number(i,"Version")==100 && hirelings.number(i,"Class")==world.hireling->monsterClass) {row=i;break;}
+        if(!row || (command.body==5 && hirelings.number(*row,"Act")!=3)) return reject("Hireling does not support this slot");
         if(cursor()) {
             if(command.mercenary && (isType(wire,"hpot") || isType(wire,"rpot") || isType(wire,"apot") || isType(wire,"wpot"))) break;
+            const auto primary=hirelings.value(*row,"WType1"),secondary=hirelings.value(*row,"WType2");
+            const bool weapon=isType(wire,primary) || (!secondary.empty() && isType(wire,secondary));
+            const bool shield=hirelings.number(*row,"Act")==3 && isType(wire,"shld");
             if(!decoded.identified || (decoded.maxDurability && *decoded.maxDurability && decoded.durability==0) ||
-                !(isType(wire,"helm") || isType(wire,"tors") || isType(wire,"bow"))) return reject("Item is not eligible Rogue equipment");
+                !(isType(wire,"helm") || isType(wire,"tors") || weapon || shield) ||
+                (hirelings.number(*row,"Act")==3 && weapon && !shield && baseNumber(wire,"2handed"))) return reject("Item is not eligible hireling equipment");
         } else if(view_.cursor || wire.ownerType!=1 || wire.owner!=world.hireling->id || wire.mode!=1 || wire.body!=command.body)
             return reject("Hireling equipment is no longer assigned");
         break;
+    }
     case OnlineItemAction::Take:
         if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2 ||
             (wire.mode == 1 && wire.body >= 1 && wire.body <= 10))) return reject("Only this player's backpack, belt or active equipment can be taken");

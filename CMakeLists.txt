@@ -169,6 +169,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/missiles/weapon.cpp
   src/server/systems/effects/system.cpp
   src/server/systems/effects/paladin.cpp
+  src/server/systems/effects/hirelings.cpp
     src/server/systems/effects/skills.cpp
     src/server/systems/effects/amazon.cpp
     src/server/systems/effects/units.cpp
@@ -177,9 +178,12 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/item_triggers.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/combat/participants.cpp
+  src/server/systems/combat/hireling_hit.cpp
   src/server/systems/combat/follow_up.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
+  src/server/systems/companions/hireling_control.cpp
+    src/server/systems/companions/hireling_equipment.cpp
   src/server/systems/companions/amazon.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp

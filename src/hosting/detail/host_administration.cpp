@@ -6,6 +6,9 @@
 #include "content/items/item_quality.hpp"
 #include "content/items/item_grades.hpp"
 #include "core/random.hpp"
+#include "content/npc/hireling_data.hpp"
+#include <charconv>
+#include <algorithm>
 
 namespace d2x::hosting {
 HostDiagnostics NativeRealmService::diagnostics() const {
@@ -191,7 +194,21 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         }
         case AdminOperation::UnlockWaypoints: return {AdminStatus::NotImplemented, "Waypoint administration is not implemented"};
         case AdminOperation::GrantShrine: return {AdminStatus::NotImplemented, "Object administration is not implemented"};
-        case AdminOperation::GrantHireling: return {AdminStatus::NotImplemented, "Hireling administration is not implemented"};
+        case AdminOperation::GrantHireling: {
+            const auto &grant=std::get<AdminSpawn>(request.arguments);int type=-1;
+            const auto parsed=std::from_chars(grant.code.data(),grant.code.data()+grant.code.size(),type);
+            const auto character=host.exportCharacter(*binding);
+            if(peer.phase!=GamePhase::Entered || !character || parsed.ec!=std::errc{} || parsed.ptr!=grant.code.data()+grant.code.size() ||
+                grant.level<1 || grant.level>character->player.level) return {AdminStatus::InvalidArguments,"Supply the current MPQ Hireling Id and a level not exceeding the owner"};
+            auto row=content->hirelings.end();
+            for(auto candidate=content->hirelings.begin();candidate!=content->hirelings.end();++candidate)
+                if(candidate->id==type && (row==content->hirelings.end() || (candidate->level<=grant.level && candidate->level>row->level))) row=candidate;
+            if(row==content->hirelings.end()) return {AdminStatus::InvalidArguments,"Hireling Id is unavailable in the original table"};
+            const auto stats=deriveHirelingStats(*row,grant.level);auto random=initialRandom(uint32_t(host.nextEntity(binding->game)));
+            HirelingRecord record{row->sourceRow,row->classId,row->nameFirst,grant.level,float(stats.life),stats.experience,rollRandom(random)};
+            const auto result=host.grantHireling(*binding,std::move(record));if(!result) return {AdminStatus::Unavailable,"Hireling replacement transaction rejected"};
+            return {AdminStatus::Applied,"Original hireling granted; previous hireling equipment removed atomically"};
+        }
         case AdminOperation::ResetAttributes: return {AdminStatus::NotImplemented, "Attribute reset administration is not implemented"};
         case AdminOperation::ResetSkills: return {AdminStatus::NotImplemented, "Skill reset administration is not implemented"};
         }

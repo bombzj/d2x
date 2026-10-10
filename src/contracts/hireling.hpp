@@ -18,6 +18,7 @@ struct HirelingView {
     int classId = -1;
     float life = 0;
     int maximumLife = 1, strength = 0, dexterity = 0, defense = 0;
+    bool defenseImproved = false;
     int damageMinimum = 0, damageMaximum = 0;
     uint64_t experience = 0, nextExperience = 0;
     std::array<int, 4> resistances{};

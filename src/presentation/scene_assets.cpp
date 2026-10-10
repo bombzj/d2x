@@ -121,6 +121,8 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     loadFont(uiGraphics_, archives, characterLabelFont, "font6");
     loadFont(uiGraphics_, archives, characterPointFont, "font6", 1);
     loadFont(uiGraphics_, archives, characterCompactFont, "font8");
+    loadFont(uiGraphics_, archives, hirelingBlueFont, "font8", 3);
+    loadFont(uiGraphics_, archives, hirelingRedFont, "font8", 1);
     loadFont(uiGraphics_, archives, automapPartyFont, "font6", 2);
     loadFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
     loadFont(uiGraphics_, archives, automapOtherFont, "font6", 1);

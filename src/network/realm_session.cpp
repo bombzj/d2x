@@ -2246,7 +2246,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         case OnlineItemAction::IdentifyAll: out.u8(0x34); out.u32(command.npc); break;
         case OnlineItemAction::QuestService: out.u8(0x38);out.u32(0);out.u32(command.npc);out.u32(command.item);break;
         case OnlineItemAction::HirelingEquipment:
-            if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4)) return false;
+            if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5)) return false;
             out.u8(0x61);out.u16(command.body);break;
         }
         p.sent(p.gs, out.release());

@@ -96,6 +96,7 @@ class GameInstance {
     DomainResult<> installArea(world::PreparedArea);
     void failArea(uint64_t request) { systems_.world.fail(request); }
     DomainResult<> grantExperience(PlayerId, uint64_t amount);
+    DomainResult<> grantHireling(PlayerId,HirelingRecord);
     DomainResult<> restoreResources(PlayerId);
     DomainResult<> grantGold(PlayerId,uint32_t);
     DomainResult<> damagePlayer(PlayerId,uint32_t);

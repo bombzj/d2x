@@ -19,6 +19,7 @@ struct PlayerState {
     std::deque<Vec> route;
     bool running{}, routeRunning{}, runningNow{}, moving{};
     uint64_t acceptedSequence{}, movementSequence{}, locomotionSequence{};
+    uint64_t teleportRevision{};
     uint64_t inventoryRevision = 1, characterRevision = 1;
     uint64_t lastExperienceAward{};
     CommandResult result;

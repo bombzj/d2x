@@ -2,8 +2,32 @@
 #include "hireling_panel.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace d2x {
+namespace {
+enum class HirelingTextAlign { Left, Center, Right };
+void hirelingText(const ClassicFont &font,const std::string &value,float left,float baseline,float right,HirelingTextAlign align) {
+    std::vector<std::string> lines;std::istringstream input(value);std::string line;
+    while(std::getline(input,line)) lines.push_back(line);
+    const auto clip=hirelingArtRect(left,baseline-20,right-left+1,40);
+    BeginScissorMode(int(clip.x),int(clip.y),int(clip.width),int(clip.height));
+    for(size_t row=0;row<lines.size();++row) {
+        float width=0;for(unsigned char ch:lines[row]) width+=font.widths[ch];
+        const float inset=align==HirelingTextAlign::Left?0:std::max(0.f,right-left+1-width)*(align==HirelingTextAlign::Center?.5f:1.f);
+        const auto origin=hirelingArtRect(left+std::floor(inset),baseline+(float(row)-(float(lines.size())-1)*.5f)*8,0,0);
+        float x=origin.x;
+        for(unsigned char ch:lines[row]) {
+            if(const auto *glyph=font.glyphs.frame(0,font.indices[ch]);glyph && ch!=' ')
+                DrawTexturePro(glyph->texture,{0,0,float(glyph->texture.width),float(glyph->texture.height)},
+                    {x+glyph->x*classicPanelScale,origin.y+(glyph->y-glyph->texture.height)*classicPanelScale,
+                        glyph->texture.width*classicPanelScale,glyph->texture.height*classicPanelScale},{},0,WHITE);
+            x+=font.widths[ch]*classicPanelScale;
+        }
+    }
+    EndScissorMode();
+}
+}
 bool SceneView::hirelingPortraitVisible() const {
     return hirelingView().active && worldViewport().x == 0 && !view_.capturesWorldInput();
 }
@@ -101,7 +125,7 @@ void SceneView::drawHireling(Vec mouse) const {
     if (!view_.hirelingOpen) return;
     const auto &hireling = hirelingView();
     if (!hireling.known) return;
-    const auto p = classicPanelBounds(false);
+    const auto p = hirelingPanelBounds();
     drawPanelFrame(false);
     for (int index = 0; index < 4; ++index) {
         const auto *frame = assets_.hirelingPanel.frame(0, index);
@@ -121,62 +145,55 @@ void SceneView::drawHireling(Vec mouse) const {
     for (size_t index = 0; index < 4; ++index) {
         const auto box = hirelingSlotBounds(index);
         auto id = inventory.equipped(slots, order[index]);
-        bool mirrored = index == 3 && !id;
-        if (mirrored) {
-            const auto right = inventory.equipped(slots, EquipmentSlot::RightHand);
-            const auto *item = inventory.item(right);
-            const auto *definition = item ? inventory.definition(item->definition) : nullptr;
-            mirrored = definition && definition->twoHanded;
-            if (mirrored) id = right;
-        }
         if (const auto *item = inventory.item(id)) {
-            if (mirrored) DrawRectangleRec(box, {73, 0, 0, 160});
             drawInventoryDrop(drop, box);
             const bool dragged = view_.inventory.hidesItem(*item);
             if (!dragged)
-                drawItemIcon(*item, box, mirrored ? Color{160, 150, 150, 150} : WHITE);
+                drawItemIcon(*item, box);
             if (!dragged && CheckCollisionPointRec(rv(mouse), box)) hovered = id;
         } else {
-            const auto &art = index == 0 ? assets_.hirelingHead :
-                              index == 1 ? assets_.hirelingArmor : assets_.hirelingWeapon;
-            if (const auto *frame = art.frame(0, 0)) {
+            const auto *art = index == 0 ? &assets_.hirelingHead :
+                              index == 1 ? &assets_.hirelingArmor : index == 2 ? &assets_.hirelingWeapon : nullptr;
+            if (const auto *frame = art ? art->frame(0, 0) : nullptr) {
                 const auto &t = frame->texture;
                 DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, box, {0, 0}, 0, WHITE);
             }
             drawInventoryDrop(drop, box);
         }
     }
-    auto cell = [&](const std::string &text, float x, float y, float width, float height, bool right = false) {
-        const auto box = hirelingArtRect(x, y, width, height);
-        int size = int(9 * classicPanelScale);
-        while (size > 7 && painter_.measure(text, size) > box.width - 6) --size;
-        painter_.label(text, int(right ? box.x + box.width - painter_.measure(text, size) - 4 : box.x + 4),
-                       int(box.y + (box.height - size) / 2), size, parchment);
+    const auto label = [&](const std::string &text,float left,float baseline,float right,HirelingTextAlign align=HirelingTextAlign::Left) {
+        hirelingText(assets_.characterLabelFont,text,left,baseline,right,align);
     };
-    cell(hireling.name, 5, 199, 150, 17);
-    cell("Life", 161, 199, 51, 17);
-    cell(std::to_string(int(hireling.life)) + " / " + std::to_string(hireling.maximumLife), 212, 199, 98, 17, true);
-    cell("Experience", 7, 222, 121, 14);
+    const auto value = [&](const std::string &text,float left,float baseline,float right,const ClassicFont *color=nullptr,HirelingTextAlign align=HirelingTextAlign::Right) {
+        const auto &font=color?*color:assets_.characterCompactFont;
+        hirelingText(font,text,left,baseline,right,align);
+    };
+    const auto &labels=assets_.characterLabels;
+    label(hireling.name,17,214,151);
+    label(labels.at("strchrlif"),183,214,211);
+    value(std::to_string(int(hireling.life))+" / "+std::to_string(hireling.maximumLife),212,215,310,nullptr,HirelingTextAlign::Center);
+    label(labels.at("strchrexp"),17,235,127);
     auto number = [](uint64_t value) {
         auto text = std::to_string(value);
         for (int index = int(text.size()) - 3; index > 0; index -= 3) text.insert(size_t(index), ",");
         return text;
     };
-    cell(number(hireling.experience), 7, 238, 121, 18, true);
-    cell("Level", 134, 222, 45, 14);
-    cell(std::to_string(hireling.level), 134, 238, 45, 18, true);
-    cell("Next Level", 186, 222, 123, 14);
-    cell(number(hireling.nextExperience), 186, 238, 123, 18, true);
-    const char *labels[] = {"Strength", "Dexterity", "Damage", "Defense"};
+    value(number(hireling.experience),7,254,124);
+    label(labels.at("strchrlvl"),142,235,182);
+    value(std::to_string(hireling.level),134,254,177);
+    label(labels.at("strchrnxtlvl"),196,235,310);
+    value(number(hireling.nextExperience),192,254,310);
+    const char *attributes[] = {"strchrstr", "strchrdex", "strchrskm", "strchrdef"};
     const std::string values[] = {std::to_string(hireling.strength), std::to_string(hireling.dexterity),
         std::to_string(hireling.damageMinimum) + "-" + std::to_string(hireling.damageMaximum), std::to_string(hireling.defense)};
-    const char *resists[] = {"Fire", "Cold", "Lightning", "Poison"};
+    const char *resists[] = {"strchrfir", "strchrcol", "strchrlit", "strchrpos"};
     const auto &numbers = hireling.resistances;
     for (int index = 0; index < 4; ++index) {
-        const float y = 265.f + 24.f * index;
-        cell(labels[index], 7, y, 90, 18); cell(values[index], 99, y, 55, 18, true);
-        cell(resists[index], 164, y - 3, 98, 12); cell("Resistance", 164, y + 7, 98, 12);
-        cell(std::to_string(numbers[index]), 264, y, 43, 18, true);
+        const float y = 280.f + 24.f * index;
+        label(labels.at(attributes[index]),17,y,99);
+        value(values[index],106,y+1,154,index==3 && hireling.defenseImproved?&assets_.hirelingBlueFont:nullptr);
+        label(labels.at(resists[index]),164,y,263,HirelingTextAlign::Center);
+        value(std::to_string(numbers[index]),266,y+1,310,numbers[index]<0?&assets_.hirelingRedFont:nullptr);
     }
     const auto close = hirelingClose();
     const auto *button = assets_.questClose.frame(0, CheckCollisionPointRec(rv(mouse), close) ? 11 : 10);

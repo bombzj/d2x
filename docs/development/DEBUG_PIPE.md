@@ -41,11 +41,12 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `cancel-load` | 原离局尚未接受时释放候选；已经离局后须关闭宿主或完成重新入局 |
 | `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
-| `grant-gold` | amount有符号整数；通过人物事务授予金币，复验钱包上限 |
+| `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
 | `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
-| `grant-shrine`、`grant-hireling` | code，level可选；类型化stub |
+| `grant-shrine` | code，level可选；类型化stub |
+| `grant-hireling` | code为当前MPQ Hireling原Id十进制字符串，level为1至主人等级；按原Id保留来源难度并选等级段、姓名与成长，原子替换旧佣兵和装备。仅宿主管理准备，不代替NPC雇佣验证 |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
 | `travel` | level（1–136），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作正常通行资格认证 |
 | `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |

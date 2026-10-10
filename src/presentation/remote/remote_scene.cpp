@@ -124,6 +124,7 @@ struct RemoteScene::Impl {
     struct BlazeTrail { OnlinePoint cell; uint64_t discontinuity{}; };
     std::map<OnlineUnitKey,BlazeTrail> blazeTrails;
     std::map<int, size_t> monsterRows;
+    std::map<std::pair<int,int>,std::string> hirelingSkillModes;
     std::map<std::string, size_t, std::less<>> monsterExtra;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
@@ -191,6 +192,20 @@ struct RemoteScene::Impl {
         for (size_t row = 0; row < monstats.rows().size(); ++row)
             if (auto id = monstats.number(row, "hcIdx"))
                 monsterRows.emplace(*id, row);
+        const DataTable hirelings(a.read("data/global/excel/hireling.txt"));
+        constexpr std::array monsterModes{"dt","nu","wl","gh","a1","a2","bl","sc",
+            "s1","s2","s3","s4","dd","kb","sq","rn"};
+        for(size_t row=0;row<hirelings.rows().size();++row) {
+            if(hirelings.number(row,"Version")!=100) continue;
+            const auto cls=hirelings.number(row,"Class");if(!cls) continue;
+            for(int slot=1;slot<=6;++slot) {
+                const auto name=hirelings.value(row,"Skill"+std::to_string(slot));
+                const auto mode=hirelings.number(row,"Mode"+std::to_string(slot));
+                if(name.empty() || !mode || *mode<0 || size_t(*mode)>=monsterModes.size()) continue;
+                for(const auto &[id,skill]:skillRows) if(skills.value(skill,"skill")==name)
+                    hirelingSkillModes.emplace(std::pair{*cls,id},monsterModes[size_t(*mode)]);
+            }
+        }
         for (size_t row = 0; row < monstats2.rows().size(); ++row) {
             const auto id = monstats2.value(row, "Id");
             if (!id.empty())
@@ -1116,6 +1131,10 @@ struct RemoteScene::Impl {
         for (int slot=1; slot<=8; ++slot)
             if (monstats.value(monster,"Skill"+std::to_string(slot))==skills.value(row->second,"skill"))
                 return lower(std::string(monstats.value(monster,"Sk"+std::to_string(slot)+"mode")));
+        // Hireling skills use Hireling.ModeN; their player Skills.monanim is
+        // intentionally "xx". MonStats still takes precedence for Jab's sequence.
+        const auto cls=monstats.number(monster,"hcIdx");
+        if(cls) if(const auto mode=hirelingSkillModes.find({*cls,int(skill)});mode!=hirelingSkillModes.end()) return mode->second;
         return lower(std::string(skills.value(row->second,"monanim")));
     }
     const Art *monster(const OnlineUnit &u, bool moving, SceneView &shared) {
@@ -1196,6 +1215,10 @@ struct RemoteScene::Impl {
             }
             monsterIdentities[u.key]=identity;
             int palette=monstats.number(row->second,"TransLvl").value_or(0);
+            // Hireable tokens without a palshift.dat (notably the native Act 5
+            // token) use their original component pixels without a remap.
+            if(monstats.value(row->second,"AI")=="Hireable" &&
+                !archives.contains("data/global/monsters/"+parts.token+"/cof/palshift.dat")) palette=0;
             bool randomPalette=false;
             if (identity.superUnique) {
                 const auto fixed=superUniqueRows.find(*identity.superUnique);

@@ -9,12 +9,16 @@ inline Rectangle hirelingPortraitBounds(float offset = 0) {
 inline Rectangle hirelingLifeBounds(float offset = 0) {
     return {12 * classicPanelScale + offset, 12 * classicPanelScale, 46 * classicPanelScale, 5 * classicPanelScale};
 }
+inline Rectangle hirelingPanelBounds() {
+    return {72 * classicPanelScale, 54 * classicPanelScale,
+        320 * classicPanelScale, 432 * classicPanelScale};
+}
 inline Rectangle hirelingArtRect(float x, float y, float width, float height) {
-    const auto panel = classicPanelBounds(false);
+    const auto panel = hirelingPanelBounds();
     return {panel.x + x * classicPanelScale, panel.y + y * classicPanelScale,
             width * classicPanelScale, height * classicPanelScale};
 }
-inline Rectangle hirelingClose() { return hirelingArtRect(277, 389, 32, 32); }
+inline Rectangle hirelingClose() { return hirelingArtRect(275, 386, 32, 32); }
 inline Rectangle hirelingListBounds() {
     return {W / 2.f - 300 * classicPanelScale, 20 * classicPanelScale,
             600 * classicPanelScale, 428 * classicPanelScale};

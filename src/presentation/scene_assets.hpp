@@ -51,7 +51,7 @@ class SceneAssets {
     SoundBank audio;
     SceneAudio sceneAudio;
     ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
-        characterCompactFont, characterRedFont, skillLevelBlueFont, skillLevelCompactFont,
+        characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont;
     std::map<std::string, std::string, std::less<>> characterLabels;

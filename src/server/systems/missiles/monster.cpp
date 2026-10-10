@@ -61,6 +61,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         hit.channels[0]+=roll(rule.minimum,rule.maximum);
         hit.channels[size_t(rule.element)]+=roll(rule.elementalMinimum,rule.elementalMaximum);
         hit.coldFrames+=rule.coldFrames;hit.poisonFrames+=rule.poisonFrames;
+        std::optional<WeaponSkillDamage> hirelingWeapon;
         if(source->hireling && source->petWeapon) {
             auto modifiers=source->petStats.attributes.combat;mergeCombatModifiers(modifiers,buffs.combat);
             SkillCastSpec skill=request.attack.weaponSkill.value_or(SkillCastSpec{});
@@ -69,6 +70,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
             weapon.attackRatingPercent+=buffs.combat.attackRatingPercent;
             weapon.projectileDamagePercent+=buffs.combat.damagePercent;
             const auto snapshot=rollWeaponSkillDamage(weapon,modifiers,skill,request.level,true,missile.random);
+            hirelingWeapon=snapshot;
             hit.channels=targetWeaponChannels(snapshot,false,false);hit.coldFrames=snapshot.coldFrames;hit.poisonFrames=snapshot.poisonFrames;
             if(!request.attack.weaponSkill) {
                 hit.channels[size_t(rule.element)]+=roll(rule.elementalMinimum,rule.elementalMaximum);
@@ -80,7 +82,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         hit.knockback=source->rule.knockbackOnHit && !request.postMortem;
         monsterCritical(hit,request.critical,missile.random);
         if(request.web) {hit.slowFrames=unsigned(request.web->slowFrames);hit.slowPercent=request.web->slowPercent;}
-        missile.enemy=EnemyProjectile{rule,hit,request.states,request.level,int(int64_t(request.attack.rating)*std::max(0,100+buffs.combat.attackRatingPercent+(source->rule.enchantment?source->rule.enchantment->attackRatingPercent:0))/100),request.web,request.attack.groundFire};
+        missile.enemy=EnemyProjectile{rule,hit,request.states,request.level,int(int64_t(request.attack.rating)*std::max(0,100+buffs.combat.attackRatingPercent+(source->rule.enchantment?source->rule.enchantment->attackRatingPercent:0))/100),request.web,request.attack.groundFire,std::move(hirelingWeapon)};
         if(source->hireling && source->petWeapon) missile.enemy->rating=int(int64_t(source->petWeapon->attackRating)*std::max(0,100+buffs.combat.attackRatingPercent)/100);
         if(rule.behavior==MonsterMissileRule::Behavior::Charged) {const auto path=chargedBoltPath(request.position,aim,int(index%2),rule.frames);missile.path.assign(path.begin(),path.end());}
         launched.push_back(std::move(missile));
@@ -142,6 +144,10 @@ System::Advance System::advanceMonster(const Missile &original) const {
         hit.occurrence=(uint64_t(missile.ageFrames)<<32)|missile.weaponContacts.size();
         hit.contactRandom=childRandom(missile.random);
         hit.monsterHit=enemy.hit;hit.monsterStates=enemy.states;hit.monsterLevel=enemy.level;hit.monsterRating=enemy.rating;hit.monsterToHit=enemy.rule.toHit;
+        if(enemy.weapon) {
+            hit.monsterHit.reset();hit.weapon=enemy.weapon;hit.coldFrames=unsigned(std::max(0,enemy.weapon->coldFrames));hit.freeze=enemy.weapon->freeze;
+            if(const auto *owner=ports_.players.find(missile.player);owner && owner->rules.skills) {hit.coldDivisor=owner->rules.skills->coldDivisor;hit.freezeDivisor=owner->rules.skills->freezeDivisor;}
+        }
         hit.returnFire=enemy.rule.returnFire;hit.hitClass=uint8_t(enemy.rule.hitClass);hit.nextDelay=unsigned(enemy.rule.nextDelay);
         if(enemy.rule.behavior==Behavior::FireHead) hit.sourceHeal=enemy.hit.channels[size_t(enemy.rule.element)];
         plan.impacts.push_back(std::move(hit));

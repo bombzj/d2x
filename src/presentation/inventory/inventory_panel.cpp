@@ -137,7 +137,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
     const auto &containers = inventory.containers;
     if (hirelingOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false))) {
         constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
-                                           EquipmentSlot::RightHand, EquipmentSlot::RightHand};
+                                           EquipmentSlot::RightHand, EquipmentSlot::LeftHand};
         const auto &slots = inventory.hirelingSlots;
         drop.description = "Release to cancel";
         for (size_t index = 0; index < slots.size(); ++index) {

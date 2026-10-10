@@ -321,7 +321,13 @@ ClassicData loadClassicData(Archives &archives) {
             if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||
                 key.starts_with("qsts") || key == "noactivequest")
                 data.questStrings.emplace(key, value);
-            else if (key.starts_with("merc")) {
+            else if (std::any_of(data.hirelings.begin(),data.hirelings.end(),[&](const auto &definition) {
+                const auto prefix=definition.nameFirst.find_last_not_of("0123456789")+1;
+                return prefix<definition.nameFirst.size() && key.size()==definition.nameFirst.size() &&
+                    definition.nameLast.size()==key.size() && key.starts_with(definition.nameFirst.substr(0,prefix)) &&
+                    key>=definition.nameFirst && key<=definition.nameLast &&
+                    std::all_of(key.begin()+prefix,key.end(),[](char c){return c>='0' && c<='9';});
+            })) {
                 data.hirelingStrings.emplace(key, value);
                 data.hirelingNameIds.emplace(key, strings.index(key));
             }

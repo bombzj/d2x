@@ -53,15 +53,16 @@ CharacterModifiers System::stateModifiers(EntityId id,int state,uint64_t tick) c
     if(effects) for(const auto &e:effects->entries()) if(e.spec.state.id==state && e.activeAt(tick)) return e.spec.modifiers;
     return {};
 }
-DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinition &a,EntityId id,uint64_t duration,bool owner,bool healing) {
+DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinition &a,EntityId id,uint64_t duration,bool owner,bool healing,EntityId emitter) {
     const auto *caster=ports_.players.find(actor.player);if(!caster || !caster->rules.skills) return {DomainStatus::InvalidActor,{}};
     const combat::Participants participants{ports_.players,ports_.monsters};
     const auto recipientView=participants.find(id);
-    if(!recipientView.aliveIn(actor.area) || (id!=actor.actor &&
-       !(a.hostile?participants.canHarm({caster,nullptr},recipientView):participants.allied({caster,nullptr},recipientView,ports_.social))))
+    const auto source=emitter?participants.find(emitter):combat::ParticipantView{caster,nullptr};
+    if(!recipientView.aliveIn(actor.area) || (id!=source.id() &&
+       !(a.hostile?participants.canHarm(source,recipientView):participants.allied(source,recipientView,ports_.social))))
         return {DomainStatus::InvalidActor,{}};
     CombatEffectSpec spec;spec.state=owner?a.ownerState:a.state;
-    spec.source={CombatEffectSource::Skill,actor.actor,a.skill,a.rank};spec.duration=duration;spec.stacking=EffectStacking::AuraLevel;
+    spec.source={CombatEffectSource::Skill,emitter?emitter:actor.actor,a.skill,a.rank};spec.duration=duration;spec.stacking=EffectStacking::AuraLevel;
     spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;
     const PlayerState *recipient=recipientView.player;
     if(recipient) {
@@ -82,7 +83,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
         const ActorContext target{recipient->player,recipient->actor,recipient->area,ports_.areas.at(recipient->area).generation,0,actor.tick};
         transactions::CharacterEdit edit{target,recipient->inventoryRevision,recipient->characterRevision,recipient->persistent.player};
         if(healing && a.lifePerPulse>0) edit.player.hp=std::min(float(recipient->totals.character.maxLife),edit.player.hp+a.lifePerPulse);
-        if(owner && a.manaPerPulse>0) {
+        if(owner && a.manaPerPulse>0 && !emitter) {
             const int state=caster->rules.character->noManaRegenState;r.states.removeState(state);
             if(healing) {
                 if(edit.player.mana<a.manaPerPulse) return {DomainStatus::Unavailable,{}};
