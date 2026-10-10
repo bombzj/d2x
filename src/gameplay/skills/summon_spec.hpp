@@ -18,7 +18,7 @@ struct SummonSkillSpec {
     std::shared_ptr<const AmazonSummonSpec> amazon;
     std::string monster, iconArt;
     MonsterKind kind = MonsterKind::NecroSkeleton;
-    int masterySkill = -1, resistSkill = -1;
+    int masterySkill = -1, resistSkill = -1, petType = 0;
     int masteryLife = 0, masteryDamage = 0;
     int lifePerRank = 0, damagePerRank = 0, attackPerRank = 0, defensePerRank = 0;
     int shieldChance = 0, shieldVariants = 0, resistMinimum = 0, resistMaximum = 0;
@@ -33,6 +33,6 @@ struct SummonCastSpec {
     std::string monster;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     UnitCombatStats stats;
-    int limit = 0, shieldChance = 0, shieldVariants = 0;
+    int limit = 0, shieldChance = 0, shieldVariants = 0, petType = 0;
 };
 } // namespace d2x

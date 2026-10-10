@@ -14,6 +14,31 @@
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 namespace d2x::server::inventory {
+std::optional<ItemInstance> System::ironGolemMaterial(const ActorContext &actor,Vec center,EntityId selected) const {
+    const auto *owner=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);if(!owner || !area) return {};
+    const ItemInstance *material=nullptr;float closest=3;
+    for(const auto &[id,item]:ports_.items.read().world.items) {
+        if(selected && selected!=id) continue;
+        const auto *at=std::get_if<GroundLocation>(&item.location);const auto *definition=ports_.definitions->find(item.definition);
+        if(!at || at->region!=actor.area || !definition || !item.quantity || !item.identified || !definition->equipment.known || !definition->ironGolemMaterial) continue;
+        const float distance=(at->position-center).length();
+        if(distance<closest && area->definition.collision.missileSegment(owner->position,at->position,{4,1})) {material=&item;closest=distance;}
+    }
+    return material?std::optional{*material}:std::nullopt;
+}
+DomainResult<transactions::Plan> System::ironGolemCost(const ActorContext &actor,const SkillCastSpec &skill,const ItemInstance &material) const {
+    const auto *owner=ports_.players.find(actor.player);if(!owner) return {DomainStatus::InvalidActor,{}};
+    const auto *at=std::get_if<GroundLocation>(&material.location);if(!at) return {DomainStatus::InvalidRequest,{}};
+    const auto current=ironGolemMaterial(actor,at->position,material.id);
+    if(!current || current->id!=material.id || current->revision!=material.revision) return {DomainStatus::Stale,{}};
+    auto world=ports_.items.read();if(world.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    world.world.items.erase(material.id);world.equipment.items.erase(material.id);
+    transactions::InventoryEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.inventory,{},owner->persistent.player.weaponSet};
+    edit.character=owner->persistent.player;edit.character->mana-=skill.manaCost;edit.charge=skill.charge;
+    edit.world=transactions::WorldEdit{world.revision,std::move(world)};edit.ironGolem=std::optional<ItemInstance>{material};
+    edit.publicFacts.emplace_back(GroundRemoveFact{material.id});
+    return ports_.transactions.prepare(std::move(edit));
+}
 DomainStatus canReceiveQuestItem(const PlayerState &player, const ItemDefinition &base,
     const ItemCatalog &catalog, unsigned difficulty) {
     if (!base.questTag) return DomainStatus::Applied;

@@ -64,6 +64,8 @@ class System {
     DomainResult<> ground(const ActorContext &, const GroundTransfer &, std::optional<SkillCastSpec> telekinesis = {});
     DomainResult<> telekinesis(const ActorContext &, EntityId, const SkillCastSpec &);
     std::optional<Vec> groundPosition(EntityId, RegionId) const;
+    std::optional<ItemInstance> ironGolemMaterial(const ActorContext &,Vec,EntityId={}) const;
+    DomainResult<transactions::Plan> ironGolemCost(const ActorContext &,const SkillCastSpec &,const ItemInstance &) const;
     DomainResult<> identify(const ActorContext &, const IdentifyItem &);
     DomainResult<> useSkill(const ActorContext &, int);
     DomainResult<> beginIdentify(const ActorContext &, ItemHandle);

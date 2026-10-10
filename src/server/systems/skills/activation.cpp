@@ -12,8 +12,46 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/combat/system.hpp"
+#include "gameplay/skills/bone_spec.hpp"
+#include "core/random.hpp"
+#include <algorithm>
 
 namespace d2x::server::skills {
+DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec center) {
+    if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
+    const auto &owner=*ports_.players.find(actor.player);const auto &corpse=*ports_.monsters.find(pending.unit);
+    if(pending.skill.effect==SkillBehavior::PoisonExplosion) {
+        const auto result=ports_.missiles.spawn({actor,pending.skill,pending.collision,center,false,actor.actor,0,center});
+        if(result) ports_.monsters.consumeCorpse(pending.unit);
+        return result.status;
+    }
+    const auto &program=*pending.skill.bone;auto random=corpse.combatRandom;
+    const int64_t life=corpse.rule.corpseBaseLife;
+    if(life<=0) return DomainStatus::Unavailable;
+    const int64_t minimum=life*program.minimumPercent/100,maximum=life*program.maximumPercent/100;
+    int64_t damage=minimum+limitedRandom(random,uint32_t(std::max<int64_t>(0,maximum-minimum)));
+    if(corpse.rule.level>owner.persistent.player.level) damage=damage*owner.persistent.player.level/corpse.rule.level;
+    const auto fire=damage*program.elementalPercent/100;
+    std::vector<EntityId> physicalTargets,fireTargets;
+    const auto &area=ports_.areas.at(actor.area).definition;
+    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && area.activation.nearby(center,m.position)) {
+        const int dx=int(m.position.x)-int(center.x),dy=int(m.position.y)-int(center.y),distance=dx*dx+dy*dy;
+        const int radius=(program.radius+1)/2,physical=program.radius/2;
+        if(distance<=radius*radius) fireTargets.push_back(id);
+        if(distance<=physical*physical) physicalTargets.push_back(id);
+    }
+    combat::SpellImpact physical{pending.unit,actor.actor,actor.area,DamageType::Physical,damage-fire,std::move(physicalTargets)};
+    combat::SpellImpact elemental{pending.unit,actor.actor,actor.area,DamageType::Fire,fire,std::move(fireTargets)};
+    physical.occurrence=actor.sequence*2;elemental.occurrence=physical.occurrence+1;physical.unblockable=elemental.unblockable=true;
+    auto hits=ports_.combat.prepareSpells({std::move(physical),std::move(elemental)});if(!hits) return hits.status;
+    transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.player.mana-=pending.skill.manaCost;edit.charge=pending.skill.charge;
+    edit.publicFacts.emplace_back(MissileFact{actor.actor,0,actor.area,program.corpseVisual,pending.skill.rank,0,center,center});
+    auto debit=ports_.transactions.prepare(std::move(edit));if(!debit) return debit.status;
+    const auto committed=ports_.transactions.commit(std::move(*debit.value));if(!committed) return committed.status;
+    ports_.combat.commitSpells(std::move(*hits.value));ports_.monsters.consumeCorpse(pending.unit);ports_.monsters.commitCombatRandom(pending.unit,random);
+    return DomainStatus::Applied;
+}
 DomainStatus System::activateItem(Release &pending, const ActorContext &actor, Vec) {
     return ports_.inventory.useSkill(actor, pending.skill.sourceId).status;
 }
@@ -31,7 +69,7 @@ DomainStatus System::activateKick(Release &pending, const ActorContext &actor, V
     return ports_.missiles.direct({actor, pending.skill, {}, target}, {pending.unit}).status;
 }
 DomainStatus System::activateAmazonSummon(Release &pending, const ActorContext &actor, Vec target) {
-    return ports_.companions.amazon(actor, pending.skill, target).status;
+    return pending.skill.summon && pending.skill.summon->amazon?ports_.companions.amazon(actor,pending.skill,target).status:ports_.companions.necro(actor,pending.skill,target,pending.unit).status;
 }
 DomainStatus System::activateAmazonMagic(Release &pending, const ActorContext &actor, Vec) {
     return ports_.effects.amazonMagic(actor, pending.skill).status;
@@ -88,6 +126,9 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
         return ports_.objects.execute(actor, {{pending.unit, 0}}, skill.telekinesisRange).status;
     default: return DomainStatus::InvalidRequest;
     }
+}
+DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Vec target) {
+    return ports_.effects.curse(actor,pending.skill,target,pending.unit).status;
 }
 DomainStatus System::activateMissile(Release &pending, const ActorContext &actor, Vec target) {
     missiles::Spawn spawn{actor,pending.skill,pending.collision,target};spawn.guidedTarget=pending.unit;

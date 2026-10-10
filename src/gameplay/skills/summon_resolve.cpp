@@ -13,6 +13,7 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
     SummonCastSpec result;
     result.corpse = spec.corpse; result.golem = spec.golem;
     result.monster = spec.monster; result.kind = spec.kind;
+    result.petType = spec.petType;
     result.limit = rank < 4 ? rank : 2 + rank / 3;
     result.shieldChance = rank > 2 ? spec.shieldChance : 0;
     result.shieldVariants = spec.shieldVariants;

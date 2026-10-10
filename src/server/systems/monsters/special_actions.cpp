@@ -7,6 +7,15 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::monsters {
+bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
+    const auto *dead=find(id);
+    return dead && dead->area==area && dead->life<=0 && !dead->owner && dead->rule.corpseSelectable &&
+        !dead->corpseUnavailable && tick>=dead->busyUntil && dead->rewardComplete &&
+        (!revive || (dead->rule.revivable && dead->rule.switchAi && dead->identity.rank==MonsterRank::Normal && !dead->rule.boss && !dead->rule.primeEvil));
+}
+void System::consumeCorpse(EntityId id) noexcept {
+    if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpseUnavailable=true;++it->second.revision;}
+}
 DomainResult<> System::lightningEmission(EntityId id,bool emitted,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;

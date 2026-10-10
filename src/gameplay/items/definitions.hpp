@@ -44,6 +44,7 @@ struct ItemDefinition {
     bool artAvailable = false;
     bool autoBelt = false, autoStack = false;
     bool imbueable = false;
+    bool ironGolemMaterial = false;
     bool personalizable = false;
     int beltRows = 0; // Zero is not an equippable belt; row zero is the ready row.
     std::string betterGem; // Misc.bettergem; empty/non means no upgrade.

@@ -34,6 +34,7 @@ struct InventoryEdit {
     std::optional<SkillCharge> charge{};
     std::vector<DirectedFacts> directed{};
     bool playerTrade{};
+    std::optional<std::optional<ItemInstance>> ironGolem{};
 };
 struct CharacterEdit {
     ActorContext actor;
@@ -50,6 +51,7 @@ struct CharacterEdit {
     std::optional<PointTarget> knockback{};
     std::optional<SkillCharge> charge{};
     std::shared_ptr<const EquipmentRules> equipment{};
+    std::optional<std::optional<ItemInstance>> ironGolem{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {

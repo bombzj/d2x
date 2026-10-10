@@ -15,11 +15,11 @@ DomainResult<> System::ownerDied(const ActorContext &actor) {
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area ||
         player->persistent.player.hp > 0 || !area || area->generation != actor.areaGeneration)
         return {DomainStatus::InvalidActor, {}};
-    if (player->persistent.player.hireling.sourceRow >= 0 && player->persistent.player.hireling.hp > 0) {
+    if ((player->persistent.player.hireling.sourceRow >= 0 && player->persistent.player.hireling.hp > 0) || player->persistent.ironGolem) {
         auto record = player->persistent.player;
         record.hireling.hp = 0;
-        auto plan = ports_.transactions.prepare(transactions::CharacterEdit{
-            actor, player->inventoryRevision, player->characterRevision, std::move(record)});
+        transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};edit.ironGolem=std::optional<ItemInstance>{};
+        auto plan = ports_.transactions.prepare(std::move(edit));
         if (!plan) return {plan.status, {}};
         const auto committed = ports_.transactions.commit(std::move(*plan.value));
         if (!committed) return committed;
@@ -45,6 +45,7 @@ bool System::canDismiss(const ActorContext &actor,EntityId id) const {
 DomainResult<> System::dismiss(const ActorContext &actor,EntityId id) {
     if(!canDismiss(actor,id)) return {DomainStatus::InvalidRequest,{}};
     auto &pet=state_.companions.at(id);const auto *body=ports_.monsters.find(id);
+    if(pet.kind==Kind::IronGolem) {const auto &owner=*ports_.players.find(actor.player);transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.ironGolem=std::optional<ItemInstance>{};auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result;}
     // Ownership retirement never enters enemy experience or loot accounting.
     pet.removeAt=actor.tick+uint64_t(body->rule.deathTicks);pet.release=0;
     ports_.monsters.retire(id,actor.tick);return {DomainStatus::Applied,std::monostate{}};
@@ -75,6 +76,8 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
     bool blocked=synchronizeHirelings(tick)==StepStatus::Blocked;
+    blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
+    blocked|=advanceBoneGrowth(tick)==StepStatus::Blocked;
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
         const auto *p=ports_.players.find(source.actor.player);
@@ -93,9 +96,24 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;ports_.monsters.retire(pet.actor,tick.tick);
         }
         if(pet.removeAt) {
+            if(!pet.deathEffect && body->necroPet && body->necroPet->kind==NecroSummonKind::Fire && p && p->entered && body->area==p->area && !ports_.areas.at(body->area).definition.town) {
+                if(tick.tick<body->deathTick+4) {++it;continue;} // Native ColdEnchantedModeChange delay.
+                std::vector<EntityId> targets;
+                for(const auto &[id,target]:ports_.monsters.read().actors) if(target.enemyTarget() && target.life>0 && target.area==body->area) {
+                    const int x=int(target.position.x)-int(body->position.x),y=int(target.position.y)-int(body->position.y);if(x*x+y*y<=36) targets.push_back(id);
+                }
+                // Native golem death callback: fixed 100 physical + 100 fire in six subtiles.
+                combat::SpellImpact physical{pet.actor,pet.actor,body->area,DamageType::Physical,100*256,targets};
+                combat::SpellImpact fire{pet.actor,pet.actor,body->area,DamageType::Fire,100*256,std::move(targets)};
+                physical.occurrence=uint64_t(1)<<58;fire.occurrence=physical.occurrence+1;physical.reaction=fire.reaction=true;physical.unblockable=fire.unblockable=true;
+                auto plan=ports_.combat.prepareSpells({std::move(physical),std::move(fire)});
+                if(!plan || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},body->area},{MissileFact{pet.actor,1,body->area,body->necroPet->explosionId,pet.rank,0,body->position,body->position}}})) {blocked=true;++it;continue;}
+                ports_.combat.commitSpells(std::move(*plan.value));pet.deathEffect=true;
+            }
             if(tick.tick>=pet.removeAt) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);} else ++it;continue;
         }
         if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
+        if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked) blocked=true;if(necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
         if(body->amazonPet) {++it;continue;}
         const auto &area=ports_.areas.at(body->area);

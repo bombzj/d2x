@@ -1,12 +1,20 @@
 #include "movement.hpp"
 #include "player_store.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "runtime/contracts.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server {
+namespace {
+bool barrierSegment(const monsters::System &monsters,RegionId area,Vec from,Vec to,int size) {
+    for(const auto &[id,body]:monsters.read().actors) {(void)id;if(body.area==area && body.life>0 && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(from,to,size,body.position,body.rule.size)) return false;}
+    return true;
+}
+}
 DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec target,float speed,int stopDistance) {
     auto it=ports_.players.players_.find(actor.player);
     if(it==ports_.players.players_.end() || it->second.actor!=actor.actor || it->second.area!=actor.area || !it->second.entered || it->second.persistent.player.hp<=0)
@@ -16,7 +24,7 @@ DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec targ
     const Vec delta=target-p.position;const float distance=delta.length();
     if(distance<=float(stopDistance)) {p.moving=false;return {DomainStatus::Applied,true};}
     const Vec next=p.position+delta.unit()*std::min(distance-float(stopDistance),speed*TickContext::seconds);
-    if(!area.definition.collision.nativeMovementSegment(p.position,next,playerMovement)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    if(!area.definition.collision.nativeMovementSegment(p.position,next,playerMovement) || !barrierSegment(ports_.monsters,p.area,p.position,next,2)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
     p.route.clear();p.position=next;p.look=delta.unit();p.moving=true;p.runningNow=true;
     skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-next).length()<=float(stopDistance)+.001f};
@@ -43,7 +51,9 @@ void MovementSystem::step(TickContext tick) {
         (void)id;
         if(const auto step=skillSteps_.find(id);step!=skillSteps_.end() && step->second==tick.tick) {skillSteps_.erase(step);continue;}
         skillSteps_.erase(id);
+        const auto from=player.position;
         advanceMovement(player, ports.areas.at(player.area), TickContext::seconds);
+        if(!barrierSegment(ports.monsters,player.area,from,player.position,2)) {player.position=from;player.route.clear();player.moving=false;}
     }
 }
 void MovementSystem::suspend() {

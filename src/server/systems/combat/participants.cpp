@@ -62,7 +62,10 @@ Relation Participants::relation(ParticipantView source, ParticipantView target, 
         return Relation::Neutral;
     }
     if ((sourceOwner && target.hostileMonster()) || (source.hostileMonster() && targetOwner)) return Relation::Hostile;
-    if (source.hostileMonster() && target.hostileMonster()) return Relation::Allied;
+    if (source.hostileMonster() && target.hostileMonster()) {
+        if(source.monster->curseControl.ai==CurseAi::Confuse || source.monster->attractionTarget==target.id()) return Relation::Hostile;
+        return Relation::Allied;
+    }
     return Relation::Unknown;
 }
 bool Participants::canHarm(ParticipantView source, ParticipantView target) const {

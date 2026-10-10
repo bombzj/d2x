@@ -9,6 +9,7 @@
 namespace d2x {
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
+    for(size_t difficulty=0;difficulty<3;++difficulty) prepared->aiCurseDivisor[difficulty]=std::max(1,data.tables.at("difficultylevels").number(difficulty,"AiCurseDiv").value_or(1));
     const auto &statTable=data.tables.at("itemstatcost");
     for(size_t row=0;row<statTable.rows().size();++row) if(const auto id=statTable.number(row,"ID"))
         prepared->nativeStats.emplace(std::string(statTable.value(row,"Stat")),*id);
@@ -25,7 +26,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2))});
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
-        if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal") continue;
+        if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
+            !(skill.classCode=="nec" && id>=66 && id<=95)) continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
         if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
@@ -33,6 +35,11 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;
         const auto &spec = *skill.spell;
         server::SkillDefinition definition{spec.rules(), skill.allowedInTown, {}};
+        if(definition.spec.summon) {
+            const auto &table=data.tables.at("skills"),&types=data.tables.at("pettype");
+            for(size_t row=0;row<table.rows().size();++row) if(table.number(row,"Id")==id)
+                for(size_t pet=0;pet<types.rows().size();++pet) if(types.value(pet,"pet type")==table.value(row,"pettype")) definition.spec.summon->petType=types.number(pet,"Id").value_or(int(pet));
+        }
         if(definition.spec.summon && definition.spec.summon->amazon) {
             definition.spec.summon->iconArt.clear();
             const auto &monsters=data.tables.at("monstats"), &extras=data.tables.at("monstats2");

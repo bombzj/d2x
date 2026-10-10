@@ -11,6 +11,7 @@
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/common_actions.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -57,6 +58,22 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         result.push_back(make(r, at, heading, id, life, speed, program, random)); return result.back();
     };
     switch (s.effect) {
+    case SkillBehavior::PoisonExplosion: {
+        const auto &burst=*s.missileImpact->cloudBurst;const auto &cloud=burst.cloud;
+        for(const auto heading:poisonCloudDirections(burst.mainStep,burst.subStep)) {
+            auto &m=add(cell(origin),heading.direction,cloud.missileId,cloud.lifetimeFrames,heading.secondary?burst.subSpeed:burst.mainSpeed,Program::PoisonCloud);
+            m.skill.minimumDamage=float(cloud.minimum)/256.f;m.skill.maximumDamage=float(cloud.maximum)/256.f;m.skill.poisonDuration=float(cloud.poisonFrames)/25.f;
+        }
+        break;
+    }
+    case SkillBehavior::Teeth:
+        for(const auto target:missileFanTargets(origin,r.target,s.missileCount,direction))
+            add(cell(origin),target-origin,s.missileId,frames,s.missileVelocity,Program::Projectile);
+        break;
+    case SkillBehavior::BoneSpirit: {
+        const int life=r.guidedTarget?frames:std::max(1,int(std::lround(direction.length()/std::max(.001f,s.missileVelocity)*25.f)));
+        add(cell(origin),direction,s.missileId,life,s.missileVelocity,Program::Spirit);break;
+    }
     case SkillBehavior::WeaponProjectile:
         if(r.weapon && r.weapon->weapon.potion) {
             const auto &projectile=*r.weapon->weapon.projectile;
@@ -82,6 +99,7 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         break;
     case SkillBehavior::FireBolt: case SkillBehavior::Fireball: case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
     case SkillBehavior::HolyBolt:
+    case SkillBehavior::BoneSpear:
     case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor: case SkillBehavior::Hydra:
         add(origin + direction.unit() * .7f, direction, s.missileId, frames, s.missileVelocity, Program::Projectile); break;
     case SkillBehavior::ChargedBolt:
@@ -89,7 +107,7 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
             auto &m = add(cell(origin), direction, s.missileId, std::min(frames,77), s.missileVelocity, Program::Charged);
             const auto path = chargedBoltPath(origin, origin + direction, i, m.lifetimeFrames); m.path.assign(path.begin(), path.end());
         } break;
-    case SkillBehavior::FrostNova: case SkillBehavior::Nova:
+    case SkillBehavior::FrostNova: case SkillBehavior::Nova: case SkillBehavior::PoisonNova:
         for (int i=0; i<64; ++i) add(cell(origin), missileRingDirection(i), s.missileId, frames, s.missileVelocity, Program::Ring);
         break;
     case SkillBehavior::GlacialSpike:

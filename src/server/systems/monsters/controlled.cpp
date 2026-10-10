@@ -2,8 +2,41 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include <cmath>
+#include "core/random.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 namespace d2x::server::monsters {
+void System::refreshNecro(EntityId id,MonsterRule rule,UnitCombatStats stats,std::shared_ptr<const NecroPetSpec> pet,std::optional<WeaponDamage> weapon) {
+    if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.necroSummon && it->second.life>0) {
+        auto &body=it->second;body.rule=std::move(rule);body.petStats=std::move(stats);body.necroPet=std::move(pet);body.petWeapon=std::move(weapon);
+        body.maximumLife=int64_t(std::max(1,body.petStats.attributes.maxLife))*256;body.life=std::min(body.life,body.maximumLife);++body.revision;
+    }
+}
+DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,uint64_t random,size_t offset) const {
+    if(offset>=65536-state_.actors.size() || offset>=UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
+    const auto *p=ports_.players.find(owner.player);if(!p) return {DomainStatus::InvalidActor,{}};
+    Actor actor;actor.id=EntityId{ports_.ids.cursor()+offset};actor.area=owner.area;actor.position=actor.home=position;actor.revision=1;actor.owner=owner.player;
+    actor.identity.monster=summon.monster;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
+    actor.implementation=summon.kind;actor.rule=rule;actor.necroSummon=true;actor.necroPet=summon.necro;actor.petStats=summon.stats;
+    actor.rule.level=summon.stats.level;actor.rule.difficulty=p->persistent.difficulty;
+    actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
+    const auto &a=summon.stats.attributes;
+    actor.rule.defense=a.defense;actor.rule.attackRating=a.attackRating;
+    actor.rule.minimumDamage=int(summon.stats.minimumDamage);actor.rule.maximumDamage=int(summon.stats.maximumDamage);
+    actor.rule.criticalChance=summon.stats.critical;actor.rule.blockChance=summon.stats.block;actor.rule.damageRegen=summon.stats.damageRegen;
+    actor.rule.resistances={a.combat.physicalResist,a.combat.magicResist,a.fireResist,a.lightningResist,a.coldResist,a.poisonResist};
+    actor.life=actor.maximumLife=int64_t(std::max(1,a.maxLife))*256;actor.rewardComplete=true;actor.combatRandom=random;
+    actor.components=chooseMonsterComponents(rule.componentCounts,{},random);
+    actor.shield=summon.shieldChance>0 && int(limitedRandom(random,100))<summon.shieldChance;
+    if(summon.kind==MonsterKind::NecroSkeleton || (summon.necro && summon.necro->kind==NecroSummonKind::Mage)) {
+        for(const int component:{0,1,2,3,4,8,9}) actor.components[size_t(component)]=0;
+        if(actor.shield) actor.components[7]=0;
+        if(rule.petVariant>=0) actor.components[11]=actor.components[12]=uint8_t(rule.petVariant);
+        else actor.components[5]=0;
+    }
+    actor.shield=actor.components[7]<rule.shieldChoices.size() && rule.shieldChoices[actor.components[7]];
+    for(auto &[mode,attack]:actor.rule.attacks) { (void)mode;attack.minimum=actor.rule.minimumDamage;attack.maximum=actor.rule.maximumDamage;attack.rating=actor.rule.attackRating; }
+    std::map<EntityId,Actor> result;result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+}
 DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContext &owner,const MonsterRule &rule,std::string_view code,Vec position,int64_t life,uint64_t random) const {
     const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
     if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || !area || area->generation!=owner.areaGeneration || life<=0 || rule.minimumLife<=0 || !area->definition.collision.walkable(position,rule.collision)) return {DomainStatus::InvalidActor,{}};
@@ -68,7 +101,7 @@ void System::commitAmazon(std::map<EntityId,Actor> &&actors,size_t items) noexce
 }
 DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec position) {
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
-    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }

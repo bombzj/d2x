@@ -56,6 +56,10 @@ class System {
     std::map<EntityId,PaladinCycle> hirelingCycles_;
     struct UnitReaction {EntityId source,attacker; RegionId area; TriggeredCombatEffect effect;};
     std::deque<UnitReaction> unitReactions_;
+    struct NecroContact {EntityId source,target,caster;RegionId area;int64_t physical{};int reflect{},tap{},overlay{-1};int slow{},slowState{-1};int64_t blood{};PlayerId owner{};int share{};int bloodPhase{},bloodOverlay{-1};};
+    std::deque<NecroContact> necroContacts_;
+    uint64_t necroOccurrence_{};
+    StepStatus advanceNecroContacts(uint64_t);
     StepStatus advanceHirelings(uint64_t);
     uint64_t paladinOccurrence_{};
     StepStatus advancePaladinAuras(uint64_t);
@@ -88,6 +92,9 @@ class System {
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
+    DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);
+    void necroContact(EntityId,EntityId,int64_t,uint64_t,bool missile=false,int64_t previousLife=INT64_MAX);
+    int64_t physicalContactDamage(EntityId,int64_t,uint64_t) const;
     DomainResult<> hirelingSkill(EntityId,const SkillCastSpec &,uint64_t);
     DomainResult<> hirelingAura(EntityId,const AuraDefinition &,uint64_t);
     bool hirelingAuraActive(EntityId,int skill,int rank) const;
@@ -107,7 +114,7 @@ class System {
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);
-    bool reactionCapacity() const { return reactions_.size() <= 4096-128 && unitReactions_.size()<=4096-128; }
+    bool reactionCapacity() const { return reactions_.size() <= 4096-128 && unitReactions_.size()<=4096-128 && necroContacts_.size()<=4096-128; }
     void react(const ActorContext &, EntityId attacker, CombatEffectEvent, bool returnFire = true);
     StepStatus step(TickContext, FrameFacts &);
 };

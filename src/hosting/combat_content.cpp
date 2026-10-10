@@ -62,6 +62,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
         request.difficulty, level.population.level.at(size_t(request.difficulty)));
     std::optional<MonsterEnchantment> enchantment;
+    const int64_t corpseBaseLife=profile?(int64_t(profile->damage.minLife)+profile->damage.maxLife)*128:0;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
     if (!identity.superUnique.empty() && (!fixed || fixed->monster!=identity.monster)) return {};
     if (profile && (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::Champion || identity.rank == MonsterRank::SuperUnique)) {
@@ -86,6 +87,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(fixed) {rule.superUniqueIndex=fixed->index;rule.uniqueTranslation=fixed->uniqueTrans.at(size_t(request.difficulty));}
     rule.nativeClass = record->index; rule.level = profile->level;
     rule.minimumLife = profile->damage.minLife; rule.maximumLife = profile->damage.maxLife;
+    rule.corpseBaseLife=corpseBaseLife;
     if(profile->damage.attack1Damage) {rule.minimumDamage=profile->damage.attack1Damage->first;rule.maximumDamage=profile->damage.attack1Damage->second;}
     rule.defense = *profile->defense; rule.attackRating = profile->attack1Rating.value_or(0);
     rule.resistances = profile->resistances; rule.criticalChance = profile->criticalChance;
@@ -95,6 +97,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
     rule.spawnCollision=record->spawnRule();rule.corpseSelectable=record->corpseSelectable;
     rule.convertible=!record->boss && record->switchAi;
+    rule.curseable=record->curseable;rule.switchAi=record->switchAi;rule.revivable=record->revivable;
     rule.primeEvil=data.tables.at("monstats").number(record->sourceRow,"primeevil").value_or(0)!=0;
     rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
     rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);

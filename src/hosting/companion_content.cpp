@@ -6,14 +6,86 @@
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/equipment_contributions.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/archive.hpp"
+#include "monster_actions_content.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 namespace d2x {
 namespace {
+void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &data) {
+    const auto &source=*prepared.source.material;const auto *original=data.items.find(source.definition);
+    if(!original || !original->ironGolemMaterial || !source.identified) throw std::runtime_error("Invalid Iron Golem metal material");
+    auto definition=*original;auto item=source;
+    definition.equipment.requiredClass.clear();definition.base.requiredStrength=definition.base.requiredDexterity=definition.base.requiredLevel=0;item.requiredLevel=item.socketRequiredLevel=0;
+    const auto slot=std::find(definition.equipment.slots.begin(),definition.equipment.slots.end(),true);
+    if(slot==definition.equipment.slots.end()) throw std::runtime_error("Metal material has no native equipment slot");
+    EquipmentLoadout loadout;loadout.equipped[size_t(slot-definition.equipment.slots.begin())]={&item,&definition};loadout.requirementPercent=[](const ItemInstance &){return 0;};
+    // The material is consumed, rather than worn; its durability does not
+    // disable the properties copied onto the golem.
+    loadout.maximumDurability=[](const ItemInstance &){return 0u;};
+    auto &stats=prepared.summon.stats;auto &attributes=stats.attributes;const EquipmentActor actor{"",0,0,stats.level};
+    const EquipmentContributionSource instructions{{},[&](const ItemInstance &value,int level){return resolveItemStats(data,value,level);},{},{}};
+    auto modifiers=deriveEquipmentModifiers(loadout,actor,instructions);auto gearModifiers=modifiers.combat;
+    gearModifiers.defensePercent=gearModifiers.shieldDefensePercent=0;
+    const auto gear=deriveEquipmentStats(loadout,actor,modifiers.defense,gearModifiers,attributes.attackRating+modifiers.attackRating);
+    attributes.attackRating+=modifiers.attackRating;attributes.defense+=gear.defense;
+    const auto summonResist=prepared.summon.necro->resistPercent;
+    if(modifiers.combat.fireAbsorbPercent>0) attributes.fireResist-=summonResist;
+    if(modifiers.combat.coldAbsorbPercent>0) attributes.coldResist-=summonResist;
+    if(modifiers.combat.lightningAbsorbPercent>0) attributes.lightningResist-=summonResist;
+    attributes.fireResist+=modifiers.fireResist;attributes.coldResist+=modifiers.coldResist;attributes.lightningResist+=modifiers.lightningResist;attributes.poisonResist+=modifiers.poisonResist;
+    attributes.maxLife=std::max(1,int(int64_t(attributes.maxLife)*(100+modifiers.combat.lifePercent)/100)+modifiers.maxLife);
+    modifiers.combat.lifePercent=0;mergeCombatModifiers(attributes.combat,modifiers.combat);
+    if(gear.weapons[0].item) {prepared.weapon=gear.weapons[0];prepared.weapon.meleeBaseMinimum+=int(stats.minimumDamage*256.f);prepared.weapon.meleeBaseMaximum+=int(stats.maximumDamage*256.f);}
+    for(const auto &stat:resolveItemStats(data,source,stats.level)) if(stat.effect=="item_slow") {auto pet=std::make_shared<NecroPetSpec>(*prepared.summon.necro);pet->slowPercent=stat.value;prepared.summon.necro=std::move(pet);}
+}
+server::companions::Prepared prepareNecro(const server::companions::Preparation &source,Archives &archives,const ClassicData &data) {
+    server::companions::Prepared result;result.source=source;result.summon=source.summon;result.random=source.seed;
+    MonsterCatalog catalog(archives,data.tables.at("monstats"));
+    const auto *record=catalog.find(source.summon.monster);
+    if(!record) throw std::runtime_error("Missing original necromancer pet monster");
+    AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    auto &rule=result.rule;rule.nativeClass=record->index;rule.size=record->collisionSize;
+    rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();
+    rule.nativeVelocity=record->walkVelocity.value_or(0);rule.meleeRange=record->meleeRange;
+    rule.difficulty=source.difficulty;rule.coldEffect=record->coldEffect.at(size_t(source.difficulty));
+    rule.coldState=data.states.at("cold").definition.id;rule.frozenState=data.states.at("freeze").definition.id;
+    rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
+    rule.demon=record->demon;rule.undead=record->undead;rule.corpseSelectable=false;rule.noTreasure=true;
+    const auto &table=data.tables.at("monstats");const auto suffix=source.difficulty==0?"":source.difficulty==1?"(N)":"(H)";
+    const auto &skills=data.tables.at("skills"),&pets=data.tables.at("pettype");
+    for(size_t row=0;row<skills.rows().size();++row) if(skills.number(row,"Id")==source.skill)
+        for(size_t pet=0;pet<pets.rows().size();++pet) if(pets.value(pet,"pet type")==skills.value(row,"pettype")) rule.petType=pets.number(pet,"Id").value_or(int(pet));
+    rule.decisionTicks=table.number(record->sourceRow,source.difficulty==0?"aidel":source.difficulty==1?"aidel(N)":"aidel(H)").value_or(1);
+    rule.drain=table.number(record->sourceRow,std::string("Drain")+suffix).value_or(0);
+    rule.threat=table.number(record->sourceRow,"threat").value_or(0);
+    const bool mage=source.summon.necro && source.summon.necro->kind==NecroSummonKind::Mage;
+    const auto attack=loadMonsterAttackTiming(animations,record->token,1,monsterModeWeapon(archives,record->token,"a1",record->baseWeapon),mage?2:1);
+    const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));
+    if((!attack && source.summon.kind!=MonsterKind::BoneWall) || !death || !prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original necromancer pet lifecycle");
+    if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
+    rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+    if(attack) rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}});
+    if(source.summon.necro && source.summon.necro->kind==NecroSummonKind::Mage) {
+        rule.petVariant=source.refresh && source.rule.petVariant>=0?source.rule.petVariant:int(limitedRandom(result.random,4));const auto &payload=source.summon.necro->missiles.at(size_t(rule.petVariant));
+        auto missile=prepareMonsterMissile(data,payload.id,1);if(!missile) throw std::runtime_error("Missing original skeleton mage missile program");
+        missile->minimum=missile->maximum=0;missile->sourceDamage=0;
+        missile->elementalMinimum=int(payload.minimumDamage*256.f);missile->elementalMaximum=int(payload.maximumDamage*256.f);
+        missile->element=payload.element;missile->coldFrames=payload.element==DamageType::Cold?uint64_t(std::lround(payload.duration*25.f)):0;
+        missile->poisonFrames=payload.element==DamageType::Poison?uint64_t(std::lround(payload.duration*25.f)):0;
+        rule.attacks.at(4).missile=std::move(missile);
+        for(size_t row=0;row<skills.rows().size();++row) if(skills.value(row,"skill")==table.value(record->sourceRow,"Skill1"))
+            if(const auto id=skills.number(row,"Id")) rule.skillActions.emplace(uint16_t(*id),rule.attacks.at(4));
+    }
+    if(source.material) equipIronGolem(result,data);
+    return result;
+}
 server::companions::Prepared prepare(const server::companions::Preparation &source,Archives &archives,const ClassicData &data) {
     server::companions::Prepared result;result.source=source;result.summon=source.summon;result.rule=source.rule;
     const auto &pet=*source.summon.amazon;auto random=source.seed;
@@ -76,7 +148,7 @@ std::vector<std::string> preparePendingSummons(GameHost &host,GameHandle game,Ar
     std::vector<std::string> issues;
     for(const auto &source:host.pendingSummons(game)) {
         server::companions::Prepared result;
-        try {result=prepare(source,archives,data);} catch(const std::exception &error) {result.source=source;result.deferred=error.what();}
+        try {result=source.summon.amazon?prepare(source,archives,data):prepareNecro(source,archives,data);} catch(const std::exception &error) {result.source=source;result.deferred=error.what();}
         if(!result.deferred.empty()) issues.push_back("Summon " + std::to_string(source.skill) + ": " + result.deferred);
         host.installSummon(game,std::move(result));
     }

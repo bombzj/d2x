@@ -213,6 +213,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.spawnCollision = extended.number(extra->second, "spawnCol").value_or(0);
         m.hitClass = extended.number(extra->second, "HitClass").value_or(0);
         m.corpseSelectable = extended.number(extra->second, "corpseSel").value_or(0) != 0;
+        m.revivable = extended.number(extra->second, "revive").value_or(0) != 0;
         m.resurrectionMode = normalize(std::string(extended.value(extra->second, "ResurrectMode")));
         m.getHitMode = extended.number(extra->second, "mGH").value_or(0) != 0;
         m.curseable = extended.number(extra->second, "mA1").value_or(0) != 0;

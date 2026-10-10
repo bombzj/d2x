@@ -88,7 +88,7 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.critical=critical;
     const auto elemental=roll(int64_t(skill.minimumDamage*256.f),int64_t(skill.maximumDamage*256.f));
     if(skill.poisonDuration>0 && !skill.weapon->spear) {
-        value.channels[5]+=elemental;value.poisonFrames=int(skill.poisonDuration*25.f+.001f);
+        value.channels[5]+=elemental;value.poisonFrames=mods.poisonFrames+extra.poisonFrames+int(skill.poisonDuration*25.f+.001f);
     }
     if(skill.weapon->bow) {
         const auto &bow=*skill.weapon->bow;

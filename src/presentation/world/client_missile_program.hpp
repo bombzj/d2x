@@ -18,6 +18,7 @@ inline constexpr std::array clientMissileCapabilities{
     ClientMissileCapabilities{7, false, false, false},
     ClientMissileCapabilities{8, false, false, true},
     ClientMissileCapabilities{9, true, true, false},
+    ClientMissileCapabilities{11, true, true, false},
     ClientMissileCapabilities{13, true, true, true},
     ClientMissileCapabilities{18, false, false, true},
     ClientMissileCapabilities{19, false, false, false},

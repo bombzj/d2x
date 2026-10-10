@@ -224,6 +224,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     if (advanceItemTriggers(tick.tick) == StepStatus::Blocked) blocked=true;
     if (advanceReactions(tick.tick) == StepStatus::Blocked) blocked = true;
+    if (advanceNecroContacts(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceUnits(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceMonsterSkills(tick.tick) == StepStatus::Blocked) blocked = true;
     if (advanceMonsterEnchantments(tick.tick) == StepStatus::Blocked) blocked = true;

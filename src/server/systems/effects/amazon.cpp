@@ -38,12 +38,12 @@ int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
 }
 ResolvedDamage System::unitDamage(EntityId id,int64_t amount,DamageType type,uint64_t tick) const {
     const auto *m=ports_.monsters.find(id);const int resistance=unitResistance(id,type,tick);
-    if(!m || !m->hireling) return {mitigateMonsterDamage(float(amount)/256.f,resistance),0};
+    if(!m || (!m->hireling && !m->necroSummon)) return {mitigateMonsterDamage(float(amount)/256.f,resistance),0};
     CharacterAttributes stats;stats.combat=m->petStats.attributes.combat;mergeCombatModifiers(stats.combat,unitModifiers(id,tick).combat);
     stats.fireResist=unitResistance(id,DamageType::Fire,tick);stats.lightningResist=unitResistance(id,DamageType::Lightning,tick);
     stats.coldResist=unitResistance(id,DamageType::Cold,tick);stats.poisonResist=unitResistance(id,DamageType::Poison,tick);
     stats.combat.physicalResist=unitResistance(id,DamageType::Physical,tick);stats.combat.magicResist=unitResistance(id,DamageType::Magic,tick);
-    return mitigatePlayerDamage(float(amount)/256.f,type,stats);
+    return mitigatePlayerDamage(float(amount)/256.f,type,stats,m->necroSummon);
 }
 std::map<int,std::vector<std::pair<int,int64_t>>> System::unitStateStats(EntityId id,uint64_t tick) const {
     const auto it=units_.find(id);if(it==units_.end()) return {};

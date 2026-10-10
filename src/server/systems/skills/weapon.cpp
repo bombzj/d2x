@@ -57,7 +57,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(charge) {skill.charge=SkillCharge{charge->item,charge->layer};skill.manaCost=skill.startMana=0;}
     const auto &program=*skill.weapon;
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
-    if(p.persistent.player.mana<skill.manaCost && program.spear && program.spear->attackWithoutMana) return attack(actor,request,0);
+    if(p.persistent.player.mana<skill.manaCost && ((program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && (program.smite || std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end());});
     if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||

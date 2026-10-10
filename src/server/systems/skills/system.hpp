@@ -36,7 +36,7 @@ class System {
     DomainStatus activate(Release &, const ActorContext &, Vec);
     enum class ActivationProgram {
         Weapon, Item, Unsummon, Kick, AmazonSummon, AmazonMagic,
-        Teleport, Hydra, Effect, StaticField, Telekinesis, Missile, Unsupported, Count
+        Teleport, Hydra, Effect, Curse, Corpse, StaticField, Telekinesis, Missile, Unsupported, Count
     };
     static ActivationProgram activationProgram(const SkillCastSpec &);
     DomainStatus activateItem(Release &, const ActorContext &, Vec);
@@ -47,6 +47,8 @@ class System {
     DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
     DomainStatus activateHydra(Release &, const ActorContext &, Vec);
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);
+    DomainStatus activateCurse(Release &, const ActorContext &, Vec);
+    DomainStatus activateCorpse(Release &,const ActorContext &,Vec);
     DomainStatus activateStaticField(Release &, const ActorContext &, Vec);
     DomainStatus activateTelekinesis(Release &, const ActorContext &, Vec);
     DomainStatus activateMissile(Release &, const ActorContext &, Vec);

@@ -26,16 +26,16 @@ int rawResistance(const CharacterAttributes &stats, DamageType type) {
     return 0;
 }
 ResolvedDamage mitigatePlayerDamage(float amount, MonsterDamageType type,
-                                    const CharacterAttributes &s) {
+                                    const CharacterAttributes &s, bool monsterRules) {
     const auto &m = s.combat;
     int resist = 0, flat = 0, absorbPercent = 0, absorb = 0;
     switch (type) {
     case MonsterDamageType::Physical:
-        resist = std::clamp(m.physicalResist, -100, 50);
+        resist = std::clamp(m.physicalResist, -100, monsterRules ? 100 : 50);
         flat = m.flatPhysicalReduction;
         break;
     case MonsterDamageType::Magic:
-        resist = std::clamp(m.magicResist, -100, std::max(-100, std::min(95, 75 + m.magicMaxResist)));
+        resist = std::clamp(m.magicResist, -100, monsterRules ? 100 : std::max(-100, std::min(95, 75 + m.magicMaxResist)));
         flat = m.flatMagicReduction;
         absorbPercent = m.magicAbsorbPercent; absorb = m.magicAbsorb;
         break;

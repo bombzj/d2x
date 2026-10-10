@@ -3,6 +3,7 @@
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/summon_resolve.hpp"
 #include <algorithm>
 
 namespace d2x::server::skills {
@@ -20,6 +21,10 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
         {rank, player.persistent.player.skillRanks, mastery(player, rules.fireMasteries),
          mastery(player, rules.lightningMasteries), player.totals.character.combat.coldSkillDamagePercent});
     if(definition.summon && definition.summon->amazon) result.summon=resolveAmazonSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,player.totals.character,player.persistent.player.skillRanks);
+    else if(definition.summon) {
+        const auto effective=[&](int id) {const auto found=player.totals.skillRanks.find(id);return found==player.totals.skillRanks.end()?0:found->second;};
+        result.summon=resolveSummon(*definition.summon,rank,effective(definition.summon->masterySkill),effective(definition.summon->resistSkill),player.persistent.player.level,player.persistent.difficulty,player.persistent.player.skillRanks);
+    }
     return result;
 }
 std::optional<ChargedSkill> chargedSource(const PlayerState &player,int skill,bool right) {

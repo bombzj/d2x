@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | 亚马逊 | [AMAZON](AMAZON.md) | 30项已接；仅列出代表路径有有限运行证据 |
 | 女巫 | [SORCERESS](SORCERESS.md) | 30项已接；仅列出代表路径有有限运行证据 |
-| 死灵法师 | [NECROMANCER](NECROMANCER.md) | 职业执行尚未迁入，保留定义与部分公共计算 |
+| 死灵法师 | [NECROMANCER](NECROMANCER.md) | 30项已接、v37构建打包；典型单机路径有限V2，见专题 |
 | 圣骑士 | [PALADIN](PALADIN.md) | 10项战斗／20项光环执行已接，原MPQ参数／D2MOO依据与有限验证边界见专题 |
 | 野蛮人 | [BARBARIAN](BARBARIAN.md) | 职业执行尚未迁入 |
 | 德鲁伊 | [DRUID](DRUID.md) | 职业执行尚未迁入 |

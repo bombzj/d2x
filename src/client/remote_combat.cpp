@@ -10,7 +10,7 @@
 namespace d2x {
 RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session, RemoteInventory &inventory)
     : scene_(scene), inventory_(inventory), session_(session) {
-    for (const char *name : {"skills", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems"})
+    for (const char *name : {"skills", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems", "weapons", "armor"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
         const auto &table = tables_.at(name);
@@ -123,6 +123,10 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
 }
 bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) const {
     const auto row = skills_.find(skill);
+    if(item.mode==3 && row!=skills_.end() && tables_.at("skills").number(row->second,"srvstfunc")==20 && tables_.at("skills").number(row->second,"srvdofunc")==57) {
+        for(const auto name:{"weapons","armor"}) {const auto &table=tables_.at(name);for(size_t i=0;i<table.rows().size();++i) if(table.value(i,"code")==item.code) return (table.number(i,"bitfield1").value_or(0)&2)!=0;}
+        return false;
+    }
     return item.mode == 3 && row != skills_.end() &&
         tables_.at("skills").number(row->second, "srvstfunc") == 12 &&
         tables_.at("skills").number(row->second, "srvdofunc") == 21;

@@ -45,10 +45,10 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto nativeVelocity = missileVelocityFixed(program.velocity,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
-    const int velocity = capabilities->stationary ? 0 : *nativeVelocity;
+    const int velocity = capabilities->stationary ? 0 : program.function==4 && program.poisonVelocity[0]>0?poisonCloudVelocity(program.poisonVelocity[0]):*nativeVelocity;
     const float tableDuration = float(program.frames + level * program.framesPerLevel) / 25.f;
     const float fullDuration = tableDuration > 0 ? tableDuration : assets_.projectileVisuals.at(id).lifetime;
-    const float duration = remaining.value_or(program.groundThrow?float(groundThrowFrames(start,target,velocity))/25.f:fullDuration);
+    const float duration = remaining.value_or(program.groundThrow?float(groundThrowFrames(start,target,velocity))/25.f:program.function==7 && !guidedTarget?std::max(1.f/25.f,(target-start).length()/std::max(.001f,float(velocity)*25.f/4096.f)):fullDuration);
     if (duration <= 0 || !std::isfinite(duration) || !std::isfinite(delay) ||
         !std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(target.x) || !std::isfinite(target.y)) return false;
     // Stationary 73 sends FirstX/FirstY = 0; these are not an aimed ray.

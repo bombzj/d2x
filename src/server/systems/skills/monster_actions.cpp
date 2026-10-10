@@ -8,6 +8,7 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
 #include <algorithm>
 #include "core/random.hpp"
@@ -20,6 +21,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonAttacker();
+    const bool chaotic=monster->curseControl.ai==CurseAi::Confuse || bool(monster->attractionTarget);
     const auto &area=ports_.areas.at(monster->area);
     if (!ports_.events.hasCapacity(1)) return {DomainStatus::Capacity,{}};
     const auto &rule = monster->rule;
@@ -37,18 +39,18 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || ((petAttack || monster->hireling || monster->conversion)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || !victim->combatCompanion())) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || ((petAttack || monster->necroSummon || monster->hireling || monster->conversion)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || (!victim->combatCompanion() && !chaotic))) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if (area.definition.town || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
     const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick);
-    const int speed=slot.casting?100:std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
+    const int speed=slot.casting?100:monster->necroMaterial && monster->petWeapon?std::max(15,effectiveAttackSpeed(100,monster->petWeapon->fasterAttack,monster->petWeapon->baseSpeed,monster->petStats.attributes.combat.attackRate+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0))):std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
     const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
     DamageType type = DamageType::Physical;
     combat::Damage damage{monster->id, target->id, type, int64_t(slot.minimum) * 256,
-        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + scaled(slot.release), slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
+        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + scaled(slot.release), slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->necroSummon || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
     damage.skill=slot.weaponSkill;
-    if((petAttack || monster->hireling) && damage.weapon) {
+    if((petAttack || monster->necroSummon || monster->hireling) && damage.weapon) {
         const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick).combat;
         damage.attackModifiers=monster->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
         damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;
@@ -83,7 +85,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
         auto &pending=it->second;
         if (pending.due>tick.tick) {++it;continue;}
         const auto *source=ports_.monsters.find(it->first);const auto *area=ports_.areas.find(pending.area);
-        if (!source || (source->owner && !source->hireling && !source->conversion) || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->stunnedUntil>tick.tick || source->knockedUntil>tick.tick ||
+        if (!source || (source->owner && !source->necroSummon && !source->hireling && !source->conversion) || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->stunnedUntil>tick.tick || source->knockedUntil>tick.tick ||
             !area || area->generation!=pending.generation || area->definition.town) {it=monsterReleases_.erase(it);continue;}
         const auto &unit=std::get<UnitTarget>(pending.request.target);
         DomainResult<> specialResult;

@@ -120,6 +120,7 @@ ClassicData loadClassicData(Archives &archives) {
             item.opensCube = family == ItemFamily::Misc &&
                              value("type") == "ques" && number("pSpell") == 7;
             item.autoBelt = number("autobelt").value_or(0) != 0;
+            item.ironGolemMaterial = (number("bitfield1").value_or(0)&2)!=0;
             item.imbueable = (number("bitfield1").value_or(0) & 1) != 0 &&
                              number("quest").value_or(0) == 0;
             if (!value("invfile").empty())

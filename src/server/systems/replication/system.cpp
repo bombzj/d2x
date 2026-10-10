@@ -36,6 +36,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         if (ports_.areas.find(edge.destination)) visible.push_back(edge.destination);
     for (const auto &[key, monster] : ports_.monsters.read().actors) {
         if (std::find(visible.begin(), visible.end(), monster.area) == visible.end()) continue;
+        if(monster.life<=0 && monster.corpseUnavailable && tick>=monster.busyUntil) continue;
         const auto &area = ports_.areas.at(monster.area).definition;
         const Vec observer = player->position + ports_.areas.at(player->area).definition.origin - area.origin;
         if (player->area == monster.area) {
@@ -73,6 +74,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             if(monster.amazonPet->decoy) result.back().modifiers.push_back(21); // SkillAma::SrvDo015 expiration UMod.
         }
         auto &states = result.back().states;
+        if(monster.revived()) {states.insert(monster.necroPet->reviveState.id);if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;}
         for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
         if(monster.conversion) {
@@ -95,10 +97,10 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
     if(!recipient || !recipient->entered) return result;
     // PlayerPets broadcasts ownership to the game independently of room interest.
     for(const auto &[key,body]:ports_.monsters.read().actors) {
-        if((!body.amazonPet && !body.hireling) || !body.owner || body.life<=0) continue;
+        if((!body.amazonPet && !(body.necroSummon && body.rule.petType>0) && !body.hireling) || !body.owner || body.life<=0) continue;
         const auto *owner=ports_.players.find(*body.owner);
         if(owner && owner->entered)
-            result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet->petType),uint16_t(body.rule.nativeClass)});
+            result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass)});
     }
     return result;
 }

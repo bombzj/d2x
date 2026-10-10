@@ -6,7 +6,7 @@ namespace d2x::server {
 // is guaranteed by the non-movable instance; destruction performs no callbacks.
 GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids, uint64_t &random,
                          EventOutbox &events, const PreparedRules &rules, const GameSettings &settings)
-    : movement(MovementPorts{players, areas, travel}),
+    : movement(MovementPorts{players, areas, travel, monsters}),
       world(d2x::server::world::Ports{areas, players, settings, ids}),
       spatial(d2x::server::spatial::Ports{areas, players, monsters, objects, missiles, items}),
       items(d2x::server::items::Ports{players, areas, ids, random, rules.items.get(), events}),
@@ -22,7 +22,7 @@ GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids,
       effects(d2x::server::effects::Ports{players, areas, skills, transactions, missiles, combat, monsters, events, random, social}),
       combat(d2x::server::combat::Ports{players, monsters, areas, transactions, random, events, effects,inventory}),
       death(d2x::server::death::Ports{players, monsters, progression, skills, loot, items, transactions, world, movement, areas, settings, companions, social}),
-      companions(d2x::server::companions::Ports{players, monsters, skills, transactions, missiles, areas, events, random, effects, npc}),
+      companions(d2x::server::companions::Ports{players, monsters, skills, transactions, missiles, areas, events, random, effects, npc, inventory, combat}),
       objects(d2x::server::objects::Ports{players, areas, quests, loot, effects, transactions, ids, world, monsters, settings, inventory, travel, skills, events, combat, missiles}),
       npc(d2x::server::npc::Ports{players, areas, transactions, events, settings, quests, effects,world}),
       merchant(d2x::server::merchant::Ports{players, npc, items, transactions, events, random, rules.items.get(), settings, loot}),

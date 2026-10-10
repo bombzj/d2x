@@ -33,9 +33,9 @@ bool System::hirelingAuraActive(EntityId id,int skill,int rank) const {
 }
 DomainResult<> System::hirelingAura(EntityId id,const AuraDefinition &a,uint64_t tick) {
     const auto *m=ports_.monsters.find(id);
-    if(!m || !m->hireling || !m->owner || m->life<=0) return {DomainStatus::InvalidActor,{}};
+    if(!m || (!m->hireling && !m->necroSummon) || !m->owner || m->life<=0) return {DomainStatus::InvalidActor,{}};
     PaladinCycle cycle;cycle.skill=a.skill;cycle.rank=a.rank;cycle.area=m->area;cycle.aura=a;cycle.next=tick;cycle.random=m->combatRandom;
-    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},
+    if(m->hireling && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},
         {AttackFact{id,id,1,1,m->area,m->position,m->position,tick+1,uint16_t(a.skill),uint8_t(a.rank),false,1}}})) return {DomainStatus::Capacity,{}};
     hirelingCycles_.insert_or_assign(id,std::move(cycle));return {DomainStatus::Applied,std::monostate{}};
 }
@@ -49,7 +49,7 @@ StepStatus System::advanceHirelings(uint64_t tick) {
     for(auto it=hirelingCycles_.begin();it!=hirelingCycles_.end();) {
         auto &cycle=it->second;const auto *m=ports_.monsters.find(it->first);
         const auto *p=m && m->owner?ports_.players.find(*m->owner):nullptr;
-        if(!m || !m->hireling || m->life<=0 || !p || !p->entered || p->persistent.player.hp<=0 || m->area!=p->area) {it=hirelingCycles_.erase(it);continue;}
+        if(!m || (!m->hireling && !m->necroSummon) || m->life<=0 || !p || !p->entered || p->persistent.player.hp<=0 || m->area!=p->area) {it=hirelingCycles_.erase(it);continue;}
         if(cycle.area!=m->area) {cycle.area=m->area;cycle.pending=false;cycle.next=tick;}
         const auto &area=ports_.areas.at(m->area);const auto &a=cycle.aura;
         if(!cycle.pending && tick<cycle.next) {++it;continue;}

@@ -33,6 +33,10 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     const ActorContext targetActor{target->player,target->actor,target->area,area.generation,0,actor.tick};
     transactions::CharacterEdit edit{targetActor,target->inventoryRevision,target->characterRevision,target->persistent.player};
     edit.transient=projection(recovery.states,actor.tick);
+    if(skill.effect==SkillBehavior::BoneArmor) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,skill.appliedEffect->state.id,true,
+        {{caster->rules.skills->nativeStats.at("bonearmor"),skill.appliedEffect->physicalShield},
+         {caster->rules.skills->nativeStats.at("bonearmormax"),skill.appliedEffect->physicalShieldMaximum}}});
+    if(skill.effect==SkillBehavior::BoneArmor && skill.castOverlayId>=0) edit.publicFacts.emplace_back(OverlayFact{target->actor,0,target->area,skill.castOverlayId});
     std::vector<transactions::Plan> plans;
     if(target==caster) {edit.player.mana-=skill.manaCost;edit.charge=skill.charge;}
     else {
@@ -68,6 +72,18 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     for (size_t i = 0; i < hit.channels.size(); ++i) {
         if (i == 5 && hit.poisonFrames) continue;
         float raw = float(hit.channels[i]) / 256.f;
+        if(i==0 && raw>0) {
+            std::vector<RemovedCombatEffect> removed;
+            const float remaining=states.absorbPhysical(raw,actor.tick,removed);
+            if(remaining!=raw) {
+                for(const auto &effect:states.entries()) if(effect.activeAt(actor.tick) && effect.spec.physicalShieldMaximum>0)
+                    edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.spec.state.id,true,
+                        {{p->rules.skills->nativeStats.at("bonearmor"),effect.spec.physicalShield},
+                         {p->rules.skills->nativeStats.at("bonearmormax"),effect.spec.physicalShieldMaximum}}});
+                for(const auto &effect:removed) edit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,effect.effect.spec.state.id,false});
+            }
+            raw=remaining;
+        }
         if (shield) {
             const auto stopped = absorbSkillShield(raw,edit.player.mana,shield->shieldPercent,shield->shieldManaFactor);
             raw = stopped.damage; edit.player.mana = stopped.mana;

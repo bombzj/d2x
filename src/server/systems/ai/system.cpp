@@ -25,7 +25,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
         // pursues or attacks, including its permitted content substitute.
         if(monster.implementation==MonsterKind::PrisonDoor) {ports_.monsters.stop(id);continue;}
-        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || (monster.owner && !monster.conversion) || ports_.skills.busy(id,tick.tick)) continue;
+        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || (monster.owner && !monster.conversion && !monster.revived()) || ports_.skills.busy(id,tick.tick)) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) controller.random = monster.combatRandom;
@@ -41,16 +41,29 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto *room=area.definition.activation.room(monster.position);
         const bool requireSight=room && !room->checkLosDraw && !controller.acquiredTarget;
         auto visible=[&](Vec point) {return !requireSight || area.definition.collision.missileSegment(monster.position,point,{4,1});};
+        const bool blind=monster.curseControl.until>tick.tick && monster.curseControl.ai==CurseAi::DimVision;
+        if(monster.curseControl.until>tick.tick && monster.curseControl.ai==CurseAi::Terror) {
+            const auto caster=participants.find(monster.curseControl.caster);
+            auto direction=(monster.position-caster.position()).unit();if(!direction.length()) direction={1,1};
+            for(int steps=20;steps>0;--steps) {
+                const Vec destination=monster.position+direction*float(steps);
+                if(area.definition.collision.walkable(destination,monster.rule.collision) && !area.definition.collision.path(monster.position,destination,true,monster.rule.collision).empty()) {
+                    ports_.monsters.requestMove({id,{monster.area,area.generation,destination},{},0,75,false});break;
+                }
+            }
+            controller.target.reset();controller.pursuing=false;continue;
+        }
         std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2;
         int distance = std::min(55, monster.rule.ai.searchDistance);
         for (const auto &[playerId, player] : ports_.players.all()) {
             (void)playerId;
             if (!participants.canHarm({nullptr,&monster},{&player,nullptr}) || !player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
             const int candidate = monsterAiDistance(player.position, 0, monster.position);
+            if(blind && candidate>monster.rule.meleeRange) continue;
             if (candidate < distance && visible(player.position)) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
         std::optional<UnitTarget> alternative;Vec alternativePosition;int alternativeSize=0;
-        if(monster.conversion) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
+        if(monster.conversion || monster.revived() || monster.curseControl.ai==CurseAi::Confuse || monster.attractionTarget) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
             if(!participants.canHarm({nullptr,&monster},{nullptr,&enemy}) || enemy.life<=0 || enemy.area!=monster.area || !area.definition.activation.nearby(enemy.position,monster.position) || !visible(enemy.position)) continue;
             const int candidate=monsterAiDistance(enemy.position,0,monster.position);
             if(candidate<distance) {distance=candidate;target=UnitTarget{enemyId,0,1};targetPosition=enemy.position;targetSize=enemy.rule.size;}
@@ -60,6 +73,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!participants.canHarm({nullptr,&monster},{nullptr,&pet})) continue;
             if(!visible(pet.position)) continue;
             const int candidate=monsterAiDistance(pet.position,0,monster.position);
+            if(blind && candidate>monster.rule.meleeRange) continue;
             if(pet.rule.threat>1) {
                 if(candidate<distance) {distance=candidate;target=UnitTarget{petId,0,1};targetPosition=pet.position;targetSize=pet.rule.size;}
             } else if(candidate<alternativeDistance) {alternativeDistance=candidate;alternative=UnitTarget{petId,0,1};alternativePosition=pet.position;alternativeSize=pet.rule.size;}
@@ -69,6 +83,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(alternative && (!target || (alternativeDistance<=5 && area.definition.collision.path(monster.position,targetPosition,true,monster.rule.collision).empty()))) {
             distance=alternativeDistance;target=alternative;targetPosition=alternativePosition;targetSize=alternativeSize;
         }
+        if(monster.attractionUntil>tick.tick) if(const auto *lure=ports_.monsters.find(monster.attractionTarget);lure && lure->life>0 && lure->area==monster.area && participants.canHarm(monster.id,lure->id) && visible(lure->position)) {target=UnitTarget{lure->id,0,1};targetPosition=lure->position;targetSize=lure->rule.size;distance=monsterAiDistance(monster.position,monster.rule.size,lure->position);}
         if (controller.target != (target ? std::optional(target->id) : std::nullopt)) {
             controller.pursuing = false; controller.charged = false; ports_.monsters.stop(id);
         }

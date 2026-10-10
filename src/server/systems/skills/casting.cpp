@@ -2,6 +2,7 @@
 #include "runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "evaluation.hpp"
 #include "server/player_store.hpp"
@@ -29,13 +30,15 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==unit.id && p.entered && p.area==actor.area && p.persistent.player.hp>0) return p.position;}
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
+        if((skill==SkillBehavior::RaiseSkeleton || skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick)) return m->position;
         const bool enemy=m && combat::Participants{ports_.players,ports_.monsters}.canHarm(actor.actor,m->id);
         if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? enemy || m->owner==actor.player : skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
         if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
     } else if(skill==SkillBehavior::Kick && unit.type==2) {
         const auto found=ports_.objects.read().objects.find(unit.id);
         if(found!=ports_.objects.read().objects.end() && found->second.area==actor.area && found->second.rule.operation==5) return found->second.position;
-    } else if(skill==SkillBehavior::Telekinesis) {
+    } else if(unit.type==4 && skill==SkillBehavior::RaiseSkeleton) return ports_.inventory.groundPosition(unit.id,actor.area);
+    else if(skill==SkillBehavior::Telekinesis) {
         if(unit.type==2) {const auto found=ports_.objects.read().objects.find(unit.id);if(found!=ports_.objects.read().objects.end() && found->second.area==actor.area) return found->second.position;return ports_.travel.portalPosition(actor,unit.id);}
         if(unit.type==4) return ports_.inventory.groundPosition(unit.id,actor.area);
     }
@@ -145,7 +148,7 @@ System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) 
     case SkillBehavior::Kick: return ActivationProgram::Kick;
     default: break;
     }
-    if (skill.summon && skill.summon->amazon) return ActivationProgram::AmazonSummon;
+    if (skill.summon || (skill.bone && skill.bone->barrier)) return ActivationProgram::AmazonSummon;
     if (skill.amazonMagic) return ActivationProgram::AmazonMagic;
     switch (skill.effect) {
     case SkillBehavior::Teleport: return ActivationProgram::Teleport;
@@ -153,6 +156,8 @@ System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) 
     default: break;
     }
     if (skill.appliedEffect) return ActivationProgram::Effect;
+    if (skill.curse) return ActivationProgram::Curse;
+    if (skill.bone && skill.bone->corpse) return ActivationProgram::Corpse;
     switch (skill.effect) {
     case SkillBehavior::StaticField: return ActivationProgram::StaticField;
     case SkillBehavior::Telekinesis: return ActivationProgram::Telekinesis;
@@ -160,10 +165,12 @@ System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) 
     case SkillBehavior::HolyBolt:
     case SkillBehavior::BlessedHammer: case SkillBehavior::FistOfTheHeavens:
     case SkillBehavior::FireBolt: case SkillBehavior::Fireball:
+    case SkillBehavior::Teeth:
+    case SkillBehavior::BoneSpear: case SkillBehavior::BoneSpirit:
     case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
     case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor:
     case SkillBehavior::ChargedBolt: case SkillBehavior::FrostNova:
-    case SkillBehavior::Nova: case SkillBehavior::GlacialSpike:
+    case SkillBehavior::Nova: case SkillBehavior::PoisonNova: case SkillBehavior::GlacialSpike:
     case SkillBehavior::FrozenOrb: case SkillBehavior::Blizzard:
     case SkillBehavior::Lightning: case SkillBehavior::ChainLightning:
     case SkillBehavior::FireWall: case SkillBehavior::Blaze:
@@ -184,6 +191,8 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
         Entry{ActivationProgram::Teleport, &System::activateTeleport},
         Entry{ActivationProgram::Hydra, &System::activateHydra},
         Entry{ActivationProgram::Effect, &System::activateEffect},
+        Entry{ActivationProgram::Curse, &System::activateCurse},
+        Entry{ActivationProgram::Corpse, &System::activateCorpse},
         Entry{ActivationProgram::StaticField, &System::activateStaticField},
         Entry{ActivationProgram::Telekinesis, &System::activateTelekinesis},
         Entry{ActivationProgram::Missile, &System::activateMissile},
@@ -296,7 +305,12 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     if(dead && (skill.appliedEffect || skill.summon || skill.effect==SkillBehavior::Teleport || skill.effect==SkillBehavior::Hydra)) return {DomainStatus::Unavailable,{}};
     const auto program = activationProgram(skill);
     switch (program) {
-    case ActivationProgram::AmazonSummon: return ports_.companions.amazon(actor,skill,position);
+    case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
+    case ActivationProgram::Curse: return ports_.effects.curse(actor,skill,position,target);
+    case ActivationProgram::Corpse: {
+        Release pending{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,1};
+        const auto result=activateCorpse(pending,actor,position);return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+    }
     case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
     case ActivationProgram::Teleport: return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
     case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);

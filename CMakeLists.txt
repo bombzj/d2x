@@ -172,6 +172,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/effects/hirelings.cpp
     src/server/systems/effects/skills.cpp
     src/server/systems/effects/amazon.cpp
+    src/server/systems/effects/necro.cpp
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
     src/server/systems/effects/monster_periodic.cpp
@@ -186,6 +187,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/companions/hireling_control.cpp
     src/server/systems/companions/hireling_equipment.cpp
   src/server/systems/companions/amazon.cpp
+    src/server/systems/companions/necro.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
   src/server/systems/objects/shrines.cpp

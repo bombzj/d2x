@@ -120,9 +120,9 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     const bool corpseUnavailable=actor.frozenUntil>tick || (actor.holyFreezeUntil>tick && actor.holyFreezeShatter);
     const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
     auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
-    if(actor.hireling && actor.petStats.attributes.combat.cannotBeFrozen) coldFrames=0;
-    else if(actor.hireling && actor.petStats.attributes.combat.halfFreezeDuration) coldFrames/=2;
-    if(actor.hireling && poison) poison->frames=poison->frames*uint64_t(std::clamp(100-actor.petStats.attributes.combat.poisonLengthResist,25,200))/100;
+    if((actor.hireling || actor.necroMaterial) && actor.petStats.attributes.combat.cannotBeFrozen) coldFrames=0;
+    else if((actor.hireling || actor.necroMaterial) && actor.petStats.attributes.combat.halfFreezeDuration) coldFrames/=2;
+    if((actor.hireling || actor.necroMaterial) && poison) poison->frames=poison->frames*uint64_t(std::clamp(100-actor.petStats.attributes.combat.poisonLengthResist,25,200))/100;
     if (life && coldFrames && actor.rule.coldEffect < 0) {
         coldFrames = std::min(coldFrames, UINT64_MAX - tick);
         if (freeze && actor.identity.rank == MonsterRank::Normal) frozen = std::max(frozen, tick + coldFrames);
@@ -206,6 +206,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         it=state_.deathCascades.erase(it);
     }
     for (auto &[id, actor] : state_.actors) {
+        if(actor.curseControl.ai!=CurseAi::None && actor.curseControl.until<=tick.tick) actor.curseControl={};
+        if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
         (void)id; actor.moving = false;
         if(actor.conversion && (tick.tick>=actor.conversion->until || actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
             const auto saved=*actor.conversion;
@@ -239,7 +241,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!actor.owner && actor.life > 0 && !actor.poison && !actor.wound && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {
             actor.life = std::min(actor.maximumLife, actor.life + actor.maximumLife * actor.rule.damageRegen / 4096); ++actor.revision;
         }
-        if((actor.amazonPet || actor.hireling) && actor.life>0 && !actor.poison && !actor.wound && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
+        if((actor.amazonPet || actor.necroSummon || actor.hireling) && actor.life>0 && !actor.poison && !actor.wound && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
             actor.life=std::min(actor.maximumLife,actor.life+actor.maximumLife*actor.petStats.damageRegen/4096);++actor.revision;
         }
         if(actor.hireling && actor.life>0 && !actor.poison && !actor.wound && actor.life<actor.maximumLife) {
@@ -300,7 +302,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance && grid.segment(position,target->first);
         };
         if (arrived(actor.position)) { stop(id); continue; }
-        const int speed = std::max(25,actor.velocityPercent+actor.effectVelocity+actor.hirelingMovementPercent+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));
+        const int speed = std::max(25,actor.velocityPercent+actor.effectVelocity+actor.hirelingMovementPercent+(actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));
         float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, speed) * TickContext::seconds;
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;
@@ -308,6 +310,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (distance < .001f) { actor.route.pop_front(); continue; }
             const Vec next = actor.position + delta.unit() * std::min(distance, remaining);
             if (!grid.nativeMovementSegment(actor.position, next, actor.rule.collision)) { actor.route.clear(); break; }
+            bool barrier=false;
+            for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
+            if(barrier) {actor.route.clear();actor.moving=false;break;}
             actor.position = next; remaining -= std::min(distance, remaining); actor.moving = true; ++actor.revision;
             if (arrived(next)) { actor.route.clear(); break; }
             if ((actor.route.front() - next).length() < .001f) actor.route.pop_front();

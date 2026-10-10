@@ -69,7 +69,7 @@ StepStatus System::resolveSpells(TickContext tick) {
         const PlayerState *owner = source.player;
         const auto *area = ports_.areas.find(impact.area);
         const auto *monsterSource=source.monster;
-        const bool hirelingSource=monsterSource && (monsterSource->hireling || monsterSource->conversion) && monsterSource->owner;
+        const bool hirelingSource=monsterSource && (monsterSource->hireling || monsterSource->necroSummon || monsterSource->conversion) && monsterSource->owner;
         if(hirelingSource) owner=ports_.players.find(*monsterSource->owner);
         if ((!owner || !owner->entered || owner->area!=impact.area) && (!monsterSource || monsterSource->owner || monsterSource->area!=impact.area)) impact.next=impact.targets.size();
         if(!area || area->definition.town) impact.next=impact.targets.size();
@@ -89,7 +89,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const PlayerState *player=participant.player;
                 const auto *pet=participant.monster;
                 if(!participant.aliveIn(impact.area)) {++impact.next;continue;}
-                if(pet && !pet->combatCompanion()) pet=nullptr;
+                if(pet && !pet->combatCompanion() && (!monsterSource || !participants.canHarm(source,participant))) pet=nullptr;
                 if (!player && !pet) {++impact.next;continue;}
                 if(impact.nextDelay && ((player && !ports_.effects.missileHitAllowed(player->actor,tick.tick)) || (pet && pet->nextHitTick>tick.tick))) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
@@ -180,8 +180,9 @@ StepStatus System::resolveSpells(TickContext tick) {
                 const auto cold=hit.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(target->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(target->rule.coldDivisor));
                 std::optional<PoisonApplication> poison;
                 if(hit.poisonFrames && hit.channels[5]) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(hit.channels[5])/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),hit.poisonFrames,owner->rules.skills->poisonState};
+                if(poison) poison->actualSource=impact.source;
                 const auto result=ports_.monsters.damage(target->id,impact.binding.credit,amount,tick.tick,cold,false,impact.hitClass,poison);
-                if(result) ports_.monsters.recordHirelingKill(target->id,impact.source);
+                if(result && monsterSource->hireling) ports_.monsters.recordHirelingKill(target->id,impact.source);
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                 if(result && impact.nextDelay) ports_.monsters.hitDelay(target->id,tick.tick+impact.nextDelay);
                 if(result) commitRandom();
@@ -254,6 +255,10 @@ StepStatus System::resolveSpells(TickContext tick) {
             if(result && monsterSource && monsterSource->hireling) {ports_.monsters.recordHirelingKill(target->id,monsterSource->id);ports_.monsters.heal(monsterSource->id,extras.healing+(target->life<=0?int64_t(monsterSource->petStats.attributes.combat.lifeOnKill)*256:0));}
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
             if(result) ports_.effects.commitItemEvents(std::move(*itemEvents.value),target->life<=0);
+            if(result && impact.weapon && !impact.reaction) {
+                const auto physical=int64_t(mitigateMonsterDamage(float(targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])/256.f,ports_.effects.unitResistance(target->id,DamageType::Physical,tick.tick))*256.f)*hirelingPercent/100;
+                ports_.effects.necroContact(impact.source,target->id,physical,tick.tick,impact.weapon->projectile);
+            }
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);
             if(result && impact.knockback && target->life>0) {ports_.monsters.knockback(target->id,owner->position,tick.tick);cancel(target->id);}
             if(result && (recoil>0 || convert)) {if(!convert) impact.conversion.reset();impact.selfDamage=recoil;impact.targetApplied=true;continue;}

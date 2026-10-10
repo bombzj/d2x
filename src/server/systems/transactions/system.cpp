@@ -81,6 +81,7 @@ DomainResult<Plan> System::prepare(Change change) {
             return {DomainStatus::InvalidRequest, {}};
         if (edit->character) next.persistent.player = *edit->character;
         if (edit->corpses) next.persistent.corpses = *edit->corpses;
+        if(edit->ironGolem) next.persistent.ironGolem=*edit->ironGolem;
         next.persistent.inventory = std::move(edit->inventory);
         next.changes = std::move(edit->changes);
         next.inventoryChanged = true;
@@ -88,6 +89,7 @@ DomainResult<Plan> System::prepare(Change change) {
         next.persistent.player.weaponSet = edit->weaponSet;
     } else { next.persistent.player = std::get<CharacterEdit>(change).player;
         if(characterEdit->waypoints) next.persistent.waypoints=*characterEdit->waypoints;
+        if(characterEdit->ironGolem) next.persistent.ironGolem=*characterEdit->ironGolem;
     }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
     const auto charge=inventoryEdit?inventoryEdit->charge:characterEdit->charge;

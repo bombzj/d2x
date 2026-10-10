@@ -17,7 +17,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     const auto *source=ports_.monsters.find(request.source);const auto *area=ports_.areas.find(request.area);
     const auto *player=ports_.players.find(request.playerSource);
     const bool playerEmitter=player && player->entered && player->actor==request.source && player->area==request.area && player->persistent.player.hp>0;
-    if((!request.environment && !playerEmitter && (!source || (source->owner && !source->hireling && !source->conversion) || (source->life<=0 && !request.postMortem) || source->area!=request.area)) || !area || area->generation!=request.generation || area->definition.town ||
+    if((!request.environment && !playerEmitter && (!source || (source->owner && !source->necroSummon && !source->hireling && !source->conversion) || (source->life<=0 && !request.postMortem) || source->area!=request.area)) || !area || area->generation!=request.generation || area->definition.town ||
         !request.attack.missile || !std::isfinite(request.target.x) || !std::isfinite(request.target.y)) return {DomainStatus::InvalidActor,{}};
     const auto &rule=*request.attack.missile;
     if(rule.definition<0 || rule.frames<=0 || rule.speed<0 || (rule.speed==0 && rule.behavior!=MonsterMissileRule::Behavior::SpiderGoo && rule.behavior!=MonsterMissileRule::Behavior::Fire && rule.behavior!=MonsterMissileRule::Behavior::PoisonCloud) || request.extraQuills<0 || request.extraQuills>255) return {DomainStatus::InvalidRequest,{}};
@@ -47,7 +47,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         Missile missile;missile.owner=request.source;missile.emitter=request.source;missile.emitterType=playerEmitter?0:source?1:2;missile.environment=request.environment;
         missile.binding=combat::Participants{ports_.players,ports_.monsters}.bind({playerEmitter?player:nullptr,source});
         if(playerEmitter) missile.player=player->player;
-        if(source && (source->hireling || source->conversion) && source->owner) missile.player=*source->owner;
+        if(source && (source->hireling || source->necroSummon || source->conversion) && source->owner) missile.player=*source->owner;
         missile.area=request.area;missile.generation=request.generation;missile.created=request.tick;
         missile.remainingHits=rule.chainCount;missile.expires=request.tick+uint64_t(rule.frames);missile.lifetimeFrames=rule.frames;missile.definition=rule.definition;
         missile.position=request.origins.empty()?request.position:request.origins[index];missile.turnTarget=aim-missile.position;

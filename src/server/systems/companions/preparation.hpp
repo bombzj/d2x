@@ -10,6 +10,8 @@ namespace d2x::server::companions {
 struct Preparation {
     ActorContext actor;uint64_t inventoryRevision{},seed{};
     int skill{},rank{},difficulty{},ownerLevel{};std::map<int,int> hardRanks;SummonCastSpec summon;MonsterRule rule;
+    std::optional<ItemInstance> material{};
+    std::optional<EntityId> refresh{};
 };
 struct Prepared {
     Preparation source;PersistentCharacter equipment;SummonCastSpec summon;MonsterRule rule;

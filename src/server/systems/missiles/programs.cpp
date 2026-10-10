@@ -6,6 +6,7 @@
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
@@ -17,8 +18,9 @@ Vec cell(Vec p) { return {std::floor(p.x)+.5f,std::floor(p.y)+.5f}; }
 bool radius(Vec a, Vec b, int r) { const auto d=Vec{std::floor(a.x)-std::floor(b.x),std::floor(a.y)-std::floor(b.y)}; return d.x*d.x+d.y*d.y<=float(r*r); }
 DamageType element(SkillBehavior s) {
     switch(s) {
-    case SkillBehavior::HolyBolt: case SkillBehavior::BlessedHammer: return DamageType::Magic;
+    case SkillBehavior::HolyBolt: case SkillBehavior::BlessedHammer: case SkillBehavior::Teeth: case SkillBehavior::BoneSpear: case SkillBehavior::BoneSpirit: return DamageType::Magic;
     case SkillBehavior::FistOfTheHeavens: return DamageType::Lightning;
+    case SkillBehavior::PoisonNova: return DamageType::Poison;
     case SkillBehavior::IceBolt: case SkillBehavior::IceBlast: case SkillBehavior::FrostNova: case SkillBehavior::GlacialSpike:
     case SkillBehavior::FrozenArmor: case SkillBehavior::FrozenOrb: case SkillBehavior::Blizzard: case SkillBehavior::ShiverArmor: case SkillBehavior::ChillingArmor: return DamageType::Cold;
     case SkillBehavior::ChargedBolt: case SkillBehavior::Nova: case SkillBehavior::Lightning: case SkillBehavior::ChainLightning:
@@ -51,7 +53,7 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
         result.type=m.skill.missileImpact->areaMissile->element;
         result.freeze=result.type==DamageType::Cold;
     }
-    if(m.program==Program::PoisonCloud) {result.type=DamageType::Poison;result.poisonFrames=uint64_t(std::max(0,int(std::lround(m.skill.poisonDuration*25.f))));}
+    if(m.program==Program::PoisonCloud || m.skill.effect==SkillBehavior::PoisonNova) {result.type=DamageType::Poison;result.poisonFrames=uint64_t(std::max(0,int(std::lround(m.skill.poisonDuration*25.f))));}
     result.coldFrames=uint64_t(std::max(0,int(std::lround(m.skill.coldDuration*25.f))));
     result.freeze=result.freeze || m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
     if (m.skill.freezingArea) result.coldFrames=uint64_t(m.skill.freezingArea->freezeFrames);
@@ -99,6 +101,22 @@ System::Advance System::advance(const Missile &original) const {
             if(area.definition.collision.missileSegment(at,at,{5,1})) child(at,{},p.shardId,p.shardFrames,0,Program::Shard,true);
         }
         ++m.ageFrames; plan.finished=m.ageFrames>=m.lifetimeFrames; return plan;
+    }
+    if(m.program==Program::Spirit) {
+        const auto &b=*m.skill.bone;
+        if(owner.persistent.player.hp<=0) {plan.finished=true;return plan;}
+        if(m.ageFrames+1>=m.lifetimeFrames && !m.guidance && !m.guidanceSearched) {
+            m.guidanceSearched=true;
+            for(const auto &[id,t]:ports_.monsters.read().actors) if(enemy(t) && radius(m.position,t.position,b.searchRadius) &&
+                area.definition.collision.missileSegment(m.position,t.position,m.collision) && (!m.guidance || id<m.guidance)) m.guidance=id;
+            m.lifetimeFrames=m.ageFrames+std::max(1,int(std::lround(b.spiritLifetime*25.f)));m.expires=m.created+uint64_t(m.lifetimeFrames);
+            if(const auto *t=ports_.monsters.find(m.guidance)) m.velocity=(t->position-m.position).unit()*m.velocity.length();
+        }
+        const auto *target=ports_.monsters.find(m.guidance);
+        if(target && enemy(*target) && (m.lifetimeFrames-m.ageFrames)%b.retargetPeriod==0) {
+            const int distance=missileDistance(m.position,target->position);
+            if(distance>3 && distance<25) m.velocity=(target->position-m.position).unit()*m.velocity.length();
+        }
     }
     ++m.ageFrames;
     const bool expires=m.ageFrames>=m.lifetimeFrames;
@@ -194,13 +212,14 @@ System::Advance System::advance(const Missile &original) const {
     for(const auto id:collisionCandidates(m,next)) {
         const auto *found=ports_.monsters.find(id);if(!found) continue;
         const auto &t=*found;
+        if(m.program==Program::Spirit && ((!m.guidance && !m.guidanceSearched) || (m.guidance && m.guidance!=id))) continue;
         if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
         const bool eligible=holyBolt?t.area==m.area && t.life>0 && ((t.owner==m.player && m.skill.healingMaximum>0) || (t.enemyTarget() && t.rule.undead)):enemy(t);
         if(!eligible || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
         if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,t.position,t.rule.size)) contacts.emplace_back(*contact,id);
     }
     std::sort(contacts.begin(),contacts.end());
-    const bool piercing=m.program==Program::Hammer || m.program==Program::FuryBolt || m.program==Program::Arc || m.program==Program::Ring || m.skill.effect==SkillBehavior::Inferno;
+    const bool piercing=m.program==Program::Hammer || m.program==Program::FuryBolt || m.program==Program::Arc || (m.program==Program::Ring && m.skill.effect!=SkillBehavior::PoisonNova) || m.skill.effect==SkillBehavior::Inferno || m.skill.effect==SkillBehavior::BoneSpear;
     if(!contacts.empty()) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
             m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;

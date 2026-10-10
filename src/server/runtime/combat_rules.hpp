@@ -71,6 +71,9 @@ struct MonsterRule {
     bool demon{}, undead{}, boss{};
     int stunState{-1};
     bool convertible{};
+    bool curseable{},switchAi{},revivable{};
+    int petType{},petVariant{-1};
+    int64_t corpseBaseLife{};
     bool primeEvil{};
     bool environmentController{};
     enum class Trap { None, Missile, Poison, Nova, RightArrow, LeftArrow, Melee, Turret, Soul } trap{};

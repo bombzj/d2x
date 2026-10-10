@@ -444,6 +444,25 @@ struct RemoteScene::Impl {
             if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
             auto missile = missileNames.find(skills.value(row->second, function ? "cltmissilea" : "cltmissile"));
+            if(function==95 && actor.key.type==1) {
+                const auto identity=monsterRows.find(actor.classId.value_or(UINT16_MAX));
+                if(identity==monsterRows.end()) return;
+                const auto extra=monsterExtra.find(monstats.value(identity->second,"MonStatsEx"));
+                if(extra==monsterExtra.end()) return;
+                try {
+                    net::protocol::BitReader bits(actor.appearanceBits);bits.read(4);const bool components=bits.read(1)!=0;
+                    unsigned element=0;
+                    for(size_t part=0;part<=11;++part) {
+                        const auto values=variants(monstats2.value(extra->second,std::string(componentCodes[part])+"v"));
+                        const auto selected=components?bits.read(values.size()>=3?std::bit_width(unsigned(values.size()-1)):1):0;
+                        if(part==11) element=selected;
+                    }
+                    if(missile==missileNames.end() || element>=4) return;
+                    const int id=missiles.number(missile->second,"Id").value_or(-1)+int(element);
+                    const auto variant=missileRows.find(id);if(variant==missileRows.end()) return;
+                    missile=missileNames.find(missiles.value(variant->second,"Missile"));
+                } catch(const std::exception &) {return;}
+            }
             if (function == 1 || function == 2 || function == 17 || function==18 || function==20) {
                 const bool secondary=skills.value(row->second,"skill")=="Left Hand Throw" || skills.value(row->second,"skill")=="Left Hand Swing";
                 int primaryBody=5;
@@ -509,7 +528,7 @@ struct RemoteScene::Impl {
                     launch(fire->second, end, end, level, animation->releaseTime-age, {}, event.source,
                         -1, 0, ClientMissileSource::Cast);
             }
-            else if (function == 28 || function==36)
+            else if (function == 28 || function==36 || function==30 || function==31 || function==32 || function==33)
                 launch(missile->second, end, end, level, animation->releaseTime-age, {}, event.source,
                     -1, 0, ClientMissileSource::Cast);
             else if(function==18) launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,event.target?effectOwner(*event.target):EntityId{});
@@ -547,7 +566,7 @@ struct RemoteScene::Impl {
                 // Retail CltDo19 RVA15AB0: origin=target, aim=2*target-owner.
                 for(int index=0;index<count && index<256;++index) launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
             }
-            else if (!function || function == 1 || function == 2 || function==27 || function==35 ||
+            else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
             else if (function == 25) {
                 // Retail CltDo25 / RVA 73CB0 -> A0DB0 emits all 64 integer
@@ -612,6 +631,15 @@ struct RemoteScene::Impl {
                 }
                 else effectLimitations.insert("Unresolved client bolt count: " + std::string(skills.value(row->second, "skill")));
             } else effectLimitations.insert("Skill client program unavailable: " + std::string(skills.value(row->second, "skill")));
+            if(function==30 || function==32 || function==33) {
+                const auto extra=missileNames.find(skills.value(row->second,"cltmissilec"));
+                if(extra!=missileNames.end()) launch(extra->second,function==30?start:end,function==30?start:end,level,animation->releaseTime-age,{},event.source);
+            }
+            if(function==32) {const auto blast=missileNames.find(skills.value(row->second,"cltmissileb"));if(blast!=missileNames.end()) launch(blast->second,end,end,level,animation->releaseTime-age,{},event.source);}
+            if(function==33) {
+                const auto cloud=missileNames.find(skills.value(row->second,"cltmissileb"));
+                if(cloud!=missileNames.end()) for(const auto direction:poisonCloudDirections(2,0)) launch(cloud->second,end,end+direction.direction,level,animation->releaseTime-age,{},event.source);
+            }
         };
         for (const auto &event : v.world.combatEvents) {
             if (event.sequence <= combatSequence) continue;

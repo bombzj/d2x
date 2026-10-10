@@ -19,20 +19,28 @@ struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std
 struct Summon { PlayerId owner; Kind kind; monsters::Admission actor; std::optional<uint16_t> sourceSkill; };
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{}; uint64_t random{};
-    uint64_t ownerTeleport{}; int attackBias{};
+    uint64_t ownerTeleport{}; int attackBias{}; bool deathEffect{};
+    int ownerLevel{};std::map<int,int> effectiveRanks{},hardRanks{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; };
 class System {
     State state_;
     const Ports ports_;
     std::map<EntityId,Preparation> pending_;
     std::map<EntityId,Prepared> prepared_;
+    struct BoneGrowth {ActorContext actor;SummonCastSpec summon;MonsterRule rule;EntityId root;Vec position,velocity;int remaining{};uint64_t next{},until{},expires{},random{};uint16_t skill{};int rank{};};
+    std::vector<BoneGrowth> boneGrowth_;
+    StepStatus advanceBoneGrowth(TickContext);
+    StepStatus synchronizeIronGolems(TickContext);
+    DomainResult<> revive(const ActorContext &,const SkillCastSpec &,EntityId);
     std::map<PlayerId,PreparedHireling> hirelingRules_;
     std::map<PlayerId,HirelingListPreparation> pendingLists_;
     std::map<PlayerId,PreparedHirelingList> hirelingLists_;
     uint64_t nextList_ = 1;
     StepStatus amazonStep(Companion &,TickContext);
+    StepStatus necroStep(Companion &,TickContext);
+    StepStatus refreshNecro(Companion &,TickContext);
     StepStatus hirelingStep(Companion &,TickContext);
     StepStatus synchronizeHirelings(TickContext);
     DomainResult<> equipHireling(const ActorContext &, uint32_t body);
@@ -52,6 +60,7 @@ class System {
     DomainResult<> install(PreparedHirelingList);
     void cancel(EntityId);
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
+    DomainResult<> necro(const ActorContext &, const SkillCastSpec &, Vec,EntityId,bool restoring=false);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
     DomainResult<> grantHireling(const ActorContext &,HirelingRecord);

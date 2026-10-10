@@ -11,6 +11,7 @@
 #include "gameplay/combat/poison.hpp"
 #include "gameplay/combat/open_wounds.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
 #include "gameplay/effects/state.hpp"
@@ -34,6 +35,13 @@ struct Actor {
     uint64_t allegianceRevision{};
     MonsterRule rule;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
+    bool necroSummon{};
+    bool revived() const {return necroPet && necroPet->kind==NecroSummonKind::Revive;}
+    std::shared_ptr<const NecroPetSpec> necroPet;
+    std::optional<ItemInstance> necroMaterial;
+    struct CurseControl {CurseAi ai{CurseAi::None};EntityId caster,target;uint64_t until{};};
+    CurseControl curseControl;
+    EntityId attractionTarget;uint64_t attractionUntil{};
     bool hireling{};
     struct Conversion {int state{-1},alignment{-1},stat{-1},level{};int64_t maximum{};uint64_t until{};};
     std::optional<Conversion> conversion;
@@ -89,10 +97,10 @@ struct Actor {
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
     bool enemyTarget() const { return hostile && !owner && !conversion && !rule.environmentController; }
-    bool damageable() const { return enemyTarget() || amazonPet || hireling || conversion; }
-    bool combatCompanion() const { return bool(amazonPet) || hireling || conversion; }
+    bool damageable() const { return enemyTarget() || amazonPet || necroSummon || hireling || conversion; }
+    bool combatCompanion() const { return bool(amazonPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
-    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || conversion; }
+    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || necroSummon || conversion; }
 };
 struct State {
     std::map<EntityId, Actor> actors;
@@ -114,6 +122,12 @@ class System {
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
     DomainResult<> beginAttack(EntityId, uint64_t until);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
+    bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
+    void consumeCorpse(EntityId) noexcept;
+    void commitRevive(std::map<EntityId,Actor> &&actors) noexcept {for(const auto &[id,body]:actors) {(void)body;state_.actors.erase(id);}state_.actors.merge(actors);}
+    void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>);
+    void curseControl(EntityId id,Actor::CurseControl control) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.curseControl=control;++it->second.revision;}}
+    void attract(EntityId id,EntityId target,uint64_t until) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.attractionTarget=target;it->second.attractionUntil=until;}}
     DomainResult<> resurrect(EntityId source,EntityId corpse,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
@@ -149,6 +163,7 @@ class System {
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraSpec &, Vec) const;
     DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random) const;
     DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {}) const;
+    DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0) const;
     void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;
     void retire(EntityId, uint64_t tick);

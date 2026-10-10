@@ -12,6 +12,6 @@ struct ResolvedDamage {
 // Damage is converted to the original 8-bit fixed-point HP unit before
 // flat reduction, resistance and absorption (SUnitDmg.cpp).
 ResolvedDamage mitigatePlayerDamage(float amount, MonsterDamageType type,
-                                    const CharacterAttributes &defender);
+                                    const CharacterAttributes &defender, bool monsterRules = false);
 float mitigateMonsterDamage(float amount, int resistance);
 } // namespace d2x

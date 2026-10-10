@@ -37,5 +37,6 @@ struct SkillRules {
     std::map<int, MissileCollisionRule> collisions;
     std::map<int, bool> returnFire, clientSend;
     std::array<int, 3> staticMinimum{}, coldDivisor{}, freezeDivisor{};
+    std::array<int,3> aiCurseDivisor{1,1,1};
 };
 }
