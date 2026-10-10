@@ -13,7 +13,8 @@ struct TcpListener::Impl {
         std::deque<std::shared_ptr<Bytes>> writes;
         size_t queued{};
         bool stopped{}, closing{};
-        explicit Connection(asio::io_context &io) : socket(io) {}
+        asio::steady_timer closeTimer;
+        explicit Connection(asio::io_context &io) : socket(io), closeTimer(io) {}
     };
     asio::io_context io;
     std::array<std::unique_ptr<asio::ip::tcp::acceptor>, 2> listeners;
@@ -24,7 +25,7 @@ struct TcpListener::Impl {
     static constexpr size_t byteLimit = 4 * 1024 * 1024, eventLimit = 4096, connectionLimit = 128;
     void stop(const std::shared_ptr<Connection> &c) {
         c->stopped = true;
-        asio::error_code ignored; c->socket.close(ignored);
+        asio::error_code ignored; c->closeTimer.cancel(); c->socket.close(ignored);
         c->writes.clear(); c->queued = 0; connections.erase(c->id);
     }
     void finish(const std::shared_ptr<Connection> &c, std::string error = {}) {
@@ -35,8 +36,7 @@ struct TcpListener::Impl {
     void read(const std::shared_ptr<Connection> &c) {
         c->socket.async_read_some(asio::buffer(c->buffer), [this, c](const asio::error_code &error, size_t count) {
             if (c->stopped) return;
-            if (c->closing) return;
-            if (count) {
+            if (count && !c->closing) {
                 if (events.size() >= eventLimit || count > byteLimit - received) { finish(c, "TCP listener receive capacity exceeded"); return; }
                 received += count;
                 events.push_back({c->id, c->listener, {StreamEventKind::Data, Bytes(c->buffer.begin(), c->buffer.begin() + count), {}}, {}});
@@ -45,6 +45,15 @@ struct TcpListener::Impl {
             else read(c);
         });
     }
+    void finishWrites(const std::shared_ptr<Connection> &c) {
+        // Closing with unread client bytes can send RST and discard the final
+        // character save on Windows. FIN the output, drain input until EOF,
+        // and bound peers which do not finish their half of the connection.
+        asio::error_code ignored;
+        c->socket.shutdown(asio::ip::tcp::socket::shutdown_send, ignored);
+        c->closeTimer.expires_after(std::chrono::seconds(2));
+        c->closeTimer.async_wait([this, c](const asio::error_code &error) { if (!error && !c->stopped) finish(c); });
+    }
     void write(const std::shared_ptr<Connection> &c) {
         auto bytes = c->writes.front();
         asio::async_write(c->socket, asio::buffer(*bytes), [this, c, bytes](const asio::error_code &error, size_t) {
@@ -52,7 +61,7 @@ struct TcpListener::Impl {
             if (error) { finish(c, "TCP listener write failed: " + error.message()); return; }
             c->queued -= bytes->size(); c->writes.pop_front();
             if (!c->writes.empty()) write(c);
-            else if (c->closing) finish(c);
+            else if (c->closing) finishWrites(c);
         });
     }
     void accept(uint8_t listener) {
@@ -121,7 +130,7 @@ void TcpListener::close(uint64_t id) { if (const auto found = impl_->connections
 void TcpListener::closeAfterWrites(uint64_t id) {
     const auto found = impl_->connections.find(id); if (found == impl_->connections.end()) return;
     auto c = found->second; c->closing = true;
-    if (c->writes.empty()) impl_->finish(c);
+    if (c->writes.empty()) impl_->finishWrites(c);
 }
 void TcpListener::shutdown() {
     auto &p = *impl_;

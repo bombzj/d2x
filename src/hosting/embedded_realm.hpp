@@ -17,7 +17,10 @@ class EmbeddedRealm {
     ~EmbeddedRealm();
     Transports connect(bool defaultDirectory = false);
     Transports attach(); // An additional independent memory client, sharing this host.
-    void listen(std::string address, uint16_t realmPort = 6113, uint16_t gamePort = 4000);
+    void listen(std::string address, uint16_t gamePort = 4000);
+    void setTcpIpHost(bool);
+    Bytes selectedTcpIpSave();
+    void receiveTcpIpSave(Bytes);
     std::string prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass);
     void pump(double seconds, bool paused);
     // Host administration, never a proprietary client protocol. Failure keeps

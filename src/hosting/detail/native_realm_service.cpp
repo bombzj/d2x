@@ -3,6 +3,8 @@
 #include "hosting/character_rules.hpp"
 #include "hosting/native_game_wire.hpp"
 #include "persistence/save_file.hpp"
+#include "persistence/save_codec.hpp"
+#include "resources/atomic_file.hpp"
 #include <algorithm>
 #include <random>
 #include <utility>
@@ -59,12 +61,51 @@ void NativeRealmService::discardReload() {
 }
 void NativeRealmService::close(bool save, bool keepReload) {
     if (save) checkpoint(); // Keep the live instance and lease on save failure.
+    if (binding) {
+        const auto *room = shared.find(binding->game);
+        if (room && room->tcpIp && room->tcpIpOwner == binding->player) {
+            // The hosting process owns the TCP/IP game. Flush guests before
+            // removing the owner; no remote player inherits an orphaned host.
+            for (auto *guest : shared.peers) if (guest != this && guest->binding && guest->binding->game == binding->game) {
+                guest->checkpoint();
+            }
+            for (auto *guest : shared.peers) if (guest != this && guest->binding && guest->binding->game == binding->game) {
+                guest->sendGame({0x06}); guest->close(false);
+            }
+        }
+    }
     if (binding) shared.retire(*binding);
     binding.reset(); lease.reset(); selected.reset();
     peer = {}; ticket = false;
     admission.clear(); terrain = {};
     gameName.clear(); gamePassword.clear();
     if (!keepReload) discardReload();
+}
+void NativeRealmService::connectTcpIp() {
+    if (binding || peer.phase != GamePhase::Closed) throw ProtocolError("TCP/IP peer is already connected");
+    directTcpIp = true; tcpIpUploadComplete = false; tcpIpUploadSize = 0; tcpIpUpload.reset();
+    peer = {}; peer.phase = GamePhase::Connected; sendGame({0xAF, 0});
+    externalSave = [this](const PersistentCharacter &character) {
+        const auto bytes = encodeSave(character, *content);
+        tcpIpLastSave = bytes;
+        for (auto &packet : net::protocol::tcpip_download(bytes)) sendGame(std::move(packet));
+    };
+}
+void NativeRealmService::recoverTcpIpSave() {
+    if (!directTcpIp || (!binding && tcpIpLastSave.empty())) return;
+    Bytes bytes = tcpIpLastSave;
+    if (binding) {
+        const auto saved = host.exportCharacter(*binding);
+        if (!saved) throw std::runtime_error("TCP/IP recovery character is unavailable");
+        bytes = encodeSave(*saved, *content);
+    }
+    decodeSave(bytes, *content);
+    const auto directory = root / "tcpip-recovery";
+    std::filesystem::create_directories(directory);
+    const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+    const auto path = directory / ("character-" + std::to_string(stamp) + ".d2s");
+    writeFileAtomically(path, bytes, false);
+    counters.lastFailure = "TCP/IP disconnected; host recovery save: " + path.string();
 }
 void NativeRealmService::resetRealm() {
     if (binding) close();

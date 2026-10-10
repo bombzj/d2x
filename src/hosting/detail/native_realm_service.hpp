@@ -7,6 +7,7 @@
 #include "hosting/protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/realm_portrait.hpp"
+#include "network/protocol/tcpip.hpp"
 #include <array>
 #include <functional>
 
@@ -29,6 +30,11 @@ struct NativeRealmService {
     uint64_t &rules;
     bool authenticated{}, ticket{};
     bool multiplayerEndpoint{};
+    bool tcpIpHost{}, directTcpIp{}, tcpIpUploadComplete{};
+    uint8_t tcpIpClass{};
+    uint32_t tcpIpUploadSize{};
+    net::protocol::TcpIpSaveTransfer tcpIpUpload;
+    Bytes tcpIpLastSave;
     uint32_t hash{};
     uint16_t token{};
     // TCP peers receive the interface reached by their MCP connection; memory
@@ -107,6 +113,10 @@ struct NativeRealmService {
     void close(bool save = true, bool keepReload = false);
     void resetRealm();
     void connectGame(bool announce = true);
+    void connectTcpIp();
+    void queryTcpIpGames(net::protocol::Reader &);
+    void uploadCharacter(net::protocol::Reader &);
+    void recoverTcpIpSave();
     void failGame();
     void setPaused(bool);
     void publishMotion(bool force = false);

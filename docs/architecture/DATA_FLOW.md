@@ -5,10 +5,10 @@
 | 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |
 | 连接 | app → RealmSession → TcpStream或MemoryTransport | 内存跨线程只传原字节；账号认证或预认证Realm在连接入口选择 |
-| 只读内容 | Archives → sharedClassicData → 客户端／NativeRealmHost | 同一挂载集合仅解析一次，单机与LAN Host在同进程共享；LAN Join不初始化未使用的本地宿主。独立进程分别加载自身所需MPQ，世界状态、地图副本、存档及GPU对象独立；解压缓存边界见[MPQ](../resources/MPQ.md#查询与提取) |
+| 只读内容 | Archives → sharedClassicData → 客户端／NativeRealmHost | 同一挂载集合仅解析一次，单机与LAN Host在同进程共享；TCP/IP Join只初始化本机选角／存储内容，不创建未使用的权威实例。独立进程分别加载自身所需MPQ，世界状态、地图副本、存档及GPU对象独立；解压缓存边界见[MPQ](../resources/MPQ.md#查询与提取) |
 | 角色列表／建删选角 | RealmFrontend ↔ RealmSession原MCP ↔ 原Realm或EmbeddedRealm → CharacterStore | UI只有OnlineCharacter；服务端映射名称到目录身份及版本，客户端不能传路径 |
 | 初始角色 | MPQ CharStats／Items → character_creation → D2S | 真实职业属性、初始物品与原来源技能，不自造参数 |
-| 入局 | 原MCP建房／票据 → 原GS握手 → nativeGameAdmission | 准备碰撞和完整可编码状态后才接受；旧连接及不匹配票据拒绝 |
+| 入局 | 原服MCP票据／单机内存建房，或TCP/IP查询→原GS登录→本机存档上传；共用nativeGameAdmission | 准备碰撞和完整可编码状态后才接受；旧连接及不匹配票据拒绝 |
 | 独立服务入局 | D2CS建房／票据 → D2DBS读取并锁定角色 → admitExternal → 原GS握手 | 账号／选角仍属PvPGN；核对姓名、职业、模式、进度、charinfo身份，不接受客户端上传D2S |
 | 地图 | LOADACT／0x07 → RemoteTown → NativeMapGenerator | 与宿主generateArea使用同一生成器和房间顺序；两侧不共享可变Map |
 | 移动 | SceneController → RemoteControl → 原01／03 → 原协议适配 → GameHost → GameInstance FIFO | 服务端25Hz寻路／碰撞；内部序号和绑定由宿主产生 |
@@ -20,7 +20,7 @@
 | 技能／任务 | 原属性／技能／任务字 + MPQ → 公共人物／任务投影 | 保存值保留；已支持技能、洞穴奖励和库存事务由独立领域执行，其余范围见对应专题 |
 | 存档 | 服务端租约 → 导出PersistentCharacter → persistence校验 → 原子替换／.bak | 全部写入由宿主发起；存档不含整局AI、路径、弹体等运行态 |
 | 独立服务存档 | 领域导出 → 原D2S编码／恢复副本 → D2DBS charsave与charinfo确认 | 正常角色库在DBS，本地仅恢复副本；两文件无后端原子事务，不自动回写恢复文件 |
-| 退局 | 客户端原69 → 宿主保存成功 → 原B0 → MCP重新列角 | 失败保留实例及租约，客户端不会得到成功确认；可修复后重试 |
+| 退局 | 原69→保存→原B0；TCP/IP先B3回传本机完整存档，再返回本机选角，宿主结束用06 | 失败保留实例及租约，客户端不会得到成功确认；可修复后重试 |
 | 单机暂停 | app窗口／菜单策略 → GameHost.pause | 清路径和未执行移动，恢复不补暂停时间；不暂停原服 |
 | 开发保存／重载 | F11／Ctrl+F11或pipe save／load → AdminRequest → 宿主 → 原协议重新入局 | 同一类型化管理接口；重载准备并保留候选实例，校验重新选角的版本后复用 |
 | 开发单步／诊断 | pipe step／server-status／server-protocol／server-systems → 宿主管理 | step仅推进已暂停的权威实例；系统诊断显示目录／阶段／stub，不用于客户端世界同步，不给原包追加字段 |

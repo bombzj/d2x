@@ -16,8 +16,8 @@
 | 入口 | 维护内容 |
 | --- | --- |
 | [message_schema.hpp](../../src/network/protocol/message_schema.hpp) | 两方向身份、分帧种类、长度偏移／最低包长、编译期完整性约束 |
-| [C2S目录](../../src/network/protocol/client_messages.inc) | 73个已核对身份和长度，双方共同分帧／发送校验 |
-| [S2C目录](../../src/network/protocol/server_messages.inc) | 142个身份，含仅保留ID的Reserved项 |
+| [C2S目录](../../src/network/protocol/client_messages.inc) | 75个已核对身份和长度，双方共同分帧／发送校验 |
+| [S2C目录](../../src/network/protocol/server_messages.inc) | 143个身份，含仅保留ID的Reserved项 |
 | [原长度表](../../src/network/protocol/lod113c_lengths.inc) | 唯一1.13c S2C长度表，0未定义、-1变长 |
 | [分帧实现](../../src/network/protocol/lod113c.cpp) | 两方向有界拆帧，不知道长度则拒绝，不尝试扫描下一个ID |
 | [宿主目录](../../src/hosting/protocol/message_catalog.cpp) | 阶段、领域、实现状态；不决定客户端是否消费 |
@@ -37,7 +37,7 @@
 | ReservedXX | 只确认S2C身份／长度，参数语义未核实；宿主Reserved／stub |
 | framing=unsupported | 身份已预留但无法分帧，拒绝连接，不是可以跳过的stub |
 
-68仅Connected；69／6B／6D为LoggedOn或Entered，其中6B另拒绝重复入场；其余C2S仅Entered。Closed拒绝全部。操作者始终来自认证连接，包内玩家GUID不能替代连接身份。领域在固定步再验区域、目标、库存、资源。
+68／6A仅Connected；69／6B／6C／6D为LoggedOn或Entered，其中6B另拒绝重复入场，6C仅直连LoggedOn允许上传；其余C2S仅Entered。Closed拒绝全部。操作者始终来自认证连接，包内玩家GUID不能替代连接身份。领域在固定步再验区域、目标、库存、资源。
 
 ## 传输封装
 
@@ -134,7 +134,7 @@
 | AA | u8@6 | 7 |
 | AC | u8@12 | 13 |
 | AF | 固定协商2字节，mode仅0／1 | 2 |
-| AE／B3 | 已登记但分帧不支持，拒绝连接 | 未核实 |
+| AE | 已登记但分帧不支持，拒绝连接 | 未核实 |
 
 ## S2C 常用参数
 
@@ -187,11 +187,11 @@
 
 ## S2C 身份预留
 
-以下用ReservedXX名称且宿主禁止输出，不编造未核实参数。固定长度只说明能分帧，不说明客户端消费。A6有分帧；AE具名Warden与B3分帧仍拒绝。
+以下用ReservedXX名称且宿主禁止输出，不编造未核实参数。固定长度只说明能分帧，不说明客户端消费。A6有分帧；AE具名Warden分帧仍拒绝；00／B2／B3用于TCP/IP生命周期，不再Reserved。
 
 | ID | 总字节 |
 | --- | --- |
-| 00／4F／6E／6F／70／71／72 | 1 |
+| 4F／6E／6F／70／71／72 | 1 |
 | 61／89 | 2 |
 | 54／A4 | 3 |
 | 5F／7E | 5 |
@@ -207,9 +207,21 @@
 | 12／91 | 26 |
 | 5E | 38 |
 | 5A | 40 |
-| B2 | 53 |
 | 24／25 | 90 |
-| A6／AE／B3 | 变长；AE／B3分帧拒绝 |
+| A6／AE | 变长；AE分帧拒绝 |
+
+## TCP/IP本地角色交换
+
+| 方向／ID | 名称 | 总字节 | 字段 |
+| --- | --- | --- | --- |
+| C2S 6A | QueryTcpIpGames | 1 | 无；Connected，仅直连 |
+| C2S 6C | UploadCharacter | partSize+7 | u8 partSize,u32 totalSize,char[partSize]存档,u8忽略尾字节 |
+| S2C 00 | GameLoading | 1 | 无 |
+| S2C B2 | TcpIpGameInfo | 53 | char[48] gameName,u16 clients,u16 gameId；FFFF为列表终止 |
+| S2C B3 | DownloadCharacter | partSize+7 | u8 partSize,u8 firstPart,u32 totalSize,char[partSize]存档 |
+| S2C B4 | AdmissionError | 5 | u32 errorCode；客户端立即终止入局并显示原码，宿主输出仍为stub |
+
+1.13c当前DLL依据及完整生命周期见[联网](NETWORK.md#tcpip直连与自研宿主入口)。分段最大255，累计小于8192字节，总长和顺序一致才交付完整字节；存档校验和／身份／原子写盘归hosting。本包不用于PvPGN后端角色；不添加通用文件路径或ACK。
 
 ## MCP 与 SID
 

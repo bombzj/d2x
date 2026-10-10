@@ -4,7 +4,7 @@
 
 ## 产品与代码边界
 
-Single Player、LAN与原服共用一套原MCP／D2GS客户端。自研宿主拥有权威玩法，单机使用内存字节传输；客户端不读写角色D2S，不因断线切换本地权威。hosting负责内容／协议／存储，server负责领域状态和25Hz执行；内核不读取MPQ、文件、socket、设备或GPU。详细依赖与状态所有权见[架构](docs/architecture/OVERVIEW.md)和[内核](docs/modules/SERVER_SYSTEMS.md)。
+Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权威玩法，单机使用内存字节传输；TCP/IP使用本地角色和默认4000直连，局前内存MCP只复用选角。network／UI不读写D2S，应用交由hosting持有本地租约和原版存档交换；断线不切换本地权威。hosting负责内容／协议／存储，server负责领域状态和25Hz执行；内核不读取MPQ、文件、socket、设备或GPU。详细依赖与状态所有权见[架构](docs/architecture/OVERVIEW.md)和[内核](docs/modules/SERVER_SYSTEMS.md)。
 
 规则／原图优先取当前MPQ，未实现行为明确拒绝；唯一已授权敌怪替身为沉沦魔，保留真实身份，中立单位不可替换。资料与许可见[来源](docs/resources/THIRD_PARTY.md)。
 
@@ -26,7 +26,7 @@ Single Player、LAN与原服共用一套原MCP／D2GS客户端。自研宿主拥
 
 战斗关系、来源与控制代次、重试后续阶段、武器目标局部随机和耐久防重复提交已改；技能私有运行态／求值实现移出公共头，活单位空间索引接入武器及通用法术直线碰撞。AI、范围爆炸及怪物弹体仍有遍历。详细范围见[战斗关系与提交](docs/modules/SERVER_SYSTEMS.md#战斗关系与提交)。
 
-上述源码已随本批Windows Release构建、打包；未测量性能及增量编译收益，重构的完整争用／背压边界未认证。四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，并完成代表单机路径的有限冒烟，详见佣兵专题。当前源码与运行包规则均为**v34**；历史证据不认证本批未覆盖路径。
+佣兵及重构源码已随本批Windows Release构建、打包；未测量性能及增量编译收益，重构的完整争用／背压边界未认证。四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，并完成代表单机路径的有限冒烟，详见佣兵专题。后续TCP/IP直连修正使当前源码规则为**v35**，既有运行包仍为**v34**；本次已构建、不打包，自研双端有限冒烟及用户手动原版Host／D2X Join成功的验证边界由[联网](docs/modules/NETWORK.md)维护。
 
 ## 保存边界
 

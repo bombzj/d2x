@@ -10,7 +10,7 @@ enum class ServerMessage : uint8_t {
 #include "server_messages.inc"
 #undef D2X_SERVER_MESSAGE
 };
-enum class WireFraming { Fixed, ByteLength, WordLength, Chat, SkillList, Compression, Unsupported };
+enum class WireFraming { Fixed, ByteLength, WordLength, Chat, SkillList, Compression, SavePart, Unsupported };
 struct ServerWireDescriptor {
     ServerMessage message;
     std::string_view name;
@@ -35,6 +35,7 @@ constexpr ServerWireDescriptor serverWireDescriptor(ServerMessage message, std::
     case 0xAA: return {message, name, WireFraming::ByteLength, 0, 6, 7};
     case 0xAC: return {message, name, WireFraming::ByteLength, 0, 12, 13};
     case 0xAF: return {message, name, WireFraming::Compression, 0};
+    case 0xB3: return {message, name, WireFraming::SavePart, 0, 1, 7};
     default: return {message, name, WireFraming::Unsupported, 0};
     }
 }
@@ -56,6 +57,7 @@ constexpr std::string_view framingName(WireFraming framing) {
     case WireFraming::Chat: return "chat-strings";
     case WireFraming::SkillList: return "skill-count";
     case WireFraming::Compression: return "compression";
+    case WireFraming::SavePart: return "save-part";
     case WireFraming::Unsupported: return "unsupported";
     }
     return "unsupported";

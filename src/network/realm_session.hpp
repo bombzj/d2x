@@ -46,6 +46,10 @@ class RealmSession {
     // codecs, state reducer and all public gameplay commands remain unchanged.
     void connect_realm(std::unique_ptr<IByteTransport> mcp, std::unique_ptr<IByteTransport> game,
                        Endpoint realm, std::string name, uint16_t gamePort = 4000);
+    // Native TCP/IP: the caller owns the local save lease. Only opaque original
+    // bytes enter networking; complete returned saves go back to that owner.
+    void connect_tcpip(Endpoint game, Bytes characterSave);
+    std::vector<Bytes> take_tcpip_saves();
     ~RealmSession();
     RealmSession(const RealmSession &) = delete;
     RealmSession &operator=(const RealmSession &) = delete;

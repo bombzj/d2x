@@ -8,10 +8,10 @@
 
 | 源码入口（相对src/hosting） | 职责 |
 | --- | --- |
-| embedded_realm | 组装多个内存端点与LAN监听，集中泵送共享宿主；close只退主连接，shutdown保存全部参与者后停服 |
+| embedded_realm | 组装多个内存端点与TCP/IP游戏监听，集中泵送共享宿主；持有Join本机角色租约，校验并原子写入完整回传；TCP/IP主宿主退局先保存并结束客人 |
 | detail/native_realm_service | 每个参与者独立协议阶段、票据、角色名册版本／文件租约及入场准备，不拥有共享实例调度器 |
 | detail/native_realm_host | 共享只读MPQ、GameHost、房间／地图目录；集中内容准备、事件路由和一次固定步推进 |
-| detail/realm_connection、lan_realm | selector／拆包状态、TCP连接与原68票据的绑定、断线保存和超时；TCP实现留network/tcp_listener |
+| detail/realm_connection、lan_realm | realm_connection保留内存MCP／GS分帧；lan_realm仅监听游戏端口，原6A／68／6C直连准入与回传，不提供远端MCP；断线恢复和超时，TCP实现留network/tcp_listener |
 | detail/world_replication、player_replication、monster_replication | 原房间／物件／瓦片出口增删、跨区位置及多人名册／位置／穿戴外观；私有数据不广播 |
 | detail/realm_protocol、realm_characters、realm_games | MCP分派与具名处理器；账号／角色、游戏票据与领域执行分开 |
 | detail/game_protocol | Connected → LoggedOn → Entered → Closed；验证票据、版本、阶段，处理原握手／心跳／保存退出 |
@@ -35,12 +35,12 @@ NativeRealmService是单个连接的生命周期编排，不是玩法容器。�
 
 ## 消息覆盖与状态
 
-共享目录覆盖当前RealmSession发送及已交叉核对的11个预留请求，S2C覆盖现有1.13c长度表全部142项。宿主实现状态独立于客户端消费；只确认身份／长度的消息为Reserved／stub，未知长度继续失败，不从旧头文件猜测。
+共享目录覆盖当前RealmSession发送及已交叉核对的11个预留请求，S2C覆盖现有1.13c长度表全部143项（含B4入局错误）。宿主实现状态独立于客户端消费；只确认身份／长度的消息为Reserved／stub，未知长度继续失败，不从旧头文件猜测。
 
 | 方向 | 当前基础 |
 | --- | --- |
-| D2GS C2S | 72种具名入口，原61种与新增11种无副作用stub；完整ID、参数、阶段见消息速查，未登记长度拒绝连接 |
-| D2GS S2C | 142种共享身份，已有93项宿主状态加49项身份预留；encodeServerPacket拒绝stub；AE／B3已登记但分帧拒绝，不生成空包假装实现 |
+| D2GS C2S | 具名入口覆盖共用客户端请求及TCP/IP查询／角色上传；完整ID、参数、阶段与stub见消息速查，未登记长度拒绝连接 |
+| D2GS S2C | 覆盖1.13c共享身份；实现与预留以当前目录为准，输出拒绝stub；00／06／B2／B3已接TCP/IP加载／结束／列表／保存，AE仍拒绝分帧 |
 | MCP C2S | 9种具名请求已接；游戏目录05／06、创建03与加入04支持多个房间及同局1–8人，资格按难度／专家状态／等级差／密码／容量复验 |
 | MCP S2C | 9种请求对应响应已接；14排队仍为stub。05逐房间发送并终止，06按原16职业／等级槽及实际姓名编码；不存在的详情没有已核实错误包，保持超时 |
 | 子命令 | 4F的18关闭仓库／19取金币／20存金币／23关闭方块／24合成已接，玩家交易2取消／3接受／4确认／7撤销确认／8报价金币已接；38的1普通商店／2赌博及0携带NPC／物品GUID的任务加工已接；0按NPC身份解释最后字段，Warriv旅行目的地40／1、Akara重置parameter0已接。子命令分别登记，不由父包状态推断全部支持 |

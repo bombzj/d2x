@@ -1,4 +1,5 @@
 #pragma once
+#include "core/bytes.hpp"
 #include "hosting/character_directory.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include <filesystem>
@@ -26,6 +27,7 @@ class CharacterStore {
     std::unique_ptr<Lease> acquire(uint64_t revision, uint64_t id);
     PersistentCharacter load(Lease &);
     void save(Lease &, const PersistentCharacter &);
+    void saveBytes(Lease &, Bytes); // Validated native TCP/IP return; preserve original bytes.
   private:
     const ClassicData &content_;
     std::filesystem::path root_;

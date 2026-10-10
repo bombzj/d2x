@@ -4,6 +4,7 @@
 #include "network/protocol/d2gs_stream.hpp"
 #include "network/protocol/message_schema.hpp"
 #include "network/protocol/bits.hpp"
+#include "network/protocol/tcpip.hpp"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -101,6 +102,11 @@ struct RealmSession::Impl {
 
     ByteStream sid, mcp, gs;
     std::optional<Endpoint> directRealm;
+    bool directTcpIp{}, tcpIpUploaded{}, tcpIpSavedOnLeave{};
+    std::optional<uint16_t> tcpIpGameId;
+    Bytes tcpIpUpload;
+    TcpIpSaveTransfer tcpIpDownload;
+    std::vector<Bytes> tcpIpSaves;
     PacketStream sidPackets{Framing::Sid}, mcpPackets{Framing::Mcp};
     D2gsStream gamePackets;
     OnlineView view;
@@ -215,6 +221,8 @@ struct RealmSession::Impl {
         mcpPackets.reset();
         clear_game();
         clear_credentials();
+        directTcpIp = false; tcpIpUploaded = tcpIpSavedOnLeave = false;
+        tcpIpGameId.reset(); tcpIpUpload.clear(); tcpIpDownload.reset();
         selected.reset();
         pendingCharacter.clear();
         gameName.clear();
@@ -777,6 +785,16 @@ struct RealmSession::Impl {
         return true;
     }
     void return_to_realm() {
+        if (directTcpIp) {
+            const bool unfinished = tcpIpDownload.incomplete();
+            const bool saved = tcpIpSavedOnLeave;
+            shutdown();
+            view.selectedCharacter.clear();
+            stage(OnlineStage::Cancelled); // Composition reconnects the local selector.
+            if (unfinished || !saved)
+                error(OnlineErrorKind::Transport, "TCP/IP save result unknown; local character was not overwritten with incomplete data");
+            return;
+        }
         mcp.close();
         mcpPackets.reset();
         erase_secret(gamePassword);
@@ -847,9 +865,21 @@ struct RealmSession::Impl {
     }
     void handle_game(Packet packet) {
         observed(view.gameProtocol, packet, 1);
+        if (packet.id == 0xB4) {
+            Reader in(packet.body); const auto code = in.u32(); in.finish();
+            std::string message = "Game server rejected character admission (code " + std::to_string(code) + ")";
+            // Native 1.13c TCP/IP pre-admission checks (D2Game RVA 0xCAD60).
+            // Other codes can originate in save loading; retain their raw value.
+            if (directTcpIp && code == 6) message += ": game unavailable, invalid name, or character already in game";
+            else if (directTcpIp && code == 15) message += ": game is full";
+            else if (directTcpIp && code == 16) message += ": client version mismatch";
+            fail(OnlineErrorKind::Server, std::move(message), packet.id, code);
+            return;
+        }
         if (packet.id == 0xAF && view.stage == OnlineStage::GameHandshake) {
             if (!selected || !selected->characterClass)
                 throw ProtocolError("Missing game character class");
+            if (directTcpIp) { sent(gs, {0x6A}); return; }
             sent(gs, game_logon(ticketHash, ticketToken, *selected->characterClass, options.gameLocale,
                                 selected->name));
             ticketHash = 0;
@@ -859,8 +889,41 @@ struct RealmSession::Impl {
             stage(OnlineStage::LoadingGame);
             return;
         }
+        if (directTcpIp && packet.id == 0xB2) {
+            if (view.stage != OnlineStage::GameHandshake) throw ProtocolError("Unexpected TCP/IP game directory");
+            Reader in(packet.body); const auto name = in.take(48); in.u16(); const auto id = in.u16(); in.finish();
+            if (id != 0xFFFF) {
+                if (!id || tcpIpGameId) throw ProtocolError("TCP/IP host must advertise one game");
+                tcpIpGameId = id;
+                const auto end = std::find(name.begin(), name.end(), uint8_t{});
+                if (end == name.end()) throw ProtocolError("Unterminated TCP/IP game name");
+                gameName.assign(name.begin(), end);
+                return;
+            }
+            if (!tcpIpGameId) throw ProtocolError("TCP/IP host has no active game");
+            sent(gs, game_logon(0, *tcpIpGameId, *selected->characterClass, options.gameLocale, selected->name));
+            gameStarted = Clock::now(); nextHeartbeat = gameStarted;
+            stage(OnlineStage::LoadingGame);
+            return;
+        }
+        if (directTcpIp && packet.id == 0xB3) {
+            Reader in(packet.body); const auto size = in.u8(), first = in.u8(); const auto total = in.u32();
+            const auto bytes = in.take(size); in.finish();
+            if (first > 1) throw ProtocolError("Invalid TCP/IP save first-part flag");
+            if (auto complete = tcpIpDownload.append(total, bytes, first != 0)) {
+                if (tcpIpSaves.size() >= 8) throw ProtocolError("TCP/IP returned-save queue is full");
+                tcpIpSaves.push_back(std::move(*complete));
+                tcpIpSavedOnLeave = true;
+            }
+            deadline = Clock::now() + options.timeout;
+            return;
+        }
+        if (directTcpIp && packet.id == 0x00) {
+            deadline = Clock::now() + options.timeout;
+            return;
+        }
         if (packet.id == 0xB0 || packet.id == 0x06) {
-            if (view.stage == OnlineStage::LeavingGame)
+            if (view.stage == OnlineStage::LeavingGame || directTcpIp)
                 return_to_realm();
             else
                 fail(OnlineErrorKind::Server, "Game server ended the game connection", packet.id);
@@ -890,7 +953,10 @@ struct RealmSession::Impl {
             }
             changed();
         } else if (packet.id == 0x02 && !environmentSent) {
-            // Server has loaded the character. This sends no local D2S or mod packet.
+            if (directTcpIp && !tcpIpUploaded) {
+                for (auto &part : tcpip_upload(tcpIpUpload)) sent(gs, std::move(part));
+                tcpIpUploaded = true; tcpIpUpload.clear();
+            }
             sent(gs, {0x6B});
             environmentSent = true;
             deadline = Clock::now() + options.timeout;
@@ -1138,7 +1204,7 @@ struct RealmSession::Impl {
                         fail(OnlineErrorKind::Protocol, e.what(), id);
                         return;
                     }
-                    if (view.stage == OnlineStage::Failed || view.stage == OnlineStage::ConnectingRealm)
+                    if (view.stage == OnlineStage::Failed || view.stage == OnlineStage::ConnectingRealm || view.stage == OnlineStage::Cancelled)
                         return;
                 }
             } else if (event.kind == StreamEventKind::Closed && view.stage == OnlineStage::LeavingGame &&
@@ -1342,6 +1408,26 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     p.snapshotDirty = true;
 }
 RealmSession::~RealmSession() = default;
+void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save) {
+    std::lock_guard lock(impl_->mutex);
+    auto &p = *impl_;
+    if (p.view.stage != OnlineStage::Lobby || !p.selected || !p.selected->characterClass)
+        throw ProtocolError("TCP/IP needs a selected local character");
+    if (!endpoint.port || save.empty() || save.size() >= tcpIpSaveLimit || !p.tcpIpSaves.empty())
+        throw ProtocolError("Invalid TCP/IP endpoint or unconsumed character save");
+    auto selected = *p.selected;
+    p.shutdown(); p.directRealm.reset();
+    p.selected = std::move(selected); p.view.selectedCharacter = p.selected->name;
+    p.directTcpIp = true; p.tcpIpUpload = std::move(save);
+    p.options = LoginOptions{}; p.options.gamePort = endpoint.port;
+    p.gs.use(std::make_unique<TcpStream>()); p.gameEndpoint = endpoint;
+    p.gs.connect(std::move(endpoint), p.options.timeout);
+    p.stage(OnlineStage::ConnectingGame); p.snapshotDirty = true;
+}
+std::vector<Bytes> RealmSession::take_tcpip_saves() {
+    std::lock_guard lock(impl_->mutex);
+    return std::exchange(impl_->tcpIpSaves, {});
+}
 void RealmSession::login(LoginOptions options) {
     authenticate(std::move(options), false);
 }
@@ -1816,6 +1902,7 @@ bool RealmSession::leave_game() {
     }
     try {
         p.close_interaction();
+        if (p.directTcpIp) p.tcpIpSavedOnLeave = false;
         p.sent(p.gs, {0x69});
         if (p.view.world.itemRequest && p.view.world.itemRequest->state == OnlineItemRequest::State::Pending)
             p.view.world.itemRequest->state = OnlineItemRequest::State::Interrupted;

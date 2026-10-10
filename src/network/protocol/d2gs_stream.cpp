@@ -1,7 +1,48 @@
 #include "network/protocol/d2gs_stream.hpp"
+#include "network/protocol/tcpip.hpp"
 #include <algorithm>
+#include <utility>
 
 namespace d2x::net::protocol {
+std::optional<Bytes> TcpIpSaveTransfer::append(uint32_t total, std::span<const uint8_t> part, bool first) {
+    if (!total || total >= tcpIpSaveLimit || part.size() > 255)
+        throw ProtocolError("Invalid native TCP/IP character size");
+    if (first) {
+        if (total_) throw ProtocolError("Interrupted native TCP/IP character transfer");
+        total_ = total;
+        bytes_.reserve(total);
+    }
+    if (!total_ || total != total_ || part.size() > total_ - bytes_.size())
+        throw ProtocolError("Inconsistent native TCP/IP character transfer");
+    bytes_.insert(bytes_.end(), part.begin(), part.end());
+    if (bytes_.size() != total_) return {};
+    total_ = 0;
+    return std::exchange(bytes_, {});
+}
+std::vector<Bytes> tcpip_upload(std::span<const uint8_t> save) {
+    if (save.empty() || save.size() >= tcpIpSaveLimit) throw ProtocolError("Character exceeds native TCP/IP save limit");
+    std::vector<Bytes> packets;
+    // D2Client 1.13c OPENCHAR always sends a final short part, including a zero
+    // part for exact multiples of 255. D2Net counts an ignored trailer byte.
+    for (size_t offset = 0;;) {
+        const auto size = std::min(size_t{255}, save.size() - offset);
+        Writer out; out.u8(0x6C); out.u8(uint8_t(size)); out.u32(uint32_t(save.size()));
+        out.append(save.subspan(offset, size)); out.u8(0); packets.push_back(out.release());
+        offset += size;
+        if (size < 255) break;
+    }
+    return packets;
+}
+std::vector<Bytes> tcpip_download(std::span<const uint8_t> save) {
+    if (save.empty() || save.size() >= tcpIpSaveLimit) throw ProtocolError("Character exceeds native TCP/IP save limit");
+    std::vector<Bytes> packets;
+    for (size_t offset = 0; offset < save.size();) {
+        const auto size = std::min(size_t{255}, save.size() - offset);
+        Writer out; out.u8(0xB3); out.u8(uint8_t(size)); out.u8(offset == 0); out.u32(uint32_t(save.size()));
+        out.append(save.subspan(offset, size)); packets.push_back(out.release()); offset += size;
+    }
+    return packets;
+}
 namespace {
 constexpr size_t bufferLimit = 256 * 1024;
 void append_bounded(Bytes &buffer, std::span<const uint8_t> bytes) {

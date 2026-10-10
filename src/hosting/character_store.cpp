@@ -111,6 +111,15 @@ void CharacterStore::save(Lease &lease, const PersistentCharacter &character) {
     writeFileAtomically(lease.path, bytes, true);
     lease.expected = std::move(bytes);
 }
+void CharacterStore::saveBytes(Lease &lease, Bytes bytes) {
+    const auto returned = decodeSave(bytes, content_);
+    const auto original = decodeSave(lease.expected, content_);
+    if (returned.player.name != original.player.name || returned.player.characterClass != original.player.characterClass)
+        throw std::runtime_error("TCP/IP returned a different character; local save was not replaced");
+    if (readBytes(lease.path) != lease.expected) throw std::runtime_error("Character changed outside TCP/IP; overwrite was refused");
+    writeFileAtomically(lease.path, bytes, true);
+    lease.expected = std::move(bytes);
+}
 void CharacterStore::create(std::string name, unsigned characterClass, uint32_t seed) {
     if (!validCharacterName(name) || folded(name) == "quick") throw std::runtime_error("Use 1-15 letters, digits or hyphens; quick is reserved");
     // Windows device names must be rejected on every platform for portable saves.

@@ -760,6 +760,18 @@ struct RealmFrontend::Impl {
                 value = std::max(low, value - 1);
         }
     }
+    void localDifficulty(const OnlineView &v, bool available) {
+        characters(v, false);
+        tiles("popup", 230, 130, 2);
+        const auto chosen = std::find_if(v.characters.begin(), v.characters.end(), [&](const auto &c) { return c.name == v.selectedCharacter; });
+        const auto progression = chosen != v.characters.end() ? chosen->progression.value_or(0) : 0;
+        const int unlocked = progression >= 10 ? 2 : progression >= 5 ? 1 : 0;
+        enabled = available;
+        for (int i = 0; i < 3; ++i) if (button("medium", 330, 205 + i * 55, s(5156 - i), i <= unlocked)) {
+            emit(FrontendCommand::SelectDifficulty); intent.difficulty = uint8_t(i);
+        }
+        if (button("medium", 330, 411, s(5103))) emit(FrontendCommand::Back);
+    }
     void lobby(const OnlineView &v) {
         tiles("lobby", 0, 0, 4);
         if (lobbyGeneration != v.gameGeneration) {
@@ -1040,6 +1052,10 @@ struct RealmFrontend::Impl {
             creation();
         else if (current == FrontendPage::Characters)
             characters(v, allowRealmSelection);
+        else if (current == FrontendPage::Difficulty) {
+            const bool available = enabled;
+            enabled = false; localDifficulty(v, available);
+        }
         else if (current == FrontendPage::Lobby)
             lobby(v);
         else {

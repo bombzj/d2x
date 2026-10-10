@@ -52,7 +52,7 @@ AppOptions parseOptions(int argc, char **argv) {
     }
     if (!options.hostLan.empty() && !options.lan.empty()) throw std::runtime_error("Choose either --host-lan or --lan");
     if ((!options.lan.empty() || !options.hostLan.empty()) && (!options.load.empty() || !options.save.empty() || !options.characterClass.empty()))
-        throw std::runtime_error("LAN sessions use the host character repository; do not combine with save startup");
+        throw std::runtime_error("TCP/IP selects local characters from --host-saves; do not combine with save startup");
     if ((!options.lan.empty() || !options.hostLan.empty()) && !options.onlinePlay.empty())
         throw std::runtime_error("Choose either LAN or original-server quick entry");
     if (!options.load.empty() && !options.characterClass.empty())

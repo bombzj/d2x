@@ -66,6 +66,9 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
             throw std::runtime_error("Room name or directory capacity unavailable");
         gameDifficulty = (flags >> 12) & 3;
         HostedGame room; room.name = name; room.password = password; room.description = description;
+        room.tcpIp = tcpIpHost;
+        if (room.tcpIp && std::any_of(shared.games.begin(), shared.games.end(), [](const auto &entry) { return entry.second.tcpIp; }))
+            throw std::runtime_error("A TCP/IP host can expose only one game");
         room.flags = flags; room.capacity = players; room.levelDifference = levelDifference;
         room.creatorLevel = uint8_t(selected->player.level); room.hardcore = bool(find(selectedName).nativeStatus & 4);
         room.settings = {selected->mapSeed, int(gameDifficulty), !multiplayerEndpoint && players == 1};
@@ -78,6 +81,7 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
         } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved), room.settings.singlePlayer); }
         stagedBinding = prepared.binding;
         room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level); room.index = shared.nextGameIndex;
+        room.tcpIpOwner = prepared.binding.player;
         try { shared.games.emplace(key, room); }
         catch (...) { shared.terrain.erase(room.handle); host.destroy(room.handle); throw; }
         ++shared.nextGameIndex;

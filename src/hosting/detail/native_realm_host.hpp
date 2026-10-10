@@ -16,6 +16,8 @@ struct HostedGame {
     uint32_t index{}, flags{};
     uint8_t capacity{}, levelDifference{}, creatorLevel{};
     bool hardcore{};
+    bool tcpIp{};
+    PlayerId tcpIpOwner;
     std::string name, password, description;
     std::chrono::steady_clock::time_point created = std::chrono::steady_clock::now();
 };

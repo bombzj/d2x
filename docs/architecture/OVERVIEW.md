@@ -4,7 +4,7 @@
 
 ## Agent速览
 
-**一套客户端，两种权威来源。** Single Player／LAN使用自研宿主，原服使用D2GS；两者都走原MCP／D2GS请求与同一客户端副本。单机只是内存字节传输，不是客户端执行玩法；断线不切换成本地权威。
+**一套客户端，两种权威来源。** Single Player／自研TCP/IP使用自研宿主，原服使用D2GS；入局共用D2GS请求与同一客户端副本。TCP/IP按原版直连游戏端口并交换本机角色字节，选角复用内部内存MCP；账号Realm路径继续使用远端MCP。单机是内存字节传输，断线不切换成本地权威。
 
 | 大模块（相对src/） | 放什么／不能放什么 |
 | --- | --- |
@@ -15,7 +15,7 @@
 | `server` | 权威领域状态、命令、25Hz执行、事务和可靠事实；不读取MPQ／文件／socket／设备／GPU／Win32 |
 | `gameplay`／`core` | 显式输入的规则计算、纯值和基础工具；不依赖会话、UI或隐式全局世界 |
 | `world`／`resources`／`content` | 导航、原地图生成、MPQ读取与定义；内核仅使用导航及已准备纯值，不调用内容加载 |
-| `persistence` | 原D2S编解码与文件保存工具，由宿主使用；客户端不直接读写角色存档 |
+| `persistence` | 原D2S编解码与文件保存工具，由hosting使用；TCP/IP本地租约及回传校验也在hosting，network／表现不读写角色存档 |
 
 **服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
 

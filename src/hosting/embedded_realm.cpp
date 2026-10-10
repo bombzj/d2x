@@ -19,6 +19,14 @@ struct EmbeddedRealm::Impl {
     MemoryPeer *primary{};
     std::unique_ptr<hosting::LanRealm> lan;
     std::string failure;
+    std::optional<Bytes> returnedSave;
+    void saveReturn() {
+        if (!returnedSave) return;
+        auto &service = primary->connection->service;
+        if (!service.lease || !service.store) throw std::runtime_error("TCP/IP local character lease has expired");
+        service.store->saveBytes(*service.lease, *returnedSave);
+        returnedSave.reset();
+    }
     Impl(Archives &archives, std::filesystem::path root) : host(archives, std::move(root)) { add(); }
     MemoryPeer &add() {
         if (peers.size() >= 64) throw std::runtime_error("Memory host connection capacity exhausted");
@@ -77,7 +85,7 @@ std::string EmbeddedRealm::prepareStartup(const std::string &load, const std::st
 }
 EmbeddedRealm::Transports EmbeddedRealm::connect(bool defaultDirectory) {
     auto &o = *impl_; auto &peer = *o.primary; auto &service = peer.connection->service;
-    service.close(); peer.disconnect();
+    o.saveReturn(); service.close(); peer.disconnect();
     if (defaultDirectory && !o.lan && o.host.root != std::filesystem::path("saves")) {
         if (o.lan || o.host.peers.size() > 1 || !o.host.games.empty()) throw std::runtime_error("Cannot change an active shared save repository");
         o.host.root = "saves"; service.store.reset();
@@ -88,9 +96,23 @@ EmbeddedRealm::Transports EmbeddedRealm::connect(bool defaultDirectory) {
     return o.transports(peer);
 }
 EmbeddedRealm::Transports EmbeddedRealm::attach() { auto &o = *impl_; return o.transports(o.add()); }
-void EmbeddedRealm::listen(std::string address, uint16_t realmPort, uint16_t gamePort) {
+void EmbeddedRealm::listen(std::string address, uint16_t gamePort) {
     auto &o = *impl_; if (o.lan) throw std::runtime_error("LAN listener is already active");
-    auto listener = std::make_unique<hosting::LanRealm>(o.host); listener->listen(std::move(address), realmPort, gamePort); o.lan = std::move(listener);
+    auto listener = std::make_unique<hosting::LanRealm>(o.host); listener->listen(std::move(address), gamePort); o.lan = std::move(listener);
+}
+void EmbeddedRealm::setTcpIpHost(bool enabled) { impl_->primary->connection->service.tcpIpHost = enabled; }
+Bytes EmbeddedRealm::selectedTcpIpSave() {
+    auto &o = *impl_; auto &service = o.primary->connection->service;
+    o.saveReturn();
+    if (!service.lease || !service.selected || service.binding) throw std::runtime_error("Select a local character before TCP/IP Join");
+    service.store->load(*service.lease);
+    return service.lease->expected;
+}
+void EmbeddedRealm::receiveTcpIpSave(Bytes bytes) {
+    auto &o = *impl_;
+    o.saveReturn(); // An earlier failed replacement cannot be discarded.
+    o.returnedSave = std::move(bytes);
+    o.saveReturn();
 }
 void EmbeddedRealm::pump(double seconds, bool paused) {
     try { impl_->pump(seconds, paused); }
@@ -133,11 +155,12 @@ hosting::AdminResult EmbeddedRealm::administer(const hosting::AdminRequest &requ
 }
 void EmbeddedRealm::close() {
     auto &o = *impl_;
-    // Frontend disconnect closes only its local player. LAN games continue.
-    o.primary->connection->service.close(); o.primary->disconnect();
+    // TCP/IP owner retirement flushes and ends its guests as well.
+    o.saveReturn(); o.primary->connection->service.close(); o.primary->disconnect();
 }
 void EmbeddedRealm::shutdown() {
     auto &o = *impl_;
+    o.saveReturn();
     for (auto *peer : o.host.peers) peer->checkpoint();
     if (o.lan) o.lan->close();
     for (auto &peer : o.peers) { peer->connection->service.close(false); peer->disconnect(); }

@@ -116,8 +116,12 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     EmbeddedRealm embedded(archives, options.hostSaves);
     bool localConnection = false, enterLocalGame = false;
     bool lanConnection = false, lanListening = false;
+    bool lanJoiningGame = false, tcpIpSaveFailed = false;
+    std::string lanJoinAddress;
+    std::deque<Bytes> tcpIpSaves;
     std::string reloadCharacter;
     uint8_t localDifficulty{};
+    bool localDifficultyChosen = false;
     auto administerLocal = [&](const hosting::AdminRequest &request) -> hosting::AdminResult {
         using namespace hosting;
         if (!localConnection && !lanListening) return {AdminStatus::Unavailable, "No embedded host connection"};
@@ -136,7 +140,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 embedded.administer({AdminOperation::CancelReload, request.target, {}});
                 return {AdminStatus::Failed, "Native leave could not be queued; prepared reload cancelled"};
             }
-            reloadCharacter = name; localDifficulty = difficulty;
+            reloadCharacter = name; localDifficulty = difficulty; localDifficultyChosen = true;
         }
         return result;
     };
@@ -257,13 +261,15 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     bool quickCharacter = !options.onlineCharacter.empty();
     bool quickGame = quickCharacter && (!options.onlineCreateGame.empty() || !options.onlineJoinGame.empty());
     if (!options.hostLan.empty()) {
-        try { embedded.listen(options.hostLan, options.realmPort, options.gamePort); lanListening = true; }
+        try { embedded.listen(options.hostLan, options.gamePort); embedded.setTcpIpHost(true); lanListening = true; }
         catch (const std::exception &error) { throw std::runtime_error(std::string("LAN host could not start: ") + error.what()); }
     }
     if (!options.lan.empty()) {
-        session.connect_realm(std::make_unique<net::TcpStream>(), std::make_unique<net::TcpStream>(),
-            {options.lan, options.realmPort}, "LAN", options.gamePort);
-        lanConnection = true;
+        auto streams = embedded.connect();
+        session.connect_realm(std::move(streams.realm), std::move(streams.game),
+            {"127.0.0.1", options.realmPort}, "TCP/IP Game", options.gamePort);
+        localConnection = lanConnection = true; lanJoinAddress = options.lan;
+        quickGame = false;
         page = FrontendPage::Characters;
     }
     if (quickCharacter && options.lan.empty()) {
@@ -311,6 +317,23 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         }
         const auto previousStage = session.read().stage;
         session.tick();
+        for (auto &save : session.take_tcpip_saves()) tcpIpSaves.push_back(std::move(save));
+        if (!tcpIpSaveFailed) while (!tcpIpSaves.empty()) {
+            try { embedded.receiveTcpIpSave(tcpIpSaves.front()); tcpIpSaves.pop_front(); }
+            catch (const std::exception &error) {
+                notice = error.what(); tcpIpSaveFailed = true; quit = false; frames = 0; break;
+            }
+        }
+        if (lanJoiningGame && !tcpIpSaveFailed && !quit &&
+            (session.read().stage == OnlineStage::Cancelled || session.read().stage == OnlineStage::Failed)) {
+            if (session.read().error) notice = session.read().error->message;
+            try {
+                auto streams = embedded.connect();
+                session.connect_realm(std::move(streams.realm), std::move(streams.game),
+                    {"127.0.0.1", options.realmPort}, "TCP/IP Game", options.gamePort);
+                localConnection = true; lanJoiningGame = false; page = FrontendPage::Characters;
+            } catch (const std::exception &error) { notice = error.what(); }
+        }
         if (session.read().world.playerTrade.active()) control.cancelMovement();
         inventory.update(session.read());
         combat.update();
@@ -416,7 +439,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             reply["uiQueue"] = {{"inputFrames", debugInputs.size()},
                 {"itemCommands", sharedClients ? sharedClients->queuedItemCommands() : 0},
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
-            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost"};
+            constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
             if (sharedUi) {
                 const auto &chat = sharedUi->chat();
@@ -455,9 +478,20 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             enterLocalGame = session.select_character(std::exchange(reloadCharacter, {}));
         }
         if (localConnection && enterLocalGame && view.stage == OnlineStage::Lobby) {
-            enterLocalGame = false;
-            session.create_game({lanConnection ? view.selectedCharacter : "SinglePlayer", {}, {}, localDifficulty,
-                                 lanConnection ? uint8_t(8) : uint8_t(1), 99});
+            const auto chosen = std::find_if(view.characters.begin(), view.characters.end(), [&](const auto &c) { return c.name == view.selectedCharacter; });
+            const bool chooseDifficulty = lanConnection && lanJoinAddress.empty() && !localDifficultyChosen &&
+                chosen != view.characters.end() && chosen->progression.value_or(0) >= 5;
+            if (chooseDifficulty) page = FrontendPage::Difficulty;
+            else {
+                enterLocalGame = false;
+                if (lanConnection && !lanJoinAddress.empty()) {
+                    try {
+                        session.connect_tcpip({lanJoinAddress, options.gamePort}, embedded.selectedTcpIpSave());
+                        localConnection = false; lanJoiningGame = true;
+                    } catch (const std::exception &error) { notice = error.what(); session.return_to_characters(); }
+                } else session.create_game({lanConnection ? view.selectedCharacter : "SinglePlayer", {}, {}, localDifficulty,
+                                           lanConnection ? uint8_t(8) : uint8_t(1), 99});
+            }
         } else if (localConnection && !enterLocalGame && view.stage == OnlineStage::Lobby) {
             // Rejected automatic admission returns to characters, never to a lobby.
             session.return_to_characters();
@@ -487,7 +521,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 quickGame = false;
                 notice = found == view.characters.end() ? "Quick-entry character is absent from the server list."
                     : "Quick-entry character cannot be selected; inspect the server response.";
-            }
+            } else if (localConnection) enterLocalGame = true;
         }
         if (quickGame && view.stage == OnlineStage::Lobby) {
             quickGame = false;
@@ -510,7 +544,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             page = FrontendPage::CreateCharacter;
         if (view.stage == OnlineStage::Lobby || view.stage == OnlineStage::ListingGames ||
             view.stage == OnlineStage::CreatingGame || view.stage == OnlineStage::JoiningGame)
-            page = localConnection ? FrontendPage::Loading : FrontendPage::Lobby;
+            if (page != FrontendPage::Difficulty) page = localConnection ? FrontendPage::Loading : FrontendPage::Lobby;
         if (localConnection && view.stage == OnlineStage::SelectingCharacter)
             page = FrontendPage::Loading;
         if (gameStage(view.stage))
@@ -781,14 +815,16 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             try {
                 const bool hosting = action.command == FrontendCommand::HostLan;
                 if (hosting && !lanListening) {
-                    embedded.listen("0.0.0.0", options.realmPort, options.gamePort);
+                    embedded.listen("0.0.0.0", options.gamePort);
                     lanListening = true;
                 }
                 session.logout();
+                embedded.setTcpIpHost(hosting);
+                lanJoinAddress.clear(); lanJoiningGame = false;
                 auto streams = embedded.connect(true);
                 session.connect_realm(std::move(streams.realm), std::move(streams.game),
                     {"127.0.0.1", options.realmPort}, hosting ? "TCP/IP Game" : "Single Player", options.gamePort);
-                localConnection = true; enterLocalGame = false; localDifficulty = 0;
+                localConnection = true; enterLocalGame = false; localDifficulty = 0; localDifficultyChosen = false;
                 lanConnection = hosting;
                 reloadCharacter.clear();
                 debugInputs.clear(); notice.clear(); page = FrontendPage::Characters;
@@ -798,10 +834,12 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             try {
                 embedded.close();
                 session.logout();
-                localConnection = enterLocalGame = false; lanConnection = true;
+                localConnection = lanConnection = true; enterLocalGame = false; lanJoiningGame = false;
+                embedded.setTcpIpHost(false); lanJoinAddress = std::move(action.name);
                 reloadCharacter.clear(); debugInputs.clear(); notice.clear();
-                session.connect_realm(std::make_unique<net::TcpStream>(), std::make_unique<net::TcpStream>(),
-                    {std::move(action.name), options.realmPort}, "TCP/IP Game", options.gamePort);
+                auto streams = embedded.connect();
+                session.connect_realm(std::move(streams.realm), std::move(streams.game),
+                    {"127.0.0.1", options.realmPort}, "TCP/IP Game", options.gamePort);
                 page = FrontendPage::Characters;
             } catch (const std::exception &e) { notice = e.what(); }
             break;
@@ -880,7 +918,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             break;
         case FrontendCommand::SelectCharacter:
+            localDifficulty = 0; localDifficultyChosen = false;
             enterLocalGame = session.select_character(std::move(action.name)) && localConnection;
+            break;
+        case FrontendCommand::SelectDifficulty:
+            localDifficulty = action.difficulty; localDifficultyChosen = true; page = FrontendPage::Loading;
             break;
         case FrontendCommand::CreateGame:
             session.create_game({std::move(action.name), std::move(action.password),
@@ -896,7 +938,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         case FrontendCommand::Back:
             ui.clearTransientPasswords();
             notice.clear();
-            if (page == FrontendPage::JoinHost) {
+            if (page == FrontendPage::Difficulty) {
+                enterLocalGame = false; localDifficultyChosen = false;
+                session.return_to_characters(); page = FrontendPage::Characters;
+            }
+            else if (page == FrontendPage::JoinHost) {
                 page = FrontendPage::TcpIp;
             }
             else if (page == FrontendPage::TcpIp) {
@@ -927,6 +973,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             break;
         case FrontendCommand::Dismiss:
+            tcpIpSaveFailed = false; // Explicit retry of a retained returned save.
             notice.clear();
             dismissedErrorSequence = session.read().error ? session.read().error->sequence
                 : std::numeric_limits<uint64_t>::max();
