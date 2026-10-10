@@ -571,7 +571,6 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             const int x = int(unit.position->x) / 5 - placement.x, y = int(unit.position->y) / 5 - placement.y;
             if (x >= 0 && y >= 0 && x < layer.width && y < layer.height && layer.seen[size_t(y) * layer.width + x]) seen = true;
         }
-        if (!seen) continue;
         int cel = -1; std::string name;
         if (key.type == 2) cel = automap_.objectCel(*unit.classId);
         else if (const auto row = monsterRows_.find(*unit.classId); row != monsterRows_.end()) {
@@ -588,6 +587,8 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         }
         auto mark = key.type == 1 && showName ? Mark::Npc : Mark::None;
         if(key.type==1) {
+            // Native automap excludes the three non-public NPC identities.
+            if(*unit.classId==537 || *unit.classId==538 || *unit.classId==539) continue;
             const auto row=monsterRows_.find(*unit.classId);
             if(row!=monsterRows_.end() && monsters_.number(row->second,"npc").value_or(0) &&
                *unit.classId!=537 && *unit.classId!=538 && *unit.classId!=539) mark=Mark::Npc;
@@ -604,7 +605,9 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         if (key.type == 2 && *unit.classId == 60 && view_.area != 125 && view_.area != 126 &&
             view_.area != 127 && view_.area != 111 && view_.area != 112 && view_.area != 117)
             mark = Mark::RedPortal;
-        if (cel >= 0 || mark != Mark::None)
+        // Live-unit symbols do not reveal map cells. Exploration gates only
+        // the static MPQ cell artwork, rather than nearby NPC/pet/portal marks.
+        if ((seen && cel >= 0) || mark != Mark::None)
             view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)},
                 mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark});
     }

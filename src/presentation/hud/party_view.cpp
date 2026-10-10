@@ -187,25 +187,25 @@ void PartyView::draw(std::string_view ownName) const {
         const float offset = 38 * float(i);
         const bool allied = ownParty_ && *ownParty_ != UINT16_MAX && p.partyId == ownParty_;
         const auto &font = allied ? greenFont_ : font_;
-        text(font, p.name, 116, 144 + offset);
+        text(font, p.name, 116, 152 + offset);
         const auto cls = p.characterClass && *p.characterClass < classes_.size() ? classes_[*p.characterClass] : "?";
-        text(font, cls.empty() ? "?" : cls, 116, 158 + offset);
+        text(font, cls.empty() ? "?" : cls, 116, 166 + offset);
         const bool lowLevel = (p.level && *p.level < 9) || (ownLevel_ && *ownLevel_ < 9);
         art(lowLevel ? &boxes_.frames.back() : boxes_.frame(0, 4), 92, 140 + offset);
         // Other relationship controls remain display-only until their workflow is verified.
         art(boxes_.frame(0, 0), 345, 136 + offset);
         art(boxes_.frame(0, 8), 365, 136 + offset);
-        text(font, level_ + ": " + (p.level ? std::to_string(*p.level) : "?"), 325, 158 + offset, 61, true);
+        text(font, level_ + ": " + (p.level ? std::to_string(*p.level) : "?"), 325, 166 + offset, 61, true);
         if (allied) {
-            text(greenFont_, inParty_, 222, 144 + offset, 115);
+            text(greenFont_, inParty_, 222, 152 + offset, 115);
             if (p.area) if (const auto area = areas_.find(*p.area); area != areas_.end())
-                text(greenFont_, area->second, 206, 158 + offset);
+                text(greenFont_, area->second, 206, 166 + offset);
         } else if (const auto action = onlinePartyAction(p)) {
             const bool down = pressed_ && pressed_->player == p.id && pressed_->action == action;
             art(buttons_.frame(0, down ? 1 : 0), 270, 136 + offset);
             text(buttonFont_, labels_[size_t(uint8_t(*action) - 6)], 270 + int(down), 150 + offset + int(down), 53);
         } else if (p.partyId && *p.partyId != UINT16_MAX)
-            text(font_, otherParty_, 222, 144 + offset, 115);
+            text(font_, otherParty_, 222, 152 + offset, 115);
         if (p.partyId && *p.partyId != UINT16_MAX &&
             (i + 1 == players_.size() || players_[i + 1].partyId != p.partyId)) {
             art(separator_.frame(0, 0), 92, 164 + offset);
