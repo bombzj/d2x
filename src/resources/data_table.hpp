@@ -4,13 +4,23 @@
 #include <string>
 #include <string_view>
 #include <vector>
+#include <unordered_map>
 
 namespace d2x {
 // Ordered columns retain duplicate headers, empty cells, and original row indices.
 // Field lookup ignores ASCII case; original headers and cell values stay intact.
 class DataTable {
+    struct ColumnHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view) const;
+    };
+    struct ColumnEqual {
+        using is_transparent = void;
+        bool operator()(std::string_view, std::string_view) const;
+    };
     std::vector<std::string> columns_;
     std::vector<std::vector<std::string>> rows_;
+    std::unordered_map<std::string, std::vector<size_t>, ColumnHash, ColumnEqual> columnIndex_;
 
   public:
     explicit DataTable(const Bytes &bytes);

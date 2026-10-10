@@ -37,7 +37,7 @@ P5物品侧新增原38／58任务加工、operation28组装、牛门／Pandemoni
 
 Single Player使用原MCP角色界面，选角后自动建普通单人房、跳过大厅；首页TCP/IP Game使用原MPQ Host／Join页面，本机IPv4由应用提供，Join默认选中127.0.0.1。Host选角后自动建角色名普通8人房，跳过大厅；Single Player／LAN选角不显示Realm控件。界面Host监听全部IPv4，当前源码默认MCP6113／GS4000；LAN Join与原服游戏默认端口同为4000，显式配置仍可覆盖。同机原D2GS、独立服务与LAN不能共享游戏端口。自定义端口及`--host-lan`／`--lan`仍保留，加入回包使用连接实际到达的接口地址。返回菜单不停止其他玩家房间。连接失败显示实际IP／端口及底层原因，玩法不分连接类型。见[联网](docs/modules/NETWORK.md)。
 
-自研存档属hosting／persistence，D2S v96不变，当前源码规则指纹为`d2x-character-admission-v31/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat/paladin30`，包含第一幕佣兵服务、装备、成长、主人死亡联动及PvPGN新角色登记初始化；后者仅接受带INIT的130字节v89空登记，不迁移已有旧角色。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。佣兵身份、经验、死亡位与装备沿原字段保存，AI、药水恢复队列和名单不写盘。限制见[存档](docs/modules/SAVES.md)。
+自研存档属hosting／persistence，D2S v96不变，当前源码规则指纹为`d2x-character-admission-v32/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat/paladin30/party`，包含第一幕佣兵、圣骑士、组队及PvPGN新角色登记初始化；后者仅接受带INIT的130字节v89空登记，不迁移已有旧角色。整局角色锁、校验后原子替换／.bak、失败保留实例与租约；旧规则不静默迁移。F11保存、Ctrl+F11校验后原协议退局重入及`--load`／`--save`入口保留。佣兵身份、经验、死亡位与装备沿原字段保存，AI、药水恢复队列、队伍和邀请不写盘。限制见[存档](docs/modules/SAVES.md)。
 
 Single Player的ESC菜单／失焦同时暂停单机宿主与世界表现，菜单仍可操作，恢复不补算暂停时间；共享房间／原服继续推进。世界表现时钟源码随本次完整构建入包，未专项运行认证。现有named pipe提供权威快照／有界历史、时钟覆盖、保存／重载、资源／经验／金币、MPQ物品／怪物准备等管理入口；正常玩法仍发送原online-*包。消息目录及stub不代表全部实现。接口见[调试管道](docs/development/DEBUG_PIPE.md)和[服务端协议](docs/modules/SERVER_PROTOCOL.md)。
 
@@ -45,13 +45,26 @@ Single Player的ESC菜单／失焦同时暂停单机宿主与世界表现，菜�
 
 ## 当前运行包与验证边界
 
+2026-10-10启动优化完成Windows **Release**客户端、独立PvPGN服务端及既有资源工具构建，当前包为`dist/current`／`dist/server`。客户端EXE SHA256为`BD304511433DFEAB2EDE6D68B234A5954EE40F853D1EF8C7CE731FB7A2D51B66`，独立服务端为`12F8E748D10278B50DA803AD278AF67EA3DE2238C246A553D5BAC9C2B64530E9`，网络DLL为`23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7`。挂载MPQ延后文件名清单至显式枚举，增加32 MiB有界解压缓存、TXT字段索引及同挂载集合只读ClassicData共享；单机／LAN Host不再为客户端与宿主分别构建完整内容。LAN Join不初始化未使用的嵌入宿主，独立进程仍各自加载资源；世界状态和GPU对象不共享。规则v32／D2S v96未变。D2MOO及原1.13c普通BIN加载证据、当前TXT导入边界见[参考设计](docs/architecture/REFERENCE_DESIGN.md#7-本项目的提取单位与所有权)与[MPQ](docs/resources/MPQ.md#查询与提取)。
+
+同机、同MPQ、同角色／地图种子的新进程首帧测量，优化前后均为Release：
+
+| 路径 | 优化前 | 优化后 |
+| --- | ---: | ---: |
+| 主菜单，正常窗口含音频初始化 | 5.29秒 | 0.79秒 |
+| 单机直入，正常窗口含音频初始化 | 7.95秒 | 2.83秒 |
+| 单机直入，hidden | 7.51秒 | 2.59秒 |
+| 本机TCP加入，hidden | 8.23秒 | 2.70–3.84秒 |
+
+原挂载耗时4.49–4.69秒，优化后5.65–7.30毫秒。计时从runGame开始，到真实EndDrawing后的首个菜单／游戏帧；hidden仍创建OpenGL但不初始化音频。TCP使用隔离宿主／独立客户端，端口6223／4110；局域网优化后两次无调试查询干扰的入局有上述波动，另一次带查询的代表路径取得实际TCP连接与failures=0。正常运行有限帧后退局、保存并退出，截图确认为原城镇和HUD，资源工具list仍能枚举TXT／BIN；临时宿主均正常退出。只使用既有客户端／资源工具和可选`--startup-profile`生命周期诊断，无新增测试脚本／用例／专用程序。证据在忽略目录`artifacts/startup-release-20261010`。没有重启清系统磁盘缓存，没有重新量Debug或原版客户端，不将用户此前约10秒当作同条件基准；本轮不重复PvPGN后端互通或跨机器／Linux测速。既有任务内容／NPC视图编译警告仍保留，有限启动测量不认证所有玩法。
+
 当前源码另修正右手卷轴／书本技能的公共客户端资格和目标处理：选择器／施放按原0x22数量判断，range=none按本人位置发送原包，原版依据见[通用技能](docs/gameplay/skills/GENERAL.md#原版依据)。此工作树修改已随下述客户端目标构建入包，未进行运行测试；已有运行证据不认证新路径，存档语义与规则指纹不变。
 
 当前源码再补门户OP→ON循环衔接、自研蓝门原ENDANIM期限、装书真实Cursor→0x29顺序和拖放等待期间原格隐藏；两种连接共用客户端，权威位置与数量仍取原包。准确依据与边界见[物件](docs/gameplay/world/OBJECTS.md)及[物品表现](docs/gameplay/items/PRESENTATION.md)。上述工作树修改已随下述客户端目标构建入包，已随本批刷新独立服务端包，共享回城门经过下述有限TCP冒烟，其他路径未专项运行认证；存档语义与规则指纹不变。
 
-2026-10-10组队与自动地图完成Windows **Release**客户端和独立PvPGN服务端目标构建，更新dist/current与dist/server。客户端EXE SHA256为EAA939FC483BA099D1869BC92E57B416B358043C6FA36126BA7A1331543948B5，独立服务端为2912A744943BC2E95458E953ED0BB8335896C6887CF837703A89C05C6F49618C，网络DLL为23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7。P原图名册、邀请／取消／接受／离队、同队区域／分隔条、七职业原头像／TRANS50及7F比例血条已接。自动地图按原1.13c分类补本人尸体紫色、其他玩家红色、本人／同队随从、私人仓库及两种门户，NPC保留537–539排除；活单位标记不揭示未探索地形。自研social权威维护邀请／队伍、离队／断线清理，75／8B／8D／7F／90投影；共享门户、附近经验／NoDrop和友方圣骑士光环接原规则及MPQ。D2S v96不变，规则v32，队伍／邀请不写盘。
+此前2026-10-10组队与自动地图完成Windows **Release**客户端和独立PvPGN服务端目标构建，更新dist/current与dist/server。当批客户端EXE SHA256为EAA939FC483BA099D1869BC92E57B416B358043C6FA36126BA7A1331543948B5，独立服务端为2912A744943BC2E95458E953ED0BB8335896C6887CF837703A89C05C6F49618C，网络DLL为23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7。P原图名册、邀请／取消／接受／离队、同队区域／分隔条、七职业原头像／TRANS50及7F比例血条已接。自动地图按原1.13c分类补本人尸体紫色、其他玩家红色、本人／同队随从、私人仓库及两种门户，NPC保留537–539排除；活单位标记不揭示未探索地形。自研social权威维护邀请／队伍、离队／断线清理，75／8B／8D／7F／90投影；共享门户、附近经验／NoDrop和友方圣骑士光环接原规则及MPQ。D2S v96不变，规则v32，队伍／邀请不写盘。
 
-本批有限冒烟使用一个临时本机TCP宿主与两套独立客户端（6213／4100），复用同一NativeRealmService和server权威；实际P面板Invite／Accept／Leave、取消后过期Accept拒绝、同队生命100／42／20及绿黄红血条、跨区域7F／90、本人尸体／原复活、同队穿门后主人门保留、离队穿门拒绝、附近两名一级队员各12经验、断线余一人解散及新进程恢复保存取得证据。修复冒烟发现的头像未上传索引纹理、等级文字被图标覆盖和Skills非卷轴怪物行空白scroll字段导致启动失败。只使用现有客户端和调试管道，没有新增测试脚本／用例／程序；管理travel／monster-spawn／monster-kill仅准备共享门和经验条件，不认证自然通关。两轮临时进程已正常退出，隔离角色及TCP快照、原静态证据、截图与构建日志在忽略目录rtifacts/party-server-20261010；之前客户端原图证据在rtifacts/party-client-20261010。独立EXE本批完成构建打包，共用内核经TCP宿主验证，本次没有重新连接PvPGN验证独立EXE。NoDrop概率分布、同队光环／随从动态标记、八人竞争／背压、跨机器和Linux未专项运行认证；完整组队任务资格、敌意／PvP、硬核尸体loot和其他职业技能例外仍未完成。入口、证据和边界见[联网](docs/modules/NETWORK.md#组队邀请客户端)、[自动地图](docs/gameplay/world/AUTOMAP.md)与[总计划](docs/architecture/MULTIPLAYER.md)。
+本批有限冒烟使用一个临时本机TCP宿主与两套独立客户端（6213／4100），复用同一NativeRealmService和server权威；实际P面板Invite／Accept／Leave、取消后过期Accept拒绝、同队生命100／42／20及绿黄红血条、跨区域7F／90、本人尸体／原复活、同队穿门后主人门保留、离队穿门拒绝、附近两名一级队员各12经验、断线余一人解散及新进程恢复保存取得证据。修复冒烟发现的头像未上传索引纹理、等级文字被图标覆盖和Skills非卷轴怪物行空白scroll字段导致启动失败。只使用现有客户端和调试管道，没有新增测试脚本／用例／程序；管理travel／monster-spawn／monster-kill仅准备共享门和经验条件，不认证自然通关。两轮临时进程已正常退出，隔离角色及TCP快照、原静态证据、截图与构建日志在忽略目录`artifacts/party-server-20261010`；之前客户端原图证据在`artifacts/party-client-20261010`。独立EXE本批完成构建打包，共用内核经TCP宿主验证，本次没有重新连接PvPGN验证独立EXE。NoDrop概率分布、同队光环／随从动态标记、八人竞争／背压、跨机器和Linux未专项运行认证；完整组队任务资格、敌意／PvP、硬核尸体loot和其他职业技能例外仍未完成。入口、证据和边界见[联网](docs/modules/NETWORK.md#组队邀请客户端)、[自动地图](docs/gameplay/world/AUTOMAP.md)与[总计划](docs/architecture/MULTIPLAYER.md)。
 
 此前2026-10-10圣骑士30项完成Windows **Debug**客户端及独立PvPGN服务端构建打包。当批`dist/current/d2x.exe` SHA256为`78B1D88B9E00458DBF5582557D04E5CD62580F4BF3534F57D0830DB1C05ACB30`，`dist/server/d2x_server.exe`为`D4C511F188762E4A5B9EA6BE5972B52A4B4431E4623C9CDAC8E1ADBE554EADF3`，网络DLL为`72AD07696429BB5A1A35D1EAE9CBB97E7F91B828E02885933FAE0022C0B1274B`。规则v31，磁盘D2S v96。Single Player逐项学习30技能、20光环状态及10战斗代表路径，补转换／所属治疗／到期、反伤、尸体消耗、卸盾资格及新进程保存恢复；随后使用PvPGN＋原版D2GS测试Blessed Hammer、Charge、Holy Shield，取得弹体／击杀、接近／命中及护盾状态原包证据，正常退局后原服确认存档成功。独立d2x_server按用户要求不重复技能测试；本批启动的客户端及此前临时独立服务已正常退出，既有原服进程保留。修复本批新发现的注释式MPQ字段读取和失败后局部UI对象重用问题。准确条件、有限范围、Holy Shield特殊盾图及队伍／PvP限制见[圣骑士](docs/gameplay/skills/PALADIN.md#有限冒烟)，证据在忽略目录`artifacts/paladin-implementation-20261010`；未新增测试脚本／用例／程序。
 

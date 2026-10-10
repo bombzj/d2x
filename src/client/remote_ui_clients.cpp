@@ -44,7 +44,8 @@ struct RemoteUiClients::Impl {
     RemoteInventory &items;
     RemoteCombat &combat;
     RemoteControl &control;
-    ClassicData data;
+    std::shared_ptr<const ClassicData> sharedData;
+    const ClassicData &data;
     const OnlineSceneView *scene{};
     OnlineIntentContext context;
     uint64_t revision{}, generation{~uint64_t{}}, areaGeneration{~uint64_t{}};
@@ -384,7 +385,7 @@ struct RemoteUiClients::Impl {
     } map{*this};
 
     Impl(Archives &a, net::RealmSession &s, RemoteInventory &i, RemoteCombat &c, RemoteControl &r)
-        : session(s), items(i), combat(c), control(r), data(loadClassicData(a)) {}
+        : session(s), items(i), combat(c), control(r), sharedData(sharedClassicData(a)), data(*sharedData) {}
     std::optional<double> stat(std::string_view name) const {
         const auto &costs = data.tables.at("itemstatcost");
         for (size_t row = 0; row < costs.rows().size(); ++row) if (costs.value(row,"Stat") == name) {

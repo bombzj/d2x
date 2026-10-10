@@ -119,5 +119,6 @@ struct ClassicData {
     bool isIdentifyScroll(std::string_view code) const { return identifyScrolls.contains(code); }
 };
 ClassicData loadClassicData(Archives &archives);
+std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives);
 void loadLodTreasureData(ClassicData &data);
 } // namespace d2x

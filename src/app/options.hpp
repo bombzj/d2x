@@ -4,7 +4,7 @@
 namespace d2x {
 struct AppOptions {
     std::string mpq = "assets/mpq2";
-    std::string screenshot, pack, debugPipe;
+    std::string screenshot, pack, debugPipe, startupProfile;
     std::string onlineConfig = "online.local.json";
     std::string onlineCharacter, onlineCreateGame, onlineJoinGame;
     std::string onlinePlay;

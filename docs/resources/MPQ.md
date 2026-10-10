@@ -50,6 +50,10 @@ D2MOO 的 `D2Hell/src/Archive.cpp::ARCHIVE_AllocateBufferAndReadFile` 分配文�
 
 ## 查询与提取
 
+运行时按已知路径查 MPQ 哈希表，挂载时不加载内部／外部 listfile；只有 `d2x_assets list` 第一次枚举时补载文件名清单。包覆盖优先级不变。`Archives` 缓存不超过 32 MiB 的已解压成员，单成员上限 2 MiB；超过总预算清空缓存，大成员直接读取。缓存归当前挂载集合，增加包时失效，不写资源侧文件。
+
+同一个 `Archives` 的 `sharedClassicData` 只构建一次只读规则集合，供客户端和嵌入宿主共享；独立进程各有自己的集合。TXT 字段查询使用不区分 ASCII 大小写的索引，保留原列顺序、重复列及行号。世界、角色、存档和 GPU 对象仍归各自消费者，不放入该共享集合。
+
 将示例目录替换为实际资源目录：
 
 ```powershell

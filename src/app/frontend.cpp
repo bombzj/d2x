@@ -1,4 +1,5 @@
 #include "frontend.hpp"
+#include "startup_profile.hpp"
 #include "hosting/embedded_realm.hpp"
 #include "network/tcp_stream.hpp"
 #include "network/local_addresses.hpp"
@@ -100,11 +101,12 @@ bool gameStage(OnlineStage s) {
            s == OnlineStage::LoadingGame || s == OnlineStage::ProtocolReady || s == OnlineStage::LeavingGame;
 }
 } // namespace
-void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options) {
+void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options, StartupProfile &profile) {
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
     RealmFrontend ui(archives);
+    profile.mark("frontend-assets-ready");
     OnlineLoginMemory loginMemory(configPath);
     std::string rememberedAccount, rememberedPassword;
     loginMemory.read(rememberedAccount, rememberedPassword);
@@ -143,6 +145,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     RemoteControl control(town, session);
     RemoteInventory inventory(archives);
     RemoteCombat combat(archives, town, session, inventory);
+    profile.mark("client-adapters-ready");
     ClientPreferences preferences = loadClientPreferences();
     bool preferencesDirty = false;
     double preferencesRetryAt = 0;
@@ -286,12 +289,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     if (!options.load.empty() || !options.save.empty() || !options.characterClass.empty()) {
         try {
             reloadCharacter = embedded.prepareStartup(options.load, options.save, options.characterClass);
+            profile.mark("host-character-ready");
             auto streams = embedded.connect();
             session.connect_realm(std::move(streams.realm), std::move(streams.game),
                 {"127.0.0.1", options.realmPort}, "Single Player", options.gamePort);
             localConnection = true; page = FrontendPage::Characters;
         } catch (const std::exception &e) { reloadCharacter.clear(); notice = e.what(); }
     }
+    profile.mark("frontend-ready");
     while (true) {
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
         if (WindowShouldClose())
@@ -567,8 +572,10 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         bool showScene =
             view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
         if (showScene && !scene) {
+            profile.mark("native-world-ready");
             try {
                 scene = std::make_unique<RemoteScene>(archives, town.read().palette.value_or(0), mapDisplay);
+                profile.mark("scene-assets-ready");
             } catch (const std::exception &e) {
                 sceneError = e.what();
                 showScene = false;
@@ -593,9 +600,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     if (!sharedClients) {
                         // Network worker remains active throughout synchronous resource loading.
                         sharedClients = std::make_unique<RemoteUiClients>(archives,session,inventory,combat,control,preferences.running);
+                        profile.mark("client-content-ready");
                         sharedClients->update(town.read());
                         sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),sharedClients->actor(),
                             sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map());
+                        profile.mark("game-ui-ready");
                         sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
                             sharedClients->character(),sharedClients->npc(),sharedClients->map(),*sharedUi);
                         auto &initial = sharedUi->ui();
@@ -736,6 +745,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                        {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
                        0, WHITE);
         EndDrawing();
+        profile.mark("first-presented-frame");
+        if (showScene && scene && scene->playerDisplayed()) profile.mark("first-game-frame");
         syncPreferences();
         if (captureRequested) saveFrontendScreenshot(target, "artifacts/d2x-capture.png");
         if (quit || presentationPaused)

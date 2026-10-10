@@ -11,7 +11,7 @@
 namespace d2x::hosting {
 void NativeRealmHost::initialize() {
     if (content) return;
-    auto data = std::make_shared<const ClassicData>(loadClassicData(archives));
+    auto data = sharedClassicData(archives);
     auto previews = std::make_unique<RealmPortraitCatalog>(archives);
     items = std::shared_ptr<const ItemCatalog>(data, &data->items);
     rules = characterRulesFingerprint(*data); content = std::move(data); portraits = std::move(previews);

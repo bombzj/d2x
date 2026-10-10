@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "frontend.hpp"
 #include "options.hpp"
+#include "startup_profile.hpp"
 #include "input.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include "presentation/graphics/primitives.hpp"
@@ -69,6 +70,7 @@ int runGame(int argc, char **argv) {
                      "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4000.\n"
                      "--load <character.d2s> | --class <MPQ class>; --save <new character.d2s>\n"
                      "--debug-pipe <name>: opt-in local command interface; starts running.\n"
+                     "--startup-profile <file.tsv>: record startup and first displayed game frame.\n"
                      "pause/resume freeze client presentation only; the server and network keep running.\n"
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"
                      "--online-play <character> logs in once and creates a uniquely named normal game.\n"
@@ -76,13 +78,16 @@ int runGame(int argc, char **argv) {
                      "--hidden --frames N --screenshot <png> --pack <new.mpq>\n";
         return 0;
     }
+    StartupProfile profile(options.startupProfile);
     Archives archives;
     archives.mountDirectory(options.mpq);
     if (archives.names.empty())
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
+    profile.mark("archives-ready");
     Platform platform(options.hidden);
+    profile.mark("platform-ready");
     RenderTarget target;
-    runFrontend(archives, target.handle, options);
+    runFrontend(archives, target.handle, options, profile);
     if (!options.screenshot.empty()) target.save(options.screenshot);
     std::filesystem::create_directories("artifacts");
     std::ofstream manifest("artifacts/mvp-manifest.txt");

@@ -35,12 +35,14 @@ Archives::~Archives() {
 }
 void Archives::mount(const std::filesystem::path &p) {
     HANDLE h = nullptr;
-    if (!SFileOpenArchive(p.string().c_str(), 0, MPQ_OPEN_READ_ONLY, &h))
+    // Known resource paths are hash lookups; loading all member names is needed
+    // only by the asset tool's list command, never by game startup.
+    if (!SFileOpenArchive(p.string().c_str(), 0, MPQ_OPEN_READ_ONLY | MPQ_OPEN_NO_LISTFILE, &h))
         throw std::runtime_error("Cannot open MPQ: " + p.string());
     handles.push_back(h);
     names.push_back(p.filename().string());
-    if (std::filesystem::exists("downloads/listfile.txt"))
-        SFileAddListFile(h, "downloads/listfile.txt");
+    listed_ = false;
+    readCache_.clear(); cacheBytes_ = 0; prepared_.clear();
 }
 void Archives::mountDirectory(const std::filesystem::path &p) {
     if (std::filesystem::is_regular_file(p)) {
@@ -68,6 +70,10 @@ void Archives::mountDirectory(const std::filesystem::path &p) {
 Bytes Archives::read(const std::string &path, bool required) const {
     pulseLoading();
     auto name = normalize(path);
+    if (const auto cached = readCache_.find(name); cached != readCache_.end()) {
+        used.insert(name);
+        return cached->second;
+    }
     for (auto i = handles.rbegin(); i != handles.rend(); ++i) {
         HANDLE f = nullptr;
         if (!SFileOpenFileEx(*i, name.c_str(), SFILE_OPEN_FROM_MPQ, &f))
@@ -84,6 +90,13 @@ Bytes Archives::read(const std::string &path, bool required) const {
         if (!ok || count != size)
             throw std::runtime_error("MPQ decompression failed: " + name);
         used.insert(name);
+        // Bound retained decompressed bytes; large media stays demand-loaded.
+        // Full-cache reset avoids storing an unbounded second copy of MPQs.
+        constexpr size_t budget = 32u * 1024 * 1024, memberLimit = 2u * 1024 * 1024;
+        if (b.size() <= memberLimit) {
+            if (cacheBytes_ + b.size() > budget) { readCache_.clear(); cacheBytes_ = 0; }
+            cacheBytes_ += b.size(); readCache_.emplace(name, b);
+        }
         return b;
     }
     if (required)
@@ -98,6 +111,14 @@ bool Archives::contains(const std::string &path) const {
     return false;
 }
 std::vector<std::string> Archives::list(const std::string &pattern) const {
+    if (!listed_) {
+        for (auto h : handles) {
+            SFileAddListFile(h, nullptr);
+            if (std::filesystem::exists("downloads/listfile.txt"))
+                SFileAddListFile(h, "downloads/listfile.txt");
+        }
+        listed_ = true;
+    }
     std::set<std::string> result;
     for (auto h : handles) {
         SFILE_FIND_DATA info{};

@@ -5,6 +5,7 @@
 | 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |
 | 连接 | app → RealmSession → TcpStream或MemoryTransport | 内存跨线程只传原字节；账号认证或预认证Realm在连接入口选择 |
+| 只读内容 | Archives → sharedClassicData → 客户端／NativeRealmHost | 同一挂载集合仅解析一次，单机与LAN Host在同进程共享；LAN Join不初始化未使用的本地宿主。独立进程分别加载自身所需MPQ，世界状态、地图副本、存档及GPU对象独立；解压缓存边界见[MPQ](../resources/MPQ.md#查询与提取) |
 | 角色列表／建删选角 | RealmFrontend ↔ RealmSession原MCP ↔ 原Realm或EmbeddedRealm → CharacterStore | UI只有OnlineCharacter；服务端映射名称到目录身份及版本，客户端不能传路径 |
 | 初始角色 | MPQ CharStats／Items → character_creation → D2S | 真实职业属性、初始物品与原来源技能，不自造参数 |
 | 入局 | 原MCP建房／票据 → 原GS握手 → nativeGameAdmission | 准备碰撞和完整可编码状态后才接受；旧连接及不匹配票据拒绝 |

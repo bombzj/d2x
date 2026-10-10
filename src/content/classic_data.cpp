@@ -32,6 +32,9 @@
 #include <stdexcept>
 
 namespace d2x {
+std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives) {
+    return archives.prepared<ClassicData>([&] { return loadClassicData(archives); });
+}
 ClassicData loadClassicData(Archives &archives) {
     const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;

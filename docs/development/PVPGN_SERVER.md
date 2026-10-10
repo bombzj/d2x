@@ -1,6 +1,6 @@
 # PvPGN 独立游戏服务端
 
-更新：2026-10-10。本页负责独立EXE部署、启停、配置和后端协议边界。客户端连接见[NETWORK](../modules/NETWORK.md)，游戏消息见[MESSAGES](../modules/MESSAGES.md)，领域支持范围见[BASELINE](../../BASELINE.md)。独立Windows Debug服务端已构建并打包到`dist/server`，EXE／DLL摘要与构建产物一致；已有下文所列本机有限冒烟，编译打包及代表路径不等于完整PvPGN互通／故障恢复认证。
+更新：2026-10-10。本页负责独立EXE部署、启停、配置和后端协议边界。客户端连接见[NETWORK](../modules/NETWORK.md)，游戏消息见[MESSAGES](../modules/MESSAGES.md)，领域支持范围见[BASELINE](../../BASELINE.md)。独立Windows Release服务端已构建并打包到`dist/server`，EXE／DLL摘要与构建产物一致；已有下文所列本机有限冒烟，编译打包及代表路径不等于完整PvPGN互通／故障恢复认证。
 
 ## 角色与复用
 
@@ -94,7 +94,7 @@ charinfo沿本地PvPGN192字节布局，头部112字节、portrait34、pad30、s
 .\scripts\package-server.ps1
 ```
 
-2026-10-10按当前共享Windows Debug配置增量构建`d2x_pvpgn`并独立打包，未改为Release配置。客户端仍使用此前Debug包，未重新构建／覆盖`dist/current`。产物摘要见基线。
+2026-10-10组队与后续启动优化使用共享Windows Release配置构建`d2x`／`d2x_pvpgn`并更新两份包。独立服务端使用同一 `Archives` 挂载／解压缓存和 `sharedClassicData` 内容准备；此轮通过嵌入TCP宿主验证共用内核入局，不重复PvPGN后端互通。当前产物摘要与速度测量见基线。
 
 ## 有限冒烟
 

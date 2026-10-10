@@ -30,6 +30,7 @@ AppOptions parseOptions(int argc, char **argv) {
             (arg == "--realm-port" ? options.realmPort : options.gamePort) = uint16_t(port);
         }
         else if (arg == "--debug-pipe") options.debugPipe = value();
+        else if (arg == "--startup-profile") options.startupProfile = value();
         else if (arg == "--online-character") options.onlineCharacter = value();
         else if (arg == "--online-play") options.onlinePlay = value();
         else if (arg == "--online-create-game") options.onlineCreateGame = value();
