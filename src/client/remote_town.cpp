@@ -14,6 +14,11 @@ RemoteTown::RemoteTown(Archives &a)
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
       skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")),
       petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a) {
+    Fingerprint content;
+    content.add("native-visible-terrain-v1"); content.add(std::to_string(a.mountIdentity()));
+    for(const auto *table:{"levels","lvlprest","lvlmaze","lvlsub","lvltypes","automap","objects"})
+        content.add(a.read("data/global/excel/"+std::string(table)+".txt"));
+    discoveryContent_=content.value();
     for (size_t row = 0; row < shrines_.rows().size(); ++row)
         if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
     for(size_t row=0;row<petTypes_.rows().size();++row)
@@ -29,7 +34,7 @@ RemoteTown::RemoteTown(Archives &a)
 void RemoteTown::update(const OnlineView &v) {
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
         if (gameGeneration_ != v.gameGeneration) {
-            explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear();
+            explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear(); actSeeds_.clear();
         }
         gameGeneration_ = v.gameGeneration;
         areaGeneration_ = v.world.areaGeneration;
@@ -50,9 +55,20 @@ void RemoteTown::update(const OnlineView &v) {
             *v.load.townArea == actTownLevels[*v.load.act]) {
             try {
                 catalog_ = std::make_unique<WorldCatalog>(archives_, v.load.difficulty.value_or(0));
+                discoveryDifficulty_=v.load.difficulty.value_or(0);
                 const auto &catalog = *catalog_;
                 const auto &town = catalog.level(*v.load.townArea);
                 if (v.load.mapSeed) {
+                    const int act=*v.load.act;
+                    if(actSeeds_.contains(act) && actSeeds_.at(act)!=*v.load.mapSeed) {
+                        auto layers=explored_.layers();
+                        std::erase_if(layers,[&](const auto &entry){return catalog_->level(int(entry.first)).act==act;});
+                        explored_.restore(std::move(layers));
+                        std::erase_if(discoveredCels_,[&](const auto &entry){return std::get<1>(entry.first)==act;});
+                        std::erase_if(discoveredTowns_,[&](const auto &entry){return std::get<1>(entry.first)==act;});
+                        std::erase_if(preparedTownAutomaps_,[&](const auto &entry){return std::get<1>(entry)==act;});
+                    }
+                    actSeeds_[act]=*v.load.mapSeed;
                     try {
                         layout_ = placeNativeAct(catalog, *v.load.act, *v.load.mapSeed);
                         const auto &placement = layout_->levels.at(town.id);
@@ -518,6 +534,10 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         const int level = int(id);
         if (!component.contains(level) || !nativeMap_->layout().levels.contains(level)) continue;
         const auto &placement = nativeMap_->layout().levels.at(level);
+        Fingerprint fingerprint;
+        fingerprint.add(std::to_string(*v.load.mapSeed)); fingerprint.add(std::to_string(*v.load.act));
+        fingerprint.add(std::to_string(level)); fingerprint.add(std::to_string(placement.x)); fingerprint.add(std::to_string(placement.y));
+        if(layer.width!=placement.width+1 || layer.height!=placement.height+1 || layer.layoutFingerprint!=fingerprint.value()) continue;
         for (int y = 0; y < layer.height; ++y)
             for (int x = 0; x < layer.width; ++x) {
                 if (!layer.seen[size_t(y) * layer.width + x]) continue;
@@ -621,5 +641,39 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             position = Vec{float(*p.positionX), float(*p.positionY)};
         if (position) view_.automap.markers.push_back({*position, -1, p.name, false, true, AutomapDrawView::UnitMark::Party});
     }
+}
+AutomapDiscovery RemoteTown::discovery() const {
+    AutomapDiscovery d;
+    d.difficulty=discoveryDifficulty_; d.contentFingerprint=discoveryContent_; d.actSeeds=actSeeds_; d.layers=explored_.layers();
+    for(const auto &[key,cels]:discoveredCels_) {
+        const auto &[seed,act,level,x,y]=key;
+        if(!cels.empty()) d.cells.push_back({seed,act,level,x,y,{cels.begin(),cels.end()}});
+    }
+    for(const auto &[key,town]:discoveredTowns_) {
+        const auto &[seed,act,level]=key;
+        d.towns.push_back({seed,act,level,town.variant,town.center.x,town.center.y});
+    }
+    return d;
+}
+void RemoteTown::restoreDiscovery(const AutomapDiscovery &d,const OnlineView &v) {
+    if(!catalog_ || !v.load.act || !v.load.mapSeed || d.difficulty!=v.load.difficulty.value_or(0) ||
+       d.contentFingerprint!=discoveryContent_ || !d.actSeeds.contains(*v.load.act) || d.actSeeds.at(*v.load.act)!=*v.load.mapSeed)
+        throw std::runtime_error("Automap discovery does not match entered world");
+    // Reject unknown or misassigned levels before publishing any remembered state.
+    for(const auto &[id,layer]:d.layers) (void)catalog_->level(int(id));
+    for(const auto &c:d.cells) if(catalog_->level(c.region).act!=c.act) throw std::runtime_error("Invalid automap cel act");
+    for(const auto &t:d.towns) if(catalog_->level(t.region).act!=t.act || !catalog_->level(t.region).town)
+        throw std::runtime_error("Invalid remembered town");
+    auto layers=d.layers;
+    for(const auto &[id,layer]:explored_.layers()) if(!layers.contains(id)) layers.emplace(id,layer);
+    explored_.restore(std::move(layers)); actSeeds_=d.actSeeds;
+    for(const auto &c:d.cells) discoveredCels_[{c.seed,c.act,c.region,c.x,c.y}].insert(c.cels.begin(),c.cels.end());
+    for(const auto &t:d.towns) {
+        const auto key=std::tuple{t.seed,t.act,t.region};
+        discoveredTowns_[key]={uint16_t(t.region),t.variant,{uint16_t(t.x),uint16_t(t.y)}};
+        preparedTownAutomaps_.insert(key);
+    }
+    explored_.reveal(automapScene(v),{});
+    updateAutomapView(v);
 }
 } // namespace d2x

@@ -1,6 +1,6 @@
 # 首领与专用策略
 
-更新：2026-10-09。本页维护专用首领／固定单位策略及任务控制与战斗AI的边界。精英rank与SuperUnique数据归[ELITES](ELITES.md)，普通家族归各幕台账，逐技能程序归[怪物技能](../skills/MONSTERS.md)。专用AI、幕首领和固定金怪不是同一个分类。
+更新：2026-10-11。本页维护专用首领／固定单位策略及任务控制与战斗AI的边界。精英rank与SuperUnique数据归[ELITES](ELITES.md)，普通家族归各幕台账，逐技能程序归[怪物技能](../skills/MONSTERS.md)。专用AI、幕首领和固定金怪不是同一个分类。
 
 ## 已接第一幕专用程序
 
@@ -15,6 +15,12 @@
 monsters持home、真实DS1技能位置、谱系和死亡连锁；[boss_decision](../../../src/gameplay/monsters/boss_decision.cpp)是服务端策略纯函数，skills持动作与多次释放，missiles／effects执行弹体和效果。A1无MissA1的技能用原event1（安达利尔毒弹／伯爵夫人火墙），远程A1用event2；Nest／Gargoyle及对应序列沿原事件。方向共享但保留Clt／Srv差异，原函数证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
 
 血乌与安达利尔死亡连锁采用QuestsFX的范围、延时和undead筛选；连锁本身不授予任务奖励或首杀完成。任务资格见[第一幕任务](../quests/ACT1.md)，历史技能201／164／167／172代表动作及Countess未认证边界见[第一幕有限证据](ACT1.md#有限运行证据)，不重复维护运行记录。
+
+## 第一幕死亡表现
+
+RemoteScene按原1.13c D2Client RVA20FB0消费新鲜DEATH动作，不从已入场尸体推造历史演出；重复死亡通知只触发一次，原死亡图形在首领进入视野时提前准备。同区资源长帧保留已启动的死亡程序与子效果；换区／换局仍清空，不重播过期死亡。安达利尔52230创建当前MPQ `andycontrol0`，血乌52320创建`brdeathcontrol`（原50帧启动计时）、`brdeathspirits1`与`brdeathsmokes1`。现有公共客户端弹体队列执行烟雾／灵魂原ExplosionMissile链、CltDo21／22的闪电、CltDo27的游走火墙，以及CltDo29的原火柱／落石选择；图形、寿命、链接和Clt参数读取MPQ。Andariel火柱使用显示像素位移，不产生伤害／碰撞或服务端单位。
+
+控制器只持25Hz显示时钟和独立随机流；权威死亡连锁仍由monsters／effects结算。完整像素粒子随机流、原相机震动和全部落石残片变体未逐帧认证，其他幕死亡程序不在本批范围。2026-10-11最终包代表死亡／重复通知／清理的有限观察见[第一幕](ACT1.md#有限运行证据)，不认证正常玩家击杀或全部难度的死亡连锁。
 
 ## 其他幕与特殊首领
 

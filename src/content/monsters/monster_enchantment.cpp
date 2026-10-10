@@ -300,7 +300,8 @@ std::string monsterDisplayName(const ClassicData &data, const MonsterIdentity &i
         return prefix + " " + suffix;
     }
     if (identity.rank == MonsterRank::Champion) {
-        const int variant = mods.ids.empty() ? 16 : mods.ids.front();
+        const auto foundVariant=std::find_if(mods.ids.begin(),mods.ids.end(),[](int id){return id==16 || (id>=36 && id<=39);});
+        const int variant=foundVariant==mods.ids.end()?16:*foundVariant;
         const auto label = data.monsterModifierNames.find(variant);
         if (label != data.monsterModifierNames.end()) {
             const auto format = data.itemStrings.find("ChampionFormatX");

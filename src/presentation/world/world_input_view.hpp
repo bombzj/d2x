@@ -16,6 +16,8 @@ struct InputSkillSelection {
 struct WorldInputView {
     uint64_t gameGeneration{}, areaGeneration{};
     bool available = false, movementAvailable = false;
+    // A held unit cast can continue when the pointer leaves the world surface.
+    bool targetingAvailable = false;
     Vec origin, size, observer, point; // Original global subtiles; observer is display-only.
     EntityId interaction, combat;
     std::optional<ItemHandle> pickup;

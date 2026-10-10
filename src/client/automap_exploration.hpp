@@ -1,15 +1,10 @@
 #pragma once
 #include "contracts/map.hpp"
+#include "contracts/automap_discovery.hpp"
 #include <map>
 #include <span>
 
 namespace d2x {
-struct AutomapLayer {
-    int width = 0, height = 0;
-    uint64_t layoutFingerprint = 0;
-    std::vector<uint8_t> seen;
-};
-using AutomapLayers = std::map<RegionId, AutomapLayer>;
 struct AutomapVisibleCell { int slot = 0, x = 0, y = 0; };
 // Observer-owned discovery, independent of authority state and GPU resources.
 class AutomapExploration {

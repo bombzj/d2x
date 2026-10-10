@@ -29,6 +29,7 @@ struct ClientMissileProgram {
     int chainCountDivisor{1};
     std::optional<MissileTargetBurst> targetBurst;
     bool blessedHammer{},holyBolt{};
+    bool deathFlame{};
 };
 struct ClientMissileVisual {
     ClientMissileVisual() = default;
@@ -39,9 +40,11 @@ struct ClientMissileVisual {
     float age = 0, duration = 0;
     Vec direction;
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
-    bool flight{};
+    bool flight{}, deathProgram{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};
     Vec turnTarget;
+    int emissionCountdown{};
+    Vec pixelOffset, pixelVelocity, pixelAcceleration;
     EntityId owner;
     bool hostile{};
     int pierce{};
@@ -57,7 +60,7 @@ struct ClientMissileVisual {
     std::deque<Vec> path{};
     std::vector<EntityId> contacts{};
 };
-enum class ClientMissileSource : uint8_t { Program = 0, Cast = 1, Synchronization = 2 };
+enum class ClientMissileSource : uint8_t { Program = 0, Cast = 1, Synchronization = 2, Death = 4 };
 struct ClientMissileTarget {
     EntityId id;
     Vec position;

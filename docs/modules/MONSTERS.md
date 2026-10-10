@@ -1,6 +1,6 @@
 # 怪物模块入口与所有权
 
-更新：2026-10-09。本页只维护代码入口、状态归属与模块协作；规则、按幕执行、原包表现及历史证据统一进入[怪物目录](../gameplay/monsters/README.md)。客户端消费所连接服务端的公开事实，不执行人口、AI、命中、复活或奖励。
+更新：2026-10-11。本页只维护代码入口、状态归属与模块协作；规则、按幕执行、原包表现及历史证据统一进入[怪物目录](../gameplay/monsters/README.md)。客户端消费所连接服务端的公开事实，不执行人口、AI、命中、复活或奖励。
 
 ## 服务端与内容入口
 
@@ -29,12 +29,14 @@ Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集�
 | --- | --- |
 | [remote_world.cpp](../../src/client/remote_world.cpp) | type1 GUID／classId、位置／模式／动作／生命／状态及移除副本 |
 | [remote_combat.cpp](../../src/client/remote_combat.cpp) | 唯一已知阵营、技能与尸体目标资格，monsterTargetEligible共用 |
-| [remote_scene.cpp](../../src/presentation/remote/remote_scene.cpp) | 原动作／技能／状态的动画、视觉弹体及声音 |
+| [remote_scene.cpp](../../src/presentation/remote/remote_scene.cpp) | 原动作／技能／状态的动画、视觉弹体及声音，公开精英姓名／标签／调色、新鲜首领死亡回调及当帧校验后的锁定目标信息条 |
 | [monster_effects.cpp](../../src/presentation/remote/monster_effects.cpp) | 原电／冰强化公开回调与显示时钟，不执行伤害 |
-| [actor_animation.cpp](../../src/presentation/actors/actor_animation.cpp) | 原COF／DCC／AnimData／MonSeq、组件与动作时钟 |
+| [actor_animation.cpp](../../src/presentation/actors/actor_animation.cpp) | 原COF／DCC／AnimData／MonSeq、组件与动作时钟，原palshift行／randtransforms独立缓存键 |
 | [sound_catalog.cpp](../../src/content/audio/sound_catalog.cpp)、[scene_audio.cpp](../../src/presentation/audio/scene_audio.cpp) | 唯一MonSounds解释与播放 |
 
 RemoteCombat核对真实身份、原alignment及MPQ资格，RemoteScene不另推断敌我。onlineMonsterCorpse统一死亡模式与剥离触发位的生命刻度，供声音、弹体接触、光照和NPC读取。原服／自研使用同一客户端；修复与共享提取须有原版依据。
+
+按住目标的唯一状态归SceneController；顶部姓名／生命／特殊说明通过RemoteScene.drawTargetInfo读取已校验目标，悬停与锁定共用姓名入口。恢复行为及源码／运行包差异见[目标姓名与按住锁定](../gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。
 
 RemoteCombat内部以Unknown／Hostile／NonHostile区分信息缺失与已知非敌对，保留hostileSource只读接口供表现使用。友方技能只接受明确NonHostile的type1单位；不存在MonStats身份或状态未解码不能因hostileSource=false而获准。原宠物归属和已知NPC／中立表记录仍沿既有优先级处理。实际关系与未实现PvP见[阵营](../gameplay/combat/FACTIONS.md)。
 

@@ -1,6 +1,6 @@
 # 第一幕怪物执行台账
 
-更新：2026-10-09。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-11。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
 
 当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。代表路径的有限V2见本页证据，其余分支仍为V1；源码接线不代表所有随机／难度组合已认证。
 
@@ -32,9 +32,22 @@ vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开
 
 额外六种类型已计入本页63类型，不能再叠加十三SuperUnique记录成为新的类型总数；固定怪物也可能复用普通家族。十三原表身份及地图刷新边界仅维护在[ELITES](ELITES.md)，Smith／Griswold／BloodRaven／Countess／Andariel／GargoyleTrap的专用执行仅维护在[BOSSES](BOSSES.md)。牛类与Cow King被本批计入，但普通区域准入不能替代牛场完整事件认证。
 
-63类型／25类AI描述本批源码接入，完整Vision／活动房间／动态拥挤、全局随机顺序、全部难度与精英组合、特殊死亡演出、多人任务／经验／掉落仍有缺口。后续补逐MonStats身份、区域与三难度行，不能把家族表扩张为完整逐分支验收。
+63类型／25类AI描述本批源码接入，完整Vision／活动房间／动态拥挤、全局随机顺序、全部难度与精英组合、多人任务／经验／掉落仍有缺口；血乌／安达利尔死亡表现和精英姓名／调色的已接范围及认证边界分别见BOSSES与ELITES。后续补逐MonStats身份、区域与三难度行，不能把家族表扩张为完整逐分支验收。
 
 ## 有限运行证据
+
+2026-10-11当前Windows Release包在`artifacts/act1-map-closeout-20261010/recheck`保留代表单机观察；身份见[基线](../../../BASELINE.md#当前运行包与验证边界)。35级死灵角色副本、普通难度、当前MPQ、种子2044627023，只使用已有EXE与调试管道，无新增测试脚本／用例：
+
+| 当前包路径 | 实际观察／边界 |
+| --- | --- |
+| `verified-entry.json`、`verified-elites.json` | 正常营地→鲜血荒地，显示缺失0；Devil Sludge＋Aura Enchanted／transform14，Champion Skeleton／25，Rakanishu／29、Coldcrow／18，Blood Raven与Andariel／2。金／蓝标题截图保留于上级目录，最终包重复确认相同显示值 |
+| `verified-blood.json`、`verified-blood-lightning.json`／PNG | 血乌死亡50帧后，一套284控制器、285闪电与286接触原图；293烟雾及296灵魂，原图实际显示，后续294／297烟雾／灵魂链正常。三条重复DEATH通知不重复创建控制器 |
+| `verified-andy.json`／`verified-andy.png` | 一套307控制器、311火柱、308游走／309地面火；真实MPQ原图。`verified-tail.json`的显示弹体在寿命结束后清空，effectLimitations为空 |
+| 探索保存 | 关闭地图继续记忆，手动保存、正常退出／重启及换种子隔离；准确计数和错误文件保留证据由[自动地图](../world/AUTOMAP.md#证据与限制)维护 |
+
+首次包在读取新增怪物诊断时发生失效副本引用崩溃，报告保留于`artifacts/crashes/20261010-154534-611-92248-92352`；已改为帧内生成诊断值副本，最终包复测没有该崩溃。首领原死亡图形提前准备；同区资源长帧保留死亡程序，避免清除刚收到的死亡回调或已启动的子效果。没有把管理击杀视为AI／玩家正常击杀验收；本批不重测全部63身份、难度／词缀组合或联机，完整粒子随机／相机震动／落石残片逐帧仍未认证。
+
+### 历史普通与全部怪物包
 
 2026-10-09全部怪物批历史最终包为Windows Release、规则v19／D2S v96；EXE SHA256 `95624C814123FCA8436F8C524D4A2E5843C4A3B53E7088DC8681924F8675E945`，DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error，早期诊断仍保留；当前运行包另见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。只用现有EXE、原服与调试管道；资源、日志、截图、角色及参考代码保留在忽略目录。
 

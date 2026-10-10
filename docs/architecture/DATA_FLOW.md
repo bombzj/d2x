@@ -1,6 +1,6 @@
 # 数据流与生命周期
 
-更新：2026-10-10。本文维护客户端、嵌入宿主与独立PvPGN游戏服务沿原协议交换状态的数据流。当前包与未交付差异见[基线](../../BASELINE.md)，实施顺序见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)，独立服务的有限互通证据与限制见[部署页](../development/PVPGN_SERVER.md#有限冒烟)。
+更新：2026-10-11。本文维护客户端、嵌入宿主与独立PvPGN游戏服务沿原协议交换状态的数据流。当前包与未交付差异见[基线](../../BASELINE.md)，实施顺序见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)，独立服务的有限互通证据与限制见[部署页](../development/PVPGN_SERVER.md#有限冒烟)。
 
 | 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |
@@ -24,7 +24,7 @@
 | 单机暂停 | app窗口／菜单策略 → GameHost.pause | 清路径和未执行移动，恢复不补暂停时间；不暂停原服 |
 | 开发保存／重载 | F11／Ctrl+F11或pipe save／load → AdminRequest → 宿主 → 原协议重新入局 | 同一类型化管理接口；重载准备并保留候选实例，校验重新选角的版本后复用 |
 | 开发单步／诊断 | pipe step／server-status／server-protocol／server-systems → 宿主管理 | step仅推进已暂停的权威实例；系统诊断显示目录／阶段／stub，不用于客户端世界同步，不给原包追加字段 |
-| 探索／偏好 | 公共AutomapExploration与client-settings.json | 探索当前为本局，偏好独立保存；不把客户端偏好当D2S |
+| 探索／偏好 | RemoteTown／AutomapExploration → app → hosting/AutomapStore，偏好另用client-settings.json | 本地单机／TCP/IP角色按实际种子保存本人观察缓存.d2xmap；原服账号不写，不授予房间兴趣／单位／碰撞，不写D2S；[探索边界](../gameplay/world/AUTOMAP.md#跨进程探索保存) |
 
 内存队列有锁和容量限制；MCP／D2GS消费不能假定一次send就是一个完整包。重连清旧字节、递增代次；内核玩家绑定从服务端票据取得。GameHost内部快照只供协议适配读取，可靠服务响应不能由覆盖式邮箱取代。
 

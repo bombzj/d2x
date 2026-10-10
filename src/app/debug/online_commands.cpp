@@ -90,6 +90,9 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["players"] = Json::array();
     result["scene"]["localCast"] = scene.localCastSkill ? Json{{"skill", *scene.localCastSkill}, {"age", scene.localCastAge}} : Json(nullptr);
     result["scene"]["clientMissiles"] = Json::array();
+    result["scene"]["monsters"] = Json::array();
+    for(const auto &m:scene.monsters) result["scene"]["monsters"].push_back({{"id",m.id},{"classId",m.classId},
+        {"name",m.name},{"modifiers",m.modifiers},{"transform",m.transform},{"randomTransform",m.random}});
     for (const auto &missile : scene.clientMissiles)
         result["scene"]["clientMissiles"].push_back({{"id", missile.id}, {"age", missile.age}, {"remaining", missile.remaining},
             {"position", {{"x", missile.position.x}, {"y", missile.position.y}}}});

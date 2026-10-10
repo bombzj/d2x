@@ -1,6 +1,7 @@
 #pragma once
 #include "core/bytes.hpp"
 #include "path.hpp"
+#include "core/fingerprint.hpp"
 #include <filesystem>
 #include <functional>
 #include <set>
@@ -21,6 +22,7 @@ class Archives {
     mutable std::map<std::type_index, std::shared_ptr<const void>> prepared_;
     mutable std::map<std::string, Bytes, std::less<>> readCache_;
     mutable size_t cacheBytes_{};
+    Fingerprint mountIdentity_;
 
   public:
     std::vector<std::string> names;
@@ -30,6 +32,7 @@ class Archives {
     Archives &operator=(const Archives &) = delete;
     ~Archives();
     void mount(const std::filesystem::path &path);
+    uint64_t mountIdentity() const { return mountIdentity_.value(); }
     void mountDirectory(const std::filesystem::path &path);
     Bytes read(const std::string &name, bool required = true) const;
     template<class T, class Loader> std::shared_ptr<const T> prepared(Loader &&loader) const {

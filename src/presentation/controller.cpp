@@ -385,11 +385,14 @@ void SceneController::resetInput() {
     releaseAfterLoad_ = true;
 }
 void SceneController::discardBufferedInput(bool focused) {
-    // Resource loading can block a frame during a held walk. Preserve its
-    // destination; buffered presses and casts still need a fresh mouse-up.
+    // Resource loading does not release a held walk or an already locked unit.
+    // handleWorld still validates the physical button, skill and target; new
+    // buffered presses and ground casts require a fresh mouse-up.
     if (focused && gesture_ == Gesture::Move) {
         pendingMove_ = true;
         nextMove_ = inputTime_;
+    } else if (focused && lockedTarget_ && (gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast)) {
+        nextCast_ = inputTime_;
     } else resetInput();
 }
 void SceneController::openGameMenu(Vec mouse) {
@@ -428,9 +431,10 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         resetInput();
         return;
     }
-    const bool enabled = world.available && !uiConsumed() && input.focused && input.insideViewport &&
-        !view_.ui().blocksInput() && !actorClient_.controlledActor().dead;
     const bool casting = gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast;
+    const bool lockedCast = casting && lockedTarget_ && world.targetingAvailable;
+    const bool enabled = ((world.available && input.insideViewport) || lockedCast) &&
+        !uiConsumed() && input.focused && !view_.ui().blocksInput() && !actorClient_.controlledActor().dead;
     const size_t hand = gesture_ == Gesture::RightCast ? 1 : 0;
     const bool held = hand ? input.rightHeld : input.leftHeld;
     const auto &valid = world.validCombatTargets[hand];
@@ -441,7 +445,7 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
         // Target/skill changes terminate this press rather than acquiring another target.
     }
     if (!enabled) return;
-    if (input.rightPressed || input.leftPressed) {
+    if ((input.rightPressed || input.leftPressed) && world.available && input.insideViewport) {
         cancelWorldGesture();
         if (input.rightPressed || (!world.pickup && world.combat) || input.shift) {
             gesture_ = input.rightPressed ? Gesture::RightCast : Gesture::LeftCast;

@@ -1,4 +1,5 @@
 #include "embedded_realm.hpp"
+#include "automap_store.hpp"
 #include "detail/realm_connection.hpp"
 #include "detail/lan_realm.hpp"
 #include "network/memory_transport.hpp"
@@ -107,6 +108,11 @@ Bytes EmbeddedRealm::selectedTcpIpSave() {
     if (!service.lease || !service.selected || service.binding) throw std::runtime_error("Select a local character before TCP/IP Join");
     service.store->load(*service.lease);
     return service.lease->expected;
+}
+std::shared_ptr<hosting::AutomapStore> EmbeddedRealm::selectedAutomapStore() const {
+    const auto &service=impl_->primary->connection->service;
+    if(!service.lease || !service.selected) return {};
+    return std::make_shared<hosting::AutomapStore>(service.lease->path,service.selected->player.name,service.selected->player.characterClass);
 }
 void EmbeddedRealm::receiveTcpIpSave(Bytes bytes) {
     auto &o = *impl_;

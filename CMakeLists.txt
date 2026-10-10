@@ -225,7 +225,7 @@ target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
 add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
 target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
-add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
+add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/automap_store.cpp src/hosting/embedded_realm.cpp
   src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp
   src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
   src/hosting/detail/realm_characters.cpp src/hosting/detail/realm_games.cpp
@@ -238,7 +238,7 @@ add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embed
   src/hosting/protocol/handlers_inventory.cpp src/hosting/protocol/handlers_interaction.cpp
   src/hosting/protocol/inventory_requests.cpp
   src/hosting/protocol/handlers_progression.cpp src/hosting/protocol/handlers_social.cpp)
-target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol)
+target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol nlohmann_json::nlohmann_json)
 include(cmake/Networking.cmake)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp
   src/client/character_projection.cpp src/client/quest_projection.cpp src/client/pet_projection.cpp)

@@ -5,6 +5,7 @@
 #include "content/character/realm_portrait.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/monsters/monster_animation.hpp"
+#include "content/monsters/monster_enchantment.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
@@ -95,6 +96,7 @@ struct RemoteScene::Impl {
     int artPalette = 0;
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
+    std::shared_ptr<const ClassicData> monsterText;
     DataTable monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, difficultyLevels, superuniques, objects;
     std::vector<size_t> characterRows;
     std::vector<PresentationSoundEvent> soundEvents;
@@ -128,6 +130,8 @@ struct RemoteScene::Impl {
     std::map<std::string, size_t, std::less<>> monsterExtra;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
+    std::map<OnlineUnitKey,std::pair<int,bool>> monsterTransforms;
+    std::set<OnlineUnitKey> deathCallbacks, preparedDeaths;
     RemoteMonsterEffects monsterEffects;
     std::map<int,size_t> superUniqueRows;
     std::map<OnlineUnitKey, Motion> motion;
@@ -139,6 +143,7 @@ struct RemoteScene::Impl {
     bool playerDisplayed{};
     std::vector<OnlinePlayerDisplay> players;
     std::vector<OnlineSceneView::MissileDisplay> clientMissiles;
+    std::vector<OnlineSceneView::MonsterDisplay> monsters;
     bool channelSkill(int id) const {
         const auto row = skillRows.find(id);
         return row != skillRows.end() && skills.number(row->second, "cltdofunc") == 24 &&
@@ -151,7 +156,7 @@ struct RemoteScene::Impl {
     Impl(Archives &a, int palette, RemoteMapDisplayState &display)
         : archives(a), mapDisplay(display),
           artPalette(palette),
-          portraits(a), strings(a),
+          portraits(a), strings(a), monsterText(sharedClassicData(a)),
           monstats(a.read("data/global/excel/monstats.txt")),
           monstats2(a.read("data/global/excel/monstats2.txt")), charstats(a.read("data/global/excel/charstats.txt")),
           skills(a.read("data/global/excel/skills.txt")), missiles(a.read("data/global/excel/missiles.txt")),
@@ -335,6 +340,7 @@ struct RemoteScene::Impl {
         }
     }
     void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin) {
+        const auto observed=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
         std::erase_if(missileCastRevisions, [&](const auto &cast) {
             const auto source = v.world.units.find(cast.first);
             bool interrupted = source == v.world.units.end();
@@ -650,14 +656,31 @@ struct RemoteScene::Impl {
                     auto actor=unit->second;
                     if(event.action==6) {actor.mode=3;actor.actionSkill.reset();}
                     else if(event.action==8) {actor.mode=0;actor.actionSkill.reset();}
+                    const auto now=observed;
+                    const float age=event.receivedMilliseconds && now>=event.receivedMilliseconds?float(now-event.receivedMilliseconds)/1000.f:0;
+                    // Resource decoding must not make a newly received death callback stale.
                     const auto *animation=monster(actor,false,shared);
                     const auto identity=monsterIdentities.find(event.source);
-                    const auto now=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
-                    const float age=event.receivedMilliseconds && now>=event.receivedMilliseconds?float(now-event.receivedMilliseconds)/1000.f:0;
                     if(identity!=monsterIdentities.end() && age<=.25f) {
                         const auto &id=identity->second;
                         const auto has=[&](int modifier){return std::find(id.modifiers.begin(),id.modifiers.end(),modifier)!=id.modifiers.end();};
                         monsterEffects.observe(unit->second,{id.unique,has(17),has(18)},event,time,age,animation?animation->fps:0);
+                    }
+                    if(event.action==8 && age<=.25f && unit->second.classId && deathCallbacks.insert(event.source).second) {
+                        const auto row=monsterRows.find(*unit->second.classId);
+                        if(row!=monsterRows.end()) {
+                            const auto code=monstats.value(row->second,"Id");
+                            const Vec at{float(unit->second.position->x)+.5f,float(unit->second.position->y)+.5f};
+                            const auto deathMissile=[&](const char *name) {
+                                if(const auto missile=missileNames.find(name);missile!=missileNames.end()) launch(missile->second,at,at,1,-age,{},event.source,-1,0,ClientMissileSource::Death);
+                            };
+                            // Retail death dispatcher 20FB0: a fresh DEATH notification,
+                            // never inferred from an already assigned corpse.
+                            if(code=="andariel") deathMissile("andycontrol0");
+                            else if(code=="bloodraven") {
+                                deathMissile("brdeathcontrol"); deathMissile("brdeathspirits1"); deathMissile("brdeathsmokes1");
+                            }
+                        }
                     }
                 }
             }
@@ -1165,6 +1188,24 @@ struct RemoteScene::Impl {
         if(cls) if(const auto mode=hirelingSkillModes.find({*cls,int(skill)});mode!=hirelingSkillModes.end()) return mode->second;
         return lower(std::string(skills.value(row->second,"monanim")));
     }
+    std::pair<std::string,std::string> monsterCaption(const OnlineUnit &unit) const {
+        const auto row=monsterRows.find(unit.classId.value_or(UINT16_MAX));
+        if(row==monsterRows.end()) return {};
+        std::string name(strings.find(monstats.value(row->second,"NameStr"))),description;
+        if(const auto identity=monsterIdentities.find(unit.key);identity!=monsterIdentities.end()) {
+            const auto &native=identity->second;
+            d2x::MonsterIdentity publicIdentity;
+            publicIdentity.rank=native.champion?MonsterRank::Champion:native.superUnique?MonsterRank::SuperUnique:
+                native.unique?MonsterRank::Unique:native.minion?MonsterRank::Minion:MonsterRank::Normal;
+            MonsterEnchantment modifiers; modifiers.nameSeed=native.nameSeed;
+            modifiers.ids.assign(native.modifiers.begin(),native.modifiers.end());
+            name=monsterDisplayName(*monsterText,publicIdentity,name,&modifiers);
+            description=monsterModifierDescription(*monsterText,publicIdentity,&modifiers);
+            if(native.superUnique) if(const auto fixed=superUniqueRows.find(*native.superUnique);fixed!=superUniqueRows.end())
+                name=strings.find(superuniques.value(fixed->second,"Name"));
+        }
+        return {std::move(name),std::move(description)};
+    }
     const Art *monster(const OnlineUnit &u, bool moving, SceneView &shared) {
         // D2Common SKILLS_GetGfxType/GetGfxClass: States.gfxtype=2 uses
         // player components on a monster unit (Decoy and Valkyrie included).
@@ -1248,15 +1289,41 @@ struct RemoteScene::Impl {
             if(monstats.value(row->second,"AI")=="Hireable" &&
                 !archives.contains("data/global/monsters/"+parts.token+"/cof/palshift.dat")) palette=0;
             bool randomPalette=false;
+            // D2Client 1.13c A7A5A / 539E0: native transform numbers include
+            // the two leading palshift rows; unique RNG is class + name seed.
+            int nativeTransform = palette < 8 ? palette + 2 : 2;
+            if (identity.unique && std::ranges::find(identity.modifiers,uint8_t{15})==identity.modifiers.end()) {
+                uint64_t random = initialRandom(uint32_t(*u.classId) + identity.nameSeed);
+                nativeTransform = 9 + int(limitedRandom(random,30));
+            }
+            const auto suffix=worldDifficulty==1?"(N)":worldDifficulty==2?"(H)":"";
+            const int configured=monstats2.number(e,"Utrans"+std::string(suffix)).value_or(0);
+            if (configured && configured!=255) nativeTransform=configured;
+            // Utrans 255 is an owner/alliance transform, not a random palette.
+            // A7ACD selects 0/1 from the original owner/alliance relation.
+            if (configured==255) {
+                bool allied=false;
+                if (const auto pet=world().pets.find(u.key.id);pet!=world().pets.end()) {
+                    allied=pet->second.owner==playerId;
+                    const auto self=playerId?world().social.players.find(*playerId):world().social.players.end();
+                    const auto owner=world().social.players.find(pet->second.owner);
+                    allied|=self!=world().social.players.end() && owner!=world().social.players.end() &&
+                        self->second.partyId && *self->second.partyId!=UINT16_MAX && self->second.partyId==owner->second.partyId;
+                }
+                nativeTransform=allied?0:1;
+            }
             if (identity.superUnique) {
                 const auto fixed=superUniqueRows.find(*identity.superUnique);
                 if (fixed!=superUniqueRows.end()) {
-                    const auto difficulty=worldDifficulty;
-                    const auto suffix=difficulty==1?"(N)":difficulty==2?"(H)":"";
-                    palette=superuniques.number(fixed->second,"Utrans"+std::string(suffix)).value_or(palette);
-                    randomPalette=palette>=8;
+                    const int fixedTransform=superuniques.number(fixed->second,"Utrans"+std::string(suffix)).value_or(0);
+                    if(fixedTransform) nativeTransform=fixedTransform;
                 }
             }
+            // A7B1A retains the original upper bound, including RNG fallback.
+            if (nativeTransform>=30) nativeTransform=2;
+            randomPalette=nativeTransform>=8;
+            palette=nativeTransform;
+            monsterTransforms[u.key]={palette,randomPalette};
             const auto actual = u.mode.value_or(uint8_t(mode));
             constexpr std::array modes{"dt", "nu", "wl", "gh", "a1", "a2", "bl", "sc",
                                        "s1", "s2", "s3", "s4", "dd", "kb", "sq", "rn"};
@@ -1270,6 +1337,7 @@ struct RemoteScene::Impl {
                     ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
                     parts.weapon = lower(std::string(monstats2.value(e, "BaseW"))); request.appearance = parts;
                     request.paletteTransform = palette; request.randomTransform = randomPalette;
+                    request.nativeMonsterTransform = true;
                     request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
                     const auto *sequence = shared.actorAnimation(request, artPalette);
                     if (!sequence) effectLimitations.insert("Monster sequence unavailable: "+std::string(monstats.value(row->second,"Id"))+":"+pose);
@@ -1288,6 +1356,7 @@ struct RemoteScene::Impl {
             ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
             request.appearance = parts; request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
             request.paletteTransform = palette; request.finalFrame = deadFrame; request.randomTransform = randomPalette;
+            request.nativeMonsterTransform = true;
             return shared.actorAnimation(request, artPalette);
         } catch (const net::protocol::ProtocolError &) {
             return nullptr;
@@ -1300,6 +1369,7 @@ struct RemoteScene::Impl {
                            SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
         RemoteSceneFrame intent;
         players.clear();
+        monsters.clear();
         rendered = unavailable = 0;
         playerDisplayed = false;
         soundEvents.clear();
@@ -1316,6 +1386,8 @@ struct RemoteScene::Impl {
             areaGeneration = v.world.areaGeneration;
             motion.clear();
             monsterIdentities.clear();
+            monsterTransforms.clear();
+            deathCallbacks.clear(); preparedDeaths.clear();
             monsterEffects.clear();
             shared.clearClientMissiles(); channels.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
             soundEvents.clear();
@@ -1341,17 +1413,52 @@ struct RemoteScene::Impl {
             // Loading a newly revealed room can take longer than one frame.
             // It is not a server teleport or a release of a held movement gesture.
             std::erase_if(motion,[&](const auto &entry) { return entry.first.type!=0 || entry.first.id!=playerId; });
-            shared.clearClientMissiles();
+            shared.clearClientMissiles(true);
             monsterEffects.clear();
             missileCastRevisions.clear(); channels.clear(); blazeTrails.clear(); overlayVisuals.clear(); localCast.reset();
             soundEvents.clear();
+            const auto beforeGap=combatSequence;
             combatSequence = v.world.combatSequence;
+            // Skip stale history, but a death just received after the frame gap
+            // still owns a fresh callback. Assigned corpses have no such event.
+            const auto received=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+            for(const auto &event:v.world.combatEvents)
+                if(event.sequence>beforeGap && event.source.type==1 && event.kind==OnlineCombatEvent::Kind::Action &&
+                   event.action==8 && (!event.receivedMilliseconds || (received>=event.receivedMilliseconds && received-event.receivedMilliseconds<=250)))
+                    combatSequence=std::min(combatSequence,event.sequence-1);
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
         }
         if (!binding.origin || !v.world.playerPosition)
             return intent;
         shared.advanceWorldPresentation(suspended ? 0.f : elapsed);
+        std::erase_if(deathCallbacks,[&](const auto &key) {
+            const auto unit=v.world.units.find(key);
+            return unit==v.world.units.end() || !onlineMonsterCorpse(unit->second);
+        });
         observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
+        // Decode the real death art when a boss is first visible, before its
+        // timed callback. A cold child DCC must not interrupt the native program.
+        for(const auto &[key,unit]:v.world.units) {
+            if(key.type!=1 || !unit.classId || onlineMonsterCorpse(unit) || preparedDeaths.contains(key)) continue;
+            const auto row=monsterRows.find(*unit.classId);
+            if(row==monsterRows.end()) continue;
+            const auto code=monstats.value(row->second,"Id");
+            if(code!="andariel" && code!="bloodraven") continue;
+            preparedDeaths.insert(key);
+            auto dead=unit; dead.mode=0; dead.actionSkill.reset(); monster(dead,false,shared);
+            std::vector<size_t> pending;
+            for(const auto *name:{"andycontrol0","brdeathcontrol","brdeathspirits1","brdeathsmokes1"})
+                if((code=="andariel")==std::string_view(name).starts_with("andy"))
+                    if(const auto missile=missileNames.find(name);missile!=missileNames.end()) pending.push_back(missile->second);
+            std::set<size_t> loaded;
+            while(!pending.empty()) {
+                const auto missile=pending.back();pending.pop_back();
+                if(!loaded.insert(missile).second) continue;
+                if(const auto id=missiles.number(missile,"Id")) shared.projectileVisual(*id);
+                for(const auto *field:{"CltSubMissile1","CltSubMissile2","CltSubMissile3","CltHitSubMissile1","CltHitSubMissile2","CltHitSubMissile3","CltHitSubMissile4","ExplosionMissile"})
+                    if(const auto child=missileNames.find(missiles.value(missile,field));child!=missileNames.end()) pending.push_back(child->second);
+            }
+        }
         std::erase_if(blazeTrails,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
         const auto origin = *binding.origin;
         std::vector<ClientMissileTarget> missileTargets;
@@ -1403,6 +1510,7 @@ struct RemoteScene::Impl {
         OnlineUnitKey selectedTarget{};
         bool hasSelectedTarget=false;
         std::optional<OnlineUnitKey> combatTarget, hoveredPlayer;
+        float monsterDistance = std::numeric_limits<float>::max();
         float playerDistance = std::numeric_limits<float>::max();
         if (!menu && !waypointOpen && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
             const auto &exit = map.terrain.exits[i];
@@ -1439,6 +1547,8 @@ struct RemoteScene::Impl {
         float targetDistance = std::numeric_limits<float>::max(), combatDistance = std::numeric_limits<float>::max();
         std::erase_if(motion, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
         std::erase_if(monsterIdentities, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
+        std::erase_if(monsterTransforms, [&](const auto &entry) { return !v.world.units.contains(entry.first); });
+        std::erase_if(preparedDeaths, [&](const auto &key) { return !v.world.units.contains(key); });
         std::erase_if(shattered, [&](const auto &key) { return !v.world.units.contains(key); });
         std::vector<SoundActorView> soundActors;
         std::map<OnlineUnitKey, size_t> soundActorsByKey;
@@ -1636,9 +1746,13 @@ struct RemoteScene::Impl {
                 if (distance < targetDistance) { targetDistance = distance; selectedTarget = key; hasSelectedTarget=true; }
             }
             if (!surface && (key.type == 0 || key.type == 1 || key.type == 2) && spriteHit(image, p, mouse)) {
+                const float distance = (p - mouse).length();
+                if (combat.monsterTargetEligible(u, false) && distance < monsterDistance) {
+                    monsterDistance = distance;
+                    intent.hoveredMonster = effectOwner(key);
+                }
                 const auto selected = rightHand ? v.world.rightSkill : v.world.leftSkill;
                 if (selected && combat.skillTargetEligible(u,selected->skill)) {
-                    const float distance=(p-mouse).length();
                     if (distance<combatDistance) { combatDistance=distance; combatTarget=key; }
                 }
             }
@@ -1742,31 +1856,11 @@ struct RemoteScene::Impl {
                 screen(actor->position) + actor->pixelOffset);
         }
         shared.drawAutomap(binding.automap);
-        if (combatTarget && combatTarget->type==1 && !groundTarget && !shared.characterView().dead) {
-            const auto &unit = v.world.units.at(*combatTarget);
-            const auto row = monsterRows.find(*unit.classId);
-            if (row != monsterRows.end()) {
-                auto name = strings.find(monstats.value(row->second, "NameStr"));
-                Color titleColor=WHITE;
-                if (const auto identity=monsterIdentities.find(unit.key); identity!=monsterIdentities.end()) {
-                    if (identity->second.champion) titleColor={105,105,255,255};
-                    else if (identity->second.unique || identity->second.superUnique) titleColor={199,179,119,255};
-                    if (identity->second.superUnique)
-                        if (const auto fixed=superUniqueRows.find(*identity->second.superUnique); fixed!=superUniqueRows.end())
-                            name=strings.find(superuniques.value(fixed->second,"Name"));
-                }
-                std::optional<float> life;
-                if (unit.lifePercent) {
-                    // MonsterMode's native ratio is 0..128. Only hit updates carry bit 7
-                    // as the unique-monster flag; assignment uses 128 for full life.
-                    const unsigned raw = *unit.lifePercent;
-                    life = float(unit.lifeCarriesTriggerFlag ? raw & 0x7f : raw) / 128.f;
-                }
-                if (!name.empty()) shared.drawEnemyBar(name, life,{},titleColor);
-            }
-        }
         auto &hit = intent.input;
         hit.available = !surface && !waypointOpen && !v.world.npcRequested;
+        hit.targetingAvailable = !shared.ui().blocksInput() && !shared.ui().skillPicker &&
+            !shared.ui().inventory.drag && !shared.ui().inventory.split && !shared.ui().inventory.goldDialog &&
+            !shared.ui().inventory.identify && !shared.characterView().dead && !waypointOpen && !v.world.npcRequested;
         hit.movementAvailable = binding.movementAvailable;
         hit.origin = {float(origin.x), float(origin.y)};
         hit.size = {float(binding.width), float(binding.height)};
@@ -1796,6 +1890,14 @@ struct RemoteScene::Impl {
         shared.updateWorldAudio(time,soundActors,soundEvents);
         const auto &audioLimitations = shared.soundLimitations();
         effectLimitations.insert(audioLimitations.begin(),audioLimitations.end());
+        // The frame's replica belongs to the caller. Diagnostics retain values,
+        // never its address after draw() returns or the next network pump runs.
+        for(const auto &[key,transform]:monsterTransforms) {
+            const auto unit=v.world.units.find(key);
+            if(unit==v.world.units.end() || !unit->second.classId) continue;
+            auto [name,modifiers]=monsterCaption(unit->second);
+            monsters.push_back({key.id,*unit->second.classId,std::move(name),std::move(modifiers),transform.first,transform.second});
+        }
         return intent;
     }
 };
@@ -1805,6 +1907,35 @@ RemoteScene::~RemoteScene() = default;
 RemoteSceneFrame RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
                                      SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
     return impl_->draw(v, m, s, shared, combat, uiConsumed, mouse, rightHand, paused);
+}
+void RemoteScene::drawTargetInfo(const OnlineView &view, const RemoteSceneFrame &frame, SceneView &shared,
+                                 const RemoteCombat &combat, EntityId lockedTarget) const {
+    if (frame.input.gameGeneration != view.gameGeneration || frame.input.areaGeneration != view.world.areaGeneration ||
+        !frame.input.targetingAvailable || shared.characterView().dead) return;
+    // The held target takes precedence over other monsters or ground items under
+    // the pointer. Never keep a separate display lock or a borrowed replica.
+    if (!lockedTarget && (!frame.input.available || frame.input.pickup)) return;
+    const auto target = lockedTarget ? lockedTarget : frame.hoveredMonster;
+    if (!target || ((target.value - 1) >> 32) != 1) return;
+    const auto found = view.world.units.find({1, uint32_t(target.value - 1)});
+    if (found == view.world.units.end() || !combat.monsterTargetEligible(found->second, false)) return;
+    const auto &unit = found->second;
+    const auto row = impl_->monsterRows.find(unit.classId.value_or(UINT16_MAX));
+    if (row == impl_->monsterRows.end()) return;
+    auto [name, description] = impl_->monsterCaption(unit);
+    if (name.empty()) return;
+    Color titleColor = impl_->monstats.number(row->second, "boss").value_or(0) ? Color{199,179,119,255} : WHITE;
+    if (const auto identity = impl_->monsterIdentities.find(unit.key); identity != impl_->monsterIdentities.end()) {
+        if (identity->second.champion) titleColor = {105,105,255,255};
+        else if (identity->second.unique || identity->second.superUnique) titleColor = {199,179,119,255};
+    }
+    std::optional<float> life;
+    if (unit.lifePercent) {
+        // MonsterMode uses 0..128; hit updates alone reserve bit 7 for a trigger.
+        const unsigned raw = *unit.lifePercent;
+        life = float(unit.lifeCarriesTriggerFlag ? raw & 0x7f : raw) / 128.f;
+    }
+    shared.drawEnemyBar(name, life, description, titleColor);
 }
 int RemoteScene::renderedUnits() const {
     return impl_->rendered;
@@ -1826,6 +1957,7 @@ std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};
 }
 void RemoteScene::effectStatus(OnlineSceneView &view) const {
+    view.monsters = impl_->monsters;
     view.clientMissiles = impl_->clientMissiles;
     view.localCastSkill = impl_->localCast ? std::optional{impl_->localCast->command.skill} : std::nullopt;
     view.localCastAge = impl_->localCast && impl_->localCast->started >= 0 ? impl_->time - impl_->localCast->started : -1;

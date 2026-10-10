@@ -30,7 +30,10 @@ const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
         const auto path = "data/global/missiles/" + std::string(file) + ".dcc";
         // Retail light-only missiles explicitly have CelFile=null. Their
         // lifetime and lighting are real content, without a fabricated image.
-        if(file=="null" && projectileVisuals.at(id).lightRadius>0) {
+        const auto program=clientMissilePrograms.find(id);
+        const bool controller=program!=clientMissilePrograms.end() &&
+            (program->second.function==21 || program->second.function==22 || program->second.function==29);
+        if(file=="null" && (projectileVisuals.at(id).lightRadius>0 || controller)) {
             imageLessProjectiles.insert(id);unavailableProjectiles.erase(id);
             return &projectileVisuals.at(id);
         }

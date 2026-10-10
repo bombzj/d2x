@@ -6,6 +6,7 @@
 
 namespace d2x {
 class Archives;
+namespace hosting { class AutomapStore; }
 // Composition root for an in-process native MCP/D2GS server. No client models,
 // frontend callbacks or decoded messages cross the memory transports.
 class EmbeddedRealm {
@@ -20,6 +21,7 @@ class EmbeddedRealm {
     void listen(std::string address, uint16_t gamePort = 4000);
     void setTcpIpHost(bool);
     Bytes selectedTcpIpSave();
+    std::shared_ptr<hosting::AutomapStore> selectedAutomapStore() const;
     void receiveTcpIpSave(Bytes);
     std::string prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass);
     void pump(double seconds, bool paused);

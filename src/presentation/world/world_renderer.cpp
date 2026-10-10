@@ -111,6 +111,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
         entry.age = effect.age + effect.animationOffset; entry.remaining = effect.duration - effect.age;
+        entry.pixelOffset=effect.pixelOffset;
         items.push_back(entry);
     }
     for (const auto &item : items) {
@@ -134,7 +135,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 [&](const auto &value) { return item.unit && value.unit == item.unit; });
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), true);
             if (item.shadow) spriteShadow(entry.image, entry.at);
-            if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining);
+            if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset);
             else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height);
             else if (item.ground) drawGroundItem(*item.ground, item.highlighted);
             else drawSelectableSprite(entry.image, entry.at, item.highlighted);

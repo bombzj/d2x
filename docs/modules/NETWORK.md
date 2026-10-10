@@ -206,7 +206,7 @@ Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Es
 
 D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／PlayerLeftParty`及`PlayerList::sub_6FCBAA20`核对相对状态：0提供Invite、2提供Accept、4提供Cancel，同队不再提供邀请按钮。RealmSession.party_action发送原六字节0x5E＋action6／7／8／9＋目标GUID；发送前复验ProtocolReady、连接／游戏代次、真实名册身份、当前邀请状态或本人非FFFF队伍ID。鼠标同项按下／释放匹配GUID、动作和本局代次；失焦、模态输入、重入清除按下状态。发送不改按钮／partyId，入队、离队及Cancel都等真实75／8B／8D；无自动接受、重试或本地成功消息。
 
-左上角同队头像读取MPQ Hireables下七职业原Icon、font6及姓名；本地原1.13c 0x5BA90／0x5B5A0核对56像素列距、TRANS50原PL2混色及46像素生命条，0x7F生命百分比在50／25阈值转绿／黄／红，未知生命不猜满值。本人不重复显示，首列x=15、姓名底线72／62交替；左侧面板或模态占用时隐藏，与佣兵／召唤图标避让。Z沿原Show Portraits切换整排显示，头像新改动尚未构建或运行核验。自动地图本人／NPC／队友／门户的原线形、颜色、公开位置及Show Party入口见[自动地图](../gameplay/world/AUTOMAP.md)。
+左上角同队头像读取MPQ Hireables下七职业原Icon、font6及姓名；本地原1.13c 0x5BA90／0x5B5A0核对56像素列距、TRANS50原PL2混色及46像素生命条，0x7F生命百分比在50／25阈值转绿／黄／红，未知生命不猜满值。本人不重复显示，首列x=15、姓名底线72／62交替；左侧面板或模态占用时隐藏，与佣兵／召唤图标避让。Z沿原Show Portraits切换整排显示，头像改动已随当前Release构建／打包，本批未专项复验队友头像；准确边界见佣兵专题。自动地图本人／NPC／队友／门户的原线形、颜色、公开位置及Show Party入口见[自动地图](../gameplay/world/AUTOMAP.md)。
 
 客户端同时消费原5A的Party5–9通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；自研权威与TCP有限证据见下段，最新包身份见[基线](../../BASELINE.md#当前运行包与验证边界)。
 
@@ -245,7 +245,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 - ClientSend只消费0x73原坐标、首路径目标、剩余帧、等级与穿透；无弹体GUID。已有程序1／5／6／8／9／18／19／20、原25Hz运动、充能弹／扇形／新星、部分拖尾与冰封球显示；接触只控制画面，未收到穿透次数不掷装备概率。
 - 原任务／NPC事件、技能、角色受伤／死亡和怪物动作转换成公共声音事件；SoundCatalog解释当前MPQ的Sounds／MonSounds／技能声音，SceneAudio消费选择、概率、延迟、脚步和待机间隔。SoundBank处理原声组、Compound及Stop／Defer；换区／打断／暂停恢复清过期事件。不维护两套MonSounds解释。
 
-限制：骨魂追踪、其余未接程序、完整速度状态、随机精英染色／首领专用死亡演出仍有缺口。技能与精英回调范围分别见职业文档及怪物模块。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/monsters/PRESENTATION.md)与[资料来源](../resources/THIRD_PARTY.md)。
+限制：骨魂追踪、其余未接程序、完整速度状态、其他幕首领死亡程序仍有缺口；精英姓名／调色及第一幕死亡回调已接，有限范围见怪物专题。技能与精英回调范围分别见职业文档及怪物模块。完整光照、空间衰减、循环音和非零FsOff缺少足够原客户端证据。scene.effectLimitations只记录遇到的限制，空数组不认证全部表现。职业及原版证据见[公共技能](../gameplay/skills/COMMON.md)、[怪物](../gameplay/monsters/PRESENTATION.md)与[资料来源](../resources/THIRD_PARTY.md)。
 
 ## 当前批交付
 

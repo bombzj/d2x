@@ -37,6 +37,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
         program.function = number("pCltDoFunc");
+        program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
         const auto serverHitFunction=table.value(row,"pSrvHitFunc");
         program.holyBolt=!serverHitFunction.starts_with('*') && number("pSrvHitFunc")==7;
         program.poisonVelocity={number("Param1"),number("Param2")};

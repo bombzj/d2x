@@ -100,7 +100,7 @@ client-settings.json只保存客户端走跑、底栏与地图选项，原子替
 
 OnlineLoginMemory按配置路径隔离：Windows当前用户凭据管理器；Linux配置旁权限0600的.credentials.local，Linux实际运行未认证。密码不写连接JSON、只读会话、日志或角色D2S。
 
-产品探索仅为本局AutomapExploration，同局返回保留、新局清空；旧app/automap_save及.d2xmap读写入口已删除。旧侧文件和用户存档保留，但不能继续照旧说明备份／读取以期待当前产品恢复。原.map／.ma*互通尚未核实，详见[自动地图](../gameplay/world/AUTOMAP.md)。
+Single Player／TCP/IP本地角色的同名.d2xmap由hosting/AutomapStore原子保存，客户端只交观察快照，不读写D2S。侧文件版本2、角色／难度／实际地图种子／内容及布局校验、单机三难度与LAN四世界缓存、旧文件保留及运行证据统一见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。这是观察缓存，不改变角色v37指纹或v96存档语义；原.map／.ma*二进制互通未实现。
 
 原位证据：本地D2MOO PlrSave2、Items／ItemMods、PlrIntro、D2QuestRecord；D2CE ActsInfo只交叉核对重置位；独立@dschu012/d2s只用于既有格式对照，不是运行依赖。固定版本及许可见[资料来源](../resources/THIRD_PARTY.md)。
 

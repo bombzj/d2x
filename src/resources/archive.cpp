@@ -41,6 +41,9 @@ void Archives::mount(const std::filesystem::path &p) {
         throw std::runtime_error("Cannot open MPQ: " + p.string());
     handles.push_back(h);
     names.push_back(p.filename().string());
+    mountIdentity_.add(p.filename().string());
+    mountIdentity_.add(std::to_string(std::filesystem::file_size(p)));
+    mountIdentity_.add(std::to_string(std::filesystem::last_write_time(p).time_since_epoch().count()));
     listed_ = false;
     readCache_.clear(); cacheBytes_ = 0; prepared_.clear();
 }

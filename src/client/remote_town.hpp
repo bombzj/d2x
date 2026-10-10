@@ -25,6 +25,9 @@ class RemoteTown {
     ClassicStrings strings_;
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
     AutomapExploration explored_;
+    std::map<int,uint32_t> actSeeds_;
+    int discoveryDifficulty_{};
+    uint64_t discoveryContent_{};
     std::map<Discovery, std::set<int>> discoveredCels_;
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
     std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
@@ -57,5 +60,8 @@ class RemoteTown {
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}) const;
     std::optional<OnlinePoint> interactionApproachPoint(const OnlineView &, OnlineUnitKey target) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
+    uint64_t discoveryContent() const { return discoveryContent_; }
+    AutomapDiscovery discovery() const;
+    void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);
 };
 } // namespace d2x

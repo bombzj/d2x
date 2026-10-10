@@ -1,6 +1,6 @@
 # 阶级、精英词缀与超级暗金
 
-更新：2026-10-09。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-11。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
 
 ## 当前固定身份与准备
 
@@ -24,8 +24,16 @@ monsters持Spectral Hit累计stat、谱系与死亡连锁，effects/monster_ench
 
 词缀行为接线不表示所有排斥／权重／难度／目标组合已运行验证。Holy Fire／Freeze／Shock与Amplify Damage在此只登记精英来源，不能认证玩家圣骑士／死灵完整技能；技能来源边界见[怪物技能](../skills/MONSTERS.md)。原MonProp血乌地狱knock从表准备，chance空白／0按原规则无条件应用，但没有地狱运行认证。
 
+## 姓名、标签与调色
+
+原服与自研客户端共用RemoteScene消费AC的rank、hcIdx、词缀与16位nameSeed。随机暗金沿master适配，用当前MPQ UniquePrefix／UniqueSuffix的TBL文本及公开nameSeed组合；冠军与Ghostly／Fanatic／Possessed／Berserker读取原标签和ChampionFormatX，仆从显示原Minion，固定超级暗金使用SuperUniques.Name。词缀说明只读已公开ID，不从生命高位猜rank。共享monsterDisplayName／monsterModifierDescription不滚玩法随机。
+
+调色按本地原1.13c D2Client A7A5A／539E0／53AA5：普通TransLvl对应原palshift的第TransLvl+2行；暗金及勇士的UNIQUE位用classId+nameSeed重新初始化显示种子，选择9..38，原末端大于等于30回退2。MonStats2的难度Utrans优先，再用固定SuperUnique难度Utrans覆盖；大于等于8读全局randtransforms，0..7读怪物palshift原行。安达利尔2／3／4保留原难度调色，序列／普通动作／尸体共用缓存键。Utrans255按已公开宠物归属／队伍选择0／1，不认证完整PvP关系。
+
+hosting的冠军AC同时保留CHAMPION与UNIQUE，符合MonsterUnique原TypeFlags，不把两位视为互斥。`online-world.scene.monsters`只读当前已解析姓名、词缀和实际transform供观察；不替代原截图或玩法认证。
+
 ## 原包与待补范围
 
 AC的rank、hcIdx、词缀及nameSeed布局由[PRESENTATION](PRESENTATION.md)负责；不把0C生命触发位当rank。第一幕电／冰强化与固定身份准入的有限历史证据只维护在[ACT1](ACT1.md#有限运行证据)，普通区域管理生成不能证明自然刷新点。
 
-全部五幕固定身份逐ID台账、全部随机词缀／冠军变体／继承组合、精英染色／完整随机名称、专用死亡演出与多人难度尚未认证。原rank奖励、首杀／任务TC选择和完整组队／NoDrop各有独立依赖，见[库存](../../modules/INVENTORY.md)、任务专题与总计划；当前MonStats／SuperUniques定义存在不算已实现。
+全部五幕固定身份逐ID台账、全部随机词缀／冠军变体／继承组合及多人难度尚未认证。随机姓名组合是master同范围适配，不声称与原客户端全部命名随机顺序逐字一致；当前调色选择已按本地原版修正，完整截图矩阵仍未认证。原rank奖励、首杀／任务TC选择和完整组队／NoDrop各有独立依赖，见[库存](../../modules/INVENTORY.md)、任务专题与总计划；当前MonStats／SuperUniques定义存在不算已实现。

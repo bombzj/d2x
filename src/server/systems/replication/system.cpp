@@ -65,7 +65,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             const auto &mods=*monster.rule.enchantment;
             for(int id:mods.ids) result.back().modifiers.push_back(uint8_t(id));
             const auto rank=monster.identity.rank;
-            result.back().rankFlags=uint8_t((rank==MonsterRank::Champion?1:0)|((rank==MonsterRank::Unique || rank==MonsterRank::SuperUnique)?2:0)|(rank==MonsterRank::SuperUnique?4:0)|(rank==MonsterRank::Minion?8:0)|(mods.has(36)?16:0));
+            result.back().rankFlags=uint8_t((rank==MonsterRank::Champion?1:0)|((rank==MonsterRank::Champion || rank==MonsterRank::Unique || rank==MonsterRank::SuperUnique)?2:0)|(rank==MonsterRank::SuperUnique?4:0)|(rank==MonsterRank::Minion?8:0)|(mods.has(36)?16:0));
             result.back().nameSeed=mods.nameSeed;result.back().superUniqueIndex=uint16_t(std::max(0,monster.rule.superUniqueIndex));
         }
         if(monster.amazonPet) {

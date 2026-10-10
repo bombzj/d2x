@@ -86,7 +86,7 @@ KillEdge删预制图最后额外行／列的图层，防止覆盖相邻房；未
 
 联机地图种子／幕／难度来自原服，不提供--level／--map-seed／--map等产品启动入口。独立d2x_assets maps／native-map／native-layout／native-room保留原资源分析和事件重放；参数见[调试文档](../../development/DEBUG_PIPE.md#资源工具)。报告或孤立房间生成不等于原服地图生命周期验收。
 
-地图指纹仍为map-rules-v13-shared-retail-all-acts；当前产品不读写.d2xmap，旧探索侧文件不套入新局。D2S v96独立编码不变。
+地图指纹仍为map-rules-v13-shared-retail-all-acts；本地单机／TCP/IP本人探索另用版本2 `.d2xmap`，按角色／难度／内容与实际地图种子恢复；旧版文件保留，不静默迁移。观察缓存与运行证据见[自动地图](AUTOMAP.md#跨进程探索保存)，D2S v96独立编码不变。
 
 ## 对照与验证边界
 

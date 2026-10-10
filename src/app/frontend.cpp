@@ -1,6 +1,7 @@
 #include "frontend.hpp"
 #include "startup_profile.hpp"
 #include "hosting/embedded_realm.hpp"
+#include "hosting/automap_store.hpp"
 #include "network/tcp_stream.hpp"
 #include "network/local_addresses.hpp"
 #include "app/online_login_memory.hpp"
@@ -24,6 +25,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <iostream>
 #include <deque>
 #include <chrono>
 #include <limits>
@@ -122,6 +124,16 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     std::string reloadCharacter;
     uint8_t localDifficulty{};
     bool localDifficultyChosen = false;
+    RemoteTown town(archives);
+    std::shared_ptr<hosting::AutomapStore> automapStore;
+    bool automapTcpIp=false;
+    uint64_t automapGeneration=~uint64_t{};
+    std::string automapError;
+    auto flushAutomap=[&] {
+        if(!automapStore) return;
+        try { automapStore->save(automapTcpIp,town.discovery()); }
+        catch(const std::exception &e) { automapError="Automap: "+std::string(e.what()); std::cerr<<automapError<<'\n'; }
+    };
     auto administerLocal = [&](const hosting::AdminRequest &request) -> hosting::AdminResult {
         using namespace hosting;
         if (!localConnection && !lanListening) return {AdminStatus::Unavailable, "No embedded host connection"};
@@ -131,6 +143,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 session.read().stage != OnlineStage::ProtocolReady || !session.read().load.difficulty || session.read().selectedCharacter.empty())
                 return {AdminStatus::Unavailable, "Reload requires the primary entered memory client"};
         }
+        if(request.operation==AdminOperation::Save || request.operation==AdminOperation::Reload) flushAutomap();
         auto result = embedded.administer(request);
         if (result.applied() && request.operation == AdminOperation::Reload) {
             const auto &current = session.read();
@@ -145,7 +158,6 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         return result;
     };
     auto hostFrame = std::chrono::steady_clock::now();
-    RemoteTown town(archives);
     RemoteControl control(town, session);
     RemoteInventory inventory(archives);
     RemoteCombat combat(archives, town, session, inventory);
@@ -307,6 +319,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
         if (WindowShouldClose())
             quit = true;
+        if(automapStore && (quit || session.read().stage==OnlineStage::LeavingGame)) {
+            flushAutomap(); automapStore.reset();
+        }
         const auto hostNow = std::chrono::steady_clock::now();
         const bool hostFocused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
         embedded.pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
@@ -317,6 +332,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         }
         const auto previousStage = session.read().stage;
         session.tick();
+        if(automapStore && (automapGeneration!=session.read().gameGeneration ||
+            (previousStage==OnlineStage::ProtocolReady && session.read().stage!=OnlineStage::ProtocolReady))) {
+            flushAutomap(); automapStore.reset();
+        }
+        if(!automapError.empty()) notice=std::exchange(automapError,{});
         for (auto &save : session.take_tcpip_saves()) tcpIpSaves.push_back(std::move(save));
         if (!tcpIpSaveFailed) while (!tcpIpSaves.empty()) {
             try { embedded.receiveTcpIpSave(tcpIpSaves.front()); tcpIpSaves.pop_front(); }
@@ -361,6 +381,23 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             renderedAct = session.read().load.act;
         }
         town.update(session.read());
+        if(!quit && (localConnection || lanJoiningGame) && session.read().stage==OnlineStage::ProtocolReady &&
+           town.read().nativeMapReady && session.read().load.mapSeed && session.read().load.act &&
+           automapGeneration!=session.read().gameGeneration) {
+            automapStore=embedded.selectedAutomapStore();
+            if(automapStore) {
+                // A background LAN listener can remain open after returning to
+                // Single Player. Cache identity follows this game's mode.
+                automapGeneration=session.read().gameGeneration; automapTcpIp=lanConnection || lanJoiningGame;
+                try {
+                    if(auto remembered=automapStore->load(automapTcpIp,session.read().load.difficulty.value_or(0),
+                        *session.read().load.act,*session.read().load.mapSeed,town.discoveryContent()))
+                        town.restoreDiscovery(*remembered,session.read());
+                } catch(const std::exception &e) {
+                    notice="Automap: "+std::string(e.what()); std::cerr<<notice<<'\n'; automapStore.reset();
+                }
+            }
+        }
         const bool focused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
         const bool escape = debugInputs.empty() ? IsKeyPressed(KEY_ESCAPE) : debugInputs.front().escape;
         if (focused && escape) control.cancelMovement();
@@ -701,7 +738,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     lastInputTime = inputNow;
                     if (inputWait) {
                         // Discard buffered physical clicks/keys after blocking window or
-                        // resource work; held buttons still require release before reuse.
+                        // resource work. Only existing held movement/unit targets survive.
                         FrameInput quiet;
                         quiet.mouse = input.mouse; quiet.insideViewport = input.insideViewport;
                         quiet.focused = input.focused;
@@ -734,6 +771,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
                         localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
+                    scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     sharedUi->drawUi(input.mouse);
                 } catch (const std::exception &e) {

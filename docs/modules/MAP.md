@@ -13,6 +13,7 @@
 | [remote_town.cpp](../../src/client/remote_town.cpp) | 原幕／种子、0x07／08及位置事件重放、锚点校验、活动 Map／Grid 和交互值 |
 | [remote_control.cpp](../../src/client/remote_control.cpp) | 原整数目标／GUID请求、靠近、旅行；显示路径不写权威位置 |
 | [automap_exploration.cpp](../../src/client/automap_exploration.cpp) | 本局区域探索掩码，城镇全揭示／野外可见格规则 |
+| [automap_store.cpp](../../src/hosting/automap_store.cpp) | 从本地角色租约路径保存本人观察缓存，校验角色／难度／内容／种子；不读写玩法或D2S |
 | [world_renderer.cpp](../../src/presentation/world/world_renderer.cpp)、[scene_assets.cpp](../../src/presentation/scene_assets.cpp) | 公共地形／单位绘制、排序／原图与灯光资源 |
 
 0x07／08只维护客户端视野引用；本人坐标选择当前房间／区域，不额外建立服务器 CLIENT_IN_ROOM 引用。房间事件历史缺口、生成失败或锚点失配明确停止显示／移动，要求重新入局，不回退近似预设。
@@ -21,7 +22,7 @@
 
 SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输入。SceneView／SceneAssets 共用原地形、Pops、Warp、原对象／单位动画及光照，原服模式与显示模式分开。地图交互和传送点解锁／菜单／旅行都等原服，面板不推断成功。
 
-自动地图只有 AutomapExploration／AutomapCatalog／SceneAssets／SceneView 一套揭示、标记、缓存和绘制；RemoteTown 适配原服活动区域。同局返回记忆保留，新局清空；不读写 .d2xmap。细节见[自动地图](../gameplay/world/AUTOMAP.md)。
+自动地图只有 AutomapExploration／AutomapCatalog／SceneAssets／SceneView 一套揭示、标记、缓存和绘制；RemoteTown 适配原服活动区域。同局返回记忆保留；本地单机／TCP/IP角色按实际种子从hosting持有的同名.d2xmap恢复本人探索，原服账号不写侧文件。细节见[自动地图](../gameplay/world/AUTOMAP.md)。
 
 自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。完整区域加载不等于原服按需活区，完整房间时序及动态占位仍有缺口。
 

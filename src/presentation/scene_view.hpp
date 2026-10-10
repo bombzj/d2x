@@ -241,7 +241,11 @@ class SceneView {
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
                                ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {});
     void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
-    void clearClientMissiles() { clientMissiles_.clear(); assets_.sceneAudio.reset(); }
+    void clearClientMissiles(bool retainDeathPrograms = false) {
+        if(retainDeathPrograms) std::erase_if(clientMissiles_,[](const auto &effect){return !effect.deathProgram;});
+        else clientMissiles_.clear();
+        assets_.sceneAudio.reset();
+    }
     const auto &clientMissiles() const { return clientMissiles_; }
     std::optional<int> weaponMissile(std::string_view code) const {
         const auto found = assets_.weaponMissiles.find(code);

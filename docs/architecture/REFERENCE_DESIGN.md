@@ -178,3 +178,5 @@ SkillMonst SrvDo088及原CltDo048的Andariel九射方向表合并到andarielSpra
 SCmd::sub_6FC3FC80给出AC的五rank位、固定hcIdx、九词缀＋终止及nameSeed；PlrMsg::sub_6FC81F60将Player.h的PLRMODE_KNOCKBACK19映射为0F/action20，客户端原生Player模式和wire模式按各自表解释，不能把action20当隐藏Kick。原表MonProp血鸟地狱knock在hosting准备。客户端只作有原版依据的修正／公共提取，不为自研服务端增加消息或玩法分支。
 
 原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。运行证据见[第一幕](../gameplay/monsters/ACT1.md#有限运行证据)，完整随机流等限制统一见[怪物COMMON](../gameplay/monsters/COMMON.md)。
+
+精英调色的原1.13c依据为A7A5A（TransLvl+2）、A7A7E（UNIQUE且无UMod15）、539E0（classId+nameSeed，单次随机9..38）、A7AAC／A7AEB（MonStats2与固定SuperUnique难度Utrans覆盖）、A7B1A（>=30回退2）、53AA5（全局randtransforms的value-8行）；公共ActorAnimation显式区分原始palshift行与旧相对TransLvl。随机姓名沿master的UniquePrefix／Suffix适配和ChampionFormatX，不据此宣称完整原命名随机流。死亡回调20FB0、52230、52320及客户端弹体表DD8A0的CltDo21=B86F0、22=B8550、27=B8130、29=BC210用于补第一幕原死亡图形；B0050、B0000、BB5B0提供计时与火柱选择，随机只属于显示。

@@ -22,6 +22,7 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     std::string key = std::to_string(palette) + ":" + request.category + ":" +
         request.appearance.token + ":" + request.mode + ":" + request.appearance.weapon + ":" +
         std::to_string(request.paletteTransform) + ":" + std::to_string(request.randomTransform) + ":" +
+        std::to_string(request.nativeMonsterTransform) + ":" +
         std::to_string(request.finalFrame) + ":" + std::to_string(request.shadow) + ":" +
         std::to_string(request.playerSequence) + ":" + (request.fasterCast ? std::to_string(*request.fasterCast) : "unknown");
     if(request.attackTiming) key+=":"+std::to_string(request.attackTiming->itemIAS)+":"+std::to_string(request.attackTiming->weaponSpeed)+":"+std::to_string(request.attackTiming->skillRate);
@@ -86,8 +87,15 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
             if (offset + 256 > data.size()) return result;
             colors.emplace(); std::copy_n(data.begin() + offset, 256, colors->begin());
             if ((*colors)[0] != 0) return result;
-        } else if (archives_.contains(path)) colors = monsterPalshift(archives_.read(path), request.paletteTransform);
-        else if (request.paletteTransform != 0) return result;
+        } else if (archives_.contains(path)) {
+            const auto data=archives_.read(path);
+            if(request.nativeMonsterTransform) {
+                const auto offset=size_t(request.paletteTransform)*256;
+                if(data.size()%256 || offset+256>data.size()) return result;
+                colors.emplace();std::copy_n(data.begin()+offset,256,colors->begin());
+                if((*colors)[0]!=0) return result;
+            } else colors = monsterPalshift(data, request.paletteTransform);
+        } else if (request.paletteTransform != (request.nativeMonsterTransform?2:0)) return result;
     }
     auto mode = request.mode;
     // The original corpse can lack a DD COF. Only its own DT final frame is allowed.

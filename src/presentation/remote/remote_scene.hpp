@@ -19,6 +19,7 @@ struct RemoteMapDisplayState {
 };
 struct RemoteSceneFrame {
     WorldInputView input;
+    EntityId hoveredMonster; // Display selection is independent of the selected skill.
     std::vector<size_t> visibleMapTiles;
 };
 // Original-resource presentation of a server replica. Returns hit/projection results; owns no input gestures.
@@ -31,6 +32,8 @@ class RemoteScene {
     ~RemoteScene();
     RemoteSceneFrame frame(const OnlineView &, const Map &, const OnlineSceneView &,
                             SceneView &, const RemoteCombat &, bool uiConsumed, Vec mouse, bool rightHand, bool paused);
+    // Called after the controller validates/releases/acquires this frame's gesture.
+    void drawTargetInfo(const OnlineView &, const RemoteSceneFrame &, SceneView &, const RemoteCombat &, EntityId lockedTarget) const;
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
