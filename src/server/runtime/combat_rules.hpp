@@ -21,7 +21,7 @@ struct PreparedMonster;
 struct AttackAnimation { int frames{}, speed{}, actionFrame{}, startFrame{}; };
 struct MeleeRules { std::map<std::string, AttackAnimation, std::less<>> animations; };
 struct MonsterMissileRule {
-    enum class Behavior { Projectile, Fireball, FireHead, SpiderLay, SpiderGoo, FirewallMaker, Fire, Charged, ColdNova } behavior{Behavior::Projectile};
+    enum class Behavior { Projectile, Fireball, FireHead, SpiderLay, SpiderGoo, FirewallMaker, Fire, Charged, ColdNova, PoisonCloud, GroundThrow } behavior{Behavior::Projectile};
     int definition{-1}, frames{}, sourceDamage{}, minimum{}, maximum{}, elementalMinimum{}, elementalMaximum{};
     int nextDelay{}, hitClass{};
     uint64_t coldFrames{}, poisonFrames{};
@@ -34,6 +34,10 @@ struct MonsterMissileRule {
     bool canSlow{}, collidePlayers{true}, collideMonsters{true}, alwaysExplode{};
     bool noMultiShot{}, noUniqueMod{}, unspreadMultiShot{};
     float acceleration{}, maximumVelocity{};
+    std::shared_ptr<const MonsterMissileRule> cloud;
+    int cloudMainStep{},cloudSubStep{};
+    int chainCount{},chainRadius{};
+    float cloudMainSpeed{},cloudSubSpeed{};
 };
 // Native monster modes are distinct from Skills.txt identities. A1/A2 keep
 // their own release frame, accuracy and damage even when no skill is assigned.
@@ -68,6 +72,12 @@ struct MonsterRule {
     int stunState{-1};
     bool convertible{};
     bool primeEvil{};
+    bool environmentController{};
+    enum class Trap { None, Missile, Poison, Nova, RightArrow, LeftArrow, Melee, Turret, Soul } trap{};
+    std::array<int,8> trapParameters{};
+    std::shared_ptr<const MonsterRule> shrineUpgrade;
+    std::map<std::string,std::shared_ptr<const MonsterRule>,std::less<>> shrineMinions;
+    bool noTreasure{};
     int coldEffect{}, coldState{-1}, frozenState{-1};
     int knockbackTicks{};
     std::vector<uint64_t> experience;
@@ -107,7 +117,7 @@ struct MonsterRule {
 };
 struct PreparedMonster {
     MonsterIdentity identity{};
-    MonsterKind implementation{};
+    std::optional<MonsterKind> implementation{};
     Vec position;
     MonsterRule rule;
     std::vector<Vec> skillPositions{};

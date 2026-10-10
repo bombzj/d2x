@@ -15,7 +15,7 @@ void System::withdrawQuestGroup(RegionId region,std::string_view name) {
 }
 DomainResult<EntityId> System::admit(const Admission &request) {
     const auto *area = ports_.areas.find(request.area);
-    if (!area || area->definition.town || !request.hostile || !request.rule || !request.implementation || request.identity.spawnKey.empty())
+    if (!area || area->definition.town || !request.hostile || !request.rule || (!request.implementation && request.rule->trap==MonsterRule::Trap::None) || request.identity.spawnKey.empty())
         return {DomainStatus::InvalidRequest, {}};
     const auto &rule = *request.rule;
     if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < rule.minimumLife ||
@@ -44,6 +44,35 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     const auto id = actor.id;
     state_.actors.emplace(id, std::move(actor));
     return {DomainStatus::Applied, id};
+}
+DomainResult<> System::finishTrap(EntityId id,uint64_t tick) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.rule.environmentController) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{id,1,actor.area,0,true,actor.position,0,0}}});
+    if(!result) return {result.status,{}};
+    actor.life=0;actor.rewardComplete=true;actor.deathTick=tick;actor.route.clear();actor.busyUntil=tick+uint64_t(actor.rule.deathTicks);++actor.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::reduceShrineLife(EntityId id,int64_t amount) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.damageable() || found->second.life<=0 || amount<0 || amount>=found->second.life) return {DomainStatus::InvalidActor,{}};
+    found->second.life-=amount;++found->second.revision;return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::Stale,{}};
+    auto &actor=found->second;
+    if(!actor.enemyTarget() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineUpgrade || actor.moving || actor.busyUntil>tick || actor.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
+    auto rule=*actor.rule.shrineUpgrade;
+    const auto minions=actor.rule.shrineMinions;
+    const auto enchantment=rule.enchantment;if(!enchantment) return {DomainStatus::Unavailable,{}};
+    actor.maximumLife=actor.maximumLife*(100+enchantment->lifePercent)/100*enchantment->lifeScalePercent/100;
+    actor.life=actor.maximumLife;actor.rule=std::move(rule);actor.identity.rank=MonsterRank::Unique;actor.identity.ownerSpawnKey.clear();++actor.revision;actor.combatRandom=childRandom(actor.combatRandom);
+    for(auto &[otherId,minion]:state_.actors) {
+        if(otherId==id || minion.area!=actor.area || minion.life<=0 || !minion.enemyTarget() || minion.identity.ownerSpawnKey!=actor.identity.spawnKey) continue;
+        const auto inherited=minions.find(minion.identity.monster);if(inherited==minions.end()) continue;
+        const auto &next=*inherited->second;const auto &mods=*next.enchantment;
+        minion.maximumLife=minion.maximumLife*(100+mods.lifePercent)/100*mods.lifeScalePercent/100;minion.life=minion.maximumLife;minion.rule=next;minion.identity.rank=MonsterRank::Minion;++minion.revision;
+    }
+    return {DomainStatus::Applied,std::monostate{}};
 }
 std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId area) const {
     for(const auto &[key,p]:ports_.players.all()) {

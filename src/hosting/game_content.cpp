@@ -1,6 +1,7 @@
 #include "game_content.hpp"
 #include "character_content.hpp"
 #include "combat_content.hpp"
+#include "environment_content.hpp"
 #include "object_content.hpp"
 #include "npc_content.hpp"
 #include "server/character_admission.hpp"
@@ -112,6 +113,7 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
         if(!area.questArrival) throw std::runtime_error("Missing original quest warp spawn marker");
     }
     prepareCombatPopulation(archives, content, result);
+    prepareEnvironmentPopulation(archives,content,result);
     prepareQuestWorld(archives,content,result);
     return result;
 }

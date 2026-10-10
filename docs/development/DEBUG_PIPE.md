@@ -45,7 +45,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
 | `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
-| `grant-shrine` | code，level可选；类型化stub |
+| `grant-shrine` | code，level可选；在当前位置附近生成当前MPQ祭坛，效果仍须正常交互领取 |
+| `object-spawn` | code为Objects定义的十进制字符串，x／y为可选原世界坐标，shrine／trap可选；仅本地管理入口，生成原物件以准备观察条件，不直接授予祭坛效果或结算陷阱 |
 | `grant-hireling` | code为当前MPQ Hireling原Id十进制字符串，level为1至主人等级；按原Id保留来源难度并选等级段、姓名与成长，原子替换旧佣兵和装备。仅宿主管理准备，不代替NPC雇佣验证 |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
 | `travel` | level（1–136），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作正常通行资格认证 |

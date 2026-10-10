@@ -1,4 +1,5 @@
 #include "combat_content.hpp"
+#include "environment_content.hpp"
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
@@ -53,9 +54,10 @@ std::vector<std::pair<int,int64_t>> auraNativeStats(const ClassicData &data,cons
 }
 std::optional<server::PreparedMonster> combatMonster(Archives &archives, const ClassicData &data,
     AreaGenerationRequest request, MonsterIdentity identity, Vec position, const WorldCatalog &world,
-    const MonsterCatalog &catalog, const AnimDataTable &animations, uint64_t &random, const MonsterEnchantment *owner = nullptr) {
+    const MonsterCatalog &catalog, const AnimDataTable &animations, uint64_t &random, const MonsterEnchantment *owner = nullptr, bool preserveRank = true) {
     const auto &level = world.level(request.level);
     const auto *record = catalog.find(identity.monster);
+    if(record) if(auto environment=prepareEnvironmentMonster(archives,data,request,identity,position)) return environment;
     if (!record || !record->hostile() || !record->aiProfiles.at(size_t(request.difficulty))) return {};
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
         request.difficulty, level.population.level.at(size_t(request.difficulty)));
@@ -63,7 +65,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
     if (!identity.superUnique.empty() && (!fixed || fixed->monster!=identity.monster)) return {};
     if (profile && (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::Champion || identity.rank == MonsterRank::SuperUnique)) {
-        enchantment = rollMonsterEnchantment(data,*record,*profile,request.difficulty,random,identity.rank,true,true,identity.championVariantAllowed,fixed);
+        enchantment = rollMonsterEnchantment(data,*record,*profile,request.difficulty,random,identity.rank,preserveRank,true,identity.championVariantAllowed,fixed);
     } else if (profile && identity.rank == MonsterRank::Minion) {
         if (!owner) return {};
         enchantment = inheritedMonsterEnchantment(data,*record,*profile,request.difficulty,*owner);
@@ -184,6 +186,17 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         rule.experienceRatios[size_t(playerLevel)]=xp.ratio;
     }
     if (!complete) return {};
+    if(identity.rank==MonsterRank::Normal && monsterShrineEligible(data,*record)) {
+        auto upgradedIdentity=identity;upgradedIdentity.rank=MonsterRank::Unique;
+        if(auto upgrade=combatMonster(archives,data,request,upgradedIdentity,position,world,catalog,animations,random)) {
+            rule.shrineUpgrade=std::make_shared<const server::MonsterRule>(upgrade->rule);
+            std::set<std::string> children{record->id};for(const auto &child:record->minions) if(!child.empty()) children.insert(child);
+            for(const auto &child:children) {
+                auto minion=identity;minion.monster=child;minion.rank=MonsterRank::Minion;minion.ownerSpawnKey=identity.spawnKey;
+                if(auto inherited=combatMonster(archives,data,request,minion,{},world,catalog,animations,random,&*upgrade->rule.enchantment)) rule.shrineMinions.emplace(child,std::make_shared<const server::MonsterRule>(std::move(inherited->rule)));
+            }
+        }
+    }
     return server::PreparedMonster{std::move(identity), monsterImplementation(record->id).kind, position, std::move(rule)};
 }
 }
@@ -196,6 +209,24 @@ std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, 
     for(const unsigned char c:identity.spawnKey) seed=(seed^c)*0x100000001b3ULL;
     auto random=initialRandom(uint32_t(seed^(seed>>32)));
     return combatMonster(archives, data, request, std::move(identity), position, world, catalog, animations,random);
+}
+std::vector<server::PreparedMonster> prepareObjectParty(Archives &archives,const ClassicData &data,AreaGenerationRequest request,std::string code) {
+    WorldCatalog world(archives,request.difficulty);MonsterCatalog catalog(archives,data.tables.at("monstats"));AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto *record=catalog.find(code);if(!record || !record->hostile()) return {};
+    auto random=initialRandom(request.seed^uint32_t(request.level));MonsterIdentity identity;identity.monster=code;identity.rank=MonsterRank::Unique;identity.spawnKey="object.urn";identity.origin=SpawnOrigin::Summoned;
+    auto parent=combatMonster(archives,data,request,identity,{},world,catalog,animations,random,nullptr,false);
+    if(!parent) {auto substitute=identity;substitute.monster="fallen1";parent=combatMonster(archives,data,request,substitute,{},world,catalog,animations,random);if(parent) parent->identity=identity;}
+    if(!parent || !parent->rule.enchantment) return {};
+    std::vector<server::PreparedMonster> result{*parent};
+    const int count=3+int(limitedRandom(random,4));
+    for(int i=0;i<count;++i) {
+        auto child=identity;child.monster=record->minions[0].empty()?code:record->minions[0];child.rank=MonsterRank::Minion;child.ownerSpawnKey=identity.spawnKey;child.spawnKey+=".minion."+std::to_string(i);
+        auto minion=combatMonster(archives,data,request,child,{},world,catalog,animations,random,&*parent->rule.enchantment);
+        if(!minion) {auto substitute=child;substitute.monster="fallen1";minion=combatMonster(archives,data,request,substitute,{},world,catalog,animations,random,&*parent->rule.enchantment);if(minion) minion->identity=child;}
+        if(!minion) return {};
+        result.push_back(std::move(*minion));
+    }
+    return result;
 }
 void prepareCombatPopulation(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
     auto &area = prepared.authority;
@@ -211,6 +242,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     auto plan = planPopulation(catalog, &level, preset, *prepared.terrain.map, {request.seed, request.difficulty});
     // MONSTERREGION_InitializeAll prepares every selected class before units
     // choose a variant. The planner's region seed remains a project adapter.
+    area.populationRoster=plan.roster;
     auto componentRandom=plan.componentRandom;
     for(const auto &code:plan.roster) {
         const auto *record=catalog.find(code);

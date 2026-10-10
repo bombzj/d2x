@@ -179,6 +179,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/combat/participants.cpp
   src/server/systems/combat/hireling_hit.cpp
+  src/server/systems/combat/environment.cpp
   src/server/systems/combat/follow_up.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
@@ -187,6 +188,9 @@ target_sources(d2x_server PRIVATE
   src/server/systems/companions/amazon.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
+  src/server/systems/objects/shrines.cpp
+  src/server/systems/objects/hazards.cpp
+  src/server/systems/objects/traps.cpp
   src/server/systems/objects/tower.cpp
   src/server/systems/npc/system.cpp
   src/server/systems/merchant/system.cpp
@@ -216,7 +220,7 @@ target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_items d2x_navigation)
 add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
 target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
-add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/monster_actions_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
+add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
 target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embedded_realm.cpp
   src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp

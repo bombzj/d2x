@@ -36,19 +36,21 @@ DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) 
     }
     if(!identityCapacity(identities)) return {DomainStatus::Capacity,{}};
     auto next = state_;
+    auto cursor=ports_.ids.cursor();
     for (auto &item : batch.items) {
         const auto position = placement(origin, next.world);
         if (!position) return {DomainStatus::Conflict, {}};
         auto properties = batch.equipment->items.at(item.id);
-        if (ports_.ids.cursor() > UINT32_MAX) return {DomainStatus::Capacity, {}};
-        item.id = ports_.ids.allocate(); item.location = GroundLocation{origin.region, *position};item.revision=1;
+        item.id = EntityId{cursor++}; item.location = GroundLocation{origin.region, *position};item.revision=1;
         for(size_t index=0;index<item.socketedItems.size();++index) {
-            auto &child=item.socketedItems[index];child.id=ports_.ids.allocate();child.revision=1;child.location=SocketLocation{item.id,unsigned(index)};
+            auto &child=item.socketedItems[index];child.id=EntityId{cursor++};child.revision=1;child.location=SocketLocation{item.id,unsigned(index)};
         }
         next.equipment.items.emplace(item.id, std::move(properties));
         next.world.items.emplace(item.id, std::move(item));
     }
     next.equipment.includeSets(*batch.equipment);
+    // Reserve identities only after every item has a valid landing cell.
+    for(size_t index=0;index<identities;++index) ports_.ids.allocate();
     ++next.revision; return {DomainStatus::Applied, std::move(next)};
 }
 DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {

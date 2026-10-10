@@ -15,6 +15,7 @@ DomainResult<> System::queue(const Request &request) {
     if (!player) return {DomainStatus::InvalidActor, {}};
     Preparation pending{request, player->persistent, player->definition.code, 0,
         player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
+    if(request.environment) pending.magicFind=pending.goldFind=0;
     if(request.questClaimant) pending.character.player=*request.questClaimant;
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
     const unsigned count=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;})));
@@ -39,6 +40,12 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         state_.deferred = std::move(deferred); state_.pending.erase(found);
         return {DomainStatus::Applied, std::monostate{}};
     }
+    if(request.object) {
+        const auto *player=ports_.players.find(request.beneficiary);
+        if(!player || !player->entered || player->area!=request.source.region || player->persistent.player.hp<=0) {
+            state_.completed.insert_or_assign(source,false);state_.pending.erase(found);return {DomainStatus::Applied,std::monostate{}};
+        }
+    }
     if (!ports_.events.hasCapacity(batch.items.size() + (request.object ? 2 : 0), request.object ? 2 : 1))
         return {DomainStatus::Capacity, {}};
     // Allocate follow-up bookkeeping before any authority is committed.
@@ -62,6 +69,14 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
             auto &value = draft.edit.inventory.items.at(key.id); ++value.revision;
             if (--value.quantity) draft.edit.changes.push_back({key.id, value.revision, ItemChangeKind::QuantityChanged, value.location, value.location, value.quantity});
             else { draft.edit.changes.push_back({key.id, value.revision, ItemChangeKind::Removed, value.location, {}, 0}); draft.edit.inventory.items.erase(key.id); }
+        }
+        const auto ingredient=request.object->ingredient;
+        if(ingredient.id) {
+            const auto *item=draft.resolve(ingredient);const auto *at=item?std::get_if<ContainerLocation>(&item->location):nullptr;
+            if(!at || at->container!=player->persistent.containers.backpack || item->revision==UINT64_MAX) return fail();
+            const auto *definition=player->rules.items->find(item->definition);
+            if(!definition || definition->betterGem!=request.object->dropCode) return fail();
+            draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});draft.edit.inventory.items.erase(item->id);
         }
         const ActorContext actor{player->player, player->actor, player->area, 0, 0, 0};
         transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(draft.edit.inventory), std::move(draft.edit.changes), player->persistent.player.weaponSet};

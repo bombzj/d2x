@@ -37,7 +37,7 @@ DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) 
             (impact.monsterHit->mana<0 || impact.monsterHit->stamina<0 ||
              std::any_of(impact.monsterHit->channels.begin(),impact.monsterHit->channels.end(),[](auto n){return n<0 || n>INT32_MAX;})))) return {DomainStatus::InvalidRequest,{}};
         if (impact.targets.empty()) continue;
-        if(!impact.binding.actor) impact.binding=participants.bind(participants.find(impact.source));
+        if(!impact.environment && !impact.binding.actor) impact.binding=participants.bind(participants.find(impact.source));
         const auto same = [&](const auto &previous) { return previous.projectile == impact.projectile && previous.occurrence == impact.occurrence; };
         if (std::any_of(state_.spells.begin(), state_.spells.end(), same) || std::any_of(plan.spells.begin(), plan.spells.end(), same))
             return {DomainStatus::Stale, {}};
@@ -60,6 +60,10 @@ StepStatus System::resolveSpells(TickContext tick) {
     const Participants participants{ports_.players, ports_.monsters};
     for (auto it = state_.spells.begin(); it != state_.spells.end();) {
         auto &impact = *it;
+        if(impact.environment) {
+            if(resolveEnvironment(impact,tick)==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;
+        }
         const auto source = participants.find(impact.source);
         if(participants.bind(source)!=impact.binding) {state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;}
         const PlayerState *owner = source.player;

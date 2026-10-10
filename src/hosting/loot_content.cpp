@@ -11,11 +11,12 @@
 #include "persistence/d2s_fixed_sections.hpp"
 namespace d2x {
 static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
-    // One source per scheduler cycle bounds content work and preserves unique
-    // availability between deaths. A failed handoff retains the same seed.
+    // One source per cycle bounds content work. Rotate stalled sources so a
+    // crowded landing does not starve unrelated drops; each retains its seed.
     const auto pending = host.pendingLoot(game);
-    if (pending.empty()) return;
-    const auto &[source, request] = *pending.begin();
+    if (pending.empty()) {cache.cursors.erase(game);return;}
+    auto selected=pending.upper_bound(cache.cursors[game]);if(selected==pending.end()) selected=pending.begin();
+    const auto &[source, request] = *selected;cache.cursors[game]=source;
     if (!cache.monsters) cache.monsters = std::make_shared<const MonsterCatalog>(archives, data.tables.at("monstats"));
     auto &world = cache.worlds[request.request.source.difficulty];
     if (!world) world = std::make_shared<const WorldCatalog>(archives, request.request.source.difficulty);
@@ -31,7 +32,12 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
     } else if (request.request.object) {
         const auto &object = *request.request.object;
         auto seed = request.seed;
-        if(object.operation==19 || object.operation==20) {
+        if(!object.dropCode.empty()) {
+            for(int i=0;i<object.dropCount;++i) plan.drops.push_back({object.dropCode,1,{},unsigned(object.dropLevel),{}});
+        } else if(object.operation==26) {
+            const bool scroll=limitedRandom(seed,20)<=12,identify=limitedRandom(seed,2)!=0;
+            plan.drops.push_back({scroll?(identify?"isc":"tsc"):(identify?"ibk":"tbk"),1,{},unsigned(world->level(int(request.request.source.region)).population.level[size_t(request.request.source.difficulty)]),{}});
+        } else if(object.operation==19 || object.operation==20) {
             plan=planRackLoot(data,*world,request.request.source.region,request.request.source.difficulty,object.operation==20,seed,request.uniques,request.classCode);
         } else {
         const auto entry = resolveObjectTreasure(data, *world, request.request.source.region, request.request.source.difficulty);
@@ -39,7 +45,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         else if (object.chest)
             plan = planChestLoot(data, entry, *object.chest, object.definition, seed, request.uniques, request.classCode, request.magicFind, request.goldFind, request.request.source.difficulty, request.effectivePlayers);
         else {
-            const bool drops = object.operation == 1 || object.operation == 14 ||
+            const bool drops = object.operation == 1 || object.operation == 14 || object.operation==48 || object.operation==51 || object.operation==68 ||
                 ((object.operation == 3 || object.operation == 5) && limitedRandom(seed,100) <= 20);
             if (drops) plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel, 0, seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers);
         }
@@ -49,7 +55,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         const auto &monstats=data.tables.at("monstats");
         for(size_t row=0;row<monstats.rows().size();++row) if(monstats.value(row,"Id")==sourceRequest.identity.monster) {
             const int slot=monstats.number(row,"TCQuestId").value_or(0),bit=monstats.number(row,"TCQuestCP").value_or(0);
-            if(slot>0 && slot<48 && bit>=0 && bit<16) {
+            if(!request.request.environment && slot>0 && slot<48 && bit>=0 && bit<16) {
                 D2sFixedSections sections;const auto &record=request.character.player;
                 if(!record.nativeSaveSections.empty()) sections=readD2sFixedSections(std::span(reinterpret_cast<const uint8_t *>(record.nativeSaveSections.data()),record.nativeSaveSections.size()));
                 exportD2sQuests(record,sections,data.npcDialogues);
@@ -89,8 +95,9 @@ void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, con
     try { prepareOneLoot(host, game, archives, data, cache); }
     catch (const std::exception &error) {
         const auto pending = host.pendingLoot(game); if (pending.empty()) return;
+        const auto source=pending.find(cache.cursors[game]);if(source==pending.end()) return;
         server::items::PreparedBatch unavailable; unavailable.equipment = std::make_shared<const server::EquipmentRules>();
-        host.installLoot(game, pending.begin()->first, std::move(unavailable), error.what());
+        host.installLoot(game, source->first, std::move(unavailable), error.what());
     }
 }
 }

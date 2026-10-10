@@ -14,7 +14,6 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::objects {
-DomainResult<EntityId> System::admit(const Admission &) { return {}; }
 void System::onWaypointArrival(RegionId area,TickContext tick) {
     // ObjRgn::InitFunction17 starts the destination waypoint when the room
     // is reached through waypoint travel; this is shared object state.
@@ -60,7 +59,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const InteractionTarget target{object.id, object.position, object.position, rule.width, rule.height, float(rule.range), true};
     if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) return {DomainStatus::InvalidRequest, {}};
     if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
-    if (object.pending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
+    if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
     if(rule.operation==23) {
         if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
         // Native operation23 first activates and animates; only an operating
@@ -118,9 +117,13 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         object.mode = object.mode ? 0 : 2; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); ++object.revision; collision(actor.area);
         return {DomainStatus::Applied, std::monostate{}};
     }
+    if(rule.operation==11 || rule.operation==13) {
+        object.mode=object.mode?0:1;object.until=0;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(rule.operation==7 || rule.operation==30) {if(object.mode) return {DomainStatus::Conflict,{}};return explode(object,actor);}
     if (object.mode && rule.operation != 22) return {DomainStatus::Conflict, {}};
     if (rule.shrine) {
-        const auto result = shrine(actor, object); if (!result) return result;
+        const auto result = shrine(actor, object); if (!result || object.pending) return result;
         object.mode = 1; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); object.reset = rule.shrine->reset > 0 ? actor.tick + uint64_t(rule.shrine->reset) : 0;
         ++object.revision; collision(actor.area); return result;
     }
@@ -131,14 +134,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         const float life = rule.parameters[3] & 2 ? std::min(float(totals.maxLife), record.hp + totals.maxLife * fraction) : record.hp;
         const float mana = rule.parameters[3] & 1 ? std::min(float(totals.maxMana), record.mana + totals.maxMana * fraction) : record.mana;
         const float stamina = std::min(float(totals.maxStamina), record.stamina + totals.maxStamina * fraction);
-        if (life == record.hp && mana == record.mana && stamina == record.stamina) return {DomainStatus::Conflict, {}};
-        const auto result = ports_.transactions.resources(actor, player->characterRevision, life, mana, stamina); if (!result) return result;
+        const auto result = ports_.effects.restore(actor,life,mana,stamina,rule.cureStates); if (!result) return result;
         --object.uses; object.mode = 2 - object.uses / rule.parameters[2]; if (!object.reset && rule.parameters[0] > 0) object.reset = actor.tick + uint64_t(rule.parameters[0]);
         ++object.revision; collision(actor.area); return result;
     }
-    if (rule.operation != 1 && rule.operation != 3 && rule.operation != 4 && rule.operation != 5 && rule.operation != 14 && rule.operation!=19 && rule.operation!=20) return {};
-    // Trap execution is a separate combat slice: never silently turn it off.
-    if (rule.chest && rule.chest->trap) return {DomainStatus::NotImplemented, {}};
+    if (rule.operation != 1 && rule.operation != 3 && rule.operation != 4 && rule.operation != 5 && rule.operation != 14 && rule.operation!=19 && rule.operation!=20 && rule.operation!=26 && rule.operation!=48 && rule.operation!=51 && rule.operation!=68) return {};
+    if(rule.operation==48) {
+        auto random=object.random;
+        if(limitedRandom(random,100)>=90) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);object.hazardAt=actor.tick+20;object.phase=0;object.operatorId=actor.player;object.random=random;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};}
+        object.random=random;
+    }
+    if(rule.operation==51) {
+        object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);object.lootAt=actor.tick+uint64_t(std::max(0,rule.parameters[1]))+1;object.operatorId=actor.player;object.trap=rule.trap;if(object.trap) object.trapAt=actor.tick+35;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
+    }
     ItemHandle key;
     if (rule.chest && rule.chest->locked && player->definition.code != "ass") {
         for (const auto &[id, item] : player->persistent.inventory.items) {
@@ -151,7 +159,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     LootRequest source; source.source = object.id; source.region = object.area; source.difficulty = ports_.settings.difficulty;
     const auto result = ports_.loot.queue({object.revision, source, actor.player, object.position, loot::ObjectSource{object.definition, rule.operation, rule.chest, key},{}});
     if (result) {
-        object.pending = true;
+        object.pending = true;object.operatorId=actor.player;
         if(rule.operation==5) {
             // Native ObjMode::OperateFunction05 starts KK independently of loot.
             // Original PlrModes can decline the action; this does not undo operation.
@@ -170,6 +178,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(source.rule.operation==23 && area.definition.town) object.mode=2; // ObjRgn::InitFunction17.
         if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
         if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
+        initialize(object,tick.tick);
         if(object.mode) changed.insert(id);
         state_.objects.emplace(source.id, std::move(object));
     }
@@ -192,15 +201,43 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().actOne.restoreCairnStones && object.mode!=2) {
             object.mode=2;object.until=0;++object.revision;changed.insert(object.area);
         }
+        if(object.lootAt && tick.tick>=object.lootAt && !object.pending) {
+            if(const auto *player=ports_.players.find(object.operatorId)) {
+                LootRequest source;source.source=id;source.region=object.area;source.difficulty=ports_.settings.difficulty;
+                const auto result=ports_.loot.queue({object.revision,source,player->player,object.position,loot::ObjectSource{object.definition,object.rule.operation,{},{}}});
+                if(result) {object.pending=true;object.lootAt=0;}
+            }
+        }
         if(object.pending) if(const auto result=ports_.quests.takeCompletion(id)) {
             object.pending=false;
             if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
         }
         if (object.pending) if (const auto result = ports_.loot.takeCompletion(id)) {
             object.pending = false;
-            if (*result) { object.mode = 1; object.until = tick.tick + std::max(uint64_t{1},object.rule.openingTicks); if (object.rule.chest) object.rule.chest->locked = false; ++object.revision; changed.insert(object.area); }
+            if (*result) {
+                if(object.rule.shrine) object.specialPending=true;
+                else if(object.rule.operation!=51) {
+                    object.mode=object.rule.operation==26 || object.rule.operation==19 || object.rule.operation==20?2:object.rule.operation==48?(object.phase?3:5):1;object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;
+                    if(object.mode==3) object.hazardAt=tick.tick+object.rule.closingTicks;
+                    object.trap=object.rule.trap;
+                    if(object.rule.chest) {object.rule.chest->locked=false;object.trap=object.rule.chest->trap;}
+                    if(object.rule.operation==1 && limitedRandom(object.random,10000)>=8192) object.trap=8;
+                    if(object.rule.operation==68 && limitedRandom(object.random,255)<=unsigned(object.rule.parameters[7])) {object.secondaryTrap=object.trap;object.trap=11;}
+                    if((object.trap==8 || object.trap==9) && ports_.areas.at(object.area).definition.act==0) {
+                        const auto &monsters=ports_.areas.at(object.area).definition.environmentMonsters;const auto found=monsters.find("chest");if(found!=monsters.end() && found->second.identity.monster=="flyingscimitar") object.trap=0;
+                    }
+                    if(object.trap) object.trapAt=tick.tick+35;
+                    ++object.revision;changed.insert(object.area);
+                }
+            }
         }
-        if (!object.rule.door && object.mode == 1 && object.until && tick.tick >= object.until) {
+        if(object.specialPending) {
+            const auto *player=ports_.players.find(object.operatorId);const auto &area=ports_.areas.at(object.area);
+            DomainResult<> result{DomainStatus::Applied,std::monostate{}};
+            if(object.rule.shrine->code!=18 && player) result=shrineMissiles({player->player,player->actor,object.area,area.generation,0,tick.tick},object);
+            if(result) {object.specialPending=false;object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);object.reset=object.rule.shrine->reset>0?tick.tick+uint64_t(object.rule.shrine->reset):0;++object.revision;changed.insert(object.area);}
+        }
+        if (!object.rule.door && object.rule.initialization!=22 && object.rule.initialization!=24 && object.mode == 1 && object.until && tick.tick >= object.until) {
             object.mode = object.rule.operation==10 && int(object.area)==38?5:2; object.until = 0; ++object.revision; changed.insert(object.area);
         }
         if (object.reset && tick.tick >= object.reset) {
@@ -213,10 +250,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     towerStep(tick);
     for (const auto area : changed) collision(area);
-    return StepStatus::Complete;
+    const bool blocked=hazardStep(tick)==StepStatus::Blocked;
+    return trapStep(tick)==StepStatus::Blocked || blocked?StepStatus::Blocked:StepStatus::Complete;
 }
-DomainResult<> System::shrine(const ActorContext &actor, const Object &object) {
+DomainResult<> System::shrine(const ActorContext &actor, Object &object) {
     const auto &rule = *object.rule.shrine; const auto *player = ports_.players.find(actor.player); const auto &attributes = player->totals.character;
+    if(rule.code>=17) return specialShrine(actor,object);
     if (rule.code <= 3) return ports_.transactions.resources(actor, player->characterRevision,
         rule.code != 3 ? float(attributes.maxLife) : player->persistent.player.hp,
         rule.code != 2 ? float(attributes.maxMana) : player->persistent.player.mana, player->persistent.player.stamina);
@@ -237,7 +276,7 @@ DomainResult<> System::shrine(const ActorContext &actor, const Object &object) {
     case 9: modifiers.coldResist = rule.argument0; break;
     case 10: modifiers.lightningResist = rule.argument0; break;
     case 11: modifiers.poisonResist = rule.argument0; modifiers.combat.preventPoison = true; break;
-    case 12: modifiers.combat.allSkills = 2; break;
+    case 12: modifiers.combat.allSkills = rule.argument0; break;
     case 13: modifiers.combat.manaRecovery = rule.argument0; break;
     case 14: modifiers.staminaPercent = int(int64_t(rule.argument0) * attributes.staminaPercent / 100); modifiers.staminaRecoveryBonus = 1000; effect.restoreStaminaOnRemoval = true; break;
     case 15: modifiers.combat.experiencePercent = rule.argument0; break;

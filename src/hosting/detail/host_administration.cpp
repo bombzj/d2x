@@ -193,7 +193,19 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             publishEvents();return {AdminStatus::Applied,"Host relocated the player through prepared native collision and original travel facts; no task or waypoint was granted"};
         }
         case AdminOperation::UnlockWaypoints: return {AdminStatus::NotImplemented, "Waypoint administration is not implemented"};
-        case AdminOperation::GrantShrine: return {AdminStatus::NotImplemented, "Object administration is not implemented"};
+        case AdminOperation::GrantShrine:
+        case AdminOperation::SpawnObject: {
+            const auto &spawn=std::get<AdminSpawn>(request.arguments);int code=-1;
+            const auto parsed=std::from_chars(spawn.code.data(),spawn.code.data()+spawn.code.size(),code);
+            if(peer.phase!=GamePhase::Entered || parsed.ec!=std::errc{} || parsed.ptr!=spawn.code.data()+spawn.code.size() || code<0) return {AdminStatus::InvalidArguments,"Supply an original Objects Id or shrine code"};
+            const auto view=host.read(*binding);const auto origin=shared.terrain.at(binding->game).at(view->actor.region).origin;
+            std::optional<int> shrine=spawn.shrine;
+            if(request.operation==AdminOperation::GrantShrine) {if(code<1 || code>22) return {AdminStatus::InvalidArguments,"Shrine code must be 1..22"};shrine=code;code=136;}
+            const auto position=spawn.position?*spawn.position-origin:view->actor.position+Vec{2,0};
+            const auto result=host.spawnObject(*binding,{code,view->actor.region,position,shrine,spawn.trap});
+            if(!result) return {AdminStatus::Unavailable,"Original object admission rejected"};
+            return {AdminStatus::Applied,"Original object admitted; use the normal native interaction command to activate it",*result.value};
+        }
         case AdminOperation::GrantHireling: {
             const auto &grant=std::get<AdminSpawn>(request.arguments);int type=-1;
             const auto parsed=std::from_chars(grant.code.data(),grant.code.data()+grant.code.size(),type);

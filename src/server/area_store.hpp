@@ -40,6 +40,11 @@ struct AreaMetadata {
     std::vector<int> objectDeferred; // Native preset callbacks awaiting object/quest authority.
 };
 struct AreaDefinition : AreaMetadata {
+    std::map<std::string,PreparedMonster,std::less<>> environmentMonsters;
+    std::map<std::string,std::vector<PreparedMonster>,std::less<>> environmentGroups;
+    std::vector<std::string> populationRoster;
+    std::map<int,ShrineRule> shrineRules;
+    std::map<int,ObjectRule> objectRules;
     Grid collision;
     RoomLayout activation;
     std::vector<PreparedMonster> population;

@@ -222,6 +222,10 @@ server::DomainResult<> GameHost::restoreResources(PlayerBinding binding) {
     if (result) publish(size_t(binding.game.slot));
     return result;
 }
+server::DomainResult<EntityId> GameHost::spawnObject(PlayerBinding binding,const server::objects::Admission &request) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->spawnObject(binding.player,request);if(result) publish(size_t(binding.game.slot));return result;
+}
 server::DomainResult<EntityId> GameHost::spawnMonster(PlayerBinding binding, const server::PreparedMonster &monster) {
     auto *slot = find(binding.game);
     if (!slot) return {server::DomainStatus::InvalidActor, {}};

@@ -50,7 +50,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
 DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed,std::optional<Vec> source) {
     const auto *p=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !origin || origin->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
-    const bool blue=kind==SpecialPortalKind::Andariel || kind==SpecialPortalKind::CainRescue || kind==SpecialPortalKind::Tyrael;
+    const bool blue=kind==SpecialPortalKind::Shrine || kind==SpecialPortalKind::Andariel || kind==SpecialPortalKind::CainRescue || kind==SpecialPortalKind::Tyrael;
     const auto exists=[&](int destination) {return std::any_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.field==actor.area && int(entry.second.town)==destination;});};
     auto rule=blue?origin->definition.portalRule:origin->definition.specialPortalRule;
     if(kind==SpecialPortalKind::ActFive || kind==SpecialPortalKind::BaalExit) {
@@ -60,7 +60,10 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
     }
     if(!rule) return {DomainStatus::Unavailable,{}};
     int level=0;const auto difficulty=size_t(p->persistent.difficulty);
-    if(kind==SpecialPortalKind::ActFive) {
+    if(kind==SpecialPortalKind::Shrine) {
+        if(origin->definition.town) return {DomainStatus::InvalidRequest,{}};
+        level=int(origin->definition.townRegion);
+    } else if(kind==SpecialPortalKind::ActFive) {
         if(int(actor.area)!=103) return {DomainStatus::InvalidRequest,{}};
         level=109;
     } else if(kind==SpecialPortalKind::AnyaTemple) {
@@ -89,7 +92,7 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
         if(kind==SpecialPortalKind::Finale) level=136;
         else {const int first=int(limitedRandom(seed,3));for(int offset=0;offset<3;++offset) if(!exists(133+(first+offset)%3)) {level=133+(first+offset)%3;break;}}
     }
-    if(!level || exists(level)) return {DomainStatus::Conflict,{}};
+    if(!level || (kind!=SpecialPortalKind::Shrine && exists(level))) return {DomainStatus::Conflict,{}};
     const auto *destination=ports_.areas.find(RegionId(level));
     if(!destination) {const auto request=ports_.world.request(RegionId(level));return {request?DomainStatus::Capacity:request.status,{}};}
     if(!(blue?destination->definition.portalRule:destination->definition.specialPortalRule)) return {DomainStatus::Unavailable,{}};

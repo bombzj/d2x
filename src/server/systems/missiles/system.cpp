@@ -22,10 +22,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto &m=it->second;
         const auto *p=ports_.players.find(m.player);const auto *a=ports_.areas.find(m.area);
         const auto *enemy=ports_.monsters.find(m.owner);
-        const bool validOwner=m.enemy?enemy && enemy->area==m.area &&
-            (m.player.value?enemy->owner==m.player && (enemy->hireling || enemy->conversion) && p && p->entered && p->area==m.area:!enemy->owner):
+        const bool validOwner=m.enemy?((p && p->entered && p->actor==m.owner && p->area==m.area) || (enemy && enemy->area==m.area &&
+            (m.player.value?enemy->owner==m.player && (enemy->hireling || enemy->conversion) && p && p->entered && p->area==m.area:!enemy->owner))):
             p && p->entered && p->area==m.area && (p->actor==m.owner || (enemy && enemy->hireling && enemy->life>0 && enemy->owner==m.player && enemy->area==m.area));
-        if(!validOwner || participants.bind(participants.find(m.owner))!=m.binding || !a || a->generation!=m.generation || a->definition.town) {
+        if((!m.environment && (!validOwner || participants.bind(participants.find(m.owner))!=m.binding)) || !a || a->generation!=m.generation || a->definition.town) {
             pending_.erase(it->first);it=state_.missiles.erase(it);continue;
         }
         if(tick.tick<=m.created) {++it;continue;}

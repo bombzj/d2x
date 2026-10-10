@@ -107,6 +107,16 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     });
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
         if (monster.life > 0 || monster.rewardComplete) continue;
+        if(!monster.killer) {
+            const PlayerState *beneficiary=nullptr;
+            for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==monster.area && p.persistent.player.hp>0) {beneficiary=&p;break;}}
+            if(!monster.rule.noTreasure && monster.enemyTarget() && beneficiary) {
+                LootRequest source;source.source=id;source.identity=monster.identity;source.region=monster.area;source.difficulty=monster.rule.difficulty;source.sourceSeed=true;source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);source.monsterPlayerCount=monster.admittedPlayerCount;
+                loot::Request request{monster.deathOccurrence,source,beneficiary->player,monster.position};request.environment=true;
+                const auto queued=ports_.loot.queue(request);if(!queued && queued.status==DomainStatus::Capacity) {blocked=true;continue;}
+            }
+            ports_.monsters.rewardComplete(id);continue;
+        }
         auto reward = state_.rewards.find(id);
         if (reward == state_.rewards.end()) {
             const PlayerState *killer = nullptr;
@@ -167,6 +177,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             reward->second.hirelingAwarded=true;
         }
+        if(monster.rule.noTreasure) reward->second.lootQueued=true;
         if (!reward->second.lootQueued) {
             LootRequest source; source.source = id; source.identity = monster.identity; source.region = monster.area; source.difficulty = monster.rule.difficulty; source.sourceSeed = true; source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);
             source.monsterPlayerCount=monster.admittedPlayerCount;

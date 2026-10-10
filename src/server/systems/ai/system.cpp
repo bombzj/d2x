@@ -21,6 +21,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto *actor = ports_.monsters.find(entry.first); return !actor || actor->life <= 0;
     });
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
+        if(monster.rule.trap!=MonsterRule::Trap::None) continue;
         // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
         // pursues or attacks, including its permitted content substitute.
         if(monster.implementation==MonsterKind::PrisonDoor) {ports_.monsters.stop(id);continue;}

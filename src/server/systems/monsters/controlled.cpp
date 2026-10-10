@@ -104,7 +104,7 @@ void System::retire(EntityId id, uint64_t tick) {
     actor.life=0;actor.busyUntil=tick+uint64_t(actor.rule.deathTicks);actor.riseUntil=0;++actor.revision;
 }
 void System::healHireling(EntityId id) noexcept {
-    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.hireling || found->second.life<=0) return;
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.combatCompanion() || found->second.life<=0) return;
     auto &m=found->second;m.life=m.maximumLife;m.poison.reset();m.chilledUntil=m.frozenUntil=0;++m.revision;
 }
 }

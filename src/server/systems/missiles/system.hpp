@@ -31,6 +31,10 @@ struct MonsterSpawn {
     std::optional<MonsterWebRule> web{};
     std::vector<Vec> aims{};
     bool postMortem{};
+    bool environment{};
+    std::vector<Vec> origins;
+    std::vector<float> speeds;
+    PlayerId playerSource;
 };
 struct MonsterLaunch { EntityId first; uint64_t random{}; };
 struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{};std::optional<WeaponSkillDamage> weapon{}; };
@@ -60,6 +64,7 @@ struct Missile {
     bool guidanceSearched{};
     std::optional<EnemyProjectile> enemy;
     combat::SourceBinding binding{};
+    bool environment{};
 };
 struct State { std::map<EntityId, Missile> missiles; };
 struct Ports {

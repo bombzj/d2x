@@ -104,6 +104,7 @@ class GameInstance {
     DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);
     DomainResult<> relocate(PlayerId,RegionId,std::optional<Vec>);
     DomainResult<EntityId> spawnMonster(PlayerId, const PreparedMonster &);
+    DomainResult<EntityId> spawnObject(PlayerId,const objects::Admission &);
     std::optional<DiagnosticSnapshot> diagnostics(PlayerId, size_t limit, uint64_t since, uint64_t commandSince,
                                                 std::optional<Vec> destination = {}) const;
 };

@@ -97,6 +97,27 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     }
     return {DomainStatus::Applied, std::move(plan)};
 }
+DomainResult<> System::restore(const ActorContext &actor,float life,float mana,float stamina,const std::vector<int> &cureStates) {
+    const auto *player=ports_.players.find(actor.player);if(!player || player->actor!=actor.actor || !player->entered || player->area!=actor.area || player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+    auto next=state_;auto &recovery=next.players[actor.actor];auto units=units_;
+    bool used=life!=player->persistent.player.hp || mana!=player->persistent.player.mana || stamina!=player->persistent.player.stamina;
+    for(const auto state:cureStates) {used|=recovery.states.hasState(state,actor.tick);recovery.states.removeState(state);}
+    if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
+    transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+    edit.player.hp=life;edit.player.mana=mana;edit.player.stamina=stamina;edit.transient=projection(recovery.states,actor.tick);
+    std::vector<EntityId> pets;
+    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.combatCompanion() && m.owner==actor.player && m.life>0 && m.area==actor.area) {
+        bool changed=m.life<m.maximumLife || bool(m.poison) || m.chilledUntil>actor.tick || m.frozenUntil>actor.tick;
+        if(auto found=units.find(id);found!=units.end()) for(const int state:cureStates) if(found->second.states.hasState(state,actor.tick)) {found->second.states.removeState(state);found->second.nativeStats.erase(state);edit.publicFacts.emplace_back(StateFact{id,1,m.area,state,false});changed=true;}
+        if(!changed) continue;
+        used=true;pets.push_back(id);
+        if(m.poison) edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.poison->damage.state,false});
+        if(m.chilledUntil || m.frozenUntil) {edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.coldState,false});edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState,false});}
+    }
+    if(!used) return {DomainStatus::Conflict,{}};
+    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) {state_.players.swap(next.players);units_.swap(units);for(const auto id:pets) ports_.monsters.healHireling(id);}return result;
+}
 void System::commit(PotionPlan &&plan) noexcept {
     state_.players.swap(plan.next.players);if(plan.random) ports_.random=*plan.random;
     for(const auto id:plan.healedHirelings) ports_.monsters.healHireling(id);

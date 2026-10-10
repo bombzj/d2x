@@ -1,4 +1,7 @@
 #include "object_content.hpp"
+#include "monster_actions_content.hpp"
+#include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/spec.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/state_data.hpp"
 #include "world/region.hpp"
@@ -45,6 +48,36 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
         if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,server::PortalRule{code,int(questPortal.reach),0});
     }
+    for(const auto &[code,source]:content.shrines) {
+        server::ShrineRule shrine{source.code,source.argument0,source.argument1,source.durationFrames,source.resetFrames,{}};
+        if(const auto state=content.states.find(std::string(shrineStateName(source.code)));state!=content.states.end()) shrine.state=state->second.definition;
+        if(code==19 || code==21 || code==22) for(int rank=1;rank<=8;++rank) {
+            auto missile=prepareMonsterMissile(content,code==19?62:code==21?45:48,rank);
+            if(!missile) throw std::runtime_error("Missing native shrine missile rule");
+            if(code==19) {
+                const auto *entry=content.skills.find(47);if(!entry || !entry->spell) throw std::runtime_error("Missing Fire Ball shrine damage");
+                const auto skill=resolveSkill(entry->spell->rules(),{rank,{},{},{}});
+                missile->elementalMinimum=int(skill.minimumDamage*256.f);missile->elementalMaximum=int(skill.maximumDamage*256.f);
+            }
+            server::MonsterAttackRule attack;attack.missile=*missile;attack.rank=uint8_t(rank);shrine.projectiles.emplace(rank,std::move(attack));
+        }
+        shrine.hitStates={content.states.at("cold").definition,content.states.at("poison").definition,{}};
+        area.shrineRules.emplace(code,std::move(shrine));
+    }
+    for(size_t row=0;row<objectTable.rows().size();++row) {
+        const auto definition=objectTable.number(row,"Id");if(!definition) continue;
+        WorldObject object;object.appearance.category="objects";object.objectClass=*definition;configureWorldObject(object,rows);
+        server::ObjectRule rule;rule.operation=object.operateFn;rule.width=object.collisionWidth;rule.height=object.collisionHeight;rule.range=int(object.reach);
+        rule.collisionMask=object.collisionMask;rule.collision=object.hasCollision;rule.light=object.blocksLight;rule.parameters=object.parameters;
+        rule.door=object.interaction==Interaction::Door;rule.stash=object.interaction==Interaction::Stash;
+        rule.initialization=objectTable.number(row,"InitFn").value_or(0);rule.damage=objectTable.number(row,"Damage").value_or(0);
+        rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;
+        if(rule.operation==22) for(const auto &[name,state]:content.states) if(state.definition.curable || name=="poison" || name=="freeze") rule.cureStates.push_back(state.definition.id);
+        for(size_t mode=0;mode<8;++mode) rule.selectable[mode]=objectTable.number(row,"Selectable"+std::to_string(mode)).value_or(0)!=0;
+        rule.openingTicks=uint64_t(std::max(1,object.animationRules[1].frames+1));rule.closingTicks=uint64_t(std::max(1,object.animationRules[3].frames+1));
+        if(rule.initialization==22 && objectTable.number(row,"Mode2").value_or(0) && !objectTable.number(row,"Mode0").value_or(0)) rule.initialMode=2;
+        area.objectRules.emplace(*definition,std::move(rule));
+    }
     std::optional<Vec> firstSpawnMarker;
     for(const auto &layer:prepared.terrain.map->terrain.data.walls) for(size_t index=0;index<layer.size();++index) {
         const auto &cell=layer[index]; if(!cell.occupied() || (cell.orientation!=10 && cell.orientation!=11)) continue;
@@ -83,7 +116,8 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         if (source.id >= 574 && source.id <= 579) {
             constexpr int low[]{2,7,8,12,1,14}, high[]{6,7,11,12,5,14}; const auto index = source.id - 574;
             object.shrineCode = low[index] + int(limitedRandom(region.objectSeed, unsigned(high[index] - low[index])));
-            if (object.shrineCode == 4 || object.shrineCode == 5) object.shrineCode = 2;
+            if(object.shrineCode==4) object.shrineCode=2;
+            if(object.shrineCode==5) object.shrineCode=3;
         }
         region.objects.push_back(std::move(object));
     }
@@ -127,6 +161,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     for (auto &object : region.objects) {
         if (object.interaction == Interaction::Shrine && !object.shrineCode) assignShrine(object, shrines, request.level, region.objectSeed);
         server::AreaObject entry{object.id, object.objectClass, object.pos, {}}; auto &rule = entry.rule;
+        rule=area.objectRules.at(object.objectClass);
         rule.operation = object.operateFn; rule.width = object.collisionWidth; rule.height = object.collisionHeight; rule.range = int(object.reach);
         rule.collisionMask = object.collisionMask; rule.collision = object.hasCollision; rule.light = object.blocksLight; rule.parameters = object.parameters;
         rule.door = object.interaction == Interaction::Door; rule.stash = object.interaction == Interaction::Stash; rule.chest = object.chest;
@@ -148,13 +183,13 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
             break;
         }
         const auto &animation = object.animationRules[1];
-        rule.openingTicks = object.chest || rule.operation==23 ? uint64_t(animation.frames + 1) : animation.fps > 0 ? uint64_t(std::ceil(animation.frames * 25.f / animation.fps)) : 0;
+        rule.openingTicks=uint64_t(std::max(1,animation.frames+1));
         if (object.shrineCode) {
-            const auto &source = content.shrines.at(object.shrineCode);
-            server::ShrineRule shrine{source.code, source.argument0, source.argument1, source.durationFrames, source.resetFrames, {}};
-            const auto state = content.states.find(std::string(shrineStateName(source.code)));
-            if (state != content.states.end()) shrine.state = state->second.definition;
-            rule.shrine = shrine;
+            rule.shrine = area.shrineRules.at(object.shrineCode);
+        }
+        if((rule.initialization==2 || rule.initialization==27) && !rule.chest) {
+            if(rule.initialization==2) {const auto level=catalog.level(request.level).objectLevel;if(!level) throw std::runtime_error("Missing native object trap level");if(limitedRandom(region.objectSeed,100)<unsigned(*level/8+5)) rule.trap=1+int(limitedRandom(region.objectSeed,8));}
+            else if(limitedRandom(region.objectSeed,1000)<333) rule.trap=3;
         }
         area.objects.push_back(std::move(entry));
         if(object.objectClass==100 && !area.openedTombWall.empty()) area.objects.back().questSpawn=true;

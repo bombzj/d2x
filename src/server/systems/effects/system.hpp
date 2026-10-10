@@ -83,6 +83,7 @@ class System {
     }
     DomainResult<PotionPlan> potion(const ActorContext &, const PotionDefinition &) const;
     DomainResult<PotionPlan> heal(const ActorContext &) const;
+    DomainResult<> restore(const ActorContext &,float life,float mana,float stamina,const std::vector<int> &cureStates);
     void commit(PotionPlan &&plan) noexcept;
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});

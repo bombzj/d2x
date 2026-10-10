@@ -202,6 +202,11 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (spawn.quality != "normal" && spawn.quality != "magic" && spawn.quality!="rare" && spawn.quality!="unique" && spawn.quality!="set" && spawn.quality!="superior" && spawn.quality!="inferior") throw std::invalid_argument("Unknown original generated quality");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
             if(request.contains("sockets")) spawn.sockets=unsigned(unsignedValue(request.at("sockets"),6));
+            if(request.contains("shrine") || request.contains("trap")) {
+                if(entry->operation!=AdminOperation::SpawnObject) throw std::invalid_argument("shrine/trap apply only to object-spawn");
+                if(request.contains("shrine")) spawn.shrine=int(unsignedValue(request.at("shrine"),22));
+                if(request.contains("trap")) spawn.trap=int(unsignedValue(request.at("trap"),9));
+            }
             args = std::move(spawn); break;
         }
         case AdminArgumentKind::Missile:

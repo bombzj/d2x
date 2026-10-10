@@ -1,6 +1,9 @@
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/spec.hpp"
+#include "gameplay/skills/amazon_missile.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -60,6 +63,19 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     rule.collidePlayers=collision==1 || collision==3 || collision==8;
     rule.collideMonsters=collision==2 || collision==3 || collision==5 || collision==8;
     switch(table.number(row,"pSrvHitFunc").value_or(0)) {
+    case 2: {
+        rule.behavior=server::MonsterMissileRule::Behavior::GroundThrow;
+        const auto name=table.value(row,"HitSubMissile1");size_t child=0;while(child<table.rows().size() && table.value(child,"Missile")!=name) ++child;
+        if(child==table.rows().size()) return {};
+        auto cloud=prepareMonsterMissile(data,table.number(child,"Id").value_or(-1),rank);if(!cloud) return {};
+        cloud->poisonFrames=unsigned(table.number(row,"Param1").value_or(int(cloud->poisonFrames)));
+        rule.cloud=std::make_shared<const server::MonsterMissileRule>(*cloud);
+        rule.cloudMainStep=table.number(row,"sHitPar1").value_or(2);rule.cloudSubStep=table.number(row,"sHitPar2").value_or(2);
+        rule.cloudMainSpeed=float(poisonCloudVelocity(table.number(child,"Param2").value_or(0)))*25.f/4096.f;rule.cloudSubSpeed=float(poisonCloudVelocity(table.number(child,"Param1").value_or(0)))*25.f/4096.f;
+        break;
+    }
+    case 3:rule.behavior=server::MonsterMissileRule::Behavior::GroundThrow;rule.blastRadius=float(table.number(row,"sHitPar1").value_or(0));if(rule.blastRadius<=0) return {};break;
+    case 12:break; // Chain Lightning redirects in the missile domain.
     case 1:rule.behavior=server::MonsterMissileRule::Behavior::Fireball;rule.blastRadius=float(table.number(row,"sHitPar1").value_or(0));if(rule.blastRadius<=0) return {};break;
     case 15:rule.behavior=server::MonsterMissileRule::Behavior::SpiderLay;break;
     case 16:rule.behavior=server::MonsterMissileRule::Behavior::SpiderGoo;break;
@@ -67,13 +83,26 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     case 0:break;
     default:return {};
     }
-    if(table.number(row,"pSrvDoFunc")==6) rule.behavior=server::MonsterMissileRule::Behavior::FirewallMaker;
+    if(table.number(row,"pSrvDoFunc")==3) rule.behavior=server::MonsterMissileRule::Behavior::PoisonCloud;
+    else if(table.number(row,"pSrvDoFunc")==6) rule.behavior=server::MonsterMissileRule::Behavior::FirewallMaker;
     else if(table.number(row,"pSrvDoFunc")==5) rule.behavior=server::MonsterMissileRule::Behavior::Fire;
     else if(table.value(row,"Missile")=="lightunique") rule.behavior=server::MonsterMissileRule::Behavior::Charged;
     else if(table.value(row,"Missile")=="coldunique") {
         rule.behavior=server::MonsterMissileRule::Behavior::ColdNova;
         for(size_t r=0;r<table.rows().size();++r) if(table.value(r,"Missile")=="frostnova") {
             rule.baseVelocity=table.number(r,"Vel").value_or(0);rule.speed=float(*missileVelocityFixed(rule.baseVelocity,0,rank))*25.f/4096.f;break;
+        }
+    }
+    const auto skillName=table.value(row,"Skill");
+    if(!skillName.empty() && (definition==62 || definition==93)) {
+        const auto &skills=data.tables.at("skills");
+        for(size_t s=0;s<skills.rows().size();++s) if(skills.value(s,"skill")==skillName) {
+            const auto *entry=data.skills.find(skills.number(s,"Id").value_or(-1));
+            if(!entry || !entry->spell) return {};
+            const auto cast=resolveSkill(entry->spell->rules(),{rank,{}});
+            rule.elementalMinimum=int(cast.minimumDamage*256.f);rule.elementalMaximum=int(cast.maximumDamage*256.f);
+            if(cast.arc) {rule.chainCount=cast.arc->count;rule.chainRadius=cast.arc->range;}
+            break;
         }
     }
     return rule;

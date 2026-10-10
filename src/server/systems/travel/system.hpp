@@ -13,7 +13,7 @@
 namespace d2x::server::travel {
 // Travel/waypoint/portal transition preparation; destination content arrives through World.
 enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject };
-enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit };
+enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit, Shrine };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
 struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival, destination; bool walking{}, run{}, crossing{}; int side{}, plane{}; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; };
 struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{}; };

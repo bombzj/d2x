@@ -88,7 +88,7 @@ struct Actor {
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
-    bool enemyTarget() const { return hostile && !owner && !conversion; }
+    bool enemyTarget() const { return hostile && !owner && !conversion && !rule.environmentController; }
     bool damageable() const { return enemyTarget() || amazonPet || hireling || conversion; }
     bool combatCompanion() const { return bool(amazonPet) || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -137,6 +137,9 @@ class System {
     DomainResult<> introduction(EntityId,uint64_t tick);
     void velocityModifier(EntityId id,int percent) { if(auto it=state_.actors.find(id);it!=state_.actors.end()) {if(it->second.effectVelocity!=percent) {it->second.effectVelocity=percent;++it->second.revision;}} }
     DomainResult<EntityId> admit(const Admission &);
+    DomainResult<> upgradeShrine(EntityId,uint64_t tick);
+    DomainResult<> finishTrap(EntityId,uint64_t tick);
+    DomainResult<> reduceShrineLife(EntityId,int64_t amount);
     DomainResult<> requestMove(const MoveRequest &);
     void stop(EntityId);
     void hitDelay(EntityId id, uint64_t until);

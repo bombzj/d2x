@@ -7,6 +7,7 @@ class WorldCatalog;
 struct LootContent {
     std::shared_ptr<const MonsterCatalog> monsters;
     std::map<int, std::shared_ptr<const WorldCatalog>> worlds;
+    std::map<GameHandle,EntityId> cursors;
 };
 void preparePendingLoot(GameHost &, GameHandle, Archives &, const ClassicData &, LootContent &);
 }

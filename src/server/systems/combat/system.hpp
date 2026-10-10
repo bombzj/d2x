@@ -65,6 +65,9 @@ struct SpellImpact {
     size_t plannedTarget{};
     std::optional<uint64_t> targetRandom{};
     bool wearApplied{};
+    // Authored environmental damage has no combat actor or player credit.
+    bool environment{}, directLife{};
+    uint64_t environmentGeneration{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}; };
@@ -73,6 +76,7 @@ class System {
     State state_;
     const Ports ports_;
     StepStatus resolveSpells(TickContext);
+    DomainStatus resolveEnvironment(SpellImpact &,TickContext);
     DomainStatus finishImpact(SpellImpact &, const PlayerState *, uint64_t generation, uint64_t tick);
   public:
     explicit System(Ports ports) : ports_(ports) {}

@@ -21,6 +21,10 @@ DomainResult<> GameInstance::restoreResources(PlayerId id) {
     if (!plan) return {plan.status, {}};
     return systems_.transactions.commit(std::move(*plan.value));
 }
+DomainResult<EntityId> GameInstance::spawnObject(PlayerId id,const objects::Admission &request) {
+    const auto *player=players_.find(id);if(!player || !player->entered || player->persistent.player.hp<=0 || player->area!=request.area) return {DomainStatus::InvalidActor,{}};
+    auto admission=request;admission.tick=tick_;return systems_.objects.admit(admission);
+}
 DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMonster &monster) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};

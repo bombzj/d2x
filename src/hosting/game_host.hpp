@@ -84,6 +84,7 @@ class GameHost {
     server::DomainResult<> missileHit(PlayerBinding,EntityId,uint32_t,DamageType,bool returnFire);
     server::DomainResult<> damageMonster(PlayerBinding,EntityId,std::optional<uint32_t> amount);
     server::DomainResult<EntityId> spawnMonster(PlayerBinding, const server::PreparedMonster &);
+    server::DomainResult<EntityId> spawnObject(PlayerBinding,const server::objects::Admission &);
     std::optional<server::DiagnosticSnapshot> diagnostics(PlayerBinding, size_t limit, uint64_t since, uint64_t commandSince,
                                                          std::optional<Vec> destination = {}) const;
     // Content worker results are installed on the scheduler thread. The worker
