@@ -67,7 +67,7 @@ DomainStatus Draft::loadBook(const LoadBook &command) {
     if (!a || !b) return DomainStatus::Stale;
     if (a->id == b->id) return DomainStatus::InvalidRequest;
     const auto *from = std::get_if<ContainerLocation>(&a->location), *to = std::get_if<ContainerLocation>(&b->location);
-    const auto permitted = [&](EntityId id) { return (storage && id == containers().stash) || id == containers().backpack || id == containers().cursor; };
+    const auto permitted = [&](EntityId id) { return (storage && id == containers().stash) || (cube && id == containers().cube) || id == containers().backpack || id == containers().cursor; };
     if (!from || !to || !owned(*from) || !owned(*to) || !permitted(from->container) || !permitted(to->container))
         return DomainStatus::InvalidRequest;
     const auto *definition = catalog.find(b->definition);

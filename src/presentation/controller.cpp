@@ -97,11 +97,22 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     }
     if (input.character && !ui.blocksInput()) {
         ui.characterOpen = !ui.characterOpen;
-        if (ui.characterOpen) ui.questOpen = ui.hirelingOpen = false;
+        if (ui.characterOpen) ui.partyOpen = ui.questOpen = ui.hirelingOpen = false;
         return true;
     }
     if (handleHirelingToggle(input)) return true;
     if (handleQuestToggle(input)) return true;
+    if (input.party && !ui.blocksInput() && !ui.inventory.drag && !ui.inventory.split &&
+        !ui.inventory.goldDialog && !ui.inventory.identify) {
+        if (!view_.partyReady()) { view_.notice(view_.partyReason(), true); return true; }
+        ui.partyOpen = !ui.partyOpen;
+        if (ui.partyOpen) {
+            if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();
+            ui.characterOpen = ui.questOpen = ui.hirelingOpen = false;
+            ui.skillPicker.reset();
+        }
+        return true;
+    }
     if (input.skillTree && !ui.blocksInput()) {
         if (!view_.characterView().hasSkillTree) {
             view_.notice("This MPQ profile has no skill tree layout.", true);
@@ -144,8 +155,12 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                     return true;
                 }
                 if (*button == 4) {
-                    view_.notice("This panel action is not available yet.", true);
-                    return true;
+                    FrameInput action;
+                    action.focused = true; action.party = true;
+                    ui.miniPanelOpen = false;
+                    const bool handled = handle(action, elapsed);
+                    inventoryClick_ = true;
+                    return handled;
                 }
                 if (*button == 6) {
                     openGameMenu(input.mouse);
@@ -192,6 +207,8 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
             ui.skillTreeOpen = false;
         else if (ui.questOpen)
             ui.questOpen = false;
+        else if (ui.partyOpen)
+            ui.partyOpen = false;
         else openGameMenu(input.mouse);
         inventoryClick_ = inventoryClick_ || input.leftPressed;
         inventoryRight_ = inventoryRight_ || input.rightPressed;
@@ -261,10 +278,11 @@ bool SceneController::handleDeath(const FrameInput &input) {
     releaseAfterLoad_ = true;
     ui.inventory.cancelGesture(); ui.inventory.open = ui.inventory.cubeOpen = false;
     ui.inventory.drag.reset(); ui.inventory.selected = {}; ui.inventory.beltExpanded = false;
+    ui.inventory.pendingPlacement.reset();
     ui.inventory.forceSwap = false; ui.inventory.pendingMessage.clear();
     ui.inventory.storage = {}; ui.skillPicker.reset(); ui.inventory.pending = {};
     ui.inventoryQuestNpc = {};
-    ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
+    ui.partyOpen = ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
     ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
     ui.help = ui.travelMenu = ui.gameMenuOpen = false; ui.showLoot = false;
     ui.pointButtonPressed.reset(); ui.shopConfirm.reset(); ui.shopSalePending.reset();
@@ -362,7 +380,7 @@ void SceneController::openGameMenu(Vec mouse) {
     if (ui.inventory.open) toggleInventory();
     ui.inventory.cancelGesture();
     ui.skillPicker.reset();
-    ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
+    ui.partyOpen = ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
     ui.pointButtonPressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;

@@ -1,12 +1,16 @@
 #include "native_realm_service.hpp"
 #include "hosting/native_game_wire.hpp"
 #include "hosting/native_item_wire.hpp"
+#include "gameplay/combat/life.hpp"
+#include <cmath>
 #include <algorithm>
 namespace d2x::hosting {
 void NativeRealmService::publishPlayers() {
     const auto participants = host.participants(binding->game);
     std::set<EntityId> present;
     std::vector<Bytes> packets;
+    const auto local=host.read(*binding);
+    std::set<EntityId> allies;
     for (const auto id : participants) {
         const auto view = host.read({binding->game, id});
         if (!view || !view->entered) continue;
@@ -18,8 +22,43 @@ void NativeRealmService::publishPlayers() {
             record.characterClass = view->characterClass; record.level = view->level;
             packets.push_back(nativePlayerRoster(*content, record));
             peer.roster[view->actor.id] = identity;
+            peer.social.erase(view->actor.id);
+        }
+        const auto relation=local->socialRelations.find(id);
+        const uint8_t status=id==binding->player?1:relation==local->socialRelations.end()?0:relation->second.partyStatus;
+        const uint16_t flags=relation==local->socialRelations.end()?0:relation->second.flags;
+        auto roster=encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
+            out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);out.u16(uint16_t(view->level));out.u16(flags);out.u16(status);
+        });
+        if(!peer.social.contains(view->actor.id) || peer.social.at(view->actor.id)!=roster) {
+            packets.push_back(roster);peer.social[view->actor.id]=std::move(roster);
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerPartyFlags,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u16(view->partyId);}));
+            if(id!=binding->player) packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationship,[&](auto &out){out.u32(uint32_t(view->actor.id.value));out.u8(status);}));
+        }
+        if(id!=binding->player && local->partyId!=UINT16_MAX && local->partyId==view->partyId) {
+            allies.insert(view->actor.id);
+            auto vitals=encodeServerPacket(ServerMessage::AllyPosition,[&](auto &out){
+                out.u8(1);out.u16(playerLifePercentage(int64_t(view->life*256),int64_t(view->attributes.maxLife)*256));
+                out.u32(uint32_t(view->actor.id.value));out.u16(uint16_t(view->actor.region));
+            });
+            if(!peer.partyVitals.contains(view->actor.id) || peer.partyVitals.at(view->actor.id)!=vitals) {
+                packets.push_back(vitals);peer.partyVitals[view->actor.id]=std::move(vitals);
+            }
+            const auto position=view->actor.position+shared.terrain.at(binding->game).at(view->actor.region).origin;
+            // Far party coordinates never assign a spatial player or reveal rooms.
+            if(view->actor.region!=local->actor.region || (view->actor.position-local->actor.position).length()>50) {
+                auto location=encodeServerPacket(ServerMessage::PartyVitals,[&](auto &out){
+                    out.u32(uint32_t(view->actor.id.value));out.u32(uint32_t(std::floor(position.x)));out.u32(uint32_t(std::floor(position.y)));
+                });
+                if(!peer.partyPositions.contains(view->actor.id) || peer.partyPositions.at(view->actor.id)!=location) {
+                    packets.push_back(location);peer.partyPositions[view->actor.id]=std::move(location);
+                }
+            } else peer.partyPositions.erase(view->actor.id);
         }
     }
+    std::erase_if(peer.social,[&](const auto &p){return !present.contains(p.first);});
+    std::erase_if(peer.partyVitals,[&](const auto &p){return !allies.contains(p.first);});
+    std::erase_if(peer.partyPositions,[&](const auto &p){return !allies.contains(p.first);});
     for (auto it = peer.roster.begin(); it != peer.roster.end();) {
         if (!present.contains(it->first)) {
             packets.push_back(encodeServerPacket(ServerMessage::PlayerLeft, [&](auto &out) { out.u32(uint32_t(it->first.value)); }));

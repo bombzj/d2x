@@ -23,6 +23,7 @@ class ChatView {
     bool ready_{}, inputOpen_{}, logOpen_{}, dragging_{};
     size_t caret_{}, scroll_{}, unavailable_{};
     uint64_t sequence_{};
+    std::array<std::string,10> partyNotices_;
     struct Glyph { uint8_t character{}, color{}; };
     using Line = std::vector<Glyph>;
     struct Message {

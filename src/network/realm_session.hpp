@@ -68,6 +68,7 @@ class RealmSession {
     // chat also remains available while dead, in a panel, or changing areas.
     bool send_chat(std::string text, std::string receiver = {}, bool overhead = false);
     bool chat_relation(uint32_t player, bool squelch, bool enabled);
+    bool party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration);
     // Respond only to the current server invitation. Accept is TRADEBTN_PERFORM
     // (3), not the final item-exchange acceptance (4). No local trade execution.
     bool respond_player_trade(bool accept, uint64_t revision, std::optional<OnlineIntentContext> context = {});

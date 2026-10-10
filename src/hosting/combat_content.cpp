@@ -172,11 +172,14 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(record->ai=="BloodRaven") rule.deathSweep=server::MonsterRule::DeathSweep{35,25,125,true};
     if(record->ai=="Andariel") rule.deathSweep=server::MonsterRule::DeathSweep{35,1,51,false};
     rule.experience.resize(100);
+    rule.experienceRatios.resize(100);
     bool complete = true;
     for (int playerLevel = 1; playerLevel < 100; ++playerLevel) {
         auto xp = resolveMonsterExperience(data, catalog, world, {identity, RegionId(request.level), request.difficulty, playerLevel, monsterRewardModifiers(enchantment)});
         if (!xp.deferred.empty()) { complete = false; break; }
         rule.experience[size_t(playerLevel)] = xp.amount;
+        rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;
+        rule.experienceRatios[size_t(playerLevel)]=xp.ratio;
     }
     if (!complete) return {};
     return server::PreparedMonster{std::move(identity), monsterImplementation(record->id).kind, position, std::move(rule)};

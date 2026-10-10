@@ -79,7 +79,7 @@ void SceneView::drawInventory(Vec mouse) const {
         auto bounds = equipmentBounds(slot);
         drawInventoryDrop(drop, bounds);
         auto equipped = inventory.item(inventory.equipped(inventoryView_.containers, slot));
-        if (equipped && !(ui.drag && ui.drag->item.id == equipped->id)) {
+        if (equipped && !ui.hidesItem(*equipped)) {
             drawItemIcon(*equipped, bounds);
             if (inventory.definition(equipped->definition)->maxStack > 1) {
                 auto quantity = std::to_string(equipped->quantity);
@@ -115,7 +115,7 @@ void SceneView::drawInventory(Vec mouse) const {
         painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale),
                        int(panel.y + 364 * inventoryScale), 12, gold);
     if (!ui.split && !ui.drag) {
-        if (auto item = inventory.item(hovered))
+        if (auto item = inventory.item(hovered); item && !ui.hidesItem(*item))
             drawItemTooltip(*item, {mouse.x + 170, mouse.y},
                 inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
     } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {

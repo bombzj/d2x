@@ -5,6 +5,7 @@
 #include "server/systems/npc/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/trade/system.hpp"
+#include "server/systems/social/system.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/systems/quests/system.hpp"
@@ -130,8 +131,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
     for(const auto &[owner,portal]:state_.portals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
-        // Party membership authority has not been implemented; ownership is mandatory.
-        if(owner!=actor.player || !portal.opened) return {DomainStatus::InvalidRequest,{}};
+        if((owner!=actor.player && !ports_.social.sameParty(owner,actor.player)) || !portal.opened) return {DomainStatus::InvalidRequest,{}};
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
         if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : ((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement))) return {DomainStatus::InvalidRequest,{}};

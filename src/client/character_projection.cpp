@@ -142,6 +142,8 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         eligibilityInput.classCode = view.classCode;
         if (skill.baseRankKnown) eligibilityInput.baseRank = skill.baseRank;
         if (skill.effectiveRankKnown) eligibilityInput.effectiveRank = effective;
+        if (const auto quantity = input.itemSkillQuantities.find(id); quantity != input.itemSkillQuantities.end())
+            eligibilityInput.itemQuantity = quantity->second;
         if (stat(input, "level")) eligibilityInput.level = view.level;
         if (stat(input, "newskills")) eligibilityInput.skillPoints = view.unspentSkills;
         for (size_t i = 0; i < attributeNames.size(); ++i)

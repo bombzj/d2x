@@ -21,11 +21,12 @@ bool SceneController::handleQuestPress(const FrameInput &input) {
 }
 bool SceneController::handleQuestToggle(const FrameInput &input) {
     auto &ui = view_.ui();
-    if ((input.quests || (ui.questNotice && !ui.questOpen && !ui.characterOpen &&
+    if ((input.quests || (ui.questNotice && !ui.questOpen && !ui.partyOpen && !ui.characterOpen &&
          !ui.inventory.storage && !ui.inventory.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), questNoticeBounds()))) && !ui.capturesWorldInput()) {
         ui.questOpen = !ui.questOpen;
         if (ui.questOpen) {
+            ui.partyOpen = false;
             ui.hirelingOpen = false;
             const bool updated = ui.questNotice;
             if (updated && ui.questUpdated >= 0 && ui.questUpdated < int(QuestId::Count))

@@ -141,7 +141,7 @@ bool SceneController::handleHirelingToggle(const FrameInput &input) {
         ui.hirelingOpen = !ui.hirelingOpen && view_.hirelingView().active;
         if (ui.hirelingOpen) {
             if (ui.inventory.storage || ui.inventory.cubeOpen) toggleInventory();
-            ui.characterOpen = ui.questOpen = false;
+            ui.partyOpen = ui.characterOpen = ui.questOpen = false;
             ui.inventory.cancelGesture();
         }
         return true;
@@ -152,8 +152,8 @@ bool SceneController::handleHirelingToggle(const FrameInput &input) {
 bool SceneController::handleHirelingPortrait(const FrameInput &input) {
     auto &ui = view_.ui();
     if (view_.hirelingPortraitVisible() && input.insideViewport &&
-        (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds()) ||
-         CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds()))) {
+        (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds(view_.partyPortraitOffset())) ||
+         CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds(view_.partyPortraitOffset())))) {
         cancelWorldGesture();
         if (ui.inventory.drag) {
             const auto drag = *ui.inventory.drag;
@@ -161,7 +161,7 @@ bool SceneController::handleHirelingPortrait(const FrameInput &input) {
             if (drop && queueInventory(UseHirelingPotion{drag.item}, drag.item.id)) ui.inventory.drag.reset();
         } else if (input.leftPressed && !ui.inventory.identify && !ui.inventory.pending) {
             ui.hirelingOpen = true;
-            ui.characterOpen = ui.questOpen = false;
+            ui.partyOpen = ui.characterOpen = ui.questOpen = false;
             actorClient_.stopActions();
             pickupClick_ = true;
         }

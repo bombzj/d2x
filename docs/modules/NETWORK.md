@@ -4,7 +4,7 @@
 
 ## 局域网自研宿主入口
 
-LAN原MCP／D2GS的TCP接受连接与Single Player内存队列共用服务和完整客户端；角色来自宿主目录，客户端D2S不参与上传。另有独立控制台D2GS入口连接既有PvPGN D2CS／D2DBS，使用后端角色锁／存档，不自行提供BNCS账号；部署、有限冒烟与限制见[PvPGN服务端](../development/PVPGN_SERVER.md)。本机双客户端／双房／保存／启停已取得代表证据，完整故障恢复与跨机器未认证，见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+LAN原MCP／D2GS的TCP接受连接与Single Player内存队列共用服务和完整客户端；角色来自宿主目录，客户端D2S不参与上传。另有独立控制台D2GS入口连接既有PvPGN D2CS／D2DBS，使用后端角色锁／存档，不自行提供BNCS账号；部署、有限冒烟与限制见[PvPGN服务端](../development/PVPGN_SERVER.md)。本机双客户端／双房／保存／启停已取得代表证据，完整故障恢复与跨机器未认证，见[基线](../../BASELINE.md#当前运行包与验证边界)。
 
 - 界面宿主：首页TCP/IP Game → Host Game → 共用角色页 → 自动建房／加载／入局。房间名为所选角色名，容量8、普通难度、无密码及等级限制；Single Player自动建普通单人房。两者选角后不显示大厅，自动建房失败返回选角并保留错误，不自动重试。首次Host监听全部IPv4接口，后续Host复用监听；返回菜单只退出本机连接，不停止远端房间。当前流程已构建入包；本批仅复查Single Player存档自动入局，未重跑界面Host／Join。
 - 界面加入：首页TCP/IP Game → Join Game → 原IP弹窗，默认填入并选中`127.0.0.1`；可直接输入宿主IPv4替换，OK／Enter连接，Cancel／Esc返回。失败显示现有错误弹窗，关闭后返回IP输入并保留地址。
@@ -13,7 +13,7 @@ LAN原MCP／D2GS的TCP接受连接与Single Player内存队列共用服务和完
 - 其他客户端：`d2x.exe --lan 192.168.1.10`，直接使用相同角色页／大厅，不读取原服账号配置。每位参与者选择不同的宿主角色；房间列表／详情、密码／难度／等级差／容量使用原MCP消息。
 - D2X LAN默认MCP 6113、游戏4000，Host／Join与原服游戏端口统一；两端可用`--realm-port`／`--game-port`覆盖。原服仍读取online配置。若同机运行原服或独立D2GS，LAN必须显式选择空闲MCP／游戏端口，不能共享4000；本批不改防火墙。宿主可用`--debug-pipe <名称>`查看rooms／participants，不向远程开放管理命令。独立EXE只监听游戏端口，不占用MCP。
 
-共享房间持续按25Hz推进，某客户端失焦、ESC或退出不暂停其他人；私有一人内存实例保留单机暂停。正常退出应用保存所有参与者并结束监听；仅退本机角色不销毁其他人所在实例。当前同步玩家／穿戴／移动／自然边界及UNIT_TILE换区和同局聊天；已接第一幕普通／精英／首领、传送点、主人门户及五幕27项个人任务主流程，任务协议与所有权见[任务系统](../gameplay/quests/SYSTEM.md)。精细房间兴趣、其余实体／战斗、组队旅行／任务、队伍仍有缺口，玩家交易权威边界见[PLAYER_TRADE](../gameplay/items/PLAYER_TRADE.md)，范围见对应模块。独立无图形入口已有PvPGN本机双房隔离有限冒烟，跨机器与故障恢复未验收。
+共享房间持续按25Hz推进，某客户端失焦、ESC或退出不暂停其他人；私有一人内存实例保留单机暂停。正常退出应用保存所有参与者并结束监听；仅退本机角色不销毁其他人所在实例。当前同步玩家／穿戴／移动／自然边界及UNIT_TILE换区和同局聊天；已接第一幕普通／精英／首领、传送点、主人门户及五幕27项个人任务主流程，任务协议与所有权见[任务系统](../gameplay/quests/SYSTEM.md)。精细房间兴趣、其余实体／战斗、完整组队任务仍有缺口，玩家交易权威边界见[PLAYER_TRADE](../gameplay/items/PLAYER_TRADE.md)，范围见对应模块。独立无图形入口已有PvPGN本机双房隔离有限冒烟，跨机器与故障恢复未验收。
 
 局前界面资源为当前MPQ的`TCPIPscreen.dc6`、`3WideButtonBlank.dc6`、`PopUpOkCancel2.dc6`、`CancelButtonBlank.dc6`和`textbox2.dc6`，文案读取TBL 5116–5124；布局参考用户截图及本地OpenD2／OpenDiablo2，面板和按钮使用原生像素。原说明中的本地角色不表示新增上传能力：此实现角色仍全部保存在宿主。本次已实际查看首页TCP/IP、Host／Join页面与Join默认127.0.0.1。
 
@@ -169,11 +169,11 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 
 原图绘制只读实际职业／装备与当前MPQ，鼠标悬停活的其他玩家显示真实角色名及轮廓，交易请求沿独立邀请入口，PvP请求仍未开放。`online-status.scene.players`区分本人与他人、本帧可见／不可见原因、移动／死亡及显示坐标，名册身份不能作为空间可见证据。参考入口为D2MOO SUnitMsg::FirstFn、PLAYER_SynchronizeItemsToClient、PlrMsg动作表／sub_6FC82830、SCmd::0x59／74／8E，以及PvPGN MCP 0x06处理器；MPQ及参考源码不进入提交。
 
-`contracts/online_social.hpp` 与 `client/remote_social.*` 单独维护名册、聊天和关系，原包字段以当前1.13c长度表及本地D2MOO的D2PacketDef／SCmd交叉核对。0x5B确认名册身份，0x75／8B／8C／8D维护原队伍／关系值，0x7F玩家分支维护公开区域／生命比例，0x90维护公开32位坐标；先到更新保留未知身份。原生命比例、队伍ID及flags保持原值，尚未解释为UI资格；0x75的关系flags与0x5B的partyFlags分开。0x7F非玩家分支、完整系统事件及队伍／敌意发送仍未实现；聊天屏蔽关系已接原5D。
+`contracts/online_social.hpp` 与 `client/remote_social.*` 单独维护名册、聊天和关系，原包字段以当前1.13c长度表及本地D2MOO的D2PacketDef／SCmd交叉核对。0x5B确认名册身份，0x75／8B／8C／8D维护原队伍／关系值，0x7F玩家分支维护公开区域／生命比例，0x90维护公开32位坐标；先到更新保留未知身份。原生命比例及flags保持原值；0x75的关系flags与0x5B的partyFlags分开。0x75末字与0x8B同取PlayerList.field_C，按到达顺序更新同一邀请状态，不能优先保留旧8B。组队邀请客户端见下节；0x7F非玩家分支、完整系统事件及敌意发送仍未实现，聊天屏蔽关系已接原5D。
 
-空间单位与名册分离：0x0A不退出名册，0x5C移除成员及其关系；离开视野不会生成幽灵角色，也不清除未收到原删除的尸体归属。本人换幕保留本局名册／关系／聊天，退局／断线／新局清空。名册暂存上限64（缓冲保护，不是允许64人游戏），关系4096，聊天256条。诊断以nameBytes／textBytes保留原语言字节，避免将原编码误当UTF-8；界面仅投影已核实的普通消息，未接组队按钮或敌对资格，不算M4完成。
+空间单位与名册分离：0x0A不退出名册，0x5C移除成员及其关系；离开视野不会生成幽灵角色，也不清除未收到原删除的尸体归属。本人换幕保留本局名册／关系／聊天，退局／断线／新局清空。名册暂存上限64（缓冲保护，不是允许64人游戏），关系4096，聊天256条。诊断以nameBytes／textBytes保留原语言字节，避免将原编码误当UTF-8；组队按钮仅使用已核实的邀请状态，未授予敌对资格，不算M4完成。
 
-聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、非可打印ASCII及超过255字节的文本。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：type=1／language=0、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；头顶气泡的图形绘制未新增。队伍／敌意、BNCS频道命令、表情与中文编码仍未实现。
+聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、非可打印ASCII及超过255字节的文本。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：type=1／language=0、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；头顶气泡的图形绘制未新增。自研宿主敌意、BNCS频道命令、表情与中文编码仍未实现。
 
 聊天界面依据与源码：用户提供原版底部输入、左上回显及M消息日志三张截图，历史最新消息在上、真实角色名深金色／普通文字白色、标题Message Log、底部Close、右侧滚动条。OpenDiablo2 `d2game/d2player/key_map.go`核对Enter／M，`d2common/d2resource/resource_paths.go`及`d2core/d2gui/box.go`／`layout_scrollbar.go`核对boxpieces／textslid原帧用途。已只读导出当前MPQ：boxpieces为22帧14×15，textslid为17帧12×13；TBL的strMsgLog／strClose存在；对照截图字形和尺寸选font8消息、font16输入／标题，字宽沿原TBL。`presentation/hud/chat_view.*`独立维护只读消息、编辑草稿、光标及滚动；边框步距从原帧尺寸读取，位置按截图800像素基准适配当前HUD尺度。Sky原PL2十三种字体索引变换按需上传，白色保留原索引；messageColor控制正文，姓名色独立于等级字段，支持原FF c0–c9颜色串（本地d2bs Print用例补证）。标题／Close动态读当前MPQ，不把截图或参考资源导入产品。原截图及原资源核对仅保留在忽略目录artifacts/chat-ui-20261007。
 
@@ -187,6 +187,20 @@ Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Es
 
 ## 联机游玩表现与输入
 
+### 组队邀请客户端
+
+`presentation/hud/party_view.*`只读原名册，P／底栏Party Screen开关左侧面板，Esc／原关闭按钮关闭。原图来自当前MPQ的menu/party、partybuttons、partyboxes、partybar及panel/buysellbtn；font8、职业名、Level、Invite／cancel／Accept／Leave／Yourparty及Levels.LevelName读原字体、PL2与TBL。本人姓名单列顶部，其余最多七名他人不依赖空间可见性；本地原1.13c D2Client的Party.cpp与用户2026-10-10截图核对38像素行距、按partyId分组及原分隔条。相同且非FFFF的本人／对方partyId显示绿色姓名／职业／等级、“In your party”及原0x7F区域。顶部Leave提交本人GUID。敌意、听见／屏蔽和尸体许可图标仍只显示，不据图标授予权限；其他关系色与操作未完整实现。
+
+D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／PlayerLeftParty`及`PlayerList::sub_6FCBAA20`核对相对状态：0提供Invite、2提供Accept、4提供Cancel，同队不再提供邀请按钮。RealmSession.party_action发送原六字节0x5E＋action6／7／8／9＋目标GUID；发送前复验ProtocolReady、连接／游戏代次、真实名册身份、当前邀请状态或本人非FFFF队伍ID。鼠标同项按下／释放匹配GUID、动作和本局代次；失焦、模态输入、重入清除按下状态。发送不改按钮／partyId，入队、离队及Cancel都等真实75／8B／8D；无自动接受、重试或本地成功消息。
+
+左上角同队头像读取MPQ Hireables下七职业原Icon、font6及姓名；本地原1.13c 0x5BA90／0x5B5A0核对56像素列距、TRANS50原PL2混色及46像素生命条，0x7F生命百分比在50／25阈值转绿／黄／红，未知生命不猜满值。本人不重复显示，左侧面板或模态占用时隐藏，与佣兵／召唤图标避让。自动地图本人／NPC／队友／门户的原线形、颜色、公开位置及Show Party入口见[自动地图](../gameplay/world/AUTOMAP.md)。
+
+客户端同时消费原5A的Party5–9通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；本次自研权威与TCP冒烟、包身份见[基线](../../BASELINE.md#当前运行包与验证边界)。
+
+自研服务端的`server/systems/social/party.cpp`唯一维护实例内队伍和有向邀请；原5E动作6–9经连接绑定解析真实GUID后提交权威命令。接受须有来自目标的有效邀请且本人尚未入队；新组从原ID3开始，加入已有组复用ID，清理不能继续接受的邀请；离队／断线撤销邀请，余一人解散。邀请不受空间距离限制，仍要求同局真实参与者。75／8B投影观察者相对状态及关系，8D同步本人和他人队号；7F只向同队他人发送生命百分比／区域，90发送远处公开全局位置，不创建空间单位／揭示房间，晚加入与重新入局从当前权威投影恢复。关系更新保留队伍ID，不以聊天屏蔽重置组队。
+
+同队回城门在接受交互与目的地准备完成时复验队伍资格，队友穿门不关闭主人的门；只有主人从城镇返回野外才关门。death按同区域、活人、距死亡怪物80格以内筛队员，沿SUnitDmg的原89/256额外经验及等级比例分配原始经验，再套每位队员MPQ经验比例和装备加成，背压重试不重复发奖；loot的NoDrop人数系数采用同区域存活队员数，仍受怪物准入人数上限。友方圣骑士光环按原MPQ滤镜、半径和碰撞作用于同队玩家／随从。敌意／PvP、硬核尸体loot权限、完整组队任务资格及其余技能的组队例外仍未完成。
+
 ### 玩家交易邀请
 
 `OnlineWorldView::playerTrade`与NPC交易状态分开。城镇左键点击活着的其他玩家，经RemoteTown／RemoteControl的原距离≤8靠近与0x13玩家交互发起；0x77 action0等待、1邀请、6打开／清除双方同意、5对方同意、14禁用同意／15恢复、9／10无空间、12关闭、13完成。邀请没有身份字段；真实对方姓名和GUID只取0x78，不从0x76或邻近玩家猜测。死亡、换区、对方移除、退局、断线清理。
@@ -199,7 +213,7 @@ NPC服务／Talk菜单和发起／接收交易邀请共用OriginalMenu（present
 
 服务器实际本人报价为原INVPAGE_TRADE=2（位流page3）；对方报价是原服复制到本人库存的INVPAGE_EQUIP=1（位流page2）临时副本，独立只读容器，不能取出／交换／装备。原服action5／mode4／page2撤销临时副本时直接清理，不将副本当作真实Cursor（D2MOO PlrTrade::sub_6FC931D0与ItemMode::sub_6FC446B0）。本人背包↔报价使用既有Take／Place／Swap和原0x19／18／1F；拖拽、Shift快捷放入／取回及悬停共用库存投影。发送前核对游戏／区域／交互、物品revision与原格子尺寸／占用；同意另外绑定交易revision，物品增删／属性更新及金币回包使旧意图失效。待处理库存队列、光标物品、本人已勾选及未齐响应阻止再次同意或编辑。关闭只消费原服实际回包，不本地交换或修改保存格式。
 
-TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互面板，打开本人库存，输入继续被隔离，网络不暂停。邀请Enter接受、Esc拒绝；报价面板勾选／取消鼠标同项按下释放，Esc取消整个交易（金币编辑时先关闭编辑）。报价期间禁用移动、战斗、消耗／装备等普通操作，保留本人背包／报价物品移动及取消。当前源码修正capturesWorldInput的交易标记误遮挡本人Cursor图标／落点高亮，只在库存绘制时允许已打开报价面板，保持其他模态状态及玩法输入隔离；此显示修正未构建、运行或入包。聊天草稿／历史保留并继续接收。
+TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互面板，打开本人库存，输入继续被隔离，网络不暂停。邀请Enter接受、Esc拒绝；报价面板勾选／取消鼠标同项按下释放，Esc取消整个交易（金币编辑时先关闭编辑）。报价期间禁用移动、战斗、消耗／装备等普通操作，保留本人背包／报价物品移动及取消。当前源码修正capturesWorldInput的交易标记误遮挡本人Cursor图标／落点高亮，只在库存绘制时允许已打开报价面板，保持其他模态状态及玩法输入隔离；此显示修正已随当前客户端构建入包，未专项运行认证。聊天草稿／历史保留并继续接收。
 
 本轮构建、包身份及实际验收以[当前批交付](#当前批交付)为准；源码支持不等于物品／金币实际成交和完整原版界面认证。
 

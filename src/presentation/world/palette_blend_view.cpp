@@ -2,6 +2,7 @@
 #include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <rlgl.h>
 #include <stdexcept>
 
@@ -110,6 +111,11 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         blend[i] = colors[bytes[screenOffset + i]];
     palette_ = upload(colors.data(), 256, 1);
     screenTable_ = upload(blend.data(), 256, 256);
+    // Original TRANS50, trans[1][destination][source], for party portraits.
+    for (size_t source = 0; source < 256; ++source)
+        for (size_t destination = 0; destination < 256; ++destination)
+            blend[source * 256 + destination] = colors[bytes[0x13500 + destination * 256 + source]];
+    halfTable_ = upload(blend.data(), 256, 256);
     // D2DDraw 1.13c RVA 0x6A25 selects trans[2] for DrawBox mode 0;
     // RVA 0x6850 indexes destination * 256 + the solid color index.
     for (size_t i = 0; i < blend.size(); ++i)
@@ -139,7 +145,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     paletteLocation_ = GetShaderLocation(shader_, "palette");
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
-    if (!palette_.id || !screenTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+    if (!palette_.id || !screenTable_.id || !halfTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 ||
         GetShaderLocation(lightingShader_, "lightTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
@@ -150,6 +156,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         UnloadRenderTexture(destination_);
         UnloadTexture(paletteIndices_);
         UnloadTexture(screenTable_);
+        UnloadTexture(halfTable_);
         UnloadTexture(rectangleTable_);
         UnloadTexture(lightTable_);
         UnloadTexture(palette_);
@@ -162,16 +169,13 @@ PaletteBlendView::~PaletteBlendView() {
     UnloadShader(shader_);
     UnloadRenderTexture(destination_);
     UnloadTexture(screenTable_);
+    UnloadTexture(halfTable_);
     UnloadTexture(rectangleTable_);
     UnloadTexture(lightTable_);
     UnloadTexture(paletteIndices_);
     UnloadTexture(palette_);
 }
-void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
-    const int left = std::max(0, int(bounds.x)), top = std::max(0, int(bounds.y));
-    const int right = std::min(W, int(bounds.x + bounds.width));
-    const int bottom = std::min(H, int(bounds.y + bounds.height));
-    if (left >= right || top >= bottom) return;
+int PaletteBlendView::paletteIndex(Color color) const {
     // D2CMP 1.13c RVA 0x9D30: squared RGB distance, first index on a tie.
     int index = 0, nearest = 3 * 255 * 255 + 1;
     for (int i = 0; i < 256; ++i) {
@@ -180,6 +184,14 @@ void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
         const int distance = r * r + g * g + b * b;
         if (distance < nearest) { nearest = distance; index = i; }
     }
+    return index;
+}
+void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
+    const int left = std::max(0, int(bounds.x)), top = std::max(0, int(bounds.y));
+    const int right = std::min(W, int(bounds.x + bounds.width));
+    const int bottom = std::min(H, int(bounds.y + bounds.height));
+    if (left >= right || top >= bottom) return;
+    const int index = paletteIndex(color);
     rlDrawRenderBatchActive();
     const auto target = rlGetActiveFramebuffer();
     rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
@@ -228,11 +240,19 @@ void PaletteBlendView::drawLighting(Texture2D lightMap, Vec player, Vec playerSc
     EndShaderMode();
 }
 void PaletteBlendView::draw(const Sprite *image, Vec position) const {
+    if (!image) return;
+    drawSprite(image, {float(int(position.x + image->x)), float(int(position.y + image->y)),
+        float(image->texture.width), float(image->texture.height)}, screenTable_);
+}
+void PaletteBlendView::drawHalf(const Sprite *image, Rectangle bounds) const {
+    drawSprite(image, bounds, halfTable_);
+}
+void PaletteBlendView::drawSprite(const Sprite *image, Rectangle bounds, Texture2D table) const {
     if (!image || !image->indexedTexture.id) return;
-    const int x = int(position.x + image->x), y = int(position.y + image->y);
+    const int x = int(bounds.x), y = int(bounds.y);
     const int left = std::max(0, x), top = std::max(0, y);
-    const int right = std::min(W, x + image->texture.width);
-    const int bottom = std::min(H - HUD, y + image->texture.height);
+    const int right = std::min(W, int(std::ceil(bounds.x + bounds.width)));
+    const int bottom = std::min(H - HUD, int(std::ceil(bounds.y + bounds.height)));
     if (left >= right || top >= bottom) return;
     rlDrawRenderBatchActive();
     const auto target = rlGetActiveFramebuffer();
@@ -245,9 +265,9 @@ void PaletteBlendView::draw(const Sprite *image, Vec position) const {
     BeginShaderMode(shader_);
     SetShaderValueTexture(shader_, destinationLocation_, destination_.texture);
     SetShaderValueTexture(shader_, paletteLocation_, palette_);
-    SetShaderValueTexture(shader_, tableLocation_, screenTable_);
+    SetShaderValueTexture(shader_, tableLocation_, table);
     SetShaderValueTexture(shader_, indicesLocation_, paletteIndices_);
-    DrawTexture(image->indexedTexture, x, y, WHITE);
+    DrawTexturePro(image->indexedTexture, {0,0,float(image->texture.width),float(image->texture.height)}, bounds, {}, 0, WHITE);
     EndShaderMode();
 }
 } // namespace d2x

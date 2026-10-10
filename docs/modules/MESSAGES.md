@@ -100,7 +100,7 @@
 | 58 | QuestCompleted，stub | 3 | u16 quest |
 | 59 | MoveNpc，stub | 17 | u32 type,guid,x,y |
 | 5D | PlayerRelation，stub | 7 | u8 relation,toggle; u32 player |
-| 5E | PartyAction，stub | 6 | u8 action; u32 player |
+| 5E | PartyAction，权威及客户端邀请／取消／接受／离队已接 | 6 | u8 action（6邀请／7取消／8接受／9离队）; u32 player（离队为本人GUID） |
 | 5F | UpdatePosition，stub | 5 | xy，不能信任为权威坐标 |
 | 60 | SwitchWeapons | 1 | 无 |
 | 61 | MercenaryItem，partial | 3 | u16 bodySlot；空光标取装备，有光标按真实物品执行装备或支持的喂药 |
@@ -175,7 +175,7 @@
 | 73 | Missile／32 | 身份、位置、方向、主人、pierce见事件编码；仅MPQ ClientSend |
 | 74／75／77／78／79 | 尸体／队伍／UI／交易方／金币，10／13／2／21／6 | 世界／社交消费者；不代表宿主交易已实现 |
 | 7A／7B | 宠物归属／热键，13／8 | 7A原owner/pet布局见事件编码；7B为u8 slot,u16 packedSkill,u32 owner |
-| 7F／8B／8C／8D／90 | 盟友位置／关系／队伍／生命，10／6／11／7／13 | 社交消费者，未核实含义保留原值 |
+| 7F／8B／8C／8D／90 | 盟友位置／关系／队伍／生命，10／6／11／7／13 | 社交消费者；75／8B相对邀请状态、8D队伍ID、7F生命／区域、90公开位置；未核实字段保留原值 |
 | 8A／8E／8F | 任务提示／尸体归属／Pong，6／10／33 | 世界消费者，8F由会话维护心跳 |
 | 94／97 | BaseSkills／WeaponSet，变长／1 | 94为u8 count,u32 player,count组(u16 skill,u8 rank)；97无body |
 | 9C／9D | 世界／所属物品，变长 | action、总长、原位流，9D含owner，见物品编码和当前MPQ |

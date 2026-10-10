@@ -50,7 +50,7 @@ void SceneView::drawControlPanel() const {
         for (int index = 0; index < int(frames.size()); ++index)
             if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
                 imageAt(icon, hudMiniButton(*icon, index),
-                        (frames[index] == 6 || frames[index] == 10) ? Color{120, 120, 120, 255} : WHITE);
+                        WHITE);
     }
 }
 std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
@@ -180,9 +180,9 @@ void SceneView::drawSkillControls(Vec mouse) const {
         hint = view_.miniPanelOpen ? "Close mini panel" : "Open mini panel";
     if (auto button = miniPanelAt(mouse); button && *button >= 0) {
         constexpr const char *labels[] = {"Character [C]", "Inventory [I]", "Skill Tree [S]",
-                                          "Automap [TAB]", "Message unavailable", "Quest Log [Q]",
+                                          "Automap [TAB]", "Party Screen [P]", "Quest Log [Q]",
                                           "Game menu [Esc]"};
-        hint = *button == 7 ? "Party service unavailable" : labels[*button];
+        hint = *button == 7 ? "Message Log [M]" : labels[*button];
     }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
         hint = "Stamina: " + characterView_.number("stamina", int(characterView_.stamina)) + " / " +

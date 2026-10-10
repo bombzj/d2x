@@ -18,7 +18,7 @@ struct Draft {
     const EquipmentRules &rules;
     const CharacterRules &characterRules;
     Edit edit;
-    bool storage = false;
+    bool storage = false, cube = false;
     explicit Draft(const PlayerState &p, const ItemCatalog &c, const EquipmentRules &r, const CharacterRules &cr)
         : player(p), catalog(c), rules(r), characterRules(cr), edit{p.persistent.inventory, {}, p.persistent.player.weaponSet} {}
     const PlayerContainers &containers() const { return player.persistent.containers; }

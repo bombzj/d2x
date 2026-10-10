@@ -14,10 +14,15 @@ struct AutomapStamp { int x = 0, y = 0, cel = -1; };
 // Positions share the observer's world coordinate space; rendering has no
 // dependency on either local authority or server packet coordinates.
 struct AutomapDrawView {
+    enum class UnitMark { None, Npc, Party, OtherPlayer, Corpse, OwnPet, PartyPet, Stash, BluePortal, RedPortal };
     struct Stamp { Vec position; int cel = -1; };
     struct Town { int level = 0, variant = 0; Vec center; };
-    struct Marker { Vec position; int cel = -1; std::string name; bool npc = false, showName = false; };
+    struct Marker {
+        Vec position; int cel = -1; std::string name; bool npc = false, showName = false;
+        UnitMark unitMark = UnitMark::None;
+    };
     Vec observer;
+    bool observerVisible{true};
     std::vector<Stamp> stamps;
     std::vector<Town> towns;
     std::vector<Marker> markers;

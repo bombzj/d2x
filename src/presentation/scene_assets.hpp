@@ -53,6 +53,7 @@ class SceneAssets {
     ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
+    ClassicFont automapPartyFont, automapNpcFont, automapOtherFont;
     std::map<std::string, std::string, std::less<>> characterLabels;
     std::array<std::string, 2> globeTextFormats;
     struct SkillIcon {
@@ -109,6 +110,7 @@ class SceneAssets {
     // Legacy map metadata; GPU terrain and actor art use the shared caches.
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     mutable std::array<std::map<int, Sprite>, 2> automapCels;
+    mutable std::optional<Palette> automapColors;
     mutable std::map<std::tuple<int, int, bool>, std::vector<Sprite>> townAutomapArt;
     struct MonsterLight { int radius = 0; Color color{0, 0, 0, 255}; };
     std::map<int, MonsterLight> monsterLights;
@@ -153,6 +155,7 @@ class SceneAssets {
     std::string actorSequenceMode(std::string_view name) const;
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
     const Sprite *automapSprite(int cel, bool large) const;
+    Color automapColor(Color) const;
     const std::vector<Sprite> &townAutomapSprites(int level, int variant, bool large) const;
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     const LevelRecord &worldLevel(int id) const;

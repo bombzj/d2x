@@ -3,11 +3,11 @@
 
 namespace d2x {
 // RogueIcon is 46 x 41. Coordinates match the original top-left pet card.
-inline Rectangle hirelingPortraitBounds() {
-    return {12 * classicPanelScale, 18 * classicPanelScale, 46 * classicPanelScale, 41 * classicPanelScale};
+inline Rectangle hirelingPortraitBounds(float offset = 0) {
+    return {12 * classicPanelScale + offset, 18 * classicPanelScale, 46 * classicPanelScale, 41 * classicPanelScale};
 }
-inline Rectangle hirelingLifeBounds() {
-    return {12 * classicPanelScale, 12 * classicPanelScale, 46 * classicPanelScale, 5 * classicPanelScale};
+inline Rectangle hirelingLifeBounds(float offset = 0) {
+    return {12 * classicPanelScale + offset, 12 * classicPanelScale, 46 * classicPanelScale, 5 * classicPanelScale};
 }
 inline Rectangle hirelingArtRect(float x, float y, float width, float height) {
     const auto panel = classicPanelBounds(false);

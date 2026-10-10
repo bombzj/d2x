@@ -121,6 +121,9 @@ RequestResult LoadBook(GameplayContext &context, Reader &in) {
     const auto state = context.host.inventoryInput(context.player);
     const auto *a = state ? item(*state, source) : nullptr, *b = state ? item(*state, target) : nullptr;
     if (!a || !b) return reject();
+    if (a->location.container!=state->containers.cursor ||
+        (b->location.container!=state->containers.backpack && b->location.container!=state->containers.stash && b->location.container!=state->containers.cube))
+        return reject();
     return submitGameplay(context, Request{d2x::LoadBook{a->handle, b->handle}});
 }
 

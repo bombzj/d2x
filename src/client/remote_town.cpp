@@ -12,9 +12,13 @@ RemoteTown::RemoteTown(Archives &a)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
-      skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")), automap_(a), strings_(a) {
+      skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")),
+      petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a) {
     for (size_t row = 0; row < shrines_.rows().size(); ++row)
         if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
+    for(size_t row=0;row<petTypes_.rows().size();++row)
+        if(petTypes_.number(row,"automap").value_or(0))
+            if(const auto type=petTypes_.number(row,"idx");type && *type>=0 && *type<=255) automapPetTypes_.insert(uint8_t(*type));
     for (size_t row = 0; row < objects_.rows().size(); ++row)
         if (auto id = objects_.number(row, "Id")) objectRows_.emplace(*id, row);
     for (size_t row = 0; row < monsters_.rows().size(); ++row)
@@ -529,12 +533,37 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             view_.automapTowns.push_back(town);
     }
     if (v.world.playerPosition) view_.automap.observer = {float(v.world.playerPosition->x), float(v.world.playerPosition->y)};
+    view_.automap.observerVisible=!onlinePlayerDead(v.world);
     for (const auto &stamp : view_.automapStamps)
         view_.automap.stamps.push_back({{stamp.tileX * 5.f + 2.5f, stamp.tileY * 5.f + 2.5f}, stamp.cel});
     for (const auto &town : view_.automapTowns)
         view_.automap.towns.push_back({town.level, town.variant, {float(town.center.x), float(town.center.y)}});
+    using Mark = AutomapDrawView::UnitMark;
+    const auto self = v.load.playerUnitId ? v.world.social.players.find(*v.load.playerUnitId) : v.world.social.players.end();
+    const auto inParty=[&](uint32_t id) {
+        const auto p=v.world.social.players.find(id);
+        return self!=v.world.social.players.end() && self->second.partyId && *self->second.partyId!=UINT16_MAX &&
+            p!=v.world.social.players.end() && p->second.partyId==self->second.partyId;
+    };
+    std::set<uint32_t> drawnPlayers;
     for (const auto &[key, unit] : v.world.units) {
-        if (!unit.position || !unit.classId || (key.type != 1 && key.type != 2)) continue;
+        if (!unit.position || !unit.classId || key.type > 2) continue;
+        if(key.type==0) {
+            const auto corpse=v.world.corpseOwners.find(key.id);
+            if(corpse!=v.world.corpseOwners.end()) {
+                // Original corpse inventory/owner admission identifies one's body;
+                // another player's corpse is not a public purple marker.
+                if(corpse->second==v.load.playerUnitId)
+                    view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,unit.name,false,true,Mark::Corpse});
+            } else if(key.id!=v.load.playerUnitId && unit.mode!=(unit.nativeMode?0:8) && unit.mode!=(unit.nativeMode?17:9)) {
+                const auto roster=v.world.social.players.find(key.id);
+                const auto &name=roster==v.world.social.players.end()?unit.name:roster->second.name;
+                view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,name,false,true,inParty(key.id)?Mark::Party:Mark::OtherPlayer});
+                drawnPlayers.insert(key.id);
+            }
+            continue;
+        }
+        if(key.type==1 && (unit.mode==0 || unit.mode==12)) continue;
         bool seen = false;
         for (const auto &[id, layer] : explored_.layers()) {
             if (!component.contains(int(id)) || !nativeMap_->layout().levels.contains(int(id))) continue;
@@ -557,7 +586,37 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             const auto translated = strings_.find(target->name);
             name = translated.empty() ? target->name : std::string(translated);
         }
-        if (cel >= 0) view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)}, cel, name, key.type == 1, showName});
+        auto mark = key.type == 1 && showName ? Mark::Npc : Mark::None;
+        if(key.type==1) {
+            const auto row=monsterRows_.find(*unit.classId);
+            if(row!=monsterRows_.end() && monsters_.number(row->second,"npc").value_or(0) &&
+               *unit.classId!=537 && *unit.classId!=538 && *unit.classId!=539) mark=Mark::Npc;
+            const auto pet=v.world.pets.find(key.id);
+            if(pet!=v.world.pets.end()) {
+                const bool eligible=automapPetTypes_.contains(pet->second.type);
+                if(eligible && pet->second.owner==v.load.playerUnitId) mark=Mark::OwnPet;
+                else if(eligible && inParty(pet->second.owner)) mark=Mark::PartyPet;
+                else {mark=Mark::None;cel=-1;}
+            }
+        }
+        if(key.type==2 && *unit.classId==267) mark=Mark::Stash;
+        if (key.type == 2 && *unit.classId == 59) mark = Mark::BluePortal;
+        if (key.type == 2 && *unit.classId == 60 && view_.area != 125 && view_.area != 126 &&
+            view_.area != 127 && view_.area != 111 && view_.area != 112 && view_.area != 117)
+            mark = Mark::RedPortal;
+        if (cel >= 0 || mark != Mark::None)
+            view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)},
+                mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark});
+    }
+    if (self == v.world.social.players.end() || !self->second.partyId || *self->second.partyId == UINT16_MAX) return;
+    for (const auto &[id, p] : v.world.social.players) {
+        if (id == *v.load.playerUnitId || drawnPlayers.contains(id) || !p.listed || p.partyId != self->second.partyId) continue;
+        std::optional<Vec> position;
+        if (const auto unit = v.world.units.find({0, id}); unit != v.world.units.end() && unit->second.position)
+            position = Vec{float(unit->second.position->x), float(unit->second.position->y)};
+        else if (p.area && component.contains(*p.area) && p.positionX && p.positionY)
+            position = Vec{float(*p.positionX), float(*p.positionY)};
+        if (position) view_.automap.markers.push_back({*position, -1, p.name, false, true, AutomapDrawView::UnitMark::Party});
     }
 }
 } // namespace d2x

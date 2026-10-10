@@ -11,6 +11,7 @@
 #include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/systems/quests/system.hpp"
+#include "server/systems/social/system.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
@@ -152,8 +153,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind==Kind::Portal) {
-            const auto portal=state_.portals.find(player.player);
-            if(portal==state_.portals.end() || (portal->second.fieldId!=transition.source && portal->second.townId!=transition.source)) { pending=state_.transitions.erase(pending); continue; }
+            const auto portal=std::find_if(state_.portals.begin(),state_.portals.end(),[&](const auto &entry){
+                return (entry.second.fieldId==transition.source || entry.second.townId==transition.source) &&
+                    (entry.first==player.player || ports_.social.sameParty(entry.first,player.player));
+            });
+            if(portal==state_.portals.end()) { pending=state_.transitions.erase(pending); continue; }
         }
         if(transition.kind==Kind::Waypoint) {
             const auto &definition=destination->definition;

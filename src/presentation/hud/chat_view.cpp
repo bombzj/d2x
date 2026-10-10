@@ -37,6 +37,7 @@ ChatView::ChatView(Archives &archives)
         slider_ = graphics_.single("data/global/ui/menu/textslid.dc6");
         const ClassicStrings strings(archives);
         title_ = strings.find("strMsgLog"); close_ = strings.find("strClose");
+        for(size_t action=5;action<=9;++action) partyNotices_[action]=strings.find("Party"+std::to_string(action));
         if (border_.count < 22 || slider_.count < 15 || title_.empty() || close_.empty())
             throw std::runtime_error("Original message log artwork or strings are missing");
         ready_ = true;
@@ -138,6 +139,18 @@ void ChatView::update(const OnlineSocialView &social) {
         rows_.insert(rows_.end(), displayed.lines.begin(), displayed.lines.end());
         messages_.push_back(std::move(displayed));
     }
+    for(const auto &notice:social.notices) {
+        if(notice.type!=7 || notice.parameter<5 || notice.parameter>9 || notice.color>=13) continue;
+        auto name=notice.playerName;
+        if(name.empty()) if(const auto p=social.players.find(notice.value);p!=social.players.end()) name=p->second.name;
+        const auto &format=partyNotices_[notice.parameter];
+        if(name.empty() || format.empty()) {++unavailable_;continue;}
+        const auto glyphs=plain(notice.parameter==8?format+name:name+format,notice.color);
+        messages_.push_back({notice.sequence,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
+    }
+    std::sort(messages_.begin(),messages_.end(),[](const auto &a,const auto &b){return a.sequence>b.sequence;});
+    rows_.clear();
+    for(const auto &message:messages_) rows_.insert(rows_.end(),message.lines.begin(),message.lines.end());
     // Preserve an older reader's visible anchor when new messages arrive.
     if (logOpen_ && scroll_ && oldFirst && oldRows) {
         size_t added = 0;

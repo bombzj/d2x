@@ -39,6 +39,9 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
     case 0x5A: {
         OnlineSocialView::Notice notice; notice.type=r.u8();notice.color=r.u8();notice.value=r.u32();notice.parameter=r.u8();
         const auto names=r.take(32);notice.names.assign(names.begin(),names.end());r.finish();
+        notice.sequence=++social.chatSequence;
+        notice.receivedMilliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(const auto identity=social.players.find(notice.value);identity!=social.players.end()) notice.playerName=identity->second.name;
         social.notices.push_back(std::move(notice));if(social.notices.size()>256) social.notices.pop_front();break;
     }
     case 0x26: {
@@ -81,6 +84,10 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
         auto &entry = player(social, r.u32());
         entry.partyId = r.u16(); entry.level = r.u16(); entry.relationshipFlags = r.u16();
         entry.partyStatus = r.u16(); r.finish();
+        // SCmd::0x75 uses the same PlayerList field_C as 0x8B. A newer
+        // roster update must replace an older invitation state.
+        entry.partyState = *entry.partyStatus <= UINT8_MAX
+            ? std::optional<uint8_t>{uint8_t(*entry.partyStatus)} : std::nullopt;
         break;
     }
     case 0x7F: {

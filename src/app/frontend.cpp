@@ -200,6 +200,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     auto lastInputTime = std::chrono::steady_clock::now();
     auto chatInput = [&](FrameInput &input) {
         sharedUi->updateChat(session.read().world.social);
+        sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
         auto trade = sharedUi->handlePlayerTrade(input);
         bool consumed = trade.consumed;
@@ -223,8 +224,17 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             consumed = intent.consumed;
         }
+        if (consumed) {
+            FrameInput canceled; canceled.focused = false;
+            sharedUi->handleParty(canceled);
+        } else {
+            const auto party = sharedUi->handleParty(input);
+            if (party.action && !session.party_action(party.player, *party.action, party.gameGeneration))
+                sharedUi->notice(session.read().error ? session.read().error->message : "Party request could not be submitted.", true);
+            consumed = party.consumed;
+        }
         if (!consumed) return;
-        // The server trade modal or chat owns the whole opening/closing frame.
+        // Trade, chat or party controls own the whole pointer interaction frame.
         // Retain held buttons so reopening gameplay requires a physical release.
         sharedController->resetInput();
         FrameInput quiet;
@@ -607,9 +617,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     if (native.storage.kind != OnlineStorageKind::Cube) panels.inventory.cubeOpen = false;
                     if (native.storage.kind == OnlineStorageKind::Stash && !panels.inventory.storage) {
                         panels.inventory.storage = sharedUi->inventoryView().containers.stash; panels.inventory.open = true;
-                        panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
+                        panels.partyOpen = panels.characterOpen = panels.questOpen = panels.hirelingOpen = false;
                     }
-                    if (native.storage.kind == OnlineStorageKind::Cube) { panels.inventory.cubeOpen = true; panels.inventory.open = true; }
+                    if (native.storage.kind == OnlineStorageKind::Cube) { panels.partyOpen = false; panels.inventory.cubeOpen = true; panels.inventory.open = true; }
                     if (native.waypointSource.has_value() != displayedWaypointKnown ||
                         (native.waypointSource && displayedWaypointKnown &&
                          *native.waypointSource != displayedWaypoint)) {
@@ -618,7 +628,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                         panels.travelMenu = displayedWaypointKnown;
                         panels.waypointSource = displayedWaypointKnown ? EntityId{(uint64_t{1} << 32) + displayedWaypoint + 1} : EntityId{};
                         panels.waypointAct = view.load.act.value_or(0);
-                        if (panels.travelMenu) { panels.inventory.open = false; panels.skillTreeOpen = panels.characterOpen = panels.questOpen = false; }
+                        if (panels.travelMenu) { panels.inventory.open = false; panels.partyOpen = panels.skillTreeOpen = panels.characterOpen = panels.questOpen = false; }
                     }
                     if (town.read().npcConversation) {
                         const auto &dialog = *town.read().npcConversation;

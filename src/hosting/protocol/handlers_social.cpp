@@ -16,9 +16,16 @@ RequestResult PlayerRelation(GameplayContext &context, net::protocol::Reader &in
     }
     return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "PlayerRelation"};
 }
-RequestResult PartyAction(GameplayContext &, net::protocol::Reader &in) {
-    in.u8(); in.u32(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "PartyAction"};
+RequestResult PartyAction(GameplayContext &context, net::protocol::Reader &in) {
+    const auto action=in.u8();const auto target=in.u32();in.finish();
+    if(action<6 || action>9) return {RequestStatus::Rejected};
+    for(const auto id:context.host.participants(context.player.game)) {
+        const auto view=context.host.read({context.player.game,id});
+        if(!view || !view->entered || view->actor.id!=EntityId{target}) continue;
+        using A=server::social::Action;
+        return submitGameplay(context,server::social::Request{action==6?A::Invite:action==7?A::CancelInvite:action==8?A::Accept:A::LeaveParty,id,{}});
+    }
+    return {RequestStatus::Rejected};
 }
 RequestResult CancelTrade(GameplayContext &context, uint32_t amount) {
     if(amount) return {RequestStatus::Rejected};

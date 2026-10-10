@@ -199,6 +199,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/progression/system.cpp
   src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
   src/server/systems/social/system.cpp
+  src/server/systems/social/party.cpp
   src/server/systems/trade/system.cpp
   src/server/systems/transactions/system.cpp
     src/server/systems/transactions/character_group.cpp src/server/systems/transactions/resources.cpp
@@ -242,6 +243,7 @@ add_library(d2x_presentation
   src/presentation/hud/classic_hud.cpp
   src/presentation/hud/chat_view.cpp
   src/presentation/hud/trade_invite_view.cpp
+  src/presentation/hud/party_view.cpp
   src/presentation/hud/skill_tree_view.cpp src/presentation/hud/quest_panel.cpp
   src/presentation/hud/quest_controller.cpp src/presentation/npc/npc_controller.cpp
   src/presentation/npc/npc_alert_view.cpp src/presentation/hud/panel_frame.cpp

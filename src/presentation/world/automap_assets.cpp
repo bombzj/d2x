@@ -2,8 +2,20 @@
 #include "presentation/scene_assets.hpp"
 #include <set>
 #include <stdexcept>
+#include <limits>
 
 namespace d2x {
+Color SceneAssets::automapColor(Color rgb) const {
+    if (!automapColors) automapColors = decodePalette(archives_.read("data/global/palette/act1/pal.dat"));
+    const Pixel *best = nullptr;
+    int distance = std::numeric_limits<int>::max();
+    for (const auto &p : *automapColors) {
+        const int r = int(p.r) - rgb.r, g = int(p.g) - rgb.g, b = int(p.b) - rgb.b;
+        const int candidate = r * r + g * g + b * b;
+        if (candidate < distance) { distance = candidate; best = &p; }
+    }
+    return {best->r, best->g, best->b, 255};
+}
 const Sprite *SceneAssets::automapSprite(int cel, bool large) const {
     if (cel < 0) return nullptr;
     auto &cache = automapCels[size_t(large)];

@@ -20,7 +20,7 @@ struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; };
+struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;

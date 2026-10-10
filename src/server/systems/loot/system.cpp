@@ -3,6 +3,7 @@
 #include "core/random.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/inventory/planning.hpp"
+#include "server/systems/social/system.hpp"
 namespace d2x::server::loot {
 std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const {
     auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
@@ -16,9 +17,13 @@ DomainResult<> System::queue(const Request &request) {
         player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
     if(request.questClaimant) pending.character.player=*request.questClaimant;
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
-    const unsigned count=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
-    // No party authority exists yet: only the killer is a qualifying party member.
-    pending.effectivePlayers=std::min(std::clamp((count+1)/2,1u,8u),request.source.monsterPlayerCount);
+    const unsigned count=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;})));
+    unsigned members=1;
+    if(ports_.social.partyId(player->player)!=UINT16_MAX)
+        members=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry){
+            return entry.second.entered && entry.second.area==request.source.region && entry.second.persistent.player.hp>0 && ports_.social.sameParty(player->player,entry.first);
+        })));
+    pending.effectivePlayers=std::min(std::clamp((count-members)/2+members,1u,8u),request.source.monsterPlayerCount);
     pending.character.inventory.items.clear();
     state_.pending.emplace(request.source.source, std::move(pending)); ports_.random = random;
     return {DomainStatus::Applied, std::monostate{}};

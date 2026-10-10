@@ -10,7 +10,7 @@ bool SceneView::hirelingPortraitVisible() const {
 void SceneView::drawHirelingPortrait() const {
     if (worldViewport().x == 0 && !view_.capturesWorldInput()) {
         const auto &counts = hirelingView().summonCounts;
-        float x = hirelingPortraitBounds().x;
+        float x = hirelingPortraitBounds(partyPortraitOffset()).x;
         if (hirelingPortraitVisible()) x += hirelingPortraitBounds().width + 12 * classicPanelScale;
         for (const auto &[skill, count] : counts) {
             auto portrait = assets_.summonPortraits.find(skill);
@@ -29,8 +29,8 @@ void SceneView::drawHirelingPortrait() const {
     }
     if (!hirelingPortraitVisible()) return;
     const auto &merc = hirelingView();
-    const auto portrait = hirelingPortraitBounds();
-    const auto bar = hirelingLifeBounds();
+    const auto portrait = hirelingPortraitBounds(partyPortraitOffset());
+    const auto bar = hirelingLifeBounds(partyPortraitOffset());
     const float life = std::clamp(merc.life / std::max(1, merc.maximumLife), 0.f, 1.f);
     DrawRectangleRec(bar, {36, 20, 12, 255});
     DrawRectangleRec({bar.x, bar.y, std::floor(bar.width * life), bar.height}, {0, 128, 0, 255});
@@ -132,11 +132,10 @@ void SceneView::drawHireling(Vec mouse) const {
         if (const auto *item = inventory.item(id)) {
             if (mirrored) DrawRectangleRec(box, {73, 0, 0, 160});
             drawInventoryDrop(drop, box);
-            const bool dragged = view_.inventory.drag &&
-                                 view_.inventory.drag->item.id == id;
+            const bool dragged = view_.inventory.hidesItem(*item);
             if (!dragged)
                 drawItemIcon(*item, box, mirrored ? Color{160, 150, 150, 150} : WHITE);
-            if (CheckCollisionPointRec(rv(mouse), box)) hovered = id;
+            if (!dragged && CheckCollisionPointRec(rv(mouse), box)) hovered = id;
         } else {
             const auto &art = index == 0 ? assets_.hirelingHead :
                               index == 1 ? assets_.hirelingArmor : assets_.hirelingWeapon;

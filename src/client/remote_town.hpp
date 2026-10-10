@@ -16,8 +16,9 @@ namespace d2x {
 class RemoteTown {
     Archives &archives_;
     TileLibraryCache libraries_;
-    DataTable objects_, monsters_, monsterSizes_, skills_, shrines_;
+    DataTable objects_, monsters_, monsterSizes_, skills_, shrines_, petTypes_;
     std::map<int, size_t> shrineRows_;
+    std::set<uint8_t> automapPetTypes_;
     std::map<int, size_t> objectRows_, monsterRows_;
     std::map<std::string, size_t, std::less<>> monsterSizeRows_;
     AutomapCatalog automap_;

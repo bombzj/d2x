@@ -24,7 +24,7 @@ void SceneView::resetQuestAnimations() {
 
 void SceneView::drawQuestNotice() const {
     if (!view_.questNotice || view_.questOpen || view_.capturesWorldInput() ||
-        view_.characterOpen || view_.inventory.storage || view_.inventory.cubeOpen) return;
+        view_.partyOpen || view_.characterOpen || view_.inventory.storage || view_.inventory.cubeOpen) return;
     const auto bounds = questNoticeBounds();
     drawArt(assets_.attributeButtons.frame(0, 0), bounds);
     if (!assets_.questNoticeLabel.empty())

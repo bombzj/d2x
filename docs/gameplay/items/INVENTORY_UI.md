@@ -1,6 +1,6 @@
 # 包裹界面
 
-更新：2026-10-09。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-10。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
 
 I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提供原石框和I／II武器标签；格子、部位、物品图及说明按原表读取。面板只消费InventoryView和提交意图，不访问可写库存或会话。
 
@@ -9,6 +9,8 @@ I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提
 左键拿起、放置、交换、装备或投向地面；Shift转移到当前已确认箱子／方块。右键按物品提交使用／装备，卷轴／书鉴定进入目标流程；物品光标与装备／容器安置等待原回包。W或I／II标签提交武器切换，0x97确认后更新。
 
 包裹打开时地面拾取可请求Cursor；关闭时请求原服通常拾取／安置。自动装书、AutoStack、腰带补位及空位由连接的服务端决定，客户端不自行合并物品。已有手持物品不得用关闭面板清掉；ESC只关闭面板，不取消服务器Cursor。
+
+拖放提交后，InventoryUi只保留待处理来源GUID／原位置的可见性覆盖：等待真实Cursor／安置回包期间不重新绘制原格物品，也不重建该物品的中间Cursor图。背包、腰带、仓库／方块、装备／佣兵与交易格共用hidesItem；目标位置、数量和占格仍只读原包投影。拒绝、超时、取消或切区按既有请求生命周期解除覆盖，实际Cursor仍由syncCursor恢复。旧master直接完成本地库存事务没有网络等待间隙，不能照搬其提交后立即清拖拽的显示时序。2026-10-10该源码修正未构建、打包或运行验证。
 
 ## 权威与限制
 

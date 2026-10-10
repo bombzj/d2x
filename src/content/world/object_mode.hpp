@@ -17,7 +17,7 @@ inline std::optional<float> objectEndAnimation(const DataTable &objects, size_t 
     case 2:
         if (objects.number(row, "CycleAnim1").value_or(0)) return {};
         break;
-    case 1: case 3: case 4: case 5: case 7: case 14: case 23:
+    case 1: case 3: case 4: case 5: case 7: case 14: case 15: case 23:
     case 30: case 48: case 51: case 68:
         break;
     default:

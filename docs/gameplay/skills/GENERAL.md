@@ -1,6 +1,6 @@
 # 通用攻击与卷轴／书本技能
 
-更新：2026-10-09。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。2026-10-08历史有限自研证据见下节，该历史批没有原服回归。
+更新：2026-10-10。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。2026-10-08历史有限自研证据见下节，该历史批没有原服回归。
 
 ## 逐项入口
 
@@ -38,6 +38,8 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 公共客户端按原表修复：CltDo2不再排除药瓶，左手投掷按手位选择可见装备弹体；Unsummon目标按原7A本人归属及PetType.unsummon过滤；3F驱动鉴定准备视图。光标准备使用事件revision，支持Escape后再次选择同一来源、入局代次重置及来源物品迟到；界面只读取状态、提交原27，不自行消费或鉴定。原服和自研宿主走相同代码。普通桶另补本人KK预测；只读取真实物件身份、原OperateFn5和已发送的0x13交互，复用已有动作表现，不决定木桶破坏或掉落。
 
 ## 原版依据
+
+卷轴／书本的公共客户端资格由skill_eligibility统一计算，MPQ的scroll标记与SrvDo113识别物品技能；CharStats固有资格不代替原0x22数量。选择器、热键和施放读取同一已知数量，零数量／尚未知不授权，数量不写入有效等级，也不与装备充能混用。依据D2Common D2Skills.cpp的SKILLS_GetUseState（scroll且nQuantity<=0返回NOQUANTITY）及ItemMode.cpp的数量维护／0x22发送。原表四项range=none，SrvDo113调用物品程序时使用本人位置；公共RemoteCombat不获取悬停单位，施放前将点目标归一本人坐标，再发送原0x0C／0x0F。这样鼠标位于地图外沿时不会因无关目标边界拒绝自身物品技能，原服与自研宿主代码一致。2026-10-10此修正仅更新源码，未构建、打包或运行验证，不沿用下节历史证据。
 
 - master：`session/session_skills.cpp`的BasicSkillAction、`units/actions.cpp::selectAttackWeapon`、`combat/attacking.cpp`、`combat/physical_projectiles.cpp`及`items/books.cpp`。
 - 本地D2MOO：D2Game `SKILLS/Skills.cpp`的SrvSt01／02／03／65、SrvDo001／002／003／004／005；`SKILLS/SkillItem.cpp`的SrvDo113及pSpell01／02；`ITEMS/ItemMode.cpp`的书本数量处理；`MISSILES/Missiles.cpp`的创建标记、`MissMode.cpp`的SrvHit02／03；`PLAYER/PlayerPets.cpp`的归属删除及退役；`OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction05_Barrel`及PlrModes的KK动作／PlrMsg的本人通知省略；`GAME/SCmd.cpp`的3F编码。原表参数仍以当前MPQ为准。

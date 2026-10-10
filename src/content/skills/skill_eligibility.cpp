@@ -45,6 +45,10 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
     result.leftAllowed = table.number(row, "leftskill").value_or(0) != 0;
     result.passive = table.number(row, "passive").value_or(0) != 0;
     result.allowedInTown = table.number(row, "InTown").value_or(0) != 0;
+    // Non-item monster rows contain whitespace in this numeric flag.
+    // Only SrvDo113 interprets scroll/book quantity; do not parse other rows.
+    result.itemSkill = table.number(row, "srvdofunc") == 113 &&
+        table.number(row, "scroll").value_or(0) != 0;
     if (result.sourceName == "Attack") result.basicAction = BasicSkillAction::Attack;
     else if (result.sourceName == "Throw") result.basicAction = BasicSkillAction::Throw;
     else if (result.sourceName == "Left Hand Swing") result.basicAction = BasicSkillAction::LeftHandSwing;
@@ -66,6 +70,9 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
 SkillEligibility evaluateSkillEligibility(const SkillMetadata &skill, const SkillEligibilityInput &input) {
     SkillEligibility result;
     result.available = input.innate || (input.effectiveRank && *input.effectiveRank > 0);
+    // CharStats installs these skills even without a usable scroll/book.
+    // D2Common SKILLS_GetUseState returns NOQUANTITY independently of rank.
+    if (skill.itemSkill) result.available = input.itemQuantity && *input.itemQuantity > 0;
     result.pickerEnabled = result.available && !skill.passive && !input.dead && input.equipmentReady.value_or(true);
     result.usableNow = result.pickerEnabled && (!input.town || skill.allowedInTown);
     if (input.mana && input.requiredMana) result.usableNow &= *input.mana >= *input.requiredMana;

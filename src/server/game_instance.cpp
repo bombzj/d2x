@@ -31,6 +31,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
     if (!active && !systems_.trade.cancelFor(id,tick_)) return false;
+    if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
@@ -43,6 +44,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
 bool GameInstance::remove(PlayerId id) {
     if (!players_.find(id)) return false;
     if (!systems_.trade.cancelFor(id,tick_)) return false;
+    if (!systems_.social.disconnect(id,tick_)) return false;
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
     systems_.travel.cancel(id); systems_.skills.cancel(id, players_.find(id)->actor);
     players_.players_.erase(id); ++revision_;
@@ -185,6 +187,9 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     if (!player) return {};
     auto result = projectPlayer(*player);
     result.hover=systems_.social.overhead(id,tick_);
+    result.partyId=systems_.social.partyId(id);
+    for(const auto &[other,peer]:players_.all()) if(peer.entered && other!=id)
+        result.socialRelations.emplace(other,PlayerSnapshot::SocialRelation{systems_.social.partyStatus(id,other),systems_.social.flags(id,other)});
     result.tick = tick_; result.revision = revision_;
     result.rulesFingerprint = rulesFingerprint_;
     result.areaGeneration = areas_.at(player->area).generation;

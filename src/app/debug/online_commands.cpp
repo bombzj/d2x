@@ -164,6 +164,10 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["scene"]["automap"] = {{"visible", scene.automapVisible}, {"large", scene.automapLarge},
         {"stamps", scene.automapStamps.size()}, {"towns", scene.automapTowns.size()},
         {"revealedCells", Json::object()}};
+    result["scene"]["automap"]["markers"]=Json::array();
+    constexpr std::array markNames{"none","npc","party","other-player","corpse","own-pet","party-pet","stash","blue-portal","red-portal"};
+    for(const auto &mark:scene.automap.markers)
+        result["scene"]["automap"]["markers"].push_back({{"kind",markNames.at(size_t(mark.unitMark))},{"x",mark.position.x},{"y",mark.position.y},{"name",mark.name},{"cel",mark.cel}});
     for (const auto &[level, count] : scene.automapRevealedCells)
         result["scene"]["automap"]["revealedCells"][std::to_string(level)] = count;
     result["scene"]["layoutOrigin"] = point(scene.layoutOrigin);
@@ -457,6 +461,13 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         } else if (command == "online-send-chat") {
             const auto receiver=request.contains("receiver")?text("receiver",15):std::string{};
             accepted = session.send_chat(text("message", 255),receiver,request.value("overhead",false)); mutation = true;
+        } else if(command=="online-party-action") {
+            const auto action=text("action",16);
+            const auto &id=request.at("unitId");
+            if(!id.is_number_integer() || id.get<int64_t>()<0 || id.get<uint64_t>()>UINT32_MAX) throw std::invalid_argument("Party target is outside the native GUID range");
+            using A=OnlinePartyAction;
+            if(action!="invite" && action!="cancel" && action!="accept" && action!="leave") throw std::invalid_argument("Party action must be invite/cancel/accept/leave");
+            accepted=session.party_action(id.get<uint32_t>(),action=="invite"?A::Invite:action=="cancel"?A::Cancel:action=="accept"?A::Accept:A::Leave,request.value("gameGeneration",session.read().gameGeneration));mutation=true;
         } else if (command == "online-chat-relation") {
             const auto action=text("action",16);
             if((action!="ignore" && action!="squelch") || !request.at("enabled").is_boolean()) throw std::invalid_argument("Chat relation requires ignore/squelch and boolean enabled");

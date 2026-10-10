@@ -273,6 +273,7 @@ struct OnlineWorldView {
         social.players.clear();
         social.relationships.clear();
         social.chat.clear();
+        social.notices.clear();social.hover.clear();
         deathPhase = OnlineDeathPhase::Unknown;
         deathRevision = 0;
         respawnRequest.reset();

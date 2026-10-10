@@ -25,6 +25,7 @@ FrameInput pollInput(const Viewport &viewport) {
     input.character = characterA || characterC;
     input.skillTree = skillS || skillT;
     input.quests = IsKeyPressed(KEY_Q);
+    input.party = IsKeyPressed(KEY_P);
     input.hireling = IsKeyPressed(KEY_O);
     input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
     input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);

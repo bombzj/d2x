@@ -10,10 +10,12 @@ class PaletteBlendView {
     Shader lightingShader_{};
     Shader rectangleShader_{};
     Texture2D palette_{}, screenTable_{}, lightTable_{}, paletteIndices_{};
-    Texture2D rectangleTable_{};
+    Texture2D rectangleTable_{}, halfTable_{};
     std::array<Color, 256> colors_{};
     RenderTexture2D destination_{};
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1;
+    void drawSprite(const Sprite *, Rectangle, Texture2D) const;
+    int paletteIndex(Color) const;
 
   public:
     explicit PaletteBlendView(Archives &archives, int act = 0);
@@ -21,6 +23,8 @@ class PaletteBlendView {
     PaletteBlendView(const PaletteBlendView &) = delete;
     PaletteBlendView &operator=(const PaletteBlendView &) = delete;
     void draw(const Sprite *image, Vec position) const;
+    void drawHalf(const Sprite *image, Rectangle bounds) const;
+    Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color) const;
     void drawLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient) const;

@@ -31,7 +31,7 @@ void SceneView::drawBelt(Vec mouse) const {
     }
     if (!ui.drag)
         if (auto cell = beltCell(mouse, rows))
-            if (auto item = inventory.item(inventory.itemAt(belt->id, *cell)))
+            if (auto item = inventory.item(inventory.itemAt(belt->id, *cell)); item && !ui.hidesItem(*item))
                 drawItemTooltip(*item, {bounds.x + bounds.width + 80, bounds.y - 5});
 }
 } // namespace d2x

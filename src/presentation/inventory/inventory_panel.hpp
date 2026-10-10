@@ -14,6 +14,12 @@ struct InventoryDrag {
     bool pickedUp = false;
     bool onCursor = false;
 };
+// Presentation only: keep the picked-up source hidden until native
+// cursor/placement facts arrive, without predicting a destination inventory.
+struct InventoryPendingPlacement {
+    EntityId item;
+    ItemLocation source;
+};
 struct SplitDialog {
     ItemHandle item;
     unsigned quantity = 1;
@@ -29,11 +35,17 @@ struct InventoryUi {
     EntityId selected, pending, storage;
     std::string pendingMessage;
     std::optional<InventoryDrag> drag;
+    std::optional<InventoryPendingPlacement> pendingPlacement;
     std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
     uint64_t targetingRevision{}, targetingGeneration{};
     std::optional<GoldDialog> goldDialog;
     void syncCursor(const InventoryView &inventory, EntityId reserved = {});
+    bool hidesItem(const InventoryItemView &item) const {
+        return (drag && drag->item.id==item.id) ||
+            (pending && pendingPlacement && pendingPlacement->item==pending &&
+             item.id==pendingPlacement->item && item.location==pendingPlacement->source);
+    }
     void cancelGesture() {
         if (drag && !drag->onCursor) drag.reset();
         split.reset();

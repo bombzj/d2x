@@ -4,6 +4,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/systems/social/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "core/random.hpp"
 #include <cmath>
@@ -56,7 +57,11 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
     CombatEffectSpec spec;spec.state=owner?a.ownerState:a.state;
     spec.source={CombatEffectSource::Skill,actor.actor,a.skill,a.rank};spec.duration=duration;spec.stacking=EffectStacking::AuraLevel;
     spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;
-    if(id==actor.actor) {
+    const PlayerState *recipient=nullptr;
+    for(const auto &[key,p]:ports_.players.all()) if(p.actor==id) {recipient=&p;break;}
+    if(recipient) {
+        if(!recipient->entered || recipient->area!=actor.area || recipient->persistent.player.hp<=0 ||
+           (recipient!=caster && (a.hostile || !ports_.social.sameParty(actor.player,recipient->player)))) return {DomainStatus::InvalidActor,{}};
         auto next=state_;auto &r=next.players[id];
         if(r.states.size()>=128 && !r.states.hasState(spec.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
         if(spec.state.id>=0) r.states.apply(spec,actor.tick);
@@ -69,8 +74,9 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
                 if(poison) {poison->duration=std::max<uint64_t>(1,r.poison->until-actor.tick);r.states.apply(std::move(*poison),actor.tick);}
             }
         }
-        transactions::CharacterEdit edit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
-        if(healing && a.lifePerPulse>0) edit.player.hp=std::min(float(caster->totals.character.maxLife),edit.player.hp+a.lifePerPulse);
+        const ActorContext target{recipient->player,recipient->actor,recipient->area,ports_.areas.at(recipient->area).generation,0,actor.tick};
+        transactions::CharacterEdit edit{target,recipient->inventoryRevision,recipient->characterRevision,recipient->persistent.player};
+        if(healing && a.lifePerPulse>0) edit.player.hp=std::min(float(recipient->totals.character.maxLife),edit.player.hp+a.lifePerPulse);
         if(owner && a.manaPerPulse>0) {
             const int state=caster->rules.character->noManaRegenState;r.states.removeState(state);
             if(healing) {
@@ -149,6 +155,12 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
             cycle.occurrence=++paladinOccurrence_;
             cycle.targets={p.actor};cycle.target=0;
             const auto &a=cycle.aura;
+            if(!a.hostile && (a.filter&1)) for(const auto &[peerId,peer]:ports_.players.all()) {
+                if(peerId==key || !peer.entered || peer.area!=p.area || peer.persistent.player.hp<=0 || !ports_.social.sameParty(key,peerId) ||
+                   !area.activation.nearby(p.position,peer.position) || (peer.position-p.position).length()>a.radius) continue;
+                if((a.filter&0x200) && !area.collision.missileSegment(p.position,peer.position,{0x0805,1})) continue;
+                cycle.targets.push_back(peer.actor);
+            }
             for(const auto &[id,m]:ports_.monsters.read().actors) {
                 if(m.area!=p.area || !area.activation.nearby(p.position,m.position) || (m.position-p.position).length()>a.radius || !(a.filter&2)) continue;
                 if((a.filter&0x200) && !area.collision.missileSegment(p.position,m.position,{0x0805,1})) continue;
@@ -158,7 +170,7 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
                 if((a.filter&0x4000) && m.rule.boss) continue;
                 if((a.filter&0x40000) && m.rule.primeEvil) continue;
                 if(a.hostile) {if(area.town || m.owner) continue;}
-                else if(a.skill!=124 && m.owner!=key) continue;
+                else if(a.skill!=124 && m.owner!=key && (!m.owner || !ports_.social.sameParty(key,*m.owner))) continue;
                 if(a.skill==124 && area.town) continue;
                 cycle.targets.push_back(id);
             }

@@ -53,6 +53,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | 地图／碰撞 | DrlgDrlg／OutPlace／OutWild／OutDesr／OutJung／OutMesa／OutSiege／Maze／Preset／TileSub／RoomTile／Activate、D2Collision；原房间／随机消耗保留。libd2 `f92423bfd4df8a1ff162967dd9d894052e1da457`（1.14d）tilegen／lut_town_skip仅交叉证据，不能单独认证1.13c |
 | 世界／动画 | OpenDiablo2 renderer／object::setMode／composite与Diablerie WorldRenderer／COFRenderer／Iso／DirectionMapping；D2MOO SequenceTbls的女巫Lightning及亚马逊Jab／Impale序列、SUnit动作回滚。原COF／DCC／AnimData／MonSeq仍取当前MPQ，缺序列证据不猜 |
 | NPC空组件／城镇地图 | MonStats2CompositLinker、D2Common_11069／11070与SCmd0xAC：启用但变体空、索引0按空组件省略，非零非法索引拒绝。DrlgPreset AutoMap及pfTownAutomap核对城镇全揭示，共用AutomapExploration规则 |
+| 客户端组队与动态地图标记 | D2MOO D2Roster／PartyScreen／PlayerList及SCmd的75／7F／8B／8D／90核对身份、邀请、离队、生命与公开位置；D2MOO不含D2Client界面实现。本地同快照原D2Client RVA 754A0／76790核对区域截断、38像素行距和分组，5BA90／5B5A0核对职业头像、TRANS50、56像素列距与生命阈值，5F1C0／D2DE8／61490／5F090核对12段单位标记、颜色及门户分支。图形、字体、区域与文案仍读当前MPQ；导出原图和静态记录不纳入源码或分发 |
 | 传送点／尸体最新修正 | ObjMode::OBJECTS_OperateFunction23_Waypoint接受mode1／2；ENDANIM::sub_6FC74AC0与ObjectsTbls固定点帧数核对ON衔接。MonsterMsg::sub_6FC65C70的DEAD动作9无目标分支发当前位置。这些2026-10-07修正未构建／入包，不能当运行认证 |
 | 怪物／原弹体 | MonsterMsg／MonsterMode、SkillMonst SrvDo088／091／092／097、Missiles::SyncToClient与SCmd；真实身份／动作／ClientSend消费，不导入AI或伤害。固定Utrans依据下方原1.13cRVA |
 | 人物／技能提示 | D2Skills／SkillDesc字段、Diablerie SkillPanelSlot；纯公式用原服已知值，缺装备／支配／基础等级保留未知。女巫SkillSor／MissMode、亚马逊SkillAma／SequenceTbls／MissMode／PlayerPets／SCmd、死灵SkillNec／SUnitEvent、圣骑士SkillPal只作规则线索，不复制执行器 |

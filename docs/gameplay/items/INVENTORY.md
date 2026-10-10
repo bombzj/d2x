@@ -1,10 +1,10 @@
 # 库存操作、数量与容器权限
 
-更新：2026-10-09。本页维护物品移动、交换、合堆和书本转装的权威规则。GUID／mode／page与版本语义归[MODEL](MODEL.md)，界面操作归[INVENTORY_UI](INVENTORY_UI.md)，事务规范见[COMMON](COMMON.md)。
+更新：2026-10-10。本页维护物品移动、交换、合堆和书本转装的权威规则。GUID／mode／page与版本语义归[MODEL](MODEL.md)，界面操作归[INVENTORY_UI](INVENTORY_UI.md)，事务规范见[COMMON](COMMON.md)。
 
 ## 已接移动与数量
 
-背包、Cursor、腰带、装备、两组武器、普通交换、双手冲突、腰带缩容、合堆与卷轴／同类书转装已有执行。本人所有权、来源／目标句柄、活动装备组及授权在固定步复验；无法安置的普通移物保持原库存，不靠关闭面板清除Cursor。装备总值见[EQUIPMENT](EQUIPMENT.md)。
+背包、Cursor、腰带、装备、两组武器、普通交换、双手冲突、腰带缩容、合堆与卷轴装书已有执行；领域内部保留自动拾取的同类书合并，手动原0x29只接受Cursor卷轴和匹配的stored书本，不开放书页互转。本人所有权、来源／目标句柄、活动装备组及授权在固定步复验；书本在仓库／方块时还要求对应真实存储授权及携带方块。无法安置的普通移物保持原库存，不靠关闭面板清除Cursor。装备总值见[EQUIPMENT](EQUIPMENT.md)，装书原包与显示时序见[PRESENTATION](PRESENTATION.md)。
 
 合堆校验基底、品质、file index、无形、物理伤害及无孔条件；普通／超强／劣质可合并，魔法品质不合并。最大数量取原基础加item_extra_stack并复验9位上限。书本使用Books配对／charges，根数量仍为1；新生成页数按原minstack／spawnstack选取，网络和磁盘数量映射为页数。自动拾取允许提交实际合并量并保留地面余物。数量归零按原品质／item_throwable规则保留或移除。
 

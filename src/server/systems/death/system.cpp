@@ -11,6 +11,7 @@
 #include "server/systems/skills/system.hpp"
 #include "server/systems/companions/system.hpp"
 #include "gameplay/rewards/experience.hpp"
+#include "server/systems/social/system.hpp"
 #include "server/systems/loot/system.hpp"
 namespace d2x::server::death {
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
@@ -122,6 +123,28 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             // level, equipment set, or player that reused an old identifier.
             reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false,killer->persistent.player}).first;
             reward->second.hireling=ports_.companions.experience(killer->player,monster);
+            std::vector<const PlayerState*> members;
+            unsigned levelSum=0;
+            if(ports_.social.partyId(killer->player)!=UINT16_MAX)
+                for(const auto &[peerId,peer]:ports_.players.all())
+                    if(peer.entered && peer.area==monster.area && peer.persistent.player.hp>0 &&
+                       ports_.social.sameParty(killer->player,peerId) && (peer.position-monster.position).length()<=80 &&
+                       peer.persistent.player.level>0 && size_t(peer.persistent.player.level)<monster.rule.experienceRatios.size()) {
+                        members.push_back(&peer);levelSum+=unsigned(peer.persistent.player.level);
+                    }
+            if(members.size()>1 && levelSum && monster.rule.experienceBase) {
+                // SUnitDmg: share raw experience before each player's MPQ ratio.
+                const auto base=monster.rule.experienceBase;
+                const auto pooled=base+89*base*(members.size()-1)/256;
+                const float multiplier=float(pooled)/float(levelSum);
+                for(const auto *member:members) {
+                    const auto level=member->persistent.player.level;
+                    const auto raw=uint64_t(double(level)*multiplier);
+                    const auto xp=monsterExperienceGain(raw,1,monster.rule.experienceLevel,level,monster.rule.experienceRatios[size_t(level)],monster.rule.experienceShift);
+                    reward->second.shares.push_back({member->player,member->actor,playerExperienceGain(xp,member->totals.character.combat.experiencePercent)});
+                }
+            } else if(ports_.social.partyId(killer->player)==UINT16_MAX || !members.empty())
+                reward->second.shares.push_back({killer->player,killer->actor,amount});
         }
         const auto *killer = ports_.players.find(reward->second.player);
         if (!killer || !killer->entered || killer->actor != reward->second.actor || killer->persistent.player.hp <= 0 || killer->lastExperienceAward == UINT64_MAX) {
@@ -151,11 +174,15 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!queued) { blocked = true; continue; }
             reward->second.lootQueued = true;
         }
-        if (!reward->second.amount) { ports_.monsters.rewardComplete(id); state_.rewards.erase(reward); continue; }
-        const auto result = ports_.progression.award({killer->player, killer->lastExperienceAward + 1, reward->second.amount, tick.tick});
-        if (result || result.status == DomainStatus::Conflict) {
-            ports_.monsters.rewardComplete(id); state_.rewards.erase(reward);
-        } else blocked = true;
+        auto &value=reward->second;
+        while(value.awarded<value.shares.size()) {
+            const auto &share=value.shares[value.awarded];const auto *recipient=ports_.players.find(share.player);
+            if(!share.amount || !recipient || !recipient->entered || recipient->actor!=share.actor || recipient->lastExperienceAward==UINT64_MAX) {++value.awarded;continue;}
+            const auto result=ports_.progression.award({share.player,recipient->lastExperienceAward+1,share.amount,tick.tick});
+            if(result || result.status==DomainStatus::Conflict) ++value.awarded;
+            else {blocked=true;break;}
+        }
+        if(value.awarded==value.shares.size()) {ports_.monsters.rewardComplete(id);state_.rewards.erase(reward);}
     }
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }

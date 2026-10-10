@@ -92,6 +92,7 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
     if (*ratio < 0)
         return defer("Invalid original player experience ratio");
     result.amount = monsterExperienceGain(base, rankFactor, result.monsterLevel, request.playerLevel, *ratio, *shift);
+    result.base=base*uint64_t(rankFactor);result.ratio=*ratio;result.shift=*shift;
     return result;
 }
 } // namespace d2x

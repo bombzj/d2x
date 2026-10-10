@@ -20,6 +20,7 @@ struct CharacterProjectionInput {
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     std::array<SkillHotkey, 8> hotkeys{};
     std::map<int, int> baseRanks, effectiveRanks;
+    std::map<int, int> itemSkillQuantities;
     std::vector<ChargedSkill> chargedSkills;
     bool baseRanksAssigned = false;
     std::array<bool, 2> throwReady{};

@@ -37,7 +37,7 @@ struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vec
 struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<uint64_t> random{}; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; skills::System &skills;
-    transactions::System &transactions; missiles::System &missiles; combat::System &combat; monsters::System &monsters; EventOutbox &events; uint64_t &random;
+    transactions::System &transactions; missiles::System &missiles; combat::System &combat; monsters::System &monsters; EventOutbox &events; uint64_t &random; const social::System &social;
 };
 class System {
     State state_;

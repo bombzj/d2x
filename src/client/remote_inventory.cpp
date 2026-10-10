@@ -488,11 +488,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Target stack is full");
         break;
     case OnlineItemAction::Book: {
-        if (!owned(wire) || !(cursor() || backpack(wire)) || !backpack(*target)) return reject("Scroll/book transfer requires owned accessible items");
+        if (!cursor() || !isType(wire, "scro") || !accessible(*target) || !isType(*target, "book"))
+            return reject("Scroll/book transfer requires the confirmed cursor scroll and an accessible stored tome");
         const auto &books = tables_.at("books"); bool pair = false;
         for (size_t row = 0; row < books.rows().size(); ++row)
             pair |= books.value(row, "ScrollSpellCode") == wire.code && books.value(row, "BookSpellCode") == target->code;
         if (!pair) return reject("Current MPQ has no matching scroll and tome pair");
+        if (!targetData->quantity || *targetData->quantity >= unsigned(std::max(0, baseNumber(*target, "maxstack"))))
+            return reject("Target tome quantity is unknown or full");
         break;
     }
     case OnlineItemAction::Socket:

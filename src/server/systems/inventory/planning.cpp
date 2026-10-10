@@ -18,6 +18,7 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
         const auto *at=std::get_if<ContainerLocation>(&entry.second.location); const auto *def=catalog.find(entry.second.definition);
         return at && at->container==player.persistent.containers.backpack && def && def->opensCube;
     });
+    draft.cube=cube && cubeCarried;
     const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (trade && id==trade) || (cube && cubeCarried && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
     for (const auto guard : request.equipmentGuards)
         if (!draft.resolve(guard)) return {DomainStatus::Stale, {}};
@@ -52,6 +53,13 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
         } else if constexpr (std::is_same_v<T, MergeStacks>) {
             return draft.merge(operation);
         } else if constexpr (std::is_same_v<T, LoadBook>) {
+            const auto *source=draft.resolve(operation.scroll), *target=draft.resolve(operation.book);
+            if (!source || !target) return DomainStatus::Stale;
+            const auto *where=std::get_if<ContainerLocation>(&target->location);
+            const auto *definition=catalog.find(target->definition);
+            if (source->location!=ItemLocation{cursor} || !where || !stored(where->container) ||
+                !definition || !definition->bookCapacity || source->definition!=definition->bookScroll)
+                return DomainStatus::InvalidRequest;
             return draft.loadBook(operation);
         } else if constexpr (std::is_same_v<T, EquipItem>) {
             return draft.equipment(operation, request.equipmentMode);

@@ -40,7 +40,9 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 | 飞箭、火球、毒球、诅咒骷髅、闪电控制器 | MonStats真实trap类型 | 原9A图、动作／释放帧与MissA1／S1／S2；Draw=0物件有意隐藏，不报告缺图 |
 | 毒云、新星、喷火雕像 | 原ClientSend／CltDo4／25／51 | 毒云只由0x73出生，按MPQ机会／数量／范围产生poisonpuff；新星64整数方向；喷火雕像原序列释放帧与枪口偏移 |
 
-`content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／23／30／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
+`content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／15／23／30／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
+
+OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影修复适用于原服和自研连接。2026-10-10该源码修正未构建、打包或运行验证。
 
 声音选择不在Objects.txt。当前1.13c D2Client原对象声表RVA F6C58及读取入口22570提供模式选择，源码按当前MPQ Token／OperateFn绑定已核实族，共享Token的5f／6t／jw按原名称／操作区分。Sounds表继续提供文件、组大小、音量；不分发DLL、导出表或WAV。原0x2C事件11是item_key_used，22按CharStats职业选needkey组，13／14是object_trap_trigger／release，不能把事件号当Sounds.Index。重入已打开物件不重播旧交互声。
 

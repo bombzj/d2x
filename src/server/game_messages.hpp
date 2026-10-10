@@ -43,6 +43,9 @@ struct CommandResult {
 struct PlayerSnapshot {
     struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; };
     std::optional<Hover> hover;
+    uint16_t partyId{UINT16_MAX};
+    struct SocialRelation {uint8_t partyStatus{};uint16_t flags{};};
+    std::map<PlayerId,SocialRelation> socialRelations;
     GameHandle game;
     PlayerId recipient;
     uint64_t tick{}, revision{}, areaGeneration{};

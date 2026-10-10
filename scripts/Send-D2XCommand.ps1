@@ -22,7 +22,7 @@ param(
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel', 'online-npc-respec', 'online-staff-update',
         'online-items', 'online-ground', 'online-item-action', 'online-item-quote',
-        'online-social', 'online-chat', 'online-send-chat', 'online-chat-relation', 'online-trade-respond', 'online-trade-offer',
+        'online-social', 'online-chat', 'online-send-chat', 'online-chat-relation', 'online-party-action', 'online-trade-respond', 'online-trade-offer',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
         'online-stop-skill', 'online-learn-skill', 'online-spend-attribute', 'online-bind-hotkey',
         'ui-input', 'screenshot', 'quit')]

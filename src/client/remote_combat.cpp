@@ -95,6 +95,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     const auto row=skills_.find(skill);if(row==skills_.end() || !unit.position) return false;
     const auto &table=tables_.at("skills");
     const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
+    if (skillMetadata_.at(skill).itemSkill) return false; // SrvDo113 searches inventory, not a hovered unit.
     if(n("srvstfunc")==3 && n("srvdofunc")==4) {
         if(unit.key.type!=1 || onlineMonsterCorpse(unit)) return false;
         const auto &world=session_.read().world;
@@ -173,6 +174,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
         SkillEligibilityInput facts;
         facts.classCode = classCode(); facts.innate = innateSkill(command.skill);
         facts.dead = onlinePlayerDead(world); facts.town = scene_.read().town;
+        if (const auto quantity = world.itemSkillQuantities.find(command.skill); quantity != world.itemSkillQuantities.end())
+            facts.itemQuantity = quantity->second;
         const auto knownAttribute = [&](uint8_t id) -> std::optional<int> {
             const auto value = world.playerAttributes.find(id);
             return value == world.playerAttributes.end() ? std::nullopt : std::optional{int(value->second)};
@@ -204,6 +207,8 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
             // SKILLS_InitSkillList adds Attack and current CharStats.Skill 1..10;
             // native 0x94 need not list these innate skills. Equipment and item
             // quantities still belong to the server, not an invented skill rank.
+            if (metadata.itemSkill && !eligibility.available)
+                return reject("Server has not reported a usable scroll or tome for this item skill");
             if (!eligibility.canSelect(command.hand == OnlineSkillHand::Left, metadata))
                 return reject("Server has not reported an available active skill for this hand");
             if (command.action == Action::Cast) {
@@ -211,6 +216,12 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                 if (!binding.nativeMapReady || !binding.movementAvailable || !world.playerPosition || !eligibility.usableNow)
                     return reject("Skill cannot be cast in the current loaded area");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
+                if (metadata.itemSkill && tables_.at("skills").value(row->second, "range") == "none") {
+                    // SrvDo113 invokes pSpell at the player's position. A pointer
+                    // over the map edge must not prevent a self item action.
+                    command.target.reset();
+                    command.point = world.playerPosition;
+                }
                 auto point = command.point;
                 if (command.target && command.target->type == 4) {
                     const auto item = world.items.find(command.target->id);

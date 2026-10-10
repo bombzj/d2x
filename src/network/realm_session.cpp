@@ -1649,6 +1649,28 @@ bool RealmSession::chat_relation(uint32_t player,bool squelch,bool enabled) {
     Writer out;out.u8(0x5D);out.u8(squelch?3:2);out.u8(enabled?1:0);out.u32(player);
     p.sent(p.gs,out.release());p.changed();return true;
 }
+bool RealmSession::party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (snapshot_.connectionGeneration != p.view.connectionGeneration ||
+        snapshot_.gameGeneration != p.view.gameGeneration || gameGeneration != p.view.gameGeneration) {
+        p.error(OnlineErrorKind::Input, "The active game changed; refresh the party screen.");
+        return false;
+    }
+    const auto found = p.view.world.social.players.find(player);
+    const bool leaving = action == OnlinePartyAction::Leave;
+    const bool valid = found != p.view.world.social.players.end() &&
+        (leaving ? player == p.view.load.playerUnitId && found->second.partyId && *found->second.partyId != UINT16_MAX
+                 : player != p.view.load.playerUnitId && onlinePartyAction(found->second) == action);
+    if (!p.view.load.playerUnitId || !valid) {
+        p.error(OnlineErrorKind::Input, "The party state changed; refresh the party screen.");
+        return false;
+    }
+    Writer out; out.u8(0x5E); out.u8(uint8_t(action)); out.u32(player);
+    p.sent(p.gs, out.release()); p.changed(); return true;
+}
 bool RealmSession::send_chat(std::string text,std::string receiver,bool overhead) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;

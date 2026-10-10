@@ -200,6 +200,17 @@ struct RemoteUiClients::Impl {
                     if(!location || (location->container!=o.inventoryView.containers.cursor && location->container!=o.inventoryView.containers.hirelingEquipment)) return InventoryError::AccessDenied;
                     return InventoryError::None;
                 }
+                else if constexpr (std::is_same_v<T, LoadBook>) {
+                    const auto *source=o.inventoryView.item(c.scroll.id), *target=o.inventoryView.item(c.book.id);
+                    if (!source || !target) return InventoryError::UnknownItem;
+                    if (source->revision!=c.scroll.revision || target->revision!=c.book.revision) return InventoryError::SourceChanged;
+                    const auto *definition=o.inventoryView.definition(target->definition);
+                    // Original 0x29 transfers a scroll into a tome, never tome-to-tome.
+                    if (source->id==target->id || !definition || !definition->bookCapacity ||
+                        definition->bookScroll!=source->definition || source->quality!=ItemQuality::Normal || target->quality!=ItemQuality::Normal)
+                        return InventoryError::IncompatibleStack;
+                    return target->charges>=definition->bookCapacity ? InventoryError::StackFull : InventoryError::None;
+                }
                 else if constexpr (std::is_same_v<T, SplitStack>)
                     return InventoryError::InvalidRequest;
                 else if constexpr (requires { c.item; }) {
@@ -603,7 +614,7 @@ struct RemoteUiClients::Impl {
             else if constexpr (std::is_same_v<T, GoldTransaction>) {
                 c.action = v.action == GoldAction::Deposit ? OnlineItemAction::GoldDeposit : v.action == GoldAction::Withdraw ? OnlineItemAction::GoldWithdraw : OnlineItemAction::GoldDrop; c.amount = v.amount;
             } else { notice = "This native item operation is unavailable."; return; }
-            if (c.action == OnlineItemAction::Socket && items.read().cursor != c.item) { compositeTake(c); return; }
+            if ((c.action == OnlineItemAction::Socket || c.action == OnlineItemAction::Book) && items.read().cursor != c.item) { compositeTake(c); return; }
             enqueue(c);
         }, intent);
     }
@@ -748,6 +759,7 @@ struct RemoteUiClients::Impl {
         }
         input.baseRanks.insert(w.playerBaseSkills.begin(), w.playerBaseSkills.end());
         input.effectiveRanks.insert(w.playerSkills.begin(), w.playerSkills.end());
+        input.itemSkillQuantities.insert(w.itemSkillQuantities.begin(), w.itemSkillQuantities.end());
         input.baseRanksAssigned = w.playerBaseSkillsAssigned;input.chargedSkills=nativeChargedSkills(online,items.read(),data.tables.at("setitems"));
         input.difficulty = online.load.difficulty;
         if(const auto level=stat("level")) {

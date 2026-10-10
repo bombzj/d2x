@@ -150,13 +150,14 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.string(chat->name); out.string(chat->text);
             }));
         } else if (const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) {
-            const auto local=host.read(*binding)->actor.id;
             delta.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){out.u32(uint32_t(relation->from.value));out.u32(uint32_t(relation->to.value));out.u16(relation->flags);}));
-            if(local==relation->from || local==relation->to)
-                delta.push_back(encodeServerPacket(ServerMessage::PartyMember,[&](auto &out){
-                    out.u32(uint32_t((local==relation->from?relation->to:relation->from).value));out.u16(UINT16_MAX);
-                    out.u16(local==relation->from?relation->toLevel:relation->fromLevel);out.u16(local==relation->from?relation->flags:relation->reverse);out.u16(0);
-                }));
+            // The roster projection carries current party/status/flags together.
+        } else if(const auto *notice=std::get_if<server::PartyNoticeFact>(&fact)) {
+            if(notice->recipient!=binding->player) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
+                out.u8(7);out.u8(notice->action==6 || notice->action==9?9:2);
+                out.u32(uint32_t(notice->player.value));out.u8(notice->action);out.append(std::array<uint8_t,32>{});
+            }));
         } else if (const auto *trade = std::get_if<server::TradeFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(trade->action);}));
             if(trade->partner) delta.push_back(encodeServerPacket(ServerMessage::TradePeer,[&](auto &out) {

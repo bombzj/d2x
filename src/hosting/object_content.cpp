@@ -35,8 +35,9 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     for(const auto *path:{"data/global/objects/tp/cof/tpophth.cof","data/global/objects/tp/hd/tphdlitophth.dcc","data/global/objects/tp/tr/tptrlitophth.dcc"}) portalResources=portalResources && archives.contains(path);
     WorldObject portal; portal.appearance.category="objects"; portal.objectClass=59; configureWorldObject(portal,rows);
     if(portalResources && portal.operateFn==15 && portal.reach>0) {
-        const auto &animation=portal.animationRules[1];
-        area.portalRule=server::PortalRule{59,int(portal.reach),std::max(1,animation.fps>0?int(std::ceil(animation.frames*25.f/animation.fps)):animation.frames)};
+        // InitFunction11_Portal schedules ENDANIM at FrameCnt1 + 1 ticks,
+        // independently of the visual FrameDelta playback rate.
+        area.portalRule=server::PortalRule{59,int(portal.reach),std::max(1,portal.animationRules[1].frames+1)};
     }
     WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
     if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=server::PortalRule{60,int(redPortal.reach),0};

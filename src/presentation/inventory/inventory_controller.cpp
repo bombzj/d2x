@@ -43,6 +43,10 @@ bool SceneController::queueInventory(InventoryIntent command, EntityId source) {
         return false;
     }
     ui.pending = source;
+    ui.pendingPlacement.reset();
+    if (ui.drag && ui.drag->item.id==source)
+        if (const auto *item=view_.inventoryView().item(source))
+            ui.pendingPlacement=InventoryPendingPlacement{source,item->location};
     if (std::holds_alternative<SwapItems>(command))
         ui.pendingMessage = "Items swapped.";
     else if (std::holds_alternative<SplitStack>(command))

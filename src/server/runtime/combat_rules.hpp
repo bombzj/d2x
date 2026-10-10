@@ -69,6 +69,9 @@ struct MonsterRule {
     int coldEffect{}, coldState{-1}, frozenState{-1};
     int knockbackTicks{};
     std::vector<uint64_t> experience;
+    uint64_t experienceBase{};
+    int experienceLevel{},experienceShift{};
+    std::vector<int> experienceRatios;
     MonsterAiProfile ai{};
     std::map<uint8_t, MonsterAttackRule> attacks;
     MonsterHitStates hitStates;

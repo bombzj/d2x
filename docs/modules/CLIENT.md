@@ -1,6 +1,6 @@
 # 客户端契约与原协议基线
 
-更新：2026-10-09。原服与自研宿主共用完整客户端，只有连接选择不同。Windows Release已构建打包；有限自研／原服冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
+更新：2026-10-10。原服与自研宿主共用完整客户端，只有连接选择不同。当前Windows客户端沿既有Debug配置构建打包；有限自研／原服冒烟、当前及旧包身份见[基线](../../BASELINE.md)。
 
 技能客户端修改边界由[COMMON](../gameplay/skills/COMMON.md#技能迁入规范)维护；弓弩／箭袋及宠物投影的原版修复与死亡图未核实项见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
@@ -49,9 +49,11 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
 
-Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。此修复未构建、测试或打包。
+Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。此修复已随当前客户端构建入包，未专项运行认证。
 
 底栏只加载原联机minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有Local备用实现。已接服务的范围见对应模块，未接服务或缺失原服状态明确不可用，不调用本地服务补齐。帮助页移除旧本地Save／Load、授予金币／经验等提示；原服调试暂停及在线command入口保留。
+
+组队操作沿app/frontend → SceneView／PartyView只读名册与按下／释放 → RealmSession.party_action → 原0x5E；不要求可见世界单位，原75／8B状态与8D队伍ID确认入队／离队。P面板显示同队状态、原区域与分隔条，世界HUD显示原职业队友头像和0x7F生命条；RemoteTown把可见玩家位置或0x90公开坐标投影为同队自动地图标记，不创建空间单位或揭示房间。原资源、动作与暂缓项见[联网模块](NETWORK.md#组队邀请客户端)和[自动地图](../gameplay/world/AUTOMAP.md)。本批只完成客户端，不扩充自研宿主队伍规则。
 
 ## 保留范围与限制
 

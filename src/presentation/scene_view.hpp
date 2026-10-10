@@ -10,6 +10,7 @@
 #include "scene_assets.hpp"
 #include "presentation/hud/chat_view.hpp"
 #include "presentation/hud/trade_invite_view.hpp"
+#include "presentation/hud/party_view.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/preset_pops.hpp"
 #include "presentation/world/world_draw_view.hpp"
@@ -53,6 +54,7 @@ struct ViewState {
     bool hirelingOpen = false, hireListOpen = false;
     int hireListScroll = 0;
     bool questOpen = false;
+    bool partyOpen = false;
     int questAct = 0;
     int questSelected = -1;
     int questPressed = -1;
@@ -117,6 +119,7 @@ class SceneView {
     ChatView chat_;
     OriginalMenu originalMenu_;
     TradeInviteView tradeInvite_;
+    PartyView party_;
     struct QuestCompletionAnimation {
         enum class Phase { Idle, Pending, Playing };
         Phase phase = Phase::Idle;
@@ -211,6 +214,13 @@ class SceneView {
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     void updateChat(const OnlineSocialView &social) { chat_.update(social); }
+    void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game) {
+        if (party_.update(social, self, game)) view_.partyOpen = false;
+    }
+    PartyIntent handleParty(const FrameInput &input);
+    bool partyReady() const { return party_.ready(); }
+    float partyPortraitOffset() const;
+    const std::string &partyReason() const { return party_.reason(); }
     ChatIntent handleChat(const FrameInput &input);
     void chatSent(bool accepted);
     const ChatView &chat() const { return chat_; }

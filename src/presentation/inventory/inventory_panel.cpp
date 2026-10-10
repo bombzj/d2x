@@ -100,8 +100,9 @@ ContainerGrid playerTradeGrid(const InventoryView &inventory, bool own) {
         {p.x+l.left*inventoryScale,p.y+l.top*inventoryScale},{cell,cell},l.columns,l.rows,cell};
 }
 void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
+    if (!pending) pendingPlacement.reset();
     if (const auto *item = inventory.cursorItem()) {
-        if (item->id == reserved) {
+        if (item->id == reserved || (pendingPlacement && pending==item->id && pendingPlacement->item==item->id)) {
             drag.reset();
             return;
         }
@@ -224,7 +225,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                     drop.command = SocketItem{source->handle(), target->handle()};
                     drop.description = "Insert into socket";
                 } else if (!ui.playerTradeOpen && !ui.forceSwap && targetDefinition->bookCapacity &&
-                    (targetDefinition->bookScroll == source->definition || target->definition == source->definition)) {
+                    targetDefinition->bookScroll == source->definition) {
                     drop.command = LoadBook{source->handle(), target->handle()};
                     drop.description = "Add pages to tome";
                 } else if (!ui.playerTradeOpen && !ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {

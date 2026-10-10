@@ -20,6 +20,8 @@ struct MonsterExperienceAward {
     uint64_t amount = 0;
     int monsterLevel = 0;
     std::string deferred;
+    uint64_t base{};
+    int ratio{},shift{};
 };
 MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const MonsterCatalog &monsters,
                                                const WorldCatalog &world,

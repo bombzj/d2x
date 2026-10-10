@@ -14,6 +14,7 @@ std::vector<int> loadInnateSkillIds(const DataTable &skills, const DataTable &ch
 struct SkillEligibilityInput {
     std::string_view classCode;
     std::optional<int> baseRank, effectiveRank, level, skillPoints;
+    std::optional<int> itemQuantity; // Native 0x22, separate from learned/effective rank.
     std::array<std::optional<int>, 4> attributes;
     std::map<int, int> prerequisiteRanks;
     bool innate = false, dead = false, town = false;
