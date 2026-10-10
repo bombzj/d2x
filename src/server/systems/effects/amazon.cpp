@@ -23,7 +23,16 @@ int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
     const auto mods=unitModifiers(id,tick);
     const std::array additions{mods.combat.physicalResist,mods.combat.magicResist,mods.fireResist,mods.lightningResist,mods.coldResist,mods.poisonResist};
     const auto channel=size_t(type);const int base=m->rule.resistances[channel];
-    return std::max(-100,base+(base>=100 && additions[channel]<0?additions[channel]/5:additions[channel]));
+    // Conviction stores its immunity penalty when the recipient effect is
+    // installed; applying it again here would divide the reduction twice.
+    const int resistance=std::max(-100,base+additions[channel]);
+    if(m->hireling && channel>=2) {
+        const auto &equipment=m->petStats.attributes.combat;
+        const std::array maximum{equipment.fireMaxResist+mods.combat.fireMaxResist,equipment.lightningMaxResist+mods.combat.lightningMaxResist,
+            equipment.coldMaxResist+mods.combat.coldMaxResist,equipment.poisonMaxResist+mods.combat.poisonMaxResist};
+        return std::min(resistance,std::clamp(75+maximum[channel-2],0,95));
+    }
+    return resistance;
 }
 std::map<int,std::vector<std::pair<int,int64_t>>> System::unitStateStats(EntityId id,uint64_t tick) const {
     const auto it=units_.find(id);if(it==units_.end()) return {};

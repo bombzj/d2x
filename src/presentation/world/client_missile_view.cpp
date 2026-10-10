@@ -91,6 +91,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         const auto path = chargedBoltPath(start, target, pathIndex, int(effect.duration * 25.f + .5f));
         effect.path.assign(path.begin(), path.end());
     }
+    if(program.blessedHammer) {
+        const auto path=blessedHammerPath(start);effect.path.assign(path.begin(),path.end());
+    }
     if(const auto fall=assets_.blizzardFalls.find(id);fall!=assets_.blizzardFalls.end()) {
         effect.flight=false;effect.duration=float((fall->second.fallDistance+fall->second.fallRate-1)/fall->second.fallRate)/25.f;
     }
@@ -162,7 +165,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 int(limitedRandom(effect.random,100))<program.hitParameters[1])
                 emit(program.hitChildren[0],center+offset,{},effect,overshoot,-1,0,program.frames+(effect.level-1)*program.framesPerLevel);
         }
-        if(program.hitFunction==25 && program.targetBurst && program.hitChildren[0]>=0) {
+        if((program.hitFunction==25 || program.hitFunction==26) && program.targetBurst && program.hitChildren[0]>=0) {
             const auto &burst=*program.targetBurst;
             std::vector<MissileBurstTarget> candidates;
             for(const auto &target:targets) if(target.id!=effect.owner && target.hostile!=effect.hostile &&
@@ -300,7 +303,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
             if (program.collide && program.function != 19)
                 for (const auto &target : targets) {
-                    if ((program.function==7 && ((!effect.guidance && !effect.guidanceSearched) || (effect.guidance && target.id!=effect.guidance))) || target.id == effect.owner || target.hostile == effect.hostile ||
+                    if ((program.holyBolt && !target.undead) || (program.function==7 && ((!effect.guidance && !effect.guidanceSearched) || (effect.guidance && target.id!=effect.guidance))) || target.id == effect.owner || target.hostile == effect.hostile ||
                         std::find(effect.contacts.begin(), effect.contacts.end(), target.id) != effect.contacts.end()) continue;
                     if (const auto at = missileUnitIntersection(start, next, program.collision.size, target.position, target.size);
                         at && *at <= fraction) contacts.emplace_back(*at, &target);
@@ -368,7 +371,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 for (const auto direction : missileRingBurst(program.hitParameters[0]))
                     emit(program.hitChildren[0], anchor, direction, effect,
                         std::max(0.f, effect.age - effect.duration));
-            } else if (program.explodeOnExpiry || program.hitFunction==25 || (program.function==9 && program.hitFunction==18))
+            } else if (program.explodeOnExpiry || program.hitFunction==25 || program.hitFunction==26 || (program.function==9 && program.hitFunction==18))
                 impact(effect, program, std::max(0.f, effect.age - effect.duration));
             finished = true;
         }

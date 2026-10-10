@@ -40,6 +40,7 @@ struct CharacterAttributes {
     int staminaRecoveryBonus = 0, staminaPercent = 0, otherAnimationRate = 0;
     CombatModifiers combat;
     int blockFactor = 0;
+    int velocityPercent = 0;
     float manaRegen = 0;
 };
 float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus);

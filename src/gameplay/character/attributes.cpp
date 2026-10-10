@@ -94,6 +94,7 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     const int64_t fasterMove = m.fasterMoveVelocity
         ? int64_t(m.fasterMoveVelocity) * 150 / (int64_t(m.fasterMoveVelocity) + 150) : 0;
     const int64_t movementPercent = 100 + fasterMove + m.velocityPercent;
+    result.velocityPercent=m.velocityPercent;
     const int64_t walkPercent = std::max<int64_t>(25, movementPercent);
     const int64_t runBonus = int64_t(100) * d.runVelocity / d.walkVelocity - 100;
     const int64_t runPercent = std::max<int64_t>(25, movementPercent + runBonus);

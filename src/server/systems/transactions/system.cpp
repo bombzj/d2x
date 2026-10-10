@@ -113,7 +113,7 @@ DomainResult<Plan> System::prepare(Change change) {
     }
     try {
         next.totals = attributes::calculate(player->definition, next.persistent, *player->rules.items,
-            *equipment, *player->rules.character, {}, transient.modifiers);
+            *equipment, *player->rules.character, {}, transient.modifiers,transient.states);
         inventory::synchronizeEquipment(next.persistent, next.totals, *equipment, next.changes);
         next.inventoryChanged = next.inventoryChanged || !next.changes.empty();
     } catch (const std::runtime_error &) { return {DomainStatus::Unavailable, {}}; }

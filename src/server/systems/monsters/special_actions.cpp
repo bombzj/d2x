@@ -92,6 +92,34 @@ DomainResult<> System::heal(EntityId id,int64_t amount) {
     auto &actor=it->second;actor.life=std::min(actor.maximumLife,actor.life+amount);++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::redeem(EntityId id) {
+    auto it=state_.actors.find(id);
+    if(it==state_.actors.end() || it->second.life>0 || it->second.corpseUnavailable || !it->second.rule.corpseSelectable)
+        return {DomainStatus::InvalidRequest,{}};
+    auto &m=it->second;
+    m.corpseUnavailable=true;++m.revision;return {DomainStatus::Applied,std::monostate{}};
+}
+void System::shortenPoison(EntityId id,uint64_t tick,int remainingPercent) {
+    auto it=state_.actors.find(id);
+    if(it!=state_.actors.end() && it->second.poison && it->second.poison->until>tick)
+        it->second.poison->until=tick+(it->second.poison->until-tick)*uint64_t(std::clamp(remainingPercent,0,100))/100;
+}
+DomainResult<> System::convert(EntityId id,const ActorContext &actor,const WeaponSkillSpec &skill) {
+    auto it=state_.actors.find(id);const auto *p=ports_.players.find(actor.player);
+    if(it==state_.actors.end() || !p || !p->rules.skills || !it->second.rule.convertible || it->second.owner || it->second.life<=0 ||
+       it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique || it->second.area!=actor.area)
+        return {DomainStatus::InvalidRequest,{}};
+    auto &m=it->second;const int alignment=p->rules.skills->alignment.id,stat=p->rules.skills->nativeStats.at("alignment");
+    if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
+        {StateFact{id,1,actor.area,skill.conversionState.id,true},StateFact{id,1,actor.area,alignment,true,{{stat,2}}}}})) return {DomainStatus::Capacity,{}};
+    m.conversion=Actor::Conversion{skill.conversionState.id,alignment,stat,m.rule.level,m.maximumLife,actor.tick+uint64_t(std::max(1,skill.conversionFrames))};
+    if(p->persistent.player.level<m.rule.level) {
+        m.life=std::max<int64_t>(256,m.life*p->persistent.player.level/m.rule.level);
+        m.maximumLife=std::max<int64_t>(256,m.maximumLife*p->persistent.player.level/m.rule.level);
+        m.life=std::min(m.life,m.maximumLife);m.rule.level=p->persistent.player.level;
+    }
+    m.owner=actor.player;++m.interruption;stop(id);++m.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || state<0 || state>=255 || percent< -100 || percent>0 || !frames) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;

@@ -22,7 +22,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
         // pursues or attacks, including its permitted content substitute.
         if(monster.implementation==MonsterKind::PrisonDoor) {ports_.monsters.stop(id);continue;}
-        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.owner || ports_.skills.busy(id,tick.tick)) continue;
+        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || (monster.owner && !monster.conversion) || ports_.skills.busy(id,tick.tick)) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) controller.random = monster.combatRandom;
@@ -42,13 +42,18 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         int distance = std::min(55, monster.rule.ai.searchDistance);
         for (const auto &[playerId, player] : ports_.players.all()) {
             (void)playerId;
-            if (!player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
+            if (monster.conversion || !player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
             const int candidate = monsterAiDistance(player.position, 0, monster.position);
             if (candidate < distance && visible(player.position)) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
         std::optional<UnitTarget> alternative;Vec alternativePosition;int alternativeSize=0;
+        if(monster.conversion) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
+            if(enemy.owner || enemy.life<=0 || enemy.area!=monster.area || !area.definition.activation.nearby(enemy.position,monster.position) || !visible(enemy.position)) continue;
+            const int candidate=monsterAiDistance(enemy.position,0,monster.position);
+            if(candidate<distance) {distance=candidate;target=UnitTarget{enemyId,0,1};targetPosition=enemy.position;targetSize=enemy.rule.size;}
+        }
         int alternativeDistance=monster.rule.ai.searchDistance;
-        for(const auto &[petId,pet]:ports_.monsters.read().actors) if(pet.amazonPet && pet.life>0 && pet.area==monster.area && area.definition.activation.nearby(pet.position,monster.position)) {
+        for(const auto &[petId,pet]:ports_.monsters.read().actors) if(!monster.conversion && pet.combatCompanion() && pet.life>0 && pet.area==monster.area && area.definition.activation.nearby(pet.position,monster.position)) {
             if(!visible(pet.position)) continue;
             const int candidate=monsterAiDistance(pet.position,0,monster.position);
             if(pet.rule.threat>1) {

@@ -76,6 +76,7 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         }
         break;
     case SkillBehavior::FireBolt: case SkillBehavior::Fireball: case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
+    case SkillBehavior::HolyBolt:
     case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor: case SkillBehavior::Hydra:
         add(origin + direction.unit() * .7f, direction, s.missileId, frames, s.missileVelocity, Program::Projectile); break;
     case SkillBehavior::ChargedBolt:
@@ -105,6 +106,14 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         add({float(int(r.target.x)),float(int(r.target.y))}, {}, s.firewall->fireId, s.firewall->fireFrames, 0, Program::Fire); break;
     case SkillBehavior::Meteor:
         add(cell(r.target), {}, s.missileId, frames, 0, Program::Meteor); break;
+    case SkillBehavior::BlessedHammer: {
+        auto &m=add(cell(origin),direction,s.missileId,frames,s.missileVelocity,Program::Hammer);
+        const auto path=blessedHammerPath(m.position);m.path.assign(path.begin(),path.end());
+        const int bonus=ports_.effects.stateModifiers(p.actor,s.concentrationState,r.actor.tick).combat.damagePercent*s.concentrationFactor/100;
+        m.damage=m.damage*(100+bonus)/100;break;
+    }
+    case SkillBehavior::FistOfTheHeavens:
+        add(cell(r.target),{},s.missileId,s.heaven->delayFrames,0,Program::Heaven);break;
     default: break;
     }
     return result;
@@ -144,6 +153,7 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     auto launched = launch(r,random); if (launched.empty()) return {DomainStatus::NotImplemented,{}};
     if (launched.size()>4096-state_.missiles.size() || launched.size()>UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
     auto facts = visuals(launched);
+    if(r.skill.heaven && r.guidedTarget && r.skill.hitOverlayId>=0) facts.emplace_back(OverlayFact{r.guidedTarget,1,r.actor.area,r.skill.hitOverlayId});
     if (!ports_.events.hasCapacity(facts.size()+1,2)) return {DomainStatus::Capacity,{}};
     std::map<EntityId,Missile> prepared; auto cursor = ports_.ids.cursor();
     for (auto &m : launched) { m.id=EntityId{cursor++}; prepared.emplace(m.id,std::move(m)); }

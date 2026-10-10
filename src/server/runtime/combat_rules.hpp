@@ -62,7 +62,10 @@ struct MonsterRule {
     int nativeVelocity{}, difficulty{};
     MovementCollisionRule collision;
     MovementCollisionRule spawnCollision;
-    bool demon{}, undead{};
+    bool demon{}, undead{}, boss{};
+    int stunState{-1};
+    bool convertible{};
+    bool primeEvil{};
     int coldEffect{}, coldState{-1}, frozenState{-1};
     int knockbackTicks{};
     std::vector<uint64_t> experience;

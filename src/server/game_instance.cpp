@@ -137,13 +137,15 @@ void GameInstance::step() {
                 if (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel)
                     player.locomotionSequence = command.sequence;
                 const auto domain = commandSystem(command.payload);
-                if (domain == SystemId::Movement || domain == SystemId::Travel) systems_.skills.cancel(player.player, player.actor);
+                const bool locked=(domain==SystemId::Movement || domain==SystemId::Travel) && systems_.skills.uninterruptible(player.actor);
+                if ((domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
                 }
                 const bool trading=systems_.trade.find(player.player)!=nullptr;
                 const bool endsTrade=domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death;
-                if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
+                if(locked) result=CommandStatus::Conflict;
+                else if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
                 else if (trading && !endsTrade && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
                 else if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);

@@ -32,12 +32,12 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || ((petAttack || monster->hireling)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || !victim->combatCompanion())) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || ((petAttack || monster->hireling || monster->conversion)?target->type!=1 || !victim || victim->owner:!resurrection && target->type==1 && (!victim || !victim->combatCompanion())) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if (area.definition.town || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
     const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick);
-    const int speed=std::max(15,100+buffs.combat.attackRate+buffs.otherAnimationRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
+    const int speed=std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
     const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
     DamageType type = DamageType::Physical;
     combat::Damage damage{monster->id, target->id, type, int64_t(slot.minimum) * 256,
@@ -46,6 +46,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick).combat;
         damage.attackModifiers=monster->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
         damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;
+        damage.weapon->projectileDamagePercent+=buffs.damagePercent;
     }
     damage.monsterMode = request.monsterMode;
     damage.sourceInterruption=monster->interruption;
@@ -75,7 +76,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
         auto &pending=it->second;
         if (pending.due>tick.tick) {++it;continue;}
         const auto *source=ports_.monsters.find(it->first);const auto *area=ports_.areas.find(pending.area);
-        if (!source || (source->owner && !source->hireling) || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->knockedUntil>tick.tick ||
+        if (!source || (source->owner && !source->hireling && !source->conversion) || source->life<=0 || source->area!=pending.area || source->interruption!=pending.interruption || source->frozenUntil>tick.tick || source->stunnedUntil>tick.tick || source->knockedUntil>tick.tick ||
             !area || area->generation!=pending.generation || area->definition.town) {it=monsterReleases_.erase(it);continue;}
         const auto &unit=std::get<UnitTarget>(pending.request.target);
         DomainResult<> specialResult;

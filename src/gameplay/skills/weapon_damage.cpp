@@ -1,6 +1,7 @@
 #include "weapon_damage.hpp"
 #include "bow_spec.hpp"
 #include "spear_spec.hpp"
+#include "behavior.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x {
@@ -31,9 +32,24 @@ WeaponSkillDamage rollPotionDamage(const WeaponDamage &weapon,int level,uint64_t
         value.channels[channel]=ranges[channel].minimum+limitedRandom(random,uint32_t(std::max(0,ranges[channel].maximum-ranges[channel].minimum)));
     value.channels[0]=targetWeaponChannels(value,false,false)[0];return value;
 }
+WeaponSkillDamage rollSmiteDamage(const WeaponDamage &weapon,const EquipmentStats &equipment,const CharacterAttributes &attributes,const SkillCastSpec &skill,int level,uint64_t &random) {
+    WeaponSkillDamage value;value.weapon=weapon;value.level=level;value.automatic=value.smite=true;
+    value.weapon.target={};value.weapon.blunt=false;value.weapon.minimumDamagePercent=value.weapon.maximumDamagePercent=0;
+    value.weapon.hitClass=101;
+    const auto &mods=attributes.combat;
+    const auto own=mods.weapons.find(weapon.item);
+    const int flat=mods.normalDamage+(own==mods.weapons.end()?0:own->second.normalDamage);
+    value.physicalMinimum=int64_t(equipment.smiteMinimum+mods.smiteMinimum+flat)*256;
+    value.physicalMaximum=int64_t(equipment.smiteMaximum+mods.smiteMaximum+flat)*256;
+    value.physicalPercent=attributes.strength+mods.damagePercent+skill.weapon->damagePercent;
+    value.physicalRoll=rollRandom(random);value.stunFrames=skill.weapon->stunFrames;
+    if(weapon.item) {value.wearChance=4;value.wearAmount=1;value.wearSkill=skill;}
+    value.channels[0]=targetWeaponChannels(value,false,false)[0];return value;
+}
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatModifiers &mods,
     const SkillCastSpec &skill,int level,bool projectile,uint64_t &random) {
     WeaponSkillDamage value; value.weapon=weapon;value.level=level;
+    value.selfDamagePercent=skill.weapon->selfDamagePercent;
     if(!projectile && weapon.item) {value.wearChance=4;value.wearAmount=1;value.wearSkill=skill;}
     value.weapon.attackRatingPercent+=skill.weapon->attackRating;
     value.physicalPercent=(projectile?weapon.projectileDamagePercent:weapon.damagePercent)+skill.weapon->damagePercent;
@@ -52,6 +68,13 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.channels[4]=roll(int64_t(ranges.cold.minimum)*256,int64_t(ranges.cold.maximum)*256);
     value.channels[5]=roll(mods.poisonMinimum+extra.poisonMinimum,mods.poisonMaximum+extra.poisonMaximum);
     value.coldFrames=mods.coldFrames+extra.coldFrames;
+    if(skill.effect==SkillBehavior::Vengeance) {
+        const auto flat=int64_t(mods.normalDamage+extra.normalDamage)*256;
+        const auto base=roll(value.physicalMinimum-flat,value.physicalMaximum-flat);
+        constexpr size_t channels[]{2,4,3};
+        for(size_t i=0;i<3;++i) value.channels[channels[i]]+=base*skill.weapon->elementPercent[i]/100;
+        value.coldFrames+=int(skill.coldDuration*25.f+.001f);
+    }
     value.poisonFrames=(mods.poisonFrames+extra.poisonFrames)/std::max(1,mods.poisonSources+extra.poisonSources);
     value.pierceChance=mods.pierce;
     bool critical=limitedRandom(random,100)<unsigned(std::clamp(mods.criticalStrike,0,100));

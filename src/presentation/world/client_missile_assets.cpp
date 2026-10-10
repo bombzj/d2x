@@ -37,6 +37,8 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
         program.function = number("pCltDoFunc");
+        const auto serverHitFunction=table.value(row,"pSrvHitFunc");
+        program.holyBolt=!serverHitFunction.starts_with('*') && number("pSrvHitFunc")==7;
         program.poisonVelocity={number("Param1"),number("Param2")};
         if(number("SubLoop")) program.loopFrames=number("SubStop")-number("SubStart");
         if(program.function==7) program.guidedRadius=number("Param2");
@@ -48,6 +50,10 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
                 const auto &f=*record.spell->weapon->spear;program.targetBurst=MissileTargetBurst{f.countBase,f.countPerLevel,f.targetRadius};
             }
             if(record.spell->blizzard) program.blizzard=record.spell->blizzard;
+            if(record.spell->effect==SkillBehavior::BlessedHammer) program.blessedHammer=true;
+            if(record.spell->heaven) {
+                const auto &h=*record.spell->heaven;program.targetBurst=MissileTargetBurst{h.limit,h.limitPerLevel,h.radius};
+            }
             if(record.spell->effect==SkillBehavior::ChainLightning) {program.chain=record.spell->arc;program.chainCountDivisor=5;}
             if(record.spell->weapon && record.spell->weapon->spear && record.spell->weapon->spear->kind==SpearSkillSpec::Kind::Strike) program.chain=record.spell->arc;
         }

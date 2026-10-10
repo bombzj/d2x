@@ -38,6 +38,8 @@ class System {
         std::vector<int> weaponHits{};
         size_t nextWeaponHit{};
         int weaponSpeed{}, weaponFrames{}, weaponRollback{};
+        EntityId shield{};
+        bool charging{}; float chargeSpeed{};
     };
     std::map<EntityId, Release> releases_;
     struct MonsterRelease {
@@ -82,6 +84,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     void cancel(PlayerId, EntityId);
+    bool uninterruptible(EntityId actor) const {const auto it=releases_.find(actor);return it!=releases_.end() && it->second.skill.weapon && !it->second.skill.weapon->interruptible;}
     size_t pendingReleases() const { return releases_.size()+monsterReleases_.size(); }
     bool busy(EntityId id, uint64_t tick) const { auto it = state_.casts.find(id); return releases_.contains(id) || monsterReleases_.contains(id) || (it != state_.casts.end() && it->second.until > tick); }
     DomainResult<> requestCast(const CastRequest &);

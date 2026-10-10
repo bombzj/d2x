@@ -10,7 +10,7 @@
 namespace d2x {
 RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session, RemoteInventory &inventory)
     : scene_(scene), inventory_(inventory), session_(session) {
-    for (const char *name : {"skills", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems"})
+    for (const char *name : {"skills", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
         const auto &table = tables_.at(name);
@@ -106,6 +106,13 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
         return false;
     }
     if(n("TargetAlly") && n("TargetPet")) {
+        if(unit.key.type==1 && hostile(unit) && !onlineMonsterCorpse(unit)) {
+            // Missiles::SrvHit07 permits enemy targeting as well as ally healing;
+            // its undead collision restriction is resolved by the authority.
+            const auto &missiles=tables_.at("missiles");
+            for(size_t missileRow=0;missileRow<missiles.rows().size();++missileRow)
+                if(missiles.value(missileRow,"Missile")==table.value(row->second,"srvmissile") && missiles.number(missileRow,"pSrvHitFunc")==7) return true;
+        }
         if(unit.key.type==0) return !session_.read().world.corpseOwners.contains(unit.key.id) &&
             (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);
         return monsterDisposition(unit)==MonsterDisposition::NonHostile && !onlineMonsterCorpse(unit);

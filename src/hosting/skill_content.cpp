@@ -1,5 +1,6 @@
 #include "skill_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/skills/aura_data.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/attack_timing.hpp"
@@ -8,7 +9,13 @@
 namespace d2x {
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
+    const auto &statTable=data.tables.at("itemstatcost");
+    for(size_t row=0;row<statTable.rows().size();++row) if(const auto id=statTable.number(row,"ID"))
+        prepared->nativeStats.emplace(std::string(statTable.value(row,"Stat")),*id);
     prepared->poisonState=data.states.at("poison").definition.id;
+    prepared->redeemed=data.states.at("redeemed").definition;
+    prepared->holyShield=data.states.at("holyshield").definition;
+    prepared->alignment=data.states.at("alignment").definition;
     const auto prefix = character.appearance + "sc";
     for (const auto &[key, animation] : data.skills.castTimings)
         if (key.starts_with(prefix)) prepared->animations.emplace(key.substr(prefix.size()),
@@ -18,7 +25,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2))});
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
-        if (skill.classCode != "sor" && skill.classCode != "ama") continue;
+        if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal") continue;
+        if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
         if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
         if (skill.coldPiercePerRank) prepared->coldMasteries.emplace(id, *skill.coldPiercePerRank);

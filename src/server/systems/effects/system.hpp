@@ -31,7 +31,7 @@ struct ItemTrigger {
 };
 struct ItemEventPlan {std::list<ItemTrigger> jobs;};
 struct State { std::map<EntityId, Recovery> players; std::string itemDeferred; };
-struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; };
+struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; bool converted{}; };
 // Prepared before inventory consumption, installed without allocation only after
 // the character transaction succeeds. No callback can observe half a drink.
 struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<uint64_t> random{}; };
@@ -46,6 +46,16 @@ class System {
     std::list<ItemTrigger> itemTriggers_;
     StepStatus advanceItemTriggers(uint64_t);
     std::map<EntityId,UnitEffect> units_;
+    struct PaladinCycle {
+        int skill{-1},rank{}; RegionId area{}; uint64_t next{},occurrence{};
+        AuraDefinition aura; std::vector<EntityId> targets; size_t target{};
+        bool pending{}; uint64_t random{};
+    };
+    std::map<EntityId,PaladinCycle> paladinCycles_;
+    uint64_t paladinOccurrence_{};
+    StepStatus advancePaladinAuras(uint64_t);
+    DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false);
+    DomainResult<> removeAura(const ActorContext &,int skill);
     struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{},random{};bool pending{};};
     std::map<EntityId,WebTrail> webTrails_;
     struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{},nextAura{},auraOccurrence{},random{};int deathPhase{};bool cursePending{},auraPending{};size_t auraTarget{},curseTarget{};std::vector<EntityId> targets,curseTargets;};
@@ -72,8 +82,10 @@ class System {
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
+    DomainResult<> convert(const ActorContext &,EntityId,const WeaponSkillSpec &);
     DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &,std::optional<EntityId> emitter = {});
     CharacterModifiers unitModifiers(EntityId, uint64_t tick) const;
+    CharacterModifiers stateModifiers(EntityId,int state,uint64_t tick) const;
     int unitDefense(EntityId,uint64_t tick) const;
     int unitResistance(EntityId,DamageType,uint64_t tick) const;
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);

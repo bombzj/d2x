@@ -50,7 +50,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now)
         for (auto &existing : effects_)
             if (existing.activeAt(now) && existing.spec.state.id == spec.state.id &&
                 existing.spec.source.definition == spec.source.definition) {
-                if (existing.spec.source.level > spec.source.level) return {existing.handle, {}};
+                if (existing.spec.source.level > spec.source.level) return {existing.handle, {}, false};
                 if (existing.spec.source.level == spec.source.level) {
                     existing.expiresAt = spec.duration ? std::optional<EffectFrame>{now + *spec.duration} : std::nullopt;
                     existing.spec.modifiers = std::move(spec.modifiers);

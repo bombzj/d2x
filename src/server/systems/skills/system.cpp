@@ -32,6 +32,8 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
     if (area.generation != actor.areaGeneration) return {DomainStatus::Unavailable, {}};
     const auto selected = selectedOverride>=0?unsigned(selectedOverride):player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0));
     const auto itemSkills=inventory::itemSkills(*player);
+    if(player->rules.skills && player->rules.skills->auras.contains(int(selected)))
+        return request.right ? applied() : DomainResult<>{DomainStatus::InvalidRequest,{}};
     if(itemSkills.contains(selected)) {
         if(busy(player->actor,actor.tick)) return {DomainStatus::Conflict,{}};
         if(!request.right || !itemSkills.at(selected)) return {DomainStatus::Unavailable,{}};

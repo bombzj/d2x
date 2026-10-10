@@ -24,6 +24,8 @@ template<class Number> std::optional<MissileVelocityStep<Number>> advanceMissile
 }
 bool missileChangedCell(Vec previous, Vec next);
 std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
+// D2Common PathMisc::PATH_ComputePathBlessedHammer (77 distinct native cells).
+std::vector<Vec> blessedHammerPath(Vec origin);
 // Original 64-direction missile ring; shared by local authority and client effects.
 Vec missileRingDirection(int index);
 struct MissileRingEmission { Vec direction; int nextIndex{}; };

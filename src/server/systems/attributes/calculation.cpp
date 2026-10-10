@@ -49,7 +49,7 @@ EquipmentLoadout loadout(const PersistentCharacter &state, const ItemCatalog &ca
     return result;
 }
 Totals calculate(const CharacterDefinition &definition, const PersistentCharacter &state, const ItemCatalog &catalog,
-                 const EquipmentRules &equipment, const CharacterRules &rules, EntityId excluded, const CharacterModifiers &temporary) {
+                 const EquipmentRules &equipment, const CharacterRules &rules, EntityId excluded, const CharacterModifiers &temporary,const std::set<int> &states) {
     const auto &record = state.player;
     auto view = loadout(state, catalog, equipment);
     const auto base = deriveCharacterAttributes(definition, record.level, record.allocated, temporary);
@@ -84,7 +84,7 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
     for (const auto &[id, rule] : rules.learning) {
         const auto learned = record.skillRanks.find(id);
         const int baseRank = learned == record.skillRanks.end() ? 0 : learned->second;
-        applySkillPassive(passives, rule.passive, baseRank, false);
+        applySkillPassive(passives, rule.passive, baseRank, states.contains(rule.passive.suppressedByState));
         const auto effective = result.skillRanks.find(id);
         const int rank = effective == result.skillRanks.end() ? 0 : effective->second;
         if (rule.passive.amazon) {

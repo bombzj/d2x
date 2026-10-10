@@ -52,6 +52,11 @@ struct SpellImpact {
     int64_t sourceHeal{};
     std::optional<uint64_t> contactRandom{};
     bool unblockable{};
+    bool targetApplied{};
+    int64_t selfDamage{};
+    int64_t healing{}; bool undeadOnly{};
+    std::optional<WeaponSkillSpec> conversion{};
+    int healingOverlay{-1};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; };

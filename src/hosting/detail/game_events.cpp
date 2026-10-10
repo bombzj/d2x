@@ -62,7 +62,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == attack->actor; })) continue;
             // PlrMsg::sub_6FC81D20 omits ordinary owner skill actions. Its client
             // predicts the submitted cast; other visible clients receive 4C/4D.
-            // No implemented server cast requests the native forced-owner flag.
+            // Charge's arrival and forced avoidance synchronize the owner too.
             if (attack->forced || attack->actorType != 0 || attack->actor != host.read(*binding)->actor.id)
                 delta = nativeAttack(*attack, shared.terrain.at(binding->game).at(attack->area).origin);
             peer.lastMotion.clear();

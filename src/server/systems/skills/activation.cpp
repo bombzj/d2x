@@ -89,7 +89,8 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
     }
 }
 DomainStatus System::activateMissile(Release &pending, const ActorContext &actor, Vec target) {
-    return ports_.missiles.spawn({actor, pending.skill, pending.collision, target}).status;
+    missiles::Spawn spawn{actor,pending.skill,pending.collision,target};spawn.guidedTarget=pending.unit;
+    return ports_.missiles.spawn(spawn).status;
 }
 DomainStatus System::activateUnsupported(Release &, const ActorContext &, Vec) {
     return DomainStatus::NotImplemented;

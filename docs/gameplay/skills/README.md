@@ -9,7 +9,7 @@
 | 亚马逊 | [AMAZON](AMAZON.md) | 30项已接；仅列出代表路径有有限运行证据 |
 | 女巫 | [SORCERESS](SORCERESS.md) | 30项已接；仅列出代表路径有有限运行证据 |
 | 死灵法师 | [NECROMANCER](NECROMANCER.md) | 职业执行尚未迁入，保留定义与部分公共计算 |
-| 圣骑士 | [PALADIN](PALADIN.md) | 职业主动／光环尚未迁入，部分基础被动不表示完整执行 |
+| 圣骑士 | [PALADIN](PALADIN.md) | 10项战斗／20项光环执行已接，原MPQ参数／D2MOO依据与有限验证边界见专题 |
 | 野蛮人 | [BARBARIAN](BARBARIAN.md) | 职业执行尚未迁入 |
 | 德鲁伊 | [DRUID](DRUID.md) | 职业执行尚未迁入 |
 | 刺客 | [ASSASSIN](ASSASSIN.md) | 职业执行尚未迁入 |
@@ -29,4 +29,4 @@
 
 完整登记应以当前MPQ的Skills行为主键，保留ID／原名／使用者、CltSt／CltDo／SrvSt／SrvDo、弹体／状态关联、客户端支持、自研执行、公共函数、证据与缺口。SkillDesc／CharStats用于职业归属，MonStats／Hireling／物品来源用于交叉引用；未被技能树收录不等于无用途。保留行、空行与未引用程序分别标记，未知用途先归SPECIAL，不自行推断执行。
 
-现有女巫、亚马逊和通用技能有逐项台账；怪物与同行者页先按当前代码的执行家族归档。其余五职业及全部非职业原表行尚未形成完整逐ID清单，后续在所属页补齐，不能把本目录分类齐备宣称为全技能审计完成。当前状态及后续顺序见[基线](../../../BASELINE.md)与[总计划](../../architecture/MULTIPLAYER.md)。
+现有女巫、亚马逊、圣骑士和通用技能有逐项台账；怪物与同行者页先按当前代码的执行家族归档。其余四职业及全部非职业原表行尚未形成完整逐ID清单，后续在所属页补齐，不能把本目录分类齐备宣称为全技能审计完成。当前状态及后续顺序见[基线](../../../BASELINE.md)与[总计划](../../architecture/MULTIPLAYER.md)。

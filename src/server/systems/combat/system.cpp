@@ -44,12 +44,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto *sourceMonster = ports_.monsters.find(damage.source), *targetMonster = ports_.monsters.find(damage.target);
         const bool petAttack=sourceMonster && sourceMonster->amazonAttacker() && targetMonster && !targetMonster->owner;
         const bool playerAttack = sourcePlayer && targetMonster;
-        const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && targetMonster->combatCompanion()));
+        const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && (targetMonster->combatCompanion() || (sourceMonster->conversion && !targetMonster->owner))));
         const auto *area = ports_.areas.find(damage.area);
         bool valid = area && !area->definition.town && ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && damage.weapon));
         if (sourcePlayer) valid = valid && sourcePlayer->entered && sourcePlayer->area == damage.area && sourcePlayer->persistent.player.hp > 0;
         if (targetPlayer) valid = valid && targetPlayer->entered && targetPlayer->area == damage.area && targetPlayer->persistent.player.hp > 0;
-        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack);
+        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->stunnedUntil<=tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack || sourceMonster->conversion);
         if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && (!targetMonster->owner || (monsterAttack && targetMonster->combatCompanion()));
         if (!valid) { it = state_.pending.erase(it); continue; }
         if(targetPlayer && !damage.reactionsStarted) {
@@ -98,7 +98,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(targetMonster->petStats.block>0 && int(limitedRandom(random,100))<targetMonster->petStats.block) hit=false;
             if(hit && rollWeaponAvoidance(targetMonster->petStats.attributes.combat,targetMonster->moving,false,random)!=WeaponAvoidance::None) hit=false;
         }
-        if (monsterAttack && !sourceMonster->owner) {
+        if (monsterAttack && (!sourceMonster->owner || sourceMonster->conversion)) {
             const auto attack = sourceMonster->rule.attacks.find(damage.monsterMode);
             if (attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
             const auto &slot = attack->second;
@@ -114,6 +114,20 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             auto hitClassCursor=state_.hitClassCursor;
             if(hit) rolled.hitClass=monsterDamageHitClass(rolled,sourceMonster->rule.hitClass,hitClassCursor);
             rolled.knockback=hit && sourceMonster->rule.knockbackOnHit;
+            SpellPlan thorns;
+            if(hit && rolled.channels[0]>0) {
+                const auto mods=targetPlayer?targetPlayer->totals.character.combat:ports_.effects.unitModifiers(targetMonster->id,tick.tick).combat;
+                if(mods.thornsPercent>0) {
+                    EntityId owner=targetPlayer?targetPlayer->actor:EntityId{};
+                    if(targetMonster && targetMonster->owner) if(const auto *p=ports_.players.find(*targetMonster->owner)) owner=p->actor;
+                    const auto physical=targetPlayer?int64_t(mitigatePlayerDamage(float(rolled.channels[0])/256.f,DamageType::Physical,targetPlayer->totals.character).dealt*256.f):int64_t(mitigateMonsterDamage(float(rolled.channels[0])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Physical,tick.tick))*256.f);
+                    if(owner && physical>0) {
+                        SpellImpact reflection{damage.source,owner,damage.area,DamageType::Physical,physical*mods.thornsPercent/100,{damage.source}};
+                        reflection.occurrence=(uint64_t(1)<<60)|damage.action;reflection.hitClass=0x8d;reflection.reaction=true;reflection.unblockable=true;
+                        auto plan=prepareSpells({reflection});if(!plan) {blocked=true;++it;continue;}thorns=std::move(*plan.value);
+                    }
+                }
+            }
             DomainResult<> result;
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
@@ -129,7 +143,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
                 result = ports_.monsters.damage(damage.target,damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison);
             }
-            if (result) { ports_.monsters.commitEnchantmentDamage(sourceMonster->id,std::move(enchantmentDamage));state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }
+            if (result) {commitSpells(std::move(thorns));ports_.monsters.commitEnchantmentDamage(sourceMonster->id,std::move(enchantmentDamage));state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }
             else if (result.status == DomainStatus::Capacity) { blocked = true; ++it; }
             else it = state_.pending.erase(it);
             continue;

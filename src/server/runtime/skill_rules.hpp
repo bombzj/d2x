@@ -2,6 +2,7 @@
 #include "gameplay/skills/rule_spec.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/skills/cast_timing.hpp"
+#include "gameplay/skills/aura_resolve.hpp"
 #include "world/collision.hpp"
 #include "combat_rules.hpp"
 #include <array>
@@ -18,6 +19,10 @@ struct SkillDefinition {
     bool itemCheckStart{},itemEffectUsesPreparedProgram{};
 };
 struct SkillRules {
+    struct Aura { AuraSkillSpec spec; bool immediate{}; };
+    std::map<int,Aura> auras;
+    std::map<std::string,int,std::less<>> nativeStats;
+    CombatStateDefinition redeemed,holyShield,alignment;
     int poisonState{-1};
     std::set<int> dismissibleSummons;
     std::map<int,MonsterRule> amazonPetRules;

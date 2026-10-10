@@ -106,7 +106,7 @@ DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, b
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    bool blocked = false;
+    bool blocked = advancePaladinAuras(tick.tick)==StepStatus::Blocked;
     std::erase_if(state_.players, [&](const auto &entry) {
         for (const auto &[id, player] : ports_.players.all()) { (void)id; if (player.actor == entry.first) return false; }
         return true;
@@ -135,7 +135,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!removed.empty()) {
             const auto transient=projection(next.states,tick.tick);
             try { changedAttributes=attributes::calculate(player.definition,player.persistent,*player.rules.items,
-                *player.rules.equipment,*player.rules.character,{},transient.modifiers).character; }
+                *player.rules.equipment,*player.rules.character,{},transient.modifiers,transient.states).character; }
             catch (const std::runtime_error &) { blocked=true; continue; }
             catch (const std::out_of_range &) { blocked=true; continue; }
         }

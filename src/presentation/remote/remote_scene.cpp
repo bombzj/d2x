@@ -219,8 +219,9 @@ struct RemoteScene::Impl {
                 // D2Common SequenceTbls: player sequence 12 is independent of weapon
                 // class, and samples the original SC frames with a release at step 7.
                 const auto sequence=skills.number(row->second,"seqnum").value_or(-1);
+                if(sequence==4 && moving) {request.mode="rn";return shared.actorAnimation(request,artPalette);}
                 if((sequence==12 && skills.value(row->second,"seqtrans")!="SC") ||
-                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=1 && sequence!=8)) return nullptr;
+                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=1 && sequence!=8 && sequence!=4)) return nullptr;
                 request.mode = "sc"; request.playerSequence = sequence;
                 return shared.actorAnimation(request, artPalette);
             }
@@ -246,7 +247,11 @@ struct RemoteScene::Impl {
                     const auto extra=monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));if(extra==monsterExtra.end()) continue;
                     if(meleeDistance({float(u.position->x),float(u.position->y)},2,{float(target.position->x),float(target.position->y)},monstats2.number(extra->second,"SizeX").value_or(0))<=*reach) ++count;
                 }
-                request.repeatCount=std::max(1,std::min(count,skills.number(row->second,"calc1").value_or(0)));
+                if(skills.number(row->second,"srvdofunc")==13) {
+                    const auto *known=shared.characterView().skill(*u.actionSkill);
+                    const int rank=u.actionSkillLevel.value_or(u.key.id==playerId && known && known->effectiveRankKnown?known->effectiveRank:1);
+                    request.repeatCount=std::max(1,std::min(skills.number(row->second,"Param6").value_or(0),skills.number(row->second,"Param5").value_or(0)+rank-1));
+                } else request.repeatCount=std::max(1,std::min(count,skills.number(row->second,"calc1").value_or(0)));
                 request.rollbackPercent=skills.number(row->second,"Param2").value_or(0);
             }
             if (mode.empty()) return nullptr;
@@ -489,7 +494,7 @@ struct RemoteScene::Impl {
                     launch(fire->second, end, end, level, animation->releaseTime-age, {}, event.source,
                         -1, 0, ClientMissileSource::Cast);
             }
-            else if (function == 28)
+            else if (function == 28 || function==36)
                 launch(missile->second, end, end, level, animation->releaseTime-age, {}, event.source,
                     -1, 0, ClientMissileSource::Cast);
             else if(function==18) launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,event.target?effectOwner(*event.target):EntityId{});
@@ -527,7 +532,7 @@ struct RemoteScene::Impl {
                 // Retail CltDo19 RVA15AB0: origin=target, aim=2*target-owner.
                 for(int index=0;index<count && index<256;++index) launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
             }
-            else if (!function || function == 1 || function == 2 || function==27 ||
+            else if (!function || function == 1 || function == 2 || function==27 || function==35 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
             else if (function == 25) {
                 // Retail CltDo25 / RVA 73CB0 -> A0DB0 emits all 64 integer
@@ -1306,6 +1311,8 @@ struct RemoteScene::Impl {
             if (!enemy && ((key.type==0 && (world().corpseOwners.contains(key.id) || playerDead(unit))) || (key.type!=0 && key.type!=1))) continue;
             missileTargets.push_back({effectOwner(key), {float(unit.position->x) + .5f, float(unit.position->y) + .5f},
                 movementRule(unit).size, enemy});
+            if(key.type==1) if(const auto row=monsterRows.find(unit.classId.value_or(UINT16_MAX));row!=monsterRows.end())
+                missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
             if(const auto effects=combat.states().find(key);effects!=combat.states().end() && effects->second.decoded)
                 for(const auto &[state,record]:effects->second.states) {
                     (void)record;const auto stateRow=stateRows.find(state);if(stateRow==stateRows.end()) continue;

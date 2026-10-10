@@ -17,12 +17,25 @@ DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,Entit
     if(state.id<0) return {DomainStatus::Applied,std::monostate{}};
     CombatEffectSpec spec;spec.state=state;spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;spec.duration=duration;
     spec.source={CombatEffectSource::Monster,source,a.skill,a.rank};
+    spec.stacking=EffectStacking::AuraLevel;
     for(const auto &[key,p]:ports_.players.all()) if(p.actor==id && p.entered && p.area==m->area && p.persistent.player.hp>0) {
+        if(a.skill==123 && p.rules.skills && p.rules.skills->auras.contains(123)) {
+            const auto state=p.rules.skills->auras.at(123).spec.ownerState.id;
+            const auto effects=state_.players.find(p.actor);
+            if(effects!=state_.players.end()) for(const auto &effect:effects->second.states.entries())
+                if(effect.activeAt(tick) && effect.spec.state.id==state && effect.spec.source.level>a.rank) return {DomainStatus::Applied,std::monostate{}};
+        }
         return apply({key,id,p.area,ports_.areas.at(p.area).generation,0,tick},std::move(spec));
     }
     const auto *target=ports_.monsters.find(id);
     if(!target || target->area!=m->area || target->life<=0) return {DomainStatus::InvalidActor,{}};
     if(state.curse && target->rule.enchantment && target->rule.enchantment->has(38)) return {DomainStatus::Applied,std::monostate{}};
+    if(a.skill==123) {
+        const auto previous=stateModifiers(id,state.id,tick),existing=unitModifiers(id,tick);
+        if(target->rule.resistances[2]+existing.fireResist-previous.fireResist>=100) spec.modifiers.fireResist/=5;
+        if(target->rule.resistances[3]+existing.lightningResist-previous.lightningResist>=100) spec.modifiers.lightningResist/=5;
+        if(target->rule.resistances[4]+existing.coldResist-previous.coldResist>=100) spec.modifiers.coldResist/=5;
+    }
     auto next=units_;auto &unit=next[id];unit.area=m->area;
     if(unit.states.size()>=128 && !unit.states.hasState(state.id,tick)) return {DomainStatus::Capacity,{}};
     if(!unit.states.apply(std::move(spec),tick).accepted) return {DomainStatus::Conflict,{}};

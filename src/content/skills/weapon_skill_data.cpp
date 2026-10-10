@@ -241,6 +241,9 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     hammer.missileArt = hammerResource.art;
     hammer.missileLifetime = hammerResource.lifetime;
     hammer.missileVelocity = float(required(missiles, hammerMissile, "Vel"));
+    hammer.missileImpact=MissileImpactSpec{};
+    hammer.missileImpact->undeadDamagePercent=required(missiles,hammerMissile,"dParam1");
+    hammer.missileImpact->demonDamagePercent=required(missiles,hammerMissile,"dParam2");
     hammer.castSoundArt = sound(skills.value(hammerRow, "stsound"));
     hammer.releaseSoundArt = sound(missiles.value(hammerMissile, "TravelSound"));
     hammer.impactSoundArt = sound(missiles.value(hammerMissile, "HitSound"));
@@ -287,7 +290,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     const auto delayRow = named(missiles, "Missile", skills.value(heavenRow, "srvmissilea"));
     const auto boltRow = named(missiles, "Missile", missiles.value(delayRow, "HitSubMissile1"));
     if (required(missiles, delayRow, "pSrvHitFunc") != 22 || skills.value(heavenRow, "aurarangecalc") != "20" ||
-        skills.value(heavenRow, "calc4") != "ln12" || missiles.value(boltRow, "EDmgSymPerCalc") != "skill('Holy Bolt'.blvl) * 15")
+        skills.value(heavenRow, "calc4") != "ln12" || !missiles.value(boltRow, "EDmgSymPerCalc").starts_with("skill('Holy Bolt'.blvl) * "))
         throw std::runtime_error("Unsupported Fist of the Heavens program");
     program.delayFrames = required(missiles, delayRow, "Range");
     program.radius = required(skills, heavenRow, "aurarangecalc");
@@ -304,7 +307,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
         program.maximumPerLevel[tier] = required(missiles, boltRow, "MaxELev" + std::to_string(tier + 1));
     }
     program.synergySkill = entry.id;
-    program.synergyPercent = 15;
+    program.synergyPercent=std::stoi(std::string(missiles.value(boltRow,"EDmgSymPerCalc")).substr(std::string("skill('Holy Bolt'.blvl) * ").size()));
     program.healingMinimum = required(skills, heavenRow, "Param3");
     program.healingMinimumPerLevel = required(skills, heavenRow, "Param4");
     program.healingMaximum = required(skills, heavenRow, "Param5");

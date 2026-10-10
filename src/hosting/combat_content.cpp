@@ -92,6 +92,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
     rule.spawnCollision=record->spawnRule();rule.corpseSelectable=record->corpseSelectable;
+    rule.convertible=!record->boss && record->switchAi;
+    rule.primeEvil=data.tables.at("monstats").number(record->sourceRow,"primeevil").value_or(0)!=0;
     rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
     rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);
     rule.introduction=data.tables.at("monstats").number(record->sourceRow,"boss").value_or(0)!=0 || identity.rank==MonsterRank::Unique || identity.rank==MonsterRank::SuperUnique;
@@ -107,6 +109,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         rule.resurrectionTicks=std::max(1,int(std::ceil(clock->duration*25)));
     }
     rule.demon = record->demon; rule.undead = record->undead;
+    rule.boss=record->boss;rule.stunState=data.states.at("stunned").definition.id;
     rule.coldEffect = record->coldEffect.at(size_t(request.difficulty));
     rule.coldState = data.states.at("cold").definition.id;
     rule.frozenState = data.states.at("freeze").definition.id;

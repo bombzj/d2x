@@ -7,6 +7,18 @@
 #include <limits>
 
 namespace d2x {
+std::vector<Vec> blessedHammerPath(Vec origin) {
+    std::vector<Vec> path;path.reserve(77);
+    Vec previous{std::floor(origin.x),std::floor(origin.y)};
+    for(int sample=1;path.size()<77;++sample) {
+        const float angle=float((sample*16)&511)*6.2831853071795864769f/512.f;
+        const float distance=float(sample*9600)/65536.f;
+        Vec next{std::floor(origin.x+std::cos(angle)*distance),std::floor(origin.y+std::sin(angle)*distance)};
+        if(next.x==previous.x && next.y==previous.y) continue;
+        path.push_back(next+Vec{.5f,.5f});previous=next;
+    }
+    return path;
+}
 std::optional<Vec> missileGuidedDirection(Vec position,Vec target,int remaining,int period) {
     if(!missileEmissionDue(remaining,period)) return {};
     const int distance=missileDistance(position,target);

@@ -32,6 +32,8 @@ struct Actor {
     MonsterRule rule;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
     bool hireling{};
+    struct Conversion {int state{-1},alignment{-1},stat{-1},level{};int64_t maximum{};uint64_t until{};};
+    std::optional<Conversion> conversion;
     uint64_t hirelingInventoryRevision{}, hirelingCharacterRevision{};
     int hirelingStrength{},hirelingDexterity{};
     int hirelingVitality{};
@@ -62,6 +64,7 @@ struct Actor {
     uint64_t riseUntil{};
     uint8_t riseMode{9};
     bool corpseUnavailable{};
+    uint64_t holyFreezeUntil{}; bool holyFreezeShatter{};
     uint64_t webUntil{};
     int nestSpawned{};
     struct Slow {int state{-1},percent{};uint64_t until{};};
@@ -73,14 +76,15 @@ struct Actor {
     uint64_t damageOccurrence{};
     bool lightningReady{};
     uint64_t chilledUntil{}, frozenUntil{}, nextHitTick{};
+    uint64_t stunnedUntil{};
     uint64_t knockedUntil{};
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
-    bool damageable() const { return !owner || amazonPet || hireling; }
-    bool combatCompanion() const { return bool(amazonPet) || hireling; }
+    bool damageable() const { return !owner || amazonPet || hireling || conversion; }
+    bool combatCompanion() const { return bool(amazonPet) || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
-    bool standardAttackSource() const { return !owner || hireling || amazonAttacker(); }
+    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || conversion; }
 };
 struct State {
     std::map<EntityId, Actor> actors;
@@ -105,8 +109,12 @@ class System {
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0);
     DomainResult<> activateWeb(EntityId,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
+    DomainResult<> redeem(EntityId);
+    DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
+    void holyFreeze(EntityId id,uint64_t until,bool shatter) {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.holyFreezeUntil=until;it->second.holyFreezeShatter=shatter;}}
     DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0);
+    void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);
     void rewardComplete(EntityId);

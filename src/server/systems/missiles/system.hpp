@@ -32,7 +32,7 @@ struct MonsterSpawn {
 };
 struct MonsterLaunch { EntityId first; uint64_t random{}; };
 struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{}; };
-enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow };
+enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow, Hammer, Heaven };
 struct Missile {
     EntityId id, owner;
     PlayerId player;

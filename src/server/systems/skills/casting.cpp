@@ -23,11 +23,11 @@ bool inside(const Grid &g, Vec p) {return std::isfinite(p.x) && std::isfinite(p.
 bool within(Vec from,Vec to,int r) {const int x=int(to.x)-int(from.x),y=int(to.y)-int(from.y);return x*x+y*y<=r*r;}
 }
 std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget unit,SkillBehavior skill) const {
-    if(unit.type==0 && skill==SkillBehavior::Enchant) {
+    if(unit.type==0 && (skill==SkillBehavior::Enchant || skill==SkillBehavior::HolyBolt)) {
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==unit.id && p.entered && p.area==actor.area && p.persistent.player.hp>0) return p.position;}
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
-        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : !m->owner)) return m->position;
+        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? !m->owner || m->owner==actor.player : skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : !m->owner)) return m->position;
         if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
     } else if(skill==SkillBehavior::Kick && unit.type==2) {
         const auto found=ports_.objects.read().objects.find(unit.id);
@@ -83,6 +83,8 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
+    if(skill.requiresShield && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
+    if(skill.effect==SkillBehavior::FistOfTheHeavens && !unit) return {DomainStatus::InvalidRequest,{}};
     if (activationProgram(skill) == ActivationProgram::Unsupported) return {DomainStatus::NotImplemented,{}};
     if(owner!=UINT32_MAX) {skill.charge=SkillCharge{charged->item,charged->layer};skill.manaCost=skill.startMana=0;}
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
@@ -151,6 +153,8 @@ System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) 
     case SkillBehavior::StaticField: return ActivationProgram::StaticField;
     case SkillBehavior::Telekinesis: return ActivationProgram::Telekinesis;
     case SkillBehavior::WeaponProjectile:
+    case SkillBehavior::HolyBolt:
+    case SkillBehavior::BlessedHammer: case SkillBehavior::FistOfTheHeavens:
     case SkillBehavior::FireBolt: case SkillBehavior::Fireball:
     case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
     case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor:
@@ -208,11 +212,31 @@ StepStatus System::release(TickContext tick) {
         if(valid && pending.skill.charge) valid=std::any_of(p->totals.chargedSkills.begin(),p->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==pending.skill.charge->item.id && c.layer==pending.skill.charge->layer && c.charges>0;});
         if(valid && !pending.skill.charge && pending.skill.sourceId>=0 && !p->rules.character->innateSkills.contains(pending.skill.sourceId)) valid=p->totals.skillRanks.contains(pending.skill.sourceId);
         Vec target=pending.target.position;
-        if(valid && pending.unit && !(pending.skill.weapon && ((pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
+        if(valid && pending.skill.requiresShield) valid=bool(p->totals.equipment.shield);
+        if(valid && pending.unit && !(pending.skill.weapon && (pending.skill.effect==SkillBehavior::Zeal || (pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
             const auto position=unitPosition(actor,{pending.unit,0,pending.unitType},pending.skill.effect);valid=position.has_value();if(valid) target=*position;
         }
         const bool channel=pending.skill.effect==SkillBehavior::Inferno;
         if(!valid) {ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;}
+        if(pending.charging) {
+            if(!ports_.events.hasCapacity(1)) {blocked=true;++it;continue;}
+            const auto *victim=ports_.monsters.find(pending.unit);
+            const int stop=victim?pending.weapon->rangeAdder+1+(victim->rule.size+2)/2:0;
+            const auto step=ports_.movement.chargeStep(actor,target,pending.chargeSpeed,stop);
+            if(!step || tick.tick>state_.casts.at(actor.actor).started+250) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
+            if(!*step.value) {pending.tick=tick.tick+1;++it;continue;}
+            if(!pending.unit) {
+                for(const auto &[id,m]:ports_.monsters.read().actors) if(!m.owner && m.life>0 && m.area==actor.area && meleeDistance(p->position,2,m.position,m.rule.size)<=pending.weapon->rangeAdder+1) {pending.unit=id;target=m.position;break;}
+                if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
+            }
+            pending.charging=false;pending.tick=tick.tick+uint64_t(std::max(1,(3*256+pending.weaponSpeed-1)/pending.weaponSpeed));
+            ports_.movement.execute(actor,{MovementAction::Stop,{},false});
+            ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
+                {AttackFact{actor.actor,pending.unit,0,1,actor.area,p->position,target,tick.tick,uint16_t(pending.skill.sourceId),uint8_t(pending.skill.rank),true}}});
+            pending.weaponHits={int(pending.tick-tick.tick)};
+            state_.casts.at(actor.actor).until=tick.tick+uint64_t(std::max(1,(7*256+pending.weaponSpeed-1)/pending.weaponSpeed));
+            ++it;continue;
+        }
         DomainStatus status;
         if(channel) {
             auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);

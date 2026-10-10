@@ -39,6 +39,7 @@ struct MissileImpactSpec {
     float visualDuration = 0;
     std::optional<PoisonCloudBurstSpec> cloudBurst = {};
     std::optional<AreaMissileSpec> areaMissile = {};
+    int undeadDamagePercent{},demonDamagePercent{};
 };
 // DamageType order: physical, magic, fire, lightning, cold, poison.
 // Poison is a rate in HP/s; the other channels are HP per impact.

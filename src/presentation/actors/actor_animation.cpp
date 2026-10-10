@@ -116,7 +116,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
             result.releaseTime=float(timing.impact)/25.f;
             result.durationFrames=timing.duration;
         }
-        if(request.category=="chars" && request.attackTiming && (mode=="a1" || mode=="a2" || mode=="th")) {
+        if(request.category=="chars" && request.attackTiming && (mode=="a1" || mode=="a2" || mode=="th" || mode=="s1")) {
             const auto &known=*request.attackTiming;
             int action=0;
             for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
@@ -150,6 +150,17 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
 ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, const ActorAnimationRequest &request) {
     ActorAnimation result;
     auto baseRequest = request; baseRequest.playerSequence = -1;
+    if(request.category=="chars" && request.playerSequence==4) {
+        baseRequest.mode="a1";const auto *attack=resolve(graphics,palette,baseRequest);
+        if(!attack || attack->animation.count<13) return {};
+        constexpr int attackFrames[]{1,4,5,6,8,10,12};
+        const int speed=request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256;
+        result=*attack;result.animation.frames.clear();result.animation.count=7;result.frameCount=7;result.start=0;result.fps=float(speed)*25.f/256.f;result.durationFrames=std::max(1,(7*256+speed-1)/speed);result.releaseTime=float(std::max(1,(3*256+speed-1)/speed))/25.f;result.cycle=false;
+        for(int facing=0;facing<attack->animation.directions;++facing) {
+            for(const int frame:attackFrames) result.animation.frames.push_back(*attack->animation.frame(facing,frame));
+        }
+        return result;
+    }
     if(request.category=="chars" && (request.playerSequence==1 || request.playerSequence==8)) {
         const auto sequence=amazonWeaponSequence(request.playerSequence,request.appearance.weapon);
         if(sequence.frames.empty()) return result;

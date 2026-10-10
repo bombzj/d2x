@@ -28,6 +28,7 @@ struct ClientMissileProgram {
     std::optional<ArcSpec> chain;
     int chainCountDivisor{1};
     std::optional<MissileTargetBurst> targetBurst;
+    bool blessedHammer{},holyBolt{};
 };
 struct ClientMissileVisual {
     ClientMissileVisual() = default;
@@ -63,6 +64,7 @@ struct ClientMissileTarget {
     int size{};
     bool hostile{};
     int retaliation{-1},retaliationRank{1};
+    bool undead{};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

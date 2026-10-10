@@ -7,6 +7,20 @@
 #include <cmath>
 
 namespace d2x::server {
+DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec target,float speed,int stopDistance) {
+    auto it=ports_.players.players_.find(actor.player);
+    if(it==ports_.players.players_.end() || it->second.actor!=actor.actor || it->second.area!=actor.area || !it->second.entered || it->second.persistent.player.hp<=0)
+        return {DomainStatus::InvalidActor,{}};
+    auto &p=it->second;const auto &area=ports_.areas.at(actor.area);
+    if(area.generation!=actor.areaGeneration || !std::isfinite(speed) || speed<=0) return {DomainStatus::Stale,{}};
+    const Vec delta=target-p.position;const float distance=delta.length();
+    if(distance<=float(stopDistance)) {p.moving=false;return {DomainStatus::Applied,true};}
+    const Vec next=p.position+delta.unit()*std::min(distance-float(stopDistance),speed*TickContext::seconds);
+    if(!area.definition.collision.nativeMovementSegment(p.position,next,playerMovement)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    p.route.clear();p.position=next;p.look=delta.unit();p.moving=true;p.runningNow=true;
+    skillSteps_[actor.player]=actor.tick;
+    return {DomainStatus::Applied,(target-next).length()<=float(stopDistance)+.001f};
+}
 CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementCommand &command) {
     const auto &ports = ports_;
     const auto found = ports.players.players_.find(actor.player);
@@ -16,20 +30,24 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     if (!player.entered || player.persistent.player.hp <= 0) return CommandStatus::Unavailable;
     if (player.actor != actor.actor || player.area != actor.area || area.generation != actor.areaGeneration)
         return CommandStatus::Stale;
+    skillSteps_.erase(actor.player);
     if(command.action==MovementAction::ApproachObject) if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
         if((*position-player.position).length()>50) return CommandStatus::InvalidRequest;
         return applyMovement(player,area,{MovementAction::Move,*position,command.forceRun,{}});
     }
     return applyMovement(player, area, command);
 }
-void MovementSystem::step(TickContext) {
+void MovementSystem::step(TickContext tick) {
     const auto &ports = ports_;
     for (auto &[id, player] : ports.players.players_) {
         (void)id;
+        if(const auto step=skillSteps_.find(id);step!=skillSteps_.end() && step->second==tick.tick) {skillSteps_.erase(step);continue;}
+        skillSteps_.erase(id);
         advanceMovement(player, ports.areas.at(player.area), TickContext::seconds);
     }
 }
 void MovementSystem::suspend() {
+    skillSteps_.clear();
     const auto &ports = ports_;
     for (auto &[id, player] : ports.players.players_) {
         (void)id;

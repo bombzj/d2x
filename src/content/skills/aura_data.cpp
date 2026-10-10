@@ -106,6 +106,7 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
     return spec;
 }
 } // namespace
+AuraSkillSpec prepareAura(const ClassicData &data, int skill) { return prepare(data, skill, 1); }
 void loadAuraSkills(ClassicData &data) {
     const auto &table = data.tables.at("skills");
     for (int skill : {98, 99, 100, 102, 103, 104, 105, 108, 109, 110, 113, 114, 115, 118, 119, 120, 122, 123, 124, 125}) {
@@ -121,6 +122,7 @@ void loadAuraSkills(ClassicData &data) {
                 throw std::runtime_error("Unsupported original Blessed Aim passive formula");
             record.passiveContribution.attackRatingPerBaseRank = number(table, row, "Param8");
             record.passiveSuppressedByState = definition.ownerState.id;
+            record.passiveContribution.suppressedByState = definition.ownerState.id;
         }
         if (skill == 100 || skill == 105 || skill == 110) {
             const std::string expected = skill == 100 ? "skill('Resist Fire'.blvl)/2" :
@@ -129,6 +131,7 @@ void loadAuraSkills(ClassicData &data) {
                 throw std::runtime_error("Unsupported original resistance aura passive formula");
             record.passiveSuppressedByState = definition.ownerState.id;
             record.passiveContribution.maxResistElement = skill == 100 ? 2 : skill == 105 ? 4 : 3;
+            record.passiveContribution.suppressedByState = definition.ownerState.id;
         }
     }
 }

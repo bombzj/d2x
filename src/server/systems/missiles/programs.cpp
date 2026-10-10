@@ -16,6 +16,8 @@ Vec cell(Vec p) { return {std::floor(p.x)+.5f,std::floor(p.y)+.5f}; }
 bool radius(Vec a, Vec b, int r) { const auto d=Vec{std::floor(a.x)-std::floor(b.x),std::floor(a.y)-std::floor(b.y)}; return d.x*d.x+d.y*d.y<=float(r*r); }
 DamageType element(SkillBehavior s) {
     switch(s) {
+    case SkillBehavior::HolyBolt: case SkillBehavior::BlessedHammer: return DamageType::Magic;
+    case SkillBehavior::FistOfTheHeavens: return DamageType::Lightning;
     case SkillBehavior::IceBolt: case SkillBehavior::IceBlast: case SkillBehavior::FrostNova: case SkillBehavior::GlacialSpike:
     case SkillBehavior::FrozenArmor: case SkillBehavior::FrozenOrb: case SkillBehavior::Blizzard: case SkillBehavior::ShiverArmor: case SkillBehavior::ChillingArmor: return DamageType::Cold;
     case SkillBehavior::ChargedBolt: case SkillBehavior::Nova: case SkillBehavior::Lightning: case SkillBehavior::ChainLightning:
@@ -28,6 +30,19 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     const auto &owner=*ports_.players.find(m.player); const auto &rules=*owner.rules.skills;
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
     result.occurrence=uint64_t(m.ageFrames);
+    if(m.skill.missileImpact && (m.skill.missileImpact->undeadDamagePercent || m.skill.missileImpact->demonDamagePercent)) {
+        for(const auto id:result.targets) {
+            const auto *target=ports_.monsters.find(id);
+            const int percent=target?((target->rule.undead?m.skill.missileImpact->undeadDamagePercent:0)+(target->rule.demon?m.skill.missileImpact->demonDamagePercent:0)):0;
+            result.targetDamage.push_back(result.damage*(100+percent)/100);
+        }
+    }
+    if(m.skill.effect==SkillBehavior::HolyBolt) {
+        result.undeadOnly=true;
+        const auto low=int64_t(m.skill.healingMinimum*256),high=int64_t(m.skill.healingMaximum*256);
+        result.healing=low+limitedRandom(m.random,uint32_t(std::max<int64_t>(0,high-low)));
+        result.healingOverlay=m.skill.hitOverlayId;
+    }
     if(m.skill.weapon && m.skill.weapon->spear && (m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Charged ||
         m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike || m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fury)) result.type=DamageType::Lightning;
     if(m.program==Program::AreaImpact && m.skill.missileImpact && m.skill.missileImpact->areaMissile) {
@@ -88,6 +103,24 @@ System::Advance System::advance(const Missile &original) const {
         if(expires) {areaHit(m.position,int(m.skill.missileImpact->areaMissile->radius),m.damage);plan.finished=true;}
         return plan;
     }
+    if(m.program==Program::Heaven) {
+        if(!expires) return plan;
+        const auto *target=ports_.monsters.find(m.guidance);
+        if(target && target->area==m.area && target->life>0 && !target->owner) {
+            plan.impacts.push_back(impact(m,{target->id}));
+            const auto &h=*m.skill.heaven;int count=0;
+            for(const auto &[id,t]:ports_.monsters.read().actors) {
+                (void)id;if(!enemy(t) || !area.definition.activation.nearby(t.position,m.position) || !radius(m.position,t.position,h.radius) || !area.definition.collision.missileSegment(m.position,t.position,{0x0805,1})) continue;
+                if(count++>=h.limit) break;
+                auto &c=child(cell(m.position),t.position-m.position,h.boltId,h.boltFrames,float(h.boltVelocity)*75.f/16.f,Program::Projectile);
+                c.skill.effect=SkillBehavior::HolyBolt;c.skill.minimumDamage=float(h.minimum)/256.f;c.skill.maximumDamage=float(h.maximum)/256.f;
+                c.skill.healingMinimum=float(h.healingMinimum);c.skill.healingMaximum=float(h.healingMaximum);
+                if(owner.rules.skills->definitions.contains(101)) c.skill.hitOverlayId=skills::evaluate(owner,101,m.skill.rank).hitOverlayId;
+                c.damage=h.minimum+limitedRandom(m.random,uint32_t(std::max(0,h.maximum-h.minimum)));
+            }
+        }
+        plan.finished=true;return plan;
+    }
     if(m.program==Program::Meteor) {
         if(!expires) return plan;
         const auto &p=*m.skill.meteor; areaHit(m.position,p.radius,m.damage);
@@ -124,7 +157,7 @@ System::Advance System::advance(const Missile &original) const {
         m.velocity=m.velocity.unit()*step->speed;
     }
     Vec next=m.position+m.velocity*TickContext::seconds;
-    if(m.program==Program::Charged) {
+    if(m.program==Program::Charged || m.program==Program::Hammer) {
         float distance=m.velocity.length()*TickContext::seconds; next=m.position;
         while(distance>0 && !m.path.empty()) {
             const Vec delta=m.path.front()-next; const float span=delta.length();
@@ -154,13 +187,15 @@ System::Advance System::advance(const Missile &original) const {
     }
     if(expires) {plan.finished=true;m.position=next;return plan;}
     std::vector<std::pair<float,EntityId>> contacts;
+    const bool holyBolt=m.skill.effect==SkillBehavior::HolyBolt;
     for(const auto &[id,t]:ports_.monsters.read().actors) {
         if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
-        if(!enemy(t) || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
+        const bool eligible=holyBolt?t.area==m.area && t.life>0 && ((t.owner==m.player && m.skill.healingMaximum>0) || (!t.owner && t.rule.undead)):enemy(t);
+        if(!eligible || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
         if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,t.position,t.rule.size)) contacts.emplace_back(*contact,id);
     }
     std::sort(contacts.begin(),contacts.end());
-    const bool piercing=m.program==Program::FuryBolt || m.program==Program::Arc || m.program==Program::Ring || m.skill.effect==SkillBehavior::Inferno;
+    const bool piercing=m.program==Program::Hammer || m.program==Program::FuryBolt || m.program==Program::Arc || m.program==Program::Ring || m.skill.effect==SkillBehavior::Inferno;
     if(!contacts.empty()) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
             m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;

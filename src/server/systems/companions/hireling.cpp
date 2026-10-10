@@ -326,10 +326,10 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         updated.minimumDamage=stats.equipment.weapons[0].minimum/256;updated.maximumDamage=stats.equipment.weapons[0].maximum/256;
         const auto &mods=stats.modifiers;const auto &combat=mods.combat;
         updated.resistances={combat.physicalResist,combat.magicResist,
-            std::clamp(prepared.rule.resistances[2]+mods.fireResist,-100,std::clamp(75+combat.fireMaxResist,0,95)),
-            std::clamp(prepared.rule.resistances[3]+mods.lightningResist,-100,std::clamp(75+combat.lightningMaxResist,0,95)),
-            std::clamp(prepared.rule.resistances[4]+mods.coldResist,-100,std::clamp(75+combat.coldMaxResist,0,95)),
-            std::clamp(prepared.rule.resistances[5]+mods.poisonResist,-100,std::clamp(75+combat.poisonMaxResist,0,95))};
+            std::max(-100,prepared.rule.resistances[2]+mods.fireResist),
+            std::max(-100,prepared.rule.resistances[3]+mods.lightningResist),
+            std::max(-100,prepared.rule.resistances[4]+mods.coldResist),
+            std::max(-100,prepared.rule.resistances[5]+mods.poisonResist)};
         auto equipment=std::make_shared<PersistentCharacter>(p->persistent);
         std::erase_if(equipment->inventory.items,[&](const auto &entry){const auto *at=std::get_if<ContainerLocation>(&entry.second.location);return !at || at->container!=p->persistent.containers.hirelingEquipment;});
         ports_.monsters.updateHireling(pet.actor,std::move(updated),stats.equipment.weapons[0],combat,stats.actor.strength,stats.actor.dexterity,

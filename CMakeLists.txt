@@ -167,6 +167,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/missiles/programs.cpp
     src/server/systems/missiles/weapon.cpp
   src/server/systems/effects/system.cpp
+  src/server/systems/effects/paladin.cpp
     src/server/systems/effects/skills.cpp
     src/server/systems/effects/amazon.cpp
     src/server/systems/effects/units.cpp

@@ -75,11 +75,16 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         auto &states = result.back().states;
         for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
+        if(monster.conversion) {
+            states.insert(monster.conversion->state);states.insert(monster.conversion->alignment);
+            result.back().stateStats[monster.conversion->alignment]={{monster.conversion->stat,2}};
+        }
         if(monster.poison) states.insert(monster.poison->damage.state);
         if(monster.webUntil>tick && monster.rule.web) states.insert(monster.rule.web->aura.id);
         if(monster.slowed && monster.slowed->until>tick) states.insert(monster.slowed->state);
         if (monster.chilledUntil > tick && monster.rule.coldState >= 0) states.insert(monster.rule.coldState);
         if (monster.frozenUntil > tick && monster.rule.frozenState >= 0) states.insert(monster.rule.frozenState);
+        if(monster.stunnedUntil>tick && monster.rule.stunState>=0) states.insert(monster.rule.stunState);
     }
     return result;
 }

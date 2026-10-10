@@ -82,12 +82,12 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly) {
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto life = std::max(int64_t(0), actor.life - amount);
-    const bool corpseUnavailable=actor.frozenUntil>tick;
+    const bool corpseUnavailable=actor.frozenUntil>tick || (actor.holyFreezeUntil>tick && actor.holyFreezeShatter);
     const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
     auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
     if (life && coldFrames && actor.rule.coldEffect < 0) {
@@ -101,10 +101,15 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         poisoned=PoisonStatus{*poison,source,tick+std::min(poison->frames,UINT64_MAX-tick),tick+1};
     if(!life) poisoned.reset();
     auto random=actor.combatRandom;
+    auto stunned=actor.stunnedUntil;
+    if(life && stunFrames && actor.rule.stunState>=0 && !actor.rule.boss && actor.rule.nativeVelocity &&
+        (actor.identity.rank==MonsterRank::Normal || actor.identity.rank==MonsterRank::Minion || limitedRandom(random,100)>=90)) stunned=tick+std::min<uint64_t>(250,stunFrames);
+    if(!life) stunned=0;
     const bool recovery=life && monsterHitRecovery(amount,actor.maximumLife,hitClass,frozen>tick,poisonOnly,actor.rule.hitRecoveryTicks>0,random);
     std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady}};
     if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
     if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
+    if(bool(stunned)!=bool(actor.stunnedUntil)) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.stunState,bool(stunned)});
     if(bool(poisoned)!=bool(actor.poison)) facts.emplace_back(StateFact{id,1,actor.area,poisoned?poisoned->damage.state:actor.poison->damage.state,bool(poisoned)});
     auto event = ports_.events.publish({0, tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(facts)});
     if (!event) return {event.status, {}};
@@ -112,8 +117,9 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
+    actor.stunnedUntil=stunned;
     actor.poison=poisoned;
-    if(recovery || frozen>tick || !life) {
+    if(recovery || frozen>tick || stunned>tick || !life) {
         ++actor.interruption;stop(id);
         if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+uint64_t(actor.rule.hitRecoveryTicks);actor.busyUntil=actor.reactionUntil;}
     }
@@ -166,6 +172,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (auto &[id, actor] : state_.actors) {
         (void)id; actor.moving = false;
+        if(actor.conversion && (tick.tick>=actor.conversion->until || actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
+            const auto saved=*actor.conversion;
+            if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
+                {StateFact{id,1,actor.area,saved.state,false},StateFact{id,1,actor.area,saved.alignment,true,{{saved.stat,0}}}}})) {blocked=true;continue;}
+            if(actor.life>0) actor.life=std::min(saved.maximum,std::max<int64_t>(256,actor.life*saved.maximum/actor.maximumLife));
+            actor.maximumLife=saved.maximum;actor.rule.level=saved.level;actor.owner.reset();actor.conversion.reset();++actor.interruption;stop(id);++actor.revision;
+        }
         if(actor.hireling) {
             actor.potionEffects.expire(tick.tick);
             if(actor.life<=0) {actor.healing.clear();actor.potionEffects.clear();}
@@ -206,12 +219,15 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         std::vector<DomainFact> expired;
         const bool thaw = actor.frozenUntil && actor.frozenUntil <= tick.tick;
         const bool warm = actor.chilledUntil && actor.chilledUntil <= tick.tick;
+        const bool unstun=actor.stunnedUntil && actor.stunnedUntil<=tick.tick;
         if (thaw) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, false});
         if (warm) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, false});
+        if(unstun) expired.emplace_back(StateFact{id,1,actor.area,actor.rule.stunState,false});
         if (!expired.empty()) {
             if (!ports_.events.publish({0, tick.tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(expired)})) { blocked = true; continue; }
             if (thaw) actor.frozenUntil = 0;
             if (warm) actor.chilledUntil = 0;
+            if(unstun) actor.stunnedUntil=0;
             ++actor.revision;
         }
         if(actor.webUntil && actor.webUntil<=tick.tick) {
@@ -222,7 +238,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.slowed->state,false}}})) {blocked=true;continue;}
             actor.slowed.reset();++actor.revision;
         }
-        if (actor.frozenUntil > tick.tick) continue;
+        if (actor.frozenUntil > tick.tick || actor.stunnedUntil>tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
         const auto target=actor.movementTarget ? targetPosition(actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});

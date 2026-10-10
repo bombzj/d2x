@@ -684,6 +684,10 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     sharedUi->drawUi(input.mouse);
                 } catch (const std::exception &e) {
+                    // Resource construction can fail after creating the clients
+                    // but before creating the view. Retire the whole group so
+                    // a later area retry cannot dereference a partial group.
+                    sharedController.reset(); sharedUi.reset(); sharedClients.reset();
                     sceneError = e.what();
                     showScene = false;
                 }

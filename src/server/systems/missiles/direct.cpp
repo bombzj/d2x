@@ -24,7 +24,9 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
     auto hit=impact(m,std::move(targets));hit.hitClass=uint8_t(request.skill.hitClass);
     if(request.weapon) {
         hit.type=DamageType::Physical;hit.damage=0;hit.nextDelay=0;
-        hit.weapon=rollWeaponSkillDamage(request.weapon->weapon,p->totals.character.combat,request.skill,request.weapon->level,false,random);
+        hit.weapon=request.skill.weapon->smite?rollSmiteDamage(request.weapon->weapon,p->totals.equipment,p->totals.character,request.skill,request.weapon->level,random):rollWeaponSkillDamage(request.weapon->weapon,p->totals.character.combat,request.skill,request.weapon->level,false,random);
+        if(hit.weapon->smite || request.skill.effect==SkillBehavior::Charge) hit.knockback=true;
+        if(request.skill.weapon->conversionFrames>0) hit.conversion=request.skill.weapon;
         hit.coldFrames=uint64_t(std::max(0,hit.weapon->coldFrames));hit.freeze=hit.weapon->freeze;
     }
     if(request.skill.effect==SkillBehavior::StaticField) {

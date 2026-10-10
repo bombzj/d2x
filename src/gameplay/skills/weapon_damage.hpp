@@ -14,9 +14,13 @@ struct WeaponSkillDamage {
     uint32_t physicalRoll{}; int sourceDamage{128};
     int conversionPercent{}; DamageType conversionElement{DamageType::Magic};
     int wearChance{},wearAmount{};
+    int selfDamagePercent{};
+    bool smite{};
+    int stunFrames{};
     SkillCastSpec wearSkill{};
 };
 WeaponSkillDamage rollPotionDamage(const WeaponDamage &, int level, uint64_t &random);
+WeaponSkillDamage rollSmiteDamage(const WeaponDamage &,const EquipmentStats &,const CharacterAttributes &,const SkillCastSpec &,int,uint64_t &);
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &,bool demon,bool undead);
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &, const CombatModifiers &,
     const SkillCastSpec &, int level, bool projectile, uint64_t &random);
