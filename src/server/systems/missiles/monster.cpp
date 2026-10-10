@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -41,6 +42,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         const Vec aim=aims[index];
         const auto &rule=firewall && !index?*request.attack.groundFire:index>=quillStart && request.attack.extraQuill?*request.attack.extraQuill:*request.attack.missile;
         Missile missile;missile.owner=request.source;missile.emitter=request.source;missile.emitterType=1;
+        missile.binding=combat::Participants{ports_.players,ports_.monsters}.bind({nullptr,source});
         if((source->hireling || source->conversion) && source->owner) missile.player=*source->owner;
         missile.area=request.area;missile.generation=request.generation;missile.created=request.tick;
         missile.expires=request.tick+uint64_t(rule.frames);missile.lifetimeFrames=rule.frames;missile.definition=rule.definition;
@@ -120,12 +122,14 @@ System::Advance System::advanceMonster(const Missile &original) const {
         missile.position=next;plan.finished=expired || bool(wall);++missile.revision;return plan;
     }
     struct Target {EntityId id;Vec position;int size;};std::vector<Target> targets;
+    const combat::Participants participants{ports_.players,ports_.monsters};
+    const auto source=participants.find(missile.owner);
     const bool friendly=missile.player.value!=0;
     if(!friendly && enemy.rule.collidePlayers) for(const auto &[key,player]:ports_.players.all()) {
-        (void)key;if(player.entered && player.area==missile.area && player.persistent.player.hp>0) targets.push_back({player.actor,player.position,2});
+        (void)key;if(player.entered && player.area==missile.area && player.persistent.player.hp>0 && participants.canHarm(source,{&player,nullptr})) targets.push_back({player.actor,player.position,2});
     }
     if(friendly || enemy.rule.collideMonsters) for(const auto &[id,pet]:ports_.monsters.read().actors)
-        if((friendly?!pet.owner:pet.combatCompanion()) && pet.life>0 && pet.area==missile.area) targets.push_back({id,pet.position,pet.rule.size});
+        if(participants.canHarm(source,{nullptr,&pet}) && pet.life>0 && pet.area==missile.area) targets.push_back({id,pet.position,pet.rule.size});
     std::vector<std::pair<float,EntityId>> contacts;
     if(missile.ageFrames>enemy.rule.activate && !expired) for(const auto &target:targets) {
         if(!goo && missile.weaponContacts.contains(target.id)) continue;
@@ -134,6 +138,7 @@ System::Advance System::advanceMonster(const Missile &original) const {
     std::sort(contacts.begin(),contacts.end());const Vec start=missile.position;
     auto impact=[&](std::vector<EntityId> units) {
         combat::SpellImpact hit{missile.id,missile.owner,missile.area,DamageType::Physical,0,std::move(units)};
+        hit.binding=missile.binding;
         hit.occurrence=(uint64_t(missile.ageFrames)<<32)|missile.weaponContacts.size();
         hit.contactRandom=childRandom(missile.random);
         hit.monsterHit=enemy.hit;hit.monsterStates=enemy.states;hit.monsterLevel=enemy.level;hit.monsterRating=enemy.rating;hit.monsterToHit=enemy.rule.toHit;

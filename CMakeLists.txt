@@ -160,6 +160,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
     src/server/systems/skills/activation.cpp
+    src/server/systems/skills/evaluation.cpp
     src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp src/server/systems/inventory/replenishment.cpp
   src/server/systems/missiles/system.cpp
     src/server/systems/missiles/launch.cpp src/server/systems/missiles/monster.cpp
@@ -175,6 +176,8 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/monster_periodic.cpp
     src/server/systems/effects/item_triggers.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
+  src/server/systems/combat/participants.cpp
+  src/server/systems/combat/follow_up.cpp
   src/server/systems/death/system.cpp
   src/server/systems/companions/system.cpp
   src/server/systems/companions/amazon.cpp

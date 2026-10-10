@@ -1,8 +1,10 @@
 #include "system.hpp"
+#include "runtime.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -11,6 +13,7 @@
 #include "core/random.hpp"
 namespace d2x::server::skills {
 DomainResult<> System::requestCast(const CastRequest &request) {
+    auto &monsterReleases_=runtime_->monsters;
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
     if (!monster || monster->life <= 0 || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || monster->frozenUntil > request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
@@ -27,6 +30,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const auto slot=petAttack?MonsterAttackRule{rule.minimumDamage,rule.maximumDamage,rule.attackRating,rule.attackTicks,rule.impactTick,{}}:*prepared;
     const bool resurrection=slot.action==MonsterAttackRule::Action::Resurrect;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
+    const combat::Participants participants{ports_.players,ports_.monsters};
+    if(!resurrection && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
     if(request.position) {
         if(!std::isfinite(request.position->x) || !std::isfinite(request.position->y)) return {DomainStatus::InvalidRequest,{}};
         destination=std::pair{*request.position,0};
@@ -71,6 +76,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     return ports_.monsters.beginAttack(monster->id, request.tick + scaled(slot.duration));
 }
 StepStatus System::releaseMonsters(TickContext tick) {
+    auto &monsterReleases_=runtime_->monsters;
     bool blocked=false;
     for (auto it=monsterReleases_.begin();it!=monsterReleases_.end();) {
         auto &pending=it->second;
@@ -96,6 +102,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);
+        if(!pending.launch && !combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,unit.id)) {it=monsterReleases_.erase(it);continue;}
         if (!target && !pending.launch) {it=monsterReleases_.erase(it);continue;}
         if(!pending.launch) pending.launch=std::pair{source->position,target->first};
         const int quills=source->rule.ai.kind==MonsterAiKind::QuillRat && pending.request.monsterMode==5?source->rule.ai.params[2]:0;

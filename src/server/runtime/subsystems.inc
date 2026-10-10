@@ -1,6 +1,6 @@
 // identity, member/namespace, scheduling phase, implementation scope
 D2X_SYSTEM(World, world, World, World)
-D2X_SYSTEM(Spatial, spatial, Spatial, Scaffold)
+D2X_SYSTEM(Spatial, spatial, Spatial, Combat)
 D2X_SYSTEM(Items, items, Commands, Inventory)
 D2X_SYSTEM(Inventory, inventory, Commands, Inventory)
 D2X_SYSTEM(Attributes, attributes, Attributes, Character)

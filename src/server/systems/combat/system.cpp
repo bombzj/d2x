@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "participants.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -15,12 +16,6 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::combat {
-namespace {
-const PlayerState *playerActor(const PlayerStore &players, EntityId actor) {
-    for (const auto &[id, player] : players.all()) { (void)id; if (player.actor == actor) return &player; }
-    return nullptr;
-}
-}
 DomainResult<> System::enqueue(const Damage &damage) {
     if (!damage.source || !damage.target || damage.source == damage.target || damage.type != DamageType::Physical ||
         damage.minimum < 0 || damage.maximum < damage.minimum || damage.maximum > INT32_MAX || !damage.action || damage.level <= 0)
@@ -28,7 +23,9 @@ DomainResult<> System::enqueue(const Damage &damage) {
     if (state_.pending.size() >= 4096) return {DomainStatus::Capacity, {}};
     if (std::any_of(state_.pending.begin(), state_.pending.end(), [&](const auto &existing) { return !existing.cancelled && existing.source == damage.source; }))
         return {DomainStatus::Conflict, {}};
+    const Participants participants{ports_.players,ports_.monsters};
     state_.pending.push_back(damage);
+    state_.pending.back().binding=participants.bind(participants.find(damage.source));
     return {DomainStatus::Applied, std::monostate{}};
 }
 void System::cancel(EntityId source) {
@@ -37,20 +34,23 @@ void System::cancel(EntityId source) {
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
+    state_.targetAttempts=0;
+    const Participants participants{ports_.players, ports_.monsters};
     for (auto it = state_.pending.begin(); it != state_.pending.end();) {
         auto &damage = *it;
         if(damage.cancelled) {it=state_.pending.erase(it);continue;}
-        const auto *sourcePlayer = playerActor(ports_.players, damage.source), *targetPlayer = playerActor(ports_.players, damage.target);
-        const auto *sourceMonster = ports_.monsters.find(damage.source), *targetMonster = ports_.monsters.find(damage.target);
+        const auto source = participants.find(damage.source), target = participants.find(damage.target);
+        if(participants.bind(source)!=damage.binding) {it=state_.pending.erase(it);continue;}
+        const auto *sourcePlayer = source.player, *targetPlayer = target.player;
+        const auto *sourceMonster = source.monster, *targetMonster = target.monster;
         const bool petAttack=sourceMonster && sourceMonster->amazonAttacker() && targetMonster && !targetMonster->owner;
         const bool playerAttack = sourcePlayer && targetMonster;
         const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && (targetMonster->combatCompanion() || (sourceMonster->conversion && !targetMonster->owner))));
         const auto *area = ports_.areas.find(damage.area);
-        bool valid = area && !area->definition.town && ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && damage.weapon));
-        if (sourcePlayer) valid = valid && sourcePlayer->entered && sourcePlayer->area == damage.area && sourcePlayer->persistent.player.hp > 0;
-        if (targetPlayer) valid = valid && targetPlayer->entered && targetPlayer->area == damage.area && targetPlayer->persistent.player.hp > 0;
-        if (sourceMonster) valid = valid && sourceMonster->area == damage.area && sourceMonster->life > 0 && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->stunnedUntil<=tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack || sourceMonster->conversion);
-        if (targetMonster) valid = valid && targetMonster->area == damage.area && targetMonster->life > 0 && (!targetMonster->owner || (monsterAttack && targetMonster->combatCompanion()));
+        bool valid = area && !area->definition.town && source.aliveIn(damage.area) && target.aliveIn(damage.area) && participants.canHarm(source,target) &&
+            ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && damage.weapon));
+        if (sourceMonster) valid = valid && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->stunnedUntil<=tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack || sourceMonster->conversion);
+        if (targetMonster) valid = valid && (!targetMonster->owner || (monsterAttack && targetMonster->combatCompanion()));
         if (!valid) { it = state_.pending.erase(it); continue; }
         if(targetPlayer && !damage.reactionsStarted) {
             if(!ports_.effects.reactionCapacity()) {blocked=true;++it;continue;}
@@ -58,9 +58,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 damage.source,CombatEffectEvent::AttackedInMelee);damage.reactionsStarted=true;
         }
         if(damage.impact>tick.tick) {++it;continue;}
-        const Vec from = sourcePlayer ? sourcePlayer->position : sourceMonster->position;
-        const Vec to = targetPlayer ? targetPlayer->position : targetMonster->position;
-        if (meleeDistance(from, damage.sourceSize, to, targetPlayer ? 2 : targetMonster->rule.size) > damage.range ||
+        ++state_.targetAttempts;
+        const Vec from = source.position(), to = target.position();
+        if (meleeDistance(from, damage.sourceSize, to, target.size()) > damage.range ||
             !area->definition.collision.segment(from, to)) { it = state_.pending.erase(it); continue; }
         // Reserve both private resource and public hit outputs before consuming RNG.
         if (!ports_.events.hasCapacity(4, targetPlayer ? 2 : 1) || !ports_.effects.reactionCapacity()) { blocked = true; ++it; continue; }
@@ -161,7 +161,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if(rolled.coldFrames>0 && ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick)<100) cold=uint64_t(rolled.coldFrames)*unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(owner->rules.skills->coldDivisor[size_t(targetMonster->rule.difficulty)]));
                 if(channels[5]>0 && rolled.poisonFrames>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),uint64_t(rolled.poisonFrames),owner->rules.skills->poisonState};
             }
-            const auto committed=ports_.monsters.damage(damage.target,owner->actor,amount,tick.tick,cold,false,uint8_t(damage.weapon->hitClass),poison);
+            const auto committed=ports_.monsters.damage(damage.target,damage.binding.credit,amount,tick.tick,cold,false,uint8_t(damage.weapon->hitClass),poison);
             if(committed.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
             if(committed) commitRandom();
             it=state_.pending.erase(it);continue;

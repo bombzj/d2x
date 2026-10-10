@@ -355,7 +355,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     }
     EntityId target;int nearest=prepared.vision;
     if(!area.definition.town) for(const auto &[id,enemy]:ports_.monsters.read().actors) {
-        if(enemy.owner || enemy.life<=0 || enemy.area!=body->area) continue;
+        if(!enemy.enemyTarget() || enemy.life<=0 || enemy.area!=body->area) continue;
         const int distance=missileDistance(body->position,enemy.position);
         if(distance<nearest && area.definition.collision.missileSegment(body->position,enemy.position,{4,1})) {nearest=distance;target=id;}
     }

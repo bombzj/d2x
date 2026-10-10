@@ -18,6 +18,7 @@ namespace { Vec cell(Vec p) { return {std::floor(p.x) + .5f, std::floor(p.y) + .
 Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int frames, float speed, Program program, uint64_t &random) const {
     const auto &rules = *ports_.players.find(r.actor.player)->rules.skills;
     Missile m; m.owner = r.actor.actor; m.player = r.actor.player; m.area = r.actor.area; m.generation = r.actor.areaGeneration;
+    m.binding=combat::Participants{ports_.players,ports_.monsters}.bind({ports_.players.find(r.actor.player),nullptr});
     m.definition = id; m.created = r.actor.tick; m.expires = r.actor.tick + uint64_t(frames);
     if(speed>0 && !direction.length()) direction={1,1};
     m.position = origin; m.velocity = direction.unit() * speed; m.turnTarget = direction;

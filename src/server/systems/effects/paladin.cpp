@@ -4,6 +4,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/social/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "core/random.hpp"
@@ -54,11 +55,15 @@ CharacterModifiers System::stateModifiers(EntityId id,int state,uint64_t tick) c
 }
 DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinition &a,EntityId id,uint64_t duration,bool owner,bool healing) {
     const auto *caster=ports_.players.find(actor.player);if(!caster || !caster->rules.skills) return {DomainStatus::InvalidActor,{}};
+    const combat::Participants participants{ports_.players,ports_.monsters};
+    const auto recipientView=participants.find(id);
+    if(!recipientView.aliveIn(actor.area) || (id!=actor.actor &&
+       !(a.hostile?participants.canHarm({caster,nullptr},recipientView):participants.allied({caster,nullptr},recipientView,ports_.social))))
+        return {DomainStatus::InvalidActor,{}};
     CombatEffectSpec spec;spec.state=owner?a.ownerState:a.state;
     spec.source={CombatEffectSource::Skill,actor.actor,a.skill,a.rank};spec.duration=duration;spec.stacking=EffectStacking::AuraLevel;
     spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;
-    const PlayerState *recipient=nullptr;
-    for(const auto &[key,p]:ports_.players.all()) if(p.actor==id) {recipient=&p;break;}
+    const PlayerState *recipient=recipientView.player;
     if(recipient) {
         if(!recipient->entered || recipient->area!=actor.area || recipient->persistent.player.hp<=0 ||
            (recipient!=caster && (a.hostile || !ports_.social.sameParty(actor.player,recipient->player)))) return {DomainStatus::InvalidActor,{}};
@@ -89,7 +94,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) state_.players.swap(next.players);return result;
     }
-    const auto *m=ports_.monsters.find(id);if(!m || m->life<=0 || m->area!=actor.area) return {DomainStatus::InvalidActor,{}};
+    const auto *m=recipientView.monster;if(!m) return {DomainStatus::InvalidActor,{}};
     if(a.skill==114) {
         if(m->rule.coldEffect>=0) return {DomainStatus::Unavailable,{}};
         spec.modifiers.velocityPercent=std::max(spec.modifiers.velocityPercent,m->rule.coldEffect);
@@ -127,6 +132,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
 }
 StepStatus System::advancePaladinAuras(uint64_t tick) {
     bool blocked=false;
+    const combat::Participants participants{ports_.players,ports_.monsters};
     for(const auto &[key,p]:ports_.players.all()) {
         const ActorContext actor{key,p.actor,p.area,ports_.areas.at(p.area).generation,0,tick};
         auto &cycle=paladinCycles_[p.actor];
@@ -169,8 +175,8 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
                 if((a.filter&4) && !m.rule.undead) continue;
                 if((a.filter&0x4000) && m.rule.boss) continue;
                 if((a.filter&0x40000) && m.rule.primeEvil) continue;
-                if(a.hostile) {if(area.town || m.owner) continue;}
-                else if(a.skill!=124 && m.owner!=key && (!m.owner || !ports_.social.sameParty(key,*m.owner))) continue;
+                if(a.hostile) {if(area.town || !participants.canHarm({&p,nullptr},{nullptr,&m})) continue;}
+                else if(a.skill!=124 && !participants.allied({&p,nullptr},{nullptr,&m},ports_.social)) continue;
                 if(a.skill==124 && area.town) continue;
                 cycle.targets.push_back(id);
             }
@@ -186,7 +192,8 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
             if(id==p.actor) result=paladinAura(actor,cycle.aura,id,duration,true,cycle.aura.lifePerPulse>0);
             else if(cycle.skill==124) {
                 const auto *m=ports_.monsters.find(id);
-                if(m && m->life<=0 && !m->corpseUnavailable) {
+                     if(m && m->area==p.area && m->life<=0 && m->rewardComplete && tick>=m->busyUntil &&
+                         !m->corpseUnavailable && m->rule.corpseSelectable && !area.town) {
                     auto random=cycle.random;
                     if(limitedRandom(random,100)<unsigned(cycle.aura.redemptionChance)) {
                         transactions::CharacterEdit edit{actor,p.inventoryRevision,p.characterRevision,p.persistent.player};

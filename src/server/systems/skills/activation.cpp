@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "server/player_store.hpp"
@@ -24,7 +25,7 @@ DomainStatus System::activateKick(Release &pending, const ActorContext &actor, V
     const auto &player = *ports_.players.find(actor.player);
     const auto *victim = ports_.monsters.find(pending.unit);
     const auto &area = ports_.areas.at(actor.area);
-    if (!victim || victim->owner || victim->life <= 0 || victim->area != actor.area ||
+    if (!victim || !victim->enemyTarget() || victim->life <= 0 || victim->area != actor.area ||
         meleeDistance(player.position, 2, victim->position, victim->rule.size) > 1 ||
         !area.definition.collision.segment(player.position, victim->position)) return DomainStatus::Unavailable;
     return ports_.missiles.direct({actor, pending.skill, {}, target}, {pending.unit}).status;
@@ -55,7 +56,7 @@ std::vector<EntityId> System::staticFieldTargets(const ActorContext &actor, cons
     const auto &player = *ports_.players.find(actor.player);
     std::vector<EntityId> targets;
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
-        if (monster.owner || monster.life <= 0 || monster.area != actor.area) continue;
+        if (!monster.enemyTarget() || monster.life <= 0 || monster.area != actor.area) continue;
         const int deltaX = int(monster.position.x) - int(player.position.x);
         const int deltaY = int(monster.position.y) - int(player.position.y);
         const int radius = int(skill.staticRadius);

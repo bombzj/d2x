@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -29,6 +30,7 @@ DamageType element(SkillBehavior s) {
 combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, std::optional<int64_t> damage) const {
     const auto &owner=*ports_.players.find(m.player); const auto &rules=*owner.rules.skills;
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
+    result.binding=m.binding;
     result.occurrence=uint64_t(m.ageFrames);
     if(m.skill.missileImpact && (m.skill.missileImpact->undeadDamagePercent || m.skill.missileImpact->demonDamagePercent)) {
         for(const auto id:result.targets) {
@@ -64,7 +66,7 @@ System::Advance System::advance(const Missile &original) const {
     Advance plan{original,{},{},false}; auto &m=plan.next;
     const auto &owner=*ports_.players.find(m.player); const auto &area=ports_.areas.at(m.area);
     Spawn source{{m.player,m.owner,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
-    const auto enemy = [&](const auto &target) { return target.life>0 && !target.owner && target.area==m.area; };
+    const auto enemy = [&](const auto &target) { return target.life>0 && combat::ParticipantView{nullptr,&target}.hostileMonster() && target.area==m.area; };
     const auto child = [&](Vec at, Vec direction, int id, int frames, float speed, Program program, bool fresh=false) -> Missile & {
         if(fresh) source.skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
         auto c=make(source,at,direction,id,frames,speed,program,m.random);
@@ -106,7 +108,7 @@ System::Advance System::advance(const Missile &original) const {
     if(m.program==Program::Heaven) {
         if(!expires) return plan;
         const auto *target=ports_.monsters.find(m.guidance);
-        if(target && target->area==m.area && target->life>0 && !target->owner) {
+        if(target && target->area==m.area && target->life>0 && target->enemyTarget()) {
             plan.impacts.push_back(impact(m,{target->id}));
             const auto &h=*m.skill.heaven;int count=0;
             for(const auto &[id,t]:ports_.monsters.read().actors) {
@@ -188,9 +190,11 @@ System::Advance System::advance(const Missile &original) const {
     if(expires) {plan.finished=true;m.position=next;return plan;}
     std::vector<std::pair<float,EntityId>> contacts;
     const bool holyBolt=m.skill.effect==SkillBehavior::HolyBolt;
-    for(const auto &[id,t]:ports_.monsters.read().actors) {
+    for(const auto id:collisionCandidates(m,next)) {
+        const auto *found=ports_.monsters.find(id);if(!found) continue;
+        const auto &t=*found;
         if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
-        const bool eligible=holyBolt?t.area==m.area && t.life>0 && ((t.owner==m.player && m.skill.healingMaximum>0) || (!t.owner && t.rule.undead)):enemy(t);
+        const bool eligible=holyBolt?t.area==m.area && t.life>0 && ((t.owner==m.player && m.skill.healingMaximum>0) || (t.enemyTarget() && t.rule.undead)):enemy(t);
         if(!eligible || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
         if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,t.position,t.rule.size)) contacts.emplace_back(*contact,id);
     }

@@ -36,7 +36,7 @@ vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开
 
 ## 有限运行证据
 
-怪物历史包身份见[基线历史怪物证据](../../../BASELINE.md#历史第一幕全部怪物证据)，当前运行包另见[基线当前包](../../../BASELINE.md#当前运行包与有限冒烟)。只用现有EXE、原服与调试管道；资源、日志、截图、角色及参考代码保留在忽略目录。
+2026-10-09全部怪物批历史最终包为Windows Release、规则v19／D2S v96；EXE SHA256 `95624C814123FCA8436F8C524D4A2E5843C4A3B53E7088DC8681924F8675E945`，DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error，早期诊断仍保留；当前运行包另见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。只用现有EXE、原服与调试管道；资源、日志、截图、角色及参考代码保留在忽略目录。
 
 | 历史证据 | 覆盖与边界 |
 | --- | --- |
@@ -52,6 +52,6 @@ vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开
 | 首领代表动作 | `final-reaction-boss.json`：Andariel技能201喷毒／164毒弹、BloodRaven技能167、GargoyleTrap技能172；权威生命变化及客户端原动作。未认证全部随机分支、血鸟召唤／死亡连锁；调试Countess没有DS1路径节点，不以准入认证其火墙 |
 | 电／冰强化 | `final-reaction-client.json`、`final-reaction-server.json`、`final-reaction-cold.json`：Rakanishu一次GH的69生命81及后续0C触发209，无快照重复GH；八条195。Coldcrow死亡第五步时三十二条194；`final-cold.png`可见电弧及冰环，客户端原死动画自行生成64方向。后续命中观察冷却清触发，不推造隐藏等级 |
 | 正常玩家战斗 | `final-reaction-pve.json`：原3C确认右手44、原C2S施放；brute2生命24→20.859375及chilledUntil，伤害和状态由权威执行。没有只靠管理击杀认证普通攻击 |
-| 保存／重入 | `final-before-save.json`／`final-reentry-saved.json`：人物92级、生命931／法力217保存恢复；原入局ProtocolReady，短时状态不恢复。该批诊断和stderr见基线 |
+| 保存／重入 | `final-before-save.json`／`final-reentry-saved.json`：人物92级、生命931／法力217保存恢复；原入局ProtocolReady，短时状态不恢复。最终failures／ignoredPackets／unavailableUnits为0，characterIssues／mapErrors／effectLimitations及stderr为空 |
 
 这些为有限V2；准入、空诊断和静态核对不能把所有怪物或P3标为V3。噩梦／地狱、全部状态组合／取消与背压、多人、Linux及长期运行仍未认证。

@@ -26,6 +26,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     for (const auto &[id, actor] : state_.actors)
         if (actor.area == request.area && actor.identity.spawnKey == request.identity.spawnKey) return {DomainStatus::Applied, id};
     Actor actor;
+    actor.hostile=request.hostile;
     actor.admittedPlayerCount=unsigned(std::clamp(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}),std::ptrdiff_t(1),std::ptrdiff_t(8)));
     actor.id = ports_.ids.allocate(); actor.identity = request.identity; actor.implementation = request.implementation;
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
@@ -177,7 +178,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
                 {StateFact{id,1,actor.area,saved.state,false},StateFact{id,1,actor.area,saved.alignment,true,{{saved.stat,0}}}}})) {blocked=true;continue;}
             if(actor.life>0) actor.life=std::min(saved.maximum,std::max<int64_t>(256,actor.life*saved.maximum/actor.maximumLife));
-            actor.maximumLife=saved.maximum;actor.rule.level=saved.level;actor.owner.reset();actor.conversion.reset();++actor.interruption;stop(id);++actor.revision;
+            actor.maximumLife=saved.maximum;actor.rule.level=saved.level;actor.owner.reset();actor.conversion.reset();++actor.allegianceRevision;++actor.interruption;stop(id);++actor.revision;
         }
         if(actor.hireling) {
             actor.potionEffects.expire(tick.tick);

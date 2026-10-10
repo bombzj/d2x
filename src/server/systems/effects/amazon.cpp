@@ -48,7 +48,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
     const Vec origin=pet?pet->position:p->position;const EntityId source=pet?pet->id:actor.actor;
     transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        if(m.owner || m.life<=0 || m.area!=actor.area || !(program.filter&2) || !area->definition.activation.nearby(origin,m.position)) continue;
+        if(!m.enemyTarget() || m.life<=0 || m.area!=actor.area || !(program.filter&2) || !area->definition.activation.nearby(origin,m.position)) continue;
         const auto delta=m.position-origin;if(delta.x*delta.x+delta.y*delta.y>float(program.radius*program.radius)) continue;
         if((program.filter&0x200) && !area->definition.collision.missileSegment(origin,m.position,{4,1})) continue;
         if(program.state.curse && m.rule.enchantment && m.rule.enchantment->has(38)) continue;

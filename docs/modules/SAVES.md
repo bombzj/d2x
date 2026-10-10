@@ -1,6 +1,6 @@
 # 服务端D2S与客户端持久化
 
-更新：2026-10-09。原服角色由D2GS／D2DBS保存；自研角色由hosting/CharacterStore与persistence保存。客户端的角色列表、选择、入局和保存退出统一通过原MCP／D2GS，不能访问D2S或PersistentCharacter。产品链接嵌入宿主，客户端／表现库不链接存档库。库存、人物成长、技能与五幕个人任务保存已有列出路径的有限往返冒烟；当前v27第三至第五幕任务包和准入语义已经构建，具体条件及限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)和[第三至第五幕](../gameplay/quests/ACT3_5.md#依据与运行证据)。
+更新：2026-10-10。本文维护存档格式、准入指纹、所有权与恢复边界。原服角色由D2GS／D2DBS保存；自研角色由hosting/CharacterStore与persistence保存。客户端通过原MCP／D2GS操作角色，不访问D2S或PersistentCharacter；客户端／表现库不链接存档库。当前源码与包差异见[基线](../../BASELINE.md)，往返证据由对应玩法专题维护，不据历史保存成功认证新源码。
 
 ## 已迁移的角色与存档入口
 
@@ -28,7 +28,7 @@ LAN角色由宿主`--host-saves`目录持有，不读取或上传客户端D2S；
 
 ## 文件与值边界
 
-当前准入规则为`d2x-character-admission-v32/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat/paladin30/party`，磁盘仍为v96。v31加入圣骑士技能／光环及被动抑制语义；临时状态、转换AI和弹体不写盘，技能基础等级与选择沿原字段保存。PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。玩家交易运行态不写盘：导出接受时的原库存，保留当前人物记录，未归一化Trade容器由编码器拒绝。取消／成交后的投影仅含真实所属物品；交易确认、镜像、冷却和头顶聊天均不保存。见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。
+当前准入规则为`d2x-character-admission-v33/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat/paladin30/party/combat-relations`，磁盘仍为v96。v33增加明确敌对关系、控制代次、来源归功复验及武器目标独立随机／重复扣耐久防护；这些运行态不写盘，不新增字段或私有段，旧规则不静默迁移。新源码未构建／保存往返认证。v31加入圣骑士技能／光环及被动抑制语义；临时状态、转换AI和弹体不写盘，技能基础等级与选择沿原字段保存。PvPGN适配入口仅额外接受130字节、v89、INIT／资料片标记的新角色登记，复验姓名／职业及charinfo的一级、零经验和模式后，复用当前MPQ创角逻辑；原始登记先保留在recovery，首次保存才经DBS写入完整v96。已有旧版角色不迁移，正常v96 codec不放宽。玩家交易运行态不写盘：导出接受时的原库存，保留当前人物记录，未归一化Trade容器由编码器拒绝。取消／成交后的投影仅含真实所属物品；交易确认、镜像、冷却和头顶聊天均不保存。见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。
 
 第一幕佣兵雇佣替换／装备／经验和死亡位沿原字段，临时药水、AI、候选与当前生命不保存。人物死亡导出除尸体结算外还等待权威DT结束及伙伴死亡事务完成，不能在佣兵仍存活时退出绕过主人死亡；原租约／失败保留策略不变。旧规则不静默迁移，佣兵执行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
 

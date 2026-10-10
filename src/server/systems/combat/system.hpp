@@ -1,9 +1,10 @@
 #pragma once
+#include "participants.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/combat/damage_type.hpp"
-#include "server/runtime/combat_rules.hpp"
+#include "gameplay/monsters/damage.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
 #include <deque>
 #include <list>
@@ -24,6 +25,7 @@ struct Damage {
     uint8_t monsterMode{4};
     uint64_t sourceInterruption{};
     std::optional<uint64_t> actionRandom{};
+    SourceBinding binding{};
 };
 // Targets are captured at missile impact, not looked up again by radius on retry.
 struct SpellImpact {
@@ -57,14 +59,20 @@ struct SpellImpact {
     int64_t healing{}; bool undeadOnly{};
     std::optional<WeaponSkillSpec> conversion{};
     int healingOverlay{-1};
+    SourceBinding binding{};
+    bool conversionApplied{};
+    size_t plannedTarget{};
+    std::optional<uint64_t> targetRandom{};
+    bool wearApplied{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
-struct State { std::vector<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; };
+struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}; };
 struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; };
 class System {
     State state_;
     const Ports ports_;
     StepStatus resolveSpells(TickContext);
+    DomainStatus finishImpact(SpellImpact &, const PlayerState *, uint64_t generation, uint64_t tick);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

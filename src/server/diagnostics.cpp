@@ -39,6 +39,12 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     if (!player) return {};
     limit = std::clamp<size_t>(limit, 1, 256);
     DiagnosticSnapshot result;
+    result.stageMetrics=simulation_.metrics();
+    const auto &spatial=systems_.spatial.read();
+    result.spatialTick=spatial.indexedTick;result.spatialGeneration=spatial.generation;result.spatialUnits=spatial.indexedUnits;
+    result.spatialQueries=spatial.queries;result.spatialCandidates=spatial.candidates;result.spatialReturned=spatial.returned;
+    result.combatQueueDepth=systems_.combat.read().pending.size();
+    result.combatTargetAttempts=systems_.combat.read().targetAttempts;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
     result.containers = player->persistent.containers;
     result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().actOne.denRemaining; result.denCleared=systems_.quests.read().actOne.denCleared; result.portals=visiblePortals(id);

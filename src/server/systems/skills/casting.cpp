@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "runtime.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -6,6 +7,7 @@
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/effects/system.hpp"
@@ -27,7 +29,8 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==unit.id && p.entered && p.area==actor.area && p.persistent.player.hp>0) return p.position;}
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
-        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? !m->owner || m->owner==actor.player : skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : !m->owner)) return m->position;
+        const bool enemy=m && combat::Participants{ports_.players,ports_.monsters}.canHarm(actor.actor,m->id);
+        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? enemy || m->owner==actor.player : skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
         if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
     } else if(skill==SkillBehavior::Kick && unit.type==2) {
         const auto found=ports_.objects.read().objects.find(unit.id);
@@ -39,6 +42,7 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
     return {};
 }
 DomainResult<> System::cast(const ActorContext &actor,const Request &request,int selected) {
+    auto &releases_=runtime_->releases;
     const auto &p=*ports_.players.find(actor.player);const auto &area=ports_.areas.at(actor.area);
     if(!p.rules.skills) return {DomainStatus::Unavailable,{}};
     const auto &rules=*p.rules.skills;const auto found=rules.definitions.find(selected);if(found==rules.definitions.end()) return {};
@@ -204,6 +208,7 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
     return (this->*handlers[size_t(program)])(pending, actor, target);
 }
 StepStatus System::release(TickContext tick) {
+    auto &releases_=runtime_->releases;
     bool blocked=false;
     for(auto it=releases_.begin();it!=releases_.end();) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
@@ -226,7 +231,7 @@ StepStatus System::release(TickContext tick) {
             if(!step || tick.tick>state_.casts.at(actor.actor).started+250) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
             if(!*step.value) {pending.tick=tick.tick+1;++it;continue;}
             if(!pending.unit) {
-                for(const auto &[id,m]:ports_.monsters.read().actors) if(!m.owner && m.life>0 && m.area==actor.area && meleeDistance(p->position,2,m.position,m.rule.size)<=pending.weapon->rangeAdder+1) {pending.unit=id;target=m.position;break;}
+                for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && meleeDistance(p->position,2,m.position,m.rule.size)<=pending.weapon->rangeAdder+1) {pending.unit=id;target=m.position;break;}
                 if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
             }
             pending.charging=false;pending.tick=tick.tick+uint64_t(std::max(1,(3*256+pending.weaponSpeed-1)/pending.weaponSpeed));

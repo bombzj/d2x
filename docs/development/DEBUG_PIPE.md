@@ -20,6 +20,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 嵌入宿主管理命令
 
+当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间每步重建两次，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。新字段未运行认证，后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
+
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
 
 当前Windows包已通过现有脚本有限运行目录、save／load／step／grant-experience／grant-gold，以及伤害、物品／怪物生成和怪物击杀管理路径；具体证据及未运行边界见基线。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。

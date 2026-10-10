@@ -1,18 +1,24 @@
 # 文档目录
 
-修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。Single Player／LAN嵌入宿主与独立PvPGN游戏服务复用权威内核，客户端共用原MCP／D2GS。客户端`dist/current`与服务端`dist/server`分别打包；当前均为Windows Debug产物，已有有限冒烟，完整覆盖仍未认证。包摘要与有限证据只由基线维护，不以旧冒烟认证新功能。
+修改前阅读[项目基线](../BASELINE.md)与[协作约定](../AGENTS.md)，再读对应模块。本页只维护文档归属和入口，不维护功能状态或运行记录。
+
+Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [编码规范](development/CODING.md) → [测试与验证](development/TESTING.md)。
 
 ## 负责页面
 
-| 问题 | 唯一负责页面 |
-| --- | --- |
-| 当前范围、已交付包与未入包源码 | [BASELINE](../BASELINE.md) |
-| 客户端／服务端双向差距、完整实施顺序、复用边界、完成门槛、地图对照与本机参考服 | [内核与服务端总计划](architecture/MULTIPLAYER.md) |
-| 公共函数提取、技能／怪物／NPC／任务复用边界与D2MOO依据 | [参考设计](architecture/REFERENCE_DESIGN.md) |
-| 代码分工、实际链接与修改入口 | [架构](architecture/OVERVIEW.md)、[数据流](architecture/DATA_FLOW.md) |
-| 原协议、副本、适配与实际有限原服证据 | [联网模块](modules/NETWORK.md) |
-| 消息ID、编码格式、参数、分帧与预留状态 | [消息速查](modules/MESSAGES.md) |
-| 领域处理器、收发所有权、扩展顺序与宿主管理边界 | [服务端协议](modules/SERVER_PROTOCOL.md) |
+| 文档层 | 只维护什么 | 不放什么 |
+| --- | --- | --- |
+| 根README／AGENTS | 产品入口／协作约束 | 批次记录、详细架构、玩法台账 |
+| BASELINE | 当前源码概况、未交付差异、最新包身份、关键限制与专题链接；保持短篇 | 历史SHA、逐项操作、源码实现细节、测试流水 |
+| architecture | 大模块、依赖、数据流、设计依据；MULTIPLAYER维护后续顺序 | 重复的当前包清单、逐技能验收 |
+| modules | 代码入口、状态所有权、接口与失败边界 | 复制各职业／物品／任务规则和全部运行记录 |
+| gameplay及分类README | 分类入口、原版规则、实现范围和该专题有限证据 | 跨专题重复台账、把旧证据写成当前整体通过 |
+| development | 编码与验证方法、构建／启停／诊断；专项性能和部署证据放对应页 | 复制基线中的当前包身份、业务实现清单 |
+| resources／licenses | 原资源、参考来源、固定版本与许可 | 玩法完成宣称 |
+
+更新原负责段落，不按每次会话追加日志。已有专题证据只链接，不再复制到基线；被替代的包身份与修改过程由Git追溯，原始证据留忽略目录`artifacts/`。新证据必须说明包／条件／范围／失败与未覆盖项，不能沿用旧包结论认证新源码。
+
+移动内容时保留有效证据和链接，外部已引用的锚点保留或同步修正。保存语义变化同步SAVES／格式／指纹；执行授权以[协作约定](../AGENTS.md)和[验证指南](development/TESTING.md)为准，不在各页重复维护授权规则。
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |

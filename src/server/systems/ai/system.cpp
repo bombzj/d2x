@@ -3,6 +3,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/objects/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
@@ -15,6 +16,7 @@
 namespace d2x::server::ai {
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
+    const combat::Participants participants{ports_.players,ports_.monsters};
     std::erase_if(state_.controllers, [&](const auto &entry) {
         const auto *actor = ports_.monsters.find(entry.first); return !actor || actor->life <= 0;
     });
@@ -42,18 +44,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         int distance = std::min(55, monster.rule.ai.searchDistance);
         for (const auto &[playerId, player] : ports_.players.all()) {
             (void)playerId;
-            if (monster.conversion || !player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
+            if (!participants.canHarm({nullptr,&monster},{&player,nullptr}) || !player.entered || player.area != monster.area || player.persistent.player.hp <= 0 || !area.definition.activation.nearby(player.position,monster.position)) continue;
             const int candidate = monsterAiDistance(player.position, 0, monster.position);
             if (candidate < distance && visible(player.position)) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
         std::optional<UnitTarget> alternative;Vec alternativePosition;int alternativeSize=0;
         if(monster.conversion) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
-            if(enemy.owner || enemy.life<=0 || enemy.area!=monster.area || !area.definition.activation.nearby(enemy.position,monster.position) || !visible(enemy.position)) continue;
+            if(!participants.canHarm({nullptr,&monster},{nullptr,&enemy}) || enemy.life<=0 || enemy.area!=monster.area || !area.definition.activation.nearby(enemy.position,monster.position) || !visible(enemy.position)) continue;
             const int candidate=monsterAiDistance(enemy.position,0,monster.position);
             if(candidate<distance) {distance=candidate;target=UnitTarget{enemyId,0,1};targetPosition=enemy.position;targetSize=enemy.rule.size;}
         }
         int alternativeDistance=monster.rule.ai.searchDistance;
         for(const auto &[petId,pet]:ports_.monsters.read().actors) if(!monster.conversion && pet.combatCompanion() && pet.life>0 && pet.area==monster.area && area.definition.activation.nearby(pet.position,monster.position)) {
+            if(!participants.canHarm({nullptr,&monster},{nullptr,&pet})) continue;
             if(!visible(pet.position)) continue;
             const int candidate=monsterAiDistance(pet.position,0,monster.position);
             if(pet.rule.threat>1) {

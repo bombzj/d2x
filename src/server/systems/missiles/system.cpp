@@ -3,9 +3,19 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/spatial/system.hpp"
 namespace d2x::server::missiles {
+std::vector<EntityId> System::collisionCandidates(const Missile &missile,Vec next) const {
+    const Vec center=(missile.position+next)*.5f;
+    const auto candidates=ports_.spatial.query({missile.area,center,(next-missile.position).length()*.5f+float(missile.collision.size+ports_.spatial.maximumSize(missile.area)+1)});
+    if(!candidates) throw std::logic_error("Missile collision index unavailable");
+    std::vector<EntityId> result;result.reserve(candidates.value->size());
+    for(const auto &candidate:*candidates.value) if(candidate.kind==spatial::UnitKind::Monster) result.push_back(candidate.id);
+    return result;
+}
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked=false;
+    const combat::Participants participants{ports_.players,ports_.monsters};
     // Newly committed children start on the next domain frame.
     const auto end=ports_.ids.cursor();
     for(auto it=state_.missiles.begin();it!=state_.missiles.end() && it->first.value<end;) {
@@ -15,7 +25,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const bool validOwner=m.enemy?enemy && enemy->area==m.area &&
             (m.player.value?enemy->owner==m.player && (enemy->hireling || enemy->conversion) && p && p->entered && p->area==m.area:!enemy->owner):
             p && p->entered && p->actor==m.owner && p->area==m.area;
-        if(!validOwner || !a || a->generation!=m.generation || a->definition.town) {
+        if(!validOwner || participants.bind(participants.find(m.owner))!=m.binding || !a || a->generation!=m.generation || a->definition.town) {
             pending_.erase(it->first);it=state_.missiles.erase(it);continue;
         }
         if(tick.tick<=m.created) {++it;continue;}

@@ -102,7 +102,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick.tick};
         if(pet.release && tick.tick>=pet.release) {
             const auto *target=ports_.monsters.find(pet.target);
-            if(target && target->life>0 && !target->owner && target->area==body->area) {
+            if(target && target->life>0 && target->enemyTarget() && target->area==body->area) {
                 auto skill=skills::evaluate(*p,*pet.sourceSkill,pet.rank);
                 const auto result=ports_.missiles.spawn({actor,skill,{},target->position,true,pet.actor,1,body->position});
                 if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
@@ -112,7 +112,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(tick.tick<pet.nextDecision || tick.tick<body->busyUntil) {++it;continue;}
         EntityId target;int nearest=25;
         for(const auto &[id,t]:ports_.monsters.read().actors) {
-            if(t.owner || t.life<=0 || t.area!=body->area || !area.definition.activation.nearby(p->position,t.position)) continue;
+            if(!t.enemyTarget() || t.life<=0 || t.area!=body->area || !area.definition.activation.nearby(p->position,t.position)) continue;
             const int distance=missileDistance(body->position,t.position);
             if(distance<nearest && area.definition.collision.missileSegment(body->position,t.position,{4,1})) {nearest=distance;target=id;}
         }

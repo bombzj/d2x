@@ -1,4 +1,5 @@
 #pragma once
+#include "server/runtime/simulation.hpp"
 #include "server/runtime/events.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/ai/system.hpp"
@@ -49,6 +50,10 @@ struct DiagnosticMonster {
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {
+    SystemMetrics stageMetrics{};
+    uint64_t spatialTick{},spatialGeneration{},spatialQueries{},spatialCandidates{},spatialReturned{};
+    size_t spatialUnits{},combatQueueDepth{};
+    uint64_t combatTargetAttempts{};
     std::vector<DiagnosticEffect> effects;
     std::vector<PlayerCorpse> corpses;
     std::vector<objects::Object> objects;

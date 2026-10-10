@@ -34,6 +34,17 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    result["combatMetrics"]={{"queueDepth",s.combatQueueDepth},{"targetAttempts",s.combatTargetAttempts},{"stages",Json::array()}};
+    for(size_t index=0;index<s.stageMetrics.size();++index) {
+        const auto &metric=s.stageMetrics[index];
+        if(metric.calls) {
+            std::string_view name="unknown";
+            for(const auto &system:server::systemCatalog()) if(size_t(system.id)==index) {name=system.name;break;}
+            result["combatMetrics"]["stages"].push_back({{"system",name},{"nanoseconds",metric.nanoseconds},{"calls",metric.calls},{"blocked",metric.blocked}});
+        }
+    }
+    result["spatial"]={{"tick",s.spatialTick},{"generation",s.spatialGeneration},{"units",s.spatialUnits},
+        {"queries",s.spatialQueries},{"candidates",s.spatialCandidates},{"returned",s.spatialReturned}};
     for (const auto &effect : s.effects) result["effects"].push_back({{"state", effect.state}, {"expires", effect.expires}});
     result["restoration"] = {{"healingQueued", s.healingQueued}, {"manaQueued", s.manaQueued}};
     result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};

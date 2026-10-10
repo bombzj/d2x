@@ -1,6 +1,7 @@
 # 协作约定
 
 - 先读 [BASELINE.md](BASELINE.md) 和对应模块；实现状态以当前代码及基线为准。
+- 开始编码前阅读[架构速览](docs/architecture/OVERVIEW.md#agent速览)与[编码规范](docs/development/CODING.md)；验证按[测试指南](docs/development/TESTING.md)执行。详细模块入口见[文档目录](docs/README.md)。
 - 核对原版规则或界面时先查本地 `reference/` 和当前 MPQ；四个参考仓库的用途见 [资料来源](docs/resources/THIRD_PARTY.md)。参考代码仅作证据，不替代当前 MPQ，也不纳入源码提交。
 - 不编写测试脚本、测试用例或专用测试程序。默认不继续构建、运行检查或打包，等待用户查看。
 - 优先读取 MPQ 的原图形和原表。缺资源或规则未核实则明确暂缓，不自造地图、UI、物品参数或掉落概率。数据尽可能都动态从MPQ读取而不写死到代码里。

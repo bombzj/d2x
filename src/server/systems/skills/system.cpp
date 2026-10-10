@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -14,10 +15,25 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
+System::System(Ports ports):ports_(ports),runtime_(std::make_unique<Runtime>()) {}
+System::~System()=default;
+bool System::uninterruptible(EntityId actor) const {
+    const auto &releases_=runtime_->releases;
+    const auto found=releases_.find(actor);
+    return found!=releases_.end() && found->second.skill.weapon && !found->second.skill.weapon->interruptible;
+}
+size_t System::pendingReleases() const {return runtime_->releases.size()+runtime_->monsters.size();}
+bool System::busy(EntityId id,uint64_t tick) const {
+    const auto &releases_=runtime_->releases;
+    const auto &monsterReleases_=runtime_->monsters;
+    const auto found=state_.casts.find(id);
+    return releases_.contains(id) || monsterReleases_.contains(id) || (found!=state_.casts.end() && found->second.until>tick);
+}
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
 }
 void System::cancel(PlayerId player, EntityId actor) {
+    auto &pending_=runtime_->pending;auto &releases_=runtime_->releases;
     ports_.companions.cancel(actor);
     pending_.erase(player);
     releases_.erase(actor);
@@ -42,6 +58,7 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
     return cast(actor, request, selected);
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
+    auto &pending_=runtime_->pending;auto &releases_=runtime_->releases;
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0)
@@ -93,6 +110,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    auto &pending_=runtime_->pending;auto &releases_=runtime_->releases;
     const auto playerStatus = release(tick);
     const auto monsterStatus = releaseMonsters(tick);
     const auto status = playerStatus == StepStatus::Blocked || monsterStatus == StepStatus::Blocked ? StepStatus::Blocked : StepStatus::Complete;

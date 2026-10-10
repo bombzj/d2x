@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -57,12 +58,13 @@ struct Missile {
     std::set<EntityId> weaponContacts{};
     bool guidanceSearched{};
     std::optional<EnemyProjectile> enemy;
-
+    combat::SourceBinding binding{};
 };
 struct State { std::map<EntityId, Missile> missiles; };
 struct Ports {
     const AreaStore &areas; const PlayerStore &players; const monsters::System &monsters;
     combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random; EventOutbox &events; const effects::System &effects;
+    const spatial::System &spatial;
 };
 class System {
     State state_;
@@ -78,6 +80,7 @@ class System {
     void weaponImpact(Advance &, Vec) const;
     combat::SpellImpact impact(Missile &, std::vector<EntityId>, std::optional<int64_t> damage = {}) const;
     std::vector<DomainFact> visuals(const std::vector<Missile> &) const;
+    std::vector<EntityId> collisionCandidates(const Missile &, Vec next) const;
 
   public:
     explicit System(Ports ports) : ports_(ports) {}

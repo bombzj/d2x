@@ -62,7 +62,7 @@
 
 先参考master单机各幕conversation／events／npc、session_quest_rewards、session_later_act_objects、session_prisoners、session_ancients、session_baal，再核对本地D2MOO `QUESTS/ACT3`、`ACT4`、`ACT5`、ObjMode、Quests状态／特殊进度编码与当前MPQ。D2Common记录解释可共享，D2Game权威执行不搬到客户端。来源及共用链见[任务系统](SYSTEM.md)。
 
-2026-10-09全部源码完成后统一Windows Release构建／打包，随后以普通难度84级角色副本通过现有named pipe做有限冒烟；冒烟暴露的问题修复后重新构建并复验。最终`build-14.log`、`package-final.log`和快照位于忽略目录`artifacts/act3-5-quests-20261009`，当前EXE摘要及DLL见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。
+2026-10-09全部源码完成后统一Windows Release构建／打包，随后以普通难度84级角色副本通过现有named pipe做有限冒烟；冒烟暴露的问题修复后重新构建并复验。最终`build-14.log`、`package-final.log`和快照位于忽略目录`artifacts/act3-5-quests-20261009`；该历史v27包EXE SHA256 `9440CD86160F5635C2921F14AA37F2D053B75D91D84383C29C46675D96E8F5E4`，不是[当前运行包](../../../BASELINE.md#当前运行包与有限冒烟)。
 
 | 范围 | 实际结果与代表证据 |
 | --- | --- |

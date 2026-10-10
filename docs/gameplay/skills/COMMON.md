@@ -73,6 +73,8 @@
 
 ## 跨职业公共计算
 
+2026-10-10源码依赖边界：`server/skills/system.hpp`不暴露私有施法／怪物释放结构，它们位于仅技能实现使用的`runtime.hpp`；求值、支配、充能源逻辑移入`evaluation.cpp`，公共头只声明函数。普通技能实现改动限定在对应编译单元，私有队列布局改动限定在技能模块；共享规则结构变化仍会影响真正使用这些类型的调用者。参与者关系通过轻量声明读取，不包含PlayerStore／monsters系统头。公共战斗规则、提交阶段与运行限制见[内核](../../modules/SERVER_SYSTEMS.md#战斗关系与提交)。本批未构建，未实测增量编译耗时。
+
 | 计算入口 | 必须保留的语义 |
 | --- | --- |
 | `resolve`、`rank_sources`、`rank_bonus`、`passive` | 基础等级用于协同，来源的有效等级用于施放；安装属性贡献仍归服务端 |
@@ -93,6 +95,15 @@ SceneController／RemoteCombat处理首次、Hold、锁定与停止，客户端�
 
 鼠标松开发出的原C2S `0x12`只结束引导，不能当作通用施法取消。依据D2MOO `PlrMsg.cpp::D2GAME_PACKETCALLBACK_Rcv0x12_6FC84670`，它只清`STATE_INFERNO`；RemoteScene按当前表CltDo24／seq6识别已支持的引导程序，普通动作及待释放飞弹继续到原动作帧。动作结束清本人表现状态，已释放飞弹独立计时；移动、受击、死亡及场景代次变化仍走真正的中断入口。自研skills的Stop同样不删除普通攻击的待接近请求。
 
-背包右键回城卷轴／书本通过`create_town_portal`发送原3C／0C，并与技能栏共用`record_combat`登记已发送施法意图，不能依赖通常省略的本人4C／4D。这只驱动动作表现；数量、落点、门对象及选择恢复仍来自原包，不自行创建门户或伪造确认。通用修复的当前代表冒烟由[基线](../../../BASELINE.md#当前运行包与有限冒烟)维护；观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
+背包右键回城卷轴／书本通过`create_town_portal`发送原3C／0C，并与技能栏共用`record_combat`登记已发送施法意图，不能依赖通常省略的本人4C／4D。这只驱动动作表现；数量、落点、门对象及选择恢复仍来自原包，不自行创建门户或伪造确认。通用修复的历史代表冒烟见下节；观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
 
 States／Overlay定义覆盖层和状态属性；客户端消费A7–AA，真实期限、互斥、反击／吸收、周期及死亡清理由服务端持有。晚入视野恢复已公开单位／状态／装备／归属，不重播历史施法／弹体。尸体资格、碎冰及未完成客户端程序见联网与对应职业专题。
+
+## 通用施法表现有限证据
+
+2026-10-09 Windows Release、规则v27／D2S v96；EXE SHA256 `BF767C41680FAD44DD825B8BD877D82D30629C03CCB0B45A79038243FD55A52A`，DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。证据：`artifacts/skill-presentation-20261009`，只使用既有客户端／调试入口。
+
+- Single Player实际UI快速按下／松开后，Fire Ball62、Ice Bolt59、Frozen Orb260／261仍生成／移动／散射，有原图截图；火球将管理准备的zombie1生命7→0。Inferno有10个视觉弹体，Stop后施法／弹体／pendingReleases清零；背包卷轴消费并创建蓝门。最终failures／ignoredPackets为0，mapErrors／effectLimitations及stderr为空。
+- 同包连接本机1.13c D2GS／PvPGN，在冰冷之原复查Fire Ball／Ice Bolt的Stop后表现；背包开门取得219施法、数量1→0及原59门户证据。原服既有ignoredPackets=16；此前一次AF后加载超时，重新选角恢复，原因未认定修复。
+
+仅认证列出路径，不覆盖全部职业／参数、多人、三难度、精确逐帧／像素或Linux，也不认证后续源码。最新运行包身份见基线。

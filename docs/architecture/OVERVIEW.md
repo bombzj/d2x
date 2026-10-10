@@ -1,6 +1,29 @@
 # 代码结构与依赖
 
-更新：2026-10-09。源码入口以CMake为准；客户端和独立服务端分别构建／打包，当前产物与历史有限证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。构建完成不代表运行验收。
+更新：2026-10-10。源码入口以CMake为准；客户端和独立服务端分别构建／打包，当前产物与历史有限证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。构建完成不代表运行验收。
+
+## Agent速览
+
+**一套客户端，两种权威来源。** Single Player／LAN使用自研宿主，原服使用D2GS；两者都走原MCP／D2GS请求与同一客户端副本。单机只是内存字节传输，不是客户端执行玩法；断线不切换成本地权威。
+
+| 大模块（相对src/） | 放什么／不能放什么 |
+| --- | --- |
+| `app`／`server_main` | 程序组合、平台输入、启停与调试；不实现另一套玩法 |
+| `presentation`／`client` | UI、动画、声音、只读副本与请求；不裁决命中、库存、奖励或保存 |
+| `network` | 原协议、连接、字节传输与客户端会话；不决定游戏规则 |
+| `hosting` | 内容准备、协议适配、角色存储、实例调度；调用内核，不在会话里结算玩法 |
+| `server` | 权威领域状态、命令、25Hz执行、事务和可靠事实；不读取MPQ／文件／socket／设备／GPU／Win32 |
+| `gameplay`／`core` | 显式输入的规则计算、纯值和基础工具；不依赖会话、UI或隐式全局世界 |
+| `world`／`resources`／`content` | 导航、原地图生成、MPQ读取与定义；内核仅使用导航及已准备纯值，不调用内容加载 |
+| `persistence` | 原D2S编解码与文件保存工具，由宿主使用；客户端不直接读写角色存档 |
+
+**服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
+
+**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞，monsters持活动非玩家实体，companions持伙伴控制关系，social持队伍关系；skills／missiles／effects分别持动作、弹体、效果。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
+
+修改时先找状态所属领域，通过窄Ports协作；不把GameSystems、网络会话或内容加载器传给玩法。共享算法不共享运行态，协议值不等于磁盘值。新内容沿“MPQ准备 → 领域资格／执行 → 事务／事实 → 原包投影”接入，未实现路径明确拒绝。
+
+快速定位：[领域目录与提交约定](../modules/SERVER_SYSTEMS.md)、[数据流](DATA_FLOW.md)、[原包入口](../modules/SERVER_PROTOCOL.md)、[存档边界](../modules/SAVES.md)。编码及头文件依赖见[编码规范](../development/CODING.md)，验证授权和方法见[测试指南](../development/TESTING.md)。下文保留详细目录和链接关系，不另维护第二份架构清单。
 
 ## 模块分工
 

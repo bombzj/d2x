@@ -22,6 +22,12 @@ class PlayerStore {
         const auto found = players_.find(id);
         return found == players_.end() ? nullptr : &found->second;
     }
+    const PlayerState *findActor(EntityId actor) const {
+        for (const auto &entry : players_) {
+            if (entry.second.actor == actor) return &entry.second;
+        }
+        return nullptr;
+    }
     const std::map<PlayerId, PlayerState> &all() const { return players_; }
 };
 }

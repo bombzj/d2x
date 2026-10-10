@@ -28,7 +28,7 @@ StepStatus System::advanceSkills(const ActorContext &actor, Recovery &recovery) 
             if(actor.tick<cycle.next) continue;
             EntityId next,fallback;
             if(!area.definition.town) for(const auto &[id,t]:ports_.monsters.read().actors) {
-                if(t.owner || t.life<=0 || t.area!=actor.area || !area.definition.activation.nearby(p.position,t.position)) continue;
+                if(!t.enemyTarget() || t.life<=0 || t.area!=actor.area || !area.definition.activation.nearby(p.position,t.position)) continue;
                 const Vec d{float(int(t.position.x)-int(p.position.x)),float(int(t.position.y)-int(p.position.y))};
                 if(d.x*d.x+d.y*d.y>float(skill.stormRadius*skill.stormRadius) || !area.definition.collision.missileSegment(p.position,t.position,{4,1})) continue;
                 if(!fallback) fallback=id;
@@ -51,7 +51,7 @@ StepStatus System::advanceReactions(uint64_t tick) {
         auto actor=it->actor;actor.tick=tick;
         const auto *p=ports_.players.find(actor.player);const auto *target=ports_.monsters.find(it->attacker);
         if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 ||
-            !target || target->owner || target->life<=0 || target->area!=actor.area || !p->rules.skills ||
+            !target || !target->enemyTarget() || target->life<=0 || target->area!=actor.area || !p->rules.skills ||
             !p->rules.skills->definitions.contains(it->effect.source.definition)) {it=reactions_.erase(it);continue;}
         auto skill=skills::evaluate(*p,it->effect.source.definition,it->effect.source.level);
         DomainResult<> result;

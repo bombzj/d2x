@@ -23,9 +23,9 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
     const auto cast=ports_.skills.read().casts.find(owner->actor);
     if(cast!=ports_.skills.read().casts.end()) {
         const auto *candidate=ports_.monsters.find(cast->second.target);
-        if(candidate && !candidate->owner && candidate->life>0 && candidate->area==body->area && missileDistance(body->position,candidate->position)<nearest) target=candidate->id;
+        if(candidate && candidate->enemyTarget() && candidate->life>0 && candidate->area==body->area && missileDistance(body->position,candidate->position)<nearest) target=candidate->id;
     }
-    if(!target) for(const auto &[id,candidate]:ports_.monsters.read().actors) if(!candidate.owner && candidate.life>0 && candidate.area==body->area) {
+    if(!target) for(const auto &[id,candidate]:ports_.monsters.read().actors) if(candidate.enemyTarget() && candidate.life>0 && candidate.area==body->area) {
         const int distance=missileDistance(body->position,candidate.position);
         if(distance<nearest && area.definition.collision.segment(body->position,candidate.position)) {nearest=distance;target=id;}
     }

@@ -29,6 +29,8 @@ struct MoveRequest {
 struct Actor {
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
+    bool hostile{};
+    uint64_t allegianceRevision{};
     MonsterRule rule;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
     bool hireling{};
@@ -81,7 +83,8 @@ struct Actor {
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
-    bool damageable() const { return !owner || amazonPet || hireling || conversion; }
+    bool enemyTarget() const { return hostile && !owner && !conversion; }
+    bool damageable() const { return enemyTarget() || amazonPet || hireling || conversion; }
     bool combatCompanion() const { return bool(amazonPet) || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || conversion; }

@@ -118,7 +118,7 @@ DomainResult<> System::convert(EntityId id,const ActorContext &actor,const Weapo
         m.maximumLife=std::max<int64_t>(256,m.maximumLife*p->persistent.player.level/m.rule.level);
         m.life=std::min(m.life,m.maximumLife);m.rule.level=p->persistent.player.level;
     }
-    m.owner=actor.player;++m.interruption;stop(id);++m.revision;return {DomainStatus::Applied,std::monostate{}};
+    m.owner=actor.player;++m.allegianceRevision;++m.interruption;stop(id);++m.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || state<0 || state>=255 || percent< -100 || percent>0 || !frames) return {DomainStatus::InvalidActor,{}};
