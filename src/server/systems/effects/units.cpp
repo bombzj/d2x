@@ -7,7 +7,9 @@
 #include <algorithm>
 namespace d2x::server::effects {
 std::set<int> System::unitStates(EntityId id,uint64_t tick) const {
-    std::set<int> states;const auto it=units_.find(id);if(it==units_.end()) return states;
+    std::set<int> states;
+    if(const auto *m=ports_.monsters.find(id);m && m->corpseSearched && m->rule.corpseNoSelectState>=0) states.insert(m->rule.corpseNoSelectState);
+    const auto it=units_.find(id);if(it==units_.end()) return states;
     for(const auto &effect:it->second.states.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
     return states;
 }
@@ -28,7 +30,7 @@ DomainResult<> System::convert(const ActorContext &actor,EntityId id,const Weapo
 DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &skill,EntityId id) {
     const auto *caster=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
     if(!caster || !caster->entered || caster->actor!=actor.actor || caster->area!=actor.area || caster->persistent.player.hp<=0 ||
-       !area || area->generation!=actor.areaGeneration || skill.effect!=SkillBehavior::Enchant || !skill.appliedEffect ||
+       !area || area->generation!=actor.areaGeneration || (skill.effect!=SkillBehavior::Enchant && !skill.warcry) || !skill.appliedEffect ||
        caster->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
     const auto *m=ports_.monsters.find(id);
     const bool allied=m && m->owner && m->life>0 && m->area==actor.area;
@@ -37,12 +39,20 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
     auto next=units_;auto &target=next[id];target.area=actor.area;
     if(target.states.size()>=128) return {DomainStatus::Capacity,{}};
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
+    if(skill.warcry) {
+        auto &stats=target.nativeStats[spec.state.id];stats.clear();
+        if(spec.modifiers.combat.defensePercent) stats.emplace_back(caster->rules.skills->nativeStats.at("skill_armor_percent"),spec.modifiers.combat.defensePercent);
+        if(spec.modifiers.combat.lifePercent) stats.emplace_back(caster->rules.skills->nativeStats.at("item_maxhp_percent"),spec.modifiers.combat.lifePercent);
+        if(spec.modifiers.combat.manaPercent) stats.emplace_back(caster->rules.skills->nativeStats.at("item_maxmana_percent"),spec.modifiers.combat.manaPercent);
+        if(spec.modifiers.staminaPercent) stats.emplace_back(caster->rules.skills->nativeStats.at("skill_staminapercent"),spec.modifiers.staminaPercent);
+        if(spec.modifiers.combat.allSkills) stats.emplace_back(caster->rules.skills->nativeStats.at("item_allskills"),spec.modifiers.combat.allSkills);
+    }
     if(!target.states.apply(std::move(spec),actor.tick).accepted) return {DomainStatus::Conflict,{}};
     transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
     debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     const auto before=unitStates(id,actor.tick);
-    for(const auto &effect:target.states.entries()) if(effect.activeAt(actor.tick) && !before.contains(effect.spec.state.id))
-        debit.publicFacts.emplace_back(StateFact{id,1,actor.area,effect.spec.state.id,true});
+    for(const auto &effect:target.states.entries()) if(effect.activeAt(actor.tick) && (!before.contains(effect.spec.state.id) || (skill.warcry && effect.spec.state.id==skill.appliedEffect->state.id)))
+        debit.publicFacts.emplace_back(StateFact{id,1,actor.area,effect.spec.state.id,true,target.nativeStats[effect.spec.state.id]});
     auto plan=ports_.transactions.prepare(std::move(debit));if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) units_.swap(next);return result;
 }
@@ -71,6 +81,13 @@ StepStatus System::advanceUnits(uint64_t tick) {
         std::swap(it->second.states,next);
         if(m && !m->conversion) it->second.converted=false;
         if(m) ports_.monsters.velocityModifier(it->first,it->second.states.modifiers(tick).velocityPercent);
+        if(m) {
+            auto &effect=it->second;
+            if(m->hireling) effect.baseLife=int64_t(m->rule.minimumLife)*256;
+            else if(!effect.baseLife || m->maximumLife!=effect.adjustedLife) effect.baseLife=m->maximumLife;
+            effect.adjustedLife=effect.baseLife*std::max(0,100+effect.states.modifiers(tick).combat.lifePercent)/100;
+            ports_.monsters.maximumLife(it->first,effect.adjustedLife);
+        }
         if(!it->second.states.size()) it=units_.erase(it);else ++it;
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;

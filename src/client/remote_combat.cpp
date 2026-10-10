@@ -96,6 +96,16 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     const auto &table=tables_.at("skills");
     const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
     if (skillMetadata_.at(skill).itemSkill) return false; // SrvDo113 searches inventory, not a hovered unit.
+    if(n("srvstfunc")==34 && n("srvdofunc")==72) return monsterTargetEligible(unit,true);
+    if(n("srvstfunc")==33 && (n("srvdofunc")==69 || n("srvdofunc")==75)) {
+        if(!monsterTargetEligible(unit,true)) return false;
+        const auto monster=monsters_.find(unit.classId.value_or(UINT16_MAX));
+        const auto extended=tables_.at("monstats").value(monster->second,"MonStatsEx");
+        const auto &extra=tables_.at("monstats2");
+        for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==extended)
+            return extra.number(row,"soft").value_or(0)!=0;
+        return false;
+    }
     if(n("srvstfunc")==3 && n("srvdofunc")==4) {
         if(unit.key.type!=1 || onlineMonsterCorpse(unit)) return false;
         const auto &world=session_.read().world;
@@ -145,7 +155,7 @@ bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
         for (const auto &[id,state]:snapshot->second.states) {
             (void)state;
             if (const auto row=states_.find(id); row!=states_.end())
-                if (tables_.at("states").number(row->second,"hide").value_or(0) ||
+                if (tables_.at("states").value(row->second,"state")=="corpse_noselect" || tables_.at("states").number(row->second,"hide").value_or(0) ||
                     tables_.at("states").number(row->second,"udead").value_or(0)) return false;
         }
     }

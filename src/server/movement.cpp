@@ -15,6 +15,19 @@ bool barrierSegment(const monsters::System &monsters,RegionId area,Vec from,Vec 
     return true;
 }
 }
+DomainResult<bool> MovementSystem::leapStep(const ActorContext &actor,Vec target,float speed,std::optional<MovementCollisionRule> collision) {
+    auto it=ports_.players.players_.find(actor.player);
+    if(it==ports_.players.players_.end() || it->second.actor!=actor.actor || it->second.area!=actor.area || !it->second.entered || it->second.persistent.player.hp<=0)
+        return {DomainStatus::InvalidActor,{}};
+    auto &p=it->second;const auto &area=ports_.areas.at(actor.area);
+    if(area.generation!=actor.areaGeneration || !std::isfinite(speed) || speed<=0) return {DomainStatus::Stale,{}};
+    const Vec delta=target-p.position;
+    const auto next=p.position+delta.unit()*std::min(delta.length(),speed*TickContext::seconds);
+    if(collision && !area.definition.collision.nativeMovementSegment(p.position,next,*collision)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    p.route.clear();p.position=next;
+    p.look=delta.unit();p.moving=true;p.runningNow=false;skillSteps_[actor.player]=actor.tick;
+    return {DomainStatus::Applied,(target-p.position).length()<.001f};
+}
 DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec target,float speed,int stopDistance) {
     auto it=ports_.players.players_.find(actor.player);
     if(it==ports_.players.players_.end() || it->second.actor!=actor.actor || it->second.area!=actor.area || !it->second.entered || it->second.persistent.player.hp<=0)

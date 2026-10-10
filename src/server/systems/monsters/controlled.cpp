@@ -113,9 +113,10 @@ DomainResult<> System::updateHireling(EntityId id,MonsterRule rule,WeaponDamage 
     if(found==state_.actors.end() || !found->second.hireling) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
     const bool levelUp=rule.level>actor.rule.level && actor.life>0;
+    const int64_t maximum=actor.rule.minimumLife>0?actor.maximumLife*rule.minimumLife/actor.rule.minimumLife:int64_t(rule.minimumLife)*256;
     actor.rule=std::move(rule);actor.petWeapon=std::move(weapon);actor.petStats.attributes.combat=std::move(modifiers);
     actor.petStats.block=actor.rule.blockChance;
-    actor.maximumLife=int64_t(actor.rule.minimumLife)*256;actor.life=levelUp?actor.maximumLife:std::min(actor.life,actor.maximumLife);
+    actor.maximumLife=maximum;actor.life=levelUp?actor.maximumLife:std::min(actor.life,actor.maximumLife);
     actor.hirelingStrength=strength;actor.hirelingDexterity=dexterity;actor.hirelingVitality=vitality;
     actor.equipment=std::move(equipment);actor.hirelingInventoryRevision=inventoryRevision;actor.hirelingCharacterRevision=characterRevision;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};

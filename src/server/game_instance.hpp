@@ -74,7 +74,7 @@ class GameInstance {
     std::vector<travel::Portal> visiblePortals(PlayerId) const;
     DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);
     auto pendingSummons() const {return systems_.companions.pending();}
-    auto pendingHirelings() const {return systems_.companions.pendingHirelings();}
+    auto pendingHirelings() const {return systems_.companions.pendingHirelings(tick_);}
     auto pendingHirelingLists() const {return systems_.companions.pendingHirelingLists();}
     DomainResult<> installHirelingList(companions::PreparedHirelingList prepared) {return systems_.companions.install(std::move(prepared));}
     DomainResult<> installHireling(companions::PreparedHireling prepared) {return systems_.companions.install(std::move(prepared));}

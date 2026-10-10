@@ -77,7 +77,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             for(const auto &s:row->skills) if(source.record.level>=s.requiredLevel) ranks[s.id]=std::clamp(s.level+((delta*s.levelPerLevel)>>5),0,32);
             for(const auto &[id,rank]:ranks) if(const auto *entry=data.skills.find(id)) result.passives.emplace_back(entry->passiveContribution,rank);
             if(!source.items || !source.equipmentRules) throw std::runtime_error("Hireling equipment rules unavailable");
-            const auto gear=server::companions::calculateHirelingEquipment(source.equipment,*source.items,*source.equipmentRules,result);
+            auto gear=server::companions::calculateHirelingEquipment(source.equipment,*source.items,*source.equipmentRules,result);
+            gear.modifiers.combat.allSkills+=source.temporarySkillBonus;
             const auto recovery=[&](int frames,int bonus){const int rate=std::max(1,100+120*bonus/(120+bonus));return std::max(1,(frames*100+rate-1)/rate);};
             if(rule.hitRecoveryTicks) rule.hitRecoveryTicks=recovery(rule.hitRecoveryTicks,gear.modifiers.combat.fasterHitRecovery);
             if(rule.blockTicks) rule.blockTicks=recovery(rule.blockTicks,gear.modifiers.combat.fasterBlock);

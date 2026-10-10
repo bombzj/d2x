@@ -96,6 +96,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
     rule.spawnCollision=record->spawnRule();rule.corpseSelectable=record->corpseSelectable;
+    rule.softCorpse=record->soft;
+    rule.corpseSize=record->corpseSize;
+    rule.corpseNoSelectState=data.states.at("corpse_noselect").definition.id;
     rule.convertible=!record->boss && record->switchAi;
     rule.curseable=record->curseable;rule.switchAi=record->switchAi;rule.revivable=record->revivable;
     rule.primeEvil=data.tables.at("monstats").number(record->sourceRow,"primeevil").value_or(0)!=0;

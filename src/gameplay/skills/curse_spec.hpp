@@ -1,6 +1,8 @@
 #pragma once
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "core/math.hpp"
+#include <optional>
 
 namespace d2x {
 struct CurseSpec {
@@ -9,6 +11,11 @@ struct CurseSpec {
     int radius = 0, radiusPerLevel = 0, frames = 0, framesPerLevel = 0;
     CharacterModifiers modifiers;
     CurseAi ai = CurseAi::None;
+    bool singleTarget = false, skipActive = false, ignoreDifficultyDivisor = false;
+    int targetLevelBonus = 0;
+    bool permanent = false;
+    std::optional<Vec> fearOrigin;
+    int attackRatingPerLevel = 0, damagePerLevel = 0, defensePerLevel = 0;
     int resistMinimum = 0, resistMaximum = 0;
     int reflectPercent = 0, reflectPerLevel = 0;
     int reflectReducedDivisor = 1, reflectHitClass = -1;

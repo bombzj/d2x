@@ -7,6 +7,7 @@
 #include "gameplay/loot/plan.hpp"
 #include "gameplay/loot/chest.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/transactions/system.hpp"
 #include <map>
 #include <set>
 #include <string>
@@ -14,7 +15,7 @@
 
 namespace d2x::server::loot {
 // Treasure selection only; a selected plan is not materialized or committed loot.
-struct ObjectSource { int definition{}, operation{}; std::optional<ChestState> chest; ItemHandle key; std::string dropCode; int dropCount{},dropLevel{}; ItemHandle ingredient; };
+struct ObjectSource { int definition{}, operation{}; std::optional<ChestState> chest; ItemHandle key; std::string dropCode; int dropCount{},dropLevel{}; ItemHandle ingredient; bool reportCompletion{true}; };
 struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant; bool towerGold{},environment{}; };
 struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; };
 struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, bool> completed; };
@@ -27,7 +28,7 @@ class System {
     const State &read() const { return state_; }
     std::set<size_t> prepareUniques(const std::set<size_t> &) const;
     void commitUniques(std::set<size_t> next) noexcept { state_.uniques.swap(next); }
-    DomainResult<> queue(const Request &);
+    DomainResult<> queue(const Request &, std::optional<transactions::CharacterEdit> payment = {});
     std::optional<bool> takeCompletion(EntityId);
     DomainResult<> install(EntityId source, items::PreparedBatch, std::string deferred);
     StepStatus step(TickContext, FrameFacts &);

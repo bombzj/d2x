@@ -1,4 +1,5 @@
 #include "stat_modifiers.hpp"
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 
@@ -18,10 +19,15 @@ void mergeAttackTargetModifiers(AttackTargetModifiers &a, const AttackTargetModi
     a.ignoreDefense |= b.ignoreDefense;
 }
 void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
+    for (const auto &[type, bonus] : b.meleeMasteries)
+        for (size_t i = 0; i < bonus.size(); ++i) a.meleeMasteries[type][i] = std::max(a.meleeMasteries[type][i], bonus[i]);
+    for (const auto &[type, bonus] : b.throwMasteries)
+        for (size_t i = 0; i < bonus.size(); ++i) a.throwMasteries[type][i] = std::max(a.throwMasteries[type][i], bonus[i]);
     mergeAttackTargetModifiers(a.target, b.target);
 #define D2X_ADD(field) add(a.field, b.field)
     D2X_ADD(damagePercent); D2X_ADD(attackRatingPercent);
     D2X_ADD(defensePercent);
+    D2X_ADD(armorOverridePercent);
     D2X_ADD(experiencePercent);
     a.preventPoison = a.preventPoison || b.preventPoison;
     a.preventBurn = a.preventBurn || b.preventBurn;

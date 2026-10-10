@@ -134,7 +134,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     edit.transient = projection(states,actor.tick);
     const auto percent = playerLifePercentage(int64_t(edit.player.hp*256),int64_t(p->totals.character.maxLife)*256);
     if(dealt>0 || hit.mana>0 || hit.stamina>0) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
-    if(hit.knockback && dealt>0 && edit.player.hp>0) if(const auto *attacker=ports_.monsters.find(source)) {
+    if(hit.knockback && dealt>0 && edit.player.hp>0 && !ports_.skills.uninterruptible(actor.actor)) if(const auto *attacker=ports_.monsters.find(source)) {
         const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker->position,3);
         if(area.definition.collision.nativeMovementSegment(p->position,destination,playerMovement)) {
             edit.knockback=PointTarget{actor.area,area.generation,destination};
@@ -158,7 +158,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
         state_.players.swap(next.players);
         if(dealt>0) commitItemEvents(std::move(*itemEvents.value),p->persistent.player.hp<=0);
-        if(hit.knockback && dealt>0) ports_.skills.cancel(actor.player,actor.actor);
+        if(hit.knockback && dealt>0 && !ports_.skills.uninterruptible(actor.actor)) ports_.skills.cancel(actor.player,actor.actor);
     }
     return {result.status,result?std::optional{dealt}:std::nullopt};
 }

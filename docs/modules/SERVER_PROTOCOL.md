@@ -1,6 +1,6 @@
 # 自研服务端协议与管理入口
 
-更新：2026-10-10。本文维护服务端收发所有权、源码接口与扩展约定；消息ID／长度／参数／预留统一见[消息速查](MESSAGES.md)，功能顺序见[总计划](../architecture/MULTIPLAYER.md)。运行证据归[基线](../../BASELINE.md)与玩法专题，结构和编译完成不代表全部消息语义或玩法完成。
+更新：2026-10-11。本文维护服务端收发所有权、源码接口与扩展约定；消息ID／长度／参数／预留统一见[消息速查](MESSAGES.md)，功能顺序见[总计划](../architecture/MULTIPLAYER.md)。运行证据归[基线](../../BASELINE.md)与玩法专题，结构和编译完成不代表全部消息语义或玩法完成。
 
 ## 所有权
 
@@ -25,9 +25,11 @@
 
 NativeRealmService是单个连接的生命周期编排，不是玩法容器。新增战斗／库存／任务逻辑放入server对应领域；包处理器只解码、提交领域命令和处理提交结果。不能把MPQ读取、存档编码、UI状态或每种技能实现放进GameInstance或这个编排对象。
 
+野蛮人移动技能复用原16位置批次同步权威坐标，保留4C／4D技能动作；跳跃／旋风的动作通知也同步本人，避免普通本人预测在等待近战范围时不启动。原0D/action19按生命校正消费，不清除不可打断动作。具体范围和运行证据见[野蛮人](../gameplay/skills/BARBARIAN.md)。
+
 内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03走跑及02／04出口靠近使用此入口，3A／3B已接人物成长事务，41复活及13本人尸体取回已接death；不新增私有包或客户端分支。
 
-亚马逊批按原SCmd／D2PacketDef新增7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。81可独立登记本人佣兵，7F非玩家分支投影本人宠物生命／区域，光标喂药使用61/body=0。头像及佣兵链的准确范围和未构建边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
+亚马逊批按原SCmd／D2PacketDef新增7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。81可独立登记本人佣兵，7F非玩家分支投影本人宠物生命／区域，光标喂药使用61/body=0。头像及佣兵链的准确范围与有限运行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
 通用十项复用原攻击／技能请求，书本／卷轴SrvDo113路由到库存与旅行。原3F现为implemented：固定8字节保留目标光标、来源GUID及技能ID，成功鉴定后取消光标；数量／物品及门户仍用原消息。它仅表示准备，不表示鉴定已成功，详见[通用技能](../gameplay/skills/GENERAL.md)。
 
@@ -47,7 +49,7 @@ NativeRealmService是单个连接的生命周期编排，不是玩法容器。�
 
 状态区分`implemented`、`admission-only`、`partial`和`stub`；4F父包为partial，子命令各自登记。9C／9D已有库存增量，97／23已有切组／选技回复，1F／21已有人物增量，28／5D已接五幕个人任务主流程，但不能据此宣称全部物品、技能或组队任务完成。两端复用network/protocol分帧，宿主目录不维护独立长度算法。编码参数见[消息速查](MESSAGES.md)，具体玩法资格归各专题。
 
-0x0E已接传送点启动模式通知，首次中性点击不发0x63，ENDANIM按原版静默完成；0x63只用于mode1／2点击后打开菜单，使用原0x102＋112位历史。原0x49关闭／同区域／非法目的地及异步内容准备边界见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。此项为未构建的源码支持，不代表其他物件模式全部迁入或逐包运行认证。
+0x0E已接传送点启动模式通知，首次中性点击不发0x63，ENDANIM按原版静默完成；0x63只用于mode1／2点击后打开菜单，使用原0x102＋112位历史。原0x49关闭／同区域／非法目的地及异步内容准备边界见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。当前包已包含，本批未专项复验，不代表其他物件模式全部迁入或逐包运行认证。
 
 库存GUID在宿主端通过inventoryInput绑定服务端ItemHandle；原包不增加revision或请求ID。请求在固定步复验来源、位置、活动武器组和交换目标，成功经InventoryFact生成原9C／9D／0A，切组另发97及23；同笔CharacterFact发原1F／21人物增量；可靠通知与可覆盖的PlayerSnapshot.command分开。一次队列写入包含整笔原字节包，接收成功才确认Outbox；失败终止连接并保留实例／存档租约。无通用成功ACK或错误fallback；详细规则／暂缓范围见[物品目录](../gameplay/items/README.md)。
 

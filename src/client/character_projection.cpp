@@ -7,6 +7,7 @@
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
+#include "gameplay/skills/barbarian_passive_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
@@ -39,6 +40,21 @@ void passiveDetails(std::vector<std::string> &lines, const ClassicData &data, co
         const int value = amazonPassiveValue(passive, rank);
         lines.push_back(passive.stat == AmazonPassiveStat::Rating ?
             "Attack rating: +" + std::to_string(value) + "%" : "Chance: " + std::to_string(value) + "%");
+    }
+    if (entry.passiveContribution.barbarian) {
+        const auto &passive = *entry.passiveContribution.barbarian;
+        if (passive.kind == BarbarianPassiveSpec::Kind::Mastery) {
+            const auto &p = passive.parameters;
+            lines.push_back("Attack rating: +" + std::to_string(skillRankBonus({p[0], p[1]}, rank)) + "%");
+            lines.push_back("Damage: +" + std::to_string(skillRankBonus({p[2], p[3]}, rank)) + "%");
+            lines.push_back("Critical strike: " + std::to_string(barbarianDiminishing(p[4], p[5], rank)) + "%");
+        } else if(passive.kind==BarbarianPassiveSpec::Kind::Stamina) {
+            lines.push_back("Maximum stamina: +"+std::to_string(skillRankBonus({passive.parameters[0],passive.parameters[1]},rank))+"%");
+        } else if(passive.kind==BarbarianPassiveSpec::Kind::Defense) {
+            lines.push_back("Defense: +"+std::to_string(skillRankBonus({passive.parameters[0],passive.parameters[1]},rank))+"%");
+        } else {
+            lines.push_back(std::string(passive.kind==BarbarianPassiveSpec::Kind::Speed?"Movement speed: +":"Elemental resistance: +")+std::to_string(barbarianDiminishing(passive.parameters[0],passive.parameters[1],rank))+"%");
+        }
     }
     if (!entry.passive || entry.classCode != "nec") return;
     const auto &table = data.tables.at("skills");

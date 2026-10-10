@@ -4,7 +4,7 @@
 
 ## 原数据与执行入口
 
-[hireling_content.cpp](../../../src/hosting/hireling_content.cpp)从当前MPQ的Hireling、MonStats／MonStats2、Skills、Missiles、MonSeq、States和AnimData准备身份、难度／等级段、基础成长、技能权重、原动画及装备后的技能和动作速度。技能使用佣兵自身等级、基础技能及佣兵装备贡献；不借用主人技能、精通或装备触发。缺失原数据或程序明确暂缓，不以沉沦魔替代中立佣兵。
+[hireling_content.cpp](../../../src/hosting/hireling_content.cpp)从当前MPQ的Hireling、MonStats／MonStats2、Skills、Missiles、MonSeq、States和AnimData准备身份、难度／等级段、基础成长、技能权重、原动画及装备后的技能和动作速度。技能使用佣兵自身等级、基础技能及佣兵装备贡献；不借用主人技能、精通或装备触发。Battle Command等作用于佣兵自身的临时全技能属性参与准备缓存，生效／到期重算实际技能和被动；刷新保留Battle Orders的生命上限，BO使用装备后基础生命。缺失原数据或程序明确暂缓，不以沉沦魔替代中立佣兵。
 
 [hireling.cpp](../../../src/server/systems/companions/hireling.cpp)负责服务，[hireling_control.cpp](../../../src/server/systems/companions/hireling_control.cpp)负责准备复验、出生、同行、选技和成长。技能动作、弹体、命中与效果分别归skills／missiles／combat／effects，伙伴生命与装备快照归monsters。hosting读取内容；server仅接收纯值规则。
 
@@ -13,7 +13,7 @@
 | 罗格 | RogueMissile、Fire Arrow／Cold Arrow、Inner Sight；头盔／护甲／弓 |
 | 沙漠守卫 | 普通近战、原MonSeq双释放Jab；Prayer／Defiance／Blessed Aim／Thorns／Holy Freeze／Might按原难度类型准备；头盔／护甲／长柄或长矛，拒绝盾 |
 | 铁狼 | 火球／有界Inferno、冰尖柱／冰风暴／自身Frozen Armor、充能弹／闪电；头盔／护甲／单手剑／左手盾，拒绝双手剑 |
-| 野蛮人 | 普通近战及原Bash／Stun；头盔／护甲／剑。这条佣兵入口不表示玩家野蛮人技能已接 |
+| 野蛮人 | 普通近战及原Bash／Stun；头盔／护甲／剑。玩家职业范围另见[野蛮人技能](../skills/BARBARIAN.md) |
 
 Fn061按25格以内视线选敌，跟随门槛24、移动主人16、远距归位100；罗格／铁狼保留攻击选择偏置和近敌退避。步行主人不增加追赶速度，跑动／停步追赶采用原速度修正。跨区和主人Teleport带同行佣兵，取消旧区动作；光环和装甲从新运行态重新施用。多人敌对关系沿共享Participants，不由UI选敌。
 
@@ -59,7 +59,7 @@ Fn061按25格以内视线选敌，跟随门槛24、移动主人16、远距归位
 
 ## 当前包有限冒烟
 
-本批Windows Release已构建、打包并使用dist/current内EXE验证；规则v34、D2S v96，包身份见基线。证据保存在忽略目录`artifacts/hirelings-complete-20261010`，仅使用既有管理／原协议／UI入口，不增加测试脚本、用例或程序。管理命令只准备等级、地图、装备、伤员和敌人；自然攻击证据取实际技能、命中、生命变化和客户端原图，不把管理击杀当作攻击证明。
+以下为2026-10-10佣兵批Windows Release的历史有限证据，规则v34、D2S v96；当时使用dist/current内EXE验证，当前包身份见基线。证据保存在忽略目录`artifacts/hirelings-complete-20261010`，仅使用既有管理／原协议／UI入口，不增加测试脚本、用例或程序。管理命令只准备等级、地图、装备、伤员和敌人；自然攻击证据取实际技能、命中、生命变化和客户端原图，不把管理击杀当作攻击证明。当前v38的Battle Command佣兵等级与到期恢复证据见[野蛮人](../skills/BARBARIAN.md#当前包有限冒烟)。
 
 | 典型路径 | 本批有限结果 |
 | --- | --- |

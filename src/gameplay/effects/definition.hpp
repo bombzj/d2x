@@ -4,7 +4,7 @@
 
 namespace d2x {
 using EffectFrame = uint64_t; // Absolute 25 Hz simulation frame; never wall-clock time.
-enum class CurseAi { None, DimVision, Terror, Confuse, Attract };
+enum class CurseAi { None, DimVision, Terror, Confuse, Attract, Taunt };
 // Imported States.txt fields. These describe a state, not a particular skill.
 struct CombatStateDefinition {
     int id = -1, group = 0;

@@ -31,7 +31,7 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 普通姓名读取MonStats.NameStr的当前TBL；随机暗金、冠军变体、固定超级暗金与仆从说明共用[精英姓名](ELITES.md#姓名标签与调色)入口，悬停与锁定不使用不同文本。冠军标签已在姓名中，不重复列成词缀说明；暗金只列AC已公开词缀，不猜隐藏属性。普通姓名白色、冠军蓝色，暗金／超级暗金及MonStats.boss首领金色，沿master已有颜色与原字体入口；血乌／安达利尔boss身份来自当前MPQ。生命未知保留未知，比例沿原0..128刻度与命中触发位解释。
 
-恢复行为静态对照master的SceneController.combatTarget与hud目标优先级；D2MOO MonsterUnique／SCmd提供公开阶级／词缀依据，当前MPQ提供姓名和boss字段。本次修正未构建、运行或打包，不能使用上一批精英悬停截图认证按住锁定。
+恢复行为静态对照master的SceneController.combatTarget与hud目标优先级；D2MOO MonsterUnique／SCmd提供公开阶级／词缀依据，当前MPQ提供姓名和boss字段。当前v38 Release包已包含此修正，但未专项复验按住锁定，不能使用上一批精英悬停截图认证它。
 
 ## 原图、声音与尸体
 

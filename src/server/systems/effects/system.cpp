@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include "gameplay/skills/barbarian_passive_spec.hpp"
 namespace d2x::server::effects {
 namespace {
 TransientAttributes projection(const CombatEffectSet &effects, uint64_t tick) {
@@ -72,6 +73,28 @@ DomainResult<PotionPlan> System::potion(const ActorContext &actor, const PotionD
     if(recovery.poison && !recovery.states.hasState(recovery.poison->damage.state,actor.tick)) recovery.poison.reset();
     return {DomainStatus::Applied, std::move(plan)};
 }
+DomainResult<PotionPlan> System::skillState(const ActorContext &actor,CombatEffectSpec spec) const {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || player->actor!=actor.actor || !player->entered || player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+    PotionPlan plan{state_,player->persistent.player,{}};
+    auto &states=plan.next.players[actor.actor].states;
+    if(states.size()>=128 && !states.hasState(spec.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
+    if(!states.apply(std::move(spec),actor.tick).accepted) return {DomainStatus::Conflict,{}};
+    plan.transient=projection(states,actor.tick);return {DomainStatus::Applied,std::move(plan)};
+}
+DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &skill) {
+    const auto &program=*skill.weapon;int stacks=1;
+    if(const auto found=state_.players.find(actor.actor);found!=state_.players.end())
+        for(const auto &effect:found->second.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.frenzyState.id)
+            stacks=std::max(stacks,effect.spec.source.level+1);
+    stacks=std::min(stacks,skill.rank);
+    CombatEffectSpec effect;effect.state=program.frenzyState;effect.duration=uint64_t(program.frenzyFrames);
+    effect.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,stacks};effect.stacking=EffectStacking::ReplaceState;
+    const auto &p=program.frenzyParameters;
+    effect.modifiers.velocityPercent=barbarianDiminishing(p[0],p[1],stacks);
+    effect.modifiers.combat.attackRate=barbarianDiminishing(p[2],p[3],stacks);
+    return apply(actor,std::move(effect));
+}
 DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
@@ -96,6 +119,17 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
         }
     }
     return {DomainStatus::Applied, std::move(plan)};
+}
+DomainResult<> System::removeState(const ActorContext &actor,int state) {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || player->actor!=actor.actor || !player->entered || player->area!=actor.area) return {DomainStatus::InvalidActor,{}};
+    auto next=state_;auto &states=next.players[actor.actor].states;
+    states.removeState(state);
+    transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+    edit.transient=projection(states,actor.tick);
+    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) state_.players.swap(next.players);
+    return result;
 }
 DomainResult<> System::restore(const ActorContext &actor,float life,float mana,float stamina,const std::vector<int> &cureStates) {
     const auto *player=ports_.players.find(actor.player);if(!player || player->actor!=actor.actor || !player->entered || player->area!=actor.area || player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};

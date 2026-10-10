@@ -5,7 +5,7 @@
 namespace d2x {
 uint64_t characterRulesFingerprint(const ClassicData &content) {
     Fingerprint hash;
-    hash.add("d2x-character-admission-v37/native-wire113c/d2s96/necromancer30/iron-golem-lifecycle/environment-objects/tcpip-local-save/hirelings-acts1235/pvpgn-newbie89/player-trade-chat/paladin30/party/combat-relations");
+    hash.add("d2x-character-admission-v38/native-wire113c/d2s96/barbarian30/necromancer30/iron-golem-lifecycle/environment-objects/tcpip-local-save/hirelings-acts1235/pvpgn-newbie89/player-trade-chat/paladin30/party/combat-relations");
     hash.add(content.profile);
     for (const auto &[name, table] : content.tables) {
         hash.add(name);

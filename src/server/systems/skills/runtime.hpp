@@ -13,11 +13,14 @@ struct System::Release {
     uint64_t tick{};
     uint8_t unitType{1}; uint64_t pulses{}; bool manaPaid{};
     std::optional<WeaponDamage> weapon{};
+    std::optional<WeaponDamage> offhand{};
     std::vector<int> weaponHits{};
     size_t nextWeaponHit{};
     int weaponSpeed{}, weaponFrames{}, weaponRollback{};
     EntityId shield{};
     bool charging{}; float chargeSpeed{};
+    bool leaping{},landed{};
+    bool whirlwind{};uint64_t nextWhirlHit{};int whirlPeriod{};size_t whirlHand{};
 };
 struct System::MonsterRelease {
     CastRequest request;

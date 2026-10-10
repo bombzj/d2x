@@ -28,6 +28,9 @@ struct WeaponDamage {
     std::optional<WeaponProjectileSpec> projectile = {};
     std::vector<std::string> types = {};
     int hitClass = 1;
+    int masteryCritical = 0, projectileMasteryCritical = 0;
+    int projectileMasteryRatingAdjustment = 0;
+    int itemBaseSpeed = 0, itemAttackSpeed = 0;
 };
 struct EquipmentStats {
     std::string animationClass = "hth";

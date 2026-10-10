@@ -44,14 +44,18 @@ DomainResult<> System::awardExperience(const ActorContext &actor,const HirelingE
     if(award.after.level>award.before.level) edit.publicFacts.emplace_back(SoundFact{award.actor,1,body->area,0x5B});
     auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
 }
-std::vector<HirelingPreparation> System::pendingHirelings() const {
+std::vector<HirelingPreparation> System::pendingHirelings(uint64_t tick) const {
     std::vector<HirelingPreparation> result;
     for(const auto &[id,p]:ports_.players.all()) {
         const auto &record=p.persistent.player.hireling;
         if(!p.entered || record.sourceRow<0) continue;
+        int skillBonus=0;
+        for(const auto &[key,pet]:state_.companions) if(pet.owner==id && pet.kind==Kind::Hireling) {
+            skillBonus=ports_.effects.unitModifiers(key,tick).combat.allSkills;break;
+        }
         const auto prior=hirelingRules_.find(id);
-        if(prior!=hirelingRules_.end() && sameHireling(record,prior->second.source.record) && prior->second.source.actor.actor==p.actor && prior->second.source.difficulty==p.persistent.difficulty && prior->second.source.inventoryRevision==p.inventoryRevision) continue;
-        result.push_back({{id,p.actor,p.area,ports_.areas.at(p.area).generation,0,0},record,p.persistent.difficulty,p.inventoryRevision,p.persistent,p.rules.items,p.rules.equipment});
+        if(prior!=hirelingRules_.end() && sameHireling(record,prior->second.source.record) && prior->second.source.actor.actor==p.actor && prior->second.source.difficulty==p.persistent.difficulty && prior->second.source.inventoryRevision==p.inventoryRevision && prior->second.source.temporarySkillBonus==skillBonus) continue;
+        result.push_back({{id,p.actor,p.area,ports_.areas.at(p.area).generation,0,0},record,p.persistent.difficulty,p.inventoryRevision,p.persistent,p.rules.items,p.rules.equipment,skillBonus});
     }
     return result;
 }
@@ -105,7 +109,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     if(!sameHireling(p->persistent.player.hireling,prepared.source.record)) return StepStatus::Complete;
     const auto activeStates=ports_.effects.unitStates(body->id,tick.tick);unsigned passiveMask=0;
     for(size_t i=0;i<prepared.passives.size();++i) if(activeStates.contains(prepared.passives[i].first.suppressedByState)) passiveMask|=1u<<i;
-    if(body->hirelingInventoryRevision!=p->inventoryRevision || body->rule.level!=p->persistent.player.hireling.level || !body->equipment || body->hirelingPassiveMask!=passiveMask) {
+    if(body->hirelingInventoryRevision!=p->inventoryRevision || body->rule.level!=p->persistent.player.hireling.level || !body->equipment || body->hirelingPassiveMask!=passiveMask || pet.projectedSkillBonus!=prepared.source.temporarySkillBonus) {
         if(!p->rules.items || !p->rules.equipment) return StepStatus::Blocked;
         const auto stats=calculateHirelingEquipment(p->persistent,*p->rules.items,*p->rules.equipment,prepared,{},activeStates);
         auto updated=prepared.rule;
@@ -123,6 +127,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         std::erase_if(equipment->inventory.items,[&](const auto &entry){const auto *at=std::get_if<ContainerLocation>(&entry.second.location);return !at || at->container!=p->persistent.containers.hirelingEquipment;});
         ports_.monsters.updateHireling(pet.actor,std::move(updated),stats.equipment.weapons[0],combat,stats.actor.strength,stats.actor.dexterity,
             std::max(0,mods.vitality),std::move(equipment),p->inventoryRevision,p->characterRevision);
+        pet.projectedSkillBonus=prepared.source.temporarySkillBonus;
         const int frw=std::max(0,stats.modifiers.fasterMoveVelocity);
         ports_.monsters.hirelingProjection(pet.actor,prepared.nextExperience,passiveMask,stats.modifiers.velocityPercent+150*frw/(150+frw));
     }

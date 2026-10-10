@@ -69,7 +69,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
         const auto entry = resolveMonsterLoot(data, *cache.monsters, *world, sourceRequest);
         if (entry.status == LootEntryStatus::Ready)
             plan = planItemLoot(data, data.tables.at("itemratio"), entry.treasureClass, entry.itemLevel,
-                entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers);
+                entry.upgradeLevel, request.seed, request.uniques, request.classCode, request.magicFind, request.goldFind,{},request.effectivePlayers,sourceRequest.ignoreNoDrop);
         else if (entry.status == LootEntryStatus::Deferred) plan.deferred = entry.reason;
     }
     auto character = request.character;

@@ -39,7 +39,7 @@ struct Actor {
     bool revived() const {return necroPet && necroPet->kind==NecroSummonKind::Revive;}
     std::shared_ptr<const NecroPetSpec> necroPet;
     std::optional<ItemInstance> necroMaterial;
-    struct CurseControl {CurseAi ai{CurseAi::None};EntityId caster,target;uint64_t until{};};
+    struct CurseControl {CurseAi ai{CurseAi::None};EntityId caster,target;uint64_t until{};std::optional<Vec> origin;};
     CurseControl curseControl;
     EntityId attractionTarget;uint64_t attractionUntil{};
     bool hireling{};
@@ -79,6 +79,7 @@ struct Actor {
     uint64_t riseUntil{};
     uint8_t riseMode{9};
     bool corpseUnavailable{};
+    bool corpseSearched{};
     uint64_t holyFreezeUntil{}; bool holyFreezeShatter{};
     uint64_t webUntil{};
     int nestSpawned{};
@@ -124,6 +125,7 @@ class System {
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     void consumeCorpse(EntityId) noexcept;
+    void searchCorpse(EntityId id) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpseSearched=true;++it->second.revision;}}
     void commitRevive(std::map<EntityId,Actor> &&actors) noexcept {for(const auto &[id,body]:actors) {(void)body;state_.actors.erase(id);}state_.actors.merge(actors);}
     void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>);
     void curseControl(EntityId id,Actor::CurseControl control) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.curseControl=control;++it->second.revision;}}
@@ -134,11 +136,16 @@ class System {
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0);
     DomainResult<> activateWeb(EntityId,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
+    void maximumLife(EntityId id,int64_t value) {
+        if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.maximumLife!=value) {
+            it->second.maximumLife=std::max<int64_t>(256,value);it->second.life=std::min(it->second.life,it->second.maximumLife);++it->second.revision;
+        }
+    }
     DomainResult<> redeem(EntityId);
     DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
     void holyFreeze(EntityId id,uint64_t until,bool shatter) {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.holyFreezeUntil=until;it->second.holyFreezeShatter=shatter;}}
     DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false);
     void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);

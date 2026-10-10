@@ -3,6 +3,7 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace d2x {
@@ -16,9 +17,12 @@ struct WeaponSkillSpec {
     bool commonAttack = false, leftHand = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
+    bool dualWield = false;
+    int sequence = -1, attackRateBonus = 0;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
     int damagePercent = 0, damagePerLevel = 0, selfDamagePercent = 0;
     std::map<int, int> damageSynergies;
+    std::map<int, int> attackRatingSynergies;
     int damageStartLevel = 1, attacks = 1, attackLimit = 1, rollbackPercent = 0;
     bool interruptible = true;
     std::array<int, 3> elementPercent{};
@@ -27,10 +31,26 @@ struct WeaponSkillSpec {
     bool smite = false;
     std::string mode;
     int stunFrames = 0, stunPerLevel = 0;
+    std::optional<std::array<int,3>> stunCurve;
+    std::map<int,int> stunSynergies;
     int physicalFlat = 0;
+    int physicalFlatPerLevel = 0;
     bool knockback = false;
+    bool clearTargetStun = false;
     int conversionMinimum = 0, conversionMaximum = 0, conversionChance = 0, conversionFrames = 0;
     CombatStateDefinition conversionState;
     int chargeVelocity = 0;
+    int magicConversionPercent = 0;
+    std::map<int,int> magicConversionSynergies;
+    CombatStateDefinition attackState;
+    int attackDefense = 0, attackDefensePerLevel = 0;
+    bool frenzy = false;
+    CombatStateDefinition frenzyState;
+    std::array<int,4> frenzyParameters{};
+    int frenzyFrames = 0;
+    bool whirlwind = false;
+    CombatStateDefinition movingState;
+    int attackDurationMinimum = 0, attackDurationMaximum = 0, attackDuration = 0;
+    int armorOverridePercent = 0, attackPhysicalResist = 0;
 };
 } // namespace d2x

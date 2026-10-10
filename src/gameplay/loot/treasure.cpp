@@ -16,7 +16,7 @@ int adjustedNoDrop(int noDrop, int itemWeight, unsigned effectivePlayers) {
     return inverse==0.0?0:int(double(itemWeight)/inverse*(1.0-inverse));
 }
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
-                           int level, const TreasureVisitor &visitor, unsigned effectivePlayers) {
+                           int level, const TreasureVisitor &visitor, unsigned effectivePlayers, bool ignoreNoDrop) {
     std::map<std::string_view, const TreasureClass *, std::less<>> lookup;
     for (const auto &record : classes)
         if (!lookup.emplace(record.name, &record).second)
@@ -52,7 +52,7 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
             total += weight;
         }
         if(total>std::numeric_limits<int>::max()) throw std::runtime_error("Treasure weight overflow: "+record.name);
-        const int noDrop=adjustedNoDrop(record.noDrop.value_or(0),int(total),effectivePlayers);
+        const int noDrop=ignoreNoDrop?0:adjustedNoDrop(record.noDrop.value_or(0),int(total),effectivePlayers);
         const int64_t bound = total + noDrop;
         if (bound > std::numeric_limits<int>::max())
             throw std::runtime_error("Treasure weight overflow: " + record.name);

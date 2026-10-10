@@ -25,6 +25,7 @@
 #include "content/skills/necro_summon_data.hpp"
 #include "content/skills/curse_data.hpp"
 #include "content/skills/bone_data.hpp"
+#include "content/skills/barbarian_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "content/skills/aura_data.hpp"
 #include <algorithm>
@@ -350,6 +351,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadAmazonMagicSkills(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
         loadAmazonSummons(data, overlays, sounds, archives);
         loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
+        loadBarbarianSkills(data, archives);
         loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
         loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
         loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),

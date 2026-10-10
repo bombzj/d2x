@@ -24,7 +24,7 @@ bool matchesCreation(const ClientMissileVisual &effect, int id, EntityId owner, 
 }
 bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, float delay,
                                   std::optional<float> remaining, int pathIndex,
-                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source,int slowPercent,EntityId guidedTarget) {
+                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source,int slowPercent,EntityId guidedTarget,int velocityBonus) {
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
@@ -44,7 +44,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         !(capabilities->allowChildArtwork && program.children[0] >= 0 &&
           assets_.ensureProjectile(program.children[0]))) return false;
     level = std::max(1, level);
-    const auto nativeVelocity = missileVelocityFixed(program.velocity,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
+    const auto nativeVelocity = missileVelocityFixed(program.velocity+velocityBonus,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
     const int velocity = capabilities->stationary ? 0 : program.function==4 && program.poisonVelocity[0]>0?poisonCloudVelocity(program.poisonVelocity[0]):*nativeVelocity;

@@ -70,11 +70,12 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
         if (!entry || !result.activeEquipment.contains(entry.instance->id)) { entry = {}; continue; }
         if (entry.instance->grantedSkill >= 0) grants.push_back({entry.instance->handle(), entry.instance->grantedSkill, 1});
     }
-    // Resolve ranks from equipment once, before passive contributions.
+    // Temporary all-skills (Battle Command) participates before passives are evaluated.
+    auto rankModifiers=modifiers.combat;mergeCombatModifiers(rankModifiers,temporary.combat);
     for (const auto &[id, rule] : rules.learning) {
         const auto learned = record.skillRanks.find(id);
         const int rank = resolveSkillSourceRank({id, learned == record.skillRanks.end() ? 0 : learned->second,
-            int(definition.sourceRow), rule.page, rule.classCode == definition.code}, grants, modifiers.combat);
+            int(definition.sourceRow), rule.page, rule.classCode == definition.code}, grants, rankModifiers);
         const int baseRank = learned == record.skillRanks.end() ? 0 : learned->second;
         if (baseRank < 0 || baseRank > 255 || rank < baseRank || rank - baseRank > 255)
             throw std::runtime_error("Unsupported native skill rank range");
@@ -87,6 +88,8 @@ Totals calculate(const CharacterDefinition &definition, const PersistentCharacte
         applySkillPassive(passives, rule.passive, baseRank, states.contains(rule.passive.suppressedByState));
         const auto effective = result.skillRanks.find(id);
         const int rank = effective == result.skillRanks.end() ? 0 : effective->second;
+        if (rule.passive.barbarian && !states.contains(rule.passive.suppressedByState))
+            applyBarbarianPassive(passives, *rule.passive.barbarian, rank);
         if (rule.passive.amazon) {
             const int value = amazonPassiveValue(*rule.passive.amazon, rank);
             switch (rule.passive.amazon->stat) {

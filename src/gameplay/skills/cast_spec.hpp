@@ -13,11 +13,18 @@
 namespace d2x {
 struct BoneSkillSpec;
 struct AmazonMagicSpec;
+struct CorpseSearchSpec;
+struct LeapSpec;
+struct GrimWardSpec;
 struct SkillCastSpec {
     SkillBehavior effect{};
     std::shared_ptr<const BoneSkillSpec> bone;
     std::shared_ptr<const AmazonMagicSpec> amazonMagic;
+    std::shared_ptr<const CorpseSearchSpec> corpseSearch;
+    std::shared_ptr<const LeapSpec> leap;
+    std::shared_ptr<const GrimWardSpec> grimWard;
     int rank = 0;
+    int stunFrames = 0;
     float healingMinimum = 0, healingMaximum = 0;
     float castDuration = 0, castImpact = 0, castRate = 0;
     float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
@@ -54,6 +61,7 @@ struct SkillCastSpec {
     int castMissileId = -1;
     float castMissileDuration = 0;
     std::optional<CombatEffectSpec> appliedEffect;
+    bool warcry = false;
     std::optional<SkillCharge> charge;
 };
 } // namespace d2x

@@ -196,6 +196,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                     if(impact.contactRandom) impact.targetRandom=childRandom(*impact.contactRandom);
                     else impact.targetRandom=childRandom(ports_.random);
                     impact.wearApplied=false;
+                    impact.frenzyApplied=false;
                 }
                 random=*impact.targetRandom;
                 if(!(impact.weaponHit.has_value()?*impact.weaponHit:weaponContact(attack,target->id,tick.tick,random))) {
@@ -207,6 +208,12 @@ StepStatus System::resolveSpells(TickContext tick) {
                     ++impact.next;continue;
                 }
                 const auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
+                if(attack.wearSkill.weapon && attack.wearSkill.weapon->frenzy && !impact.frenzyApplied) {
+                    const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
+                    const auto result=ports_.effects.frenzy(actor,attack.wearSkill);
+                    if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
+                    impact.frenzyApplied=true;
+                }
                 amount=0;
                 const bool sanctuary=!hirelingSource && target->rule.undead && owner->rules.skills && owner->rules.skills->auras.contains(119) && owner->transient.states.contains(owner->rules.skills->auras.at(119).spec.ownerState.id);
                 for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,sanctuary && channel==0?0:ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
@@ -230,7 +237,8 @@ StepStatus System::resolveSpells(TickContext tick) {
             amount=amount*hirelingPercent/100;if(poison) poison->rate=poison->rate*hirelingPercent/100;
             if(impact.type==DamageType::Poison) amount=0;
             const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-            auto itemEvents=hirelingSource?DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}}:impact.weapon?ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
+            const bool whirlwind=impact.weapon && impact.weapon->wearSkill.weapon && impact.weapon->wearSkill.weapon->whirlwind;
+            auto itemEvents=(hirelingSource || whirlwind)?DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}}:impact.weapon?ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.effects.prepareItemEvents(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
             if(!itemEvents) {blocked=true;break;}
             const bool wearRequired=!hirelingSource && impact.weapon && impact.weapon->wearChance>0 && limitedRandom(random,100)<unsigned(impact.weapon->wearChance);
             if(wearRequired && !impact.wearApplied) {
@@ -251,7 +259,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 extras=hirelingHitEffects(*impact.weapon,*target,monsterSource->id,impact.binding.credit,resistance,physical,amount,tick.tick);amount+=extras.crushing;
             }
             if(poison && monsterSource && monsterSource->hireling) poison->actualSource=monsterSource->id;
-            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):0,extras.wound);
+            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):impact.stunFrames,extras.wound,0,impact.weapon && impact.weapon->clearTargetStun);
             if(result && monsterSource && monsterSource->hireling) {ports_.monsters.recordHirelingKill(target->id,monsterSource->id);ports_.monsters.heal(monsterSource->id,extras.healing+(target->life<=0?int64_t(monsterSource->petStats.attributes.combat.lifeOnKill)*256:0));}
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
             if(result) ports_.effects.commitItemEvents(std::move(*itemEvents.value),target->life<=0);

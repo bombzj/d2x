@@ -112,7 +112,7 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed) {
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
@@ -135,6 +135,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(!life) poisoned.reset();
     auto random=actor.combatRandom;
     auto stunned=actor.stunnedUntil;
+    if(clearStun) stunned=0;
     if(life && stunFrames && actor.rule.stunState>=0 && !actor.rule.boss && actor.rule.nativeVelocity &&
         (actor.identity.rank==MonsterRank::Normal || actor.identity.rank==MonsterRank::Minion || limitedRandom(random,100)>=90)) stunned=tick+std::min<uint64_t>(250,stunFrames);
     if(!life) stunned=0;

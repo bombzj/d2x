@@ -27,7 +27,14 @@ void key(Writer &out, const PlayerSnapshot &view) {
 }
 }
 Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
-    if (view.attacking && view.life > 0) return {};
+    if (view.attacking && view.life > 0) {
+        if (!view.actor.moving) return {};
+        // Moving skills retain their skill action while original 16 updates
+        // carry authoritative coordinates (no walking pose or cast restart).
+        Writer update; update.u8(0x16); update.u16(13); update.u8(1);
+        key(update,view); point(update,view.actor.position+origin);
+        return update.release();
+    }
     Writer out;
     // The next path corner is authority-owned, never a route from the client.
     out.u8(view.actor.moving ? 0x0F : 0x0D); key(out, view);

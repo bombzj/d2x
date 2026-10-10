@@ -20,7 +20,7 @@ System::~System()=default;
 bool System::uninterruptible(EntityId actor) const {
     const auto &releases_=runtime_->releases;
     const auto found=releases_.find(actor);
-    return found!=releases_.end() && found->second.skill.weapon && !found->second.skill.weapon->interruptible;
+    return found!=releases_.end() && (found->second.skill.leap || (found->second.skill.weapon && !found->second.skill.weapon->interruptible));
 }
 size_t System::pendingReleases() const {return runtime_->releases.size()+runtime_->monsters.size();}
 bool System::busy(EntityId id,uint64_t tick) const {

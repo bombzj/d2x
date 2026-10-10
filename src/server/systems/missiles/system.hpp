@@ -38,7 +38,7 @@ struct MonsterSpawn {
 };
 struct MonsterLaunch { EntityId first; uint64_t random{}; };
 struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{};std::optional<WeaponSkillDamage> weapon{}; };
-enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow, Hammer, Heaven, Spirit };
+enum class Program { Projectile, Ring, Charged, Orb, OrbBolt, OrbNova, Blizzard, Shard, Arc, FirewallMaker, Fire, Meteor, PoisonCloud, AreaImpact, FuryBolt, GroundThrow, Hammer, Heaven, Spirit, GrimWard };
 struct Missile {
     EntityId id, owner;
     PlayerId player;
@@ -69,13 +69,16 @@ struct Missile {
 struct State { std::map<EntityId, Missile> missiles; };
 struct Ports {
     const AreaStore &areas; const PlayerStore &players; const monsters::System &monsters;
-    combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random; EventOutbox &events; const effects::System &effects;
+    combat::System &combat; transactions::System &transactions; EntityIds &ids; uint64_t &random; EventOutbox &events; effects::System &effects;
     const spatial::System &spatial;
+    const social::System &social;
 };
 class System {
     State state_;
     const Ports ports_;
-    struct Advance { Missile next; std::vector<Missile> children; std::vector<combat::SpellImpact> impacts; bool finished{}; };
+    struct Advance { Missile next; std::vector<Missile> children; std::vector<combat::SpellImpact> impacts; bool finished{};
+        std::vector<EntityId> curseTargets; size_t nextCurseTarget{};
+        std::vector<EntityId> buffTargets; size_t nextBuffTarget{}; };
     std::map<EntityId, Advance> pending_;
     Missile make(const Spawn &, Vec origin, Vec direction, int definition, int frames, float speed, Program, uint64_t &) const;
     std::vector<Missile> launch(const Spawn &, uint64_t &) const;

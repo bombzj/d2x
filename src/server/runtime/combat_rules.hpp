@@ -98,7 +98,9 @@ struct MonsterRule {
     std::shared_ptr<const PreparedMonster> nestChild;
     Vec spawnOffset;
     std::optional<MonsterWebRule> web;
-    bool corpseSelectable{}, opensDoors{};
+    bool corpseSelectable{}, softCorpse{}, opensDoors{};
+    int corpseSize = 1;
+    int corpseNoSelectState{-1};
     int resurrectionTicks{}, threat{};
     int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1};
     bool blockWithoutShield{};

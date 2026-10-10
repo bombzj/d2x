@@ -16,7 +16,7 @@ CharacterModifiers System::unitModifiers(EntityId id,uint64_t tick) const {
 int System::unitDefense(EntityId id,uint64_t tick) const {
     const auto *m=ports_.monsters.find(id);if(!m) return 0;
     const auto mods=unitModifiers(id,tick);
-    return int(std::clamp<int64_t>((int64_t(m->rule.defense)+mods.defense)*std::max(0,100+mods.combat.defensePercent)/100,0,INT32_MAX));
+    return int(std::clamp<int64_t>((int64_t(m->rule.defense)+mods.defense)*std::max(0,100+mods.combat.defensePercent)/100*std::max(0,100+mods.combat.armorOverridePercent)/100,0,INT32_MAX));
 }
 int System::unitResistance(EntityId id,DamageType type,uint64_t tick) const {
     const auto *m=ports_.monsters.find(id);if(!m) return 0;

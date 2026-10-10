@@ -7,6 +7,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/grim_ward_spec.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
@@ -18,6 +19,7 @@ Vec cell(Vec p) { return {std::floor(p.x)+.5f,std::floor(p.y)+.5f}; }
 bool radius(Vec a, Vec b, int r) { const auto d=Vec{std::floor(a.x)-std::floor(b.x),std::floor(a.y)-std::floor(b.y)}; return d.x*d.x+d.y*d.y<=float(r*r); }
 DamageType element(SkillBehavior s) {
     switch(s) {
+    case SkillBehavior::WarCry: return DamageType::Physical;
     case SkillBehavior::HolyBolt: case SkillBehavior::BlessedHammer: case SkillBehavior::Teeth: case SkillBehavior::BoneSpear: case SkillBehavior::BoneSpirit: return DamageType::Magic;
     case SkillBehavior::FistOfTheHeavens: return DamageType::Lightning;
     case SkillBehavior::PoisonNova: return DamageType::Poison;
@@ -34,6 +36,7 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
     result.binding=m.binding;
     result.occurrence=uint64_t(m.ageFrames);
+    result.stunFrames=uint64_t(std::max(0,m.skill.stunFrames));result.hitClass=uint8_t(m.skill.hitClass);
     if(m.skill.missileImpact && (m.skill.missileImpact->undeadDamagePercent || m.skill.missileImpact->demonDamagePercent)) {
         for(const auto id:result.targets) {
             const auto *target=ports_.monsters.find(id);
@@ -81,6 +84,22 @@ System::Advance System::advance(const Missile &original) const {
         for(const auto &[id,t]:ports_.monsters.read().actors) if(enemy(t) && radius(at,t.position,range)) targets.push_back(id);
         plan.impacts.push_back(impact(m,std::move(targets),damage));
     };
+    if(m.program==Program::GrimWard) {
+        const auto &ward=*m.skill.grimWard;const auto &form=ward.forms.at(size_t(m.directionIndex));
+        if(m.remainingHits==1 && (m.lifetimeFrames-m.ageFrames)%std::max(1,form.period)==0) {
+            for(const auto &[id,target]:ports_.monsters.read().actors) if(enemy(target) && radius(m.position,target.position,ward.radius)) plan.curseTargets.push_back(id);
+            m.skill.curse->fearOrigin=m.position;
+        }
+        ++m.ageFrames;
+        if(m.ageFrames>=m.lifetimeFrames) {
+            if(m.remainingHits<2) {
+                auto &phase=child(m.position,{},m.remainingHits?form.stop:form.ward,m.remainingHits?form.stopFrames:ward.duration,0,Program::GrimWard);
+                phase.directionIndex=m.directionIndex;phase.remainingHits=m.remainingHits+1;
+            }
+            plan.finished=true;
+        }
+        return plan;
+    }
     if(m.program==Program::Orb) {
         const auto &p=*m.skill.frozenOrb;
         if(const auto e=missileRingEmission(m.lifetimeFrames-m.ageFrames,p.emissionPeriod,m.directionIndex,p.directionStep)) {
@@ -208,6 +227,18 @@ System::Advance System::advance(const Missile &original) const {
     }
     if(expires) {plan.finished=true;m.position=next;return plan;}
     std::vector<std::pair<float,EntityId>> contacts;
+    if(m.skill.warcry) {
+        const combat::Participants participants{ports_.players,ports_.monsters};
+        for(const auto id:collisionCandidates(m,next)) {
+            if(id==m.owner || m.weaponContacts.contains(id)) continue;
+            const auto recipient=participants.find(id);
+            if(!recipient.aliveIn(m.area) || !participants.allied(participants.find(m.owner),recipient,ports_.social)) continue;
+            if(missileUnitIntersection(m.position,next,m.collision.size,recipient.position(),recipient.size())) {
+                plan.buffTargets.push_back(id);m.weaponContacts.insert(id);
+            }
+        }
+        m.position=next;++m.revision;if(wall) plan.finished=true;return plan;
+    }
     const bool holyBolt=m.skill.effect==SkillBehavior::HolyBolt;
     for(const auto id:collisionCandidates(m,next)) {
         const auto *found=ports_.monsters.find(id);if(!found) continue;
@@ -215,7 +246,7 @@ System::Advance System::advance(const Missile &original) const {
         if(m.program==Program::Spirit && ((!m.guidance && !m.guidanceSearched) || (m.guidance && m.guidance!=id))) continue;
         if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
         const bool eligible=holyBolt?t.area==m.area && t.life>0 && ((t.owner==m.player && m.skill.healingMaximum>0) || (t.enemyTarget() && t.rule.undead)):enemy(t);
-        if(!eligible || id==m.lastHit || (m.skill.arc && m.skill.arc->nextDelay && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
+        if(!eligible || id==m.lastHit || ((m.skill.missileNextDelay>0 || (m.skill.arc && m.skill.arc->nextDelay)) && t.nextHitTick>m.created+uint64_t(m.ageFrames))) continue;
         if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,t.position,t.rule.size)) contacts.emplace_back(*contact,id);
     }
     std::sort(contacts.begin(),contacts.end());
@@ -247,7 +278,8 @@ System::Advance System::advance(const Missile &original) const {
                 }
                 if(!piercing) {next=m.position+(next-m.position)*fraction;plan.finished=true;break;}
             }
-            plan.impacts.push_back(impact(m,std::move(targets)));
+            if(m.skill.effect==SkillBehavior::Howl || m.skill.effect==SkillBehavior::BattleCry) plan.curseTargets=std::move(targets);
+            else plan.impacts.push_back(impact(m,std::move(targets)));
         }
     } else if(wall && m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
         m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;

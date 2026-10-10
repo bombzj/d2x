@@ -3,6 +3,8 @@
 #include "gameplay/items/skill_sources.hpp"
 #include "gameplay/combat/damage_type.hpp"
 #include <map>
+#include <array>
+#include <string>
 
 namespace d2x {
 struct AttackTargetModifiers {
@@ -29,9 +31,12 @@ struct WeaponModifiers {
     int lifeLeech = 0, manaLeech = 0, crushingBlow = 0, openWounds = 0;
 };
 struct CombatModifiers {
+    // Native passive mastery layers are weapon types, not global weapon ED.
+    std::map<std::string, std::array<int, 3>, std::less<>> meleeMasteries, throwMasteries;
     AttackTargetModifiers target;
     int damagePercent = 0, attackRatingPercent = 0;
     int defensePercent = 0;
+    int armorOverridePercent = 0;
     int minimumDamagePercent = 0, maximumDamagePercent = 0;
     int normalDamage = 0, minimumDamage = 0, maximumDamage = 0;
     int fireMinimum = 0, fireMaximum = 0;

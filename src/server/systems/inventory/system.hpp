@@ -59,7 +59,7 @@ class System {
     DomainResult<> storage(const ActorContext &, const Request &);
     DomainResult<> consume(const ActorContext &, const UseItem &, Source);
     DomainResult<transactions::Plan> weaponCost(const ActorContext &, const WeaponDamage &,
-        const SkillCastSpec &, bool payMana, bool payAmmo, unsigned wear = 0) const;
+        const SkillCastSpec &, bool payMana, bool payAmmo, unsigned wear = 0, std::optional<TransientAttributes> transient = {}) const;
     std::optional<ItemHandle> defensiveWear(PlayerId,uint64_t &random) const;
     DomainResult<> ground(const ActorContext &, const GroundTransfer &, std::optional<SkillCastSpec> telekinesis = {});
     DomainResult<> telekinesis(const ActorContext &, EntityId, const SkillCastSpec &);

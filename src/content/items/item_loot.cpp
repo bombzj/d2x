@@ -196,7 +196,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers) {
+                      int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -206,7 +206,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
     auto roll = selectTreasure(data.treasures, root, seed, upgradeLevel,
         [&](const TreasureSelection &selection, uint64_t &random) {
             return appendSelectedItem(data,ratios,selection,itemLevel,characterClass,magicFind,goldFind,forcedQuality,false,random,plan,selectedUniques);
-        }, effectivePlayers);
+        }, effectivePlayers, ignoreNoDrop);
     plan.randomState = roll.randomState;
     plan.noDrops = roll.noDrops;
     return plan;

@@ -13,8 +13,10 @@ std::optional<CastAnimationTiming> prepareCastAnimationTiming(int frames, int sp
 std::optional<PlayerCastSequence> playerCastSequence(int sequence) {
     static constexpr std::array inferno{0,1,2,3,4,5,6,7,8,9,9,10,11,12,13};
     static constexpr std::array lightning{0,1,3,4,5,7,8,9,9,9,9,10,9,9,9,10,11,12,13};
+    static constexpr std::array leap{0,1,2,3,4,5,6,7,8,9,10,11,12,13,14};
     if (sequence == 6) return PlayerCastSequence{inferno,10,10,256};
     if (sequence == 12) return PlayerCastSequence{lightning,7,-1,0};
+    if (sequence == 13) return PlayerCastSequence{leap,5,10,256};
     return {};
 }
 CastTiming playerCastSequenceTiming(const PlayerCastSequence &sequence, int speed) {

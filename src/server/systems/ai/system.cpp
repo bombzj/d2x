@@ -42,9 +42,21 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const bool requireSight=room && !room->checkLosDraw && !controller.acquiredTarget;
         auto visible=[&](Vec point) {return !requireSight || area.definition.collision.missileSegment(monster.position,point,{4,1});};
         const bool blind=monster.curseControl.until>tick.tick && monster.curseControl.ai==CurseAi::DimVision;
+        if(monster.curseControl.until>tick.tick && monster.curseControl.ai==CurseAi::Taunt) {
+            const auto caster=participants.find(monster.curseControl.caster);
+            if(!caster.player || !caster.player->entered || caster.player->area!=monster.area || caster.player->persistent.player.hp<=0) {
+                ports_.monsters.curseControl(id,{});ports_.monsters.stop(id);controller.target.reset();continue;
+            }
+            controller.target=caster.id();controller.acquiredTarget=true;
+            if(meleeDistance(monster.position,monster.rule.size,caster.position(),2)<=monster.rule.meleeRange && area.definition.collision.segment(monster.position,caster.position())) {
+                const auto cast=ports_.skills.requestCast({id,0,UnitTarget{caster.id(),0,0},tick.tick,4});
+                if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
+            } else ports_.monsters.requestMove({id,{monster.area,area.generation,caster.position()},caster.id(),monster.rule.meleeRange,75,false});
+            continue;
+        }
         if(monster.curseControl.until>tick.tick && monster.curseControl.ai==CurseAi::Terror) {
             const auto caster=participants.find(monster.curseControl.caster);
-            auto direction=(monster.position-caster.position()).unit();if(!direction.length()) direction={1,1};
+            auto direction=(monster.position-monster.curseControl.origin.value_or(caster.position())).unit();if(!direction.length()) direction={1,1};
             for(int steps=20;steps>0;--steps) {
                 const Vec destination=monster.position+direction*float(steps);
                 if(area.definition.collision.walkable(destination,monster.rule.collision) && !area.definition.collision.path(monster.position,destination,true,monster.rule.collision).empty()) {

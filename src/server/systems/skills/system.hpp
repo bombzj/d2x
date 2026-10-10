@@ -20,7 +20,7 @@ struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, statio
 struct CastRequest { EntityId actor; uint16_t skill{}; ActionTarget target; uint64_t tick{}; uint8_t monsterMode{4}; std::optional<Vec> position{}; int teleportHeal{}; };
 struct Cast { EntityId actor; uint16_t skill{}; uint64_t started{}, revision{}, until{}; RegionId area; EntityId target; bool interrupted{}; uint64_t cooldownUntil{}; };
 struct State { std::map<EntityId, Cast> casts; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; };
 class System {
     State state_;
     const Ports ports_;
@@ -36,7 +36,7 @@ class System {
     DomainStatus activate(Release &, const ActorContext &, Vec);
     enum class ActivationProgram {
         Weapon, Item, Unsummon, Kick, AmazonSummon, AmazonMagic,
-        Teleport, Hydra, Effect, Curse, Corpse, StaticField, Telekinesis, Missile, Unsupported, Count
+        Teleport, Hydra, Leap, GrimWard, Effect, Warcry, Curse, Corpse, CorpseSearch, StaticField, Telekinesis, Missile, Unsupported, Count
     };
     static ActivationProgram activationProgram(const SkillCastSpec &);
     DomainStatus activateItem(Release &, const ActorContext &, Vec);
@@ -45,10 +45,15 @@ class System {
     DomainStatus activateAmazonSummon(Release &, const ActorContext &, Vec);
     DomainStatus activateAmazonMagic(Release &, const ActorContext &, Vec);
     DomainStatus activateTeleport(Release &, const ActorContext &, Vec);
+    DomainStatus activateLeap(Release &,const ActorContext &,Vec);
     DomainStatus activateHydra(Release &, const ActorContext &, Vec);
     DomainStatus activateEffect(Release &, const ActorContext &, Vec);
+    DomainStatus activateWarcry(Release &,const ActorContext &,Vec);
     DomainStatus activateCurse(Release &, const ActorContext &, Vec);
     DomainStatus activateCorpse(Release &,const ActorContext &,Vec);
+    DomainStatus activateCorpseSearch(Release &,const ActorContext &,Vec);
+    DomainStatus activateGrimWard(Release &,const ActorContext &,Vec);
+    DomainStatus activateWhirlwind(Release &,const ActorContext &,Vec);
     DomainStatus activateStaticField(Release &, const ActorContext &, Vec);
     DomainStatus activateTelekinesis(Release &, const ActorContext &, Vec);
     DomainStatus activateMissile(Release &, const ActorContext &, Vec);

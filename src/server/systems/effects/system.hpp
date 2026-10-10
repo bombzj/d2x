@@ -32,7 +32,7 @@ struct ItemTrigger {
 };
 struct ItemEventPlan {std::list<ItemTrigger> jobs;};
 struct State { std::map<EntityId, Recovery> players; std::string itemDeferred; };
-struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; bool converted{}; };
+struct UnitEffect { RegionId area; CombatEffectSet states; std::map<int,std::vector<std::pair<int,int64_t>>> nativeStats; bool converted{}; int64_t baseLife{}, adjustedLife{}; };
 // Prepared before inventory consumption, installed without allocation only after
 // the character transaction succeeds. No callback can observe half a drink.
 struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<uint64_t> random{}; std::vector<EntityId> healedHirelings; std::vector<DomainFact> publicFacts; };
@@ -86,10 +86,13 @@ class System {
         itemTriggers_.splice(itemTriggers_.end(),plan.jobs);
     }
     DomainResult<PotionPlan> potion(const ActorContext &, const PotionDefinition &) const;
+    DomainResult<PotionPlan> skillState(const ActorContext &, CombatEffectSpec) const;
+    DomainResult<> frenzy(const ActorContext &,const SkillCastSpec &);
     DomainResult<PotionPlan> heal(const ActorContext &) const;
     DomainResult<> restore(const ActorContext &,float life,float mana,float stamina,const std::vector<int> &cureStates);
     void commit(PotionPlan &&plan) noexcept;
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false);
+    DomainResult<> removeState(const ActorContext &,int state);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);

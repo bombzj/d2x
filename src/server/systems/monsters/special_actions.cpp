@@ -10,7 +10,7 @@ namespace d2x::server::monsters {
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
     return dead && dead->area==area && dead->life<=0 && !dead->owner && dead->rule.corpseSelectable &&
-        !dead->corpseUnavailable && tick>=dead->busyUntil && dead->rewardComplete &&
+        !dead->corpseUnavailable && !dead->corpseSearched && tick>=dead->busyUntil && dead->rewardComplete &&
         (!revive || (dead->rule.revivable && dead->rule.switchAi && dead->identity.rank==MonsterRank::Normal && !dead->rule.boss && !dead->rule.primeEvil));
 }
 void System::consumeCorpse(EntityId id) noexcept {
@@ -35,7 +35,7 @@ DomainResult<> System::introduction(EntityId id,uint64_t tick) {
 bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const {
     const auto *caster=find(source),*dead=find(corpse);
     if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
-        dead->corpseUnavailable || tick<dead->busyUntil || !dead->rewardComplete || dead->identity.rank!=MonsterRank::Normal || dead->area!=caster->area) return false;
+        dead->corpseUnavailable || dead->corpseSearched || tick<dead->busyUntil || !dead->rewardComplete || dead->identity.rank!=MonsterRank::Normal || dead->area!=caster->area) return false;
     // Ordinary Fn013 uses its party callback. The broader family callback is
     // reserved for unique shamans and is deliberately not used here.
     if(((!caster->rule.enchantment || caster->identity.rank==MonsterRank::Minion) && dead->identity.ownerSpawnKey!=caster->identity.spawnKey) || dead->rule.ai.kind!=MonsterAiKind::Fallen) return false;
@@ -103,7 +103,7 @@ DomainResult<> System::heal(EntityId id,int64_t amount) {
 }
 DomainResult<> System::redeem(EntityId id) {
     auto it=state_.actors.find(id);
-    if(it==state_.actors.end() || it->second.life>0 || it->second.corpseUnavailable || !it->second.rule.corpseSelectable)
+    if(it==state_.actors.end() || it->second.life>0 || it->second.corpseUnavailable || it->second.corpseSearched || !it->second.rule.corpseSelectable)
         return {DomainStatus::InvalidRequest,{}};
     auto &m=it->second;
     m.corpseUnavailable=true;++m.revision;return {DomainStatus::Applied,std::monostate{}};

@@ -19,6 +19,7 @@ struct WeaponSkillDamage {
     int stunFrames{};
     int lifeLeech{},physicalFlat{};
     bool crushing{},openWounds{},knockback{};
+    bool clearTargetStun{};
     SkillCastSpec wearSkill{};
 };
 WeaponSkillDamage rollPotionDamage(const WeaponDamage &, int level, uint64_t &random);

@@ -27,11 +27,14 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
     debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     for(const auto &[id,monster]:ports_.monsters.read().actors) {
+        if(program.singleTarget && id!=selected) continue;
         if(!monster.enemyTarget() || monster.life<=0 || !monster.rule.curseable || monster.area!=actor.area || !(program.targetFilter&2) ||
            !area->definition.activation.nearby(center,monster.position) || (monster.rule.enchantment && monster.rule.enchantment->has(38))) continue;
         const int dx=int(monster.position.x)-int(center.x),dy=int(monster.position.y)-int(center.y);
         if(dx*dx+dy*dy>program.radius*program.radius) continue;
         if(program.ai!=CurseAi::None && !aiEligible(monster)) continue;
+        if(program.targetLevelBonus && skill.rank+program.targetLevelBonus+player->persistent.player.level<=monster.rule.level) continue;
+        if(program.skipActive && unitStates(id,actor.tick).contains(program.state.id)) continue;
         if(program.ai==CurseAi::Attract && id!=selected) {attractions.push_back(id);continue;}
         const int resistance=std::clamp(monster.petStats.attributes.combat.curseResistance+unitModifiers(id,actor.tick).combat.curseResistance,0,100);
         if(resistance==100) continue;
@@ -39,8 +42,8 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(recipient.states.size()>=128 && !recipient.states.hasState(program.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
         CombatEffectSpec curse;curse.state=program.state;curse.stacking=EffectStacking::CurseLevel;
         curse.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};
-        const int divisor=program.ai==CurseAi::None?1:player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
-        curse.duration=uint64_t(std::max<int64_t>(1,int64_t(program.frames/divisor)*(100-resistance)/100));curse.modifiers=program.modifiers;
+        const int divisor=program.ai==CurseAi::None || program.ignoreDifficultyDivisor?1:player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty));
+        if(!program.permanent) curse.duration=uint64_t(std::max<int64_t>(1,int64_t(program.frames/divisor)*(100-resistance)/100));curse.modifiers=program.modifiers;
         curse.curseAi=program.ai;
         // SkillNec tests STAT_UNITBASE independently for each immune channel.
         auto &modifiers=curse.modifiers;
@@ -50,7 +53,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(monster.rule.resistances[4]>=100) modifiers.coldResist/=5;
         if(monster.rule.resistances[5]>=100) modifiers.poisonResist/=5;
         const auto applied=recipient.states.apply(std::move(curse),actor.tick);if(!applied.accepted) continue;
-        for(const auto &effect:recipient.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.state.id) controls[id]={effect.spec.curseAi,effect.spec.source.entity,{},effect.expiresAt.value_or(UINT64_MAX)};
+        for(const auto &effect:recipient.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.state.id) controls[id]={effect.spec.curseAi,effect.spec.source.entity,{},effect.expiresAt.value_or(UINT64_MAX),program.fearOrigin};
         for(const auto &removed:applied.removed) if(!recipient.states.hasState(removed.effect.spec.state.id,actor.tick)) {
             recipient.nativeStats.erase(removed.effect.spec.state.id);
             debit.publicFacts.emplace_back(StateFact{id,1,actor.area,removed.effect.spec.state.id,false});
@@ -58,6 +61,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         CharacterModifiers installed;
         for(const auto &effect:recipient.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.state.id) mergeCharacterModifiers(installed,effect.spec.modifiers);
         const std::pair<std::string_view,int> values[]{{"damageresist",installed.combat.physicalResist},{"damagepercent",installed.combat.damagePercent},
+            {"item_tohit_percent",installed.combat.attackRatingPercent},{"skill_armor_percent",installed.combat.defensePercent},
             {"fireresist",installed.fireResist},{"lightresist",installed.lightningResist},{"coldresist",installed.coldResist},
             {"poisonresist",installed.poisonResist},{"velocitypercent",installed.velocityPercent},{"attackrate",installed.combat.attackRate}};
         auto &stats=recipient.nativeStats[program.state.id];stats.clear();
@@ -67,7 +71,10 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     auto plan=ports_.transactions.prepare(std::move(debit));if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) {
         units_.swap(next);
-        for(const auto &[id,control]:controls) {ports_.monsters.curseControl(id,control);ports_.monsters.stop(id);}
+        for(const auto &[id,control]:controls) {
+            ports_.monsters.curseControl(id,control);ports_.monsters.stop(id);
+            if(skill.missileNextDelay>0) ports_.monsters.hitDelay(id,actor.tick+uint64_t(skill.missileNextDelay));
+        }
         if(program.ai==CurseAi::Attract) for(const auto id:attractions) ports_.monsters.attract(id,selected,actor.tick+uint64_t(std::max(1,program.frames/player->rules.skills->aiCurseDivisor.at(size_t(player->persistent.difficulty)))));
         for(const auto &[id,recipient]:units_) if(recipient.area==actor.area) ports_.monsters.velocityModifier(id,recipient.states.modifiers(actor.tick).velocityPercent);
     }

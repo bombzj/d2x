@@ -8,7 +8,7 @@ namespace d2x::server::loot {
 std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const {
     auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
 }
-DomainResult<> System::queue(const Request &request) {
+DomainResult<> System::queue(const Request &request,std::optional<transactions::CharacterEdit> payment) {
     if (state_.pending.contains(request.source.source)) return {DomainStatus::Applied, std::monostate{}};
     if (state_.pending.size() >= 256) return {DomainStatus::Capacity, {}};
     const auto *player = ports_.players.find(request.beneficiary);
@@ -26,7 +26,12 @@ DomainResult<> System::queue(const Request &request) {
         })));
     pending.effectivePlayers=std::min(std::clamp((count-members)/2+members,1u,8u),request.source.monsterPlayerCount);
     pending.character.inventory.items.clear();
-    state_.pending.emplace(request.source.source, std::move(pending)); ports_.random = random;
+    std::map<EntityId,Preparation> candidate;candidate.emplace(request.source.source,std::move(pending));
+    if(payment) {
+        auto plan=ports_.transactions.prepare(std::move(*payment));if(!plan) return {plan.status,{}};
+        const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
+    }
+    state_.pending.merge(candidate); ports_.random = random;
     return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std::string deferred) {
@@ -36,21 +41,24 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
     uniques.insert(batch.limitedUniques.begin(), batch.limitedUniques.end());
     const auto &request = found->second.request;
     if (!deferred.empty()) {
-        if(request.object) state_.completed.insert_or_assign(source, false);
+        if(request.object && request.object->reportCompletion) state_.completed.insert_or_assign(source, false);
         state_.deferred = std::move(deferred); state_.pending.erase(found);
         return {DomainStatus::Applied, std::monostate{}};
     }
     if(request.object) {
         const auto *player=ports_.players.find(request.beneficiary);
         if(!player || !player->entered || player->area!=request.source.region || player->persistent.player.hp<=0) {
-            state_.completed.insert_or_assign(source,false);state_.pending.erase(found);return {DomainStatus::Applied,std::monostate{}};
+            if(request.object->reportCompletion) state_.completed.insert_or_assign(source,false);
+            state_.pending.erase(found);return {DomainStatus::Applied,std::monostate{}};
         }
     }
-    if (!ports_.events.hasCapacity(batch.items.size() + (request.object ? 2 : 0), request.object ? 2 : 1))
+    const size_t facts=batch.items.size()+(request.object?2:0);
+    // Native NoDrop is a completed empty result, not an outbox reservation.
+    if (facts && !ports_.events.hasCapacity(facts, request.object ? 2 : 1))
         return {DomainStatus::Capacity, {}};
     // Allocate follow-up bookkeeping before any authority is committed.
     auto completions = state_.completed;
-    if (request.object) completions.insert_or_assign(source, true);
+    if (request.object && request.object->reportCompletion) completions.insert_or_assign(source, true);
     auto next = ports_.items.prepare(std::move(batch), {request.source.region, request.position});
     if (!next) return {next.status, {}};
     std::vector<DomainFact> drops;
@@ -58,7 +66,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         if(!ports_.items.read().world.items.contains(id)) drops.emplace_back(GroundDropFact{item});
     if (request.object) {
         const auto *player = ports_.players.find(request.beneficiary);
-        const auto fail = [&]() { state_.completed.insert_or_assign(source, false); state_.pending.erase(found); return DomainResult<>{DomainStatus::Applied, std::monostate{}}; };
+        const auto fail = [&]() { if(request.object->reportCompletion) state_.completed.insert_or_assign(source, false); state_.pending.erase(found); return DomainResult<>{DomainStatus::Applied, std::monostate{}}; };
         if (!player || !player->entered || player->area != request.source.region || player->persistent.player.hp <= 0) return fail();
         inventory::detail::Draft draft(*player, *player->rules.items, *player->rules.equipment, *player->rules.character);
         const auto key = request.object->key;

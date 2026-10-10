@@ -15,14 +15,21 @@
 namespace d2x {
 struct BoneSkillSpec;
 struct AmazonMagicSpec;
+struct CorpseSearchSpec;
+struct LeapSpec;
+struct GrimWardSpec;
 // Typed values imported from Skills.txt and Missiles.txt. No archive data enters gameplay.
 struct SkillOverlayCue { int id=-1, frames=0; float fps=0; };
 struct SkillRuleSpec {
     SkillBehavior effect{};
     std::shared_ptr<const BoneSkillSpec> bone;
     std::shared_ptr<const AmazonMagicSpec> amazonMagic;
+    std::shared_ptr<const CorpseSearchSpec> corpseSearch;
+    std::shared_ptr<const LeapSpec> leap;
+    std::shared_ptr<const GrimWardSpec> grimWard;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
+    int stunFrames = 0, stunFramesPerLevel = 0;
     bool fireDamage = false;
     bool lightningDamage = false;
     bool coldDamage = false;
@@ -74,6 +81,7 @@ struct SkillRuleSpec {
     int castMissileId = -1;
     float castMissileDuration = 0;
     CombatStateDefinition state;
+    bool warcry = false;
     std::array<int, 8> armorParameters{};
     std::vector<int> armorSynergySkills;
 };

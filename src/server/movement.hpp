@@ -18,6 +18,7 @@ class MovementSystem {
     explicit MovementSystem(MovementPorts ports) : ports_(ports) {}
     CommandStatus execute(const ActorContext &, const MovementCommand &);
     DomainResult<bool> chargeStep(const ActorContext &,Vec target,float speed,int stopDistance);
+    DomainResult<bool> leapStep(const ActorContext &,Vec target,float speed,std::optional<MovementCollisionRule> collision = {});
     void step(TickContext);
     void suspend();
 };

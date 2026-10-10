@@ -4,6 +4,10 @@
 #include "rule_spec.hpp"
 #include "bone_spec.hpp"
 #include "bow_spec.hpp"
+#include "corpse_search_spec.hpp"
+#include "leap_spec.hpp"
+#include "grim_ward_spec.hpp"
+#include "barbarian_passive_spec.hpp"
 #include "damage_curve.hpp"
 #include "rank_bonus.hpp"
 #include "resolve.hpp"
@@ -34,6 +38,23 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     SkillCastSpec result;
     result.effect = spec.effect;
     result.rank = rank;
+    result.warcry = spec.warcry;
+    if(spec.leap) {
+        auto leap=std::make_shared<LeapSpec>(*spec.leap);
+        leap->range=barbarianDiminishing(leap->rangeMinimum,leap->rangeMaximum,rank);
+        leap->knockbackRadius+=(rank-1)*leap->knockbackPerLevel;
+        result.leap=std::move(leap);
+    }
+    if(spec.grimWard) {
+        auto ward=std::make_shared<GrimWardSpec>(*spec.grimWard);
+        ward->radius+=(rank-1)*ward->radiusPerLevel;ward->duration+=(rank-1)*ward->durationPerLevel;
+        result.grimWard=std::move(ward);
+    }
+    if(spec.corpseSearch) {
+        auto search=std::make_shared<CorpseSearchSpec>(*spec.corpseSearch);
+        search->chance=barbarianDiminishing(search->minimumChance,search->maximumChance,rank);
+        result.corpseSearch=std::move(search);
+    }
     if (spec.amazonMagic) {
         auto program = std::make_shared<AmazonMagicSpec>(*spec.amazonMagic);
         program->radius += (rank - 1) * program->radiusPerLevel;
@@ -51,6 +72,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         result.bone = std::move(program);
     }
     result.sourceId = spec.sourceId;result.hitClass=spec.hitClass;
+    result.stunFrames=spec.stunFrames+(rank-1)*spec.stunFramesPerLevel;
     result.castMissileId = spec.castMissileId;
     result.castMissileDuration = spec.castMissileDuration;
     result.requiresShield = spec.requiresShield;
@@ -164,6 +186,27 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         else armor.reactions.push_back({CombatEffectEvent::HitByMissile, ColdMissileRetaliation{}});
         result.appliedEffect = std::move(armor);
     }
+    if(spec.effect==SkillBehavior::Shout) {
+        CombatEffectSpec shout;shout.state=spec.state;shout.stacking=EffectStacking::ReplaceState;
+        int duration=spec.armorParameters[2]+(rank-1)*spec.armorParameters[3];
+        for(const auto id:spec.armorSynergySkills) if(const auto known=learned.find(id);known!=learned.end()) duration+=known->second*spec.armorParameters[7];
+        shout.duration=uint64_t(duration);shout.modifiers.combat.defensePercent=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
+        result.appliedEffect=std::move(shout);
+    }
+    if(spec.effect==SkillBehavior::BattleOrders) {
+        CombatEffectSpec orders;orders.state=spec.state;orders.stacking=EffectStacking::ReplaceState;
+        int frames=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
+        for(const auto id:spec.armorSynergySkills) if(const auto found=learned.find(id);found!=learned.end()) frames+=found->second*spec.armorParameters[7];
+        orders.duration=uint64_t(frames);const int amount=spec.armorParameters[2]+(rank-1)*spec.armorParameters[3];
+        orders.modifiers.combat.lifePercent=orders.modifiers.combat.manaPercent=orders.modifiers.staminaPercent=amount;
+        result.appliedEffect=std::move(orders);
+    }
+    if(spec.effect==SkillBehavior::BattleCommand) {
+        CombatEffectSpec command;command.state=spec.state;command.stacking=EffectStacking::ReplaceState;
+        int frames=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
+        for(const auto id:spec.armorSynergySkills) if(const auto found=learned.find(id);found!=learned.end()) frames+=found->second*spec.armorParameters[7];
+        command.duration=uint64_t(frames);command.modifiers.combat.allSkills=1;result.appliedEffect=std::move(command);
+    }
     if (spec.effect == SkillBehavior::BoneArmor) {
         int64_t synergy = 0;
         for (int id : spec.armorSynergySkills)
@@ -264,9 +307,18 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.weapon->bow = std::move(bow);
         }
         result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
+        result.weapon->physicalFlat += (rank - 1) * result.weapon->physicalFlatPerLevel;
+        for (const auto &[skill, percent] : result.weapon->attackRatingSynergies)
+            if (const auto found = learned.find(skill); found != learned.end())
+                result.weapon->attackRating += found->second * percent;
         result.weapon->damagePercent += std::max(0, rank - result.weapon->damageStartLevel) * result.weapon->damagePerLevel;
         result.weapon->attacks = std::min(result.weapon->attackLimit, result.weapon->attacks + rank - 1);
         result.weapon->stunFrames = std::min(250, result.weapon->stunFrames + (rank - 1) * result.weapon->stunPerLevel);
+        if(spec.weapon->stunCurve) {
+            int synergy=0;for(const auto &[id,percent]:spec.weapon->stunSynergies)
+                if(const auto known=learned.find(id);known!=learned.end()) synergy+=known->second*percent;
+            result.weapon->stunFrames=int(std::min<int64_t>(250,skillElementalLength(spec.weapon->stunFrames,*spec.weapon->stunCurve,rank,synergy)));
+        }
         result.weapon->conversionChance = std::min(result.weapon->conversionMaximum, result.weapon->conversionMinimum +
             (result.weapon->conversionMaximum - result.weapon->conversionMinimum) * (110 * rank / (rank + 6)) / 100);
         for (size_t element = 0; element < result.weapon->elementPercent.size(); ++element) {
@@ -280,6 +332,11 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         for (const auto &[skill, percent] : result.weapon->damageSynergies)
             if (const auto found = learned.find(skill); found != learned.end())
                 result.weapon->damagePercent += found->second * percent;
+        result.weapon->attackDefense += (rank-1)*result.weapon->attackDefensePerLevel;
+        if(result.weapon->attackDurationMaximum>0) result.weapon->attackDuration=result.weapon->attackDurationMaximum-
+            barbarianDiminishing(0,result.weapon->attackDurationMaximum-result.weapon->attackDurationMinimum,rank);
+        for(const auto &[id,percent]:result.weapon->magicConversionSynergies)
+            if(const auto found=learned.find(id);found!=learned.end()) result.weapon->magicConversionPercent+=found->second*percent;
     }
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,skillRankBonus({spec.missileCount,spec.missileCountPerLevel},rank));

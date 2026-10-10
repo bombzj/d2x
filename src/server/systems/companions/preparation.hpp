@@ -25,6 +25,7 @@ struct HirelingPreparation {
     PersistentCharacter equipment;
     std::shared_ptr<const ItemCatalog> items;
     std::shared_ptr<const EquipmentRules> equipmentRules;
+    int temporarySkillBonus{};
 };
 struct HirelingAction {int skill{},rank{},chance{},mode{},aiType{},state{-1},maximumRange{};std::optional<AuraDefinition> aura;};
 struct PreparedHireling {

@@ -26,7 +26,8 @@ HirelingEquipment calculateHirelingEquipment(const PersistentCharacter &state, c
         [&](EntityId item,size_t index,int level){return rules.at(item,level).setStats.at(index);}};
     std::set<EntityId> active;
     result.modifiers=deriveEquipmentModifiers(loadout,result.actor,source,excluded,&active);
-    for(const auto &[passive,rank]:prepared.passives) applySkillPassive(result.modifiers,passive,rank,states.contains(passive.suppressedByState));
+    const int skillBonus=result.modifiers.combat.allSkills+prepared.source.temporarySkillBonus;
+    for(const auto &[passive,rank]:prepared.passives) applySkillPassive(result.modifiers,passive,std::max(0,rank+skillBonus),states.contains(passive.suppressedByState));
     result.actor.strength+=result.modifiers.strength;result.actor.dexterity+=result.modifiers.dexterity;
     for(auto &item:loadout.equipped) if(item && !active.contains(item.instance->id)) item={};
     auto combat=result.modifiers.combat;

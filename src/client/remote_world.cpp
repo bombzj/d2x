@@ -434,7 +434,14 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x0D: {
         auto &u = unit(w, key(r));
-        u.mode = r.u8();
+        const auto action = r.u8();
+        if (u.key.type == 0 && action == 19) {
+            // PlrMsg life/correction update does not select a player mode.
+            position(v,u,point(r));u.hitClass=r.u8();u.lifePercent=r.u8();
+            u.lifeCarriesTriggerFlag=false;u.hitRevision=w.revision;r.finish();
+            break;
+        }
+        u.mode = action;
         u.nativeMode = false; u.actionSkill.reset(); u.actionSkillLevel.reset();
         position(v, u, point(r));
         u.hitClass = r.u8();

@@ -12,6 +12,10 @@
 #include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/amazon_magic_spec.hpp"
+#include "gameplay/skills/corpse_search_spec.hpp"
+#include "gameplay/skills/leap_spec.hpp"
+#include "gameplay/skills/grim_ward_spec.hpp"
+#include "gameplay/skills/barbarian_passive_spec.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -279,15 +283,34 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
             detail += " / Corpse life " + std::to_string(value.bone->minimumPercent) + "-" +
                 std::to_string(value.bone->maximumPercent) + "% / Half physical, half fire / Radius " +
                 std::string(displayNumber("%.1f yards", float(value.bone->radius) / 3.f));
+        else if(value.corpseSearch) detail+=" / Chance "+std::to_string(value.corpseSearch->chance)+"%";
+        else if(value.grimWard) detail+=" / Radius "+std::to_string(value.grimWard->radius)+" / "+std::string(displayNumber("%.1fs",float(value.grimWard->duration)/25.f));
+        else if(value.leap && !value.leap->attack) detail+=" / Range "+std::to_string(value.leap->range)+" / Knockback radius "+std::to_string(value.leap->knockbackRadius);
         else if (value.curse) {
-            const int divisor = value.curse->ai == CurseAi::None ? 1 : std::max(1, aiCurseDivisor);
+            const int divisor = value.curse->ai == CurseAi::None || value.curse->ignoreDifficultyDivisor ? 1 : std::max(1, aiCurseDivisor);
             detail += " / Radius " + std::to_string(value.curse->radius) +
                 " / " + std::string(displayNumber("%.1fs", float(value.curse->frames / divisor) / 25.f));
             if (value.curse->modifiers.combat.ironMaidenPercent > 0)
                 detail += " / Melee return " + std::to_string(value.curse->modifiers.combat.ironMaidenPercent) + "%";
             if (value.curse->modifiers.combat.lifeTapPercent > 0)
                 detail += " / Physical healing " + std::to_string(value.curse->modifiers.combat.lifeTapPercent) + "%";
+            if(value.curse->permanent) detail+=" / Until cleared";
+            if(value.curse->modifiers.combat.defensePercent) detail+=" / Enemy defense "+std::to_string(value.curse->modifiers.combat.defensePercent)+"%";
+            if(value.curse->modifiers.combat.damagePercent) detail+=" / Enemy damage "+std::to_string(value.curse->modifiers.combat.damagePercent)+"%";
+            if(value.curse->modifiers.combat.attackRatingPercent) detail+=" / Enemy attack rating "+std::to_string(value.curse->modifiers.combat.attackRatingPercent)+"%";
         }
+        else if(value.effect==SkillBehavior::BattleOrders) detail+=" / Life, mana, stamina +"+std::to_string(value.appliedEffect->modifiers.combat.lifePercent)+"% / "+std::to_string(value.appliedEffect->duration.value()/25)+" seconds";
+        else if(value.effect==SkillBehavior::BattleCommand) detail+=" / All skills +1 / "+std::to_string(value.appliedEffect->duration.value()/25)+" seconds";
+        else if(skill.classCode=="bar" && value.weapon) {
+            const auto &weapon=*value.weapon;detail+=" / Weapon damage "+std::to_string(weapon.damagePercent)+"% / Attack rating +"+std::to_string(weapon.attackRating)+"%";
+            if(weapon.physicalFlat) detail+=" / Damage +"+std::to_string(weapon.physicalFlat);
+            if(weapon.stunFrames) detail+=" / Stun "+std::string(displayNumber("%.2fs",float(weapon.stunFrames)/25.f));
+            if(weapon.magicConversionPercent) detail+=" / Converts "+std::to_string(weapon.magicConversionPercent)+"% to magic";
+            if(weapon.attackDefense) detail+=" / Defense +"+std::to_string(weapon.attackDefense)+"% while attacking";
+            if(weapon.armorOverridePercent==-100) detail+=" / Defense 0 for "+std::string(displayNumber("%.2fs",float(weapon.attackDuration)/25.f));
+            if(weapon.frenzy) detail+=" / Maximum speed +"+std::to_string(barbarianDiminishing(weapon.frenzyParameters[0],weapon.frenzyParameters[1],value.rank))+"% / "+std::to_string(weapon.frenzyFrames/25)+" seconds";
+        }
+        else if(value.effect==SkillBehavior::WarCry) detail+=" / Physical "+damage()+" / Stun "+std::string(displayNumber("%.2fs",float(value.stunFrames)/25.f));
         else if (value.effect == SkillBehavior::HolyBolt)
             detail += " / Undead magic " + damage() +
                 " / Ally healing " + std::string(displayNumber("%.1f-%.1f", value.healingMinimum, value.healingMaximum));

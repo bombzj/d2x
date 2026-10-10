@@ -34,5 +34,5 @@ struct TreasureRoll {
 using TreasureVisitor = std::function<bool(const TreasureSelection &, uint64_t &)>;
 int adjustedNoDrop(int noDrop, int itemWeight, unsigned effectivePlayers);
 TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_view root, uint64_t seed,
-                           int level = 0, const TreasureVisitor &visitor = {}, unsigned effectivePlayers = 1);
+                           int level = 0, const TreasureVisitor &visitor = {}, unsigned effectivePlayers = 1, bool ignoreNoDrop = false);
 } // namespace d2x

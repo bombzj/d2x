@@ -57,9 +57,10 @@ struct MonsterRecord {
     int infernoLength = 0, infernoAnimation = 0;
     bool curseable = false;
     bool switchAi = false;
-    bool castsShadow = false, corpseSelectable = false, revivable = false;
+    bool castsShadow = false, corpseSelectable = false, revivable = false, soft = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;
     bool flying = false;
+    int corpseSize = 1;
     std::array<std::string, 2> minions;
     MovementCollisionRule movementRule() const {
         // PATH_AllocDynamicPath: Wraith's small pattern ignores walls, flying

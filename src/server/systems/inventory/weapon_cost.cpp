@@ -8,7 +8,7 @@
 #include <algorithm>
 namespace d2x::server::inventory {
 DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,const WeaponDamage &weapon,
-    const SkillCastSpec &skill,bool payMana,bool payAmmo,unsigned wear) const {
+    const SkillCastSpec &skill,bool payMana,bool payAmmo,unsigned wear,std::optional<TransientAttributes> transient) const {
     const auto *p=ports_.players.find(actor.player);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !skill.weapon ||
         (weapon.item && !p->totals.activeEquipment.contains(weapon.item))) return {DomainStatus::InvalidActor,{}};
@@ -16,6 +16,7 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
     if(!std::isfinite(mana) || mana<0 || p->persistent.player.mana<mana) return {DomainStatus::Unavailable,{}};
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.inventory,{},p->persistent.player.weaponSet};
     edit.character=p->persistent.player;edit.character->mana-=mana;
+    edit.transient=transient;
     EntityId consume;
     if(!weapon.item && (payAmmo || wear)) return {DomainStatus::InvalidRequest,{}};
     if((weapon.ranged || skill.weapon->thrown) && !skill.weapon->noAmmo) {
@@ -74,7 +75,7 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
     if(payMana) edit.charge=skill.charge;
     if(edit.changes.empty()) {
         transactions::CharacterEdit character{actor,p->inventoryRevision,p->characterRevision,*edit.character};
-        character.charge=edit.charge;return ports_.transactions.prepare(std::move(character));
+        character.charge=edit.charge;character.transient=edit.transient;return ports_.transactions.prepare(std::move(character));
     }
     return ports_.transactions.prepare(std::move(edit));
 }

@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-10。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[基线](../../BASELINE.md)。这是源码契约，不是逐包运行认证。
+更新：2026-10-11。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[基线](../../BASELINE.md)。这是源码契约，不是逐包运行认证。
 
 ## 编码约定
 
@@ -184,6 +184,8 @@
 | A8／AA | 状态属性／快照，变长 | unit,u8 total；A8再u8 state；剩余位流按MPQ |
 | AC | AssignNpc／变长 | u32 npc; u16 class; xy; u8 life,total；组件／rank／词缀／owner等位流 |
 | AF | Compression／2 | u8 mode |
+
+原16为 `u16 length; u8 count; count × (unit, xy)`；自研移动技能用单条13字节位置更新保留技能动作，不改为走路模式。原0D玩家action19是生命／位置校正，消费时保留当前动作、技能与目的地；死亡／普通模式仍按各自原action处理。
 
 ## S2C 身份预留
 

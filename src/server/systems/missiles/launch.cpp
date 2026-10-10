@@ -12,6 +12,7 @@
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/common_actions.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/grim_ward_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -58,6 +59,11 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         result.push_back(make(r, at, heading, id, life, speed, program, random)); return result.back();
     };
     switch (s.effect) {
+    case SkillBehavior::GrimWard: {
+        const auto form=size_t(s.missileCount);const auto &shape=s.grimWard->forms.at(form);
+        auto &ward=add(cell(r.target),{},shape.start,shape.startFrames,0,Program::GrimWard);
+        ward.directionIndex=int(form);break;
+    }
     case SkillBehavior::PoisonExplosion: {
         const auto &burst=*s.missileImpact->cloudBurst;const auto &cloud=burst.cloud;
         for(const auto heading:poisonCloudDirections(burst.mainStep,burst.subStep)) {
@@ -107,6 +113,7 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
             auto &m = add(cell(origin), direction, s.missileId, std::min(frames,77), s.missileVelocity, Program::Charged);
             const auto path = chargedBoltPath(origin, origin + direction, i, m.lifetimeFrames); m.path.assign(path.begin(), path.end());
         } break;
+    case SkillBehavior::Howl: case SkillBehavior::Shout: case SkillBehavior::BattleCry: case SkillBehavior::BattleOrders: case SkillBehavior::WarCry: case SkillBehavior::BattleCommand:
     case SkillBehavior::FrostNova: case SkillBehavior::Nova: case SkillBehavior::PoisonNova:
         for (int i=0; i<64; ++i) add(cell(origin), missileRingDirection(i), s.missileId, frames, s.missileVelocity, Program::Ring);
         break;

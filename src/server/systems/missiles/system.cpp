@@ -4,13 +4,14 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/effects/system.hpp"
 namespace d2x::server::missiles {
 std::vector<EntityId> System::collisionCandidates(const Missile &missile,Vec next) const {
     const Vec center=(missile.position+next)*.5f;
     const auto candidates=ports_.spatial.query({missile.area,center,(next-missile.position).length()*.5f+float(missile.collision.size+ports_.spatial.maximumSize(missile.area)+1)});
     if(!candidates) throw std::logic_error("Missile collision index unavailable");
     std::vector<EntityId> result;result.reserve(candidates.value->size());
-    for(const auto &candidate:*candidates.value) if(candidate.kind==spatial::UnitKind::Monster) result.push_back(candidate.id);
+    for(const auto &candidate:*candidates.value) if(candidate.kind==spatial::UnitKind::Monster || (missile.skill.warcry && candidate.kind==spatial::UnitKind::Player)) result.push_back(candidate.id);
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
@@ -31,6 +32,26 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(tick.tick<=m.created) {++it;continue;}
         auto [entry,fresh]=pending_.try_emplace(m.id);if(fresh) entry->second=advance(m);
         auto &plan=entry->second;
+        while(plan.nextCurseTarget<plan.curseTargets.size()) {
+            auto skill=plan.next.skill;skill.manaCost=0;skill.charge.reset();
+            const ActorContext actor{m.player,m.owner,m.area,m.generation,0,tick.tick};
+            const auto target=plan.curseTargets[plan.nextCurseTarget];
+            const auto *monster=ports_.monsters.find(target);
+            const auto result=monster?ports_.effects.curse(actor,skill,monster->position,target):DomainResult<>{DomainStatus::Unavailable,{}};
+            if(result.status==DomainStatus::Capacity) break;
+            ++plan.nextCurseTarget;
+        }
+        if(plan.nextCurseTarget<plan.curseTargets.size()) {blocked=true;++it;continue;}
+        while(plan.nextBuffTarget<plan.buffTargets.size()) {
+            auto skill=m.skill;skill.manaCost=0;skill.charge.reset();
+            const ActorContext actor{m.player,m.owner,m.area,m.generation,0,tick.tick};
+            const auto target=plan.buffTargets[plan.nextBuffTarget];
+            const auto *recipient=ports_.players.findActor(target);
+            const auto result=recipient?ports_.effects.skill(actor,skill,recipient->player):ports_.effects.skillUnit(actor,skill,target);
+            if(result.status==DomainStatus::Capacity) break;
+            ++plan.nextBuffTarget;
+        }
+        if(plan.nextBuffTarget<plan.buffTargets.size()) {blocked=true;++it;continue;}
         if(plan.children.size()>4096-state_.missiles.size() || plan.children.size()>UINT32_MAX-ports_.ids.cursor()) {blocked=true;++it;continue;}
         auto facts=visuals(plan.children);
         if(!facts.empty() && !ports_.events.hasCapacity(facts.size())) {blocked=true;++it;continue;}

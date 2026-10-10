@@ -13,6 +13,7 @@
 #include "gameplay/skills/weapon_damage.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
+#include "gameplay/skills/barbarian_sequence.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -57,16 +58,25 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(charge) {skill.charge=SkillCharge{charge->item,charge->layer};skill.manaCost=skill.startMana=0;}
     const auto &program=*skill.weapon;
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
-    if(p.persistent.player.mana<skill.manaCost && ((program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
+    if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
         [&](const auto &w){return !w.leftHand && (program.smite || std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end());});
     if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};
-    if(program.commonAttack && (weapon->ranged || program.thrown)) {
+    if((program.commonAttack || program.dualWield) && (weapon->ranged || program.thrown)) {
         if(!weapon->projectile) return {DomainStatus::Unavailable,{}};
         skill=commonProjectileSkill(skill,*weapon->projectile);
     }
     const auto &mods=p.totals.character.combat;
+    const WeaponDamage *offhand=nullptr;
+    if(program.dualWield) {
+        const auto last=p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount;
+        const auto second=std::find_if(p.totals.equipment.weapons.begin(),last,[&](const auto &w){return w.leftHand && w.item &&
+            std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end() && (!program.thrown || w.throwable);});
+        if(second==last || !weapon->item) return {DomainStatus::Unavailable,{}};
+        offhand=&*second;
+    }
+    if(program.whirlwind) for(const auto &other:p.totals.equipment.weapons) if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
     if(!weapon->potion && unsupportedWeaponEffects(mods)) return {DomainStatus::NotImplemented,{}};
     if(const auto own=mods.weapons.find(weapon->item);own!=mods.weapons.end() && !weapon->potion && unsupportedWeaponEffects(own->second)) return {DomainStatus::NotImplemented,{}};
     const bool fend=program.spear && program.spear->kind==SpearSkillSpec::Kind::Fend;
@@ -78,13 +88,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         if(!monster || !monster->enemyTarget() || monster->life<=0 || monster->area!=actor.area) return {DomainStatus::InvalidRequest,{}};
         destination=monster->position;target=monster->id;
         if(program.chargeVelocity>0 && meleeDistance(p.position,2,destination,monster->rule.size)<=weapon->rangeAdder+1) return attack(actor,request,0);
-        if(program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown && (meleeDistance(p.position,2,destination,monster->rule.size)>weapon->rangeAdder+1 ||
+        if(program.whirlwind && meleeDistance(p.position,2,destination,monster->rule.size)<=weapon->rangeAdder+1) return attack(actor,request,0);
+        if(!program.whirlwind && program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown && (meleeDistance(p.position,2,destination,monster->rule.size)>weapon->rangeAdder+1 ||
             !area.definition.collision.segment(p.position,destination))) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
             ports_.movement.execute(actor,{MovementAction::Move,destination,false});return {DomainStatus::Conflict,{}};
         }
     } else {
-        if(!weapon->ranged && !program.thrown && !fend && !zeal && !program.commonAttack && !program.chargeVelocity) return {DomainStatus::InvalidRequest,{}};
+        if(!weapon->ranged && !program.thrown && !fend && !zeal && !program.commonAttack && !program.chargeVelocity && !program.whirlwind) return {DomainStatus::InvalidRequest,{}};
         const auto &point=std::get<PointTarget>(*request.target);
         if(point.area!=actor.area || point.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
         destination=point.position;
@@ -97,6 +108,13 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     const auto &a=animation->second;
     WeaponAttackTiming timing{mode,a.frames,effectiveAttackSpeed(a.speed,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,a.startFrame};
     std::vector<int> hits{timing.actionTick()};
+    if(program.sequence==11 || program.sequence==15) {
+        const auto sequence=barbarianSequence(program.sequence,p.totals.equipment.animationClass);
+        timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate+program.attackRateBonus-30);
+        timing.frames=int(sequence.size());timing.startFrame=0;hits.clear();
+        for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) hits.push_back(weaponSequenceTick(int(i),timing.speed));
+        if(hits.empty()) return {DomainStatus::Unavailable,{}};
+    }
     if(program.spear && (program.spear->kind==SpearSkillSpec::Kind::Jab || program.spear->kind==SpearSkillSpec::Kind::Impale)) {
         const auto sequence=amazonWeaponSequence(program.spear->kind==SpearSkillSpec::Kind::Jab?1:8,p.totals.equipment.animationClass);
         if(sequence.frames.empty()) return {DomainStatus::Unavailable,{}};
@@ -106,6 +124,11 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     }
     const bool strafe=program.bow && program.bow->strafe;
     int volleyDuration=timing.durationTicks();
+    if(program.whirlwind) {
+        const float speed=float(p.definition.runVelocity)*25.f/16.f*float(std::max(50,p.totals.character.velocityPercent))/100.f;
+        if(speed<=0 || (destination-p.position).length()<.001f || !area.definition.collision.nativeMovementSegment(p.position,destination,{0x804,2})) return {DomainStatus::Unavailable,{}};
+        volleyDuration=int(std::ceil((destination-p.position).length()*25.f/speed))+1;hits={4};
+    }
     if(strafe || fend || zeal) {
         std::vector<uint64_t> targets;
         for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=program.bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):meleeDistance(p.position,2,m.position,m.rule.size)<=weapon->rangeAdder+1 && area.definition.collision.segment(p.position,m.position))) targets.push_back(id.value);
@@ -119,13 +142,37 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     }
     auto prior=state_.casts.find(actor.actor);
     if(prior!=state_.casts.end() && skill.delayFrames>0 && prior->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
-    auto cost=ports_.inventory.weaponCost(actor,*weapon,skill,!program.manaOnRelease,strafe);if(!cost) return {cost.status,{}};
-    const auto fact=AttackFact{actor.actor,target,0,1,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank)};
+    std::optional<effects::PotionPlan> attackState;
+    if(program.attackState.id>=0) {
+        CombatEffectSpec effect;effect.state=program.attackState;effect.duration=uint64_t(std::max(1,program.attackDuration>0?program.attackDuration:volleyDuration));
+        effect.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};effect.stacking=EffectStacking::ReplaceState;
+        effect.modifiers.combat.defensePercent=program.attackDefense;
+        effect.modifiers.combat.armorOverridePercent=program.armorOverridePercent;effect.modifiers.combat.physicalResist=program.attackPhysicalResist;
+        auto prepared=ports_.effects.skillState(actor,std::move(effect));if(!prepared) return {prepared.status,{}};
+        attackState=std::move(*prepared.value);
+        if(program.whirlwind) {
+            CombatEffectSpec moving;moving.state=program.movingState;moving.duration=uint64_t(std::max(1,volleyDuration));
+            moving.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};
+            auto &states=attackState->next.players[actor.actor].states;
+            if(!states.apply(std::move(moving),actor.tick).accepted) return {DomainStatus::Conflict,{}};
+            attackState->transient.states.insert(program.movingState.id);
+        }
+    }
+    auto cost=ports_.inventory.weaponCost(actor,*weapon,skill,!program.manaOnRelease,strafe,0,attackState?std::optional{attackState->transient}:std::nullopt);if(!cost) return {cost.status,{}};
+    const auto fact=AttackFact{actor.actor,target,0,1,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank),program.whirlwind};
     if(auto *edit=std::get_if<transactions::CharacterEdit>(&cost.value->change)) edit->publicFacts.emplace_back(fact);
     else std::get<transactions::InventoryEdit>(cost.value->change).publicFacts.emplace_back(fact);
     Release release{actor,skill,{}, {actor.area,actor.areaGeneration,destination},target,actor.tick+uint64_t(hits.front())};
     release.weapon=*weapon;release.manaPaid=!program.manaOnRelease;release.weaponHits=std::move(hits);
+    if(offhand) release.offhand=*offhand;
     release.weaponSpeed=timing.speed;release.weaponFrames=timing.frames;release.weaponRollback=program.rollbackPercent;
+    if(program.whirlwind) {
+        release.whirlwind=true;release.tick=actor.tick+1;release.nextWhirlHit=actor.tick+4;
+        release.chargeSpeed=float(p.definition.runVelocity)*25.f/16.f*float(std::max(50,p.totals.character.velocityPercent))/100.f;
+        const int speed=std::max(1,a.speed*std::max(1,100-weapon->itemBaseSpeed+weapon->itemAttackSpeed)/100);
+        const int frames=a.frames*256/speed;
+        release.whirlPeriod=frames<12?4:frames<15?6:frames<18?8:frames<20?10:frames<23?12:frames<26?14:16;
+    }
     if(program.smite) release.shield=p.totals.equipment.shield;
     if(program.chargeVelocity>0) {
         release.charging=true;release.tick=actor.tick+1;
@@ -138,21 +185,24 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     std::map<EntityId,Release> preparedRelease;preparedRelease.emplace(actor.actor,std::move(release));
     std::map<EntityId,Cast> preparedCast;preparedCast.emplace(actor.actor,cast);
     const auto committed=ports_.transactions.commit(std::move(*cost.value));if(!committed) return committed;
+    if(attackState) ports_.effects.commit(std::move(*attackState));
     releases_.erase(actor.actor);releases_.merge(preparedRelease);state_.casts.erase(actor.actor);state_.casts.merge(preparedCast);
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
 DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Vec destination) {
     const auto &p=*ports_.players.find(actor.player);
+    const auto &hand=pending.offhand && pending.nextWeaponHit%2?*pending.offhand:*pending.weapon;
     const auto found=std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
-        [&](const auto &w){return w.item==pending.weapon->item && w.weaponClass==pending.weapon->weaponClass && w.leftHand==pending.weapon->leftHand;});
+        [&](const auto &w){return w.item==hand.item && w.weaponClass==hand.weaponClass && w.leftHand==hand.leftHand;});
     if(found==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount) return DomainStatus::Stale;
     if(pending.skill.weapon->smite && (!pending.shield || pending.shield!=p.totals.equipment.shield)) return DomainStatus::Stale;
     if(pending.skill.weapon->commonAttack && commonAttackWeapon(p.totals.equipment,pending.skill.weapon->thrown,pending.skill.weapon->leftHand)!=&*found) return DomainStatus::Stale;
     const bool strafe=pending.skill.weapon->bow && pending.skill.weapon->bow->strafe;
     const bool fend=pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend;
     const bool zeal=pending.skill.effect==SkillBehavior::Zeal;
+    const bool secondSwing=pending.offhand && !pending.skill.weapon->thrown && pending.nextWeaponHit>0;
     EntityId selectedTarget=pending.unit;
-    if(strafe || fend || zeal) {
+    if(strafe || fend || zeal || secondSwing) {
         std::vector<uint64_t> targets;
         const auto &area=ports_.areas.at(actor.area);
         for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=pending.skill.weapon->bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):meleeDistance(p.position,2,m.position,m.rule.size)<=found->rangeAdder+1 && area.definition.collision.segment(p.position,m.position))) targets.push_back(id.value);
@@ -163,6 +213,10 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         selectedTarget=target;destination=ports_.monsters.find(target)->position;
     }
     const bool projectile=(found->ranged && !pending.skill.weapon->smite) || pending.skill.weapon->thrown;
+    if(projectile && pending.skill.weapon->dualWield) {
+        if(!found->projectile) return DomainStatus::Unavailable;
+        pending.skill=commonProjectileSkill(pending.skill,*found->projectile);
+    }
     auto event=ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::Attack},selectedTarget,destination);if(!event) return event.status;
     if(pending.skill.charge) {
         const auto source=p.persistent.inventory.items.find(pending.skill.charge->item.id);

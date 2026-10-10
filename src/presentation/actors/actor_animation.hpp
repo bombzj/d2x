@@ -21,6 +21,8 @@ struct ActorAnimationRequest {
     std::optional<int> fasterCast;
     std::optional<KnownAttackTiming> attackTiming;
     int repeatCount{1},rollbackPercent{};
+    int sequenceRateBonus{};
+    bool sequenceLanding{};
 };
 struct ActorAnimation {
     GpuAnimation animation;

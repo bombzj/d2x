@@ -15,5 +15,6 @@ struct LootRequest {
     bool sourceSeed = false; // Unit/chest loot streams must not replace the shared object stream.
     std::optional<MonsterRewardModifiers> rewardModifiers;
     unsigned monsterPlayerCount = 8; // Original admission-time cap; objects use the room count.
+    bool ignoreNoDrop = false; // Native Find Item's DropTC a7 flag.
 };
 } // namespace d2x

@@ -47,6 +47,7 @@ struct SpellImpact {
     uint8_t hitClass{};
     std::optional<WeaponSkillDamage> weapon{};
     uint64_t poisonFrames{};
+    uint64_t stunFrames{};
     std::optional<bool> weaponHit{};
     std::optional<MonsterHit> monsterHit{};
     MonsterHitStates monsterStates{};
@@ -65,6 +66,7 @@ struct SpellImpact {
     size_t plannedTarget{};
     std::optional<uint64_t> targetRandom{};
     bool wearApplied{};
+    bool frenzyApplied{};
     // Authored environmental damage has no combat actor or player credit.
     bool environment{}, directLife{};
     uint64_t environmentGeneration{};

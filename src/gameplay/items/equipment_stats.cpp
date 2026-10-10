@@ -48,6 +48,7 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
     }
     result.defense = int(std::clamp<int64_t>(int64_t(result.defense) *
         std::max(0, 100 + combat.defensePercent + (result.shield ? combat.shieldDefensePercent : 0)) / 100, 0, std::numeric_limits<int>::max()));
+    result.defense=int(int64_t(result.defense)*std::max(0,100+combat.armorOverridePercent)/100);
     for (auto item : {right, left}) {
         if (!item)
             continue;
@@ -106,16 +107,38 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         weapon.weaponClass = definition.base.weaponClass;
         weapon.hitClass = definition.base.hitClass;
         weapon.types = definition.equipment.types;
+        auto mastery = [&](const auto &values) {
+            std::array<int, 3> bonus{};
+            for (const auto &[type, value] : values) if (definition.equipment.isType(type))
+                for (size_t i = 0; i < bonus.size(); ++i) bonus[i] = std::max(bonus[i], value[i]);
+            return bonus;
+        };
+        const auto meleeMastery = mastery(combat.meleeMasteries);
+        const auto throwMastery = mastery(combat.throwMasteries);
+        const bool hasThrowMastery = std::any_of(throwMastery.begin(), throwMastery.end(), [](int value) { return value != 0; });
+        const auto projectileMastery = weapon.throwable && hasThrowMastery ? throwMastery : meleeMastery;
+        weapon.damagePercent += meleeMastery[1];
+        weapon.attackRatingPercent += meleeMastery[0];
+        weapon.masteryCritical = meleeMastery[2];
+        weapon.projectileMasteryCritical = projectileMastery[2];
+        weapon.projectileMasteryRatingAdjustment = projectileMastery[0] - meleeMastery[0];
+        if (meleeMastery[1]) {
+            const auto percent = std::max(-90, weapon.damagePercent);
+            const int64_t rawLow = weapon.meleeBaseMinimum, rawHigh = weapon.meleeBaseMaximum;
+            weapon.minimum = int(std::max<int64_t>(0, rawLow + rawLow * (percent + weapon.minimumDamagePercent) / 100));
+            weapon.maximum = int(std::max<int64_t>(weapon.minimum, rawHigh + rawHigh * (percent + weapon.maximumDamagePercent) / 100));
+        }
         weapon.attackRating = int(std::clamp<int64_t>((int64_t(baseAttackRating) + own.attackRating) *
-            std::max<int64_t>(0, 100LL + combat.attackRatingPercent + own.attackRatingPercent) / 100,
+            std::max<int64_t>(0, 100LL + weapon.attackRatingPercent) / 100,
             0, std::numeric_limits<int>::max()));
         weapon.fasterAttack = combat.fasterAttack + own.fasterAttack;
+        weapon.itemBaseSpeed=weapon.baseSpeed;weapon.itemAttackSpeed=own.fasterAttack;
         result.animationClass = twoHands ? definition.equipment.twoHandWeaponClass : weapon.weaponClass;
         if (weapon.ranged || weapon.throwable) {
             if (!definition.base.projectile)
                 throw std::runtime_error("Missing original weapon projectile: " + definition.code);
             weapon.projectile = definition.base.projectile;
-            weapon.projectileDamagePercent = int(std::max<int64_t>(-90, bonus +
+            weapon.projectileDamagePercent = int(std::max<int64_t>(-90, bonus + projectileMastery[1] +
                 std::max(combat.minimumDamagePercent, combat.maximumDamagePercent)));
         }
         if (weapon.ranged) {

@@ -8,6 +8,9 @@ CurseSpec evaluateCurse(const CurseSpec &spec, int rank) {
     auto result = spec;
     result.radius += (rank - 1) * result.radiusPerLevel;
     result.frames += (rank - 1) * result.framesPerLevel;
+    result.modifiers.combat.attackRatingPercent+=(rank-1)*result.attackRatingPerLevel;
+    result.modifiers.combat.damagePercent+=(rank-1)*result.damagePerLevel;
+    result.modifiers.combat.defensePercent+=(rank-1)*result.defensePerLevel;
     result.modifiers.combat.ironMaidenPercent = result.reflectPercent + (rank - 1) * result.reflectPerLevel;
     result.modifiers.combat.lifeTapPercent = result.lifeTapPercent + (rank - 1) * result.lifeTapPerLevel;
     if (result.resistMaximum > 0) {

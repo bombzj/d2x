@@ -51,8 +51,10 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     const SkillCastSpec &skill,int level,bool projectile,uint64_t &random) {
     WeaponSkillDamage value; value.weapon=weapon;value.level=level;
     value.selfDamagePercent=skill.weapon->selfDamagePercent;
+    value.conversionPercent=std::clamp(skill.weapon->magicConversionPercent,0,100);value.conversionElement=DamageType::Magic;
     if(!projectile && weapon.item) {value.wearChance=4;value.wearAmount=1;value.wearSkill=skill;}
     value.weapon.attackRatingPercent+=skill.weapon->attackRating;
+    if (projectile) value.weapon.attackRatingPercent += weapon.projectileMasteryRatingAdjustment;
     value.physicalPercent=(projectile?weapon.projectileDamagePercent:weapon.damagePercent)+skill.weapon->damagePercent;
     const auto roll=[&](int64_t low,int64_t high) {
         low=std::clamp<int64_t>(low,0,INT32_MAX);high=std::clamp<int64_t>(high,low,INT32_MAX);
@@ -67,6 +69,7 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.crushing=crushing && limitedRandom(random,100)<unsigned(crushing);
     value.openWounds=wounds && limitedRandom(random,100)<unsigned(wounds);
     value.physicalFlat=skill.weapon->physicalFlat;value.stunFrames=skill.weapon->stunFrames;value.knockback=skill.weapon->knockback;
+    value.clearTargetStun=skill.weapon->clearTargetStun;
     const auto ranges=attackElementRanges(mods,weapon.item);
     value.channels[1]=roll(int64_t(ranges.magic.minimum)*256,int64_t(ranges.magic.maximum)*256);
     value.channels[2]=roll(int64_t(ranges.fire.minimum)*256,int64_t(ranges.fire.maximum)*256);
@@ -83,7 +86,9 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     }
     value.poisonFrames=(mods.poisonFrames+extra.poisonFrames)/std::max(1,mods.poisonSources+extra.poisonSources);
     value.pierceChance=mods.pierce;
-    bool critical=limitedRandom(random,100)<unsigned(std::clamp(mods.criticalStrike,0,100));
+    const int mastery = projectile ? weapon.projectileMasteryCritical : weapon.masteryCritical;
+    bool critical = mastery > 0 && limitedRandom(random,100) < unsigned(std::clamp(mastery,0,100));
+    if (!critical) critical=limitedRandom(random,100)<unsigned(std::clamp(mods.criticalStrike,0,100));
     if(!critical) critical=limitedRandom(random,100)<unsigned(std::clamp(mods.deadlyStrike+extra.deadlyStrike,0,100));
     value.critical=critical;
     const auto elemental=roll(int64_t(skill.minimumDamage*256.f),int64_t(skill.maximumDamage*256.f));
