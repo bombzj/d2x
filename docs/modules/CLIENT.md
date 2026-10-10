@@ -75,7 +75,7 @@ GameSession、Simulation、SkillRuntime、InventoryService、客户端本地任�
 
 本轮遵循同一授权边界，具体原Clt函数／DLL RVA、30项范围和公共计算见[亚马逊](../gameplay/skills/AMAZON.md)。Shared sequence／weaponVolley、引导、分裂候选、整数圆盘／环形和GUID继任用于原客户端程序，不读取服务端领域状态。本人IAS／武器速度／Pierce仅用已知属性及已解码装备；远端隐藏值不推算。Srv与Clt的牺牲火期限、目标候选及转向参数分别取原表。
 
-RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD尚未接，不能将世界图形支持解释为完整宠物界面。
+RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD现按PetType与TBL读取原图、数量／单只生命及佣兵交互，原7F非玩家分支与81本人佣兵登记已接；实现和本轮未构建／未运行边界见[头像](../gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。
 
 亚马逊30项已构建打包，列出的自研及原服代表路径完成有限运行；证据及未认证边界见亚马逊专题，其他技能的历史证据不能认证其新增路径。
 

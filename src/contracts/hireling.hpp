@@ -3,11 +3,18 @@
 #include "core/math.hpp"
 #include <array>
 #include <cstdint>
-#include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
 namespace d2x {
+struct PetPortraitView {
+    EntityId single;
+    bool hireling = false, showCount = false;
+    int count = 0;
+    std::string art, name;
+    std::optional<uint16_t> lifePercentage;
+};
 struct HirelingView {
     uint64_t revision = 0;
     EntityId actor, id;
@@ -22,7 +29,7 @@ struct HirelingView {
     int damageMinimum = 0, damageMaximum = 0;
     uint64_t experience = 0, nextExperience = 0;
     std::array<int, 4> resistances{};
-    std::map<int, int> summonCounts;
+    std::vector<PetPortraitView> portraits;
 };
 struct HirelingOfferView {
     uint32_t slot = 0;

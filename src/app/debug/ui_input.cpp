@@ -59,6 +59,7 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         else if (key.size() == 2 && key[0] == 'f' && key[1] >= '1' && key[1] <= '8')
             frame.skills[size_t(key[1] - '1')] = true;
         else if (key == "hireling" || key == "o") frame.hireling = true;
+        else if (key == "portraits" || key == "z") frame.togglePortraits = true;
         else if (key == "weapon-swap") frame.weaponSwap = true;
         else if (key == "automap") frame.automap = true;
         else if (key == "automap-side") frame.minimapSide = true;

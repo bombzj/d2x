@@ -78,6 +78,12 @@ bool SceneController::handleMenu(const FrameInput &input) {
 }
 bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (input.togglePortraits && !ui.capturesWorldInput()) {
+        ui.portraitsVisible = !ui.portraitsVisible;
+        ui.hirelingPortraitHovered = {};
+        ui.hirelingPortraitHoverTime = 0;
+        ui.hirelingPortraitCanFeed = false;
+    }
     if (input.help) {
         ui.skillPicker.reset();
         ui.help = !ui.help;
@@ -225,7 +231,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
         for (int column = 0; column < 4; ++column)
             if (input.belt[column]) inventoryClient_.submit(UseBeltColumn{column, input.shift});
-    if (handleHirelingPortrait(input)) return true;
+    if (handleHirelingPortrait(input, elapsed)) return true;
     if (handleHirelingPanel(input)) return true;
     if (ui.characterOpen && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
@@ -283,6 +289,9 @@ bool SceneController::handleDeath(const FrameInput &input) {
     ui.inventory.storage = {}; ui.skillPicker.reset(); ui.inventory.pending = {};
     ui.inventoryQuestNpc = {};
     ui.partyOpen = ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
+    ui.hirelingPortraitHovered = {};
+    ui.hirelingPortraitHoverTime = 0;
+    ui.hirelingPortraitCanFeed = false;
     ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
     ui.help = ui.travelMenu = ui.gameMenuOpen = false; ui.showLoot = false;
     ui.pointButtonPressed.reset(); ui.shopConfirm.reset(); ui.shopSalePending.reset();
@@ -295,6 +304,10 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (handleDeath(input)) return true;
     auto &ui = view_.ui();
     if(ui.hirelingOpen && !view_.hirelingView().active) {ui.hirelingOpen=false;ui.inventory.cancelGesture();}
+    if (!input.focused || !input.insideViewport || !view_.hirelingPortraitVisible() ||
+        !CheckCollisionPointRec(rv(input.mouse), hirelingPortraitHitBounds(view_.partyPortraitOffset()))) {
+        ui.hirelingPortraitHovered={};ui.hirelingPortraitHoverTime=0;ui.hirelingPortraitCanFeed=false;
+    }
     ui.showLoot = input.focused && input.showLoot;
     if (!input.focused) {
         actorClient_.stopMoving();
@@ -365,6 +378,9 @@ void SceneController::resetInput() {
     skillGesture_ = false;
     view_.ui().pointButtonPressed.reset();
     view_.ui().questPressed = -1;
+    view_.ui().hirelingPortraitHovered={};
+    view_.ui().hirelingPortraitHoverTime=0;
+    view_.ui().hirelingPortraitCanFeed=false;
     cancelWorldGesture();
     releaseAfterLoad_ = true;
 }

@@ -7,6 +7,8 @@ void NativeRealmService::publishMonsters() {
     std::set<EntityId> visible;
     std::vector<Bytes> packets;
     std::map<EntityId,Bytes> pets;
+    std::map<EntityId,Bytes> petVitals;
+    const auto recipient=host.read(*binding);
     for(const auto &pet:host.pets(*binding)) {
         auto packet=encodeServerPacket(ServerMessage::PetOwnership,[&](auto &out){
             out.u8(1);out.u8(pet.type);out.u16(pet.nativeClass);out.u32(uint32_t(pet.owner.value));out.u32(uint32_t(pet.id.value));
@@ -17,9 +19,21 @@ void NativeRealmService::publishMonsters() {
             packets.push_back(packet);
         }
         pets.emplace(pet.id,std::move(packet));
+        // SCmd::sub_6FC3E200 sends monster 0x7F only to its owner, independently
+        // of visible-unit removal. Its scale is 0..100, not motion's 0..128.
+        if(recipient && pet.owner==recipient->actor.id) {
+            auto vitals=encodeServerPacket(ServerMessage::AllyPosition,[&](auto &out){
+                out.u8(0);out.u16(pet.lifePercentage);out.u32(uint32_t(pet.id.value));out.u16(uint16_t(pet.area));
+            });
+            const auto previous=peer.petVitals.find(pet.id);
+            if(prior==peer.pets.end() || prior->second!=pets.at(pet.id) || previous==peer.petVitals.end() || previous->second!=vitals)
+                packets.push_back(vitals);
+            petVitals.emplace(pet.id,std::move(vitals));
+        }
     }
     for(const auto &[id,packet]:peer.pets) if(!pets.contains(id)) {auto removal=packet;removal[1]=0;packets.push_back(std::move(removal));}
     peer.pets=std::move(pets);
+    peer.petVitals=std::move(petVitals);
     for (const auto &monster : host.visibleMonsters(*binding)) {
         visible.insert(monster.id);
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;

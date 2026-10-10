@@ -116,6 +116,16 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         for (size_t destination = 0; destination < 256; ++destination)
             blend[source * 256 + destination] = colors[bytes[0x13500 + destination * 256 + source]];
     halfTable_ = upload(blend.data(), 256, 256);
+    // D2WinPalette builds the HIGHLIGHT shift by brightening current PL2 RGB
+    // to 170% and finding the nearest original palette index. D2DDraw RVA
+    // 6DA7 selects that shift (PaletteTable + 118) for CelDraw mode 7.
+    for (size_t source = 0; source < colors.size(); ++source) {
+        const auto color = colors[source];
+        const auto brighten = [](uint8_t component) { return uint8_t(std::min(255, 170 * int(component) / 100)); };
+        const auto highlighted = paletteColor({brighten(color.r), brighten(color.g), brighten(color.b), 255});
+        std::fill_n(blend.begin() + source * 256, 256, highlighted);
+    }
+    highlightTable_ = upload(blend.data(), 256, 256);
     // D2DDraw 1.13c RVA 0x6A25 selects trans[2] for DrawBox mode 0;
     // RVA 0x6850 indexes destination * 256 + the solid color index.
     for (size_t i = 0; i < blend.size(); ++i)
@@ -145,7 +155,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     paletteLocation_ = GetShaderLocation(shader_, "palette");
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
-    if (!palette_.id || !screenTable_.id || !halfTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+    if (!palette_.id || !screenTable_.id || !halfTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 ||
         GetShaderLocation(lightingShader_, "lightTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
@@ -157,6 +167,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         UnloadTexture(paletteIndices_);
         UnloadTexture(screenTable_);
         UnloadTexture(halfTable_);
+        UnloadTexture(highlightTable_);
         UnloadTexture(rectangleTable_);
         UnloadTexture(lightTable_);
         UnloadTexture(palette_);
@@ -170,6 +181,7 @@ PaletteBlendView::~PaletteBlendView() {
     UnloadRenderTexture(destination_);
     UnloadTexture(screenTable_);
     UnloadTexture(halfTable_);
+    UnloadTexture(highlightTable_);
     UnloadTexture(rectangleTable_);
     UnloadTexture(lightTable_);
     UnloadTexture(paletteIndices_);
@@ -246,6 +258,9 @@ void PaletteBlendView::draw(const Sprite *image, Vec position) const {
 }
 void PaletteBlendView::drawHalf(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, halfTable_);
+}
+void PaletteBlendView::drawHighlight(const Sprite *image, Rectangle bounds) const {
+    drawSprite(image, bounds, highlightTable_);
 }
 void PaletteBlendView::drawSprite(const Sprite *image, Rectangle bounds, Texture2D table) const {
     if (!image || !image->indexedTexture.id) return;

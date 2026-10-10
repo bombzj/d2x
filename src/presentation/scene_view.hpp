@@ -52,6 +52,10 @@ struct ViewState {
     bool characterOpen = false;
     std::optional<bool> pointButtonPressed;
     bool hirelingOpen = false, hireListOpen = false;
+    bool portraitsVisible = true;
+    EntityId hirelingPortraitHovered;
+    float hirelingPortraitHoverTime = 0;
+    bool hirelingPortraitCanFeed = false;
     int hireListScroll = 0;
     bool questOpen = false;
     bool partyOpen = false;
@@ -176,7 +180,7 @@ class SceneView {
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;
-    void drawHirelingPortrait() const;
+    void drawHirelingPortrait(Vec mouse) const;
     void drawHirelingList(Vec mouse) const;
     void drawStorage(Vec mouse) const;
     void drawCube(Vec mouse) const;

@@ -27,7 +27,7 @@ NativeRealmService是单个连接的生命周期编排，不是玩法容器。�
 
 内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03走跑及02／04出口靠近使用此入口，3A／3B已接人物成长事务，41复活及13本人尸体取回已接death；不新增私有包或客户端分支。
 
-亚马逊批按原SCmd／D2PacketDef新增7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。消息身份登记不代表宠物头像或完整佣兵链已实现，范围见[亚马逊](../gameplay/skills/AMAZON.md)。
+亚马逊批按原SCmd／D2PacketDef新增7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。81可独立登记本人佣兵，7F非玩家分支投影本人宠物生命／区域，光标喂药使用61/body=0。头像及佣兵链的准确范围和未构建边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
 通用十项复用原攻击／技能请求，书本／卷轴SrvDo113路由到库存与旅行。原3F现为implemented：固定8字节保留目标光标、来源GUID及技能ID，成功鉴定后取消光标；数量／物品及门户仍用原消息。它仅表示准备，不表示鉴定已成功，详见[通用技能](../gameplay/skills/GENERAL.md)。
 

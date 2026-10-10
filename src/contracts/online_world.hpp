@@ -183,7 +183,12 @@ struct OnlineRespawnRequest {
     uint8_t restoredResources{};
     bool repositioned{};
 };
-struct OnlinePet { uint8_t type{}; uint16_t monsterClass{}; uint32_t owner{}; };
+struct OnlinePet {
+    uint8_t type{};
+    uint16_t monsterClass{};
+    uint32_t owner{};
+    std::optional<uint16_t> lifePercentage, area; // Original 0x7F; independent of spatial interest.
+};
 enum class OnlineHirelingAction { List, Hire, Resurrect };
 struct OnlineHireling {
     uint32_t id{},owner{},seed{},name{};

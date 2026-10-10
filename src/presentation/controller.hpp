@@ -47,7 +47,7 @@ class SceneController {
     bool handleNpcShop(const FrameInput &input);
     bool handleHirelingList(const FrameInput &input);
     bool handleHirelingPanel(const FrameInput &input);
-    bool handleHirelingPortrait(const FrameInput &input);
+    bool handleHirelingPortrait(const FrameInput &input, float elapsed);
     bool handleHirelingToggle(const FrameInput &input);
     bool handleQuestPress(const FrameInput &input);
     bool handleQuestToggle(const FrameInput &input);

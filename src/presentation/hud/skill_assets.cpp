@@ -1,15 +1,31 @@
 #include "gameplay/skills/spec.hpp"
 #include "presentation/scene_assets.hpp"
 #include "content/classic_data.hpp"
+#include <stdexcept>
+#include <utility>
 
 namespace d2x {
 void SceneAssets::loadSkillIcons(Archives &archives, const ClassicData &content) {
-    for (const auto &[id, entry] : content.skills.skills)
-        if (entry.spell && entry.spell->summon && !entry.spell->summon->iconArt.empty()) {
-            auto icon = uiGraphics_.single(entry.spell->summon->iconArt);
-            if (icon.frames.empty()) throw std::runtime_error("Missing original summon portrait");
-            summonPortraits.emplace(id, std::move(icon));
-        }
+    const auto loadPortrait = [&](const std::string &path) {
+        if (path.empty() || petPortraits.contains(path)) return;
+        auto icon = uiGraphics_.single(path, true);
+        if (icon.frames.empty()) throw std::runtime_error("Missing original pet portrait: " + path);
+        petPortraits.emplace(path, std::move(icon));
+    };
+    for (const auto &[type, entry] : content.petPortraits) {
+        (void)type;
+        if (!entry.hireling && !entry.iconType) continue;
+        loadPortrait(entry.baseArt);
+        for (const auto &[monsterClass, path] : entry.classArt) { (void)monsterClass; loadPortrait(path); }
+    }
+    const auto potionHint = content.itemStrings.find("hireiconinfo1"), inventoryHint = content.itemStrings.find("hireiconinfo2");
+    if (potionHint != content.itemStrings.end()) hirelingPotionHint = potionHint->second;
+    if (inventoryHint != content.itemStrings.end()) {
+        hirelingInventoryHint = inventoryHint->second;
+        // The current common input adapter binds the Hireling Inventory action to O.
+        if (const auto key = hirelingInventoryHint.find("%s"); key != std::string::npos)
+            hirelingInventoryHint.replace(key, 2, "O");
+    }
     const auto &skills = content.tables.at("skills");
     auto descriptionTable = content.tables.find("skilldesc");
     std::map<std::string, GpuAnimation> sheets;

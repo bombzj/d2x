@@ -28,47 +28,6 @@ void hirelingText(const ClassicFont &font,const std::string &value,float left,fl
     EndScissorMode();
 }
 }
-bool SceneView::hirelingPortraitVisible() const {
-    return hirelingView().active && worldViewport().x == 0 && !view_.capturesWorldInput();
-}
-void SceneView::drawHirelingPortrait() const {
-    if (worldViewport().x == 0 && !view_.capturesWorldInput()) {
-        const auto &counts = hirelingView().summonCounts;
-        float x = hirelingPortraitBounds(partyPortraitOffset()).x;
-        if (hirelingPortraitVisible()) x += hirelingPortraitBounds().width + 12 * classicPanelScale;
-        for (const auto &[skill, count] : counts) {
-            auto portrait = assets_.summonPortraits.find(skill);
-            if (portrait == assets_.summonPortraits.end()) continue;
-            const auto *frame = portrait->second.frame(0, 0);
-            if (!frame) continue;
-            const auto &texture = frame->texture;
-            Rectangle bounds{x, hirelingPortraitBounds().y, texture.width * classicPanelScale, texture.height * classicPanelScale};
-            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, WHITE);
-            const auto amount = std::to_string(count);
-            const int size = std::max(8, int(9 * classicPanelScale));
-            painter_.label(amount, int(bounds.x + (bounds.width - painter_.measure(amount, size)) / 2),
-                           int(bounds.y + bounds.height + 2 * classicPanelScale), size, WHITE);
-            x += bounds.width + 12 * classicPanelScale;
-        }
-    }
-    if (!hirelingPortraitVisible()) return;
-    const auto &merc = hirelingView();
-    const auto portrait = hirelingPortraitBounds(partyPortraitOffset());
-    const auto bar = hirelingLifeBounds(partyPortraitOffset());
-    const float life = std::clamp(merc.life / std::max(1, merc.maximumLife), 0.f, 1.f);
-    DrawRectangleRec(bar, {36, 20, 12, 255});
-    DrawRectangleRec({bar.x, bar.y, std::floor(bar.width * life), bar.height}, {0, 128, 0, 255});
-    const auto art = assets_.hirelingPortraits.find(merc.classId);
-    if (const auto *frame = art != assets_.hirelingPortraits.end() ? art->second.frame(0, 0) : nullptr) {
-        const auto &t = frame->texture;
-        DrawTexturePro(t, {0, 0, float(t.width), float(t.height)}, portrait, {0, 0}, 0, WHITE);
-    }
-    const auto &name = merc.name;
-    const int size = std::max(8, int(9 * classicPanelScale));
-    painter_.label(name, int(portrait.x + (portrait.width - painter_.measure(name, size)) / 2),
-                   int(portrait.y + portrait.height + 2 * classicPanelScale), size, WHITE);
-}
-
 Rectangle SceneView::hirelingSlotBounds(size_t index) const {
     const auto &box = inventoryView_.hirelingSlots.at(index);
     return hirelingArtRect(float(box[0]), float(box[1]), float(box[2] - box[0]), float(box[3] - box[1]));

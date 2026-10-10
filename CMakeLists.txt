@@ -85,6 +85,7 @@ target_sources(d2x_content PRIVATE src/content/items/item_grades.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/npc_dialogue.cpp)
 target_sources(d2x_content PRIVATE src/content/quest/quest_data.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/hireling_data.cpp)
+target_sources(d2x_content PRIVATE src/content/npc/pet_portrait_data.cpp)
 target_sources(d2x_content PRIVATE src/content/world/automap_data.cpp)
 target_sources(d2x_content PRIVATE src/content/npc/vendor_data.cpp src/content/npc/vendor_stock.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
@@ -240,7 +241,7 @@ add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/embed
 target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol)
 include(cmake/Networking.cmake)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp
-  src/client/character_projection.cpp src/client/quest_projection.cpp)
+  src/client/character_projection.cpp src/client/quest_projection.cpp src/client/pet_projection.cpp)
 target_link_libraries(d2x_client PUBLIC d2x_client_api PRIVATE d2x_content)
 add_library(d2x_remote_scene src/client/remote_town.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp src/client/remote_combat.cpp src/client/remote_ui_clients.cpp)
 target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_client)
@@ -269,7 +270,7 @@ target_link_libraries(d2x_presentation PUBLIC d2x_client raylib PRIVATE d2x_cont
 target_sources(d2x_content PRIVATE src/content/audio/sound_catalog.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/audio/scene_audio.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/npc/hireling_view.cpp
-  src/presentation/npc/client_views.cpp src/presentation/npc/commerce_controller.cpp)
+  src/presentation/npc/client_views.cpp src/presentation/npc/commerce_controller.cpp src/presentation/hud/pet_portraits.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/automap_assets.cpp src/presentation/world/automap_view.cpp
   src/presentation/world/map_view.cpp src/presentation/world/map_controller.cpp src/presentation/world/object_hint.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/lighting_view.cpp)

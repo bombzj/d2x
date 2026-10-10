@@ -15,6 +15,7 @@
 #include "content/npc/npc_dialogue.hpp"
 #include "content/quest/quest_data.hpp"
 #include "content/npc/hireling_data.hpp"
+#include "content/npc/pet_portrait_data.hpp"
 #include "content/skills/skill_data.hpp"
 #include "content/skills/state_data.hpp"
 #include "content/world/shrine_data.hpp"
@@ -92,6 +93,7 @@ struct ClassicData {
     std::map<std::string, int, std::less<>> hirelingNameIds;
     std::map<std::string, std::string, std::less<>> itemStrings;
     std::vector<HirelingDefinition> hirelings;
+    std::map<int, PetPortraitDefinition> petPortraits;
     HirelingLayout hirelingLayout;
     std::map<std::string, std::string> hirelingDescriptions;
     std::map<std::string, VendorDefinition, std::less<>> vendors;

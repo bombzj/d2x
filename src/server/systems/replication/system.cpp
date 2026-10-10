@@ -100,7 +100,8 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
         if((!body.amazonPet && !(body.necroSummon && body.rule.petType>0) && !body.hireling) || !body.owner || body.life<=0) continue;
         const auto *owner=ports_.players.find(*body.owner);
         if(owner && owner->entered)
-            result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass)});
+            result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),
+                playerLifePercentage(body.life,body.maximumLife),body.area});
     }
     return result;
 }

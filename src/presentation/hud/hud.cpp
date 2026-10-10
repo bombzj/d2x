@@ -180,18 +180,18 @@ void SceneView::drawDeathNotice() const {
     painter_.centered("PRESS ESC TO CONTINUE", 300, 32, {187, 46, 30, 255});
 }
 float SceneView::partyPortraitOffset() const {
-    return worldViewport().x == 0 && !view_.capturesWorldInput() ?
+    return view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput() ?
         float(party_.portraitCount()) * 56 * classicPanelScale : 0;
 }
 void SceneView::drawUi(Vec mouse) const {
     drawControlPanel();
     drawQuestNotice();
-    if (worldViewport().x == 0 && !view_.capturesWorldInput()) {
+    if (view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput()) {
         const int palette = std::clamp(mapView().palette, 0, 4);
         const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
-        if (blend) party_.drawPortraits(12, *blend);
+        if (blend) party_.drawPortraits(15, *blend);
     }
-    drawHirelingPortrait();
+    drawHirelingPortrait(mouse);
     if (view_.noticeTime > 0)
         painter_.centered(view_.lootNotice, H - HUD - 35, 14, view_.noticeError ? RED : parchment);
     drawStorage(mouse);

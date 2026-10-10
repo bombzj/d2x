@@ -386,6 +386,7 @@ ClassicData loadClassicData(Archives &archives) {
     for (const auto &character : data.characters)
         data.experienceByClass.emplace(character.name,
             experienceThresholds(data.tables.at("experience"), character.name));
+    data.petPortraits = loadPetPortraitData(data.tables.at("pettype"), strings);
     data.armorTypes = std::move(armorTypes);
     data.vendors = loadVendorData(data.tables, data.items);
     if (archives.contains("data/local/docs/eng/a1npc.txt"))

@@ -78,6 +78,8 @@ struct PetOwnershipSnapshot {
     EntityId id, owner;
     uint8_t type{};
     uint16_t nativeClass{};
+    uint16_t lifePercentage{};
+    RegionId area;
 };
 struct MonsterSnapshot {
     EntityId id;

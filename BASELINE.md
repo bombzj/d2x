@@ -19,7 +19,7 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 | 野外物件 | 当前MPQ祭坛1–22、水井解除状态、爆炸桶连锁、伤害箱、宝箱陷阱、地刺／火焰、原陷阱怪物AI及特殊藏物 | 完整五幕变体、自然生成概率与多人争用未验收；[物件](docs/gameplay/world/OBJECTS.md#自研野外祭坛与环境机关) |
 | 物品／成长 | 库存／装备／腰带、生成／掉落、商店／加工、经验／属性／技能、死亡／尸体 | 复杂争用、全属性／配方／奖励组合、硬核／多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻／投射／六通道、通用十项、女巫／亚马逊／圣骑士／死灵各30项 | 其他职业、完整双持与吸取／压碎／撕裂／触发、PvP；[技能](docs/gameplay/skills/README.md) |
-| 怪物／伙伴 | 第一幕63战斗类型／25类AI、精英／首领，Hydra、诱饵／女武神、四类原佣兵、死灵召唤／重生 | 其他幕与召唤、完整AI／伙伴服务与表现；本批佣兵范围及运行边界见[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
+| 怪物／伙伴 | 第一幕63战斗类型／25类AI、精英／首领，Hydra、诱饵／女武神、四类原佣兵、死灵召唤／重生及原宠物头像／数量／生命条 | 其他幕与召唤、完整AI／伙伴服务与表现；本批佣兵范围及运行边界见[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕27项个人任务主流程与保存 | 完整中立AI、剧情／机关及组队任务资格；[NPC／任务](docs/modules/NPC_QUEST.md) |
 | 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环 | 完整任务共享、敌意／PvP、尸体权限、八人背压与跨机器验收；[组队](docs/modules/NETWORK.md#组队邀请客户端)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
 
@@ -28,6 +28,8 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 战斗关系、来源与控制代次、重试后续阶段、武器目标局部随机和耐久防重复提交已改；技能私有运行态／求值实现移出公共头，活单位空间索引接入武器及通用法术直线碰撞。AI、范围爆炸及怪物弹体仍有遍历。详细范围见[战斗关系与提交](docs/modules/SERVER_SYSTEMS.md#战斗关系与提交)。
 
 四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，并完成代表单机路径的有限冒烟，详见佣兵专题。TCP/IP直连修正的自研双端有限冒烟及用户手动原版Host／D2X Join成功边界由[联网](docs/modules/NETWORK.md)维护。当前源码和Windows Release包已接入死灵30项及铁魔材料生命周期，规则指纹为**v37**，代表单机路径有限冒烟见[死灵技能](docs/gameplay/skills/NECROMANCER.md#当前包有限冒烟)。未测量性能及增量编译收益，重构的完整争用／背压边界未认证。
+
+头像源码已按当前MPQ和本地原1.13c接入召唤物分组、实际类型图片、数量、单只生命条、佣兵悬停／喂药／右键装备及Z显示开关，详见[头像](docs/gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。本轮仅静态核对，尚未构建、打包或运行验收；上述最新运行包不包含这批头像改动，规则指纹与D2S格式不变。
 
 ## 保存边界
 

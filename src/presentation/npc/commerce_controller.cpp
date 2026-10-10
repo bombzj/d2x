@@ -149,21 +149,32 @@ bool SceneController::handleHirelingToggle(const FrameInput &input) {
     return false;
 }
 
-bool SceneController::handleHirelingPortrait(const FrameInput &input) {
+bool SceneController::handleHirelingPortrait(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
     if (view_.hirelingPortraitVisible() && input.insideViewport &&
-        (CheckCollisionPointRec(rv(input.mouse), hirelingPortraitBounds(view_.partyPortraitOffset())) ||
-         CheckCollisionPointRec(rv(input.mouse), hirelingLifeBounds(view_.partyPortraitOffset())))) {
+        CheckCollisionPointRec(rv(input.mouse), hirelingPortraitHitBounds(view_.partyPortraitOffset()))) {
+        const auto &portraits=view_.hirelingView().portraits;
+        const auto merc=std::find_if(portraits.begin(),portraits.end(),[](const auto &entry){return entry.hireling;});
+        if(merc==portraits.end()) return false;
+        if(ui.hirelingPortraitHovered!=merc->single) {ui.hirelingPortraitHovered=merc->single;ui.hirelingPortraitHoverTime=0;}
+        else ui.hirelingPortraitHoverTime=std::min(hirelingPortraitHoverSeconds,ui.hirelingPortraitHoverTime+std::max(0.f,elapsed));
+        ui.hirelingPortraitCanFeed=ui.inventory.drag &&
+            inventoryClient_.preview(UseHirelingPotion{ui.inventory.drag->item})==InventoryError::None;
         cancelWorldGesture();
+        inventoryClick_|=input.leftPressed;
+        inventoryRight_|=input.rightPressed;
         if (ui.inventory.drag) {
             const auto drag = *ui.inventory.drag;
             const bool drop = drag.pickedUp ? input.leftPressed : input.leftReleased;
             if (drop && queueInventory(UseHirelingPotion{drag.item}, drag.item.id)) ui.inventory.drag.reset();
-        } else if (input.leftPressed && !ui.inventory.identify && !ui.inventory.pending) {
+        } else if (input.rightPressed && ui.hirelingPortraitHoverTime>=hirelingPortraitHoverSeconds &&
+            view_.hirelingView().active && !ui.inventory.identify && !ui.inventory.pending &&
+            !ui.inventory.split && !ui.inventory.goldDialog) {
             ui.hirelingOpen = true;
             ui.partyOpen = ui.characterOpen = ui.questOpen = false;
+            ui.skillPicker.reset();
             actorClient_.stopActions();
-            pickupClick_ = true;
+            ui.hirelingPortraitHovered={};ui.hirelingPortraitHoverTime=0;ui.hirelingPortraitCanFeed=false;
         }
         return true;
     }

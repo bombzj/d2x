@@ -114,7 +114,8 @@ class SceneAssets {
     mutable std::map<std::tuple<int, int, bool>, std::vector<Sprite>> townAutomapArt;
     struct MonsterLight { int radius = 0; Color color{0, 0, 0, 255}; };
     std::map<int, MonsterLight> monsterLights;
-    std::map<int, GpuAnimation> hirelingPortraits, summonPortraits;
+    std::map<std::string, GpuAnimation> petPortraits;
+    std::string hirelingPotionHint, hirelingInventoryHint;
     std::map<std::string, GpuAnimation> itemGround, itemIcons;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, targetingCursors, inventoryPanel, attributeButtons,

@@ -10,7 +10,7 @@ class PaletteBlendView {
     Shader lightingShader_{};
     Shader rectangleShader_{};
     Texture2D palette_{}, screenTable_{}, lightTable_{}, paletteIndices_{};
-    Texture2D rectangleTable_{}, halfTable_{};
+    Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{};
     std::array<Color, 256> colors_{};
     RenderTexture2D destination_{};
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1;
@@ -24,6 +24,7 @@ class PaletteBlendView {
     PaletteBlendView &operator=(const PaletteBlendView &) = delete;
     void draw(const Sprite *image, Vec position) const;
     void drawHalf(const Sprite *image, Rectangle bounds) const;
+    void drawHighlight(const Sprite *image, Rectangle bounds) const;
     Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color) const;

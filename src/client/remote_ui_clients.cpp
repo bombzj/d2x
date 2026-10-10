@@ -3,6 +3,7 @@
 #include "item_skill_sources.hpp"
 #include "client/character_projection.hpp"
 #include "client/quest_projection.hpp"
+#include "client/pet_projection.hpp"
 #include "client/remote_inventory.hpp"
 #include "client/remote_combat.hpp"
 #include "client/remote_control.hpp"
@@ -227,6 +228,20 @@ struct RemoteUiClients::Impl {
                 }
                 else if constexpr (std::is_same_v<T, SplitStack>)
                     return InventoryError::InvalidRequest;
+                else if constexpr (std::is_same_v<T, UseHirelingPotion>) {
+                    const auto *item=o.inventoryView.item(c.item.id);
+                    if (!item) return InventoryError::UnknownItem;
+                    if (item->revision!=c.item.revision) return InventoryError::SourceChanged;
+                    if (!o.hirelingView.active) return InventoryError::AccessDenied;
+                    const auto *potion=o.data.potion(item->definition);
+                    if (!potion || (potion->kind!=PotionKind::Healing && potion->kind!=PotionKind::Rejuvenation && potion->kind!=PotionKind::Remedy))
+                        return InventoryError::UnsupportedUse;
+                    const auto *where=std::get_if<ContainerLocation>(&item->location);
+                    if (!where || (where->container!=o.inventoryView.containers.backpack &&
+                        where->container!=o.inventoryView.containers.cursor && where->container!=o.inventoryView.containers.belt))
+                        return InventoryError::AccessDenied;
+                    return InventoryError::None;
+                }
                 else if constexpr (requires { c.item; }) {
                     const auto *item = o.inventoryView.item(c.item.id);
                     return !item ? InventoryError::UnknownItem : item->revision != c.item.revision
@@ -587,11 +602,12 @@ struct RemoteUiClients::Impl {
                 }
                 c.action = OnlineItemAction::Use; c.item = guid(v.item.id); c.itemRevision = v.item.revision;
                 if constexpr (std::is_same_v<T, UseHirelingPotion>) {
+                    if (inventory.preview(v)!=InventoryError::None) {notice="Item cannot be used on this hireling.";return;}
                     c.mercenary=true;
                     const auto native=session.read().world.items.find(c.item);
                     if(native==session.read().world.items.end()) return;
                     if(native->second.mode!=2) {
-                        c.action=OnlineItemAction::HirelingEquipment;c.body=1;
+                        c.action=OnlineItemAction::HirelingEquipment;c.body=0;
                         if(items.read().cursor!=c.item) {compositeTake(c);return;}
                     }
                 }
@@ -1349,6 +1365,8 @@ struct RemoteUiClients::Impl {
     void projectHireling() {
         hirelingView={};hirelingView.revision=revision;hirelingView.actor=characterView.actor;
         const auto &world=session.read().world;
+        if (session.read().load.playerUnitId)
+            hirelingView.portraits=projectPetPortraits(data,world,*session.read().load.playerUnitId);
         if(!world.hireling) return;
         const auto &merc=*world.hireling;
         hirelingView.id=npcId(merc.id);hirelingView.classId=merc.monsterClass;
@@ -1370,7 +1388,8 @@ struct RemoteUiClients::Impl {
         hirelingView.known=life && maximum && level && *maximum>0;
         if(!hirelingView.known) return;
         hirelingView.level=int(*level);hirelingView.life=float(*life)/256.f;hirelingView.maximumLife=int(*maximum/256);
-        hirelingView.active=*life>0 && !world.deadHirelingName;
+        const auto pet=world.pets.find(merc.id);
+        hirelingView.active=*life>0 && !world.deadHirelingName && pet!=world.pets.end();
         hirelingView.strength=int(value("strength").value_or(0));hirelingView.dexterity=int(value("dexterity").value_or(0));
         hirelingView.defense=int(value("armorclass").value_or(0));
         for(const auto &[id,item]:world.items) {

@@ -415,6 +415,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         break;
     }
     case OnlineItemAction::HirelingEquipment: {
+        if(command.mercenary) {
+            if(!world.hireling || world.deadHirelingName || !world.pets.contains(world.hireling->id) || !cursor() ||
+                command.body!=0 || !(isType(wire,"hpot") || isType(wire,"rpot") || isType(wire,"apot") || isType(wire,"wpot")))
+                return reject("Hireling portrait requires an eligible cursor potion");
+            break;
+        }
         if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5))
             return reject("No living hireling or invalid equipment slot");
         const auto &hirelings=tables_.at("hireling");
@@ -422,7 +428,6 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         for(size_t i=0;i<hirelings.rows().size();++i) if(hirelings.number(i,"Version")==100 && hirelings.number(i,"Class")==world.hireling->monsterClass) {row=i;break;}
         if(!row || (command.body==5 && hirelings.number(*row,"Act")!=3)) return reject("Hireling does not support this slot");
         if(cursor()) {
-            if(command.mercenary && (isType(wire,"hpot") || isType(wire,"rpot") || isType(wire,"apot") || isType(wire,"wpot"))) break;
             const auto primary=hirelings.value(*row,"WType1"),secondary=hirelings.value(*row,"WType2");
             const bool weapon=isType(wire,primary) || (!secondary.empty() && isType(wire,secondary));
             const bool shield=hirelings.number(*row,"Act")==3 && isType(wire,"shld");

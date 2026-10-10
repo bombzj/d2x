@@ -95,8 +95,10 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
         r.finish();
         if (isPlayer > 1) throw ProtocolError("Invalid ally information unit kind");
         if (isPlayer) { auto &entry = player(social, id); entry.lifePercentage = life; entry.area = area; }
-        // The other branch is a hireling update; its consumer belongs to that domain.
-        else { ++v.gameProtocol.unconsumed[packet.id]; ++v.world.ignoredPackets; }
+        else if (auto pet = v.world.pets.find(id); pet != v.world.pets.end()) {
+            pet->second.lifePercentage = life;
+            pet->second.area = area;
+        }
         break;
     }
     case 0x8B: {

@@ -665,7 +665,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x7A: {
         const auto assign=r.u8(),type=r.u8();const auto monsterClass=r.u16();const auto owner=r.u32(),id=r.u32();r.finish();
-        if(assign) {if(!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner});}
+        if(assign) {
+            if(!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");
+            const auto previous=w.pets.find(id);
+            if(previous==w.pets.end() || previous->second.type!=type || previous->second.monsterClass!=monsterClass || previous->second.owner!=owner)
+                w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner,{},{}});
+        }
         else w.pets.erase(id);
         break;
     }
@@ -746,6 +751,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if(type==7 && owner==v.load.playerUnitId) {
             if(!w.hireling || w.hireling->id!=id) w.hireling=OnlineHireling{id,owner,seed,name,monsterClass,{}};
             else {w.hireling->seed=seed;w.hireling->name=name;w.hireling->monsterClass=monsterClass;}
+            // PlayerPets uses 0x81 instead of 0x7A to assign the owner's hireable.
+            if (!w.pets.contains(id) && w.pets.size()>=8192) throw ProtocolError("Remote pet limit exceeded");
+            const auto previous=w.pets.find(id);
+            if(previous==w.pets.end() || previous->second.type!=type || previous->second.monsterClass!=monsterClass || previous->second.owner!=owner)
+                w.pets.insert_or_assign(id,OnlinePet{type,monsterClass,owner,{},{}});
         }
         break;
     }

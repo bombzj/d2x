@@ -223,6 +223,7 @@ size_t PartyView::portraitCount() const {
 }
 void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
     if (!ready_ || !ownParty_ || *ownParty_ == UINT16_MAX) return;
+    size_t column = 0;
     for (const auto &p : players_) {
         if (p.partyId != ownParty_ || !p.characterClass || *p.characterClass >= portraits_.size()) continue;
         const auto *image = portraits_[*p.characterClass].frame(0, 0);
@@ -239,8 +240,9 @@ void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
         auto name = p.name;
         auto measured = [&] { int width = 0; for (unsigned char c : name) width += nameFont_.widths[c]; return width; };
         while (!name.empty() && measured() > 66) name.pop_back();
-        text(nameFont_, name, std::max(0.f, x + 22 - measured() / 2.f), 70);
+        text(nameFont_, name, std::max(0.f, x + 22 - measured() / 2.f), column % 2 ? 62 : 72);
         x += 56;
+        ++column;
     }
 }
 }

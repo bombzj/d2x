@@ -2,13 +2,18 @@
 #include "presentation/hud/classic_panel.hpp"
 
 namespace d2x {
-// RogueIcon is 46 x 41. Coordinates match the original top-left pet card.
+// PetUI.cpp (1.13c RVA 5C7F0): x=15, bottom=60, stride=56.
 inline Rectangle hirelingPortraitBounds(float offset = 0) {
-    return {12 * classicPanelScale + offset, 18 * classicPanelScale, 46 * classicPanelScale, 41 * classicPanelScale};
+    return {15 * classicPanelScale + offset, 19 * classicPanelScale, 46 * classicPanelScale, 41 * classicPanelScale};
 }
 inline Rectangle hirelingLifeBounds(float offset = 0) {
-    return {12 * classicPanelScale + offset, 12 * classicPanelScale, 46 * classicPanelScale, 5 * classicPanelScale};
+    return {15 * classicPanelScale + offset, 14 * classicPanelScale, 46 * classicPanelScale, 5 * classicPanelScale};
 }
+// The native mercenary handlers hit y=24..60; the life bar is read-only.
+inline Rectangle hirelingPortraitHitBounds(float offset = 0) {
+    return {15 * classicPanelScale + offset, 24 * classicPanelScale, 46 * classicPanelScale, 36 * classicPanelScale};
+}
+inline constexpr float hirelingPortraitHoverSeconds = .7f;
 inline Rectangle hirelingPanelBounds() {
     return {72 * classicPanelScale, 54 * classicPanelScale,
         320 * classicPanelScale, 432 * classicPanelScale};

@@ -25,7 +25,7 @@ struct FrameInput {
     bool minimapSide = false;
     bool automapCenter = false;
     bool automapNames = false;
-    bool hireling = false, party = false;
+    bool hireling = false, party = false, togglePortraits = false;
     bool run = false, escape = false, screenshot = false;
     bool save = false, load = false;
     bool expandBelt = false, weaponSwap = false;
