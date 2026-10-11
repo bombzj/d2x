@@ -28,6 +28,7 @@ int integer(const CharacterProjectionInput &input, std::string_view name) {
 CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterProjectionInput &input) {
     CharacterView view;
     view.attackTiming=input.attackTiming;view.missilePierceChance=input.missilePierceChance;
+    view.recoveryTiming=input.recoveryTiming;
     view.revision = input.revision; view.actor = input.actor; view.name = input.name;
     view.dead = input.dead; view.running = input.running; view.weaponSet = std::min(input.weaponSet, 1u);
     view.selectedSkills = input.selectedSkills; view.skillHotkeys = input.hotkeys;

@@ -2,6 +2,7 @@
 #include "player_store.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "runtime/contracts.hpp"
 #include "world/interaction_geometry.hpp"
@@ -51,6 +52,8 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     if (!player.entered || player.persistent.player.hp <= 0) return CommandStatus::Unavailable;
     if (player.actor != actor.actor || player.area != actor.area || area.generation != actor.areaGeneration)
         return CommandStatus::Stale;
+    if(ports.effects.recovering(player.actor,actor.tick) && command.action!=MovementAction::Stop && command.action!=MovementAction::ToggleRunning)
+        return CommandStatus::Unavailable;
     skillSteps_.erase(actor.player);
     if(command.action==MovementAction::ApproachObject) if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
         if((*position-player.position).length()>50) return CommandStatus::InvalidRequest;
@@ -64,6 +67,7 @@ void MovementSystem::step(TickContext tick) {
         (void)id;
         if(const auto step=skillSteps_.find(id);step!=skillSteps_.end() && step->second==tick.tick) {skillSteps_.erase(step);continue;}
         skillSteps_.erase(id);
+        if(ports.effects.recovering(player.actor,tick.tick)) {player.moving=false;player.runningNow=false;continue;}
         const auto from=player.position;
         advanceMovement(player, ports.areas.at(player.area), TickContext::seconds);
         if(!barrierSegment(ports.monsters,player.area,from,player.position,2)) {player.position=from;player.route.clear();player.moving=false;}

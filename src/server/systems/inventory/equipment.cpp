@@ -10,19 +10,6 @@ bool hand(EquipmentSlot slot) {
     return slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
         slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand;
 }
-bool both(const ItemDefinition &def, std::string_view characterClass) {
-    return def.equipment.twoHanded && !(characterClass == "bar" && def.equipment.oneOrTwoHanded);
-}
-bool compatible(const ItemDefinition &a, const ItemDefinition &b, std::string_view characterClass) {
-    const auto &left = a.equipment, &right = b.equipment;
-    if (!left.shoots.empty() || !right.shoots.empty())
-        return (!left.shoots.empty() && right.isType(left.shoots) && !right.quiver.empty() && left.isType(right.quiver)) ||
-            (!right.shoots.empty() && left.isType(right.shoots) && !left.quiver.empty() && right.isType(left.quiver));
-    if (!left.quiver.empty() || !right.quiver.empty() || both(a, characterClass) || both(b, characterClass)) return false;
-    if (left.isType("shld") || right.isType("shld")) return left.isType("shld") ? right.isType("weap") : left.isType("weap");
-    return left.isType("weap") && right.isType("weap") &&
-        (characterClass == "bar" || (characterClass == "ass" && left.isType("h2h") && right.isType("h2h")));
-}
 }
 DomainStatus Draft::qualified(EntityId candidate) const {
     auto state = player.persistent;
@@ -67,13 +54,13 @@ DomainStatus Draft::equipment(const EquipItem &command, EquipmentMode mode) {
     if (hand(slot)) opposite = equipped(weaponHandSlot(slot == weaponHandSlot(false, edit.weaponSet), edit.weaponSet));
     const auto *oppositeDefinition = opposite ? catalog.find(edit.inventory.items.at(opposite).definition) : nullptr;
     if (opposite && !oppositeDefinition) return DomainStatus::Unavailable;
-    const bool conflicts = opposite && !compatible(*def, *oppositeDefinition, player.definition.code);
+    const bool conflicts = opposite && !compatibleWeaponHands(def->equipment, oppositeDefinition->equipment, player.definition.code);
     switch (mode) {
     case EquipmentMode::Insert: if (previous || conflicts) return DomainStatus::Conflict; break;
     case EquipmentMode::Swap: if (!previous || conflicts) return DomainStatus::Conflict; break;
     case EquipmentMode::Indirect: if (!hand(slot) || previous || !conflicts) return DomainStatus::Conflict; break;
     case EquipmentMode::TwoHanded:
-        if (!hand(slot) || !previous || !opposite || !both(*def, player.definition.code)) return DomainStatus::Conflict;
+        if (!hand(slot) || !previous || !opposite || !requiresBothWeaponHands(def->equipment, player.definition.code)) return DomainStatus::Conflict;
         break;
     }
     const auto destination = belt ? ContainerLocation{containers().beltEquipment, {}}

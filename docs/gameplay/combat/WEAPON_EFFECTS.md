@@ -1,0 +1,45 @@
+# 武器吸取、压碎性打击与撕裂伤口
+
+更新：2026-10-11。本页维护玩家对敌对怪物的四项武器命中效果、公共计算与提交边界。装备资格／手位见[装备](../items/EQUIPMENT.md)，普通动作／弹药见[通用技能](../skills/GENERAL.md)，运行证据见[物品证据](../items/EVIDENCE.md)。
+
+## 来源与结算
+
+装备已保存属性由`equipment_combat`分离全局贡献与武器本件贡献；释放帧的`WeaponSkillDamage`保留当前武器的lifeLeech、manaLeech、crushingBlow和openWounds。双持逐次释放取实际出手武器，非活动组／失效装备不贡献；在途弹体保留发射时来源，不在命中时借用后来换装的属性。普通攻击、弓弩、投掷、职业武器技能共用`combat`命中结算；普通药瓶与不带武器来源的元素范围／子弹体不继承这四项。
+
+命中／格挡成功后才逐目标掷压碎和撕裂概率，范围、连续攻击及穿透接触各自判定。概率累加至100%；命中失败和被格挡不触发。多重箭按原SrvDo008和MPQ中央箭数保留中央箭的压碎／撕裂资格，外侧箭仍可从自身物理伤害吸取。盾击有压碎／撕裂，普通装备吸血／吸魔为零；纯元素转换后的零物理通道无法吸取。
+
+吸血与吸魔只消费减伤后物理通道，包含实际双倍伤害及目标类型加成，排除元素／毒／撕裂和压碎本身。物理值先限制到压碎后目标剩余生命；难度除数分别读取当前MPQ DifficultyLevels的LifeStealDivisor／ManaStealDivisor，目标比例读取MonStats对应难度的Drain。计算保留原六位百分比精度：先把吸取百分比乘64再除难度系数，依次乘实际物理伤害／100、Drain／100，最后除64；每步整除。Drain为零及物理伤害为零时无吸取。玩家资源经事务回传本人并限制到当前上限，不复活死亡玩家。佣兵仍免玩家难度除数，共用目标Drain和纯计算。
+
+压碎先扣目标当前生命的一部分。当前原1.13c的怪物分支以MonStats boss标记或SuperUnique身份使用除数8，其他敌对怪物使用4；佣兵目标使用10。非佣兵目标按入场人数的原生命加成扩大除数，远程再乘2；正物理抗性减少该生命损失，负物理抗性保持原值，100%物理抗性免疫压碎。扣除单独提交到怪物生命，不进入普通物理吸取或GH伤害阈值。
+
+撕裂使用原openwounds状态、200个25Hz权威帧和攻击者等级固定点速率：基础40，等级区间1–15／16–30／31–45／46–60／61以上每级分别增加9／18／27／36／45。Champion／Unique／SuperUnique按原类型标记减半，物理抗性不减少该速率。持续期间抑制自然回复；重复命中刷新同一状态期限，保留既有速率／来源，不叠加并行伤口。逐帧伤害保留实际来源与玩家归功，可击杀并沿既有死亡／奖励流程结算；到期或死亡清理状态。
+
+## 客户端动画
+
+吸血和吸魔使用原S2C `0x11`本人单位叠加，读取当前MPQ的steallife／stealmana原DCC；压碎使用目标单位的bash叠加。当前表分别为151／152／147，吸取13帧、压碎9帧，AnimRate均16、Trans3。两项吸取同时成立时按原命中分支随机选择一项动画；不能把只播放其中一项误判成另一项资源未回补。资源与叠加由服务端成组发布，客户端仅消费事实、跟随单位位置并按原帧率结束。
+
+撕裂的openwounds状态没有overlay字段，原表现由States的cltactivefunc85驱动。`RemoteScene::emitWoundBlood`只在已解码、仍存活且在当前区域副本中的怪物持有该状态时发射本地血粒子；不自行判定命中、伤害或状态期限。原客户端全局节拍为frame严格大于next后设置next=frame+5，暂停不推进、断续帧不补发。怪物GH动作保留原1/3喷血分支，行走／跑步依据已收到的0..63朝向选择喷血候选，其他动作随机选择。
+
+血液类型读取MonStats→MonStatsEx→MonStats2.Bleed：零不喷血，当前类型1／2从blood1／blood2／bigblood1／bigblood2族按原Bleed×2选择，编号及DCC仍动态读MPQ。原字段偏移0x11D是Bleed，0x11C才是localBlood；不能用后者取代前者，例如Andariel的localBlood空但Bleed为2。原八方向偏移每次最多检查七个候选，碰撞只检查WALL。原默认数量1，收到的damage_blood状态属性可覆盖；不猜测未发布的怪物隐藏属性。客户端随机独立于服务端结算，不能声称与未传输的原单位种子逐粒同步。
+
+LocalBlood的CltDo2按原动画完成时停止移动、保留最后一帧地面血迹、逐帧续128个25Hz帧；血迹离开视野或换区清理。状态到期／死亡停止新喷血，已落地血迹保留到原清理边界。复用既有2048本地弹体容量；不把CltDo2的血粒子支持扩大为尚未核实的药瓶程序。
+
+## 所有权与重试
+
+`gameplay/combat/weapon_hit`只接纯值和显式随机，`server/systems/combat/weapon_hit`适配怪物身份与撕裂应用；`monsters`唯一持有撕裂时钟、生命及死亡归功。`hosting/skill_content`从当前MPQ准备难度除数和bash／steallife／stealmana原Overlay编号，客户端按既有原包读取资源。
+
+`replication`从仍存活怪物的真实wound派生openwounds可见状态，与首次命中／到期的StateFact一致；首次可见、离区再回来及输出背压期间均保留原状态。不能仅发首次开启事件，却在下一次怪物快照中遗漏并撤销它。
+
+接触随机保留在目标阶段，输出背压不重新创建随机子流；耐久提交保留已应用标记。目标伤害／撕裂提交成功后进入资源回补阶段，资源与原Overlay成组发布，成功后清除待回补值。Sacrifice反噬在吸取之后执行，单独保留阶段；背压重试不再次扣目标生命或重复吸取。玩家死亡、换区或来源控制代次失效仍按公共战斗资格处理。
+
+撕裂的下一次扣血标记仅在伤害事实提交成功后推进；输出容量不足时保留未付帧数，恢复后补齐到期限内应付的固定点伤害，再清理到期状态。正常固定步每次只有一帧，容量重试既不漏帧也不重复支付。
+
+原D2S v96的物品掷值、生命与法力字段沿用既有编码；伤口、接触概率、随机、待回补和Overlay均为运行态，不新增存档段、握持字段或迁移。重入重新派生装备属性，临时伤口不恢复。保存边界见[存档](../../modules/SAVES.md)。
+
+## 原版依据与限制
+
+本地D2MOO `SUnitDmg::SUNITDMG_ExecuteEvents`／`SUNITDMG_AddLeechedLife`／`SUNITDMG_AddLeechedMana`、`SkillItem::SKILLITEM_EventFunc15_OpenWounds`／`SKILLITEM_EventFunc16_CrushingBlow`、`Skills::sub_6FD10EC0`、`SkillPal`盾击与Sacrifice，以及`SkillAma::SKILLS_SrvDo008_MultipleShot_Teeth_ShockWave`；参数及原图以当前MPQ为准。本机原1.13c D2Game.dll MD5 `978f6f74cd031bce6ecee602cd5988cc`的RVA `0xACC30`只读核对了压碎的boss／类型标记2、人数、远程、抗性及原Overlay147分支，静态证据保留在忽略目录`artifacts/weapon-effects/native-crushing.txt`，原DLL不修改／分发。
+
+本机原1.13c D2Client.dll MD5 `f5860c629d309b8fc1f96174babcf633`只读核对了状态回调表RVA `0xDEA48`的85项→`0xC9000`、喷血helper `0x4C500`、创建helper `0xB0450`→`0xB30F0`与CltDo2 `0xB3060`→公共程序`0xB17C0`。同版本D2Common.dll MD5 `ee1238806ef6d6d9801d12a09d128fe1`核对字段装载偏移与停止条件、速度归零、128续帧；静态证据在忽略目录`artifacts/weapon-effects/visual/native-*.txt`。不执行、修改或分发原DLL。
+
+当前覆盖已实现玩家武器技能对敌对怪物的四项效果。PvP资格／伤害与吸取系数、未实现职业技能、全部多目标／装备触发组合及客户端逐像素表现仍按所属专题的限制；有限运行不能推定所有职业、武器、多人和三难度均已认证。

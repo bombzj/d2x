@@ -16,6 +16,8 @@ Skills、Missiles、AnimData、COF／DCC、ItemTypes和当前装备外观提供�
 
 女巫及亚马逊Clt程序、专项公共函数和未认证差异分别见[女巫](../skills/SORCERESS.md)与[亚马逊](../skills/AMAZON.md)，通用Attack／弓弩／投掷／左手及药瓶见[GENERAL](../skills/GENERAL.md)。本页只维护表现入口和通用限制，逐技能分派与历史证据不重复维护。共享计算／权威与视觉所有权统一见[COMMON](../skills/COMMON.md#公共层与所有权)。
 
+玩家武器吸血／吸魔／压碎／撕裂的服务端结算、原Overlay与状态通知见[武器命中效果](WEAPON_EFFECTS.md)。资源仍由原包发布，表现层不从接触、特效或概率自行加血／加法力。
+
 骨魂、药瓶抛物线高度和其余客户端程序仍有缺口；RandStart指南存在冲突，暂缓。全效果密度／随机分布、空间音频、精确定点路径及像素一致性没有完整认证，不画自造替代效果。
 
 原规则入口：本地D2MOO PlrMsg／PlrModes、Missiles／MissMode、PathMisc、D2Skills；Diablerie Missile／MissileFunctions只交叉核对显示结构。当前MPQ始终决定原图与参数，参考服务端函数不代表完整D2Client视觉实现。

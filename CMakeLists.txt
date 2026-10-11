@@ -100,7 +100,7 @@ add_library(d2x_gameplay
   src/gameplay/items/equipment_contributions.cpp src/gameplay/items/equipment_stats.cpp
   src/gameplay/character/attributes.cpp src/gameplay/character/skill_rank.cpp
   src/gameplay/combat/stat_modifiers.cpp src/gameplay/combat/geometry.cpp
-  src/gameplay/combat/attack_element_ranges.cpp
+  src/gameplay/combat/attack_element_ranges.cpp src/gameplay/combat/weapon_hit.cpp
   src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/attack_timing.cpp
   src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
@@ -186,7 +186,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/item_triggers.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
   src/server/systems/combat/participants.cpp
-  src/server/systems/combat/hireling_hit.cpp
+  src/server/systems/combat/weapon_hit.cpp
   src/server/systems/combat/environment.cpp
   src/server/systems/combat/follow_up.cpp
   src/server/systems/death/system.cpp

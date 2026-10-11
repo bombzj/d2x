@@ -343,7 +343,7 @@ ClassicData loadClassicData(Archives &archives) {
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
         loadAuraSkills(data);
         loadMonsterEnchantmentResources(data, archives);
-        const DataTable overlays(archives.read("data/global/excel/overlay.txt"));
+        const auto &overlays = data.tables.emplace("overlay", DataTable(archives.read("data/global/excel/overlay.txt"))).first->second;
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
                              overlays, sounds, data.states, archives);

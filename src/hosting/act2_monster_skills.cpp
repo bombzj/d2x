@@ -25,19 +25,25 @@ uint8_t nativeMode(std::string_view mode) {
 bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTable &sequences,
                  const MonsterRecord &record,std::string_view source,int event,server::MonsterAttackRule &action) {
     if(source.starts_with("seq_")) {
-        float elapsed=0;bool found=false;
+        int frames=0;
         for(size_t row=0;row<sequences.rows().size();++row) if(sequences.value(row,"sequence")==source) {
             auto mode=std::string(sequences.value(row,"mode"));
             std::transform(mode.begin(),mode.end(),mode.begin(),[](unsigned char c){return char(std::tolower(c));});
             const auto weapon=monsterModeWeapon(archives,record.token,mode,record.baseWeapon);
             const auto motion=loadMonsterMotionTiming(animations,record.token,mode,weapon);
-            if(!motion) return false;
-            if(sequences.number(row,"event").value_or(0)==event) action.releaseFrames.push_back(std::max(1,int(std::ceil(elapsed))));
-            elapsed+=motion->duration*25.f/float(motion->frames);found=true;
+            const auto frame=sequences.number(row,"frame");
+            if(!motion || !frame || *frame<0 || *frame>255 || frames>=10000) return false;
+            if(sequences.number(row,"event").value_or(0)==event) {
+                action.animationEvents.push_back(frames);
+                action.releaseFrames.push_back(std::max(1,frames));
+            }
+            ++frames;
         }
-        if(!found || elapsed<=0 || elapsed>10000) return false;
-        action.duration=std::max(1,int(std::ceil(elapsed)));
+        if(!frames) return false;
+        action.animation=AnimationTiming{frames,256};action.animationSequence=true;
+        action.duration=frames;
         action.release=action.releaseFrames.empty()?action.duration:action.releaseFrames.front();
+        action.animationAction=action.animationEvents.empty()?frames:action.animationEvents.front();
         action.nativeMode=14;
     } else {
         std::string mode(source);std::transform(mode.begin(),mode.end(),mode.begin(),[](unsigned char c){return char(std::tolower(c));});
@@ -46,6 +52,7 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
         action.duration=std::max(1,int(std::ceil(timing->duration*25.f)));
         action.release=std::clamp(int(std::ceil(timing->impact*25.f)),1,action.duration);
         action.nativeMode=nativeMode(source);action.casting=source=="SC";
+        action.animation=AnimationTiming{timing->frames,timing->speed};action.animationAction=timing->actionFrame;
     }
     return true;
 }
@@ -113,7 +120,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         server::MonsterAttackRule action;int event=2;
         if(name=="Fire Hit" || name=="Jab") {action=baseAttack("S1");event=1;}
-        else if(name=="Smite") {action=baseAttack("A2");action.hitClass=0x65;action.stunFrames=std::min(250,skillRankBonus({skillTableNumber(skills,row,"Param1"),skillTableNumber(skills,row,"Param2")},rank));event=1;}
+        else if(name=="Smite") {action=baseAttack("A2");action.hitClass=0x65;action.stunFrames=std::min(250,skillRankBonus({skillTableNumber(skills,row,"Param1"),skillTableNumber(skills,row,"Param2")},rank));action.knockback=(skills.number(row,"ResultFlags").value_or(0)&8)!=0;event=1;}
         else if(name=="Charge" || name=="SerpentCharge") {
             action=baseAttack(record.ai=="Duriel"?"A2":"A1");action.action=Action::Charge;action.knockback=true;action.alwaysHit=true;
             action.hitClass=0x70;
@@ -171,7 +178,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         action.ratingPercent=skills.number(row,"ToHit").value_or(0)+(rank-1)*skills.number(row,"LevToHit").value_or(0);
         action.rank=uint8_t(rank);
         if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),event,action)) return false;
-        if(action.action==Action::Charge) action.release=1;
+        const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
+        action.useAttackRate=sourceMode=="A1" || sourceMode=="A2" || skills.number(row,"UseAttackRate").value_or(0)!=0;
+        if(action.action==Action::Charge) {action.release=1;action.animationAction=0;}
         if(action.action==Action::Leap) {
             server::MonsterAttackRule takeoff;
             if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),2,takeoff)) return false;
@@ -181,7 +190,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             action.movementPercent=100*run/walk;
         }
         // Movement events drive a sequence, not repeated melee strikes.
-        if(action.action==Action::Charge || action.action==Action::Leap || action.action==Action::SwarmMove) action.releaseFrames.clear();
+        if(action.action==Action::Charge || action.action==Action::Leap || action.action==Action::SwarmMove) {action.releaseFrames.clear();action.animationEvents.clear();}
         rule.skillIds[slot]=uint16_t(id);rule.skillActions.insert_or_assign(uint16_t(id),std::move(action));
         if(record.ai=="ArcaneTower" && name=="Lightning") {
             const auto ordinary=rule.attacks.find(4);if(ordinary==rule.attacks.end()) return false;
@@ -195,7 +204,12 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
     if(record.ai=="SandMaggotQueen") {
         rule.deathBurst=missile("queenpoisoncloud",rule.level);if(!rule.deathBurst) return false;rule.deathBurst->behavior=server::MonsterMissileRule::Behavior::Charged;
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));if(!clock) return false;
-        server::MonsterAttackRule pose;pose.action=Action::Animation;pose.nativeMode=8;pose.release=1;pose.duration=std::max(1,int(std::ceil(clock->duration*25)));rule.attacks.emplace(8,std::move(pose));
+        server::MonsterAttackRule pose;
+        pose.action=Action::Animation;pose.nativeMode=8;pose.release=1;
+        pose.animation=AnimationTiming{clock->frames,clock->speed};
+        pose.animationAction=0;pose.useAttackRate=false;
+        pose.duration=pose.animation->durationTicks();
+        rule.attacks.emplace(8,std::move(pose));
     }
     return true;
 }

@@ -82,7 +82,8 @@ class System {
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, float manaCost,
                            std::optional<PointTarget> relocation = {}, std::optional<SkillCharge> charge = {});
     // Resource-only commit: no inventory clone or equipment re-evaluation per hit.
-    DomainResult<> resources(const ActorContext &, uint64_t expected, float life, float mana, float stamina);
+    DomainResult<> resources(const ActorContext &, uint64_t expected, float life, float mana, float stamina,
+                             std::vector<DomainFact> publicFacts = {});
     DomainResult<> damage(const ActorContext &, uint64_t expectedCharacterRevision, int64_t amount);
 };
 }

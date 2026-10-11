@@ -33,6 +33,7 @@ struct CharacterProjectionInput {
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;
     std::optional<unsigned> difficulty;
     std::optional<KnownAttackTiming> attackTiming;
+    std::optional<KnownRecoveryTiming> recoveryTiming;
     std::optional<int> missilePierceChance;
     std::optional<CombatDisplayEquipment> combatEquipment;
 };

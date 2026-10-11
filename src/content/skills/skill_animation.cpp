@@ -18,7 +18,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
             for (auto &letter : value) letter = char(std::tolower(static_cast<unsigned char>(letter)));
             if (!value.empty()) classes.insert(value);
         }
-    std::set<std::string> modes{"sc", "s1", "bl", "a2", "kk"};
+    std::set<std::string> modes{"sc", "s1", "bl", "gh", "a2", "kk"};
     for (const auto &[id, skill] : catalog.skills)
         if (skill.basicAction != BasicSkillAction::None) modes.insert(skill.animationMode);
     for (const auto &tree : catalog.classes)
@@ -32,6 +32,9 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
                 if (!anim || anim->frames <= 1 || anim->frames > 144 || anim->speed <= 0 ||
                     !archives.contains("data/global/chars/" + tree.iconToken + "/cof/" + key + ".cof")) continue;
                 // Native frame events: 1 = melee/skill, 2 = missile release.
+                if(mode=="gh" || mode=="bl")
+                    catalog.recoveryTimings.emplace(key,SkillCatalog::CastTiming{int(anim->frames),anim->speed,0});
+                if(mode=="gh") continue;
                 if (mode == "bl" || (mode == "s1" && tree.classCode == "ama")) {
                     catalog.attackTimings.emplace(key, SkillCatalog::CastTiming{int(anim->frames), anim->speed, 0});
                     continue;

@@ -29,8 +29,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const MonsterAttackRule *prepared=nullptr;
     if(request.skill || monster->hireling) {const auto found=rule.skillActions.find(request.skill);if(found!=rule.skillActions.end()) prepared=&found->second;}
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
-    if((petAttack && request.skill) || (!petAttack && !prepared)) return {DomainStatus::Unavailable,{}};
-    const auto slot=petAttack?MonsterAttackRule{rule.minimumDamage,rule.maximumDamage,rule.attackRating,rule.attackTicks,rule.impactTick,{}}:*prepared;
+    if((petAttack && request.skill) || !prepared) return {DomainStatus::Unavailable,{}};
+    const auto slot=*prepared;
     const bool resurrection=slot.action==MonsterAttackRule::Action::Resurrect;
     const bool healing=slot.action==MonsterAttackRule::Action::Heal;
     const bool selfAction=slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay;
@@ -53,9 +53,23 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick);
     const int speed=slot.casting?100:monster->necroMaterial && monster->petWeapon?std::max(15,effectiveAttackSpeed(100,monster->petWeapon->fasterAttack,monster->petWeapon->baseSpeed,monster->petStats.attributes.combat.attackRate+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0))):std::max(15,100+buffs.combat.attackRate+(monster->chilledUntil>request.tick?rule.coldEffect:0));
     const auto scaled = [&](int frames) { return uint64_t((int64_t(frames) * 100 + speed - 1) / speed); };
+    uint64_t duration=scaled(slot.duration),releaseTick=scaled(slot.release);
+    int animationSpeed=0;
+    if(slot.animation) {
+        auto modifiers=buffs.combat;
+        if(monster->combatCompanion()) mergeCombatModifiers(modifiers,monster->petStats.attributes.combat);
+        const auto *weapon=monster->petWeapon?&*monster->petWeapon:nullptr;
+        const int coldRate=monster->chilledUntil>request.tick?rule.coldEffect:0;
+        if(slot.casting) animationSpeed=effectiveCastSpeed(slot.animation->speed,modifiers.fasterCast);
+        else if(slot.useAttackRate) animationSpeed=effectiveAttackSpeed(slot.animation->speed,weapon?weapon->fasterAttack:0,weapon?weapon->baseSpeed:0,modifiers.attackRate+coldRate);
+        else if(slot.animationSequence) animationSpeed=slot.animation->speed;
+        else animationSpeed=effectiveOtherAnimationSpeed(slot.animation->speed,buffs.otherAnimationRate+(monster->combatCompanion()?monster->petStats.attributes.otherAnimationRate:0)+coldRate);
+        duration=uint64_t(slot.animationSequence?animationFrameTicks(slot.animation->frames,animationSpeed):AnimationTiming{slot.animation->frames,animationSpeed}.durationTicks(slot.animationStartFrame));
+        releaseTick=uint64_t(std::clamp(animationFrameTicks(std::max(0,slot.animationAction-slot.animationStartFrame),animationSpeed),1,int(duration)));
+    }
     DamageType type = DamageType::Physical;
     combat::Damage damage{monster->id, target->id, type, int64_t(slot.minimum) * 256,
-        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + scaled(slot.release), slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->necroSummon || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
+        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + releaseTick, slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->necroSummon || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
     damage.skill=slot.weaponSkill;
     damage.monsterSkill=slot;damage.rating=int(int64_t(slot.rating)*std::max(0,100+slot.ratingPercent)/100);
     if((petAttack || monster->necroSummon || monster->hireling) && damage.weapon) {
@@ -71,9 +85,11 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     if(!petAttack) damage.actionRandom=actionRandom;
     if (slot.missile || special || !slot.releaseFrames.empty()) {
         if (monsterReleases_.size() >= 4096) return {DomainStatus::Capacity,{}};
-        MonsterRelease release{request,slot,monster->area,area.generation,request.tick+scaled(slot.release),actionRandom,monster->interruption,{}};
+        MonsterRelease release{request,slot,monster->area,area.generation,request.tick+releaseTick,actionRandom,monster->interruption,{}};
         release.started=request.tick;
-        for(int frame:slot.releaseFrames) release.releaseFrames.push_back(int(scaled(frame)));
+        if(animationSpeed && !slot.animationEvents.empty()) {
+            for(int frame:slot.animationEvents) release.releaseFrames.push_back(weaponSequenceTick(frame,animationSpeed));
+        } else for(int frame:slot.releaseFrames) release.releaseFrames.push_back(int(scaled(frame)));
         if(slot.action==MonsterAttackRule::Action::Spray || request.position || slot.action==MonsterAttackRule::Action::Leap) release.launch=std::pair{monster->position,destination->first};
         monsterReleases_.emplace(request.actor,std::move(release));
     } else if (request.monsterMode != 9) {
@@ -88,12 +104,12 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
     if (!event) { ports_.combat.cancel(monster->id); monsterReleases_.erase(monster->id); return {event.status, {}}; }
     if(!petAttack) ports_.monsters.commitCombatRandom(monster->id,reserved);
-    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + scaled(slot.duration));
+    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration);
     if(begun && slot.action==MonsterAttackRule::Action::Charge) {
         const auto delta=destination->first-monster->position;
         const float stop=float(rule.meleeRange+3)+.5f;
         const Vec goal=monster->position+delta.unit()*std::max(0.f,delta.length()-stop);
-        const auto motion=ports_.monsters.startSkillMotion(monster->id,goal,request.tick+scaled(slot.duration),slot.movementPercent,false,request.tick,target->id);
+        const auto motion=ports_.monsters.startSkillMotion(monster->id,goal,request.tick+duration,slot.movementPercent,false,request.tick,target->id);
         if(!motion) {monsterReleases_.erase(monster->id);return motion;}
     }
     return begun;

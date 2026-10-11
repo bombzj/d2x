@@ -51,6 +51,28 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.combatQueueDepth=systems_.combat.read().pending.size();
     result.combatTargetAttempts=systems_.combat.read().targetAttempts;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
+    if(const auto recovery=systems_.effects.read().players.find(player->actor);recovery!=systems_.effects.read().players.end()) {
+        result.recoveryUntil=recovery->second.actionUntil;result.lastBlockTick=recovery->second.lastBlockTick;
+    }
+    if(player->rules.skills) {
+        const auto &rules=*player->rules.skills;
+        const auto &weapon=player->totals.equipment.weapons[0];
+        const auto &modifiers=player->totals.character.combat;
+        const auto &weaponClass=player->totals.equipment.animationClass;
+        for(const auto &[key,animation]:rules.weaponAnimations) if(key.substr(2)==weaponClass && key.substr(0,2)!="bl") {
+            const WeaponAttackTiming timing{key.substr(0,2),animation.frames,effectiveAttackSpeed(animation.speed,weapon.fasterAttack,weapon.baseSpeed,modifiers.attackRate),animation.actionFrame,animation.startFrame};
+            result.animations.push_back({timing.mode,timing.frames,timing.startFrame,timing.speed,timing.durationTicks(),timing.actionTick()});
+        }
+        if(const auto found=rules.animations.find(weaponClass);found!=rules.animations.end()) {
+            const auto timing=normalCastTiming(found->second,modifiers.fasterCast);
+            result.animations.push_back({"sc",found->second.frames,0,timing.speed,timing.duration,timing.impact});
+        }
+        for(const auto &[key,animation]:rules.recoveryAnimations) if(key.substr(2)==weaponClass) {
+            const bool block=key.starts_with("bl");
+            const int speed=effectiveRecoverySpeed(animation.speed,block?modifiers.fasterBlock:modifiers.fasterHitRecovery,block && player->transient.states.contains(rules.holyShield.id));
+            result.animations.push_back({key.substr(0,2),animation.frames,0,speed,AnimationTiming{animation.frames,speed}.durationTicks(),0});
+        }
+    }
     result.containers = player->persistent.containers;
     result.waypoints=player->persistent.waypoints; result.denRemaining=systems_.quests.read().actOne.denRemaining; result.denCleared=systems_.quests.read().actOne.denCleared; result.portals=visiblePortals(id);
     result.corpses=player->persistent.corpses; result.merchantDeferred=systems_.merchant.read().deferred;
@@ -115,6 +137,12 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.rules=monster.rule.ai;value.damageRegen=monster.rule.damageRegen;value.threat=monster.rule.threat;
         value.admittedPlayers=monster.admittedPlayerCount;value.experienceBase=monster.rule.experienceBase;
         value.minimumLife=monster.rule.minimumLife;value.maximumBaseLife=monster.rule.maximumLife;
+        value.drain=monster.rule.drain;value.difficulty=monster.rule.difficulty;
+        value.physicalResistance=systems_.effects.unitResistance(key,DamageType::Physical,tick_);
+        if(monster.wound) {
+            value.woundRate=monster.wound->rate;value.woundUntil=monster.wound->until;value.woundNext=monster.wound->next;
+            value.woundSource=monster.wound->source;value.woundCredit=monster.wound->credit;
+        }
         value.nativeVelocity=monster.rule.nativeVelocity;value.movementMask=monster.rule.collision.mask;value.spawnMask=monster.rule.spawnCollision.mask;
         value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
         value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;

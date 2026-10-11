@@ -110,7 +110,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         };
         if (definition.family == ItemFamily::Weapon) {
             if (definition.equipment.throwable) damage("Throw Damage: ", base.throwMin, base.throwMax, true);
-            if (!definition.equipment.twoHanded || definition.equipment.oneOrTwoHanded)
+            if (!definition.equipment.twoHanded || canUseWeaponOneHanded(definition.equipment, context.characterClass))
                 damage("One-Hand Damage: ", base.minDamage, base.maxDamage);
             if (definition.equipment.twoHanded)
                 damage("Two-Hand Damage: ", base.twoHandMin, base.twoHandMax);

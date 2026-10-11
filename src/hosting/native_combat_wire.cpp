@@ -156,6 +156,10 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
     if(fact.type==0 && !fact.killed && fact.knockback) result.push_back(encodeServerPacket(ServerMessage::MovePoint,[&](auto &out) {
         key(out,0,fact.target);out.u8(20);point(out,*fact.knockback+origin);out.u8(fact.hitClass);point(out,fact.position+origin);
     }));
+    if(fact.type==0 && !fact.killed && !fact.knockback && fact.playerMode)
+        result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
+            key(out,0,fact.target);out.u8(fact.playerMode);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
+        }));
     if(fact.type==1 && !fact.killed && fact.monsterMode)
         result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){
             out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);

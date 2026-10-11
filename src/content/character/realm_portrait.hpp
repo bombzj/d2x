@@ -14,7 +14,7 @@ using RealmPortraitParts = ActorAppearance;
 class RealmPortraitCatalog {
     struct Entry {
         std::string code, type, weapon, twoHandWeapon;
-        bool twoHanded{};
+        bool twoHanded{}, oneOrTwoHanded{};
     };
     std::array<Entry, 255> codes_;
     struct Item {

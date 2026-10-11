@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "animation_timing.hpp"
 #include "core/math.hpp"
 #include <array>
 #include <cstdint>
@@ -23,6 +24,9 @@ struct HirelingView {
     std::string name;
     int level = 0;
     int classId = -1;
+    std::optional<KnownAttackTiming> attackTiming;
+    std::optional<KnownRecoveryTiming> recoveryTiming;
+    std::optional<int> fasterCast;
     float life = 0;
     int maximumLife = 1, strength = 0, dexterity = 0, defense = 0;
     bool defenseImproved = false;

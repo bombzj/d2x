@@ -5,7 +5,7 @@
 #include <optional>
 
 namespace d2x {
-struct MonsterMotionTiming { float duration = 0; int frames = 0; };
+struct MonsterMotionTiming { float duration = 0; int frames = 0, speed = 0; };
 std::string monsterModeWeapon(const Archives &archives, std::string_view token,
                               std::string_view mode, std::string_view baseWeapon);
 std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &animations,

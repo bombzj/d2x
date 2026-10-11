@@ -97,7 +97,15 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random) const {
         if(s.weapon->bow && s.weapon->bow->multiple) {
             const auto targets=missileFanTargets(origin,r.target,s.missileCount,direction);
             const int id=p.totals.equipment.animationClass=="xbw"?s.weapon->bow->boltId:s.missileId;
-            for(const auto target:targets) add(cell(origin),target-origin,id,frames,s.missileVelocity,Program::Projectile);
+            const int central=std::min(int(targets.size()),s.weapon->bow->centralArrows);
+            const int first=(int(targets.size())-central)/2;
+            for(size_t arrow=0;arrow<targets.size();++arrow) {
+                auto &missile=add(cell(origin),targets[arrow]-origin,id,frames,s.missileVelocity,Program::Projectile);
+                // SrvDo008's outer missiles suppress item damage events. Leech
+                // still belongs to their physical channel, unlike CB and OW.
+                if(missile.weapon && (int(arrow)<first || int(arrow)>=first+central))
+                    missile.weapon->crushingBlow=missile.weapon->openWounds=0;
+            }
         } else {
             const int id=s.weapon->bow && (s.weapon->bow->guided || s.weapon->bow->strafe) && p.totals.equipment.animationClass=="xbw"?s.weapon->bow->boltId:s.missileId;
             add(cell(origin),direction,id,frames,s.missileVelocity,Program::Projectile);

@@ -46,10 +46,10 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 ## 当前边界
 
-- 普通武器管线拒绝lifeLeech／manaLeech／crushingBlow／openWounds，不忽略后执行。完整双持、PvP、全职业武器效果仍未完成。
+- 普通武器管线已接lifeLeech／manaLeech／crushingBlow／openWounds；来源、难度／目标系数、特殊技能资格及提交顺序见[武器命中效果](../combat/WEAPON_EFFECTS.md)。完整双持组合、PvP、未实现职业及专用触发仍有缺口。
 - 普通近战武器／防具耐久、Impale磨损、投掷补充／自修复及充能扣费／维修已经接入；具体规则和装备六类事件框架由[库存](../../modules/INVENTORY.md)维护，不能笼统写成未实现。专用触发程序及ItemCltEffect仍有明确暂缓项。
 - Unsummon只对当前已实现且PetType允许的本人召唤物有效，不补齐其他职业召唤或完整佣兵；同行者与雇佣范围见[佣兵](../characters/HIRELINGS.md)。普通门户资格由travel负责，任务／队友门户范围由[物件](../world/OBJECTS.md)和[任务系统](../quests/SYSTEM.md)维护。
-- 药瓶地面寿命与伤害已接，不等于完整抛物线高度／阴影。普通桶KK、左手等未运行路径见下节，源码入口不是全参数认证。
+- 药瓶地面寿命与伤害已接，不等于完整抛物线高度／阴影。普通桶KK、Left Hand Throw／Swing等未运行路径见下节；左手弓／相反手弹药已有[装备代表证据](../items/EVIDENCE.md#双手剑与左右手有限冒烟)，与两项左手固有技能分别记录，源码入口不是全参数认证。
 
 ## 有限运行证据
 

@@ -28,7 +28,7 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
                 const auto *location=std::get_if<ContainerLocation>(&item.location);
                 const auto *definition=ports_.definitions->find(item.definition);
                 if(location && location->container==p->persistent.containers.equipment &&
-                    location->cell.x==int(weaponHandSlot(true,p->persistent.player.weaponSet)) && definition &&
+                    location->cell.x==int(weaponHandSlot(!weapon.leftHand,p->persistent.player.weaponSet)) && definition &&
                     definition->equipment.isType(base->equipment.shoots) && item.quantity) {consume=id;break;}
             }
         }

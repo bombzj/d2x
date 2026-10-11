@@ -6,10 +6,19 @@
 #include "gameplay/combat/life.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
+#include "server/systems/effects/system.hpp"
 #include <algorithm>
 
 namespace d2x::server::monsters {
 namespace {
+int recoveryTicks(const Actor &actor,const effects::System &effects,uint64_t tick,bool block) {
+    const auto &clock=block?actor.rule.blockAnimation:actor.rule.hitRecoveryAnimation;
+    if(!clock) return block?actor.rule.blockTicks:actor.rule.hitRecoveryTicks;
+    auto modifiers=effects.unitModifiers(actor.id,tick).combat;
+    if(actor.combatCompanion()) mergeCombatModifiers(modifiers,actor.petStats.attributes.combat);
+    const int speed=effectiveRecoverySpeed(clock->speed,block?modifiers.fasterBlock:modifiers.fasterHitRecovery);
+    return AnimationTiming{clock->frames,speed}.durationTicks();
+}
 void playerCountBonus(MonsterRule &rule,unsigned count) {
     const unsigned scale=100+50*(count-1);
     rule.experienceBase=rule.experienceBase*scale/100;
@@ -145,11 +154,13 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun) {
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0 || crushing < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
-    const auto life = std::max(actor.hireling && poisonOnly && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0), std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed)) - amount);
+    // Crushing Blow changes current life before the ordinary damage channel;
+    // it must not inflate the hit-recovery damage threshold.
+    const auto life = std::max(actor.hireling && poisonOnly && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0), std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed)) - crushing - amount);
     const bool corpseUnavailable=actor.frozenUntil>tick || (actor.holyFreezeUntil>tick && actor.holyFreezeShatter);
     const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
     auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
@@ -170,9 +181,10 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     auto stunned=actor.stunnedUntil;
     if(clearStun) stunned=0;
     if(life && stunFrames && actor.rule.stunState>=0 && !actor.rule.boss && actor.rule.nativeVelocity &&
-        (actor.identity.rank==MonsterRank::Normal || actor.identity.rank==MonsterRank::Minion || limitedRandom(random,100)>=90)) stunned=tick+std::min<uint64_t>(250,stunFrames);
+        (actor.identity.rank==MonsterRank::Normal || actor.identity.rank==MonsterRank::Minion || limitedRandom(random,100)>=90)) stunned=tick+std::min<uint64_t>(actor.hireling?13:250,stunFrames);
     if(!life) stunned=0;
-    const bool recovery=life && monsterHitRecovery(amount,actor.maximumLife,hitClass,frozen>tick,poisonOnly,actor.rule.hitRecoveryTicks>0,random);
+    const bool recovery=life && !poisonOnly && monsterHitRecovery(amount,actor.maximumLife,hitClass,frozen>tick,poisonOnly,actor.rule.hitRecoveryTicks>0,random,stunned>tick);
+    const int reactionTicks=recovery?recoveryTicks(actor,ports_.effects,tick,false):0;
     std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady}};
     if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
     if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
@@ -187,10 +199,16 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
     actor.stunnedUntil=stunned;
     actor.poison=poisoned;
-    if(!life) actor.wound.reset();else if(wound) actor.wound=std::move(wound);
+    if(!life) actor.wound.reset();
+    else if(wound) {
+        // Native same-state/same-skill refresh extends the existing stat list;
+        // its original rate and source survive instead of stacking wounds.
+        if(actor.wound) actor.wound->until=wound->until;
+        else actor.wound=std::move(wound);
+    }
     if(recovery || frozen>tick || stunned>tick || !life) {
         ++actor.interruption;stop(id);
-        if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+uint64_t(actor.rule.hitRecoveryTicks);actor.busyUntil=actor.reactionUntil;}
+        if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;}
     }
     if (!life) {
         // Fn043 marks an exhausted nest NOTC before its own death action.
@@ -212,10 +230,11 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;
     if(actor.rule.blockTicks>0) {
+        const int reactionTicks=recoveryTicks(actor,ports_.effects,tick,true);
         const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{id,1,actor.area,percent,false,actor.position,0,6}}});
         if(!result) return {result.status,{}};
-        stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+uint64_t(actor.rule.blockTicks);actor.busyUntil=actor.reactionUntil;++actor.revision;
+        stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;++actor.revision;
     }
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -264,14 +283,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
         }
         if(actor.wound && actor.life>0) {
-            if(tick.tick>=actor.wound->until) {
+            if(tick.tick>=actor.wound->next && actor.wound->next<=actor.wound->until) {
+                const auto wound=*actor.wound;
+                const auto last=std::min(tick.tick,wound.until);
+                const auto frames=last-wound.next+1;
+                // Retain every unpaid pulse across output backpressure, including
+                // the last frame, before retiring the state. Normal ticks owe one.
+                const auto result=damage(id,wound.credit,wound.rate*int64_t(frames),tick.tick,0,false,0,{},true);
+                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+                if(result) {if(actor.wound) actor.wound->next=last+1;recordHirelingKill(id,wound.source);}
+            }
+            if(actor.wound && tick.tick>=actor.wound->until) {
                 if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.rule.openWoundsState,false}}})) {blocked=true;continue;}
                 actor.wound.reset();
-            } else if(tick.tick>=actor.wound->next) {
-                const auto wound=*actor.wound;
-                const auto result=damage(id,wound.credit,wound.rate,tick.tick,0,false,0,{},true);
-                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
-                if(result) {if(actor.wound) actor.wound->next=tick.tick+1;recordHirelingKill(id,wound.source);}
             }
         }
         if (!actor.owner && actor.life > 0 && !actor.poison && !actor.wound && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {

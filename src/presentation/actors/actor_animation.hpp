@@ -13,6 +13,7 @@
 namespace d2x {
 struct ActorAnimationRequest {
     std::string category, mode;
+    bool sequenceUsesAttackRate{};
     ActorAppearance appearance;
     int paletteTransform = -1;
     bool randomTransform = false, finalFrame = false, shadow = false;
@@ -20,6 +21,7 @@ struct ActorAnimationRequest {
     int playerSequence = -1;
     std::optional<int> fasterCast;
     std::optional<KnownAttackTiming> attackTiming;
+    std::optional<KnownRecoveryTiming> recoveryTiming;
     int repeatCount{1},rollbackPercent{};
     int sequenceRateBonus{};
     bool sequenceLanding{};

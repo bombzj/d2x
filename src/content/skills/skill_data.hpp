@@ -44,6 +44,7 @@ struct SkillCatalog {
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
     std::map<std::string, CastTiming> castTimings;
     std::map<std::string, CastTiming> attackTimings;
+    std::map<std::string, CastTiming> recoveryTimings;
     std::vector<ClassSkillTree> classes;
     std::map<int, SkillRecord> skills;
     const SkillRecord *find(int id) const;

@@ -155,6 +155,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         if(damage) {attack.minimum=damage->first;attack.maximum=damage->second;}
         attack.rating=rating.value_or(0);attack.duration=std::max(1,int(std::ceil(clock->duration*25)));
         attack.release=std::clamp(int(std::ceil(clock->impact*25)),1,attack.duration);
+        attack.animation=AnimationTiming{clock->frames,clock->speed};attack.animationAction=clock->actionFrame;
         for(const auto &element:profile.damage.elements) if(element && element->mode==(slot==1?"A1":"A2")) attack.elements.push_back(*element);
         if(projectile) {
             attack.missile=prepareMonsterMissile(data,projectile->id,1+data.tables.at("difficultylevels").number(size_t(difficulty),"MonsterSkillBonus").value_or(0));
@@ -202,10 +203,14 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         if(!timing) return false;
         action.duration=std::max(1,int(std::ceil(timing->duration*25)));
         action.release=std::clamp(int(std::ceil(timing->impact*25)),1,action.duration);
-        action.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="sc"?7:4;
+        action.nativeMode=timing->sequenceFrames?14:lower=="a2"?5:lower=="s1"?8:lower=="sc"?7:4;
         // Units::UNITS_IsSeqAnimSpeedModulatedByFCR excludes monster SQ.
         // A plain SC cast is not accelerated/slowed by the attack-rate stat.
         action.casting=sourceMode=="SC";
+        action.useAttackRate=sourceMode=="A1" || sourceMode=="A2" || skills.number(row,"UseAttackRate").value_or(0)!=0;
+        action.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
+        action.animationAction=timing->actionFrame;action.animationSequence=timing->sequenceFrames>0;
+        action.animationEvents=timing->eventFrames;
         if(record.ai=="FallenShaman" && slot==0) action.action=server::MonsterAttackRule::Action::Resurrect;
         else if(record.ai=="FoulCrowNest" || (record.ai=="BloodRaven" && slot==0)) action.action=server::MonsterAttackRule::Action::Nest;
         else if(rule.ai.kind==MonsterAiKind::Countess) {
@@ -295,12 +300,14 @@ bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const An
             if(extra.number(row,field).value_or(0)) {
                 const auto clock=loadMonsterMotionTiming(animations,record.token,mode,monsterModeWeapon(archives,record.token,mode,record.baseWeapon));
                 if(!clock) return false;
-                *ticks=std::max(1,int(std::ceil(clock->duration*25)));
+                const AnimationTiming timing{clock->frames,clock->speed};
+                (mode==std::string_view("gh")?rule.hitRecoveryAnimation:rule.blockAnimation)=timing;
+                *ticks=AnimationTiming{timing.frames,effectiveRecoverySpeed(timing.speed,0)}.durationTicks();
             }
         }
         if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mWL").value_or(0) && record.walkAnimationRate.value_or(0)>0) {
             const auto hit=loadMonsterMotionTiming(animations,record.token,"gh",monsterModeWeapon(archives,record.token,"gh",record.baseWeapon));
-            if(hit) rule.knockbackTicks=std::max(1,int(std::ceil(float(hit->frames)*256.f/float(*record.walkAnimationRate))));
+            if(hit) rule.knockbackTicks=AnimationTiming{hit->frames,*record.walkAnimationRate}.durationTicks();
         }
         return true;
     }

@@ -16,4 +16,4 @@ content/items/item_properties、equipment_data与gameplay/items/equipment_stats�
 
 ## 缺口与依据
 
-完整Properties程序／组合、特殊显示函数与全部战斗消费者仍未逐项验收，未完成的吸取、压碎／撕裂、专用触发等见战斗／技能专题。先参考master，再查当前MPQ、D2MOO ItemMods／Items及原D2Common；对应属性证据链接[参考设计](../../architecture/REFERENCE_DESIGN.md)。已有词缀与保存代表证据见[EVIDENCE](EVIDENCE.md)。
+完整Properties程序／组合、特殊显示函数与全部战斗消费者仍未逐项验收；玩家吸取、压碎／撕裂已接[武器命中效果](../combat/WEAPON_EFFECTS.md)，专用触发限制见所属技能专题。先参考master，再查当前MPQ、D2MOO ItemMods／Items及原D2Common；对应属性证据链接[参考设计](../../architecture/REFERENCE_DESIGN.md)。已有词缀与保存代表证据见[EVIDENCE](EVIDENCE.md)。

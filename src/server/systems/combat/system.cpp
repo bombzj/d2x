@@ -13,7 +13,7 @@
 #include "core/random.hpp"
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/monsters/enchantment_damage.hpp"
-#include "hireling_hit.hpp"
+#include "weapon_hit.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::combat {
@@ -80,6 +80,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (hit && targetPlayer && targetPlayer->totals.equipment.shield) {
             const int block = targetPlayer->totals.equipment.blockChance / (running ? 3 : 1);
             hit = int(limitedRandom(random, 100)) >= block;
+            if(!hit) {
+                const auto result=ports_.effects.block({targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick});
+                if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+                commitRandom();it=state_.pending.erase(it);continue;
+            }
         }
         if(hit && targetMonster && !targetMonster->owner && (targetMonster->shield || targetMonster->rule.blockWithoutShield) &&
             int(limitedRandom(random,100))<targetMonster->rule.blockChance) {
@@ -95,8 +100,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 commitRandom();it=state_.pending.erase(it);continue;
             }
         }
-        if(hit && targetMonster && (targetMonster->amazonPet || targetMonster->necroSummon)) {
-            if(targetMonster->petStats.block>0 && int(limitedRandom(random,100))<targetMonster->petStats.block) hit=false;
+        if(hit && targetMonster && targetMonster->combatCompanion()) {
+            if(targetMonster->petStats.block>0 && int(limitedRandom(random,100))<targetMonster->petStats.block) {
+                const auto result=ports_.monsters.block(targetMonster->id,tick.tick);
+                if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+                commitRandom();it=state_.pending.erase(it);continue;
+            }
             if(hit && rollWeaponAvoidance(targetMonster->petStats.attributes.combat,targetMonster->moving,false,random)!=WeaponAvoidance::None) hit=false;
         }
         if ((monsterAttack || petAttack) && (!sourceMonster->owner || sourceMonster->conversion || (sourceMonster->necroSummon && !sourceMonster->petWeapon))) {
@@ -144,7 +153,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
                 const auto wear=hit?ports_.inventory.defensiveWear(actor.player,random):std::nullopt;
-                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates,wear);
+                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates,wear,std::ref(random));
                 result = {received.status,received ? std::optional{std::monostate{}} : std::nullopt};
                 if (received && hit) {ports_.effects.triggerMonsterCurse(damage.source,tick.tick);if(*received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);}
             } else {
@@ -167,7 +176,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto *owner=ports_.players.find(*sourceMonster->owner);
             if(!owner || !owner->entered || owner->area!=damage.area || owner->persistent.player.hp<=0 || !owner->rules.skills) {it=state_.pending.erase(it);continue;}
             int64_t amount=0,physicalContact=0;const auto previousLife=targetMonster->life;uint64_t cold=0;std::optional<PoisonApplication> poison;
-            HirelingHitEffects extras;WeaponSkillDamage snapshot;
+            WeaponHitEffects extras;WeaponSkillDamage snapshot;
             if(hit) {
                 SkillCastSpec ordinary=damage.skill.value_or(SkillCastSpec{});if(!ordinary.weapon) ordinary.weapon=WeaponSkillSpec{};
                 const auto rolled=rollWeaponSkillDamage(*damage.weapon,damage.attackModifiers.value_or(sourceMonster->petStats.attributes.combat),ordinary,damage.level,false,random);
@@ -180,13 +189,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if(sourceMonster->hireling || sourceMonster->necroMaterial) {
                     const int resistance=ports_.effects.unitResistance(targetMonster->id,DamageType::Physical,tick.tick);
                     const auto physical=int64_t(mitigateMonsterDamage(float(channels[0])/256.f,resistance)*256.f);
-                    extras=hirelingHitEffects(rolled,*targetMonster,sourceMonster->id,damage.binding.credit,resistance,physical,amount,tick.tick);amount+=extras.crushing;
+                    extras=weaponHitEffects(rolled,*targetMonster,sourceMonster->id,damage.binding.credit,resistance,physical,{},tick.tick,random);
                 }
                 if(rolled.coldFrames>0 && ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick)<100) cold=uint64_t(rolled.coldFrames)*unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(owner->rules.skills->coldDivisor[size_t(targetMonster->rule.difficulty)]));
                 if(channels[5]>0 && rolled.poisonFrames>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),uint64_t(rolled.poisonFrames),owner->rules.skills->poisonState};
             }
             if(poison) poison->actualSource=sourceMonster->id;
-            const auto committed=ports_.monsters.damage(damage.target,damage.binding.credit,amount,tick.tick,cold,snapshot.freeze,uint8_t(damage.weapon->hitClass),poison,false,uint64_t(std::max(0,snapshot.stunFrames)),extras.wound);
+            const auto committed=ports_.monsters.damage(damage.target,damage.binding.credit,amount,tick.tick,cold,snapshot.freeze,uint8_t(damage.weapon->hitClass),poison,false,uint64_t(std::max(0,snapshot.stunFrames)),extras.wound,0,false,extras.crushing);
             if(committed.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
             if(committed) {
                 if(hit) ports_.effects.necroContact(damage.source,damage.target,physicalContact,tick.tick,false,previousLife);
@@ -236,7 +245,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (targetMonster) committed = ports_.monsters.damage(damage.target, damage.source, amount, tick.tick,0,false,uint8_t(damage.weapon?damage.weapon->hitClass:0));
         else {
             ActorContext actor{targetPlayer->player, targetPlayer->actor, targetPlayer->area, area->generation, 0, tick.tick};
-            const auto received=ports_.effects.receive(actor, amount, DamageType::Physical);
+            MonsterHit contact;contact.channels[0]=amount;contact.hitClass=uint8_t(damage.weapon?damage.weapon->hitClass:0);
+            const auto received=ports_.effects.receiveMonster(actor,damage.source,contact,{}, {},std::ref(random));
             committed={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             if(received && hit && *received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
         }

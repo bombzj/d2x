@@ -30,7 +30,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
     const auto *capabilities = findClientMissileCapabilities(program.function);
-    if (!capabilities) return false;
+    if (!capabilities || (program.function == 2 && !program.localBlood)) return false;
     if (program.function==9)
         for (const int child:program.children) if (child>=0 && !assets_.ensureProjectile(child)) return false;
     if(program.function==21 || program.function==22 || program.function==29)
@@ -225,6 +225,25 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         }
         if (effect.age < 0) { clientMissiles_.push_back(std::move(effect)); continue; }
         const auto &program = assets_.clientMissilePrograms.at(effect.missileId);
+        if (program.function == 2 && program.localBlood) {
+            // Retail CltDo2 (RVA B3060): freeze at animation end, reset the
+            // remaining counter to 128, and discard blood outside the view.
+            // These are local particles, with no contacts or damage events.
+            const auto &visual = assets_.projectileVisuals.at(effect.missileId);
+            const auto at = screen(effect.pos - origin);
+            if (at.x < 0 || at.x > W || at.y < -8 || at.y > H - HUD + 64) continue;
+            const int lastFrame = int(effect.age * 25.f + .00001f);
+            const int movingFrames = visual.fps > 0 ? int(std::ceil(float(visual.frames) * 25.f / visual.fps)) : 0;
+            while (effect.frame < std::min(lastFrame,movingFrames)) {
+                effect.pos = effect.pos + effect.velocity * (1.f / 25.f);
+                ++effect.frame;
+            }
+            effect.frame = lastFrame;
+            if (lastFrame >= movingFrames) effect.velocity = {};
+            effect.duration = effect.age + 128.f / 25.f;
+            if (clientMissiles_.size() < 2048) clientMissiles_.push_back(std::move(effect));
+            continue;
+        }
         const int lastFrame = int(std::min(effect.age, effect.duration) * 25.f + effect.animationOffset * 25.f + .00001f);
         bool finished = false;
         auto poisonSmoke = [&](float age) {

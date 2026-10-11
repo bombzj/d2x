@@ -8,9 +8,10 @@ namespace d2x::server {
 class PlayerStore;
 namespace travel { class System; }
 namespace monsters { class System; }
+namespace effects { class System; }
 struct ActorContext;
 struct TickContext;
-struct MovementPorts { PlayerStore &players; const AreaStore &areas; const travel::System &travel; const monsters::System &monsters; };
+struct MovementPorts { PlayerStore &players; const AreaStore &areas; const travel::System &travel; const monsters::System &monsters; const effects::System &effects; };
 class MovementSystem {
     const MovementPorts ports_;
     std::map<PlayerId,uint64_t> skillSteps_;

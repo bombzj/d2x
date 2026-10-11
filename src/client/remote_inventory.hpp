@@ -6,6 +6,7 @@
 #include <map>
 
 namespace d2x {
+struct EquipmentDefinition;
 class RemoteInventory {
     std::map<std::string, DataTable, std::less<>> tables_;
     struct Base { std::string table; size_t row{}; };
@@ -21,6 +22,7 @@ class RemoteInventory {
     OnlineDecodedItem decode(const OnlineItem &) const;
     bool isType(const OnlineItem &, std::string_view) const;
     int baseNumber(const OnlineItem &, std::string_view) const;
+    EquipmentDefinition equipmentDefinition(const OnlineItem &) const;
     bool reject(std::string);
   public:
     explicit RemoteInventory(Archives &);

@@ -138,7 +138,8 @@ void GameInstance::step() {
                 if (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel)
                     player.locomotionSequence = command.sequence;
                 const auto domain = commandSystem(command.payload);
-                const bool locked=(domain==SystemId::Movement || domain==SystemId::Travel) && systems_.skills.uninterruptible(player.actor);
+                const bool locked=(domain==SystemId::Movement || domain==SystemId::Travel) &&
+                    (systems_.skills.uninterruptible(player.actor) || systems_.effects.recovering(player.actor,tick_));
                 if ((domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
@@ -191,6 +192,7 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
         result.socialRelations.emplace(other,PlayerSnapshot::SocialRelation{systems_.social.partyStatus(id,other),systems_.social.flags(id,other)});
     result.tick = tick_; result.revision = revision_;
     result.areaGeneration = areas_.at(player->area).generation;
+    result.recovering=systems_.effects.recovering(player->actor,tick_);
     const auto cast = systems_.skills.read().casts.find(player->actor);
     result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted &&
         systems_.skills.busy(player->actor, tick_);

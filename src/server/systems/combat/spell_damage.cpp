@@ -1,5 +1,5 @@
 #include "system.hpp"
-#include "hireling_hit.hpp"
+#include "weapon_hit.hpp"
 #include "participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -74,8 +74,8 @@ StepStatus System::resolveSpells(TickContext tick) {
         if ((!owner || !owner->entered || owner->area!=impact.area) && (!monsterSource || monsterSource->owner || monsterSource->area!=impact.area)) impact.next=impact.targets.size();
         if(!area || area->definition.town) impact.next=impact.targets.size();
         while (impact.next < impact.targets.size()) {
-            // Sacrifice's recoil follows a successful target hit. Keep this
-            // phase across output backpressure without applying that hit twice.
+            // Resource credit and Sacrifice recoil follow a committed hit.
+            // Backpressure retains this phase without repeating target damage.
             if(impact.targetApplied) {
                 if(finishImpact(impact,owner,area->generation,tick.tick)==DomainStatus::Capacity) {blocked=true;break;}
                 continue;
@@ -104,8 +104,20 @@ StepStatus System::resolveSpells(TickContext tick) {
                     hit=running || int(limitedRandom(random,100))<physicalHitChance(impact.monsterLevel,impact.monsterRating,
                         player?player->persistent.player.level:pet->rule.level,player?player->totals.character.defense:ports_.effects.unitDefense(pet->id,tick.tick));
                 }
-                if(hit && !stateOnly && !impact.unblockable && player && player->totals.equipment.shield) hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
-                if(hit && !stateOnly && !impact.unblockable && pet && pet->petStats.block>0) hit=int(limitedRandom(random,100))>=pet->petStats.block;
+                if(hit && !stateOnly && !impact.unblockable && player && player->totals.equipment.shield) {
+                    hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
+                    if(!hit) {
+                        const auto result=ports_.effects.block({player->player,player->actor,player->area,area->generation,0,tick.tick});
+                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                    }
+                }
+                if(hit && !stateOnly && !impact.unblockable && pet && pet->petStats.block>0) {
+                    hit=int(limitedRandom(random,100))>=pet->petStats.block;
+                    if(!hit) {
+                        const auto result=ports_.monsters.block(pet->id,tick.tick);
+                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
+                    }
+                }
                 if(!hit) {commitRandom();++impact.next;continue;}
                 const auto avoided=(stateOnly || impact.unblockable)?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
                 if(avoided!=WeaponAvoidance::None) {
@@ -122,7 +134,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 DomainResult<> result;
                 if(player) {
                     const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
-                    const auto received=ports_.effects.receiveMonster(actor,impact.source,rolled,impact.monsterStates);
+                    const auto received=ports_.effects.receiveMonster(actor,impact.source,rolled,impact.monsterStates,{},std::ref(random));
                     result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
                     if(received && !stateOnly) {if(!impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);ports_.effects.react(actor,impact.source,CombatEffectEvent::HitByMissile,impact.returnFire);}
                 } else {
@@ -188,6 +200,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(result) commitRandom();
                 ++impact.next;continue;
             }
+            int64_t physical=0;
             if(impact.weapon) {
                 const auto &attack=*impact.weapon;
                 if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}
@@ -216,7 +229,10 @@ StepStatus System::resolveSpells(TickContext tick) {
                 }
                 amount=0;
                 const bool sanctuary=!hirelingSource && target->rule.undead && owner->rules.skills && owner->rules.skills->auras.contains(119) && owner->transient.states.contains(owner->rules.skills->auras.at(119).spec.ownerState.id);
-                for(size_t channel=0;channel<5;++channel) amount+=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,sanctuary && channel==0?0:ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
+                for(size_t channel=0;channel<5;++channel) {
+                    const auto dealt=int64_t(mitigateMonsterDamage(float(channels[channel])/256.f,sanctuary && channel==0?0:ports_.effects.unitResistance(target->id,DamageType(channel),tick.tick))*256.f);
+                    amount+=dealt;if(channel==0) physical=dealt;
+                }
             }
             if (impact.staticPercent) {
                 const auto floor = std::max<int64_t>(256, target->maximumLife * impact.staticFloors.at(size_t(target->rule.difficulty)) / 100);
@@ -234,7 +250,7 @@ StepStatus System::resolveSpells(TickContext tick) {
             const auto frames=impact.weapon?uint64_t(std::max(0,impact.weapon->poisonFrames)):impact.poisonFrames;
             if(rate>0 && frames) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rate)/256.f,ports_.effects.unitResistance(target->id,DamageType::Poison,tick.tick))*256.f),frames,owner->rules.skills->poisonState};
             const int hirelingPercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
-            amount=amount*hirelingPercent/100;if(poison) poison->rate=poison->rate*hirelingPercent/100;
+            amount=amount*hirelingPercent/100;physical=physical*hirelingPercent/100;if(poison) poison->rate=poison->rate*hirelingPercent/100;
             if(impact.type==DamageType::Poison) amount=0;
             const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
             const bool whirlwind=impact.weapon && impact.weapon->wearSkill.weapon && impact.weapon->wearSkill.weapon->whirlwind;
@@ -250,26 +266,39 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
                 impact.wearApplied=true;
             }
-            const auto recoil=impact.weapon?std::min(target->life,targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])*impact.weapon->selfDamagePercent/100:0;
-            const bool convert=impact.conversion && target->rule.convertible && target->life>amount && int(limitedRandom(random,100))<impact.conversion->conversionChance;
-            HirelingHitEffects extras;
-            if(monsterSource && monsterSource->hireling && impact.weapon) {
+            WeaponHitEffects extras;
+            int leechOverlay=-1;
+            if(impact.weapon && (source.player || (monsterSource && (monsterSource->hireling || monsterSource->necroMaterial)))) {
                 const int resistance=ports_.effects.unitResistance(target->id,DamageType::Physical,tick.tick);
-                const auto physical=int64_t(mitigateMonsterDamage(float(targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])/256.f,resistance)*256.f)*hirelingPercent/100;
-                extras=hirelingHitEffects(*impact.weapon,*target,monsterSource->id,impact.binding.credit,resistance,physical,amount,tick.tick);amount+=extras.crushing;
+                const auto difficulty=size_t(target->rule.difficulty);
+                const auto &rules=*owner->rules.skills;
+                const LeechDivisors divisors=source.player?LeechDivisors{rules.lifeStealDivisor.at(difficulty),rules.manaStealDivisor.at(difficulty)}:LeechDivisors{};
+                extras=weaponHitEffects(*impact.weapon,*target,impact.source,impact.binding.credit,resistance,physical,divisors,tick.tick,random);
+                if(source.player && physical>0 && target->rule.drain>0) {
+                    const bool life=impact.weapon->lifeLeech>0,mana=impact.weapon->manaLeech>0;
+                    if(life && mana) leechOverlay=limitedRandom(random,2)?rules.manaStealOverlay:rules.lifeStealOverlay;
+                    else if(life || mana) leechOverlay=life?rules.lifeStealOverlay:rules.manaStealOverlay;
+                }
             }
+            const auto recoil=impact.weapon?std::min(std::max<int64_t>(0,target->life-extras.crushing),physical)*impact.weapon->selfDamagePercent/100:0;
+            const bool convert=impact.conversion && target->rule.convertible && target->life>amount+extras.crushing && int(limitedRandom(random,100))<impact.conversion->conversionChance;
             if(poison && monsterSource && monsterSource->hireling) poison->actualSource=monsterSource->id;
-            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):impact.stunFrames,extras.wound,0,impact.weapon && impact.weapon->clearTargetStun);
+            const auto result = ports_.monsters.damage(target->id, impact.binding.credit, amount, tick.tick, cold, impact.freeze,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),poison,impact.type==DamageType::Poison && !impact.weapon,impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):impact.stunFrames,extras.wound,0,impact.weapon && impact.weapon->clearTargetStun,extras.crushing);
             if(result && monsterSource && monsterSource->hireling) {ports_.monsters.recordHirelingKill(target->id,monsterSource->id);ports_.monsters.heal(monsterSource->id,extras.healing+(target->life<=0?int64_t(monsterSource->petStats.attributes.combat.lifeOnKill)*256:0));}
             if (result.status == DomainStatus::Capacity) { blocked = true; break; }
             if(result) ports_.effects.commitItemEvents(std::move(*itemEvents.value),target->life<=0);
             if(result && impact.weapon && !impact.reaction) {
-                const auto physical=int64_t(mitigateMonsterDamage(float(targetWeaponChannels(*impact.weapon,target->rule.demon,target->rule.undead)[0])/256.f,ports_.effects.unitResistance(target->id,DamageType::Physical,tick.tick))*256.f)*hirelingPercent/100;
                 ports_.effects.necroContact(impact.source,target->id,physical,tick.tick,impact.weapon->projectile);
             }
             if (result && impact.nextDelay) ports_.monsters.hitDelay(target->id, tick.tick + impact.nextDelay);
             if(result && impact.knockback && target->life>0) {ports_.monsters.knockback(target->id,owner->position,tick.tick);cancel(target->id);}
-            if(result && (recoil>0 || convert)) {if(!convert) impact.conversion.reset();impact.selfDamage=recoil;impact.targetApplied=true;continue;}
+            if(result && source.player) {
+                impact.lifeGain=extras.healing;impact.manaGain=extras.mana;impact.leechOverlay=leechOverlay;
+                if(extras.crushing>0) impact.contactOverlay=owner->rules.skills->crushingOverlay;
+            }
+            if(result && (recoil>0 || convert || impact.lifeGain || impact.manaGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
+                if(!convert) impact.conversion.reset();impact.selfDamage=recoil;impact.targetApplied=true;continue;
+            }
             ++impact.next;
         }
         if (impact.next == impact.targets.size()) { state_.spellTargets -= impact.targets.size(); it = state_.spells.erase(it); }

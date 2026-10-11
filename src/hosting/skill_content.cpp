@@ -6,10 +6,26 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include <cctype>
+#include <stdexcept>
 namespace d2x {
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
     for(size_t difficulty=0;difficulty<3;++difficulty) prepared->aiCurseDivisor[difficulty]=std::max(1,data.tables.at("difficultylevels").number(difficulty,"AiCurseDiv").value_or(1));
+    const auto &difficulties=data.tables.at("difficultylevels");
+    for(size_t difficulty=0;difficulty<3;++difficulty) {
+        const auto life=difficulties.number(difficulty,"LifeStealDivisor"), mana=difficulties.number(difficulty,"ManaStealDivisor");
+        if(!life || !mana || *life<=0 || *mana<=0) throw std::runtime_error("Missing original leech difficulty divisors");
+        prepared->lifeStealDivisor[difficulty]=*life;prepared->manaStealDivisor[difficulty]=*mana;
+    }
+    const auto &overlays=data.tables.at("overlay");
+    for(size_t row=0;row<overlays.rows().size();++row) {
+        const auto name=overlays.value(row,"overlay");
+        if(name=="bash") prepared->crushingOverlay=int(row);
+        else if(name=="steallife") prepared->lifeStealOverlay=int(row);
+        else if(name=="stealmana") prepared->manaStealOverlay=int(row);
+    }
+    if(prepared->crushingOverlay<0 || prepared->lifeStealOverlay<0 || prepared->manaStealOverlay<0)
+        throw std::runtime_error("Missing original weapon hit overlays");
     const auto &statTable=data.tables.at("itemstatcost");
     for(size_t row=0;row<statTable.rows().size();++row) if(const auto id=statTable.number(row,"ID"))
         prepared->nativeStats.emplace(std::string(statTable.value(row,"Stat")),*id);
@@ -17,6 +33,9 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->redeemed=data.states.at("redeemed").definition;
     prepared->holyShield=data.states.at("holyshield").definition;
     prepared->alignment=data.states.at("alignment").definition;
+    prepared->stunned=data.states.at("stunned").definition;
+    for(const auto &[key,animation]:data.skills.recoveryTimings) if(key.starts_with(character.appearance))
+        prepared->recoveryAnimations.emplace(key.substr(character.appearance.size()),AnimationTiming{animation.frames,animation.speed});
     const auto prefix = character.appearance + "sc";
     for (const auto &[key, animation] : data.skills.castTimings)
         if (key.starts_with(prefix)) prepared->animations.emplace(key.substr(prefix.size()),

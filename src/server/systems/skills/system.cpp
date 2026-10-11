@@ -24,10 +24,16 @@ bool System::uninterruptible(EntityId actor) const {
 }
 size_t System::pendingReleases() const {return runtime_->releases.size()+runtime_->monsters.size();}
 bool System::busy(EntityId id,uint64_t tick) const {
+    if(ports_.effects.recovering(id,tick)) return true;
     const auto &releases_=runtime_->releases;
     const auto &monsterReleases_=runtime_->monsters;
     const auto found=state_.casts.find(id);
     return releases_.contains(id) || monsterReleases_.contains(id) || (found!=state_.casts.end() && found->second.until>tick);
+}
+void System::interrupt(const ActorContext &actor) {
+    cancel(actor.player,actor.actor);
+    if(auto found=state_.casts.find(actor.actor);found!=state_.casts.end()) found->second.until=actor.tick;
+    ports_.movement.execute(actor,{MovementAction::Stop,{},{},{}});
 }
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
@@ -46,7 +52,10 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
         return {DomainStatus::InvalidActor, {}};
     const auto &area = ports_.areas.at(player->area);
     if (area.generation != actor.areaGeneration) return {DomainStatus::Unavailable, {}};
-    const auto selected = selectedOverride>=0?unsigned(selectedOverride):player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0));
+    // Persistent -1 is the ordinary Attack alias (native skill 0), also used
+    // by an unset hand. Match the selected-skill wire projection on reentry.
+    const auto selected = selectedOverride >= 0 ? selectedOverride :
+        std::max(0, player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0)));
     const auto itemSkills=inventory::itemSkills(*player);
     if(player->rules.skills && player->rules.skills->auras.contains(int(selected)))
         return request.right ? applied() : DomainResult<>{DomainStatus::InvalidRequest,{}};
@@ -104,6 +113,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (request.action != Action::Cast) return {};
+    if(ports_.effects.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     const auto result = attack(actor, request);
     if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request}; return applied(); }
     if (pending_.erase(actor.player) && !result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});

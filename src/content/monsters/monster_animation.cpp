@@ -2,6 +2,7 @@
 #include "monster_animation.hpp"
 #include <cctype>
 #include <string>
+#include <utility>
 
 namespace d2x {
 std::string monsterModeWeapon(const Archives &archives, std::string_view token,
@@ -27,7 +28,7 @@ std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &
         return std::nullopt;
     const float duration = float(record->frames * 256) / record->speed / 25.f;
     if (duration <= 0 || duration > 20) return std::nullopt;
-    return MonsterMotionTiming{duration, int(record->frames)};
+    return MonsterMotionTiming{duration,int(record->frames),record->speed};
 }
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
                                                            std::string_view token, int mode,
@@ -58,7 +59,7 @@ std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &
     const float impactTime = float(impact * 256) / record->speed / 25.f;
     if (duration <= 0 || duration > 20 || impactTime >= duration)
         return std::nullopt;
-    return MonsterAttackTiming{duration, impactTime, frames};
+    return MonsterAttackTiming{duration,impactTime,frames,0,{},record->speed,impact};
 }
 std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     const AnimDataTable &animations, const DataTable &sequences,
@@ -67,27 +68,29 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     const auto motion = loadMonsterMotionTiming(animations, token, mode, weapon);
     if (!motion) return std::nullopt;
     int sequenceFrames = 0, impactFrame = -1;
-    std::string sequenceMode(mode);
-    for (char &value : sequenceMode)
-        value = char(std::toupper(static_cast<unsigned char>(value)));
+    std::vector<int> events;
     for (size_t row = 0; row < sequences.rows().size(); ++row) {
-        if (sequences.value(row, "sequence") != sequence ||
-            sequences.value(row, "mode") != sequenceMode) continue;
+        if (sequences.value(row, "sequence") != sequence) continue;
         const auto frame = sequences.number(row, "frame");
-        if (!frame || *frame != sequenceFrames) return std::nullopt;
-        if (sequences.number(row, "event").value_or(0) == event)
-            impactFrame = *frame;
+        std::string rowMode(sequences.value(row,"mode"));
+        for(char &value:rowMode) value=char(std::tolower(static_cast<unsigned char>(value)));
+        const auto rowMotion=loadMonsterMotionTiming(animations,token,rowMode,weapon);
+        if (!frame || !rowMotion || *frame<0 || *frame>255) return std::nullopt;
+        if (sequences.number(row, "event").value_or(0) == event) {
+            if(impactFrame<0) impactFrame=sequenceFrames;
+            events.push_back(sequenceFrames);
+        }
         ++sequenceFrames;
     }
     if (sequenceFrames <= 0 || sequenceFrames > 144 ||
         impactFrame < 0 || impactFrame >= sequenceFrames) return std::nullopt;
-    const float frameTime = motion->duration / float(motion->frames);
+    // UNITS_InitializeSequence starts dwSeqSpeed at 256. Displayed frames
+    // (including repeated/reversed frames and mode changes) do not set time.
+    constexpr float frameTime = 1.f/25.f;
     MonsterAttackTiming result{frameTime * sequenceFrames,
                                frameTime * impactFrame, motion->frames, sequenceFrames};
-    for (size_t row = 0; row < sequences.rows().size(); ++row)
-        if (sequences.value(row, "sequence") == sequence && sequences.value(row, "mode") == sequenceMode &&
-            sequences.number(row, "event").value_or(0) == event)
-            result.eventTimes.push_back(frameTime * sequences.number(row, "frame").value());
+    result.speed=256;result.actionFrame=impactFrame;result.eventFrames=std::move(events);
+    for(const int frame:result.eventFrames) result.eventTimes.push_back(frameTime*frame);
     return result;
 }
 } // namespace d2x

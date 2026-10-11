@@ -1,0 +1,18 @@
+#pragma once
+#include <cstdint>
+
+namespace d2x {
+struct WeaponSkillDamage;
+struct WeaponHitTarget {
+    int64_t life{};
+    int physicalResistance{}, drain{};
+    unsigned playerCount{1};
+    bool hireling{}, boss{}, reducedWounds{};
+};
+struct LeechDivisors { int life{1}, mana{1}; };
+struct WeaponHitResult { int64_t crushing{}, life{}, mana{}, woundRate{}; };
+// Physical damage is already mitigated. Crushing Blow is separate from the
+// physical channel used for leech, and precedes its remaining-life cap.
+WeaponHitResult calculateWeaponHitEffects(const WeaponSkillDamage &, const WeaponHitTarget &,
+                                         int64_t physical, LeechDivisors, uint64_t &random);
+}

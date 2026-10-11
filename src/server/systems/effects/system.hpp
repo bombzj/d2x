@@ -14,10 +14,11 @@
 #include <list>
 #include <initializer_list>
 #include <algorithm>
+#include <functional>
 namespace d2x::server::effects {
 std::vector<std::pair<int,int64_t>> nativeEffectStats(const SkillRules &, const CharacterModifiers &);
 struct Cycle { uint64_t next{}; EntityId last; };
-struct Recovery { std::map<int,TimedRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; };
+struct Recovery { std::map<int,TimedRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; uint64_t actionUntil{}, lastBlockTick{}; };
 struct Reaction { ActorContext actor; EntityId attacker; TriggeredCombatEffect effect; };
 struct ItemTrigger {
     ActorContext actor;
@@ -115,7 +116,10 @@ class System {
     std::set<int> unitStates(EntityId, uint64_t tick) const;
     std::map<int,std::vector<std::pair<int,int64_t>>> unitStateStats(EntityId, uint64_t tick) const;
     DomainResult<float> receive(const ActorContext &, int64_t rawDamage, DamageType);
-    DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {});
+    // Contact RNG is staged by combat; commit it only with the character hit.
+    DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {});
+    DomainResult<> block(const ActorContext &);
+    bool recovering(EntityId, uint64_t tick) const;
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);

@@ -52,8 +52,13 @@ struct DiagnosticMonster {
     unsigned admittedPlayers{1};uint64_t experienceBase{};
     int minimumLife{},maximumBaseLife{};
     int64_t aiRegenerationBonus{};
+    int drain{}, physicalResistance{}, difficulty{};
+    int64_t woundRate{};
+    uint64_t woundUntil{}, woundNext{};
+    EntityId woundSource{}, woundCredit{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
+struct DiagnosticAnimation { std::string mode; int frames{},startFrame{},speed{},duration{},action{}; };
 struct DiagnosticSnapshot {
     unsigned virtualPlayers{1};
     SystemMetrics stageMetrics{};
@@ -61,6 +66,8 @@ struct DiagnosticSnapshot {
     size_t spatialUnits{},combatQueueDepth{};
     uint64_t combatTargetAttempts{};
     std::vector<DiagnosticEffect> effects;
+    std::vector<DiagnosticAnimation> animations;
+    uint64_t recoveryUntil{},lastBlockTick{};
     std::vector<PlayerCorpse> corpses;
     std::vector<objects::Object> objects;
     std::string merchantDeferred;

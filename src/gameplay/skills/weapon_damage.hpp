@@ -17,8 +17,9 @@ struct WeaponSkillDamage {
     int selfDamagePercent{};
     bool smite{};
     int stunFrames{};
-    int lifeLeech{},physicalFlat{};
-    bool crushing{},openWounds{},knockback{};
+    int lifeLeech{},manaLeech{},physicalFlat{};
+    int crushingBlow{},openWounds{};
+    bool knockback{};
     bool clearTargetStun{};
     SkillCastSpec wearSkill{};
 };

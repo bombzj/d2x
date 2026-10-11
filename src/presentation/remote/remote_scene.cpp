@@ -105,6 +105,10 @@ struct RemoteScene::Impl {
     std::map<int, size_t> missileRows, stateRows;
     std::map<uint8_t,int> movementFireMissiles;
     int slowMissileStat{-1};
+    int damageBloodStat{-1};
+    std::array<int, 4> bloodMissiles{-1, -1, -1, -1};
+    uint64_t nextWoundBloodFrame{};
+    std::map<OnlineUnitKey, uint64_t> woundBloodRandom;
     std::map<std::string, size_t, std::less<>> missileNames, overlayNames;
     struct OverlayVisual { int id{}; OnlineUnitKey unit; float born{}, duration{}; };
     std::set<std::string> effectLimitations;
@@ -170,7 +174,10 @@ struct RemoteScene::Impl {
           superuniques(a.read("data/global/excel/superuniques.txt")),
           objects(a.read("data/global/excel/objects.txt")) {
         const DataTable statCosts(a.read("data/global/excel/itemstatcost.txt"));
-        for(size_t row=0;row<statCosts.rows().size();++row) if(statCosts.value(row,"Stat")=="skill_handofathena") slowMissileStat=statCosts.number(row,"ID").value_or(-1);
+        for (size_t row = 0; row < statCosts.rows().size(); ++row) {
+            if (statCosts.value(row,"Stat") == "skill_handofathena") slowMissileStat = statCosts.number(row,"ID").value_or(-1);
+            if (statCosts.value(row,"Stat") == "damage_blood") damageBloodStat = statCosts.number(row,"ID").value_or(-1);
+        }
         for (size_t row=0; row<superuniques.rows().size(); ++row)
             if (const auto id=superuniques.number(row,"hcIdx")) superUniqueRows.emplace(*id,row);
         for (const auto &character:loadCharacterDefinitions(charstats)) characterRows.push_back(character.sourceRow);
@@ -179,6 +186,11 @@ struct RemoteScene::Impl {
         for (size_t row = 0; row < missiles.rows().size(); ++row) if (auto id = missiles.number(row, "Id")) {
             missileRows.emplace(*id, row); missileNames.emplace(missiles.value(row, "Missile"), row);
         }
+        constexpr std::array bloodNames{"blood1", "blood2", "bigblood1", "bigblood2"};
+        for (size_t index = 0; index < bloodNames.size(); ++index)
+            if (const auto found = missileNames.find(bloodNames[index]); found != missileNames.end() &&
+                missiles.number(found->second,"LocalBlood") == 1 && missiles.number(found->second,"pCltDoFunc") == 2)
+                bloodMissiles[index] = missiles.number(found->second,"Id").value_or(-1);
         for (size_t row = 0; row < overlays.rows().size(); ++row)
             overlayNames.emplace(overlays.value(row, "overlay"), row);
         for (size_t row = 0; row < states.rows().size(); ++row)
@@ -262,6 +274,7 @@ struct RemoteScene::Impl {
         ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
         if (u.key.type==0 && u.key.id==playerId) request.fasterCast=shared.characterView().fasterCast;
         if (u.key.type==0 && u.key.id==playerId) request.attackTiming=shared.characterView().attackTiming;
+        if (u.key.type==0 && u.key.id==playerId) request.recoveryTiming=shared.characterView().recoveryTiming;
         std::string mode;
         if (u.actionSkill) {
             const auto row = skillRows.find(*u.actionSkill);
@@ -372,6 +385,69 @@ struct RemoteScene::Impl {
         case 28: case 29: emitSound(Kind::Skill4,source,age); break;
         default: break;
         }
+    }
+    void emitWoundBlood(const OnlineView &view, SceneView &shared, const RemoteCombat &combat,
+                       const Grid &grid, Vec origin) {
+        // Retail state callback 85 (RVA C9000) owns one shared client timer.
+        // Strict frame > next, then next = frame + 5; never replay missed ticks.
+        const auto frame = uint64_t(double(time) * 25.0);
+        std::set<OnlineUnitKey> active;
+        for (const auto &[key, snapshot] : combat.states()) {
+            const auto found = view.world.units.find(key);
+            if (!snapshot.decoded || found == view.world.units.end() || key.type != 1) continue;
+            const auto &unit = found->second;
+            if (!unit.position || !unit.classId || onlineMonsterCorpse(unit)) continue;
+            const bool bleeding = std::any_of(snapshot.states.begin(), snapshot.states.end(), [&](const auto &entry) {
+                const auto row = stateRows.find(entry.first);
+                return row != stateRows.end() && states.number(row->second,"cltactivefunc") == 85;
+            });
+            if (!bleeding) continue;
+            active.insert(key);
+            if (frame <= nextWoundBloodFrame) continue;
+            nextWoundBloodFrame = frame + 5;
+            // Client seeds are not transmitted. Keep this cosmetic stream
+            // separate from combat, stable through a refresh of the same state.
+            auto &random = woundBloodRandom.try_emplace(key, initialRandom(key.id)).first->second;
+            if (unit.mode == 3 && limitedRandom(random,3) != 0) continue;
+            const auto monster = monsterRows.find(*unit.classId);
+            if (monster == monsterRows.end()) continue;
+            const auto extra = monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));
+            if (extra == monsterExtra.end()) continue;
+            // The native MonStats2 byte 0x11D is Bleed, not localBlood (0x11C).
+            const int blood = monstats2.number(extra->second,"Bleed").value_or(0);
+            if (!blood) continue;
+            if (blood < 0 || blood > int(bloodMissiles.size() / 2)) {
+                effectLimitations.insert("Open Wounds blood type " + std::to_string(blood)); continue;
+            }
+            int64_t observedCount = 0;
+            for (const auto &[id, state] : snapshot.states) {
+                (void)id;
+                for (const auto &stat : state.stats)
+                    if (stat.id == damageBloodStat && !stat.parameter)
+                        observedCount += std::clamp<int64_t>(stat.value,-2048,2048);
+            }
+            // Native helper defaults to one; only published damage_blood can
+            // override it. Do not infer hidden monster stat lists.
+            const int count = int(std::clamp<int64_t>(observedCount ? observedCount : 1,0,2048));
+            constexpr std::array<Vec, 8> offsets{{{0,2},{-1,1},{-2,0},{-1,-1},{0,-2},{1,-1},{2,0},{1,1}}};
+            const Vec center{float(unit.position->x) + .5f, float(unit.position->y) + .5f};
+            for (int particle = 0; particle < count; ++particle) {
+                const bool moving = (unit.mode == 2 || unit.mode == 15) && unit.direction.has_value();
+                const int first = moving ? (int(*unit.direction / 8) + int(limitedRandom(random,7)) - 3) & 7
+                                         : int(limitedRandom(random,8));
+                // RVA 4C500 checks seven candidate points against WALL only.
+                for (int candidate = 0; candidate < 7; ++candidate) {
+                    const auto target = center + offsets[size_t((first + candidate) & 7)];
+                    if (!grid.walkable(target - origin, {1,1})) continue;
+                    const int missile = bloodMissiles[limitedRandom(random,uint32_t(blood * 2))];
+                    // Native B0450 creates at the unit, aimed at the free point.
+                    if (missile < 0 || !shared.launchClientMissile(missile,center,target,1,0,{},-1,effectOwner(key)))
+                        effectLimitations.insert("Open Wounds blood missile " + std::to_string(missile));
+                    break;
+                }
+            }
+        }
+        std::erase_if(woundBloodRandom,[&](const auto &entry) { return !active.contains(entry.first); });
     }
     void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin) {
         const auto observed=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
@@ -1399,10 +1475,14 @@ struct RemoteScene::Impl {
                 if(u.actionSkill) pose = monsterSkillMode(row->second,*u.actionSkill);
                 if (pose.starts_with("seq_")) {
                     ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
+                    if(const auto &hireling=shared.hirelingView();hireling.id.value==u.key.id) {
+                        request.attackTiming=hireling.attackTiming;request.recoveryTiming=hireling.recoveryTiming;request.fasterCast=hireling.fasterCast;
+                    }
                     request.finalFrame=burrowed;
                     if(u.actionSkill) {
                         const auto skill=skillRows.find(*u.actionSkill);
                         if(skill!=skillRows.end()) {
+                            request.sequenceUsesAttackRate=skills.number(skill->second,"UseAttackRate").value_or(0)!=0;
                             const auto name=skills.value(skill->second,"skill");
                             if(name=="Charge" || name=="SerpentCharge") {
                                 const bool travelling=motion[u.key].leapFlying && motion[u.key].leapLanding<0;
@@ -1434,6 +1514,9 @@ struct RemoteScene::Impl {
             if (parts.weapon.empty())
                 return nullptr;
             ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
+            if(const auto &hireling=shared.hirelingView();hireling.id.value==u.key.id) {
+                request.attackTiming=hireling.attackTiming;request.recoveryTiming=hireling.recoveryTiming;request.fasterCast=hireling.fasterCast;
+            }
             request.appearance = parts; request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
             request.paletteTransform = palette; request.finalFrame = deadFrame; request.randomTransform = randomPalette;
             request.nativeMonsterTransform = true;
@@ -1486,6 +1569,7 @@ struct RemoteScene::Impl {
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
             localCast.reset();
             time = 0;
+            nextWoundBloodFrame = 0; woundBloodRandom.clear();
             localObjectKickRevision = 0;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -1574,6 +1658,8 @@ struct RemoteScene::Impl {
                     }
                 }
         }
+        if (elapsed > 0 && !suspended)
+            emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
         shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
             {float(origin.x), float(origin.y)}, missileTargets);
         clientMissiles.clear();

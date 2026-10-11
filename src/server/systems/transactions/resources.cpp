@@ -2,6 +2,8 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include <cmath>
+#include <utility>
+#include <vector>
 namespace d2x::server::transactions {
 DomainResult<> System::release(const ActorContext &actor, uint64_t expected, float cost, std::optional<PointTarget> relocation, std::optional<SkillCharge> charge) {
     const auto found = ports_.players.players_.find(actor.player);
@@ -36,7 +38,8 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, flo
 }
 
 namespace d2x::server::transactions {
-DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, float life, float mana, float stamina) {
+DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, float life, float mana, float stamina,
+                                std::vector<DomainFact> publicFacts) {
     const auto found = ports_.players.players_.find(actor.player);
     if (found == ports_.players.players_.end()) return {DomainStatus::InvalidActor, {}};
     auto &player = found->second; const auto &totals = player.totals.character;
@@ -46,12 +49,18 @@ DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, f
     if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     if (!std::isfinite(life) || !std::isfinite(mana) || !std::isfinite(stamina) || life <= 0 || life > totals.maxLife || mana < 0 || mana > totals.maxMana || stamina < 0 || stamina > totals.maxStamina) return {DomainStatus::InvalidRequest, {}};
     auto record = player.persistent.player; record.hp = life; record.mana = mana; record.stamina = stamina;
-    if (record.hp == player.persistent.player.hp && record.mana == player.persistent.player.mana && record.stamina == player.persistent.player.stamina) return {DomainStatus::Applied, std::monostate{}};
-    const auto result = ports_.events.publish({0, actor.tick, {}, {AudienceKind::Player, player.player, player.area},
+    const bool changed = record.hp != player.persistent.player.hp || record.mana != player.persistent.player.mana || record.stamina != player.persistent.player.stamina;
+    if (!changed && publicFacts.empty()) return {DomainStatus::Applied, std::monostate{}};
+    std::vector<EventBatch> events;
+    if (changed) events.push_back({0, actor.tick, {}, {AudienceKind::Player, player.player, player.area},
         {CharacterFact{player.persistent.player, record, player.totals, player.totals}}});
+    if (!publicFacts.empty()) events.push_back({0, actor.tick, {}, {AudienceKind::Area, {}, player.area}, std::move(publicFacts)});
+    const auto result = ports_.events.publishGroup(std::move(events));
     if (!result) return {result.status, {}};
-    player.persistent.player.hp = life; player.persistent.player.mana = mana; player.persistent.player.stamina = stamina;
-    ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
+    if (changed) {
+        player.persistent.player.hp = life; player.persistent.player.mana = mana; player.persistent.player.stamina = stamina;
+        ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
+    }
     return {DomainStatus::Applied, std::monostate{}};
 }
 }

@@ -11,6 +11,7 @@ struct ClientMissileCapabilities {
 };
 inline constexpr std::array clientMissileCapabilities{
     ClientMissileCapabilities{1, false, false, false},
+    ClientMissileCapabilities{2, false, false, false},
     ClientMissileCapabilities{3, false, false, false},
     ClientMissileCapabilities{4, false, false, false},
     ClientMissileCapabilities{5, true, true, false},

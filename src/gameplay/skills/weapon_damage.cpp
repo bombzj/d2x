@@ -39,6 +39,8 @@ WeaponSkillDamage rollSmiteDamage(const WeaponDamage &weapon,const EquipmentStat
     value.weapon.hitClass=101;
     const auto &mods=attributes.combat;
     const auto own=mods.weapons.find(weapon.item);
+    value.crushingBlow=std::clamp(mods.crushingBlow+(own==mods.weapons.end()?0:own->second.crushingBlow),0,100);
+    value.openWounds=std::clamp(mods.openWounds+(own==mods.weapons.end()?0:own->second.openWounds),0,100);
     const int flat=mods.normalDamage+(own==mods.weapons.end()?0:own->second.normalDamage);
     value.physicalMinimum=int64_t(equipment.smiteMinimum+mods.smiteMinimum+flat)*256;
     value.physicalMaximum=int64_t(equipment.smiteMaximum+mods.smiteMaximum+flat)*256;
@@ -65,9 +67,9 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.physicalRoll=rollRandom(random);
     auto own=mods.weapons.find(weapon.item);const WeaponModifiers extra=own==mods.weapons.end()?WeaponModifiers{}:own->second;
     value.lifeLeech=std::max(0,mods.lifeLeech+extra.lifeLeech);
-    const int crushing=std::clamp(mods.crushingBlow+extra.crushingBlow,0,100),wounds=std::clamp(mods.openWounds+extra.openWounds,0,100);
-    value.crushing=crushing && limitedRandom(random,100)<unsigned(crushing);
-    value.openWounds=wounds && limitedRandom(random,100)<unsigned(wounds);
+    value.manaLeech=std::max(0,mods.manaLeech+extra.manaLeech);
+    value.crushingBlow=std::clamp(mods.crushingBlow+extra.crushingBlow,0,100);
+    value.openWounds=std::clamp(mods.openWounds+extra.openWounds,0,100);
     value.physicalFlat=skill.weapon->physicalFlat;value.stunFrames=skill.weapon->stunFrames;value.knockback=skill.weapon->knockback;
     value.clearTargetStun=skill.weapon->clearTargetStun;
     const auto ranges=attackElementRanges(mods,weapon.item);

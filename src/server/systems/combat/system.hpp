@@ -69,6 +69,8 @@ struct SpellImpact {
     std::optional<uint64_t> targetRandom{};
     bool wearApplied{};
     bool frenzyApplied{};
+    int64_t lifeGain{}, manaGain{};
+    int contactOverlay{-1}, leechOverlay{-1};
     // Authored environmental damage has no combat actor or player credit.
     bool environment{}, directLife{};
     uint64_t environmentGeneration{};

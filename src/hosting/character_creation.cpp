@@ -150,7 +150,8 @@ ActorAppearance characterAppearance(const ClassicData &content, const Persistent
             if (weapon == "1hs" || weapon == "1ht" || weapon == "ht1") component = left ? 6 : 5;
             weapons.push_back(weapon);
             result.weapon = weapon;
-            if (item->equipment.twoHanded && (!item->equipment.oneOrTwoHanded || !equipped(weaponHandSlot(!left, save.player.weaponSet))))
+            if (usesTwoHandedWeapon(item->equipment, character->code,
+                                   equipped(weaponHandSlot(!left, save.player.weaponSet)) != nullptr))
                 result.weapon = item->equipment.twoHandWeaponClass;
         }
         if (component >= 5 && component <= 7) parts[size_t(component)] = item->appearance.token;

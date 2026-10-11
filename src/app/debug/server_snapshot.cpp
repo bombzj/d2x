@@ -34,6 +34,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    result["animationTiming"]={{"recoveryUntil",s.recoveryUntil},{"lastBlockTick",s.lastBlockTick},{"modes",Json::array()}};
+    for(const auto &animation:s.animations) result["animationTiming"]["modes"].push_back({{"mode",animation.mode},{"frames",animation.frames},{"startFrame",animation.startFrame},{"speed",animation.speed},{"duration",animation.duration},{"action",animation.action}});
     result["combatMetrics"]={{"queueDepth",s.combatQueueDepth},{"targetAttempts",s.combatTargetAttempts},{"stages",Json::array()}};
     for(size_t index=0;index<s.stageMetrics.size();++index) {
         const auto &metric=s.stageMetrics[index];
@@ -54,7 +56,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &charge:s.chargedSkills) result["chargedSkills"].push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},{"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
     result["player"] = {{"id", p.actor.id.value}, {"name", p.name}, {"entered", p.entered},
         {"position", point(p.actor.position + origin)}, {"localPosition", point(p.actor.position)},
-        {"moving", p.actor.moving}, {"attacking", p.attacking}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
+        {"moving", p.actor.moving}, {"attacking", p.attacking}, {"recovering",p.recovering}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
         {"life", r.hp}, {"maxLife", a.maxLife}, {"mana", r.mana}, {"maxMana", a.maxMana},
         {"stamina", r.stamina}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
         {"strength", a.strength}, {"dexterity", a.dexterity}, {"vitality", a.vitality}, {"energy", a.energy},
@@ -78,6 +80,9 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"life", double(monster.life) / 256.}, {"maxLife", double(monster.maximumLife) / 256.}, {"revision", monster.revision},
             {"admittedPlayers",monster.admittedPlayers},{"experienceBase",monster.experienceBase},
             {"minimumLife",monster.minimumLife},{"maximumBaseLife",monster.maximumBaseLife},
+            {"drain",monster.drain},{"physicalResistance",monster.physicalResistance},{"difficulty",monster.difficulty},
+            {"openWounds",{{"rate",monster.woundRate},{"until",monster.woundUntil},{"next",monster.woundNext},
+                {"source",monster.woundSource.value},{"credit",monster.woundCredit.value}}},
             {"moving", monster.moving}, {"running", monster.running}, {"busyUntil", monster.busyUntil}, {"rewardComplete", monster.rewardComplete},{"chilledUntil",monster.chilledUntil},{"frozenUntil",monster.frozenUntil},{"knockedUntil",monster.knockedUntil},{"nextHitTick",monster.nextHitTick},{"owner",monster.owner?Json(monster.owner->value):Json(nullptr)}};
         if (monster.controller) value["ai"] = {{"nextDecision", monster.controller->nextDecision},
             {"target", monster.controller->target ? Json(monster.controller->target->value) : Json(nullptr)},

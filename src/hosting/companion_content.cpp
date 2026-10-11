@@ -71,7 +71,10 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     if((!attack && source.summon.kind!=MonsterKind::BoneWall) || !death || !prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original necromancer pet lifecycle");
     if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
     rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
-    if(attack) rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}});
+    if(attack) {
+        auto &action=rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}}).first->second;
+        action.animation=AnimationTiming{attack->frames,attack->speed};action.animationAction=attack->actionFrame;
+    }
     if(source.summon.necro && source.summon.necro->kind==NecroSummonKind::Mage) {
         rule.petVariant=source.refresh && source.rule.petVariant>=0?source.rule.petVariant:int(limitedRandom(result.random,4));const auto &payload=source.summon.necro->missiles.at(size_t(rule.petVariant));
         auto missile=prepareMonsterMissile(data,payload.id,1);if(!missile) throw std::runtime_error("Missing original skeleton mage missile program");
@@ -137,6 +140,22 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     const auto &a=animation->second;
     const WeaponAttackTiming timing{"a1",a.frames,effectiveAttackSpeed(a.speed,result.weapon.fasterAttack,result.weapon.baseSpeed,attributes.combat.attackRate),a.actionFrame,attackStartingFrame(equipment.player.characterClass,gear.animationClass,"a1")};
     result.rule.attackTicks=timing.durationTicks();result.rule.impactTick=timing.actionTick();result.rule.decisionTicks=std::max(1,pet.thinkFrames);
+    auto &action=result.rule.attacks[4];
+    action.minimum=result.rule.minimumDamage;action.maximum=result.rule.maximumDamage;action.rating=result.rule.attackRating;
+    action.duration=result.rule.attackTicks;action.release=result.rule.impactTick;
+    action.animation=AnimationTiming{a.frames,a.speed};action.animationAction=a.actionFrame;action.animationStartFrame=timing.startFrame;
+    result.rule.stunState=data.states.at("stunned").definition.id;
+    for(const std::string_view mode:{"gh","bl"}) {
+        const auto recovery=data.skills.recoveryTimings.find(token+std::string(mode)+gear.animationClass);
+        if(recovery==data.skills.recoveryTimings.end()) {
+            if(mode=="bl") continue; // Two-handed weapon classes have no BL.
+            throw std::runtime_error("Missing original Valkyrie recovery animation");
+        }
+        const AnimationTiming clock{recovery->second.frames,recovery->second.speed};
+        const int ticks=AnimationTiming{clock.frames,effectiveRecoverySpeed(clock.speed,0)}.durationTicks();
+        if(mode=="gh") {result.rule.hitRecoveryAnimation=clock;result.rule.hitRecoveryTicks=ticks;}
+        else {result.rule.blockAnimation=clock;result.rule.blockTicks=ticks;}
+    }
     // Native character death uses HTH (current MPQ AnimData: AMDTHTH).
     AnimDataTable animations(archives.read("data/global/animdata.d2"));auto death=token+"dthth";
     for(auto &ch:death) ch=char(std::toupper(static_cast<unsigned char>(ch)));

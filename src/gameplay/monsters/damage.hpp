@@ -23,5 +23,5 @@ MonsterHit rollMonsterHit(int minimum, int maximum, int critical,
     std::span<const MonsterElementAttack> elements, int sourceDamage, uint64_t &random);
 // SUNITDMG::sub_6FCC1870 returns whether GH should be suppressed.
 bool monsterHitRecovery(int64_t damage,int64_t maximumLife,uint8_t hitClass,
-    bool frozen,bool poisonOnly,bool hasMode,uint64_t &random);
+    bool frozen,bool poisonOnly,bool hasMode,uint64_t &random,bool stunned=false);
 }

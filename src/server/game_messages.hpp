@@ -70,7 +70,7 @@ struct PlayerSnapshot {
     bool entered{};
     bool paused{};
     float life{};
-    bool attacking{}, deadSettled{};
+    bool attacking{}, recovering{}, deadSettled{};
 };
 struct PersistentCharacter;
 struct PetOwnershipSnapshot {

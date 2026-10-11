@@ -112,6 +112,13 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
         entry.age = effect.age + effect.animationOffset; entry.remaining = effect.duration - effect.age;
         entry.pixelOffset=effect.pixelOffset;
+        if (const auto program = assets_.clientMissilePrograms.find(effect.missileId);
+            program != assets_.clientMissilePrograms.end() && program->second.localBlood) {
+            entry.heading = effect.direction;
+            if (const auto visual = assets_.projectileVisuals.find(effect.missileId);
+                visual != assets_.projectileVisuals.end() && effect.age * visual->second.fps >= visual->second.frames)
+                entry.orderFlag = 1; // Native ISDEAD blood joins the ground pass.
+        }
         items.push_back(entry);
     }
     for (const auto &item : items) {

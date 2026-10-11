@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "animation_timing.hpp"
 #include "gameplay/character/intents.hpp"
 #include "gameplay/character/display.hpp"
 #include "gameplay/character/skill_choices.hpp"
@@ -12,7 +13,6 @@
 #include <set>
 
 namespace d2x {
-struct KnownAttackTiming { int itemIAS{},weaponSpeed{},skillRate{}; };
 struct CharacterSkillView {
     int id = -1, page = 0, row = 0, column = 0;
     int listRow = -1, listPool = 0, iconCell = -1;
@@ -47,6 +47,7 @@ struct CharacterView {
     int poisonLengthResist = 0, fireAbsorbPercent = 0;
     std::optional<int> fasterCast; // Known native self stat; never inferred for other players.
     std::optional<KnownAttackTiming> attackTiming;
+    std::optional<KnownRecoveryTiming> recoveryTiming;
     std::optional<int> missilePierceChance;
     bool dead = false, running = false, blueStamina = false, attackUsable = false, hasSkillTree = false;
     unsigned weaponSet = 0;

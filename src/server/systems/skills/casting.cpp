@@ -140,7 +140,8 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto kick=rules.weaponAnimations.find("kk"+p.totals.equipment.animationClass);
         if(kick==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
         const auto &a=kick->second;
-        WeaponAttackTiming clock{"kk",a.frames,effectiveAttackSpeed(a.speed,0,0,p.totals.character.combat.attackRate),a.actionFrame,0};
+        const auto &weapon=p.totals.equipment.weapons[0];
+        WeaponAttackTiming clock{"kk",a.frames,effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,0};
         timing={clock.durationTicks(),clock.actionTick(),clock.speed};
     }
     if(skill.effect==SkillBehavior::Unsummon && (!unit || !ports_.companions.canDismiss(actor,unit))) return {DomainStatus::InvalidRequest,{}};

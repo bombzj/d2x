@@ -29,7 +29,7 @@ struct ClientMissileProgram {
     int chainCountDivisor{1};
     std::optional<MissileTargetBurst> targetBurst;
     bool blessedHammer{},holyBolt{};
-    bool deathFlame{};
+    bool deathFlame{}, localBlood{};
 };
 struct ClientMissileVisual {
     ClientMissileVisual() = default;

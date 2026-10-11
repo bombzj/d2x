@@ -119,7 +119,7 @@ struct State {
     struct DeathCascade {EntityId source;uint64_t due{};};
     std::map<EntityId,DeathCascade> deathCascades;
 };
-struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; };
+struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; const effects::System &effects; };
 class System {
     State state_;
     const Ports ports_;
@@ -164,7 +164,7 @@ class System {
     DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
     void holyFreeze(EntityId id,uint64_t until,bool shatter) {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.holyFreezeUntil=until;it->second.holyFreezeShatter=shatter;}}
     DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false,int64_t crushing=0);
     void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);

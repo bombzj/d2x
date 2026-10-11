@@ -1,4 +1,5 @@
 #pragma once
+#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
 #include "gameplay/monsters/ai_spec.hpp"
@@ -62,6 +63,12 @@ struct MonsterAttackRule {
     bool knockback{}, alwaysHit{};
     int hitClass{-1};
     std::optional<AuraDefinition> curse{};
+    std::optional<AnimationTiming> animation{};
+    int animationAction{-1};
+    bool animationSequence{};
+    std::vector<int> animationEvents{};
+    bool useAttackRate{true};
+    int animationStartFrame{};
 };
 struct MonsterWebRule {
     int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};
@@ -120,6 +127,7 @@ struct MonsterRule {
     int resurrectionTicks{}, threat{};
     uint8_t resurrectionMode{1};
     int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1}, freezeDivisor{1};
+    std::optional<AnimationTiming> hitRecoveryAnimation, blockAnimation;
     bool blockWithoutShield{};
     std::array<uint8_t,16> componentCounts{};
     uint8_t totalPieces{};

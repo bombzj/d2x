@@ -1,5 +1,6 @@
 #include "realm_portrait.hpp"
 #include "resources/data_table.hpp"
+#include "gameplay/items/equipment_rules.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -71,7 +72,8 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
                 gfx = items.value(row, "code");
             visual.appearance = {std::string(gfx), type, std::string(items.value(row, "wclass")),
                                  std::string(items.value(row, "2handedwclass")),
-                                 items.number(row, "2handed").value_or(0) != 0};
+                                 items.number(row, "2handed").value_or(0) != 0,
+                                 items.number(row, "1or2handed").value_or(0) != 0};
             visual.component = items.number(row, "component").value_or(-1);
             constexpr std::array columns{"rArm", "lArm", "Torso", "Legs", "rSPad", "lSPad"};
             for (size_t part = 0; part < columns.size(); ++part) {
@@ -100,7 +102,8 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
                 throw std::runtime_error("Original preview component table exceeds wire capacity");
             codes_[slot] = {std::string(gfx), std::move(type), std::string(items.value(row, "wclass")),
                             std::string(items.value(row, "2handedwclass")),
-                            items.number(row, "2handed").value_or(0) != 0};
+                            items.number(row, "2handed").value_or(0) != 0,
+                            items.number(row, "1or2handed").value_or(0) != 0};
             if (slot == next)
                 ++next;
         }
@@ -200,9 +203,14 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineChara
                                               : (left->weapon == "1ht" ? "1js" : "1ss");
         } else
             return {};
-    } else if (const auto *weapon = right ? right : left)
-        p.weapon =
-            weapon->twoHanded && !weapon->twoHandWeapon.empty() ? weapon->twoHandWeapon : weapon->weapon;
+    } else if (const auto *weapon = right ? right : left) {
+        EquipmentDefinition equipment;
+        equipment.twoHanded = weapon->twoHanded;
+        equipment.oneOrTwoHanded = weapon->oneOrTwoHanded;
+        const bool oppositeOccupied = p.components[right ? 6 : 5] != "nil" || p.components[7] != "nil";
+        const bool twoHands = usesTwoHandedWeapon(equipment, *c.characterClass == 4 ? "bar" : "", oppositeOccupied);
+        p.weapon = twoHands && !weapon->twoHandWeapon.empty() ? weapon->twoHandWeapon : weapon->weapon;
+    }
     if (p.weapon.empty())
         return {};
     return p;

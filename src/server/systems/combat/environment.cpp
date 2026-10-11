@@ -28,7 +28,13 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
             if(!ports_.effects.reactionCapacity() || !ports_.events.hasCapacity(4,2)) return DomainStatus::Capacity;
             const auto *player=target.player;const auto *monster=target.monster;
             const int block=player && player->totals.equipment.shield?player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1):monster?monster->petStats.block:0;
-            if(block>0 && int(limitedRandom(random,100))<block) {commitRandom();++impact.next;continue;}
+            if(block>0 && int(limitedRandom(random,100))<block) {
+                const auto result = player
+                    ? ports_.effects.block({player->player,player->actor,player->area,area->generation,0,tick.tick})
+                    : ports_.monsters.block(monster->id,tick.tick);
+                if(result.status==DomainStatus::Capacity) return result.status;
+                commitRandom();++impact.next;continue;
+            }
             const auto avoided=rollWeaponAvoidance(player?player->totals.character.combat:monster->petStats.attributes.combat,player?player->moving:monster->moving,true,random);
             if(avoided!=WeaponAvoidance::None) {
                 if(player) {const auto result=ports_.effects.avoidance({player->player,player->actor,player->area,area->generation,0,tick.tick},avoided,impact.source);if(result.status==DomainStatus::Capacity) return result.status;}
@@ -46,7 +52,7 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
             if(impact.directLife) result=ports_.transactions.resources(actor,player.characterRevision,
                 std::max(1.f,player.persistent.player.hp-float(hit.channels[size_t(impact.type)])/256.f),player.persistent.player.mana,player.persistent.player.stamina);
             else {
-                const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates);
+                const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates,{},std::ref(random));
                 result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             }
         } else {

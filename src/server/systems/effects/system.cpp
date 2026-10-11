@@ -187,7 +187,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         auto next = entry->second;
         const bool dead = player.persistent.player.hp <= 0;
         const auto removed = dead ? next.states.onDeath(EffectUnitKind::Player) : next.states.expire(tick.tick);
-        if (dead) { next.healing.clear(); next.mana.clear(); next.poison.reset(); }
+        if (dead) { next.healing.clear(); next.mana.clear(); next.poison.reset(); next.actionUntil=0;next.lastBlockTick=0; }
         if (dead) {
             if (!removed.empty()) {
                 transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};

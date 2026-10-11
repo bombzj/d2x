@@ -20,11 +20,6 @@
 #include "gameplay/skills/common_actions.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
-namespace {
-template<class T> bool unsupportedWeaponEffects(const T &mods) {
-    return mods.lifeLeech || mods.manaLeech || mods.crushingBlow || mods.openWounds;
-}
-}
 DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {
     const auto &p=*ports_.players.find(actor.player);
     if(result==WeaponAvoidance::Evade) {
@@ -67,7 +62,6 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         if(!weapon->projectile) return {DomainStatus::Unavailable,{}};
         skill=commonProjectileSkill(skill,*weapon->projectile);
     }
-    const auto &mods=p.totals.character.combat;
     const WeaponDamage *offhand=nullptr;
     if(program.dualWield) {
         const auto last=p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount;
@@ -77,8 +71,6 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         offhand=&*second;
     }
     if(program.whirlwind) for(const auto &other:p.totals.equipment.weapons) if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
-    if(!weapon->potion && unsupportedWeaponEffects(mods)) return {DomainStatus::NotImplemented,{}};
-    if(const auto own=mods.weapons.find(weapon->item);own!=mods.weapons.end() && !weapon->potion && unsupportedWeaponEffects(own->second)) return {DomainStatus::NotImplemented,{}};
     const bool fend=program.spear && program.spear->kind==SpearSkillSpec::Kind::Fend;
     const bool zeal=skill.effect==SkillBehavior::Zeal;
     Vec destination;EntityId target;
@@ -109,12 +101,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     WeaponAttackTiming timing{mode,a.frames,effectiveAttackSpeed(a.speed,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,a.startFrame};
     std::vector<int> hits{timing.actionTick()};
     if(program.sequence==11 || program.sequence==15) {
+        timing.sequence=true;
         const auto sequence=barbarianSequence(program.sequence,p.totals.equipment.animationClass);
         timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate+program.attackRateBonus-30);
         timing.frames=int(sequence.size());timing.startFrame=0;hits=weaponSequenceHitTicks(sequence,timing.speed);
         if(hits.empty()) return {DomainStatus::Unavailable,{}};
     }
     if(program.spear && (program.spear->kind==SpearSkillSpec::Kind::Jab || program.spear->kind==SpearSkillSpec::Kind::Impale)) {
+        timing.sequence=true;
         const auto sequence=amazonWeaponSequence(program.spear->kind==SpearSkillSpec::Kind::Jab?1:8,p.totals.equipment.animationClass);
         if(sequence.frames.empty()) return {DomainStatus::Unavailable,{}};
         timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate-30);

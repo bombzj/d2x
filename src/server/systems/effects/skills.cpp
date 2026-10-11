@@ -18,6 +18,44 @@ TransientAttributes projection(const CombatEffectSet &states, uint64_t tick) {
     for(const auto &e:states.entries()) if(e.activeAt(tick) && e.spec.state.id>=0) result.states.insert(e.spec.state.id);
     return result;
 }
+std::optional<AnimationTiming> reactionTiming(const PlayerState &player,std::string_view mode) {
+    if(!player.rules.skills) return {};
+    const auto found=player.rules.skills->recoveryAnimations.find(std::string(mode=="kb"?"gh":mode)+player.totals.equipment.animationClass);
+    if(found==player.rules.skills->recoveryAnimations.end()) return {};
+    auto timing=found->second;
+    // UNITS_GetBaseAnimSpeed: player KB uses the unmodified walk clock.
+    if(mode=="kb") {timing.speed=213;return timing;}
+    const bool block=mode=="bl";
+    const bool holyShield=block && player.transient.states.contains(player.rules.skills->holyShield.id);
+    timing.speed=effectiveRecoverySpeed(timing.speed,block?player.totals.character.combat.fasterBlock:player.totals.character.combat.fasterHitRecovery,holyShield);
+    return timing;
+}
+}
+bool System::recovering(EntityId id,uint64_t tick) const {
+    const auto found=state_.players.find(id);
+    return found!=state_.players.end() && found->second.actionUntil>tick;
+}
+DomainResult<> System::block(const ActorContext &actor) {
+    const auto *player=ports_.players.find(actor.player);
+    const auto *area=ports_.areas.find(actor.area);
+    if(!player || !area || !player->entered || player->actor!=actor.actor || player->area!=actor.area ||
+        area->generation!=actor.areaGeneration || player->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+    const auto timing=reactionTiming(*player,"bl");
+    if(!timing || ports_.skills.uninterruptible(actor.actor)) return {DomainStatus::Applied,std::monostate{}};
+    auto next=state_;
+    auto &recovery=next.players[actor.actor];
+    // SUNITDMG: repeated successful blocks suppress BL, never the block itself.
+    const uint64_t delay=uint64_t(std::max(0,player->totals.character.combat.fasterBlock/8+15));
+    if(actor.tick<=recovery.lastBlockTick || actor.tick-recovery.lastBlockTick<=delay) return {DomainStatus::Applied,std::monostate{}};
+    HitFact fact{actor.actor,0,actor.area,playerLifePercentage(int64_t(player->persistent.player.hp*256),int64_t(player->totals.character.maxLife)*256),false,player->position};
+    fact.playerMode=18;
+    recovery.lastBlockTick=actor.tick;
+    recovery.actionUntil=actor.tick+std::min<uint64_t>(timing->durationTicks(),UINT64_MAX-actor.tick);
+    const auto result=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{fact}});
+    if(!result) return {result.status,{}};
+    state_.players.swap(next.players);
+    ports_.skills.interrupt(actor);
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &skill, std::optional<PlayerId> recipient) {
     const auto *caster=ports_.players.find(actor.player);const auto *target=ports_.players.find(recipient.value_or(actor.player));
@@ -60,7 +98,7 @@ DomainResult<float> System::receive(const ActorContext &actor, int64_t raw, Dama
     MonsterHit hit; hit.channels[size_t(type)] = raw;
     return receiveMonster(actor, {}, hit, {});
 }
-DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear) {
+DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear,std::optional<std::reference_wrapper<uint64_t>> contactRandom) {
     const auto *p = ports_.players.find(actor.player);
     if (!p || !p->entered || p->actor != actor.actor || p->area != actor.area || p->persistent.player.hp <= 0 ||
         hit.mana < 0 || hit.stamina < 0 || std::any_of(hit.channels.begin(), hit.channels.end(), [](int64_t n) { return n < 0; }))
@@ -100,6 +138,13 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     edit.player.hp = std::clamp(edit.player.hp-dealt+absorbed,0.f,float(p->totals.character.maxLife));
     edit.player.mana = std::max(0.f,edit.player.mana-float(hit.mana)/256.f);
     edit.player.stamina = std::max(0.f,edit.player.stamina-float(hit.stamina)/256.f);
+    if(edit.player.hp>0 && hit.stunFrames && p->rules.skills && p->rules.skills->stunned.id>=0) {
+        const auto &definition=p->rules.skills->stunned;
+        if(states.size()>=128 && !states.hasState(definition.id,actor.tick)) return {DomainStatus::Capacity,{}};
+        CombatEffectSpec stun;stun.state=definition;stun.duration=std::min<uint64_t>(250,hit.stunFrames);
+        stun.source={CombatEffectSource::Monster,source,definition.id,0};
+        states.apply(std::move(stun),actor.tick);
+    }
     if(edit.player.hp>0 && hit.slowFrames && definitions.slow.id>=0) {
         if(states.size()>=128 && !states.hasState(definitions.slow.id,actor.tick)) return {DomainStatus::Capacity,{}};
         CombatEffectSpec slow;slow.state=definitions.slow;slow.duration=hit.slowFrames;
@@ -138,9 +183,20 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         for (const auto handle : depleted) states.remove(handle);
     }
     edit.transient = projection(states,actor.tick);
+    auto random=contactRandom?contactRandom->get():ports_.random;
+    const auto clock=reactionTiming(*p,"gh");
+    const bool getHit=source && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
+        !ports_.skills.uninterruptible(actor.actor) &&
+        monsterHitRecovery(int64_t(dealt*256),int64_t(p->totals.character.maxLife)*256,hit.hitClass,false,
+            hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
+            p->rules.skills && states.hasState(p->rules.skills->stunned.id,actor.tick));
+    const auto knockbackClock=hit.knockback?reactionTiming(*p,"kb"):std::optional<AnimationTiming>{};
+    const bool knockback=source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor);
+    if(getHit || knockback) recovery.actionUntil=actor.tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-actor.tick);
     const auto percent = playerLifePercentage(int64_t(edit.player.hp*256),int64_t(p->totals.character.maxLife)*256);
-    if(dealt>0 || hit.mana>0 || hit.stamina>0) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
-    if(hit.knockback && dealt>0 && edit.player.hp>0 && !ports_.skills.uninterruptible(actor.actor)) if(const auto *attacker=ports_.monsters.find(source)) {
+    if(dealt>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
+    if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->playerMode=knockback?20:6;
+    if(knockback) if(const auto *attacker=ports_.monsters.find(source)) {
         const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker->position,3);
         if(area.definition.collision.nativeMovementSegment(p->position,destination,playerMovement)) {
             edit.knockback=PointTarget{actor.area,area.generation,destination};
@@ -163,8 +219,9 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
         state_.players.swap(next.players);
+        if(contactRandom) contactRandom->get()=random;else ports_.random=random;
+        if(getHit || knockback) ports_.skills.interrupt(actor);
         if(dealt>0) commitItemEvents(std::move(*itemEvents.value),p->persistent.player.hp<=0);
-        if(hit.knockback && dealt>0 && !ports_.skills.uninterruptible(actor.actor)) ports_.skills.cancel(actor.player,actor.actor);
     }
     return {result.status,result?std::optional{dealt}:std::nullopt};
 }

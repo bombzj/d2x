@@ -43,7 +43,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 领域 | 入口 |
 | --- | --- |
 | 角色 | [属性／成长](gameplay/characters/ATTRIBUTES.md)、[佣兵](gameplay/characters/HIRELINGS.md)、[死亡／尸体](gameplay/characters/PLAYER_DEATH.md) |
-| 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
+| 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[武器命中效果](gameplay/combat/WEAPON_EFFECTS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
 | 技能 | [全分类目录](gameplay/skills/README.md)、[公共规范／所有权／状态](gameplay/skills/COMMON.md)、[MPQ 选择器／树描述](gameplay/skills/DESCRIPTIONS.md)；目录包含七职业、通用、怪物／精英、佣兵／召唤物、物品技能与特殊／未归档条目 |
 | 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及历史证据 |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |

@@ -29,7 +29,7 @@ void key(Writer &out, const PlayerSnapshot &view) {
 }
 }
 Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
-    if (view.attacking && view.life > 0) {
+    if ((view.attacking || view.recovering) && view.life > 0) {
         if (!view.actor.moving) return {};
         // Moving skills retain their skill action while original 16 updates
         // carry authoritative coordinates (no walking pose or cast restart).

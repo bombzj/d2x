@@ -846,6 +846,14 @@ struct RemoteUiClients::Impl {
                 input.missilePierceChance=chance;
             }
             const auto ias=knownSelfEquipmentStat("item_fasterattackrate",int(*level));
+            const auto fhr=knownSelfEquipmentStat("item_fastergethitrate",int(*level));
+            const auto fbr=knownSelfEquipmentStat("item_fasterblockrate",int(*level));
+            const auto fcr=knownSelfEquipmentStat("item_fastercastrate",int(*level));
+            if(fcr && *fcr>-120) input.stats.insert_or_assign("item_fastercastrate",double(*fcr));
+            if(fhr && fbr && *fhr>-120 && *fbr>-120 && online.load.playerUnitId) {
+                const auto states=combat.states().find({0,*online.load.playerUnitId});
+                if(states!=combat.states().end()) input.recoveryTiming=KnownRecoveryTiming{*fhr,*fbr,states->second.states.contains(data.states.at("holyshield").definition.id)};
+            }
             const auto rate=knownSelfEquipmentStat("attackrate",int(*level));
             if(ias && rate && *ias>-120) for(const auto &[id,item]:w.items) {
                 (void)id;
@@ -912,14 +920,17 @@ struct RemoteUiClients::Impl {
                 if (found || leftHand) break;
             }
         }
-        if (const auto level=stat("level"))
-            if (const auto faster=knownSelfEquipmentStat("item_fastercastrate",int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
         if(input.characterClass && *input.characterClass<data.characters.size() && online.load.playerUnitId &&
             stat("strength") && stat("dexterity") && stat("level") && input.baseRanksAssigned) {
             const auto &definition=data.characters[*input.characterClass];
             input.combatEquipment=observedCombatEquipment({0,*online.load.playerUnitId},
                 {definition.code,int(*stat("strength")),int(*stat("dexterity")),int(*stat("level")),definition.blockFactor,weaponSet},
                 input.effectiveRanks,0,definition.toHitFactor-35);
+            if(input.combatEquipment) {
+                const auto &equipment=*input.combatEquipment;
+                const auto &weapon=equipment.equipment.weapons[0];
+                input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate};
+            }
         }
         if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
             for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
@@ -1150,7 +1161,7 @@ struct RemoteUiClients::Impl {
             auto item = complete.value_or(itemInstance(native, di, location));
             const auto stats = resolveItemStats(data, item, characterView.level);
             const auto maximum = itemMaximumDurability(data, item, stats);
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,session.read().world.quests.cainStones.value_or(std::array<int,5>{})});
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,session.read().world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode});
             if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
@@ -1585,6 +1596,10 @@ struct RemoteUiClients::Impl {
             {},int(*value("armorclass")),0,int(*value("mindamage")),int(*value("maxdamage")));
         hirelingView.known=projected.has_value();if(!projected) return;
         const auto &mods=projected->modifiers;
+        const auto &attack=projected->equipment.weapons[0];
+        hirelingView.attackTiming=KnownAttackTiming{attack.fasterAttack,attack.baseSpeed,mods.combat.attackRate};
+        hirelingView.recoveryTiming=KnownRecoveryTiming{mods.combat.fasterHitRecovery,mods.combat.fasterBlock,false};
+        hirelingView.fasterCast=mods.combat.fasterCast;
         hirelingView.level=int(*level);hirelingView.life=float(*life)/256.f;
         hirelingView.maximumLife=std::max(1,int((int64_t(*maximum/256)+mods.maxLife)*(100+mods.combat.lifePercent)/100));
         const auto pet=world.pets.find(merc.id);

@@ -68,6 +68,7 @@ class System {
     System &operator=(const System &)=delete;
     const State &read() const { return state_; }
     void cancel(PlayerId, EntityId);
+    void interrupt(const ActorContext &);
     bool uninterruptible(EntityId actor) const;
     size_t pendingReleases() const;
     bool busy(EntityId id, uint64_t tick) const;

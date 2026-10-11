@@ -21,10 +21,12 @@ uint8_t monsterDamageHitClass(const MonsterHit &hit,uint8_t base,uint32_t &curso
     return uint8_t((base?base:0x0d)|tag);
 }
 bool monsterHitRecovery(int64_t damage,int64_t maximumLife,uint8_t hitClass,
-    bool frozen,bool poisonOnly,bool hasMode,uint64_t &random) {
+    bool frozen,bool poisonOnly,bool hasMode,uint64_t &random,bool stunned) {
+    // SUNITDMG checks STATE_STUNNED before sub_6FCC1870, without rolling.
+    if(stunned) return hasMode;
     if(frozen || poisonOnly || damage<256) return false;
     int divisor=16;
-    switch(hitClass&0x0f) {
+    switch(hitClass) {
     case 2:case 6:case 10:case 11:divisor=8;break;
     case 5:divisor=64;break;
     case 4:case 8:divisor=32;break;

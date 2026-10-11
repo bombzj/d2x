@@ -1,5 +1,6 @@
 #include "remote_inventory.hpp"
 #include "gameplay/items/quality.hpp"
+#include "gameplay/items/equipment_rules.hpp"
 #include "network/protocol/bits.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -40,6 +41,31 @@ RemoteInventory::RemoteInventory(Archives &archives) : strings_(archives) {
 int RemoteInventory::baseNumber(const OnlineItem &item, std::string_view column) const {
     const auto found = bases_.find(item.code);
     return found == bases_.end() ? 0 : tables_.at(found->second.table).number(found->second.row, column).value_or(0);
+}
+EquipmentDefinition RemoteInventory::equipmentDefinition(const OnlineItem &item) const {
+    EquipmentDefinition result;
+    const auto base = bases_.find(item.code);
+    if (base == bases_.end()) return result;
+    const auto &table = tables_.at(base->second.table), &types = tables_.at("itemtypes");
+    const auto type = typeRows_.find(table.value(base->second.row, "type"));
+    if (type == typeRows_.end()) return result;
+    result.known = true;
+    result.twoHanded = baseNumber(item, "2handed") != 0;
+    result.oneOrTwoHanded = baseNumber(item, "1or2handed") != 0;
+    result.shoots = types.value(type->second, "Shoots");
+    result.quiver = types.value(type->second, "Quiver");
+    std::set<std::string, std::less<>> visited;
+    std::function<void(std::string_view)> inherit = [&](std::string_view code) {
+        if (code.empty() || !visited.emplace(code).second) return;
+        result.types.emplace_back(code);
+        const auto row = typeRows_.find(code);
+        if (row == typeRows_.end()) return;
+        inherit(types.value(row->second, "Equiv1"));
+        inherit(types.value(row->second, "Equiv2"));
+    };
+    inherit(table.value(base->second.row, "type"));
+    inherit(table.value(base->second.row, "type2"));
+    return result;
 }
 bool RemoteInventory::isType(const OnlineItem &item, std::string_view wanted) const {
     const auto base = bases_.find(item.code);
@@ -572,16 +598,13 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     if (command.action == OnlineItemAction::Equip && (command.body == 4 || command.body == 5)) {
         const auto opposite = bodyItem(command.body == 4 ? 5 : 4);
-        const bool twoHanded = baseNumber(wire, "2handed") && !baseNumber(wire, "1or2handed");
-        // D2MOO ItemMode::sub_6FC43280: matching bow/quiver hands are
-        // compatible even though the bow itself occupies both weapon hands.
-        const bool ammunitionPair = opposite &&
-            ((isType(wire, "bow") && isType(*opposite, "bowq")) ||
-             (isType(wire, "bowq") && isType(*opposite, "bow")) ||
-             (isType(wire, "xbow") && isType(*opposite, "xboq")) ||
-             (isType(wire, "xboq") && isType(*opposite, "xbow")));
-        if (opposite && !ammunitionPair && (twoHanded || (baseNumber(*opposite, "2handed") && !baseNumber(*opposite, "1or2handed")))) {
-            command.equipVariant = bodyItem(command.body) && twoHanded ? 2 : 1;
+        const std::string_view characterClass = playerClass_ == 4 ? "bar" : playerClass_ == 6 ? "ass" : "";
+        const auto incoming = equipmentDefinition(wire);
+        if (opposite && !compatibleWeaponHands(incoming, equipmentDefinition(*opposite), characterClass)) {
+            const bool twoHanded = requiresBothWeaponHands(incoming, characterClass);
+            if (bodyItem(command.body) && !twoHanded)
+                return reject("The requested swap would leave incompatible items in both hands");
+            command.equipVariant = bodyItem(command.body) ? 2 : 1;
             if (!command.targetRevision) { command.target = opposite->id; command.targetRevision = opposite->revision; }
         }
     }

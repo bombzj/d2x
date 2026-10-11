@@ -18,7 +18,7 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 | 地图／旅行 | 五幕1–136原生成、碰撞、区域切换、传送点、门户及跨幕旅行；单机／TCP/IP本人探索侧文件 | 长绕墙／拥挤、完整活动房间与特殊内容；[地图](docs/modules/MAP.md)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 野外物件 | 当前MPQ祭坛1–22、水井解除状态、爆炸桶连锁、伤害箱、宝箱陷阱、地刺／火焰、原陷阱怪物AI及特殊藏物 | 五幕变体、生成概率与多人争用的具体支持条件见[物件](docs/gameplay/world/OBJECTS.md#自研野外祭坛与环境机关) |
 | 物品／成长 | 库存／装备／腰带、生成／掉落、商店／加工、经验／属性／技能、死亡／尸体 | 复杂争用、全属性／配方／奖励组合、硬核／多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
-| 战斗／技能 | 普攻／投射／六通道、通用十项、女巫／亚马逊／圣骑士／死灵／野蛮人各30项 | 德鲁伊／刺客、完整双持与吸取／压碎／撕裂／触发、PvP；[技能](docs/gameplay/skills/README.md) |
+| 战斗／技能 | 普攻／投射／六通道、武器吸血／吸魔／压碎／撕裂及原命中叠加／伤口喷血、通用十项、女巫／亚马逊／圣骑士／死灵／野蛮人各30项 | 德鲁伊／刺客、完整双持组合／专用触发、PvP；[技能](docs/gameplay/skills/README.md)、[武器命中效果](docs/gameplay/combat/WEAPON_EFFECTS.md) |
 | 怪物／伙伴 | 第一幕63战斗类型／25类AI、第二幕74身份／33类AI、动画与30项技能槽接线、精英／首领、随机姓名／勇士标签／原调色及血乌／安达利尔死亡表现，Hydra、诱饵／女武神、四类原佣兵、死灵召唤／重生及原宠物头像／数量／生命条 | 第三至第五幕与召唤、完整伙伴服务与表现；具体支持条件见[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕27项个人任务主流程与保存 | 完整中立AI、剧情／机关及组队任务资格；[NPC／任务](docs/modules/NPC_QUEST.md) |
 | 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环；游戏内命令分流、BNCS私聊／命令回复、宿主虚拟人数 | 完整任务共享、敌意／PvP、尸体权限、中文聊天与头顶气泡；[联网](docs/modules/NETWORK.md#游戏内命令分流)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
@@ -31,7 +31,9 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 
 战斗结算区分关系、来源与控制代次，保留重试阶段，使用武器目标局部随机和耐久防重复提交；技能私有运行态／求值实现与公共头分离，武器及通用法术直线碰撞使用活单位空间索引。AI、范围爆炸及怪物弹体仍有遍历。详细范围见[战斗关系与提交](docs/modules/SERVER_SYSTEMS.md#战斗关系与提交)。
 
-四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，支持条件见[佣兵](docs/gameplay/characters/HIRELINGS.md)。
+玩家手位按原MPQ允许盾牌、弓／弩及箭袋放入任一手，配对与冲突由权威装备规则校验；野蛮人原1or2handed双手剑按实际另一手占位切换单手／双手伤害和动画，物品说明区分查看职业。规则和限制见[装备](docs/gameplay/items/EQUIPMENT.md#手位与双手剑)。四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，支持条件见[佣兵](docs/gameplay/characters/HIRELINGS.md)。
+
+动画时钟按MPQ原帧／速度／事件在25Hz求整数断点，IAS／FCR／FHR／FBR及圣盾格挡基础速率共用纯值计算。玩家受击／格挡恢复锁接入技能、移动与旅行，完整HitClass、眩晕及连续受击沿原恢复判定；佣兵、召唤物及怪物动作读取当前速度贡献，MonSeq按原行次序和UseAttackRate资格计时。尚未接入德鲁伊／刺客变身执行，远端隐藏装备速率不推断；规则、入口和验证边界见[动画帧时钟与恢复](docs/gameplay/skills/COMMON.md#动画帧时钟与恢复)。
 
 头像按当前MPQ和本地原1.13c显示召唤物分组、实际类型图片、数量、单只生命条，并支持佣兵悬停／喂药／右键装备及Z显示开关，详见[头像](docs/gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。
 

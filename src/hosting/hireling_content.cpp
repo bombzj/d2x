@@ -79,15 +79,17 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             if(!source.items || !source.equipmentRules) throw std::runtime_error("Hireling equipment rules unavailable");
             auto gear=server::companions::calculateHirelingEquipment(source.equipment,*source.items,*source.equipmentRules,result);
             gear.modifiers.combat.allSkills+=source.temporarySkillBonus;
-            const auto recovery=[&](int frames,int bonus){const int rate=std::max(1,100+120*bonus/(120+bonus));return std::max(1,(frames*100+rate-1)/rate);};
-            if(rule.hitRecoveryTicks) rule.hitRecoveryTicks=recovery(rule.hitRecoveryTicks,gear.modifiers.combat.fasterHitRecovery);
-            if(rule.blockTicks) rule.blockTicks=recovery(rule.blockTicks,gear.modifiers.combat.fasterBlock);
+            const auto recovery=[](AnimationTiming timing,int bonus){timing.speed=effectiveRecoverySpeed(timing.speed,bonus);return timing.durationTicks();};
+            if(rule.hitRecoveryAnimation) rule.hitRecoveryTicks=recovery(*rule.hitRecoveryAnimation,gear.modifiers.combat.fasterHitRecovery);
+            if(rule.blockAnimation) rule.blockTicks=recovery(*rule.blockAnimation,gear.modifiers.combat.fasterBlock);
             const auto actionTiming=[&](server::MonsterAttackRule &attack,const MonsterAttackTiming &motion,bool casting) {
-                const int baseRate=int(std::lround(motion.frames*256.f/(motion.duration*25.f)));
-                const int rate=casting?std::max(1,baseRate*std::min(175,100+120*gear.modifiers.combat.fasterCast/(120+gear.modifiers.combat.fasterCast))/100):
+                const int baseRate=motion.speed;
+                const int rate=casting?effectiveCastSpeed(baseRate,gear.modifiers.combat.fasterCast):
                     effectiveAttackSpeed(baseRate,gear.equipment.weapons[0].fasterAttack,gear.equipment.weapons[0].baseSpeed,gear.modifiers.combat.attackRate);
-                const auto frames=[&](float seconds){return std::max(1,int(std::ceil(seconds*25.f*baseRate/rate)));};
-                attack.duration=frames(motion.duration);attack.release=frames(motion.impact);attack.casting=casting;
+                const int frames=motion.sequenceFrames?motion.sequenceFrames:motion.frames;
+                attack.duration=motion.sequenceFrames?animationFrameTicks(frames,rate):AnimationTiming{frames,rate}.durationTicks();
+                attack.release=std::clamp(animationFrameTicks(motion.actionFrame,rate),1,attack.duration);attack.casting=casting;
+                attack.animation=AnimationTiming{frames,baseRate};attack.animationAction=motion.actionFrame;attack.animationSequence=bool(motion.sequenceFrames);
             };
             const auto prepareAttack=[&](int id,int rank)->server::MonsterAttackRule {
                 size_t skill=0;while(skill<skills.rows().size() && skills.number(skill,"Id")!=id) ++skill;
@@ -148,13 +150,15 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                     attack.weaponSkill=cast;
                     if(cast.weapon->spear && monster->hirelingSequence) {
                         attack.releaseFrames.clear();
-                        const int baseRate=int(std::lround(timing->frames*256.f/(timing->duration*25.f)));
+                        const int baseRate=256; // Native SQ clock; not the underlying A1 speed.
                         const int rate=effectiveAttackSpeed(baseRate,gear.equipment.weapons[0].fasterAttack,gear.equipment.weapons[0].baseSpeed,gear.modifiers.combat.attackRate);
                         const auto &sequence=monster->hirelingSequence->frames;
+                        attack.animation=AnimationTiming{int(sequence.size()),baseRate};attack.animationSequence=true;attack.animationEvents.clear();
                         attack.duration=std::max(1,(int(sequence.size())*256+rate-1)/rate);
-                        for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) attack.releaseFrames.push_back(std::max(1,(int(i)*256+rate-1)/rate));
+                        for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) {attack.animationEvents.push_back(int(i));attack.releaseFrames.push_back(weaponSequenceTick(int(i),rate));}
                         if(attack.releaseFrames.empty()) throw std::runtime_error("Missing original Jab releases");
                         attack.release=attack.releaseFrames.front();
+                        attack.animationAction=attack.animationEvents.front();
                     }
                 } else {
                     attack.action=server::MonsterAttackRule::Action::Skill;attack.spell=std::move(cast);
@@ -162,6 +166,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                         if(!monster->hirelingCastTiming) throw std::runtime_error("Missing original Iron Wolf cast timing");
                         actionTiming(attack,*monster->hirelingCastTiming,true);
                         if(attack.spell->effect==SkillBehavior::Inferno) {
+                            attack.animation.reset();
                             const auto found=std::find_if(row->skills.begin(),row->skills.end(),[&](const auto &s){return s.id==id;});
                             if(found==row->skills.end() || found->channelFrames<=0) throw std::runtime_error("Missing original Inferno channel frames");
                             for(int frame=attack.release;frame<attack.release+found->channelFrames;frame+=2) attack.releaseFrames.push_back(frame);

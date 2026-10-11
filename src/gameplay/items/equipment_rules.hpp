@@ -54,4 +54,8 @@ struct EquipmentActor {
     unsigned weaponSet = 0;
     bool hireling = false;
 };
+bool canUseWeaponOneHanded(const EquipmentDefinition &, std::string_view characterClass);
+bool requiresBothWeaponHands(const EquipmentDefinition &, std::string_view characterClass);
+bool usesTwoHandedWeapon(const EquipmentDefinition &, std::string_view characterClass, bool oppositeOccupied);
+bool compatibleWeaponHands(const EquipmentDefinition &, const EquipmentDefinition &, std::string_view characterClass);
 } // namespace d2x

@@ -55,9 +55,9 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         const auto &definition = *loadout.find(item->id).definition;
         if (!definition.equipment.isType("weap"))
             continue;
-        bool twoHands = definition.equipment.isType("miss") || (definition.equipment.twoHanded &&
-                        (!definition.equipment.oneOrTwoHanded || actor.characterClass != "bar" ||
-                         !(item == right ? left : right)));
+        const auto oppositeSlot = weaponHandSlot(item == right, actor.weaponSet);
+        const bool twoHands = usesTwoHandedWeapon(definition.equipment, actor.hireling ? "" : actor.characterClass,
+                                                 bool(loadout.equipped[size_t(oppositeSlot)]));
         auto minimum = twoHands ? definition.base.twoHandMin : definition.base.minDamage;
         auto maximum = twoHands ? definition.base.twoHandMax : definition.base.maxDamage;
         if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum)

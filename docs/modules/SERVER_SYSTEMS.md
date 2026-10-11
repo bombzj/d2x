@@ -1,6 +1,6 @@
 # 自研游戏内核与子系统
 
-更新：2026-10-10。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)，包身份见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)，历史运行证据由对应玩法专题维护。
+更新：2026-10-11。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)，包身份见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)，历史运行证据由对应玩法专题维护。
 
 ## 当前范围
 
@@ -103,6 +103,8 @@ transactions的Plan含TransactionId、库存／人物双RevisionGuard、Inventor
 EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保留当次稀疏物品值，CharacterFact保留前后人物／Totals，TravelFact保留提交区域／位置，ChatFact保留提交时收件人。NativeRealmHost集中路由：库存／人物／换区仅本人，聊天仅已捕获的同局连接。每位接收者完整编码后一次提交字节队列；失败明确终止该连接、移出投影并保留可恢复存档租约，再确认已送达或明确退役的批，不向其他连接重复发送。Area受众按同实例可见区域及单位过滤；未实现事实明确拒绝。玩家／世界／怪物增量由独立player_replication／world_replication／monster_replication编码；只发别人穿戴外观，不发背包、Cursor、私人箱或人物属性。
 
 普通攻击／弓弩／左手动作／投掷药瓶统一进入skills.weapon与missiles／combat；隐藏Kick由普通桶OperateFn5调用skills.objectKick，左右键选择不变，objects／loot仍持有破坏和掉落；Unsummon由原程序入口执行，四项卷轴／书本由inventory和travel复用原事务。来源资格、释放复验、公共函数及限制见[通用十项](../gameplay/skills/GENERAL.md)。
+
+玩家武器吸取、压碎和撕裂沿同一combat接触阶段执行，纯值计算见[武器命中效果](../gameplay/combat/WEAPON_EFFECTS.md)。monsters持有伤口和生命；目标命中提交后保留待资源回补阶段，transactions将本人资源与区域原Overlay成组发布，后续反噬背压不会重复目标伤害或回补。replication从活怪物的wound投影原openwounds状态，包含首次可见、重新进入兴趣及背压等待，直到伤口事务真正清理；不能在持续快照中撤销刚发出的开启事实。
 
 ## 怪物战斗与生命周期
 

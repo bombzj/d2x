@@ -20,7 +20,7 @@
 
 | 范围 | 当前自研服务端 | 客户端与验证边界 |
 | --- | --- | --- |
-| 通用0–5、217–220 | 十项执行入口；Kick是隐藏破桶程序 | 武器／药瓶／物品技能／Unsummon代表路径有限V2；普通桶KK及左手等未覆盖路径V1，见GENERAL |
+| 通用0–5、217–220 | 十项执行入口；Kick是隐藏破桶程序 | 武器／药瓶／物品技能／Unsummon代表路径有限V2；普通桶KK及Left Hand Throw／Swing未覆盖路径V1，见GENERAL；左手弓与相反手弹药另见装备证据 |
 | 女巫36–65 | 26项主动、4项被动 | 原Clt表现已接；历史自研、同机TCP及原服代表路径有限V2，见SORCERESS |
 | 亚马逊6–35 | 24项主动、6项被动 | 原Clt表现及宠物归属／装备已接；历史代表路径与保存往返有限V2，女武神死亡图等缺口见AMAZON |
 | 圣骑士96–125 | 10项战斗技能、20项光环及随状态切换的被动贡献 | 单机30项学习／状态、战斗及保存恢复有限V2，原版D2GS三个代表技能有限V2；依据和组队／PvP／Holy Shield特殊盾图限制见PALADIN |
@@ -111,7 +111,19 @@
 
 Skills／SkillDesc／CharStats、TBL及原树／图标提供ID、前置、手位／城镇资格与描述；显示节点不表示服务端已执行。`projectCharacterDisplay`使用原包等级和已知值，缺必要武器、协同、支配或描述程序时保持未知。普通、固有、物品授予和充能来源不能混用，源失效不退回同ID普通技能；充能及ItemEffect／ItemCltEffect限制由[物品技能](ITEM_SKILLS.md)维护。
 
-本人已收到属性或完整解码的装备／状态可以用于FCR／IAS／Pierce显示；远端缺隐藏值时不猜测。学习、选择、数量与热键的原包及等待条件统一见人物模块，保存字段和运行态排除项统一见SAVES。
+本人已收到属性或完整解码的装备／状态可以用于FCR／IAS／FHR／FBR／Pierce显示，本人佣兵完整投影也参与计时；远端缺隐藏值时仅使用基础显示速率，不据画面推断权威断点。学习、选择、数量与热键的原包及等待条件统一见人物模块，保存字段和运行态排除项统一见SAVES。
+
+## 动画帧时钟与恢复
+
+`gameplay/combat/attack_timing`统一8.8固定点速度及25Hz整数帧。MPQ AnimData／COF提供帧数、速度和动作事件，宿主将纯值交给服务端。装备有效速率为整数`120×bonus/(120+bonus)`，先截断再合并。IAS合并技能AttackRate并扣武器速度，最终百分比限制15–175；双持基础武器速度在装备计算中取平均。FCR基础100、上限175，不叠加OtherAnimationRate；FHR／FBR基础50，圣盾的FBR基础100，按最终整数速度计算，不能用帧数的连续比例代替。
+
+普通动作时长为`max(1,ceil((frames-startFrame)×256/speed)-1)`，序列时长为`ceil(frames×256/speed)`；事件按同一时钟释放，攻击至少第1 tick。Amazon／Sorceress普通攻击的起始帧奖励不传入重组序列。Jab／Impale、双挥／双投使用各自帧表和事件；Inferno／Leap固定速度、Leap Attack阶段及Strafe／Fend／Zeal回滚保持专用路径。客户端采样也量化到25Hz，序列不继承单段COF的起始帧或结束时间。
+
+玩家`effects::Recovery::actionUntil`阻止恢复期间的新技能、移动和旅行，恢复成功后中断可中断动作并清路线。GH沿原伤害／生命／完整HitClass概率判断，元素／暴击高位不剥除；再次满足受击资格会重启GH。眩晕先于普通阈值／概率判断，玩家眩晕上限250tick、佣兵13tick；周期毒伤不播放GH。非可中断动作不被GH／BL／KB打断。格挡成功与播放BL分开，`lastBlockTick`及`FBR/8+15`间隔抑制连续BL，格挡判定仍有效。KB复用GH图形，玩家固定速度213、怪物取原WalkAnimSpeed，不使用FHR；击退成功也安装动作锁，怪物Smite的击退资格取原ResultFlags。伤害、恢复状态与随机数只在事务／输出成功后安装，容量失败保留原状态。死亡清恢复锁；这些时钟均不保存到D2S，不改变v96格式。原0x0D action19仍只校正生命／位置，GH／BL另发原action6／18，KB沿原action20。
+
+怪物与佣兵恢复使用MPQ原帧／速度及当前FHR／FBR，伙伴成功格挡也发布BL；近战、技能弹体及环境弹体统一调用monsters::block，容量失败不提交接触随机或推进目标。普通怪物、死灵召唤物、女武神和佣兵动作保留原整数帧，按当前装备／状态计算事件；Kick沿当前武器IAS／WSM。第一、二幕怪物MonSeq按行次序计时，不将显示帧、倒放或A1／A2切换换算成时间；SQ初始速度256，只有原Skills.UseAttackRate允许时才按IAS更新，不套玩家SQ的-30。普通SC走FCR，其他特殊模式按原UseAttackRate选择AttackRate或OtherAnimationRate，非攻击SQ保持固定时钟。佣兵Jab保留多事件，Inferno保持引导时钟。`server-snapshot.animationTiming`只读提供当前武器类下的基础动作速度、时长、事件tick及恢复锁，不是复制／存档来源，也不代表特殊序列的最终调度。
+
+依据为当前MPQ、本地D2MOO `Units.cpp`／`SequenceTbls.cpp`速率与序列函数、`SUnitDmg.cpp`恢复／眩晕分支。本地1.13c `D2Common.dll`的`0x6FD7EFC0`确认玩家GH为mode4、怪物GH为mode3；`0x6FD80BD0`确认怪物按模式表继续查询UseAttackRate。重建代码分别误写BLOCK和遗漏monster分支break，不采用这些笔误；反汇编证据在`artifacts/animation-timing/native-*.txt`。德鲁伊／刺客执行和变身转换尚未接入，本路径不新增变身玩法或虚构速度；全部武器、装备、技能、难度及原服组合仍需分别认证。
 
 SceneController／RemoteCombat处理首次、Hold、锁定与停止，客户端动作来自原包或已发送请求的表现预测；服务端省略本人通知不表示没有施放。ClientSend是原弹体通知资格，不能解释成所有Clt程序都等待0x73；具体源配对与表现见攻击专题。客户端视觉碰撞不是原服命中证据。
 
@@ -120,6 +132,37 @@ SceneController／RemoteCombat处理首次、Hold、锁定与停止，客户端�
 背包右键回城卷轴／书本通过`create_town_portal`发送原3C／0C，并与技能栏共用`record_combat`登记已发送施法意图，不能依赖通常省略的本人4C／4D。这只驱动动作表现；数量、落点、门对象及选择恢复仍来自原包，不自行创建门户或伪造确认。通用修复的历史代表冒烟见下节；观察入口见[调试管道](../../development/DEBUG_PIPE.md)。
 
 States／Overlay定义覆盖层和状态属性；客户端消费A7–AA，真实期限、互斥、反击／吸收、周期及死亡清理由服务端持有。晚入视野恢复已公开单位／状态／装备／归属，不重播历史施法／弹体。尸体资格、碎冰及未完成客户端程序见联网与对应职业专题。
+
+## 动画断点有限冒烟
+
+2026-10-11 Windows Release、D2S v96；本节记录前包客户端SHA256 `076F14C3800E4B7332D94D950E0CFF3E25F4A33AB06AEA386A769E35E6CA6142`，证据在`artifacts/animation-timing`。该批早期包验证Fire Bolt释放和FCR70 Lightning释放；恢复锁修复后的最终包复查保存重入的FCR70时钟、换装断点、FCR50 Lightning、GH／BL、圣盾及双客户端同步，早期释放快照不单独认证该批最终包。仅使用既有客户端和调试管道；装备取当前MPQ原唯一物品属性，管理授予成长、生成物品／敌人、旅行和补满资源用于准备条件，不认证自然获得、任务通行或完整战斗。没有新建测试程序，也未运行旧构建目录残留的`d2x_tests`。
+
+| 核对项 | 实际结果及证据 |
+| --- | --- |
+| 女巫普通施法与攻击 | SC基础13tick；Suicide Branch／Magefist合计FCR70为9tick、释放第5tick。相同魔杖IAS20→30，A1从15→14tick。FCR70→50，SC从9→10tick、释放5→6tick；`sor/equipped.json`、`bloodfist-final.json`，实际Fire Bolt释放见`fire-start.json`、`fire-release.json` |
+| Lightning序列 | FCR70为14tick，释放前pending为1、释放后清零并生成权威弹体；FCR50为15tick。见`sor/lightning-*.json`、`fcr50-lightning-final.json`；TCP最终包重复取得15tick |
+| 受击／格挡锁 | FHR20的GH为11tick，FHR50为9tick；FBR20的BL为7tick。最终包自然攻击触发GH／BL，锁内移动和施法均conflict、casts不新增，客户端保留action6／18；锁结束可再施法。见`sor/gethit-*-final.json`、`block-*-final.json`、`recovered-cast-final.json` |
+| 圣盾 | 圣骑士同一盾的BL基础5tick；实际施放Holy Shield117、收到state101后为2tick，见`pal/before-holy.json`、`holy-final.json` |
+| 保存重入 | 正常退局后新进程加载，同一装备／技能和断点保留，恢复锁及lastBlockTick归零；`sor/reentry-final.json`。恢复时钟没有写入D2S |
+| 双客户端TCP/IP | 最终包主客独立进程进入同局，两参与者就绪；客端收到主机skill49序列、GH action6、BL action18；GH锁内主机移动／施法均conflict，客端action6保持。见`tcp-host/lightning.json`、`recovery-6.json`、`recovery-18.json`、`locked-events.json`及`tcp-peer`对应原协议快照 |
+
+TCP最终快照ignoredPackets为0、mapErrors为空；仍有已知的组件装备着色／无形透明限制，不能以原动作包替代逐帧像素验收。该批没有佣兵实战、所有武器／职业序列、德鲁伊／刺客变身、三难度、跨机器、Linux或原D2GS认证；怪物与佣兵的纯整数接入完成构建，运行证据只覆盖表中路径。
+
+## 服务端动画补齐有限冒烟
+
+2026-10-11 Windows Release、D2S v96；该批客户端SHA256 `8E6405C5684F22EE3BA18B60BD8664A379270271A2EB8182E1527C71E107A302`、独立服务端 `29AD217F4AB17950F72CAA4D55009A9ADB4F5E98978245A56F8FEF0EA75E81E3`，最新包另见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。证据在`artifacts/animation-timing/server-audit`，只运行既有游戏和调试管道。管理成长、人数、敌人、旅行及补满资源只准备条件；伤害、命中、技能动作及恢复由游戏正常执行，没有新增测试脚本、用例或专用程序。
+
+`sor`／`barb`证据来自本轮中间包客户端SHA256 `45D8BC9372617C210AA824E1C28F4F8F4C6325D6304EC56D12E6708538EE8E6D`；最终增量只补沙虫女王S1的原帧准备，最终包重新运行`final`中的序列、重载和画面路径，不将中间包结果计作最终包逐项复测。
+
+| 典型路径 | 实际结果及证据 |
+| --- | --- |
+| 连续受击与锁内命令 | 女巫第一次GH结束tick465，未结束时再次受击延长到469；锁内移动／施法均conflict，原action6保持。`sor/first-gh.json`、`before-restart.json`、`restarted-gh.json`、`locked-events.json` |
+| 眩晕期间再次命中 | 野蛮人实际Stun139命中brute1，收到state21／怪物原GH mode3；随后普通攻击再次产生GH，interruption从1到2。`barb/stun-hit.json`、`stun-events.json`、`stunned-normal-hit.json` |
+| 怪物Smite与击退锁 | Duriel实际Smite97在tick916命中，玩家位移并收到action20／state21，KB锁到922（6tick）；tick919移动／施法均conflict，结束后recovering清零，眩晕状态仍保留到独立期限。GH原图可见。`barb/knockback.json`、`knockback-world.json`、`knockback-locked-events.json`、`knockback-finished.json`、`knockback.png` |
+| 怪物与佣兵Jab | 最终包Duriel技能10起始238、结束251（13tick）；第二幕佣兵技能10起始198、结束212（14tick）。按权威attack事件起点核算，不用采样快照tick减结束tick。`final/combat-events.json`、`duriel-jab.json`、`hireling-jab.json`；原MonSeq事件行已接入调度，未逐次认证所有多事件伤害 |
+| 保存重载及画面 | 最终包新进程加载同一45级野蛮人、技能及45级第二幕佣兵，recoveryUntil／lastBlockTick均0；自然战斗画面正常，最终ignoredPackets为0、mapErrors为空、stderr为空。`final/reentry.json`、`finished-world.json`、`scene.png` |
+
+客户端与独立服务端均完成Release构建／打包，嵌入宿主与独立服务端共用同一领域实现；本轮没有运行PvPGN／原D2GS后端。抽取上述典型路径，不穷举每个怪物、武器或职业；女武神／死灵召唤物、全部特殊模式／装备状态速率组合、三难度、跨机器和Linux仍未运行认证。前包的全部断点及双客户端结果保留在上节，不能替代本包对应路径复验。
 
 ## 通用施法表现有限证据
 
