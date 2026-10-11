@@ -13,7 +13,14 @@ std::string speechKey(std::string_view value) {
 }
 std::string speechText(std::string_view value) {
     std::string text="text:";
-    for(const unsigned char c:value) {
+    for(size_t index=0;index<value.size();++index) {
+        const auto sequence=value.substr(index,3);
+        // Authored UTF-16 NPC text is decoded to UTF-8, while TBL strings
+        // retain their original single-byte punctuation.
+        if(sequence=="\xE2\x80\xA6") {text+="...";index+=2;continue;}
+        if(sequence=="\xE2\x80\x98" || sequence=="\xE2\x80\x99") {text+='\'';index+=2;continue;}
+        if(sequence=="\xE2\x80\x9C" || sequence=="\xE2\x80\x9D") {text+='"';index+=2;continue;}
+        const auto c=static_cast<unsigned char>(value[index]);
         if(std::isspace(c)) continue;
         if(c==0x85) text+="...";
         else if(c==0x91 || c==0x92) text+='\'';
@@ -60,7 +67,6 @@ server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &inde
     // A1/A2 acknowledgements also include messages outside journal groups.
     rule.questMessages.insert(callbacks.begin(),callbacks.end());
     for (const auto &character : data.characters) if (const auto text = message(introSpeech(data.npcDialogues, name, character.name, act))) rule.introductions.emplace(character.name, *text);
-    for (size_t i = 0; i < 8; ++i) if (const auto text = message(gossipSpeech(data.npcDialogues, name, i, act)); text && std::find(rule.gossip.begin(),rule.gossip.end(),*text)==rule.gossip.end()) rule.gossip.push_back(*text);
     return rule;
 }
 }

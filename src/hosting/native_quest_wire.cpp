@@ -9,15 +9,43 @@
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include <algorithm>
+#include <array>
 namespace d2x {
-std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::QuestFact &fact) {
+namespace {
+    // Current 1.13c D2Game's 37-entry table at RVA 0x10DC00. This order
+    // differs from the 1.10f gpQuestInitTable (the extra slot 41 is at index 7).
+    constexpr std::array<unsigned,37> initializationSlots{
+        0,1,2,3,4,5,6,41,8,9,10,11,12,13,14,30,31,16,17,18,19,20,21,22,32,24,25,26,27,29,33,35,36,37,38,39,40};
+}
+Bytes nativeQuestInitialization(const server::QuestFact &fact) {
+    return hosting::encodeServerPacket(hosting::ServerMessage::QuestAvailability,[&](auto &out) {
+        for(const auto slot:initializationSlots) out.u8((fact.gameFlags.at(slot)&0x8000)?0:1);
+    });
+}
+std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::QuestFact &fact,std::optional<EntityId> npc) {
     using namespace hosting; D2sFixedSections sections;
     const auto &record=fact.record;
     if(!record.nativeSaveSections.empty()) sections=readD2sFixedSections(std::span(reinterpret_cast<const uint8_t *>(record.nativeSaveSections.data()),record.nativeSaveSections.size()));
     exportD2sQuests(record,sections,data.npcDialogues);
-    const auto flags=std::span<const uint8_t>(sections.quests).subspan(10+size_t(fact.difficulty)*96,96);
+    auto flags=std::span<uint8_t>(sections.quests).subspan(10+size_t(fact.difficulty)*96,96);
+    // Current 1.13c D2Common RVA 0x2D140 resets slots 0..41, including
+    // Akara's reset reward. The older D2MOO loop stops before slot 41.
+    const auto resetGoal=flags[41*2+1]&0x20;
+    for(size_t slot=0;slot<42;++slot) flags[slot*2+1]&=uint8_t(~0x60);
+    for(const auto &definition:questDefinitions) {
+        const auto at=definition.nativeSlot*2;
+        if(fact.credited[questIndex(definition.id)]) flags[at+1]|=0x20;
+        else if(flags[at]&2) flags[at+1]|=0x80; // Reward pending from a previous game.
+        const auto word=uint16_t(flags[at]|unsigned(flags[at+1])<<8);
+        if(fact.unavailable[questIndex(definition.id)] && !(word&0x2003)) flags[at+1]|=0x40;
+    }
+    if(fact.credited[questIndex(QuestId::DenOfEvil)]) flags[41*2+1]|=resetGoal;
+    else if(flags[41*2]&2) flags[41*2+1]|=0x80;
     std::vector<Bytes> result;
-    result.push_back(encodeServerPacket(ServerMessage::PlayerQuests,[&](auto &out){out.u8(1);out.u32(uint32_t(record.id.value));out.u8(0);out.append(flags);}));
+    result.push_back(encodeServerPacket(ServerMessage::GameQuests,[&](auto &out){for(const auto word:fact.gameFlags) out.u16(word);}));
+    result.push_back(encodeServerPacket(ServerMessage::PlayerQuests,[&](auto &out){out.u8(npc?1:6);out.u32(npc?uint32_t(npc->value):0);out.u8(0);out.append(flags);}));
+    if(npc) return result; // 27 -> 29 -> NPC-context 28 activates the original client.
+    std::array<uint8_t,41> statuses{};
     const auto &book=record.quests.at(size_t(fact.difficulty));
     // A1Q1..6 StatusCycler: native quest numbers follow record slots,
     // not the journal's display order (Tools=3, Cain=4).
@@ -36,7 +64,7 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         case QuestId::TaintedSun: status=stage>=4?13:stage==3?4:uint8_t(stage);break;
         case QuestId::ArcaneSanctuary: status=stage>=4?13:uint8_t(stage);break;
         case QuestId::Summoner: status=stage>=3?13:stage==2?4:stage==1?2:0;break;
-        case QuestId::SevenTombs: status=stage>=5?13:stage==4?6:stage==3?5:stage==2?4:uint8_t(stage);break;
+        case QuestId::SevenTombs: status=stage>=5?0:stage==4?6:stage==3?5:stage==2?4:uint8_t(stage);break;
         case QuestId::GoldenBird: status=stage>=6?13:stage==5?5:uint8_t(stage);break;
         case QuestId::BladeOfTheOldReligion: status=stage>=5?13:stage==4?uint8_t(state&gidbinnRingGranted?6:5):stage==3?4:uint8_t(stage);break;
         case QuestId::KhalimsWill: status=fact.khalimStatus.value_or(stage>=4?13:stage==3?6:stage?1:0);break;
@@ -57,15 +85,19 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         // Quests.h chain number is distinct from the persisted filter slot.
         const auto number=definition.nativeSlot-unsigned(definition.act);
         if(definition.act==2 && !record.completedActs.at(size_t(fact.difficulty)).at(1)) status=0;
-        result.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){out.u8(uint8_t(number));out.u8(0);out.u8(status);out.u16(definition.id==QuestId::DenOfEvil?uint16_t(fact.remaining):definition.id==QuestId::RescueOnMountArreat?uint16_t(15-std::min(fact.rescued,15u)):0);}));
+        if(flags[definition.nativeSlot*2+1]&0x40) status=12;
+        statuses.at(definition.nativeSlot)=status;
+        if(fact.fullStatus && (fact.gameFlags[definition.nativeSlot]&0x8000)) statuses.at(definition.nativeSlot)=0;
+        if(!fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){out.u8(uint8_t(number));out.u8(0);out.u8(status);out.u16(definition.id==QuestId::DenOfEvil?uint16_t(fact.remaining):definition.id==QuestId::RescueOnMountArreat?uint16_t(15-std::min(fact.rescued,15u)):0);}));
     }
     unsigned seen=0;bool valid=true;
     for(const int stone:fact.stones) {if(stone<17 || stone>21 || (seen&(1u<<(stone-17)))) {valid=false;break;}seen|=1u<<(stone-17);}
     if(valid && book.at(questIndex(QuestId::SearchForCain)).stage>=uint32_t(CainStage::ScrollTranslated))
         result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(4);for(int stone:fact.stones) out.u16(uint16_t(stone-17));out.u16(0);}));
-    if((fact.tombOffset && *fact.tombOffset<7) || book.at(questIndex(QuestId::RescueOnMountArreat)).stage)
+    if((fact.tombOffset && *fact.tombOffset<7) || book.at(questIndex(QuestId::RescueOnMountArreat)).stage || book.at(questIndex(QuestId::DenOfEvil)).stage)
         result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(1);out.u16(uint16_t(fact.remaining));out.u16(fact.tombOffset.value_or(0));out.u16(uint16_t(15-std::min(fact.rescued,15u)));for(int i=0;i<3;++i)out.u16(0);}));
     if(fact.eclipse) result.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out){out.u32(*fact.eclipse?5:2);out.u32(0);out.u8(*fact.eclipse?1:0);}));
+    if(fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestStatuses,[&](auto &out){out.append(statuses);}));
     return result;
 }
 }

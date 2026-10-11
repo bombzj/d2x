@@ -101,7 +101,7 @@ void playerMode(OnlineView &v, const OnlineUnit &u) {
         if (!onlinePlayerDead(w)) w.respawnRequest.reset();
         const auto phase = dead || w.deathPhase == OnlineDeathPhase::Dead ? OnlineDeathPhase::Dead : OnlineDeathPhase::Dying;
         if (w.deathPhase != phase) { w.deathPhase = phase; w.deathRevision = w.revision; }
-        w.movementRequest.reset(); w.npcRequested.reset(); w.npcConversation.reset(); w.waypointSource.reset();
+        w.movementRequest.reset(); w.npcRequested.reset(); w.npcPendingConversation.reset(); w.npcConversation.reset(); w.waypointSource.reset();
         w.waypointRequested.reset();
         w.waypointActivation.reset();
         w.staffSource.reset();
@@ -136,7 +136,7 @@ void removePlayer(OnlineWorldView &w) {
     w.waypointSource.reset();
     w.waypointRequested.reset();
     w.waypointActivation.reset();
-    w.npcRequested.reset(); w.npcConversation.reset(); w.movementRequest.reset();
+    w.npcRequested.reset(); w.npcPendingConversation.reset(); w.npcConversation.reset(); w.movementRequest.reset();
     w.staffSource.reset();
     w.townPortalPending = false;
     w.playerPosition.reset();
@@ -240,6 +240,14 @@ void itemPacket(OnlineView &v, const Packet &p) {
     const auto packed = r.take(r.remaining()); item.packed.assign(packed.begin(), packed.end());
     BitReader bits(packed);
     item.flags = bits.read(32); bits.read(10); item.mode = uint8_t(bits.read(3));
+    // A successful sale receipt can precede the seller's removal packet.
+    // Its ONCURSOR mode describes equipment removal, not a new owned cursor.
+    if ((item.action == 5 || item.action == 8 || item.action == 15 || item.action == 17) &&
+        v.world.tradeResult && v.world.tradeResult->result == 1 &&
+        v.world.tradeResult->item == item.id && !v.world.items.contains(item.id)) {
+        removeItem(v.world, item.id);
+        return;
+    }
     // Taking an item can combine removal with its new cursor mode in the same packet.
     if ((item.action == 5 || item.action == 15) && item.mode != 4) {
         removeItem(v.world, item.id);
@@ -376,7 +384,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         if(k.type==2 && w.staffSource==k.id) {w.staffSource.reset();++w.interactionGeneration;}
         if(k.type==2 && w.npcConversation && w.npcConversation->type==2 && w.npcConversation->source==k.id) {w.npcConversation.reset();++w.interactionGeneration;}
         if (k.type == 1) {
-            if (w.npcRequested == k.id) w.npcRequested.reset();
+            if (w.npcRequested == k.id) {w.npcRequested.reset(); w.npcPendingConversation.reset();}
             if (w.npcConversation && w.npcConversation->source == k.id) w.npcConversation.reset();
             if (w.shopRequested == k.id) w.shopRequested.reset();
             if (w.shopSource == k.id) w.shopSource.reset();
@@ -623,15 +631,30 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     }
     case 0x28: case 0x29: {
         uint8_t kind = 6;
-        if (p.id == 0x28) { kind = r.u8(); r.u32(); r.u8(); }
+        uint32_t source=0;
+        if (p.id == 0x28) { kind = r.u8(); source=r.u32(); r.u8(); }
         std::array<uint16_t, 48> flags;
         for (auto &value : flags) value = r.u16();
         r.finish();
         if (p.id == 0x29) w.quests.gameFlags = flags;
         else if (kind == 6 || kind == 1) w.quests.playerFlags = flags; // Initialization or NPC's player-private record.
+        if(p.id==0x28 && kind==1 && w.npcRequested==source && w.npcPendingConversation &&
+            w.npcPendingConversation->source==source && w.units.contains({1,source})) {
+            w.npcConversation=std::move(w.npcPendingConversation);
+            w.npcPendingConversation.reset();
+            w.npcConversation->revision=w.revision;
+        }
         w.quests.revision = w.revision;
         break;
     }
+    case 0x5E: {
+        std::array<uint8_t,37> availability;
+        for(auto &value:availability) value=r.u8();
+        r.finish(); w.quests.availability=availability; w.quests.revision=w.revision;
+        break;
+    }
+    case 0x5F:
+        w.playerPortalFlags=r.u32(); r.finish(); break;
     case 0x52:
         for (auto &status : w.quests.statuses) status = r.u8();
         r.finish(); w.quests.revision = w.revision; break;
@@ -705,7 +728,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     case 0x27: {
         const auto target = key(r);
         const auto count = r.u8(); r.u8();
-        if (count > 8) throw ProtocolError("Invalid native NPC message count");
+        if (count >= 8) throw ProtocolError("Invalid native NPC message count");
         std::vector<OnlineNpcMessage> messages;
         for (int i = 0; i < 8; ++i) {
             const auto menu = r.u8(); r.u8(); const auto id = r.u16();
@@ -714,9 +737,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         r.finish();
         if ((target.type == 1 && w.npcRequested == target.id) || (target.type==2 && w.units.contains(target))) {
             w.questAlerts.erase(target);
-            if (!w.npcConversation || w.npcConversation->source != target.id)
-                w.npcConversation = OnlineNpcConversation{target.id, 0, {}, {}};
-            auto &conversation = *w.npcConversation;
+            auto &current=target.type==1?w.npcPendingConversation:w.npcConversation;
+            if (!current || current->source != target.id)
+                current = OnlineNpcConversation{target.id, 0, {}, {}};
+            auto &conversation = *current;
             conversation.type=target.type;
             conversation.messages = std::move(messages);
             conversation.acknowledged.clear();
@@ -812,7 +836,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             trade.revision = w.revision; trade.lastAction = action;
             ++w.interactionGeneration;
             w.movementRequest.reset();
-            w.npcRequested.reset(); w.npcConversation.reset();
+            w.npcRequested.reset(); w.npcPendingConversation.reset(); w.npcConversation.reset();
             w.waypointRequested.reset(); w.waypointSource.reset();
             w.storage = {}; w.shopRequested.reset(); w.shopSource.reset(); w.shopGamble = false;
             if (w.itemRequest && w.itemRequest->state == OnlineItemRequest::State::Pending)
@@ -1108,7 +1132,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                 }
                 if (w.waypointSource || w.waypointRequested || w.npcRequested || w.npcConversation)
                     ++w.interactionGeneration;
-                w.waypointSource.reset(); w.waypointRequested.reset(); w.npcRequested.reset();
+                w.waypointSource.reset(); w.waypointRequested.reset(); w.npcRequested.reset(); w.npcPendingConversation.reset();
                 w.waypointActivation.reset();
                 w.npcConversation.reset(); w.movementRequest.reset();
                 w.townPortalPending = false;

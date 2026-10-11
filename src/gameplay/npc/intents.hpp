@@ -9,7 +9,7 @@ struct IdentifyWithCain { EntityId target; };
 struct EndNpcConversation { EntityId target; };
 struct TalkToNpc {
     EntityId target;
-    enum class Action { Talk, Acknowledge, Trade } action = Action::Talk;
+    enum class Action { Talk, Acknowledge, Trade, Initialize } action = Action::Talk;
     std::optional<uint32_t> message;
 };
 struct ClaimAkaraRespec { EntityId target; };

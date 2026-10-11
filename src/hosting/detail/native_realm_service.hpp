@@ -3,6 +3,7 @@
 #include "native_realm_host.hpp"
 #include "hosting/game_host.hpp"
 #include "hosting/game_content.hpp"
+#include "hosting/native_game_wire.hpp"
 #include "hosting/administration.hpp"
 #include "hosting/protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
@@ -51,6 +52,9 @@ struct NativeRealmService {
         GamePhase phase = GamePhase::Closed;
         uint64_t sequence{}, sentRevision{}, sentMovement{};
         Bytes lastMotion;
+        std::optional<NativePlayerResources> resources;
+        uint64_t resourceTick{};
+        RegionId resourceArea{};
         std::set<RegionId> areas;
         std::map<EntityId, std::pair<uint64_t, std::string>> roster;
         std::map<EntityId,Bytes> social,partyVitals,partyPositions;
@@ -62,6 +66,7 @@ struct NativeRealmService {
         std::map<EntityId, Bytes> petVitals;
         std::map<EntityId, uint64_t> groundItems, corpses, objects, portals;
         std::map<EntityId, std::set<EntityId>> corpseEquipment;
+        std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;
         std::set<EntityId> npcs, shopItems;
         std::map<EntityId,std::set<int>> npcStates;
@@ -118,6 +123,7 @@ struct NativeRealmService {
     void uploadCharacter(net::protocol::Reader &);
     void recoverTcpIpSave();
     void failGame();
+    void rejectAdmission(uint32_t,std::string);
     void setPaused(bool);
     void publishMotion(bool force = false);
     void publishEvents();

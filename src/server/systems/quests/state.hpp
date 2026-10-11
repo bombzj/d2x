@@ -11,11 +11,11 @@ namespace d2x::server::quests {
 struct ActOneState {
     bool denCleared{};
     unsigned denRemaining{};
-    std::set<PlayerId> eligible;
+    std::set<PlayerId> contributors;
     std::map<PlayerId,unsigned> observed;
     std::array<int,5> stones{};
     unsigned activatedStones{};
-    bool stonesOrdered{}, cainRescued{}, restoreCairnStones{}, cainPortalOpened{};
+    bool stonesOrdered{}, cainRescued{}, restoreCairnStones{}, cainPortalOpened{}, cainOffer{}, burialOffer{}, toolsOffer{};
     bool andarielPortal{};
     uint64_t andarielPortalAt{};
 };

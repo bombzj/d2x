@@ -2,6 +2,7 @@
 #include "gameplay/combat/life.hpp"
 #include "native_item_wire.hpp"
 #include "native_character_wire.hpp"
+#include "native_quest_wire.hpp"
 #include "native_combat_wire.hpp"
 #include "protocol/message_catalog.hpp"
 #include "network/protocol/bits.hpp"
@@ -28,7 +29,27 @@ void key(Writer &out, const PlayerSnapshot &view) {
     out.u8(0); out.u32(uint32_t(view.actor.id.value));
 }
 }
-Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
+NativePlayerResources nativePlayerResources(const PlayerSnapshot &view,Vec origin) {
+    const auto position=view.actor.position+origin,target=view.actor.nextPosition+origin;
+    if(!std::isfinite(position.x) || !std::isfinite(position.y) || position.x<0 || position.y<0 || position.x>65535 || position.y>65535)
+        throw std::runtime_error("Resource position exceeds native coordinates");
+    const auto resource=[](float value) {if(!std::isfinite(value)) throw std::runtime_error("Invalid native resource");return uint16_t(std::clamp(value,0.f,32767.f));};
+    const auto x=uint16_t(std::lround(position.x)),y=uint16_t(std::lround(position.y));
+    // PlrMsg sends the signed low byte of current minus first path point.
+    return {resource(view.life),resource(view.mana),resource(view.stamina),x,y,
+        view.potionLifePercent,view.potionManaPercent,uint8_t(int(x)-int(std::lround(target.x))),uint8_t(int(y)-int(std::lround(target.y)))};
+}
+Bytes nativeResourceUpdate(const NativePlayerResources &value,uint8_t message) {
+    if(message!=0x18 && message!=0x95 && message!=0x96) throw std::logic_error("Invalid resource message");
+    net::protocol::BitWriter bits;
+    if(message!=0x96) {bits.write(value.life,15);bits.write(value.mana,15);}
+    bits.write(value.stamina,15);
+    if(message==0x18) {bits.write(value.potionLife,7);bits.write(value.potionMana,7);}
+    bits.write(value.x,16);bits.write(value.y,16);bits.write(value.offsetX,8);bits.write(value.offsetY,8);
+    const auto bytes=bits.release();
+    return encodeServerPacket(static_cast<ServerMessage>(message),[&](auto &out){out.append(bytes);});
+}
+Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin, bool targetVisible) {
     if ((view.attacking || view.recovering) && view.life > 0) {
         if (!view.actor.moving) return {};
         // Moving skills retain their skill action while original 16 updates
@@ -38,6 +59,12 @@ Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin) {
         return update.release();
     }
     Writer out;
+    if(view.actor.moving && view.life>0 && view.actor.target && targetVisible) {
+        return encodeServerPacket(ServerMessage::MoveUnit,[&](auto &wire) {
+            key(wire,view);wire.u8(view.actor.running?24:0);
+            wire.u8(view.actor.target->type);wire.u32(uint32_t(view.actor.target->id.value));point(wire,view.actor.position+origin);
+        });
+    }
     // The next path corner is authority-owned, never a route from the client.
     out.u8(view.actor.moving ? 0x0F : 0x0D); key(out, view);
     out.u8(view.life <= 0 ? (view.deadSettled ? 9 : 8) : view.actor.moving ? (view.actor.running ? 23 : 1) : 7);
@@ -79,7 +106,7 @@ Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player)
     });
 }
 std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const PersistentCharacter &state,
-    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition) {
+    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition, const server::QuestFact &quests) {
     std::vector<Bytes> result;
     const auto &player = state.player;
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
@@ -87,7 +114,6 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     const auto classId = uint8_t(found - data.characters.begin());
     auto emit = [&](ServerMessage id, auto fill) { result.push_back(encodeServerPacket(id, fill)); };
     emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(actTownLevels.at(size_t(area.request.act)))); out.u32(0); });
-    emit(ServerMessage::AssignPlayerIdentity, [&](auto &out) { key(out, view); });
     for (const auto &[x, y] : area.rooms)
         emit(ServerMessage::RevealRoom, [&](auto &out) { out.u16(uint16_t(x)); out.u16(uint16_t(y)); out.u8(uint8_t(area.request.level)); });
     emit(ServerMessage::AssignPlayer, [&](auto &out) {
@@ -95,6 +121,24 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
         for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
         point(out, view.actor.position + area.origin);
     });
+    // 5E initializes the original client's quest table, including the flag
+    // consulted when NPCs are assigned in quest-controlled levels.
+    result.push_back(nativeQuestInitialization(quests));
+    // The native 0B callback looks up an already assigned unit. Sending it
+    // before 59 leaves the local player null when 19..1F attributes arrive.
+    emit(ServerMessage::AssignPlayerIdentity, [&](auto &out) { key(out, view); });
+    // UNITS_InitPlayer starts with DUNGEON_GetPortalFlagFromLevelId(1).
+    // Portal bit order comes from the current MPQ's Portal-marked levels.
+    const auto &levels=data.tables.at("levels");
+    if(!levels.has("Portal")) throw std::runtime_error("Levels lacks native Portal flags");
+    unsigned portalIndex=0; uint32_t initialPortalFlags=0;
+    for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Portal").value_or(0)) {
+        if(portalIndex>=32) throw std::runtime_error("Portal levels exceed native flag capacity");
+        if(levels.number(row,"Id")==1) initialPortalFlags=uint32_t(1)<<portalIndex;
+        ++portalIndex;
+    }
+    if(!initialPortalFlags) throw std::runtime_error("Missing Rogue Encampment portal flag");
+    emit(ServerMessage::PlayerPortalFlags, [&](auto &out) { out.u32(initialPortalFlags); });
     // SUNITMSG_FirstFn sends AA even for an empty initial state list. A new
     // admission has no transient stat lists; later A7/A8/A9 carry updates.
     result.push_back(nativeStateSnapshot(data,player.id,0,view.states,{}));
@@ -113,13 +157,7 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     }
     // Player-private quest initialization and the game quest record are
     // distinct original messages, even in a one-player game.
-    D2sFixedSections sections;
-    if (!player.nativeSaveSections.empty()) sections = readD2sFixedSections(std::span(
-        reinterpret_cast<const uint8_t *>(player.nativeSaveSections.data()), player.nativeSaveSections.size()));
-    exportD2sQuests(player, sections, data.npcDialogues);
-    const auto flags = std::span<const uint8_t>(sections.quests).subspan(10 + size_t(state.difficulty) * 96, 96);
-    emit(ServerMessage::GameQuests, [&](auto &out) { out.append(flags); });
-    emit(ServerMessage::PlayerQuests, [&](auto &out) { out.u8(6); out.u32(uint32_t(player.id.value)); out.u8(0); out.append(flags); });
+    for(auto &packet:nativeQuestUpdate(data,quests)) result.push_back(std::move(packet));
     for (auto &packet : nativeAreaUnits(area, definition)) result.push_back(std::move(packet));
     emit(ServerMessage::LoadComplete, [](auto &) {});
     return result;

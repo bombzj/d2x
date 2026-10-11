@@ -41,7 +41,7 @@ RequestResult InteractUnit(GameplayContext &context, net::protocol::Reader &in) 
 RequestResult InitializeNpc(GameplayContext &context, net::protocol::Reader &in) {
     const auto type=in.u32(), id=in.u32(); in.finish();
     if(type!=1) return {RequestStatus::Rejected};
-    return submitGameplay(context,server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Talk,{}}});
+    return submitGameplay(context,server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Initialize,{}}});
 }
 RequestResult CloseNpc(GameplayContext &context, net::protocol::Reader &in) {
     const auto type=in.u32(), id=in.u32(); in.finish();

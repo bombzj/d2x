@@ -18,6 +18,13 @@ void LanRealm::retire(Peer &peer) {
     catch (const std::exception &error) { peer.service->counters.lastFailure = error.what(); }
 }
 void LanRealm::fail(Peer &peer, std::string error) {
+    if(!peer.closed && !peer.closing && (peer.service->peer.phase==GamePhase::Connected || peer.service->peer.phase==GamePhase::LoggedOn)) {
+        try {
+            peer.service->rejectAdmission(6,error);peer.closing=peer.draining=true;
+            peer.deadline=std::chrono::steady_clock::now()+admissionTimeout;
+            network_.closeAfterWrites(peer.socket);return;
+        } catch(const std::exception &) { /* A closed/full transport cannot deliver B4. */ }
+    }
     peer.service->failure = error; peer.service->counters.lastFailure = std::move(error);
     ++peer.service->counters.failures; peer.service->failGame();
     peer.closed = true; network_.close(peer.socket); retire(peer);
@@ -40,8 +47,17 @@ void LanRealm::collect() {
         (void)id;
         if (peer->closed) continue;
         if (peer->service->peer.phase == GamePhase::Closed) {
-            if (!peer->closing) { peer->closing = true; peer->deadline = now + admissionTimeout; network_.closeAfterWrites(peer->socket); }
-            if (now >= peer->deadline) fail(*peer, "TCP/IP save output timed out");
+            // B3/B0 are processed by the original client's game loop. An
+            // immediate FIN can be observed as a lost connection before B0.
+            // Let the client close after consuming the save/leave response;
+            // bound a peer which never finishes with the normal write drain.
+            if (!peer->closing) { peer->closing = true; peer->deadline = now + admissionTimeout; }
+            if (now >= peer->deadline) {
+                if(!peer->draining) {
+                    peer->draining=true; peer->deadline=now+admissionTimeout;
+                    network_.closeAfterWrites(peer->socket);
+                } else fail(*peer, "TCP/IP save output timed out");
+            }
         } else if (peer->service->peer.phase != GamePhase::Entered && now >= peer->deadline)
             fail(*peer, "Native TCP/IP character admission timed out");
     }

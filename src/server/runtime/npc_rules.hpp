@@ -13,7 +13,6 @@ struct NpcRule {
     int nativeClass{}, size{};
     bool vendor{}, repair{}, identify{}, heal{}, gamble{};
     std::map<std::string, uint16_t, std::less<>> introductions;
-    std::vector<uint16_t> gossip;
     std::set<uint16_t> questMessages;
     std::map<std::pair<QuestId,std::string>,uint16_t> questSpeeches;
     int questInitFunction{};

@@ -12,6 +12,7 @@ GameInstance::GameInstance(GameDefinition definition)
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
     systems_.world.initialize();
     players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_);
+    systems_.quests.initialize(players_.find({1})->persistent.player);
 }
 PlayerId GameInstance::admit(GameDefinition definition) {
     if (players_.all().size() >= 8 || nextPlayer_ == UINT64_MAX)
@@ -193,6 +194,8 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     result.tick = tick_; result.revision = revision_;
     result.areaGeneration = areas_.at(player->area).generation;
     result.recovering=systems_.effects.recovering(player->actor,tick_);
+    const auto potion=systems_.effects.potionRecoveryPercent(id,tick_);
+    result.potionLifePercent=potion.first;result.potionManaPercent=potion.second;
     const auto cast = systems_.skills.read().casts.find(player->actor);
     result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted &&
         systems_.skills.busy(player->actor, tick_);
@@ -240,6 +243,14 @@ DomainResult<> GameInstance::spawnItems(PlayerId id, items::PreparedBatch batch,
     auto uniques=systems_.loot.prepareUniques(batch.limitedUniques);
     const auto result=systems_.items.install(std::move(batch), {player->area, position.value_or(player->position)});
     if(result) systems_.loot.commitUniques(std::move(uniques));
+    return result;
+}
+std::map<EntityId, EntityId> GameInstance::corpseOwners() const {
+    std::map<EntityId, EntityId> result;
+    for (const auto &[id, player] : players_.all()) {
+        (void)id;
+        for (const auto &corpse : player.persistent.corpses) result.emplace(corpse.id, corpse.owner);
+    }
     return result;
 }
 std::vector<CorpseView> GameInstance::visibleCorpses(PlayerId id) const {

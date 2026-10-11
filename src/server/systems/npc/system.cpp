@@ -39,12 +39,18 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     const auto &talk = std::get<TalkToNpc>(request.intent);
     const auto *npc = find(actor,talk.target); if (!npc) return {DomainStatus::InvalidRequest,{}};
+    // 2F confirms the conversation created by 13; do not resend 27/28 and
+    // restart the client's activation/initialization exchange.
+    if(talk.action==TalkToNpc::Action::Initialize)
+        return {find(actor,npc->id,true)?DomainStatus::Applied:DomainStatus::Stale,{}};
     const auto &player = *ports_.players.find(actor.player);
     auto record = player.persistent.player;
     if (talk.action == TalkToNpc::Action::Acknowledge) {
         auto current = state_.conversations.find(actor.player);
-        if (!find(actor,npc->id,true) || current == state_.conversations.end() || !talk.message || current->second.pendingMessage != talk.message) return {DomainStatus::Stale,{}};
-        if(current->second.quest) {
+        if (!find(actor,npc->id,true) || current == state_.conversations.end() || !talk.message) return {DomainStatus::Stale,{}};
+        const bool introduction=current->second.pendingIntroduction==talk.message;
+        if(!introduction && current->second.pendingMessage!=talk.message) return {DomainStatus::Stale,{}};
+        if(current->second.quest && !introduction) {
             auto result=ports_.quests.execute(actor,{quests::Action::Acknowledge,current->second.questId,npc->id,talk.message});
             if(result) current->second.pendingMessage.reset();
             return result;
@@ -53,18 +59,32 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         for(const auto &prelude:questPreludes) if(npc->rule.code==prelude.npcClass && ports_.areas.at(actor.area).definition.act==prelude.act) record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(prelude.id))=true;
         auto plan = ports_.transactions.prepare(transactions::CharacterEdit{actor,player.inventoryRevision,player.characterRevision,std::move(record)});
         if (!plan) return {plan.status,{}};
-        auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) current->second.pendingMessage.reset(); return result;
+        auto result = ports_.transactions.commit(std::move(*plan.value));
+        if (result) {if(introduction) current->second.pendingIntroduction.reset();else current->second.pendingMessage.reset();}
+        return result;
     }
     if (talk.action != TalkToNpc::Action::Talk) return {};
     if (state_.next == UINT64_MAX) return {DomainStatus::Capacity, {}};
     Conversation next{npc->id,actor.area,state_.next,{}}; NpcMessagesFact fact{npc->id,{}};
     next.actor=actor.actor; next.areaGeneration=actor.areaGeneration;
-    if(const auto message=ports_.quests.dialogue(actor,npc->rule)) { next.quest=true; next.questId=message->quest; next.pendingMessage=message->message.text; fact.messages.push_back(message->message); }
-    if (!next.pendingMessage && !record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc->rule.introduction)) {
-        const auto intro = npc->rule.introductions.find(record.characterClass);
-        if (intro != npc->rule.introductions.end()) { next.pendingMessage=intro->second; fact.messages.push_back({0,intro->second}); }
+    if(const auto message=ports_.quests.dialogue(actor,npc->rule)) {
+        next.quest=true; next.questId=message->quest; next.pendingMessage=message->message.text;
+        auto offered=message->message;
+        // QUESTS_InitScrollTextChain converts authored menu 1 to wire menu 0.
+        // Wire menu 1 is an urgent interaction, not an ordinary quest offer.
+        if(offered.menu==1) offered.menu=0;
+        fact.messages.push_back(offered);
     }
-    for (const auto text : npc->rule.gossip) { if (fact.messages.size() == 8) break; fact.messages.push_back({1,text}); }
+    if (!record.npcIntroductions.at(size_t(ports_.settings.difficulty)).contains(npc->rule.introduction)) {
+        const auto intro = npc->rule.introductions.find(record.characterClass);
+        if (intro != npc->rule.introductions.end() && next.pendingMessage!=intro->second) {
+            if(next.pendingMessage) next.pendingIntroduction=intro->second;
+            else next.pendingMessage=intro->second;
+            fact.messages.push_back({0,intro->second});
+        }
+    }
+    // Ordinary gossip is selected by the client from its MPQ, not appended
+    // to the server's quest/intro text chain (27).
     auto conversations = state_.conversations; conversations[actor.player] = next;
     std::optional<effects::PotionPlan> healing;
     if (npc->rule.heal) {

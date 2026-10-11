@@ -120,6 +120,7 @@ struct RealmSession::Impl {
     std::optional<OnlineCharacter> selected;
     std::string pendingCharacter, gameName, gamePassword;
     std::vector<GamePacket> worldPackets;
+    std::function<void(uint64_t, const Packet &)> gamePacketObserver;
     size_t worldBytes{};
     Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
@@ -860,7 +861,7 @@ struct RealmSession::Impl {
             world.combatRequest->state = OnlineCombatRequest::State::Interrupted;
         world.combatEvents.clear(); world.combatSequence = 0;
         world.questAlerts.clear();
-        world.npcRequested.reset(); world.npcConversation.reset(); world.movementRequest.reset();
+        world.npcRequested.reset(); world.npcPendingConversation.reset(); world.npcConversation.reset(); world.movementRequest.reset();
         world.townPortalPending = false;
         initializedNpc.reset(); portalRequest.reset();
         if (!preserveInitialPosition) {
@@ -932,6 +933,12 @@ struct RealmSession::Impl {
             return;
         }
         if (directTcpIp && packet.id == 0x00) {
+            deadline = Clock::now() + options.timeout;
+            return;
+        }
+        if (packet.id == 0xB0 && directTcpIp) {
+            // The original host sends B0 on its system channel before the
+            // buffered game-end 05/06. Keep pumping to receive game completion.
             deadline = Clock::now() + options.timeout;
             return;
         }
@@ -1093,7 +1100,7 @@ struct RealmSession::Impl {
                 ++view.world.interactionGeneration;
             portalRequest.reset(); view.world.townPortalPending = false;
             view.world.storage = {}; view.world.shopRequested.reset(); view.world.shopSource.reset(); view.world.shopGamble = false;
-            view.world.movementRequest.reset(); view.world.npcRequested.reset(); view.world.npcConversation.reset();
+            view.world.movementRequest.reset(); view.world.npcRequested.reset(); view.world.npcPendingConversation.reset(); view.world.npcConversation.reset();
             view.world.waypointSource.reset(); view.world.waypointRequested.reset(); waypointDeadline = {}; initializedNpc.reset();
         }
         if (packet.id == 0x63) {
@@ -1110,7 +1117,7 @@ struct RealmSession::Impl {
                 sent(gs, close.release());
             }
         }
-        if (packet.id == 0x27 && view.world.npcConversation && view.world.npcConversation->type==1 &&
+        if (packet.id == 0x28 && view.world.npcConversation && view.world.npcConversation->type==1 &&
             initializedNpc != view.world.npcConversation->source) {
             Writer init;
             init.u8(0x2F); init.u32(1); init.u32(view.world.npcConversation->source);
@@ -1211,6 +1218,7 @@ struct RealmSession::Impl {
                 gamePackets.append(event.data);
                 Packet packet;
                 while (gamePackets.next(packet)) {
+                    if (gamePacketObserver) gamePacketObserver(view.gameGeneration, packet);
                     const auto id = packet.id;
                     try { handle_game(std::move(packet)); }
                     catch (const ProtocolError &e) {
@@ -1271,7 +1279,7 @@ struct RealmSession::Impl {
             close.u8(0x49); close.u32(*waypoint); close.u32(0);
             sent(gs, close.release());
         }
-        world.npcRequested.reset(); world.npcConversation.reset(); world.waypointSource.reset();
+        world.npcRequested.reset(); world.npcPendingConversation.reset(); world.npcConversation.reset(); world.waypointSource.reset();
         world.waypointRequested.reset(); waypointDeadline = {};
         world.waypointActivation.reset();
         initializedNpc.reset();
@@ -1932,7 +1940,7 @@ bool RealmSession::resurrect(std::optional<OnlineIntentContext> context) {
     if (world.respawnRequest && (world.respawnRequest->state == OnlineRespawnRequest::State::WaitingForDeath ||
                                 world.respawnRequest->state == OnlineRespawnRequest::State::Sent)) return true;
     p.view.error.reset();
-    world.movementRequest.reset(); world.npcRequested.reset(); world.npcConversation.reset();
+    world.movementRequest.reset(); world.npcRequested.reset(); world.npcPendingConversation.reset(); world.npcConversation.reset();
     world.waypointSource.reset(); world.storage = {}; world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
     world.waypointRequested.reset(); p.waypointDeadline = {};
     auto request = world.respawnRequest.value_or(OnlineRespawnRequest{});
@@ -2624,5 +2632,9 @@ std::vector<GamePacket> RealmSession::take_game_packets() {
     impl_->worldPackets.clear();
     impl_->worldBytes = 0;
     return packets;
+}
+void RealmSession::observe_game_packets(std::function<void(uint64_t, const protocol::Packet &)> observer) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->gamePacketObserver = std::move(observer);
 }
 } // namespace d2x::net

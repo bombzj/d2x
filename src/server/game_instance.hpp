@@ -68,6 +68,8 @@ class GameInstance {
     std::vector<PlayerId> participants() const;
     std::vector<ItemInstance> groundItems(PlayerId) const;
     std::vector<CorpseView> visibleCorpses(PlayerId) const;
+    std::optional<QuestFact> questProjection(PlayerId id) const { const auto *p=players_.find(id);return p?std::optional<QuestFact>{systems_.quests.projection(id,p->persistent.player,p->area)}:std::nullopt; }
+    std::map<EntityId, EntityId> corpseOwners() const;
     std::vector<objects::Object> visibleObjects(PlayerId) const;
     std::vector<travel::Portal> visiblePortals(PlayerId) const;
     DomainResult<> spawnItems(PlayerId, items::PreparedBatch, std::optional<Vec>);

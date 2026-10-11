@@ -16,6 +16,8 @@ struct State {
     ActFourState actFour;
     ActFiveState actFive;
     std::array<bool,size_t(QuestId::Count)> objectives{};
+    std::array<uint16_t,48> initialFlags{}, publishedFlags{};
+    std::map<PlayerId,std::set<QuestId>> credited;
     std::map<QuestId,Goal> goals;
     std::map<PlayerId,Preparation> pending;
     uint64_t next=1;
@@ -23,7 +25,7 @@ struct State {
     std::map<EntityId,bool> completed;
     std::map<EntityId,int> objectModes;
 };
-struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; };
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
@@ -39,7 +41,8 @@ class System {
     StepStatus ancientsStep(TickContext);
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
-    void captureGoal(QuestId,uint32_t,RegionId);
+    void captureGoal(QuestId,uint32_t,RegionId,std::optional<Vec> = {});
+    std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>) const;
     std::optional<Dialogue> actOneDialogue(const ActorContext &,const NpcRule &) const;
     std::optional<Dialogue> actTwoDialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> acknowledgeActTwo(const ActorContext &,const Request &,const NpcRule &);
@@ -61,6 +64,9 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    void initialize(const CharacterRecord &);
+    std::array<uint16_t,48> gameFlags() const;
+    QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area) const { auto result=fact(player,record,area);result.fullStatus=true;return result; }
     std::optional<Dialogue> dialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;

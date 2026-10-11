@@ -84,7 +84,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         if(!program.whirlwind && program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown && (meleeDistance(p.position,2,destination,monster->rule.size)>weapon->rangeAdder+1 ||
             !area.definition.collision.segment(p.position,destination))) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
-            ports_.movement.execute(actor,{MovementAction::Move,destination,false});return {DomainStatus::Conflict,{}};
+            ports_.movement.execute(actor,{MovementAction::Move,destination,false,{},MotionTarget{unit->id,unit->type}});return {DomainStatus::Conflict,{}};
         }
     } else {
         if(!weapon->ranged && !program.thrown && !fend && !zeal && !program.commonAttack && !program.chargeVelocity && !program.whirlwind) return {DomainStatus::InvalidRequest,{}};

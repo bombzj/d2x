@@ -15,6 +15,16 @@ enum class ItemAction : uint8_t {
     Put = 4, Take = 5, Equip = 6, IndirectEquip = 7, Unequip = 8, SwapEquipment = 9, Quantity = 10, Shop = 11, Properties = 21,
     SwapStored = 13, PutBelt = 14, TakeBelt = 15, SwapBelt = 16, Cursor = 18, Socket = 19, WeaponSwitch = 23
 };
+bool ownedAction(ItemAction action) {
+    // SCmd's 9C and 9D callbacks accept different action sets. A player's
+    // belt/stored/cursor snapshots use 9C even though that player owns them.
+    switch (action) {
+    case ItemAction::Take: case ItemAction::Equip: case ItemAction::IndirectEquip:
+    case ItemAction::Unequip: case ItemAction::SwapEquipment: case ItemAction::Properties:
+    case ItemAction::Socket: case ItemAction::WeaponSwitch: return true;
+    default: return false;
+    }
+}
 Bytes itemStat(EntityId id,unsigned stat,uint32_t number,uint16_t layer=0) {
     if(id.value>UINT32_MAX || stat>=511) throw std::runtime_error("Native item stat identity overflow");
     BitWriter bits;
@@ -128,7 +138,7 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     return bits.release();
 }
 void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
-              const ItemInstance &item, ItemAction action, bool ownedPacket, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {}) {
+              const ItemInstance &item, ItemAction action, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {}) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto wireItem=item;
     if (const auto *at=std::get_if<ContainerLocation>(&item.location); at &&
@@ -152,6 +162,7 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
         saved.flags |= (saved.body == 4 || saved.body == 5) ? 0x40 : 0x80;
     }
     const auto body = packed(data, saved);
+    const bool ownedPacket = ownedAction(action);
     const size_t prefix = ownedPacket ? 13 : 8;
     if (body.size() + prefix > 255) throw std::runtime_error("Item exceeds native packet capacity");
     const auto *def = data.items.find(item.definition);
@@ -164,7 +175,7 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
     if (ownedPacket) { out.u8(uint8_t(ownerType)); out.u32(owner); }
     out.append(body); result.push_back(out.release());
     for (const auto &child : item.socketedItems)
-        emitItem(result, data, state, child, ItemAction::Socket, true, 4, uint32_t(item.id.value));
+        emitItem(result, data, state, child, ItemAction::Socket, 4, uint32_t(item.id.value));
 }
 bool equipment(ContainerKind kind) { return kind == ContainerKind::Equipment || kind == ContainerKind::BeltEquipment; }
 ContainerKind kind(const PersistentCharacter &state, const std::optional<ItemLocation> &location) {
@@ -180,7 +191,7 @@ std::vector<Bytes> nativeCorpseEquipment(const ClassicData &data, PersistentChar
         if (at.cell.x >= int(EquipmentSlot::Count)) continue;
         const auto conceal = [&](auto &&self, ItemInstance &value) -> void { value.identified = false; value.nativeFlags &= ~uint32_t(0x10); for (auto &child : value.socketedItems) self(self, child); };
         conceal(conceal, item);
-        emitItem(result, data, projection, item, ItemAction::Equip, true, 0, uint32_t(projection.player.id.value));
+        emitItem(result, data, projection, item, ItemAction::Equip, 0, uint32_t(projection.player.id.value));
     }
     return result;
 }
@@ -189,7 +200,7 @@ std::vector<Bytes> nativeTradeItems(const ClassicData &data,const server::TradeI
     for (const auto id : fact.removed)
         result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(id.value));}));
     for (const auto &[id,item] : fact.projection.inventory.items) {
-        (void)id; emitItem(result,data,fact.projection,item,ItemAction::Put,true,0,uint32_t(receiver.value),2);
+        (void)id; emitItem(result,data,fact.projection,item,ItemAction::Put,0,uint32_t(receiver.value),2);
     }
     return result;
 }
@@ -222,7 +233,7 @@ std::vector<Bytes> nativeInventoryPackets(const ClassicData &data, const Persist
         const auto kind = container->second.spec.kind;
         emitItem(result, data, state, item, equipment(kind) ? ItemAction::Equip : kind == ContainerKind::Belt ? ItemAction::PutBelt :
             kind == ContainerKind::Cursor ? ItemAction::Cursor : ItemAction::Put,
-            true, 0, uint32_t(state.player.id.value));
+            0, uint32_t(state.player.id.value));
     }
     return result;
 }
@@ -233,7 +244,7 @@ std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentChar
         const auto conceal=[&](auto &&self,ItemInstance &value)->void {value.identified=false;value.nativeFlags&=~uint32_t(0x10);for(auto &child:value.socketedItems) self(self,child);};
         if(hide) conceal(conceal,item);
         projection.player.weaponSet=0;
-        emitItem(result,data,projection,item,ItemAction::Equip,true,1,uint32_t(owner.value));
+        emitItem(result,data,projection,item,ItemAction::Equip,1,uint32_t(owner.value));
     }
     return result;
 }
@@ -252,6 +263,18 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
     const auto &state = fact.projection;
     if (state.player.id.value > UINT32_MAX) throw std::runtime_error("Inventory owner exceeds native GUID capacity");
     std::vector<Bytes> result;
+    // ItemMode clears the owner's cursor before removing a consumed cursor
+    // item. Emit before a replacement cursor item in the same transaction.
+    // Removing a unit with 0A does not replace native CLEARCURSOR semantics.
+    const bool clearCursor=std::any_of(fact.changes.begin(),fact.changes.end(),[&](const auto &change) {
+        const auto *before=change.before?std::get_if<ContainerLocation>(&*change.before):nullptr;
+        if(!before || before->container!=state.containers.cursor) return false;
+        return change.kind==ItemChangeKind::Removed ||
+            (change.kind==ItemChangeKind::Moved && kind(state,change.after)==ContainerKind::Corpse);
+    });
+    if(clearCursor) result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::ItemSkill,[&](auto &out){
+        out.u8(0);out.u32(uint32_t(state.player.id.value));
+    }));
     for (const auto &change : fact.changes) {
         if (change.item.value > UINT32_MAX) throw std::runtime_error("Inventory delta GUID overflow");
         const auto *destination=change.after?std::get_if<ContainerLocation>(&*change.after):nullptr;
@@ -275,14 +298,13 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         if (change.kind == ItemChangeKind::QuantityChanged || change.kind == ItemChangeKind::PropertiesChanged || change.kind==ItemChangeKind::DurabilityChanged) {
             if(change.kind==ItemChangeKind::DurabilityChanged) result.push_back(itemStat(change.item,72,state.inventory.items.at(change.item).durability));
             const auto action = change.kind == ItemChangeKind::QuantityChanged ? ItemAction::Quantity : ItemAction::Properties;
-            emitItem(result, data, state, state.inventory.items.at(change.item), action,
-                action == ItemAction::Properties, 0, uint32_t(state.player.id.value));
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value));
             continue;
         }
         if (change.kind == ItemChangeKind::Created) {
             const auto destination = kind(state, change.after);
             const auto action = destination == ContainerKind::Cursor ? ItemAction::Cursor : destination == ContainerKind::Belt ? ItemAction::PutBelt : equipment(destination) ? ItemAction::Equip : ItemAction::Put;
-            emitItem(result, data, state, state.inventory.items.at(change.item), action, equipment(destination), 0, uint32_t(state.player.id.value)); continue;
+            emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value)); continue;
         }
         if (change.kind != ItemChangeKind::Moved) throw std::logic_error("Unsupported inventory delta");
         const auto from = kind(state, change.before), to = kind(state, change.after);
@@ -290,25 +312,22 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(change.item.value)); })); continue;
         }
         ItemAction action;
-        bool owned;
         const auto replaced = std::find_if(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
             return other.item != change.item && other.before == change.after;
         }) != fact.changes.end();
         if (to == ContainerKind::Cursor) {
             action = equipment(from) ? ItemAction::Unequip : from == ContainerKind::Belt ? ItemAction::TakeBelt : ItemAction::Take;
-            owned = equipment(from) || from == ContainerKind::Backpack || from == ContainerKind::Stash || from == ContainerKind::Cube || from == ContainerKind::Trade;
         }
         else if (equipment(to)) {
             const bool indirect = !replaced && std::any_of(fact.changes.begin(), fact.changes.end(), [&](const auto &other) {
                 return other.kind == ItemChangeKind::Moved && other.item != change.item && equipment(kind(state, other.before)) && kind(state, other.after) == ContainerKind::Cursor;
             });
             action = replaced ? ItemAction::SwapEquipment : indirect ? ItemAction::IndirectEquip : ItemAction::Equip;
-            owned = true;
         }
-        else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; owned = false; }
-        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube || to == ContainerKind::Trade) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; owned = false; }
+        else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; }
+        else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube || to == ContainerKind::Trade) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; }
         else throw std::logic_error("Unsupported inventory destination");
-        emitItem(result, data, state, state.inventory.items.at(change.item), action, owned, 0, uint32_t(state.player.id.value));
+        emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value));
     }
     if (fact.switchedWeapons) {
         for (const auto &[id, item] : state.inventory.items) {
@@ -318,7 +337,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
             const auto slot = EquipmentSlot(at->cell.x);
             if (slot == EquipmentSlot::RightHand || slot == EquipmentSlot::LeftHand ||
                 slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand)
-                emitItem(result, data, state, item, ItemAction::WeaponSwitch, true, 0, uint32_t(state.player.id.value));
+                emitItem(result, data, state, item, ItemAction::WeaponSwitch, 0, uint32_t(state.player.id.value));
         }
         result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::WeaponSet, [](auto &) {}));
         for (size_t side = 0; side < 2; ++side)
@@ -334,7 +353,7 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
 namespace d2x {
 std::vector<Bytes> nativeShopItems(const ClassicData &data,const PersistentCharacter &state) {
     std::vector<Bytes> result;
-    for (const auto &[id,item] : state.inventory.items) { (void)id; emitItem(result,data,state,item,ItemAction::Shop,false,1,uint32_t(state.player.id.value)); }
+    for (const auto &[id,item] : state.inventory.items) { (void)id; emitItem(result,data,state,item,ItemAction::Shop,1,uint32_t(state.player.id.value)); }
     return result;
 }
 }

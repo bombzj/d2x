@@ -1,6 +1,6 @@
 # 库存与物品模块入口
 
-更新：2026-10-09。本页只维护代码入口、状态归属及领域协作。规则、分类和证据统一见[物品目录](../gameplay/items/README.md)。原服／自研宿主共用原1.13c物品包、RealmSession／RemoteInventory／RemoteUiClients及公共UI。
+更新：2026-10-11。本页只维护代码入口、状态归属及领域协作。规则、分类和证据统一见[物品目录](../gameplay/items/README.md)。原服／自研宿主共用原1.13c物品包、RealmSession／RemoteInventory／RemoteUiClients及公共UI。
 
 ## 内容与领域
 
@@ -37,6 +37,8 @@ merchant的stock只读查询统一选择普通NPC共享货架或按玩家／NPC�
 物品GUID／revision、交互与区域代次、地面generation属于不同层的条件；具体语义见[MODEL](../gameplay/items/MODEL.md)和[COMMON](../gameplay/items/COMMON.md)。原包成功条件、图形和拒绝边界见[PRESENTATION](../gameplay/items/PRESENTATION.md)，参数仅维护在[调试管道](../development/DEBUG_PIPE.md#联网物品操作)。
 
 [online_items.hpp](../../src/contracts/online_items.hpp)的onlineItemOwnedBy／onlineCursorItem／onlineHasCursorItem统一解释已知玩家归属与原mode4光标。移动、技能发送、交易、库存投影和42清光标消费复用；玩家GUID未知不等于物品owner未知时属于本人。这些是只读原包查询，不推断背包、仓库、交易或商店操作权限；各入口仍复验自己的容器、阶段和revision。
+
+hosting的`native_item_wire::ownedAction`按动作选择原9C／9D，不按“物品属于玩家”选择包号。背包放入、数量、腰带放入／取出／交换及光标创建走9C；容器取出、穿戴、卸装、交换装备、属性更新、镶嵌和切组走9D。初始库存、增量与交易展示共用选择，依据本地D2MOO SCmd及当前1.13c D2Client的两个动作回调；原版加入时发现的失败及修正边界见[服务端协议有限冒烟](SERVER_PROTOCOL.md#本批有限冒烟)。
 
 ## 修改归属
 

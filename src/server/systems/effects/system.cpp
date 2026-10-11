@@ -11,6 +11,31 @@
 #include <stdexcept>
 #include "gameplay/skills/rank_bonus.hpp"
 namespace d2x::server::effects {
+std::pair<uint8_t,uint8_t> System::potionRecoveryPercent(PlayerId id,uint64_t tick) const {
+    const auto *player=ports_.players.find(id);
+    if(!player || player->persistent.player.hp<=0) return {};
+    const auto found=state_.players.find(player->actor);if(found==state_.players.end()) return {};
+    const auto &recovery=found->second;
+    const auto percent=[&](const auto &queue,float current,int maximum,bool mana) -> uint8_t {
+        if(maximum<=0) return 0;
+        int64_t remaining=0;bool active=false;
+        for(const auto &[state,effect]:queue) if(effect.until>tick && recovery.states.hasState(state,tick)) {
+            active=true;
+            const auto frames=effect.until-tick;
+            const int64_t rate=effect.perFrame+(mana?int64_t(std::lround(player->totals.character.manaRegen*256.f/25.f)):0);
+            // Only the capped end percentage is public; avoid overflowing a
+            // long combined potion timer while deriving that projection.
+            const int64_t cap=int64_t(maximum)*256;
+            remaining+=rate>0?int64_t(std::min<uint64_t>(frames,uint64_t(cap/rate+1)))*rate:0;
+            remaining=std::min(remaining,cap);
+        }
+        if(!active) return 0;
+        const int64_t total=int64_t(current*256)+remaining;
+        return uint8_t(std::clamp<int64_t>(mana?100*total/(int64_t(maximum)*256):100*(total>>8)/maximum,0,100));
+    };
+    return {percent(recovery.healing,player->persistent.player.hp,player->totals.character.maxLife,false),
+        percent(recovery.mana,player->persistent.player.mana,player->totals.character.maxMana,true)};
+}
 namespace {
 TransientAttributes projection(const CombatEffectSet &effects, uint64_t tick) {
     TransientAttributes result; result.modifiers = effects.modifiers(tick);

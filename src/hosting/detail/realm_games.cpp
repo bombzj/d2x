@@ -35,7 +35,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
         room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level);
         binding = prepared.binding; terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
     } else {
-        if (host.participants(room.handle).size() >= room.capacity) throw ProtocolError("External game is full");
+        if (host.participants(room.handle).size() >= room.capacity) throw AdmissionFailure(15,"External game is full");
         const auto &area = shared.terrain.at(room.handle).at(room.town);
         auto definition = prepareJoiningCharacter(*content, std::move(saved), room.settings, room.town, host.nextEntity(room.handle), shared.items);
         const auto state = host.area(room.handle, room.town);
@@ -43,7 +43,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
         for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
         const auto staged = host.admit(room.handle, std::move(definition));
         try {
-            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition);
+            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged));
             for (const auto &packet : admission) validateServerPacket(packet);
             terrain = area; binding = staged;
         } catch (...) { host.remove(staged); throw; }
@@ -114,7 +114,7 @@ void NativeRealmService::joinGame(net::protocol::Reader &in) {
             const auto staged = host.admit(room.handle, std::move(definition));
             stagedBinding = staged;
             try {
-                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition);
+                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged));
                 for (const auto &packet : packets) validateServerPacket(packet);
                 terrain = area; admission = std::move(packets); binding = staged;
             } catch (...) { host.remove(staged); throw; }

@@ -247,6 +247,8 @@ std::optional<server::DiagnosticSnapshot> GameHost::diagnostics(PlayerBinding bi
 namespace d2x {
 std::vector<ItemInstance> GameHost::groundItems(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->groundItems(binding.player) : std::vector<ItemInstance>{}; }
 std::vector<server::CorpseView> GameHost::visibleCorpses(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->visibleCorpses(binding.player) : std::vector<server::CorpseView>{}; }
+std::map<EntityId, EntityId> GameHost::corpseOwners(GameHandle game) const { const auto *slot = find(game); return slot ? slot->game->corpseOwners() : std::map<EntityId, EntityId>{}; }
+std::optional<server::QuestFact> GameHost::questProjection(PlayerBinding binding) const { const auto *slot=find(binding.game);return slot?slot->game->questProjection(binding.player):std::nullopt; }
 std::vector<server::objects::Object> GameHost::visibleObjects(PlayerBinding binding) const { const auto *slot = find(binding.game); return slot ? slot->game->visibleObjects(binding.player) : std::vector<server::objects::Object>{}; }
 server::DomainResult<> GameHost::spawnItems(PlayerBinding binding, server::items::PreparedBatch batch, std::optional<Vec> position) {
     auto *slot = find(binding.game); if (!slot) return {server::DomainStatus::InvalidActor, {}};

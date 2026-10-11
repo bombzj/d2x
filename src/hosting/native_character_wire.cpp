@@ -74,29 +74,41 @@ void skillPacket(std::vector<Bytes> &packets, EntityId owner, int skill, int bas
 int rank(const std::map<int, int> &ranks, int id) {
     const auto found = ranks.find(id); return found == ranks.end() ? 0 : found->second;
 }
-void emitAttributes(std::vector<Bytes> &packets, const std::map<uint8_t, uint32_t> &current,
+void emitAttributes(std::vector<Bytes> &packets, const ClassicData &data,const std::map<uint8_t, uint32_t> &current,
                     const std::map<uint8_t, uint32_t> &previous = {}) {
+    const auto experience=nativeValues(data,{{"experience",0}}).begin()->first;
+    const auto gold=nativeValues(data,{{"gold",0}}).begin()->first;
     for (const auto &[id, value] : current) {
         const auto old = previous.find(id);
         if (old != previous.end() && old->second == value) continue;
-        packets.push_back(hosting::encodeServerPacket(hosting::ServerMessage::AttributeDword,
-            [&](auto &out) { out.u8(id); out.u32(value); }));
+        using hosting::ServerMessage;using hosting::encodeServerPacket;
+        if(id==experience) {
+            const bool delta=old!=previous.end() && value>=old->second && value-old->second<UINT16_MAX;
+            const uint32_t amount=delta?value-old->second:value;
+            const auto message=!delta?ServerMessage::ExperienceAbsolute:amount<UINT8_MAX?ServerMessage::ExperienceByte:ServerMessage::ExperienceWord;
+            packets.push_back(encodeServerPacket(message,[&](auto &out){if(!delta)out.u32(amount);else if(amount<UINT8_MAX)out.u8(uint8_t(amount));else out.u16(uint16_t(amount));}));
+        } else if(id==gold && old!=previous.end() && value>old->second && value-old->second<UINT8_MAX) {
+            packets.push_back(encodeServerPacket(ServerMessage::GoldDelta,[&](auto &out){out.u8(uint8_t(value-old->second));}));
+        } else {
+            const auto message=value<UINT8_MAX?ServerMessage::AttributeByte:value<UINT16_MAX?ServerMessage::AttributeWord:ServerMessage::AttributeDword;
+            packets.push_back(encodeServerPacket(message,[&](auto &out){out.u8(id);if(value<UINT8_MAX)out.u8(uint8_t(value));else if(value<UINT16_MAX)out.u16(uint16_t(value));else out.u32(value);}));
+        }
     }
 }
 }
 std::vector<Bytes> nativeMana(const ClassicData &data, const server::ManaFact &fact) {
     std::vector<Bytes> packets;
-    emitAttributes(packets, nativeValues(data, {{"mana", fact.mana}}));
+    emitAttributes(packets, data,nativeValues(data, {{"mana", fact.mana}}));
     return packets;
 }
 std::vector<Bytes> nativeLife(const ClassicData &data, const server::LifeFact &fact) {
     std::vector<Bytes> packets;
-    emitAttributes(packets, nativeValues(data, {{"hitpoints", fact.life}}));
+    emitAttributes(packets, data,nativeValues(data, {{"hitpoints", fact.life}}));
     return packets;
 }
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
-    emitAttributes(result, nativeValues(data, values(record, totals)));
+    emitAttributes(result, data,nativeValues(data, values(record, totals)));
     hirelingStatus(result,data,record.hireling);
     if (record.id.value > UINT32_MAX || record.skillRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
     result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::BaseSkills, [&](auto &out) {
@@ -111,7 +123,7 @@ std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const Charact
 }
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::CharacterFact &fact) {
     std::vector<Bytes> result;
-    emitAttributes(result, nativeValues(data, values(fact.after, fact.current)), nativeValues(data, values(fact.before, fact.previous)));
+    emitAttributes(result, data,nativeValues(data, values(fact.after, fact.current)), nativeValues(data, values(fact.before, fact.previous)));
     if((fact.before.hireling.hp>0)!=(fact.after.hireling.hp>0) || fact.before.hireling.seed!=fact.after.hireling.seed ||
         fact.before.hireling.sourceRow!=fact.after.hireling.sourceRow) hirelingStatus(result,data,fact.after.hireling);
     std::set<int> ids;

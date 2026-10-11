@@ -75,6 +75,7 @@ struct Actor {
     std::array<uint8_t,16> components{};
     bool shield{};
     int stopDistance{}, velocityPercent{75};
+    uint8_t pathSteps{};
     int effectVelocity{};
     bool running{};
     bool rewardComplete{}, moving{};

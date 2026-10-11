@@ -215,6 +215,11 @@ DomainResult<> System::install(Prepared prepared) {
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result) {
+        const auto credited=state_.credited.find(s.actor.player);
+        if(credited!=state_.credited.end()) {
+            if(s.kind==RewardKind::Rogue && credited->second.contains(QuestId::SistersBurialGrounds)) state_.actOne.cainOffer=true;
+            if(s.kind==RewardKind::CainRing && credited->second.contains(QuestId::SearchForCain)) state_.actOne.toolsOffer=true;
+        }
         if(s.kind==RewardKind::ThawAnya) {
             state_.actFive.anyaThawed=true;state_.objectModes[s.source]=2;
             captureGoal(QuestId::PrisonOfIce,5,s.actor.area);

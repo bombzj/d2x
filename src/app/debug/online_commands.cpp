@@ -233,10 +233,11 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         result["world"]["questAlerts"].push_back({{"type",key.type},{"id",key.id}});
     Json statuses=Json::array(); for (const auto &status:quests.statuses) statuses.push_back(optional(status));
     result["world"]["quests"]={{"revision",quests.revision}, {"playerFlags",optional(quests.playerFlags)},
-        {"gameFlags",optional(quests.gameFlags)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
+        {"gameFlags",optional(quests.gameFlags)}, {"availability",optional(quests.availability)}, {"statuses",std::move(statuses)}, {"updates",quests.updates},
         {"denRemaining",optional(quests.denRemaining)}, {"staffTombOffset",optional(quests.staffTombOffset)},
         {"rescuedBarbsRemaining",optional(quests.rescuedBarbsRemaining)}, {"cainStones",optional(quests.cainStones)}};
     result["world"]["eclipse"]=optional(v.world.eclipse);
+    result["world"]["playerPortalFlags"]=optional(v.world.playerPortalFlags);
     result["world"]["staffInteraction"]={{"source",optional(v.world.staffSource)},{"revision",v.world.staffRevision},{"result",v.world.staffResult}};
     Json roster = Json::array(), relations = Json::array(), chat = Json::array(), notices=Json::array();
     for(const auto &notice:social.notices) notices.push_back({{"type",notice.type},{"color",notice.color},{"parameter",notice.parameter},{"value",notice.value},{"nameBytes",notice.names}});

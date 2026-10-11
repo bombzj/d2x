@@ -71,7 +71,7 @@ DomainResult<> System::install(Prepared prepared) {
     const auto queued=state_.pending.find(actor.player);
     if (queued==state_.pending.end() || queued->second.token!=pending.token) return {DomainStatus::Stale,{}};
     const auto *player=ports_.players.find(actor.player);
-    const auto operation=uint8_t(request.action==Action::Sell?3:request.action==Action::Repair || request.action==Action::RepairAll?1:5);
+    auto operation=uint8_t(request.action==Action::Buy?4:request.action==Action::Sell?3:request.action==Action::Repair || request.action==Action::RepairAll?1:5);
     const auto failure=[&](DomainStatus status,uint8_t result=9)->DomainResult<> {
         if (player && player->entered) { auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,player->area},{MerchantFact{request.npc.id,request.item?request.item->id:EntityId{},0,result,player->persistent.player.gold}}}); if (!sent) return {sent.status,{}}; }
         state_.pending.erase(queued); return {status,{}};
@@ -113,6 +113,7 @@ DomainResult<> System::install(Prepared prepared) {
     auto rules=std::make_shared<EquipmentRules>(*player->rules.equipment);
     inventory::detail::Draft draft(*player,*ports_.definitions,*rules,*player->rules.character);
     auto record=player->persistent.player; uint64_t total=0; EntityId soldOffer;
+    EntityId receiptItem=request.item?request.item->id:EntityId{};
     std::optional<std::map<EntityId,Stock>> changedStocks;
     const auto accessible=[&](const ItemInstance &item) { const auto *at=std::get_if<ContainerLocation>(&item.location); const auto &c=player->persistent.containers; return at && (at->container==c.backpack || at->container==c.equipment || at->container==c.beltEquipment || (request.action==Action::Sell && at->container==c.cursor)); };
     if (request.action==Action::Buy) {
@@ -132,6 +133,7 @@ DomainResult<> System::install(Prepared prepared) {
         rules->includeSets(stock->setRules);
         if(!ports_.items.identityCapacity(1+offer->second.item.socketedItems.size())) return failure(DomainStatus::Capacity);
         total=prepared.prices.at(request.item->id); auto item=offer->second.item; item.identified=true;item.nativeFlags=(item.nativeFlags&~0x2000000u)|0x10u; item.id=ports_.items.reserveIdentity(); item.revision=1;
+        receiptItem=item.id;
         for(size_t i=0;i<item.socketedItems.size();++i) {auto &child=item.socketedItems[i];child.id=ports_.items.reserveIdentity();child.revision=1;child.location=SocketLocation{item.id,unsigned(i)};}
         item.location=ContainerLocation{player->persistent.containers.cursor,{}};
         draft.edit.inventory.items.emplace(item.id,item); rules->items.emplace(item.id,offer->second.equipment);
@@ -160,6 +162,7 @@ DomainResult<> System::install(Prepared prepared) {
             if(!amount || target.revision==UINT64_MAX) return failure(DomainStatus::Capacity);
             target.charges+=amount;++target.revision;total*=amount;
             draft.edit.changes.push_back({id,target.revision,ItemChangeKind::QuantityChanged,target.location,target.location,target.quantity});
+            receiptItem=id;
             draft.edit.inventory.items.erase(item.id);rules->items.erase(item.id);bookFilled=true;break;
         }
         if(!bookFilled && base->autoStack && !base->bookCapacity) {
@@ -168,6 +171,7 @@ DomainResult<> System::install(Prepared prepared) {
             for(const auto id:targets) {
                 const auto from=draft.edit.inventory.items.find(item.id);if(from==draft.edit.inventory.items.end()) break;
                 draft.merge({from->second.handle(),draft.edit.inventory.items.at(id).handle(),0});
+                if(!draft.edit.inventory.items.contains(item.id)) receiptItem=id;
             }
             std::erase_if(draft.edit.changes,[&](const auto &v){return v.item==item.id;});
             bookFilled=!draft.edit.inventory.items.contains(item.id);
@@ -176,11 +180,16 @@ DomainResult<> System::install(Prepared prepared) {
         }
         if(!bookFilled) {
             std::optional<ContainerLocation> destination;
-            if(base->autoBelt) destination=draft.space(item.id,player->persistent.containers.belt);
+            const auto equipped=draft.autoEquip(item.id);
+            if(!equipped) return failure(equipped.status);
+            std::erase_if(draft.edit.changes,[&](const auto &change){return change.item==item.id;});
+            if(*equipped.value) destination=std::get<ContainerLocation>(draft.edit.inventory.items.at(item.id).location);
+            if(!destination && base->autoBelt) destination=draft.space(item.id,player->persistent.containers.belt);
             if(!destination) destination=draft.space(item.id,player->persistent.containers.backpack);
             if (!destination) return failure(DomainStatus::Capacity);
-            draft.edit.inventory.items.at(item.id).location=*destination;
-            draft.edit.changes.push_back({item.id,item.revision,ItemChangeKind::Created,{},ItemLocation{*destination},item.quantity});
+            auto &bought=draft.edit.inventory.items.at(item.id);
+            bought.location=*destination;
+            draft.edit.changes.push_back({bought.id,bought.revision,ItemChangeKind::Created,{},ItemLocation{*destination},bought.quantity});
             if(request.multibuy && offer->second.permanent && base->autoBelt && destination->container==player->persistent.containers.belt) {
                 const uint64_t unitPrice=total;
                 for(unsigned i=0;i<15 && (!unitPrice || total+unitPrice<=funds);++i) {
@@ -193,7 +202,7 @@ DomainResult<> System::install(Prepared prepared) {
                     draft.edit.changes.push_back({extra.id,1,ItemChangeKind::Created,{},ItemLocation{*at},extra.quantity});total+=unitPrice;
                 }
             }
-        }
+        } else operation=5;
         if (!offer->second.permanent) soldOffer=offer->first;
     } else if (request.action==Action::Sell) {
         if (!request.item || !prepared.prices.contains(request.item->id)) return failure(DomainStatus::InvalidRequest);
@@ -210,27 +219,45 @@ DomainResult<> System::install(Prepared prepared) {
         changedStocks=state_.stocks;
         auto &stock=(*changedStocks)[request.npc.id];stock.area=actor.area;
         if(stock.offers.size()>=1024 || stock.revision==UINT64_MAX) return failure(DomainStatus::Capacity);
-        auto bought=copy;++bought.revision;
+        // SUnitNpc duplicates the sold item into NPC stock. The seller's
+        // removal and the new shop item must not share a unit identity.
+        if(!ports_.items.identityCapacity(1+copy.socketedItems.size())) return failure(DomainStatus::Capacity);
+        auto bought=copy;bought.id=ports_.items.reserveIdentity();bought.revision=1;
+        for(size_t index=0;index<bought.socketedItems.size();++index) {
+            auto &child=bought.socketedItems[index];child.id=ports_.items.reserveIdentity();child.revision=1;
+            child.location=SocketLocation{bought.id,unsigned(index)};
+        }
         stock.setRules.includeSets(*player->rules.equipment);
         stock.offers.emplace(bought.id,Offer{std::move(bought),player->rules.equipment->items.at(copy.id),false,{}});
         ++stock.revision;
     } else {
+        if(request.action==Action::Repair && (!request.item || !prepared.prices.contains(request.item->id))) return failure(DomainStatus::InvalidRequest,9);
         for (const auto &[id,price] : prepared.prices) {
             auto found=draft.edit.inventory.items.find(id); if (found==draft.edit.inventory.items.end() || !accessible(found->second) || found->second.revision==UINT64_MAX) return failure(DomainStatus::Stale);
             if (request.item && (request.item->id!=id || request.item->revision!=found->second.revision)) return failure(DomainStatus::Stale);
             auto &item=found->second; const auto *definition=ports_.definitions->find(item.definition); if (!definition) return failure(DomainStatus::Unavailable);
+            const bool partial=request.action==Action::Repair && price>uint64_t(record.gold)+record.bankGold;
             if (request.action==Action::IdentifyAll) { item.identified=true; item.nativeFlags|=0x10; }
-            else { if(prepared.repairs.contains(id)) { const auto location=item.location;const auto revision=item.revision;item=prepared.repairs.at(id);item.id=id;item.location=location;item.revision=revision;if(prepared.equipment) rules->items.insert_or_assign(id,prepared.equipment->items.at(id)); }
+            else if(partial) {
+                // SUnitNpc's partial repair uses wallet gold and a 10-bit unit cost.
+                // It does not restore charges, stacks, or a broken item.
+                const auto maximum=rules->at(id,record.level).maximumDurability;
+                if(!record.gold || item.durability>=maximum || (item.nativeFlags&0x100u)) return failure(DomainStatus::Conflict,12);
+                const uint64_t divisor=(uint64_t(price)<<10)/(maximum-item.durability);
+                const uint64_t budget=uint64_t(record.gold)<<10;
+                if(!divisor || divisor>=budget) return failure(DomainStatus::Conflict,12);
+                item.durability=unsigned(std::min<uint64_t>(maximum,uint64_t(item.durability)+budget/divisor));
+            } else { if(prepared.repairs.contains(id)) { const auto location=item.location;const auto revision=item.revision;item=prepared.repairs.at(id);item.id=id;item.location=location;item.revision=revision;if(prepared.equipment) rules->items.insert_or_assign(id,prepared.equipment->items.at(id)); }
                 const auto &values=rules->at(id,record.level); item.durability=values.maximumDurability;item.nativeFlags&=~0x100u;
                 if (definition->equipment.throwable && definition->equipment.repairable) { int extra=0; for(const auto &stat:values.stats) if(stat.effect=="item_extra_stack") extra+=stat.value; item.quantity=unsigned(std::clamp(int(definition->maxStack)+extra,1,511)); }
             }
-            ++item.revision; draft.edit.changes.push_back({id,item.revision,ItemChangeKind::PropertiesChanged,item.location,item.location,item.quantity}); total+=price;
+            ++item.revision; draft.edit.changes.push_back({id,item.revision,partial?ItemChangeKind::DurabilityChanged:ItemChangeKind::PropertiesChanged,item.location,item.location,item.quantity}); total+=partial?record.gold:price;
         }
     }
     if (total>uint64_t(record.gold)+record.bankGold) return failure(DomainStatus::Conflict,12);
     const unsigned wallet=unsigned(std::min<uint64_t>(record.gold,total)); record.gold-=wallet; record.bankGold-=unsigned(total-wallet);
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),record.weaponSet};
-    edit.equipment=rules; edit.character=record; edit.facts.emplace_back(MerchantFact{request.npc.id,request.item?request.item->id:EntityId{},operation,uint8_t(request.action==Action::Sell?1:request.action==Action::Repair || request.action==Action::RepairAll?2:0),record.gold});
+    edit.equipment=rules; edit.character=record; edit.facts.emplace_back(MerchantFact{request.npc.id,receiptItem,operation,uint8_t(request.action==Action::Sell?1:request.action==Action::Repair || request.action==Action::RepairAll?2:0),record.gold});
     if (!draft.edit.spilled.empty()) {
         auto world=inventory::detail::prepareSpill(*player,draft.edit,*rules,ports_.items);
         if (!world) return failure(world.status);

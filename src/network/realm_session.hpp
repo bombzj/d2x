@@ -4,6 +4,7 @@
 #include "network/protocol/wire.hpp"
 #include "network/byte_transport.hpp"
 #include <chrono>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -117,6 +118,9 @@ class RealmSession {
     // The basic replica in read().world has already consumed supported messages.
     // Taking packets does not mutate the view revision. No auth or tickets are exposed.
     std::vector<GamePacket> take_game_packets();
+    // Opt-in diagnostic observer on the service thread, before reduction.
+    // Includes handshake/leave packets; only D2GS server packets are exposed.
+    void observe_game_packets(std::function<void(uint64_t, const protocol::Packet &)> observer);
 
   private:
     void authenticate(LoginOptions options, bool createAccount);

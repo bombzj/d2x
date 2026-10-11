@@ -135,7 +135,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         // Object operation has already checked the original interaction geometry.
         if(type!=2 && (meleeDistance(p.position,2,target.position,victim->rule.size)>1 || !area.definition.collision.segment(p.position,target.position))) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
-            ports_.movement.execute(actor,{MovementAction::Move,target.position,false});return {DomainStatus::Conflict,{}};
+            ports_.movement.execute(actor,{MovementAction::Move,target.position,false,{},MotionTarget{unit,type}});return {DomainStatus::Conflict,{}};
         }
         const auto kick=rules.weaponAnimations.find("kk"+p.totals.equipment.animationClass);
         if(kick==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};

@@ -122,6 +122,13 @@ void NativeRealmService::failGame() {
     ticket = false;
     if (binding) host.enter(*binding, false);
 }
+void NativeRealmService::rejectAdmission(uint32_t code,std::string reason) {
+    if(peer.phase==GamePhase::Entered || peer.phase==GamePhase::Closed) throw ProtocolError("Admission error outside admission");
+    sendGame(encodeServerPacket(ServerMessage::AdmissionError,[&](auto &out){out.u32(code);}));
+    failure=std::move(reason);counters.lastFailure=failure;++counters.failures;
+    counters.lastResult="admission-rejected/"+std::to_string(code);
+    failGame();
+}
 void NativeRealmService::setPaused(bool paused) {
     if (!binding) return;
     const auto *room = shared.find(binding->game);
@@ -132,13 +139,25 @@ void NativeRealmService::publishMotion(bool force) {
     const auto view = host.read(*binding);
     if (!view) throw std::logic_error("Active game binding expired");
     if (!force && view->revision == peer.sentRevision) return;
-    auto packet = nativePlayerMotion(*view, terrain.origin);
-    if (packet.empty()) { peer.lastMotion.clear(); return; }
+    const auto resources=nativePlayerResources(*view,terrain.origin);
+    const auto &old=peer.resources;
+    uint8_t resourceMessage=0;
+    if(!old || old->potionLife!=resources.potionLife || old->potionMana!=resources.potionMana) resourceMessage=0x18;
+    else if(old->life!=resources.life || old->mana!=resources.mana) resourceMessage=0x95;
+    else if(force || peer.resourceArea!=view->actor.region || old->stamina!=resources.stamina || view->movementSequence!=peer.sentMovement ||
+        (view->tick>=peer.resourceTick+4 && (std::abs(int(old->x)-resources.x)>=2 || std::abs(int(old->y)-resources.y)>=2 || old->offsetX!=resources.offsetX || old->offsetY!=resources.offsetY))) resourceMessage=0x96;
+    std::vector<Bytes> packets;
+    if(resourceMessage) packets.push_back(nativeResourceUpdate(resources,resourceMessage));
+    // Locomotion is predicted by the original owner client. Death and forced
+    // moving skill coordinates retain their separate original action packets.
+    auto packet = view->life<=0 || ((view->attacking || view->recovering) && view->actor.moving)
+        ? nativePlayerMotion(*view, terrain.origin) : Bytes{};
     // Tick revisions alone must not broadcast identical idle poses at 25 Hz.
     // A processed/rejected move still needs its authoritative correction.
-    if (force || packet != peer.lastMotion || view->movementSequence != peer.sentMovement) {
-        sendGame(packet); peer.lastMotion = std::move(packet);
-    }
+    if(!packet.empty() && (force || packet!=peer.lastMotion || view->movementSequence!=peer.sentMovement)) packets.push_back(packet);
+    if(!packets.empty()) sendGameBatch(std::move(packets));
+    if(resourceMessage) {peer.resources=resources;peer.resourceTick=view->tick;peer.resourceArea=view->actor.region;}
+    peer.lastMotion=std::move(packet);
     peer.sentRevision = view->revision; peer.sentMovement = view->movementSequence;
 }
 void NativeRealmService::prepareReload() {
@@ -159,7 +178,7 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentChara
     prepared.authority.settings.singlePlayer = singlePlayer;
     const auto staged = host.create(std::move(prepared.authority));
     try {
-        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition);
+        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged));
         for (const auto &packet : packets) validateServerPacket(packet);
         host.pause(staged.game, true);
         shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);

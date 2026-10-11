@@ -6,6 +6,11 @@ namespace d2x::hosting {
 enum class MessageDomain { Lifecycle, Movement, Combat, Inventory, Interaction, Progression, Social, World, Character, Reserved };
 enum class MessageSupport { Stub, AdmissionOnly, Partial, Implemented };
 enum class GamePhase { Connected, LoggedOn, Entered, Closed };
+class AdmissionFailure : public net::protocol::ProtocolError {
+  public:
+    uint32_t code;
+    AdmissionFailure(uint32_t value,const char *reason) : ProtocolError(reason),code(value) {}
+};
 using ClientMessage = net::protocol::ClientMessage;
 using ServerMessage = net::protocol::ServerMessage;
 struct MessageDescriptor {

@@ -51,7 +51,7 @@ struct PvpgnServer::Impl {
         std::unique_ptr<hosting::NativeRealmService> service;
         Clock::time_point deadline = Clock::now() + std::chrono::seconds(30);
         Clock::time_point checkpoint = Clock::now() + std::chrono::seconds(60);
-        bool locked{}, entered{}, failed{}, saved{}, leaveNotified{}, leaving{}, disconnected{}, confirmLeave{};
+        bool locked{}, entered{}, failed{}, saved{}, leaveNotified{}, leaving{}, disconnected{}, confirmLeave{}, draining{};
     };
     PvpgnServerOptions options;
     std::function<void(std::string_view)> log;
@@ -229,7 +229,7 @@ struct PvpgnServer::Impl {
         out.u32(classId); out.string(peer.name, 15); send(cs, 0x22, nextSequence(), std::move(out));
     }
     void cleanup(Peer &peer) {
-        if (peer.service && peer.service->binding) {
+        if (peer.entered && peer.service && peer.service->binding) {
             if (const auto snapshot = host.host.exportCharacter(*peer.service->binding)) peer.service->selected = *snapshot;
             peer.service->checkpoint();
         }
@@ -262,7 +262,8 @@ struct PvpgnServer::Impl {
     void admit(Peer &peer, const Bytes &packet) {
         net::protocol::Reader in(packet); if (in.u8() != 0x68) throw ProtocolError("First game packet must be logon");
         const auto token = in.u32(); const auto game = in.u16(); const auto characterClass = in.u8();
-        if (in.u32() != 13 || in.u32() != 0xED5DCC50 || in.u32() != 0x91A519B6) throw ProtocolError("Unsupported game client version");
+        if(in.u32()!=13) throw hosting::AdmissionFailure(16,"Unsupported game client version");
+        if(in.u32()!=0xED5DCC50 || in.u32()!=0x91A519B6) throw hosting::AdmissionFailure(6,"Invalid game client signature");
         in.u8(); const auto nameBytes = in.take(16); in.finish();
         const auto end = std::find(nameBytes.begin(), nameBytes.end(), uint8_t{});
         if (end == nameBytes.end()) throw ProtocolError("Unterminated game character name");
@@ -301,15 +302,21 @@ struct PvpgnServer::Impl {
             saved = createCharacter(*host.content, registeredName, characterClass, uint32_t(std::random_device{}()));
             bytes = encodeSave(saved, *host.content);
             log("PvPGN new character initialized from MPQ: " + peer.name);
-        } else saved = decodeSave(bytes, *host.content);
+        } else {
+            try {saved=decodeSave(bytes,*host.content);}
+            catch(const std::exception &) {throw hosting::AdmissionFailure(14,"Invalid D2DBS character save");}
+        }
         const auto header = readD2sHeader(bytes);
-        if (folded(saved.player.name) != folded(name) || header.characterClass != characterClass || !(header.flags & 0x20) || (header.flags & 0x44))
-            throw ProtocolError("D2DBS character identity or mode mismatch");
+        if (folded(saved.player.name) != folded(name) || header.characterClass != characterClass)
+            throw ProtocolError("D2DBS character identity mismatch");
+        if(!(header.flags&0x20)) throw hosting::AdmissionFailure(23,"Expansion character required");
+        if((header.flags&0x44)==0x44) throw hosting::AdmissionFailure(21,"Hardcore character is dead");
+        if(header.flags&4) throw hosting::AdmissionFailure(20,"Hardcore character cannot join a softcore game");
         auto room = std::find_if(host.games.begin(), host.games.end(), [&](const auto &entry) { return entry.second.index == game; });
         if (room == host.games.end()) throw ProtocolError("D2CS game expired during load");
         const auto progression = (header.flags >> 8) & 31;
         if (unsigned(room->second.settings.difficulty) > (progression >= 10 ? 2u : progression >= 5 ? 1u : 0u))
-            throw ProtocolError("Character has not unlocked the requested difficulty");
+            throw hosting::AdmissionFailure(room->second.settings.difficulty==1?17:18,"Character has not unlocked the requested difficulty");
         auto *target = &peer;
         peer.service = std::make_unique<hosting::NativeRealmService>(host,
             [](uint8_t, Bytes) { throw ProtocolError("MCP output is not available on a PvPGN game connection"); },
@@ -346,10 +353,21 @@ struct PvpgnServer::Impl {
                     }
                     peer.service->game(packet);
                     if (!peer.entered && peer.service->peer.phase == hosting::GamePhase::Entered) { peer.entered = true; peer.deadline = Clock::now() + std::chrono::seconds(90); update(peer, 1); log("Character entered: " + peer.name); }
-                    if (peer.service->peer.phase == hosting::GamePhase::Closed) { peer.leaving = true; listener.close(peer.socket); break; }
+                    if (peer.service->peer.phase == hosting::GamePhase::Closed) {
+                        peer.leaving=true;peer.draining=!peer.entered;
+                        if(!peer.draining) listener.close(peer.socket);
+                        break;
+                    }
                 }
             } catch (const std::exception &error) {
-                peer.failed = peer.leaving = true; listener.close(peer.socket); log(std::string("Game peer failed: ") + error.what());
+                peer.failed=peer.leaving=true;
+                if(!peer.entered && !peer.disconnected) {
+                    const auto *admission=dynamic_cast<const hosting::AdmissionFailure *>(&error);
+                    const auto packet=hosting::encodeServerPacket(hosting::ServerMessage::AdmissionError,[&](auto &out){out.u32(admission?admission->code:6);});
+                    peer.draining=listener.send(peer.socket,packet);
+                }
+                if(!peer.draining) listener.close(peer.socket);
+                log(std::string("Game peer failed: ")+error.what());
                 if (peer.service) peer.service->peer.phase = hosting::GamePhase::Closed;
                 if (!peer.service || !peer.service->binding) { try { unlock(peer); } catch (...) {} }
             }
@@ -358,7 +376,11 @@ struct PvpgnServer::Impl {
             if (Clock::now() >= peer->deadline && !peer->failed && !peer->leaving) {
                 peer->failed = peer->leaving = true; peer->deadline = Clock::now() + std::chrono::seconds(15);
                 if (peer->service) peer->service->peer.phase = hosting::GamePhase::Closed;
-                listener.close(id);
+                if(!peer->entered && !peer->disconnected) {
+                    const auto packet=hosting::encodeServerPacket(hosting::ServerMessage::AdmissionError,[](auto &out){out.u32(6);});
+                    peer->draining=listener.send(id,packet);
+                }
+                if(!peer->draining) listener.close(id);
             }
             if (peer->service && peer->service->binding && peer->service->peer.phase == hosting::GamePhase::Closed && !peer->failed && !peer->leaving) { peer->failed = peer->leaving = true; listener.close(id); }
         }
@@ -375,7 +397,8 @@ struct PvpgnServer::Impl {
             if (peer.confirmLeave && !peer.disconnected) {
                 if (!listener.send(peer.socket, {0xB0})) throw ProtocolError("Leave confirmation could not be queued");
                 listener.closeAfterWrites(peer.socket);
-            } else listener.close(peer.socket);
+            } else if(peer.draining && !peer.disconnected) listener.closeAfterWrites(peer.socket);
+            else listener.close(peer.socket);
             current = peers.erase(current);
         }
     }

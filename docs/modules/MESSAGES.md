@@ -159,7 +159,7 @@
 | 21 | SkillRank／12 | u8 type,flags; u32 guid; u16 skill; u8 base,bonus,reserved |
 | 22／23 | 物品技能次数／选技，12／13 | 23为unit,u8 left,u16 skill,u32 owner；22见[事件编码](../../src/hosting/detail/game_events.cpp) |
 | 26 | Chat／变长 | 10字节固定头后发送者和文本双NUL，见[社交消费者](../../src/client/remote_social.cpp) |
-| 27 | NpcMessages／40 | unit; u8 count,reserved; 8组(u8 menu,reserved,u16 stringId) |
+| 27 | NpcMessages／40 | unit; u8 count（0..7）,reserved; 8组(u8 menu,reserved,u16 stringId)，原版要求count小于8；NPC列表须后接29与28/type1、NPC GUID确认，2F不重发列表 |
 | 28／29 | 私有／公共任务，103／97 | 28为u8 type,u32 player,u8 reserved后96字节；29直接96字节 |
 | 2A／2C | 商店结果／音效，15／8 | 2A见[物品编码](../../src/hosting/native_item_wire.cpp)；2C为unit,u16 sound |
 | 3E／3F／42 | 物品属性／光标／技能，变长／8／6 | 3F为u8 targetMode,u32 source,u16 skill；其余见世界消费者 |
@@ -170,6 +170,7 @@
 | 58 | NpcServiceResult／7 | u32 npc; u8 result,reserved |
 | 59 | AssignPlayer／26 | u32 player; u8 class; char[16] name; xy |
 | 5B／5C | 名册／离局，变长／5 | 5B前缀u16 total,u32 player,u8 class,char[16] name,u16 level；尾部见[名册编码](../../src/hosting/native_game_wire.cpp)；5C为u32 player |
+| 5E／5F | 任务初始化／本人门户资格，38／5 | 5E为当前1.13c初始化表顺序的37个u8 bNotIntro；不是48个任务记录槽位。5F为u32本局已访问门户区域位，不是跨幕任务完成标志 |
 | 60／63／82 | 门状态／传送点／主人，7／21／29 | 63为u32 waypoint,u16 marker=0102,112位历史；其余见事件编码 |
 | 67／68／69／6A／6B／6C／6D | NPC移动／动作，16／21／12／12／16／16／10 | u32 npc前缀；[战斗编码](../../src/hosting/native_combat_wire.cpp)保留不同动作格式，6D为u32 npc,xy,u8 life |
 | 73 | Missile／32 | 身份、位置、方向、主人、pierce见事件编码；仅MPQ ClientSend |

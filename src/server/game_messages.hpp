@@ -29,11 +29,13 @@ struct PlayerBinding {
     PlayerId player;
 };
 enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc };
+struct MotionTarget { EntityId id; uint8_t type{1}; };
 struct MovementCommand {
     MovementAction action = MovementAction::Move;
     Vec destination;
     bool forceRun{};
     EntityId exit{};
+    std::optional<MotionTarget> target{};
 };
 enum class CommandStatus { Queued, Applied, NotImplemented, InvalidBinding, Stale, Paused, QueueFull, InvalidDestination, NoRoute, InvalidRequest, Unavailable, Conflict };
 struct CommandResult {
@@ -55,6 +57,7 @@ struct PlayerSnapshot {
         Vec position, look, nextPosition;
         bool moving{}, running{};
         float movementSpeed{};
+        std::optional<MotionTarget> target{};
     } actor;
     // Coalesced diagnostic result, not a reliable transaction acknowledgement.
     CharacterAttributes attributes;
@@ -69,7 +72,8 @@ struct PlayerSnapshot {
     int level{};
     bool entered{};
     bool paused{};
-    float life{};
+    float life{}, mana{}, stamina{};
+    uint8_t potionLifePercent{}, potionManaPercent{};
     bool attacking{}, recovering{}, deadSettled{};
 };
 struct PersistentCharacter;
@@ -96,6 +100,8 @@ struct MonsterSnapshot {
     std::shared_ptr<const PersistentCharacter> equipment{};
     int appearOverlay{-1};
     std::optional<EntityId> storedOwner{};
+    std::optional<MotionTarget> movementTarget{};
+    uint8_t pathSteps{};
     std::vector<uint8_t> modifiers{};
     std::array<uint8_t,16> components{}, componentCounts{};
     uint8_t rankFlags{};

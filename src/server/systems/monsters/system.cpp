@@ -134,6 +134,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     if(request.pathSteps<0 || request.pathSteps>255) return {DomainStatus::InvalidRequest,{}};
     if(request.pathSteps>0 && route.size()>size_t(request.pathSteps)) route.resize(size_t(request.pathSteps));
     actor.route = std::move(route); actor.movementTarget = request.target;
+    actor.pathSteps=uint8_t(request.pathSteps);
     actor.movementGoal = request.destination.position;
     actor.stopDistance = request.stopDistance; actor.velocityPercent = request.velocityPercent; actor.running = request.running;
     if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
@@ -232,7 +233,10 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
     if(actor.rule.blockTicks>0) {
         const int reactionTicks=recoveryTicks(actor,ports_.effects,tick,true);
         const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
-        auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{id,1,actor.area,percent,false,actor.position,0,6}}});
+        HitFact hit{id,1,actor.area,percent,false,actor.position,0,6};
+        if(actor.movementTarget && targetPosition(actor.movementTarget,actor.area))
+            hit.actionTarget=MotionTarget{actor.movementTarget,uint8_t(ports_.players.findActor(actor.movementTarget)?0:1)};
+        auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{hit}});
         if(!result) return {result.status,{}};
         stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;++actor.revision;
     }

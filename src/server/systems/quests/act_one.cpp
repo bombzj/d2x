@@ -104,12 +104,8 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
         if(state_.actOne.cainRescued) return {DomainStatus::Applied,std::monostate{}};
         const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::CainRescue,0,position+Vec{3,3});
         if(!portal) return {portal.status,{}};
-        // Capture only present eligible characters. The personal pending reward
-        // persists; late entrants never acquire another player's ring.
-        std::set<PlayerId> eligible;
-        for(const auto &[id,player]:ports_.players.all()) if(player.entered && int(player.area)==38 &&
-            player.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::SearchForCain)).stage<uint32_t(CainStage::Rescued)) eligible.insert(id);
-        state_.goals.insert_or_assign(QuestId::SearchForCain,Goal{uint32_t(CainStage::Rescued),std::move(eligible)});state_.actOne.cainRescued=true;
+        captureGoal(QuestId::SearchForCain,uint32_t(CainStage::Rescued),actor.area);
+        state_.actOne.cainRescued=true;
         ports_.travel.commitSpecialPortal(*portal.value);
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -124,9 +120,8 @@ StepStatus System::actOneStep(TickContext tick) {
         if(int(m.area)==25 && m.identity.superUnique=="The Countess") goal=QuestId::ForgottenTower;
         if(int(m.area)==37 && m.identity.monster=="andariel") goal=QuestId::SistersToTheSlaughter;
         if(!goal || state_.objectives[questIndex(*goal)]) continue;
-        std::set<PlayerId> eligible;
-        for(const auto &[playerId,p]:ports_.players.all()) if(p.entered && p.area==m.area) eligible.insert(playerId);
-        const uint32_t stage=*goal==QuestId::ForgottenTower?uint32_t(TowerStage::CountessSlain):*goal==QuestId::SistersBurialGrounds?uint32_t(BurialStage::BloodRavenSlain):uint32_t(SlaughterStage::AndarielSlain); state_.goals.insert_or_assign(*goal,Goal{stage,std::move(eligible)});state_.objectives[questIndex(*goal)]=true;
+        const uint32_t stage=*goal==QuestId::ForgottenTower?uint32_t(TowerStage::CountessSlain):*goal==QuestId::SistersBurialGrounds?uint32_t(BurialStage::BloodRavenSlain):uint32_t(SlaughterStage::AndarielSlain);
+        captureGoal(*goal,stage,m.area,*goal==QuestId::SistersBurialGrounds?std::optional<Vec>{m.position}:std::nullopt);
         // Game.cpp calls QuestUpdater every 20 frames; timeout 1 uses a
         // strict '<', hence each invocation consumes two updater ticks.
         if(*goal==QuestId::SistersToTheSlaughter) state_.actOne.andarielPortalAt=(tick.tick/20+9*2)*20;
@@ -135,6 +130,10 @@ StepStatus System::actOneStep(TickContext tick) {
         if(!p.entered) continue;
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));
         const auto before=book;const int area=int(p.area);
+        const auto burial=book[questIndex(QuestId::SistersBurialGrounds)].stage;
+        if(burial>0 && burial<uint32_t(BurialStage::BloodRavenSlain)) state_.actOne.burialOffer=true;
+        const auto tools=book[questIndex(QuestId::ToolsOfTheTrade)].stage;
+        if(tools>0 && tools<uint32_t(ToolsStage::RewardReady)) state_.actOne.toolsOffer=true;
         // A1Q4_PlayerStartedGame restores opened stones; InitFunction06 on
         // STONEALPHA schedules the real red portal when that area is loaded.
         if(state_.actOne.restoreCairnStones && !state_.actOne.cainPortalOpened && area==4 && p.persistent.player.hp>0) {

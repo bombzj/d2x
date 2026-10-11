@@ -1,6 +1,7 @@
 #include "native_realm_service.hpp"
 #include "hosting/protocol/gameplay_dispatch.hpp"
 #include "persistence/save_codec.hpp"
+#include "persistence/d2s_header.hpp"
 #include "hosting/character_creation.hpp"
 
 namespace d2x::hosting {
@@ -11,13 +12,18 @@ void NativeRealmService::logon(net::protocol::Reader &in) {
     const auto version = in.u32(); const auto sigA = in.u32(), sigB = in.u32(); in.u8(); const auto nameBytes = in.take(16); in.finish();
     const auto end = std::find(nameBytes.begin(), nameBytes.end(), uint8_t{});
     const std::string name(nameBytes.begin(), end);
+    if(version!=13) throw AdmissionFailure(16,"Unsupported native client version");
     if (directTcpIp) {
         if (binding || end == nameBytes.end() || !validCharacterName(name) || receivedToken != 1 || version != 13 ||
             sigA != 0xED5DCC50 || sigB != 0x91A519B6 || characterClass >= content->characters.size())
             throw ProtocolError("Invalid native TCP/IP logon");
         const HostedGame *room = nullptr;
         for (const auto &[key, candidate] : shared.games) { (void)key; if (candidate.tcpIp) room = &candidate; }
-        if (!room || host.participants(room->handle).size() >= room->capacity) throw ProtocolError("TCP/IP host has no available game");
+        if (!room) throw AdmissionFailure(6,"TCP/IP host has no available game");
+        if(host.participants(room->handle).size()>=room->capacity) throw AdmissionFailure(15,"TCP/IP game is full");
+        auto folded=[](std::string value){for(auto &c:value) if(c>='A' && c<='Z') c+='a'-'A';return value;};
+        for(const auto *other:shared.peers) if(other!=this && other->peer.phase!=GamePhase::Closed && folded(other->selectedName)==folded(name))
+            throw AdmissionFailure(6,"Character name is already admitted or reserved");
         selectedName = name; tcpIpClass = characterClass; gameName = room->name; gameDifficulty = unsigned(room->settings.difficulty);
         peer.phase = GamePhase::LoggedOn;
         Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(0); out.u8(1); out.u8(0);
@@ -52,15 +58,20 @@ void NativeRealmService::uploadCharacter(net::protocol::Reader &in) {
     }
     const bool first = !tcpIpUpload.incomplete();
     if (auto bytes = tcpIpUpload.append(total, part, first)) {
-        auto saved = decodeSave(*bytes, *content);
+        PersistentCharacter saved;
+        try {saved=decodeSave(*bytes,*content);} catch(const std::exception &) {throw AdmissionFailure(14,"Invalid uploaded native character");}
+        const auto header=readD2sHeader(*bytes);
         if (saved.player.name != selectedName || saved.player.characterClass != content->characters[tcpIpClass].name)
             throw ProtocolError("Uploaded character differs from native logon");
         const auto progression = (bytes->at(0x25) & 31);
         const unsigned unlocked = progression >= 10 ? 2 : progression >= 5 ? 1 : 0;
-        if (gameDifficulty > unlocked) throw ProtocolError("Character has not unlocked host difficulty");
+        if (gameDifficulty > unlocked) throw AdmissionFailure(gameDifficulty==1?17:18,"Character has not unlocked host difficulty");
         HostedGame *room = nullptr;
         for (auto &[key, candidate] : shared.games) { (void)key; if (candidate.tcpIp && candidate.name == gameName) room = &candidate; }
         if (!room) throw ProtocolError("TCP/IP host game has ended");
+        if(!(header.flags&0x20)) throw AdmissionFailure(23,"Expansion character required");
+        if((header.flags&0x44)==0x44) throw AdmissionFailure(21,"Hardcore character is dead");
+        if(room->hardcore!=bool(header.flags&4)) throw AdmissionFailure(room->hardcore?19:20,"Character hardcore mode does not match game");
         auto folded = [](std::string value) { for (auto &c : value) if (c >= 'A' && c <= 'Z') c += 'a' - 'A'; return value; };
         for (auto *other : shared.peers) if (other != this && other->binding && other->binding->game == room->handle && folded(other->selectedName) == folded(selectedName))
             throw ProtocolError("Character is already in this TCP/IP game");
@@ -72,19 +83,23 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     in.finish();
     if (peer.phase != GamePhase::LoggedOn) throw ProtocolError("Duplicate game admission");
     if (!binding || (directTcpIp && !tcpIpUploadComplete)) throw ProtocolError("Native character upload is incomplete");
+    if (!host.enter(*binding)) throw AdmissionFailure(6,"Game admission expired");
     for (auto &packet : admission) sendGame(std::move(packet));
     admission.clear();
     peer.phase = GamePhase::Entered;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();
     peer.areas.insert(RegionId(terrain.request.level));
-    if (!host.enter(*binding)) throw ProtocolError("Game admission expired");
     setPaused(false);
 }
 void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {
     in.finish();
     const bool preparedReload = reload.has_value();
     close(!preparedReload, preparedReload);
+    // TCP/IP B0 is a system-channel acknowledgment. The original game loop
+    // needs 05/06 to unload and finish leaving, after the save was returned.
+    sendGame({0x05});
+    sendGame({0x06});
     sendGame({0xB0});
 }
 void NativeRealmService::ping(net::protocol::Reader &in) {
@@ -132,6 +147,15 @@ void NativeRealmService::game(std::span<const uint8_t> bytes) {
             }
             break;
         }
-    } catch (const ProtocolError &) { ++stats.malformed; counters.lastResult = "malformed"; throw; }
+    } catch(const AdmissionFailure &error) {
+        ++stats.rejected;rejectAdmission(error.code,error.what());
+    } catch (const ProtocolError &error) {
+        ++stats.malformed;counters.lastResult="malformed";
+        if(peer.phase==GamePhase::Connected || peer.phase==GamePhase::LoggedOn) {rejectAdmission(6,error.what());return;}
+        throw;
+    } catch(const std::exception &error) {
+        if(peer.phase==GamePhase::Connected || peer.phase==GamePhase::LoggedOn) {++stats.rejected;rejectAdmission(6,error.what());return;}
+        throw;
+    }
 }
 }

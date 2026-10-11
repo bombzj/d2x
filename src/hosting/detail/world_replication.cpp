@@ -82,6 +82,16 @@ void NativeRealmService::publishGroundItems() {
 namespace d2x::hosting {
 void NativeRealmService::publishCorpses() {
     std::map<EntityId, uint64_t> next; std::vector<Bytes> packets;
+    const auto owners = host.corpseOwners(binding->game);
+    // 8E is the game-wide ownership roster, independent of room visibility.
+    for (const auto &[corpse, owner] : peer.corpseOwners) if (!owners.contains(corpse))
+        packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) {
+            out.u8(0); out.u32(uint32_t(owner.value)); out.u32(uint32_t(corpse.value));
+        }));
+    for (const auto &[corpse, owner] : owners) if (!peer.corpseOwners.contains(corpse))
+        packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) {
+            out.u8(1); out.u32(uint32_t(owner.value)); out.u32(uint32_t(corpse.value));
+        }));
     std::map<EntityId, std::set<EntityId>> equipment;
     // A recovered GUID may already be projected as owned/private or public
     // equipment this cycle. Removing the former corpse copy must not erase it.
@@ -102,22 +112,22 @@ void NativeRealmService::publishCorpses() {
         const auto origin = shared.terrain.at(binding->game).at(corpse.region).origin;
         if (old == peer.corpses.end()) {
             packets.push_back(nativePlayerAssignment(*content, view.equipment, motion, origin));
-            packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) { out.u8(1); out.u32(uint32_t(corpse.owner.value)); out.u32(uint32_t(corpse.id.value)); }));
+            packets.push_back(nativePlayerMotion(motion, origin));
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerCorpse, [&](auto &out) { out.u8(1); out.u32(uint32_t(corpse.owner.value)); out.u32(uint32_t(corpse.id.value)); }));
         }
         auto items = nativeCorpseEquipment(*content, view.equipment);
         for (auto &packet : items) packets.push_back(std::move(packet));
-        packets.push_back(nativePlayerMotion(motion, origin));
+        if (old != peer.corpses.end()) packets.push_back(nativePlayerMotion(motion, origin));
     }
     for (const auto &[corpse, previous] : peer.corpseEquipment) for (const auto id : previous)
         if ((!equipment.contains(corpse) || !equipment.at(corpse).contains(id)) && !retained.contains(id))
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(id.value)); }));
     for (const auto &[id, revision] : peer.corpses) if (!next.contains(id)) {
         (void)revision;
-        packets.push_back(encodeServerPacket(ServerMessage::CorpseAssignment, [&](auto &out) { out.u8(0); out.u32(0); out.u32(uint32_t(id.value)); }));
         packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(uint32_t(id.value)); }));
     }
     if (!packets.empty()) sendGameBatch(std::move(packets));
-    peer.corpses.swap(next); peer.corpseEquipment.swap(equipment);
+    peer.corpses.swap(next); peer.corpseEquipment.swap(equipment); peer.corpseOwners = owners;
 }
 }
 

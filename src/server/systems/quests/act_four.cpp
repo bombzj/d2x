@@ -90,7 +90,7 @@ StepStatus System::actFourStep(TickContext tick) {
         (void)monsterId;
         if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==105 && m.identity.monster=="izual") {
-            captureGoal(QuestId::FallenAngel,3,m.area);world.izualSlain=true;world.ghostPosition=m.position;
+            captureGoal(QuestId::FallenAngel,3,m.area,m.position);world.izualSlain=true;world.ghostPosition=m.position;
         }
         if(int(m.area)==108 && m.identity.monster=="diablo") {captureGoal(QuestId::TerrorsEnd,4,m.area);world.diabloSlain=true;}
     }

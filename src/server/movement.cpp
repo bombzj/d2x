@@ -55,9 +55,17 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     if(ports.effects.recovering(player.actor,actor.tick) && command.action!=MovementAction::Stop && command.action!=MovementAction::ToggleRunning)
         return CommandStatus::Unavailable;
     skillSteps_.erase(actor.player);
+    if(command.action==MovementAction::ApproachNpc) if(const auto *target=ports.monsters.find(command.exit);target && target->area==actor.area && target->life>0) {
+        if((target->position-player.position).length()>50) return CommandStatus::InvalidRequest;
+        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->id,1}});
+    }
+    if(command.action==MovementAction::ApproachCorpse) if(const auto *target=ports.players.findActor(command.exit);target && target->entered && target->area==actor.area && target->actor!=actor.actor) {
+        if((target->position-player.position).length()>50) return CommandStatus::InvalidRequest;
+        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0}});
+    }
     if(command.action==MovementAction::ApproachObject) if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
         if((*position-player.position).length()>50) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,*position,command.forceRun,{}});
+        return applyMovement(player,area,{MovementAction::Move,*position,command.forceRun,{},MotionTarget{command.exit,2}});
     }
     return applyMovement(player, area, command);
 }
@@ -139,6 +147,13 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         return CommandStatus::NoRoute;
     }
     player.route = std::move(route);
+    player.movementTarget=command.target;
+    if(command.exit) {
+        if(command.action==MovementAction::ApproachExit) player.movementTarget=MotionTarget{command.exit,5};
+        else if(command.action==MovementAction::ApproachCorpse) player.movementTarget=MotionTarget{command.exit,0};
+        else if(command.action==MovementAction::ApproachObject) player.movementTarget=MotionTarget{command.exit,2};
+        else if(command.action==MovementAction::ApproachNpc) player.movementTarget=MotionTarget{command.exit,1};
+    }
     player.routeRunning = player.running || command.forceRun;
     return CommandStatus::Applied;
 }

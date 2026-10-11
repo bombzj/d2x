@@ -11,11 +11,13 @@ PlayerSnapshot projectPlayer(const PlayerState &p) {
     result.states = p.transient.states; result.itemSkills=inventory::itemSkills(p);
     result.level = p.persistent.player.level; result.entered = p.entered;
     result.life = p.persistent.player.hp;
+    result.mana = p.persistent.player.mana; result.stamina = p.persistent.player.stamina;
     result.attributes = p.totals.character; result.equipment = p.totals.equipment; result.skillRanks = p.totals.skillRanks;
     auto &actor = result.actor;
     actor.id = p.actor; actor.region = p.area; actor.position = p.position; actor.look = p.look;
     actor.nextPosition = p.route.empty() ? p.position : p.route.front();
     actor.moving = p.moving && p.persistent.player.hp > 0; actor.running = p.runningNow;
+    if(actor.moving && !p.route.empty()) actor.target=p.movementTarget;
     actor.movementSpeed = p.runningNow ? p.totals.character.runSpeed : p.totals.character.walkSpeed;
     return result;
 }

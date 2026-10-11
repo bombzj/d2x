@@ -17,6 +17,7 @@ struct PlayerState {
     bool entered{};
     Vec position, look{0, 1};
     std::deque<Vec> route;
+    std::optional<MotionTarget> movementTarget;
     bool running{}, routeRunning{}, runningNow{}, moving{};
     uint64_t acceptedSequence{}, movementSequence{}, locomotionSequence{};
     uint64_t teleportRevision{};

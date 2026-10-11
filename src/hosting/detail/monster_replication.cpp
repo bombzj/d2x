@@ -95,7 +95,13 @@ void NativeRealmService::publishMonsters() {
         // their animations, including when only the UMod life flag changes.
         // A newly interested observer still needs the current reaction mode.
         if(!fresh && (monster.mode==3 || monster.mode==6)) continue;
-        auto motion = nativeMonsterMotion(monster, origin);
+        auto projected=monster;
+        if(projected.movementTarget) {
+            const auto target=*projected.movementTarget;
+            const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):peer.monsters.contains(target.id);
+            if(!known) projected.movementTarget.reset();
+        }
+        auto motion = nativeMonsterMotion(projected, origin);
         if (motion.empty()) entry->second.motion.clear();
         else if (fresh || motion != entry->second.motion) { packets.push_back(motion); entry->second.motion = std::move(motion); }
     }

@@ -82,6 +82,7 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    std::pair<uint8_t,uint8_t> potionRecoveryPercent(PlayerId,uint64_t) const;
     size_t pendingItemTriggers() const {return itemTriggers_.size();}
     DomainResult<ItemEventPlan> prepareItemEvents(const ActorContext &,std::initializer_list<ItemSkillEvent>,EntityId target,Vec position) const;
     void commitItemEvents(ItemEventPlan plan,bool terminal=true) noexcept {

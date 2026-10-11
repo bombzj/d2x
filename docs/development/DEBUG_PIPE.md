@@ -18,6 +18,10 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
 
+## 原服收包记录
+
+需要核对原服实际回包时，可在启动客户端时指定`--game-packet-log <新.jsonl>`。应用层将每条成功完成分帧的D2GS S2C按接收顺序记录为JSONL，含sequence、相对启动微秒、gameGeneration、包号、含包头长度及完整十六进制字节；观察发生在副本消费之前，握手、离局和触发消费错误的包也会记录。网络层不读写日志文件，默认关闭；已有文件拒绝覆盖，达到64 MiB或写盘失败明确停止当前连接，不静默丢包。不记录BNCS／MCP认证内容；未知长度导致不能分帧的原始TCP块不在此日志中。诊断文件放忽略目录`artifacts/`，不提交角色保存字节或日志。
+
 ## 嵌入宿主管理命令
 
 `server-snapshot.animationTiming`只读返回当前武器类下的基础动作帧数、起始帧、8.8速度、结束及事件tick，另有`recoveryUntil`／`lastBlockTick`用于观察玩家恢复锁。普通动作与序列的结束帧算法不同，字段不替代特殊序列调度；规则见[动画帧时钟与恢复](../gameplay/skills/COMMON.md#动画帧时钟与恢复)。

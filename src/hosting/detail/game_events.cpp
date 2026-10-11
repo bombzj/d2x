@@ -55,16 +55,15 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         }
         else if (const auto *attack = std::get_if<server::AttackFact>(&fact)) {
             if (attack->actorType == 1 && !peer.monsters.contains(attack->actor)) continue;
-            if (attack->targetType == 0 && attack->target != host.read(*binding)->actor.id &&
-                std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == attack->target; })) continue;
-            if (attack->targetType == 1 && attack->target && !visibleActor(attack->target,1)) continue;
+            auto projected=*attack;
+            if(projected.target && !visibleActor(projected.target,projected.targetType)) projected.target={};
             if (attack->actorType == 0 && attack->actor != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == attack->actor; })) continue;
             // PlrMsg::sub_6FC81D20 omits ordinary owner skill actions. Its client
             // predicts the submitted cast; other visible clients receive 4C/4D.
             // Charge's arrival and forced avoidance synchronize the owner too.
             if (attack->forced || attack->actorType != 0 || attack->actor != host.read(*binding)->actor.id)
-                delta = nativeAttack(*attack, shared.terrain.at(binding->game).at(attack->area).origin);
+                delta = nativeAttack(projected, shared.terrain.at(binding->game).at(attack->area).origin);
             peer.lastMotion.clear();
             for (auto &[id, player] : peer.visible) { (void)id; if (player.actor == attack->actor) player.motion.clear(); }
             if (auto found = peer.monsters.find(attack->actor); found != peer.monsters.end()) found->second.motion.clear();
@@ -72,7 +71,9 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if (hit->type == 1 && !peer.monsters.contains(hit->target)) continue;
             if (hit->type == 0 && hit->target != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == hit->target; })) continue;
-            delta = nativeHit(*hit, shared.terrain.at(binding->game).at(hit->area).origin);
+            auto projected=*hit;
+            if(projected.actionTarget && !visibleActor(projected.actionTarget->id,projected.actionTarget->type)) projected.actionTarget.reset();
+            delta = nativeHit(projected, shared.terrain.at(binding->game).at(hit->area).origin);
             if (auto found = peer.monsters.find(hit->target); found != peer.monsters.end() && hit->killed) found->second.motion.clear();
         } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) {
             delta = nativeInventoryDelta(*content, *inventory);
@@ -180,13 +181,19 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 std::copy(message->name.begin(),message->name.end(),names.begin());out.append(names);
             }));
         } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
+            if(npc->messages.size()>=8) throw std::runtime_error("NPC message count exceeds native limit");
             delta.push_back(encodeServerPacket(ServerMessage::NpcMessages,[&](auto &out) {
                 out.u8(npc->type); out.u32(uint32_t(npc->npc.value)); out.u8(uint8_t(npc->messages.size())); out.u8(0);
                 for (size_t i=0;i<8;++i) { const auto message=i<npc->messages.size()?npc->messages[i]:server::NpcMessage{}; out.u8(message.menu); out.u8(0); out.u16(message.text); }
             }));
+            if(npc->type==1) {
+                const auto quests=host.questProjection(*binding);
+                if(!quests) throw std::logic_error("NPC interaction quest projection unavailable");
+                for(auto &packet:nativeQuestUpdate(*content,*quests,npc->npc)) delta.push_back(std::move(packet));
+            }
         } else if (const auto *merchant = std::get_if<server::MerchantFact>(&fact)) {
             if (merchant->refreshShop) peer.shopItems.clear();
-            delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(uint32_t(merchant->item.value));out.u32(merchant->gold);}));
+            delta.push_back(encodeServerPacket(ServerMessage::MerchantResult,[&](auto &out) {out.u8(merchant->operation);out.u8(merchant->result);out.u32(0);out.u32(merchant->result==2?UINT32_MAX:uint32_t(merchant->item.value));out.u32(merchant->gold);}));
         } else if (const auto *waypoint=std::get_if<server::WaypointFact>(&fact)) {
             std::array<uint16_t,8> history{}; history[0]=0x102; history[1]=1; const auto &levels=content->tables.at("levels");
             for(const auto region:waypoint->unlocked) for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==int(region)) {

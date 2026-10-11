@@ -111,16 +111,27 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
         if(!monster.moving) return {};
         return encodeServerPacket(ServerMessage::UnitPositions,[&](auto &out){out.u16(13);out.u8(1);key(out,1,monster.id);point(out,monster.position+origin);});
     }
+    if(monster.moving && monster.movementTarget)
+        return encodeServerPacket(ServerMessage::NpcMoveUnit,[&](auto &out) {
+            out.u32(uint32_t(monster.id.value));out.u8(monster.running?24:0);point(out,monster.position+origin);
+            key(out,monster.movementTarget->type,monster.movementTarget->id);
+            out.u8(monster.pathSteps);out.u8(0);out.u8(2);out.u16(uint16_t(monster.velocityPercent));out.u8(0);
+        });
     if (monster.moving)
         return encodeServerPacket(ServerMessage::NpcMovePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.running ? 23 : 1); point(out, monster.destination + origin);
-            out.u8(1); out.u8(0); out.u8(0); out.u16(uint16_t(monster.velocityPercent)); out.u8(0);
+            out.u8(monster.pathSteps); out.u8(0); out.u8(1); out.u16(uint16_t(monster.velocityPercent)); out.u8(0);
         });
     return encodeServerPacket(ServerMessage::NpcReposition, [&](auto &out) {
         out.u32(uint32_t(monster.id.value)); point(out, monster.position + origin); out.u8(monster.life);
     });
 }
 std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
+    if(fact.actorType==1 && !fact.skill && !fact.target)
+        return {encodeServerPacket(ServerMessage::NpcActionPoint,[&](auto &out) {
+            out.u32(uint32_t(fact.actor.value));out.u8(fact.monsterMode==9?14:fact.monsterMode==8?12:fact.monsterMode==5?17:11);
+            point(out,fact.destination+origin);out.u8(direction(fact.position,fact.destination));out.u8(0);point(out,fact.position+origin);
+        })};
     if (fact.actorType == 1 && !fact.skill)
         return {encodeServerPacket(ServerMessage::NpcAction, [&](auto &out) {
             out.u32(uint32_t(fact.actor.value)); out.u8(fact.monsterMode == 9 ? 15 : fact.monsterMode == 8 ? 13 : fact.monsterMode == 5 ? 16 : 10); key(out, fact.targetType, fact.target);
@@ -160,7 +171,11 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
         result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
             key(out,0,fact.target);out.u8(fact.playerMode);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
         }));
-    if(fact.type==1 && !fact.killed && fact.monsterMode)
+    if(fact.type==1 && !fact.killed && fact.monsterMode==6 && fact.actionTarget)
+        result.push_back(encodeServerPacket(ServerMessage::NpcModeUnit,[&](auto &out) {
+            out.u32(uint32_t(fact.target.value));out.u8(18);key(out,fact.actionTarget->type,fact.actionTarget->id);out.u8(0);
+        }));
+    else if(fact.type==1 && !fact.killed && fact.monsterMode)
         result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){
             out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);
             // GH overloads the direction byte with HP and the UMod trigger.

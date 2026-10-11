@@ -47,6 +47,8 @@ class GameHost {
     std::optional<PersistentCharacter> shop(PlayerBinding) const;
     std::vector<ItemInstance> groundItems(PlayerBinding) const;
     std::vector<server::CorpseView> visibleCorpses(PlayerBinding) const;
+    std::optional<server::QuestFact> questProjection(PlayerBinding) const;
+    std::map<EntityId, EntityId> corpseOwners(GameHandle) const;
     std::vector<server::objects::Object> visibleObjects(PlayerBinding) const;
     std::vector<server::travel::Portal> visiblePortals(PlayerBinding) const;
     server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);

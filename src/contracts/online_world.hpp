@@ -36,6 +36,7 @@ struct OnlineSkillHotkey {
 };
 struct OnlineQuestState {
     std::optional<std::array<uint16_t, 48>> playerFlags, gameFlags;
+    std::optional<std::array<uint8_t,37>> availability; // Native 5E initialization-table order.
     std::array<std::optional<uint8_t>, 41> statuses;
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
@@ -246,6 +247,7 @@ struct OnlineWorldView {
     std::optional<OnlineMovementRequest> movementRequest;
     std::optional<uint32_t> npcRequested;
     std::optional<OnlineNpcConversation> npcConversation;
+    std::optional<OnlineNpcConversation> npcPendingConversation; // 27 waits for NPC-context 28.
     std::optional<bool> eclipse;
     std::optional<uint32_t> staffSource;
     uint64_t staffRevision{};
@@ -262,6 +264,7 @@ struct OnlineWorldView {
     std::optional<OnlineCombatRequest> combatRequest;
     bool townPortalPending{}; // Enqueued command, not proof that a portal exists.
     std::optional<std::array<uint16_t, 8>> waypointHistory; // Native 0x102 header + 112 bits.
+    std::optional<uint32_t> playerPortalFlags; // Native 5F session visitation, not quest completion.
     std::optional<uint32_t> waypointSource; // Only 0x63 authorizes an open menu.
     std::optional<uint32_t> waypointRequested; // Local 0x13 intent, never an open-menu confirmation.
     struct WaypointActivation { uint32_t source; uint64_t generation; };
@@ -309,7 +312,7 @@ struct OnlineWorldView {
         stamina.reset();
         movementRequest.reset();
         npcRequested.reset();
-        npcConversation.reset();
+        npcConversation.reset(); npcPendingConversation.reset();
         eclipse.reset();staffSource.reset();staffRevision=0;staffResult=0;
         playerSkills.clear();
         playerBaseSkills.clear();
@@ -321,6 +324,8 @@ struct OnlineWorldView {
         skillHotkeys = {};
         quests.playerFlags.reset();
         quests.gameFlags.reset();
+        quests.availability.reset();
+        playerPortalFlags.reset();
         for (auto &status : quests.statuses) status.reset();
         quests.updates.clear();
         quests.denRemaining.reset();

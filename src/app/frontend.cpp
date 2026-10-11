@@ -116,6 +116,27 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     ui.setLogin(std::move(rememberedAccount), std::move(rememberedPassword));
     HideCursor();
     net::RealmSession session;
+    if (!options.gamePacketLog.empty()) {
+        const auto path = std::filesystem::path(options.gamePacketLog);
+        if (std::filesystem::exists(path)) throw std::runtime_error("Game packet log already exists");
+        if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
+        auto output = std::make_shared<std::ofstream>(path, std::ios::binary);
+        output->exceptions(std::ios::badbit | std::ios::failbit);
+        const auto started = std::chrono::steady_clock::now();
+        session.observe_game_packets([output, started, sequence=uint64_t{}, written=size_t{}]
+            (uint64_t generation, const net::protocol::Packet &packet) mutable {
+            static constexpr char digits[] = "0123456789ABCDEF";
+            std::string hex; hex.reserve((packet.body.size()+1)*2);
+            const auto byte = [&](uint8_t value) { hex += digits[value>>4]; hex += digits[value&15]; };
+            byte(packet.id); for (const auto value : packet.body) byte(value);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-started).count();
+            auto row = nlohmann::json{{"sequence",++sequence},{"microseconds",elapsed},{"gameGeneration",generation},
+                {"id",packet.id},{"length",packet.body.size()+1},{"hex",std::move(hex)}}.dump()+"\n";
+            constexpr size_t limit = 64*1024*1024;
+            if (row.size()>limit-written) throw std::runtime_error("Game packet log limit exceeded (64 MiB)");
+            output->write(row.data(),std::streamsize(row.size())); output->flush(); written += row.size();
+        });
+    }
     EmbeddedRealm embedded(archives, options.hostSaves);
     bool localConnection = false, enterLocalGame = false;
     bool lanConnection = false, lanListening = false;

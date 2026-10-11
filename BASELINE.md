@@ -6,6 +6,8 @@
 
 Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权威玩法，单机使用内存字节传输；TCP/IP使用本地角色和默认4000直连，局前内存MCP只复用选角。network／UI不读写D2S，应用交由hosting持有本地租约和原版存档交换；断线不切换本地权威。hosting负责内容／协议／存储，server负责领域状态和25Hz执行；内核不读取MPQ、文件、socket、设备或GPU。详细依赖与状态所有权见[架构](docs/architecture/OVERVIEW.md)和[内核](docs/modules/SERVER_SYSTEMS.md)。
 
+自研原包输出包含本人18／95／96资源与路径校正、42光标清除、74尸体首次可见与8E全局归属、5E任务入场初始化／29公共任务／52完整日志、10／68目标移动及6A／6B动作、B4入场错误与排空关闭。任务通用目标接入事件时资格冻结和同幕组队传播；原版Host对照补齐NPC任务／介绍独立确认、房间任务序列、介绍保存位、购买自动装备／新GUID回执、售后迟到移除及部分修理。详细包型、发送顺序及仍有限制见[服务端协议](docs/modules/SERVER_PROTOCOL.md)与[任务系统](docs/gameplay/quests/SYSTEM.md)。协议接线不等同原版客户端实机认证。
+
 规则／原图优先取当前MPQ，未实现行为明确拒绝；唯一已授权敌怪替身为沉沦魔，保留真实身份，中立单位不可替换。资料与许可见[来源](docs/resources/THIRD_PARTY.md)。
 
 ## 当前实现范围

@@ -49,6 +49,13 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
+        result.back().pathSteps=monster.pathSteps;
+        if(monster.movementTarget) {
+            if(const auto *target=ports_.players.findActor(monster.movementTarget);target && target->entered && target->area==monster.area)
+                result.back().movementTarget=MotionTarget{target->actor,0};
+            else if(const auto *target=ports_.monsters.find(monster.movementTarget);target && target->area==monster.area && target->life>0)
+                result.back().movementTarget=MotionTarget{target->id,1};
+        }
         if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner);owner && owner->player==id) {
             result.back().hireling=owner->persistent.player.hireling;
             result.back().hirelingOwner=owner->actor;

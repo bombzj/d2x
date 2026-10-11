@@ -8,6 +8,7 @@
 #include "client/remote_combat.hpp"
 #include "client/remote_control.hpp"
 #include "content/classic_data.hpp"
+#include "content/npc/npc_dialogue.hpp"
 #include "content/skills/description_values.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/item_display.hpp"
@@ -1495,7 +1496,15 @@ struct RemoteUiClients::Impl {
                 }
             }
             auto add=[&](std::string label,NpcMenuAction action) { npcView.services.push_back({std::move(label),{action,{}}}); };
-            if(!npcView.textTopics.empty()) {
+            // Native servers send quest/intro text in 27; ordinary gossip is
+            // local MPQ presentation and must not generate a quest ACK (31).
+            if(d.type==1) for(size_t turn=0;;++turn) {
+                const auto *speech=gossipSpeech(data.npcDialogues,d.speaker,turn,mapView.act);
+                if(!speech || speech->text.empty() || std::find(npcView.gossip.begin(),npcView.gossip.end(),speech->text)!=npcView.gossip.end()) break;
+                npcView.gossip.push_back(speech->text);
+            }
+            if(!npcView.gossip.empty()) npcView.talkEntries.push_back({"Gossip",{NpcMenuAction::Gossip,{}}});
+            if(!npcView.textTopics.empty() || !npcView.gossip.empty()) {
                 add("Talk",NpcMenuAction::Talk);
                 npcView.talkEntries.push_back({"Back",{NpcMenuAction::Back,{}}});
             }

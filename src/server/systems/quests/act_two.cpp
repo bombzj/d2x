@@ -7,6 +7,7 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "core/random.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -14,6 +15,15 @@
 namespace d2x::server::quests {
 QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId region) const {
     QuestFact result{player,record,ports_.settings.difficulty,state_.actOne.denRemaining,state_.actOne.stones};
+    result.gameFlags=gameFlags();
+    for(const auto &definition:questDefinitions) {
+        const auto index=questIndex(definition.id);
+        const bool credited=state_.credited.contains(player) && state_.credited.at(player).contains(definition.id);
+        result.credited[index]=credited;
+        const bool pending=state_.goals.contains(definition.id) && state_.goals.at(definition.id).eligible.contains(player);
+        result.unavailable[index]=bool(result.gameFlags[definition.nativeSlot]&0xA000) && !credited && !pending &&
+            record.quests.at(size_t(ports_.settings.difficulty))[index].stage<definition.completedStage;
+    }
     const auto *area=ports_.areas.find(region);
     result.rescued=state_.actFive.rescued;
     if(const auto *p=ports_.players.find(player);p && record.completedActs.at(size_t(ports_.settings.difficulty)).at(1)) {
@@ -89,7 +99,7 @@ StepStatus System::actTwoStep(TickContext tick) {
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
         if(int(m.area)==49 && m.identity.monster=="radament" && !state_.objectives.at(questIndex(QuestId::RadamentsLair))) {
-            captureGoal(QuestId::RadamentsLair,uint32_t(RadamentStage::Slain),m.area);
+            captureGoal(QuestId::RadamentsLair,uint32_t(RadamentStage::Slain),m.area,m.position);
             state_.actTwo.radament=id;state_.actTwo.bookPosition=m.position;
             state_.actTwo.radamentBooks=state_.goals.at(QuestId::RadamentsLair).eligible;
         }

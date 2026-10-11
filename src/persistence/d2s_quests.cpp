@@ -19,6 +19,8 @@
 namespace d2x {
 namespace {
 constexpr std::array<size_t, 4> actCompletedSlots{7, 15, 23, 28};
+// PlrSave2 stores QuestIntroFlags at 0x04; 0x1C is the separate NpcIntroFlags.
+constexpr size_t questIntroductionOffset = 4;
 void require(bool condition, const char *reason) {
     if (!condition) throw std::runtime_error(std::string("D2S: ") + reason);
 }
@@ -143,7 +145,7 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
         const auto tombsFlags = word(sections.quests, 10 + difficulty * 96 + questDefinition(QuestId::SevenTombs).nativeSlot * 2);
         player.quests[difficulty][questIndex(QuestId::SevenTombs)].stage = tombsFlags & 1 ? 5 : tombsFlags & 0x10 ? 4 : tombsFlags & 8 ? 3 : tombsFlags & 0x20 ? 2 : tombsFlags & 4 ? 1 : 0;
         for (const auto &[bit, key] : dialogues.introductionKeys)
-            if (sections.introductions[28 + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
+            if (sections.introductions[questIntroductionOffset + difficulty * 8 + bit / 8] & (1u << (bit % 8)))
                 player.npcIntroductions[difficulty].insert(key);
     }
 }
@@ -274,8 +276,9 @@ void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, 
         putWord(sections.quests, tombsOffset, (word(sections.quests, tombsOffset) & ~0x203Du) |
             (tombs >= 5 ? 0x2001 : tombs == 4 ? 0x2010 : tombs == 3 ? 0x2008 : tombs == 2 ? 0x20 : tombs == 1 ? 4 : 0));
         for (const auto &[bit, key] : dialogues.introductionKeys)
-            if (player.npcIntroductions[difficulty].contains(key))
-                sections.introductions[28 + difficulty * 8 + bit / 8] |= uint8_t(1u << (bit % 8));
+            if (player.npcIntroductions[difficulty].contains(key)) {
+                sections.introductions[questIntroductionOffset + difficulty * 8 + bit / 8] |= uint8_t(1u << (bit % 8));
+            }
     }
 }
 void reconcileD2sQuestItem(CharacterRecord &player, int difficulty, std::string_view code, unsigned nativeDifficulty) {
