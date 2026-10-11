@@ -9,9 +9,12 @@ std::optional<server::inventory::InputState> GameHost::inventoryInput(PlayerBind
     const auto *slot = find(binding.game);
     return slot ? slot->game->inventoryInput(binding.player) : std::nullopt;
 }
-std::optional<PersistentCharacter> GameHost::exportCharacter(PlayerBinding binding) const {
+bool GameHost::prepareSave(PlayerBinding binding) {
+    auto *slot=find(binding.game);return slot && slot->game->prepareSave(binding.player);
+}
+std::optional<PersistentCharacter> GameHost::exportCharacter(PlayerBinding binding,bool settledOnly) const {
     const auto *slot = find(binding.game);
-    return slot ? slot->game->exportCharacter(binding.player) : std::nullopt;
+    return slot ? slot->game->exportCharacter(binding.player,settledOnly) : std::nullopt;
 }
 std::optional<PersistentCharacter> GameHost::publicEquipment(PlayerBinding binding) const {
     const auto *slot = find(binding.game);

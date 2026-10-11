@@ -10,17 +10,18 @@
 namespace d2x::server::quests {
 std::optional<Dialogue> System::actFourDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
+    const auto available=[&](QuestId id){return !unavailable(actor.player,p->persistent.player,id);};
     const auto &book=p->persistent.player.quests.at(size_t(ports_.settings.difficulty));
     const auto &izual=book[questIndex(QuestId::FallenAngel)];
-    if(npc.code=="tyrael2" && (izual.stage==0 || izual.stage==3)) return speech(npc,QuestId::FallenAngel,izual.stage==3?"Successful":"Init");
+    if(available(QuestId::FallenAngel) && npc.code=="tyrael2" && (izual.stage==0 || izual.stage==3)) return speech(npc,QuestId::FallenAngel,izual.stage==3?"Successful":"Init");
     if(npc.code=="izualghost" && izual.stage==3 && !(izual.flags&izualGhostSpoken)) return speech(npc,QuestId::FallenAngel,"Successful");
     const auto &forge=book[questIndex(QuestId::HellsForge)];
-    if(npc.code.starts_with("cain") && forge.stage<5 && book[questIndex(QuestId::Guardian)].stage>=4) {
+    if(available(QuestId::HellsForge) && npc.code.starts_with("cain") && forge.stage<5 && book[questIndex(QuestId::Guardian)].stage>=4) {
         if(forge.stage==4) return speech(npc,QuestId::HellsForge,"Successful");
         if(!forge.stage || (forge.stage<3 && !detail::actTwoCarried(*p,p->rules.character->laterQuests.soulstone,ports_.settings.difficulty))) return speech(npc,QuestId::HellsForge,detail::actTwoCarried(*p,p->rules.character->laterQuests.soulstone,ports_.settings.difficulty)?"InitHasStone":"InitNoStone");
     }
     const auto &terror=book[questIndex(QuestId::TerrorsEnd)];
-    if(npc.code=="tyrael2" && ((!terror.stage && (izual.stage>=3 || forge.stage>=4)) || (terror.stage==4 && !(terror.flags&terrorPortalOpened)))) {
+    if(available(QuestId::TerrorsEnd) && npc.code=="tyrael2" && ((!terror.stage && (izual.stage>=3 || forge.stage>=4)) || (terror.stage==4 && !(terror.flags&terrorPortalOpened)))) {
         const auto result=speech(npc,QuestId::TerrorsEnd,terror.stage==4?"ExpansionSuccess":"Init");
         return result?result:speech(npc,QuestId::TerrorsEnd,"Successful");
     }
@@ -90,17 +91,17 @@ StepStatus System::actFourStep(TickContext tick) {
         (void)monsterId;
         if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
         if(int(m.area)==105 && m.identity.monster=="izual") {
-            captureGoal(QuestId::FallenAngel,3,m.area,m.position);world.izualSlain=true;world.ghostPosition=m.position;
+            captureGoal(QuestId::FallenAngel,3,m.area,m.position,killerPlayer(m.killer));world.izualSlain=true;world.ghostPosition=m.position;
         }
-        if(int(m.area)==108 && m.identity.monster=="diablo") {captureGoal(QuestId::TerrorsEnd,4,m.area);world.diabloSlain=true;}
+        if(int(m.area)==108 && m.identity.monster=="diablo") {captureGoal(QuestId::TerrorsEnd,4,m.area,m.position);world.diabloSlain=true;}
     }
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || ports_.areas.at(p.area).definition.act!=3) continue;
         const ActorContext actor{id,p.actor,p.area,ports_.areas.at(p.area).generation,0,tick.tick};
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));const auto before=book;
-        if(int(p.area)!=103) for(const auto quest:{QuestId::FallenAngel,QuestId::HellsForge,QuestId::TerrorsEnd}) if(book[questIndex(quest)].stage==1) book[questIndex(quest)].stage=2;
+        if(int(p.area)!=103) for(const auto quest:{QuestId::FallenAngel,QuestId::HellsForge,QuestId::TerrorsEnd}) if(!unavailable(id,record,quest) && book[questIndex(quest)].stage==1) book[questIndex(quest)].stage=2;
         if(int(p.area)==108) {
-            auto &q=book[questIndex(QuestId::TerrorsEnd)];if(q.stage<3) q.stage=3;
+            auto &q=book[questIndex(QuestId::TerrorsEnd)];if(!unavailable(id,record,QuestId::TerrorsEnd) && q.stage<3) q.stage=3;
             bool cleared=world.seals.size()==5;
             for(const auto *name:{"Infector of Souls","Lord De Seis","Grand Vizier of Chaos"}) {
                 bool killed=false;

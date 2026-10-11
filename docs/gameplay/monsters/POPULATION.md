@@ -1,6 +1,6 @@
 # MPQ人口计划与权威出生
 
-更新：2026-10-09。本页唯一维护候选、固定身份、出生与房间调度边界；战斗规范见[COMMON](COMMON.md)，按幕覆盖见[怪物目录](README.md)。
+更新：2026-10-12。本页唯一维护候选、固定身份、出生与房间调度边界；战斗规范见[COMMON](COMMON.md)，按幕覆盖见[怪物目录](README.md)。
 
 原服和自研都由原单位分配消息驱动客户端，客户端不运行人口计划、出生或AI。`world/population`供自研hosting内容准备与独立`d2x_assets`报告共用。
 
@@ -17,3 +17,5 @@ MonStats2.spawnCol决定出生掩码，飞行／Wraith移动掩码不能替代�
 客户端保留classId／GUID、阶级与固定身份。替身适用条件、暂缓与完成口径唯一维护在[COMMON](COMMON.md)；NPC和中立／环境单位不可替换为敌人。
 
 D2MOO MonsterRegion／Choose／Spawn／Unique与MonsterTbls核对规则，当前MPQ提供实际参数。验证见[第一幕有限证据](ACT1.md#有限运行证据)，表现见[表现专题](PRESENTATION.md)，许可见[资料来源](../../resources/THIRD_PARTY.md)。
+
+当前同级房间近邻按DRLG两轴间隙均小于6个tile判定；目标资格和第一幕死亡恐惧复用这份规则。鸟巢和石棺区分成功施放与实际子怪出生，堵塞是否消耗间隔按各自原AI执行，见[第二幕](ACT2.md#三难度重新核对)。跨区域完整活动房间与原动态碰撞缓存仍未完全还原。

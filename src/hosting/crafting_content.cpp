@@ -146,7 +146,13 @@ void cube(const ClassicData &data, Prepared &result) {
             else if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted || item.quality==ItemQuality::Set || item.quality==ItemQuality::Unique) cap=std::min(cap,1);
             item.sockets=unsigned(cap); if(cap) item.nativeFlags|=0x800u;
         }
-        if(preserve && output.quantity) (base->bookCapacity?item.charges:item.quantity)=std::min(base->maxStack,output.quantity);
+        if(preserve && output.repair && output.quantity && base->maxStack>1 && !base->bookCapacity) {
+            int64_t maximum=base->maxStack;
+            for(const auto &stat:resolveItemStats(data,item,s.character.player.level))
+                if(stat.name=="item_extra_stack") maximum+=stat.value;
+            require(maximum>1 && maximum<=511,"Original repaired stack capacity is unavailable");
+            item.quantity=std::min(unsigned(maximum),output.quantity);
+        }
         if(output.repair) { auto stats=resolveItemStats(data,item,s.character.player.level); item.durability=itemMaximumDurability(data,item,stats); item.nativeFlags&=~0x100u; }
         if(output.recharge) rechargeItemSkills(item);
         if(output.ethereal && !(item.nativeFlags&0x400000u)) { item.nativeFlags|=0x400000u; if(base->family==ItemFamily::Armor) item.defense=item.defense*3/2; }

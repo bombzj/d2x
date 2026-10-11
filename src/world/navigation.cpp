@@ -217,6 +217,40 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
     }
     return toward;
 }
+std::deque<Vec> Grid::nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const {
+    // D2MOO PathMisc sub_6FDAA720 / Path type 5 and 6 (MIT,
+    // docs/licenses/D2MOO.txt): rotate native direction priorities by +/-2,
+    // test each cell and stop on an obstructed or reversed direction.
+    std::deque<Vec> route;
+    if(!walkable(from,rule) || !std::isfinite(target.x) || !std::isfinite(target.y) ||
+       distance<=0 || distance>77 || (turn!=-1 && turn!=1)) return route;
+    constexpr std::array<std::array<int,3>,25> directions{{
+        {5,4,6},{4,5,6},{4,3,5},{4,3,2},{3,4,2},
+        {6,5,4},{5,4,6},{4,3,5},{3,4,2},{2,3,4},
+        {6,7,5},{6,7,5},{6,7,5},{2,1,3},{2,1,3},
+        {6,7,0},{7,0,6},{0,1,7},{1,0,2},{1,0,2},
+        {7,0,6},{0,7,6},{0,1,7},{0,1,2},{1,0,2}}};
+    constexpr std::array<int,8> ox{1,1,0,-1,-1,-1,0,1},oy{0,1,1,1,0,-1,-1,-1};
+    int x=int(std::floor(from.x)),y=int(std::floor(from.y)),previous=-1;
+    const int tx=int(std::floor(target.x)),ty=int(std::floor(target.y));
+    for(int step=0;step<distance && (x!=tx || y!=ty);++step) {
+        int dx=tx-x,dy=ty-y;
+        const int ax=std::abs(dx),ay=std::abs(dy);
+        if(ax<2*ay) {if(ay>=2*ax) dx=dx<0?-1:dx&1;}
+        else dy=dy>=0?dy&1:-1;
+        dx=std::clamp(dx,-2,2);
+        const int index=dy< -1?5*dx+10:std::min(dy,2)+5*dx+12;
+        int selected=-1;
+        for(int direction:directions[size_t(index)]) {
+            const int d=(direction+2*turn+8)%8;
+            if(walkable(x+ox[d],y+oy[d],rule)) {selected=d;break;}
+        }
+        if(selected<0 || ((selected+4)%8)==previous) break;
+        x+=ox[selected];y+=oy[selected];previous=selected;
+        route.push_back({float(x)+.5f,float(y)+.5f});
+    }
+    return route;
+}
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
     if (rule.size < 0 || rule.size > 3) return false;

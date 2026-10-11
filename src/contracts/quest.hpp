@@ -8,13 +8,13 @@
 
 namespace d2x {
 struct QuestEntryView {
-    bool active = false, completed = false, known = false;
+    bool active = false, completed = false, known = false, unavailable = false;
     int act = 0;
     unsigned displaySlot = 0, icon = 0;
     std::string title;
     std::optional<std::string> description;
     std::optional<unsigned> tombSymbol;
-    bool selectable() const { return active || completed || !known; }
+    bool selectable() const { return active || completed || unavailable || !known; }
 };
 // One bound player's current-difficulty log; no task flags, inventory or seed.
 struct QuestView {

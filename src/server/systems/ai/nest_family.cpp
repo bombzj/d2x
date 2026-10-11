@@ -8,7 +8,7 @@ StepStatus System::nestFamily(EntityId id,UnitTarget target,int distance,TickCon
     // master monster_nest / AITHINK_Fn043. Stationary actors do not borrow a
     // walking or melee clock. Birth uses the prepared MonSeq event 4 clock.
     if(distance>20) {controller.nextDecision=tick.tick+25;return StepStatus::Complete;}
-    if(nest.nestSpawned>=p[2]) {
+    if(controller.act2Attempts>=p[2]) {
         const auto result=ports_.monsters.damage(id,id,nest.life,tick.tick);
         if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
         return StepStatus::Complete;
@@ -16,9 +16,15 @@ StepStatus System::nestFamily(EntityId id,UnitTarget target,int distance,TickCon
     if(tick.tick-controller.lastSpawn<uint64_t(p[0])) {
         controller.nextDecision=tick.tick+20+limitedRandom(controller.random,10);return StepStatus::Complete;
     }
+    // Fn043 consumes its interval even when the birth preflight fails;
+    // successful cast attempts, rather than surviving children, exhaust it.
+    if(!ports_.monsters.canSpawnNestChild(id)) {
+        controller.lastSpawn=tick.tick;controller.nextDecision=tick.tick+20+limitedRandom(controller.random,10);
+        return StepStatus::Complete;
+    }
     const auto result=ports_.skills.requestCast({id,nest.rule.skillIds[0],target,tick.tick});
     if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
-    if(result) controller.lastSpawn=tick.tick;
+    if(result) {controller.lastSpawn=tick.tick;++controller.act2Attempts;}
     else controller.nextDecision=tick.tick+20+limitedRandom(controller.random,10);
     return StepStatus::Complete;
 }

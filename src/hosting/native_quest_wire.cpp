@@ -4,6 +4,7 @@
 #include "persistence/d2s_fixed_sections.hpp"
 #include "hosting/protocol/message_catalog.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
@@ -11,15 +12,9 @@
 #include <algorithm>
 #include <array>
 namespace d2x {
-namespace {
-    // Current 1.13c D2Game's 37-entry table at RVA 0x10DC00. This order
-    // differs from the 1.10f gpQuestInitTable (the extra slot 41 is at index 7).
-    constexpr std::array<unsigned,37> initializationSlots{
-        0,1,2,3,4,5,6,41,8,9,10,11,12,13,14,30,31,16,17,18,19,20,21,22,32,24,25,26,27,29,33,35,36,37,38,39,40};
-}
 Bytes nativeQuestInitialization(const server::QuestFact &fact) {
     return hosting::encodeServerPacket(hosting::ServerMessage::QuestAvailability,[&](auto &out) {
-        for(const auto slot:initializationSlots) out.u8((fact.gameFlags.at(slot)&0x8000)?0:1);
+        for(const auto slot:nativeQuestInitializationSlots) out.u8((fact.gameFlags.at(slot)&0x8000)?0:1);
     });
 }
 std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::QuestFact &fact,std::optional<EntityId> npc) {
@@ -87,7 +82,9 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         if(definition.act==2 && !record.completedActs.at(size_t(fact.difficulty)).at(1)) status=0;
         if(flags[definition.nativeSlot*2+1]&0x40) status=12;
         statuses.at(definition.nativeSlot)=status;
-        if(fact.fullStatus && (fact.gameFlags[definition.nativeSlot]&0x8000)) statuses.at(definition.nativeSlot)=0;
+        if(fact.fullStatus && (fact.gameFlags[definition.nativeSlot]&0x8000) &&
+            !fact.entitled[questIndex(definition.id)] && !fact.credited[questIndex(definition.id)] &&
+            !fact.unavailable[questIndex(definition.id)]) statuses.at(definition.nativeSlot)=0;
         if(!fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){out.u8(uint8_t(number));out.u8(0);out.u8(status);out.u16(definition.id==QuestId::DenOfEvil?uint16_t(fact.remaining):definition.id==QuestId::RescueOnMountArreat?uint16_t(15-std::min(fact.rescued,15u)):0);}));
     }
     unsigned seen=0;bool valid=true;

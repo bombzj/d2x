@@ -1,5 +1,6 @@
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -143,9 +144,13 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
 }
 std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,const MonsterCombatProfile &profile,int difficulty) {
     std::map<uint8_t,server::MonsterAttackRule> result;
+    // MonsterMode calculates attack values at the current unit level, after
+    // unique/champion/minion level bonuses; HP and AC were initialized earlier.
+    const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level);
+    if(!current) return result;
     for(int slot=1;slot<=2;++slot) {
-        const auto &damage=slot==1?profile.damage.attack1Damage:profile.damage.attack2Damage;
-        const auto &rating=slot==1?profile.attack1Rating:profile.attack2Rating;
+        const auto &damage=slot==1?current->damage.attack1Damage:current->damage.attack2Damage;
+        const auto &rating=slot==1?current->attack1Rating:current->attack2Rating;
         const auto &projectile=slot==1?record.attack1Projectile:record.attack2Projectile;
         if(!damage && !projectile) continue;
         const std::string mode=slot==1?"a1":"a2";
@@ -156,7 +161,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         attack.rating=rating.value_or(0);attack.duration=std::max(1,int(std::ceil(clock->duration*25)));
         attack.release=std::clamp(int(std::ceil(clock->impact*25)),1,attack.duration);
         attack.animation=AnimationTiming{clock->frames,clock->speed};attack.animationAction=clock->actionFrame;
-        for(const auto &element:profile.damage.elements) if(element && element->mode==(slot==1?"A1":"A2")) attack.elements.push_back(*element);
+        for(const auto &element:current->damage.elements) if(element && element->mode==(slot==1?"A1":"A2")) attack.elements.push_back(*element);
         if(projectile) {
             attack.missile=prepareMonsterMissile(data,projectile->id,1+data.tables.at("difficultylevels").number(size_t(difficulty),"MonsterSkillBonus").value_or(0));
             if(!attack.missile || (attack.missile->toHit && !rating)) continue;

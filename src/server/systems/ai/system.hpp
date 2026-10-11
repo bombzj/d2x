@@ -37,6 +37,8 @@ class System {
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
+    struct ShootableTarget { UnitTarget unit; Vec position; int size{}, distance{}; };
+    std::optional<ShootableTarget> shootableTarget(const monsters::Actor &, TickContext) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

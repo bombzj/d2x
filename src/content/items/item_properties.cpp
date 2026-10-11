@@ -70,7 +70,7 @@ bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     if (found == data.properties.end() || found->operations.empty()) return false;
     switch (found->operations.front().function) {
     case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-    case 9: case 10: case 13: case 14: case 21: case 22: case 24: return true;
+    case 9: case 10: case 12: case 13: case 14: case 21: case 22: case 24: case 36: return true;
     default: return false;
     }
 }
@@ -117,6 +117,10 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
             // separately initializes current durability from the resulting max.
             append(op.stat, roll); break;
         case 9: append(op.stat, roll, parameter); break;
+        // ItemMods PropertyFunc12 rolls the skill id, retaining Param as rank.
+        // Freeze this result like other property rolls; never reroll on equip.
+        case 12: append(op.stat, parameter, roll); break;
+        case 36: append(op.stat, number(op.value), roll); break; // Random class, fixed Properties.val rank (Torch).
         case 5: append("mindamage", roll); break;
         case 6: append("maxdamage", roll); break;
         case 7:
@@ -150,7 +154,8 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
             break;
         }
         case 23: break; // Physical ethereality belongs to the instance, not a stat.
-        default: break; // Other handlers require their own verified item/state semantics.
+        case 0: break;
+        default: throw std::runtime_error("Unsupported item property function: " + std::to_string(op.function));
         }
     }
     return result;

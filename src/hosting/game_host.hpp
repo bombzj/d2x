@@ -70,7 +70,8 @@ class GameHost {
     CommandStatus submit(PlayerBinding, server::GameCommand);
     std::shared_ptr<const PlayerSnapshot> read(PlayerBinding) const;
     // Host storage boundary only; never exposed on a client transport.
-    std::optional<PersistentCharacter> exportCharacter(PlayerBinding) const;
+    bool prepareSave(PlayerBinding);
+    std::optional<PersistentCharacter> exportCharacter(PlayerBinding,bool settledOnly=true) const;
     std::optional<PersistentCharacter> publicEquipment(PlayerBinding) const;
     std::optional<server::inventory::InputState> inventoryInput(PlayerBinding) const;
     std::optional<server::SystemSteps> systemSteps(GameHandle) const;

@@ -34,7 +34,7 @@ struct State { std::map<PlayerId, Pending> pending; uint64_t next = 1; std::stri
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; items::System &items; transactions::System &transactions;
     const ItemCatalog *definitions; const inventory::System &inventory;
-    const GameSettings &settings; uint64_t &random; const npc::System &npc; travel::System &travel; EventOutbox &events;
+    const GameSettings &settings; uint64_t &random; const npc::System &npc; travel::System &travel; EventOutbox &events; const quests::System &quests;
 };
 class System {
     State state_;

@@ -6,6 +6,7 @@
 #include "server/systems/world/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 
 namespace d2x::server::quests {
@@ -39,11 +40,15 @@ DomainResult<> System::operateActTwo(const ActorContext &actor,EntityId source,i
             }
             auto record=p->persistent.player;
             auto &arcane=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::ArcaneSanctuary));
-            if(arcane.stage<uint32_t(ArcaneStage::JournalRead)) {arcane.stage=uint32_t(ArcaneStage::JournalRead);arcane.flags|=arcaneCommentPending;}
-            const auto result=commit(actor,std::move(record));
+            const bool completeQuest=!(state_.initialFlags[questDefinition(QuestId::ArcaneSanctuary).nativeSlot]&0x8000) &&
+                !state_.objectives[questIndex(QuestId::ArcaneSanctuary)];
+            const auto eligible=completeQuest?eligibleParty(QuestId::ArcaneSanctuary,uint32_t(ArcaneStage::JournalRead),actor.area,{},{}):std::set<PlayerId>{};
+            if(!unavailable(actor.player,record,QuestId::ArcaneSanctuary) && arcane.stage<uint32_t(ArcaneStage::JournalRead)) {arcane.stage=uint32_t(ArcaneStage::JournalRead);arcane.flags|=arcaneCommentPending;}
+            const auto result=commit(actor,std::move(record),false,eligible.contains(actor.player)?std::optional{QuestId::ArcaneSanctuary}:std::nullopt);
             if(result) {
                 if(portal) ports_.travel.commitSpecialPortal(std::move(*portal));
-                state_.actTwo.journalRead=true;captureGoal(QuestId::ArcaneSanctuary,uint32_t(ArcaneStage::JournalRead),actor.area);
+                state_.actTwo.journalRead=true;
+                if(completeQuest) captureGoal(QuestId::ArcaneSanctuary,uint32_t(ArcaneStage::JournalRead),eligible);
             }
             return result;
         }

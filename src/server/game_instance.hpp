@@ -62,7 +62,8 @@ class GameInstance {
     std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
     std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;
-    std::optional<PersistentCharacter> exportCharacter(PlayerId) const;
+    bool prepareSave(PlayerId);
+    std::optional<PersistentCharacter> exportCharacter(PlayerId,bool settledOnly=true) const;
     std::optional<PersistentCharacter> publicEquipment(PlayerId) const;
     std::optional<inventory::InputState> inventoryInput(PlayerId id) const { return systems_.inventory.input(id); }
     std::vector<PlayerId> participants() const;

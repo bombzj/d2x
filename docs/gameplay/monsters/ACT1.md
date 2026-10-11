@@ -1,6 +1,6 @@
 # 第一幕怪物执行台账
 
-更新：2026-10-11。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-12。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
 
 当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。代表路径的有限V2见本页证据，其余分支仍为V1；源码接线不代表所有随机／难度组合已认证。
 
@@ -27,6 +27,37 @@
 | Vampire | vampire5 | 火球范围命中、FireHead命中恢复、生命阶段与撤退 |
 
 vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开启，普通AI不执行。骷髅／法师的SkeletonRaise是复活动画，非普通AI主动技能；Countess相关槽不作为普通罗格程序调用。其他原行／精英须另准备条件，不能根据已有槽位宣称支持。
+
+## 三难度重新核对
+
+2026-10-12重新提取当前`assets/mpq2`的Levels、MonStats／2、MonPreset、SuperUniques、MonLvl、MonUMod、MonProp、DifficultyLevels、Skills、Missiles与MonSeq。普通mon／umon、噩梦／地狱nmon，加固定／任务及递归spawn／minion重建集合：三个难度各63类，当前身份集合相同，参数分别准备。24个原AI名加Countess专用程序为25类。逐身份矩阵位于忽略目录`artifacts/act12-reaudit-20261012/identity-difficulty.csv`，全集沿用下表。
+
+| 分支 | 普通 | 噩梦 | 地狱 |
+| --- | --- | --- | --- |
+| 普通怪等级 | MonStats.Level | 非boss／noRatio取区域MonLvl2Ex | 非boss／noRatio取区域MonLvl3Ex |
+| 数值、元素、命中、经验 | 无后缀MonStats及MonLvl L列 | MonStats(N)及MonLvl L列(N) | MonStats(H)及MonLvl L列(H) |
+| 技能／普通弹体等级 | SkNlvl／1 | SkNlvl+3／4 | SkNlvl+7／8 |
+| 冷／冻结时长除数 | 1／1 | 2／2 | 4／4 |
+| 随机暗金／固定暗金额外词缀 | 1／0 | 2／1 | 3／2 |
+
+boss／noRatio保留各难度MonStats等级；密度、精英组数、固定仆从数和TC各读当前难度。冠军、暗金、仆从变体见[精英](ELITES.md)。
+
+本次修正CorruptLancer、SkeletonMage及Bighead低生命接近的原单位距离停止条件，不再将WithSteps截短路线或混用WalkInRadiusToTarget。骷髅弓手／法师及萨满分别保留主目标与可射击目标，法师撤退失败仍射主目标；Bighead只用射击回调判断资格，实际攻击仍指向主目标。绕行使用原方向优先级±2与逐格碰撞；同区域近房间取原六tile间隙条件，依据见[COMMON](COMMON.md#移动与目标依据)。
+
+源码／数据核对不等于完整运行认证。Vision缓存、跨区域完整活动房间、动态单位占位、全随机流及所有自然精英组合仍未认证；最小运行范围见本文有限证据。
+
+## 三难度核对后的最小冒烟
+
+2026-10-12 Windows Release客户端和独立服务端已构建、打包。只复用包内EXE和现有调试管道，无新增测试脚本／用例／专用程序。证据在忽略目录`artifacts/act12-reaudit-20261012/smoke`，当时客户端SHA256 `91C1F0EE34054707A4BB8752161E5374221E4C6112FCCF9B0FC750166E8AA92F`，独立服务端 `5BE4F129D188A3DB51734361196B1364EFA2D91C0599A87A3C98E56CE52DE78D`，见同目录上级`package-hashes.json`。后续物品包身份由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护；下面的旧包运行结果不认证后续源码。
+
+| 场景 | 实际观察 |
+| --- | --- |
+| 普通第一幕冰冷之原 | 自然人口与骷髅法师真实准入；100固定步后法师移动／动作、人物受伤；原技能36火弹命中，法师生命15→11.18359375 |
+| 普通第二幕干燥高地 | 自然人口与高等木乃伊真实准入；125固定步后追击／动作及人物受伤；原移动命令到达4818／5178 |
+| 保存退出／新进程重入 | 正常退局返回CharacterSelection；新进程ProtocolReady，生命644.3359375、法力215、等级91及经验1800000131恢复，物品数量保持 |
+| 两幕客户端／服务端 | scene.available=true，unavailableUnits=0，mapErrors／effectLimitations／characterIssues为空，failures=0；stderr为空 |
+
+普通场景有全局无关候选告警`Ambiguous duplicate MonStats Id disabled: cr_lancer8`，populationMissing=0；不把告警隐去或改成有效第二身份。噩梦／地狱仅本轮静态逐身份、逐难度核查，没有已解锁的隔离角色，不伪造存档来运行；全部AI分支、自然通关、词缀组合、巢生堵塞／耗尽及原版Join画面未重测。独立服务端只完成构建／打包，未启动PvPGN后端；最小冒烟不认证完整原版等价。
 
 ## 逐身份源码与原资源核对
 

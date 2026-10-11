@@ -1,12 +1,14 @@
 # 腰带与消耗品
 
-更新：2026-10-10。本页维护腰带使用、药剂与原消耗效果；数量／缩容归[INVENTORY](INVENTORY.md)，永久奖励归[QUEST_ITEMS](QUEST_ITEMS.md)，卷轴／书本技能程序归[GENERAL](../skills/GENERAL.md)。
+更新：2026-10-12。本页维护腰带使用、药剂与原消耗效果；数量／缩容归[INVENTORY](INVENTORY.md)，永久奖励归[QUEST_ITEMS](QUEST_ITEMS.md)，卷轴／书本技能程序归[GENERAL](../skills/GENERAL.md)。
 
 容量、布局、类型、书页和原图来自当前MPQ Belts／Inventory／Misc／Books／CharStats。连接的服务端拥有自动入带、补位、消耗、回复、状态与持续时间；自研inventory／effects沿同一原协议执行，旧客户端本地执行器已删除。Shift商店购买按原multibuy位提交，服务器决定腰带／书本补满和费用。
 
 ## 操作
 
 1–4提交对应腰带列饮用，B展开腰带；右键或拖放沿公共库存面板提交原请求。腰带→Cursor、放入、交换及使用由原物品回包确认，药剂消失与资源回复分别观察，不能只按发送成功认定恢复完成。
+
+背包Shift入带已使用原0x63直接请求，不再先移入Cursor；服务端复验本人背包来源和空Cursor。自动空位按原GetFreeBeltSlot优先选择底格同类药水列，生命／法力／回复药水不同等级可同列；只有MPQ AutoBelt允许另开空底格，不能任意填入非同类列上方。自有客户端空位预览同步该规则，手动拖放仍使用原0x23。
 
 回城卷轴／书经RemoteControl选择原技能并创建门户，真实type2门户与位置等原服；鉴定技能栏施放／原0x20使用由原0x3F准备光标，再0x27确认目标；背包右键当前直接准备只读来源并提交0x27。两条路径都等物品鉴定／来源消耗更新，不自动重试；界面不扣卷轴或书页。
 

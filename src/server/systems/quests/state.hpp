@@ -11,7 +11,7 @@ namespace d2x::server::quests {
 struct ActOneState {
     bool denCleared{};
     unsigned denRemaining{};
-    std::set<PlayerId> contributors;
+    std::map<PlayerId,EntityId> contributors;
     std::map<PlayerId,unsigned> observed;
     std::array<int,5> stones{};
     unsigned activatedStones{};
@@ -35,6 +35,9 @@ struct ActTwoState {
 struct Goal {
     uint32_t stage{};
     std::set<PlayerId> eligible;
+    std::map<PlayerId,EntityId> actors;
+    std::map<PlayerId,uint64_t> experience;
+    bool attributeReward{}, consumeForgeItems{}, consumeKhalimItems{}, primaryGoal=true;
 };
 struct ActThreeState {
     EntityId figurineSource{};
@@ -60,7 +63,6 @@ struct ActFiveState {
     unsigned rescued{},wave{};
     uint64_t ancientAt{},waveAt{};
     bool wavePrepared{};
-    std::set<PlayerId> ancientEligible;
     Vec baalPosition;
 };
 }

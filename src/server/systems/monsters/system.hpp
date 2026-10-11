@@ -27,7 +27,8 @@ struct Admission { MonsterIdentity identity; std::optional<MonsterKind> implemen
 struct MoveRequest {
     EntityId actor; PointTarget destination; EntityId target;
     int stopDistance{}, velocityPercent{75}; bool running{};
-    int pathSteps{};
+    int pathSteps{}; // Nonzero stores native unit arrival distance + 1.
+    int circleTurn{},circleDistance{};
 };
 struct Actor {
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
@@ -64,6 +65,7 @@ struct Actor {
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     EntityId killer, movementTarget;
     EntityId hirelingKiller;
+    int hirelingLootMagicFind{},hirelingLootGoldFind{};
     std::optional<OpenWoundsApplication> wound;
     Vec movementGoal;
     uint64_t hitOccurrence{};
@@ -124,6 +126,7 @@ struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &id
 class System {
     State state_;
     const Ports ports_;
+    std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
   public:
     void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement,std::map<std::string,int64_t,std::less<>> base) {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
@@ -153,6 +156,7 @@ class System {
     void aiRegeneration(EntityId,int eighths);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
+    bool canSpawnNestChild(EntityId) const;
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0);
     DomainResult<> activateWeb(EntityId,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
@@ -171,7 +175,13 @@ class System {
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);
     void rewardComplete(EntityId);
     void recordHirelingKill(EntityId victim,EntityId source) {
-        if(auto found=state_.actors.find(victim);found!=state_.actors.end() && found->second.life<=0) found->second.hirelingKiller=source;
+        const auto *killer=find(source);
+        if(!killer || !killer->hireling) return;
+        if(auto found=state_.actors.find(victim);found!=state_.actors.end() && found->second.life<=0) {
+            found->second.hirelingKiller=source;
+            found->second.hirelingLootMagicFind=killer->petStats.attributes.combat.magicFind;
+            found->second.hirelingLootGoldFind=killer->petStats.attributes.combat.goldFind;
+        }
     }
     void commitCombatRandom(EntityId id, uint64_t value) { if (auto it=state_.actors.find(id); it!=state_.actors.end()) it->second.combatRandom=value; }
     void commitEnchantmentDamage(EntityId id,MonsterEnchantmentDamageState value) { if(auto it=state_.actors.find(id);it!=state_.actors.end()) it->second.enchantmentDamage=std::move(value); }

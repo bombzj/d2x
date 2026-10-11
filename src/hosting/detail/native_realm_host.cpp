@@ -71,6 +71,14 @@ void NativeRealmHost::advance(double seconds) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }
     }
+    // Drain published facts before retrying save/leave. Frozen party rewards
+    // may require another authoritative step after their content installation.
+    for(auto *peer:peers) if(peer->leavePending && peer->peer.phase==GamePhase::Entered) {
+        try {peer->finishPendingLeave();}
+        catch(const std::exception &error) {
+            if(peer->counters.lastFailure!=error.what()) {peer->counters.lastFailure=error.what();++peer->counters.failures;}
+        }
+    }
 }
 void NativeRealmHost::publishEvents(GameHandle game) {
     const auto pending = host.pendingEvents(game); if (!pending) return;

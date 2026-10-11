@@ -4,6 +4,9 @@
 #include <span>
 
 namespace d2x {
+// Current 1.13c S2C 5E initialization order; distinct from journal/D2S order.
+inline constexpr std::array<unsigned,37> nativeQuestInitializationSlots{
+    0,1,2,3,4,5,6,41,8,9,10,11,12,13,14,30,31,16,17,18,19,20,21,22,32,24,25,26,27,29,33,35,36,37,38,39,40};
 struct QuestDefinition {
     QuestId id;
     int act; // Zero-based, like Levels.Act after content decoding.

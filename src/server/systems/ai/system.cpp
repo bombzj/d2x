@@ -15,6 +15,30 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
+std::optional<System::ShootableTarget> System::shootableTarget(const monsters::Actor &source, TickContext tick) const {
+    // AiUtil callback 6: clear missile ray, FullUnitSize distance <= 48,
+    // and separate Threat <= 1 candidates. Do not overwrite AI acquisition.
+    const auto &area=ports_.areas.at(source.area);
+    const combat::Participants participants{ports_.players,ports_.monsters};
+    std::optional<ShootableTarget> primary,alternative;
+    const bool blind=source.curseControl.until>tick.tick && source.curseControl.ai==CurseAi::DimVision;
+    const auto consider=[&](UnitTarget unit,Vec position,int size,int threat) {
+        const int distance=monsterAiDistance(position,unit.type?size:0,source.position);
+        if(distance>48 || (blind && distance>source.rule.meleeRange) ||
+           !area.definition.activation.nearby(source.position,position) || !participants.canHarm(source.id,unit.id) ||
+           !area.definition.collision.missileSegment(source.position,position,{4,1})) return;
+        auto &selected=threat>1?primary:alternative;
+        if(!selected || distance<selected->distance) selected=ShootableTarget{unit,position,size,distance};
+    };
+    for(const auto &[key,p]:ports_.players.all()) {
+        (void)key;if(p.entered && p.area==source.area && p.persistent.player.hp>0) consider({p.actor,0,0},p.position,2,14);
+    }
+    for(const auto &[key,m]:ports_.monsters.read().actors)
+        if(m.area==source.area && m.life>0 && m.damageable()) consider({key,0,1},m.position,m.rule.size,m.rule.threat);
+    if(alternative && (!primary || (alternative->distance<=5 &&
+       area.definition.collision.path(source.position,primary->position,true,source.rule.collision).empty()))) return alternative;
+    return primary;
+}
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
     const combat::Participants participants{ports_.players,ports_.monsters};
@@ -32,6 +56,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (fresh) {
             controller.random = monster.combatRandom;
             if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=tick.tick+uint64_t(monster.rule.ai.params[0]);
+            if(monster.rule.ai.kind==MonsterAiKind::FoulCrowNest) controller.lastSpawn=tick.tick;
         }
         if (controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);

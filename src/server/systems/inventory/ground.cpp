@@ -5,6 +5,7 @@
 #include "server/movement.hpp"
 #include "server/systems/items/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/social/system.hpp"
 #include <algorithm>
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
@@ -100,7 +101,7 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
         item.nativeSeed = uint32_t(item.id.value);
         EquipmentValues values; values.levels.resize(player.rules.character->experience.size());
         drops.emplace_back(GroundDropFact{item});
-        remaining -= item.quantity; world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
+        remaining -= item.quantity; world.goldOwners.emplace(item.id,actor.player); world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
     }
     auto record = player.persistent.player; record.gold -= amount;
     transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision, player.persistent.inventory, {}, record.weaponSet};
@@ -119,6 +120,14 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     if (source.revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *definition = ports_.definitions->find(source.definition);
     if (!definition) return {DomainStatus::Unavailable, {}};
+    if(request.cube) {
+        const auto box=player->persistent.inventory.items.find(request.cube->id);
+        const auto *at=box==player->persistent.inventory.items.end()?nullptr:std::get_if<ContainerLocation>(&box->second.location);
+        const auto *base=box==player->persistent.inventory.items.end()?nullptr:ports_.definitions->find(box->second.definition);
+        if(request.drop || request.cursor || telekinesis || !at || !base || !base->opensCube || box->second.revision!=request.cube->revision ||
+            (at->container!=player->persistent.containers.backpack && at->container!=player->persistent.containers.stash) ||
+            definition->equipment.isType("gold")) return {DomainStatus::InvalidRequest,{}};
+    }
     if (!request.drop) {
         const auto status = canReceiveQuestItem(*player, *definition, *ports_.definitions, unsigned(player->persistent.difficulty));
         if (status != DomainStatus::Applied) return {status, {}};
@@ -168,6 +177,49 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         }
         if (!telekinesis && !ports_.items.reachable(*position, player->position)) return {DomainStatus::InvalidRequest, {}};
         if (definition->equipment.isType("gold")) {
+            // ItemMode only shares natural gold. Player-dropped/death piles keep
+            // their owner provenance even when a partial pickup creates a new id.
+            if(!world.goldOwners.contains(source.id) && ports_.social.partyId(actor.player)!=UINT16_MAX) {
+                std::vector<const PlayerState *> members;
+                unsigned living=0;
+                for(const auto &[id,peer]:ports_.players.all())
+                    if(peer.entered && peer.area==actor.area && ports_.social.sameParty(actor.player,id)) {members.push_back(&peer);if(peer.persistent.player.hp>0) ++living;}
+                if(living>1) {
+                    // 1.13c Party RVA 0x9C270 counts living members for division,
+                    // but its recipient loop checks the picker mode, not theirs.
+                    // Keep signed remainder: dead recipients can exhaust it.
+                    int64_t remaining=source.quantity;
+                    const auto share=source.quantity/living;
+                    std::vector<transactions::Plan> plans;
+                    for(const auto *peer:members) {
+                        if(peer->player==actor.player) continue;
+                        const unsigned cap=unsigned(peer->persistent.player.level)*10000;
+                        const auto amount=std::min(share,cap>peer->persistent.player.gold?cap-peer->persistent.player.gold:0);
+                        if(!amount) continue;
+                        auto next=peer->persistent.player;next.gold+=amount;remaining-=amount;
+                        transactions::CharacterEdit edit{{peer->player,peer->actor,actor.area,actor.areaGeneration,actor.sequence,actor.tick},peer->inventoryRevision,peer->characterRevision,std::move(next)};
+                        auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+                        plans.push_back(std::move(*plan.value));
+                    }
+                    const unsigned cap=unsigned(record.level)*10000;
+                    const auto amount=std::min(remaining,int64_t(cap>record.gold?cap-record.gold:0));
+                    record.gold=unsigned(std::max<int64_t>(0,int64_t(record.gold)+amount));remaining-=amount;
+                    if(remaining==source.quantity) return {DomainStatus::Conflict,{}};
+                    transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
+                    if(telekinesis) edit.charge=telekinesis->charge;
+                    edit.publicFacts.emplace_back(GroundRemoveFact{source.id});
+                    if(remaining) {
+                        if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
+                        auto left=source;left.id=ports_.items.reserveIdentity();left.quantity=unsigned(remaining);left.revision=1;
+                        world.equipment.items.emplace(left.id,world.equipment.items.at(source.id));
+                        edit.publicFacts.emplace_back(GroundDropFact{left});world.world.items.emplace(left.id,std::move(left));
+                    }
+                    world.world.items.erase(source.id);world.equipment.items.erase(source.id);
+                    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+                    plans.push_back(std::move(*plan.value));
+                    return ports_.transactions.commitCharacters(std::move(plans),transactions::WorldEdit{world.revision,std::move(world)});
+                }
+            }
             const auto capacity = unsigned(record.level) * 10000;
             const auto amount = std::min(source.quantity, capacity > record.gold ? capacity - record.gold : 0);
             if (!amount) return {DomainStatus::Conflict, {}};
@@ -176,6 +228,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             if (amount != source.quantity) {
                 if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
                 auto left = source; left.id = ports_.items.reserveIdentity(); left.quantity -= amount; left.revision = 1;
+                if(const auto owner=world.goldOwners.find(source.id);owner!=world.goldOwners.end()) world.goldOwners.emplace(left.id,owner->second);
                 world.equipment.items.emplace(left.id, world.equipment.items.at(source.id));
                 world.world.items.emplace(left.id, std::move(left));
             }
@@ -195,12 +248,12 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             equipment->includeSets(world.equipment);
             auto copy = source; copy.location = cursor;
             draft.edit.inventory.items.emplace(copy.id, copy);
-            if (!request.cursor) {
+            if (!request.cursor && !request.cube) {
                 const auto merged = draft.mergeCarried(source.id);
                 if (merged != DomainStatus::Applied) return {merged, {}};
             }
             bool equipped = false;
-            if (!request.cursor && draft.edit.inventory.items.contains(source.id)) {
+            if (!request.cursor && !request.cube && draft.edit.inventory.items.contains(source.id)) {
                 const auto result = draft.autoEquip(source.id);
                 if (!result) return {result.status,{}};
                 equipped = *result.value;
@@ -210,7 +263,8 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             if (current == draft.edit.inventory.items.end()) world.world.items.erase(source.id);
             else {
                 std::optional<ContainerLocation> destination;
-                if (request.cursor) destination = cursor;
+                if(request.cube) destination=draft.space(source.id,player->persistent.containers.cube);
+                else if (request.cursor) destination = cursor;
                 else if (equipped) destination = std::get<ContainerLocation>(current->second.location);
                 else {
                     if (definition->autoBelt) destination = draft.space(source.id, player->persistent.containers.belt);

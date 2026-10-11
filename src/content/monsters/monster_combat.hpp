@@ -4,8 +4,8 @@
 #include <optional>
 
 namespace d2x {
-// LoD single-player, normal-difficulty A1 baseline. Other ranks and
-// difficulties retain their explicit pending implementation.
+// Normal profile used by the catalog. Runtime ranks/difficulties are resolved
+// by monster_difficulty_combat before hosting prepares the attack rules.
 std::optional<MonsterNormalCombat> loadMonsterNormalCombat(const DataTable &stats, size_t row,
                                                           const DataTable *levels);
 } // namespace d2x

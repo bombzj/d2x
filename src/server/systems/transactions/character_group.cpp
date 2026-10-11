@@ -3,8 +3,9 @@
 #include "server/area_store.hpp"
 #include <algorithm>
 namespace d2x::server::transactions {
-DomainResult<> System::commitCharacters(std::vector<Plan> plans) {
-    if(plans.empty() || plans.size()>2) return {DomainStatus::InvalidRequest,{}};
+DomainResult<> System::commitCharacters(std::vector<Plan> plans,std::optional<WorldEdit> world) {
+    if(plans.empty() || plans.size()>(world?8u:2u)) return {DomainStatus::InvalidRequest,{}};
+    if(world && (world->expected!=ports_.items.read().revision || world->expected==UINT64_MAX || world->next.revision!=world->expected)) return {DomainStatus::Stale,{}};
     std::set<PlayerId> actors; std::vector<EventBatch> batches;
     uint64_t last=state_.lastCommitted;
     for(const auto &plan:plans) {
@@ -12,7 +13,8 @@ DomainResult<> System::commitCharacters(std::vector<Plan> plans) {
         if(!e || !plan.player || (plan.player->inventoryChanged && !e->charge) || e->revival || e->knockback || e->waypoints || e->experienceAward || !actors.insert(e->actor.player).second)
             return {DomainStatus::InvalidRequest,{}};
         const auto *p=ports_.players.find(e->actor.player);
-        if(!p || !p->entered || p->persistent.player.hp<=0 || p->actor!=e->actor.actor || p->area!=e->actor.area) return {DomainStatus::InvalidActor,{}};
+        if(world && (e->actor.area!=std::get<CharacterEdit>(plans.front().change).actor.area || e->actor.areaGeneration!=std::get<CharacterEdit>(plans.front().change).actor.areaGeneration)) return {DomainStatus::InvalidRequest,{}};
+        if(!p || !p->entered || (p->persistent.player.hp<=0 && (!world || e->player.hp!=p->persistent.player.hp || e->charge || e->transient)) || p->actor!=e->actor.actor || p->area!=e->actor.area) return {DomainStatus::InvalidActor,{}};
         if(p->inventoryRevision!=e->expectedInventoryRevision || p->characterRevision!=e->expectedCharacterRevision ||
             plan.expected.size()!=2 || plan.expected[0].entity!=p->actor || plan.expected[0].expected!=p->inventoryRevision ||
             plan.expected[1].entity!=p->actor || plan.expected[1].expected!=p->characterRevision ||
@@ -35,6 +37,7 @@ DomainResult<> System::commitCharacters(std::vector<Plan> plans) {
         batch.facts.insert(batch.facts.end(),e->facts.begin(),e->facts.end());batches.push_back(std::move(batch));
     }
     const auto output=ports_.events.publishGroup(std::move(batches));if(!output) return {output.status,{}};
+    if(world) {++world->next.revision;ports_.items.commit(std::move(world->next));}
     for(auto &plan:plans) {
         auto &e=std::get<CharacterEdit>(plan.change);auto &p=ports_.players.players_.at(e.actor.player);
         if(e.transient) std::swap(p.transient,*e.transient);

@@ -60,11 +60,13 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     if(ports_.areas.at(actor.area).definition.act==4) return operateActFive(actor,source,definition,operation,position);
     auto record=p->persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));
     if(operation==6 && definition==8) {
+        if(unavailable(actor.player,record,QuestId::ForgottenTower)) return {DomainStatus::Conflict,{}};
         if(!towerAdvance(book.at(questIndex(QuestId::ForgottenTower)),TowerStage::TomeRead)) return {DomainStatus::Applied,std::monostate{}};
         return commit(actor,std::move(record));
     }
     auto &cain=book.at(questIndex(QuestId::SearchForCain));
     if(operation==12 && int(actor.area)==5) {
+        if(unavailable(actor.player,record,QuestId::SearchForCain)) return {DomainStatus::Conflict,{}};
         if(cain.stage>=uint32_t(CainStage::Rescued) || detail::carried(*p,"bks",ports_.settings.difficulty) || detail::carried(*p,"bkd",ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
         // A new game can replace a lost scroll. Do not permanently lock the
         // tree from a saved journal stage without its actual original item.
@@ -75,11 +77,12 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     }
     if(operation==21 && definition==108 && int(actor.area)==28) {
         auto &tools=book.at(questIndex(QuestId::ToolsOfTheTrade));
-        if(p->persistent.player.level<8 || tools.stage>=uint32_t(ToolsStage::RewardReady) || detail::carried(*p,"hdm",ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
+        if(p->persistent.player.level<8 || tools.stage>=uint32_t(ToolsStage::RewardReady) || detail::actTwoCarried(*p,"hdm",ports_.settings.difficulty)) return {DomainStatus::Conflict,{}};
         for(const auto &[id,item]:ports_.items.read().world.items) { (void)id;if(item.definition=="hdm") return {DomainStatus::Conflict,{}}; }
         return prepareReward(actor,source,RewardKind::Malus,false);
     }
     if(operation==9 && int(actor.area)==4 && definition>=17 && definition<=21) {
+        if(unavailable(actor.player,record,QuestId::SearchForCain)) return {DomainStatus::Conflict,{}};
         orderStones();
         if(!detail::carried(*p,"bkd",ports_.settings.difficulty) && cain.stage<uint32_t(CainStage::ScrollTranslated)) return {DomainStatus::InvalidRequest,{}};
         if(state_.actOne.activatedStones>=5) return {DomainStatus::Applied,std::monostate{}};
@@ -102,6 +105,7 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
     }
     if(operation==10 && int(actor.area)==38) {
         if(state_.actOne.cainRescued) return {DomainStatus::Applied,std::monostate{}};
+        if(unavailable(actor.player,record,QuestId::SearchForCain)) return {DomainStatus::Conflict,{}};
         const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::CainRescue,0,position+Vec{3,3});
         if(!portal) return {portal.status,{}};
         captureGoal(QuestId::SearchForCain,uint32_t(CainStage::Rescued),actor.area);
@@ -121,7 +125,8 @@ StepStatus System::actOneStep(TickContext tick) {
         if(int(m.area)==37 && m.identity.monster=="andariel") goal=QuestId::SistersToTheSlaughter;
         if(!goal || state_.objectives[questIndex(*goal)]) continue;
         const uint32_t stage=*goal==QuestId::ForgottenTower?uint32_t(TowerStage::CountessSlain):*goal==QuestId::SistersBurialGrounds?uint32_t(BurialStage::BloodRavenSlain):uint32_t(SlaughterStage::AndarielSlain);
-        captureGoal(*goal,stage,m.area,*goal==QuestId::SistersBurialGrounds?std::optional<Vec>{m.position}:std::nullopt);
+        captureGoal(*goal,stage,m.area,*goal==QuestId::SistersBurialGrounds?std::optional<Vec>{m.position}:std::nullopt,
+            *goal==QuestId::SistersBurialGrounds?std::nullopt:killerPlayer(m.killer));
         // Game.cpp calls QuestUpdater every 20 frames; timeout 1 uses a
         // strict '<', hence each invocation consumes two updater ticks.
         if(*goal==QuestId::SistersToTheSlaughter) state_.actOne.andarielPortalAt=(tick.tick/20+9*2)*20;
@@ -129,6 +134,7 @@ StepStatus System::actOneStep(TickContext tick) {
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));
+        const auto available=[&](QuestId quest){return !unavailable(id,record,quest);};
         const auto before=book;const int area=int(p.area);
         const auto burial=book[questIndex(QuestId::SistersBurialGrounds)].stage;
         if(burial>0 && burial<uint32_t(BurialStage::BloodRavenSlain)) state_.actOne.burialOffer=true;
@@ -144,10 +150,10 @@ StepStatus System::actOneStep(TickContext tick) {
                 if(portal) {ports_.travel.commitSpecialPortal(*portal.value);state_.actOne.cainPortalOpened=true;} else blocked=true;
             }
         }
-        if(area==17) burialAdvanceOnEntry(book[questIndex(QuestId::SistersBurialGrounds)]);
-        if(area>=20 && area<=25) towerAdvance(book[questIndex(QuestId::ForgottenTower)],area==20?TowerStage::TowerEntered:TowerStage::CellarEntered);
-        if(area==28) toolsAdvance(book[questIndex(QuestId::ToolsOfTheTrade)],ToolsStage::BarracksEntered);
-        if(area==37) slaughterAdvance(book[questIndex(QuestId::SistersToTheSlaughter)],SlaughterStage::CatacombsEntered);
+        if(area==17 && available(QuestId::SistersBurialGrounds)) burialAdvanceOnEntry(book[questIndex(QuestId::SistersBurialGrounds)]);
+        if(area>=20 && area<=25 && available(QuestId::ForgottenTower)) towerAdvance(book[questIndex(QuestId::ForgottenTower)],area==20?TowerStage::TowerEntered:TowerStage::CellarEntered);
+        if(area==28 && available(QuestId::ToolsOfTheTrade)) toolsAdvance(book[questIndex(QuestId::ToolsOfTheTrade)],ToolsStage::BarracksEntered);
+        if(area==37 && available(QuestId::SistersToTheSlaughter)) slaughterAdvance(book[questIndex(QuestId::SistersToTheSlaughter)],SlaughterStage::CatacombsEntered);
         auto &cain=book[questIndex(QuestId::SearchForCain)];
         if(record.completedActs.at(size_t(ports_.settings.difficulty)).at(0) && cain.stage<uint32_t(CainStage::Rescued)) {
             cain.stage=uint32_t(CainStage::Rewarded);cain.flags=cainRescuedByRogues;
@@ -156,10 +162,12 @@ StepStatus System::actOneStep(TickContext tick) {
             const auto portal=ports_.travel.prepareSpecialPortal({id,p.actor,p.area,ports_.areas.at(p.area).generation,0,tick.tick},travel::SpecialPortalKind::Andariel,0,p.position);
             if(portal) {ports_.travel.commitSpecialPortal(*portal.value);state_.actOne.andarielPortal=true;} else blocked=true;
         }
-        if(area==38) cainAdvance(cain,CainStage::TristramEntered);
-        if(detail::carried(p,"bks",ports_.settings.difficulty)) cainAdvance(cain,CainStage::BarkAcquired);
-        if(detail::carried(p,"bkd",ports_.settings.difficulty)) cainAdvance(cain,CainStage::ScrollTranslated);
-        if(detail::carried(p,"hdm",ports_.settings.difficulty)) toolsAdvance(book[questIndex(QuestId::ToolsOfTheTrade)],ToolsStage::MalusAcquired);
+        if(available(QuestId::SearchForCain)) {
+            if(area==38) cainAdvance(cain,CainStage::TristramEntered);
+            if(detail::carried(p,"bks",ports_.settings.difficulty)) cainAdvance(cain,CainStage::BarkAcquired);
+            if(detail::carried(p,"bkd",ports_.settings.difficulty)) cainAdvance(cain,CainStage::ScrollTranslated);
+        }
+        if(detail::actTwoCarried(p,"hdm",ports_.settings.difficulty)) toolsAdvance(book[questIndex(QuestId::ToolsOfTheTrade)],ToolsStage::MalusAcquired);
         if(!std::equal(before.begin(),before.end(),book.begin(),[](const auto &a,const auto &b){return a.stage==b.stage && a.flags==b.flags;})) {
             if(!commit({id,p.actor,p.area,ports_.areas.at(p.area).generation,0,tick.tick},std::move(record))) blocked=true;
         }

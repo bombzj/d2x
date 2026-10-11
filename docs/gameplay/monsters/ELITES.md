@@ -1,12 +1,14 @@
 # 阶级、精英词缀与超级暗金
 
-更新：2026-10-11。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-12。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
 
 ## 当前固定身份与准备
 
 SuperUniques读取十三条第一幕记录：Bishibosh、Bonebreak、Coldcrow、Rakanishu、Treehead WoodFist、Griswold、The Countess、Pitspawn Fouldog、Flamespike the Crawler、Boneash、The Smith、The Cow King、Corpsefire。固定词缀、额外词缀、组数、名称、变换和TC由当前表准备；Flamespike的表存在不等于当前地图存在刷新点，不自造位置。普通池之外的中立NPC、牲畜和不可击杀墙面发射器不进入敌对人口，后者属于物件机关范围。
 
 hosting按每个出生身份滚独立词缀，仆从继承已准备领队数值；不把已滚暗金规则按类型缓存。MonUMod的权重、排斥、类型限制、难度常数与MonLvl、DifficultyLevels、Skills共同准备生命／等级／经验、物理增伤、命中、抗性、速度、元素、法力燃烧、冠军变体及光环／诅咒。runtime只接纯值，不读MPQ。实际经验／掉落携带真实rank及rewardModifiers；首领任务资格、首杀TC、组队／人数规则另属任务／奖励领域，尚未完整接入。
+
+普通A1／A2与原元素附伤按MonMode实际攻击时的单位等级重新准备，包含冠军／暗金／仆从等级加成，不沿用出生前基础等级伤害／命中。生命、防御、经验的出生初始化倍率仍保持原独立顺序，不把全部属性一并重算。S1与技能借用A1／A2也使用当前等级攻击快照，之后应用词缀／人数／技能加成。依据为D2MOO MonsterMode的DATATBLS_CalculateMonsterStatsByLevel与当前MPQ三难度MonLvl。
 
 ## 当前运行效果
 

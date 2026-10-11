@@ -14,6 +14,8 @@ struct MonsterDecisionInput {
     bool retreatBlocked{};
     bool trapAxisAligned{};
     int upgradeCooldown{};
+    bool canShoot{};
+    int shootDistance{INT32_MAX};
 };
 struct MonsterDecision {
     MonsterDecisionAction action{MonsterDecisionAction::Idle};
@@ -30,6 +32,7 @@ struct MonsterDecision {
     bool commandParty{};
     bool bloodRavenCloseWhenMoveFails{};
     int upgradeCooldown{};
-    int pathSteps{};
+    int pathSteps{}; // Native PATH_SetStepNum arrival bound, not route length.
+    bool useShootableTarget{};
 };
 }

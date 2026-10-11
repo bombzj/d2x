@@ -145,7 +145,7 @@ void NativeRealmService::gameInfo(net::protocol::Reader &in) {
     if (found == shared.games.end()) return;
     const auto &room = found->second;
     std::vector<PersistentCharacter> characters;
-    for (const auto id : host.participants(room.handle)) characters.push_back(*host.exportCharacter({room.handle, id}));
+    for (const auto id : host.participants(room.handle)) if(const auto record=host.exportCharacter({room.handle,id},false)) characters.push_back(*record);
     Writer out; out.u16(request); out.u32(room.flags);
     out.u32(uint32_t(std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - room.created).count()));
     out.u8(room.creatorLevel); out.u8(room.levelDifference); out.u8(room.capacity); out.u8(uint8_t(characters.size()));

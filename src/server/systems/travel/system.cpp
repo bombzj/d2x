@@ -214,7 +214,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 edit.waypoints=player.persistent.waypoints;
                 edit.waypoints->try_emplace(transition.to,float(tick.tick)*TickContext::seconds);
             }
-            edit.facts.emplace_back(QuestFact{player.player,edit.player,player.persistent.difficulty,0});
+            edit.facts.emplace_back(ports_.quests.projection(player.player,edit.player,transition.to,false));
             edit.facts.emplace_back(TravelFact{player.player,player.actor,transition.from,transition.to,destination->generation,arrival,false});
             auto plan=ports_.transactions.prepare(std::move(edit));
             if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {++pending;continue;}

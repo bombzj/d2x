@@ -159,8 +159,8 @@ void loadCubeData(ClassicData &data) {
                 auto found = std::find_if(data.properties.begin(), data.properties.end(), [&](const auto &property) { return property.code == code; });
                 if (found == data.properties.end()) throw std::runtime_error("Unknown cube property: " + std::string(code));
                 for (const auto &operation : found->operations)
-                    if (operation.function != 23 && (operation.function < 1 || operation.function > 24 ||
-                        operation.function == 12 || operation.function == 13 || operation.function == 18))
+                    if (operation.function != 23 && operation.function != 36 && (operation.function < 1 || operation.function > 24 ||
+                        operation.function == 18))
                         throw std::runtime_error("Unsupported cube property function");
                 output.properties.push_back({{std::string(code), std::string(table.value(row, prefix + " param")),
                     table.number(row, prefix + " min"), table.number(row, prefix + " max"),

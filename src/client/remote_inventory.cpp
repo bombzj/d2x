@@ -404,7 +404,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     const OnlineDecodedItem *targetData = nullptr;
     const bool needsTarget = command.action == OnlineItemAction::Swap || command.action == OnlineItemAction::BeltSwap ||
         command.action == OnlineItemAction::Stack || command.action == OnlineItemAction::Book ||
-        command.action == OnlineItemAction::Socket || command.action == OnlineItemAction::Identify;
+        command.action == OnlineItemAction::Socket || command.action == OnlineItemAction::Identify || command.action == OnlineItemAction::CubeStore;
     if (needsTarget) {
         const auto entry = world.items.find(command.target);
         if (entry == world.items.end() || command.target == command.item || !owned(entry->second))
@@ -554,6 +554,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         break;
     }
     case OnlineItemAction::SwitchWeapons: break;
+    case OnlineItemAction::BeltAuto:
+        if(!backpack(wire) || view_.cursor || !baseNumber(wire,"belt") || decoded.width!=1 || decoded.height!=1)
+            return reject("Automatic belt placement requires a beltable backpack item and empty cursor");
+        break;
+    case OnlineItemAction::CubeStore:
+        if((!cursor() && wire.mode!=3) || !owned(*target) || target->mode!=0 || (target->page!=1 && target->page!=5) || baseNumber(*target,"pSpell")!=7)
+            return reject("Cube placement requires a cursor/ground item and this player's stored cube");
+        break;
     case OnlineItemAction::CubeOpen:
         if (!backpack(wire) || view_.cursor || !isType(wire, "ques") || baseNumber(wire, "pSpell") != 7)
             return reject("Open cube requires this player's original usable backpack cube and empty cursor");

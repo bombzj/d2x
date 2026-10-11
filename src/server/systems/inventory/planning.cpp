@@ -4,6 +4,7 @@
 
 namespace d2x::server::inventory {
 bool supports(const Request &request) {
+    if(std::holds_alternative<AutoStoreItem>(request.intent)) return true;
     if(std::holds_alternative<CloseCube>(request.intent)) return true;
     return std::holds_alternative<IdentifyItem>(request.intent) || std::holds_alternative<CloseStorage>(request.intent) || std::holds_alternative<GoldTransaction>(request.intent) || std::holds_alternative<UseItem>(request.intent) || std::holds_alternative<GroundTransfer>(request.intent) || std::holds_alternative<MoveItem>(request.intent) || std::holds_alternative<EquipItem>(request.intent) ||
         std::holds_alternative<MergeStacks>(request.intent) || std::holds_alternative<LoadBook>(request.intent) ||
@@ -25,7 +26,25 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
     const auto &containers = draft.containers();
     const auto cursor = ContainerLocation{containers.cursor, {}};
     const auto result = std::visit([&]<class T>(const T &operation) -> DomainStatus {
-        if constexpr (std::is_same_v<T, MoveItem>) {
+        if constexpr (std::is_same_v<T, AutoStoreItem>) {
+            const auto *item=draft.resolve(operation.item);
+            if(!item) return DomainStatus::Stale;
+            EntityId destination=containers.belt;
+            if(operation.cube) {
+                const auto *box=draft.resolve(*operation.cube);
+                const auto *at=box?std::get_if<ContainerLocation>(&box->location):nullptr;
+                const auto *base=box?catalog.find(box->definition):nullptr;
+                if(!box || !at || !base || !base->opensCube ||
+                    (at->container!=containers.backpack && at->container!=containers.stash) ||
+                    item->location!=ItemLocation{cursor}) return DomainStatus::InvalidRequest;
+                destination=containers.cube;
+            } else {
+                const auto *at=std::get_if<ContainerLocation>(&item->location);
+                if(!at || at->container!=containers.backpack || draft.at(cursor)) return DomainStatus::InvalidRequest;
+            }
+            const auto target=draft.space(item->id,destination);
+            return target?draft.move(item->id,*target):DomainStatus::Conflict;
+        } else if constexpr (std::is_same_v<T, MoveItem>) {
             const auto *item = draft.resolve(operation.item);
             if (!item) return DomainStatus::Stale;
             const auto *origin = std::get_if<ContainerLocation>(&item->location);

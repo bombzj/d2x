@@ -9,6 +9,7 @@ struct Act2DecisionInput {
     bool burrowed{}, corpse{}, heal{}, preferCold{true};
     bool hasTarget{true}, hasAlly{}, woundedNearby{}, sameRoom{true}, canLand{true}, airborne{};
     int allyDistanceSquared{}, targetDistanceSquared{}, attempts{},supportCount{};
+    bool birthAvailable{};
 };
 struct Act2Decision {
     MonsterDecision action;

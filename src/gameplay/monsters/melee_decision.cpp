@@ -95,8 +95,8 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
         }
         result.velocityPercent = result.running ? 175 : 75;
         result.stopDistance = result.running ? rules.meleeRange : 0;
-        // Fn036's walking value is a path step count, not an arrival range.
-        if(!result.running) result.approachRadius=3;
+        // Fn036 uses PATH_SetStepNum, not WalkInRadiusToTarget.
+        result.pathSteps=result.running?std::max(1,rules.meleeRange):3;
     }
     result.action = MonsterDecisionAction::Approach;
     return result;

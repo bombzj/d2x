@@ -20,12 +20,16 @@ namespace d2x::server::quests {
 std::optional<Dialogue> System::dialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *area=ports_.areas.find(actor.area);
     if(!area) return {};
-    if(area->definition.act==0) return actOneDialogue(actor,npc);
-    if(area->definition.act==1) return actTwoDialogue(actor,npc);
-    if(area->definition.act==2) return actThreeDialogue(actor,npc);
-    if(area->definition.act==3) return actFourDialogue(actor,npc);
-    if(area->definition.act==4) return actFiveDialogue(actor,npc);
-    return {};
+    const auto *p=ports_.players.find(actor.player);if(!p) return {};
+    std::optional<Dialogue> offered;
+    if(area->definition.act==0) offered=actOneDialogue(actor,npc);
+    if(area->definition.act==1) offered=actTwoDialogue(actor,npc);
+    if(area->definition.act==2) offered=actThreeDialogue(actor,npc);
+    if(area->definition.act==3) offered=actFourDialogue(actor,npc);
+    if(area->definition.act==4) offered=actFiveDialogue(actor,npc);
+    // Jerhyn's arrival speech is an independent A2Q0 prelude.
+    if(offered && offered->message.text!=253 && unavailable(actor.player,p->persistent.player,offered->quest)) return {};
+    return offered;
 }
 std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player); if(!p) return {};
@@ -37,13 +41,13 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
     };
     if(npc.code=="akara") {
         const auto cain=stage(QuestId::SearchForCain);
-        if(cain==3 && detail::carried(*p,"bks",ports_.settings.difficulty)) return emit(QuestId::SearchForCain,112,0);
+        if(!unavailable(actor.player,p->persistent.player,QuestId::SearchForCain) && cain==3 && detail::carried(*p,"bks",ports_.settings.difficulty)) return emit(QuestId::SearchForCain,112,0);
         if(cain==7) return emit(QuestId::SearchForCain,118);
         const auto den=stage(QuestId::DenOfEvil);
-        if(den==0 || den==3) return emit(QuestId::DenOfEvil,den==0?64:76,0);
+        if((den==0 || den==3) && !unavailable(actor.player,p->persistent.player,QuestId::DenOfEvil)) return emit(QuestId::DenOfEvil,den==0?64:76,0);
         // A1Q2_SeqCallback activates Cain's offer after Blood Raven's
         // reward, or immediately when the creator already completed A1Q2.
-        if(cain==0 && state_.actOne.cainOffer) return emit(QuestId::SearchForCain,97);
+        if(cain==0 && state_.actOne.cainOffer && !unavailable(actor.player,p->persistent.player,QuestId::SearchForCain)) return emit(QuestId::SearchForCain,97);
         if(den==1 || den==2) return emit(QuestId::DenOfEvil,den==1?65:71,2);
     }
     if(npc.code=="kashya") {
@@ -56,7 +60,7 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
     }
     if(npc.code=="charsi") {
         const auto tools=stage(QuestId::ToolsOfTheTrade);
-        if(tools<5 && p->persistent.player.level>=8 && detail::carried(*p,"hdm",ports_.settings.difficulty)) return emit(QuestId::ToolsOfTheTrade,163,0);
+        if(tools<5 && p->persistent.player.level>=8 && detail::actTwoCarried(*p,"hdm",ports_.settings.difficulty)) return emit(QuestId::ToolsOfTheTrade,163,0);
         if(tools==0 && state_.actOne.toolsOffer && p->persistent.player.level>=8) return emit(QuestId::ToolsOfTheTrade,146);
         if(tools>0 && tools<5) return emit(QuestId::ToolsOfTheTrade,150,2);
     }
@@ -64,13 +68,18 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
     if(npc.code=="warriv1" && stage(QuestId::SistersToTheSlaughter)==3) return emit(QuestId::SistersToTheSlaughter,183,0);
     return {};
 }
-DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,bool levelUp) {
+DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,bool levelUp,std::optional<QuestId> primaryGoal) {
     const auto *player=ports_.players.find(actor.player); if(!player) return {DomainStatus::InvalidActor,{}};
     auto triggers=levelUp?ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::LevelUp},{},player->position):DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}};
     if(!triggers) return {triggers.status,{}};
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
     if(levelUp) edit.resources=transactions::ResourceRefresh::LevelUp;
-    edit.facts.emplace_back(fact(actor.player,edit.player,actor.area));
+    auto questFact=fact(actor.player,edit.player,actor.area);
+    if(primaryGoal) {
+        const auto index=questIndex(*primaryGoal);
+        questFact.credited[index]=true;questFact.entitled[index]=true;questFact.unavailable[index]=false;
+    }
+    edit.facts.emplace_back(std::move(questFact));
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result && levelUp) ports_.effects.commitItemEvents(std::move(*triggers.value));
@@ -133,10 +142,12 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     default: return {DomainStatus::Applied,std::monostate{}};
     }
     const auto result=commit(actor,std::move(record));
-    if(result && *request.message==76 && state_.credited[actor.player].contains(QuestId::DenOfEvil)) state_.actOne.burialOffer=true;
+    if(result && *request.message==76 && credited(actor.player,QuestId::DenOfEvil)) state_.actOne.burialOffer=true;
     return result;
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
+    std::erase_if(state_.credited,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || state_.creditedActors.at(entry.first)!=p->actor;});
+    std::erase_if(state_.creditedActors,[&](const auto &entry){return !state_.credited.contains(entry.first);});
     const auto den=denStep(tick),act=actOneStep(tick),two=actTwoStep(tick),three=actThreeStep(tick),four=actFourStep(tick),five=actFiveStep(tick),ancients=ancientsStep(tick),baal=baalStep(tick),goals=flushGoals(tick);
     bool publicationBlocked=false;
     const auto flags=gameFlags();
@@ -162,9 +173,9 @@ StepStatus System::denStep(TickContext tick) {
         for(const auto &[id,m]:ports_.monsters.read().actors) {
             (void)id;if(m.area!=RegionId(8) || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
             ++admitted;if(m.life>0) {++alive;continue;}++killed;
-            if(const auto *killer=ports_.players.findActor(m.killer)) state_.actOne.contributors.insert(killer->player);
+            if(const auto *killer=ports_.players.findActor(m.killer)) state_.actOne.contributors[killer->player]=killer->actor;
             else if(const auto pet=ports_.monsters.read().actors.find(m.killer);pet!=ports_.monsters.read().actors.end() && pet->second.owner)
-                state_.actOne.contributors.insert(*pet->second.owner);
+                if(const auto *owner=ports_.players.find(*pet->second.owner)) state_.actOne.contributors[owner->player]=owner->actor;
         }
         alive+=area->definition.population.size()>admitted?area->definition.population.size()-admitted:0;
         state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
@@ -177,6 +188,7 @@ StepStatus System::denStep(TickContext tick) {
     bool blocked=false;
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered) continue;
+        if(unavailable(id,p.persistent.player,QuestId::DenOfEvil)) continue;
         auto record=p.persistent.player; auto &den=record.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::DenOfEvil));
         bool changed=false;
         if(p.area==RegionId(8)) changed=denAdvanceOnEntry(den);
@@ -186,7 +198,7 @@ StepStatus System::denStep(TickContext tick) {
         if(result) state_.actOne.observed[id]=state_.actOne.denRemaining; else blocked=true;
     }
     std::erase_if(state_.actOne.observed,[&](const auto &entry){return !ports_.players.find(entry.first);});
-    std::erase_if(state_.actOne.contributors,[&](PlayerId id){return !ports_.players.find(id);});
+    std::erase_if(state_.actOne.contributors,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || p->actor!=entry.second;});
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 }

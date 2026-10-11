@@ -3,6 +3,7 @@
 #include "server/systems/items/system.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/quest/id.hpp"
+#include <map>
 
 namespace d2x::server::quests {
 enum class RewardKind { Bark, TranslateScroll, CainRing, Malus, Rogue, SkillBook, HoradricScroll, Cube, StaffShaft, ViperAmulet, ExplainStaffScroll,
@@ -22,6 +23,7 @@ struct Preparation {
     std::optional<Vec> dropPosition{}; // Natural monster rewards use their captured death position.
     unsigned quantity=1;
     std::set<size_t> uniques{};
+    std::map<PlayerId,EntityId> participants{};
 };
 struct Prepared {
     Preparation source;

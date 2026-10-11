@@ -76,8 +76,23 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec orig
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
     auto &nest=it->second;const auto &child=*nest.rule.nestChild;
     if(nest.nestSpawned>=(nest.rule.ai.kind==MonsterAiKind::BloodRaven?8+2*nest.rule.difficulty:nest.rule.ai.params[2]+(nest.rule.ai.kind==MonsterAiKind::Sarcophagus?1:0))) return {DomainStatus::Unavailable,{}};
-    const auto &grid=ports_.areas.at(nest.area).definition.collision;
     auto random=nest.combatRandom;
+    const auto point=nestBirthPoint(id,origin,random);
+    if(!point) {nest.combatRandom=random;return {DomainStatus::Unavailable,{}};}
+    auto identity=child.identity;identity.spawnKey=nest.identity.spawnKey+".child."+std::to_string(nest.nestSpawned);identity.ownerSpawnKey=nest.identity.spawnKey;
+    const auto admitted=admit({identity,child.implementation,nest.area,*point,true,child.rule});
+    if(admitted) {state_.actors.at(*admitted.value).rewardComplete=true;++nest.nestSpawned;nest.combatRandom=random;++nest.revision;}
+    (void)tick;return admitted;
+}
+bool System::canSpawnNestChild(EntityId id) const {
+    const auto *nest=find(id);if(!nest || nest->life<=0 || !nest->rule.nestChild) return false;
+    auto random=nest->combatRandom;
+    return bool(nestBirthPoint(id,nest->position+nest->rule.spawnOffset,random));
+}
+std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &random) const {
+    const auto *source=find(id);if(!source || source->life<=0 || !source->rule.nestChild) return {};
+    const auto &nest=*source;const auto &child=*nest.rule.nestChild;
+    const auto &grid=ports_.areas.at(nest.area).definition.collision;
     const int radius=nest.rule.ai.kind==MonsterAiKind::BloodRaven?1:3;
     // master nestSpawn's perimeter walk; MPQ spawnx/spawny supply the origin.
     int x=0,y=0;
@@ -92,12 +107,9 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec orig
         for(const auto &[key,actor]:state_.actors) { (void)key;if(actor.area==nest.area && actor.life>0 && (point-actor.position).length()<1.f) {occupied=true;break;} }
         for(const auto &[key,p]:ports_.players.all()) { (void)key;if(p.entered && p.area==nest.area && p.persistent.player.hp>0 && (point-p.position).length()<1.f) {occupied=true;break;} }
         if(occupied) continue;
-        auto identity=child.identity;identity.spawnKey=nest.identity.spawnKey+".child."+std::to_string(nest.nestSpawned);identity.ownerSpawnKey=nest.identity.spawnKey;
-        const auto admitted=admit({identity,child.implementation,nest.area,point,true,child.rule});
-        if(admitted) {state_.actors.at(*admitted.value).rewardComplete=true;++nest.nestSpawned;nest.combatRandom=random;++nest.revision;}
-        return admitted;
+        return point;
     }
-    (void)tick;nest.combatRandom=random;return {DomainStatus::Unavailable,{}};
+    return {};
 }
 DomainResult<> System::activateWeb(EntityId id,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.web) return {DomainStatus::InvalidActor,{}};

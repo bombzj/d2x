@@ -54,7 +54,8 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
             }
             case RewardKind::ForgeHammer: add(data.hellforge.hammer,unsigned(source.character.player.level),questUnique(data.hellforge.hammer));break;
             case RewardKind::SmashSoulstone:
-                for(const unsigned tier:{0u,1u,1u,2u}) add(data.hellforge.gems[tier][limitedRandom(random,7)],50);
+                for(const unsigned tier:{0u,1u,1u,2u}) for(unsigned count=0;count<source.quantity;++count)
+                    add(data.hellforge.gems[tier][limitedRandom(random,7)],50);
                 add(data.hellforge.runes.at(size_t(source.difficulty))[limitedRandom(random,11)],50);break;
             case RewardKind::KhalimEye: case RewardKind::KhalimBrain: case RewardKind::KhalimHeart: case RewardKind::KhalimFlail:
             case RewardKind::CouncilCube: case RewardKind::LamTome: case RewardKind::Soulstone: {
@@ -148,7 +149,7 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
             case RewardKind::Rogue: case RewardKind::IronWolf: case RewardKind::RescueRunes: {
                 if(source.kind==RewardKind::RescueRunes) {
                     const auto count=source.character.player.quests.at(size_t(source.difficulty))[questIndex(QuestId::RescueOnMountArreat)].flags&15u;
-                    if(count<13) throw std::runtime_error("Original rescue reward requires thirteen survivors");
+                    if(count<12) throw std::runtime_error("Original rescue reward requires twelve survivors");
                     const unsigned rewards=count==15?3:count==14?2:1;
                     for(unsigned i=0;i<rewards;++i) add(data.hellforge.runes[0][6+i],1);
                 }

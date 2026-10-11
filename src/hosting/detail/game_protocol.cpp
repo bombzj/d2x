@@ -94,7 +94,19 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
 }
 void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {
     in.finish();
+    leavePending=true;
+    finishPendingLeave();
+}
+void NativeRealmService::finishPendingLeave() {
+    if(!leavePending || !binding) return;
     const bool preparedReload = reload.has_value();
+    if(!preparedReload) {
+        if(!host.prepareSave(*binding) || !host.exportCharacter(*binding)) return;
+        const auto *room=shared.find(binding->game);
+        if(room && room->tcpIp && room->tcpIpOwner==binding->player)
+            for(auto *guest:shared.peers) if(guest!=this && guest->binding && guest->binding->game==binding->game)
+                if(!host.prepareSave(*guest->binding) || !host.exportCharacter(*guest->binding)) return;
+    }
     close(!preparedReload, preparedReload);
     // TCP/IP B0 is a system-channel acknowledgment. The original game loop
     // needs 05/06 to unload and finish leaving, after the save was returned.
@@ -131,6 +143,7 @@ void NativeRealmService::game(std::span<const uint8_t> bytes) {
             return;
         }
         if (!binding) throw ProtocolError("Native gameplay request has no game binding");
+        if(leavePending) {++stats.rejected;counters.lastResult="leaving";return;}
         GameplayContext context{host, *binding, terrain.origin, peer.sequence};
         const auto result = dispatchGameplay(bytes, context);
         if (!result.operation.empty()) counters.lastRequest += "/" + std::string(result.operation);

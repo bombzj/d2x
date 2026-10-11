@@ -2,6 +2,7 @@
 #include "server/player_store.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
@@ -47,7 +48,7 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
         }
         draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});draft.edit.inventory.items.erase(item->id);
         transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),record.weaponSet};
-        edit.character=record;edit.facts.emplace_back(QuestFact{actor.player,record,player->persistent.difficulty,0});
+        edit.character=record;edit.facts.emplace_back(ports_.quests.projection(actor.player,record,actor.area,false));
         auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
     }
     const auto definition = player->rules.potions->find(item->definition);

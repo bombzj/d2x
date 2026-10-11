@@ -16,6 +16,8 @@ struct InventoryDefinitionView {
     int width = 0, height = 0, beltRows = 0;
     unsigned maxStack = 0, bookCapacity = 0;
     bool beltAllowed = false, opensCube = false, identifySource = false;
+    bool autoBelt = false;
+    std::string beltPotionType;
     std::array<bool, size_t(EquipmentSlot::Count)> slots{};
     bool shield = false, quiver = false;
     bool fits(EquipmentSlot slot) const { return slots.at(size_t(slot)); }

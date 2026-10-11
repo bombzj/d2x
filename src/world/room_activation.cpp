@@ -61,6 +61,9 @@ bool RoomLayout::nearby(Vec observer, Vec point) const {
     if (a < 0 || b < 0)
         return false;
     const auto &r = rooms_[a], &s = rooms_[b];
-    return r.x <= s.x + s.width && s.x <= r.x + r.width && r.y <= s.y + s.height && s.y <= r.y + r.height;
+    // The same-level DRLG near-room criterion, shared with nearRooms().
+    const int gapX=std::max({r.x-s.x-s.width,s.x-r.x-r.width,0});
+    const int gapY=std::max({r.y-s.y-s.height,s.y-r.y-r.height,0});
+    return gapX<6*5 && gapY<6*5;
 }
 } // namespace d2x

@@ -1,6 +1,6 @@
 # 怪物公共规范与生命周期
 
-更新：2026-10-09。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+更新：2026-10-12。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
 
 ## 身份与完成口径
 
@@ -24,6 +24,14 @@ hosting准备不可变纯值，server不读表、资源或客户端副本。自�
 | 组件／表现 | MonStats2十六组件选择数、TotalPieces及HitClass；区域选中类型先准备最多三个十六槽组合，新增类型在TotalPieces>2且区域类型数未满13时补入；无区域池使用原单体前十二槽路径。原AC位宽发送，实际SH盾牌影响格挡；近战用MonStats2.HitClass，弹体用Missiles.HitClass，元素／暴击标记在接触成功时计算。MonSounds／Light／调色／COF／DCC仍由原客户端解释 |
 
 缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。怪物弹体已接NextHit／NextDelay的玩家及伙伴接触窗口、NoMultiShot／NoUniqueMod和独立随机。区域组合以人口计划选型后的区域随机流准备；完整原版全区域初始化／房间随机调度尚未复刻，不能宣称同种子外观和出生位置逐单位一致。Vision缓存、特殊AI强制察觉旗标及动态拥挤仍待完整接入。
+
+## 移动与目标依据
+
+PATH_SetStepNum保存steps−1，PathMisc.sub_6FD5DB70以D2Common_10399单位距离判停止，不是路线点数量。本地原版1.13c D2Common.dll VA6FD5DBC7–6FD5DBD9调用6FDCFCD0后读取动态路径0x93字段比较，已只读核对。DLL SHA256为`59FA5928522F566F2BF99675571206AD70DF889C89D3D07FA87EDF5083E06E10`；证据在`artifacts/act12-reaudit-20261012/native-path-arrival.txt`，源码不加载原DLL执行。
+
+两幕绕行沿D2MOO AiTactics.sub_6FCD0E80及PathMisc.sub_6FDAA720：一次随机选type5／6，方向优先级转±2，逐格查原碰撞／大小，碰壁或反转停止，参数为路程上限；0不造一格绕行。RoomLayout.nearby与nearRooms共用DRLG同区域各轴间隙＜6 tile条件；跨区域链接及完整活动调度仍待接。
+
+server/ai.shootableTarget独立提供AiUtil回调6目标／距离：近房间、FullUnitSize距离≤48、可伤害资格和原missile barrier视线，Threat≤1另选。各家族只在原射击分支使用，不能覆盖主目标、接战判断、元素偏好及坐标技能落点；开始／释放仍复验来源、目标、区域、技能资格。完整强制目标／Vision缓存尚未实现。
 
 ## 状态所有权与公共计算
 

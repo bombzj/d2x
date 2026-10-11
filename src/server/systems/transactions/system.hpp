@@ -73,9 +73,9 @@ class System {
     bool hasOutputCapacity(size_t extraFacts = 0) const { return ports_.events.hasCapacity(2 + extraFacts); }
     DomainResult<Plan> prepare(Change);
     DomainResult<> commit(Plan);
-    // Same-area skill buffs may debit a caster and update a different player.
-    // This restricted character-only group publishes all projections before swaps.
-    DomainResult<> commitCharacters(std::vector<Plan>);
+    // Character-only skill groups, or up to eight same-area wallets coupled to
+    // one ground-item edit. Reserve every projection before committing any owner.
+    DomainResult<> commitCharacters(std::vector<Plan>, std::optional<WorldEdit> = {});
     // Two inventory owners, one output reservation and no intermediate writes.
     DomainResult<> commitInventories(std::vector<Plan>);
     // Atomic mana debit and optional same-area relocation at the release frame.

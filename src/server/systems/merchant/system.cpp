@@ -17,6 +17,23 @@ const Stock *System::stock(PlayerId player, EntityId npc, bool gamble) const {
     return found == state_.stocks.end() ? nullptr : &found->second;
 }
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {
+    if(request.action==Action::IdentifyBought) {
+        const auto *p=ports_.players.find(actor.player);
+        const auto bought=state_.bought.find(actor.player);
+        if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
+        if(!request.item || bought==state_.bought.end() || bought->second!=request.item->id) return {DomainStatus::InvalidRequest,{}};
+        const auto found=p->persistent.inventory.items.find(request.item->id);
+        if(found==p->persistent.inventory.items.end() || found->second.revision!=request.item->revision) return {DomainStatus::Stale,{}};
+        if(found->second.identified) return {DomainStatus::Applied,std::monostate{}};
+        if(found->second.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto inventory=p->persistent.inventory;auto &item=inventory.items.at(request.item->id);
+        item.identified=true;item.nativeFlags|=0x10u;++item.revision;
+        std::vector<ItemChange> changes{{item.id,item.revision,ItemChangeKind::PropertiesChanged,item.location,item.location,item.quantity}};
+        transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(inventory),
+            std::move(changes),p->persistent.player.weaponSet};
+        auto plan=ports_.transactions.prepare(std::move(edit));
+        return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
+    }
     const auto access = ports_.npc.service(actor, request.npc.id);
     if (!access) return {DomainStatus::InvalidRequest,{}};
     const auto *npc = access->npc;
@@ -264,9 +281,12 @@ DomainResult<> System::install(Prepared prepared) {
         for (const auto &item:draft.edit.spilled) edit.publicFacts.emplace_back(GroundDropFact{world.value->next.world.items.at(item.id)});
         edit.world=std::move(*world.value);
     }
+    auto bought=state_.bought;
+    if(request.action==Action::Buy) bought.insert_or_assign(actor.player,receiptItem);
     auto plan=ports_.transactions.prepare(std::move(edit)); if (!plan) { if(plan.status==DomainStatus::Capacity) return {plan.status,{}}; return failure(plan.status); }
     const auto result=ports_.transactions.commit(std::move(*plan.value)); if (!result) return {result.status,{}};
     if(changedStocks) state_.stocks.swap(*changedStocks);
+    state_.bought.swap(bought);
     if (soldOffer) { auto &stock=request.gamble?state_.gambles.at({actor.player,request.npc.id}):state_.stocks.at(request.npc.id); stock.offers.erase(soldOffer); ++stock.revision; }
     state_.pending.erase(queued); return result;
 }
@@ -274,6 +294,7 @@ DomainResult<> System::install(Prepared prepared) {
 
 namespace d2x::server::merchant {
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(state_.bought,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered;});
     const auto valid = [&](PlayerId id, EntityId npc, uint64_t revision) {
         const auto *conversation=ports_.npc.conversation(id);
         return conversation && conversation->npc==npc && conversation->revision==revision;

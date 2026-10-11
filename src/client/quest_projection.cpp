@@ -15,12 +15,15 @@ QuestView projectQuestDisplay(const ClassicData &data, const QuestProjectionInpu
         const auto &facts=input.entries[questIndex(def.id)];
         const auto status=facts.status;
         const auto flags=facts.playerFlags;
-        entry.known=flags.has_value() || status.has_value();
-        entry.completed=(flags && (*flags & 1)) || status==13; // Native completed log status; never shared flags.
-        entry.active=!entry.completed && ((status && *status) || (flags && (*flags & 0x001E)));
+        entry.known=flags.has_value() || status.has_value() || facts.available.has_value();
+        const bool missed=flags && (*flags&0x4000) && !(*flags&1);
+        entry.completed=(flags && (*flags & 1)) || (!missed && status==13); // Owner facts only.
+        const bool closed=facts.available==false && (!status || !*status) && !(flags && (*flags&2));
+        entry.unavailable=!entry.completed && (missed || status==12 || closed);
+        entry.active=!entry.completed && !entry.unavailable && ((status && *status) || (flags && (*flags & 0x001E)));
         std::string key;
         if (entry.completed) key="qstsComplete";
-        else if (status && *status==12) key="qstsThankYouComeAgain";
+        else if (entry.unavailable) key="qstsThankYouComeAgain";
         else if (status && *status>0 && *status<12) {
             key=(def.id==QuestId::SiegeOnHarrogath ? "qsta" : "qstsa") +
                 std::to_string(def.act+1)+"q"+std::to_string(def.nativeQuest)+std::to_string(*status);

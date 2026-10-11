@@ -1,6 +1,36 @@
 # 物品历史运行证据与验证边界
 
-更新：2026-10-11。本页维护物品批次的条件、包身份、实际路径、失败样本与未覆盖范围。当前包另见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；旧证据只覆盖对应源码，不认证当前新增分支。仅使用既有EXE、原服与调试管道，没有新测试脚本／用例／专用程序。
+更新：2026-10-12。本页维护物品批次的条件、包身份、实际路径、失败样本与未覆盖范围。当前包另见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；旧证据只覆盖对应源码，不认证当前新增分支。仅使用既有EXE、原服与调试管道，没有新测试脚本／用例／专用程序。
+
+## 客户端与服务端物品核对
+
+2026-10-12，当前`assets/mpq2`及本地D2MOO，Windows Release、D2S v96。忽略目录`artifacts/items-completion-20261012/`保留原表提取、`mpq-item-audit.json`逐配方／启用属性来源及表哈希、构建记录和后续运行副本；参考源码及原资源不纳入提交。
+
+| 链路 | 源码核对与本批修复 | 依据／边界 |
+| --- | --- | --- |
+| 原库存请求／客户端 | 2A Cursor／地面直接入本人方块，63空Cursor背包入带，37最后成功购入身份鉴定；D2X Shift入带、列预览和原请求编码同步 | PlrMsg、ItemMode、D2Inventory、SUnitNpc；自动入带优先底格同类药水，明确拖放仍保留指定格 |
+| 实际属性／保存 | 奥玛斯长袍随机技能、火炬随机职业的原stat107／83层；冻结编号和等级，未知函数不静默丢属性 | ItemMods PropertyFunc12／36与MPQ Properties.val；函数18未有启用来源，未实现自造时间规则 |
+| 掉落 | NoDrop总人数包含已入场死亡玩家，同区域存活同队成员完整贡献；佣兵实际击杀叠加主人及佣兵MF／GF | Items_DropItemByMonster；TC、首杀、暗金一次限制及失败品质耐久沿现有路径，不替换概率 |
+| 战斗到掉落的客户端资格 | 移除网络血量百分比为零即推断尸体的分支，仅原DT／DD模式判尸体；修复实际剩余不足1点生命时无法补最后一击 | MonsterMode的血量先整点取整，原0C可以对活怪报告零；不改服务端真实伤害／生命 |
+| 金币 | 同区域同队自然金堆整除分配／拾取者余数，原存活人数除数及死亡队员分支、有符号余数，所有钱包及地面同笔提交；玩家手动／死亡丢金不分配 | ItemMode／Party及当前1.13c反汇编，已纠正D2MOO队友容量指针，见[GOLD](GOLD.md)；极限分支静态核对，未逐项录包认证 |
+| 方块 | 146条enabled（36条Crafted），141条普通op与5条op28；现有修复、升级、词缀、孔、去孔、任务物品及门路径逐输入／输出登记。`useitem,rep,qty`补量含实际额外堆数，书本不套用；导入允许已实现属性函数12／13／36 | CubeParser／PlrTrade；`useitem`保留品质／等级，`usetype`才重生基底，未改正确分支；表级登记不等于146条运行验收 |
+| 镶嵌／符文之语 | 原0x28实际子项、宿主类型、品质、顺序、孔数、冻结属性及D2S保留沿既有路径 | MPQ有78条complete，其中23条server；Realm Ladder过滤证据仍不足，见[SOCKETS](SOCKETS.md) |
+| 商店／维修／鉴定／消耗／任务加工 | 正常请求、本人来源、NPC会话、金额、材料及库存输出仍由各系统准备和事务提交；客户端不执行第二套生成或消费 | 全商店刷新、折扣、充能、护符／套装条件、多尸体、争用／背压组合未逐项运行认证 |
+
+牛门／钥匙门／最终门物品合成与地图准备已有；Pandemonium真实首领、固定奖励、完整世界活动及部分视觉仍是独立缺口，未用管理生成冒充自然事件。没有新增测试脚本、用例或专用程序。
+
+客户端及独立服务端Windows Release构建、打包成功。最终客户端SHA256 `BF2FDDE219A2C12E2934C9E7115460D4D6435E4B583AA6574405EED42B179B21`，服务端 `796E0D45A1878B6FB049DC6C191A28562D0668727BBB953CBC41AD67E3D14FC4`，BNCS DLL `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7`；磁盘包与`build/bin`一致。以下用隔离存档、当前MPQ与既有调试管道操作正常客户端请求；管理生成／旅行／伤害只准备条件，不认证自然生成概率。
+
+| 代表冒烟路径 | 实际结果及证据 |
+| --- | --- |
+| 拾取、鉴定、关闭方块直接入箱、合成 | 六件准备物拾取，实际鉴定卷轴消费；三枚碎裂紫宝石经2A入箱，再由77／4F合成一枚裂开紫宝石。`smoke/picked-items.json`、`cube-closed-items.json`、`belt-cube-items.json` |
+| 同类跨等级自动入带及随机属性 | 腰带扩为8格，hp5由63放入底格hp1同列上格（原Slot4）；奥玛斯长袍实际stat107层51、等级3。正常保存后最终包新进程恢复方块内gfv、腰带位置及相同随机属性。`smoke/reentry-items.json`、`reentry-server.json` |
+| 真实双客户端TCP组队分金 | 41012隔离宿主，双方实际入同区域且远距同队：自然TC的45金分为拾取者23、队友22；玩家手动丢100金拾回不分队友。双方原回包余额一致，正常退局保存；最终包新进程恢复队友799金。`tcp/*/shared-gold-after.json`、`owned-gold-after.json`、`tcp/host/final-server.json`、`tcp/guest/reload-server.json` |
+| 最终包低生命最后一击、实际TC掉落和拾取 | 自然沉沦巫师经Fire Bolt及管理扣1点准备为0.97265625生命，客户端原mode3、lifePercent0；正常右键Fire Bolt成功击杀，原mode12、rewardComplete，TC掉出lbl，走近后正常拾入背包。`smoke/final-low-life-server.json`、`final-low-life-client.json`、`final-drop-server.json`、`final-drop-items.json`、`final-picked-drop.json`、`final-server.json` |
+
+前三条操作包客户端SHA256为`AAAE6C68B9D8FD3F7B6783DFA4FF8DCB1C4BE93AC8D6DE83FC83116214F73EFA`：已含全部本批物品／分金修复，仅缺随后补齐的客户端低生命尸体判定；最终包另做上述新进程重入及最后一击。对应宿主failures=0、characterIssues为空，进程stderr为空，均正常退出。中间发现旧客户端拒绝对不足1点生命的活怪施放，修复及最终复验如上；Town零等级箱子无TC档位、过远拾取等准备请求明确拒绝，不计作链路通过。
+
+未启动PvPGN、未重做原版人工Join、Linux、噩梦／地狱及全部配方／品质／概率运行验证。佣兵MF／GF、购入鉴定37、地面直接入方块及死亡队员／容量极限分金为源码与原版证据核对，未逐项冒烟；23条server符文之语模式资格和世界事件限制仍见上表，不能宣称全物品功能已完整认证。
 
 ## 相关功能收尾复核
 

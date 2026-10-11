@@ -2301,7 +2301,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;
     }
     const bool hasItem = command.action <= OnlineItemAction::Identify || command.action == OnlineItemAction::CubeOpen ||
-        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService || command.action==OnlineItemAction::HirelingEquipment;
+        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService || command.action==OnlineItemAction::HirelingEquipment || command.action==OnlineItemAction::BeltAuto || command.action==OnlineItemAction::CubeStore;
     const auto item = world.items.find(command.item);
     if (hasItem && (item == world.items.end() ||
         command.itemRevision != item->second.revision)) {
@@ -2357,6 +2357,8 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             else { out.u32(point.x); out.u32(point.y); }
             break;
         case OnlineItemAction::BeltPlace: out.u8(0x23); out.u32(command.item); out.u32(command.beltSlot); break;
+        case OnlineItemAction::BeltAuto: out.u8(0x63); out.u32(command.item); break;
+        case OnlineItemAction::CubeStore: pair(0x2A); break;
         case OnlineItemAction::BeltSwap: pair(0x25); break;
         case OnlineItemAction::Stack: pair(0x21); break;
         case OnlineItemAction::Book: pair(0x29); break;

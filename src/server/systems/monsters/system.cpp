@@ -129,14 +129,19 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
         return {DomainStatus::Stale, {}};
     if (actor.rule.nativeVelocity <= 0 || (request.target && !targetPosition(request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
-    auto route = area.definition.collision.path(actor.position, request.destination.position, true, actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision);
+    const auto collision=actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision;
+    auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position,request.destination.position,request.circleDistance,request.circleTurn,collision):
+        area.definition.collision.path(actor.position, request.destination.position, true, collision);
     if (route.empty()) return {DomainStatus::Unavailable, {}};
     if(request.pathSteps<0 || request.pathSteps>255) return {DomainStatus::InvalidRequest,{}};
-    if(request.pathSteps>0 && route.size()>size_t(request.pathSteps)) route.resize(size_t(request.pathSteps));
-    actor.route = std::move(route); actor.movementTarget = request.target;
+    // PATH_SetStepNum stores steps - 1 as a unit-distance arrival bound.
+    // It never limits the number of route points (D2Common PathMisc).
+    const auto goal=request.circleTurn?route.back():request.destination.position;
+    actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
     actor.pathSteps=uint8_t(request.pathSteps);
-    actor.movementGoal = request.destination.position;
-    actor.stopDistance = request.stopDistance; actor.velocityPercent = request.velocityPercent; actor.running = request.running;
+    actor.movementGoal = goal;
+    actor.stopDistance = request.pathSteps>0?request.pathSteps-1:request.stopDistance;
+    actor.velocityPercent = request.velocityPercent; actor.running = request.running;
     if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
     ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
@@ -364,7 +369,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         auto arrived=[&](Vec position) {
             if (!actor.movementTarget) return (position - actor.movementGoal).length() < .25f;
-            return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance && grid.segment(position,target->first);
+            return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance &&
+                (actor.pathSteps || grid.segment(position,target->first));
         };
         if (arrived(actor.position)) { stop(id); continue; }
         const int speed = std::max(25,actor.velocityPercent+actor.effectVelocity+actor.hirelingMovementPercent+(actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));

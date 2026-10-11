@@ -56,9 +56,13 @@ std::vector<RegionId> GameInstance::visibleAreas(PlayerId id) const {
 std::vector<PlayerId> GameInstance::visiblePlayers(PlayerId id) const {
     return systems_.replication.visible(id);
 }
-std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id) const {
+bool GameInstance::prepareSave(PlayerId id) {
+    return bool(systems_.trade.cancelFor(id,tick_));
+}
+std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id,bool settledOnly) const {
     const auto *player = players_.find(id);
     if (!player) return {};
+    if(settledOnly && systems_.quests.pendingGoals(id)) return {};
     if (player->persistent.player.hp <= 0) {
         const auto death = systems_.death.read().transitions.find(player->actor);
         if (death == systems_.death.read().transitions.end() || !death->second.finalized || !death->second.companionsSettled) return {};

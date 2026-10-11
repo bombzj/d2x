@@ -49,7 +49,7 @@ const CharacterRosterEntry &NativeRealmService::find(std::string_view name) cons
 void NativeRealmService::checkpoint() {
     if (!binding) return;
     const auto saved = host.exportCharacter(*binding);
-    if (!saved) throw std::runtime_error("Character storage binding expired or death settlement pending");
+    if (!saved) throw std::runtime_error("Character storage binding expired or character settlement pending");
     if (externalSave) { externalSave(*saved); return; }
     if (!lease) throw std::runtime_error("Character storage binding expired");
     store->save(*lease, *saved);
@@ -75,6 +75,7 @@ void NativeRealmService::close(bool save, bool keepReload) {
     }
     if (binding) shared.retire(*binding);
     binding.reset(); lease.reset(); selected.reset();
+    leavePending=false;
     peer = {}; ticket = false;
     admission.clear(); terrain = {};
     gameName.clear(); gamePassword.clear();

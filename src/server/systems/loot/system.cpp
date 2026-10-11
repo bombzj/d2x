@@ -15,10 +15,14 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     if (!player) return {DomainStatus::InvalidActor, {}};
     Preparation pending{request, player->persistent, player->definition.code, 0,
         player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
+    pending.magicFind=int(std::clamp(int64_t(pending.magicFind)+request.additionalMagicFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
+    pending.goldFind=int(std::clamp(int64_t(pending.goldFind)+request.additionalGoldFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     if(request.environment) pending.magicFind=pending.goldFind=0;
     if(request.questClaimant) pending.character.player=*request.questClaimant;
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
-    const unsigned count=std::clamp(std::max(ports_.settings.virtualPlayers,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered && entry.second.persistent.player.hp>0;}))),1u,8u);
+    // PLAYER_GetPlayerCount includes entered dead players; only the same-level
+    // party bonus uses living members (Items::ITEMS_DropItemByMonster).
+    const unsigned count=std::clamp(std::max(ports_.settings.virtualPlayers,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}))),1u,8u);
     unsigned members=1;
     if(ports_.social.partyId(player->player)!=UINT16_MAX)
         members=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry){

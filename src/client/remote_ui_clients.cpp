@@ -258,16 +258,18 @@ struct RemoteUiClients::Impl {
         std::optional<Cell> beltSpace(std::string_view code) const override {
             const auto belt = o.inventoryView.containers.belt;
             const auto *grid = o.inventoryView.container(belt);
-            if (!grid) return {};
+            const auto *base=o.inventoryView.definition(code);
+            if (!grid || !base || !base->beltAllowed) return {};
             for (int x = 0; x < grid->columns; ++x) {
-                bool compatible = true;
-                for (int y = 0; y < grid->rows; ++y)
-                    if (const auto *i = o.inventoryView.item(o.inventoryView.itemAt(belt, {x,y})))
-                        compatible &= i->definition == code;
+                const auto *bottom=o.inventoryView.item(o.inventoryView.itemAt(belt,{x,0}));
+                const auto *other=bottom?o.inventoryView.definition(bottom->definition):nullptr;
+                const bool compatible=other && (other->code==code || (!base->beltPotionType.empty() && other->beltPotionType==base->beltPotionType));
                 if (!compatible) continue;
                 for (int y = 0; y < grid->rows; ++y)
                     if (!o.inventoryView.itemAt(belt, {x,y})) return Cell{x,y};
             }
+            if(base->autoBelt) for(int x=0;x<grid->columns;++x)
+                if(!o.inventoryView.itemAt(belt,{x,0})) return Cell{x,0};
             return {};
         }
     } inventory{*this};
@@ -525,6 +527,10 @@ struct RemoteUiClients::Impl {
             }
             next.x = uint8_t(target.cell.x); next.y = uint8_t(target.cell.y);
             if (target.container == owned.belt) {
+                const auto *origin=std::get_if<ContainerLocation>(&item->location);
+                if(std::holds_alternative<AutoPlace>(destination) && origin && origin->container==owned.backpack && !items.read().cursor) {
+                    next.action=OnlineItemAction::BeltAuto;next.itemRevision=handle.revision;enqueue(next);return;
+                }
                 next.action = OnlineItemAction::BeltPlace; next.beltSlot = uint8_t(target.cell.y*4+target.cell.x);
             } else if(target.container==owned.hirelingEquipment) {
                 next.action=OnlineItemAction::HirelingEquipment;next.body=nativeBody(EquipmentSlot(target.cell.x));
@@ -1409,6 +1415,8 @@ struct RemoteUiClients::Impl {
             InventoryDefinitionView def; def.targetCursor=definition->targetCursor; def.code=native.code; def.name=definition->name; def.bookScroll=definition->bookScroll;
             def.width=di.width; def.height=di.height; def.beltRows=definition->beltRows; def.maxStack=definition->maxStack; def.bookCapacity=definition->bookCapacity;
             def.beltAllowed=definition->beltAllowed; def.opensCube=definition->opensCube; def.twoHanded=definition->equipment.twoHanded;
+            def.autoBelt=definition->autoBelt;
+            for(const auto type:{"hpot","mpot","rpot"}) if(definition->equipment.isType(type)) def.beltPotionType=type;
             def.shield=definition->equipment.isType("shld"); def.quiver=!definition->equipment.quiver.empty();
             def.socketFiller=definition->equipment.isType("sock"); def.identifySource=data.isIdentifyScroll(native.code)||data.isIdentifyScroll(def.bookScroll);
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
@@ -1545,6 +1553,10 @@ struct RemoteUiClients::Impl {
             auto &entry=questInput.entries[questIndex(def.id)];
             entry.status=w.quests.statuses[def.nativeSlot];
             if (w.quests.playerFlags) entry.playerFlags=(*w.quests.playerFlags)[def.nativeSlot];
+            if(w.quests.availability) {
+                const auto found=std::find(nativeQuestInitializationSlots.begin(),nativeQuestInitializationSlots.end(),def.nativeSlot);
+                if(found!=nativeQuestInitializationSlots.end()) entry.available=(*w.quests.availability)[size_t(found-nativeQuestInitializationSlots.begin())]!=0;
+            }
         }
         questView=projectQuestDisplay(data,questInput);
         shopView={}; shopView.revision=revision; shopView.actor=characterView.actor; shopView.npc=npcView.npc;

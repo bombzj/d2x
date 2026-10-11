@@ -71,15 +71,15 @@ Act2Decision decideAct2Monster(const MonsterAiProfile &rule,const Act2DecisionIn
         else if(i.distance<5 && chance(p[0])) attack(5);
         else if(input.heal && chance(p[2])) cast(1);
         else if(input.corpse && chance(p[1])) cast(0);
-        else if(chance(p[3]) && i.clear) cast(2);
+        else if(chance(p[3]) && i.canShoot) {cast(2);d.useShootableTarget=true;}
         else if(!input.supportCount) {approach(50);d.pathSteps=3;}
         else if(chance(50)) circle(3);else d.waitFrames=6;
         break;
     case MonsterAiKind::SandMaggot:
-        if(input.burrowed) {if((input.hasTarget || i.distance<16) && input.tick>input.deadline) {cast(0);d.phase=1;d.waitFrames=25;result.deadline=input.tick+uint64_t(p[4]);}else d.waitFrames=20;}
-        else if((!input.hasTarget && i.distance>10 && input.tick>input.deadline) || (i.lifePercent<25 && i.distance<7 && input.tick>input.deadline && chance(20))) {cast(1);d.phase=3;d.waitFrames=30;result.deadline=input.tick+uint64_t(p[4]);}
+        if(input.burrowed) {if((input.hasTarget || i.shootDistance<16) && input.tick>input.deadline) {cast(0);d.phase=1;d.waitFrames=25;result.deadline=input.tick+uint64_t(p[4]);}else d.waitFrames=20;}
+        else if((!input.hasTarget && i.shootDistance>10 && input.tick>input.deadline) || (i.lifePercent<25 && i.shootDistance<7 && input.tick>input.deadline && chance(20))) {cast(1);d.phase=3;d.waitFrames=30;result.deadline=input.tick+uint64_t(p[4]);}
         else if(i.contact && chance(p[3])) attack();
-        else if(i.distance<15 && chance(p[1]) && i.clear) attack(5);
+        else if(i.canShoot && i.shootDistance<15 && chance(p[1])) {attack(5);d.useShootableTarget=true;}
         else if(chance(20)) circle(6);
         else if(input.attempts>=p[2] || !chance(p[0])) d.waitFrames=12;
         else if(i.phase==2) {cast(2);d.phase=1;d.waitFrames=20;++result.attempts;}
@@ -95,7 +95,7 @@ Act2Decision decideAct2Monster(const MonsterAiProfile &rule,const Act2DecisionIn
         break;
     case MonsterAiKind::Sarcophagus:
         if(i.distance>25) d.waitFrames=25;
-        else if(input.born<=p[2]) {if(input.tick>=input.deadline) {cast(0);result.deadline=input.tick+uint64_t(p[0]);}else d.waitFrames=20+int(limitedRandom(d.random,10));}
+        else if(input.attempts<=p[2]) {if(input.tick>=input.deadline && input.birthAvailable) {cast(0);result.deadline=input.tick+uint64_t(p[0]);++result.attempts;}else d.waitFrames=20+int(limitedRandom(d.random,10));}
         else result.exhaust=true;
         break;
     case MonsterAiKind::Duriel:
@@ -104,13 +104,13 @@ Act2Decision decideAct2Monster(const MonsterAiProfile &rule,const Act2DecisionIn
         break;
     case MonsterAiKind::Summoner: {
         if(i.distance<5 && chance(p[5])) {d.action=MonsterDecisionAction::Retreat;d.stopDistance=6;}
-        if(!chance(p[0])) {circle(4);break;}
+        if(!chance(p[0])) {d.action=MonsterDecisionAction::Wander;d.stopDistance=4;break;}
         if(chance(p[1])) {cast(4);break;}
         bool cold=input.preferCold;if(int(limitedRandom(d.random,100))>p[2]) cold=!cold;
         if(cold && input.tick>input.novaAt && i.distance<p[6]) {cast(1);result.novaAt=input.tick+uint64_t(p[3]);}
-        else if(cold && i.clear && i.distance<p[7]) cast(0);
+        else if(cold && i.canShoot && i.distance<p[7]) {cast(0);d.useShootableTarget=true;}
         else if(input.tick>input.firewallAt) {cast(3);result.firewallAt=input.tick+uint64_t(p[4]);}
-        else if(i.clear && i.distance<p[7]) cast(2);
+        else if(i.canShoot && i.distance<p[7]) {cast(2);d.useShootableTarget=true;}
         else if(!cold && input.tick>input.novaAt && i.distance<p[6]) {cast(1);result.novaAt=input.tick+uint64_t(p[3]);}
         else cast(4);
         break;
@@ -130,10 +130,10 @@ Act2Decision decideAct2Monster(const MonsterAiProfile &rule,const Act2DecisionIn
         else if(!i.contact) approach();else if(chance(p[2])) attack(chance(p[3])?4:5);else {approach();d.waitFrames=p[4];}
         break;
     case MonsterAiKind::PantherJavelin:
-        if(i.distance<8 && chance(p[3])) {d.action=MonsterDecisionAction::Retreat;d.stopDistance=16;}
-        else if(i.distance>p[5]-6 && chance(p[0])) {approach();d.stopDistance=4;}
-        else if(i.distance>=p[5] || !i.clear) {if(input.hasAlly && input.allyDistanceSquared>p[2]) {result.seekAlly=true;approach();}else d.waitFrames=p[4];}
-        else if(chance(p[1])) attack();else d.waitFrames=p[4];
+        if(i.shootDistance<8 && chance(p[3])) {d.action=MonsterDecisionAction::Retreat;d.stopDistance=16;}
+        else if(i.shootDistance>p[5]-6 && chance(p[0])) {approach();d.stopDistance=4;}
+        else if(i.shootDistance>=p[5] || !i.canShoot) {if(input.hasAlly && input.allyDistanceSquared>p[2]) {result.seekAlly=true;approach();}else d.waitFrames=p[4];}
+        else if(chance(p[1])) {attack();d.useShootableTarget=true;}else d.waitFrames=p[4];
         break;
     case MonsterAiKind::PantherWoman:
         if(i.contact) {if(chance(p[1])) attack();else d.waitFrames=p[3];}

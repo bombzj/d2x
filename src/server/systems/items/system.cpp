@@ -106,7 +106,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(!base || !ground || base->questTag) {++it;continue;}
         if(tick.tick<lifetime->second.expires) {++it;continue;}
         if(state_.revision==UINT64_MAX || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},ground->region},{GroundRemoveFact{item.id}}})) {blocked=true;++it;continue;}
-        groundLifetimes_.erase(item.id);clearRestoration(item.id);state_.equipment.items.erase(item.id);it=state_.world.items.erase(it);++state_.revision;
+        groundLifetimes_.erase(item.id);clearRestoration(item.id);state_.goldOwners.erase(item.id);state_.equipment.items.erase(item.id);it=state_.world.items.erase(it);++state_.revision;
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }

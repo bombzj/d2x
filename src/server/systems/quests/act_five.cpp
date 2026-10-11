@@ -8,18 +8,21 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/quest/catalog.hpp"
+#include "gameplay/monsters/movement_math.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
 std::optional<Dialogue> System::actFiveDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
+    const auto available=[&](QuestId id){return !unavailable(actor.player,p->persistent.player,id);};
     const auto &book=p->persistent.player.quests.at(size_t(ports_.settings.difficulty));
     const auto &items=p->rules.character->laterQuests;
     const auto &siege=book[questIndex(QuestId::SiegeOnHarrogath)];
     if(npc.code=="larzuk" && (!siege.stage || siege.stage==3)) return speech(npc,QuestId::SiegeOnHarrogath,siege.stage==3?"Successful":"Init");
     const auto &rescue=book[questIndex(QuestId::RescueOnMountArreat)];
-    if(npc.code=="qual-kehk" && (!rescue.stage || rescue.stage==3)) return speech(npc,QuestId::RescueOnMountArreat,rescue.stage==3?"Successful":"Init");
+    if(available(QuestId::RescueOnMountArreat) && npc.code=="qual-kehk" && (!rescue.stage || rescue.stage==3)) return speech(npc,QuestId::RescueOnMountArreat,rescue.stage==3?"Successful":"Init");
     const auto &ice=book[questIndex(QuestId::PrisonOfIce)];
-    if(npc.code=="malah") {
+    if(available(QuestId::PrisonOfIce) && npc.code=="malah") {
         if(!ice.stage) return speech(npc,QuestId::PrisonOfIce,"Init");
         if(ice.stage>=3 && ice.stage<5 && !detail::actTwoCarried(*p,items.defrostPotion,ports_.settings.difficulty)) return speech(npc,QuestId::PrisonOfIce,"FoundAnya");
         if(ice.stage>=5 && !(ice.flags&iceScrollUsed) && !detail::actTwoCarried(*p,items.resistanceScroll,ports_.settings.difficulty)) return speech(npc,QuestId::PrisonOfIce,"Successful");
@@ -28,7 +31,7 @@ std::optional<Dialogue> System::actFiveDialogue(const ActorContext &actor,const 
     const auto &betrayal=book[questIndex(QuestId::BetrayalOfHarrogath)];
     if(npc.code=="drehya" && ice.stage>=5 && (!betrayal.stage || betrayal.stage==3)) return speech(npc,QuestId::BetrayalOfHarrogath,betrayal.stage==3?"Successful":"Init");
     const auto &ancients=book[questIndex(QuestId::RiteOfPassage)];
-    if(!ancients.stage && siege.stage>=3 && npc.code=="qual-kehk") return speech(npc,QuestId::RiteOfPassage,"Init");
+    if(available(QuestId::RiteOfPassage) && !ancients.stage && siege.stage>=3 && npc.code=="qual-kehk") return speech(npc,QuestId::RiteOfPassage,"Init");
     if(ancients.stage==4 && (ancientNpcAcknowledgement(npc.code)&~ancients.flags)) return speech(npc,QuestId::RiteOfPassage,"Successful");
     const auto &baal=book[questIndex(QuestId::EveOfDestruction)];
     if(baal.stage==5 && (baalNpcAcknowledgement(npc.code)&~baal.flags)) return speech(npc,QuestId::EveOfDestruction,"Successful");
@@ -83,6 +86,7 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
     auto record=p->persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));
     if(operation==67 && int(actor.area)==114) {
+        if(unavailable(actor.player,record,QuestId::PrisonOfIce)) return {DomainStatus::Conflict,{}};
         auto &q=book[questIndex(QuestId::PrisonOfIce)];
         if(q.stage>=5 || state_.actFive.anyaThawed) return {DomainStatus::Conflict,{}};
         if(detail::actTwoCarried(*p,p->rules.character->laterQuests.defrostPotion,ports_.settings.difficulty)) return prepareReward(actor,source,RewardKind::ThawAnya,false,position);
@@ -99,13 +103,11 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
         if(world.ancientsActive || world.ancientsDefeated) return {DomainStatus::Conflict,{}};
         const auto &groups=ports_.areas.at(actor.area).definition.questGroups;
         for(const auto name:ancientIdentities) if(!groups.contains(name)) return {DomainStatus::Unavailable,{}};
-        book[questIndex(QuestId::RiteOfPassage)].stage=std::max(book[questIndex(QuestId::RiteOfPassage)].stage,3u);
+        if(!unavailable(actor.player,record,QuestId::RiteOfPassage)) book[questIndex(QuestId::RiteOfPassage)].stage=std::max(book[questIndex(QuestId::RiteOfPassage)].stage,3u);
         const auto result=commit(actor,std::move(record));
         if(result) {
             ports_.travel.closePortals(actor.area);
             world.ancientsActive=true;world.ancientAt=actor.tick+20;
-            constexpr std::array minimumLevel{20,40,60};
-            for(const auto &[id,player]:ports_.players.all()) if(player.entered && player.area==actor.area && player.persistent.player.hp>0 && player.persistent.player.level>=minimumLevel.at(size_t(ports_.settings.difficulty)) && player.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::RiteOfPassage)].stage<4) world.ancientEligible.insert(id);
             state_.objectModes[source]=2;
         }
         return result;
@@ -113,7 +115,7 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
     if(operation>=62 && operation<=64 && int(actor.area)==120) {
         if(book[questIndex(QuestId::RiteOfPassage)].stage<4) return {DomainStatus::Conflict,{}};
         book[questIndex(QuestId::RiteOfPassage)].flags|=32;
-        book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,2u);
+        if(!unavailable(actor.player,record,QuestId::EveOfDestruction)) book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,2u);
         return commit(actor,std::move(record));
     }
     if(operation==66 || operation==70 || operation==72) return ports_.travel.useSpecial(actor,{travel::Kind::QuestObject,{source,0,2},{}});
@@ -121,34 +123,53 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
 }
 StepStatus System::actFiveStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actFive;
+    // A5Q2 counts prisoners freed by the door callback, before their escape
+    // animation ends. The participating nearby player seeds the party award.
+    world.rescued=0;
+    for(const auto &[id,escape]:ports_.npc.read().escapes) {(void)id;if(int(escape.area)==111) ++world.rescued;}
     for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
         (void)monsterId;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
-        if(int(m.area)==110 && m.identity.superUnique=="Siege Boss") captureGoal(QuestId::SiegeOnHarrogath,3,m.area);
-        if(int(m.area)==124 && m.identity.superUnique=="Nihlathak Boss") captureGoal(QuestId::BetrayalOfHarrogath,3,m.area);
+        if(int(m.area)==110 && m.identity.superUnique=="Siege Boss") captureGoal(QuestId::SiegeOnHarrogath,3,m.area,m.position);
+        if(int(m.area)==124 && m.identity.superUnique=="Nihlathak Boss") captureGoal(QuestId::BetrayalOfHarrogath,3,m.area,m.position);
         if(int(m.area)==111 && m.identity.monster=="prisondoor") {
             const auto &area=ports_.areas.at(m.area);
-            for(const auto &npc:area.definition.npcs) if(npc.rule.code=="act5pow" && !npc.hidden && (npc.position-m.position).length()<15)
-                ports_.npc.escape(m.area,npc.id,m.position+Vec{2,0});
+            for(const auto &npc:area.definition.npcs) {
+                if(npc.rule.code!="act5pow" || npc.hidden || (npc.position-m.position).length()>=15 || ports_.npc.read().escapes.contains(npc.id)) continue;
+                std::optional<PlayerId> rescuer;int distance=16;
+                for(const auto &[id,p]:ports_.players.all()) {
+                    if(!p.entered || p.area!=m.area || p.persistent.player.hp<=0 || !area.definition.activation.nearby(p.position,npc.position)) continue;
+                    const int candidate=monsterAiDistance(npc.position,npc.rule.size,p.position);
+                    if(candidate<distance) {distance=candidate;rescuer=id;}
+                }
+                if(!rescuer) continue;
+                if(!ports_.npc.escape(m.area,npc.id,m.position+Vec{2,0})) {blocked=true;continue;}
+                ++world.rescued;
+                if(world.rescued==15 && !(state_.initialFlags[questDefinition(QuestId::RescueOnMountArreat).nativeSlot]&0x8000)) {
+                    const auto &record=ports_.players.find(*rescuer)->persistent.player;
+                    const auto eligible=!rewardPending(record,QuestId::RescueOnMountArreat) && !unavailable(*rescuer,record,QuestId::RescueOnMountArreat)?
+                        eligibleDelivery(QuestId::RescueOnMountArreat,3,*rescuer):std::set<PlayerId>{};
+                    captureGoal(QuestId::RescueOnMountArreat,3,eligible);
+                }
+            }
         }
     }
-    world.rescued=0;for(const auto &[id,escape]:ports_.npc.read().escapes) {(void)id;if(int(escape.area)==111 && escape.escaped) ++world.rescued;}
     world.rescued=std::min(world.rescued,15u);
-    if(world.rescued==15) captureGoal(QuestId::RescueOnMountArreat,3,RegionId(111));
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || ports_.areas.at(p.area).definition.act!=4) continue;
         const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));const auto before=book;
+        const auto available=[&](QuestId quest){return !unavailable(id,record,quest);};
         const int level=int(p.area);
-        if(level>=110 && level<=112 && book[questIndex(QuestId::SiegeOnHarrogath)].stage==1) book[questIndex(QuestId::SiegeOnHarrogath)].stage=2;
-        if(level==111) {
+        if(available(QuestId::SiegeOnHarrogath) && level>=110 && level<=112 && book[questIndex(QuestId::SiegeOnHarrogath)].stage==1) book[questIndex(QuestId::SiegeOnHarrogath)].stage=2;
+        if(available(QuestId::RescueOnMountArreat) && level==111) {
             auto &q=book[questIndex(QuestId::RescueOnMountArreat)];if(q.stage<3) {q.stage=2;q.flags=(q.flags&~rescueCountMask)|world.rescued;}
         }
-        if(level!=109 && book[questIndex(QuestId::PrisonOfIce)].stage==1) book[questIndex(QuestId::PrisonOfIce)].stage=2;
-        if(level>=121 && level<=124 && book[questIndex(QuestId::BetrayalOfHarrogath)].stage<2) book[questIndex(QuestId::BetrayalOfHarrogath)].stage=2;
-        if(level!=109 && book[questIndex(QuestId::RiteOfPassage)].stage==1) book[questIndex(QuestId::RiteOfPassage)].stage=2;
-        if(level==120 && book[questIndex(QuestId::RiteOfPassage)].stage<3) book[questIndex(QuestId::RiteOfPassage)].stage=3;
+        if(available(QuestId::PrisonOfIce) && level!=109 && book[questIndex(QuestId::PrisonOfIce)].stage==1) book[questIndex(QuestId::PrisonOfIce)].stage=2;
+        if(available(QuestId::BetrayalOfHarrogath) && level>=121 && level<=124 && book[questIndex(QuestId::BetrayalOfHarrogath)].stage<2) book[questIndex(QuestId::BetrayalOfHarrogath)].stage=2;
+        if(available(QuestId::RiteOfPassage) && level!=109 && book[questIndex(QuestId::RiteOfPassage)].stage==1) book[questIndex(QuestId::RiteOfPassage)].stage=2;
+        if(available(QuestId::RiteOfPassage) && level==120 && book[questIndex(QuestId::RiteOfPassage)].stage<3) book[questIndex(QuestId::RiteOfPassage)].stage=3;
         const unsigned baal=level==132?4u:level==131?3u:level>=128 && level<=130?2u:0u;
-        if(baal) book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,baal);
+        if(baal && available(QuestId::EveOfDestruction)) book[questIndex(QuestId::EveOfDestruction)].stage=std::max(book[questIndex(QuestId::EveOfDestruction)].stage,baal);
         if(level==109 && (world.anyaThawed || book[questIndex(QuestId::PrisonOfIce)].stage>=5) && !world.anyaSpawned) {
             for(const auto &object:area.definition.objects) if(object.type==459) {
                 if(ports_.world.admitQuestNpc(p.area,"drehya",object.position)) world.anyaSpawned=true;else blocked=true;

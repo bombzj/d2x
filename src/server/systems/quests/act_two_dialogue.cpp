@@ -4,6 +4,7 @@
 #include "server/systems/npc/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 
 namespace d2x::server::quests {
@@ -11,6 +12,7 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
     const auto &record=p->persistent.player;
     const auto &book=record.quests.at(size_t(ports_.settings.difficulty));
+    const auto available=[&](QuestId id){return !unavailable(actor.player,record,id);};
     const auto stage=[&](QuestId id){return book.at(questIndex(id)).stage;};
     const auto emit=[&](QuestId id,uint16_t text,uint8_t menu=1)->std::optional<Dialogue> {
         if(!npc.questMessages.contains(text)) return {};
@@ -20,10 +22,11 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     if(npc.code=="jerhyn" && !record.questPreludes.at(size_t(ports_.settings.difficulty)).at(size_t(QuestPreludeId::LutGholeinArrival)))
         return emit(QuestId::SevenTombs,253,0);
     const auto tombs=stage(QuestId::SevenTombs);
-    if(npc.code=="tyrael1" && tombs>=uint32_t(TombsStage::DurielSlain)) return emit(QuestId::SevenTombs,302);
+    if(npc.code=="tyrael1" && tombs<uint32_t(TombsStage::TyraelRescued) &&
+       (tombs==uint32_t(TombsStage::DurielSlain) || state_.actTwo.durielSlain)) return emit(QuestId::SevenTombs,302);
     if(npc.code=="jerhyn" && tombs==uint32_t(TombsStage::TyraelRescued)) return emit(QuestId::SevenTombs,442);
     if(npc.code=="meshif1" && tombs==uint32_t(TombsStage::JerhynConfirmed)) return emit(QuestId::SevenTombs,450,2);
-    if(npc.code=="atma") {
+    if(npc.code=="atma" && available(QuestId::RadamentsLair)) {
         const auto radament=stage(QuestId::RadamentsLair);
         if(!radament || radament==uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,radament?334:304,radament?1:0);
     }
@@ -39,13 +42,13 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
     }
     const auto sun=stage(QuestId::TaintedSun);
     if(npc.code=="drognan") {
-        if(sun==uint32_t(SunStage::Darkness)) return emit(QuestId::TaintedSun,348);
+        if(available(QuestId::TaintedSun) && sun==uint32_t(SunStage::Darkness)) return emit(QuestId::TaintedSun,348);
         if(sun==uint32_t(SunStage::AltarDestroyed)) return emit(QuestId::TaintedSun,371);
-        if(sun>=uint32_t(SunStage::AltarDestroyed) && !stage(QuestId::ArcaneSanctuary)) return emit(QuestId::ArcaneSanctuary,373);
+        if(available(QuestId::ArcaneSanctuary) && sun>=uint32_t(SunStage::AltarDestroyed) && !stage(QuestId::ArcaneSanctuary)) return emit(QuestId::ArcaneSanctuary,373);
     }
     if(npc.code=="jerhyn") {
-        if(stage(QuestId::ArcaneSanctuary)==uint32_t(ArcaneStage::PalaceOpened)) return emit(QuestId::ArcaneSanctuary,377);
-        if(stage(QuestId::ArcaneSanctuary)>0 && !tombs) return emit(QuestId::SevenTombs,430);
+        if(available(QuestId::ArcaneSanctuary) && stage(QuestId::ArcaneSanctuary)==uint32_t(ArcaneStage::PalaceOpened)) return emit(QuestId::ArcaneSanctuary,377);
+        if(available(QuestId::SevenTombs) && stage(QuestId::ArcaneSanctuary)>0 && !tombs) return emit(QuestId::SevenTombs,430);
     }
     // A2Q3/A2Q5 completion comments are offered by every original town participant.
     static constexpr std::pair<std::string_view,uint16_t> sunComments[]{
@@ -61,7 +64,7 @@ std::optional<Dialogue> System::actTwoDialogue(const ActorContext &actor,const N
         {"drognan",399},{"lysander",405},{"cain2",407},{"meshif1",402},{"geglash",401},{"fara",404}};
     if(book.at(questIndex(QuestId::ArcaneSanctuary)).flags&arcaneCommentPending)
         for(const auto &[code,text]:arcaneComments) if(npc.code==code) return emit(QuestId::ArcaneSanctuary,text);
-    if(npc.code=="atma" && stage(QuestId::RadamentsLair)<uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,stage(QuestId::RadamentsLair)==1?310:317,2);
+    if(available(QuestId::RadamentsLair) && npc.code=="atma" && stage(QuestId::RadamentsLair)<uint32_t(RadamentStage::Slain)) return emit(QuestId::RadamentsLair,stage(QuestId::RadamentsLair)==1?310:317,2);
     return {};
 }
 DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request &request,const NpcRule &) {
@@ -83,7 +86,8 @@ DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request
     case 377: q.stage=uint32_t(ArcaneStage::JerhynBriefed);break;
     case 430: q.stage=uint32_t(TombsStage::Assigned);break;
     case 302: {
-        if(q.stage<uint32_t(TombsStage::DurielSlain)) return {DomainStatus::Conflict,{}};
+        if((q.stage<uint32_t(TombsStage::DurielSlain) && !state_.actTwo.durielSlain) || state_.actTwo.tyraelPortal ||
+            state_.initialFlags[questDefinition(QuestId::SevenTombs).nativeSlot]&0x8000) return {DomainStatus::Conflict,{}};
         if(!state_.actTwo.tyraelPortal) {
             const auto result=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::Tyrael,0,p->position);
             if(!result) return {result.status,{}};
@@ -99,8 +103,12 @@ DomainResult<> System::acknowledgeActTwo(const ActorContext &actor,const Request
         else if(request.quest==QuestId::ArcaneSanctuary && q.stage==uint32_t(ArcaneStage::JournalRead)) q.flags&=~arcaneCommentPending;
         else return {DomainStatus::Applied,std::monostate{}};
     }
-    const auto result=commit(actor,std::move(record));
-    if(result && portal) {ports_.travel.commitSpecialPortal(std::move(*portal));state_.actTwo.tyraelPortal=true;}
+    const auto eligible=message==302?eligibleParty(QuestId::SevenTombs,uint32_t(TombsStage::TyraelRescued),actor.area,{},{}):std::set<PlayerId>{};
+    const auto result=commit(actor,std::move(record),false,eligible.contains(actor.player)?std::optional{QuestId::SevenTombs}:std::nullopt);
+    if(result && portal) {
+        ports_.travel.commitSpecialPortal(std::move(*portal));state_.actTwo.tyraelPortal=true;
+        captureGoal(QuestId::SevenTombs,uint32_t(TombsStage::TyraelRescued),eligible);
+    }
     return result;
 }
 }

@@ -12,7 +12,7 @@ struct RoomBounds {
     bool checkLosDraw{true};
 };
 // Immutable spatial room index. Activity is derived from the observer's room and
-// touching neighbours, following DRLG's InRoom / InSight / OutOfSight model.
+// DRLG near-room list, following its same-level six-tile gap criterion.
 class RoomLayout {
     int width_ = 0, height_ = 0;
     std::vector<RoomBounds> rooms_;
@@ -83,6 +83,7 @@ struct Grid {
     // Presentation-only native Straight/Toward policy, with AStar fallback
     // restricted to 18 cells. Never generates server movement commands.
     std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement) const;
+    std::deque<Vec> nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
     // Object interaction uses the native shortened integer ray and flying
     // player mask; approaching it still uses the full walking footprint.

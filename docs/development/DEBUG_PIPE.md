@@ -140,6 +140,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 诊断与异步含义
 
+`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。
+
 传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
 accepted仅入队或发送，不等待原服。online-status的ProtocolReady只表示协议初始化；另查scene.nativeMapReady／movementAvailable／playerDisplayed、原服坐标、请求状态与reason，不能以界面或命令成功代替实际结果。

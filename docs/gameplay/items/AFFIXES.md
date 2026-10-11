@@ -1,8 +1,10 @@
 # 词缀、属性层与特殊品质记录
 
-更新：2026-10-09。本页负责Properties／ItemStatCost、词缀／StaffMods／AutoMagic、暗金／套装实际记录及属性消费者边界。品质选择归[GENERATION](GENERATION.md)，属性贡献归[EQUIPMENT](EQUIPMENT.md)，镶嵌层归[SOCKETS](SOCKETS.md)。
+更新：2026-10-12。本页负责Properties／ItemStatCost、词缀／StaffMods／AutoMagic、暗金／套装实际记录及属性消费者边界。品质选择归[GENERATION](GENERATION.md)，属性贡献归[EQUIPMENT](EQUIPMENT.md)，镶嵌层归[SOCKETS](SOCKETS.md)。
 
 ## 当前准备与保存
+
+2026-10-12核对启用来源的Properties执行函数，补齐奥玛斯长袍`skill-rand`的随机技能编号／固定等级，以及地狱火炬`randclassskill`的随机职业／Properties.val等级。随机编号在生成时冻结，保存为原stat107／83层，不在装备或重入时重掷；未知函数明确报缺，避免静默丢属性。时间函数18目前没有启用来源引用，未自造世界时钟。表级扫描及运行边界见[EVIDENCE](EVIDENCE.md#客户端与服务端物品核对)。
 
 MagicPrefix／Suffix、AutoMagic、稀有名、StaffMods、UniqueItems／SetItems／Sets及属性层已有内容准备。保留实际掷值、特殊记录身份与条件套装随机值，激活不重掷。基础最大耐久与属性修饰分开，读写／提示／维修共用实际最大耐久，避免保存后重复加成。当前MPQ dur%的百分比最大耐久投影由公共item_properties及D2S额外属性校验支持Properties函数13，依据本地D2MOO ItemMods::ITEMMODS_PropertyFunc13；客户端读取已保存的原网络属性，不能在解码时再加一次。
 

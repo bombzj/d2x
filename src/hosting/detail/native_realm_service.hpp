@@ -88,6 +88,7 @@ struct NativeRealmService {
         unsigned difficulty{};
     };
     std::optional<ReloadCandidate> reload;
+    bool leavePending{};
     HostDiagnostics counters;
 
     NativeRealmService(NativeRealmHost &, RealmOutput, GameOutput);
@@ -146,6 +147,7 @@ struct NativeRealmService {
     void logon(net::protocol::Reader &);
     void enterEnvironment(net::protocol::Reader &);
     void saveAndLeave(net::protocol::Reader &);
+    void finishPendingLeave();
     void ping(net::protocol::Reader &);
 };
 }

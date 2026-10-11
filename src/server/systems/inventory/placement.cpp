@@ -50,6 +50,28 @@ bool Draft::fits(EntityId id, ContainerLocation target, EntityId ignore) const {
 std::optional<ContainerLocation> Draft::space(EntityId id, EntityId destination) const {
     const auto *c = container(destination);
     if (!c) return {};
+    if(c->spec.kind==ContainerKind::Belt) {
+        const auto *base=catalog.find(edit.inventory.items.at(id).definition);
+        if(!base || !base->beltAllowed) return {};
+        // GetFreeBeltSlot prefers a matching potion in the bottom row. Different
+        // grades of health, mana and rejuvenation potions share their column.
+        for(int x=0;x<c->spec.columns;++x) {
+            const auto bottom=at({destination,{x,0}});
+            const auto *other=bottom?catalog.find(edit.inventory.items.at(bottom).definition):nullptr;
+            if(!other) continue;
+            bool matching=other->code==base->code;
+            for(const auto type:{"hpot","mpot","rpot"}) matching=matching || (base->equipment.isType(type) && other->equipment.isType(type));
+            if(matching) for(int y=0;y<c->spec.rows;++y) {
+                const ContainerLocation target{destination,{x,y}};
+                if(fits(id,target)) return target;
+            }
+        }
+        if(base->autoBelt) for(int x=0;x<c->spec.columns;++x) {
+            const ContainerLocation target{destination,{x,0}};
+            if(fits(id,target)) return target;
+        }
+        return {};
+    }
     for (int y = 0; y < c->spec.rows; ++y)
         for (int x = 0; x < c->spec.columns; ++x) {
             const ContainerLocation target{destination, {x, y}};

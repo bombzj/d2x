@@ -14,9 +14,11 @@
 namespace d2x::server { class MovementSystem; }
 namespace d2x::server::inventory {
 // Inventory access and placement plans; no second occupancy or item copy.
-struct GroundTransfer { ItemHandle item; bool drop{}, cursor{}; };
+struct GroundTransfer { ItemHandle item; bool drop{}, cursor{}; std::optional<ItemHandle> cube{}; };
+// Native direct placement: cursor/ground to an owned cube, or pack to belt.
+struct AutoStoreItem { ItemHandle item; std::optional<ItemHandle> cube{}; };
 struct CloseCube {};
-using Intent = std::variant<GroundTransfer, MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
+using Intent = std::variant<GroundTransfer, AutoStoreItem, MoveItem, TransferItem, SwapItems, SplitStack, MergeStacks,
     LoadBook, IdentifyItem, EquipBelt, EquipItem, EquipHirelingItem, UseItem,
     UseBeltColumn, UseHirelingPotion, SwitchWeaponSet, CloseStorage, CloseCube, GoldTransaction>;
 enum class Source { Stored, Cursor, Belt };
@@ -40,7 +42,7 @@ struct InputState {
 struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; };
 struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}, groundGeneration{}; };
 struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
-struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; trade::System &trade; };
+struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; trade::System &trade; const quests::System &quests; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;

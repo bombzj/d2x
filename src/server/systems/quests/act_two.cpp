@@ -18,11 +18,11 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
     result.gameFlags=gameFlags();
     for(const auto &definition:questDefinitions) {
         const auto index=questIndex(definition.id);
-        const bool credited=state_.credited.contains(player) && state_.credited.at(player).contains(definition.id);
-        result.credited[index]=credited;
-        const bool pending=state_.goals.contains(definition.id) && state_.goals.at(definition.id).eligible.contains(player);
-        result.unavailable[index]=bool(result.gameFlags[definition.nativeSlot]&0xA000) && !credited && !pending &&
-            record.quests.at(size_t(ports_.settings.difficulty))[index].stage<definition.completedStage;
+        result.credited[index]=credited(player,definition.id);
+        result.entitled[index]=entitled(player,record,definition.id);
+        // CompletedNow is a personal missed objective, not the creator's
+        // CompletedBefore/5E inactive flag. Saved entitlements take priority.
+        result.unavailable[index]=state_.objectives[index] && unavailable(player,record,definition.id);
     }
     const auto *area=ports_.areas.find(region);
     result.rescued=state_.actFive.rescued;
@@ -98,14 +98,18 @@ StepStatus System::actTwoStep(TickContext tick) {
     }
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
-        if(int(m.area)==49 && m.identity.monster=="radament" && !state_.objectives.at(questIndex(QuestId::RadamentsLair))) {
+        if(int(m.area)==49 && m.identity.monster=="radament" && !(state_.initialFlags[questDefinition(QuestId::RadamentsLair).nativeSlot]&0x8000) && !state_.objectives.at(questIndex(QuestId::RadamentsLair))) {
             captureGoal(QuestId::RadamentsLair,uint32_t(RadamentStage::Slain),m.area,m.position);
             state_.actTwo.radament=id;state_.actTwo.bookPosition=m.position;
-            state_.actTwo.radamentBooks=state_.goals.at(QuestId::RadamentsLair).eligible;
+            state_.actTwo.radamentBooks=state_.goals.find(QuestId::RadamentsLair)->second.eligible;
         }
-        if(int(m.area)==74 && m.identity.monster=="summoner") captureGoal(QuestId::Summoner,uint32_t(SummonerStage::Slain),m.area);
-        if(int(m.area)==73 && m.identity.monster=="duriel") {
-            captureGoal(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),m.area);state_.actTwo.durielSlain=true;
+        if(int(m.area)==74 && m.identity.monster=="summoner") captureGoal(QuestId::Summoner,uint32_t(SummonerStage::Slain),m.area,m.position);
+        if(int(m.area)==73 && m.identity.monster=="duriel" && !state_.actTwo.durielSlain) {
+            // CUSTOM1 is kill permission; PrimaryGoalDone and CompletedNow
+            // are assigned later, when Tyrael opens the return portal.
+            shareProgress(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),
+                eligibleParty(QuestId::SevenTombs,uint32_t(TombsStage::DurielSlain),m.area,{},killerPlayer(m.killer)));
+            state_.actTwo.durielSlain=true;
         }
     }
     if(state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed && tick.tick>=state_.actTwo.sunAt) state_.actTwo.dark=true;
@@ -118,18 +122,20 @@ StepStatus System::actTwoStep(TickContext tick) {
         if(!p.entered) continue;
         const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
         auto record=p.persistent.player;auto &book=record.quests.at(size_t(ports_.settings.difficulty));const auto before=book;
+        const auto available=[&](QuestId quest){return !unavailable(id,record,quest);};
         auto &radament=book.at(questIndex(QuestId::RadamentsLair));
-        if(area.definition.act==1 && int(p.area)!=40 && radament.stage==uint32_t(RadamentStage::Assigned)) radament.stage=uint32_t(RadamentStage::LeftTown);
+        if(available(QuestId::RadamentsLair) && area.definition.act==1 && int(p.area)!=40 && radament.stage==uint32_t(RadamentStage::Assigned)) radament.stage=uint32_t(RadamentStage::LeftTown);
         if((int(p.area)==44 || int(p.area)==45) && !state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed) {
             auto random=ports_.random;const auto delay=limitedRandom(random,2)+15;
             state_.actTwo.sunAt=(tick.tick/20+delay+1)*20;state_.actTwo.sunScheduled=true;ports_.random=random;
         }
         auto &sun=book.at(questIndex(QuestId::TaintedSun));
-        if(area.definition.act==1 && state_.actTwo.dark && !sun.stage) sun.stage=uint32_t(SunStage::Darkness);
+        if(available(QuestId::TaintedSun) && area.definition.act==1 && state_.actTwo.dark && !sun.stage) sun.stage=uint32_t(SunStage::Darkness);
         if(int(p.area)==74) {
-            auto &arcane=book.at(questIndex(QuestId::ArcaneSanctuary));arcane.stage=std::max(arcane.stage,uint32_t(ArcaneStage::Entered));
+            auto &arcane=book.at(questIndex(QuestId::ArcaneSanctuary));
+            if(available(QuestId::ArcaneSanctuary)) arcane.stage=std::max(arcane.stage,uint32_t(ArcaneStage::Entered));
             auto &summoner=book.at(questIndex(QuestId::Summoner));
-            if(!summoner.stage) for(const auto &[monsterId,monster]:ports_.monsters.read().actors) {
+            if(available(QuestId::Summoner) && !summoner.stage) for(const auto &[monsterId,monster]:ports_.monsters.read().actors) {
                 (void)monsterId;
                 if(monster.area==p.area && monster.identity.monster=="summoner" && monster.identity.origin!=SpawnOrigin::Debug && monster.life>0 && area.definition.activation.nearby(p.position,monster.position)) {summoner.stage=uint32_t(SummonerStage::Encountered);break;}
             }

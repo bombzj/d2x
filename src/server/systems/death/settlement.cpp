@@ -70,7 +70,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
             item.nativeSeed = uint32_t(item.id.value);
             drops.emplace_back(GroundDropFact{item});
             EquipmentValues values; values.levels.resize(player->rules.character->experience.size());
-            record.gold -= item.quantity; world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
+            record.gold -= item.quantity; world.goldOwners.emplace(item.id,actor.player); world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
         }
         break;
     }

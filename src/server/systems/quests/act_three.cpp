@@ -5,6 +5,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
 std::optional<Dialogue> System::speech(const NpcRule &npc,QuestId quest,std::string_view state,uint8_t menu) const {
@@ -14,6 +15,7 @@ std::optional<Dialogue> System::speech(const NpcRule &npc,QuestId quest,std::str
 }
 std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
+    const auto available=[&](QuestId id){return !unavailable(actor.player,p->persistent.player,id);};
     const auto &q=p->persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird));
     const auto &items=p->rules.character->laterQuests;
     if(q.stage==5 && npc.code=="alkor") return speech(npc,QuestId::GoldenBird,"Successful");
@@ -26,7 +28,7 @@ std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const
         if(npc.code.starts_with("cain") && q.stage<2) return speech(npc,QuestId::GoldenBird,"Init1");
     }
     const auto &blade=p->persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::BladeOfTheOldReligion));
-    if(npc.code=="hratli" && !blade.stage) return speech(npc,QuestId::BladeOfTheOldReligion,"Init");
+    if(available(QuestId::BladeOfTheOldReligion) && npc.code=="hratli" && !blade.stage) return speech(npc,QuestId::BladeOfTheOldReligion,"Init");
     if(npc.code=="ormus" && blade.stage<4 && detail::actTwoCarried(*p,items.gidbinn,ports_.settings.difficulty)) return speech(npc,QuestId::BladeOfTheOldReligion,"Successful");
     if(blade.stage==4) {
         if(npc.code=="ormus" && !(blade.flags&gidbinnRingGranted)) return speech(npc,QuestId::BladeOfTheOldReligion,"Reward");
@@ -34,23 +36,23 @@ std::optional<Dialogue> System::actThreeDialogue(const ActorContext &actor,const
     }
     const auto &book=p->persistent.player.quests.at(size_t(ports_.settings.difficulty));
     const auto &khalim=book[questIndex(QuestId::KhalimsWill)];
-    if(npc.code.starts_with("cain") && khalim.stage<4 && (q.stage>=5 || khalim.stage || int(actor.area)!=75)) {
+    if(available(QuestId::KhalimsWill) && npc.code.starts_with("cain") && khalim.stage<4 && (q.stage>=5 || khalim.stage || int(actor.area)!=75)) {
         if(detail::actTwoCarried(*p,items.khalimWill,ports_.settings.difficulty) && !(khalim.flags&khalimWillExplained)) return speech(npc,QuestId::KhalimsWill,"Successful");
         constexpr std::array names{"EarlyReturnEye","EarlyReturnBrain","EarlyReturnHeart","EarlyReturnFlail"};
         for(int part=3;part>=0;--part) if(detail::actTwoCarried(*p,items.khalimParts[size_t(part)],ports_.settings.difficulty) && !(khalim.flags&(1u<<part))) return speech(npc,QuestId::KhalimsWill,names[size_t(part)]);
         if(!(khalim.flags&khalimAssigned)) return speech(npc,QuestId::KhalimsWill,"Init");
     }
     const auto &tome=book[questIndex(QuestId::LamEsensTome)];
-    if(npc.code=="alkor" && tome.stage<4) {
+    if(available(QuestId::LamEsensTome) && npc.code=="alkor" && tome.stage<4) {
         if(detail::actTwoCarried(*p,items.tome,ports_.settings.difficulty)) return speech(npc,QuestId::LamEsensTome,"Successful");
         if(!tome.stage && (book[questIndex(QuestId::BladeOfTheOldReligion)].stage>=4 || book[questIndex(QuestId::BlackenedTemple)].stage)) return speech(npc,QuestId::LamEsensTome,"Init");
     }
     const auto &temple=book[questIndex(QuestId::BlackenedTemple)];
-    if(!temple.stage && npc.code=="ormus" && (tome.stage>=4 || khalim.stage)) return speech(npc,QuestId::BlackenedTemple,"Init");
+    if(available(QuestId::BlackenedTemple) && !temple.stage && npc.code=="ormus" && (tome.stage>=4 || khalim.stage)) return speech(npc,QuestId::BlackenedTemple,"Init");
     if(temple.stage==3 && npc.code.starts_with("cain")) return speech(npc,QuestId::BlackenedTemple,"Successful");
     const auto &guardian=book[questIndex(QuestId::Guardian)];
     if(guardian.flags&guardianSpeechPending) return speech(npc,QuestId::Guardian,"Successful");
-    if(!guardian.stage && temple.stage>=3 && npc.code=="ormus") return speech(npc,QuestId::Guardian,"Init");
+    if(available(QuestId::Guardian) && !guardian.stage && temple.stage>=3 && npc.code=="ormus") return speech(npc,QuestId::Guardian,"Init");
     return {};
 }
 DomainResult<> System::acknowledgeActThree(const ActorContext &actor,const Request &request,const NpcRule &npc) {
@@ -81,10 +83,30 @@ DomainResult<> System::acknowledgeActThree(const ActorContext &actor,const Reque
     }
     if(request.quest==QuestId::BlackenedTemple) q.stage=q.stage==3?4:std::max(q.stage,1u);
     if(request.quest==QuestId::Guardian) {q.flags&=~guardianSpeechPending;if(!q.stage) q.stage=1;}
-    return commit(actor,std::move(record));
+    std::set<PlayerId> shared;
+    const auto stage=q.stage;
+    if(request.quest==QuestId::GoldenBird && npc.code.starts_with("cain")) shared=eligibleDelivery(QuestId::GoldenBird,stage,actor.player);
+    const auto result=commit(actor,std::move(record));
+    if(result && !shared.empty()) shareProgress(QuestId::GoldenBird,stage,std::move(shared));
+    return result;
 }
 StepStatus System::actThreeStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actThree;
+    constexpr std::array council{"Ismail Vilehand","Geleb Flamefinger","Toorc Icefist"};
+    std::set<std::string> deadCouncil;
+    const monsters::Actor *lastCouncil=nullptr;
+    for(const auto &[id,m]:ports_.monsters.read().actors) {
+        (void)id;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned) continue;
+        if(int(m.area)==102 && m.identity.monster=="mephisto") {
+            world.mephistoSlain=true;captureGoal(QuestId::Guardian,4,m.area,{},killerPlayer(m.killer));
+        }
+        if(int(m.area)==83 && m.identity.rank==MonsterRank::SuperUnique && std::find(council.begin(),council.end(),m.identity.superUnique)!=council.end()) {
+            deadCouncil.insert(m.identity.superUnique);
+            if(!lastCouncil || m.deathTick>lastCouncil->deathTick ||
+               (m.deathTick==lastCouncil->deathTick && m.deathOccurrence>lastCouncil->deathOccurrence)) lastCouncil=&m;
+        }
+    }
+    if(deadCouncil.size()==council.size() && lastCouncil) captureGoal(QuestId::BlackenedTemple,world.orbSmashed?4u:3u,lastCouncil->area,lastCouncil->position);
     // A3Q4_SetGoldenBirdBoss selects an eligible original elite, never a
     // summoned or administrator unit. One physical figurine exists per game.
     if(!world.figurineSource && !world.figurineDropped) for(const auto &[id,m]:ports_.monsters.read().actors) {
@@ -92,7 +114,7 @@ StepStatus System::actThreeStep(TickContext tick) {
         if(!area || area->definition.act!=2 || m.life<=0 || m.owner || m.identity.spawnKey=="quest.gidbinn" || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned || m.identity.rank==MonsterRank::Normal || m.identity.rank==MonsterRank::Minion) continue;
         for(const auto &[player,p]:ports_.players.all()) {
             (void)player;
-            if(p.entered && p.area==m.area && p.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird)).stage<5 && area->definition.activation.nearby(p.position,m.position)) {
+            if(p.entered && p.area==m.area && !unavailable(player,p.persistent.player,QuestId::GoldenBird) && p.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird)).stage<5 && area->definition.activation.nearby(p.position,m.position)) {
                 world.figurineSource=id;world.figurineArea=m.area;world.figurinePosition=m.position;break;
             }
         }
@@ -117,36 +139,32 @@ StepStatus System::actThreeStep(TickContext tick) {
         if(q.stage<3 && detail::actTwoCarried(p,items.figurine,ports_.settings.difficulty)) q.stage=std::max(q.stage,1u);
         if(q.stage<5 && detail::actTwoCarried(p,items.bird,ports_.settings.difficulty)) q.stage=std::max(q.stage,3u);
         auto &book=record.quests.at(size_t(ports_.settings.difficulty));
+        const auto available=[&](QuestId quest){return !unavailable(id,record,quest);};
         auto &blade=book[questIndex(QuestId::BladeOfTheOldReligion)];
         if(blade.stage<4 && detail::actTwoCarried(p,items.gidbinn,ports_.settings.difficulty)) blade.stage=3;
         auto &khalim=book[questIndex(QuestId::KhalimsWill)];
-        if(khalim.stage<4) {
+        if(available(QuestId::KhalimsWill) && khalim.stage<4) {
             if(detail::actTwoCarried(p,items.khalimWill,ports_.settings.difficulty)) khalim.stage=3;
             else for(const auto &part:items.khalimParts) if(detail::actTwoCarried(p,part,ports_.settings.difficulty)) khalim.stage=std::max(khalim.stage,2u);
         }
         auto &tome=book[questIndex(QuestId::LamEsensTome)];
         if(tome.stage<4 && detail::actTwoCarried(p,items.tome,ports_.settings.difficulty)) tome.stage=3;
-        if(int(p.area)!=75 && tome.stage==1) tome.stage=2;
+        if(available(QuestId::LamEsensTome) && int(p.area)!=75 && tome.stage==1) tome.stage=2;
         auto &temple=book[questIndex(QuestId::BlackenedTemple)];
         if(int(p.area)==83) {
-            temple.stage=std::max(temple.stage,2u);
-            constexpr std::array council{"Ismail Vilehand","Geleb Flamefinger","Toorc Icefist"};
-            std::set<std::string> dead;
+            if(available(QuestId::BlackenedTemple)) temple.stage=std::max(temple.stage,2u);
             for(const auto &[monsterId,m]:ports_.monsters.read().actors) {
                 (void)monsterId;
                 if(m.area!=p.area || m.owner || m.identity.origin==SpawnOrigin::Debug || !m.identity.monster.starts_with("council")) continue;
-                if(m.life<=0 && m.identity.rank==MonsterRank::SuperUnique && std::find(council.begin(),council.end(),m.identity.superUnique)!=council.end()) dead.insert(m.identity.superUnique);
                 if(m.life<=0 && !state_.pending.contains(id)) {
                     if(!world.flailDropped && khalim.stage<4 && !detail::actTwoCarried(p,items.khalimParts[3],ports_.settings.difficulty) && !detail::actTwoCarried(p,items.khalimWill,ports_.settings.difficulty)) prepareReward(actor,monsterId,RewardKind::KhalimFlail,false,m.position);
                     else if(!world.cubeDropped && !detail::actTwoCarried(p,p.rules.character->actTwo.cube,ports_.settings.difficulty)) prepareReward(actor,monsterId,RewardKind::CouncilCube,false,m.position);
                 }
             }
-            if(dead.size()==council.size()) captureGoal(QuestId::BlackenedTemple,world.orbSmashed?4u:3u,p.area);
         }
         auto &guardian=book[questIndex(QuestId::Guardian)];
-        if(int(p.area)>=94 && int(p.area)<=102 && guardian.stage<4) guardian.stage=std::max(guardian.stage,int(p.area)==102?3u:int(p.area)>=100?2u:1u);
+        if(available(QuestId::Guardian) && int(p.area)>=94 && int(p.area)<=102 && guardian.stage<4) guardian.stage=std::max(guardian.stage,int(p.area)==102?3u:int(p.area)>=100?2u:1u);
         for(const auto &[monsterId,m]:ports_.monsters.read().actors) if(int(m.area)==102 && m.identity.monster=="mephisto" && m.identity.origin!=SpawnOrigin::Debug && m.life<=0) {
-            world.mephistoSlain=true;captureGoal(QuestId::Guardian,4,m.area);
             if(p.area==m.area && !world.soulstoneDropped && !state_.pending.contains(id)) prepareReward(actor,monsterId,RewardKind::Soulstone,false,m.position);
         }
         if(!std::equal(before.begin(),before.end(),book.begin(),[](const auto &a,const auto &b){return a.stage==b.stage && a.flags==b.flags;}) && !commit(actor,record)) blocked=true;
@@ -174,6 +192,7 @@ DomainResult<> System::spawnQuestGroup(const ActorContext &actor,std::string_vie
 DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source,int,int operation,Vec position) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};
     if(operation==31) {
+        if((state_.initialFlags[questDefinition(QuestId::BladeOfTheOldReligion).nativeSlot]&0x8000) || unavailable(actor.player,p->persistent.player,QuestId::BladeOfTheOldReligion)) return {DomainStatus::Conflict,{}};
         const auto &q=p->persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::BladeOfTheOldReligion));
         if(q.stage>=4 || state_.actThree.gidbinnAt) return {DomainStatus::Conflict,{}};
         state_.actThree.gidbinnAltar=source;

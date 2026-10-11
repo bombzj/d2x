@@ -50,7 +50,7 @@ void NativeRealmService::publishAreas(RegionId region) {
 void NativeRealmService::changeArea(const server::TravelFact &fact) {
     if (fact.player != binding->player) throw std::logic_error("Travel recipient mismatch");
     publishAreas(fact.to);
-    if (fact.revived) sendGame(nativePlayerAssignment(*content, *host.exportCharacter(*binding), *host.read(*binding), terrain.origin));
+    if (fact.revived) sendGame(nativePlayerAssignment(*content, *host.exportCharacter(*binding,false), *host.read(*binding), terrain.origin));
     const auto position = fact.position + terrain.origin;
     if (!fact.walking) sendGame(encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
         out.u8(0); out.u32(uint32_t(fact.actor.value));
@@ -96,7 +96,7 @@ void NativeRealmService::publishCorpses() {
     // A recovered GUID may already be projected as owned/private or public
     // equipment this cycle. Removing the former corpse copy must not erase it.
     std::set<EntityId> retained;
-    if (const auto local = host.exportCharacter(*binding)) for (const auto &[id, item] : local->inventory.items) {
+    if (const auto local = host.exportCharacter(*binding,false)) for (const auto &[id, item] : local->inventory.items) {
         const auto *at = std::get_if<ContainerLocation>(&item.location);
         if (at && local->inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse) retained.insert(id);
     }

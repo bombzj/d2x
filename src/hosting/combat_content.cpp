@@ -144,6 +144,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty);
     rule.attacks.merge(attacks);
+    if(const auto current=rule.attacks.find(4);current!=rule.attacks.end()) {
+        rule.minimumDamage=current->second.minimum;rule.maximumDamage=current->second.maximum;rule.attackRating=current->second.rating;
+    }
     if (record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && (!rule.attacks.contains(4) || (profile->damage.attack2Damage && !rule.attacks.contains(5)))) return {};
     if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
     if(record->ai=="FoulCrowNest" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {

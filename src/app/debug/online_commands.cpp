@@ -574,7 +574,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
                 "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
-                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service"};
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store"};
             const auto action = text("action", 32);
             const auto selected = std::find(names.begin(), names.end(), action);
             if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
@@ -589,13 +589,13 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 return uint32_t(n);
             };
             const bool hasItem = intent.action <= OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeOpen ||
-                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService;
+                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService || intent.action == OnlineItemAction::HirelingEquipment || intent.action == OnlineItemAction::BeltAuto || intent.action == OnlineItemAction::CubeStore;
             intent.item = id("itemId", hasItem);
             intent.amount = id("amount", intent.action == OnlineItemAction::GoldDeposit ||
                 intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop);
             const bool pair = intent.action == OnlineItemAction::Swap || intent.action == OnlineItemAction::BeltSwap ||
                 intent.action == OnlineItemAction::Stack || intent.action == OnlineItemAction::Book ||
-                intent.action == OnlineItemAction::Socket || intent.action == OnlineItemAction::Identify;
+                intent.action == OnlineItemAction::Socket || intent.action == OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeStore;
             intent.target = id("targetId", pair);
             auto revision = [&](const char *field) {
                 if (!request.contains(field)) return uint64_t{};

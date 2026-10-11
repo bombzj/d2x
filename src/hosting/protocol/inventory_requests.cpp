@@ -2,17 +2,25 @@
 #include <optional>
 
 namespace d2x::hosting::handlers {
-RequestResult ItemToCube(GameplayContext &, net::protocol::Reader &in) {
-    in.u32(); in.u32(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "ItemToCube"};
+RequestResult ItemToCube(GameplayContext &context, net::protocol::Reader &in) {
+    const auto id=EntityId{in.u32()}, box=EntityId{in.u32()}; in.finish();
+    const auto state=context.host.inventoryInput(context.player);
+    if(!state || !state->items.contains(box)) return {RequestStatus::Rejected};
+    const auto cube=state->items.at(box).handle;
+    if(state->items.contains(id)) return submitGameplay(context,server::inventory::Request{server::inventory::AutoStoreItem{state->items.at(id).handle,cube}});
+    for(const auto &item:context.host.groundItems(context.player))
+        if(item.id==id) return submitGameplay(context,server::inventory::Request{server::inventory::GroundTransfer{item.handle(),false,false,cube}});
+    return {RequestStatus::Rejected};
 }
 RequestResult MercenaryItem(GameplayContext &context, net::protocol::Reader &in) {
     const auto body=in.u16(); in.finish();
     return submitGameplay(context,server::companions::Request{server::companions::Action::Equipment,{},body});
 }
-RequestResult InventoryToBelt(GameplayContext &, net::protocol::Reader &in) {
-    in.u32(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "InventoryToBelt"};
+RequestResult InventoryToBelt(GameplayContext &context, net::protocol::Reader &in) {
+    const auto id=EntityId{in.u32()}; in.finish();
+    const auto state=context.host.inventoryInput(context.player);
+    if(!state || !state->items.contains(id)) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::inventory::Request{server::inventory::AutoStoreItem{state->items.at(id).handle}});
 }
 namespace {
 using namespace server::inventory;

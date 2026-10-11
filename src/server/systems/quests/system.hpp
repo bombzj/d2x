@@ -18,7 +18,8 @@ struct State {
     std::array<bool,size_t(QuestId::Count)> objectives{};
     std::array<uint16_t,48> initialFlags{}, publishedFlags{};
     std::map<PlayerId,std::set<QuestId>> credited;
-    std::map<QuestId,Goal> goals;
+    std::map<PlayerId,EntityId> creditedActors;
+    std::multimap<QuestId,Goal> goals;
     std::map<PlayerId,Preparation> pending;
     uint64_t next=1;
     std::string deferred;
@@ -29,7 +30,7 @@ struct Ports { const PlayerStore &players; const AreaStore &areas; const populat
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
-    DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false);
+    DomainResult<> commit(const ActorContext &,CharacterRecord,bool levelUp=false,std::optional<QuestId> primaryGoal={});
     QuestFact fact(PlayerId,const CharacterRecord &,RegionId) const;
     DomainResult<> prepareReward(const ActorContext &,EntityId,RewardKind,bool conversation,std::optional<Vec> dropPosition = {});
     StepStatus denStep(TickContext);
@@ -41,8 +42,18 @@ class System {
     StepStatus ancientsStep(TickContext);
     StepStatus baalStep(TickContext);
     StepStatus flushGoals(TickContext);
-    void captureGoal(QuestId,uint32_t,RegionId,std::optional<Vec> = {});
-    std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>) const;
+    void captureGoal(QuestId,uint32_t,RegionId,std::optional<Vec> = {},std::optional<PlayerId> = {});
+    void captureGoal(QuestId,uint32_t,std::set<PlayerId>,bool attributeReward=false,bool consumeForgeItems=false);
+    void shareProgress(QuestId,uint32_t,std::set<PlayerId>);
+    void queueGoal(QuestId,Goal);
+    std::set<PlayerId> eligibleParty(QuestId,uint32_t,RegionId,std::optional<Vec>,std::optional<PlayerId>) const;
+    std::set<PlayerId> eligibleDelivery(QuestId,uint32_t,PlayerId,bool allInAct=false) const;
+    bool credited(PlayerId,QuestId) const;
+    void creditPlayer(PlayerId,QuestId);
+    bool rewardPending(const CharacterRecord &,QuestId) const;
+    bool entitled(PlayerId,const CharacterRecord &,QuestId) const;
+    bool unavailable(PlayerId,const CharacterRecord &,QuestId) const;
+    std::optional<PlayerId> killerPlayer(EntityId) const;
     std::optional<Dialogue> actOneDialogue(const ActorContext &,const NpcRule &) const;
     std::optional<Dialogue> actTwoDialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> acknowledgeActTwo(const ActorContext &,const Request &,const NpcRule &);
@@ -66,7 +77,8 @@ class System {
     const State &read() const { return state_; }
     void initialize(const CharacterRecord &);
     std::array<uint16_t,48> gameFlags() const;
-    QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area) const { auto result=fact(player,record,area);result.fullStatus=true;return result; }
+    bool pendingGoals(PlayerId) const;
+    QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }
     std::optional<Dialogue> dialogue(const ActorContext &,const NpcRule &) const;
     DomainResult<> operate(const ActorContext &,EntityId,int definition,int operation,Vec);
     std::vector<Preparation> pending() const;

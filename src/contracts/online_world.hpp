@@ -345,8 +345,9 @@ struct OnlineWorldView {
     }
 };
 inline bool onlineMonsterCorpse(const OnlineUnit &unit) {
-    return unit.key.type == 1 && (unit.mode == 0 || unit.mode == 12 ||
-        (unit.lifePercent && (unit.lifeCarriesTriggerFlag ? (*unit.lifePercent & 0x7f) : *unit.lifePercent) == 0));
+    // Native life updates truncate whole hit points before scaling. A living
+    // unit below one hit point can report zero; only DT/DD modes prove death.
+    return unit.key.type == 1 && (unit.mode == 0 || unit.mode == 12);
 }
 inline bool onlinePlayerDead(const OnlineWorldView &world) {
     if (world.deathPhase != OnlineDeathPhase::Unknown)

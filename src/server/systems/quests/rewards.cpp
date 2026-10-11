@@ -13,13 +13,35 @@
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
 namespace d2x::server::quests {
+namespace {
+std::optional<QuestId> rewardQuest(RewardKind kind,bool conversation) {
+    switch(kind) {
+    case RewardKind::Bark: case RewardKind::TranslateScroll: case RewardKind::CainRing: return QuestId::SearchForCain;
+    case RewardKind::Malus: return QuestId::ToolsOfTheTrade;
+    case RewardKind::Rogue: return QuestId::SistersBurialGrounds;
+    case RewardKind::SkillBook: return QuestId::RadamentsLair;
+    case RewardKind::DeliverBird: case RewardKind::GoldenBird: case RewardKind::LifePotion: return QuestId::GoldenBird;
+    case RewardKind::ReturnGidbinn: case RewardKind::GidbinnRing: case RewardKind::IronWolf: return QuestId::BladeOfTheOldReligion;
+    case RewardKind::SmashOrb: return QuestId::KhalimsWill;
+    case RewardKind::ReturnTome: case RewardKind::LamTome: return QuestId::LamEsensTome;
+    case RewardKind::PlaceSoulstone: case RewardKind::SmashSoulstone: return QuestId::HellsForge;
+    case RewardKind::RescueRunes: return QuestId::RescueOnMountArreat;
+    case RewardKind::DefrostPotion: case RewardKind::ThawAnya: case RewardKind::ResistanceScroll: case RewardKind::AnyaRare: return QuestId::PrisonOfIce;
+    case RewardKind::Soulstone: if(conversation) return QuestId::HellsForge;break;
+    default: break;
+    }
+    return {};
+}
+}
 DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,RewardKind kind,bool conversation,std::optional<Vec> dropPosition) {
     const auto *p=ports_.players.find(actor.player);
     if(!p || state_.pending.contains(actor.player)) return {DomainStatus::Conflict,{}};
+    if(const auto quest=rewardQuest(kind,conversation);quest && unavailable(actor.player,p->persistent.player,*quest)) return {DomainStatus::Conflict,{}};
     const bool sharedDrop=kind==RewardKind::Figurine || kind==RewardKind::Gidbinn || kind==RewardKind::KhalimFlail || kind==RewardKind::CouncilCube || kind==RewardKind::ForgeHammer || kind==RewardKind::Soulstone;
     if(sharedDrop && !conversation) for(const auto &[id,pending]:state_.pending) {(void)id;if(pending.kind==kind && !pending.conversation) return {DomainStatus::Conflict,{}};}
     for(const auto &[id,pending]:state_.pending) {(void)id;if(!conversation && pending.source==source) return {DomainStatus::Conflict,{}};}
@@ -29,6 +51,10 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
     auto random=ports_.random;
     Preparation request{actor,state_.next,initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation?lease->revision:0,source,kind,p->persistent,p->definition.code,ports_.settings.difficulty};
     request.dropPosition=dropPosition;
+    if(kind==RewardKind::SmashSoulstone) {
+        for(const auto id:eligibleDelivery(QuestId::HellsForge,4,actor.player)) request.participants[id]=ports_.players.find(id)->actor;
+        request.quantity=unsigned(request.participants.size());
+    }
     if(kind==RewardKind::KhalimFlail || kind==RewardKind::CouncilCube) {
         request.quantity=0;
         for(const auto &[id,player]:ports_.players.all()) {
@@ -68,6 +94,25 @@ DomainResult<> System::install(Prepared prepared) {
     auto uniques=ports_.loot.prepareUniques(prepared.items.limitedUniques);
     if(!ports_.transactions.hasOutputCapacity(3)) return {DomainStatus::Capacity,{}};
     auto record=p->persistent.player;auto &book=record.quests.at(size_t(s.difficulty));
+    if(const auto quest=rewardQuest(s.kind,bool(s.conversation));quest && unavailable(s.actor.player,record,*quest)) return fail(DomainStatus::Stale);
+    std::set<PlayerId> delivery;
+    const bool completeSun=s.kind==RewardKind::ViperAmulet &&
+        !(state_.initialFlags[questDefinition(QuestId::TaintedSun).nativeSlot]&0x8000) && !state_.objectives[questIndex(QuestId::TaintedSun)];
+    if(s.kind==RewardKind::ReturnTome) delivery=eligibleDelivery(QuestId::LamEsensTome,4,s.actor.player,true);
+    if(s.kind==RewardKind::DeliverBird) delivery=eligibleDelivery(QuestId::GoldenBird,5,s.actor.player);
+    if(s.kind==RewardKind::ReturnGidbinn) delivery=eligibleDelivery(QuestId::BladeOfTheOldReligion,4,s.actor.player);
+    if(s.kind==RewardKind::ThawAnya) delivery=eligibleDelivery(QuestId::PrisonOfIce,5,s.actor.player);
+    if(s.kind==RewardKind::Malus && s.conversation) delivery=eligibleDelivery(QuestId::ToolsOfTheTrade,5,s.actor.player);
+    if(s.kind==RewardKind::SmashOrb) delivery=eligibleDelivery(QuestId::KhalimsWill,4,s.actor.player);
+    if(completeSun) delivery=eligibleParty(QuestId::TaintedSun,uint32_t(SunStage::AltarDestroyed),s.actor.area,{},{});
+    if(s.kind==RewardKind::SmashSoulstone) {
+        delivery=eligibleDelivery(QuestId::HellsForge,4,s.actor.player);
+        // Content quantities belong to this frozen set. A party change while
+        // preparing must retry instead of granting a different number of gems.
+        std::map<PlayerId,EntityId> participants;
+        for(const auto id:delivery) participants[id]=ports_.players.find(id)->actor;
+        if(participants!=s.participants) return fail(DomainStatus::Stale);
+    }
     auto rules=std::make_shared<EquipmentRules>(*p->rules.equipment);
     inventory::detail::Draft draft(*p,*p->rules.items,*rules,*p->rules.character);
     std::string_view consume;
@@ -83,7 +128,7 @@ DomainResult<> System::install(Prepared prepared) {
     if(s.kind==RewardKind::SmashSoulstone) consume=p->rules.character->laterQuests.hammer;
     if(s.kind==RewardKind::ThawAnya) consume=p->rules.character->laterQuests.defrostPotion;
     if(!consume.empty()) {
-        const auto *item=s.kind==RewardKind::SmashOrb || s.kind==RewardKind::SmashSoulstone?detail::equippedQuestWeapon(*p,consume,s.difficulty):s.kind==RewardKind::TranslateScroll || s.kind==RewardKind::Malus?detail::carried(*p,consume,s.difficulty):detail::actTwoCarried(*p,consume,s.difficulty);
+        const auto *item=s.kind==RewardKind::SmashOrb || s.kind==RewardKind::SmashSoulstone?detail::equippedQuestWeapon(*p,consume,s.difficulty):s.kind==RewardKind::TranslateScroll?detail::carried(*p,consume,s.difficulty):detail::actTwoCarried(*p,consume,s.difficulty);
         if(!item || item->revision==UINT64_MAX) return fail(DomainStatus::Stale);
         draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});
         draft.edit.inventory.items.erase(item->id);rules->items.erase(item->id);
@@ -91,7 +136,7 @@ DomainResult<> System::install(Prepared prepared) {
     switch(s.kind) {
     case RewardKind::RescueRunes: {
         auto &q=book[questIndex(QuestId::RescueOnMountArreat)];
-        if(q.stage!=3 || (q.flags&rescueCountMask)<13) return fail(DomainStatus::Stale);
+        if(q.stage!=3 || (q.flags&rescueCountMask)<12) return fail(DomainStatus::Stale);
         if(record.hireling.sourceRow<0) {if(!prepared.hireling) return fail(DomainStatus::Unavailable);record.hireling=*prepared.hireling;}
         q.stage=4;break;
     }
@@ -176,7 +221,7 @@ DomainResult<> System::install(Prepared prepared) {
         if(book[questIndex(QuestId::RadamentsLair)].flags & radamentBookUsed) return fail(DomainStatus::Stale);
         book[questIndex(QuestId::RadamentsLair)].flags|=radamentBookPending;break;
     case RewardKind::ViperAmulet:
-        book[questIndex(QuestId::TaintedSun)].stage=std::max(book[questIndex(QuestId::TaintedSun)].stage,uint32_t(SunStage::AltarDestroyed));
+        if(completeSun && delivery.contains(s.actor.player)) book[questIndex(QuestId::TaintedSun)].stage=std::max(book[questIndex(QuestId::TaintedSun)].stage,uint32_t(SunStage::AltarDestroyed));
         break;
     case RewardKind::HoradricScroll: case RewardKind::Cube: case RewardKind::StaffShaft: break;
     }
@@ -211,32 +256,66 @@ DomainResult<> System::install(Prepared prepared) {
     auto completed=state_.completed;if(objectSource) completed.insert_or_assign(s.source,true);
     transactions::InventoryEdit edit{s.actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),record.weaponSet};
     edit.character=record;edit.equipment=std::move(rules);edit.world=std::move(world);edit.publicFacts=std::move(drops);
-    edit.facts.emplace_back(fact(s.actor.player,record,s.actor.area));
+    auto questFact=fact(s.actor.player,record,s.actor.area);
+    std::optional<QuestId> primaryGoal;
+    if(delivery.contains(s.actor.player)) {
+        if(s.kind==RewardKind::ReturnTome) primaryGoal=QuestId::LamEsensTome;
+        if(s.kind==RewardKind::Malus && s.conversation) primaryGoal=QuestId::ToolsOfTheTrade;
+        if(s.kind==RewardKind::SmashOrb) primaryGoal=QuestId::KhalimsWill;
+        if(s.kind==RewardKind::SmashSoulstone) primaryGoal=QuestId::HellsForge;
+        if(s.kind==RewardKind::ThawAnya) primaryGoal=QuestId::PrisonOfIce;
+        if(completeSun) primaryGoal=QuestId::TaintedSun;
+    }
+    if(primaryGoal) {
+        const auto index=questIndex(*primaryGoal);
+        questFact.credited[index]=true;questFact.entitled[index]=true;questFact.unavailable[index]=false;
+    }
+    if(s.kind==RewardKind::LifePotion) questFact.credited[questIndex(QuestId::GoldenBird)]=true;
+    if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5)
+        questFact.credited[questIndex(QuestId::BladeOfTheOldReligion)]=true;
+    edit.facts.emplace_back(std::move(questFact));
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result) {
-        const auto credited=state_.credited.find(s.actor.player);
-        if(credited!=state_.credited.end()) {
-            if(s.kind==RewardKind::Rogue && credited->second.contains(QuestId::SistersBurialGrounds)) state_.actOne.cainOffer=true;
-            if(s.kind==RewardKind::CainRing && credited->second.contains(QuestId::SearchForCain)) state_.actOne.toolsOffer=true;
+        if(s.kind==RewardKind::Rogue && credited(s.actor.player,QuestId::SistersBurialGrounds)) state_.actOne.cainOffer=true;
+        if(s.kind==RewardKind::CainRing && credited(s.actor.player,QuestId::SearchForCain)) state_.actOne.toolsOffer=true;
+        if(s.kind==RewardKind::ReturnTome) captureGoal(QuestId::LamEsensTome,4,std::move(delivery),true);
+        if(s.kind==RewardKind::Malus && s.conversation) {
+            Goal goal;goal.stage=5;goal.eligible=std::move(delivery);queueGoal(QuestId::ToolsOfTheTrade,std::move(goal));
+            state_.objectives[questIndex(QuestId::ToolsOfTheTrade)]=true;
         }
+        if(s.kind==RewardKind::DeliverBird) shareProgress(QuestId::GoldenBird,5,std::move(delivery));
+        if(s.kind==RewardKind::ReturnGidbinn) {
+            shareProgress(QuestId::BladeOfTheOldReligion,4,std::move(delivery));
+            state_.objectives[questIndex(QuestId::BladeOfTheOldReligion)]=true;
+        }
+        if(s.kind==RewardKind::LifePotion) {creditPlayer(s.actor.player,QuestId::GoldenBird);state_.objectives[questIndex(QuestId::GoldenBird)]=true;}
+        if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5) creditPlayer(s.actor.player,QuestId::BladeOfTheOldReligion);
+        if(s.kind==RewardKind::SmashSoulstone) captureGoal(QuestId::HellsForge,4,std::move(delivery),false,true);
         if(s.kind==RewardKind::ThawAnya) {
             state_.actFive.anyaThawed=true;state_.objectModes[s.source]=2;
-            captureGoal(QuestId::PrisonOfIce,5,s.actor.area);
+            captureGoal(QuestId::PrisonOfIce,5,std::move(delivery));
         }
         if(s.kind==RewardKind::ForgeHammer) state_.actFour.hammerDropped=true;
         if(s.kind==RewardKind::PlaceSoulstone) {state_.actFour.forgePlaced=true;state_.objectModes[s.source]=2;}
         if(s.kind==RewardKind::SmashSoulstone) {state_.actFour.forgeSmashed=true;state_.objectModes[s.source]=4;}
         if(s.kind==RewardKind::KhalimFlail) state_.actThree.flailDropped=true;
         if(s.kind==RewardKind::CouncilCube) state_.actThree.cubeDropped=true;
-        if(s.kind==RewardKind::SmashOrb) {state_.actThree.orbSmashed=true;state_.objectModes[s.source]=2;}
+        if(s.kind==RewardKind::SmashOrb) {
+            state_.actThree.orbSmashed=true;state_.objectModes[s.source]=2;
+            Goal goal;goal.stage=4;goal.eligible=std::move(delivery);goal.consumeKhalimItems=true;
+            queueGoal(QuestId::KhalimsWill,std::move(goal));state_.objectives[questIndex(QuestId::KhalimsWill)]=true;
+        }
         if(s.kind==RewardKind::LamTome || s.kind==RewardKind::KhalimEye || s.kind==RewardKind::KhalimBrain || s.kind==RewardKind::KhalimHeart) state_.objectModes[s.source]=2;
         if(s.kind==RewardKind::Soulstone && !s.conversation) state_.actThree.soulstoneDropped=true;
         if(s.kind==RewardKind::Figurine) state_.actThree.figurineDropped=true;
         if(s.kind==RewardKind::Gidbinn) state_.actThree.gidbinnDropped=true;
         ports_.loot.commitUniques(std::move(uniques));
         if(s.kind==RewardKind::SkillBook) state_.actTwo.radamentBooks.erase(s.actor.player);
-        if(s.kind==RewardKind::ViperAmulet) {state_.actTwo.altarDestroyed=true;state_.actTwo.dark=false;captureGoal(QuestId::TaintedSun,uint32_t(SunStage::AltarDestroyed),s.actor.area);}
+        if(s.kind==RewardKind::ViperAmulet) {
+            state_.actTwo.altarDestroyed=true;state_.actTwo.dark=false;
+            if(completeSun) captureGoal(QuestId::TaintedSun,uint32_t(SunStage::AltarDestroyed),std::move(delivery));
+        }
         state_.completed.swap(completed);state_.pending.erase(found);state_.deferred.clear();
     }
     return result;

@@ -14,24 +14,19 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     const auto &monster=*ports_.monsters.find(id);const auto &area=ports_.areas.at(monster.area);
     const bool hasTarget=target.id!=id;
     const auto kind=monster.rule.ai.kind;
-    // Native shootable-target callbacks operate independently of primary AI
-    // acquisition. Keep the nearest clear victim for maggot spit and casters.
-    if(kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::PantherJavelin || kind==MonsterAiKind::Summoner || kind==MonsterAiKind::GreaterMummy) {
-        int nearest=INT32_MAX;
-        const combat::Participants participants{ports_.players,ports_.monsters};
-        const auto candidate=[&](UnitTarget victim,Vec position,int extent) {
-            const int distance=monsterAiDistance(position,0,monster.position);
-            if(distance<nearest && area.definition.activation.nearby(position,monster.position) &&
-               participants.canHarm(id,victim.id) && area.definition.collision.missileSegment(monster.position,position,{4,1})) {
-                nearest=distance;target=victim;point=position;size=extent;
-            }
-        };
-        for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==monster.area && p.persistent.player.hp>0) candidate({p.actor,0,0},p.position,2);}
-        for(const auto &[key,m]:ports_.monsters.read().actors) if(m.area==monster.area && m.life>0 && m.damageable()) candidate({key,0,1},m.position,m.rule.size);
-    }
+    const auto shootable=(kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::PantherJavelin ||
+        kind==MonsterAiKind::Summoner || kind==MonsterAiKind::GreaterMummy)?shootableTarget(monster,tick):std::nullopt;
     const int distance=target.id==id?INT32_MAX:monsterAiDistance(point,target.type?size:0,monster.position);
     const bool clear=area.definition.collision.missileSegment(monster.position,point,{4,1});
-    if(controller.pursuing && !monster.route.empty() && !monster.burrowed && !monster.airborne) {controller.nextDecision=tick.tick+1;return StepStatus::Complete;}
+    if(controller.pursuing && !monster.route.empty() && !monster.burrowed && !monster.airborne) {
+        if(monster.movementTarget && tick.tick>=controller.nextPath) {
+            const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
+            const auto moved=destination?ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,monster.pathSteps}):DomainResult<>{DomainStatus::Unavailable,{}};
+            controller.nextPath=tick.tick+18;
+            if(!moved) {ports_.monsters.stop(id);controller.pursuing=false;}
+        }
+        controller.nextDecision=tick.tick+1;return StepStatus::Complete;
+    }
     ports_.monsters.stop(id);controller.pursuing=false;
     std::optional<UnitTarget> corpse,heal;
     if(monster.rule.ai.kind==MonsterAiKind::GreaterMummy) for(const auto &[key,other]:ports_.monsters.read().actors) {
@@ -46,10 +41,12 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         int(monster.life*100/monster.maximumLife),controller.commanded,controller.alerted,
         monster.identity.ownerSpawnKey.empty() || monster.identity.ownerSpawnKey==monster.identity.spawnKey,controller.phase,controller.loop,100,false,clear};
     if(kind==MonsterAiKind::BatDemon) combat.retreatBlocked=area.definition.collision.path(monster.position,monsterRetreatPoint(monster.position,point,combat.lifePercent<monster.rule.ai.params[0]?15:12),true,monster.rule.collision).empty();
+    combat.canShoot=bool(shootable);combat.shootDistance=shootable?shootable->distance:INT32_MAX;
     Act2DecisionInput input{combat,tick.tick,controller.skillDeadline,controller.novaAt,controller.firewallAt,monster.nestSpawned,monster.burrowed,bool(corpse),bool(heal),cold};
     input.hasTarget=hasTarget;input.sameRoom=area.definition.activation.room(point)==area.definition.activation.room(monster.position);
     if(kind==MonsterAiKind::GreaterMummy) for(const auto &[key,other]:ports_.monsters.read().actors) {(void)other;if(ports_.monsters.mummySupportTarget(id,key,tick.tick,false,true) || ports_.monsters.mummySupportTarget(id,key,tick.tick,true)) ++input.supportCount;}
     input.canLand=ports_.monsters.canLand(id);input.airborne=monster.airborne;input.attempts=controller.act2Attempts;
+    if(kind==MonsterAiKind::Sarcophagus) input.birthAvailable=ports_.monsters.canSpawnNestChild(id);
     const auto squared=[&](Vec p) {const int x=int(p.x)-int(monster.position.x),y=int(p.y)-int(monster.position.y);return x*x+y*y;};
     input.targetDistanceSquared=squared(point);
     std::optional<Vec> ally;int allyDistance=INT32_MAX;
@@ -90,7 +87,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     }
     else if(decision.action==MonsterDecisionAction::Special || decision.action==MonsterDecisionAction::Attack) {
         const auto skill=decision.action==MonsterDecisionAction::Special?monster.rule.skillIds.at(size_t(decision.skillSlot)):0;
-        auto victim=target;
+        auto victim=decision.useShootableTarget && shootable?shootable->unit:target;
         if(monster.rule.ai.kind==MonsterAiKind::GreaterMummy && decision.skillSlot==0 && corpse) victim=*corpse;
         if(monster.rule.ai.kind==MonsterAiKind::GreaterMummy && decision.skillSlot==1 && heal) victim=*heal;
         const auto prepared=monster.rule.skillActions.find(uint16_t(skill));
@@ -99,9 +96,11 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     } else if(decision.action==MonsterDecisionAction::Approach) {
         const Vec goal=result.seekAlly?*ally:decision.approachRadius>0?monsterRadiusApproachPoint(monster.position,monster.rule.size,point,decision.approachRadius):point;
         controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},result.seekAlly || decision.approachRadius>0?EntityId{}:target.id,result.seekAlly?0:decision.stopDistance,decision.velocityPercent,decision.running,decision.pathSteps}));
+        controller.nextPath=tick.tick+18;
     } else if(decision.action==MonsterDecisionAction::Circle || decision.action==MonsterDecisionAction::Retreat || decision.action==MonsterDecisionAction::Wander) {
         if(decision.action==MonsterDecisionAction::Circle) {
-            for(const Vec goal:monsterCirclePoints(monster.position,point,decision.stopDistance,random)) if(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},{},0,decision.velocityPercent,false})) {controller.pursuing=true;break;}
+            const int turn=(rollRandom(random)&255)<128?1:-1;
+            controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,point},target.id,0,decision.velocityPercent,false,0,turn,decision.stopDistance}));
         } else {
             const Vec goal=decision.action==MonsterDecisionAction::Retreat?monsterRetreatPoint(monster.position,point,decision.stopDistance):monsterWanderPoint(monster.position,decision.stopDistance,random);
             controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},{},0,decision.velocityPercent,decision.running}));

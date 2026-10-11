@@ -5,6 +5,7 @@
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/npc/system.hpp"
+#include "server/systems/quests/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 
@@ -150,7 +151,7 @@ DomainResult<> System::install(Prepared prepared) {
     edit.equipment = std::move(rules);
     if(prepared.character) {
         edit.character=std::move(prepared.character);
-        edit.facts.emplace_back(QuestFact{actor.player,*edit.character,ports_.settings.difficulty,0});
+        edit.facts.emplace_back(ports_.quests.projection(actor.player,*edit.character,actor.area,false));
         if(source.pending.conversation) edit.facts.emplace_back(NpcServiceFact{serviceNpc(source.pending.request.intent),6});
     }
     if(std::holds_alternative<TransmuteCube>(source.pending.request.intent)) edit.facts.emplace_back(SoundFact{p->actor,0,p->area,4});

@@ -30,11 +30,11 @@ std::optional<MonsterDecision> decideRangedMonster(const MonsterAiProfile &profi
         if(!input.contact && input.retaliating) shoot(5);
         else if(input.lifePercent>=p[0]) {
             if(input.contact) shoot(4);
-            else if(input.distance<15 && input.clear && chance(p[2])) shoot(5);
+            else if(input.distance<15 && input.canShoot && chance(p[2])) shoot(5);
             else approach(0);
         } else if(input.distance<3) retreat(5,125,5);
-        else if(input.distance>15) approach(6);
-        else if(input.clear && chance(p[3])) shoot(5);
+        else if(input.distance>15) {approach(0);result.pathSteps=6;}
+        else if(input.canShoot && chance(p[3])) shoot(5);
         else if(chance(p[1])) circle(3);
         else result.waitFrames=10;
         break;
@@ -48,17 +48,18 @@ std::optional<MonsterDecision> decideRangedMonster(const MonsterAiProfile &profi
         else result.waitFrames=p[2];
         break;
     case MonsterAiKind::SkeletonBow:
-        if(input.clear && input.retaliating) shoot(4);
-        else if(input.clear && input.distance<20) {
+        if(input.canShoot && input.retaliating) {shoot(4);result.useShootableTarget=true;}
+        else if(input.canShoot && input.shootDistance<20) {
             if(chance(p[0])) shoot(4);else if(chance(20)) circle(3);else result.waitFrames=p[1];
+            result.useShootableTarget=result.action==MonsterDecisionAction::Attack;
         } else if(chance(p[2])) {approach(p[3]);result.targetDistance=p[4];}
         else result.waitFrames=20;
         break;
     case MonsterAiKind::SkeletonMage:
-        if(input.clear && input.distance>p[1] && chance(p[2])) approach(p[1],85);
-        else if(input.clear && input.distance<=p[3] && chance(p[4])) retreat(5,100,4);
-        else if(input.clear && input.distance<p[5] && chance(p[0])) shoot(4);
-        else if(input.distance>p[1] && chance(p[2])) approach(p[1],85);
+        if(input.canShoot && input.shootDistance>p[1] && chance(p[2])) {approach(0,85);result.pathSteps=std::max(1,p[1]);result.useShootableTarget=true;}
+        else if(input.canShoot && input.shootDistance<=p[3] && chance(p[4])) {retreat(5,100,4);result.useShootableTarget=true;}
+        else if(input.canShoot && input.shootDistance<p[5] && chance(p[0])) {shoot(4);result.useShootableTarget=true;}
+        else if(input.shootDistance>p[1] && chance(p[2])) {approach(0,85);result.pathSteps=std::max(1,p[1]);}
         else if(chance(p[6])) circle(4);
         else result.waitFrames=p[7];
         break;

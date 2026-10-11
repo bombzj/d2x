@@ -443,7 +443,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 else if (hitGrid && hitGrid->container == backpack && def->beltAllowed) {
                     auto space = inventoryClient_.beltSpace(def->code);
                     if (space)
-                        queueInventory(MoveItem{item->handle(), ContainerLocation{containers.belt, *space}},
+                        queueInventory(TransferItem{item->handle(), containers.belt},
                                        item->id);
                     else
                         view_.notice("No suitable belt column has room.", true);

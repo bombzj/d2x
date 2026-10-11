@@ -17,14 +17,12 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     const auto &area = ports_.areas.at(monster.area);
     const auto distance = meleeDistance(monster.position, monster.rule.size, position, size);
     const bool clear = area.definition.collision.missileSegment(monster.position,position,{4,1});
-    auto move = [&](int stop, int percentage, bool running) {
-        return ports_.monsters.requestMove({id, {monster.area, area.generation, position}, target.id, stop, percentage, running});
-    };
     if (monster.rule.ai.kind == MonsterAiKind::Fallen) {
         const monsters::Actor *corpse = nullptr;
         for (const auto &[key, other] : ports_.monsters.read().actors) {
             (void)key;
             if (other.area == monster.area && other.life <= 0 && other.deathOccurrence > controller.observedDeath && tick.tick < other.busyUntil &&
+                area.definition.activation.nearby(other.position,monster.position) &&
                 monsterAiDistance(other.position, 0, monster.position) < 15 && (!corpse || other.deathOccurrence > corpse->deathOccurrence)) corpse = &other;
         }
         if (corpse) {
@@ -35,12 +33,11 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
             if (controller.pursuing) return StepStatus::Complete;
         }
     }
-    // Continue an accepted WL/RN action without rerolling its movement choice.
-    // Repath at the old 0.7-second cadence, and finish its own arrival threshold.
-    if (controller.pursuing && !monster.route.empty() && (!monster.movementTarget || monster.movementTarget == target.id) &&
-        (!monster.movementTarget || !(distance <= monster.stopDistance && clear))) {
+    // Keep an accepted WL/RN action, including an independent shootable target.
+    if (controller.pursuing && !monster.route.empty()) {
         if (monster.movementTarget && tick.tick >= controller.nextPath) {
-            const auto result = move(monster.stopDistance, monster.velocityPercent, monster.running);
+            const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
+            const auto result=destination?ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,monster.pathSteps}):DomainResult<>{DomainStatus::Unavailable,{}};
             controller.nextPath = tick.tick + 18;
             if (!result) { ports_.monsters.stop(id); controller.pursuing = false; }
         }
@@ -63,6 +60,9 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         input.retreatBlocked=area.definition.collision.path(monster.position,monsterRetreatPoint(monster.position,position,radius),true,monster.rule.collision).empty();
     }
     input.upgradeCooldown=controller.upgradeCooldown;
+    const auto shootable=(monster.rule.ai.kind==MonsterAiKind::SkeletonBow || monster.rule.ai.kind==MonsterAiKind::SkeletonMage ||
+        monster.rule.ai.kind==MonsterAiKind::Bighead || monster.rule.ai.kind==MonsterAiKind::FallenShaman)?shootableTarget(monster,tick):std::nullopt;
+    input.canShoot=bool(shootable);input.shootDistance=shootable?shootable->distance:INT32_MAX;
     std::optional<UnitTarget> corpse;
     if(monster.rule.ai.kind==MonsterAiKind::FallenShaman) for(const auto &[key,other]:ports_.monsters.read().actors) {
         (void)other;if(ports_.monsters.resurrectionTarget(id,key,tick.tick)) corpse=UnitTarget{key,0,1};
@@ -79,13 +79,15 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     const auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
     if (!decision) return StepStatus::NotImplemented;
+    const auto actionTarget=decision->useShootableTarget && shootable?shootable->unit:target;
+    const auto actionPosition=decision->useShootableTarget && shootable?shootable->position:position;
     if (decision->action == MonsterDecisionAction::Shout) {
         const auto result = ports_.skills.requestCast({id, 0, target, tick.tick, 9});
         if (result.status == DomainStatus::Capacity) { controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
         if(result && monster.identity.ownerSpawnKey==monster.identity.spawnKey) {commandParty(monster);controller.commanded=true;}
     } else if (decision->action == MonsterDecisionAction::Attack || decision->action == MonsterDecisionAction::Special) {
         const auto skill=decision->action==MonsterDecisionAction::Special?monster.rule.skillIds.at(size_t(decision->skillSlot)):uint16_t(0);
-        const auto actualTarget=monster.rule.ai.kind==MonsterAiKind::FallenShaman && decision->skillSlot==0?*corpse:target;
+        const auto actualTarget=monster.rule.ai.kind==MonsterAiKind::FallenShaman && decision->skillSlot==0?*corpse:actionTarget;
                 std::optional<Vec> point;
         if(boss && monster.rule.ai.kind==MonsterAiKind::Countess && decision->skillSlot==0) point=monster.skillPositions.at(size_t(firewallPhase));
         if(boss && monster.rule.ai.kind==MonsterAiKind::BloodRaven && decision->skillSlot==0) point=Vec{std::floor(position.x)+.5f,std::floor(position.y)+.5f}+boss->summonOffset;
@@ -100,9 +102,10 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         auto random = decision->random;
         auto freeMove = [&](Vec goal) { return ports_.monsters.requestMove({id, {monster.area, area.generation, goal}, {}, 0, decision->velocityPercent, decision->running}); };
         if (decision->action == MonsterDecisionAction::Circle) {
-            for (const Vec goal : monsterCirclePoints(monster.position, position, decision->stopDistance, random)) if (freeMove(goal)) { controller.pursuing = true; break; }
+            const int turn=(rollRandom(random)&255)<128?1:-1;
+            controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,actionPosition},actionTarget.id,0,decision->velocityPercent,decision->running,0,turn,decision->stopDistance}));
         } else {
-            const Vec goal = decision->action == MonsterDecisionAction::Retreat ? monsterRetreatPoint(monster.position, position, decision->stopDistance) : monsterWanderPoint(monster.position, decision->stopDistance, random);
+            const Vec goal = decision->action == MonsterDecisionAction::Retreat ? monsterRetreatPoint(monster.position, actionPosition, decision->stopDistance) : monsterWanderPoint(monster.position, decision->stopDistance, random);
             controller.pursuing = bool(freeMove(goal));
         }
         if (!controller.pursuing && monster.rule.ai.kind == MonsterAiKind::Fetish && decision->action == MonsterDecisionAction::Retreat) {
@@ -134,12 +137,15 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         controller.nextDecision = tick.tick + uint64_t(controller.pursuing ? 1 : std::max(1, decision->waitFrames));
         return StepStatus::Complete;
     } else if (decision->action == MonsterDecisionAction::Approach) {
-        if (!(distance <= decision->stopDistance && clear)) {
+        const auto stop=decision->pathSteps>0?decision->pathSteps-1:decision->stopDistance;
+        const auto actionSize=decision->useShootableTarget && shootable?shootable->size:size;
+        if (decision->approachRadius || !(meleeDistance(monster.position,monster.rule.size,actionPosition,actionSize)<=stop &&
+              area.definition.collision.missileSegment(monster.position,actionPosition,{4,1}))) {
             if (decision->approachRadius) {
                 const Vec goal = monsterRadiusApproachPoint(monster.position, monster.rule.size, position, decision->approachRadius,decision->targetDistance);
                 controller.pursuing = bool(ports_.monsters.requestMove({id, {monster.area, area.generation, goal}, {}, 0, decision->velocityPercent, decision->running}));
             } else if(boss && boss->returnHome) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monster.home},{},0,decision->velocityPercent,decision->running}));
-            else controller.pursuing = bool(move(decision->stopDistance, decision->velocityPercent, decision->running));
+            else controller.pursuing = bool(ports_.monsters.requestMove({id,{monster.area,area.generation,actionPosition},actionTarget.id,decision->stopDistance,decision->velocityPercent,decision->running,decision->pathSteps}));
             if(!controller.pursuing && monster.rule.ai.kind==MonsterAiKind::Fallen) controller.commanded=false;
             controller.nextPath = tick.tick + 18;
         }

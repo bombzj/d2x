@@ -123,7 +123,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminOperation::SpawnItem: {
             const auto &spawn = std::get<AdminSpawn>(request.arguments);
             if (peer.phase != GamePhase::Entered || spawn.level < 1 || spawn.level > 99 || !content->items.find(spawn.code)) return {AdminStatus::InvalidArguments, "Enter a game and supply an MPQ item code and level 1..99"};
-            const auto saved=host.exportCharacter(*binding); if(!saved) return {AdminStatus::Unavailable,"Character death settlement is pending"};
+            const auto saved=host.exportCharacter(*binding); if(!saved) return {AdminStatus::Unavailable,"Character settlement is pending"};
             auto character = *saved; character.inventory.items.clear();
             auto random = initialRandom(uint32_t(host.nextEntity(binding->game)));
             ItemGeneration generation;

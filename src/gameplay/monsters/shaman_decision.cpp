@@ -10,7 +10,7 @@ MonsterDecision decideFallenShaman(const MonsterAiProfile &profile,MonsterDecisi
     out.commandParty=chance(p[0]);
     if(corpseAvailable && chance(p[0])) {out.action=MonsterDecisionAction::Special;out.skillSlot=0;}
     else if(in.distance<p[4] && chance(p[1])) {out.action=MonsterDecisionAction::Special;out.skillSlot=1;}
-    else if(in.clear && in.distance<p[4] && chance(p[1])) {out.action=MonsterDecisionAction::Special;out.skillSlot=1;}
+    else if(in.canShoot && in.shootDistance<p[4] && chance(p[1])) {out.action=MonsterDecisionAction::Special;out.skillSlot=1;out.useShootableTarget=true;}
     else if(chance(p[2])) {out.action=MonsterDecisionAction::Circle;out.stopDistance=3;}
     else out.waitFrames=10;
     return out;

@@ -6,9 +6,11 @@ RequestResult HireMercenary(GameplayContext &context, net::protocol::Reader &in)
     if(name>UINT16_MAX) return {RequestStatus::Rejected};
     return submitGameplay(context,server::companions::Request{server::companions::Action::Hire,EntityId{npc},name});
 }
-RequestResult IdentifyGamble(GameplayContext &, net::protocol::Reader &in) {
-    in.u32(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "IdentifyGamble"};
+RequestResult IdentifyGamble(GameplayContext &context, net::protocol::Reader &in) {
+    const auto id=EntityId{in.u32()}; in.finish();
+    const auto input=context.host.inventoryInput(context.player);
+    if(!input || !input->items.contains(id)) return {RequestStatus::Rejected};
+    return submitGameplay(context,server::merchant::Request{server::merchant::Action::IdentifyBought,{},input->items.at(id).handle});
 }
 RequestResult MoveNpc(GameplayContext &, net::protocol::Reader &in) {
     in.u32(); in.u32(); in.u32(); in.u32(); in.finish();

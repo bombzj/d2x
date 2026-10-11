@@ -6,8 +6,10 @@ struct ClassicData;
 struct QuestDisplayState {
     std::optional<uint8_t> status;
     std::optional<uint16_t> playerFlags;
+    std::optional<bool> available; // Explicit native 5E admission fact.
 };
-// Decoded owner facts only. No game-wide flags, inventory, seed or executor.
+// Decoded private flags/status and revealed native admission availability.
+// No hidden game-wide flags, inventory, seed or executor.
 struct QuestProjectionInput {
     uint64_t revision{};
     EntityId actor;
