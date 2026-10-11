@@ -13,6 +13,7 @@ struct MonsterDecisionInput {
     bool webActive{}, clear{};
     bool retreatBlocked{};
     bool trapAxisAligned{};
+    int upgradeCooldown{};
 };
 struct MonsterDecision {
     MonsterDecisionAction action{MonsterDecisionAction::Idle};
@@ -28,5 +29,7 @@ struct MonsterDecision {
     int failedMoveWanderRadius{}, targetDistance{};
     bool commandParty{};
     bool bloodRavenCloseWhenMoveFails{};
+    int upgradeCooldown{};
+    int pathSteps{};
 };
 }

@@ -67,7 +67,8 @@ class System {
     DomainResult<> removeAura(const ActorContext &,int skill);
     struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{},random{};bool pending{};};
     std::map<EntityId,WebTrail> webTrails_;
-    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{},nextAura{},auraOccurrence{},random{};int deathPhase{};bool cursePending{},auraPending{};size_t auraTarget{},curseTarget{};std::vector<EntityId> targets,curseTargets;};
+    struct MonsterAuraCycle {uint64_t nextAura{},auraOccurrence{};bool auraPending{};size_t auraTarget{};std::vector<EntityId> targets;};
+    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{},random{};uint64_t nativeHit{},nativeHitAt{},nativeDeath{},nativeDeathAt{};int deathPhase{};bool cursePending{};size_t curseTarget{};std::vector<EntityId> curseTargets;std::map<int,MonsterAuraCycle> auras;};
     std::map<EntityId,UniqueCycle> uniqueCycles_;
     StepStatus advanceMonsterEnchantments(uint64_t);
     DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
@@ -117,6 +118,7 @@ class System {
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);
+    DomainResult<> castMonsterCurse(EntityId,const AuraDefinition &,EntityId,uint64_t tick);
     bool reactionCapacity() const { return reactions_.size() <= 4096-128 && unitReactions_.size()<=4096-128 && necroContacts_.size()<=4096-128; }
     void react(const ActorContext &, EntityId attacker, CombatEffectEvent, bool returnFire = true);
     StepStatus step(TickContext, FrameFacts &);

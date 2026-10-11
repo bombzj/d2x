@@ -47,6 +47,9 @@ struct DiagnosticMonster {
     std::optional<MonsterEnchantment> enchantment{};
     Vec home{};
     std::vector<Vec> skillPositions{};
+    bool burrowed{},airborne{},holdPose{},skillMotion{};
+    uint8_t aiPose{1};uint64_t poseUntil{};
+    int64_t aiRegenerationBonus{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {

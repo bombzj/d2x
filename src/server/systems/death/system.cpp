@@ -127,12 +127,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 killer->persistent.player.level < 1 || size_t(killer->persistent.player.level) >= monster.rule.experience.size()) {
                 ports_.monsters.rewardComplete(id); continue;
             }
-            const auto amount = playerExperienceGain(monster.rule.experience[size_t(killer->persistent.player.level)], killer->totals.character.combat.experiencePercent);
+            const auto amount = monster.rule.noExperience?0:playerExperienceGain(monster.rule.experience[size_t(killer->persistent.player.level)], killer->totals.character.combat.experiencePercent);
 
             // Capture once: backpressure must not reroll rewards using a later
             // level, equipment set, or player that reused an old identifier.
             reward = state_.rewards.emplace(id, Reward{killer->player, killer->actor, amount,false,killer->totals.character.combat.lifeOnKill,killer->totals.character.combat.manaOnKill,false,killer->persistent.player}).first;
-            reward->second.hireling=ports_.companions.experience(killer->player,monster);
+            if(!monster.rule.noExperience) reward->second.hireling=ports_.companions.experience(killer->player,monster);
             std::vector<const PlayerState*> members;
             unsigned levelSum=0;
             if(ports_.social.partyId(killer->player)!=UINT16_MAX)
@@ -142,7 +142,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                        peer.persistent.player.level>0 && size_t(peer.persistent.player.level)<monster.rule.experienceRatios.size()) {
                         members.push_back(&peer);levelSum+=unsigned(peer.persistent.player.level);
                     }
-            if(members.size()>1 && levelSum && monster.rule.experienceBase) {
+            if(!monster.rule.noExperience && members.size()>1 && levelSum && monster.rule.experienceBase) {
                 // SUnitDmg: share raw experience before each player's MPQ ratio.
                 const auto base=monster.rule.experienceBase;
                 const auto pooled=base+89*base*(members.size()-1)/256;

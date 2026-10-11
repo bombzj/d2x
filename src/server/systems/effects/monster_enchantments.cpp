@@ -11,8 +11,13 @@
 #include "gameplay/monsters/projectile_math.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 namespace d2x::server::effects {
+DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,EntityId target,uint64_t tick) {
+    if(!combat::Participants{ports_.players,ports_.monsters}.canHarm(source,target)) return {DomainStatus::InvalidActor,{}};
+    return monsterAura(source,a,target,tick,uint64_t(std::max(1,a.periodFrames)));
+}
 DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,EntityId id,uint64_t tick,uint64_t duration,bool owner) {
     const auto *m=ports_.monsters.find(source);if(!m) return {DomainStatus::InvalidActor,{}};
     const auto state=owner?a.ownerState:a.state;
@@ -69,8 +74,9 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
     bool blocked=false;
     const combat::Participants participants{ports_.players,ports_.monsters};
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        if(m.owner || !m.rule.enchantment) continue;
-        const auto &mods=*m.rule.enchantment;const auto &area=ports_.areas.at(m.area);
+        if(m.owner || (!m.rule.enchantment && !m.rule.nativeAura && !m.rule.hitBurst && !m.rule.deathBurst)) continue;
+        const MonsterEnchantment empty;
+        const auto &mods=m.rule.enchantment?*m.rule.enchantment:empty;const auto &area=ports_.areas.at(m.area);
         auto [entry,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=entry->second;if(fresh) cycle.random=m.combatRandom;
         if(cycle.cursePending && mods.curse) {
             while(cycle.curseTarget<cycle.curseTargets.size()) {
@@ -89,6 +95,23 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             const auto result=ports_.missiles.spawnMonster(spawn);if(result) cycle.random=result.value->random;
             return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
         };
+        auto nativeBurst=[&](const MonsterMissileRule &rule,bool dead)->DomainResult<> {
+            MonsterAttackRule attack;attack.missile=rule;
+            missiles::MonsterSpawn spawn{id,m.area,area.generation,tick,m.position,m.position,attack,m.rule.hitStates,m.rule.level,0,0,cycle.random};spawn.postMortem=dead;
+            for(const Vec offset:std::array<Vec,4>{Vec{0,-1},Vec{1,0},Vec{0,1},Vec{-1,0}}) for(int branch=0;branch<2;++branch) spawn.aims.push_back(m.position+offset);
+            const auto result=ports_.missiles.spawnMonster(spawn);if(result) cycle.random=result.value->random;
+            return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+        };
+        if(m.rule.hitBurst && m.hitOccurrence!=cycle.nativeHit) {cycle.nativeHit=m.hitOccurrence;if(m.reactionMode==3 && m.reactionUntil>tick && m.knockedUntil<=tick) cycle.nativeHitAt=tick+2;}
+        if(cycle.nativeHitAt && tick>=cycle.nativeHitAt) {
+            const auto result=nativeBurst(*m.rule.hitBurst,m.life<=0);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+            cycle.nativeHitAt=0;
+        }
+        if(m.life<=0 && (m.rule.hitBurst || m.rule.deathBurst) && m.deathOccurrence!=cycle.nativeDeath) {cycle.nativeDeath=m.deathOccurrence;cycle.nativeDeathAt=m.deathTick+(m.rule.hitBurst?2:0);}
+        if(cycle.nativeDeathAt && tick>=cycle.nativeDeathAt) {
+            const auto result=nativeBurst(m.rule.deathBurst?*m.rule.deathBurst:*m.rule.hitBurst,true);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+            cycle.nativeDeathAt=0;
+        }
         const bool unique=m.identity.rank==MonsterRank::Unique || m.identity.rank==MonsterRank::SuperUnique;
         if(unique && mods.has(17) && m.damageOccurrence!=cycle.damage) {
             cycle.damage=m.damageOccurrence;
@@ -101,9 +124,9 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             if(tick>=std::max(uint64_t(10),cycle.nextLightning)) {
                 const auto result=burst(195,m.life<=0);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
                 emitted=bool(result);if(emitted) cycle.nextLightning=tick+10;
-            }
             ports_.monsters.lightningEmission(id,emitted,tick);
             cycle.lightning=0;
+            }
         }
         if(m.life<=0 && m.deathOccurrence!=cycle.deathOccurrence) {cycle.deathOccurrence=m.deathOccurrence;cycle.death=m.deathTick+4;cycle.deathPhase=0;}
         if(cycle.death && tick>=cycle.death) {
@@ -128,35 +151,40 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             if(cycle.deathPhase==1 && unique && mods.has(18)) {const auto result=burst(194,true);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}}
             cycle.death=0;cycle.deathPhase=2;
         }
-        if(m.life<=0 || !mods.aura) continue;
-        const auto &a=*mods.aura;
-        if(!cycle.auraPending && tick>=cycle.nextAura) {
-            cycle.targets.clear();cycle.auraPending=true;
-            cycle.auraTarget=0;
+        if(m.life<=0 || (!mods.aura && !m.rule.nativeAura)) continue;
+        for(const auto *definition:{m.rule.nativeAura?&*m.rule.nativeAura:nullptr,mods.aura?&*mods.aura:nullptr}) {
+        if(!definition) continue;
+        if(m.rule.nativeAura && mods.aura && m.rule.nativeAura->skill==mods.aura->skill &&
+           (definition==&*m.rule.nativeAura?mods.aura->rank>definition->rank:m.rule.nativeAura->rank>=definition->rank)) continue;
+        const auto &a=*definition;auto &auraCycle=cycle.auras[a.skill];
+        if(!auraCycle.auraPending && tick>=auraCycle.nextAura) {
+            auraCycle.targets.clear();auraCycle.auraPending=true;
+            auraCycle.auraTarget=0;
             if(a.hostile) {
-                for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(p.actor);}
-                for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(id,key) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(key);
-            } else for(const auto &[key,p]:ports_.monsters.read().actors) if((participants.relation({nullptr,&m},{nullptr,&p})==combat::Relation::Allied || key==id) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(key);
-            if(a.hostile) cycle.targets.push_back(id);
+                for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(p.actor);}
+                for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(id,key) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(key);
+            } else for(const auto &[key,p]:ports_.monsters.read().actors) if((participants.relation({nullptr,&m},{nullptr,&p})==combat::Relation::Allied || key==id) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(key);
+            if(a.hostile) auraCycle.targets.push_back(id);
         }
-        if(!cycle.auraPending) continue;
-        while(cycle.auraTarget<cycle.targets.size()) {
-            const auto result=monsterAura(id,a,cycle.targets[cycle.auraTarget],tick,uint64_t(std::max(1,a.periodFrames))*2,cycle.targets[cycle.auraTarget]==id);
+        if(!auraCycle.auraPending) continue;
+        while(auraCycle.auraTarget<auraCycle.targets.size()) {
+            const auto result=monsterAura(id,a,auraCycle.targets[auraCycle.auraTarget],tick,uint64_t(std::max(1,a.periodFrames))*2,auraCycle.targets[auraCycle.auraTarget]==id);
             if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-            ++cycle.auraTarget;
+            ++auraCycle.auraTarget;
         }
-        if(cycle.auraTarget==cycle.targets.size()) {
+        if(auraCycle.auraTarget==auraCycle.targets.size()) {
             if(a.element>=0 && a.maximumDamage>0) {
                 auto random=cycle.random;std::vector<EntityId> targets;
-                for(const auto target:cycle.targets) if(target!=id) targets.push_back(target);
+                for(const auto target:auraCycle.targets) if(target!=id) targets.push_back(target);
                 const int64_t low=int64_t(a.minimumDamage*256),spread=int64_t((a.maximumDamage-a.minimumDamage)*256);
                 combat::SpellImpact pulse{id,id,m.area,DamageType(a.element),low+(spread>0?limitedRandom(random,uint32_t(spread)):0),std::move(targets)};
-                pulse.occurrence=(uint64_t(1)<<63)|++cycle.auraOccurrence;pulse.hitClass=uint8_t(a.hitClass);pulse.reaction=true;pulse.unblockable=true;
+                pulse.occurrence=(uint64_t(1)<<63)|(uint64_t(a.skill)<<40)|++auraCycle.auraOccurrence;pulse.hitClass=uint8_t(a.hitClass);pulse.reaction=true;pulse.unblockable=true;
                 auto plan=ports_.combat.prepareSpells({pulse});
-                if(!plan) {--cycle.auraOccurrence;if(plan.status==DomainStatus::Capacity) blocked=true;continue;}
+                if(!plan) {--auraCycle.auraOccurrence;if(plan.status==DomainStatus::Capacity) blocked=true;continue;}
                 ports_.combat.commitSpells(std::move(*plan.value));cycle.random=random;
             }
-            cycle.targets.clear();cycle.auraPending=false;cycle.nextAura=tick+uint64_t(std::max(1,a.periodFrames));
+            auraCycle.targets.clear();auraCycle.auraPending=false;auraCycle.nextAura=tick+uint64_t(std::max(1,a.periodFrames));
+        }
         }
     }
     std::erase_if(uniqueCycles_,[&](const auto &entry){return !ports_.monsters.find(entry.first);});

@@ -112,9 +112,9 @@ SkeletonRaise在骷髅及fetish1的原技能槽中存在，但普通Skeleton／F
 
 ## 有限运行证据
 
-2026-10-11当前Windows Release最终包为规则v39／D2S v96，哈希见[基线](../../../BASELINE.md#当前运行包与验证边界)。92级女巫隔离角色、普通单机、当前MPQ；只用已有资源工具、游戏及调试管道，无新增测试脚本／用例／专用程序。证据目录为`artifacts/act1-audit-20261011/smoke`：
+2026-10-11第一幕批次的Windows Release历史包为规则v39／D2S v96，客户端SHA256为`253F3AE1D28991F8BC7501B14EF9A7BC175C0D14B0C4756F1BE84158C329FA70`，独立服务端为`CAF7AF871442667A2AFE1F6F8965CD8737FDE11E4C36437BE984006087190450`。当前包见[基线](../../../BASELINE.md#当前运行包与验证边界)，下面的证据不认证后续规则版本。92级女巫隔离角色、普通单机、当前MPQ；只用已有资源工具、游戏及调试管道，无新增测试脚本／用例／专用程序。证据目录为`artifacts/act1-audit-20261011/smoke`：
 
-| 当前包证据 | 实际观察／边界 |
+| 第一幕v39包证据 | 实际观察／边界 |
 | --- | --- |
 | `final-identities.json`、`final-identities-summary.csv`及逐ID JSON | 63类型逐项生成后推进40帧，记录真实规则、单位模式／技能及原姓名；63项均成功，原图显示缺失0。管理击杀只用于清理条件，不认证正常玩家击杀／掉落概率或每条随机分支 |
 | `final-superuniques.json` | 13个固定身份全部准入，The Countess为AI22，真实姓名／调色显示缺失0；管理生成Flamespike不授予自然刷新点，Cow King不认证牛场开启事件 |

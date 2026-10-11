@@ -78,7 +78,10 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"moving", monster.moving}, {"running", monster.running}, {"busyUntil", monster.busyUntil}, {"rewardComplete", monster.rewardComplete},{"chilledUntil",monster.chilledUntil},{"frozenUntil",monster.frozenUntil},{"knockedUntil",monster.knockedUntil},{"nextHitTick",monster.nextHitTick},{"owner",monster.owner?Json(monster.owner->value):Json(nullptr)}};
         if (monster.controller) value["ai"] = {{"nextDecision", monster.controller->nextDecision},
             {"target", monster.controller->target ? Json(monster.controller->target->value) : Json(nullptr)},
-            {"pursuing", monster.controller->pursuing}, {"charged", monster.controller->charged}};
+            {"pursuing", monster.controller->pursuing}, {"charged", monster.controller->charged},
+            {"phase",monster.controller->phase},{"loop",monster.controller->loop},{"spawnAttempts",monster.controller->act2Attempts}};
+        value["burrowed"]=monster.burrowed;value["airborne"]=monster.airborne;value["holdPose"]=monster.holdPose;
+        value["aiPose"]=monster.aiPose;value["poseUntil"]=monster.poseUntil;value["aiRegenerationBonus"]=monster.aiRegenerationBonus;value["skillMotion"]=monster.skillMotion;
         value["rules"]={{"family",int(monster.rules.kind)},{"searchDistance",monster.rules.searchDistance},{"params",monster.rules.params},
             {"damageRegen",monster.damageRegen},{"threat",monster.threat},{"nativeVelocity",monster.nativeVelocity},
             {"movementMask",monster.movementMask},{"spawnMask",monster.spawnMask},{"blockChance",monster.blockChance},

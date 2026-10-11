@@ -121,7 +121,8 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                     if (id && velocity && *velocity > 0 && range && *range > 0 &&
                         minimum >= 0 && maximum >= minimum && maximum <= 1000000 &&
                         sourceDamage >= 0 && sourceDamage <= 255 &&
-                        !file.empty() && archives.contains(art)) {
+                        !file.empty() && (archives.contains(art) ||
+                            (file == "null" && missiles.number(missileRow, "pCltDoFunc") == 8))) {
                         artPath = art;
                         return MonsterProjectile{*id, float(*velocity), float(*range) / 25.f,
                                                  minimum, maximum, sourceDamage};

@@ -76,7 +76,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             return physicalHitChance(damage.level,sourceMonster?int(int64_t(damage.rating)*std::max(0,100+ports_.effects.unitModifiers(sourceMonster->id,tick.tick).combat.attackRatingPercent+(sourceMonster->rule.enchantment?sourceMonster->rule.enchantment->attackRatingPercent:0))/100):damage.rating,targetPlayer?targetPlayer->persistent.player.level:targetMonster->rule.level,targetPlayer?targetPlayer->totals.character.defense:ports_.effects.unitDefense(targetMonster->id,tick.tick));
         };
-        bool hit = running || int(limitedRandom(random, 100)) < chance();
+        bool hit = (damage.monsterSkill && damage.monsterSkill->alwaysHit) || running || int(limitedRandom(random, 100)) < chance();
         if (hit && targetPlayer && targetPlayer->totals.equipment.shield) {
             const int block = targetPlayer->totals.equipment.blockChance / (running ? 3 : 1);
             hit = int(limitedRandom(random, 100)) >= block;
@@ -101,13 +101,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if ((monsterAttack || petAttack) && (!sourceMonster->owner || sourceMonster->conversion || (sourceMonster->necroSummon && !sourceMonster->petWeapon))) {
             const auto attack = sourceMonster->rule.attacks.find(damage.monsterMode);
-            if (attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
-            const auto &slot = attack->second;
+            if (!damage.monsterSkill && attack == sourceMonster->rule.attacks.end()) { it = state_.pending.erase(it); continue; }
+            const auto &slot = damage.monsterSkill?*damage.monsterSkill:attack->second;
             auto enchantmentDamage=sourceMonster->enchantmentDamage;
             MonsterHit rolled = hit ? rollMonsterHit(slot.minimum, slot.maximum, 0, slot.elements, 128, random) : MonsterHit{};
             if(hit) {
                 const auto buffs=ports_.effects.unitModifiers(sourceMonster->id,tick.tick);
-                const int percent=buffs.combat.damagePercent+(sourceMonster->necroSummon?sourceMonster->petStats.attributes.combat.damagePercent:0)+(sourceMonster->rule.enchantment?sourceMonster->rule.enchantment->damagePercent:0);
+                const int percent=slot.damagePercent+buffs.combat.damagePercent+(sourceMonster->necroSummon?sourceMonster->petStats.attributes.combat.damagePercent:0)+(sourceMonster->rule.enchantment?sourceMonster->rule.enchantment->damagePercent:0);
                 rolled.channels[0]=rolled.channels[0]*std::max(0,100+percent)/100;
                 if(sourceMonster->necroSummon) {
                     auto modifiers=sourceMonster->petStats.attributes.combat;mergeCombatModifiers(modifiers,buffs.combat);
@@ -119,8 +119,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 monsterCritical(rolled,sourceMonster->rule.criticalChance,random);
             }
             auto hitClassCursor=state_.hitClassCursor;
-            if(hit) rolled.hitClass=monsterDamageHitClass(rolled,sourceMonster->rule.hitClass,hitClassCursor);
-            rolled.knockback=hit && sourceMonster->rule.knockbackOnHit;
+            if(hit) rolled.hitClass=slot.hitClass>=0?uint8_t(slot.hitClass):monsterDamageHitClass(rolled,sourceMonster->rule.hitClass,hitClassCursor);
+            rolled.knockback=hit && (sourceMonster->rule.knockbackOnHit || slot.knockback);
+            if(hit) rolled.stunFrames+=unsigned(std::max(0,slot.stunFrames));
             SpellPlan thorns;
             if(hit && rolled.channels[0]>0) {
                 auto mods=targetPlayer?targetPlayer->totals.character.combat:ports_.effects.unitModifiers(targetMonster->id,tick.tick).combat;
@@ -153,7 +154,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 std::optional<PoisonApplication> poison;
                 if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
                 if(poison && sourceMonster->necroSummon) poison->actualSource=sourceMonster->id;
-                result = ports_.monsters.damage(damage.target,sourceMonster->necroSummon?damage.binding.credit:damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison,false,0,{},absorbed);
+                result = ports_.monsters.damage(damage.target,sourceMonster->necroSummon?damage.binding.credit:damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison,false,rolled.stunFrames,{},absorbed);
+                if(result && hit && rolled.knockback && targetMonster->life>0) ports_.monsters.knockback(targetMonster->id,sourceMonster->position,tick.tick);
                 if(result && hit && amount>0 && targetMonster->hireling) ports_.effects.hirelingReact(targetMonster->id,damage.source,CombatEffectEvent::DamagedInMelee,tick.tick);
             }
             if (result) {if(hit && !damage.cancelled) ports_.effects.necroContact(damage.source,damage.target,physicalContact,tick.tick,false,previousLife);commitSpells(std::move(thorns));ports_.monsters.commitEnchantmentDamage(sourceMonster->id,std::move(enchantmentDamage));state_.hitClassCursor=hitClassCursor;commitRandom(); it = state_.pending.erase(it); }

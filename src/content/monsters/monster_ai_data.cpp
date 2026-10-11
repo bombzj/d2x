@@ -1,6 +1,7 @@
 #include "monster_ai_data.hpp"
 #include <string>
 #include <algorithm>
+#include <vector>
 
 namespace d2x {
 std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, size_t row,
@@ -31,8 +32,29 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "BloodRaven") profile.kind = MonsterAiKind::BloodRaven;
     else if (ai == "Andariel") profile.kind = MonsterAiKind::Andariel;
     else if (ai == "GargoyleTrap") profile.kind = MonsterAiKind::GargoyleTrap;
+    else if (ai == "SandRaider") profile.kind = MonsterAiKind::SandRaider;
+    else if (ai == "SandMaggot") profile.kind = MonsterAiKind::SandMaggot;
+    else if (ai == "SandMaggotQueen") profile.kind = MonsterAiKind::SandMaggotQueen;
+    else if (ai == "MaggotEgg") profile.kind = MonsterAiKind::MaggotEgg;
+    else if (ai == "MaggotLarva") profile.kind = MonsterAiKind::MaggotLarva;
+    else if (ai == "ClawViper") profile.kind = MonsterAiKind::ClawViper;
+    else if (ai == "SandLeaper") profile.kind = MonsterAiKind::SandLeaper;
+    else if (ai == "Swarm") profile.kind = MonsterAiKind::Swarm;
+    else if (ai == "Scarab") profile.kind = MonsterAiKind::Scarab;
+    else if (ai == "GreaterMummy") profile.kind = MonsterAiKind::GreaterMummy;
+    else if (ai == "Mummy") profile.kind = MonsterAiKind::Mummy;
+    else if (ai == "PantherWoman") profile.kind = MonsterAiKind::PantherWoman;
+    else if (ai == "PantherJavelin") profile.kind = MonsterAiKind::PantherJavelin;
+    else if (ai == "Baboon") profile.kind = MonsterAiKind::Baboon;
+    else if (ai == "Vulture") profile.kind = MonsterAiKind::Vulture;
+    else if (ai == "BatDemon") profile.kind = MonsterAiKind::BatDemon;
+    else if (ai == "PinHead") profile.kind = MonsterAiKind::PinHead;
+    else if (ai == "Summoner") profile.kind = MonsterAiKind::Summoner;
+    else if (ai == "Duriel") profile.kind = MonsterAiKind::Duriel;
+    else if (ai == "Sarcophagus") profile.kind = MonsterAiKind::Sarcophagus;
+    else if (ai == "ArcaneTower") profile.kind = MonsterAiKind::ArcaneTower;
     else return std::nullopt;
-    if (profile.kind == MonsterAiKind::Vampire) {
+    if (profile.kind == MonsterAiKind::Vampire || profile.kind == MonsterAiKind::Baboon) {
         const int velocity = stats.number(row, "Velocity").value_or(0);
         const int run = stats.number(row, "Run").value_or(0);
         if (velocity > 0) profile.retreatVelocityBonus = std::clamp(100 * run / velocity - 100, 0, 120);
@@ -103,6 +125,30 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     if (profile.kind == MonsterAiKind::Arach &&
         (!percentage(0) || !percentage(1) || !percentage(2) ||
          !percentage(4) || profile.params[3] > 255)) return std::nullopt;
+    // The family-specific percentage columns must not silently become always
+    // true when malformed content reaches the pure decision programs.
+    std::vector<int> percentages;
+    switch(profile.kind) {
+    case MonsterAiKind::SandRaider: percentages={0,1,2,3,6};break;
+    case MonsterAiKind::SandMaggot: percentages={0,1,3};break;
+    case MonsterAiKind::ClawViper: percentages={0,2,3};break;
+    case MonsterAiKind::SandLeaper: percentages={0,1,2,3};break;
+    case MonsterAiKind::Swarm: percentages={0,2};break;
+    case MonsterAiKind::Scarab: percentages={0,1,3,4};break;
+    case MonsterAiKind::GreaterMummy: percentages={0,1,2,3};break;
+    case MonsterAiKind::Mummy: percentages={1,2,3};break;
+    case MonsterAiKind::PantherWoman: percentages={0,1};break;
+    case MonsterAiKind::PantherJavelin: percentages={0,1,3};break;
+    case MonsterAiKind::Baboon: percentages={0,1,2,3};break;
+    case MonsterAiKind::Vulture: percentages={0,2,3,4};break;
+    case MonsterAiKind::BatDemon: percentages={0,1,2,3};break;
+    case MonsterAiKind::PinHead: percentages={0,2,4};break;
+    case MonsterAiKind::Summoner: percentages={0,1,2,5};break;
+    case MonsterAiKind::Duriel: percentages={1,2,3,4};break;
+    case MonsterAiKind::MaggotEgg: percentages={1};break;
+    default:break;
+    }
+    for(int index:percentages) if(!percentage(index)) return std::nullopt;
     return profile;
 }
 } // namespace d2x

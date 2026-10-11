@@ -27,6 +27,7 @@ struct Admission { MonsterIdentity identity; std::optional<MonsterKind> implemen
 struct MoveRequest {
     EntityId actor; PointTarget destination; EntityId target;
     int stopDistance{}, velocityPercent{75}; bool running{};
+    int pathSteps{};
 };
 struct Actor {
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
@@ -82,6 +83,13 @@ struct Actor {
     bool corpseSearched{};
     uint64_t holyFreezeUntil{}; bool holyFreezeShatter{};
     uint64_t webUntil{};
+    bool burrowed{};
+    bool airborne{}, holdPose{};
+    uint8_t aiPose{1}; uint64_t poseUntil{};
+    int64_t aiRegenerationBonus{};
+    std::set<int> aiStates;
+    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{};};
+    std::optional<SkillMotion> skillMotion;
     int nestSpawned{};
     struct Slow {int state{-1},percent{};uint64_t until{};};
     std::optional<Slow> slowed;
@@ -98,7 +106,7 @@ struct Actor {
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
     bool enemyTarget() const { return hostile && !owner && !conversion && !rule.environmentController; }
-    bool damageable() const { return enemyTarget() || amazonPet || necroSummon || hireling || conversion; }
+    bool damageable() const { return !burrowed && !airborne && (enemyTarget() || amazonPet || necroSummon || hireling || conversion); }
     bool combatCompanion() const { return bool(amazonPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || necroSummon || conversion; }
@@ -131,6 +139,16 @@ class System {
     void curseControl(EntityId id,Actor::CurseControl control) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.curseControl=control;++it->second.revision;}}
     void attract(EntityId id,EntityId target,uint64_t until) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.attractionTarget=target;it->second.attractionUntil=until;}}
     DomainResult<> resurrect(EntityId source,EntityId corpse,uint64_t tick);
+    bool mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy=false) const;
+    DomainResult<> spawnSkillChildren(EntityId source,Vec target,int count,bool hatch,uint64_t tick);
+    DomainResult<> burrow(EntityId source,bool below,int healPercent,uint64_t tick);
+    DomainResult<> startSkillMotion(EntityId source,Vec target,uint64_t until,int velocity,bool leap,uint64_t tick,EntityId victim={});
+    DomainResult<> startSwarmMove(EntityId source,Vec target,uint64_t tick);
+    bool advanceSkillMotion(Actor &,uint64_t tick);
+    bool canLand(EntityId) const;
+    DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick);
+    DomainResult<> aiColor(EntityId,int color,int overlay,uint64_t tick);
+    void aiRegeneration(EntityId,int eighths);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0);

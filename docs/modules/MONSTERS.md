@@ -10,10 +10,12 @@
 | [population.cpp](../../src/world/population.cpp) | hosting与资源工具报告共用人口计划，客户端不据此出生 |
 | [combat_content.cpp](../../src/hosting/combat_content.cpp) | 人口／战斗规则、准入／替身与组件准备，不持活动AI |
 | [monster_actions_content.cpp](../../src/hosting/monster_actions_content.cpp) | 攻击／技能／弹体与原事件帧准备，内核不读MPQ |
+| [act2_monster_skills.cpp](../../src/hosting/act2_monster_skills.cpp) | 第二幕技能槽、MonSeq行时钟、固有光环及受击／死亡弹体的纯值准备 |
 | [population/system.cpp](../../src/server/systems/population/system.cpp) | 区域代次与spawn key准入，不因离开视野重生 |
 | [monsters/system.cpp](../../src/server/systems/monsters/system.cpp)、[special_actions.cpp](../../src/server/systems/monsters/special_actions.cpp)、[controlled.cpp](../../src/server/systems/monsters/controlled.cpp) | 活动实体、生命、组件、位置／路线、版本、home／节点、复活／出生／死亡连锁及伙伴实体 |
 | [ai/system.cpp](../../src/server/systems/ai/system.cpp)及family_actions／nest_family／unique_actions | 目标、决策时钟与随机，调用纯策略并提交movement／skills窄请求 |
 | [gameplay/monsters](../../src/gameplay/monsters) | 家族／首领纯决策、方向、碰撞、速度、伤害及组件计算 |
+| [ai/act2_actions.cpp](../../src/server/systems/ai/act2_actions.cpp)、[monsters/act2_skills.cpp](../../src/server/systems/monsters/act2_skills.cpp) | 第二幕家族AI、飞行／栖息／颜色／再生、木乃伊支持资格、钻地、子怪及可中断移动；完整范围见所属幕 |
 | [skills/monster_actions.cpp](../../src/server/systems/skills/monster_actions.cpp) | 开始／释放、MonSeq多次事件及目标／中断／代次复验 |
 | [missiles/monster.cpp](../../src/server/systems/missiles/monster.cpp) | 权威弹体、接触及多发／地面效果 |
 | [effects/monster_enchantments.cpp](../../src/server/systems/effects/monster_enchantments.cpp)、[monster_periodic.cpp](../../src/server/systems/effects/monster_periodic.cpp) | 精英光环／诅咒／受击／死亡与周期效果时钟 |

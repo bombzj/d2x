@@ -35,7 +35,7 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     const auto type=table.value(row,"EType");
     if(type=="fire") rule.element=DamageType::Fire;
     else if(type=="ltng") rule.element=DamageType::Lightning;
-    else if(type=="cold") rule.element=DamageType::Cold;
+    else if(type=="cold" || type=="frze") {rule.element=DamageType::Cold;rule.freeze=type=="frze";}
     else if(type=="pois") rule.element=DamageType::Poison;
     else if(type=="mag") rule.element=DamageType::Magic;
     else if(!type.empty()) return {};
@@ -80,6 +80,12 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     case 15:rule.behavior=server::MonsterMissileRule::Behavior::SpiderLay;break;
     case 16:rule.behavior=server::MonsterMissileRule::Behavior::SpiderGoo;break;
     case 31:rule.behavior=server::MonsterMissileRule::Behavior::FireHead;break;
+    case 13:rule.behavior=server::MonsterMissileRule::Behavior::GlacialSpike;break;
+    case 14:rule.behavior=server::MonsterMissileRule::Behavior::Meteor;break;
+    // Orange bottles have neither sHitPar1 nor a Skill in the current MPQ.
+    // SrvHit24 therefore performs no additional area explosion.
+    case 24:break;
+    case 25:rule.behavior=server::MonsterMissileRule::Behavior::PoisonBottle;break;
     case 0:break;
     default:return {};
     }
@@ -94,7 +100,7 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
         }
     }
     const auto skillName=table.value(row,"Skill");
-    if(!skillName.empty() && (definition==62 || definition==93)) {
+    if(!skillName.empty() && (definition==62 || definition==93 || definition==98 || rule.behavior==server::MonsterMissileRule::Behavior::GlacialSpike)) {
         const auto &skills=data.tables.at("skills");
         for(size_t s=0;s<skills.rows().size();++s) if(skills.value(s,"skill")==skillName) {
             const auto *entry=data.skills.find(skills.number(s,"Id").value_or(-1));
@@ -102,8 +108,36 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
             const auto cast=resolveSkill(entry->spell->rules(),{rank,{}});
             rule.elementalMinimum=int(cast.minimumDamage*256.f);rule.elementalMaximum=int(cast.maximumDamage*256.f);
             if(cast.arc) {rule.chainCount=cast.arc->count;rule.chainRadius=cast.arc->range;}
+            if(cast.freezingArea) {rule.blastRadius=float(cast.freezingArea->radius);rule.coldFrames=unsigned(cast.freezingArea->freezeFrames);rule.freeze=true;}
             break;
         }
+    }
+    if(rule.behavior==server::MonsterMissileRule::Behavior::Meteor) {
+        const auto &skills=data.tables.at("skills");size_t s=0;
+        while(s<skills.rows().size() && skills.value(s,"skill")!=skillName) ++s;
+        if(s==skills.rows().size() || skills.value(s,"aurarangecalc")!="ln12" || !skills.value(s,"EDmgSymPerCalc").empty()) return {};
+        rule.blastRadius=float(skills.number(s,"Param1").value_or(0)+(rank-1)*skills.number(s,"Param2").value_or(0));
+        const int hitShift=skills.number(s,"HitShift").value_or(8);
+        if(hitShift<0 || hitShift>8 || rule.blastRadius<=0) return {};
+        auto skillDamage=[&](bool high) {int64_t value=skills.number(s,high?"EMax":"EMin").value_or(0);for(size_t i=0;i<std::size(brackets);++i) value+=int64_t(brackets[i])*skills.number(s,std::string(high?"EMaxLev":"EMinLev")+std::to_string(i+1)).value_or(0);return value*(int64_t(1)<<hitShift);};
+        const auto lo=skillDamage(false),hi=skillDamage(true);if(lo<0 || hi<lo || hi>INT32_MAX) return {};
+        rule.elementalMinimum=int(lo);rule.elementalMaximum=int(hi);
+        const auto childName=table.value(row,"HitSubMissile1");size_t child=0;
+        while(child<table.rows().size() && table.value(child,"Missile")!=childName) ++child;
+        if(child==table.rows().size()) return {};
+        auto fire=prepareMonsterMissile(data,table.number(child,"Id").value_or(-1),rank);if(!fire) return {};
+        fire->frames=skills.number(s,"Param3").value_or(0)+(rank-1)*skills.number(s,"Param4").value_or(0);if(fire->frames<1) return {};
+        rule.impactMissile=std::make_shared<const server::MonsterMissileRule>(*fire);rule.childStep=std::max(1,table.number(row,"sHitPar2").value_or(1));
+    }
+    if(rule.behavior==server::MonsterMissileRule::Behavior::PoisonBottle) {
+        const auto childName=table.value(row,"HitSubMissile1");size_t child=0;
+        while(child<table.rows().size() && table.value(child,"Missile")!=childName) ++child;
+        if(child==table.rows().size()) return {};
+        auto gas=prepareMonsterMissile(data,table.number(child,"Id").value_or(-1),rank);if(!gas) return {};
+        if(table.number(child,"SubLoop").value_or(0)) gas->frames+=(rank-1)*(table.number(child,"SubStop").value_or(0)-table.number(child,"SubStart").value_or(0));
+        if(gas->frames<=0) return {};
+        rule.impactMissile=std::make_shared<const server::MonsterMissileRule>(*gas);
+        rule.cloudMainSpeed=float(table.number(child,"Param1").value_or(0)*128)*25.f/4096.f;
     }
     return rule;
 }
@@ -133,6 +167,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
     return result;
 }
 bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
+    if(hasAct2MonsterSkills(record.ai) || record.id=="vampire1") return prepareAct2MonsterSkills(archives,data,animations,record,rule);
     const auto &stats=data.tables.at("monstats");const auto &skills=data.tables.at("skills");
     const auto &missiles=data.tables.at("missiles");const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const auto &difficulty=data.tables.at("difficultylevels");

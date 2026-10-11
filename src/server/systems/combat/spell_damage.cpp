@@ -134,10 +134,10 @@ StepStatus System::resolveSpells(TickContext tick) {
                     }
                     int64_t amount=0,absorbed=0;
                     for(size_t channel=0;channel<5;++channel) {const auto resolved=ports_.effects.unitDamage(pet->id,rolled.channels[channel],DamageType(channel),tick.tick);amount+=int64_t(resolved.dealt*256.f);absorbed+=int64_t(resolved.absorbed*256.f);}
-                    const auto cold=rolled.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(pet->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(pet->rule.coldDivisor));
+                    const auto cold=rolled.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(pet->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(impact.freeze?pet->rule.freezeDivisor:pet->rule.coldDivisor));
                     std::optional<PoisonApplication> poison;
                     if(rolled.poisonFrames && rolled.channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(pet->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,impact.monsterStates.poison.id};
-                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,false,rolled.hitClass,poison,false,0,{},absorbed);
+                    result=ports_.monsters.damage(pet->id,impact.source,amount,tick.tick,cold,impact.freeze,rolled.hitClass,poison,false,0,{},absorbed);
                     if(result && rolled.knockback) ports_.monsters.knockback(pet->id,monsterSource->position,tick.tick);
                 }
                 if(result.status==DomainStatus::Capacity) {blocked=true;break;}

@@ -37,6 +37,7 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
     const auto *caster=find(source),*dead=find(corpse);
     if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
         dead->corpseUnavailable || dead->corpseSearched || tick<dead->busyUntil || !dead->rewardComplete || dead->area!=caster->area) return false;
+    if(caster->rule.ai.kind==MonsterAiKind::GreaterMummy) return mummySupportTarget(source,corpse,tick,true);
     const int radius=caster->rule.ai.params[3];
     const bool unique=caster->identity.rank==MonsterRank::Unique || caster->identity.rank==MonsterRank::SuperUnique;
     if(unique) {
@@ -74,7 +75,7 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick) {
 DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec origin) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
     auto &nest=it->second;const auto &child=*nest.rule.nestChild;
-    if(nest.nestSpawned>=(nest.rule.ai.kind==MonsterAiKind::BloodRaven?8+2*nest.rule.difficulty:nest.rule.ai.params[2])) return {DomainStatus::Unavailable,{}};
+    if(nest.nestSpawned>=(nest.rule.ai.kind==MonsterAiKind::BloodRaven?8+2*nest.rule.difficulty:nest.rule.ai.params[2]+(nest.rule.ai.kind==MonsterAiKind::Sarcophagus?1:0))) return {DomainStatus::Unavailable,{}};
     const auto &grid=ports_.areas.at(nest.area).definition.collision;
     auto random=nest.combatRandom;
     const int radius=nest.rule.ai.kind==MonsterAiKind::BloodRaven?1:3;

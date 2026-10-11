@@ -24,6 +24,9 @@ struct ActorAnimationRequest {
     int sequenceRateBonus{};
     bool sequenceLanding{};
     std::optional<int> animationRate;
+    bool persistentCycle{};
+    int sequenceStart{},sequenceEnd{-1};
+    int stateColorShift{-1};
 };
 struct ActorAnimation {
     GpuAnimation animation;
@@ -60,7 +63,7 @@ class ActorAnimationCatalog {
     std::map<int, size_t> objectRows_;
     std::map<std::string, std::vector<size_t>, std::less<>> sequenceRows_;
     std::map<std::string, ActorAnimation, std::less<>> animations_;
-    ActorAnimation composite(Graphics &, const ActorAnimationRequest &);
+    ActorAnimation composite(Graphics &,int palette,const ActorAnimationRequest &);
     ActorAnimation sequence(Graphics &, int palette, const ActorAnimationRequest &);
   public:
     explicit ActorAnimationCatalog(Archives &);

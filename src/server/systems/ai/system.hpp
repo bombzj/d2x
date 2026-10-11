@@ -22,6 +22,10 @@ struct Controller {
     int summonChance{};
     uint64_t firewallCycle{};
     bool introduced{};
+    uint64_t skillDeadline{},novaAt{},firewallAt{};
+    int upgradeCooldown{};
+    int act2Attempts{};
+    std::optional<Vec> flightGoal;
 };
 struct State { std::map<EntityId, Controller> controllers; };
 struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; };
@@ -29,6 +33,7 @@ class System {
     State state_;
     const Ports ports_;
     StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
+    StepStatus act2Action(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);

@@ -105,6 +105,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
   src/gameplay/skills/passive.cpp src/gameplay/skills/targeting.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
   src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/skirmish_decision.cpp
+  src/gameplay/monsters/act2_decision.cpp
     src/gameplay/monsters/ranged_decision.cpp
     src/gameplay/monsters/special_decision.cpp
     src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/components.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
@@ -156,8 +157,10 @@ target_sources(d2x_server PRIVATE
   src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp
     src/server/systems/monsters/special_actions.cpp
+    src/server/systems/monsters/act2_skills.cpp
     src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
+    src/server/systems/ai/act2_actions.cpp
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
     src/server/systems/skills/activation.cpp
@@ -223,7 +226,7 @@ target_link_libraries(d2x_server PUBLIC d2x_gameplay d2x_items d2x_navigation)
 add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
 target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
-add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
+add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp src/hosting/act2_monster_skills.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp src/hosting/character_rules.cpp)
 target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/automap_store.cpp src/hosting/embedded_realm.cpp
   src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp

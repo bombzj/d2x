@@ -73,8 +73,10 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
 Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
     if(monster.mode==3 || monster.mode==6)
         return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==3?6:18);point(out,monster.position+origin);out.u8(monster.mode==3?uint8_t(monster.life>1?monster.life-1:monster.life)|(monster.lightningReady?0x80:0):0);out.u8(0);});
-    if(monster.mode==8 || monster.mode==9)
-        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==8?12:14);point(out,monster.position+origin);out.u8(0);out.u8(0);});
+    if(monster.mode==8 && monster.moving)
+        return encodeServerPacket(ServerMessage::NpcMovePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(12);point(out,monster.destination+origin);out.u8(8);out.u8(0);out.u8(0);out.u16(uint16_t(monster.velocityPercent));out.u8(0);});
+    if(monster.mode>=8 && monster.mode<=11)
+        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==8?12:monster.mode==9?14:monster.mode==10?26:28);point(out,monster.position+origin);out.u8(0);out.u8(0);});
     if (monster.mode == 0 || monster.mode == 12)
         return encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.mode == 12 ? 9 : 8);
@@ -85,7 +87,10 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
             out.u32(uint32_t(monster.id.value));out.u8(20);point(out,monster.knockbackSource+origin);
             out.u8(3);out.u8(109);out.u8(11);out.u16(0);out.u8(monster.life);
         });
-    if (monster.attacking) return {};
+    if (monster.attacking) {
+        if(!monster.moving) return {};
+        return encodeServerPacket(ServerMessage::UnitPositions,[&](auto &out){out.u16(13);out.u8(1);key(out,1,monster.id);point(out,monster.position+origin);});
+    }
     if (monster.moving)
         return encodeServerPacket(ServerMessage::NpcMovePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.running ? 23 : 1); point(out, monster.destination + origin);

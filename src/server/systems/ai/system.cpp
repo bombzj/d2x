@@ -9,6 +9,7 @@
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/monsters/ranged_decision.hpp"
 #include "gameplay/monsters/special_decision.hpp"
+#include "gameplay/monsters/act2_decision.hpp"
 #include "gameplay/monsters/boss_decision.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "core/random.hpp"
@@ -28,7 +29,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || (monster.owner && !monster.conversion && !monster.revived()) || ports_.skills.busy(id,tick.tick)) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
-        if (fresh) controller.random = monster.combatRandom;
+        if (fresh) {
+            controller.random = monster.combatRandom;
+            if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=tick.tick+uint64_t(monster.rule.ai.params[0]);
+        }
         if (controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
         const auto &area=ports_.areas.at(monster.area);
@@ -97,16 +101,28 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if(monster.attractionUntil>tick.tick) if(const auto *lure=ports_.monsters.find(monster.attractionTarget);lure && lure->life>0 && lure->area==monster.area && participants.canHarm(monster.id,lure->id) && visible(lure->position)) {target=UnitTarget{lure->id,0,1};targetPosition=lure->position;targetSize=lure->rule.size;distance=monsterAiDistance(monster.position,monster.rule.size,lure->position);}
         if (controller.target != (target ? std::optional(target->id) : std::nullopt)) {
-            controller.pursuing = false; controller.charged = false; ports_.monsters.stop(id);
+            controller.pursuing = false;
+            if(monster.rule.ai.kind!=MonsterAiKind::SandRaider) controller.charged = false;
+            ports_.monsters.stop(id);
         }
         controller.target = target ? std::optional(target->id) : std::nullopt;
-        if (!target) { controller.pursuing = false; ports_.monsters.stop(id); continue; }
+        if (!target) {
+            controller.pursuing = false; ports_.monsters.stop(id);
+            const auto kind=monster.rule.ai.kind;
+            if(kind==MonsterAiKind::MaggotEgg || kind==MonsterAiKind::SandMaggotQueen || kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::BatDemon || kind==MonsterAiKind::Vulture)
+                blocked|=act2Action(id,{id,0,1},monster.position,monster.rule.size,tick,controller)==StepStatus::Blocked;
+            continue;
+        }
         controller.acquiredTarget=true;
         if(monster.rule.opensDoors && ports_.objects.openMonsterDoor(id,targetPosition,tick.tick)) {
             ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+5;continue;
         }
         if(const auto unique=uniqueAction(id,*target,targetPosition,tick,controller)) {blocked|=*unique==StepStatus::Blocked;continue;}
         const auto &rules = monster.rule.ai;
+        if(hasAct2Decision(rules.kind)) {
+            blocked|=act2Action(id,*target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;
+            continue;
+        }
         if(rules.kind==MonsterAiKind::FoulCrowNest) {
             if(nestFamily(id,*target,distance,tick,controller)==StepStatus::Blocked) blocked=true;
             continue;

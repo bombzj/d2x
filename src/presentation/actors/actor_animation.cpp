@@ -30,6 +30,8 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     key+=":"+std::to_string(request.repeatCount)+":"+std::to_string(request.rollbackPercent)+":"+std::to_string(request.sequenceRateBonus);
     key+=":"+std::to_string(request.sequenceLanding);
     key+=":"+(request.animationRate?std::to_string(*request.animationRate):"native");
+    key+=":"+std::to_string(request.persistentCycle)+":"+std::to_string(request.sequenceStart)+":"+std::to_string(request.sequenceEnd);
+    key+=":"+std::to_string(request.stateColorShift);
     for (const auto &part : request.appearance.components) key += ":" + part;
     return key;
 }
@@ -74,7 +76,7 @@ ActorAnimationCatalog::ActorAnimationCatalog(Archives &archives)
         if (!sequences_.value(row, "sequence").empty())
             sequenceRows_[std::string(sequences_.value(row, "sequence"))].push_back(row);
 }
-ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorAnimationRequest &request) {
+ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,const ActorAnimationRequest &request) {
     ActorAnimation result;
     const auto &parts = request.appearance;
     const auto base = "data/global/" + request.category + "/" + parts.token + "/";
@@ -99,6 +101,16 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
                 if((*colors)[0]!=0) return result;
             } else colors = monsterPalshift(data, request.paletteTransform);
         } else if (request.paletteTransform != (request.nativeMonsterTransform?2:0)) return result;
+    }
+    if(request.stateColorShift>=0) {
+        // D2Win_10175_GetPL2Shift indexes the 128 native state transforms.
+        if(request.stateColorShift>=128 || palette<0 || palette>4) return result;
+        const auto pl2=archives_.read("data/global/palette/act"+std::to_string(palette+1)+"/pal.pl2");
+        const size_t offset=0x53500+size_t(request.stateColorShift)*256;
+        if(pl2.size()<offset+256) return result;
+        std::array<uint8_t,256> shifted{};
+        for(size_t index=1;index<256;++index) shifted[index]=pl2[offset+(colors?(*colors)[index]:index)];
+        colors=shifted;
     }
     auto mode = request.mode;
     // The original corpse can lack a DD COF. Only its own DT final frame is allowed.
@@ -162,6 +174,10 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
 ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, const ActorAnimationRequest &request) {
     ActorAnimation result;
     auto baseRequest = request; baseRequest.playerSequence = -1;
+    // Apply travelling/landing bounds to the assembled sequence, never to
+    // its constituent COFs (maggot down can contain a one-frame NU pose).
+    baseRequest.sequenceStart = 0; baseRequest.sequenceEnd = -1;
+    baseRequest.persistentCycle = false;
     if(request.category=="chars" && request.playerSequence==10) {
         baseRequest.mode="a1";const auto *attack=resolve(graphics,palette,baseRequest);if(!attack || attack->animation.count<7) return {};
         constexpr int frames[]{0,1,2,3,3,4,5,6};result=*attack;result.animation.frames.clear();result.animation.count=8;
@@ -250,7 +266,8 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         if (baseRequest.mode.starts_with("seq_") || baseRequest.mode == "sq") return result;
         baseRequest.appearance.weapon = monsterModeWeapon(archives_, request.appearance.token, baseRequest.mode,
             request.appearance.weapon);
-        if (baseRequest.appearance.weapon.empty() || sequences_.number(row, "dir").value_or(0)) return result;
+        // UNITS_AdvanceAnimation reads MonSeq.dir but retains the unit facing.
+        if (baseRequest.appearance.weapon.empty()) return result;
         const auto *base = resolve(graphics, palette, baseRequest);
         const auto frame = sequences_.number(row, "frame");
         if (!base || !frame || *frame < 0 || *frame >= base->animation.count || base->fps <= 0) return result;
@@ -269,6 +286,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         if (event == 1 || event == 2 || event == 4) result.releaseTimes.push_back(float(index) / result.fps);
     }
     if (!result.releaseTimes.empty()) result.releaseTime = result.releaseTimes.front();
+    if(request.finalFrame) {result.start=result.animation.count-1;result.frameCount=1;result.fps=0;result.releaseTime=-1;result.releaseTimes.clear();result.holdFrame=-1;}
     return result;
 }
 const ActorAnimation *ActorAnimationCatalog::resolve(Graphics &graphics, int palette, const ActorAnimationRequest &request) {
@@ -276,7 +294,13 @@ const ActorAnimation *ActorAnimationCatalog::resolve(Graphics &graphics, int pal
     if (const auto found = animations_.find(key); found != animations_.end())
         return found->second.ready() ? &found->second : nullptr;
     auto result = request.playerSequence >= 0 || request.mode.starts_with("seq_")
-        ? sequence(graphics, palette, request) : composite(graphics, request);
+        ? sequence(graphics, palette, request) : composite(graphics,palette,request);
+    if(request.sequenceStart || request.sequenceEnd>=0) {
+        const int end=request.sequenceEnd>=0?std::min(request.sequenceEnd,result.frameCount):result.frameCount;
+        if(request.sequenceStart<0 || end<=request.sequenceStart) return nullptr;
+        result.start+=request.sequenceStart;result.frameCount=end-request.sequenceStart;result.durationFrames.reset();
+    }
+    if(request.persistentCycle) {result.cycle=true;result.holdFrame=-1;}
     const auto entry = animations_.emplace(key, std::move(result)).first;
     graphics.releaseDecoded();
     return entry->second.ready() ? &entry->second : nullptr;
@@ -309,7 +333,7 @@ const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int pale
     const auto base = "data/global/objects/" + request.appearance.token + "/";
     const auto cof = base + "cof/" + request.appearance.token + request.mode + "hth.cof";
     ActorAnimation result;
-    if (archives_.contains(cof)) result = composite(graphics, request);
+    if (archives_.contains(cof)) result = composite(graphics,palette,request);
     else {
         const auto path = base + "tr/" + request.appearance.token + "trlit" + request.mode + "hth";
         if (archives_.contains(path + ".dcc")) result.animation = graphics.single(path + ".dcc");

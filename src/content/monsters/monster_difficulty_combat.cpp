@@ -61,7 +61,9 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     static constexpr std::array resistanceFields{"ResDm", "ResMa", "ResFi", "ResLi", "ResCo", "ResPo"};
     for (size_t index = 0; index < resistanceFields.size(); ++index) {
         const int value = stats.number(row, std::string(resistanceFields[index]) + ending).value_or(0);
-        if (value < -100 || value > 200) return std::nullopt;
+        // MonStats stores signed 16-bit resistances. ArcaneTower's native
+        // poison resistance is 1000; retaining it preserves its immunity.
+        if (value < -100 || value > std::numeric_limits<int16_t>::max()) return std::nullopt;
         result.resistances[index] = value;
     }
     for (size_t index = 0; index < result.damage.elements.size(); ++index) {

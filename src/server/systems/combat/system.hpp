@@ -1,5 +1,6 @@
 #pragma once
 #include "participants.hpp"
+#include "server/runtime/combat_rules.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
@@ -27,6 +28,7 @@ struct Damage {
     std::optional<uint64_t> actionRandom{};
     SourceBinding binding{};
     std::optional<SkillCastSpec> skill{};
+    std::optional<MonsterAttackRule> monsterSkill{};
 };
 // Targets are captured at missile impact, not looked up again by radius on retry.
 struct SpellImpact {

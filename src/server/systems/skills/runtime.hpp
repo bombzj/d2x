@@ -32,6 +32,10 @@ struct System::MonsterRelease {
     std::vector<int> releaseFrames{};
     size_t nextRelease{};
     uint64_t started{};
+    std::vector<EntityId> effectTargets{};
+    size_t effectTarget{};
+    bool targetsCaptured{};
+    bool hitReleased{};
 };
 struct System::Runtime {
     struct Pending { ActorContext actor; Request request; };

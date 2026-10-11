@@ -112,6 +112,7 @@ struct RemoteScene::Impl {
     std::deque<OverlayVisual> overlayVisuals;
     std::map<std::pair<OnlineUnitKey, uint8_t>, float> stateTimes;
     std::set<OnlineUnitKey> shattered;
+    std::map<OnlineUnitKey,int> stateColorShifts;
     uint64_t combatSequence{};
     uint64_t localRequestSequence{};
     uint64_t localObjectKickRevision{};
@@ -619,7 +620,7 @@ struct RemoteScene::Impl {
             }
             else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
-            else if (function == 25) {
+            else if (function == 25 || function==61) {
                 // Retail CltDo25 / RVA 73CB0 -> A0DB0 emits all 64 integer
                 // ring directions. Trap Nova shares this with Nova/Frost Nova.
                 const int bonus=skills.value(row->second,"cltcalc1")=="par1 * (lvl-1)"
@@ -705,10 +706,11 @@ struct RemoteScene::Impl {
                     // Resource decoding must not make a newly received death callback stale.
                     const auto *animation=monster(actor,false,shared);
                     const auto identity=monsterIdentities.find(event.source);
-                    if(identity!=monsterIdentities.end() && age<=.25f) {
-                        const auto &id=identity->second;
-                        const auto has=[&](int modifier){return std::find(id.modifiers.begin(),id.modifiers.end(),modifier)!=id.modifiers.end();};
-                        monsterEffects.observe(unit->second,{id.unique,has(17),has(18)},event,time,age,animation?animation->fps:0);
+                    if(age<=.25f) {
+                        const auto has=[&](int modifier){return identity!=monsterIdentities.end() && std::find(identity->second.modifiers.begin(),identity->second.modifiers.end(),modifier)!=identity->second.modifiers.end();};
+                        const auto original=monsterRows.find(unit->second.classId.value_or(UINT16_MAX));
+                        const auto ai=original==monsterRows.end()?std::string_view{}:monstats.value(original->second,"AI");
+                        monsterEffects.observe(unit->second,{identity!=monsterIdentities.end() && identity->second.unique,has(17),has(18),ai=="Scarab",ai=="SandMaggotQueen"},event,time,age,animation?animation->fps:0);
                     }
                     if(event.action==8 && age<=.25f && unit->second.classId && deathCallbacks.insert(event.source).second) {
                         const auto row=monsterRows.find(*unit->second.classId);
@@ -816,6 +818,10 @@ struct RemoteScene::Impl {
             const Vec start{float(source->second.position->x)+.5f,float(source->second.position->y)+.5f};
             if(release.missile==195)
                 for(const auto &ray:monsterLightningRays()) launch(row->second,start,start+ray.offset,1,0,{},release.owner,ray.pathIndex);
+            else if(release.missile==225 || release.missile==321) {
+                constexpr std::array<Vec,4> directions{Vec{0,-1},Vec{1,0},Vec{0,1},Vec{-1,0}};
+                for(Vec heading:directions) for(int branch=0;branch<2;++branch) launch(row->second,start,start+heading,1,0,{},release.owner,branch);
+            }
             else for(const Vec direction:missileRingBurst(1)) launch(row->second,start,start+direction,1,0,{},release.owner);
         }
         const auto source = playerId ? v.world.units.find({0, *playerId}) : v.world.units.end();
@@ -968,6 +974,10 @@ struct RemoteScene::Impl {
     }
     bool walking(const OnlineUnit &u) const {
         if (u.actionSkill) return false;
+        if(u.key.type==1 && u.mode==8 && u.classId) {
+            const auto row=monsterRows.find(*u.classId);
+            if(row!=monsterRows.end() && monstats.value(row->second,"AI")=="Vulture") return true;
+        }
         return u.key.type == 0 ? (u.nativeMode ? (u.mode == 2 || u.mode == 3 || u.mode == 6)
             : (u.mode == 0 || u.mode == 1 || u.mode == 23 || u.mode == 24))
             : u.key.type == 1 && (u.mode == 2 || u.mode == 15);
@@ -986,6 +996,7 @@ struct RemoteScene::Impl {
         if (u.key.type == 0) return playerMovement;
         const auto row = monsterRows.find(u.classId.value_or(UINT16_MAX));
         if (row == monsterRows.end()) return {};
+        if(u.mode==8 && !u.actionSkill && monstats.value(row->second,"AI")=="Vulture") return {0,1};
         const auto extra = monsterExtra.find(monstats.value(row->second, "MonStatsEx"));
         const int size = extra == monsterExtra.end() ? 0 : monstats2.number(extra->second, "SizeX").value_or(0);
         return monsterMovementCollision(monstats.value(row->second, "BaseId") == "wraith1",
@@ -1377,15 +1388,36 @@ struct RemoteScene::Impl {
                 return nullptr;
             const bool walkingPose = moving && (actual == 1 || actual == 2 || actual == 15);
             std::string pose = walkingPose ? (actual == 15 ? "rn" : "wl") : modes[actual];
+            if(actual==0 && monstats.value(row->second,"AI")=="SandMaggotQueen") {
+                for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="QueenDeath") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
+            }
+            const bool burrowed=actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="SandMaggot";
+            if(burrowed) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="MagottDown") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
             // D2Common COMPOSIT maps MONMODE_KNOCKBACK to the original GH art.
             if(actual==13) pose="gh";
-            if (u.actionSkill) {
-                pose = monsterSkillMode(row->second,*u.actionSkill);
+            if (u.actionSkill || pose.starts_with("seq_")) {
+                if(u.actionSkill) pose = monsterSkillMode(row->second,*u.actionSkill);
                 if (pose.starts_with("seq_")) {
                     ActorAnimationRequest request; request.category = "monsters"; request.mode = pose;
+                    request.finalFrame=burrowed;
+                    if(u.actionSkill) {
+                        const auto skill=skillRows.find(*u.actionSkill);
+                        if(skill!=skillRows.end()) {
+                            const auto name=skills.value(skill->second,"skill");
+                            if(name=="Charge" || name=="SerpentCharge") {
+                                const bool travelling=motion[u.key].leapFlying && motion[u.key].leapLanding<0;
+                                // Charge's native server rewind bounds are 7;
+                                // Duriel initializes its movement bound to 15.
+                                const int boundary=monstats.value(row->second,"AI")=="Duriel"?16:8;
+                                if(travelling) {request.sequenceEnd=boundary;request.persistentCycle=true;}
+                                else request.sequenceStart=boundary;
+                            } else if(name=="Swarm Move" && moving) request.persistentCycle=true;
+                        }
+                    }
                     parts.weapon = lower(std::string(monstats2.value(e, "BaseW"))); request.appearance = parts;
                     request.paletteTransform = palette; request.randomTransform = randomPalette;
                     request.nativeMonsterTransform = true;
+                    if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
                     request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
                     const auto *sequence = shared.actorAnimation(request, artPalette);
                     if (!sequence) effectLimitations.insert("Monster sequence unavailable: "+std::string(monstats.value(row->second,"Id"))+":"+pose);
@@ -1405,6 +1437,8 @@ struct RemoteScene::Impl {
             request.appearance = parts; request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
             request.paletteTransform = palette; request.finalFrame = deadFrame; request.randomTransform = randomPalette;
             request.nativeMonsterTransform = true;
+            if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
+            request.persistentCycle=(actual==8 && monstats.value(row->second,"AI")=="Vulture") || (actual==11 && monstats.value(row->second,"AI")=="BatDemon");
             if(actual==13) {
                 const auto rate=monsterWalkRates.find(*u.classId);
                 if(rate==monsterWalkRates.end() || rate->second<=0) return nullptr;
@@ -1651,6 +1685,7 @@ struct RemoteScene::Impl {
                 m = {}; m.assignmentRevision = u.assignmentRevision;
             }
             bool frozen=false, hiddenCorpse=false, shatter=false;
+            stateColorShifts.erase(key);int colorPriority=0;
             if (key.type<=1) {
                 const bool dead = key.type == 0 ? playerDead(u) : onlineMonsterCorpse(u);
                 if (!dead) shattered.erase(key);
@@ -1659,6 +1694,9 @@ struct RemoteScene::Impl {
                         const auto row=stateRows.find(id);
                         if (row==stateRows.end()) continue;
                         frozen |= !dead && state.name=="freeze";
+                        const int priority=states.number(row->second,"colorpri").value_or(0);
+                        const auto shift=states.number(row->second,"colorshift");
+                        if(!dead && shift && *shift>=0 && *shift<128 && priority>colorPriority) {colorPriority=priority;stateColorShifts[key]=*shift;}
                         hiddenCorpse |= key.type == 1 && dead && states.number(row->second,"hide").value_or(0);
                         shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
                     }
@@ -1685,7 +1723,7 @@ struct RemoteScene::Impl {
             const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
                 ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
             m.animation.observe(u.mode, u.actionRevision, time, age, frozen);
-            if(key.type==0 && (u.actionSkill==132 || u.actionSkill==143)) {
+            if((key.type==0 && (u.actionSkill==132 || u.actionSkill==143)) || (key.type==1 && (u.actionSkill==107 || u.actionSkill==352))) {
                 if(m.leapRevision!=u.actionRevision) {m.leapRevision=u.actionRevision;m.leapFlying=false;m.leapLanding=-1;}
                 bool flying=false;
                 if(const auto snapshot=combat.states().find(key);snapshot!=combat.states().end() && snapshot->second.decoded)

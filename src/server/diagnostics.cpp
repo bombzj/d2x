@@ -115,6 +115,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.nativeVelocity=monster.rule.nativeVelocity;value.movementMask=monster.rule.collision.mask;value.spawnMask=monster.rule.spawnCollision.mask;
         value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
         value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;
+        value.burrowed=monster.burrowed;value.airborne=monster.airborne;value.holdPose=monster.holdPose;
+        value.aiPose=monster.aiPose;value.poseUntil=monster.poseUntil;value.aiRegenerationBonus=monster.aiRegenerationBonus;value.skillMotion=bool(monster.skillMotion);
         value.components=monster.components;value.componentCounts=monster.rule.componentCounts;
         value.identity=monster.identity;value.enchantment=monster.rule.enchantment;value.home=monster.home;value.skillPositions=monster.skillPositions;
         if(const auto region=systems_.monsters.read().componentPalettes.find(monster.area);region!=systems_.monsters.read().componentPalettes.end())

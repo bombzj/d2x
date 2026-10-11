@@ -62,6 +62,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         const int radius=monster.rule.ai.kind==MonsterAiKind::CorruptArcher?12:8;
         input.retreatBlocked=area.definition.collision.path(monster.position,monsterRetreatPoint(monster.position,position,radius),true,monster.rule.collision).empty();
     }
+    input.upgradeCooldown=controller.upgradeCooldown;
     std::optional<UnitTarget> corpse;
     if(monster.rule.ai.kind==MonsterAiKind::FallenShaman) for(const auto &[key,other]:ports_.monsters.read().actors) {
         (void)other;if(ports_.monsters.resurrectionTarget(id,key,tick.tick)) corpse=UnitTarget{key,0,1};
@@ -146,7 +147,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     controller.random = decision->random; controller.charged = decision->charged;
     controller.observedHit = monster.hitOccurrence;
     controller.alerted = decision->alerted;
-    controller.phase = monster.rule.ai.kind==MonsterAiKind::Countess?firewallPhase:decision->phase; controller.loop = decision->loop;
+    controller.phase = monster.rule.ai.kind==MonsterAiKind::Countess?firewallPhase:decision->phase; controller.loop = decision->loop;controller.upgradeCooldown=decision->upgradeCooldown;
     if(boss) controller.summonChance=boss->summonChance;
     if(decision->commandParty) commandParty(monster);
     controller.nextDecision = tick.tick + uint64_t(std::max(1, decision->waitFrames));

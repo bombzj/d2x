@@ -7,6 +7,8 @@ struct ClassicData;
 std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicData &, int definition, int rank);
 std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,const MonsterCombatProfile &,int difficulty);
 bool prepareMonsterSpecialActions(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
+bool hasAct2MonsterSkills(std::string_view ai);
+bool prepareAct2MonsterSkills(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
 bool prepareMonsterComponents(const ClassicData &,const MonsterRecord &,server::MonsterRule &);
 bool prepareMonsterLifecycle(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,server::MonsterRule &);
 }

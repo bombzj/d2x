@@ -23,6 +23,7 @@ void RemoteMonsterEffects::observe(const OnlineUnit &unit,Definition definition,
         if(event.life) actor.lightningReady=(*event.life&0x80)!=0;
         // Retail RVA 20BF0: GH's animation-frame-2 callback.
         actor.lightning=definition.unique && definition.lightning && fps>0?now-age+2.f/fps:-1;
+        if(definition.scarab && fps>0) actor.scarab=now-age+2.f/fps;
     } else {
         actor.mode=*event.action==8?0:*event.action==9?12:1;
         actor.lightning=-1;
@@ -30,6 +31,8 @@ void RemoteMonsterEffects::observe(const OnlineUnit &unit,Definition definition,
     if(*event.action==8 && definition.unique && definition.cold && fps>0)
         actor.cold=now-age+4.f/fps; // Retail RVA 20C40: death animation frame 4.
     else if(actor.mode!=0 && actor.mode!=12) actor.cold=-1;
+    if(*event.action==8 && definition.scarab && fps>0) actor.scarab=now-age+2.f/fps;
+    if(*event.action==8 && definition.queen) releases_.push_back({unit.key,321});
 }
 std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const OnlineWorldView &world,float now) {
     std::erase_if(actors_,[&](const auto &entry){
@@ -43,6 +46,7 @@ std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const O
             if(actor.lightningReady) {releases_.push_back({key,195});actor.lightning=-1;}
         }
         if(actor.cold>=0 && now>=actor.cold) {releases_.push_back({key,194});actor.cold=-1;}
+        if(actor.scarab>=0 && now>=actor.scarab) {releases_.push_back({key,225});actor.scarab=-1;}
     }
     return std::exchange(releases_,{});
 }

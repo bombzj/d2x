@@ -21,7 +21,7 @@ struct PreparedMonster;
 struct AttackAnimation { int frames{}, speed{}, actionFrame{}, startFrame{}; };
 struct MeleeRules { std::map<std::string, AttackAnimation, std::less<>> animations; };
 struct MonsterMissileRule {
-    enum class Behavior { Projectile, Fireball, FireHead, SpiderLay, SpiderGoo, FirewallMaker, Fire, Charged, ColdNova, PoisonCloud, GroundThrow } behavior{Behavior::Projectile};
+    enum class Behavior { Projectile, Fireball, FireHead, SpiderLay, SpiderGoo, FirewallMaker, Fire, Charged, ColdNova, PoisonCloud, GroundThrow, GlacialSpike, Meteor, PoisonBottle } behavior{Behavior::Projectile};
     int definition{-1}, frames{}, sourceDamage{}, minimum{}, maximum{}, elementalMinimum{}, elementalMaximum{};
     int nextDelay{}, hitClass{};
     uint64_t coldFrames{}, poisonFrames{};
@@ -38,6 +38,9 @@ struct MonsterMissileRule {
     int cloudMainStep{},cloudSubStep{};
     int chainCount{},chainRadius{};
     float cloudMainSpeed{},cloudSubSpeed{};
+    bool freeze{};
+    int childStep{1};
+    std::shared_ptr<const MonsterMissileRule> impactMissile;
 };
 // Native monster modes are distinct from Skills.txt identities. A1/A2 keep
 // their own release frame, accuracy and damage even when no skill is assigned.
@@ -45,7 +48,8 @@ struct MonsterAttackRule {
     int minimum{}, maximum{}, rating{}, duration{}, release{};
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
-    enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill } action{Action::Damage};
+    enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
@@ -53,6 +57,11 @@ struct MonsterAttackRule {
     std::optional<SkillCastSpec> weaponSkill{};
     std::optional<SkillCastSpec> spell{};
     bool casting{};
+    int damagePercent{}, ratingPercent{}, stunFrames{}, healMinimum{}, healMaximum{}, hatchCount{};
+    int movementPercent{100}, movementStart{};
+    bool knockback{}, alwaysHit{};
+    int hitClass{-1};
+    std::optional<AuraDefinition> curse{};
 };
 struct MonsterWebRule {
     int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};
@@ -68,7 +77,7 @@ struct MonsterRule {
     int nativeVelocity{}, difficulty{};
     MovementCollisionRule collision;
     MovementCollisionRule spawnCollision;
-    bool demon{}, undead{}, boss{};
+    bool demon{}, undead{}, boss{}, lesserUndead{};
     int stunState{-1};
     bool convertible{};
     bool curseable{},switchAi{},revivable{};
@@ -81,6 +90,7 @@ struct MonsterRule {
     std::shared_ptr<const MonsterRule> shrineUpgrade;
     std::map<std::string,std::shared_ptr<const MonsterRule>,std::less<>> shrineMinions;
     bool noTreasure{};
+    bool noExperience{};
     int coldEffect{}, coldState{-1}, frozenState{-1};
     int knockbackTicks{};
     std::vector<uint64_t> experience;
@@ -94,16 +104,22 @@ struct MonsterRule {
     int drain{},openWoundsState{-1};
     int hirelingBossDamagePercent{100},hirelingRegeneration{};
     std::map<uint16_t,MonsterAttackRule> skillActions;
-    std::array<uint16_t,4> skillIds{};
+    std::array<uint16_t,8> skillIds{};
     std::shared_ptr<const PreparedMonster> nestChild;
     Vec spawnOffset;
+    uint8_t spawnMode{1};
+    int spawnTicks{}, skillMoveState{-1};
+    int baseClass{}, blueState{-1}, redState{-1};
+    std::map<uint8_t,int> aiPoseTicks{};
+    std::optional<AuraDefinition> nativeAura{};
+    std::optional<MonsterMissileRule> hitBurst{}, deathBurst{};
     std::optional<MonsterWebRule> web;
     bool corpseSelectable{}, softCorpse{}, opensDoors{};
     int corpseSize = 1;
     int corpseNoSelectState{-1};
     int resurrectionTicks{}, threat{};
     uint8_t resurrectionMode{1};
-    int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1};
+    int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1}, freezeDivisor{1};
     bool blockWithoutShield{};
     std::array<uint8_t,16> componentCounts{};
     uint8_t totalPieces{};

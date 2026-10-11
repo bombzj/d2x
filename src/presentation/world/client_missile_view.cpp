@@ -8,6 +8,7 @@
 #include "world/navigation.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <deque>
 #include <limits>
@@ -158,6 +159,11 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         child.age = std::max(0.f, age); pending.push_back(std::move(child));
     };
     auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot) {
+        if(program.hitFunction==28 && program.hitChildren[0]>=0) {
+            const auto &cloud=assets_.clientMissilePrograms.at(program.hitChildren[0]);
+            constexpr std::array<Vec,8> directions{Vec{0,2},Vec{2,2},Vec{2,0},Vec{2,-2},Vec{0,-2},Vec{-2,-2},Vec{-2,0},Vec{-2,2}};
+            for(Vec direction:directions) emit(program.hitChildren[0],effect.pos,direction,effect,overshoot,cloud.poisonVelocity[0],std::max(0,effect.level-1));
+        }
         if(program.hitFunction==2 && program.hitChildren[0]>=0) {
             const auto &cloud=assets_.clientMissilePrograms.at(program.hitChildren[0]);
             for(const auto &heading:poisonCloudDirections(program.hitParameters[1],program.hitParameters[0]))

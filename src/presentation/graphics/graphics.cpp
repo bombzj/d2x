@@ -151,6 +151,15 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
         auto part = animation(path);
         if (!part && !archives.contains(path))
             part = animation(path.substr(0, path.size() - 4) + ".dc6");
+        // PW's native 1HT death COFs refer to S5 blood, but the current
+        // MPQ only supplies its A1 pixels. Preserve the original body and
+        // omit this absent decorative layer, without borrowing other art.
+        if (!part && type == "monsters" && token == "pw" && c == 12 && gear == "bld" &&
+            (mode == "dt" || mode == "dd") && !archives.contains(path) &&
+            !archives.contains(path.substr(0, path.size() - 4) + ".dc6")) {
+            ++omitted;
+            continue;
+        }
         const bool explicitComponent = equipment && (*equipment)[c][0];
         if (!part && c == 7 && type != "chars" && !explicitComponent)
             part =

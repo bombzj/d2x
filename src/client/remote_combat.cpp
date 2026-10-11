@@ -88,6 +88,13 @@ RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUn
     return MonsterDisposition::Hostile;
 }
 bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
+    if(!targetCorpse && unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
+        const auto found=monsters_.find(unit.classId.value_or(UINT16_MAX));
+        if(found!=monsters_.end()) {
+            const auto ai=tables_.at("monstats").value(found->second,"AI");
+            if(ai=="Vulture" || ai=="SandMaggot") return false;
+        }
+    }
     return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&
         (!targetCorpse || corpseSelectable(unit));
 }

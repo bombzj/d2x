@@ -5,12 +5,18 @@ namespace d2x {
 bool hasSpecialDecision(MonsterAiKind kind) {return kind==MonsterAiKind::Arach || kind==MonsterAiKind::Vampire || kind==MonsterAiKind::GargoyleTrap;}
 std::optional<MonsterDecision> decideSpecialMonster(const MonsterAiProfile &profile,MonsterDecisionInput in) {
     if(!hasSpecialDecision(profile.kind)) return {};
-    const auto &p=profile.params;MonsterDecision out;out.random=in.random;out.phase=in.phase;out.loop=in.loop;out.alerted=in.alerted;
+    const auto &p=profile.params;MonsterDecision out;out.random=in.random;out.phase=in.phase;out.loop=in.loop;out.alerted=in.alerted;out.upgradeCooldown=std::max(0,in.upgradeCooldown-1);
     auto chance=[&](int percent){return int(limitedRandom(out.random,100))<percent;};
     auto circle=[&](int distance){out.action=MonsterDecisionAction::Circle;out.stopDistance=distance;};
     auto retreat=[&](int distance,int speed=75){out.action=MonsterDecisionAction::Retreat;out.stopDistance=distance;out.velocityPercent=speed;};
     auto approach=[&]{out.action=MonsterDecisionAction::Approach;out.stopDistance=profile.meleeRange;};
     auto spell=[&]{out.action=MonsterDecisionAction::Special;out.skillSlot=chance(50)?0:3;};
+    auto upgrade=[&] {
+        if(out.upgradeCooldown) return false;
+        if((p[4]&2) && chance(p[3])) {out.action=MonsterDecisionAction::Special;out.skillSlot=1;out.upgradeCooldown=11;return true;}
+        if((p[4]&4) && chance(p[3])) {out.action=MonsterDecisionAction::Special;out.skillSlot=2;out.upgradeCooldown=11;return true;}
+        return false;
+    };
     if(profile.kind==MonsterAiKind::GargoyleTrap) {
         // AITHINK_Fn063: separate recovery invocation, then the MPQ stall.
         if(out.phase) {out.phase=0;out.waitFrames=p[2];return out;}
@@ -56,6 +62,7 @@ std::optional<MonsterDecision> decideSpecialMonster(const MonsterAiProfile &prof
         if(in.lifePercent>=75) {out.phase=1;approach();}
         else if((in.distance<14 || in.distance<=out.loop) && !in.retreatBlocked) retreat(8,75+profile.retreatVelocityBonus);
         else if(in.distance>=p[2] || !chance(p[1])) out.waitFrames=15;
+        else if(upgrade()) {}
         else if(ordinary && in.clear && in.distance<=20) spell();
         else circle(4);
         return out;
@@ -68,7 +75,7 @@ std::optional<MonsterDecision> decideSpecialMonster(const MonsterAiProfile &prof
     } else if(in.distance>=p[2]) {if(out.phase==1) approach();else out.waitFrames=15;}
     else {
         out.phase=1;
-        if(chance(p[1])) {if(!ordinary || !in.clear || in.distance>20) approach();else if(!chance(75)) circle(4);else spell();}
+        if(chance(p[1])) {if(upgrade()) {}else if(!ordinary || !in.clear || in.distance>20) approach();else if(!chance(75)) circle(4);else spell();}
         else if(in.distance>20) approach();
         else if(in.distance<9 && chance(50) && !in.retreatBlocked) retreat(8);
         else if(chance(50)) circle(4);

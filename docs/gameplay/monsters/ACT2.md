@@ -1,14 +1,81 @@
 # 第二幕怪物执行边界
 
-更新：2026-10-09。本页预留第二幕逐MonStats类型与AI台账。第二幕地图／人口准备和任务身份／死亡链已有入口，完整独有怪物AI与首领战斗尚未迁入；当前能进入地图或完成任务不表示真实怪物程序已实现。规范见[COMMON](COMMON.md)。
+更新：2026-10-11。本批完成第二幕逐身份AI、动画、普通攻击与技能接线；源码完成与有限冒烟分别登记。当前MPQ的第二幕Levels三难度候选、Act 2 MonPreset及SuperUniques固定记录，再递归spawn／minion，得到74个enabled、killable、非中立MonStats身份、33类AI。技能槽去重30项，逐项关系见[怪物技能](../skills/MONSTERS.md#第二幕技能逐项台账)。规范见[COMMON](COMMON.md)。
 
-| 范围 | 当前状态／待补 |
+## 当前身份与程序入口
+
+本页逐身份登记AI、动画、普通攻击及所需技能接入，包含出生／复活、移动技能、固有效果与固定首领。已补入Baboon逃跑／再生、Vulture起降／目标资格、BatDemon栖息／离巢、Panther集合、SandRaider受伤伙伴／颜色、ClawViper颜色清理及移动序列续行。实现后统一构建、打包并复用现有游戏／调试管道完成有限冒烟，运行结果见本页末尾。
+
+以下是当前MPQ身份，不按族名推断其他幕变体已经实现。共享家族沿用第一幕执行，新增家族的技能值由hosting准备；DesertTurret及GargoyleTrap保留各自机关入口。
+
+| AI | 当前第二幕身份 | 本批范围 |
+| --- | --- | --- |
+| SandRaider | sandraider1、2、3 | Fire Hit、S1物理／火伤、颜色蓄力及受伤伙伴集合 |
+| SandMaggot | sandmaggot1、2、3 | 上／下钻、当前生命百分比恢复、产卵、A2毒液 |
+| SandMaggotQueen | maggotqueen1 | NOXP子怪、出生S1、QueenDeath序列与毒云回调 |
+| MaggotEgg | maggotegg1、2、3 | 按等级孵化，随后终止自身 |
+| MaggotLarva | maggotbaby1、2、3 | 普通攻击，S1出生与NOXP |
+| ClawViper | clawviper2、3 | SerpentCharge、击退及A1／A2 |
+| SandLeaper | sandleaper1、2、3 | 起跳前A1、越过目标落点、Run速度及skill_move |
+| Swarm | swarm1、2 | 普通攻击；Swarm Move有入口，Fn019不主动施放 |
+| Scarab | scarab1、2、3、4 | S1 Jab两击，GH／死亡固有八道闪电 |
+| GreaterMummy | unraveler1、2、3、radament | 复活、Bestow、UnHolyBolt；Radament扩大亡灵资格 |
+| Mummy | mummy1、2、3、4 | A1／A2及MPQ元素附伤 |
+| PantherWoman | pantherwoman1、2、3、4 | 普通攻击、同族集合，无主动Skills槽 |
+| PantherJavelin | slinger1、2、4、5、6 | 远程攻击、同族集合、绿瓶毒云与橙瓶碰撞 |
+| Baboon | baboon1 | A1／A2选择、逃跑与阶段再生，无主动Skills槽 |
+| Vulture | vulture1、2 | 普通攻击、空中绕行、伤员观察及安全落地，无主动Skills槽 |
+| BatDemon | batdemon1 | S3入巢／S4栖息／S2离巢、再生与脱离，无主动Skills槽 |
+| PinHead | blunderbore1、2 | A2伤害的Smite及眩晕 |
+| Summoner | summoner | 冰尖柱、霜之新星、火球、火墙、第5槽削弱 |
+| Duriel | duriel | Charge、三击Jab、Smite及AI等级的Holy Freeze |
+| Sarcophagus | sarcophagus | Nest、数量上限及耗尽NOTC |
+| ArcaneTower | lightningspire | 环形闪电、连续A1闪电及两阶段间隔 |
+| Skeleton | skeleton2、3、4、5 | 共享普通攻击／复活模式 |
+| SkeletonBow | sk_archer4、5 | 共享箭矢入口 |
+| SkeletonMage | skmage_pois3、4；skmage_cold4；skmage_fire3、4；skmage_ltng3、4 | 共享组件与元素弹入口 |
+| Zombie | zombie5 | 共享普通攻击 |
+| Brute | brute4 | 共享A1／A2 |
+| Goatman | goatman4 | 共享普通攻击 |
+| Wraith | wraith3、4 | 共享普通攻击与碰撞规则 |
+| BloodHawk | foulcrow3 | 共享攻击／飞行入口 |
+| FoulCrowNest | crownest3 | 共享Nest序列与NOXP／NOTC子怪 |
+| Vampire | vampire1 | 四槽准备；MPQ掩码3自然开启火球／FireHead和火墙，未开启陨石 |
+| GargoyleTrap | gargoyletrap | 共享原序列、射线及轴向资格 |
+| DesertTurret | firetower | 环境控制器三发原火弹 |
+
+MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetleburst、Leatherarm、Coldworm the Burrower、Fire Eye、Dark Elder及Ancient Kaa the Soulless，保留实际SuperUnique及MonStats。Duriel、Summoner任务身份与战斗规则分开持有。不可击杀的横／竖陷阱控制器由环境模块负责，不加入74个身份；飞行弯刀由物件产生，不属于上述候选或主动Skills槽。
+
+## 技能、生命周期与原资源
+
+`hosting/act2_monster_skills.cpp`按MonStats最多8槽、Skills、Missiles、MonSeq、AnimData及难度加成准备纯值。MonSeq显示帧可倒放／重复、混用A1／A2；释放时钟按序列行累计，Jab保留多次命中事件。技能使用自己的伤害／命中快照，不把SQ当普通A1。SC维持施法时钟，移动技能另持目的地与中断代次。Charge使用Run基速、最低50%的原速度修正，跟踪目标位置，结束移动后复验额外近战范围及邻近新目标；接近时回落当前怪物自己的A2。原skill_move沿状态事实和快照同步，0x16位置更新保留施放身份，显示随移动阶段回绕／切入攻击段。
+
+`monsters/act2_skills.cpp`负责钻地、移动、出生及木乃伊支持目标；`skills/monster_actions.cpp`持释放队列；`missiles/monster.cpp`持冰尖柱爆炸／冻结、延迟陨石／地火及毒瓶子弹体。甲虫／虫后固有回调与精英词缀分开计时，本身光环与精英光环各自执行。客户端消费真实MonSeq、钻地末帧、甲虫闪电及虫后死亡毒云，不判伤害或生成战斗子怪。Vulture空中使用无碰撞移动、不可攻击／选择，S1沿原移动包持续显示，落地S2复验原碰撞及动态占位。BatDemon的S3／S4／S2使用各自AnimData时钟与原26／28动作包。蓝／红及其他颜色状态按States.colorpri选择当前幕PL2的colorshift，不自造RGB替身。
+
+虫卵与石棺虽有MonStats2.inert，仍按enabled／killable／Align及自己的AI准入；inert不作为这两类敌怪的拒绝条件。ArcaneTower保留原表1000毒抗，抗性校验采用原有符号16位字段范围；其MissA1的CelFile=null使用原CltDo8程序，不要求不存在的DCC。MaggotEgg的原calc1先按公式字段去除外围引号，再核对及按原等级求值；出生先探原点，再按原搜索参数1–4展开3／6／9／12格周界，每次完整失败才提高参数，追加调用最多2×目标数量。冲锋的回绕／落地区间只作用于完整MonSeq，内部COF仍使用全部原帧，MonSeq.dir不作为拒绝条件。豹族投矛手的1HT DT／DD COF引用S5 bld，但当前MPQ只含该组件A1图；保留原身体并略过缺失的血迹装饰层，不借用其他身体或自制像素。
+
+沙虫／虫后子怪只禁经验，保留MPQ掉落资格；Nest和复活同时禁重复经验／掉落。Bestow当前calc1／calc2均为空，治疗量为0，不自造比例。SkeletonRaise是复活显示声明，不添加AI主动施放。Swarm Move及VampireMeteor保留声明与原AI开启条件，不因有槽擅自启用。
+
+依据为当前MPQ，以及本地D2MOO AiThink Fn008／011／014／015／016／017／018／020／021／022／023／028／029／038／040／044／045／053／066／093／095、SkillMonst、SkillAma、SkillPal、SkillBar、SkillSor、MissMode、MonsterUnique。参考代码不进入源码产物。
+
+## 交付与未验证边界
+
+本批规则v41、D2S v96；临时技能、钻地、飞行、栖息、颜色、再生加成、移动、召唤、复活和效果时钟不写盘，旧规则不静默迁移。最终Windows Release构建、客户端／独立服务端打包及下述有限冒烟已完成；包身份与SHA256由[基线](../../../BASELINE.md#当前运行包与验证边界)维护。
+
+全部74身份使用自己的当前MPQ身份、组件、AI参数、普通动作及声明槽；共享家族继续调用第一幕程序，新增分支见上表和源码入口。所有三难度数值与技能等级从当前表准备，未人为扩展未启用技能。有限管理准备与单机观察不能认证三难度自然出生、所有技能分支／精英组合、全部碰撞／背压／中断、原版逐帧随机、联网及自然通关。任务死亡链历史管理验证只维护在[第二幕任务](../quests/ACT2.md#有限运行证据)。
+
+## 有限运行证据
+
+2026-10-11使用当前MPQ、隔离角色及本批Windows Release客户端，在原第二幕地图执行现有管理准备和单机权威AI推进；没有新建测试脚本、用例或专用程序。管理出生／伤害／升级用于准备条件，技能释放与阶段变化从权威快照、事件和原资源场景读取。74身份及9个固定SuperUnique在最终二进制上重新逐项核对，均保持真实MonStats／SuperUnique身份，场景不可用计数为0，没有沉沦魔替身。
+
+| 范围 | 实际观察 |
 | --- | --- |
-| 沙漠、下水道、宫殿、虫洞、古墓与神秘避难所人口 | 从当前Levels／MonPreset等准备候选；逐类型、三难度、特殊移动／碰撞与完整AI台账待补 |
-| 与第一幕共享的家族或类型 | 可复用已准备程序，但每个实际身份、技能／等级／动作仍须准入核对；不据家族名称批量标完成 |
-| Radament、Summoner等任务目标与Duriel | 任务身份与死亡后资格／旅行已有执行；专用技能、AI、战斗阶段与原图边界尚未完整迁入／验证 |
-| 冠军／暗金／固定身份与特殊召唤 | 可用公共阶级框架不代表第二幕全部身份／词缀／专用程序已完成，逐项台账待补 |
+| 钻地／飞行 | 沙虫下钻后拒绝伤害、上钻并按当前生命恢复；秃鹫起飞／移动／落地，空中拒绝伤害及攻击选择，显示原S1／S2 |
+| 栖息／出生 | BatDemon受伤逃离后进入S3／S4并持再生加成；石棺生出mummy1、虫后生出sandmaggot1，子怪原身份及场景可用 |
+| 虫卵 | 最终包按原calc1及出生搜索孵出两只maggotbaby1，随后耗尽自身；两只子怪场景可用 |
+| 固有死亡／复活 | 虫后死亡生成八道原queenpoisoncloud；GreaterMummy自然使用Resurrect2复活skeleton2，保留已完成奖励标记 |
+| 召唤者 | 自然AI攻击事件观察到170／47／55／44／72，即火墙、火球、冰尖柱、霜之新星、削弱；场景不可用计数为0 |
+| 保存重入 | 隔离角色正常保存、退出并重启载入；等级91、经验1800000131、生命730、四项基础属性、基础技能及剩余属性／技能点一致，进入第二幕城镇且无角色恢复问题 |
+| 独立服务端 | 最终包加载并显示Usage，参数入口按现有契约退出2；未启动PvPGN后端会话 |
 
-不支持的敌对类型当前可用保留真实身份的沉沦魔替身，缺规则或无法放置仍留诊断；中立不替换。任务冒烟通过管理准备与死亡事件验证流程，不认证真实Boss战斗，条件及限制唯一维护在[第二幕任务](../quests/ACT2.md#有限运行证据)。
-
-后续先查master对应家族／特殊AI，再按当前MPQ登记；本地D2MOO AiThink、MonsterMode、SkillMonst及相关任务程序提供分工依据。首领专用差异归[BOSSES](BOSSES.md)，词缀归[ELITES](ELITES.md)，本页不复制其算法。目前没有本幕全类型正常战斗／原服专项验收。
+本地逐身份CSV、代表快照及截图、构建和启动日志保留在忽略目录`artifacts/act2-complete-20261011/`，不进入源码或交付资源。最终客户端标准错误为空；场景仍提示既有wraith_attack_1原声音中断淡出限制。豹族投矛手缺失的S5死亡血迹装饰按上文保留资源限制，身体仍使用原MPQ；场景可用计数不能认证该缺失装饰或所有动作的逐像素完整性。本批未覆盖完整三难度自然出生／通关、所有技能分支及多人／跨机器／Linux运行。

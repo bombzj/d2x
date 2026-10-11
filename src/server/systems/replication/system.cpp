@@ -43,9 +43,9 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             if (!area.activation.nearby(observer, monster.position)) continue;
         } else if ((observer - monster.position).length() > 35) continue;
         const bool dead = monster.life <= 0;
-        const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:1;
+        const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
-            monster.route.empty() ? monster.position : monster.route.front(),
+            monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.front(),
             monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
@@ -74,6 +74,8 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             if(monster.amazonPet->decoy) result.back().modifiers.push_back(21); // SkillAma::SrvDo015 expiration UMod.
         }
         auto &states = result.back().states;
+        states.insert(monster.aiStates.begin(),monster.aiStates.end());
+        if(monster.skillMotion && monster.skillMotion->moveState && monster.rule.skillMoveState>=0) states.insert(monster.rule.skillMoveState);
         if(monster.revived()) {states.insert(monster.necroPet->reviveState.id);if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;}
         for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);

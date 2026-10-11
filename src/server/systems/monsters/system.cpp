@@ -91,11 +91,14 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
         return {DomainStatus::Stale, {}};
     if (actor.rule.nativeVelocity <= 0 || (request.target && !targetPosition(request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
-    auto route = area.definition.collision.path(actor.position, request.destination.position, true, actor.rule.collision);
+    auto route = area.definition.collision.path(actor.position, request.destination.position, true, actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision);
     if (route.empty()) return {DomainStatus::Unavailable, {}};
+    if(request.pathSteps<0 || request.pathSteps>255) return {DomainStatus::InvalidRequest,{}};
+    if(request.pathSteps>0 && route.size()>size_t(request.pathSteps)) route.resize(size_t(request.pathSteps));
     actor.route = std::move(route); actor.movementTarget = request.target;
     actor.movementGoal = request.destination.position;
     actor.stopDistance = request.stopDistance; actor.velocityPercent = request.velocityPercent; actor.running = request.running;
+    if(!actor.airborne) {actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;}
     ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -109,6 +112,7 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
+    actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -161,7 +165,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     }
     if (!life) {
         // Fn043 marks an exhausted nest NOTC before its own death action.
-        if(source==id && actor.rule.ai.kind==MonsterAiKind::FoulCrowNest) actor.rule.noTreasure=true;
+        if(source==id && (actor.rule.ai.kind==MonsterAiKind::FoulCrowNest || actor.rule.ai.kind==MonsterAiKind::Sarcophagus)) actor.rule.noTreasure=true;
         actor.corpseUnavailable=corpseUnavailable;
         actor.deathTick = tick; actor.deathOccurrence = *event.value; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);
@@ -242,10 +246,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
         }
         if (!actor.owner && actor.life > 0 && !actor.poison && !actor.wound && actor.rule.damageRegen > 0 && actor.life < actor.maximumLife) {
-            actor.life = std::min(actor.maximumLife, actor.life + actor.maximumLife * actor.rule.damageRegen / 4096); ++actor.revision;
+            actor.life = std::min(actor.maximumLife, actor.life + actor.maximumLife * actor.rule.damageRegen / 4096 + actor.aiRegenerationBonus); ++actor.revision;
         }
         if((actor.amazonPet || actor.necroSummon || actor.hireling) && actor.life>0 && !actor.poison && !actor.wound && actor.petStats.damageRegen>0 && actor.life<actor.maximumLife) {
-            actor.life=std::min(actor.maximumLife,actor.life+actor.maximumLife*actor.petStats.damageRegen/4096);++actor.revision;
+            actor.life=std::min(actor.maximumLife,actor.life+actor.maximumLife*actor.petStats.damageRegen/4096+actor.aiRegenerationBonus);++actor.revision;
         }
         if(actor.hireling && actor.life>0 && !actor.poison && !actor.wound && actor.life<actor.maximumLife) {
             actor.life=std::clamp(actor.life+actor.rule.hirelingRegeneration+actor.petStats.attributes.combat.replenishLife,int64_t(1),actor.maximumLife);++actor.revision;
@@ -294,6 +298,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.slowed->state,false}}})) {blocked=true;continue;}
             actor.slowed.reset();++actor.revision;
         }
+        if(actor.skillMotion && advanceSkillMotion(actor,tick.tick)) continue;
         if (actor.frozenUntil > tick.tick || actor.stunnedUntil>tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
@@ -312,9 +317,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const float distance = delta.length();
             if (distance < .001f) { actor.route.pop_front(); continue; }
             const Vec next = actor.position + delta.unit() * std::min(distance, remaining);
-            if (!grid.nativeMovementSegment(actor.position, next, actor.rule.collision)) { actor.route.clear(); break; }
+            if (!grid.nativeMovementSegment(actor.position, next, actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision)) { actor.route.clear(); break; }
             bool barrier=false;
-            for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
+            if(!actor.airborne) for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
             if(barrier) {actor.route.clear();actor.moving=false;break;}
             actor.position = next; remaining -= std::min(distance, remaining); actor.moving = true; ++actor.revision;
             if (arrived(next)) { actor.route.clear(); break; }
