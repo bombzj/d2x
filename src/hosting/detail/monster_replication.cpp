@@ -70,8 +70,11 @@ void NativeRealmService::publishMonsters() {
             const auto stats=monster.stateStats.find(state);
             return nativeState(*content,{monster.id,1,monster.area,state,enabled,enabled && stats!=monster.stateStats.end()?stats->second:std::vector<std::pair<int,int64_t>>{}});
         };
-        for (const int state : entry->second.states) if (!monster.states.contains(state)) packets.push_back(statePacket(state, false));
-        for (const int state : monster.states) if (!entry->second.states.contains(state) || (monster.stateStats.contains(state) ? entry->second.stateStats[state]!=monster.stateStats.at(state) : !entry->second.stateStats[state].empty())) packets.push_back(statePacket(state, true));
+        if(fresh) packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
+        else {
+            for (const int state : entry->second.states) if (!monster.states.contains(state)) packets.push_back(statePacket(state, false));
+            for (const int state : monster.states) if (!entry->second.states.contains(state) || (monster.stateStats.contains(state) ? entry->second.stateStats[state]!=monster.stateStats.at(state) : !entry->second.stateStats[state].empty())) packets.push_back(statePacket(state, true));
+        }
         entry->second.states = monster.states;
         entry->second.stateStats = monster.stateStats;
         if(monster.equipment) {

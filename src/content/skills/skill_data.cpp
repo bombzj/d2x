@@ -111,62 +111,6 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto detail = strings.find(descriptions.value(source, "str long"));
         if (!detail.empty()) entry.description = skillText(detail);
         entry.shortDescription = skillText(strings.find(descriptions.value(source, "str short")));
-        if (name == "Frozen Armor" || name == "Blaze") {
-            entry.secondLabel = strings.find("StrSkill15");
-            entry.secondsLabel = strings.find("StrSkill16");
-            for (int slot = 1; slot <= 6; ++slot) {
-                const auto index = std::to_string(slot);
-                const int function = descriptions.number(source, "descline" + index).value_or(0);
-                if (!function) continue;
-                SkillDescriptionLine line;
-                line.function = function;
-                line.prefix = strings.find(descriptions.value(source, "desctexta" + index));
-                line.suffix = strings.find(descriptions.value(source, "desctextb" + index));
-                const auto formula = descriptions.value(source, "desccalca" + index);
-                if (function == 1) {
-                    line.value = SkillDescriptionValue::Mana;
-                    line.prefix = strings.find(descriptions.value(source, "str mana"));
-                } else if (name == "Blaze" && function == 23 && descriptions.value(source, "descmissile1") == "blaze")
-                    line.value = SkillDescriptionValue::FireDuration;
-                else if (name == "Blaze" && function == 27 && descriptions.number(source, "descdam") == 9) {
-                    line.value = SkillDescriptionValue::AverageFireDamage;
-                    line.prefix = std::string(strings.find("StrSkill68")) + std::string(strings.find("StrSkill5"));
-                    line.suffix = strings.find("StrSkill34");
-                } else if (function == 3 && skills.value(row, "aurastat1") == "skill_armor_percent" &&
-                           formula == skills.value(row, "aurastatcalc1"))
-                    line.value = SkillDescriptionValue::DefensePercent;
-                else if (function == 12 && !formula.empty()) {
-                    if (formula == skills.value(row, "auralencalc")) line.value = SkillDescriptionValue::Duration;
-                    else if (formula == skills.value(row, "calc1")) line.value = SkillDescriptionValue::FreezeDuration;
-                }
-                entry.descriptionLines.push_back(std::move(line));
-            }
-        }
-        for (int slot = 1; slot <= 7; ++slot) {
-            const auto index = std::to_string(slot);
-            const int function = descriptions.number(source, "dsc3line" + index).value_or(0);
-            if (!function) continue;
-            const auto textA = std::string(strings.find(descriptions.value(source, "dsc3texta" + index)));
-            const auto textB = std::string(strings.find(descriptions.value(source, "dsc3textb" + index)));
-            const auto formula = descriptions.value(source, "dsc3calca" + index);
-            if (function == 40 && formula == "2") {
-                entry.bonusHeading = textA;
-                if (const auto marker = entry.bonusHeading.find("%s"); marker != std::string::npos)
-                    entry.bonusHeading.replace(marker, 2, textB);
-            } else {
-                std::optional<int> value;
-                if (formula.size() == 4 && formula.starts_with("par") && formula[3] >= '1' && formula[3] <= '8')
-                    value = skills.number(row, "Param" + std::string(1, formula[3]));
-                // The verified percent-per-level program is independent of learned ranks.
-                if (function == 63)
-                    entry.bonusDescriptions.push_back(textA + ": +" + (value ? std::to_string(*value) : "?") + "% " + textB);
-                else if (function == 67 && formula == "(par7 + 12)/25") {
-                    const auto frames = skills.number(row, "Param7");
-                    entry.bonusDescriptions.push_back(textA + ": +" +
-                        (frames ? std::to_string((*frames + 12) / 25) : "?") + " " + textB);
-                } else entry.bonusDescriptions.push_back(textA + ": ? " + textB);
-            }
-        }
         if (entry.passive && entry.classCode == "nec") {
             NecromancerPassiveSpec passive;
             bool known = true;

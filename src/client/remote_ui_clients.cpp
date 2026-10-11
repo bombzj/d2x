@@ -8,6 +8,7 @@
 #include "client/remote_combat.hpp"
 #include "client/remote_control.hpp"
 #include "content/classic_data.hpp"
+#include "content/skills/description_values.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/item_display.hpp"
 #include "content/items/item_pricing.hpp"
@@ -82,6 +83,9 @@ struct RemoteUiClients::Impl {
     using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool>;
     struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
     mutable std::map<std::string,CachedEquipmentStat,std::less<>> equipmentStats;
+    using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>>;
+    struct CachedCombatEquipment {CombatEquipmentKey key;std::optional<CombatDisplayEquipment> value;};
+    mutable std::map<OnlineUnitKey,CachedCombatEquipment> combatEquipment;
 
     struct Actor final : IActorClient {
         Impl &o; explicit Actor(Impl &owner) : o(owner) {}
@@ -761,6 +765,46 @@ struct RemoteUiClients::Impl {
         }
         return {};
     }
+    void projectSkillUseFacts(CharacterProjectionInput &input) const {
+        const auto &online = session.read();
+        if (!online.load.playerUnitId) return;
+        const OnlineUnitKey key{0, *online.load.playerUnitId};
+        const auto actor = online.world.units.find(key);
+        if (actor == online.world.units.end()) return;
+        if (actor->second.equipmentObserved) {
+            constexpr std::array<uint8_t, 2> bodies{4, 5};
+            for (size_t hand = 0; hand < bodies.size(); ++hand) {
+                const auto equipped = std::find_if(online.world.items.begin(), online.world.items.end(),
+                    [&](const auto &entry) {
+                        const auto &item = entry.second;
+                        return item.ownerType == 0 && item.owner == key.id && item.mode == 1 && item.body == bodies[hand];
+                    });
+                if (equipped == online.world.items.end()) {
+                    input.handEquipment[hand] = SkillHandEquipment{};
+                    continue;
+                }
+                const auto &wire = equipped->second;
+                const auto *base = data.items.find(wire.code);
+                if (!base || !base->equipment.known) continue;
+                SkillHandEquipment facts;
+                facts.present = true; facts.unusable = (wire.flags & 0x4100u) != 0;
+                facts.types = base->equipment.types;
+                facts.ammunitionType = base->equipment.shoots;
+                facts.stackable = base->maxStack > 1;
+                const auto decoded = items.read().items.find(wire.id);
+                if (decoded != items.read().items.end() && decoded->second.decoded && decoded->second.revision == wire.revision)
+                    facts.quantity = decoded->second.quantity;
+                input.handEquipment[hand] = std::move(facts);
+            }
+        }
+        const auto observed = combat.states().find(key);
+        const auto bloodMana = data.states.find("blood_mana"), inferno = data.states.find("inferno");
+        if (actor->second.stateSequence && observed != combat.states().end() && observed->second.decoded &&
+            observed->second.sequence == actor->second.stateSequence && bloodMana != data.states.end() && inferno != data.states.end())
+            input.resourceStates = CharacterProjectionInput::ResourceStates{
+                observed->second.states.contains(bloodMana->second.definition.id),
+                observed->second.states.contains(inferno->second.definition.id)};
+    }
     void projectCharacter() {
         const auto &online = session.read(); const auto &w = online.world;
         CharacterProjectionInput input;
@@ -792,6 +836,7 @@ struct RemoteUiClients::Impl {
         input.itemSkillQuantities.insert(w.itemSkillQuantities.begin(), w.itemSkillQuantities.end());
         input.baseRanksAssigned = w.playerBaseSkillsAssigned;input.chargedSkills=nativeChargedSkills(online,items.read(),data.tables.at("setitems"));
         input.difficulty = online.load.difficulty;
+        projectSkillUseFacts(input);
         if(const auto level=stat("level")) {
             if(const auto itemPierce=knownSelfEquipmentStat("item_pierce",int(*level));itemPierce && w.playerBaseSkillsAssigned) {
                 int chance=*itemPierce;
@@ -810,9 +855,46 @@ struct RemoteUiClients::Impl {
                 break;
             }
         }
-        if (const auto value = stat("passive_fire_mastery")) input.fireMastery = int(*value);
-        if (const auto value = stat("passive_ltng_mastery")) input.lightningMastery = int(*value);
-        if (const auto value = stat("passive_cold_mastery")) input.coldDamagePercent = int(*value);
+        if (const auto level=stat("level"); level && online.load.playerUnitId && data.skills.descriptions) {
+            const auto &catalog=*data.skills.descriptions;
+            const auto unit=w.units.find({0,*online.load.playerUnitId});
+            const auto states=combat.states().find({0,*online.load.playerUnitId});
+            // Native mastery IDs exceed the single-byte attribute packet.
+            // Reconstruct the same read-only stat lists as D2Common: observed
+            // equipment + observed states + Skills.passivecalc. If a passive
+            // already carries that stat in its native state, count it once.
+            for (const auto *name:{"passive_fire_mastery","passive_ltng_mastery","passive_cold_mastery","passive_pois_mastery"}) {
+                if (const auto native=stat(name)) { input.stats.insert_or_assign(name,*native); continue; }
+                const auto equipmentAndStates=knownSelfEquipmentStat(name,int(*level));
+                if (!equipmentAndStates || !input.baseRanksAssigned || unit==w.units.end() || states==combat.states().end()) continue;
+                const auto statId=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &record){return record.name==name;});
+                if (statId==data.itemStats.end() || !statId->id) continue;
+                std::set<int> accounted;
+                bool known=true;
+                if (const auto passives=catalog.passives.find(name);passives!=catalog.passives.end())
+                    for (const auto &passive:passives->second) {
+                        const auto passiveState=data.states.find(passive.state);
+                        if (passiveState==data.states.end()) { known=false; break; }
+                        const auto observed=states->second.states.find(passiveState->second.definition.id);
+                        if (observed!=states->second.states.end() && std::any_of(observed->second.stats.begin(),observed->second.stats.end(),
+                            [&](const auto &entry){return entry.id==*statId->id && !entry.parameter;})) accounted.insert(passive.skill);
+                    }
+                if (!known) continue;
+                SkillDescriptionInput description{0,{},input.baseRanks,input.effectiveRanks,input.stats};
+                description.baseRanksComplete=input.baseRanksAssigned;
+                const auto passive=projectDescriptionPassiveStat(catalog,description,name,accounted);
+                if (!passive) continue;
+                const int64_t total=int64_t(*equipmentAndStates)+*passive;
+                if (total>=INT32_MIN && total<=INT32_MAX) input.stats.insert_or_assign(name,double(total));
+            }
+        }
+        const auto knownMastery=[&](std::string_view name)->std::optional<int> {
+            const auto found=input.stats.find(name);
+            return found==input.stats.end()?std::nullopt:std::optional{int(found->second)};
+        };
+        input.fireMastery=knownMastery("passive_fire_mastery");
+        input.lightningMastery=knownMastery("passive_ltng_mastery");
+        input.coldDamagePercent=knownMastery("passive_cold_mastery");
         for (size_t hand = 0; hand < input.throwReady.size(); ++hand) {
             const bool leftHand = hand != 0;
             for (uint8_t body : {uint8_t(leftHand ? 5 : 4), uint8_t(5)}) {
@@ -832,6 +914,15 @@ struct RemoteUiClients::Impl {
         }
         if (const auto level=stat("level"))
             if (const auto faster=knownSelfEquipmentStat("item_fastercastrate",int(*level))) input.stats.insert_or_assign("item_fastercastrate",*faster);
+        if(input.characterClass && *input.characterClass<data.characters.size() && online.load.playerUnitId &&
+            stat("strength") && stat("dexterity") && stat("level") && input.baseRanksAssigned) {
+            const auto &definition=data.characters[*input.characterClass];
+            input.combatEquipment=observedCombatEquipment({0,*online.load.playerUnitId},
+                {definition.code,int(*stat("strength")),int(*stat("dexterity")),int(*stat("level")),definition.blockFactor,weaponSet},
+                input.effectiveRanks,0,definition.toHitFactor-35);
+        }
+        if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
+            for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
         characterView = projectCharacterDisplay(data, input);
         characterView.selectedSkillOwners[weaponSet*2]=w.leftSkill?w.leftSkill->owner:UINT32_MAX;
         characterView.selectedSkillOwners[weaponSet*2+1]=w.rightSkill?w.rightSkill->owner:UINT32_MAX;
@@ -903,6 +994,96 @@ struct RemoteUiClients::Impl {
                 if (property.directRoll && property.minimum != property.maximum) return {};
         }
         return item;
+    }
+    std::optional<CombatDisplayEquipment> observedCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
+        const std::map<int,int> &ranks,int defense=0,int rating=0,int minimum=0,int maximum=0) const {
+        const auto &online=session.read();
+        const auto unit=online.world.units.find(key);
+        if(unit==online.world.units.end()) return {};
+        const CombatEquipmentKey cacheKey{online.gameGeneration,online.world.itemRevision,items.read().revision,
+            unit->second.appearanceRevision,unit->second.stateSequence,actor.characterClass,actor.strength,actor.dexterity,actor.level,
+            actor.blockFactor,actor.weaponSet,actor.hireling,defense,rating,minimum,maximum,ranks};
+        const auto cached=combatEquipment.find(key);
+        if(cached!=combatEquipment.end() && cached->second.key==cacheKey) return cached->second.value;
+        auto value=calculateCombatEquipment(key,std::move(actor),ranks,defense,rating,minimum,maximum);
+        combatEquipment.insert_or_assign(key,CachedCombatEquipment{cacheKey,value});return value;
+    }
+    std::optional<CombatDisplayEquipment> calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
+        const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const {
+        const auto &world=session.read().world;
+        const auto unit=world.units.find(key),end=world.units.end();
+        const auto observed=combat.states().find(key);
+        if(unit==end || !unit->second.equipmentObserved || !unit->second.stateSequence ||
+            observed==combat.states().end() || !observed->second.decoded || observed->second.sequence!=unit->second.stateSequence) return {};
+        std::vector<CombatDisplayItem> equipped;std::vector<ItemInstance> charms;
+        for(const auto &[id,wire]:world.items) {
+            if(wire.ownerType!=key.type || wire.owner!=key.id || (wire.flags&0x4100u)) continue;
+            const auto *base=data.items.find(wire.code);
+            const bool worn=wire.mode==1 && wire.body>=1 && wire.body<=10;
+            const bool charm=key.type==0 && wire.mode==0 && wire.page==1 && base && base->equipment.isType("char");
+            if(!worn && !charm) continue;
+            const auto decoded=items.read().items.find(id);
+            if(!base || decoded==items.read().items.end() || !decoded->second.decoded || decoded->second.revision!=wire.revision) return {};
+            auto item=completeItem(wire,decoded->second,SocketLocation{{},0});if(!item) return {};
+            if(worn) {
+                auto slot=EquipmentSlot(wire.body-1);
+                if(actor.weaponSet && slot==EquipmentSlot::RightHand) slot=EquipmentSlot::AlternateRightHand;
+                if(actor.weaponSet && slot==EquipmentSlot::LeftHand) slot=EquipmentSlot::AlternateLeftHand;
+                equipped.push_back({slot,std::move(*item)});
+            } else charms.push_back(std::move(*item));
+        }
+        std::vector<ResolvedItemStat> stateStats;std::set<int> states,accounted;
+        for(const auto &[id,list]:observed->second.states) {
+            states.insert(id);
+            for(const auto &entry:list.stats) {
+                const auto cost=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &record){return record.id==entry.id;});
+                if(cost==data.itemStats.end() || entry.value<INT32_MIN || entry.value>INT32_MAX) return {};
+                stateStats.push_back({cost->name,cost->name,int(entry.value),int(entry.parameter),int(entry.value)});
+            }
+            if(data.skills.descriptions) for(const auto &[skill,source]:data.skills.descriptions->skills) {
+                if(source.reference("passivestate")!=list.name) continue;
+                bool carried=false;
+                for(unsigned slot=1;slot<=5;++slot) {
+                    const auto name=source.reference("passivestat"+std::to_string(slot));
+                    const auto cost=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &record){return record.name==name;});
+                    if(cost!=data.itemStats.end() && std::any_of(list.stats.begin(),list.stats.end(),[&](const auto &entry){return cost->id==entry.id;})) carried=true;
+                }
+                if(carried) accounted.insert(skill);
+            }
+        }
+        std::map<int,int> baseRanks;
+        if(!actor.hireling) for(const auto &[id,rank]:session.read().world.playerBaseSkills) baseRanks.emplace(id,rank);
+        int concentration=0;
+        int smiteMinimum=0,smiteMaximum=0;
+        for(const auto &[id,list]:observed->second.states) {
+            (void)id;
+            if(list.name=="concentration") for(const auto &entry:list.stats) for(const auto &cost:data.itemStats)
+                if(cost.id==entry.id && cost.name=="damagepercent" && !entry.parameter) concentration=int(entry.value);
+            if(list.name=="holyshield" && data.skills.descriptions) {
+                int skill=-1,rank=0;
+                for(const auto &entry:list.stats) for(const auto &cost:data.itemStats) if(cost.id==entry.id) {
+                    if(cost.name=="modifierlist_skill") skill=int(entry.value);
+                    if(cost.name=="modifierlist_level") rank=int(entry.value);
+                }
+                const auto source=data.skills.descriptions->skills.find(skill);
+                if(rank>0 && source!=data.skills.descriptions->skills.end() && std::any_of(equipped.begin(),equipped.end(),[&](const auto &entry){
+                    const auto *definition=data.items.find(entry.item.definition);return definition && definition->equipment.isType("shld");
+                })) {
+                    const std::map<std::string,double,std::less<>> values;
+                    SkillDescriptionInput input{skill,rank,baseRanks,ranks,values};input.baseRanksComplete=true;
+                    const auto bonus=SkillDescriptionValues(*data.skills.descriptions,input,source->second).parameter("clc1");
+                    if(!bonus) return {};
+                    stateStats.push_back({"item_armor_percent","item_armor_percent",*bonus,0,*bonus});
+                    const auto smite=SkillDescriptionValues(*data.skills.descriptions,input,source->second).physicalDamage();
+                    if(!smite.minimum || !smite.maximum) return {};
+                    smiteMinimum=*smite.minimum;smiteMaximum=*smite.maximum;
+                }
+            }
+        }
+        auto result=projectCombatEquipment(data,std::move(actor),equipped,charms,stateStats,ranks,baseRanks,states,accounted,defense,rating,minimum,maximum);
+        result.concentrationDamagePercent=concentration;
+        result.modifiers.combat.smiteMinimum+=smiteMinimum;result.modifiers.combat.smiteMaximum+=smiteMaximum;
+        return result;
     }
     std::optional<unsigned> itemQuote(uint32_t id, OnlineItemAction action) const {
         const auto &online = session.read();
@@ -981,6 +1162,16 @@ struct RemoteUiClients::Impl {
             }
             InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
             projection.specialRow = item.specialRow;
+            const auto &source = data.tables.at(definition->base.sourceTable);
+            int64_t indestructible = 0;
+            for (const auto &stat : stats)
+                if (stat.name == "item_indesctructible" && !stat.layer) indestructible += stat.rawValue;
+            // D2Client 1.13c RVA 0x28680: HasDurability, non-stackable,
+            // then current * 100 / resolved maximum, with integer truncation.
+            if (complete && di.revision == native.revision && di.maxDurability && di.durability && maximum &&
+                definition->maxDurability && !source.number(definition->base.sourceRow, "nodurability").value_or(0) &&
+                !source.number(definition->base.sourceRow, "stackable").value_or(0) && indestructible <= 0)
+                projection.durabilityPercentage = unsigned(std::min(uint64_t(*di.durability) * 100 / maximum, uint64_t{100}));
             return projection;
     }
     std::optional<unsigned> repairAllQuote() const {
@@ -1206,6 +1397,7 @@ struct RemoteUiClients::Impl {
             InventoryDefinitionView def; def.targetCursor=definition->targetCursor; def.code=native.code; def.name=definition->name; def.bookScroll=definition->bookScroll;
             def.width=di.width; def.height=di.height; def.beltRows=definition->beltRows; def.maxStack=definition->maxStack; def.bookCapacity=definition->bookCapacity;
             def.beltAllowed=definition->beltAllowed; def.opensCube=definition->opensCube; def.twoHanded=definition->equipment.twoHanded;
+            def.shield=definition->equipment.isType("shld"); def.quiver=!definition->equipment.quiver.empty();
             def.socketFiller=definition->equipment.isType("sock"); def.identifySource=data.isIdentifyScroll(native.code)||data.isIdentifyScroll(def.bookScroll);
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
             v.definitions.emplace(native.code,std::move(def));
@@ -1386,12 +1578,19 @@ struct RemoteUiClients::Impl {
         };
         const auto life=value("hitpoints"),maximum=value("maxhp"),level=value("level");
         hirelingView.known=life && maximum && level && *maximum>0;
+        for(const auto *name:{"strength","dexterity","armorclass","mindamage","maxdamage","experience","nextexp","fireresist","coldresist","lightresist","poisonresist"})
+            hirelingView.known=hirelingView.known && value(name).has_value();
         if(!hirelingView.known) return;
-        hirelingView.level=int(*level);hirelingView.life=float(*life)/256.f;hirelingView.maximumLife=int(*maximum/256);
+        const auto projected=observedCombatEquipment({1,merc.id},{"",int(*value("strength")),int(*value("dexterity")),int(*level),0,0,true},
+            {},int(*value("armorclass")),0,int(*value("mindamage")),int(*value("maxdamage")));
+        hirelingView.known=projected.has_value();if(!projected) return;
+        const auto &mods=projected->modifiers;
+        hirelingView.level=int(*level);hirelingView.life=float(*life)/256.f;
+        hirelingView.maximumLife=std::max(1,int((int64_t(*maximum/256)+mods.maxLife)*(100+mods.combat.lifePercent)/100));
         const auto pet=world.pets.find(merc.id);
         hirelingView.active=*life>0 && !world.deadHirelingName && pet!=world.pets.end();
-        hirelingView.strength=int(value("strength").value_or(0));hirelingView.dexterity=int(value("dexterity").value_or(0));
-        hirelingView.defense=int(value("armorclass").value_or(0));
+        hirelingView.strength=projected->actor.strength;hirelingView.dexterity=projected->actor.dexterity;
+        hirelingView.defense=projected->equipment.defense;
         for(const auto &[id,item]:world.items) {
             if(item.ownerType!=1 || item.owner!=merc.id || item.mode!=1) continue;
             const auto decoded=items.read().items.find(id);
@@ -1406,10 +1605,26 @@ struct RemoteUiClients::Impl {
                     for(const auto &entry:list.stats) if(costs.number(row,"ID")==entry.id && entry.value>0) hirelingView.defenseImproved=true;
                 }
         }
-        hirelingView.damageMinimum=int(value("mindamage").value_or(0));hirelingView.damageMaximum=int(value("maxdamage").value_or(0));
-        hirelingView.experience=uint64_t(std::max<int64_t>(0,value("experience").value_or(0)));
-        hirelingView.nextExperience=uint64_t(std::max<int64_t>(0,value("nextexp").value_or(0)));
-        hirelingView.resistances={int(value("fireresist").value_or(0)),int(value("coldresist").value_or(0)),int(value("lightresist").value_or(0)),int(value("poisonresist").value_or(0))};
+        auto weapon=projected->equipment.weapons[0];
+        const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.classId==merc.monsterClass;});
+        if(!weapon.item && definition!=data.hirelings.end() && definition->act==1) {
+            const int percent=std::max(-90,projected->actor.dexterity+mods.combat.damagePercent+std::max(mods.combat.minimumDamagePercent,mods.combat.maximumDamagePercent));
+            weapon.minimum=int(int64_t(weapon.meleeBaseMinimum)*(100+percent)/100);
+            weapon.maximum=int(int64_t(weapon.meleeBaseMaximum)*(100+percent)/100);
+        }
+        const auto elements=attackElementRanges(mods.combat,weapon.item);
+        WeaponModifiers own;if(const auto found=mods.combat.weapons.find(weapon.item);found!=mods.combat.weapons.end()) own=found->second;
+        const int64_t frames=(int64_t(mods.combat.poisonFrames)+own.poisonFrames)/std::max(1,mods.combat.poisonSources+own.poisonSources);
+        hirelingView.damageMinimum=int(int64_t(weapon.minimum)/256+elements.fire.minimum+elements.lightning.minimum+elements.cold.minimum+elements.magic.minimum+
+            (int64_t(mods.combat.poisonMinimum)+own.poisonMinimum)*frames/256);
+        hirelingView.damageMaximum=int(int64_t(weapon.maximum)/256+elements.fire.maximum+elements.lightning.maximum+elements.cold.maximum+elements.magic.maximum+
+            (int64_t(mods.combat.poisonMaximum)+own.poisonMaximum)*frames/256);
+        hirelingView.experience=uint64_t(std::max<int64_t>(0,*value("experience")));
+        hirelingView.nextExperience=uint64_t(std::max<int64_t>(0,*value("nextexp")));
+        const int baseResist[]={int(*value("fireresist")),int(*value("coldresist")),int(*value("lightresist")),int(*value("poisonresist"))};
+        const int bonus[]={mods.fireResist,mods.coldResist,mods.lightningResist,mods.poisonResist};
+        const int caps[]={mods.combat.fireMaxResist,mods.combat.coldMaxResist,mods.combat.lightningMaxResist,mods.combat.poisonMaxResist};
+        for(size_t index=0;index<4;++index) hirelingView.resistances[index]=std::clamp(baseResist[index]+bonus[index],-100,std::clamp(75+caps[index],-100,95));
         const auto unit=world.units.find({1,merc.id});
         if(unit!=world.units.end() && unit->second.position && scene && scene->origin)
             hirelingView.position={float(unit->second.position->x)-scene->origin->x,float(unit->second.position->y)-scene->origin->y};
@@ -1445,7 +1660,9 @@ struct RemoteUiClients::Impl {
         context = onlineIntentContext(session.read());
         if(generation!=session.read().gameGeneration) {
             generation=session.read().gameGeneration; transactions.clear(); waiting.reset(); waitingContext.reset(); hotkeys={};
+            combatEquipment.clear();equipmentStats.clear();
         }
+        std::erase_if(combatEquipment,[&](const auto &entry){return !session.read().world.units.contains(entry.first);});
         if (areaGeneration!=session.read().world.areaGeneration) {
             areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset(); waitingContext.reset();
         }

@@ -2,16 +2,13 @@
 #include "content/classic_data.hpp"
 #include "content/character/character_display.hpp"
 #include "content/character/character_progression.hpp"
-#include "content/skills/aura_data.hpp"
+#include "content/skills/skill_description.hpp"
+#include "content/skills/description_values.hpp"
 #include "content/skills/skill_eligibility.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
-#include "gameplay/skills/amazon_passive_spec.hpp"
-#include "gameplay/skills/barbarian_passive_spec.hpp"
-#include "gameplay/skills/necro_passive_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/resolve.hpp"
-#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/spec.hpp"
 #include <algorithm>
 #include <limits>
@@ -26,50 +23,7 @@ int integer(const CharacterProjectionInput &input, std::string_view name) {
     return int(std::clamp(stat(input, name).value_or(0),
         double(std::numeric_limits<int>::min()), double(std::numeric_limits<int>::max())));
 }
-void passiveDetails(std::vector<std::string> &lines, const SkillRecord &entry, int rank) {
-    if (rank <= 0) return;
-    if (entry.manaRecoveryPerRank)
-        lines.push_back("Mana regeneration: +" + std::to_string(skillRankBonus(*entry.manaRecoveryPerRank,rank)) + "%");
-    if (entry.fireMasteryPerRank)
-        lines.push_back("Fire skill damage: +" + std::to_string(skillRankBonus(*entry.fireMasteryPerRank,rank)) + "%");
-    if (entry.lightningMasteryPerRank)
-        lines.push_back("Lightning skill damage: +" + std::to_string(skillRankBonus(*entry.lightningMasteryPerRank,rank)) + "%");
-    if (entry.coldPiercePerRank)
-        lines.push_back("Enemy cold resistance: -" + std::to_string(skillRankBonus(*entry.coldPiercePerRank,rank)) + "%");
-    if (entry.passiveContribution.amazon) {
-        const auto &passive = *entry.passiveContribution.amazon;
-        const int value = amazonPassiveValue(passive, rank);
-        lines.push_back(passive.stat == AmazonPassiveStat::Rating ?
-            "Attack rating: +" + std::to_string(value) + "%" : "Chance: " + std::to_string(value) + "%");
-    }
-    if (entry.passiveContribution.barbarian) {
-        const auto &passive = *entry.passiveContribution.barbarian;
-        const auto value = evaluateBarbarianPassive(passive,rank);
-        if (passive.kind == BarbarianPassiveSpec::Kind::Mastery) {
-            lines.push_back("Attack rating: +" + std::to_string(value.attackRating) + "%");
-            lines.push_back("Damage: +" + std::to_string(value.damagePercent) + "%");
-            lines.push_back("Critical strike: " + std::to_string(value.criticalChance) + "%");
-        } else if(passive.kind==BarbarianPassiveSpec::Kind::Stamina) {
-            lines.push_back("Maximum stamina: +"+std::to_string(value.amount)+"%");
-        } else if(passive.kind==BarbarianPassiveSpec::Kind::Defense) {
-            lines.push_back("Defense: +"+std::to_string(value.amount)+"%");
-        } else {
-            lines.push_back(std::string(passive.kind==BarbarianPassiveSpec::Kind::Speed?"Movement speed: +":"Elemental resistance: +")+std::to_string(value.amount)+"%");
-        }
-    }
-    if (entry.passiveContribution.necromancer) {
-        const auto &passive = *entry.passiveContribution.necromancer;
-        const auto value = evaluateNecromancerPassive(passive,rank);
-        if (passive.kind == NecromancerPassiveSpec::Kind::GolemMastery) {
-            lines.push_back("Golem life: +" + std::to_string(value.golemLife) + "%");
-            lines.push_back("Golem attack rating: +" + std::to_string(value.golemRating));
-            lines.push_back("Golem movement speed: +" + std::to_string(value.golemSpeed) + "%");
-        } else if (passive.kind == NecromancerPassiveSpec::Kind::SkeletonMastery) {
-            lines.push_back("Skeleton life: +" + std::to_string(value.skeletonLife) + " / Damage: +" + std::to_string(value.skeletonDamage));
-            lines.push_back("Revive life: +" + std::to_string(value.reviveLife) + "% / Damage: +" + std::to_string(value.reviveDamage) + "%");
-        } else lines.push_back("Summon elemental resistance: +" + std::to_string(value.resistance) + "%");
-    }
-}
+
 }
 CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterProjectionInput &input) {
     CharacterView view;
@@ -119,9 +73,37 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
     view.unknownStats.insert("toblock"); // Final block needs shield/dexterity/level, not just native toblock.
     view.attackUsable = !view.dead && !input.town;
     CharacterAttributes attributes;
-    EquipmentStats equipment;
+    attributes.strength=view.attributes[0];attributes.dexterity=view.attributes[1];
+    EquipmentStats equipment=input.combatEquipment?input.combatEquipment->equipment:EquipmentStats{};
+    if(input.combatEquipment) {
+        attributes.combat=input.combatEquipment->modifiers.combat;
+        const auto &mods=input.combatEquipment->modifiers;
+        view.defense=equipment.defense;view.unknownStats.erase("armorclass");
+        // The panel uses UNITS_GetBlockRate. The run button is a movement
+        // preference, not an active running mode or a combat block penalty.
+        view.blockChance=equipment.blockChance;
+        view.unknownStats.erase("toblock");
+        if(input.difficulty && *input.difficulty<data.resistancePenalty.size()) {
+            const int bonus[]={mods.fireResist,mods.coldResist,mods.lightningResist,mods.poisonResist};
+            const int caps[]={mods.combat.fireMaxResist,mods.combat.coldMaxResist,mods.combat.lightningMaxResist,mods.combat.poisonMaxResist};
+            for(size_t index=0;index<4;++index) {
+                // The original unit starts with an empty resistance list. Anya
+                // explicitly sends its permanent list with 1D/E/F; an absent
+                // entry stays zero after a complete unit/equipment/state admission.
+                view.resistances[index]=std::clamp(integer(input,resistNames[index])+bonus[index]+data.resistancePenalty[*input.difficulty],
+                    -100,std::clamp(75+caps[index],-100,95));
+                view.unknownStats.erase(resistNames[index]);
+            }
+        }
+        view.physicalResist=mods.combat.physicalResist;view.magicResist=mods.combat.magicResist;
+        view.flatPhysicalReduction=mods.combat.flatPhysicalReduction;view.flatMagicReduction=mods.combat.flatMagicReduction;
+        view.poisonLengthResist=mods.combat.poisonLengthResist;view.fireAbsorbPercent=mods.combat.fireAbsorbPercent;
+        for(const auto *name:{"damageresist","magicresist","normal_damage_reduction","magic_damage_reduction","item_poisonlengthresist","item_absorbfire_percent"}) view.unknownStats.erase(name);
+    }
     CharacterDisplayContext display{attributes, equipment, input.baseRanks,
         input.fireMastery.value_or(0), input.lightningMastery.value_or(0)};
+    display.weaponValuesKnown=input.combatEquipment.has_value();
+    if(input.combatEquipment) display.concentrationDamagePercent=input.combatEquipment->concentrationDamagePercent;
     attributes.combat.coldSkillDamagePercent = input.coldDamagePercent.value_or(0);
     view.attack = describeCharacterAction(display, nullptr);
     const auto *tree = data.skills.tree(view.classCode);
@@ -175,67 +157,116 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         const auto eligibility = evaluateSkillEligibility(entry, eligibilityInput);
         skill.available = eligibility.available; skill.canAllocate = eligibility.canAllocate;
         skill.usableNow = eligibility.usableNow; skill.pickerEnabled = eligibility.pickerEnabled;
-        auto hints = [&](int rank, const std::map<int, int> &baseRanks) {
-            std::vector<std::string> lines;
-            if (entry.passive) { passiveDetails(lines, entry, rank); return lines; }
-            bool known = input.baseRanksAssigned && rank <= 255;
-            bool damageKnown = known;
-            std::optional<SkillCastSpec> cast;
-            std::optional<AuraDefinition> aura;
-            if (entry.spell && rank > 0 && rank <= 255) {
-                const auto &spec = *entry.spell;
-                damageKnown &= (!spec.fireDamage || input.fireMastery.has_value()) &&
-                    (!spec.lightningDamage || input.lightningMastery.has_value()) &&
-                    (!spec.coldDamage || input.coldDamagePercent.has_value());
-                known &= !spec.summon; // Pet attributes need a separate complete input.
-                cast = rank == effective ? currentCast : std::optional{resolveSkill(spec.rules(),
-                    {rank, baseRanks, display.fireMastery, display.lightningMastery,
-                     attributes.combat.coldSkillDamagePercent})};
+        // Native picker color uses SKILLS_GetUseState, not town permission or
+        // point-allocation eligibility. AURA exits before equipment/mana checks.
+        skill.pickerTooltipUnavailable = !entry.inGame || !skill.available || entry.passive || view.dead;
+        if (!entry.aura) {
+            if (!skill.pickerEnabled) skill.pickerTooltipUnavailable = true;
+            if (const auto ready = skillEquipmentReady(entry, input.handEquipment); ready && !*ready)
+                skill.pickerTooltipUnavailable = true;
+            if (data.skills.descriptions && input.resourceStates) {
+                const auto &catalog = *data.skills.descriptions;
+                const auto source = catalog.skills.find(id);
+                if (source != catalog.skills.end()) {
+                    const auto rank = innate ? std::optional{std::max(1, effective)} :
+                        skill.effectiveRankKnown ? std::optional{effective} : std::nullopt;
+                    SkillDescriptionInput resourceInput{id, rank, input.baseRanks, input.effectiveRanks, input.stats};
+                    SkillDescriptionValues values(catalog, resourceInput, source->second);
+                    const auto resource = input.resourceStates->bloodMana ?
+                        (input.life ? std::optional<double>{*input.life} : stat(input, "hitpoints")) :
+                        (eligibilityInput.mana ? std::optional<double>{*eligibilityInput.mana} : std::nullopt);
+                    // Native use-state checks the raw cost without MinMana;
+                    // item-owned charges bypass it. SrvDo116's transformed
+                    // exception needs a shape snapshot not projected here.
+                    if (input.chargedSkill != id && entry.serverDoFunction != 116)
+                        if (const auto required = values.mana(false); required && resource && *resource * 256 < *required)
+                            skill.pickerTooltipUnavailable = true;
+                    if (!input.resourceStates->inferno && eligibilityInput.mana && *eligibilityInput.mana < entry.startMana)
+                        skill.pickerTooltipUnavailable = true;
+                }
             }
-            // Aura damage can include mastery/equipment and Prayer. Keep its
-            // numbers unknown until those inputs exist rather than defaulting them.
-            if (entry.auraImplemented && rank > 0 && input.baseRanksAssigned && input.fireMastery &&
-                input.lightningMastery && input.coldDamagePercent && effectiveKnown(99))
-                aura = resolveAura(data, id, rank, baseRanks, display.fireMastery, display.lightningMastery,
-                    attributes.combat.coldSkillDamagePercent, id == 99 ? rank : effectiveRank(99));
-            display.spellDamageKnown = known && damageKnown;
-            if (rank == effective) skill.action = describeCharacterAction(display, &entry, rank, skill.available);
-            return describeSkillPicker(entry, cast ? &*cast : nullptr, aura ? &*aura : nullptr,
-                skill.baseRank, input.difficulty ? data.tables.at("difficultylevels").number(*input.difficulty, "AiCurseDiv").value_or(1) : 1,
-                known && (!cast || !cast->curse || input.difficulty.has_value()), damageKnown);
-        };
-        if (skill.effectiveRankKnown && effective > 0) skill.pickerTooltip = hints(effective, input.baseRanks);
-        else if (innate) {
-            skill.action = describeCharacterAction(display, &entry, effective, true);
-            skill.pickerTooltip = describeSkillPicker(entry, nullptr, nullptr, skill.baseRank, 1);
         }
-        else skill.pickerTooltip.clear();
-        const auto currentDetails = skill.pickerTooltip;
+        // Native attribute-panel programs and tooltip programs share MPQ
+        // formulas, while keeping their distinct display dispatch tables.
+        display.spellDamageKnown = input.baseRanksAssigned && effective <= 255 && entry.spell &&
+            (!entry.spell->fireDamage || input.fireMastery.has_value()) &&
+            (!entry.spell->lightningDamage || input.lightningMastery.has_value()) &&
+            (!entry.spell->coldDamage || input.coldDamagePercent.has_value()) && !entry.spell->summon;
+        if(data.skills.descriptions) {
+            SkillDescriptionInput action{id,innate?std::optional{std::max(1,effective)}:std::optional{effective},input.baseRanks,input.effectiveRanks,input.stats};
+            action.baseRanksComplete=input.baseRanksAssigned;action.difficulty=input.difficulty;
+            action.fireDamagePercent=input.fireMastery;action.lightningDamagePercent=input.lightningMastery;action.coldDamagePercent=input.coldDamagePercent;
+            if(input.combatEquipment) action.weaponDamage=std::pair{equipment.weapons[0].minimum/256,equipment.weapons[0].maximum/256};
+            skill.action=describeCharacterAction(display,*data.skills.descriptions,action,entry,skill.available);
+        }
+        auto hints = [&](std::optional<int> rank, const std::map<int, int> &baseRanks,
+                         SkillDescriptionContext context) {
+            if (!data.skills.descriptions) return SkillDescriptionResult{};
+            SkillDescriptionInput description{id, rank, baseRanks, input.effectiveRanks, input.stats};
+            description.baseRanksComplete = input.baseRanksAssigned;
+            description.difficulty = input.difficulty;
+            description.fireDamagePercent = input.fireMastery;
+            description.lightningDamagePercent = input.lightningMastery;
+            description.coldDamagePercent = input.coldDamagePercent;
+            if (const auto quantity = input.itemSkillQuantities.find(id); quantity != input.itemSkillQuantities.end())
+                description.quantity = quantity->second;
+            return describeSkill(*data.skills.descriptions, description, context);
+        };
+        const std::optional<int> descriptionRank = innate ? std::optional{std::max(1,effective)} :
+            skill.effectiveRankKnown ? std::optional{effective} : std::nullopt;
+        // Native tree calls dsc2/dsc3 with next effective rank, and reads
+        // cross-skill/base-rank callbacks from the unchanged character.
+        const std::optional<int> treeDescriptionRank = skill.effectiveRankKnown ? std::optional{effective+1} : std::nullopt;
+        const auto currentDetails = hints(descriptionRank, input.baseRanks, SkillDescriptionContext::Picker).lines;
+        // Native D2Client 33C2E / 33E44 / 34007 distinguishes a learned
+        // skill from an item grant by its base and effective levels. This is
+        // shared display metadata, independent of the skill or server flavor.
+        const bool itemGranted=skill.baseRankKnown && skill.effectiveRankKnown && skill.baseRank==0 && effective>0 && !innate;
+        if (itemGranted && data.skills.descriptions)
+            skill.treeGrantedHeading=data.skills.descriptions->label("StrSkill118");
         skill.treeTooltip.push_back(entry.name);
         if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
-        if (skill.baseRankKnown && stat(input, "level") && view.level < skill.nextRequiredLevel)
-            skill.treeTooltip.push_back("Requires level " + std::to_string(skill.nextRequiredLevel));
-        for (int required : entry.prerequisites)
-            if (baseKnown(required) && (!input.baseRanks.contains(required) || input.baseRanks.at(required) <= 0))
-                if (const auto *prerequisite = data.skills.find(required)) skill.treeTooltip.push_back("Requires " + prerequisite->name);
+        // Native tree RVA 7899C selects the red/requirement branch from node
+        // eligibility, not just whether its effective rank is zero. Learned
+        // nodes stay normal when no skill points are left; unknown inputs do
+        // not establish that a requirement has failed.
+        const bool noSkillPoints = stat(input, "newskills") && view.unspentSkills == 0;
+        bool treeRequirementsKnown = input.baseRanksAssigned && skill.effectiveRankKnown &&
+            stat(input, "level") && stat(input, "newskills");
+        for (size_t i = 0; i < entry.requiredAttributes.size(); ++i)
+            if (entry.requiredAttributes[i] > 0 && !eligibilityInput.attributes[i]) treeRequirementsKnown = false;
+        skill.treeTooltipUnavailable = treeRequirementsKnown && !skill.canAllocate && !(noSkillPoints && effective > 0);
+        if (skill.treeTooltipUnavailable && data.skills.descriptions) {
+            if (skill.baseRank >= skill.maximumRank)
+                skill.treeTooltip.push_back(std::string(data.skills.descriptions->label("StrSkill116")));
+            else
+                skill.treeTooltip.push_back(std::string(data.skills.descriptions->label("skilldesc3")) +
+                    std::to_string(entry.requiredLevel + effective));
+        }
+        const auto general = hints(treeDescriptionRank, input.baseRanks, SkillDescriptionContext::TreeGeneral).lines;
+        if (!general.empty()) skill.treeTooltip.push_back("");
+        skill.treeTooltip.insert(skill.treeTooltip.end(), general.begin(), general.end());
         if (skill.effectiveRankKnown && effective > 0) {
             skill.treeTooltip.push_back("");
-            skill.treeTooltip.push_back(data.skills.currentLevelLabel + std::to_string(effective));
-            if (effective > 0) skill.treeTooltip.insert(skill.treeTooltip.end(), currentDetails.begin(), currentDetails.end());
+            auto currentHeading=data.skills.currentLevelLabel + std::to_string(effective);
+            if (itemGranted && data.skills.descriptions) currentHeading+=data.skills.descriptions->label("StrSkill117");
+            skill.treeTooltip.push_back(std::move(currentHeading));
+            const auto current = hints(effective, input.baseRanks, SkillDescriptionContext::TreeLevel).lines;
+            skill.treeTooltip.insert(skill.treeTooltip.end(), current.begin(), current.end());
         } else if (!skill.effectiveRankKnown) {
             skill.treeTooltip.push_back("");
             skill.treeTooltip.push_back(data.skills.currentLevelLabel + "?");
         }
         if (skill.baseRankKnown && skill.effectiveRankKnown && skill.baseRank < skill.maximumRank && effective < 255) {
-            auto nextRanks = input.baseRanks; ++nextRanks[id];
             skill.treeTooltip.push_back("");
             skill.treeTooltip.push_back(effective == 0 ? data.skills.firstLevelLabel :
                 data.skills.nextLevelLabel);
-            const auto next = hints(effective + 1, nextRanks);
+            const auto next = hints(effective + 1, input.baseRanks, SkillDescriptionContext::TreeLevel).lines;
             skill.treeTooltip.insert(skill.treeTooltip.end(), next.begin(), next.end());
         }
-        skill.treeBonusHeading = entry.bonusHeading;
-        skill.treeBonusTooltip = entry.bonusDescriptions;
+        const auto bonus = hints(treeDescriptionRank, input.baseRanks, SkillDescriptionContext::TreeBonus);
+        skill.treeBonusHeading = bonus.bonusHeading;
+        skill.treeBonusTooltip = bonus.lines;
         skill.pickerTooltip.clear();
         if (!entry.shortDescription.empty()) skill.pickerTooltip.push_back(entry.shortDescription);
         if (!entry.classCode.empty()) {
@@ -250,12 +281,15 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         view.skills.emplace(id, std::move(skill));
     }
     for(const auto &charge:input.chargedSkills) {
-        auto source=input;source.chargedSkills.clear();source.effectiveRanks[charge.skill]=charge.rank;
+        auto source=input;source.chargedSkills.clear();source.effectiveRanks[charge.skill]=charge.rank;source.chargedSkill=charge.skill;
         auto projected=projectCharacterDisplay(data,source);
         if(const auto *entry=projected.skill(charge.skill)) {
             auto skill=*entry;skill.owner=uint32_t(charge.item.id.value);skill.canAllocate=false;
             skill.available=skill.available && charge.charges>0;skill.pickerEnabled=skill.pickerEnabled && charge.charges>0;skill.usableNow=skill.usableNow && charge.charges>0;
-            skill.pickerTooltip.push_back(std::to_string(charge.charges)+" / "+std::to_string(charge.maximum)+" Charges");view.chargedSkills.push_back(std::move(skill));
+            skill.pickerTooltipUnavailable=skill.pickerTooltipUnavailable || charge.charges==0;
+            if (data.skills.descriptions)
+                skill.pickerTooltip.push_back(describeSkillCharges(*data.skills.descriptions,charge.charges,charge.maximum));
+            view.chargedSkills.push_back(std::move(skill));
         }
     }
     return view;

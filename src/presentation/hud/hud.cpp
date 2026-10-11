@@ -185,6 +185,7 @@ float SceneView::partyPortraitOffset() const {
 }
 void SceneView::drawUi(Vec mouse) const {
     drawControlPanel();
+    drawDurabilityWarning();
     drawQuestNotice();
     if (view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput()) {
         const int palette = std::clamp(mapView().palette, 0, 4);

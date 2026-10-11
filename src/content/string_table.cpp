@@ -29,6 +29,8 @@ void merge(const Bytes &bytes, std::map<std::string, std::string, std::less<>> &
     const uint64_t hashStart = 21ull + uint64_t(nodes) * 2;
     if (start > bytes.size() || hashStart + uint64_t(buckets) * 17 > start)
         throw std::runtime_error("Invalid MPQ string table index");
+    struct KeyEntry { uint32_t distance; int index; std::string value; };
+    std::map<std::string,KeyEntry,std::less<>> keys;
     for (uint32_t i = 0; i < buckets; ++i) {
         const size_t node = size_t(hashStart) + size_t(i) * 17;
         if (!bytes[node]) continue;
@@ -40,9 +42,22 @@ void merge(const Bytes &bytes, std::map<std::string, std::string, std::less<>> &
         auto value = field(bytes, textOffset, textLength);
         indexed[base + int(number(bytes, node + 1, 2))] = value;
         if (!key.empty()) {
-            indices[key] = base + int(number(bytes, node + 1, 2));
-            entries[std::move(key)] = std::move(value);
+            // Native key lookup starts at the stored hash bucket and probes
+            // forward, wrapping. Original TBLs contain duplicate names; the
+            // first probe wins, not the last record in physical bucket order.
+            const auto hash = number(bytes, node + 3, 4);
+            if (hash >= buckets) throw std::runtime_error("Invalid MPQ string hash bucket");
+            const auto distance = (uint64_t(i) + buckets - hash) % buckets;
+            const auto found = keys.find(key);
+            if (found == keys.end() || distance < found->second.distance)
+                keys.insert_or_assign(std::move(key),KeyEntry{uint32_t(distance),base + int(number(bytes,node+1,2)),std::move(value)});
         }
+    }
+    // Expansion/patch tables still override a previous table's chosen key;
+    // numeric lookups retain every original entry, including duplicate names.
+    for (auto &[key,record]:keys) {
+        indices[key]=record.index;
+        entries[key]=std::move(record.value);
     }
 }
 } // namespace

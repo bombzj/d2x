@@ -45,6 +45,18 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
     result.leftAllowed = table.number(row, "leftskill").value_or(0) != 0;
     result.passive = table.number(row, "passive").value_or(0) != 0;
     result.allowedInTown = table.number(row, "InTown").value_or(0) != 0;
+    result.inGame = table.number(row, "InGame").value_or(0) != 0;
+    result.aura = table.number(row, "aura").value_or(0) != 0;
+    result.noAmmo = table.number(row, "noammo").value_or(0) != 0;
+    result.startMana = table.number(row, "startmana").value_or(0);
+    result.serverDoFunction = table.number(row, "srvdofunc").value_or(0);
+    for (size_t hand = 0; hand < 2; ++hand) {
+        const auto group = hand ? "b" : "a";
+        for (size_t slot = 0; slot < 3; ++slot)
+            result.includedHandTypes[hand][slot] = table.value(row, "itype" + std::string(group) + std::to_string(slot + 1));
+        for (size_t slot = 0; slot < 2; ++slot)
+            result.excludedHandTypes[hand][slot] = table.value(row, "etype" + std::string(group) + std::to_string(slot + 1));
+    }
     // Non-item monster rows contain whitespace in this numeric flag.
     // Only SrvDo113 interprets scroll/book quantity; do not parse other rows.
     result.itemSkill = table.number(row, "srvdofunc") == 113 &&
@@ -66,6 +78,53 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
         if (!found) throw std::runtime_error("Invalid original skill prerequisite: " + std::string(name));
     }
     return result;
+}
+std::optional<bool> skillEquipmentReady(const SkillMetadata &skill,
+    const std::array<std::optional<SkillHandEquipment>, 2> &hands) {
+    if (skill.basicAction != BasicSkillAction::None) return {};
+    if (skill.includedHandTypes[0][0].empty() && skill.excludedHandTypes[0][0].empty()) return true;
+    const auto isType = [](const SkillHandEquipment &item, std::string_view type) {
+        return item.present && std::find(item.types.begin(), item.types.end(), type) != item.types.end();
+    };
+    const auto matches = [&](size_t hand, size_t group) -> std::optional<bool> {
+        if (!hands[hand]) return {};
+        const auto &item = *hands[hand];
+        const auto &other = hands[1 - hand];
+        const auto &included = skill.includedHandTypes[group];
+        const auto &excluded = skill.excludedHandTypes[group];
+        if (!item.present) {
+            if (included[0].empty() && excluded[0].empty()) return true;
+            // D2Common permits bare hands for these original ItemTypes only
+            // when group B is empty and the other hand is not a weapon.
+            const auto &primary = skill.includedHandTypes[0][0];
+            if ((primary == "weap" || primary == "mele" || primary == "h2h") &&
+                skill.includedHandTypes[1][0].empty())
+                return other ? std::optional{!isType(*other, "weap")} : std::nullopt;
+            return false;
+        }
+        for (const auto &type : excluded) {
+            if (type.empty()) break;
+            if (isType(item, type)) return false;
+        }
+        if (included[0].empty()) return true;
+        bool found = false;
+        for (const auto &type : included) {
+            if (type.empty()) break;
+            if (isType(item, type)) { found = true; break; }
+        }
+        if (!found || item.unusable) return false;
+        if (item.ammunitionType.empty() || skill.noAmmo) return true;
+        if (!other) return {};
+        if (!isType(*other, item.ammunitionType)) return false;
+        if (!other->stackable) return true;
+        return other->quantity ? std::optional{*other->quantity > 0} : std::nullopt;
+    };
+    const auto rightA = matches(0, 0);
+    if (!rightA) return {};
+    if (*rightA) return matches(1, 1);
+    const auto rightB = matches(0, 1);
+    if (!rightB) return {};
+    return *rightB ? matches(1, 0) : std::optional{false};
 }
 SkillEligibility evaluateSkillEligibility(const SkillMetadata &skill, const SkillEligibilityInput &input) {
     SkillEligibility result;

@@ -2,7 +2,9 @@
 #include "gameplay/items/intents.hpp"
 #include "gameplay/items/display.hpp"
 #include <array>
+#include <cstdint>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,6 +17,7 @@ struct InventoryDefinitionView {
     unsigned maxStack = 0, bookCapacity = 0;
     bool beltAllowed = false, opensCube = false, identifySource = false;
     std::array<bool, size_t(EquipmentSlot::Count)> slots{};
+    bool shield = false, quiver = false;
     bool fits(EquipmentSlot slot) const { return slots.at(size_t(slot)); }
 };
 struct InventoryItemView {
@@ -34,6 +37,8 @@ struct InventoryItemView {
     float groundAnimationAge = 0;
     bool groundPickupAllowed = true;
     int specialRow = -1; // Only supplied when the native special-item index is known.
+    // Original integer percentage, capped at 100; absent for unknown/ineligible items.
+    std::optional<unsigned> durabilityPercentage{};
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {

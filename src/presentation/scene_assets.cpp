@@ -251,6 +251,11 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
         hirelingHead.frames.empty() || hirelingArmor.frames.empty() || hirelingWeapon.frames.empty())
         throw std::runtime_error("Original expansion hireling panel resources are missing");
     panel = uiGraphics_.single("data/global/ui/panel/800ctrlpnl7.dc6");
+    durabilityIcons = uiGraphics_.single("data/global/ui/panel/duroicon.dc6", true);
+    if (durabilityIcons.directions != 1 || durabilityIcons.count != 33 || durabilityIcons.frames.size() != 33 ||
+        std::any_of(durabilityIcons.frames.begin(), durabilityIcons.frames.end(),
+            [](const auto &image) { return !image.texture.id || !image.indexedTexture.id; }))
+        throw std::runtime_error("Original equipment durability warning artwork is missing or incomplete");
     miniPanel = uiGraphics_.single("data/global/ui/panel/minipanel.dc6");
     miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
     miniPanelToggle = uiGraphics_.single("data/global/ui/panel/menubutton.dc6");

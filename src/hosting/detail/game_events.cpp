@@ -136,6 +136,10 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 if(entry!=peer.monsters.end()) {if (state->enabled) entry->second.states.insert(state->state);else entry->second.states.erase(state->state);}
             }
             if(state->type==0 && state->actor!=host.read(*binding)->actor.id && std::none_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==state->actor;})) continue;
+            if(state->type==0) {
+                if(state->enabled) peer.states[state->actor].insert(state->state);
+                else peer.states[state->actor].erase(state->state);
+            }
             delta.push_back(nativeState(*content,*state));
         }
         else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);

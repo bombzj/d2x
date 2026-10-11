@@ -109,6 +109,17 @@ void SceneView::chatSent(bool accepted) {
     chat_.sent(accepted);
     view_.chatInputOpen = chat_.inputOpen();
 }
+void SceneView::updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game) {
+    if (party_.update(social, self, game)) view_.partyOpen = false;
+    // D2Client 1.13c RVA 0x9DB90: another roster player's directed flag 8 toward self.
+    constexpr uint16_t hostileFlag = 8;
+    incomingHostility_ = self != UINT32_MAX && std::any_of(social.relationships.begin(), social.relationships.end(),
+        [&](const auto &entry) {
+            const auto source = social.players.find(entry.first.first);
+            return entry.first.first != self && entry.first.second == self && (entry.second & hostileFlag) &&
+                source != social.players.end() && source->second.listed;
+        });
+}
 PartyIntent SceneView::handleParty(const FrameInput &input) {
     if (view_.blocksInput() || view_.inventory.drag || view_.inventory.split ||
         view_.inventory.goldDialog || view_.inventory.identify) {

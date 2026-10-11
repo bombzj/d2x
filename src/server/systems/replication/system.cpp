@@ -53,11 +53,9 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             result.back().hireling=owner->persistent.player.hireling;
             result.back().hirelingOwner=owner->actor;
             result.back().hirelingLife=monster.life;
-            result.back().hirelingAttributes={{"level",monster.rule.level},{"experience",int64_t(owner->persistent.player.hireling.experience)},{"nextexp",int64_t(monster.hirelingNextExperience)},
-                {"hitpoints",monster.life},{"maxhp",monster.maximumLife},{"strength",monster.hirelingStrength},{"dexterity",monster.hirelingDexterity},
-                {"armorclass",ports_.effects.unitDefense(monster.id,tick)},{"mindamage",monster.rule.minimumDamage},{"maxdamage",monster.rule.maximumDamage},
-                {"fireresist",ports_.effects.unitResistance(monster.id,DamageType::Fire,tick)},{"lightresist",ports_.effects.unitResistance(monster.id,DamageType::Lightning,tick)},
-                {"coldresist",ports_.effects.unitResistance(monster.id,DamageType::Cold,tick)},{"poisonresist",ports_.effects.unitResistance(monster.id,DamageType::Poison,tick)}};
+            result.back().hirelingAttributes=monster.hirelingBaseAttributes;
+            result.back().hirelingAttributes.insert({{"level",monster.rule.level},{"experience",int64_t(owner->persistent.player.hireling.experience)},
+                {"nextexp",int64_t(monster.hirelingNextExperience)},{"hitpoints",monster.life}});
         }
         result.back().lightningReady=monster.lightningReady;
         result.back().components=monster.components;result.back().componentCounts=monster.rule.componentCounts;

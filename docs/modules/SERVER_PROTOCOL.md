@@ -25,6 +25,10 @@
 
 NativeRealmService是单个连接的生命周期编排，不是玩法容器。新增战斗／库存／任务逻辑放入server对应领域；包处理器只解码、提交领域命令和处理提交结果。不能把MPQ读取、存档编码、UI状态或每种技能实现放进GameInstance或这个编排对象。
 
+native_game_wire在本人新准入的0x59后发送原0xAA初始状态快照；monster_replication也为新进入视野的怪物／佣兵发送当前状态及数值列表。两者共用nativeStateSnapshot，即使无状态也包含0xFF终止；属性列表按当前ItemStatCost的Send Bits／Signed编码，容量不足明确拒绝。本人新准入不恢复临时属性列表，运行中变更走原A7／A8／A9；玩家光环及技能效果发布原数值列表，事件发送后同步观察缓存，避免后续空A7覆盖A9。目录的StateSnapshot已标实现，不表示运行中全状态重同步或所有他人状态组合已认证。客户端对未收到／解码失败的状态仍保留未知，不为自研漏包默认零。原依据及有限观察见[人物属性](../gameplay/characters/ATTRIBUTES.md)和[技能描述](../gameplay/skills/DESCRIPTIONS.md#当前包有限冒烟)。
+
+native_character_wire的四抗条目只发布安亚永久奖励，装备／状态／难度在共用客户端投影合成；佣兵原9E／9F／A0发布MonsterAI_SendMercStats对应的基础成长值及当前生命，装备和状态同样由原副本合成。不能把权威最终抗性或佣兵装备后总值再作为原基础列表发送。对应显示和验证边界归[人物属性](../gameplay/characters/ATTRIBUTES.md)及[佣兵](../gameplay/characters/HIRELINGS.md)。
+
 野蛮人移动技能复用原16位置批次同步权威坐标，保留4C／4D技能动作；跳跃／旋风的动作通知也同步本人，避免普通本人预测在等待近战范围时不启动。原0D/action19按生命校正消费，不清除不可打断动作。具体范围和运行证据见[野蛮人](../gameplay/skills/BARBARIAN.md)。
 
 内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03走跑及02／04出口靠近使用此入口，3A／3B已接人物成长事务，41复活及13本人尸体取回已接death；不新增私有包或客户端分支。

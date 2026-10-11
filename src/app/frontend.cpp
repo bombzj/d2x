@@ -478,6 +478,24 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
+            if (sharedClients && request.find("online-status") != std::string::npos) {
+                const auto &player = sharedClients->character().read();
+                const auto &merc = sharedClients->npc().hireling();
+                const auto left = player.actionDisplay(player.selectedSkills[player.weaponSet * 2],player.selectedSkillOwners[player.weaponSet * 2]);
+                const auto right = player.actionDisplay(player.selectedSkills[player.weaponSet * 2 + 1],player.selectedSkillOwners[player.weaponSet * 2 + 1]);
+                reply["characterUi"] = {{"name", player.name}, {"level", player.level},
+                    {"attributes", player.attributes}, {"resistances", player.resistances},
+                    {"defense", player.defense}, {"block", player.blockChance},
+                    {"life", player.hp}, {"maxLife", player.maxLife}, {"mana", player.mana}, {"maxMana", player.maxMana},
+                    {"unknownStats", player.unknownStats},
+                    {"left", {{"damage", left.damage}, {"rating", left.attackRating}}},
+                    {"right", {{"damage", right.damage}, {"rating", right.attackRating}}}};
+                reply["hirelingUi"] = {{"known", merc.known}, {"active", merc.active}, {"name", merc.name},
+                    {"level", merc.level}, {"strength", merc.strength}, {"dexterity", merc.dexterity},
+                    {"defense", merc.defense}, {"life", merc.life}, {"maxLife", merc.maximumLife},
+                    {"damageMinimum", merc.damageMinimum}, {"damageMaximum", merc.damageMaximum},
+                    {"resistances", merc.resistances}, {"experience", merc.experience}, {"nextExperience", merc.nextExperience}};
+            }
             if (sharedUi) {
                 const auto &chat = sharedUi->chat();
                 reply["chatUi"] = {{"ready", chat.ready()}, {"inputOpen", chat.inputOpen()}, {"logOpen", chat.logOpen()},

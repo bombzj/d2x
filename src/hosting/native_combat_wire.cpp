@@ -8,12 +8,10 @@
 #include <bit>
 #include <algorithm>
 namespace d2x {
-Bytes nativeState(const ClassicData &data,const server::StateFact &fact) {
-    using hosting::ServerMessage;using hosting::encodeServerPacket;
-    if(fact.state<0 || fact.state>=255) throw std::runtime_error("Native state id exceeds packet capacity");
-    if(!fact.enabled || fact.stats.empty()) return encodeServerPacket(fact.enabled?ServerMessage::EnableState:ServerMessage::DisableState,[&](auto &out){out.u8(fact.type);out.u32(uint32_t(fact.actor.value));out.u8(uint8_t(fact.state));});
-    const auto &table=data.tables.at("itemstatcost");net::protocol::BitWriter bits;
-    for(const auto &[id,value]:fact.stats) {
+namespace {
+void stateStats(net::protocol::BitWriter &bits,const ClassicData &data,const std::vector<std::pair<int,int64_t>> &stats) {
+    const auto &table=data.tables.at("itemstatcost");
+    for(const auto &[id,value]:stats) {
         size_t row=0;while(row<table.rows().size() && table.number(row,"ID")!=id) ++row;
         if(row==table.rows().size() || id<0 || id>=511) throw std::runtime_error("Unknown native state stat");
         const int width=table.number(row,"Send Bits").value_or(0),param=table.number(row,"Send Param Bits").value_or(0);
@@ -21,7 +19,29 @@ Bytes nativeState(const ClassicData &data,const server::StateFact &fact) {
         if(width<1 || width>32 || param<0 || param>32 || value<(signedValue?-(int64_t(1)<<(width-1)):0) || value>=(int64_t(1)<<(width-(signedValue?1:0)))) throw std::runtime_error("Native state stat exceeds Send Bits");
         bits.write(uint32_t(id),9);bits.write(0,unsigned(param));bits.write(uint32_t(uint64_t(value)&((uint64_t(1)<<width)-1)),unsigned(width));
     }
-    bits.write(511,9);auto packed=bits.release();if(packed.size()>247) throw std::runtime_error("Native state stat packet exceeds byte length");
+    bits.write(511,9);
+}
+}
+Bytes nativeStateSnapshot(const ClassicData &data,EntityId actor,uint8_t type,const std::set<int> &states,
+    const std::map<int,std::vector<std::pair<int,int64_t>>> &stats) {
+    net::protocol::BitWriter bits;
+    for(int id:states) {
+        if(id<0 || id>=255) throw std::runtime_error("Native state id exceeds snapshot capacity");
+        const auto list=stats.find(id);const bool present=list!=stats.end() && !list->second.empty();
+        bits.write(uint32_t(id),8);bits.write(present,1);if(present) stateStats(bits,data,list->second);
+    }
+    bits.write(255,8);const auto packed=bits.release();
+    if(packed.size()>244) throw std::runtime_error("Native state snapshot exceeds byte length");
+    return hosting::encodeServerPacket(hosting::ServerMessage::StateSnapshot,[&](auto &out) {
+        out.u8(type);out.u32(uint32_t(actor.value));out.u8(uint8_t(packed.size()+7));out.append(packed);
+    });
+}
+Bytes nativeState(const ClassicData &data,const server::StateFact &fact) {
+    using hosting::ServerMessage;using hosting::encodeServerPacket;
+    if(fact.state<0 || fact.state>=255) throw std::runtime_error("Native state id exceeds packet capacity");
+    if(!fact.enabled || fact.stats.empty()) return encodeServerPacket(fact.enabled?ServerMessage::EnableState:ServerMessage::DisableState,[&](auto &out){out.u8(fact.type);out.u32(uint32_t(fact.actor.value));out.u8(uint8_t(fact.state));});
+    net::protocol::BitWriter bits;stateStats(bits,data,fact.stats);
+    auto packed=bits.release();if(packed.size()>247) throw std::runtime_error("Native state stat packet exceeds byte length");
     return encodeServerPacket(ServerMessage::EnableStateStats,[&](auto &out){out.u8(fact.type);out.u32(uint32_t(fact.actor.value));out.u8(uint8_t(packed.size()+8));out.u8(uint8_t(fact.state));out.append(packed);});
 }
 namespace {

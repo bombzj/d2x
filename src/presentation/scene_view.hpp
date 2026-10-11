@@ -124,6 +124,7 @@ class SceneView {
     OriginalMenu originalMenu_;
     TradeInviteView tradeInvite_;
     PartyView party_;
+    bool incomingHostility_ = false;
     struct QuestCompletionAnimation {
         enum class Phase { Idle, Pending, Playing };
         Phase phase = Phase::Idle;
@@ -170,6 +171,7 @@ class SceneView {
     void drawNpcShop(Vec mouse) const;
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
+    void drawDurabilityWarning() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
     void drawSkillTree(Vec mouse) const;
@@ -218,9 +220,7 @@ class SceneView {
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     void updateChat(const OnlineSocialView &social) { chat_.update(social); }
-    void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game) {
-        if (party_.update(social, self, game)) view_.partyOpen = false;
-    }
+    void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game);
     PartyIntent handleParty(const FrameInput &input);
     bool partyReady() const { return party_.ready(); }
     float partyPortraitOffset() const;

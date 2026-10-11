@@ -1,6 +1,8 @@
 #pragma once
 #include "contracts/character.hpp"
 #include "gameplay/items/skill_sources.hpp"
+#include "content/skills/skill_eligibility.hpp"
+#include "content/character/combat_display.hpp"
 #include <map>
 #include <optional>
 
@@ -24,10 +26,15 @@ struct CharacterProjectionInput {
     std::vector<ChargedSkill> chargedSkills;
     bool baseRanksAssigned = false;
     std::array<bool, 2> throwReady{};
+    std::array<std::optional<SkillHandEquipment>, 2> handEquipment;
+    struct ResourceStates { bool bloodMana = false, inferno = false; };
+    std::optional<ResourceStates> resourceStates;
+    std::optional<int> chargedSkill; // This recursion projects a native item owner, not a learned cast.
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;
     std::optional<unsigned> difficulty;
     std::optional<KnownAttackTiming> attackTiming;
     std::optional<int> missilePierceChance;
+    std::optional<CombatDisplayEquipment> combatEquipment;
 };
 CharacterView projectCharacterDisplay(const ClassicData &, const CharacterProjectionInput &);
 } // namespace d2x

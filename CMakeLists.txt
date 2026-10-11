@@ -52,6 +52,9 @@ add_library(d2x_items src/gameplay/items/definitions.cpp
   src/gameplay/items/inventory_error.cpp src/gameplay/items/equipment_rules.cpp src/gameplay/items/equipment_combat.cpp)
 target_link_libraries(d2x_items PUBLIC d2x_core)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp src/content/monsters/monster_catalog.cpp)
+target_sources(d2x_content PRIVATE
+    src/content/skills/description_formula.cpp src/content/skills/description_data.cpp
+    src/content/skills/description_values.cpp src/content/skills/skill_description.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
@@ -249,7 +252,7 @@ target_link_libraries(d2x_client PUBLIC d2x_client_api PRIVATE d2x_content)
 add_library(d2x_remote_scene src/client/remote_town.cpp src/client/remote_control.cpp src/client/remote_inventory.cpp src/client/remote_combat.cpp src/client/remote_ui_clients.cpp)
 target_link_libraries(d2x_remote_scene PUBLIC d2x_client d2x_world d2x_remote_client)
 target_sources(d2x_world PRIVATE src/world/preset_identity.cpp)
-target_sources(d2x_content PRIVATE src/content/items/item_display.cpp src/content/character/character_display.cpp)
+target_sources(d2x_content PRIVATE src/content/items/item_display.cpp src/content/character/character_display.cpp src/content/character/combat_display.cpp)
 target_sources(d2x_content PRIVATE src/content/character/realm_portrait.cpp)
 
 add_library(d2x_presentation

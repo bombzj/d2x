@@ -19,8 +19,7 @@ DomainResult<> System::hirelingSkill(EntityId id,const SkillCastSpec &skill,uint
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,id,skill.sourceId,skill.rank};
     if(!unit.states.apply(spec,tick).accepted) return {DomainStatus::Conflict,{}};
     const int state=spec.state.id;
-    std::vector<std::pair<int,int64_t>> stats;
-    if(spec.modifiers.combat.defensePercent) stats.emplace_back(p->rules.skills->nativeStats.at("skill_armor_percent"),spec.modifiers.combat.defensePercent);
+    auto stats=nativeEffectStats(*p->rules.skills,spec.modifiers);
     std::vector<DomainFact> facts;
     for(const int previous:unitStates(id,tick)) if(!unit.states.hasState(previous,tick)) facts.emplace_back(StateFact{id,1,m->area,previous,false});
     facts.emplace_back(StateFact{id,1,m->area,state,true,stats});

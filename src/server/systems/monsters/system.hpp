@@ -50,6 +50,7 @@ struct Actor {
     int hirelingStrength{},hirelingDexterity{};
     int hirelingVitality{};
     uint64_t hirelingNextExperience{};
+    std::map<std::string,int64_t,std::less<>> hirelingBaseAttributes;
     unsigned hirelingPassiveMask{};
     int hirelingMovementPercent{};
     std::map<int,TimedRestoration> healing;
@@ -123,8 +124,8 @@ class System {
     State state_;
     const Ports ports_;
   public:
-    void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement) {
-        if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;}
+    void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement,std::map<std::string,int64_t,std::less<>> base) {
+        if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
     }
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

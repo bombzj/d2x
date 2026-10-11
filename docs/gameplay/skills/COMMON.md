@@ -107,6 +107,8 @@
 
 ## 定义、来源与客户端状态
 
+选择器与技能树的 MPQ 描述程序、公式及截图证据由[技能描述](DESCRIPTIONS.md)维护，与执行和学习资格分开。
+
 Skills／SkillDesc／CharStats、TBL及原树／图标提供ID、前置、手位／城镇资格与描述；显示节点不表示服务端已执行。`projectCharacterDisplay`使用原包等级和已知值，缺必要武器、协同、支配或描述程序时保持未知。普通、固有、物品授予和充能来源不能混用，源失效不退回同ID普通技能；充能及ItemEffect／ItemCltEffect限制由[物品技能](ITEM_SKILLS.md)维护。
 
 本人已收到属性或完整解码的装备／状态可以用于FCR／IAS／Pierce显示；远端缺隐藏值时不猜测。学习、选择、数量与热键的原包及等待条件统一见人物模块，保存字段和运行态排除项统一见SAVES。

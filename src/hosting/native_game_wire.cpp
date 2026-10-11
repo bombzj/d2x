@@ -2,7 +2,9 @@
 #include "gameplay/combat/life.hpp"
 #include "native_item_wire.hpp"
 #include "native_character_wire.hpp"
+#include "native_combat_wire.hpp"
 #include "protocol/message_catalog.hpp"
+#include "network/protocol/bits.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/character_attributes.hpp"
 #include "persistence/d2s_quests.hpp"
@@ -93,6 +95,9 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
         for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
         point(out, view.actor.position + area.origin);
     });
+    // SUNITMSG_FirstFn sends AA even for an empty initial state list. A new
+    // admission has no transient stat lists; later A7/A8/A9 carry updates.
+    result.push_back(nativeStateSnapshot(data,player.id,0,view.states,{}));
     server::attributes::Totals totals;
     totals.character = view.attributes; totals.equipment = view.equipment; totals.skillRanks = view.skillRanks;
     auto character = nativeCharacterPackets(data, state.player, totals);

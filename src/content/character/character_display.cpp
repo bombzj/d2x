@@ -1,34 +1,19 @@
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
-#include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "character_display.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "content/skills/skill_data.hpp"
-#include "gameplay/skills/aura.hpp"
-#include "gameplay/skills/passive.hpp"
-#include "gameplay/skills/necro_summon_spec.hpp"
-#include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/amazon_magic_spec.hpp"
-#include "gameplay/skills/corpse_search_spec.hpp"
-#include "gameplay/skills/leap_spec.hpp"
-#include "gameplay/skills/grim_ward_spec.hpp"
-#include "gameplay/skills/rank_bonus.hpp"
+#include "content/skills/description_values.hpp"
 #include <algorithm>
-#include <cstdio>
 #include <cstdint>
 #include <limits>
-#include <tuple>
 
 namespace d2x {
 namespace {
-template<class... Args> std::string displayNumber(const char *format, Args... values) {
-    char buffer[128];
-    std::snprintf(buffer, sizeof(buffer), format, values...);
-    return buffer;
-}
 std::string damageText(int64_t minimum, int64_t maximum) {
     return std::to_string(minimum) + "-" + std::to_string(maximum);
 }
@@ -41,7 +26,7 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
         const auto &weapon = equipment.weapons[index];
         if (leftHand && (!weapon.item || !weapon.leftHand)) continue;
         if ((thrown && !weapon.throwable) || (!thrown && weapon.potion)) return {};
-        if (skill && !skill->weapon->smite && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
+        if (skill && !skill->weapon->smite && !skill->weapon->requiredType.empty() && std::find(weapon.types.begin(), weapon.types.end(), skill->weapon->requiredType) == weapon.types.end())
             return {};
         if (skill && skill->weapon->smite) {
             if (!equipment.shield) return {};
@@ -76,12 +61,14 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
             int(int64_t(weapon.meleeBaseMinimum) * skillDamage / 100);
         int64_t maximum = thrown ? weapon.throwMaximum : weapon.maximum +
             int(int64_t(weapon.meleeBaseMaximum) * skillDamage / 100);
-        int64_t poisonMinimum = 0, poisonMaximum = 0;
+        WeaponModifiers own;
+        if (auto found = combat.weapons.find(weapon.item); found != combat.weapons.end()) own = found->second;
+        const int64_t itemFrames=(int64_t(combat.poisonFrames)+own.poisonFrames)/std::max(1,combat.poisonSources+own.poisonSources);
+        int64_t poisonMinimum = (int64_t(combat.poisonMinimum)+own.poisonMinimum)*itemFrames/256;
+        int64_t poisonMaximum = (int64_t(combat.poisonMaximum)+own.poisonMaximum)*itemFrames/256;
         if (skill && skill->poisonDuration > 0) {
-            WeaponModifiers own;
-            if (auto found = combat.weapons.find(weapon.item); found != combat.weapons.end()) own = found->second;
             const int64_t frames = (int64_t(skill->poisonDuration * 25.f + .001f) + combat.poisonFrames + own.poisonFrames) /
-                std::max(1, combat.poisonSources + own.poisonSources);
+                std::max(1, 1+combat.poisonSources + own.poisonSources);
             poisonMinimum = (int64_t(skill->minimumDamage * 256.f) + combat.poisonMinimum + own.poisonMinimum) * frames / 256;
             poisonMaximum = (int64_t(skill->maximumDamage * 256.f) + combat.poisonMaximum + own.poisonMaximum) * frames / 256;
         }
@@ -112,7 +99,7 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     const SkillRecord *entry, int rank, bool available) {
     if (!entry) return weaponStats(context, false, false);
     if (!available || entry->passive) return {};
-    if (entry->auraImplemented) return weaponStats(context, false, false);
+    if (entry->aura) return {};
     if (entry->basicAction != BasicSkillAction::None) {
         const bool thrown = entry->basicAction == BasicSkillAction::Throw || entry->basicAction == BasicSkillAction::LeftHandThrow;
         const bool leftHand = entry->basicAction == BasicSkillAction::LeftHandThrow ||
@@ -136,266 +123,58 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     return {};
 }
 
-std::vector<std::string> describeAuraSkill(const SkillRecord &skill, const AuraDefinition &definition, int baseRank) {
-    const auto *aura = &definition;
-    std::vector<std::string> lines;
-    auto number = [](float value) { return std::string(displayNumber("%.1f", value)); };
-    const auto &stats = aura->modifiers;
-    const auto &combat = stats.combat;
-    lines.push_back("Radius: " + number(aura->radius * 2.f / 3.f) + " yards");
-    if (combat.damagePercent)
-        lines.push_back("Damage: +" + std::to_string(combat.damagePercent + aura->ownerDamageBonus) + "%" +
-            (aura->ownerDamageBonus ? " / Party: +" + std::to_string(combat.damagePercent) + "%" : ""));
-    if (combat.attackRatingPercent) lines.push_back("Attack rating: +" + std::to_string(combat.attackRatingPercent) + "%");
-    if (combat.defensePercent) lines.push_back("Defense: " + std::string(combat.defensePercent > 0 ? "+" : "") + std::to_string(combat.defensePercent) + "%");
-    if (combat.attackRate > 0) lines.push_back("Attack speed: +" + std::to_string(combat.attackRate) + "%");
-    if (stats.velocityPercent < 0) lines.push_back("Slows enemies: " + std::to_string(-stats.velocityPercent) + "%");
-    else if (stats.velocityPercent > 0) lines.push_back("Movement speed: +" + std::to_string(stats.velocityPercent) + "%");
-    for (const auto &[label, resist, maximum] : std::vector<std::tuple<const char *, int, int>>{
-        {"Fire", stats.fireResist, combat.fireMaxResist}, {"Cold", stats.coldResist, combat.coldMaxResist},
-        {"Lightning", stats.lightningResist, combat.lightningMaxResist}}) {
-        if (!resist && !maximum) continue;
-        std::string line = std::string(label) + " resist: " + (resist > 0 ? "+" : "") + std::to_string(resist) + "%";
-        if (maximum) line += " / Maximum: +" + std::to_string(maximum) + "%";
-        lines.push_back(std::move(line));
+CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,const SkillDescriptionCatalog &catalog,
+    const SkillDescriptionInput &input,const SkillRecord &entry,bool available) {
+    if(!available || entry.passive) return {};
+    const auto found=catalog.skills.find(entry.id);
+    if(found==catalog.skills.end() || !found->second.hasDescription) return {};
+    const auto &source=found->second;const auto &description=source.description;
+    if(!description.damageProgram && !description.attackProgram) return {};
+    // The original character panel dispatches SkillDesc.DescDam/DescAtt, not
+    // server execution availability. Generic spell programs share the same
+    // fixed-point calculator as the picker/tree, including poison totals.
+    CharacterActionDisplay result;
+    SkillDescriptionValues values(catalog,input,source);
+    if(description.damageProgram==5 || description.damageProgram==8 || description.damageProgram==9 || description.damageProgram==12) {
+        auto physical=values.physicalDamage(true),elemental=values.elementalDamage();
+        if(description.damageProgram==9 && !description.missiles[0].empty())
+            elemental=values.missileElementalDamage(0,75,DescriptionMastery::Include);
+        if(elemental.minimum && elemental.maximum && values.element()=="pois") {
+            const auto frames=values.parameter("edln");
+            if(frames) elemental=values.elementalDamage(*frames);
+            else elemental={};
+        }
+        if(description.damageProgram==8) {
+            const auto multiplier=values.formula(description.damageCalculations[0]),divisor=values.formula(description.damageCalculations[1]);
+            if(elemental.minimum && elemental.maximum && multiplier && divisor) {
+                elemental=values.elementalDamage(std::max(1,*multiplier)*25);
+                if(elemental.minimum) elemental.minimum=*elemental.minimum/std::max(1,*divisor);
+                if(elemental.maximum) elemental.maximum=*elemental.maximum/std::max(1,*divisor);
+            } else elemental={};
+        } else if(description.damageProgram==9 && description.missiles[0].empty()) elemental=values.elementalDamage(75);
+        if(description.damageProgram==12 && elemental.minimum && elemental.maximum) {
+            const auto factor=source.number("param1");
+            if(factor) {
+                const int percent=context.concentrationDamagePercent * *factor / 8;
+                elemental.minimum=int(int64_t(*elemental.minimum)*(100+percent)/100);
+                elemental.maximum=int(int64_t(*elemental.maximum)*(100+percent)/100);
+            } else elemental={};
+        }
+        if(physical.minimum && physical.maximum && elemental.minimum && elemental.maximum)
+            result.damage=damageText(int64_t(*physical.minimum)+*elemental.minimum,int64_t(*physical.maximum)+*elemental.maximum);
+        else result.damage="?";
+    } else result=describeCharacterAction(context,&entry,input.rank.value_or(0),available);
+    if(!description.damageProgram) result.damage.clear();
+    if(!description.attackProgram) result.attackRating.clear();
+    else if(result.attackRating.empty()) {
+        if(!context.weaponValuesKnown) result.attackRating="?";
+        else {
+            const auto &weapon=context.equipment.weapons[0];
+            const auto bonus=values.parameter("toht");
+            result.attackRating=bonus?std::to_string(int64_t(weapon.baseAttackRating)*std::max(0,100+weapon.attackRatingPercent+*bonus)/100):"?";
+        }
     }
-    if (aura->element >= 0) {
-        const char *element = aura->element == 2 ? "Fire" : aura->element == 3 ? "Lightning" : aura->element == 4 ? "Cold" : "Magic";
-        lines.push_back(std::string(element) + " damage: " + number(aura->minimumDamage) + "-" + number(aura->maximumDamage) +
-            " / " + number(float(aura->periodFrames) / 25.f) + " seconds");
-        const auto &own = aura->ownerModifiers.combat;
-        const int minimum = own.fireMinimum + own.lightningMinimum + own.coldMinimum;
-        const int maximum = own.fireMaximum + own.lightningMaximum + own.coldMaximum;
-        if (maximum) lines.push_back("Attack damage: +" + std::to_string(minimum) + "-" + std::to_string(maximum));
-    }
-    if (aura->lifePerPulse > 0) lines.push_back("Heals: " + number(aura->lifePerPulse) + " / " + number(float(aura->periodFrames) / 25.f) + " seconds");
-    if (aura->harmfulDurationPercent < 100) lines.push_back("Poison / curse duration reduction: " + std::to_string(100 - aura->harmfulDurationPercent) + "%");
-    if (combat.manaRecovery) lines.push_back("Mana recovery: +" + std::to_string(combat.manaRecovery) + "%");
-    if (stats.staminaPercent) lines.push_back("Maximum stamina: +" + std::to_string(stats.staminaPercent) + "%");
-    if (stats.staminaRecoveryBonus) lines.push_back("Stamina recovery: +" + std::to_string(stats.staminaRecoveryBonus) + "%");
-    if (combat.thornsPercent) lines.push_back("Damage returned: " + std::to_string(combat.thornsPercent) + "%");
-    if (combat.concentrationChance) lines.push_back("Uninterruptible attack chance: " + std::to_string(combat.concentrationChance) + "%");
-    if (aura->redemptionChance) {
-        lines.push_back("Corpse redemption chance: " + std::to_string(aura->redemptionChance) + "%");
-        lines.push_back("Life / mana per corpse: " + number(aura->redemptionLife) + " / " + number(aura->redemptionMana));
-    }
-    if (aura->manaPerPulse > 0) lines.push_back("Mana per pulse: " + number(aura->manaPerPulse));
-    CharacterModifiers passive;
-    applySkillPassive(passive, skill.passiveContribution, baseRank, false);
-    if (skill.passiveContribution.attackRatingPerBaseRank)
-        lines.push_back("Passive attack rating: +" + std::to_string(passive.combat.attackRatingPercent) + "%");
-    if (skill.passiveContribution.maxResistElement >= 0)
-        lines.push_back("Passive maximum resist: +" + std::to_string(passive.combat.fireMaxResist +
-            passive.combat.coldMaxResist + passive.combat.lightningMaxResist) + "%");
-    return lines;
+    return result;
 }
 
-std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const SkillCastSpec *resolved,
-    const AuraDefinition *aura, int baseRank, int aiCurseDivisor, bool valuesKnown, bool damageKnown) {
-    if ((skill.sourceName == "Frozen Armor" || skill.sourceName == "Blaze") && !skill.descriptionLines.empty()) {
-        std::vector<std::string> lines;
-        auto number = [](float value) {
-            auto text = displayNumber("%.1f", value);
-            if (text.ends_with(".0")) text.resize(text.size() - 2);
-            return text;
-        };
-        // SkillDesc stores these lines from the bottom (mana) upwards.
-        for (auto it = skill.descriptionLines.rbegin(); it != skill.descriptionLines.rend(); ++it) {
-            const auto &line = *it;
-            if (line.value == SkillDescriptionValue::AverageFireDamage) {
-                // DescDam 9 describes the three overlapping fire cells at 25 Hz.
-                const auto damage = resolved && damageKnown
-                    ? std::to_string(int(resolved->minimumDamage * 75.f)) + "-" +
-                      std::to_string(int(resolved->maximumDamage * 75.f)) : "?";
-                lines.push_back(line.prefix + damage + line.suffix);
-                continue;
-            }
-            std::optional<float> value;
-            if (resolved) {
-                const auto &cast = *resolved;
-                if (line.value == SkillDescriptionValue::Mana) value = cast.manaCost;
-                else if (line.value == SkillDescriptionValue::FireDuration) value = cast.missileLifetime;
-                else if (cast.appliedEffect) {
-                    const auto &armor = *cast.appliedEffect;
-                    if (line.value == SkillDescriptionValue::DefensePercent)
-                        value = float(armor.modifiers.combat.defensePercent);
-                    else if (valuesKnown && line.value == SkillDescriptionValue::Duration && armor.duration)
-                        value = float(*armor.duration) / 25.f;
-                    else if (valuesKnown && line.value == SkillDescriptionValue::FreezeDuration)
-                        for (const auto &reaction : armor.reactions)
-                            if (const auto *freeze = std::get_if<FreezeAttacker>(&reaction.action)) value = freeze->duration;
-                }
-            }
-            auto text = line.prefix + (value ? number(*value) : "?");
-            if (line.function == 12 || line.function == 23)
-                text += value && *value == 1.f ? skill.secondLabel : skill.secondsLabel;
-            else text += line.suffix;
-            lines.push_back(std::move(text));
-        }
-        return lines;
-    }
-    const auto *entry = &skill;
-    std::string detail;
-    std::vector<std::string> detailLines;
-    if (resolved) {
-        const auto &value = *resolved;
-        auto damage = [&](float scale = 1.f) {
-            return damageKnown ? std::string(displayNumber("%.1f-%.1f", value.minimumDamage * scale,
-                value.maximumDamage * scale)) : std::string("?");
-        };
-        detail = "Mana " + std::string(displayNumber("%.1f", value.manaCost));
-        if (!valuesKnown) {
-            if (value.effect == SkillBehavior::Inferno)
-                detail = "Mana/sec " + std::string(displayNumber("%.1f", value.manaCost * 12.5f));
-            return {detail, "Other values: ?"};
-        }
-        if (value.summon) {
-            const auto &pet = *value.summon;
-            const auto &stats = pet.stats.attributes;
-            detail += " / Summons " + std::to_string(pet.limit);
-            if (pet.amazon) {
-                const auto &amazon = *pet.amazon;
-                if (amazon.decoy) detail += " / Life " + std::to_string(stats.maxLife) + " / " + std::to_string(amazon.lifetimeFrames / 25) + " seconds";
-                else detail += " / Base life " + std::to_string(amazon.lifeMinimum * (100 + amazon.lifePercent) / 100) + "-" +
-                    std::to_string(amazon.lifeMaximum * (100 + amazon.lifePercent) / 100) + " / Equipment level " + std::to_string(amazon.itemLevel);
-            }
-            else if (pet.necro && pet.necro->kind == NecroSummonKind::Revive)
-                detail += " / Life +" + std::to_string(pet.necro->lifePercent) + "% / Physical damage +" +
-                    std::to_string(pet.necro->damagePercent) + "% / " + std::to_string(pet.necro->lifetimeFrames / 25) + " seconds";
-            else detail += " / Life " + std::to_string(stats.maxLife) + " / Attack rating " +
-                std::to_string(stats.attackRating) + " / Defense " + std::to_string(stats.defense);
-            if (pet.necro && pet.necro->slowPercent) detail += " / Slows " + std::to_string(pet.necro->slowPercent) + "%";
-        }
-        else if (value.amazonMagic) {
-            const auto &program = *value.amazonMagic;
-            detail += " / Radius " + std::to_string(program.radius) + " / " + std::string(displayNumber("%.1fs", float(program.frames) / 25.f));
-            if (program.defenseReduction) detail += " / Enemy defense -" + std::to_string(program.defenseReduction);
-            if (program.slowPercent) detail += " / Missile velocity " + std::to_string(program.slowPercent) + "%";
-        }
-        else if (value.effect == SkillBehavior::Teleport) detail += " / Teleport to clear ground";
-        else if (value.effect == SkillBehavior::Teeth)
-            detail += " / Teeth " + std::to_string(value.missileCount) + " / Magic " +
-                damage();
-        else if (value.bone && value.bone->barrier)
-            detail += " / Barrier life +" + std::to_string(value.bone->lifePercent) + "% / " +
-                std::to_string(value.bone->barrierFrames / 25) + " seconds";
-        else if (value.effect == SkillBehavior::CorpseExplosion)
-            detail += " / Corpse life " + std::to_string(value.bone->minimumPercent) + "-" +
-                std::to_string(value.bone->maximumPercent) + "% / Half physical, half fire / Radius " +
-                std::string(displayNumber("%.1f yards", float(value.bone->radius) / 3.f));
-        else if(value.corpseSearch) detail+=" / Chance "+std::to_string(value.corpseSearch->chance)+"%";
-        else if(value.grimWard) detail+=" / Radius "+std::to_string(value.grimWard->radius)+" / "+std::string(displayNumber("%.1fs",float(value.grimWard->duration)/25.f));
-        else if(value.leap && !value.leap->attack) detail+=" / Range "+std::to_string(value.leap->range)+" / Knockback radius "+std::to_string(value.leap->knockbackRadius);
-        else if (value.curse) {
-            const int divisor = value.curse->ai == CurseAi::None || value.curse->ignoreDifficultyDivisor ? 1 : std::max(1, aiCurseDivisor);
-            detail += " / Radius " + std::to_string(value.curse->radius) +
-                " / " + std::string(displayNumber("%.1fs", float(value.curse->frames / divisor) / 25.f));
-            if (value.curse->modifiers.combat.ironMaidenPercent > 0)
-                detail += " / Melee return " + std::to_string(value.curse->modifiers.combat.ironMaidenPercent) + "%";
-            if (value.curse->modifiers.combat.lifeTapPercent > 0)
-                detail += " / Physical healing " + std::to_string(value.curse->modifiers.combat.lifeTapPercent) + "%";
-            if(value.curse->permanent) detail+=" / Until cleared";
-            if(value.curse->modifiers.combat.defensePercent) detail+=" / Enemy defense "+std::to_string(value.curse->modifiers.combat.defensePercent)+"%";
-            if(value.curse->modifiers.combat.damagePercent) detail+=" / Enemy damage "+std::to_string(value.curse->modifiers.combat.damagePercent)+"%";
-            if(value.curse->modifiers.combat.attackRatingPercent) detail+=" / Enemy attack rating "+std::to_string(value.curse->modifiers.combat.attackRatingPercent)+"%";
-        }
-        else if(value.effect==SkillBehavior::BattleOrders) detail+=" / Life, mana, stamina +"+std::to_string(value.appliedEffect->modifiers.combat.lifePercent)+"% / "+std::to_string(value.appliedEffect->duration.value()/25)+" seconds";
-        else if(value.effect==SkillBehavior::BattleCommand) detail+=" / All skills +1 / "+std::to_string(value.appliedEffect->duration.value()/25)+" seconds";
-        else if(skill.classCode=="bar" && value.weapon) {
-            const auto &weapon=*value.weapon;detail+=" / Weapon damage "+std::to_string(weapon.damagePercent)+"% / Attack rating +"+std::to_string(weapon.attackRating)+"%";
-            if(weapon.physicalFlat) detail+=" / Damage +"+std::to_string(weapon.physicalFlat);
-            if(weapon.stunFrames) detail+=" / Stun "+std::string(displayNumber("%.2fs",float(weapon.stunFrames)/25.f));
-            if(weapon.magicConversionPercent) detail+=" / Converts "+std::to_string(weapon.magicConversionPercent)+"% to magic";
-            if(weapon.attackDefense) detail+=" / Defense +"+std::to_string(weapon.attackDefense)+"% while attacking";
-            if(weapon.armorOverridePercent==-100) detail+=" / Defense 0 for "+std::string(displayNumber("%.2fs",float(weapon.attackDuration)/25.f));
-            if(weapon.frenzy) detail+=" / Maximum speed +"+std::to_string(skillDiminishingRatioBonus({weapon.frenzyParameters[0],weapon.frenzyParameters[1]},value.rank))+"% / "+std::to_string(weapon.frenzyFrames/25)+" seconds";
-        }
-        else if(value.effect==SkillBehavior::WarCry) detail+=" / Physical "+damage()+" / Stun "+std::string(displayNumber("%.2fs",float(value.stunFrames)/25.f));
-        else if (value.effect == SkillBehavior::HolyBolt)
-            detail += " / Undead magic " + damage() +
-                " / Ally healing " + std::string(displayNumber("%.1f-%.1f", value.healingMinimum, value.healingMaximum));
-        else if (value.effect == SkillBehavior::Inferno)
-            detail = "Mana/sec " + std::string(displayNumber("%.1f", value.manaCost * 12.5f)) +
-                " / Damage/sec " + damage(25.f);
-        else if (value.effect == SkillBehavior::BoneArmor)
-            detail += " / Absorbs " + std::to_string(value.appliedEffect->physicalShieldMaximum / 256) + " physical damage";
-        else if (value.effect == SkillBehavior::EnergyShield)
-            detail += " / Absorbs " + std::to_string(value.shieldPercent) + "% / Mana per damage " +
-                std::string(displayNumber("%.2f", float(value.shieldManaFactor) / 16.f)) + " / " +
-                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
-        else if (value.effect == SkillBehavior::Enchant)
-            detail += " / Fire damage " + damage() + " / Attack rating +" +
-                std::to_string(value.appliedEffect->modifiers.combat.attackRatingPercent) + "% / " +
-                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
-        else if (value.effect == SkillBehavior::ThunderStorm)
-            detail += " / Lightning damage " + damage() + " / Interval " +
-                std::string(displayNumber("%.2fs", float(value.stormPeriod) / 25.f)) + " / " +
-                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
-        else if (value.appliedEffect) {
-            detail += " / Defense +" + std::to_string(value.appliedEffect->modifiers.combat.defensePercent +
-                value.appliedEffect->modifiers.combat.shieldDefensePercent) + "% / " +
-                std::to_string(value.appliedEffect->duration.value() / 25) + " seconds";
-            if (value.effect == SkillBehavior::HolyShield)
-                detail += " / Block +" + std::to_string(value.appliedEffect->modifiers.combat.blockBonus) +
-                    " / Smite " + std::to_string(value.appliedEffect->modifiers.combat.smiteMinimum) +
-                    "-" + std::to_string(value.appliedEffect->modifiers.combat.smiteMaximum);
-            if (value.effect == SkillBehavior::ShiverArmor || value.effect == SkillBehavior::ChillingArmor)
-                detail += " / Retaliate cold " + damage() +
-                    " / Chill " + std::string(displayNumber("%.1fs", value.coldDuration));
-        }
-        else if (value.effect == SkillBehavior::StaticField)
-            detail += " / " + std::to_string(int(value.staticPercent)) + "% current life, range " +
-                std::to_string(int(value.staticRadius));
-        else if (value.blizzard)
-            detail += " / Cold damage per shard " + damage() +
-                " / Duration " + std::string(displayNumber("%.1fs", value.missileLifetime)) +
-                " / Delay " + std::string(displayNumber("%.1fs", float(value.delayFrames) / 25.f));
-        else if (value.frozenOrb)
-            detail += " / Cold damage per bolt " + damage() +
-                " / Chill " + std::string(displayNumber("%.1fs", value.coldDuration)) +
-                " / Delay " + std::string(displayNumber("%.1fs", float(value.delayFrames) / 25.f));
-        else if (value.freezingArea)
-            detail += " / Cold damage " + damage() +
-                " / Freeze " + std::string(displayNumber("%.2fs", float(value.freezingArea->freezeFrames) / 25.f));
-        else if (value.poisonDuration > 0)
-            detail += " / Poison " + damage(value.poisonDuration * 25.f) + " over " +
-                std::string(displayNumber("%.1fs", value.poisonDuration));
-        else if (value.effect == SkillBehavior::Zeal)
-            detail += " / Attacks " + std::to_string(value.weapon->attacks) +
-                " / Physical +" + std::to_string(value.weapon->damagePercent) + "%";
-        else if (value.effect == SkillBehavior::Vengeance)
-            detail += " / Fire " + std::to_string(value.weapon->elementPercent[0]) +
-                "% / Cold " + std::to_string(value.weapon->elementPercent[1]) +
-                "% / Lightning " + std::to_string(value.weapon->elementPercent[2]) + "%";
-        else if (value.effect == SkillBehavior::Sacrifice)
-            detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
-                "% / Attack +" + std::to_string(value.weapon->attackRating) +
-                "% / Self damage " + std::to_string(value.weapon->selfDamagePercent) + "%";
-        else if (value.effect == SkillBehavior::Smite)
-            detail += " / Shield damage +" + std::to_string(value.weapon->damagePercent) +
-                "% / Stun " + std::string(displayNumber("%.2fs", float(value.weapon->stunFrames) / 25.f));
-        else if (value.effect == SkillBehavior::Conversion)
-            detail += " / Convert " + std::to_string(value.weapon->conversionChance) +
-                "% / " + std::to_string(value.weapon->conversionFrames / 25) + " seconds";
-        else if (value.effect == SkillBehavior::Charge)
-            detail += " / Physical +" + std::to_string(value.weapon->damagePercent) +
-                "% / Attack +" + std::to_string(value.weapon->attackRating) + "%";
-        else if (value.weapon && value.missileImpact && value.missileImpact->areaMissile)
-            detail += " / Fire " + damage() +
-                " + weapon fire damage";
-        else detail += " / Damage " + damage();
-    } else if (entry->auraImplemented) {
-        if (aura) detailLines = describeAuraSkill(skill, *aura, baseRank);
-        else detail = "Numerical values: ?";
-    } else detail = !entry ? "Normal weapon attack"
-        : entry->sourceName == "Throw" || entry->sourceName == "Left Hand Throw"
-            ? "Throw equipped weapon; consumes one from the stack"
-        : entry->basicAction == BasicSkillAction::Attack || entry->basicAction == BasicSkillAction::LeftHandSwing
-            ? "Uses the current basic melee damage"
-        : entry->sourceName == "Unsummon"
-            ? "Select a summoned ally"
-            : "Numerical values: ?";
-    if (detailLines.empty()) detailLines.push_back(detail);
-    return detailLines;
-}
 } // namespace d2x

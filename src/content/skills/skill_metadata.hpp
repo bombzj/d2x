@@ -14,6 +14,11 @@ struct SkillMetadata {
     std::string classCode, sourceName, name, description;
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false, allowedInTown = false;
+    bool inGame = false, aura = false, noAmmo = false;
+    int startMana = 0, serverDoFunction = 0;
+    // Native paired hand groups, not a per-skill weapon/shield switch.
+    std::array<std::array<std::string, 3>, 2> includedHandTypes;
+    std::array<std::array<std::string, 2>, 2> excludedHandTypes;
     bool itemSkill = false; // Scroll/Book SrvDo113; availability requires native quantity.
     BasicSkillAction basicAction = BasicSkillAction::None;
     std::string animationMode;

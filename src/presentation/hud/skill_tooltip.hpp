@@ -7,9 +7,14 @@
 #include <vector>
 
 namespace d2x {
+struct SkillTooltipHeadings {
+    size_t title=0;
+    size_t bonus=std::numeric_limits<size_t>::max();
+    size_t granted=std::numeric_limits<size_t>::max();
+};
 // Both skill surfaces use the original font16, centered lines and an icon anchor.
 inline void drawSkillTooltip(const UiPainter &painter, const std::vector<std::string> &text, Vec anchor,
-    const UiPainter *green = nullptr, size_t bonusHeading = std::numeric_limits<size_t>::max(),
+    const UiPainter *green = nullptr, SkillTooltipHeadings headings = {},
     bool below = false, float iconHeight = 0) {
     constexpr int size = 16, lineHeight = 18, padding = 6;
     const int maximumWidth = W - 20;
@@ -19,7 +24,7 @@ inline void drawSkillTooltip(const UiPainter &painter, const std::vector<std::st
         const auto &block = text[blockIndex];
         auto append = [&](const std::string &line) {
             lines.push_back(line);
-            greenLines.push_back(green && (blockIndex == 0 || blockIndex == bonusHeading));
+            greenLines.push_back(green && (blockIndex == headings.title || blockIndex == headings.bonus || blockIndex == headings.granted));
         };
         size_t start = 0;
         do {

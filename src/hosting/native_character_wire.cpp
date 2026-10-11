@@ -1,5 +1,6 @@
 #include "native_character_wire.hpp"
 #include "content/classic_data.hpp"
+#include "gameplay/quest/acts/act_five_state.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
 #include <bit>
@@ -22,13 +23,16 @@ void hirelingStatus(std::vector<Bytes> &packets, const ClassicData &data, const 
 Values values(const CharacterRecord &record, const server::attributes::Totals &totals) {
     const auto &a = totals.character;
     const auto &c = a.combat;
+    const int permanentResistance=questResistance(record.quests);
     return {{"strength", a.strength}, {"energy", a.energy}, {"dexterity", a.dexterity}, {"vitality", a.vitality},
         {"statpts", record.unspentAttributes}, {"newskills", record.unspentSkills},
         {"hitpoints", record.hp}, {"maxhp", a.maxLife}, {"mana", record.mana}, {"maxmana", a.maxMana},
         {"stamina", record.stamina}, {"maxstamina", a.maxStamina}, {"level", record.level},
         {"experience", double(record.experience)}, {"gold", record.gold}, {"goldbank", record.bankGold},
         {"armorclass", a.defense}, {"tohit", a.attackRating}, {"toblock", c.blockBonus},
-        {"fireresist", a.fireResist}, {"coldresist", a.coldResist}, {"lightresist", a.lightningResist}, {"poisonresist", a.poisonResist},
+        // ACT5Q3_UpdateResistances sends only the permanent reward list.
+        // Equipment, passive states and the difficulty penalty are client inputs.
+        {"fireresist", permanentResistance}, {"coldresist", permanentResistance}, {"lightresist", permanentResistance}, {"poisonresist", permanentResistance},
         {"maxfireresist", c.fireMaxResist}, {"maxcoldresist", c.coldMaxResist}, {"maxlightresist", c.lightningMaxResist}, {"maxpoisonresist", c.poisonMaxResist},
         {"damageresist", c.physicalResist}, {"magicresist", c.magicResist},
         {"normal_damage_reduction", c.flatPhysicalReduction}, {"magic_damage_reduction", c.flatMagicReduction},

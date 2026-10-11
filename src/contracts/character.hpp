@@ -20,10 +20,13 @@ struct CharacterSkillView {
     int baseRank = 0, effectiveRank = 0, maximumRank = 0, nextRequiredLevel = 0;
     bool baseRankKnown = false, effectiveRankKnown = false;
     bool passive = false, leftAllowed = false, available = false, canAllocate = false, usableNow = false;
-    bool pickerEnabled = false; // Selection icon state; independent of town casting permission.
+    bool pickerEnabled = false; // Selection permission; independent of town casting permission and red tint.
     CharacterActionDisplay action;
     std::vector<std::string> treeTooltip, pickerTooltip;
+    bool treeTooltipUnavailable = false; // Native tree's unavailable branch: red body and requirement/max-level line.
+    bool pickerTooltipUnavailable = false; // Native use state: red icon and entire selector tooltip, including title.
     uint32_t owner=UINT32_MAX;
+    std::string treeGrantedHeading;
     std::string treeBonusHeading;
     std::vector<std::string> treeBonusTooltip;
 };

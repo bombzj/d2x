@@ -118,19 +118,25 @@ void SceneView::drawSkillTree(Vec mouse) const {
     if (auto hovered = skillAt(mouse)) {
         const auto &skill = *characterView_.skill(*hovered);
         auto lines = skill.treeTooltip;
-        size_t bonusHeading = std::numeric_limits<size_t>::max();
+        SkillTooltipHeadings headings;
+        if (!skill.treeGrantedHeading.empty()) {
+            lines.insert(lines.begin(),{skill.treeGrantedHeading,""});
+            headings.granted=0;
+            headings.title=2;
+        }
         if (!skill.treeBonusHeading.empty() || !skill.treeBonusTooltip.empty()) {
             lines.push_back("");
             if (!skill.treeBonusHeading.empty()) {
-                bonusHeading = lines.size();
+                headings.bonus = lines.size();
                 lines.push_back(skill.treeBonusHeading);
             }
             lines.insert(lines.end(), skill.treeBonusTooltip.begin(), skill.treeBonusTooltip.end());
         }
         const auto bounds = skillTreeNode(skill.row, skill.column);
         const UiPainter green(assets_.skillGreenFont, 0);
-        drawSkillTooltip(UiPainter(assets_.font, 0), lines, {bounds.x + bounds.width / 2, bounds.y + bounds.height},
-                         &green, bonusHeading, true, bounds.height);
+        const UiPainter body(skill.treeTooltipUnavailable ? assets_.characterRedFont : assets_.font, 0);
+        drawSkillTooltip(body, lines, {bounds.x + bounds.width / 2, bounds.y + bounds.height},
+                         &green, headings, true, bounds.height);
     }
 }
 } // namespace d2x

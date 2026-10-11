@@ -1,8 +1,10 @@
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
+#include "classic_panel.hpp"
 #include "skill_tooltip.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
+#include <array>
 #include <sstream>
 
 namespace d2x {
@@ -13,15 +15,76 @@ void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     const auto &texture = image->texture;
     DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds, {0, 0}, 0, tint);
 }
+int durabilityPart(EquipmentSlot slot, const InventoryDefinitionView *definition) {
+    // D2Client 1.13c RVA 0x28420: eleven parts per grey/yellow/red group.
+    switch (slot) {
+    case EquipmentSlot::Head: return 1;
+    case EquipmentSlot::Torso: return 4;
+    case EquipmentSlot::Belt: return 0;
+    case EquipmentSlot::Feet: return 2;
+    case EquipmentSlot::Gloves: return 3;
+    case EquipmentSlot::RightHand: case EquipmentSlot::AlternateRightHand:
+        return definition && definition->quiver ? 10 : definition && definition->shield ? 7 : 6;
+    case EquipmentSlot::LeftHand: case EquipmentSlot::AlternateLeftHand:
+        return definition && definition->quiver ? 9 : definition && definition->shield ? 5 : 8;
+    default: return -1;
+    }
+}
 } // namespace
+void SceneView::drawDurabilityWarning() const {
+    // The original main UI pass suppresses this under inventory/shop/anvil.
+    if (view_.inventory.open || view_.shopOpen) return;
+    constexpr unsigned warningPercentage = 20;
+    constexpr int partsPerColor = 11;
+    constexpr size_t warningSlotCount = 7;
+    const std::array<EquipmentSlot, warningSlotCount> slots{EquipmentSlot::Head, EquipmentSlot::Torso, EquipmentSlot::Belt,
+        EquipmentSlot::Feet, EquipmentSlot::Gloves,
+        weaponHandSlot(false, inventoryView_.weaponSet), weaponHandSlot(true, inventoryView_.weaponSet)};
+    std::array<int, warningSlotCount> frames;
+    frames.fill(-1);
+    bool visible = false;
+    for (size_t index = 0; index < slots.size(); ++index) {
+        const auto *item = inventoryView_.item(inventoryView_.equipped(inventoryView_.containers, slots[index]));
+        const bool hand = slots[index] == weaponHandSlot(false, inventoryView_.weaponSet) ||
+            slots[index] == weaponHandSlot(true, inventoryView_.weaponSet);
+        if (hand && !item) continue;
+        const auto *definition = item ? inventoryView_.definition(item->definition) : nullptr;
+        if (hand && !definition) continue;
+        int color = 0;
+        if (item && item->durabilityPercentage && *item->durabilityPercentage <= warningPercentage) {
+            visible = true;
+            color = *item->durabilityPercentage == 0 ? 2 : 1;
+        }
+        frames[index] = durabilityPart(slots[index], definition) + color * partsPerColor;
+    }
+    if (!visible) return;
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    if (!blend) return;
+    // Native bottom origin: W-60, baseline 110; automap adds 30 pixels,
+    // and an incoming hostile relation adds another 43 while automap is open.
+    const float baseline = 110 + (view_.automap ? 30 + (incomingHostility_ ? 43 : 0) : 0);
+    for (const int frame : frames) {
+        if (frame < 0) continue;
+        const auto *image = assets_.durabilityIcons.frame(0, frame);
+        if (!image) continue;
+        blend->drawHalf(image, {W - 60 * classicPanelScale + image->x * classicPanelScale,
+            (baseline + image->y - image->texture.height) * classicPanelScale,
+            image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+    }
+}
 void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker,uint32_t owner) const {
     const auto *entry = skill ? characterView_.skill(*skill,owner) : nullptr;
     auto icon = skill ? assets_.skillIcons.find(*skill) : assets_.skillIcons.end();
     const auto *image = !skill ? &assets_.attackIcon
                               : icon != assets_.skillIcons.end() ? &icon->second.sprite : nullptr;
-    const bool available = skill ? entry && (picker ? entry->pickerEnabled : entry->usableNow)
+    const bool available = skill ? entry && (picker ? !entry->pickerTooltipUnavailable : entry->usableNow)
                                 : picker ? !characterView_.dead : characterView_.attackUsable;
-    imageAt(image, bounds, available ? WHITE : Color{255, 64, 64, 255});
+    if (picker && !available) {
+        if (!skill) image = &assets_.attackUnavailableIcon;
+        else if (icon != assets_.skillIcons.end()) image = &icon->second.pickerUnavailable;
+    }
+    imageAt(image, bounds, picker || available ? WHITE : Color{255, 64, 64, 255});
 }
 void SceneView::drawControlPanel() const {
     const auto &player = characterView_;
@@ -142,7 +205,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         auto lines = std::vector<std::string>{name};
         const auto details = entry ? entry->pickerTooltip : std::vector<std::string>{"Normal weapon attack"};
         lines.insert(lines.end(), details.begin(), details.end());
-        drawSkillTooltip(UiPainter(assets_.font, 0), lines, tooltipAnchor);
+        drawSkillTooltip(UiPainter(entry && entry->pickerTooltipUnavailable ? assets_.characterRedFont : assets_.font, 0), lines, tooltipAnchor);
     }
     for (bool mana : {false, true}) {
         if (!CheckCollisionPointRec(rv(mouse), hudGlobe(mana)))

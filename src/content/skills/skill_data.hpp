@@ -15,15 +15,7 @@
 
 namespace d2x {
 struct SkillSpec;
-// Verified SkillDesc value bindings for the original Frozen Armor/Blaze descriptions.
-// Keep the source order and formatting program; this is display data only.
-enum class SkillDescriptionValue { Unknown, Mana, DefensePercent, Duration, FreezeDuration,
-                                   FireDuration, AverageFireDamage };
-struct SkillDescriptionLine {
-    int function = 0;
-    SkillDescriptionValue value = SkillDescriptionValue::Unknown;
-    std::string prefix, suffix;
-};
+struct SkillDescriptionCatalog;
 struct ClassSkillTree {
     std::string classCode, iconToken, backgroundToken;
     std::array<std::string, 3> pageNames;
@@ -34,10 +26,6 @@ struct ClassSkillTree {
 // execution definition is immutable and owned separately, not embedded here.
 struct SkillRecord : SkillMetadata {
     std::string shortDescription;
-    std::vector<SkillDescriptionLine> descriptionLines;
-    std::string secondLabel, secondsLabel;
-    std::string bonusHeading;
-    std::vector<std::string> bonusDescriptions;
     std::shared_ptr<const SkillSpec> spell;
     bool auraImplemented = false;
     bool auraImmediate = false;
@@ -50,6 +38,7 @@ struct SkillRecord : SkillMetadata {
     std::optional<std::pair<int, int>> coldPiercePerRank;
 };
 struct SkillCatalog {
+    std::shared_ptr<const SkillDescriptionCatalog> descriptions;
     std::optional<HydraSpec> hydra;
     std::string currentLevelLabel, nextLevelLabel, firstLevelLabel;
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };

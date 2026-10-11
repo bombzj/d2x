@@ -33,6 +33,12 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     const ActorContext targetActor{target->player,target->actor,target->area,area.generation,0,actor.tick};
     transactions::CharacterEdit edit{targetActor,target->inventoryRevision,target->characterRevision,target->persistent.player};
     edit.transient=projection(recovery.states,actor.tick);
+    if(skill.effect!=SkillBehavior::BoneArmor) {
+        auto stats=nativeEffectStats(*caster->rules.skills,skill.appliedEffect->modifiers);
+        stats.emplace_back(caster->rules.skills->nativeStats.at("modifierlist_skill"),skill.sourceId);
+        stats.emplace_back(caster->rules.skills->nativeStats.at("modifierlist_level"),skill.rank);
+        edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,skill.appliedEffect->state.id,true,std::move(stats)});
+    }
     if(skill.effect==SkillBehavior::BoneArmor) edit.publicFacts.emplace_back(StateFact{target->actor,0,target->area,skill.appliedEffect->state.id,true,
         {{caster->rules.skills->nativeStats.at("bonearmor"),skill.appliedEffect->physicalShield},
          {caster->rules.skills->nativeStats.at("bonearmormax"),skill.appliedEffect->physicalShieldMaximum}}});

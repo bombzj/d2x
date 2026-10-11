@@ -41,11 +41,7 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
     if(skill.warcry) {
         auto &stats=target.nativeStats[spec.state.id];stats.clear();
-        if(spec.modifiers.combat.defensePercent) stats.emplace_back(caster->rules.skills->nativeStats.at("skill_armor_percent"),spec.modifiers.combat.defensePercent);
-        if(spec.modifiers.combat.lifePercent) stats.emplace_back(caster->rules.skills->nativeStats.at("item_maxhp_percent"),spec.modifiers.combat.lifePercent);
-        if(spec.modifiers.combat.manaPercent) stats.emplace_back(caster->rules.skills->nativeStats.at("item_maxmana_percent"),spec.modifiers.combat.manaPercent);
-        if(spec.modifiers.staminaPercent) stats.emplace_back(caster->rules.skills->nativeStats.at("skill_staminapercent"),spec.modifiers.staminaPercent);
-        if(spec.modifiers.combat.allSkills) stats.emplace_back(caster->rules.skills->nativeStats.at("item_allskills"),spec.modifiers.combat.allSkills);
+        stats=nativeEffectStats(*caster->rules.skills,spec.modifiers);
     }
     if(!target.states.apply(std::move(spec),actor.tick).accepted) return {DomainStatus::Conflict,{}};
     transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};

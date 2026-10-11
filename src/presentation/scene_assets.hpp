@@ -59,7 +59,7 @@ class SceneAssets {
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
-        Sprite treeDisabled, treeHovered;
+        Sprite treeDisabled, treeHovered, pickerUnavailable;
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
@@ -106,7 +106,7 @@ class SceneAssets {
     };
     std::map<int, SpellOverlay> spellOverlays;
     std::map<std::string, GpuAnimation> skillTrees;
-    Sprite attackIcon;
+    Sprite attackIcon, attackUnavailableIcon;
     // Legacy map metadata; GPU terrain and actor art use the shared caches.
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     mutable std::array<std::map<int, Sprite>, 2> automapCels;
@@ -123,7 +123,7 @@ class SceneAssets {
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
-        globeOverlap, runButton, button;
+        globeOverlap, runButton, button, durabilityIcons;
     std::string waypointTitle;
     std::string questNoticeLabel;
     std::array<ClassicFont, 3> waypointFonts; // Native PL2 white, blue and dark grey.

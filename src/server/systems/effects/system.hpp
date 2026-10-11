@@ -15,6 +15,7 @@
 #include <initializer_list>
 #include <algorithm>
 namespace d2x::server::effects {
+std::vector<std::pair<int,int64_t>> nativeEffectStats(const SkillRules &, const CharacterModifiers &);
 struct Cycle { uint64_t next{}; EntityId last; };
 struct Recovery { std::map<int,TimedRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; };
 struct Reaction { ActorContext actor; EntityId attacker; TriggeredCombatEffect effect; };

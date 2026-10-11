@@ -23,13 +23,19 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 | NPC／任务 | 城镇服务、五幕27项个人任务主流程与保存 | 完整中立AI、剧情／机关及组队任务资格；[NPC／任务](docs/modules/NPC_QUEST.md) |
 | 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环 | 完整任务共享、敌意／PvP、尸体权限、八人背压与跨机器验收；[组队](docs/modules/NETWORK.md#组队邀请客户端)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
 
-## 当前重构与技能交付
+## 当前重构与显示交付
+
+当前源码的技能选择器／技能树已迁入[MPQ 描述层](docs/gameplay/skills/DESCRIPTIONS.md)，移除逐技能提示分支，补元素支配的只读输入投影，并按原版截图补物品授予标题／标记、通用组分隔、多段充能标签、不可学习节点的红色正文／需求等级，以及选择器已知装备／资源条件失败时的红色图标与提示。选择权限、学习资格和使用状态显示分别处理，完整变身／冷却显示仍待补。本批已完成 Windows Release 构建、客户端／独立服务端打包及代表单机描述冒烟；另修复 TBL 重复键查找和自研入局漏发原 0xAA。准确路径、失败样本及未验收范围见描述专题。规则指纹 v41 与 D2S v96 不变。
+
+玩家／佣兵属性页已接共用只读装备与原状态投影，补防御、格挡、动作伤害／命中、抗性及佣兵装备数值；自研修正永久抗性、佣兵基础属性及玩家技能状态的原包发布，避免漏值或重复叠加。只在完整原快照齐备时确认默认零值，未知不以零掩盖。准确公式与当前包代表冒烟见[人物属性](docs/gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)及[佣兵](docs/gameplay/characters/HIRELINGS.md#当前包有限冒烟)，全部职业特殊动作与装备组合尚未全面认证。规则指纹 v41 与 D2S v96 不变。
 
 战斗关系、来源与控制代次、重试后续阶段、武器目标局部随机和耐久防重复提交已改；技能私有运行态／求值实现移出公共头，活单位空间索引接入武器及通用法术直线碰撞。AI、范围爆炸及怪物弹体仍有遍历。详细范围见[战斗关系与提交](docs/modules/SERVER_SYSTEMS.md#战斗关系与提交)。
 
 四类佣兵的服务／AI／装备／技能／生命／经验／保存已接，并完成代表单机路径的有限冒烟，详见佣兵专题。TCP/IP直连修正的自研双端有限冒烟及用户手动原版Host／D2X Join成功边界由[联网](docs/modules/NETWORK.md)维护。当前源码和Windows Release包已接入死灵及野蛮人各30项，规则指纹为**v41**；公共抽取前的代表单机证据见[野蛮人技能](docs/gameplay/skills/BARBARIAN.md#当前包有限冒烟)，铁魔历史证据见[死灵技能](docs/gameplay/skills/NECROMANCER.md#当前包有限冒烟)。未测量性能及增量编译收益，重构的完整争用／背压边界未认证。
 
 头像已按当前MPQ和本地原1.13c接入召唤物分组、实际类型图片、数量、单只生命条、佣兵悬停／喂药／右键装备及Z显示开关，详见[头像](docs/gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。当前Release包保留这批改动，此前单机观察到铁魔原头像／生命条；本轮没有专项复验全部喂药／右键／队友路径。头像改动不改变规则指纹与D2S格式。
+
+右上角装备耐久小人提示已接源码：当前MPQ原DuroIcon部位／三组颜色、活动武器组、原整数20%阈值、PL2半透明及自动地图位置分支。详见[经典HUD](docs/gameplay/ui/CLASSIC_HUD.md#装备耐久提示)。当前 Release 包已包含，低耐久／破损、阈值、面板隐藏、维修／卸装、武器组及保存重入已有限观察；全部缩放与多人敌意组合仍未认证。不改变规则指纹与D2S格式。
 
 ## 保存边界
 
@@ -41,15 +47,15 @@ D2S磁盘格式仍为v96；当前源码准入指纹、拒绝条件、锁与恢�
 
 当前包包含按住怪物后的目标信息条持续显示、独立于技能资格的悬停姓名及首领金色姓名修正，入口与清理边界见[怪物表现](docs/gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。本批未专项复验鼠标锁定。
 
-最新交付为2026-10-11第二幕怪物完整接线批次，Windows **Release**，规则v41／D2S v96。当前MPQ候选、固定身份及子怪共74身份／33类AI，30项技能槽逐项准备；补齐飞行／栖息／集合／颜色／再生AI、原序列与移动回绕、钻地、多段近战、召唤／复活、诅咒、冰尖柱／陨石／毒瓶、固有光环及甲虫／虫后回调。逐项范围及原MPQ资源限制见[第二幕](docs/gameplay/monsters/ACT2.md)，逐项技能见[怪物技能](docs/gameplay/skills/MONSTERS.md#第二幕技能逐项台账)。客户端和独立服务端由本批构建更新，同时保留第一幕补缺及[技能公共抽取](docs/gameplay/skills/COMMON.md#公共函数抽取)。以下哈希对应本批磁盘包。
+最新交付为2026-10-11玩家／佣兵属性显示修复，Windows **Release**，规则v41／D2S v96；保留此前技能 MPQ 描述及耐久提示改动。客户端与独立服务端同步更新。此前第二幕74身份／33类AI及30项技能槽范围继续由[第二幕](docs/gameplay/monsters/ACT2.md)维护，不由本次UI冒烟重新认证。以下哈希对应最新磁盘包。
 
 | 产物 | 目录 | SHA256 |
 | --- | --- | --- |
-| 客户端 | `dist/current/d2x.exe` | `48ED42BCF7F76EA777A0AB823585BA3BB95AF4F32B5746997091737E41302EF7` |
-| 独立服务端 | `dist/server/d2x_server.exe` | `8E87A3CDD32E320D7501D1A6AADCBEA3EE6646774D260E76D6DFF47860107628` |
+| 客户端 | `dist/current/d2x.exe` | `0FACA9FBA33C0D002D57E9259794506B060B4ACAD954F1F4B7AF175962E5C39C` |
+| 独立服务端 | `dist/server/d2x_server.exe` | `4601C0F78DD564897B687BA242C2D2C5CB0A7B2F6F457379507761866E08DA66` |
 | 网络DLL | 两包的`d2x_bncs_legacy.dll` | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
 
-本批按最新授权完成Windows Release构建、两个包更新及现有游戏／调试管道的有限单机冒烟。最终包逐项进入74个真实身份及9个固定SuperUnique，身份均匹配原类型，场景不可用计数均为0；代表钻地／飞行／栖息、出生／复活、虫后死亡及召唤者五项技能和隔离角色保存重入见[第二幕有限证据](docs/gameplay/monsters/ACT2.md#有限运行证据)。独立服务端只核对二进制加载及Usage入口（按现有参数契约退出2），未连接PvPGN后端。未新增测试脚本／用例／专用程序。第一幕v39证据仍由[第一幕](docs/gameplay/monsters/ACT1.md#有限运行证据)维护，不代替本批验收。三难度自然出生、全部技能分支、精英组合、碰撞／中断／背压、联网、跨机器、Linux和性能均未获本批运行验收；既有声音中断淡出限制及当前MPQ缺失的豹族死亡血迹装饰层已在专题记录。此前启动测量见[开发指南](docs/development/BUILD_AND_RUN.md#启动测量)。
+本批按最新授权完成 Windows Release 构建、两个包更新及现有游戏／调试管道的有限单机冒烟。玩家装备、防御技能、动作伤害／命中、四抗、破损／副武器组与保存重入见[人物属性证据](docs/gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)；罗格基础数值、弓／暗金护甲、抗性封顶及保存重入见[佣兵证据](docs/gameplay/characters/HIRELINGS.md#当前包有限冒烟)。代表页面无问号，最终宿主 failures=0，证据使用独立存档，未改用户原件。本轮未实连原服或独立服务端的 PvPGN 后端。未新增测试脚本／用例／专用程序。全部职业特殊动作、装备／套装／孔内及难度组合、完整怪物行为、多人、跨机器、Linux和性能未获本批运行验收。此前技能描述及耐久提示证据保留在[描述专题](docs/gameplay/skills/DESCRIPTIONS.md#当前包有限冒烟)及[经典HUD](docs/gameplay/ui/CLASSIC_HUD.md#装备耐久提示)，历史怪物／联网证据由负责专题维护。此前启动测量见[开发指南](docs/development/BUILD_AND_RUN.md#启动测量)。
 
 ## 专题证据入口
 
@@ -59,6 +65,7 @@ D2S磁盘格式仍为v96；当前源码准入指纹、拒绝条件、锁与恢�
 | --- | --- |
 | 组队／共享门户／经验与独立服务 | [组队有限证据](docs/modules/NETWORK.md#组队有限证据)、[PvPGN有限冒烟](docs/development/PVPGN_SERVER.md#有限冒烟) |
 | 技能／施法表现 | [技能分类](docs/gameplay/skills/README.md)、[通用表现](docs/gameplay/skills/COMMON.md#通用施法表现有限证据) |
+| 玩家属性 | [属性有限冒烟](docs/gameplay/characters/ATTRIBUTES.md#当前包有限冒烟) |
 | 怪物／佣兵 | [第一幕](docs/gameplay/monsters/ACT1.md#有限运行证据)、[第二幕](docs/gameplay/monsters/ACT2.md#有限运行证据)、[佣兵](docs/gameplay/characters/HIRELINGS.md#当前包有限冒烟) |
 | 野外祭坛／环境机关 | [物件有限冒烟](docs/gameplay/world/OBJECTS.md#当前包有限冒烟) |
 | 物品／交易 | [物品证据](docs/gameplay/items/EVIDENCE.md)、[玩家交易](docs/gameplay/items/PLAYER_TRADE.md#有限冒烟) |

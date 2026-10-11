@@ -144,6 +144,8 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 
 ## 联网物品操作
 
+`online-status` 附带 `characterUi`／`hirelingUi`，读取当前共享 UI 端口的实际数值（含伤害／命中与 unknownStats、佣兵 known），便于和页面截图核对。它们不读取服务端 Totals、不补私有字段、不改变人物；原包事实仍在 online 下，宿主权威对照使用 server-snapshot。
+
 先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
 
 所有修改用`online-item-action`；itemId来自本局服务器，不沿用单机ID。itemRevision／targetRevision可选，省略或0采用提交时版本；建议传查询版本避免操作旧物品。connectionGeneration／gameGeneration／areaGeneration沿用联网通用代次校验。

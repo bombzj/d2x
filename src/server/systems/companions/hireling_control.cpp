@@ -129,7 +129,13 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
             std::max(0,mods.vitality),std::move(equipment),p->inventoryRevision,p->characterRevision);
         pet.projectedSkillBonus=prepared.source.temporarySkillBonus;
         const int frw=std::max(0,stats.modifiers.fasterMoveVelocity);
-        ports_.monsters.hirelingProjection(pet.actor,prepared.nextExperience,passiveMask,stats.modifiers.velocityPercent+150*frw/(150+frw));
+        // MONSTERAI_SendMercStats sends base stats; owner item/state packets
+        // provide equipment contributions separately, as on the original server.
+        ports_.monsters.hirelingProjection(pet.actor,prepared.nextExperience,passiveMask,stats.modifiers.velocityPercent+150*frw/(150+frw),
+            {{"maxhp",int64_t(prepared.rule.minimumLife)*256},{"strength",prepared.strength},{"dexterity",prepared.dexterity},
+             {"armorclass",prepared.rule.defense},{"mindamage",prepared.rule.minimumDamage},{"maxdamage",prepared.rule.maximumDamage},
+             {"fireresist",prepared.rule.resistances[2]},{"lightresist",prepared.rule.resistances[3]},
+             {"coldresist",prepared.rule.resistances[4]},{"poisonresist",prepared.rule.resistances[5]}});
     }
     const float life=float(body->life)/256.f;
     if(p->persistent.player.hireling.hp!=life) {

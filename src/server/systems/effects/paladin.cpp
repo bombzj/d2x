@@ -17,12 +17,17 @@ TransientAttributes projection(const CombatEffectSet &states,uint64_t tick) {
     for(const auto &e:states.entries()) if(e.activeAt(tick)) p.states.insert(e.spec.state.id);
     return p;
 }
-std::vector<std::pair<int,int64_t>> native(const SkillRules &rules,const CharacterModifiers &m) {
-    const std::pair<std::string_view,int> values[]{
+} // namespace
+std::vector<std::pair<int,int64_t>> nativeEffectStats(const SkillRules &rules,const CharacterModifiers &m) {
+    const std::pair<std::string_view,int64_t> values[]{
         {"damagepercent",m.combat.damagePercent},{"item_tohit_percent",m.combat.attackRatingPercent},
         {"attackrate",m.combat.attackRate},{"other_animrate",m.otherAnimationRate},{"velocitypercent",m.velocityPercent},
         {"skill_armor_percent",m.combat.defensePercent},{"damageresist",m.combat.physicalResist},
+        {"toblock",m.combat.blockBonus},{"strength",m.strength},{"dexterity",m.dexterity},
+        {"maxhp",int64_t(m.maxLife)*256},{"item_maxhp_percent",m.combat.lifePercent},
+        {"item_maxmana_percent",m.combat.manaPercent},{"item_allskills",m.combat.allSkills},
         {"fireresist",m.fireResist},{"coldresist",m.coldResist},{"lightresist",m.lightningResist},
+        {"poisonresist",m.poisonResist},
         {"maxfireresist",m.combat.fireMaxResist},{"maxcoldresist",m.combat.coldMaxResist},{"maxlightresist",m.combat.lightningMaxResist},
         {"firemindam",m.combat.fireMinimum},{"firemaxdam",m.combat.fireMaximum},
         {"coldmindam",m.combat.coldMinimum},{"coldmaxdam",m.combat.coldMaximum},
@@ -33,6 +38,7 @@ std::vector<std::pair<int,int64_t>> native(const SkillRules &rules,const Charact
     for(const auto &[name,value]:values) if(value) result.emplace_back(rules.nativeStats.at(std::string(name)),value);
     return result;
 }
+namespace {
 void removeDefinition(CombatEffectSet &states,EntityId source,int skill) {
     std::vector<EffectHandle> handles;
     for(const auto &e:states.entries()) if(e.spec.source.entity==source && e.spec.source.definition==skill) handles.push_back(e.handle);
@@ -93,6 +99,11 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
             }
         }
         edit.transient=projection(r.states,actor.tick);
+        if(spec.state.id>=0) {
+            auto stats=nativeEffectStats(*caster->rules.skills,spec.modifiers);
+            if(stats!=nativeEffectStats(*caster->rules.skills,stateModifiers(id,spec.state.id,actor.tick)))
+                edit.publicFacts.emplace_back(StateFact{id,0,actor.area,spec.state.id,true,std::move(stats)});
+        }
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) state_.players.swap(next.players);return result;
     }
@@ -115,7 +126,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
     if(spec.state.id>=0) {
         if(unit.states.size()>=128 && !unit.states.hasState(spec.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
         if(!unit.states.apply(spec,actor.tick).accepted) return {DomainStatus::Applied,std::monostate{}};
-        auto stats=native(*caster->rules.skills,spec.modifiers);
+        auto stats=nativeEffectStats(*caster->rules.skills,spec.modifiers);
         if(unit.nativeStats[spec.state.id]!=stats || !unitStates(id,actor.tick).contains(spec.state.id)) {
             if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,spec.state.id,true,stats}}})) return {DomainStatus::Capacity,{}};
         }

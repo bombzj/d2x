@@ -1,3 +1,4 @@
+#include "content/skills/description_data.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "classic_data.hpp"
@@ -335,6 +336,7 @@ ClassicData loadClassicData(Archives &archives) {
             }
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
+        data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings));
         loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), archives);
         data.playerDeath = loadPlayerDeathData(archives, data.characters, data.tables.at("difficultylevels"));
         data.shrines = loadShrines(data.tables.at("shrines"));

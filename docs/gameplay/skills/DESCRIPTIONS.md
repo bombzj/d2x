@@ -1,0 +1,154 @@
+# MPQ 技能描述
+
+本页唯一维护技能选择器与技能树的描述程序、公式输入和原版依据。当前公共表驱动层已进入 Windows Release 包，并完成下面列出的有限单机冒烟；不代表七职业全部数值与像素验收。技能执行、人物面板伤害和学习资格分别由职业专题、[人物模块](../../modules/CHARACTER.md)与[公共规范](COMMON.md)负责。
+
+## 数据与入口
+
+| 入口 | 职责 |
+| --- | --- |
+| [description_data](../../../src/content/skills/description_data.cpp) | 从当前 MPQ 的 SkillDesc、Skills、Missiles、MonStats、MonLvl、DifficultyLevels、ItemStatCost 与 TBL 准备不可变描述目录；导入被引用的隐藏技能，不依赖 SkillSpec 是否已实现 |
+| [description_formula](../../../src/content/skills/description_formula.cpp) | 编译只读表达式树；求值使用显式回调，不读取会话、MPQ、设备或随机流 |
+| [description_values](../../../src/content/skills/description_values.cpp) | 连接等级、基础技能、已知属性和表参数；复用公共固定点曲线；提供法力、伤害、时间、召唤物与被动数值 |
+| [skill_description](../../../src/content/skills/skill_description.cpp) | 按描述程序编号 1–75 分派，使用 TBL 文案及格式；程序 0 无输出，未知编号保留未知描述 |
+| [character_projection](../../../src/client/character_projection.cpp) | 同一原包副本投影选择器、当前等级、首次／下一等级及协同区；预览不分配点数、不改变技能资格 |
+| [remote_ui_clients](../../../src/client/remote_ui_clients.cpp) | 准备原包已知属性、数量与有效等级；元素支配按已观察装备／状态及 MPQ 被动公式只读投影，已在原状态表携带的被动不重复计入 |
+| [skill_eligibility](../../../src/content/skills/skill_eligibility.cpp) | 导入原技能资格及两组手部类型条件；装备显示条件只消费原包准备的类型、标志和数量，保留未知；不以红色显示替代选技能请求权限 |
+| [skill_tooltip](../../../src/presentation/hud/skill_tooltip.hpp) | 消费结果，负责字体、颜色、居中、换行和锚点；不再计算技能数值 |
+
+`SkillCatalog.descriptions` 持有公共目录，角色标题、短／长说明及布局仍由现有 SkillCatalog 导入。删除旧 Frozen Armor／Blaze 的专用描述字段、逐技能 hints 和按施法效果拼接的英文说明。描述目录与服务端执行目录独立，因此职业玩法未迁入不阻止读取其原描述。
+
+SkillDesc 的三组字段均导入 `line / texta / textb / calca / calcb`：等级相关 `desc1–6`、通用 `dsc2 1–4`、协同 `dsc3 1–7`。参数、技能／弹体引用、召唤物基础值和语言文本来自当前挂载资源，不从参考仓库附带表复制。
+
+同名表字段按所属表解释：Skills.Range 是目标类型文本，Missiles.Range／LevRange 才是弹体整数寿命。MonStats 只导入被技能 summon 引用的记录及原程序 41 的基础身份，避免将无关的同名怪物行当作唯一描述身份。TBL 数字索引保留全部原记录；重复文本键按原哈希桶的最短前向探测距离选取，再应用资料片／补丁覆盖。当前原表 StrSkill44 的两个记录分别是骷髅战士总数与骷髅法师复数，不能用桶遍历的最后一项覆盖原键查找结果。
+
+## 两个界面的原调用规则
+
+原客户端先构造底行在前的文本。本项目生成最终视觉顺序：
+
+- 选择器：短说明与当前有效等级标题，随后 dsc2 逆序、desc 逆序；不把 dsc3 放进选择器。
+- 技能树：长说明、通用组、当前等级组、首次／下一等级组，最后 dsc3 正序；非空通用组与说明之间保留空行，协同标题与正文分别交给现有视图。
+- 树的 desc 当前／预览分别传当前有效等级与有效等级加一。原树的 dsc2／dsc3 同样传有效等级加一；跨技能引用及 `blvl` 读取当前人物，不为预览修改基础清单或装备。
+- `str mana`、StrSkill1／2／17、skilldesc3 等标签由 TBL 决定。多行短／长说明沿原表方向转换；现有绘制器负责屏幕内折行。
+- 物品授予：基础等级已知为零且有效等级大于零时，树顶部显示绿色 StrSkill118，当前等级后加 StrSkill117。固有通用技能不视为物品授予；基础清单未知时不推断来源。标题、授予提示和协同标题分别以行块标记着色，长文本换行不改变标题位置。
+- 不可学习的树节点走原红色正文分支，绿色技能标题独立保留；达到原表 maxlvl 时显示 StrSkill116，否则需求等级用 `skilldesc3` 和原表 reqlevel 加当前有效等级，即使人物已超过该等级也仍显示。能学习的未学技能不一律标红；无剩余技能点时，已学节点保留普通正文。客户端根据已知基础清单、有效等级、技能点、等级与必要属性投影该状态，不从未知输入推断失败，也不改变实际分配点数的资格计算。
+- 选择器图标及整块提示（包括技能名）共用原技能使用状态的红色分支，独立于树的学习资格与城镇施法限制。原 AURA 在装备／资源判断之前返回独立状态，不因低法力或城镇条件一律标红。当前显示投影接原表 InGame、aura、itype／etype A/B 两组手部条件、noammo，以及已观察装备类型／损坏／NOEQUIP／弹药数量；类型继承沿当前 ItemTypes，先匹配右手 A，再查左手 B，只有右手 A 不匹配时才尝试相反组别。空手例外按原 weap／mele／h2h 条件处理，不按职业或技能名设例外。
+- 选择器资源不足判断独立读取原描述目录，使用未施加 MinMana 的原固定点消耗；已知 blood_mana 改查生命，物品 owner 充能不按普通技能扣法力，startmana 保留 inferno 状态例外。装备空槽必须已观察，弹药解码必须与原物品 revision 一致，资源例外必须有同步的原状态副本；缺少事实时不推断条件失败。这层只决定图标／提示色号，不新增客户端消耗或自研协议，不改变既有选择命令权限。
+- 选择器红色图标与红色字体都使用当前 Sky PL2 第 1 号原索引变色；图标不以 RGB 乘红近似。树已有灰色／悬停变色继续使用同一资源准备路径。
+
+火弹的法力在 dsc2，冰箭的法力在 desc，因此两者顺序不同，不能统一成“伤害、时间、法力”模板。协同文本也由程序解释，而非读取 Param 后按固定百分比模板猜测。
+
+## 描述程序与公式
+
+| 程序族 | 实现内容 |
+| --- | --- |
+| 1 | 原法力固定点、MinMana 限制、ManaShift／等级增量决定整数或小数；公式 A 为显示精度，不是法力覆盖值 |
+| 2–7、20–21、32、36、68、70 | 数字前后标签、正负号、百分比、单／复数、零值抑制 |
+| 8–14、22、24、26–27、34、39、41、48–50、59 | 命中率、物理／元素范围、元素持续、毒伤总量、每秒平均值、召唤物基础及加成、指定描述弹体；各程序保留原固定点与取整顺序 |
+| 12、16、19、23、28–31、37、57 | 帧转秒、时间范围、原单位转码／半径、弹体与子弹体 Range、难度 AiCurseDiv |
+| 15、18、25、33、40、45–46、65、69 | 标签、格式化标题、等级条件、上一等级描述及原色号标题 |
+| 17、35、38、42–44、47、52、58、60–64、67、72–73 | 范围、分数、固定点精度与协同格式；范围相等时是否合并、标签位置和加号按程序处理 |
+| 51、53–56、66、71、74–75 | TBL 格式字符串参数替换及原数量描述；资源格式不交给 printf 执行 |
+
+公式支持整数、一元符号、算术、比较、逻辑、条件、min／max，以及 `skill`、`miss`、`stat`、`sklvl`。技能参数包含 par、ln／dm、lvl／blvl／ulvl、原伤害／持续／法力、技能 Calc／Aura／Passive／Pet 与描述弹体参数。`skill` 读取目标技能有效等级，`sklvl` 使用指定参数求出的等级；伤害协同的 `blvl` 使用基础等级。
+
+`math / madm / macr` 按被动 Stat 身份寻找计算槽，不假定第一、第二、第三槽固定用途。元素曲线复用 `damage_curve`，物理及弹体保留协同在 HitShift 前的顺序；技能元素最小值沿原“固定不超过 1 点且第一阶增量为零”例外。程序 22 的指定弹体先乘 75，再施加所属技能的火／电支配，最后移位；程序 50 不施加该支配。程序 14 先将固定点毒伤率乘持续帧数，再移位。
+
+程序 17／19／24 将 TextB 放在 TextA 数值行之前，不另起一行，也不省略。充能标签因此由 MPQ 的 `Eskillpowerup1–3` 自然组成“Charge N - …”；同一规则覆盖火焰拳、雷电爪和寒冰刃，不按技能身份处理。程序 17 在范围后接原每秒标签，19 在半径后接原单位，24 使用原元素数值；射击次数等固定通用行仍由 dsc2 决定。
+
+召唤描述使用 MonStats 的难度等级和基础值；非 noRatio 行结合 MonLvl 的资料片比例。生命百分比先作用于平均基础生命，平加最后加入；宠物物理伤害按原 Aura／Passive Stat 槽收集百分比及平加。程序 41 的 MonStats 身份 292 是原描述程序常量，实际基础值仍读当前表，不按 Fire Golem 技能名分支。
+
+原小数格式使用截断后的整数部分／小数部分，不用浮点四舍五入或统一的 `%.1f`。固定点范围的 `%d.%d-%d.%d` 保留原程序格式，不另作零填充或去尾零。
+
+SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1el / me3o` 等名称，不另造别名。弹体参数分别读取 Param、CltParam、HitPar、CltHitPar、DmgParam 及各自的线性／递减对。原 1.13c 的 `mps` 将完整等级法力乘 25 后除以 2；它与 D2MOO 1.10f 转录不同，以本机原二进制为准。原 raw 描述弹体回调仍按参数编号除以 3，因此 `m2eo/ey` 读取描述弹体 1、`me3o/y` 读取描述弹体 2；这是已核实的原显示映射，不在描述层擅自改成普通弹体槽号。
+
+充能选择器的数量行使用当前 TBL `ModStre10d` 格式，不保留手写英文 Charges 文案；原 owner／等级／余量语义不变。
+
+## 已知值与未完成边界
+
+描述求值只读。未知不是零：缺少引用等级、装备／状态、难度、必要属性或不支持的表达式时，仅受影响的数值显示 `?`，结果记录对应描述程序；其他已知行继续输出。未收到完整基础清单不推断未学习；基础清单完整且该技能不存在时，才能采用原零基础等级语义。
+
+元素支配 ID 329–332 超过单字节属性包。客户端可以从已解码装备、完整状态快照和当前 MPQ 的被动公式重建所需显示值；数量和效果仍由原包决定，不增加自研服务端专用属性包。装备或状态未完整观察时保持未知，不把支配默认为零。
+
+以下范围尚不能宣称全部数值或像素认证：
+
+- 武器来源伤害接玩家／佣兵共用战斗投影准备的完整原武器值；缺少完整装备输入时仍保持未知。人物面板另按 SkillDesc.DescDam／DescAtt 调度，不把描述行程序当作动作程序；数值、格挡和有限冒烟由[人物属性](../characters/ATTRIBUTES.md)维护，全部特殊动作尚未全面认证。
+- `stat.base / stat.mod` 不从已收到的累计属性反推；依赖这两种输入的表达式保持未知。随机表达式不消费玩法随机流，尚未支持的词法保持未知。
+- 程序 48 接当前资料片路径；旧经典版模式的额外分支不在本项目当前资料片入口认证范围。
+- TBL 原标题色号已接现有协同标题契约；任意嵌入颜色、极长多行说明与全部装备／充能状态的最终排版仍需原版截图核对。
+- 选择器已接普通技能的成对装备条件及已知资源条件，不等于完整复刻 SKILLS_GetUseState。基础动作仍沿已有投掷事实，主武器优先级／魔法箭物品属性、变身限制、技能延迟和原客户端动作冷却显示尚未完整投影；SrvDo116 的变身免资源分支未取得完整形态事实时不推断资源失败。未以城镇禁用替代这些状态。
+- 本批完成有限单机运行，未连接 D2GS，未建立测试脚本／用例／专用程序；程序入口齐全与原表覆盖不等于全部参数通过运行验收。
+
+## 当前包有限冒烟
+
+2026-10-11，Windows Release，当前 `assets/mpq2`，嵌入宿主经原 MCP／D2GS 字节队列。使用 `artifacts/skill-description-smoke-20261011/` 中独立复制的等级 90 截图角色、新建女巫和全未学刺客；不修改 `saves/` 原件。等级 90 角色多数基础技能为 2，各职业三个重点技能为 10，无装备加成；具体技能／装备副本保存在同目录 JSON。通过现有 `ui-input` 实际悬停及 `screenshot` 观察，物品准备仅使用宿主管理生成，不作自然掉落证据。
+
+| 实际路径 | 观察结果与证据 |
+| --- | --- |
+| 女巫 Fire Bolt／Ice Bolt／Frozen Armor／Blaze 的树和选择器、Warmth 的树 | 当前／下一等级、通用法力、时间／伤害及协同分组无问号；两个界面保留原字段顺序。`tree-*`、`picker-*` 截图 |
+| Holy Fire／Holy Shield 树及选择器 | 半径、两种火伤、盾击／持续／防御／格挡按表显示；缺盾时圣盾整块提示及图标红色，装备原 Buckler 后恢复白色。`picker-holy-shield-unarmed.png`／`picker-holy-shield-equipped.png` |
+| Poison Nova 树和选择器、Poison Dagger 选择器 | 总毒伤与持续相邻；毒匕首含命中与法力小数，空手红色、装备正常 Dagger 后白色。`tree-poison-nova.png`、`picker-poison-*` |
+| Raise Skeleton 树 | 通用伤害、当前／下一等级、宠物属性及协同显示；修复 TBL 重复键后数量为骷髅战士总数。最终证据 `tree-raise-skeleton-final.png`，旧同名非 final 截图保留为失败现场 |
+| Fists of Fire／Wake of Inferno 树和选择器 | 三段 Charge 前缀、半径／每秒伤害、射击次数及协同顺序与已提供原截图相符。`tree-fists-of-fire.png`、`tree-wake-of-inferno.png` 及对应 picker |
+| 全未学刺客 | 可学习火焰拳为白正文 First Level；缺前置的 Inferno Sentry 为绿色标题／红正文、Required Level 及 First Level，不显示 Current 0。`tree-unlearned-*` |
+| 新女巫原初始法杖授予 Fire Bolt | 原包基础 0、有效 1、物品属性 107/36；绿色授予标题和 `(item)` 标记，当前／预览值正常。`tree-item-granted-fire-bolt.png`、`fresh-start.json` |
+| 保存正常退出并在新进程恢复 | 圣骑士装备／活动武器组及破损耐久保持；初始 0xAA 解码成功、地图／行走／本人显示可用，无服务端失败。`reentry.json`／`reentry-server.json` |
+
+冒烟暴露并修复表字段类型、无关 MonStats 重复名和 TBL 重复键问题。自研入局漏发原 0xAA 使空状态未知，已依据 D2MOO `SUNITMSG_FirstFn`／`D2GAME_STATES_SendUnitStates_6FCC58E0` 补入初始状态快照；空列表仍发 0xFF 终止，后续 A7／A8／A9 保留。客户端未改成缺包默认零。新准入不携带临时状态属性列表；运行中全状态重同步及所有他人属性组合未在此验收。
+
+构建日志在 `artifacts/skill-tooltip-20261007/build-release-20261011.log` 及本证据目录的增量日志；实际包哈希由[基线](../../../BASELINE.md#当前运行包与验证边界)维护。装备耐久提示结果只在[经典 HUD](../ui/CLASSIC_HUD.md#装备耐久提示)维护。本次未认证全部 75 个程序参数、复杂装备／充能／变身／冷却、原版完整像素、多客户端、Linux或原服运行；仍需的原版截图见文末。
+
+## 原版证据
+
+参考固定版本与许可见[资料来源](../../resources/THIRD_PARTY.md)。本批独立实现解释器，不加载原 DLL，也不复制原字节码或二进制程序。
+
+| 来源 | 核实内容 |
+| --- | --- |
+| 本地 D2MOO D2Common `D2Skills.cpp` | `SKILLS_GetSpecialParamValue`、`SKILLS_EvaluateSkillDescFormula`、跨技能／指定等级回调、`D2Common_11032`、法力／伤害／持续及支配顺序 |
+| D2MOO `DATATBLS/SkillsTbls.cpp`、`Units/Missile.cpp` | 关键词、Stat 选择器、SkillDesc 字段及弹体参数／曲线 |
+| D2MOO `DATATBLS/MonsterTbls.cpp` | `DATATBLS_CalculateMonsterStatsByLevel` 的 noRatio、难度与资料片 MonLvl 比例 |
+| 原 1.13c D2Client，MD5 `f5860c629d309b8fc1f96174babcf633` | RVA `0x316C0` 分派、`0x32ABC` 的 75 项跳转表；描述 helper `0x2C790–0x315xx`；`0x33340` 选择器、`0x33C80 / 0x33CF0 / 0x33DB0 / 0x33EA0` 的组别／等级调用 |
+| 同套 D2Client 物品授予分支 | `0x335C9–0x335EA` 核对有效／基础等级条件；`0x33C2E–0x33C63` 的树来源判断、`0x33E44–0x33E61` 的 StrSkill117 后缀、`0x34007–0x3404F` 的 StrSkill118 顶部提示；通用组分隔空行见 `0x33ED2–0x33EFD` |
+| 同套 D2Client 多段描述与不可学习树分支 | `0x31B1B / 0x31BE8 / 0x31CE0` 核对程序 17／19／24 先写 TextB；`0x7899C–0x789D8` 由节点状态选择普通 `0x33B50` 或红色 `0x33550` 描述；`0x338BE–0x33941` 写 reqlevel 加当前有效等级，`0x33B2D` 使用红色色号 1。节点状态来源见 `0x78BE2–0x78C35` 和 `0x78DAD–0x78E8C` |
+| 同套 D2Client 选择器使用状态 | `0x3E98E–0x3E9B6` 调 D2Common 使用状态并检查本地动作冷却；`0x3EA43–0x3EA57` 区分 USABLE、AURA 与红色；`0x3E794–0x3E7DD` 将红色色号 1 传给整块选择器提示 `0x33290`，不读取树的学习资格或城镇限制 |
+| 同套 D2Common，MD5 `ee1238806ef6d6d9801d12a09d128fe1` | 1.13c ordinal 10435／RVA `0x51B80` 对应描述公式，参数解释入口 `0x51070`；不直接套用 D2MOO 1.10f 的 ordinal |
+| 同套 D2Common 使用状态与手部／资源条件 | ordinal 10787／RVA `0x52340` 对应 SKILLS_GetUseState；`0x50610` 手部类型／空手／损坏／弹药，`0x50F00` 成对组别与优先级，`0x50AF0` 原消耗及血魔法／充能，`0x4FDC0` startmana／inferno。与 D2MOO 的 SKILLS_GetUseState、sub_6FDB1130 和 CheckStat／CheckStartStat 对照；本机 1.13c 使用本机导出身份 |
+
+原版导出表、TBL、反汇编和截图保留在忽略目录 `artifacts/skill-tooltip-20261007`，只作本地证据，不纳入源码或分发。
+
+## 截图证据与待补
+
+用户已提供选择器：Fire Bolt 等级 2、Ice Bolt／Frozen Armor／Blaze／Raise Skeleton 等级 1；并补充这五个技能及 Warmth 等级 2 的原版树提示。原图保存为本页证据目录的 `tree-*-20261011.png`，不纳入源码或分发。它们支持标签、排序、法力小数、帧转秒、平均伤害、宠物行和物品授予提示的显示方式；装备、难度、版本与基础技能清单未完整给出，不能据此认证所有公式数值。
+
+用户另补 Holy Fire／Poison Nova／Holy Shield／Fists of Fire／Wake of Inferno 的等级 10 树提示及未学习的 Amplify Damage。Wake of Inferno 是 TBL 显示名，Skills 行名为 `Inferno Sentry`；它们通过 SkillDesc／TBL 关联，不加程序别名。最后一张是死灵诅咒的未学技能样本，不是刺客充能或陷阱的首次等级样本。
+
+后续补充选择器全图与 Holy Fire／Holy Shield／Wake of Inferno／Fists of Fire 等级 10、Poison Dagger 等级 2 提示，保存在同一忽略目录的 `picker-*-20261011.png`。这批毒系选择器是 Poison Dagger，不是 Poison Nova，不将它记为后者的双界面认证。
+
+| 树截图 | 对描述层的约束 |
+| --- | --- |
+| Fire Bolt | 法力仅在通用组，不在 Current／Next 下重复；两项协同依表顺序显示 |
+| Ice Bolt | Current／Next 均显示伤害、Cold Length、法力；五项协同无额外猜测模板 |
+| Frozen Armor | 防御、总持续、冻结时间、法力依 desc 逆序；dsc3 可交替使用程序 67 的秒数和 63 的百分比 |
+| Blaze | 火焰持续、平均每秒伤害、法力；预览独立求等级曲线，协同依当前人物基础清单 |
+| Warmth | 只显示数值加 StrSkill23，不额外拼接“Mana regeneration”标签；无协同区 |
+| Raise Skeleton（物品授予） | 顶部绿色授予提示、Current 等级的 `(item)`；宠物基础伤害在通用组，Attack／Defense／Life／数量／法力在等级组；协同两项仅技能名 |
+| Holy Fire 等级 10 | 半径、附加到攻击的火伤、固定点光环火伤依 desc 逆序；不显示零法力行；协同为 Resist Fire、Salvation |
+| Poison Nova 等级 10 | 总毒伤、Over 持续时间在同一描述程序的相邻行，随后法力；预览沿新等级曲线，协同依实际 Poison Dagger／Poison Explosion 基础等级 |
+| Holy Shield 等级 10 | Smite Damage 的加号范围、Duration、Defense Bonus、Successful Blocking、法力依表顺序；最终人物格挡与这里的技能加成不是同一值 |
+| Fists of Fire 等级 10 | 三项充能各自同一行带 Charge N 前缀，第二项半径、第三项每秒范围；Attack 与法力在其后；唯一协同由当前表指定 Phoenix Strike |
+| Wake of Inferno 等级 10 | Shoots 10 Times 单独属于通用组，Current／Next 内仅火伤与法力；Wake of Fire 的每级半径小数与另外三条伤害协同分别按程序解释 |
+| Amplify Damage 未学习 | 绿色标题、红色长说明／Required Level／通用伤害加成／First Level 组；无 Current／Next 标题，通用组与首级组有空行；并非所有未学技能都走红色分支 |
+
+| 新选择器截图 | 对共用描述／显示层的约束 |
+| --- | --- |
+| 圣骑士全图 | 原 ListRow 分开两组光环、战斗和底行通用动作；红色图标不能简单等同于没有学会或城镇不可施放；截图不认证现有菜单全部坐标／排序 |
+| Holy Fire | 半径、攻击附加范围、光环固定点范围；无协同组，光环提示保留白字 |
+| Holy Shield | Smite 加号范围、持续、防御、格挡、法力与树的当前等级组一致；技能名、短说明、等级与数值整块为红色。具体失败原因仍需装备／资源事实，不能只凭颜色指定为缺盾 |
+| Poison Dagger | 总毒伤与持续相邻，随后 Attack 百分比和法力小数；整块红字是使用状态，不是毒伤描述程序自行变色 |
+| Wake of Inferno | 当前等级之后接 dsc2 的射击次数，然后 desc 的火伤与法力；树中通用组在 Current 标题之前，两界面不使用同一固定拼接顺序 |
+| Fists of Fire | 短说明保留原空行；三项 Charge N 前缀与数值同一行，随后 Attack 和法力；由程序 24／19／17 组合，不另写技能模板 |
+
+原字体的小图中数字 5 容易与 6 混淆。以本机 MPQ 而非截图 OCR 硬改数值：Fire Bolt 法力为 2.5，Warmth 等级 2／3 为 42／54 percent，Ice Bolt 的协同 Param8 为 15，Frozen Armor 下一级防御为 35 percent。冻结时间仍使用当前人物其他护甲的基础等级；先前选择器与这次树截图的冻结值不同，不足以证明两个界面使用不同公式。
+
+还需补 Poison Nova 的选择器截图，以及 Fists of Fire／Wake of Inferno 未学习时的树提示；前者核对同一毒伤程序在另一界面的组合，后者核对多段描述和协同区的首次等级／颜色。可学习的未学节点与因点数／前置条件不可学习的节点分别有价值。截图注明版本、难度、基础／有效等级及装备加成；现有未学 Amplify Damage 只证明所示红色分支的布局。
+
+这些截图用于后续核对原版显示，不将截图中的特定等级数值写成技能分支。
