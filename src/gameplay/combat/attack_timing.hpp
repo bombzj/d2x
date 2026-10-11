@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 #include <string_view>
+#include <vector>
+#include <cstddef>
 namespace d2x {
 // Pure subset of the original single-player weapon attack timing. No executor state.
 struct WeaponAttackTiming {
@@ -11,4 +13,14 @@ struct WeaponAttackTiming {
 };
 int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, int skillRate);
 int attackStartingFrame(std::string_view character, std::string_view weapon, std::string_view mode);
+int animationFrameTicks(int frame, int speed);
+int weaponSequenceTick(int frame, int speed);
+// SequenceTbls events share the same fixed-point clock for rendering and hits.
+template<class Frames>
+std::vector<int> weaponSequenceHitTicks(const Frames &frames, int speed) {
+    std::vector<int> result;
+    for (std::size_t frame = 0; frame < frames.size(); ++frame)
+        if (frames[frame].hit) result.push_back(weaponSequenceTick(int(frame),speed));
+    return result;
+}
 }

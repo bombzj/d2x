@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/bow_spec.hpp"
@@ -10,20 +11,13 @@
 namespace d2x {
 namespace {
 int required(const DataTable &table, size_t row, std::string_view field) {
-    auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing weapon skill field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 size_t named(const DataTable &table, std::string_view column, std::string_view value) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (!value.empty() && table.value(row, column) == value) return row;
-    throw std::runtime_error("Missing weapon skill reference: " + std::string(value));
+    return findSkillTableRow(table,column,value);
 }
 std::string_view formula(const DataTable &table, size_t row, std::string_view field) {
-    auto value = table.value(row, field);
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
-        value = value.substr(1, value.size() - 2);
-    return value;
+    return skillTableFormula(table,row,field);
 }
 } // namespace
 void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const DataTable &missiles,

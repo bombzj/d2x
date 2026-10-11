@@ -2,6 +2,14 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x {
+MonsterDecision decideBloodRavenClose(MonsterDecisionInput input) {
+    MonsterDecision result;result.random=input.random;result.phase=input.phase;result.loop=input.loop;
+    if(limitedRandom(result.random,100)<30 && input.distance<12) {
+        result.action=MonsterDecisionAction::Retreat;result.stopDistance=12-input.distance;
+        result.velocityPercent=175;result.running=true;result.attackWhenMoveFails=true;
+    } else result.action=MonsterDecisionAction::Attack;
+    return result;
+}
 bool hasBossDecision(MonsterAiKind k) {
     return k==MonsterAiKind::Smith || k==MonsterAiKind::Griswold || k==MonsterAiKind::Andariel || k==MonsterAiKind::BloodRaven || k==MonsterAiKind::Countess;
 }
@@ -24,9 +32,10 @@ std::optional<MonsterBossDecision> decideBossMonster(const MonsterAiProfile &pro
         else if(chance(p[2])) spell(chance(p[3])?0:1);
         else approach();
     } else if(profile.kind==MonsterAiKind::Countess) {
-        if(!input.sameHomeRoom || input.homeDistance>40) {
+        if(!input.sameHomeRoom || !input.targetInHomeRoom || input.homeDistance>40) {
             if(input.homeDistance>0) {approach(0,75,true);result.returnHome=true;return result;}
             if(in.distance>=25) {out.waitFrames=10;return result;}
+            if(!input.targetInHomeRoom && !input.firewallReady) {out.waitFrames=10;return result;}
         }
         if(input.firewallReady) {spell(0);return result;}
         if(in.contact) {if(chance(p[2]+10)) attack();else out.waitFrames=p[1];}
@@ -49,11 +58,11 @@ std::optional<MonsterBossDecision> decideBossMonster(const MonsterAiProfile &pro
         }
         if(in.distance>5) {
             if(chance(5) && input.targetHomeDistance<50) {approach(11,175,true);return result;}
-            if(in.clear && chance(80)) {if(chance(10*(in.difficulty+4))) spell(1);else attack();return result;}
-            out.action=MonsterDecisionAction::Circle;out.stopDistance=4;out.velocityPercent=125;return result;
+            if(in.clear && !in.retaliating && chance(80)) {if(chance(10*(in.difficulty+4))) spell(1);else attack();return result;}
+            out.action=MonsterDecisionAction::Circle;out.stopDistance=4;out.velocityPercent=125;out.bloodRavenCloseWhenMoveFails=true;return result;
         }
-        if(in.distance<12 && chance(30)) {out.action=MonsterDecisionAction::Retreat;out.stopDistance=12-in.distance;out.velocityPercent=175;out.running=true;out.attackWhenMoveFails=true;}
-        else attack();
+        auto close=in;close.random=out.random;close.phase=out.phase;close.loop=out.loop;
+        out=decideBloodRavenClose(close);
     }
     return result;
 }

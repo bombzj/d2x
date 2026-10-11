@@ -4,6 +4,8 @@
 
 定义入口为 `src/content/skills/barbarian_data.cpp`；纯规则在 `gameplay/skills`，动作、移动、弹体、命中、状态和尸体消耗分别由 server 对应系统拥有。客户端读取原协议状态、播放当前 MPQ 原图并提交命令。MPQ 数值、公式、武器类型、状态、弹体及尸体尺寸动态准备；本地 D2MOO 的 `SkillBar.cpp`、`MissMode.cpp`、`SequenceTbls.cpp`、武器速度和路径函数仅作职责及算法证据，见[资料来源](../../resources/THIRD_PARTY.md)。
 
+十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。抽取已纳入最终v39包的构建及第一幕有限冒烟，未专项复验全部野蛮人技能；下节冒烟属于此前野蛮人技能批。
+
 ## 逐技能入口
 
 | ID | 技能 | 当前执行 |
@@ -51,6 +53,8 @@ Battle Command 在被动求值前加入临时技能来源；协同仍只读基�
 
 ## 当前包有限冒烟
 
+本节为2026-10-11公共抽取前的历史证据，源码提交`f2efa6a`对应的收尾包客户端SHA256为`6CE740D7F60FCBD7D2E1345F66A9F5EF33107FE4E94FDFDE6000DAFA1CB065E4`，独立服务端为`E75EB3319FFA6030CF3CF2FA93633497B3BDF2956071F2638072809382F7EE1F`；不认证此次公共函数重构包。
+
 2026-10-11，Windows Release／当前 MPQ 1.13c，使用现有 `Send-D2XCommand.ps1` 和原协议请求，未新增测试脚本。管理员准备58级角色、真实武器和怪物；这不认证自然升级或掉落概率。
 
 | 代表路径 | 观察结果 |
@@ -63,6 +67,6 @@ Battle Command 在被动求值前加入临时技能来源；协同仍只读基�
 | 敌方战吼 | Battle Cry的原降伤／降防属性、Howl恐惧、Taunt属性及War Cry物理伤害已观察；存活 `brute3` 收到原stunned状态21。原MPQ禁止上述战吼在城镇施放，入口明确拒绝 |
 | 尸体／图腾 | Find Potion搜索产出第一幕 `hp2`；Find Item另一次搜索产出 `cqv`，状态118阻止再次使用。Grim Ward消耗尸体、显示原大型图腾256、持续1000帧并完整结束，无残留弹体 |
 
-本批冒烟修复空NoDrop批次永久等待容量导致尸体搜索挂起，以及移动技能原16输出目录未开放的问题；Battle Cry接触采用当前MPQ NextDelay。构建客户端和独立服务端均通过，包目录及最终哈希见基线。证据保留在忽略的 `artifacts/barbarian-*.json`、`barbarian-buffs.png`、`barbarian-whirlwind.png`、`barbarian-grimward.png`；最终包记录为 `barbarian-final-package.json`，角色为 `BarbSmoke-20261011.d2s`。期间修复后重打包，较早截图／分项记录属于本批相应构建，不冒充全部在最终EXE重跑。
+本批冒烟修复空NoDrop批次永久等待容量导致尸体搜索挂起，以及移动技能原16输出目录未开放的问题；Battle Cry接触采用当前MPQ NextDelay。构建客户端和独立服务端均通过，历史包身份见本节首段。证据保留在忽略的 `artifacts/barbarian-*.json`、`barbarian-buffs.png`、`barbarian-whirlwind.png`、`barbarian-grimward.png`；最终包记录为 `barbarian-final-package.json`，角色为 `BarbSmoke-20261011.d2s`。期间修复后重打包，较早截图／分项记录属于本批相应构建，不冒充全部在最终EXE重跑。
 
 只认证上述代表单机路径；未运行联机／原服／Linux，未穷举全部等级、装备、六精通类型、精英眩晕随机、多人争用、容量和所有视觉／声音组合。跳跃高度曲线限制见上节。

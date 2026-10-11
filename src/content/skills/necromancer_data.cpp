@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
@@ -8,13 +9,10 @@
 namespace d2x {
 namespace {
 size_t rowOf(const DataTable &table, std::string_view column, std::string_view value) {
-    for (size_t row = 0; row < table.rows().size(); ++row) if (table.value(row, column) == value) return row;
-    throw std::runtime_error("Missing original summon record: " + std::string(value));
+    return findSkillTableRow(table,column,value,SkillIdentityPolicy::AllowEmpty);
 }
 int number(const DataTable &table, size_t row, std::string_view column) {
-    const auto value = table.number(row, column);
-    if (!value) throw std::runtime_error("Missing original summon number: " + std::string(column));
-    return *value;
+    return skillTableNumber(table,row,column);
 }
 }
 void loadNecromancerSummons(SkillCatalog &catalog, const DataTable &skills, const DataTable &monstats,

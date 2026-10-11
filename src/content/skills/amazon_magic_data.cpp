@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "amazon_magic_data.hpp"
 #include "gameplay/skills/amazon_magic_spec.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
@@ -10,19 +11,13 @@
 namespace d2x {
 namespace {
 size_t rowOf(const DataTable &table, std::string_view column, std::string_view value) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.value(row, column) == value) return row;
-    throw std::runtime_error("Missing original Amazon magic record: " + std::string(value));
+    return findSkillTableRow(table,column,value,SkillIdentityPolicy::AllowEmpty);
 }
 int number(const DataTable &table, size_t row, std::string_view column) {
-    const auto value = table.number(row, column);
-    if (!value && !table.value(row, column).empty())
-        throw std::runtime_error("Unsupported Amazon magic number: " + std::string(column));
-    return value.value_or(0);
+    return skillTableNumber(table,row,column,SkillNumberPolicy::OptionalBlankIsZero);
 }
 void expect(const DataTable &table, size_t row, std::string_view column, std::string_view value) {
-    if (table.value(row, column) != value)
-        throw std::runtime_error("Unsupported original Amazon magic formula: " + std::string(column));
+    requireSkillTableText(table,row,column,value);
 }
 SkillOverlayVisual overlay(const DataTable &table, std::string_view name, Archives &archives) {
     SkillOverlayVisual visual;

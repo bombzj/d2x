@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "blizzard_data.hpp"
@@ -7,18 +8,14 @@
 namespace d2x {
 namespace {
 int required(const DataTable &table, size_t row, std::string_view field) {
-    const auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing Blizzard field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 void expect(const DataTable &table, size_t row, std::string_view field, int value) {
     if (table.number(row, field).value_or(0) != value)
         throw std::runtime_error("Unsupported Blizzard rule: " + std::string(field));
 }
 size_t named(const DataTable &table, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.value(row, "Missile") == name) return row;
-    throw std::runtime_error("Missing Blizzard missile: " + std::string(name));
+    return findSkillTableRow(table,"Missile",name,SkillIdentityPolicy::AllowEmpty);
 }
 } // namespace
 void loadBlizzardMissiles(SkillSpec &spec, const DataTable &skills, size_t skillRow,

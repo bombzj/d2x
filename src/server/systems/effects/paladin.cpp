@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -164,12 +165,12 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
             const auto &a=cycle.aura;
             if(!a.hostile && (a.filter&1)) for(const auto &[peerId,peer]:ports_.players.all()) {
                 if(peerId==key || !peer.entered || peer.area!=p.area || peer.persistent.player.hp<=0 || !ports_.social.sameParty(key,peerId) ||
-                   !area.activation.nearby(p.position,peer.position) || (peer.position-p.position).length()>a.radius) continue;
+                   !area.activation.nearby(p.position,peer.position) || !withinSkillArea(p.position,peer.position,a.radius,SkillAreaCoordinates::Continuous)) continue;
                 if((a.filter&0x200) && !area.collision.missileSegment(p.position,peer.position,{0x0805,1})) continue;
                 cycle.targets.push_back(peer.actor);
             }
             for(const auto &[id,m]:ports_.monsters.read().actors) {
-                if(m.area!=p.area || !area.activation.nearby(p.position,m.position) || (m.position-p.position).length()>a.radius || !(a.filter&2)) continue;
+                if(m.area!=p.area || !area.activation.nearby(p.position,m.position) || !withinSkillArea(p.position,m.position,a.radius,SkillAreaCoordinates::Continuous) || !(a.filter&2)) continue;
                 if((a.filter&0x200) && !area.collision.missileSegment(p.position,m.position,{0x0805,1})) continue;
                 if(a.filter&0x1000) {if(m.life>0 || !m.rewardComplete || tick<m.busyUntil || m.corpseUnavailable || !m.rule.corpseSelectable) continue;}
                 else if(m.life<=0 || !m.damageable()) continue;

@@ -6,6 +6,7 @@
 #include "gameplay/combat/life.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 namespace d2x::server::monsters {
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
@@ -35,15 +36,22 @@ DomainResult<> System::introduction(EntityId id,uint64_t tick) {
 bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const {
     const auto *caster=find(source),*dead=find(corpse);
     if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
-        dead->corpseUnavailable || dead->corpseSearched || tick<dead->busyUntil || !dead->rewardComplete || dead->identity.rank!=MonsterRank::Normal || dead->area!=caster->area) return false;
-    // Ordinary Fn013 uses its party callback. The broader family callback is
-    // reserved for unique shamans and is deliberately not used here.
-    if(((!caster->rule.enchantment || caster->identity.rank==MonsterRank::Minion) && dead->identity.ownerSpawnKey!=caster->identity.spawnKey) || dead->rule.ai.kind!=MonsterAiKind::Fallen) return false;
+        dead->corpseUnavailable || dead->corpseSearched || tick<dead->busyUntil || !dead->rewardComplete || dead->area!=caster->area) return false;
     const int radius=caster->rule.ai.params[3];
+    const bool unique=caster->identity.rank==MonsterRank::Unique || caster->identity.rank==MonsterRank::SuperUnique;
+    if(unique) {
+        // Fn013's unique callback accepts both Fallen and FallenShaman families,
+        // excluding unique/champion corpses, with a squared coordinate metric.
+        if(!dead->enemyTarget() || (dead->rule.ai.kind!=MonsterAiKind::Fallen && dead->rule.ai.kind!=MonsterAiKind::FallenShaman) ||
+            (dead->identity.rank!=MonsterRank::Normal && dead->identity.rank!=MonsterRank::Minion)) return false;
+        const Vec delta{std::floor(caster->position.x)-std::floor(dead->position.x),
+            std::floor(caster->position.y)-std::floor(dead->position.y)};
+        if(delta.x*delta.x+delta.y*delta.y>radius*radius) return false;
+    } else if(dead->identity.ownerSpawnKey!=caster->identity.spawnKey) return false;
     // Fn013 deliberately passes a squared threshold to callback 9, whose
     // actual metric is FullUnitSize. Preserve that native quirk and room scope.
     return ports_.areas.at(caster->area).definition.activation.nearby(caster->position,dead->position) &&
-        monsterAiDistance(caster->position,caster->rule.size,dead->position)<=radius*radius;
+        (unique || monsterAiDistance(caster->position,caster->rule.size,dead->position)<=radius*radius);
 }
 DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) {
     if(!resurrectionTarget(source,corpse,tick)) return {DomainStatus::Unavailable,{}};
@@ -53,7 +61,7 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     for(const auto &[id,p]:ports_.players.all()) { (void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && (actor.position-p.position).length()<1.f) return {DomainStatus::Unavailable,{}}; }
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{corpse,1,actor.area,128,false,actor.position}}})) return {DomainStatus::Capacity,{}};
     actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.poison.reset();
-    actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=8;
+    actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;
     actor.killer={};actor.route.clear();actor.moving=actor.running=false;actor.movementTarget={};
     actor.hitOccurrence=0;actor.knockedUntil=0;actor.knockbackGoal.reset();++actor.revision;
     // rewardComplete remains set: SKILLS_ResurrectUnit gives NOXP | NOTC.

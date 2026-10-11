@@ -5,9 +5,11 @@
 namespace d2x {
 struct AmazonPassiveSpec;
 struct BarbarianPassiveSpec;
+struct NecromancerPassiveSpec;
 struct SkillPassiveSpec {
     std::shared_ptr<const AmazonPassiveSpec> amazon;
     std::shared_ptr<const BarbarianPassiveSpec> barbarian;
+    std::shared_ptr<const NecromancerPassiveSpec> necromancer;
     int attackRatingPerBaseRank = 0;
     int maxResistElement = -1;
     int suppressedByState = -1;

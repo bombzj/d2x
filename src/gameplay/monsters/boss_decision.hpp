@@ -8,6 +8,7 @@ struct MonsterBossInput {
     MonsterDecisionInput combat;
     int homeDistance{}, targetHomeDistance{}, summonChance{};
     bool sameHomeRoom{true}, firewallReady{};
+    bool targetInHomeRoom{true};
 };
 struct MonsterBossDecision {
     MonsterDecision action;
@@ -19,4 +20,5 @@ struct MonsterBossDecision {
 // and Countess special state 13 (sub_6FCE5520). Server AI policy only.
 bool hasBossDecision(MonsterAiKind);
 std::optional<MonsterBossDecision> decideBossMonster(const MonsterAiProfile &,MonsterBossInput);
+MonsterDecision decideBloodRavenClose(MonsterDecisionInput);
 } // namespace d2x

@@ -9,7 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
-#include "gameplay/skills/barbarian_passive_spec.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
 namespace d2x::server::effects {
 namespace {
 TransientAttributes projection(const CombatEffectSet &effects, uint64_t tick) {
@@ -91,8 +91,8 @@ DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &ski
     CombatEffectSpec effect;effect.state=program.frenzyState;effect.duration=uint64_t(program.frenzyFrames);
     effect.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,stacks};effect.stacking=EffectStacking::ReplaceState;
     const auto &p=program.frenzyParameters;
-    effect.modifiers.velocityPercent=barbarianDiminishing(p[0],p[1],stacks);
-    effect.modifiers.combat.attackRate=barbarianDiminishing(p[2],p[3],stacks);
+    effect.modifiers.velocityPercent=skillDiminishingRatioBonus({p[0],p[1]},stacks);
+    effect.modifiers.combat.attackRate=skillDiminishingRatioBonus({p[2],p[3]},stacks);
     return apply(actor,std::move(effect));
 }
 DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {

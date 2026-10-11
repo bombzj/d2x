@@ -168,6 +168,9 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         action.duration=std::max(1,int(std::ceil(timing->duration*25)));
         action.release=std::clamp(int(std::ceil(timing->impact*25)),1,action.duration);
         action.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="sc"?7:4;
+        // Units::UNITS_IsSeqAnimSpeedModulatedByFCR excludes monster SQ.
+        // A plain SC cast is not accelerated/slowed by the attack-rate stat.
+        action.casting=sourceMode=="SC";
         if(record.ai=="FallenShaman" && slot==0) action.action=server::MonsterAttackRule::Action::Resurrect;
         else if(record.ai=="FoulCrowNest" || (record.ai=="BloodRaven" && slot==0)) action.action=server::MonsterAttackRule::Action::Nest;
         else if(rule.ai.kind==MonsterAiKind::Countess) {

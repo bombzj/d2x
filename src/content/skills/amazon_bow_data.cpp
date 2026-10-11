@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "amazon_bow_data.hpp"
 #include "missile_effects.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -10,21 +11,13 @@
 namespace d2x {
 namespace {
 size_t named(const DataTable &table, std::string_view column, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (!name.empty() && table.value(row, column) == name) return row;
-    throw std::runtime_error("Missing Amazon bow reference: " + std::string(name));
+    return findSkillTableRow(table,column,name);
 }
 int number(const DataTable &table, size_t row, std::string_view field) {
-    if (!table.has(field)) throw std::runtime_error("Missing Amazon bow field: " + std::string(field));
-    if (!table.value(row, field).empty() && !table.number(row, field))
-        throw std::runtime_error("Invalid Amazon bow number: " + std::string(field));
-    return table.number(row, field).value_or(0); // Blank native numeric fields are zero.
+    return skillTableNumber(table,row,field,SkillNumberPolicy::BlankIsZero);
 }
 std::string_view formula(const DataTable &table, size_t row, std::string_view field) {
-    auto value = table.value(row, field);
-    if (value.size() >= 2 && value.front() == '"' && value.back() == '"')
-        value = value.substr(1, value.size() - 2);
-    return value;
+    return skillTableFormula(table,row,field);
 }
 std::string sound(const DataTable &sounds, std::string_view key, Archives &archives) {
     if (key.empty()) return {};

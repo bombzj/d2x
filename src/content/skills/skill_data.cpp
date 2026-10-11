@@ -1,5 +1,6 @@
 #include "skill_data.hpp"
 #include "skill_eligibility.hpp"
+#include "gameplay/skills/necro_passive_spec.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iterator>
@@ -164,6 +165,19 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
                     entry.bonusDescriptions.push_back(textA + ": +" +
                         (frames ? std::to_string((*frames + 12) / 25) : "?") + " " + textB);
                 } else entry.bonusDescriptions.push_back(textA + ": ? " + textB);
+            }
+        }
+        if (entry.passive && entry.classCode == "nec") {
+            NecromancerPassiveSpec passive;
+            bool known = true;
+            if (name == "Skeleton Mastery") passive.kind = NecromancerPassiveSpec::Kind::SkeletonMastery;
+            else if (name == "Golem Mastery") passive.kind = NecromancerPassiveSpec::Kind::GolemMastery;
+            else if (name == "Summon Resist") passive.kind = NecromancerPassiveSpec::Kind::SummonResist;
+            else known = false;
+            if (known) {
+                for (size_t parameter = 0; parameter < passive.parameters.size(); ++parameter)
+                    passive.parameters[parameter] = skills.number(row,"Param" + std::to_string(parameter + 1)).value_or(0);
+                entry.passiveContribution.necromancer = std::make_shared<const NecromancerPassiveSpec>(std::move(passive));
             }
         }
         entry.page = required(descriptions, source, "SkillPage");

@@ -29,6 +29,7 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     if(request.attackTiming) key+=":"+std::to_string(request.attackTiming->itemIAS)+":"+std::to_string(request.attackTiming->weaponSpeed)+":"+std::to_string(request.attackTiming->skillRate);
     key+=":"+std::to_string(request.repeatCount)+":"+std::to_string(request.rollbackPercent)+":"+std::to_string(request.sequenceRateBonus);
     key+=":"+std::to_string(request.sequenceLanding);
+    key+=":"+(request.animationRate?std::to_string(*request.animationRate):"native");
     for (const auto &part : request.appearance.components) key += ":" + part;
     return key;
 }
@@ -137,6 +138,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics, const ActorA
         }
     }
     result.frameCount = result.animation.count;
+    if(request.animationRate) result.fps=float(*request.animationRate)*25.f/256.f;
     result.frameCount-=result.start;
     if(request.repeatCount>1 && (mode=="a1" || mode=="a2")) {
         const int speed=int(std::lround(result.fps*256.f/25.f));
@@ -179,7 +181,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
             if(sample.frame>=base->animation.count) return {};
             result.animation.frames.push_back(*base->animation.frame(facing,sample.frame));
         }
-        for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) result.releaseTimes.push_back(float(weaponSequenceTick(int(i),speed))/25.f);
+        for(const int tick:weaponSequenceHitTicks(sequence,speed)) result.releaseTimes.push_back(float(tick)/25.f);
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.size()),speed,0,0}.durationTicks();
         if(request.playerSequence==14) {
             if(request.sequenceLanding) {result.start=15;result.frameCount-=15;result.holdFrame=-1;result.durationFrames=weaponSequenceTick(result.frameCount,speed);}
@@ -212,7 +214,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
             if(sample.frame<0 || sample.frame>=base->animation.count) return {};
             result.animation.frames.push_back(*base->animation.frame(facing,sample.frame));
         }
-        for(size_t i=0;i<sequence.frames.size();++i) if(sequence.frames[i].hit) result.releaseTimes.push_back(float(weaponSequenceTick(int(i),speed))/25.f);
+        for(const int tick:weaponSequenceHitTicks(sequence.frames,speed)) result.releaseTimes.push_back(float(tick)/25.f);
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.frames.size()),speed,0,0}.durationTicks();return result;
     }
     if (const auto sequence=playerCastSequence(request.playerSequence); sequence && request.category == "chars") {

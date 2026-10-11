@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -49,9 +50,8 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
         const auto &program=*request.skill.weapon->spear;
         std::vector<uint64_t> eligible;
         for(const auto &[id,target]:ports_.monsters.read().actors) {
-            const Vec d{std::floor(target.position.x)-std::floor(request.target.x),std::floor(target.position.y)-std::floor(request.target.y)};
             if(target.enemyTarget() && target.life>0 && target.area==p->area && id!=primary && target.nextHitTick<=request.actor.tick &&
-                d.x*d.x+d.y*d.y<=float(program.targetRadius*program.targetRadius) && a->definition.collision.missileSegment(request.target,target.position,{4,1})) eligible.push_back(id.value);
+                withinSkillArea(request.target,target.position,float(program.targetRadius),SkillAreaCoordinates::FlooredCells) && a->definition.collision.missileSegment(request.target,target.position,{4,1})) eligible.push_back(id.value);
         }
         const EntityId successor{missileChainSuccessor(primary.value,eligible)};
         if(successor) {

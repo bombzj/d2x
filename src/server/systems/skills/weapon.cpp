@@ -111,16 +111,14 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(program.sequence==11 || program.sequence==15) {
         const auto sequence=barbarianSequence(program.sequence,p.totals.equipment.animationClass);
         timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate+program.attackRateBonus-30);
-        timing.frames=int(sequence.size());timing.startFrame=0;hits.clear();
-        for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) hits.push_back(weaponSequenceTick(int(i),timing.speed));
+        timing.frames=int(sequence.size());timing.startFrame=0;hits=weaponSequenceHitTicks(sequence,timing.speed);
         if(hits.empty()) return {DomainStatus::Unavailable,{}};
     }
     if(program.spear && (program.spear->kind==SpearSkillSpec::Kind::Jab || program.spear->kind==SpearSkillSpec::Kind::Impale)) {
         const auto sequence=amazonWeaponSequence(program.spear->kind==SpearSkillSpec::Kind::Jab?1:8,p.totals.equipment.animationClass);
         if(sequence.frames.empty()) return {DomainStatus::Unavailable,{}};
         timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate-30);
-        timing.frames=int(sequence.frames.size());timing.startFrame=0;hits.clear();
-        for(size_t i=0;i<sequence.frames.size();++i) if(sequence.frames[i].hit) hits.push_back(weaponSequenceTick(int(i),timing.speed));
+        timing.frames=int(sequence.frames.size());timing.startFrame=0;hits=weaponSequenceHitTicks(sequence.frames,timing.speed);
     }
     const bool strafe=program.bow && program.bow->strafe;
     int volleyDuration=timing.durationTicks();

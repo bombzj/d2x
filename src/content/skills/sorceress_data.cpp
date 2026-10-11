@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
@@ -15,9 +16,7 @@
 namespace d2x {
 namespace {
 int required(const DataTable &table, size_t row, std::string_view field) {
-    auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing original sorceress field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 std::string lower(std::string_view value) {
     std::string result(value);
@@ -282,9 +281,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 }
             }
         } else if (effect == SkillBehavior::EnergyShield) {
-            auto absorption = skills.value(row, "calc1");
-            if (absorption.size() >= 2 && absorption.front() == '"' && absorption.back() == '"')
-                absorption = absorption.substr(1, absorption.size() - 2);
+            const auto absorption = skillTableFormula(skills,row,"calc1");
             if (required(skills, row, "srvdofunc") != 23 || skills.value(row, "auralencalc") != "ln12" ||
                 absorption != "min(edmn,95)" || skills.value(row, "calc2") != "par5-skill('Telekinesis'.blvl)" ||
                 skills.value(row, "auraevent1") != "absorbdamage" || required(skills, row, "auraeventfunc1") != 24)

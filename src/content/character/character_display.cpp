@@ -15,7 +15,7 @@
 #include "gameplay/skills/corpse_search_spec.hpp"
 #include "gameplay/skills/leap_spec.hpp"
 #include "gameplay/skills/grim_ward_spec.hpp"
-#include "gameplay/skills/barbarian_passive_spec.hpp"
+#include "gameplay/skills/rank_bonus.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstdint>
@@ -308,7 +308,7 @@ std::vector<std::string> describeSkillPicker(const SkillRecord &skill, const Ski
             if(weapon.magicConversionPercent) detail+=" / Converts "+std::to_string(weapon.magicConversionPercent)+"% to magic";
             if(weapon.attackDefense) detail+=" / Defense +"+std::to_string(weapon.attackDefense)+"% while attacking";
             if(weapon.armorOverridePercent==-100) detail+=" / Defense 0 for "+std::string(displayNumber("%.2fs",float(weapon.attackDuration)/25.f));
-            if(weapon.frenzy) detail+=" / Maximum speed +"+std::to_string(barbarianDiminishing(weapon.frenzyParameters[0],weapon.frenzyParameters[1],value.rank))+"% / "+std::to_string(weapon.frenzyFrames/25)+" seconds";
+            if(weapon.frenzy) detail+=" / Maximum speed +"+std::to_string(skillDiminishingRatioBonus({weapon.frenzyParameters[0],weapon.frenzyParameters[1]},value.rank))+"% / "+std::to_string(weapon.frenzyFrames/25)+" seconds";
         }
         else if(value.effect==SkillBehavior::WarCry) detail+=" / Physical "+damage()+" / Stun "+std::string(displayNumber("%.2fs",float(value.stunFrames)/25.f));
         else if (value.effect == SkillBehavior::HolyBolt)

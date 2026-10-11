@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "glacial_spike_data.hpp"
@@ -7,18 +8,14 @@
 namespace d2x {
 namespace {
 int required(const DataTable &table, size_t row, std::string_view field) {
-    const auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing Glacial Spike field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 void expect(const DataTable &table, size_t row, std::string_view field, int value) {
     if (table.number(row, field).value_or(0) != value)
         throw std::runtime_error("Unsupported Glacial Spike rule: " + std::string(field));
 }
 size_t named(const DataTable &table, std::string_view field, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.value(row, field) == name) return row;
-    throw std::runtime_error("Missing Glacial Spike dependency: " + std::string(name));
+    return findSkillTableRow(table,field,name,SkillIdentityPolicy::AllowEmpty);
 }
 } // namespace
 void loadGlacialSpikeMissiles(SkillSpec &spec, const DataTable &skills, size_t skillRow,

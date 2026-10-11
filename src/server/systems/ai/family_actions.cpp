@@ -71,8 +71,9 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     if(monster.rule.ai.kind==MonsterAiKind::Countess && firewallPhase>=int(monster.skillPositions.size()) && tick.tick-controller.firewallCycle>700) firewallPhase=0;
     if(hasBossDecision(monster.rule.ai.kind)) {
         const auto *homeRoom=area.definition.activation.room(monster.home);
+        const auto *monsterRoom=area.definition.activation.room(monster.position);
         const auto *targetRoom=area.definition.activation.room(position);
-        boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(monster.home,monster.rule.size,monster.position),monsterAiDistance(monster.home,0,position),controller.summonChance,homeRoom==targetRoom,firewallPhase<int(monster.skillPositions.size())});
+        boss=decideBossMonster(monster.rule.ai,{input,monsterAiDistance(monster.home,0,monster.position),monsterAiDistance(monster.home,0,position),controller.summonChance,homeRoom==monsterRoom,firewallPhase<int(monster.skillPositions.size()),homeRoom==targetRoom});
     }
     const auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
@@ -106,6 +107,18 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         if (!controller.pursuing && monster.rule.ai.kind == MonsterAiKind::Fetish && decision->action == MonsterDecisionAction::Retreat) {
             controller.random = random; controller.observedHit = monster.hitOccurrence;
             controller.phase = controller.loop = 0; controller.nextDecision = tick.tick + 10; return StepStatus::Complete;
+        }
+        if(!controller.pursuing && decision->bloodRavenCloseWhenMoveFails) {
+            auto close=input;close.random=random;close.phase=decision->phase;close.loop=decision->loop;
+            const auto fallback=decideBloodRavenClose(close);random=fallback.random;
+            if(fallback.action==MonsterDecisionAction::Retreat) {
+                const Vec goal=monsterRetreatPoint(monster.position,position,fallback.stopDistance);
+                controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},{},0,fallback.velocityPercent,fallback.running}));
+            }
+            if(!controller.pursuing) {
+                const auto result=ports_.skills.requestCast({id,0,target,tick.tick,4});
+                if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
+            }
         }
         if (!controller.pursuing && decision->attackWhenMoveFails) {
             const auto result = ports_.skills.requestCast({id, 0, target, tick.tick,decision->failedMoveAttackMode});

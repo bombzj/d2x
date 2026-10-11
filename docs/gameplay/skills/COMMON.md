@@ -84,6 +84,25 @@
 | `projectile_path`、`amazon_missile`、combat几何 | 速度、格点、环射／扇形、remaining调度、引导／连锁／分裂等纯值；各端持有候选、时钟、碰撞及创建队列 |
 | `weapon_damage`、`poison`、`avoidance` | 武器六通道／转换、显式随机、毒替换及近远程／移动回避；不因纯函数可用就授权客户端结算 |
 
+### 公共函数抽取
+
+2026-10-11对照本地D2MOO、当前MPQ准备代码及既有原1.13c静态证据，收敛下列重复计算。函数只接收显式规则与输入，不持有世界、MPQ或随机流；客户端和服务端通过各自入口调用。
+
+| 公共入口 | 已接调用与保留条件 |
+| --- | --- |
+| `rank_bonus::skillRankBonus`、`skillDiminishingBonus`、`skillDiminishingRatioBonus` | 亚马逊被动、圣骑士光环／盾／转换、死灵诅咒／石魔、野蛮人被动／Frenzy／跳跃／尸体搜索／Berserk共用曲线。乘积后除法与先截断110×等级/(等级+6)的两种递减取整分别保留；没有以1.10f重建公式替换当前曲线 |
+| `skillRank`、`skillRankSum`、`skillSynergyBonus` | 女巫甲胄／伤害、圣骑士光环／武器、死灵白骨装甲、野蛮人呐喊／武器等统一查询、协同等级求和与加权求和；调用者仍区分基础等级与有效等级 |
+| `damage_curve::skillDurationBonus` | 技能元素长度与骷髅法师弹体长度共用8／16级分段。技能长度入口保留1–255资格，法师内部合成等级不强加这个上限；技能／弹体伤害的HitShift和协同顺序不合并 |
+| `evaluateBarbarianPassive`、`evaluateNecromancerPassive` | 六武器精通及四项野蛮人被动的提示／实际贡献，骷髅支配／石魔支配／召唤抵抗的提示／召唤求值读取同一纯结果；死灵提示不再扫描Skills表。参数仍由当前MPQ准备，属性安装与宠物创建由服务端完成 |
+| `attack_timing::animationFrameTicks`、`weaponSequenceTick`、`weaponSequenceHitTicks` | 施法序列、Jab／Impale、双挥／Frenzy／双投的服务端命中与客户端动画共用8.8时钟及事件遍历。施法释放允许第0帧，武器事件仍至少第1 tick；序列内容、手位、动作及Leap Attack阶段保持独立 |
+| `targeting::withinSkillArea` | Static Field、Telekinesis、尸爆／诅咒，连锁／范围／毒云弹体，人物／佣兵／精英光环共用几何。接口显式区分坐标截断、向下取整和连续距离；半径、房间活动、阵营、候选顺序及碰撞仍由调用者提供 |
+| `targeting::skillAiControlAllowed` | Taunt与死灵AI诅咒共用switchAi、非boss、Normal／Minion资格；恐惧等级限制、附身者排除和吸引特殊覆盖仍在原调用点 |
+| `content/skills/table_values` | 15个内容加载编译单元共用数字、身份引用及公式文本读取。缺列、空值、坏数字、允许空身份及引号处理按显式策略保留原拒绝／默认规则；它是内容辅助层，不进入玩法热路径，也不是通用Calc解释器 |
+
+核对范围包含七职业和通用／怪物／佣兵／宠物／物品／其他来源。已实现职业直接接入上述公共值；佣兵和物品来源沿既有resolve／aura／武器／弹体入口复用，怪物与精英复用几何和既有弹体计算。德鲁伊／刺客目前共用定义、来源、资格与客户端投影，职业执行器尚未迁入；其他未支持程序仍明确拒绝。本次没有为了未来技能添加虚拟执行器、通用世界回调上下文或未核实的Calc解释器。
+
+公共抽取本身不改变规则语义或D2S v96格式；与第一幕怪物补缺合并后的Windows Release客户端及独立服务端已构建／打包，准入由怪物修正升至v39。最终包完成第一幕逐身份、Telekinesis击退及隔离角色保存重入的有限V2，没有新增测试脚本、用例或专用程序；未专项复验抽取后的全部职业、等级、来源及多人组合，各职业此前的有限V2仍只认证对应历史构建。具体原函数证据见[公共层](../../architecture/REFERENCE_DESIGN.md#6-d2moo的公共层究竟共用什么)，产物身份与验证范围见[基线](../../../BASELINE.md#当前运行包与验证边界)。
+
 具体调用点和原版例外在职业逐项台账；数值／模块证据见参考设计的[女巫核对](../../architecture/REFERENCE_DESIGN.md#女巫公共层的原版核对)及[亚马逊核对](../../architecture/REFERENCE_DESIGN.md#亚马逊公共层的原版核对)。
 
 ## 定义、来源与客户端状态

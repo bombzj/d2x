@@ -127,6 +127,8 @@ struct RemoteScene::Impl {
     struct BlazeTrail { OnlinePoint cell; uint64_t discontinuity{}; };
     std::map<OnlineUnitKey,BlazeTrail> blazeTrails;
     std::map<int, size_t> monsterRows;
+    std::map<int, int> monsterWalkRates;
+    std::map<int, int> monsterRunRates;
     std::map<std::pair<int,int>,std::string> hirelingSkillModes;
     std::map<std::string, size_t, std::less<>> monsterExtra;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
@@ -216,6 +218,34 @@ struct RemoteScene::Impl {
             const auto id = monstats2.value(row, "Id");
             if (!id.empty())
                 monsterExtra.emplace(std::string(id), row);
+        }
+        // MonsterTbls loads KB's rate from the base identity's WL AnimData,
+        // scaling variants by their MPQ Velocity (UNITS_GetBaseAnimSpeed).
+        const AnimDataTable animations(a.read("data/global/animdata.d2"));
+        std::map<std::string_view,size_t,std::less<>> baseRows;
+        for(const auto &[id,row]:monsterRows) { (void)id;baseRows.emplace(monstats.value(row,"Id"),row); }
+        for(const auto &[id,row]:monsterRows) {
+            const auto base=baseRows.find(monstats.value(row,"BaseId"));
+            if(base==baseRows.end()) continue;
+            const auto extra=monsterExtra.find(monstats.value(base->second,"MonStatsEx"));
+            if(extra==monsterExtra.end()) continue;
+            const auto token=lower(std::string(monstats.value(base->second,"Code")));
+            const auto weapon=monsterModeWeapon(a,token,"wl",monstats2.value(extra->second,"BaseW"));
+            if(weapon.empty()) continue;
+            auto key=token+"wl"+weapon;
+            for(auto &ch:key) ch=char(std::toupper(static_cast<unsigned char>(ch)));
+            const auto *clock=animations.find(key);if(!clock || clock->speed<=0) continue;
+            int rate=clock->speed;
+            const int velocity=monstats.number(base->second,"Velocity").value_or(0);
+            if(row!=base->second && velocity>0) rate=rate*monstats.number(row,"Velocity").value_or(0)/velocity;
+            monsterWalkRates.emplace(id,std::clamp(rate,0,32767));
+            // Pre-expansion RN uses half the base WL speed, scaled by Run.
+            if(id<410) {
+                int run=clock->speed/2;
+                const int baseRun=monstats.number(base->second,"Run").value_or(0);
+                if(row!=base->second && baseRun>0) run=run*monstats.number(row,"Run").value_or(0)/baseRun;
+                monsterRunRates.emplace(id,std::clamp(run,0,32767));
+            }
         }
     }
     const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared) {
@@ -1347,6 +1377,8 @@ struct RemoteScene::Impl {
                 return nullptr;
             const bool walkingPose = moving && (actual == 1 || actual == 2 || actual == 15);
             std::string pose = walkingPose ? (actual == 15 ? "rn" : "wl") : modes[actual];
+            // D2Common COMPOSIT maps MONMODE_KNOCKBACK to the original GH art.
+            if(actual==13) pose="gh";
             if (u.actionSkill) {
                 pose = monsterSkillMode(row->second,*u.actionSkill);
                 if (pose.starts_with("seq_")) {
@@ -1373,6 +1405,15 @@ struct RemoteScene::Impl {
             request.appearance = parts; request.shadow = monstats2.number(e, "Shadow").value_or(0) != 0;
             request.paletteTransform = palette; request.finalFrame = deadFrame; request.randomTransform = randomPalette;
             request.nativeMonsterTransform = true;
+            if(actual==13) {
+                const auto rate=monsterWalkRates.find(*u.classId);
+                if(rate==monsterWalkRates.end() || rate->second<=0) return nullptr;
+                request.animationRate=rate->second;
+            } else if(walkingPose) {
+                const auto &rates=actual==15?monsterRunRates:monsterWalkRates;
+                const auto rate=rates.find(*u.classId);
+                if(rate!=rates.end()) request.animationRate=rate->second*std::max(25,int(u.velocityPercent.value_or(100)))/100;
+            }
             return shared.actorAnimation(request, artPalette);
         } catch (const net::protocol::ProtocolError &) {
             return nullptr;

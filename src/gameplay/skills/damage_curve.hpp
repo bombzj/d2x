@@ -8,6 +8,7 @@ struct SkillDamageCurve {
     std::array<int, 5> perLevel{};
 };
 int64_t skillLevelBonus(int rank, const std::array<int, 5> &steps);
+int64_t skillDurationBonus(int rank, const std::array<int, 3> &steps);
 // D2Common SKILLS_GetManaCosts / GetElementalLength. Values are native 8-bit fixed mana and 25 Hz frames.
 int64_t skillManaCostFixed(int base, int perLevel, int shift, int rank);
 int64_t skillElementalLength(int base, const std::array<int, 3> &steps, int rank, int64_t bonusPercent = 0);

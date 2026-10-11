@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
 #include "frozen_orb_data.hpp"
@@ -7,9 +8,7 @@
 namespace d2x {
 namespace {
 int required(const DataTable &table, size_t row, std::string_view field) {
-    const auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing original Frozen Orb field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 size_t linked(const DataTable &table, size_t row, std::string_view field) {
     const auto name = table.value(row, field);

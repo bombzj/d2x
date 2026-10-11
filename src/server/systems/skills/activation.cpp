@@ -2,6 +2,7 @@
 #include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -20,6 +21,7 @@
 #include "gameplay/skills/barbarian_sequence.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/movement.hpp"
 #include <cmath>
 #include "server/systems/loot/system.hpp"
@@ -163,10 +165,9 @@ DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,V
     std::vector<EntityId> physicalTargets,fireTargets;
     const auto &area=ports_.areas.at(actor.area).definition;
     for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && area.activation.nearby(center,m.position)) {
-        const int dx=int(m.position.x)-int(center.x),dy=int(m.position.y)-int(center.y),distance=dx*dx+dy*dy;
         const int radius=(program.radius+1)/2,physical=program.radius/2;
-        if(distance<=radius*radius) fireTargets.push_back(id);
-        if(distance<=physical*physical) physicalTargets.push_back(id);
+        if(withinSkillArea(center,m.position,float(radius),SkillAreaCoordinates::TruncatedCells)) fireTargets.push_back(id);
+        if(withinSkillArea(center,m.position,float(physical),SkillAreaCoordinates::TruncatedCells)) physicalTargets.push_back(id);
     }
     combat::SpellImpact physical{pending.unit,actor.actor,actor.area,DamageType::Physical,damage-fire,std::move(physicalTargets)};
     combat::SpellImpact elemental{pending.unit,actor.actor,actor.area,DamageType::Fire,fire,std::move(fireTargets)};
@@ -229,10 +230,8 @@ std::vector<EntityId> System::staticFieldTargets(const ActorContext &actor, cons
     std::vector<EntityId> targets;
     for (const auto &[id, monster] : ports_.monsters.read().actors) {
         if (!monster.enemyTarget() || monster.life <= 0 || monster.area != actor.area) continue;
-        const int deltaX = int(monster.position.x) - int(player.position.x);
-        const int deltaY = int(monster.position.y) - int(player.position.y);
         const int radius = int(skill.staticRadius);
-        if (deltaX * deltaX + deltaY * deltaY <= radius * radius) targets.push_back(id);
+        if (withinSkillArea(player.position,monster.position,float(radius),SkillAreaCoordinates::TruncatedCells)) targets.push_back(id);
     }
     return targets;
 }
@@ -243,9 +242,7 @@ DomainStatus System::activateStaticField(Release &pending, const ActorContext &a
 DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &actor, Vec target) {
     const auto &player = *ports_.players.find(actor.player);
     const auto &skill = pending.skill;
-    const int deltaX = int(target.x) - int(player.position.x);
-    const int deltaY = int(target.y) - int(player.position.y);
-    if (deltaX * deltaX + deltaY * deltaY > skill.telekinesisRange * skill.telekinesisRange) return DomainStatus::InvalidRequest;
+    if (!withinSkillArea(player.position,target,float(skill.telekinesisRange),SkillAreaCoordinates::TruncatedCells)) return DomainStatus::InvalidRequest;
     switch (pending.unitType) {
     case 1: return ports_.missiles.direct({actor, skill, {}, target}, {pending.unit}).status;
     case 4: return ports_.inventory.telekinesis(actor, pending.unit, skill).status;
@@ -263,8 +260,8 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
 }
 DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Vec target) {
     if(pending.skill.curse && pending.skill.curse->ai==CurseAi::Taunt) {
-        const auto eligible=[&](const monsters::Actor *m) {return m && m->enemyTarget() && m->life>0 && m->area==actor.area && m->rule.switchAi && !m->rule.boss &&
-            (m->identity.rank==MonsterRank::Normal || m->identity.rank==MonsterRank::Minion) &&
+        const auto eligible=[&](const monsters::Actor *m) {return m && m->enemyTarget() && m->life>0 && m->area==actor.area &&
+            skillAiControlAllowed(m->identity.rank,m->rule.switchAi,m->rule.boss) &&
             ports_.areas.at(actor.area).definition.collision.missileSegment(ports_.players.find(actor.player)->position,m->position,{4,1});};
         auto *victim=ports_.monsters.find(pending.unit);
         if(!eligible(victim)) {

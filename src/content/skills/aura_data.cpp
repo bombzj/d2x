@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "aura_data.hpp"
 #include "content/classic_data.hpp"
 #include <array>
@@ -8,7 +9,7 @@
 namespace d2x {
 namespace {
 int number(const DataTable &table, size_t row, std::string_view field) {
-    return table.number(row, field).value_or(0);
+    return skillTableNumber(table,row,field,SkillNumberPolicy::OptionalZero);
 }
 size_t numberedRow(const DataTable &table, int id) {
     for (size_t row = 0; row < table.rows().size(); ++row)
@@ -16,8 +17,6 @@ size_t numberedRow(const DataTable &table, int id) {
     throw std::runtime_error("Missing original monster modifier ID: " + std::to_string(id));
 }
 AuraFormula formula(std::string_view source) {
-    if (source.size() >= 2 && source.front() == '"' && source.back() == '"')
-        source = source.substr(1, source.size() - 2);
     constexpr std::pair<std::string_view, AuraFormula> formulas[]{
         {"ln12", AuraFormula::Linear12}, {"ln34", AuraFormula::Linear34}, {"ln56", AuraFormula::Linear56},
         {"par5", AuraFormula::Parameter5}, {"1", AuraFormula::One}, {"ln56/2", AuraFormula::HalfLinear56},
@@ -70,12 +69,12 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
     spec.filter = uint32_t(n("aurafilter"));
     spec.hitClass = n("HitClass") ? n("HitClass") : 13;
     spec.resultFlags = uint32_t(n("ResultFlags")) | 0x20;
-    spec.radius = formula(value("aurarangecalc"));
-    if (skill == 66) spec.period = formula(value("auralencalc"));
+    spec.radius = formula(skillTableFormula(table,row,"aurarangecalc"));
+    if (skill == 66) spec.period = formula(skillTableFormula(table,row,"auralencalc"));
     else spec.periodFrames = n("perdelay");
     if (skill == 124)
         for (int index = 0; index < 3; ++index)
-            spec.redemption[size_t(index)] = formula(value("calc" + std::to_string(index + 1)));
+            spec.redemption[size_t(index)] = formula(skillTableFormula(table,row,"calc" + std::to_string(index + 1)));
     if (const auto state = value("aurastate"); !state.empty()) spec.ownerState = data.states.at(std::string(state)).definition;
     if (const auto state = value("auratargetstate"); !state.empty()) spec.state = data.states.at(std::string(state)).definition;
     bool needsPrayer = spec.radius == AuraFormula::PrayerMinimum ||
@@ -85,7 +84,7 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
     for (int slot = 1; slot <= 6; ++slot) {
         const auto field = value("aurastat" + std::to_string(slot));
         if (field.empty()) continue;
-        const auto calculation = formula(value("aurastatcalc" + std::to_string(slot)));
+        const auto calculation = formula(skillTableFormula(table,row,"aurastatcalc" + std::to_string(slot)));
         needsPrayer |= calculation == AuraFormula::PrayerMinimum;
         spec.stats.push_back({calculation, stat(field, skill, spec.state.id)});
     }

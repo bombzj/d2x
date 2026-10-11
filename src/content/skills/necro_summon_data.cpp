@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "necro_summon_data.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/aura_data.hpp"
@@ -12,17 +13,13 @@
 namespace d2x {
 namespace {
 size_t rowOf(const DataTable &t, std::string_view column, std::string_view value) {
-    for (size_t r = 0; r < t.rows().size(); ++r) if (t.value(r, column) == value) return r;
-    throw std::runtime_error("Missing native summon record: " + std::string(value));
+    return findSkillTableRow(t,column,value,SkillIdentityPolicy::AllowEmpty);
 }
 int number(const DataTable &t, size_t r, std::string_view field) {
-    if (!t.has(field)) throw std::runtime_error("Missing native summon column: " + std::string(field));
-    return t.number(r, field).value_or(0);
+    return skillTableNumber(t,r,field,SkillNumberPolicy::ColumnIsZero);
 }
 void expect(const DataTable &t, size_t r, std::string_view field, std::string_view value) {
-    auto actual = t.value(r,field);
-    if (actual.size() >= 2 && actual.front() == '"' && actual.back() == '"') actual = actual.substr(1,actual.size()-2);
-    if (actual != value) throw std::runtime_error("Unsupported native summon formula: " + std::string(t.value(r, "skill")) + "/" + std::string(field));
+    requireSkillTableText(t,r,field,value,SkillTextPolicy::Formula);
 }
 SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2, const DataTable &monlvl, std::string code) {
     const auto monster = rowOf(monstats, "Id", code);

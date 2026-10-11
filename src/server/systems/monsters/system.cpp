@@ -160,6 +160,8 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+uint64_t(actor.rule.hitRecoveryTicks);actor.busyUntil=actor.reactionUntil;}
     }
     if (!life) {
+        // Fn043 marks an exhausted nest NOTC before its own death action.
+        if(source==id && actor.rule.ai.kind==MonsterAiKind::FoulCrowNest) actor.rule.noTreasure=true;
         actor.corpseUnavailable=corpseUnavailable;
         actor.deathTick = tick; actor.deathOccurrence = *event.value; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);

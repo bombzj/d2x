@@ -1,6 +1,6 @@
 # 公共规则、领域执行与表现的参考设计
 
-依据：本地固定版本 `reference/` 源码阅读。更新：2026-10-09。本文维护参考结构和公共提取的原版依据；技能规范／状态由COMMON、逐技能台账由职业专题维护。当前产品已有自研权威宿主与唯一原协议客户端；已实施范围见[内核子系统](../modules/SERVER_SYSTEMS.md)。以下明确区分已存在的代码、参考证据和后续设计，不据源码阅读认证运行表现。原规则与参数继续以当前 MPQ 和已核实证据为准。
+依据：本地固定版本 `reference/` 源码阅读。更新：2026-10-11。本文维护参考结构和公共提取的原版依据；技能规范／状态由COMMON、逐技能台账由职业专题维护。当前产品已有自研权威宿主与唯一原协议客户端；已实施范围见[内核子系统](../modules/SERVER_SYSTEMS.md)。以下明确区分已存在的代码、参考证据和后续设计，不据源码阅读认证运行表现。原规则与参数继续以当前 MPQ 和已核实证据为准。
 
 ## 1. 参考价值与限制
 
@@ -70,6 +70,12 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 | [D2Common/D2QuestRecord.h](../../reference/d2moo/source/D2Common/include/D2QuestRecord.h)、[A1Q1.cpp](../../reference/d2moo/source/D2Game/src/QUESTS/ACT1/A1Q1.cpp) | 任务旗标读写／编码是基础能力；杀怪、换区、NPC事件和奖励回调在D2Game | 公共身份／旗标解释和纯资格条件可共用；任务推进和领奖只能由服务端提交 |
 
 原版数据及版本差异优先于参考实现。已知NPC消息menu=0／2的1.13c证据与参考快照差异见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。没有源码的部分不以简化开源客户端代替原版结论；先标明缺证据，再做最小范围核对。
+
+2026-10-11公共函数抽取的直接依据：`D2Common/src/D2Skills.cpp::SKILLS_GetSpecialParamValue`分派ln／dm参数，`D2Common_11033`采用乘积后除法；`SKILLS_EvaluateSkillFormula`和`SKILLS_GetElementalLength`集中协同／长度求值。本项目抽取rank_bonus、duration和被动纯值，仍分别保留现有两种递减取整，不把1.10f重建结果认作已认证的1.13c全参数规则。
+
+`D2Common/src/DataTbls/SequenceTbls.cpp`将序列帧／事件作为公共基础，既有本机1.13c证据见下节女巫／亚马逊核对；本项目的animationFrameTicks和weaponSequenceHitTicks让表现与权威武器释放共用时钟／事件遍历，保留动作、手位和阶段差异。`D2Game/src/SKILLS/Skills.cpp::sub_6FD0FE80`／`SKILLS_FindAuraTarget`为范围遍历及筛选，`sub_6FD10EC0`为共用诅咒安装，`SkillBar.cpp::SKILLS_ApplyWarcryStats`被呐喊弹体调用；本项目只进一步共用范围几何和AI资格，候选、关系、状态／随机和提交保持领域所有权。
+
+当前MPQ仍由content准备；table_values统一原表读取和明确的空值／拒绝策略，不读取D2MOO附带表。七职业与其他来源的接入／缺口以及本次仅构建打包、未运行验证的边界统一见[COMMON](../gameplay/skills/COMMON.md#公共函数抽取)。
 
 ## 7. 本项目的提取单位与所有权
 

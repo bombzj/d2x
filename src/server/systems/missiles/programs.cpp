@@ -9,6 +9,7 @@
 #include "gameplay/skills/bone_spec.hpp"
 #include "gameplay/skills/grim_ward_spec.hpp"
 #include "gameplay/skills/projectile_path.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -16,7 +17,7 @@
 namespace d2x::server::missiles {
 namespace {
 Vec cell(Vec p) { return {std::floor(p.x)+.5f,std::floor(p.y)+.5f}; }
-bool radius(Vec a, Vec b, int r) { const auto d=Vec{std::floor(a.x)-std::floor(b.x),std::floor(a.y)-std::floor(b.y)}; return d.x*d.x+d.y*d.y<=float(r*r); }
+bool radius(Vec a, Vec b, int r) { return withinSkillArea(a,b,float(r),SkillAreaCoordinates::FlooredCells); }
 DamageType element(SkillBehavior s) {
     switch(s) {
     case SkillBehavior::WarCry: return DamageType::Physical;

@@ -102,6 +102,7 @@ struct MonsterRule {
     int corpseSize = 1;
     int corpseNoSelectState{-1};
     int resurrectionTicks{}, threat{};
+    uint8_t resurrectionMode{1};
     int hitRecoveryTicks{}, blockTicks{}, blockChance{}, coldDivisor{1};
     bool blockWithoutShield{};
     std::array<uint8_t,16> componentCounts{};

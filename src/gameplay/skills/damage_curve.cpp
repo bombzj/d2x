@@ -15,10 +15,14 @@ int64_t skillManaCostFixed(int base, int perLevel, int shift, int rank) {
         throw std::invalid_argument("Unsupported original mana curve");
     return (int64_t(base) + int64_t(rank - 1) * perLevel) * (int64_t(1) << shift);
 }
+int64_t skillDurationBonus(int rank, const std::array<int, 3> &steps) {
+    if (rank <= 1) return 0;
+    return int64_t(std::min(rank - 1, 7)) * steps[0] +
+        int64_t(std::clamp(rank - 8, 0, 8)) * steps[1] + int64_t(std::max(rank - 16, 0)) * steps[2];
+}
 int64_t skillElementalLength(int base, const std::array<int, 3> &steps, int rank, int64_t bonusPercent) {
     if (rank < 1 || rank > 255) throw std::invalid_argument("Unsupported original duration rank");
-    const int64_t frames = int64_t(base) + int64_t(std::min(rank - 1, 7)) * steps[0] +
-        int64_t(std::clamp(rank - 8, 0, 8)) * steps[1] + int64_t(std::max(rank - 16, 0)) * steps[2];
+    const int64_t frames = int64_t(base) + skillDurationBonus(rank,steps);
     return frames + frames * bonusPercent / 100;
 }
 int32_t evaluateSkillDamageFixed(const SkillDamageCurve &curve, int rank, int hitShift,

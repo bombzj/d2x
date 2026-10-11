@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "amazon_spear_data.hpp"
 #include "missile_effects.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -11,14 +12,10 @@
 namespace d2x {
 namespace {
 size_t named(const DataTable &table, std::string_view column, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (!name.empty() && table.value(row, column) == name) return row;
-    throw std::runtime_error("Missing Amazon spear reference: " + std::string(name));
+    return findSkillTableRow(table,column,name);
 }
 int number(const DataTable &table, size_t row, std::string_view field) {
-    if (!table.has(field) || (!table.value(row, field).empty() && !table.number(row, field)))
-        throw std::runtime_error("Invalid Amazon spear field: " + std::string(field));
-    return table.number(row, field).value_or(0);
+    return skillTableNumber(table,row,field,SkillNumberPolicy::BlankIsZero);
 }
 SkillSpec base(const DataTable &skills, size_t row) {
     if (skills.value(row, "charclass") != "ama") throw std::runtime_error("Invalid Amazon spear class");

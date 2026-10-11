@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -56,7 +57,7 @@ StepStatus System::advanceHirelings(uint64_t tick) {
         if(!cycle.pending) {
             cycle.targets={m->id};cycle.target=0;
             const auto eligible=[&](combat::ParticipantView target) {
-                if(target.id()==m->id || !target.aliveIn(m->area) || (target.position()-m->position).length()>a.radius || !area.definition.activation.nearby(m->position,target.position())) return false;
+                if(target.id()==m->id || !target.aliveIn(m->area) || !withinSkillArea(m->position,target.position(),a.radius,SkillAreaCoordinates::Continuous) || !area.definition.activation.nearby(m->position,target.position())) return false;
                 if((a.filter&0x200) && !area.definition.collision.missileSegment(m->position,target.position(),{0x0805,1})) return false;
                 return a.hostile?!area.definition.town && participants.canHarm({nullptr,m},target):participants.allied({nullptr,m},target,ports_.social);
             };

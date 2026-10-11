@@ -18,5 +18,4 @@ inline SpearSequence amazonWeaponSequence(int sequence, std::string_view weapon)
     }
     return result;
 }
-inline int weaponSequenceTick(int frame, int speed) { return std::max(1,(frame*256+speed-1)/speed); }
 }

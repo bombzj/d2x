@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "barbarian_data.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -14,24 +15,16 @@
 namespace d2x {
 namespace {
 size_t named(const DataTable &table, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.value(row, "skill") == name) return row;
-    throw std::runtime_error("Missing original Barbarian skill: " + std::string(name));
+    return findSkillTableRow(table,"skill",name,SkillIdentityPolicy::AllowEmpty);
 }
 int required(const DataTable &table, size_t row, std::string_view column) {
-    const auto value = table.number(row, column);
-    if (!value) throw std::runtime_error("Missing Barbarian skill field: " + std::string(column));
-    return *value;
+    return skillTableNumber(table,row,column);
 }
 void formula(const DataTable &table, size_t row, std::string_view column, std::string_view expected) {
-    auto value=table.value(row,column);
-    if(value.size()>=2 && value.front()=='"' && value.back()=='"') value=value.substr(1,value.size()-2);
-    if (value != expected)
-        throw std::runtime_error("Unsupported Barbarian formula: " + std::string(table.value(row,"skill")) + "/" + std::string(column) + " = " + std::string(table.value(row,column)));
+    requireSkillTableText(table,row,column,expected,SkillTextPolicy::Formula);
 }
 size_t missileNamed(const DataTable &table,std::string_view name) {
-    for(size_t row=0;row<table.rows().size();++row) if(table.value(row,"Missile")==name) return row;
-    throw std::runtime_error("Missing original Barbarian missile: "+std::string(name));
+    return findSkillTableRow(table,"Missile",name,SkillIdentityPolicy::AllowEmpty);
 }
 SkillSpec base(const DataTable &table, size_t row) {
     SkillSpec spec;

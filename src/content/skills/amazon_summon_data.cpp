@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "amazon_summon_data.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
@@ -10,18 +11,13 @@
 namespace d2x {
 namespace {
 size_t rowOf(const DataTable &t, std::string_view field, std::string_view value) {
-    for (size_t r = 0; r < t.rows().size(); ++r) if (t.value(r, field) == value) return r;
-    throw std::runtime_error("Missing Amazon summon record: " + std::string(value));
+    return findSkillTableRow(t,field,value,SkillIdentityPolicy::AllowEmpty);
 }
 int number(const DataTable &t, size_t r, std::string_view field) {
-    if (!t.has(field) || (!t.value(r, field).empty() && !t.number(r, field)))
-        throw std::runtime_error("Unsupported Amazon summon number: " + std::string(field));
-    return t.number(r, field).value_or(0);
+    return skillTableNumber(t,r,field,SkillNumberPolicy::BlankIsZero);
 }
 void expect(const DataTable &t, size_t r, std::string_view field, std::string_view value) {
-    auto actual = t.value(r, field);
-    if (actual.size() >= 2 && actual.front() == '"' && actual.back() == '"') actual = actual.substr(1, actual.size() - 2);
-    if (actual != value) throw std::runtime_error("Unsupported Amazon summon formula: " + std::string(field));
+    requireSkillTableText(t,r,field,value,SkillTextPolicy::Formula);
 }
 }
 void loadAmazonSummons(ClassicData &data, const DataTable &overlays, const DataTable &sounds, Archives &archives) {

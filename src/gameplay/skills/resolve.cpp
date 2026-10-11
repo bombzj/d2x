@@ -7,7 +7,6 @@
 #include "corpse_search_spec.hpp"
 #include "leap_spec.hpp"
 #include "grim_ward_spec.hpp"
-#include "barbarian_passive_spec.hpp"
 #include "damage_curve.hpp"
 #include "rank_bonus.hpp"
 #include "resolve.hpp"
@@ -41,7 +40,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.warcry = spec.warcry;
     if(spec.leap) {
         auto leap=std::make_shared<LeapSpec>(*spec.leap);
-        leap->range=barbarianDiminishing(leap->rangeMinimum,leap->rangeMaximum,rank);
+        leap->range=skillDiminishingRatioBonus({leap->rangeMinimum,leap->rangeMaximum},rank);
         leap->knockbackRadius+=(rank-1)*leap->knockbackPerLevel;
         result.leap=std::move(leap);
     }
@@ -52,7 +51,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     if(spec.corpseSearch) {
         auto search=std::make_shared<CorpseSearchSpec>(*spec.corpseSearch);
-        search->chance=barbarianDiminishing(search->minimumChance,search->maximumChance,rank);
+        search->chance=skillDiminishingRatioBonus({search->minimumChance,search->maximumChance},rank);
         result.corpseSearch=std::move(search);
     }
     if (spec.amazonMagic) {
@@ -99,8 +98,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         auto &combat = shield.modifiers.combat;
         combat.shieldDefensePercent = spec.armorParameters[2] + (rank - 1) * spec.armorParameters[3] +
             (synergy == learned.end() ? 0 : synergy->second) * spec.armorParameters[7];
-        combat.blockBonus = std::min(spec.armorParameters[5], spec.armorParameters[4] +
-            (spec.armorParameters[5] - spec.armorParameters[4]) * (110 * rank / (rank + 6)) / 100);
+        combat.blockBonus = skillDiminishingRatioBonus({spec.armorParameters[4],spec.armorParameters[5]},rank);
         combat.smiteMinimum = spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel));
         combat.smiteMaximum = spec.maximumDamage + int(skillLevelBonus(rank, spec.maximumPerLevel));
         result.appliedEffect = std::move(shield);
@@ -162,9 +160,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     if (spec.effect == SkillBehavior::FrozenArmor || spec.effect == SkillBehavior::ShiverArmor ||
         spec.effect == SkillBehavior::ChillingArmor) {
-        int synergyRanks = 0;
-        for (int id : spec.armorSynergySkills)
-            if (auto found = learned.find(id); found != learned.end()) synergyRanks += found->second;
+        const auto synergyRanks = skillRankSum(spec.armorSynergySkills, learned);
         const auto &parameters = spec.armorParameters;
         CombatEffectSpec armor;
         armor.state = spec.state;
@@ -188,29 +184,27 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     if(spec.effect==SkillBehavior::Shout) {
         CombatEffectSpec shout;shout.state=spec.state;shout.stacking=EffectStacking::ReplaceState;
-        int duration=spec.armorParameters[2]+(rank-1)*spec.armorParameters[3];
-        for(const auto id:spec.armorSynergySkills) if(const auto known=learned.find(id);known!=learned.end()) duration+=known->second*spec.armorParameters[7];
+        const auto duration=skillRankBonus({spec.armorParameters[2],spec.armorParameters[3]},rank)+
+            skillRankSum(spec.armorSynergySkills,learned)*spec.armorParameters[7];
         shout.duration=uint64_t(duration);shout.modifiers.combat.defensePercent=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
         result.appliedEffect=std::move(shout);
     }
     if(spec.effect==SkillBehavior::BattleOrders) {
         CombatEffectSpec orders;orders.state=spec.state;orders.stacking=EffectStacking::ReplaceState;
-        int frames=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
-        for(const auto id:spec.armorSynergySkills) if(const auto found=learned.find(id);found!=learned.end()) frames+=found->second*spec.armorParameters[7];
+        const auto frames=skillRankBonus({spec.armorParameters[0],spec.armorParameters[1]},rank)+
+            skillRankSum(spec.armorSynergySkills,learned)*spec.armorParameters[7];
         orders.duration=uint64_t(frames);const int amount=spec.armorParameters[2]+(rank-1)*spec.armorParameters[3];
         orders.modifiers.combat.lifePercent=orders.modifiers.combat.manaPercent=orders.modifiers.staminaPercent=amount;
         result.appliedEffect=std::move(orders);
     }
     if(spec.effect==SkillBehavior::BattleCommand) {
         CombatEffectSpec command;command.state=spec.state;command.stacking=EffectStacking::ReplaceState;
-        int frames=spec.armorParameters[0]+(rank-1)*spec.armorParameters[1];
-        for(const auto id:spec.armorSynergySkills) if(const auto found=learned.find(id);found!=learned.end()) frames+=found->second*spec.armorParameters[7];
+        const auto frames=skillRankBonus({spec.armorParameters[0],spec.armorParameters[1]},rank)+
+            skillRankSum(spec.armorSynergySkills,learned)*spec.armorParameters[7];
         command.duration=uint64_t(frames);command.modifiers.combat.allSkills=1;result.appliedEffect=std::move(command);
     }
     if (spec.effect == SkillBehavior::BoneArmor) {
-        int64_t synergy = 0;
-        for (int id : spec.armorSynergySkills)
-            if (auto found = learned.find(id); found != learned.end()) synergy += found->second;
+        const auto synergy = skillRankSum(spec.armorSynergySkills, learned);
         CombatEffectSpec armor;
         armor.state = spec.state;
         armor.source = {CombatEffectSource::Skill, {}, spec.sourceId, rank};
@@ -223,12 +217,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     const int64_t fixedMana = std::max<int64_t>(int64_t(spec.minimumMana) * 256, scaledMana);
     result.manaCost = float(fixedMana) / 256.f;
     result.startMana = float(spec.startMana);
-    int64_t synergy = 0;
-    for (int id : spec.synergySkills)
-        if (auto found = learned.find(id); found != learned.end()) synergy += found->second;
-    int64_t weightedBonus = 0;
-    for (const auto &[id, percent] : spec.weightedSynergies)
-        if (auto found = learned.find(id); found != learned.end()) weightedBonus += int64_t(found->second) * percent;
+    const auto synergy = skillRankSum(spec.synergySkills, learned);
+    const auto weightedBonus = skillSynergyBonus(spec.weightedSynergies, learned);
     const int64_t bonus = std::max<int64_t>(0, 100 + synergy * spec.synergyPercent + weightedBonus);
     const int damageMastery = spec.fireDamage ? fireMasteryPercent :
         spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
@@ -308,35 +298,27 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         }
         result.weapon->attackRating += (rank - 1) * result.weapon->attackRatingPerLevel;
         result.weapon->physicalFlat += (rank - 1) * result.weapon->physicalFlatPerLevel;
-        for (const auto &[skill, percent] : result.weapon->attackRatingSynergies)
-            if (const auto found = learned.find(skill); found != learned.end())
-                result.weapon->attackRating += found->second * percent;
+        result.weapon->attackRating += int(skillSynergyBonus(result.weapon->attackRatingSynergies,learned));
         result.weapon->damagePercent += std::max(0, rank - result.weapon->damageStartLevel) * result.weapon->damagePerLevel;
         result.weapon->attacks = std::min(result.weapon->attackLimit, result.weapon->attacks + rank - 1);
         result.weapon->stunFrames = std::min(250, result.weapon->stunFrames + (rank - 1) * result.weapon->stunPerLevel);
         if(spec.weapon->stunCurve) {
-            int synergy=0;for(const auto &[id,percent]:spec.weapon->stunSynergies)
-                if(const auto known=learned.find(id);known!=learned.end()) synergy+=known->second*percent;
+            const auto synergy=skillSynergyBonus(spec.weapon->stunSynergies,learned);
             result.weapon->stunFrames=int(std::min<int64_t>(250,skillElementalLength(spec.weapon->stunFrames,*spec.weapon->stunCurve,rank,synergy)));
         }
-        result.weapon->conversionChance = std::min(result.weapon->conversionMaximum, result.weapon->conversionMinimum +
-            (result.weapon->conversionMaximum - result.weapon->conversionMinimum) * (110 * rank / (rank + 6)) / 100);
+        result.weapon->conversionChance = skillDiminishingRatioBonus({result.weapon->conversionMinimum,result.weapon->conversionMaximum},rank);
         for (size_t element = 0; element < result.weapon->elementPercent.size(); ++element) {
             auto &percent = result.weapon->elementPercent[element];
             percent += (rank - 1) * result.weapon->elementPerLevel;
-            for (const auto &[skill, bonus] : result.weapon->elementSynergies[element])
-                if (const auto found = learned.find(skill); found != learned.end()) percent += found->second * bonus;
+            percent += int(skillSynergyBonus(result.weapon->elementSynergies[element],learned));
             const int mastery = element == 0 ? fireMasteryPercent : element == 1 ? coldDamagePercent : lightningMasteryPercent;
             percent += percent * mastery / 100;
         }
-        for (const auto &[skill, percent] : result.weapon->damageSynergies)
-            if (const auto found = learned.find(skill); found != learned.end())
-                result.weapon->damagePercent += found->second * percent;
+        result.weapon->damagePercent += int(skillSynergyBonus(result.weapon->damageSynergies,learned));
         result.weapon->attackDefense += (rank-1)*result.weapon->attackDefensePerLevel;
         if(result.weapon->attackDurationMaximum>0) result.weapon->attackDuration=result.weapon->attackDurationMaximum-
-            barbarianDiminishing(0,result.weapon->attackDurationMaximum-result.weapon->attackDurationMinimum,rank);
-        for(const auto &[id,percent]:result.weapon->magicConversionSynergies)
-            if(const auto found=learned.find(id);found!=learned.end()) result.weapon->magicConversionPercent+=found->second*percent;
+            skillDiminishingRatioBonus({0,result.weapon->attackDurationMaximum-result.weapon->attackDurationMinimum},rank);
+        result.weapon->magicConversionPercent+=int(skillSynergyBonus(result.weapon->magicConversionSynergies,learned));
     }
     result.missileId = spec.missileId;
     result.missileCount = std::min(spec.missileCountLimit,skillRankBonus({spec.missileCount,spec.missileCountPerLevel},rank));

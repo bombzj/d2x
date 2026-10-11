@@ -1,4 +1,5 @@
 #include "aura_resolve.hpp"
+#include "rank_bonus.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -7,10 +8,10 @@ namespace {
 int evaluate(AuraFormula formula, const AuraSkillSpec &spec, int rank,
              const std::map<int, int> &ranks, int prayerRank) {
     auto parameter = [&](int index) { return spec.parameters[size_t(index - 1)]; };
-    auto linear = [&](int first) { return parameter(first) + (rank - 1) * parameter(first + 1); };
+    auto linear = [&](int first) { return skillRankBonus({parameter(first), parameter(first + 1)},rank); };
     auto diminishing = [&](int first) {
         const int low = parameter(first), high = parameter(first + 1);
-        return std::min(high, low + (high - low) * 110 * rank / (rank + 6) / 100);
+        return skillDiminishingBonus({low,high},rank);
     };
     switch (formula) {
     case AuraFormula::Linear12: return linear(1);
@@ -81,7 +82,7 @@ AuraDefinition evaluateBaseAura(const AuraSkillSpec &spec, int rank,
     AuraDefinition result;
     result.skill = spec.skill;
     result.rank = rank;
-    result.manaPerPulse = float((int64_t(spec.mana) + int64_t(rank - 1) * spec.manaPerLevel) << spec.manaShift) / 256.f;
+    result.manaPerPulse = float(skillManaCostFixed(spec.mana,spec.manaPerLevel,spec.manaShift,rank)) / 256.f;
     result.filter = spec.filter;
     result.hitClass = spec.hitClass;
     result.resultFlags = spec.resultFlags;
@@ -122,9 +123,7 @@ AuraDefinition evaluateAura(const AuraSkillSpec &spec, int rank,
     const std::map<int, int> &ranks, int fireMasteryPercent,
     int lightningMasteryPercent, int coldDamagePercent, int prayerRank) {
     auto result = evaluateBaseAura(spec, rank, ranks, prayerRank);
-    int bonus = 100;
-    for (const auto &[synergy, percent] : result.synergies)
-        if (const auto found = ranks.find(synergy); found != ranks.end()) bonus += found->second * percent;
+    const auto bonus = 100 + skillSynergyBonus(result.synergies,ranks);
     if (spec.skill != 118) result.minimumDamage = float(int64_t(result.minimumDamage * 256.f) * bonus / 100) / 256.f;
     result.maximumDamage = float(int64_t(result.maximumDamage * 256.f) * bonus / 100) / 256.f;
     const int mastery = result.element == 2 ? fireMasteryPercent :

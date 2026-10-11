@@ -1,4 +1,5 @@
 #include "cast_timing.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -22,8 +23,8 @@ std::optional<PlayerCastSequence> playerCastSequence(int sequence) {
 CastTiming playerCastSequenceTiming(const PlayerCastSequence &sequence, int speed) {
     if (sequence.fixedSpeed) speed=sequence.fixedSpeed;
     if (speed <= 0 || sequence.frames.empty()) throw std::invalid_argument("Unprepared sequence timing");
-    return {(int(sequence.frames.size())*256+speed-1)/speed,
-        (sequence.releaseFrame*256+speed-1)/speed,speed};
+    return {animationFrameTicks(int(sequence.frames.size()),speed),
+        animationFrameTicks(sequence.releaseFrame,speed),speed};
 }
 CastTiming sorceressCastTiming(CastAnimationTiming animation, int fasterCast, bool arc, bool inferno) {
     if(inferno) {

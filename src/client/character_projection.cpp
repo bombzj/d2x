@@ -8,6 +8,7 @@
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "gameplay/skills/barbarian_passive_spec.hpp"
+#include "gameplay/skills/necro_passive_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
@@ -25,7 +26,7 @@ int integer(const CharacterProjectionInput &input, std::string_view name) {
     return int(std::clamp(stat(input, name).value_or(0),
         double(std::numeric_limits<int>::min()), double(std::numeric_limits<int>::max())));
 }
-void passiveDetails(std::vector<std::string> &lines, const ClassicData &data, const SkillRecord &entry, int rank) {
+void passiveDetails(std::vector<std::string> &lines, const SkillRecord &entry, int rank) {
     if (rank <= 0) return;
     if (entry.manaRecoveryPerRank)
         lines.push_back("Mana regeneration: +" + std::to_string(skillRankBonus(*entry.manaRecoveryPerRank,rank)) + "%");
@@ -43,36 +44,30 @@ void passiveDetails(std::vector<std::string> &lines, const ClassicData &data, co
     }
     if (entry.passiveContribution.barbarian) {
         const auto &passive = *entry.passiveContribution.barbarian;
+        const auto value = evaluateBarbarianPassive(passive,rank);
         if (passive.kind == BarbarianPassiveSpec::Kind::Mastery) {
-            const auto &p = passive.parameters;
-            lines.push_back("Attack rating: +" + std::to_string(skillRankBonus({p[0], p[1]}, rank)) + "%");
-            lines.push_back("Damage: +" + std::to_string(skillRankBonus({p[2], p[3]}, rank)) + "%");
-            lines.push_back("Critical strike: " + std::to_string(barbarianDiminishing(p[4], p[5], rank)) + "%");
+            lines.push_back("Attack rating: +" + std::to_string(value.attackRating) + "%");
+            lines.push_back("Damage: +" + std::to_string(value.damagePercent) + "%");
+            lines.push_back("Critical strike: " + std::to_string(value.criticalChance) + "%");
         } else if(passive.kind==BarbarianPassiveSpec::Kind::Stamina) {
-            lines.push_back("Maximum stamina: +"+std::to_string(skillRankBonus({passive.parameters[0],passive.parameters[1]},rank))+"%");
+            lines.push_back("Maximum stamina: +"+std::to_string(value.amount)+"%");
         } else if(passive.kind==BarbarianPassiveSpec::Kind::Defense) {
-            lines.push_back("Defense: +"+std::to_string(skillRankBonus({passive.parameters[0],passive.parameters[1]},rank))+"%");
+            lines.push_back("Defense: +"+std::to_string(value.amount)+"%");
         } else {
-            lines.push_back(std::string(passive.kind==BarbarianPassiveSpec::Kind::Speed?"Movement speed: +":"Elemental resistance: +")+std::to_string(barbarianDiminishing(passive.parameters[0],passive.parameters[1],rank))+"%");
+            lines.push_back(std::string(passive.kind==BarbarianPassiveSpec::Kind::Speed?"Movement speed: +":"Elemental resistance: +")+std::to_string(value.amount)+"%");
         }
     }
-    if (!entry.passive || entry.classCode != "nec") return;
-    const auto &table = data.tables.at("skills");
-    for (size_t row = 0; row < table.rows().size(); ++row) {
-        if (table.number(row, "Id") != entry.id) continue;
-        auto param = [&](int index) { return table.number(row, "Param" + std::to_string(index)).value_or(0); };
-        if (entry.sourceName == "Golem Mastery") {
-            lines.push_back("Golem life: +" + std::to_string(param(1) + (rank - 1) * param(2)) + "%");
-            lines.push_back("Golem attack rating: +" + std::to_string(param(5) + (rank - 1) * param(6)));
-            lines.push_back("Golem movement speed: +" + std::to_string(std::min(param(4),
-                param(3) + (param(4) - param(3)) * (110 * rank / (rank + 6)) / 100)) + "%");
-        } else if (entry.sourceName == "Skeleton Mastery") {
-            lines.push_back("Skeleton life: +" + std::to_string(rank * param(1)) + " / Damage: +" + std::to_string(rank * param(2)));
-            lines.push_back("Revive life: +" + std::to_string(rank * param(3)) + "% / Damage: +" + std::to_string(rank * param(4)) + "%");
-        } else if (entry.sourceName == "Summon Resist")
-            lines.push_back("Summon elemental resistance: +" + std::to_string(std::min(param(2),
-                param(1) + (param(2) - param(1)) * (110 * rank / (rank + 6)) / 100)) + "%");
-        break;
+    if (entry.passiveContribution.necromancer) {
+        const auto &passive = *entry.passiveContribution.necromancer;
+        const auto value = evaluateNecromancerPassive(passive,rank);
+        if (passive.kind == NecromancerPassiveSpec::Kind::GolemMastery) {
+            lines.push_back("Golem life: +" + std::to_string(value.golemLife) + "%");
+            lines.push_back("Golem attack rating: +" + std::to_string(value.golemRating));
+            lines.push_back("Golem movement speed: +" + std::to_string(value.golemSpeed) + "%");
+        } else if (passive.kind == NecromancerPassiveSpec::Kind::SkeletonMastery) {
+            lines.push_back("Skeleton life: +" + std::to_string(value.skeletonLife) + " / Damage: +" + std::to_string(value.skeletonDamage));
+            lines.push_back("Revive life: +" + std::to_string(value.reviveLife) + "% / Damage: +" + std::to_string(value.reviveDamage) + "%");
+        } else lines.push_back("Summon elemental resistance: +" + std::to_string(value.resistance) + "%");
     }
 }
 }
@@ -182,7 +177,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         skill.usableNow = eligibility.usableNow; skill.pickerEnabled = eligibility.pickerEnabled;
         auto hints = [&](int rank, const std::map<int, int> &baseRanks) {
             std::vector<std::string> lines;
-            if (entry.passive) { passiveDetails(lines, data, entry, rank); return lines; }
+            if (entry.passive) { passiveDetails(lines, entry, rank); return lines; }
             bool known = input.baseRanksAssigned && rank <= 255;
             bool damageKnown = known;
             std::optional<SkillCastSpec> cast;

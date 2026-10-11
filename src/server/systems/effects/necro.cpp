@@ -8,6 +8,7 @@
 #include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/skills/common_actions.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include <algorithm>
 
@@ -19,7 +20,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         return {DomainStatus::InvalidActor,{}};
     const auto &program=*skill.curse;
     const auto *attracted=program.ai==CurseAi::Attract?ports_.monsters.find(selected):nullptr;
-    const auto aiEligible=[](const monsters::Actor &m) {return m.rule.switchAi && !m.rule.boss && (m.identity.rank==MonsterRank::Normal || m.identity.rank==MonsterRank::Minion);};
+    const auto aiEligible=[](const monsters::Actor &m) {return skillAiControlAllowed(m.identity.rank,m.rule.switchAi,m.rule.boss);};
     if(program.ai==CurseAi::Attract && (!attracted || !attracted->enemyTarget() || attracted->life<=0 || attracted->area!=actor.area || !aiEligible(*attracted))) return {DomainStatus::Unavailable,{}};
     auto next=units_;
     std::map<EntityId,monsters::Actor::CurseControl> controls;
@@ -30,8 +31,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(program.singleTarget && id!=selected) continue;
         if(!monster.enemyTarget() || monster.life<=0 || !monster.rule.curseable || monster.area!=actor.area || !(program.targetFilter&2) ||
            !area->definition.activation.nearby(center,monster.position) || (monster.rule.enchantment && monster.rule.enchantment->has(38))) continue;
-        const int dx=int(monster.position.x)-int(center.x),dy=int(monster.position.y)-int(center.y);
-        if(dx*dx+dy*dy>program.radius*program.radius) continue;
+        if(!withinSkillArea(center,monster.position,float(program.radius),SkillAreaCoordinates::TruncatedCells)) continue;
         if(program.ai!=CurseAi::None && !aiEligible(monster)) continue;
         if(program.targetLevelBonus && skill.rank+program.targetLevelBonus+player->persistent.player.level<=monster.rule.level) continue;
         if(program.skipActive && unitStates(id,actor.tick).contains(program.state.id)) continue;

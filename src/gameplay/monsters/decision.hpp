@@ -27,5 +27,6 @@ struct MonsterDecision {
     uint8_t failedMoveAttackMode{4};
     int failedMoveWanderRadius{}, targetDistance{};
     bool commandParty{};
+    bool bloodRavenCloseWhenMoveFails{};
 };
 }

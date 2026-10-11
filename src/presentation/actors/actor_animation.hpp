@@ -23,6 +23,7 @@ struct ActorAnimationRequest {
     int repeatCount{1},rollbackPercent{};
     int sequenceRateBonus{};
     bool sequenceLanding{};
+    std::optional<int> animationRate;
 };
 struct ActorAnimation {
     GpuAnimation animation;

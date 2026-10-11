@@ -1,3 +1,4 @@
+#include "table_values.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "bone_data.hpp"
 #include "gameplay/skills/bone_spec.hpp"
@@ -8,21 +9,13 @@
 namespace d2x {
 namespace {
 size_t named(const DataTable &table, std::string_view field, std::string_view name) {
-    for (size_t row = 0; row < table.rows().size(); ++row)
-        if (table.value(row, field) == name) return row;
-    throw std::runtime_error("Missing original bone skill record: " + std::string(name));
+    return findSkillTableRow(table,field,name,SkillIdentityPolicy::AllowEmpty);
 }
 int number(const DataTable &table, size_t row, std::string_view field) {
-    const auto value = table.number(row, field);
-    if (!value) throw std::runtime_error("Missing original bone skill field: " + std::string(field));
-    return *value;
+    return skillTableNumber(table,row,field);
 }
 void expect(const DataTable &table, size_t row, std::string_view field, std::string_view value) {
-    auto actual = table.value(row, field);
-    if (actual.size() >= 2 && actual.front() == '"' && actual.back() == '"') actual = actual.substr(1, actual.size() - 2);
-    if (actual != value)
-        throw std::runtime_error("Unsupported original bone skill formula: " + std::string(field) +
-            " / " + std::string(table.value(row, "skill")));
+    requireSkillTableText(table,row,field,value,SkillTextPolicy::Formula);
 }
 std::string sound(const DataTable &sounds, std::string_view name, Archives &archives) {
     if (name.empty()) return {};

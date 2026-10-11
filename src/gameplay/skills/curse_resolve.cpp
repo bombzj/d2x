@@ -1,4 +1,5 @@
 #include "curse_resolve.hpp"
+#include "rank_bonus.hpp"
 #include <algorithm>
 #include <stdexcept>
 
@@ -17,9 +18,7 @@ CurseSpec evaluateCurse(const CurseSpec &spec, int rank) {
         // Keep the intermediate integer ratio. Current MPQ parameters yield
         // Blizzard's published Lower Resist values (rank 1 = 31, rank 20 = 62).
         // D2MOO's reconstructed 11033 uses different grouping; see the baseline.
-        const int ratio = 110 * rank / (rank + 6);
-        const int amount = -std::min(result.resistMaximum, result.resistMinimum +
-            (result.resistMaximum - result.resistMinimum) * ratio / 100);
+        const int amount = -skillDiminishingRatioBonus({result.resistMinimum, result.resistMaximum}, rank);
         auto &modifiers = result.modifiers;
         modifiers.fireResist = modifiers.coldResist = modifiers.lightningResist = modifiers.poisonResist = amount;
     }

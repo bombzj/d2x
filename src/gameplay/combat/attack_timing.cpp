@@ -3,6 +3,13 @@
 #include <cstdint>
 #include <stdexcept>
 namespace d2x {
+int animationFrameTicks(int frame, int speed) {
+    if (speed <= 0) throw std::invalid_argument("Unprepared sequence speed");
+    return int((int64_t(frame)*256+speed-1)/speed);
+}
+int weaponSequenceTick(int frame, int speed) {
+    return std::max(1,animationFrameTicks(frame,speed));
+}
 int WeaponAttackTiming::durationTicks() const {
     return std::max(1, ((frames - startFrame) * 256 + speed - 1) / speed - 1);
 }

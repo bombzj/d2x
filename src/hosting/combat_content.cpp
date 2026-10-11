@@ -10,6 +10,7 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <set>
@@ -117,6 +118,11 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         const auto clock=loadMonsterMotionTiming(animations,record->token,record->resurrectionMode,monsterModeWeapon(archives,record->token,record->resurrectionMode,record->baseWeapon));
         if(!clock) return {};
         rule.resurrectionTicks=std::max(1,int(std::ceil(clock->duration*25)));
+        constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc",
+            "s1","s2","s3","s4","dd","kb","sq","rn"};
+        const auto mode=std::ranges::find(modes,record->resurrectionMode);
+        if(mode==modes.end()) return {};
+        rule.resurrectionMode=uint8_t(mode-modes.begin());
     }
     rule.demon = record->demon; rule.undead = record->undead;
     rule.boss=record->boss;rule.stunState=data.states.at("stunned").definition.id;

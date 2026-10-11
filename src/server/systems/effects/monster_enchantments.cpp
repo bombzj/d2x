@@ -1,9 +1,11 @@
 #include "system.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
@@ -57,13 +59,15 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
     if(!(rollRandom(cycle.random)&3)) return;
     if(cycle.cursePending) return;
     const auto &a=*m->rule.enchantment->curse;const auto &area=ports_.areas.at(m->area).definition;
+    const combat::Participants participants{ports_.players,ports_.monsters};
     const float radius=std::clamp(a.radius,1.f,40.f);cycle.curseTargets.clear();cycle.curseTarget=0;
-    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m->area && p.persistent.player.hp>0 && (p.position-m->position).length()<=radius && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(p.actor);}
-    for(const auto &[key,p]:ports_.monsters.read().actors) if(p.amazonPet && p.area==m->area && p.life>0 && (p.position-m->position).length()<=radius && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(key);
+    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m->area && p.persistent.player.hp>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(p.actor);}
+    for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(m->id,key) && p.area==m->area && p.life>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(key);
     cycle.cursePending=true;(void)tick;
 }
 StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
     bool blocked=false;
+    const combat::Participants participants{ports_.players,ports_.monsters};
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         if(m.owner || !m.rule.enchantment) continue;
         const auto &mods=*m.rule.enchantment;const auto &area=ports_.areas.at(m.area);
@@ -111,7 +115,7 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
                     std::vector<EntityId> targets;
                     auto eligible=[&](Vec p){const Vec delta{std::floor(p.x)-std::floor(m.position.x),std::floor(p.y)-std::floor(m.position.y)};return delta.length()<=m.rule.difficulty+4 && area.definition.activation.nearby(p,m.position) && area.definition.collision.missileSegment(m.position,p,{0x0805,1});};
                     for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && eligible(p.position)) targets.push_back(p.actor);}
-                    for(const auto &[key,p]:ports_.monsters.read().actors) if(p.amazonPet && p.life>0 && p.area==m.area && eligible(p.position)) targets.push_back(key);
+                    for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(id,key) && p.life>0 && p.area==m.area && eligible(p.position)) targets.push_back(key);
                     combat::SpellImpact impact{id,id,m.area,DamageType::Physical,0,std::move(targets)};impact.occurrence=(uint64_t(1)<<62)|m.deathOccurrence;impact.reaction=true;impact.unblockable=true;
                     impact.monsterHit=MonsterHit{};impact.monsterHit->channels[0]=damage;impact.monsterHit->channels[2]=damage;impact.monsterStates=m.rule.hitStates;
                     auto plan=ports_.combat.prepareSpells({impact});if(!plan || !ports_.events.hasCapacity(1)) {blocked=true;continue;}
@@ -130,9 +134,9 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             cycle.targets.clear();cycle.auraPending=true;
             cycle.auraTarget=0;
             if(a.hostile) {
-                for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && (p.position-m.position).length()<=a.radius && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(p.actor);}
-                for(const auto &[key,p]:ports_.monsters.read().actors) if(p.amazonPet && p.life>0 && p.area==m.area && (p.position-m.position).length()<=a.radius) cycle.targets.push_back(key);
-            } else for(const auto &[key,p]:ports_.monsters.read().actors) if(!p.owner && p.life>0 && p.area==m.area && (p.position-m.position).length()<=a.radius && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(key);
+                for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(p.actor);}
+                for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(id,key) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(key);
+            } else for(const auto &[key,p]:ports_.monsters.read().actors) if((participants.relation({nullptr,&m},{nullptr,&p})==combat::Relation::Allied || key==id) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) cycle.targets.push_back(key);
             if(a.hostile) cycle.targets.push_back(id);
         }
         if(!cycle.auraPending) continue;

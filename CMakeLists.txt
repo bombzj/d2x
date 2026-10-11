@@ -56,7 +56,7 @@ target_sources(d2x_content PRIVATE src/content/character/character_progression.c
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp
-  src/content/skills/skill_eligibility.cpp)
+  src/content/skills/skill_eligibility.cpp src/content/skills/table_values.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
     src/content/skills/bone_data.cpp src/content/skills/barbarian_data.cpp src/content/skills/amazon_bow_data.cpp src/content/skills/amazon_spear_data.cpp src/content/skills/amazon_magic_data.cpp src/content/skills/amazon_summon_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
@@ -103,7 +103,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
-  src/gameplay/skills/passive.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
+  src/gameplay/skills/passive.cpp src/gameplay/skills/targeting.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
   src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/skirmish_decision.cpp
     src/gameplay/monsters/ranged_decision.cpp
     src/gameplay/monsters/special_decision.cpp
