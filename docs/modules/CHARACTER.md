@@ -4,7 +4,7 @@
 
 ## 自研服务端属性与成长基础
 
-2026-10-08已构建打包，经验升级、属性点／技能点分配及保存重入有有限冒烟；范围与限制见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+2026-10-08已构建打包，经验升级、属性点／技能点分配及保存重入有有限冒烟；范围与限制见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 - hosting/character_content准备MPQ经验阈值、Skills学习门槛／前置、CharStats职业定义、难度抗性惩罚和入场物品在全部支持等级的属性值。server不持有Archives／ClassicData或MPQ求值回调。
 - attributes/calculation共用纯装备loadout／requirements／contributions／stats，汇总活动装备、背包护符、不同套装原件的条件／固定全套属性、黄金鸟已饮药生命与安亚已用卷轴抗性；生成四属性、资源上限、抗性、防御、移动速度、有效技能等级及装备战斗快照。基础被动包含既有圣骑士基础等级命中／抗性上限、亚马逊六类被动和Warmth；女巫／亚马逊及已实现职业的被动、技能状态与临时效果已接；各职业执行范围由[技能目录](../gameplay/skills/README.md)维护，未迁入的职业与完整组合不由此推定支持。
@@ -14,7 +14,7 @@
 - transactions.CharacterEdit与InventoryEdit共同复验人物／库存revision，重算派生值并发布不可变CharacterFact／InventoryFact。升级补满存活人物生命／法力／耐力；体力／精力加点按CharStats四分之一单位增量增加对应资源，再限制到新上限；换装仅限制，不当作治疗。入场按真实总值限制资源，死亡语义沿已有入场规则。
 - hosting/native_character_wire共用入场／增量编码：ItemStatCost提供身份、ValShift和Signed，原1F发绝对属性，94发基础清单，21更新基础／额外技能等级（含装备来源撤销后的零等级）。增量仅发改变值，无私有成功ACK或模式分支。人物投影独立细节修复已获用户确认：按当前MPQ的item_poisonlengthresist（ID 110）／item_absorbfire_percent（ID 142）读取毒持续时间抗性／百分比火焰吸收。RemoteUiClients仍按原表Stat／ID／ValShift读取实际收到的属性；旧名在当前表中不存在，修正同时适用于原服，不是自研协议适配。
 
-grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，当前宿主指纹见[存档](SAVES.md)；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。尚未认证全部装备组合、成长及存档往返。攻击显示已在后续属性修复接入，范围见[属性有限冒烟](../gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)；完整战斗仍由战斗及职业专题维护。
+grant-experience已接GameHost → progression → transactions → 原包输出，暂停实例也可使用；原服拒绝宿主管理。D2S保存基础分配、经验／等级、余点、基础技能与当前资源；总值、有效等级、缓存及奖励发生标识不写盘。v96不变，保存与校验边界见[存档](SAVES.md)；未分配随机套装值／条件套装需求明确不可用，不重掷或静默忽略。尚未认证全部装备组合、成长及存档往返。攻击显示已在后续属性修复接入，范围见[属性有限冒烟](../gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)；完整战斗仍由战斗及职业专题维护。
 
 Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共用`gameplay/character/respec`纯退款函数；清基础分配／技能并退款，清选择与热键，不把装备加成退成人物点数。资格消费、属性和技能由同一CharacterEdit提交。来源、slot41保存及有限冒烟统一见[第一幕任务](../gameplay/quests/ACT1.md)。
 
@@ -32,7 +32,7 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 | [character.hpp](../../src/contracts/character.hpp)、[character_client.hpp](../../src/client/character_client.hpp) | 人物、技能树、技能菜单和 HUD 的值视图及语义意图 |
 | [record.hpp](../../src/gameplay/character/record.hpp)、[character_save.hpp](../../src/persistence/character_save.hpp) | 服务端持久人物值及D2S接口；不持有活世界或客户端会话 |
 
-技能资格元数据与只读判断在content/skills/skill_eligibility，人物投影与RemoteCombat共用；未收到基础等级不能按零授权学习，原reqstr／reqdex／reqvit／reqint门槛也使用已知属性。此收拢已入当前运行包，见[基线](../../BASELINE.md)。
+技能资格元数据与只读判断在content/skills/skill_eligibility，人物投影与RemoteCombat共用；未收到基础等级不能按零授权学习，原reqstr／reqdex／reqvit／reqint门槛也使用已知属性。此收拢已入当前运行包，包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 原 0x94 全量技能清单（含空清单）区分未学习与未收到；0x21分别维护基础／加成等级。0x23维护左右键选择和 owner，0x7B恢复绑定。基础技能、已学前置、等级上限及属性门槛按原表交给 evaluateSkillEligibility；未知基础等级、点数或必需属性不授权学习。Attack／CharStats.Skill 1–10 由同一个导入函数确认，不要求原0x94再次列出；0x3A／3B请求等待原服属性／基础等级变化，超时结果未知。
 
@@ -50,4 +50,4 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 
 未知属性／等级显示 `?`。完整装备与状态已接玩家／佣兵共用战斗投影；完整入场空列表的合法零值按原规则确认，解码失败不补零。缺少完整武器／装备输入时不重算武器伤害、命中或最终格挡；缺伤害加成时伤害未知，但已知法力、范围及时间仍可显示。描述程序入口已接 1–75，但缺少必要原包输入／尚未支持的表达式仍保留未知；全技能数值及像素验收状态见描述专题。当前等级的既有法力公式和可投掷装备事实只作为资格判断的可选只读输入；发送适配缺少这些输入时仍由原服裁决，不增加第二套消耗／装备计算。下一等级预览只生成提示，不改变当前施放资格。
 
-人物、技能树、选择器和底栏消费同一结果；没有 LocalCharacterClient 或第二份提示组装。角色身份及 D2S 字段的编解码见[存档](SAVES.md)，运行包与有限证据见[基线](../../BASELINE.md)。
+人物、技能树、选择器和底栏消费同一结果；没有 LocalCharacterClient 或第二份提示组装。角色身份及 D2S 字段的编解码见[存档](SAVES.md)，运行包见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)，有限证据见[人物属性](../gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)及对应技能专题。

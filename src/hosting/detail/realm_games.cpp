@@ -37,7 +37,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
     } else {
         if (host.participants(room.handle).size() >= room.capacity) throw ProtocolError("External game is full");
         const auto &area = shared.terrain.at(room.handle).at(room.town);
-        auto definition = prepareJoiningCharacter(*content, std::move(saved), room.settings, room.town, host.nextEntity(room.handle), rules, shared.items);
+        auto definition = prepareJoiningCharacter(*content, std::move(saved), room.settings, room.town, host.nextEntity(room.handle), shared.items);
         const auto state = host.area(room.handle, room.town);
         if (!state) throw ProtocolError("External game area is unavailable");
         for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
@@ -108,7 +108,7 @@ void NativeRealmService::joinGame(net::protocol::Reader &in) {
         } else {
             if (host.participants(room.handle).size() >= room.capacity) throw std::runtime_error("Room is full");
             const auto &area = shared.terrain.at(room.handle).at(room.town);
-            auto definition = prepareJoiningCharacter(*content, *selected, room.settings, room.town, host.nextEntity(room.handle), rules, shared.items);
+            auto definition = prepareJoiningCharacter(*content, *selected, room.settings, room.town, host.nextEntity(room.handle), shared.items);
             const auto state = host.area(room.handle, room.town);
             for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
             const auto staged = host.admit(room.handle, std::move(definition));

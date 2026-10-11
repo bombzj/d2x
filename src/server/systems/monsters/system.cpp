@@ -4,10 +4,32 @@
 #include "core/random.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/life.hpp"
+#include "gameplay/rewards/experience.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include <algorithm>
 
 namespace d2x::server::monsters {
+namespace {
+void playerCountBonus(MonsterRule &rule,unsigned count) {
+    const unsigned scale=100+50*(count-1);
+    rule.experienceBase=rule.experienceBase*scale/100;
+    for(size_t level=1;level<rule.experience.size() && level<rule.experienceRatios.size();++level)
+        rule.experience[level]=monsterExperienceGain(rule.experienceBase,1,rule.experienceLevel,int(level),rule.experienceRatios[level],rule.experienceShift);
+    if(rule.difficulty==0 || count==1) return;
+    // D2MOO MonsterMode::sub_6FC627B0 uses 8*(count-1)/128 for
+    // expansion Nightmare/Hell attack damage, to-hit and native element duration.
+    const auto scaled=[&](int value){return int(std::min(int64_t(INT32_MAX),int64_t(value)+int64_t(value)*8*(count-1)/128));};
+    rule.minimumDamage=scaled(rule.minimumDamage);rule.maximumDamage=scaled(rule.maximumDamage);rule.attackRating=scaled(rule.attackRating);
+    const auto attackBonus=[&](MonsterAttackRule &attack) {
+        attack.minimum=scaled(attack.minimum);attack.maximum=scaled(attack.maximum);attack.rating=scaled(attack.rating);
+        for(auto &element:attack.elements) {
+            element.minimum=scaled(element.minimum);element.maximum=scaled(element.maximum);element.durationFrames=scaled(element.durationFrames);
+        }
+    };
+    for(auto &[mode,attack]:rule.attacks) {(void)mode;attackBonus(attack);}
+    for(auto &[skill,attack]:rule.skillActions) {(void)skill;attackBonus(attack);}
+}
+}
 void System::withdrawQuestGroup(RegionId region,std::string_view name) {
     const auto key="quest."+std::string(name);
     std::erase_if(state_.actors,[&](const auto &entry){const auto &m=entry.second;return m.area==region && !m.owner && m.identity.origin==SpawnOrigin::Preset && (m.identity.spawnKey==key || m.identity.ownerSpawnKey==key);});
@@ -27,10 +49,16 @@ DomainResult<EntityId> System::admit(const Admission &request) {
         if (actor.area == request.area && actor.identity.spawnKey == request.identity.spawnKey) return {DomainStatus::Applied, id};
     Actor actor;
     actor.hostile=request.hostile;
-    actor.admittedPlayerCount=unsigned(std::clamp(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}),std::ptrdiff_t(1),std::ptrdiff_t(8)));
+    const auto living=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered && v.second.persistent.player.hp>0;}));
+    actor.admittedPlayerCount=std::clamp(std::max(living,ports_.settings.virtualPlayers),1u,8u);
     actor.id = ports_.ids.allocate(); actor.identity = request.identity; actor.implementation = request.implementation;
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.life = actor.maximumLife = (int64_t(rule.minimumLife) + limitedRandom(ports_.random, uint32_t(rule.maximumLife - rule.minimumLife + 1))) * 256;
+    // D2MOO MONSTER_GetHpBonus/GetExperienceBonus: +50% per additional
+    // living/virtual player, captured at admission; existing monsters stay unchanged.
+    const unsigned scale=100+50*(actor.admittedPlayerCount-1);
+    actor.life=actor.maximumLife=actor.maximumLife*scale/100;
+    playerCountBonus(actor.rule,actor.admittedPlayerCount);
     actor.combatRandom = childRandom(ports_.random);
     // MONSTERREGION::sub_6FC67FA0 lazily adds out-of-pool identities when
     // TotalPieces > 2, up to thirteen class entries. Never borrow another area.
@@ -62,6 +90,7 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
     auto &actor=found->second;
     if(!actor.enemyTarget() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineUpgrade || actor.moving || actor.busyUntil>tick || actor.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
     auto rule=*actor.rule.shrineUpgrade;
+    playerCountBonus(rule,actor.admittedPlayerCount);
     const auto minions=actor.rule.shrineMinions;
     const auto enchantment=rule.enchantment;if(!enchantment) return {DomainStatus::Unavailable,{}};
     actor.maximumLife=actor.maximumLife*(100+enchantment->lifePercent)/100*enchantment->lifeScalePercent/100;
@@ -70,7 +99,7 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
         if(otherId==id || minion.area!=actor.area || minion.life<=0 || !minion.enemyTarget() || minion.identity.ownerSpawnKey!=actor.identity.spawnKey) continue;
         const auto inherited=minions.find(minion.identity.monster);if(inherited==minions.end()) continue;
         const auto &next=*inherited->second;const auto &mods=*next.enchantment;
-        minion.maximumLife=minion.maximumLife*(100+mods.lifePercent)/100*mods.lifeScalePercent/100;minion.life=minion.maximumLife;minion.rule=next;minion.identity.rank=MonsterRank::Minion;++minion.revision;
+        minion.maximumLife=minion.maximumLife*(100+mods.lifePercent)/100*mods.lifeScalePercent/100;minion.life=minion.maximumLife;minion.rule=next;playerCountBonus(minion.rule,minion.admittedPlayerCount);minion.identity.rank=MonsterRank::Minion;++minion.revision;
     }
     return {DomainStatus::Applied,std::monostate{}};
 }

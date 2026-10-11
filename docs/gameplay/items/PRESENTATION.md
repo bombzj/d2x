@@ -32,4 +32,4 @@ RemoteInventory消费9C／9D、0A、3E、2A、58、77、97；UI预览位置、Cu
 - 原0x22不提供自选分堆；缺原图明确报告。
 - 音频时序听验、三难度、多人、全部随机分支不由有限冒烟替代。
 
-当前包见[基线](../../../BASELINE.md#当前运行包与有限冒烟)，物品历史证据统一见[EVIDENCE](EVIDENCE.md)，原服历史观察见[联网记录](../../modules/NETWORK.md#既有有限证据)，独立编码拒绝范围见[存档](../../modules/SAVES.md)。
+当前包见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，物品历史证据统一见[EVIDENCE](EVIDENCE.md)，原服历史观察见[联网记录](../../modules/NETWORK.md#既有有限证据)，独立编码拒绝范围见[存档](../../modules/SAVES.md)。

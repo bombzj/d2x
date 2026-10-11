@@ -26,7 +26,7 @@ struct CharacterSkillView {
     bool treeTooltipUnavailable = false; // Native tree's unavailable branch: red body and requirement/max-level line.
     bool pickerTooltipUnavailable = false; // Native use state: red icon and entire selector tooltip, including title.
     uint32_t owner=UINT32_MAX;
-    std::string treeGrantedHeading;
+    std::vector<std::string> treeStatusHeadings; // Native green notices before the title, in visual order.
     std::string treeBonusHeading;
     std::vector<std::string> treeBonusTooltip;
 };

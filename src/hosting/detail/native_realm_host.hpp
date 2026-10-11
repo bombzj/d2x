@@ -31,7 +31,6 @@ struct NativeRealmHost {
     std::unique_ptr<RealmPortraitCatalog> portraits;
     GameHost host;
     LootContent lootContent;
-    uint64_t rules{};
     uint32_t nextGameIndex = 1;
     std::map<std::string, HostedGame> games;
     std::map<GameHandle, std::map<RegionId, GeneratedArea>> terrain;

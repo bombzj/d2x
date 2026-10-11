@@ -52,6 +52,7 @@ struct OnlinePlayerDisplay {
     bool local{}, visible{}, moving{}, dead{};
 };
 struct OnlineSceneView {
+    bool noPickup{}; // Client input toggle only; never a server or save field.
     bool available{}, movementAvailable{}, collisionVerified{};
     std::string reason{"Waiting for server world data"}, map;
     std::optional<OnlinePoint> origin;

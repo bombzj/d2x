@@ -175,6 +175,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         result["scene"]["automap"]["revealedCells"][std::to_string(level)] = count;
     result["scene"]["layoutOrigin"] = point(scene.layoutOrigin);
     result["scene"]["layoutMatched"] = scene.layoutMatched;
+    result["scene"]["noPickup"] = scene.noPickup;
     result["scene"]["layoutReason"] = scene.layoutReason;
     result["scene"]["nativeMapReady"] = scene.nativeMapReady;
     result["scene"]["nativeMapReason"] = scene.nativeMapReason;
@@ -259,6 +260,10 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["world"]["social"] = {{"revision", social.revision}, {"players", std::move(roster)},
         {"relationships", std::move(relations)}, {"chatSequence", social.chatSequence}, {"chat", std::move(chat)}, {"notices",std::move(notices)}};
     result["world"]["social"]["hover"]=Json::array();
+    result["accountChat"]={{"sequence",v.accountChat.chatSequence},{"messages",Json::array()}};
+    for(const auto &message:v.accountChat.chat)
+        result["accountChat"]["messages"].push_back({{"sequence",message.sequence},{"type",message.type},
+            {"name",std::string(message.name.begin(),message.name.end())},{"text",std::string(message.text.begin(),message.text.end())}});
     for(const auto &[id,message]:social.hover) result["world"]["social"]["hover"].push_back({{"unitId",id},{"textBytes",message.text},{"sequence",message.sequence}});
     constexpr std::array tradePhases{"None", "Outgoing", "Incoming", "Open"};
     constexpr std::array tradeResponses{"None", "AcceptSent", "CancelSent", "TimedOut", "GoldSent", "ResetSent"};
@@ -407,6 +412,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &inputFrames,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
+                               const std::function<std::string(const std::string &)> &chatInput,
                                const std::function<std::optional<std::string>(const Json &)> &hostCommand) {
     Json request;
     Credentials secrets{request, {}};
@@ -461,6 +467,10 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             command == "online-characters" || command == "online-games" || command == "online-world" ||
             command == "online-items" || command == "online-ground" || command == "online-combat" || command == "online-skills" ||
             command == "online-social" || command == "online-chat") {
+        } else if (command == "online-chat-input") {
+            const auto error=chatInput(text("message",255));
+            if(!error.empty()) return Json{{"ok",false},{"error",error}}.dump();
+            accepted=true;mutation=true;
         } else if (command == "online-send-chat") {
             const auto receiver=request.contains("receiver")?text("receiver",15):std::string{};
             accepted = session.send_chat(text("message", 255),receiver,request.value("overhead",false)); mutation = true;

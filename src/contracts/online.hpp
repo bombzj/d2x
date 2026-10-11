@@ -96,6 +96,7 @@ struct OnlineView {
     std::vector<OnlineGame> games;
     std::optional<OnlineGameInfo> gameInfo;
     std::vector<OnlineLobbyNotice> lobbyNotices; // Bounded native SID info/error announcements, not chat.
+    OnlineSocialView accountChat; // BNCS transcript, independent of the current game replica.
     std::string selectedRealm, selectedCharacter;
     OnlineLoadInfo load;
     OnlineWorldView world;
@@ -115,6 +116,7 @@ struct OnlineView {
         games.clear();
         gameInfo.reset();
         lobbyNotices.clear();
+        accountChat = {};
         selectedRealm.clear();
         selectedCharacter.clear();
         load = {};

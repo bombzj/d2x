@@ -43,6 +43,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     if (!player) return {};
     limit = std::clamp<size_t>(limit, 1, 256);
     DiagnosticSnapshot result;
+    result.virtualPlayers=settings_.virtualPlayers;
     result.stageMetrics=simulation_.metrics();
     const auto &spatial=systems_.spatial.read();
     result.spatialTick=spatial.indexedTick;result.spatialGeneration=spatial.generation;result.spatialUnits=spatial.indexedUnits;
@@ -112,6 +113,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         if (const auto found = systems_.ai.read().controllers.find(key); found != systems_.ai.read().controllers.end()) value.controller = found->second;
         value.chilledUntil=monster.chilledUntil;value.frozenUntil=monster.frozenUntil;value.knockedUntil=monster.knockedUntil;value.nextHitTick=monster.nextHitTick;value.owner=monster.owner;
         value.rules=monster.rule.ai;value.damageRegen=monster.rule.damageRegen;value.threat=monster.rule.threat;
+        value.admittedPlayers=monster.admittedPlayerCount;value.experienceBase=monster.rule.experienceBase;
+        value.minimumLife=monster.rule.minimumLife;value.maximumBaseLife=monster.rule.maximumLife;
         value.nativeVelocity=monster.rule.nativeVelocity;value.movementMask=monster.rule.collision.mask;value.spawnMask=monster.rule.spawnCollision.mask;
         value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
         value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;
@@ -150,6 +153,15 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
 }
 
 namespace d2x::server {
+DomainResult<> GameInstance::setVirtualPlayers(PlayerId id,unsigned count) {
+    const auto *player=players_.find(id);
+    if(id!=PlayerId{1} || !player || !player->entered) return {DomainStatus::InvalidActor,{}};
+    if(count<1 || count>8) return {DomainStatus::InvalidRequest,{}};
+    const ActorContext actor{id,player->actor,player->area,areas_.at(player->area).generation,0,tick_};
+    const auto result=systems_.social.execute(actor,{social::Action::Chat,{},"players set to "+std::to_string(count)});
+    if(result) {settings_.virtualPlayers=count;++revision_;}
+    return result;
+}
 DomainResult<> GameInstance::grantGold(PlayerId id,uint32_t amount) {
     const auto *p=players_.find(id); if(!p || !p->entered || p->persistent.player.hp<=0 || !amount) return {DomainStatus::InvalidActor,{}};
     auto record=p->persistent.player; const auto cap=unsigned(record.level)*10000;

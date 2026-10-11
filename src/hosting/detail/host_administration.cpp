@@ -103,6 +103,14 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if(!result) return {AdminStatus::Unavailable,"Authority rejected the resource mutation"};
             publishEvents(); return {AdminStatus::Applied,"Authority resource transaction committed"};
         }
+        case AdminOperation::SetPlayers: {
+            const auto count=std::get<AdminAmount>(request.arguments).value;
+            if(count<1 || count>8) return {AdminStatus::InvalidArguments,"Players must be 1-8"};
+            if(peer.phase!=GamePhase::Entered) return {AdminStatus::Unavailable,"Enter the host game first"};
+            const auto result=host.setVirtualPlayers(*binding,unsigned(count));
+            if(!result) return {AdminStatus::Unavailable,"Only the entered primary host can set virtual players; retry if its event queue is full"};
+            publishEvents();return {AdminStatus::Applied,"Virtual player count changed"};
+        }
         case AdminOperation::GrantExperience: {
             if (peer.phase != GamePhase::Entered) return {AdminStatus::Unavailable, "Enter the host game before granting experience"};
             const auto amount = std::get<AdminAmount>(request.arguments).value;

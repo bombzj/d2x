@@ -57,4 +57,4 @@
 
 COMMON写公共边界，GENERATION／AFFIXES写准备值，EQUIPMENT写贡献，INVENTORY／GROUND／GOLD写移动与事务，CUBE／QUEST_ITEMS／ECONOMY写各自资格与提交。UI和原包分别写INVENTORY_UI／PRESENTATION；物品技能仍归skills目录，任务阶段、佣兵服务、尸体和D2S仍链接原专题，不复制实现与历史流水。
 
-完整逐基底、Properties／ItemStatCost消费者、全部词缀／特殊品质、Gems／Runes、CubeMain与来源组合台账尚未完成；已实现的保留入口，未做类别明确预留。当前证据只覆盖列出路径，三难度、多人、全随机、音频／像素与原服精确认证仍有限；完整后续顺序见[总计划](../../architecture/MULTIPLAYER.md)，当前包只见[基线](../../../BASELINE.md)。
+完整逐基底、Properties／ItemStatCost消费者、全部词缀／特殊品质、Gems／Runes、CubeMain与来源组合台账尚未完成；已实现的保留入口，未做类别明确预留。当前证据只覆盖列出路径，三难度、多人、全随机、音频／像素与原服精确认证仍有限；完整后续顺序见[总计划](../../architecture/MULTIPLAYER.md)，当前包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。

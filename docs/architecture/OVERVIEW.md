@@ -1,6 +1,6 @@
 # 代码结构与依赖
 
-更新：2026-10-11。源码入口以CMake为准；客户端和独立服务端分别构建／打包，当前产物与历史有限证据见[基线](../../BASELINE.md)，功能顺序见[总计划](MULTIPLAYER.md)。构建完成不代表运行验收。
+更新：2026-10-11。源码入口以CMake为准；客户端和独立服务端分别构建／打包，实现范围见[基线](../../BASELINE.md)，包身份见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)，运行证据见对应专题，功能顺序见[总计划](MULTIPLAYER.md)。构建完成不代表运行验收。
 
 ## Agent速览
 
@@ -43,7 +43,7 @@
 | server/runtime | 类型化命令、穷尽分派、系统组合／窄依赖、固定步顺序、只读规则和有界事件出口 |
 | server/systems/* | 独立领域State／Ports／操作；已执行范围与保留Scaffold分开，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | hosting/game_host | 多实例槽位、代次、绑定、25Hz固定步、暂停与内部快照 |
-| hosting/game_content、character_creation、character_rules | MPQ输入准备、初始角色／物品、入局规则指纹；不负责客户端绘制 |
+| hosting/game_content、character_creation | MPQ输入准备、初始角色／物品；不负责客户端绘制 |
 | hosting/embedded_realm | 内存端点、selector、分帧与断开／调度组装，不实现具体玩法 |
 | server_main、hosting/pvpgn_server | 独立控制台组合根；D2CS房间／票据、D2DBS角色锁／保存、游戏监听与停服，不实现另一套玩法 |
 | network/protocol/pvpgn | D2CS／D2DBS八字节头有界分帧，与客户端MCP／D2GS分帧分离 |

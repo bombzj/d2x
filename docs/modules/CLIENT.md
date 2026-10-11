@@ -1,6 +1,6 @@
 # 客户端契约与原协议基线
 
-更新：2026-10-11。原服与自研宿主共用完整客户端，只有连接选择不同。当前Windows客户端为Release包；有限自研／原服冒烟、启动耗时及包身份见[基线](../../BASELINE.md)。
+更新：2026-10-11。原服与自研宿主共用完整客户端，只有连接选择不同。当前Windows客户端为Release包；有限自研／原服冒烟见[联网记录](NETWORK.md#既有有限证据)，启动耗时及包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 技能客户端修改边界由[COMMON](../gameplay/skills/COMMON.md#技能迁入规范)维护；弓弩／箭袋及宠物投影的原版修复与死亡图未核实项见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
@@ -63,7 +63,7 @@ Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteS
 
 GameSession、Simulation、SkillRuntime、InventoryService、客户端本地任务／AI／奖励执行源码及d2x_session目标已删除。gameplay／items保留两端适用的纯函数和值；服务端调用纯任务阶段规则，客户端不能调用它推进权威记录。PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原协议插杖流程仍未实现。原MPQ、reference、旧包、mvp和用户文件保留。
 
-完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据与源码／包差异统一见基线和联网模块。
+完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据由联网及对应玩法专题维护，包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 ## 女巫公共客户端补齐
 

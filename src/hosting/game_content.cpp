@@ -118,20 +118,20 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     return result;
 }
 server::GameDefinition prepareJoiningCharacter(const ClassicData &content, PersistentCharacter saved,
-    server::GameSettings settings, RegionId town, uint64_t nextEntity, uint64_t fingerprint, std::shared_ptr<const ItemCatalog> items) {
+    server::GameSettings settings, RegionId town, uint64_t nextEntity, std::shared_ptr<const ItemCatalog> items) {
     server::GameDefinition result;
     const auto character = std::find_if(content.characters.begin(), content.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
     saved.difficulty = settings.difficulty; saved.mapSeed = settings.mapSeed; saved.lastRegion = town;
     saved.player.hp = std::max(1.f, saved.player.hp);
-    result.settings = settings; result.character = *character; result.rulesFingerprint = fingerprint;
+    result.settings = settings; result.character = *character;
     result.persistent = server::admitCharacter(std::move(saved), nextEntity);
     result.rules.items = std::move(items);
     prepareCharacterRules(result.rules, content, result.persistent);
     result.rules.melee = prepareMeleeRules(content, *character);
     return result;
 }
-WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, uint64_t rulesFingerprint, std::shared_ptr<const ItemCatalog> items) {
+WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items) {
     WalkingGameContent result;
     const auto character = std::find_if(content.characters.begin(), content.characters.end(),
         [&](const auto &entry) { return entry.name == saved.player.characterClass; });
@@ -144,7 +144,6 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     saved.player.hp = std::max(1.f, saved.player.hp);
     result.authority.settings = {saved.mapSeed, saved.difficulty};
     result.authority.character = *character;
-    result.authority.rulesFingerprint = rulesFingerprint;
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);

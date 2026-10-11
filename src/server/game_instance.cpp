@@ -8,19 +8,18 @@ namespace d2x::server {
 GameInstance::GameInstance(GameDefinition definition)
     : settings_(definition.settings), areas_(std::move(definition.area)),
       entities_(definition.persistent.nextEntityId), random_(initialRandom(settings_.mapSeed)),
-      rulesFingerprint_(definition.rulesFingerprint), rules_(std::move(definition.rules)),
+      rules_(std::move(definition.rules)),
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
-    if (!rulesFingerprint_) throw std::runtime_error("Game admission requires prepared rules");
     systems_.world.initialize();
     players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_);
 }
 PlayerId GameInstance::admit(GameDefinition definition) {
     if (players_.all().size() >= 8 || nextPlayer_ == UINT64_MAX)
         throw std::runtime_error("Game participant capacity exhausted");
-    if (definition.rulesFingerprint != rulesFingerprint_ || definition.settings.mapSeed != settings_.mapSeed ||
+    if (definition.settings.mapSeed != settings_.mapSeed ||
         definition.settings.difficulty != settings_.difficulty || definition.persistent.player.id.value < entities_.cursor() ||
         definition.persistent.nextEntityId <= definition.persistent.player.id.value || definition.persistent.nextEntityId > UINT32_MAX)
-        throw std::runtime_error("Invalid participant admission rules or identity range");
+        throw std::runtime_error("Invalid participant game settings or identity range");
     const PlayerId id{nextPlayer_};
     players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules);
     entities_ = EntityIds(players_.find(id)->persistent.nextEntityId);
@@ -191,7 +190,6 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
     for(const auto &[other,peer]:players_.all()) if(peer.entered && other!=id)
         result.socialRelations.emplace(other,PlayerSnapshot::SocialRelation{systems_.social.partyStatus(id,other),systems_.social.flags(id,other)});
     result.tick = tick_; result.revision = revision_;
-    result.rulesFingerprint = rulesFingerprint_;
     result.areaGeneration = areas_.at(player->area).generation;
     const auto cast = systems_.skills.read().casts.find(player->actor);
     result.attacking = cast != systems_.skills.read().casts.end() && !cast->second.interrupted &&

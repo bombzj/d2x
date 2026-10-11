@@ -1,4 +1,5 @@
 #include "frontend.hpp"
+#include "network/chat_command.hpp"
 #include "startup_profile.hpp"
 #include "hosting/embedded_realm.hpp"
 #include "hosting/automap_store.hpp"
@@ -192,9 +193,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     std::string sceneError;
     uint64_t sceneGeneration = ~uint64_t{};
     uint64_t inputAreaGeneration = ~uint64_t{};
+    bool noPickup=false;
     auto sceneStatus = [&] {
         town.update(session.read());
         auto status = town.read();
+        status.noPickup=noPickup;
         status.automapVisible = mapDisplay.visible;
         status.automapLarge = mapDisplay.large;
         if (sceneGeneration == session.read().gameGeneration && !sceneError.empty()) {
@@ -216,9 +219,29 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     bool quit = false, manualRealm = false, presentationPaused = false;
     int frames = 0;
     std::deque<FrameInput> debugInputs;
+    auto submitChatInput=[&](const std::string &text) -> std::string {
+        if(session.read().stage!=OnlineStage::ProtocolReady) return "Enter a game before submitting a command.";
+        const auto command=net::parseChatCommand(text);
+        if(command.route==net::ChatRoute::Invalid) return command.error;
+        if(command.route==net::ChatRoute::NoPickup) {
+            noPickup=!noPickup;
+            if(sharedUi) sharedUi->notice(noPickup?"No pickup enabled; hold Alt to pick up items.":"No pickup disabled.",false);
+            return {};
+        }
+        if(command.route==net::ChatRoute::Players) {
+            if(!localConnection || lanJoiningGame)
+                return "/players requires Single Player or the local TCP/IP host.";
+            const auto binding=embedded.diagnostics().player;
+            if(!binding) return "The local host player is unavailable.";
+            const auto result=administerLocal({hosting::AdminOperation::SetPlayers,*binding,hosting::AdminAmount{int64_t(command.players)}});
+            return result.applied()?std::string{}:result.message;
+        }
+        if(session.send_chat_input(text)) return {};
+        return session.read().error?session.read().error->message:"The message could not be submitted.";
+    };
     auto lastInputTime = std::chrono::steady_clock::now();
     auto chatInput = [&](FrameInput &input) {
-        sharedUi->updateChat(session.read().world.social);
+        sharedUi->updateChat(session.read().world.social,session.read().accountChat);
         sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
         auto trade = sharedUi->handlePlayerTrade(input);
@@ -237,9 +260,10 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             auto intent = sharedUi->handleChat(input);
             if (!intent.error.empty()) sharedUi->notice(std::move(intent.error), true);
             if (intent.message) {
-                const bool accepted = session.send_chat(std::move(*intent.message));
+                const auto error=submitChatInput(*intent.message);
+                const bool accepted = error.empty();
                 sharedUi->chatSent(accepted);
-                if (!accepted && session.read().error) sharedUi->notice(session.read().error->message, true);
+                if (!accepted) sharedUi->notice(error, true);
             }
             consumed = intent.consumed;
         }
@@ -436,7 +460,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     if (!sharedClients) return {};
                     inventory.update(session.read());
                     return sharedClients->itemQuote(item, action);
-                }, [&](const nlohmann::json &command) {
+                }, submitChatInput, [&](const nlohmann::json &command) {
                     return serverDebugCommand(command, localConnection || lanListening ? &embedded : nullptr, administerLocal);
                 });
             if (presentationPaused != wasPaused) {
@@ -788,6 +812,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
                         localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
+                    if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);

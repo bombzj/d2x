@@ -81,7 +81,7 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 
 MPQ 加载参考：本地 D2MOO `D2Common/src/DataTbls/DataTbls.cpp` 的 `sgptDataTables` 指向进程级常驻目录，`DATATBLS_LoadFromBin` 默认 TRUE，`DATATBLS_CompileTxt` 优先读取 `DATA/GLOBAL/EXCEL/<name>.bin`，TXT 编译路径另行启用。`D2Hell/src/Archive.cpp::ARCHIVE_OpenFile` 按已知路径调用 FOG 文件接口。这里采用只读表常驻和按名读取的机制，不据此声称测得原版启动时间，也不将该参考版本布局直接当成本机 1.13c 的所有 BIN 布局。
 
-本机原版 1.13c 的同一 D2Common 快照已静态确认普通加载模式默认读取 BIN、首个 u32 为记录数并跳过 4 字节首部，准确 RVA 和样本身份见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。当前 d2x 仍从当前 MPQ 的 TXT 导入，增加字段索引、每挂载集合只读 `ClassicData` 共享与有界解压缓存；运行时不枚举全包文件名。客户端与嵌入宿主共用规则值，跨进程不共享内存；地图生成副本与角色运行状态仍分属各端。原 BIN 导入未实现，需先逐表核实当前 MPQ 与对应版本布局；没有增加磁盘解析缓存或改变规则指纹／D2S 格式。
+本机原版 1.13c 的同一 D2Common 快照已静态确认普通加载模式默认读取 BIN、首个 u32 为记录数并跳过 4 字节首部，准确 RVA 和样本身份见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。当前 d2x 仍从当前 MPQ 的 TXT 导入，增加字段索引、每挂载集合只读 `ClassicData` 共享与有界解压缓存；运行时不枚举全包文件名。客户端与嵌入宿主共用规则值，跨进程不共享内存；地图生成副本与角色运行状态仍分属各端。原 BIN 导入未实现，需先逐表核实当前 MPQ 与对应版本布局；没有增加磁盘解析缓存或改变D2S 格式。
 
 复用分两类：两端都能消费的确定性计算，以及多个服务端领域／怪物／技能族之间的计算复用。后一类不需要为了“公用”而调用到客户端。禁止客户端通过公共函数拿到权威玩家存档、怪物目标列表、隐藏随机或任务世界状态。
 
@@ -131,7 +131,7 @@ MPQ 加载参考：本地 D2MOO `D2Common/src/DataTbls/DataTbls.cpp` 的 `sgptDa
 
 技能的复用顺序、纯函数输入、事务／随机、客户端修改边界及证据口径统一见[COMMON规范](../gameplay/skills/COMMON.md#技能迁入规范)。其他领域同样先从master迁可用规则，再用当前MPQ与reference补证据；领域拥有运行状态，原包只投影一次已提交事实，不恢复万能会话。
 
-本页保留结构／原函数证据，不维护职业、任务或怪物的第二份完成清单。当前状态见[基线](../../BASELINE.md)，模块所有权见[SERVER_SYSTEMS](../modules/SERVER_SYSTEMS.md)，实施顺序见[MULTIPLAYER](MULTIPLAYER.md)，保存语义及指纹见[SAVES](../modules/SAVES.md)。
+本页保留结构／原函数证据，不维护职业、任务或怪物的第二份完成清单。当前状态见[基线](../../BASELINE.md)，模块所有权见[SERVER_SYSTEMS](../modules/SERVER_SYSTEMS.md)，实施顺序见[MULTIPLAYER](MULTIPLAYER.md)，保存语义及校验边界见[SAVES](../modules/SAVES.md)。
 
 ### 女巫公共计算落点
 

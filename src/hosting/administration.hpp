@@ -16,7 +16,7 @@ namespace d2x::hosting {
 enum class AdminOperation {
     Save, Reload, CancelReload, Step, Pause, Resume, AutoPause, RestoreResources, DamagePlayer, MissileHit, GrantGold, GrantExperience, SpawnItem, SpawnMonster, SpawnObject,
     DamageMonster, KillMonster, Travel, UnlockWaypoints, GrantShrine,
-    GrantHireling, ResetAttributes, ResetSkills
+    GrantHireling, ResetAttributes, ResetSkills, SetPlayers
 };
 struct AdminAmount { int64_t value{}; };
 struct AdminStep { uint32_t frames = 1; };

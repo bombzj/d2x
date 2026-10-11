@@ -14,7 +14,7 @@
 | 对白／菜单／提示显示、交谈生命周期 | [NPC交互](../npc/INTERACTIONS.md) |
 | 服务请求、加工与经济 | [NPC交易](../npc/TRADE.md)、[任务物品](../items/QUEST_ITEMS.md)、[物品经济](../items/ECONOMY.md) |
 | 原D2S任务槽／奖励位、progression及拒绝边界 | [存档](../../modules/SAVES.md#任务槽与奖励语义) |
-| 当前规则指纹／运行包、后续实施顺序 | [基线](../../../BASELINE.md)、[总计划](../../architecture/MULTIPLAYER.md) |
+| 当前运行包、后续实施顺序 | [运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)、[总计划](../../architecture/MULTIPLAYER.md) |
 
 ## 服务端所有权
 

@@ -117,13 +117,15 @@ void SceneView::drawSkillTree(Vec mouse) const {
     EndScissorMode();
     if (auto hovered = skillAt(mouse)) {
         const auto &skill = *characterView_.skill(*hovered);
-        auto lines = skill.treeTooltip;
+        std::vector<std::string> lines;
         SkillTooltipHeadings headings;
-        if (!skill.treeGrantedHeading.empty()) {
-            lines.insert(lines.begin(),{skill.treeGrantedHeading,""});
-            headings.granted=0;
-            headings.title=2;
+        for (const auto &notice : skill.treeStatusHeadings) {
+            headings.statuses.push_back(lines.size());
+            lines.push_back(notice);
+            lines.push_back("");
         }
+        headings.title = lines.size();
+        lines.insert(lines.end(), skill.treeTooltip.begin(), skill.treeTooltip.end());
         if (!skill.treeBonusHeading.empty() || !skill.treeBonusTooltip.empty()) {
             lines.push_back("");
             if (!skill.treeBonusHeading.empty()) {

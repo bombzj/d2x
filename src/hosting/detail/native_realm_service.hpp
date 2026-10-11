@@ -27,7 +27,6 @@ struct NativeRealmService {
     std::unique_ptr<RealmPortraitCatalog> &portraits;
     std::unique_ptr<CharacterStore> store;
     GameHost &host;
-    uint64_t &rules;
     bool authenticated{}, ticket{};
     bool multiplayerEndpoint{};
     bool tcpIpHost{}, directTcpIp{}, tcpIpUploadComplete{};

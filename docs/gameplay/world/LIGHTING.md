@@ -32,4 +32,4 @@
 
 参考代码：`reference/d2moo/source/D2Common/src/DataTbls/LevelsTbls.cpp`、`ItemsTbls.cpp`、`Items/ItemMods.cpp`、`Monsters/Monsters.cpp` 和 `D2Environment.cpp`；DT1 标志交叉核对 `reference/diablerie/Assets/Scripts/Diablerie/Engine/IO/D2Formats/DT1.cs`。图形仍从用户挂载的原 MPQ 读取，不导出成独立资源文件。
 
-当前源码／包差异与有限运行证据见[基线](../../../BASELINE.md)，没有把旧离线观察或一次正常窗口启动视为完整光照验收。
+当前包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，有限运行证据见[联网记录](../../modules/NETWORK.md#既有有限证据)，没有把旧离线观察或一次正常窗口启动视为完整光照验收。

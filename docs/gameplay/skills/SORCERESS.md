@@ -1,6 +1,6 @@
 # 女巫技能
 
-更新：2026-10-09。自研服务端执行26项主动、4项被动，原服与自研共用原协议客户端。此页维护30项职责、女巫专属Clt／Srv差异及历史有限证据；公共规范与整体状态见[COMMON](COMMON.md)，当前包见[基线](../../../BASELINE.md)。
+更新：2026-10-09。自研服务端执行26项主动、4项被动，原服与自研共用原协议客户端。此页维护30项职责、女巫专属Clt／Srv差异及历史有限证据；公共规范与整体状态见[COMMON](COMMON.md)，当前包见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
 
 ## 30项公共职责核对
 
@@ -69,11 +69,11 @@
 - 同区Teleport资格／碰撞及位置事务已接；同行者传送、跨区弹体及完整路径定点量化未完成。
 - Chilling Armor的历史运行只覆盖指定ReturnFire命中反击，不能认证完整远程AI／客户端接触流程。
 - 碎冰、爆炸密度、连锁在延迟／可见性变化下的时序、循环声音、三难度／全装备／协同等级／免疫和背压仍没有完整认证。
-- 充能、装备触发、武器通用限制由[库存](../../modules/INVENTORY.md)及[GENERAL](GENERAL.md)维护；保存字段／指纹由[SAVES](../../modules/SAVES.md)维护。晚入视野和客户端权限沿COMMON，不以本页30项入口扩张其他职业或V3认证。
+- 充能、装备触发、武器通用限制由[库存](../../modules/INVENTORY.md)及[GENERAL](GENERAL.md)维护；保存字段与校验边界由[SAVES](../../modules/SAVES.md)维护。晚入视野和客户端权限沿COMMON，不以本页30项入口扩张其他职业或V3认证。
 
 ## 历史女巫有限运行证据
 
-历史源码／包为提交 `2fcc439`，2026-10-08 Windows Release，EXE SHA256 `C19749017A53A1F226205F4E2E519369F38E487554F3FE643B77A5CA8FF86A37`，当时指纹v17／sorceress30、D2S v96。记录位于忽略目录 `artifacts/sorceress-smoke-20261008`、`artifacts/sorceress-d2gs-20261008`；这些证据不认证当前包新增分支。
+历史源码／包为提交 `2fcc439`，2026-10-08 Windows Release，EXE SHA256 `C19749017A53A1F226205F4E2E519369F38E487554F3FE643B77A5CA8FF86A37`，D2S v96。记录位于忽略目录 `artifacts/sorceress-smoke-20261008`、`artifacts/sorceress-d2gs-20261008`；这些证据不认证当前包新增分支。
 
 自研主要角色为普通难度41级Hero，种子1961888707，30项基础等级1，初始法杖使Fire Bolt有效等级2。现有管理管道只准备条件、指定命中与推进固定步，正常施放仍走原C2S。
 

@@ -47,6 +47,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"queries",s.spatialQueries},{"candidates",s.spatialCandidates},{"returned",s.spatialReturned}};
     for (const auto &effect : s.effects) result["effects"].push_back({{"state", effect.state}, {"expires", effect.expires}});
     result["restoration"] = {{"healingQueued", s.healingQueued}, {"manaQueued", s.manaQueued}};
+    result["virtualPlayers"]=s.virtualPlayers;
     result["loot"] = {{"pending", s.lootPending}, {"deferred", s.lootDeferred}};
     result["itemTriggers"]={{"pending",s.itemTriggersPending},{"deferred",s.itemTriggersDeferred}};
     result["chargedSkills"]=Json::array();
@@ -75,6 +76,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for (const auto &monster : s.monsters) {
         Json value{{"id", monster.id.value}, {"code", monster.code}, {"position", point(monster.position + origin)},
             {"life", double(monster.life) / 256.}, {"maxLife", double(monster.maximumLife) / 256.}, {"revision", monster.revision},
+            {"admittedPlayers",monster.admittedPlayers},{"experienceBase",monster.experienceBase},
+            {"minimumLife",monster.minimumLife},{"maximumBaseLife",monster.maximumBaseLife},
             {"moving", monster.moving}, {"running", monster.running}, {"busyUntil", monster.busyUntil}, {"rewardComplete", monster.rewardComplete},{"chilledUntil",monster.chilledUntil},{"frozenUntil",monster.frozenUntil},{"knockedUntil",monster.knockedUntil},{"nextHitTick",monster.nextHitTick},{"owner",monster.owner?Json(monster.owner->value):Json(nullptr)}};
         if (monster.controller) value["ai"] = {{"nextDecision", monster.controller->nextDecision},
             {"target", monster.controller->target ? Json(monster.controller->target->value) : Json(nullptr)},

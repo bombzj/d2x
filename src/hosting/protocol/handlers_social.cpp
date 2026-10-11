@@ -49,13 +49,13 @@ RequestResult OfferTradeGold(GameplayContext &context, uint32_t amount) {
 }
 RequestResult Chat(GameplayContext &context, net::protocol::Reader &in) {
     const auto type = in.u8(), language = in.u8(); const auto text = in.string(255), receiver = in.string(15); const auto extension = in.u8(); in.take(extension); in.finish();
-    if (type != 1 || language || extension) return {RequestStatus::Rejected};
+    if ((type != 1 && type != 2) || (type==2 && receiver.empty()) || language || extension) return {RequestStatus::Rejected};
     return submitGameplay(context, server::social::Request{server::social::Action::Chat, {}, text,receiver});
 }
 RequestResult OverheadChat(GameplayContext &context, net::protocol::Reader &in) {
     const auto type=in.u8(),language=in.u8(); const auto text=in.string(255),receiver=in.string(15);
     const auto extension=in.u8();in.take(extension);in.finish();
-    if(type!=1 || language || !receiver.empty() || extension) return {RequestStatus::Rejected};
+    if((type!=0 && type!=1) || language || !receiver.empty() || extension) return {RequestStatus::Rejected};
     return submitGameplay(context,server::social::Request{server::social::Action::Chat,{},text,{},true});
 }
 }

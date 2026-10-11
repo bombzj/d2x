@@ -219,7 +219,7 @@ class SceneView {
     }
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
-    void updateChat(const OnlineSocialView &social) { chat_.update(social); }
+    void updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
     void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game);
     PartyIntent handleParty(const FrameInput &input);
     bool partyReady() const { return party_.ready(); }

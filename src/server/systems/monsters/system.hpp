@@ -119,7 +119,7 @@ struct State {
     struct DeathCascade {EntityId source;uint64_t due{};};
     std::map<EntityId,DeathCascade> deathCascades;
 };
-struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; };
+struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; };
 class System {
     State state_;
     const Ports ports_;

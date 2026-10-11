@@ -1,6 +1,6 @@
 # Windows调试管道
 
-直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算。构建／包状态见[基线](../../BASELINE.md)。
+直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算。构建／包状态见[运行包记录](BUILD_AND_RUN.md#运行包记录)。
 
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
 ## 启动与调用
@@ -26,7 +26,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
 
-当前Windows包已通过现有脚本有限运行目录、save／load／step／grant-experience／grant-gold，以及伤害、物品／怪物生成和怪物击杀管理路径；具体证据及未运行边界见基线。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
+当前Windows包已通过现有脚本有限运行目录、save／load／step／grant-experience／grant-gold，以及伤害、物品／怪物生成和怪物击杀管理路径；具体证据及未运行边界见[联网记录](../modules/NETWORK.md#既有有限证据)。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
@@ -44,6 +44,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
+| `set-players` | amount为1–8；设置当前本地实例虚拟人数，与游戏内/players共用类型化宿主入口。仅已入局的本机宿主角色可用，客人及账号Realm拒绝；不写D2S，人数规则见[命令分流](../modules/NETWORK.md#游戏内命令分流) |
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
 | `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
@@ -77,7 +78,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
-| `online-social` / `online-chat` | 同一完整只读快照的world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；冒烟范围见基线，不能据此认证完整M4 |
+| `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；冒烟范围见[联网记录](../modules/NETWORK.md#既有有限证据)，不能据此认证完整M4 |
+| `online-chat-input` | message经过与游戏UI相同的通用分流，支持/nopickup、/players、房间／头顶／私聊和BNCS命令。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
 | `online-party-action` | unitId为当前名册真实GUID，action为invite／cancel／accept／leave（leave目标为本人）；可选gameGeneration复验本局。与P界面共用RealmSession.party_action，只发送原5E；accepted不修改名册／队号，真实结果读取75／8B／8D。 |
 | `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore或squelch，enabled布尔值；原5D/action2或3。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；不实现敌意或队伍 |
@@ -231,7 +233,7 @@ P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges
 
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 
-冒烟使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照用于观察，不能代替逐只普通攻击或完整AI认证；本批证据与边界见[基线](../../BASELINE.md#当前运行包与有限冒烟)。
+冒烟使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照用于观察，不能代替逐只普通攻击或完整AI认证；本批证据与边界见[运行包记录](BUILD_AND_RUN.md#运行包记录)。
 
 server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；实际验证范围见[第一幕怪物证据](../gameplay/monsters/ACT1.md#有限运行证据)，管理准备不能作为真实首领战斗认证。
 

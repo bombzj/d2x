@@ -18,7 +18,7 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     if(request.environment) pending.magicFind=pending.goldFind=0;
     if(request.questClaimant) pending.character.player=*request.questClaimant;
     auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
-    const unsigned count=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;})));
+    const unsigned count=std::clamp(std::max(ports_.settings.virtualPlayers,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered && entry.second.persistent.player.hp>0;}))),1u,8u);
     unsigned members=1;
     if(ports_.social.partyId(player->player)!=UINT16_MAX)
         members=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry){

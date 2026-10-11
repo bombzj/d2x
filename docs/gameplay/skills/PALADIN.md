@@ -47,7 +47,7 @@ server/effects/paladin.cpp按右手当前武器组的有效等级持有发射周
 
 Holy Shield保留当前原盾组件。MPQ状态101没有可直接采用的特殊盾图组件规则；未核实原D2Client选择逻辑前不替换或自造图形。Charge移动显示原RN，到达用SequenceTbls中7个A1尾帧；权威位置由原移动／技能通知同步。Blessed Hammer服务端和客户端共用PathMisc路径算法，图形／音效只读取MPQ。
 
-D2S仍为v96，准入指纹升至`d2x-character-admission-v31/native-wire113c/d2s96/act1-hireling/pvpgn-newbie89/player-trade-chat/paladin30`；旧规则不静默迁移，见[存档](../../modules/SAVES.md)。通用职责与证据等级见[COMMON](COMMON.md)。
+D2S仍为v96，见[存档](../../modules/SAVES.md)。通用职责与证据等级见[COMMON](COMMON.md)。
 
 ## 有限冒烟
 

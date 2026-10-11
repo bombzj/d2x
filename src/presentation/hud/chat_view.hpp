@@ -22,7 +22,7 @@ class ChatView {
     std::string title_, close_, reason_, draft_;
     bool ready_{}, inputOpen_{}, logOpen_{}, dragging_{};
     size_t caret_{}, scroll_{}, unavailable_{};
-    uint64_t sequence_{};
+    uint64_t sequence_{}, accountSequence_{};
     std::array<std::string,10> partyNotices_;
     struct Glyph { uint8_t character{}, color{}; };
     using Line = std::vector<Glyph>;
@@ -51,7 +51,7 @@ class ChatView {
     void scrollTo(Vec);
   public:
     explicit ChatView(Archives &);
-    void update(const OnlineSocialView &);
+    void update(const OnlineSocialView &, const OnlineSocialView &account);
     ChatIntent handle(const FrameInput &, bool canOpen);
     void setLogOpen(bool);
     void sent(bool accepted);

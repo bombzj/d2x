@@ -1,6 +1,6 @@
 # 构建、运行与打包
 
-操作说明不记录各功能的重复构建流水；当前源码与运行包差异见 [项目基线](../../BASELINE.md)。命令需要当轮用户授权时才执行，默认不构建、运行或打包。
+操作说明不记录各功能的重复构建流水；功能范围见[项目基线](../../BASELINE.md)，包身份见[运行包记录](#运行包记录)。命令需要当轮用户授权时才执行，默认不构建、运行或打包。
 
 ## Linux 支持状态
 
@@ -30,7 +30,7 @@ cmake --build build --parallel
 ./build/bin/d2x
 ```
 
-首次配置时，CMake 会从 GitHub 下载固定版本的 raylib、StormLib、Asio 和 BNCSutil，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 图形应用不需要 Wine；联网认证会只读配置中的原版客户端文件。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。当前源码／已交付包差异见基线，Linux未验证。
+首次配置时，CMake 会从 GitHub 下载固定版本的 raylib、StormLib、Asio 和 BNCSutil，所以需要网络与 Git。不要复制 Windows 的 `build` 目录给 Linux 继续编译。Linux 图形应用不需要 Wine；联网认证会只读配置中的原版客户端文件。`--hidden` 仍会创建图形上下文，不能据此在无显示服务的服务器上运行。功能范围见基线，Linux验证限制见本页支持状态。
 
 游戏内由原服提供角色、单位和区域状态，客户端重建 MPQ 地形。技能菜单悬停后用 `F1–F8` 绑定，`1–4` 饮药，`B` 展开腰带，`I` 整理库存；菜单不暂停联机会话。本地读写档与直进区域参数已退出产品入口。
 
@@ -38,7 +38,7 @@ cmake --build build --parallel
 
 构建已有EXE后，在项目根目录使用 `Play.cmd`，或运行 `build/bin/d2x.exe`。显式 `--mpq <目录或文件>` 优先；未指定时，依次搜索工作目录本身、EXE 所在目录本身、工作目录的 `assets/mpq2`，再搜索 EXE 所在目录及最多四级父目录中的 `assets/mpq2`。自动定位以 `d2data.mpq`／`D2Data.mpq` 为入口，找到首个目录即停止，挂载该目录全部 MPQ，不递归搜索子目录。工作目录与 EXE 所在目录可以不同。MPQ 不参与编译，但运行时必须可用。源码入口为 `CMakeLists.txt`、`cmake/` 和 `src/`；许可和素材来源见 `LICENSE`、[第三方说明](../resources/THIRD_PARTY.md) 及 `docs/licenses/`。
 
-当前源码普通启动进入原图主菜单：Battle.net沿账号／Realm／角色／房间链，Single Player使用内存MCP／D2GS；TCP/IP在本机选角后按原版直连4000并交换本地存档，详见联网模块。F11保存、Ctrl+F11校验后重载；ESC／失焦暂停单机，共享房间继续推进。角色、战斗、库存及保存由所连接服务端执行，当前支持范围和缺口见[基线](../../BASELINE.md)。客户端`dist/current`与独立服务端`dist/server`均为Windows Release包；运行证据与速度测量见基线，不将有限冒烟视为所有玩法验证。
+当前源码普通启动进入原图主菜单：Battle.net沿账号／Realm／角色／房间链，Single Player使用内存MCP／D2GS；TCP/IP在本机选角后按原版直连4000并交换本地存档，详见联网模块。F11保存、Ctrl+F11校验后重载；ESC／失焦暂停单机，共享房间继续推进。角色、战斗、库存及保存由所连接服务端执行，当前支持范围和缺口见[基线](../../BASELINE.md)。客户端`dist/current`与独立服务端`dist/server`均为Windows Release包；运行证据见对应专题，速度测量见本页，不将有限冒烟视为所有玩法验证。
 
 Windows EXE 需要同目录 `d2x_bncs_legacy.dll`。`--online-config <路径>` 指定配置，原版客户端文件只读参与认证；PvPGN 模式无需 CD-key。网络 worker 独立于菜单、资源加载和绘制持续推进，`--hidden` 也不会进入本地玩法。`--load <file.d2s>`或`--class <MPQ职业名>`可启动嵌入宿主并通过原协议快捷入局，`--save <新file.d2s>`指定新目标；已存在目标拒绝覆盖，继续用--load。--seed／--map-seed／--population-seed／--level／--region／--difficulty等旧世界参数仍不可用。存储约束见[存档](../modules/SAVES.md)。
 
@@ -61,7 +61,7 @@ ESC 优先关闭面板，无面板时打开游戏菜单；Save and Exit 请求�
 
 EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame` 开始的首次生命周期节点：MPQ 挂载、平台、菜单资产、首个显示帧、服务端世界、客户端内容、游戏 UI 及首个已绘制游戏帧。每个节点只记录一次并立即刷新；未指定不产生文件。`--frames <数量>` 可有限运行后正常退局，`--hidden` 仍建立 OpenGL 上下文但跳过音频设备初始化。测速需注明运行条件，文件首帧时间不包含操作系统创建进程之前的耗时，也不代表首次磁盘冷启动或后续每次入局耗时。
 
-启动优化的有限测量见[启动测量](#启动测量)；当前包身份仅由基线维护。
+启动优化的有限测量见[启动测量](#启动测量)；包身份由本页[运行包记录](#运行包记录)维护。
 
 双客户端从两个终端分别运行 `dist/current/Play.cmd -PipeName d2x-player-one` 和 `dist/current/Play.cmd -PipeName d2x-player-two`，在各自窗口登录不同账号并选择不同角色。第一位创建房间，第二位点击 Join、选择真实列表项查看详情后加入，或输入名称／密码直接加入。参考服可能不在列表展示密码房间或资格不符房间；原服决定加入结果。调试管道名必须不同，账号记忆仍按配置路径共享；第二个窗口修改记忆不会替换第一个窗口已登录的会话。
 
@@ -85,9 +85,23 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 独立服务端在CMake Tools中选择`d2x_pvpgn`构建目标，成功后运行[scripts/package-server.ps1](../../scripts/package-server.ps1)。原`d2x`目标和客户端打包脚本继续保留；`d2x_server`是内核库目标，不能误当成EXE目标。两份脚本均复制当前已构建文件，不隐式编译或切换配置。服务端启动／关闭请使用[PvPGN部署页](PVPGN_SERVER.md)中的独立脚本，不使用客户端Play入口。
 
+## 运行包记录
+
+当前记录的运行包日期为2026-10-11，Windows **Release**，D2S v96；包含玩家／佣兵属性显示、技能 MPQ 描述、耐久提示及游戏内命令分流／虚拟人数规则。客户端与独立服务端为同一交付版本。第二幕74身份／33类AI及30项技能槽的历史验证范围由[第二幕](../gameplay/monsters/ACT2.md)维护。以下哈希标识当前记录的磁盘包，不能用于认证尚未入包的源码修改。
+
+| 产物 | 目录 | SHA256 |
+| --- | --- | --- |
+| 客户端 | `dist/current/d2x.exe` | `D2F01F3E305C5E6DB71948F60BC4E5709F0D68E00C1DA3E7670542E98FC9048E` |
+| 独立服务端 | `dist/server/d2x_server.exe` | `71291566390177DF49011BFB297834C36D9840BC338A5E3A763069E16C37B874` |
+| 网络DLL | 两包的`d2x_bncs_legacy.dll` | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+当前 Windows Release 客户端／独立服务端包已构建、打包，具有现有游戏／调试管道的有限单机冒烟证据。玩家装备、防御技能、动作伤害／命中、四抗、破损／副武器组及保存重入的覆盖范围见[人物属性证据](../gameplay/characters/ATTRIBUTES.md#当前包有限冒烟)；佣兵数值、装备、抗性封顶及保存重入见[佣兵证据](../gameplay/characters/HIRELINGS.md#当前包有限冒烟)。技能描述、耐久提示及启动测量分别由[描述专题](../gameplay/skills/DESCRIPTIONS.md#当前包有限冒烟)、[经典HUD](../gameplay/ui/CLASSIC_HUD.md#装备耐久提示)及[开发指南](BUILD_AND_RUN.md#启动测量)维护。
+
+当前记录的运行包通过单机、双客户端TCP/IP及自研独立服务端接PvPGN后端的列出命令路径，范围与证据见[命令分流有限冒烟](../modules/NETWORK.md#命令分流有限冒烟)。本轮未启动原D2GS验证客户端兼容；NoDrop概率、梦魇／地狱人数倍率、全部职业特殊动作、装备／套装／孔内组合、完整怪物行为、跨机器、Linux和性能尚未全面验收；其他版本的历史成功不能替代当前包验证。
+
 ## 启动测量
 
-2026-10-10 Windows Release启动优化包的有限记录，规则v32／D2S v96；客户端SHA256 `BD304511433DFEAB2EDE6D68B234A5954EE40F853D1EF8C7CE731FB7A2D51B66`。同机、同MPQ、同角色／地图种子的新进程对照：
+2026-10-10 Windows Release启动优化包的有限记录，D2S v96；客户端SHA256 `BD304511433DFEAB2EDE6D68B234A5954EE40F853D1EF8C7CE731FB7A2D51B66`。同机、同MPQ、同角色／地图种子的新进程对照：
 
 | 路径 | 优化前 | 优化后 |
 | --- | ---: | ---: |

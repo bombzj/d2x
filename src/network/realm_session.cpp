@@ -1,4 +1,5 @@
 #include "network/realm_session.hpp"
+#include "network/chat_command.hpp"
 #include "network/tcp_stream.hpp"
 #include "client/remote_world.hpp"
 #include "network/protocol/d2gs_stream.hpp"
@@ -541,18 +542,30 @@ struct RealmSession::Impl {
         }
         case 0x0F: {
             const auto type = in.u32();
-            if (type != 0x12 && type != 0x13) {
+            if (type != 0x04 && type != 0x0A && type != 0x12 && type != 0x13) {
                 ++view.sidProtocol.unconsumed[packet.id];
                 break;
             }
             in.take(20); // Flags, latency, IP, account and authority fields.
-            in.string(64);
+            const auto name = in.string(64);
             auto message = in.string(512);
             in.finish();
             if (!message.empty()) {
-                if (view.lobbyNotices.size() == 32)
-                    view.lobbyNotices.erase(view.lobbyNotices.begin());
-                view.lobbyNotices.push_back({std::move(message), type == 0x13});
+                if (type == 0x12 || type == 0x13) {
+                    if (view.lobbyNotices.size() == 32) view.lobbyNotices.erase(view.lobbyNotices.begin());
+                    view.lobbyNotices.push_back({message, type == 0x13});
+                }
+                auto &chat = view.accountChat;
+                OnlineChatMessage entry;
+                entry.sequence = ++chat.chatSequence;
+                entry.receivedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now().time_since_epoch()).count());
+                entry.type = type == 0x04 ? 2 : type == 0x0A ? 6 : 4;
+                entry.messageColor = type == 0x13 ? 1 : type == 0x04 || type == 0x0A ? 2 : 0;
+                if (type == 0x04 || type == 0x0A) entry.name.assign(name.begin(), name.end());
+                entry.text.assign(message.begin(), message.end());
+                chat.chat.push_back(std::move(entry));
+                if (chat.chat.size() > 128) chat.chat.pop_front();
+                ++chat.revision;
                 changed();
             }
             break;
@@ -1756,6 +1769,55 @@ bool RealmSession::party_action(uint32_t player, OnlinePartyAction action, uint6
     }
     Writer out; out.u8(0x5E); out.u8(uint8_t(action)); out.u32(player);
     p.sent(p.gs, out.release()); p.changed(); return true;
+}
+bool RealmSession::send_bnet_command(std::string text) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (snapshot_.connectionGeneration != p.view.connectionGeneration || snapshot_.gameGeneration != p.view.gameGeneration) {
+        p.error(OnlineErrorKind::Input, "The active connection changed; retry the command."); return false;
+    }
+    if (!text_valid(text,255) || text.front() != '/') {
+        p.error(OnlineErrorKind::Input, "Battle.net commands must start with / and fit in 255 ASCII bytes."); return false;
+    }
+    if (!p.sid.connected()) {
+        p.error(OnlineErrorKind::Input, "Battle.net commands are unavailable in this game mode."); return false;
+    }
+    try {
+        Writer out; out.string(text,255); p.send_sid(0x0E,std::move(out));
+        p.view.error.reset();p.changed();return true;
+    } catch (const std::exception &) {
+        p.error(OnlineErrorKind::Transport,"Battle.net command could not be queued.");return false;
+    }
+}
+bool RealmSession::send_chat_input(std::string text) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto command = parseChatCommand(text);
+    switch(command.route) {
+    case ChatRoute::Room: return send_chat(std::move(command.text),std::move(command.receiver));
+    case ChatRoute::Overhead: return send_chat(std::move(command.text),{},true);
+    case ChatRoute::Whisper: {
+        const auto sameName=[](std::string_view a,std::string_view b) {
+            if(a.size()!=b.size()) return false;
+            return std::equal(a.begin(),a.end(),b.begin(),[](char x,char y){
+                if(x>='A' && x<='Z') x=char(x-'A'+'a');
+                if(y>='A' && y<='Z') y=char(y-'A'+'a');
+                return x==y;
+            });
+        };
+        for(const auto &[id,peer]:impl_->view.world.social.players) {
+            (void)id;
+            if(peer.listed && sameName(peer.name,command.receiver))
+                return send_chat(std::move(command.text),peer.name);
+        }
+        return send_bnet_command("/w "+command.receiver+" "+command.text);
+    }
+    case ChatRoute::BattleNet: return send_bnet_command(std::move(command.text));
+    case ChatRoute::Invalid: impl_->error(OnlineErrorKind::Input,std::move(command.error));return false;
+    default: impl_->error(OnlineErrorKind::Input,"This local command requires the application command dispatcher.");return false;
+    }
 }
 bool RealmSession::send_chat(std::string text,std::string receiver,bool overhead) {
     std::lock_guard lock(impl_->mutex);

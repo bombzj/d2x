@@ -42,7 +42,7 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 `content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／15／23／30／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
 
-OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影修复适用于原服和自研连接。2026-10-10已随v36构建、打包，自研祭坛公共蓝门往返有限验证见下文；精确表现节拍未逐帧认证。
+OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影修复适用于原服和自研连接。2026-10-10已随野外物件批构建、打包，自研祭坛公共蓝门往返有限验证见下文；精确表现节拍未逐帧认证。
 
 声音选择不在Objects.txt。当前1.13c D2Client原对象声表RVA F6C58及读取入口22570提供模式选择，源码按当前MPQ Token／OperateFn绑定已核实族，共享Token的5f／6t／jw按原名称／操作区分。Sounds表继续提供文件、组大小、音量；不分发DLL、导出表或WAV。原0x2C事件11是item_key_used，22按CharStats职业选needkey组，13／14是object_trap_trigger／release，不能把事件号当Sounds.Index。重入已打开物件不重播旧交互声。
 
@@ -65,7 +65,7 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 | 原怪物陷阱 | Trap-Missile／Poison／Nova有限攻击与退场，横／纵箭的轴距与区域变体，Trap-Melee机会／停顿，DesertTurret原转向／散射／短长间隔，TrappedSoul唤醒／朝向动作；命中、抗性、毒／冷与NextHit进入共同战斗路径 |
 | 其他藏物 | 书架按原卷轴／书比例，普通容器、棺材、架子、尸体及任务物件沿既有掉落与操作入口；所有模式碰撞读MPQ，开启动画按FrameCnt1+1衔接 |
 
-祭坛增益、物件时钟、机关AI、区域掉落和弹体是局内状态；宝石消耗／拾取后的库存按原D2S字段保存。当前规则指纹v36，旧规则不静默迁移，详见[存档](../../modules/SAVES.md)。本地管理object-spawn／grant-shrine只准备真实MPQ条件，须用正常0x13操作；不作为自然地图随机概率或正常通关证据。
+祭坛增益、物件时钟、机关AI、区域掉落和弹体是局内状态；宝石消耗／拾取后的库存按原D2S字段保存。保存边界详见[存档](../../modules/SAVES.md)。本地管理object-spawn／grant-shrine只准备真实MPQ条件，须用正常0x13操作；不作为自然地图随机概率或正常通关证据。
 
 依据：D2Game ObjMode的祭坛17–22、OperateFn7／30／48／51／68，ObjRgn初始化与陷阱怪物选择，ObjEval陷阱时钟，AiThink Fn077–080／087／094／099，Missiles碰撞／毒云／连锁闪电及Skills雕像散射。master为旧单机范围对照，具体参数以当前MPQ和D2MOO核实结果为准。
 
@@ -98,7 +98,7 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 ## 自研传送点
 
-2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；已在历史v26第二幕任务包构建／打包，后续包继续包含。新增传送点边界未逐项运行认证，包与准确有限证据见基线。
+2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；已在历史第二幕任务包构建／打包，后续包继续包含。新增传送点边界未逐项运行认证，包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，有限证据见[第二幕任务](../quests/ACT2.md#有限运行证据)。
 
 | 路径 | 当前源码规则与分工 |
 | --- | --- |
@@ -109,7 +109,7 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 | 原0x49 | 当前源GUID、区域／代次、活人及菜单授权必须相符；独立整数X／Y距离每轴≤10，女巫≤22，不使用普通物件射线或Telekinesis圆形距离。level0／源区域关闭并取消待换区；未解锁或非传送点目的地撤销授权；单纯距离不合格保留授权 |
 | 内容准备与提交 | world只准备地图；travel在提交时再次核对菜单代次、人物意图／存活／位置、源区域及目的地目录／解锁。关闭或重开旧菜单不能让旧换区继续提交；通知接受后才改玩家区域 |
 | 目的地落点 | hosting按原DS1预设、Objects.SubClass64与Levels.Position解析传送点房间；城镇、Canyon、Arcane使用原tile index13路径，其余当前MPQ传送点使用Position0路径。公共waypointSpawnAnchor完成tile→subtile转换；Grid.nativeSpawn用原size2／0x1c09、半径小于50的整数环、Manhattan优先及原扫描次序寻找当前碰撞上的落点，不回退到一般城镇出生点 |
-| 跨幕与保存 | Warriv1向东旅行、第一幕完成位与鲁高因传送点激活在同一事务提交。0x63使用0x102＋112位并保留必开bit0；D2S当前难度的WS段按相同容量读写，其他难度及未知映射位保留。格式与指纹见[存档](../../modules/SAVES.md) |
+| 跨幕与保存 | Warriv1向东旅行、第一幕完成位与鲁高因传送点激活在同一事务提交。0x63使用0x102＋112位并保留必开bit0；D2S当前难度的WS段按相同容量读写，其他难度及未知映射位保留。格式与校验边界见[存档](../../modules/SAVES.md) |
 
 客户端只补原版启动通知的等待处理：中性传送点收到0x0E/mode1后结束激活等待，下一次点击才能正常请求菜单；若多人先后点击引起随后0x63到达，只在同一交互代次接受该真实菜单。关闭、移动、换区等代次失效后不重新打开。两种服务端共用此处理，没有自研协议或自行解锁。
 

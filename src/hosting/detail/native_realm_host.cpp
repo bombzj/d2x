@@ -1,6 +1,5 @@
 #include "native_realm_host.hpp"
 #include "native_realm_service.hpp"
-#include "hosting/character_rules.hpp"
 #include "hosting/loot_content.hpp"
 #include "hosting/merchant_content.hpp"
 #include "hosting/crafting_content.hpp"
@@ -14,7 +13,7 @@ void NativeRealmHost::initialize() {
     auto data = sharedClassicData(archives);
     auto previews = std::make_unique<RealmPortraitCatalog>(archives);
     items = std::shared_ptr<const ItemCatalog>(data, &data->items);
-    rules = characterRulesFingerprint(*data); content = std::move(data); portraits = std::move(previews);
+    content = std::move(data); portraits = std::move(previews);
 }
 const HostedGame *NativeRealmHost::find(GameHandle handle) const {
     for (const auto &[name, game] : games) { (void)name; if (game.handle == handle) return &game; }

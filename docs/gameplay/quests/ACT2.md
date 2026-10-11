@@ -38,7 +38,7 @@ A2Q0杰海因欢迎使用原槽8位0，独立于六项日志和普通初见。�
 
 日志确认等待区域准备时由服务端保留有界请求，固定步复验人物、区域代次、存活、对象来源与交互几何后重试；不要求客户端重复发送已确认文本。插杖开启和租约清理使用同一交互几何。对象发起的旅行由travel绑定移动序号，后续移动／死亡／换区会使等待失效。
 
-新游戏按个人插杖提交资格及当前真实墓穴恢复class100入口。成杖说明、日志待确认与日食等状态的原编码／不保存边界及当前规则指纹统一见[存档](../../modules/SAVES.md#任务槽与奖励语义)；下节v26只是历史证据版本。
+新游戏按个人插杖提交资格及当前真实墓穴恢复class100入口。成杖说明、日志待确认与日食等状态的原编码／不保存边界及校验边界统一见[存档](../../modules/SAVES.md#任务槽与奖励语义)；下节仅记录历史验证范围。
 
 ## 依据与限制
 
@@ -48,7 +48,7 @@ A2Q0杰海因欢迎使用原槽8位0，独立于六项日志和普通初见。�
 
 ## 有限运行证据
 
-2026-10-09历史v26包完成Windows Release构建（`build-09.log`），EXE SHA256为`6F249024C009CEF71BAA684E96E83B5B13F4FB0A775ACE2CB2B6AF3E5CF10D86`。它不是[当前运行包](../../../BASELINE.md#当前运行包与有限冒烟)。忽略目录`artifacts/act2-quests-20261009`保留构建／运行日志、快照、截图和临时存档；未新增测试脚本、用例或专用程序。
+2026-10-09历史包完成Windows Release构建（`build-09.log`），EXE SHA256为`6F249024C009CEF71BAA684E96E83B5B13F4FB0A775ACE2CB2B6AF3E5CF10D86`。它不是[当前运行包](../../development/BUILD_AND_RUN.md#运行包记录)。忽略目录`artifacts/act2-quests-20261009`保留构建／运行日志、快照、截图和临时存档；未新增测试脚本、用例或专用程序。
 
 同日重新构建确认无待编译内容并重新打包，同一EXE的独立复验保存在`artifacts/act2-recheck-20261009`。从材料检查点副本启动，实际重做Cain339（说明位15→31）、日志确认等待与红门往返、插杖取消／提交、开墓／进入巢穴、Tyrael救援／蓝门、Jerhyn／Meshif交接与跨幕往返；新进程恢复六任务阶段4／6／4／4／3／5、说明位31、技能点84和已消耗材料，并再次恢复class100 mode2入口。重载时ProtocolReady、ignoredPackets=0、unavailableUnits=0、mapErrors为空、宿主failures=0，两次stderr为空。复验未重新获取技能书／材料或重做日食，这些只由下表的前次样本覆盖。具体快照为`cain-assembled`、`journal-read`、`staff-submitted`、`tomb-open`、`tyrael-rescued`、`meshif-east`、`saved-snapshot`、`reloaded-snapshot`／`reloaded-online`及`reloaded-tomb`。
 

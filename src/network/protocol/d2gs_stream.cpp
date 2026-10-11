@@ -120,7 +120,7 @@ Bytes game_chat(std::string_view text,std::string_view receiver,bool overhead) {
     Writer out;
     if(receiver.size()>15 || (overhead && !receiver.empty()) ||
         !std::all_of(receiver.begin(),receiver.end(),[](unsigned char c){return c>=32 && c<127;})) throw ProtocolError("Invalid chat recipient");
-    out.u8(overhead?0x14:0x15); out.u8(1); out.u8(0);
+    out.u8(overhead?0x14:0x15); out.u8(overhead?0:receiver.empty()?1:2); out.u8(0);
     out.string(text, 255); out.string(receiver, 15); out.u8(0);
     return out.release();
 }

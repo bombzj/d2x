@@ -116,6 +116,14 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         const auto found = input.effectiveRanks.find(id);
         return found == input.effectiveRanks.end() ? 0 : found->second;
     };
+    // D2Client 2C8C0 scans base levels of the player's whole class, not the
+    // hovered skill's effective level. Item grants and common actions do not
+    // count as learning a class skill; an incomplete list cannot establish zero.
+    const bool noLearnedClassSkills = tree && input.baseRanksAssigned &&
+        std::none_of(data.skills.skills.begin(), data.skills.skills.end(), [&](const auto &record) {
+            const auto learned = input.baseRanks.find(record.first);
+            return record.second.classCode == view.classCode && learned != input.baseRanks.end() && learned->second > 0;
+        });
     for (const auto &[id, entry] : data.skills.skills) {
         const int effective = effectiveRank(id);
         if (entry.classCode != view.classCode && !entry.classCode.empty() && effective <= 0) continue;
@@ -222,8 +230,6 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         // skill from an item grant by its base and effective levels. This is
         // shared display metadata, independent of the skill or server flavor.
         const bool itemGranted=skill.baseRankKnown && skill.effectiveRankKnown && skill.baseRank==0 && effective>0 && !innate;
-        if (itemGranted && data.skills.descriptions)
-            skill.treeGrantedHeading=data.skills.descriptions->label("StrSkill118");
         skill.treeTooltip.push_back(entry.name);
         if (!entry.description.empty()) skill.treeTooltip.push_back(entry.description);
         // Native tree RVA 7899C selects the red/requirement branch from node
@@ -236,6 +242,15 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         for (size_t i = 0; i < entry.requiredAttributes.size(); ++i)
             if (entry.requiredAttributes[i] > 0 && !eligibilityInput.attributes[i]) treeRequirementsKnown = false;
         skill.treeTooltipUnavailable = treeRequirementsKnown && !skill.canAllocate && !(noSkillPoints && effective > 0);
+        if (data.skills.descriptions) {
+            // Native normal tree 34056-3409C prepends StrSkill119 when no
+            // class skill has been learned. It precedes the item-grant notice
+            // if both apply, and is absent from the red requirement branch.
+            if (!skill.treeTooltipUnavailable && noLearnedClassSkills)
+                skill.treeStatusHeadings.emplace_back(data.skills.descriptions->label("StrSkill119"));
+            if (itemGranted)
+                skill.treeStatusHeadings.emplace_back(data.skills.descriptions->label("StrSkill118"));
+        }
         if (skill.treeTooltipUnavailable && data.skills.descriptions) {
             if (skill.baseRank >= skill.maximumRank)
                 skill.treeTooltip.push_back(std::string(data.skills.descriptions->label("StrSkill116")));

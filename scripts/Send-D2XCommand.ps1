@@ -7,7 +7,7 @@ param(
         'server-status', 'server-protocol', 'server-commands', 'server-systems', 'server-snapshot', 'server-events',
         'server-pause', 'server-resume', 'server-auto-pause', 'refill-resources',
         'save', 'load', 'cancel-load', 'step',
-        'grant-gold', 'player-damage', 'missile-hit', 'grant-experience', 'item-spawn', 'monster-spawn', 'object-spawn',
+        'grant-gold', 'set-players', 'player-damage', 'missile-hit', 'grant-experience', 'item-spawn', 'monster-spawn', 'object-spawn',
         'monster-damage', 'monster-kill', 'travel', 'unlock-waypoints',
         'grant-shrine', 'grant-hireling', 'reset-attributes', 'reset-skills',
         'online-status', 'online-login', 'online-realms', 'online-select-realm',
@@ -22,7 +22,7 @@ param(
         'online-resurrect', 'online-recover-corpse',
         'online-npc-message', 'online-npc-close', 'online-npc-travel', 'online-npc-respec', 'online-staff-update',
         'online-items', 'online-ground', 'online-item-action', 'online-item-quote',
-        'online-social', 'online-chat', 'online-send-chat', 'online-chat-relation', 'online-party-action', 'online-trade-respond', 'online-trade-offer',
+        'online-social', 'online-chat', 'online-chat-input', 'online-send-chat', 'online-chat-relation', 'online-party-action', 'online-trade-respond', 'online-trade-offer',
         'online-combat', 'online-skills', 'online-select-skill', 'online-cast', 'online-attack',
         'online-stop-skill', 'online-learn-skill', 'online-spend-attribute', 'online-bind-hotkey',
         'ui-input', 'screenshot', 'quit')]

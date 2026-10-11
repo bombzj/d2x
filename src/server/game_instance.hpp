@@ -14,17 +14,15 @@ struct GameDefinition {
     AreaDefinition area;
     CharacterDefinition character;
     PersistentCharacter persistent;
-    uint64_t rulesFingerprint{};
     PreparedRules rules;
 };
 struct CorpseView { PlayerCorpse corpse; PersistentCharacter equipment; uint64_t revision{}; };
 // Composition and ordering only; domain implementations live beside this class.
 class GameInstance {
-    const GameSettings settings_;
+    GameSettings settings_;
     AreaStore areas_;
     EntityIds entities_;
     uint64_t random_, tick_{}, revision_{1};
-    uint64_t rulesFingerprint_{};
     uint64_t nextPlayer_ = 2;
     const PreparedRules rules_;
     PlayerStore players_;
@@ -99,6 +97,7 @@ class GameInstance {
     DomainResult<> grantHireling(PlayerId,HirelingRecord);
     DomainResult<> restoreResources(PlayerId);
     DomainResult<> grantGold(PlayerId,uint32_t);
+    DomainResult<> setVirtualPlayers(PlayerId,unsigned);
     DomainResult<> damagePlayer(PlayerId,uint32_t);
     DomainResult<> missileHit(PlayerId,EntityId,uint32_t,DamageType,bool returnFire);
     DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);

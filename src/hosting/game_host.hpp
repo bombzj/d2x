@@ -80,6 +80,7 @@ class GameHost {
     server::DomainResult<> grantHireling(PlayerBinding,HirelingRecord);
     server::DomainResult<> restoreResources(PlayerBinding);
     server::DomainResult<> grantGold(PlayerBinding,uint32_t);
+    server::DomainResult<> setVirtualPlayers(PlayerBinding,unsigned);
     server::DomainResult<> damagePlayer(PlayerBinding,uint32_t);
     server::DomainResult<> missileHit(PlayerBinding,EntityId,uint32_t,DamageType,bool returnFire);
     server::DomainResult<> damageMonster(PlayerBinding,EntityId,std::optional<uint32_t> amount);

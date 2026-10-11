@@ -16,7 +16,7 @@
 
 ## 当前包有限冒烟
 
-2026-10-11 Windows Release，MPQ `assets/mpq2`，当前包身份见[基线](../../../BASELINE.md#当前运行包与有限冒烟)。使用 `artifacts/character-stats-smoke-20261011` 的隔离角色、实际页面截图和原包投影；`online-status.characterUi` 是同一页面视图，server-snapshot仅作权威数值对照，不作为画面证明。
+2026-10-11 Windows Release，MPQ `assets/mpq2`，当前包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。使用 `artifacts/character-stats-smoke-20261011` 的隔离角色、实际页面截图和原包投影；`online-status.characterUi` 是同一页面视图，server-snapshot仅作权威数值对照，不作为画面证明。
 
 - 女巫90级：空手伤害／命中、经验／资源／四属性和四抗无问号；火弹39–50、冰弹35–51；帽子后防御11→16，冰甲后21，与权威值一致。保存重入保留装备，临时冰甲不入档。
 - 圣骑士90级：普通武器伤害4–13／命中203；圣盾防御43、格挡8，重击46–56；暗金蛇皮甲原25四抗与增强防御投影后防御852，与权威值一致。圣盾首次暴露 clc1 参数名遗漏，失败现场保留，修复后同路径无未知字段。

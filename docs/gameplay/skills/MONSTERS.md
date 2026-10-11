@@ -58,7 +58,7 @@
 
 普通A2、骷髅法师元素弹、投矛／投瓶从MissA1／A2准备；绿色瓶子按原八方向产生rancidgascloud及SubLoop时长，橙瓶当前没有有效Srv爆炸半径，不自造范围伤害。甲虫GH／死亡的buglightning与虫后死亡的queenpoisoncloud各为四个基方向×两条ChargedBolt路径；固有计时不覆盖精英电／冰／火词缀。
 
-本批源码已接移动序列回绕、飞行／栖息／集群AI，技能声明与AI启用条件分开保留。Windows最终包身份与有限冒烟统一见[第二幕](../monsters/ACT2.md#有限运行证据)和基线，不据本表宣称三难度完整战斗验收。
+本批源码已接移动序列回绕、飞行／栖息／集群AI，技能声明与AI启用条件分开保留。Windows包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，历史有限冒烟见[第二幕](../monsters/ACT2.md#有限运行证据)，不据本表宣称三难度完整战斗验收。
 
 ## 代码与归档
 

@@ -71,6 +71,8 @@ class RealmSession {
     // receives only original server messages. No scene/life/interaction gate:
     // chat also remains available while dead, in a panel, or changing areas.
     bool send_chat(std::string text, std::string receiver = {}, bool overhead = false);
+    bool send_chat_input(std::string text); // Client syntax and room/BNCS routing; local actions belong to app.
+    bool send_bnet_command(std::string text);
     bool chat_relation(uint32_t player, bool squelch, bool enabled);
     bool party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration);
     // Respond only to the current server invitation. Accept is TRADEBTN_PERFORM

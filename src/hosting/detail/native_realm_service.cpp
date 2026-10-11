@@ -1,6 +1,5 @@
 #include "native_realm_service.hpp"
 #include "hosting/character_creation.hpp"
-#include "hosting/character_rules.hpp"
 #include "hosting/native_game_wire.hpp"
 #include "persistence/save_file.hpp"
 #include "persistence/save_codec.hpp"
@@ -13,7 +12,7 @@ namespace d2x::hosting {
 using namespace net::protocol;
 NativeRealmService::NativeRealmService(NativeRealmHost &owner, RealmOutput realm, GameOutput game)
     : shared(owner), archives(owner.archives), root(owner.root), realmOutput(std::move(realm)), gameOutput(std::move(game)),
-      content(owner.content), portraits(owner.portraits), host(owner.host), rules(owner.rules) {
+      content(owner.content), portraits(owner.portraits), host(owner.host) {
     shared.peers.insert(this);
 }
 NativeRealmService::~NativeRealmService() { shared.peers.erase(this); }
@@ -156,7 +155,7 @@ void NativeRealmService::prepareReload() {
     reload = std::move(candidate);
 }
 NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved, bool singlePlayer) {
-    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), rules, shared.items);
+    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), shared.items);
     prepared.authority.settings.singlePlayer = singlePlayer;
     const auto staged = host.create(std::move(prepared.authority));
     try {

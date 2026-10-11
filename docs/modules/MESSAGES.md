@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-11。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[基线](../../BASELINE.md)。这是源码契约，不是逐包运行认证。
+更新：2026-10-11。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)。这是源码契约，不是逐包运行认证。
 
 ## 编码约定
 
@@ -111,7 +111,7 @@
 | 6B | EnterEnvironment | 1 | 无 |
 | 6D | Ping | 13 | u32 elapsed,latency,wardenResponse |
 
-68 version=13，签名DWORD依次ED5DCC50／91A519B6；认证票据和登录原始载荷不进入日志。14头顶／15广播和私聊使用type1、language0、extraLength0；广播receiver空，最大261字节，具名私聊最大276字节。分帧识别双字符串／扩展，暂不授权其他文本编码或非零扩展；私聊接收2／发送6及找不到／屏蔽5A结果，头顶5与76清除，见[NETWORK](NETWORK.md)。
+68 version=13，签名DWORD依次ED5DCC50／91A519B6；认证票据和登录原始载荷不进入日志。按当前1.13c D2Client前缀程序，14头顶使用type0，15广播使用type1、具名私聊使用type2，均为language0、extraLength0；宿主14仍兼容已有客户端的type1。广播receiver空，最大261字节，具名私聊最大276字节。分帧识别双字符串／扩展，暂不授权其他文本编码或非零扩展；私聊接收2／发送6及找不到／屏蔽5A结果，头顶5与76清除。通用斜杠命令由客户端分流到BNCS SID0E，不增加游戏包；规则与参考入口见[NETWORK](NETWORK.md#游戏内命令分流)。
 
 4F子命令：2取消交易、3接受、4同意、7重置、8报价金币均stub；18关闭仓库、19取金币、20存金币、23关闭方块、24合成已接。38子命令：0旅行／奖励加工、1商店、2赌博已接；未知子操作拒绝，不从父包推断全部NPC服务支持。
 

@@ -49,10 +49,13 @@ struct DiagnosticMonster {
     std::vector<Vec> skillPositions{};
     bool burrowed{},airborne{},holdPose{},skillMotion{};
     uint8_t aiPose{1};uint64_t poseUntil{};
+    unsigned admittedPlayers{1};uint64_t experienceBase{};
+    int minimumLife{},maximumBaseLife{};
     int64_t aiRegenerationBonus{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticSnapshot {
+    unsigned virtualPlayers{1};
     SystemMetrics stageMetrics{};
     uint64_t spatialTick{},spatialGeneration{},spatialQueries{},spatialCandidates{},spatialReturned{};
     size_t spatialUnits{},combatQueueDepth{};

@@ -271,6 +271,7 @@ std::optional<PersistentCharacter> GameHost::shop(PlayerBinding binding) const {
 
 namespace d2x {
 server::DomainResult<> GameHost::grantGold(PlayerBinding binding,uint32_t amount) { auto *slot=find(binding.game); if(!slot) return {server::DomainStatus::InvalidActor,{}}; auto result=slot->game->grantGold(binding.player,amount); if(result) publish(size_t(binding.game.slot)); return result; }
+server::DomainResult<> GameHost::setVirtualPlayers(PlayerBinding binding,unsigned count) {auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};auto result=slot->game->setVirtualPlayers(binding.player,count);if(result) publish(binding.game.slot);return result;}
 server::DomainResult<> GameHost::missileHit(PlayerBinding binding,EntityId source,uint32_t amount,DamageType type,bool returnFire) {
     auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
     auto result=slot->game->missileHit(binding.player,source,amount,type,returnFire);if(result) publish(size_t(binding.game.slot));return result;

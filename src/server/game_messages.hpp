@@ -49,7 +49,6 @@ struct PlayerSnapshot {
     GameHandle game;
     PlayerId recipient;
     uint64_t tick{}, revision{}, areaGeneration{};
-    uint64_t rulesFingerprint{};
     struct Motion {
         EntityId id;
         RegionId region{};

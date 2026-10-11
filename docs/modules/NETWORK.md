@@ -1,6 +1,6 @@
 # 联网模块
 
-更新：2026-10-10。本页维护原协议、客户端副本及既有原服证据；[基线](../../BASELINE.md)区分源码与包，[总计划](../architecture/MULTIPLAYER.md)维护功能顺序。当前原服与自研宿主共用RealmSession／Remote*完整客户端，传输为TCP或内存字节队列。历史2fcc439女巫30项已构建打包，另用原服验证心灵传动、传送、暴风雪、连锁、Hydra、冰封球、陨石、火墙及烈焰之径的列出路径。原服常规施法不回送本人4C／4D，也不以73重复创建这些地面程序；自研服务端已同步修正。原服既有未消费包和引擎启动限制仍有诊断，不作全协议或全技能认证。最终包、证据及限制统一见[女巫技能](../gameplay/skills/SORCERESS.md)；当前亚马逊30项及原Clt程序／7A／9D怪物装备已构建打包，列出的自研、保存往返及多重箭／导引箭／诱饵／女武神／闪电之怒原服代表路径为有限V2，其余仍V1；逐项源码和边界见[亚马逊](../gameplay/skills/AMAZON.md)。下文历史交付记录不认证当前包的新增路径。
+更新：2026-10-11。本页维护原协议、客户端副本及既有原服证据；[基线](../../BASELINE.md)维护实现范围，[开发指南](../development/BUILD_AND_RUN.md#运行包记录)维护包身份，[总计划](../architecture/MULTIPLAYER.md)维护功能顺序。当前原服与自研宿主共用RealmSession／Remote*完整客户端，传输为TCP或内存字节队列。历史2fcc439女巫30项已构建打包，另用原服验证心灵传动、传送、暴风雪、连锁、Hydra、冰封球、陨石、火墙及烈焰之径的列出路径。原服常规施法不回送本人4C／4D，也不以73重复创建这些地面程序；自研服务端已同步修正。原服既有未消费包和引擎启动限制仍有诊断，不作全协议或全技能认证。最终包、证据及限制统一见[女巫技能](../gameplay/skills/SORCERESS.md)；当前亚马逊30项及原Clt程序／7A／9D怪物装备已构建打包，列出的自研、保存往返及多重箭／导引箭／诱饵／女武神／闪电之怒原服代表路径为有限V2，其余仍V1；逐项源码和边界见[亚马逊](../gameplay/skills/AMAZON.md)。下文历史交付记录不认证当前包的新增路径。
 
 ## TCP/IP直连与自研宿主入口
 
@@ -20,7 +20,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 ## TCP/IP有限冒烟
 
-2026-10-10，本批源码v35／D2S v96，Windows Release目标d2x已构建；运行`build/bin/d2x.exe`、当前`assets/mpq2`，无打包，`dist/current`及独立服务端包仍保持基线v34。自研双端冒烟时的EXE SHA256在忽略目录`artifacts/tcpip-direct-smoke-20261010/identity.json`；随后补齐B4错误响应的35步增量构建成功。
+2026-10-10，本批源码采用D2S v96，Windows Release目标d2x已构建；运行`build/bin/d2x.exe`、当前`assets/mpq2`，无打包，`dist/current`及独立服务端包仍为此前佣兵批产物。自研双端冒烟时的EXE SHA256在忽略目录`artifacts/tcpip-direct-smoke-20261010/identity.json`；随后补齐B4错误响应的35步增量构建成功。
 
 用上述目录的host／guest隔离角色库，既有D2GS按用户要求关闭，原D2CS保留。Host监听实际`0.0.0.0:4000`，Join连接`127.0.0.1:4000`，没有新增6113监听。两个不同角色均到ProtocolReady，原城镇／HUD可显示，客人可见两人名册，真实原15／26广播聊天到达宿主，宿主两人诊断failures=0。客人GS计数确认6A／68／6C／6B直连生命周期；局前MCP仅为各自本机内存选择器。
 
@@ -82,6 +82,7 @@ UI登录记忆由应用层[OnlineLoginMemory](../../src/app/online_login_memory.
 | [online_commands.cpp](../../src/app/debug/online_commands.cpp) | 同一会话的菜单管道；accepted 与异步成功分开 |
 | [RealmPortraitCatalog](../../src/content/character/realm_portrait.hpp) | MPQ 原表动态重建外观编号 |
 | [RealmSession](../../src/network/realm_session.hpp) | SID／MCP／D2GS 状态机、认证、角色／房间、取票、加载、心跳与退局 |
+| [chat_command.hpp](../../src/network/chat_command.hpp) | 游戏内输入语法与本地／房间／账号命令分类；不执行玩法或网络发送 |
 | [TcpStream](../../src/network/tcp_stream.hpp) | Asio DNS／TCP、期限、有限队列、拥有线程 poll；关闭后旧回调不交付 |
 | [protocol/](../../src/network/protocol/wire.hpp) | 边界检查、framing、认证、D2GS 压缩与拆包 |
 | [Networking.cmake](../../cmake/Networking.cmake) | 固定 Asio 1.30.2／BNCSutil 快照，独立网络／协议／远端客户端目标；[来源／许可](../resources/THIRD_PARTY.md) |
@@ -89,6 +90,43 @@ UI登录记忆由应用层[OnlineLoginMemory](../../src/app/online_login_memory.
 网络公开头仅有项目值类型和标准库；Asio／WinSock／BNCSutil 留在实现，网络不依赖玩法、世界、存档、MPQ 或 GPU，保留 C++20／CMake Windows／Linux 路径。
 
 ## 会话与协议边界
+
+### 游戏内命令分流
+
+输入先由`network/chat_command`识别客户端命令与聊天语法，再由应用／RealmSession选择目标；不在游戏服务端解析通用斜杠命令，不增加私有D2GS包。名称不区分ASCII大小写；正文仍只支持255字节内可打印ASCII。已识别命令的参数或模式错误直接提示，不降级为广播或其他服务命令。
+
+| 输入 | 执行位置与范围 |
+| --- | --- |
+| `/nopickup` | 本进程客户端输入开关；开启后地面拾取需要Alt，不修改服务端物品资格，也不写角色存档 |
+| `/players N` | N为1–8，仅Single Player或本机TCP/IP Host；类型化宿主调用设置本实例虚拟人数，并通过原房间聊天发布确认。客人及账号Realm客户端明确拒绝 |
+| 普通文字、`!文字` | 当前房间D2GS 15广播、14头顶文字；头顶图形气泡仍未新增 |
+| `@角色名 文字` | 显式房间私聊，D2GS 15带接收角色；目标不在房间由服务端报告，不回退BNCS |
+| `/w`／`/m`／`/msg`／`/whisper` | 当前名册命中角色名则房间私聊，否则按`/w 接收者 正文`交BNCS；`*账号`明确走战网私聊 |
+| 剩余`/命令` | 通过现有账号连接发SID_CHATCOMMAND 0E，不穷举好友／查询／屏蔽等服务端命令；无BNCS连接明确拒绝 |
+
+`/fps`、`/framerate`、`soundchaosdebug`暂不实现，识别后明确提示。BNCS的04私聊、0A发送确认、12信息和13错误进入独立`accountChat`有界记录；游戏界面与房间消息合并显示，房间副本不持有账号聊天，退局不丢账号记录。账号重连清理账号记录；其他频道事件暂不消费，转发入队不代表命令执行成功。
+
+原版依据：D2MOO PlrMsg 14／15只消费已解析聊天，PLAYER_SetVirtualPlayerCount／GetPlayerCount与MONSTER_GetHpBonus／GetExperienceBonus提供虚拟人数及出生时人数规则。另核对本机1.13c D2Client RVA707F0的输入分流、70500的房间名册／BNCS私聊分支、6EC30的`/`／`!`／`@`前缀表；RVA70A94经D2Game ordinal10049设置本进程人数。原版允许范围之外的N会钳制，d2x输入目前明确要求1–8。D2MOO没有D2Client解析器，不能仅凭Storm声明推断转发规则。
+
+本实例虚拟人数初始1，不保存；出生人数取存活已入场人数和虚拟人数的较大值（1–8）。新敌怪生命与原始经验每额外人数加50%，先缩放原始经验再计算MPQ等级比例；梦魇／地狱原攻击的伤害、命中和元素时长沿D2MOO MonsterMode每额外人数加8/128；既有怪物不追溯修改，邪恶祭坛升级保留出生人数加成。掉落沿原NoDrop有效人数计算纳入虚拟人数，并保留怪物出生人数上限与真实队员贡献；宝箱使用当前有效人数。D2S仍为v96。
+
+原版D2Game虚拟人数是进程全局值；d2x改为实例状态，避免一个宿主同时存在的房间互相影响。
+
+### 命令分流有限冒烟
+
+2026-10-11，当前Windows Release包已合并角色准入指纹移除，并重新构建及复验；D2S仍为v96。使用`assets/mpq2`、现有调试管道及实际聊天输入，隔离角色／目录／管道／端口；未新增测试程序。最终包证据集中在忽略目录`artifacts/chat-routing/integrated`，实际包哈希由[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)维护。
+
+| 路径 | 有限观察 |
+| --- | --- |
+| 本地人数 | 单机及TCP/IP宿主设置1／8成功；最终包新生成普通沉沦魔出生人数1的原始经验18，人数8为81、最大生命9（原MPQ基础生命1–4）；改回1后已出生怪物仍为8。无效N／额外参数明确拒绝；`single-players.json`、`player-bonus.json` |
+| TCP/IP双客户端 | 127.0.0.1:4107，Hero宿主与ChatGuest；普通文字收到26/type1，四个角色私聊别名及`@`收到type2，`!`收到type5。私聊角色名不区分大小写；宿主通过聊天框设置8，加入者拒绝设置；`host-chat.json`／`guest-chat.json`、`lan-chat.png` |
+| 客户端拾取 | `/nopickup`生效；未按Alt点击地面药水不发16拾取包且物品仍为ground，按Alt后实际拾取、16计数增为1，物品转入库存；`pickup-blocked.json`／`pickup-after.json`、`pickup-blocked.png` |
+| PvPGN与自研独立服务端 | 两个隔离账号分别进入不同房间，`/whisper *账号`通过SID0E／0F跨房间收发；`/f l`及未知斜杠命令收到账号服务回复，Realm拒绝`/players`。同房间四个私聊别名改发D2GS15，SID0E计数不变；`realm-*-chat.json`、`realm-same-room-*.json`、`private-routing-counters.json`及两张Realm消息日志截图 |
+| 保存与清理 | 本地角色正常保存／退出，新进程重入姓名、等级、经验、资源、属性／剩余点数一致，准入问题0、虚拟人数1；`save-roundtrip.json`。独立服务端记录角色保存确认并优雅关闭；测试客户端与本轮启动的三个PvPGN后端均已关闭 |
+
+NoDrop公式与梦魇／地狱攻击倍率只完成参考／源码核对；随机掉落概率、全部难度／怪物组合、头顶气泡、原D2GS实连、跨机器及Linux未认证。
+
+### 会话生命周期
 
 公共方法在同一个客户端线程调用，底层持锁串行提交。私有 worker 每 10 毫秒服务传输、心跳、超时及有序副本更新；`tick()` 在客户端线程发布快照，也可立即服务一次。UI 停止绘制不停止网络。Idle／Failed／Cancelled 登录或注册；RealmSelection 选 Realm；CharacterSelection 创建／删除／选择角色或切换 Realm；Lobby 列表／建局／加入。列表取消保留 MCP，迟到回复不污染后续请求；游戏请求取消退役旧 MCP／GS 并重新取角色列表，已登录游戏则先原生退局；其他账号／角色等待取消结束会话。不自动重发角色消费操作。UI／command 不把 accepted 当作服务器成功；失败阶段的迟到输入不覆盖原连接错误。
 
@@ -208,7 +246,7 @@ D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／Player
 
 左上角同队头像读取MPQ Hireables下七职业原Icon、font6及姓名；本地原1.13c 0x5BA90／0x5B5A0核对56像素列距、TRANS50原PL2混色及46像素生命条，0x7F生命百分比在50／25阈值转绿／黄／红，未知生命不猜满值。本人不重复显示，首列x=15、姓名底线72／62交替；左侧面板或模态占用时隐藏，与佣兵／召唤图标避让。Z沿原Show Portraits切换整排显示，头像改动已随当前Release构建／打包，本批未专项复验队友头像；准确边界见佣兵专题。自动地图本人／NPC／队友／门户的原线形、颜色、公开位置及Show Party入口见[自动地图](../gameplay/world/AUTOMAP.md)。
 
-客户端同时消费原5A的Party5–9通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；自研权威与TCP有限证据见下段，最新包身份见[基线](../../BASELINE.md#当前运行包与验证边界)。
+客户端同时消费原5A的Party5–9通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；自研权威与TCP有限证据见下段，最新包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 自研服务端的`server/systems/social/party.cpp`唯一维护实例内队伍和有向邀请；原5E动作6–9经连接绑定解析真实GUID后提交权威命令。接受须有来自目标的有效邀请且本人尚未入队；新组从原ID3开始，加入已有组复用ID，清理不能继续接受的邀请；离队／断线撤销邀请，余一人解散。邀请不受空间距离限制，仍要求同局真实参与者。75／8B投影观察者相对状态及关系，8D同步本人和他人队号；7F玩家分支只向同队他人发送生命百分比／区域，宠物分支只向主人发送，90发送远处公开全局位置，不创建空间单位／揭示房间，晚加入与重新入局从当前权威投影恢复。关系更新保留队伍ID，不以聊天屏蔽重置组队。
 
@@ -216,7 +254,7 @@ D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／Player
 
 #### 组队有限证据
 
-2026-10-10 Windows Release、规则v32／D2S v96；该批客户端SHA256 `EAA939FC483BA099D1869BC92E57B416B358043C6FA36126BA7A1331543948B5`，独立服务端 `2912A744943BC2E95458E953ED0BB8335896C6887CF837703A89C05C6F49618C`。临时本机TCP宿主与两个独立客户端（6213／4100）验证实际P面板邀请／接受／离队、取消后的过期接受拒绝、100／42／20生命及血条颜色、跨区7F／90、本人尸体／复活、同队穿门保留主人门／离队拒绝、附近两名一级队员各12经验、断线解散及新进程保存恢复。管理换区／生成／击杀只准备条件，不认证自然通关。
+2026-10-10 Windows Release、D2S v96；该批客户端SHA256 `EAA939FC483BA099D1869BC92E57B416B358043C6FA36126BA7A1331543948B5`，独立服务端 `2912A744943BC2E95458E953ED0BB8335896C6887CF837703A89C05C6F49618C`。临时本机TCP宿主与两个独立客户端（6213／4100）验证实际P面板邀请／接受／离队、取消后的过期接受拒绝、100／42／20生命及血条颜色、跨区7F／90、本人尸体／复活、同队穿门保留主人门／离队拒绝、附近两名一级队员各12经验、断线解散及新进程保存恢复。管理换区／生成／击杀只准备条件，不认证自然通关。
 
 证据在`artifacts/party-server-20261010`，原图证据在`artifacts/party-client-20261010`；临时进程正常退出，无新增测试程序。独立EXE当批只构建打包，未重新连接PvPGN；NoDrop分布、同队光环／随从动态标记、八人竞争／背压、跨机器和Linux未专项验证。不能用该批结果认证后续战斗重构。
 
@@ -249,13 +287,13 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 ## 当前批交付
 
-当前野外物件批（2026-10-07）：用户授权全部源码完成后打包，后续明确实际操作验证交由用户。Windows Release首次58步及后续8步增量构建成功；dist/current已更新，EXE SHA256为`8445EBDB3A745F166F7A03F91CA766FBC57D3BECE16C08228E21F7F939DE467C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。对象族清单、静默ENDANIM共享模式投影、原模式声与钥匙／陷阱声、新星／雕像／毒云表现及未核实缺口见[物件](../gameplay/world/OBJECTS.md)。没有新增测试脚本、用例或专用程序，不改MPQ、原服掉落／概率、存档编码或规则指纹；本批按用户授权提交源码及文档，运行包与冒烟材料不纳入提交。
+当前野外物件批（2026-10-07）：用户授权全部源码完成后打包，后续明确实际操作验证交由用户。Windows Release首次58步及后续8步增量构建成功；dist/current已更新，EXE SHA256为`8445EBDB3A745F166F7A03F91CA766FBC57D3BECE16C08228E21F7F939DE467C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。对象族清单、静默ENDANIM共享模式投影、原模式声与钥匙／陷阱声、新星／雕像／毒云表现及未核实缺口见[物件](../gameplay/world/OBJECTS.md)。没有新增测试脚本、用例或专用程序，不改MPQ、原服掉落／概率或存档编码；本批按用户授权提交源码及文档，运行包与冒烟材料不纳入提交。
 
 有限冒烟使用包内EXE及既有管道：bomb／SkillTestSor创建ObjectSmoke，bomb2／NetCombatSor加入，关闭等级差限制（99）后两端ProtocolReady、nativeMapReady=true。SkillTestSor经原传送点进入Cold Plains，NetCombatSor在营地打开传送点菜单；最终采样均unavailableUnits=0、effectLimitations为空。这些采样未操作实际箱子、木桶或陷阱，不能记作物件效果通过。用户接手后正常请求quit，两客户端进程已结束，原服记录保存／角色解锁，一个stderr为空，另一个仅有既有选角肖像sohdbrstnhth.dcc缺组件报告，实际场景采样无不可用单位；本批没有可靠退出码记录。构建、只读MPQ审阅及有限运行材料在忽略目录artifacts/object-audit-20261007；后续手动观察步骤见物件文档。
 
 以下界面／祭坛及更早批为历史交付记录，旧哈希不代表当前包。
 
-此前界面／祭坛修正批（2026-10-07）：用户授权打包、简单冒烟并提交源码。Windows Release首次51步及后续修正增量构建均成功，无编译warning或error；dist/current已更新。最终EXE SHA256为`D1CDCC65190491878E39AFCB498D2F9B1131CE90E4BF80ECFD953F6163EEB82C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包括角色面板、HUD字体、交易持物、双击Join／详情、技能提示及树、祭坛图层／模式修正。页签改当前MPQ StrSklTree分片、font16白字及原分行，补Skill Choices Remaining；数字整体右移4原生像素；关闭恢复原圆圈斜杠，按SkillDesc末行空列动态选择预留格，MPQ没有独立关闭像素坐标字段，锚点仍取原UI布局。未新增测试程序、改D2S／规则指纹或复制MPQ，参考仓库、凭据、截图、保存和包不进入源码提交。
+此前界面／祭坛修正批（2026-10-07）：用户授权打包、简单冒烟并提交源码。Windows Release首次51步及后续修正增量构建均成功，无编译warning或error；dist/current已更新。最终EXE SHA256为`D1CDCC65190491878E39AFCB498D2F9B1131CE90E4BF80ECFD953F6163EEB82C`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包括角色面板、HUD字体、交易持物、双击Join／详情、技能提示及树、祭坛图层／模式修正。页签改当前MPQ StrSklTree分片、font16白字及原分行，补Skill Choices Remaining；数字整体右移4原生像素；关闭恢复原圆圈斜杠，按SkillDesc末行空列动态选择预留格，MPQ没有独立关闭像素坐标字段，锚点仍取原UI布局。未新增测试程序、改D2S或复制MPQ，参考仓库、凭据、截图、保存和包不进入源码提交。
 
 使用包内EXE及既有管道／正常UI：UiShrineRetry中bomb／SkillTestSor与bomb2／bbb完成房间详情Ready（经过时间、1–99等级、姓名／职业）及UI同一列表项双击加入，两端ProtocolReady、原地图就绪、对方visible=true；聊天服务器回显及三条入局消息已查看。角色面板白色姓名／数值、千位分隔及常驻灰底已查看。最终哈希包另入UiFinalReady，女巫三页分行、字号、白字、数字小格及两处预留关闭按钮已截图查看，实际点击圆圈斜杠关闭成功；两端再次ProtocolReady，同房两方向ASCII聊天实际收到0x26。原有效技能仍为1级，本轮未为检查双位数而消费技能点；加成／双位数全部状态仍待实机覆盖。最终两端正常quit、退出码均0，原服确认两角色CHARINFO保存及解锁；一个stderr为空，另一个仅有既有选角肖像sohdbrstnhth.dcc缺组件报告，实际场景没有不可用单位。
 
@@ -264,7 +302,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 失败样本保留：首包前端字体色查找不存在的Units/pal.pl2导致启动失败，改读当前MPQ实际Sky/pal.pl2后成功。参考服两次watchdog报告D2GS死锁并保存关闭游戏，相关客户端断线截图不计通过；确认没有游戏连接后复用既有Start.ps1恢复参考服，最终有限入局／操作成功。记录及截图在忽略目录artifacts/ui-shrine-smoke-20261007（join-details、joined、character-retry、tree-page1／2-final、tree-ui-final-cold、tree-closed-final、shrine-before、final-shrine-before／after及客户端日志）。此前交易成交证据见下段；本轮未重新验收完整交易、所有HUD悬停、技能加成状态、七职业、八人、跨机器、参考服长期稳定性或Linux。
 
 以下聊天／交易及多人基础批为历史记录，旧哈希不代表当前包。
-此前聊天／交易及共用菜单批（2026-10-07）：Windows Release构建成功，公共SceneView头依赖的41个目标重新编译／链接无编译warning或error，随后Ninja无待构建项。dist/current的EXE SHA256为`E22E7F70A5737618EA67914972AE895D4F289795788A237DCD806C3D691CA2C6`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包内程序、脚本及文档已更新，没有新增测试脚本／用例／专用程序、不复制MPQ、不改D2S编码或规则指纹、未提交Git。
+此前聊天／交易及共用菜单批（2026-10-07）：Windows Release构建成功，公共SceneView头依赖的41个目标重新编译／链接无编译warning或error，随后Ninja无待构建项。dist/current的EXE SHA256为`E22E7F70A5737618EA67914972AE895D4F289795788A237DCD806C3D691CA2C6`，与build/bin一致；协议DLL仍为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包内程序、脚本及文档已更新，没有新增测试脚本／用例／专用程序、不复制MPQ、不改D2S编码、未提交Git。
 
 本批使用包内EXE、既有调试管道／正常UI和本机原服，bomb／SkillTestSor与bomb2／bbb在trade1007g、trade1007h入局及互见，两端ProtocolReady／nativeMapReady／玩家visible=true。发起／接收菜单、蓝色悬停、NPC Warriv服务菜单及蓝色Talk已截图查看；NPC Cancel、邀请拒绝／取消和交易取消实际发送原请求。Shift放入hp2药水后对端收到只读page2副本；Shift取回后双方收到14／15、副本消失且对端Cursor为空。Gold原弹窗输入10，两端收到对应0x79；灰色／绿色按钮是对勾。双方点击同意后均收到0x77 action13，原服将药水放入bbb实际背包（新GUID37），钱包由112／0变为102／10。反向交易同药水和10金币，两端再次13，余额恢复112／0，药水回SkillTestSor（新GUID39），再经原Take／Place放回原格(3,2)。不恢复旧GUID或写入角色保存。正常退局重入trade1007h，双方仍互见，SkillTestSor钱包112、药水原格和bbb无该药水再次观察；bbb零金币在重入时原服不发送属性14，不把缺字段认作已知零。
 
@@ -274,7 +312,7 @@ TradeInviteView／SceneView只读状态并提交意图；交易关闭旧交互�
 
 以下多人基础批及更早包为历史交付记录，哈希不代表当前包。
 
-当前多人批（2026-10-07）：scripts/build.ps1 Windows Release成功（19步增量），远端物品生命周期补齐后另3步编译／链接成功，均无编译warning／error。dist/current的EXE SHA256为`694AD1CDFD6526A408C59E1D6E657ED9999FCA30D770E680F4EF149DA518443A`，与build/bin一致；协议DLL为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包内程序、脚本与文档已更新，不复制MPQ、不改D2S编码或规则指纹、未提交Git。
+当前多人批（2026-10-07）：scripts/build.ps1 Windows Release成功（19步增量），远端物品生命周期补齐后另3步编译／链接成功，均无编译warning／error。dist/current的EXE SHA256为`694AD1CDFD6526A408C59E1D6E657ED9999FCA30D770E680F4EF149DA518443A`，与build/bin一致；协议DLL为`E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。包内程序、脚本与文档已更新，不复制MPQ、不改D2S编码、未提交Git。
 
 使用既有调试管道操作正常UI与原服，bomb的SkillTestSor和bomb2的bbb完成：UI创建MultiOctGood、真实列表选中及MCP 0x06详情（普通／1–8人／真实角色和等级）后Join；两端ProtocolReady／nativeMapReady／playerDisplayed和scene.players对方visible=true，走／跑连续显示及最终原服位置、姓名悬停、远端Frozen Armor动作／效果已观察。原服卸装两件初始武器／盾牌后退局重入，无装备bbb仍可见；随后恢复原body4／5装备。最终包另以MultiOctPass验证名称不存在0x2A／错误密码0x29提示、修改后UI入局、双方走跑／施法、装备更新、退出清理全部远端物品、再加入重新互见与恢复装备；不存在房间的详情查询TimedOut后仍可查询现存房间Ready并加入。最终两个客户端正常退出码均0，D2GS记录双方解除角色锁及CHARINFO保存成功。没有新增测试脚本／用例／专用程序，证据入口为忽略目录artifacts/multiplayer-20261007（package-ready、package-walk／run／cast、naked-rejoin、package-peer-left／rejoin、detail-timeout、package-exitcodes和d2gs-final）。
 
@@ -306,7 +344,7 @@ NPC点击／靠近源码修正：原`interactionReady`只读最近原服坐标�
 
 传送点／怪物尸体消费：当前MPQ Objects的OperateFn=23条目均为Selectable1=0，但D2MOO `OBJECTS_OperateFunction23_Waypoint`接受mode=1／2开菜单。RemoteTown对这两个模式保留点击资格，普通物件继续核对Selectable及TARGETABLE；解锁历史、菜单和旅行仍等待原服。0x51物件分配记录动作接收时间；公共ActorAnimationCatalog按原FrameCnt1＋1个25Hz服务帧投影启动结束后的mode=2，复用原ON循环动画，并将同一显示模式交给公共光照。仅限Waypoint的表现衔接，不修改副本模式、碰撞或解锁位；缺少必要MPQ定义不推导完成状态。
 
-MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S与规则指纹不变；修正已入当前包；怪物有限验证见[第一幕证据](../gameplay/monsters/ACT1.md#有限运行证据)，第二幕传送点鼠标／发光仍未专项认证。
+MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／positionRevision并清除旧destination，事件仍保留原坐标与方向；其它动作的目标坐标语义保持原样。RemoteScene在死亡动作尚无新当前位置时停止路径并保留当前连续显示位置，收到尸体当前位置后由原位置校正收敛，不再先回退到旧行走采样。D2S不变；修正已入当前包；怪物有限验证见[第一幕证据](../gameplay/monsters/ACT1.md#有限运行证据)，第二幕传送点鼠标／发光仍未专项认证。
 
 技能／怪物只读资格：人物投影和 RemoteCombat 共用 skill_eligibility 的当前 MPQ 条件导入、Attack／CharStats 固有清单及学习／选择资格。未收到基础等级不按零授权学习，界面补齐原 reqstr／reqdex／reqvit／reqint 门槛；当前法力／装备提示仍使用已有只读输入，下一等级预览不写当前资格。RemoteCombat 集中 MonStats 敌我、原状态 alignment 及 corpseSel／hide／udead 目标校验，RemoteScene 的命中与锁定复用 monsterTargetEligible；声音、弹体、光照与 NPC 读取同一 onlineMonsterCorpse，不再各自判断死亡模式或漏剥离生命触发位。场景、owner、范围及地图绑定保留原协议校验，伤害、消耗和学习结果仍由 D2GS 决定。
 
@@ -322,7 +360,7 @@ MonsterMsg的0x69动作9使用当前坐标，RemoteWorld将它写入position／p
 
 删除无原服生产者的旧法杖插入面板、状态和资源加载，缺失原服插杖流程仍明确未实现；删除旧本地调试输入、旧 CLI 别名、旧地图／动画／音效重复缓存及单机切换分支。LocalCast 名称表示本人施法显示衔接，保留原服预测／校正用途，不是本地结算。测试 pause/resume、在线 command 和独立资源／存档工具保留。
 
-CharacterSaveData 定义移到 persistence/character_save.hpp，字段与 D2S v96 编码不变，不更改格式、语义或规则指纹。原 MPQ、reference、旧压缩包、mvp 和用户文件保留；参考源码／原表／资源不纳入提交。完整依赖图见[架构](../architecture/OVERVIEW.md)。
+CharacterSaveData 定义移到 persistence/character_save.hpp，字段与 D2S v96 编码不变，不更改格式或语义。原 MPQ、reference、旧压缩包、mvp 和用户文件保留；参考源码／原表／资源不纳入提交。完整依赖图见[架构](../architecture/OVERVIEW.md)。
 
 Windows Release 构建及 d2x／d2x_assets 链接成功；构建图无 d2x_session，两个可执行文件均未发现 GameSession／Simulation／SkillRuntime／InventoryService 符号。2026-10-07 已更新 dist/current，实际包内 EXE SHA256 为 `A7B767F8AFE9E0195F64EFC132BB0A3B8604CDA0CE86985A3B879520AE58B3E2`，协议 DLL 为 `E96C38DE1911BF24292EE726BB1CF862E7D1CF0D0DF816EDE565A213667B0CBD`。证据在忽略的 artifacts/trash/dependency-cleanup-20261007，使用既有程序／调试管道／本机参考服，不编写测试脚本、用例或专用程序。
 

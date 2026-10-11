@@ -15,6 +15,7 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::MissileHit, "missile-hit", AdminArgumentKind::Missile, true},
         {AdminOperation::DamagePlayer, "player-damage", AdminArgumentKind::Amount, true},
         {AdminOperation::GrantGold, "grant-gold", AdminArgumentKind::Amount, true},
+        {AdminOperation::SetPlayers, "set-players", AdminArgumentKind::Amount, true},
         {AdminOperation::GrantExperience, "grant-experience", AdminArgumentKind::Amount, true},
         {AdminOperation::SpawnItem, "item-spawn", AdminArgumentKind::Spawn, true},
         {AdminOperation::SpawnMonster, "monster-spawn", AdminArgumentKind::Spawn, true},

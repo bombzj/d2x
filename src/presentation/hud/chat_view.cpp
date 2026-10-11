@@ -101,14 +101,18 @@ std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) 
     }
     return result;
 }
-void ChatView::update(const OnlineSocialView &social) {
-    if (!ready_ || sequence_ == social.chatSequence) return;
+void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &account) {
+    if (!ready_ || (sequence_ == social.chatSequence && accountSequence_ == account.chatSequence)) return;
     sequence_ = social.chatSequence;
+    accountSequence_ = account.chatSequence;
     const auto oldRows = rows_.size();
     const auto oldFirst = messages_.empty() ? 0 : messages_.front().sequence;
     messages_.clear(); rows_.clear(); unavailable_ = 0;
-    for (auto it = social.chat.rbegin(); it != social.chat.rend(); ++it) {
-        const auto &message = *it;
+    std::vector<std::pair<const OnlineChatMessage *,bool>> transcript;
+    for(const auto &message:social.chat) transcript.emplace_back(&message,false);
+    for(const auto &message:account.chat) transcript.emplace_back(&message,true);
+    for (const auto &[source,battleNet] : transcript) {
+        const auto &message = *source;
         if (message.language != 0 || (message.type != 1 && message.type != 2 && message.type != 3 && message.type != 4 && message.type != 6) ||
             message.messageColor >= 13 ||
             !std::all_of(message.name.begin(), message.name.end(), [](auto c) { return c >= 32 && c < 127; })) {
@@ -119,8 +123,9 @@ void ChatView::update(const OnlineSocialView &social) {
         // screenshot establishes dark-gold names, independently of that byte.
         if ((message.type == 1 || message.type == 2 || message.type == 6) && !message.name.empty()) {
             const std::string name(message.name.begin(), message.name.end());
-            glyphs = plain(name + ": ", 4);
+            glyphs = plain((battleNet ? (message.type==6 ? "To " : "From ") : "") + name + ": ", 4);
         }
+        if(battleNet && message.type==4) glyphs=plain("[Battle.net] ",4);
         uint8_t color = message.messageColor;
         bool decoded = true;
         for (size_t index = 0; index < message.text.size(); ++index) {
@@ -135,7 +140,7 @@ void ChatView::update(const OnlineSocialView &social) {
             glyphs.push_back({character, color});
         }
         if (!decoded) { ++unavailable_; continue; }
-        Message displayed{message.sequence, message.receivedMilliseconds, glyphs, wrap(glyphs, body().width)};
+        Message displayed{message.sequence*2+unsigned(battleNet), message.receivedMilliseconds, glyphs, wrap(glyphs, body().width)};
         rows_.insert(rows_.end(), displayed.lines.begin(), displayed.lines.end());
         messages_.push_back(std::move(displayed));
     }
@@ -146,16 +151,18 @@ void ChatView::update(const OnlineSocialView &social) {
         const auto &format=partyNotices_[notice.parameter];
         if(name.empty() || format.empty()) {++unavailable_;continue;}
         const auto glyphs=plain(notice.parameter==8?format+name:name+format,notice.color);
-        messages_.push_back({notice.sequence,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
+        messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
     }
-    std::sort(messages_.begin(),messages_.end(),[](const auto &a,const auto &b){return a.sequence>b.sequence;});
+    std::sort(messages_.begin(),messages_.end(),[](const auto &a,const auto &b){
+        return a.receivedMilliseconds!=b.receivedMilliseconds?a.receivedMilliseconds>b.receivedMilliseconds:a.sequence>b.sequence;
+    });
     rows_.clear();
     for(const auto &message:messages_) rows_.insert(rows_.end(),message.lines.begin(),message.lines.end());
     // Preserve an older reader's visible anchor when new messages arrive.
     if (logOpen_ && scroll_ && oldFirst && oldRows) {
         size_t added = 0;
         for (const auto &message : messages_) {
-            if (message.sequence <= oldFirst) break;
+            if (message.sequence == oldFirst) break;
             added += message.lines.size();
         }
         scroll_ += added;
