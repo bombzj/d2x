@@ -19,7 +19,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     using Trap=server::MonsterRule::Trap;
     const std::map<std::string,Trap,std::less<>> types{{"Trap-Missile",Trap::Missile},{"Trap-Poison",Trap::Poison},{"Trap-Nova",Trap::Nova},{"Trap-RightArrow",Trap::RightArrow},{"Trap-LeftArrow",Trap::LeftArrow},{"Trap-Melee",Trap::Melee},{"DesertTurret",Trap::Turret},{"TrappedSoul",Trap::Soul}};
     const auto type=types.find(record->ai);if(type==types.end()) return {};
-    WorldCatalog world(archives,request.difficulty);const auto &stats=data.tables.at("monstats"),&levels=data.tables.at("monlvl"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;const auto &stats=data.tables.at("monstats"),&levels=data.tables.at("monlvl"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     const std::string suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
     server::MonsterRule rule;rule.trap=type->second;rule.environmentController=!record->killable;rule.nativeClass=record->index;
     // MonsterSpawn gives blank-level trap rows the current monster-region level.

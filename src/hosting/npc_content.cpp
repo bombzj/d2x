@@ -4,6 +4,7 @@
 #include "content/string_table.hpp"
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 namespace d2x {
 namespace {
 std::string speechKey(std::string_view value) {
@@ -45,6 +46,8 @@ server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &inde
         return found==indexes.end()?std::nullopt:std::optional<uint16_t>{found->second};
     };
     server::NpcRule rule; rule.code = record.id; rule.nativeClass = record.index; rule.size = record.collisionSize;
+    if(record.alignment<0 || record.alignment>2) throw std::runtime_error("Invalid MPQ NPC alignment");
+    rule.alignment=UnitAlignment(record.alignment ? 3-record.alignment : 0);
     rule.interactable=record.interact;rule.walkVelocity=record.walkVelocity.value_or(0);rule.movement=record.movementRule();
     
     rule.vendor = data.vendors.contains(rule.code); rule.repair = npcCanRepair(rule.code);

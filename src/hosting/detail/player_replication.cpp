@@ -10,11 +10,14 @@ void NativeRealmService::publishPlayers() {
     std::set<EntityId> present;
     std::vector<Bytes> packets;
     const auto local=host.read(*binding);
+    if(!local) return;
+    std::map<PlayerId,EntityId> actors;
     std::set<EntityId> allies;
     for (const auto id : participants) {
         const auto view = host.read({binding->game, id});
         if (!view || !view->entered) continue;
         present.insert(view->actor.id);
+        actors.emplace(id,view->actor.id);
         const auto identity = std::pair<uint64_t, std::string>{uint64_t(view->level), view->name};
         const auto found = peer.roster.find(view->actor.id);
         if (found == peer.roster.end() || found->second != identity) {
@@ -56,6 +59,24 @@ void NativeRealmService::publishPlayers() {
             } else peer.partyPositions.erase(view->actor.id);
         }
     }
+    // PlayerList broadcasts directed flags, including relations between two
+    // other players. Rebuild these after all roster identities on late join.
+    for(const auto &[id,actor]:actors) {
+        const auto view=host.read({binding->game,id});
+        if(!view) continue;
+        for(const auto &[other,relation]:view->socialRelations) {
+            const auto target=actors.find(other);
+            if(target==actors.end() || target->second==actor) continue;
+            const auto key=std::pair{actor,target->second};
+            const auto sent=peer.relations.find(key);
+            if(sent!=peer.relations.end() && sent->second==relation.flags) continue;
+            packets.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){
+                out.u32(uint32_t(actor.value));out.u32(uint32_t(target->second.value));out.u16(relation.flags);
+            }));
+            peer.relations[key]=relation.flags;
+        }
+    }
+    std::erase_if(peer.relations,[&](const auto &p){return !present.contains(p.first.first) || !present.contains(p.first.second);});
     std::erase_if(peer.social,[&](const auto &p){return !present.contains(p.first);});
     std::erase_if(peer.partyVitals,[&](const auto &p){return !allies.contains(p.first);});
     std::erase_if(peer.partyPositions,[&](const auto &p){return !allies.contains(p.first);});

@@ -19,8 +19,11 @@ class System {
     State state_;
     const Ports ports_;
   struct Entry { UnitRef unit; Vec position; };
-  struct Region { std::map<std::pair<int,int>,std::vector<Entry>> cells; int maximumSize{}; };
+  struct Region { std::map<int,std::map<int,std::map<EntityId,Entry>>> cells; int maximumSize{}; };
+  struct Location { RegionId area; int x{}, y{}; uint64_t generation{}; };
   std::map<RegionId,Region> regions_;
+  std::map<EntityId,Location> locations_;
+  void erase(EntityId, const Location &);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

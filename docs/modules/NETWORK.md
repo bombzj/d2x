@@ -227,7 +227,7 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 
 空间单位与名册分离：0x0A不退出名册，0x5C移除成员及其关系；离开视野不会生成幽灵角色，也不清除未收到原删除的尸体归属。本人换幕保留本局名册／关系／聊天，退局／断线／新局清空。名册暂存上限64（缓冲保护，不是允许64人游戏），关系4096，聊天256条。诊断以nameBytes／textBytes保留原语言字节，避免将原编码误当UTF-8；组队按钮仅使用已核实的邀请状态，未授予敌对资格，不算M4完成。
 
-聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、非可打印ASCII及超过255字节的文本。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：type=1／language=0、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；头顶气泡的图形绘制未新增。自研宿主敌意、BNCS频道命令、表情与中文编码仍未实现。
+聊天发送源码：`RealmSession::send_chat`要求ProtocolReady及当前连接／游戏／本人身份，跨区、死亡、库存／NPC面板不作为聊天禁用资格；拒绝空白、非可打印ASCII及超过255字节的文本。`protocol::game_chat`编码0x15广播／具名私聊或0x14头顶消息：type=1／language=0、文本NUL、收件人NUL、扩展长度0；末尾额外长度字节依据`reference/d2moo/source/D2Net/src/Server.cpp::SERVER_GetClientPacketSize`，不能仅发两个字符串。D2Game `PLAYER/PlrMsg.cpp::Rcv0x15_HandleChatMessage`由服务端真实角色名生成0x26，并按原关系／交互限制转发，发送者也等真实回显；不插本地消息或伪造ACK，不自动重试，不停止原服移动／施法。接收分帧限制姓名15／文本255字节，支持跨包与同帧后续包。原0x26的unitType=2／GUID=0不代表发送者GUID；`nNameColor`在普通玩家广播中是发送者等级，不直接作为字体色。原类型1／2／3／4／5／6／7按原字节保留。独立服务social按不区分大小写角色名路由私聊，接收者type2、发送者type6真实回包；找不到角色／被屏蔽分别回原5A/type4／13。原5D/action2(ignore)与3(squelch)更新方向关系，75／8C投影；广播沿原PlrMsg的聊天屏蔽及交易双方限制。14头顶消息按D2Chat原公式125+8×长度(最多254)帧保留，26/type5发送给可见且未屏蔽玩家，晚入可见也投影，到期76清除。客户端保留world.social.hover；头顶气泡的图形绘制未新增。BNCS频道命令、表情与中文编码仍未实现。
 
 聊天界面依据与源码：用户提供原版底部输入、左上回显及M消息日志三张截图，历史最新消息在上、真实角色名深金色／普通文字白色、标题Message Log、底部Close、右侧滚动条。OpenDiablo2 `d2game/d2player/key_map.go`核对Enter／M，`d2common/d2resource/resource_paths.go`及`d2core/d2gui/box.go`／`layout_scrollbar.go`核对boxpieces／textslid原帧用途。已只读导出当前MPQ：boxpieces为22帧14×15，textslid为17帧12×13；TBL的strMsgLog／strClose存在；对照截图字形和尺寸选font8消息、font16输入／标题，字宽沿原TBL。`presentation/hud/chat_view.*`独立维护只读消息、编辑草稿、光标及滚动；边框步距从原帧尺寸读取，位置按截图800像素基准适配当前HUD尺度。Sky原PL2十三种字体索引变换按需上传，白色保留原索引；messageColor控制正文，姓名色独立于等级字段，支持原FF c0–c9颜色串（本地d2bs Print用例补证）。标题／Close动态读当前MPQ，不把截图或参考资源导入产品。原截图及原资源核对仅保留在忽略目录artifacts/chat-ui-20261007。
 
@@ -243,17 +243,27 @@ Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Es
 
 ### 组队邀请客户端
 
-`presentation/hud/party_view.*`只读原名册，P／底栏Party Screen开关左侧面板，Esc／原关闭按钮关闭。原图来自当前MPQ的menu/party、partybuttons、partyboxes、partybar及panel/buysellbtn；font8、职业名、Level、Invite／cancel／Accept／Leave／Yourparty及Levels.LevelName读原字体、PL2与TBL。本人姓名单列顶部，其余最多七名他人不依赖空间可见性；本地原1.13c D2Client的Party.cpp与用户2026-10-10截图核对38像素行距、按partyId分组及原分隔条。相同且非FFFF的本人／对方partyId显示绿色姓名／职业／等级、“In your party”及原0x7F区域。顶部Leave提交本人GUID。敌意、听见／屏蔽和尸体许可图标仍只显示，不据图标授予权限；其他关系色与操作未完整实现。
+`presentation/hud/party_view.*`只读原名册，P／底栏Party Screen开关左侧面板，Esc／原关闭按钮关闭。原图来自当前MPQ的menu/party、partybuttons、partyboxes、partybar及panel/buysellbtn；font8、职业名、Level、Invite／cancel／Accept／Leave／Yourparty及Levels.LevelName读原字体、PL2与TBL。本人姓名单列顶部，其余最多七名他人不依赖空间可见性；本地原1.13c D2Client的Party.cpp与用户2026-10-10截图核对38像素行距、按partyId分组及原分隔条。相同且非FFFF的本人／对方partyId显示绿色姓名／职业／等级、“In your party”及原0x7F区域。顶部Leave提交本人GUID。左侧Hostile及右侧Ignore／Squelch提交原5D/action4／2／3；Ignore阻止对方听见自己，Squelch屏蔽对方发来的聊天。图标与提示取MPQ，Hostile原帧4／6、Ignore0／2、Squelch8／10，按下取相邻帧；只在75／8C确认后改变状态。Hostile要求城镇内、双方基础等级至少9，禁用提示取原TBL；当前partyboxes.dc6为18帧，红色禁用直接使用原16／17帧，不额外生成调色替身。敌意行的姓名／职业／等级使用Sky PL2原红色font8，优先于同队绿色，邀请按钮与本人标题保持各自原字体。硬核尸体许可未接，其他关系行色仍未完整实现。
 
 D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／PlayerLeftParty`及`PlayerList::sub_6FCBAA20`核对相对状态：0提供Invite、2提供Accept、4提供Cancel，同队不再提供邀请按钮。RealmSession.party_action发送原六字节0x5E＋action6／7／8／9＋目标GUID；发送前复验ProtocolReady、连接／游戏代次、真实名册身份、当前邀请状态或本人非FFFF队伍ID。鼠标同项按下／释放匹配GUID、动作和本局代次；失焦、模态输入、重入清除按下状态。发送不改按钮／partyId，入队、离队及Cancel都等真实75／8B／8D；无自动接受、重试或本地成功消息。
 
 左上角同队头像读取MPQ Hireables下七职业原Icon、font6及姓名；本地原1.13c 0x5BA90／0x5B5A0核对56像素列距、TRANS50原PL2混色及46像素生命条，0x7F生命百分比在50／25阈值转绿／黄／红，未知生命不猜满值。本人不重复显示，首列x=15、姓名底线72／62交替；左侧面板或模态占用时隐藏，与佣兵／召唤图标避让。Z沿原Show Portraits切换整排显示，头像改动已随当前Release构建／打包，本批未专项复验队友头像；准确边界见佣兵专题。自动地图本人／NPC／队友／门户的原线形、颜色、公开位置及Show Party入口见[自动地图](../gameplay/world/AUTOMAP.md)。
 
-客户端同时消费原5A的Party5–9通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；自研权威与TCP有限证据见下段，最新包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+右上角敌意提示使用当前MPQ `panel/hostilepic.dc6`，只由另一名仍在名册中的玩家→本人关系位8驱动；本人单向对别人宣战不代替该方向。原1.13c D2Client RVA285C0调用9DB90，按W−58、底部基线45（自动地图开启为115）及原TRANS50绘制；D2X沿当前HUD尺度与活动幕PL2显示，右侧面板遮住角落时隐藏，左侧Party等面板仍可显示，不从点击意图推断敌意。静态证据保留在忽略目录`artifacts/hostility-display-20261012/native-hostile-ui.txt`。
+
+玩家悬停姓名使用独立drawPlayerLabel入口：按用户原版截图，无论关系都绘制深红色半透明背景；红色取当前Sky PL2的字体RGB，背景走活动幕原矩形混合表。已确认本人→目标敌意时用原红色font16，其他关系保持原普通字体；姓名沿收到的真实type0单位，友方交易目标与敌方战斗目标都走该入口；NPC／物件／尸体仍用各自标签。背景颜色依据截图适配，并未静态恢复原版玩家标签全部布局／颜色分支。Windows Release已构建并更新dist/current，有限运行结果见下段；未提交Git。
+
+2026-10-12敌意表现有限冒烟：最终包EXE SHA256 `12D30F8EA7C3D25C6EAF03BB54FB655364CB4148F19376E7780FE75F0CAEE49C`，当前原MPQ、普通难度，两名隔离12级女巫SmokeHost／SmokeGuest，经127.0.0.1:4400真实TCP/IP连接。截图核对Party名称／职业／等级红字而Invite保持白色，右上角原骷髅及自动地图开启后下移，玩家姓名红色半透明底、友方白字／敌方红字；本人取消敌意后Party回白但仍有对方→本人的骷髅，对方再取消后图标消失。双方正常退局，宿主失败计数0。证据在忽略目录`artifacts/hostility-display-20261012/run-02`，包含双向消息、状态、截图及实际EXE身份。首轮run-01发现友方交易目标仍走通用黑底标签，已修正并用最终包重新核对；旧截图不能认证最终包。未复验原版客户端、其他幕／难度、全部面板遮挡、PvPGN或Linux，红底颜色／完整布局仍以原版人工比对为准；未新增测试脚本／用例／专用程序。
+
+客户端消费原5A的Party3–9及type16敌意冷却通知，按当前MPQ文案、颜色和收到时刻进入聊天顶部及消息日志。type2／3按sysmsg3／4（有账号名时3a／4a）显示入退局和怪物强弱提示，type6玩家击杀使用sysmsg7；只消费真实事件，不从名册变化生成通知。宿主仅在真实入场／退场提交时广播，晚入名册不会重播历史提示；“minions weaken”不触发对已生成怪物重新缩放生命，人数系数仍在生成准入时捕获。原图及静态证据保留于忽略目录`artifacts/party-client-20261010`；自研权威与TCP有限证据见下段，最新包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 自研服务端的`server/systems/social/party.cpp`唯一维护实例内队伍和有向邀请；原5E动作6–9经连接绑定解析真实GUID后提交权威命令。接受须有来自目标的有效邀请且本人尚未入队；新组从原ID3开始，加入已有组复用ID，清理不能继续接受的邀请；离队／断线撤销邀请，余一人解散。邀请不受空间距离限制，仍要求同局真实参与者。75／8B投影观察者相对状态及关系，8D同步本人和他人队号；7F玩家分支只向同队他人发送生命百分比／区域，宠物分支只向主人发送，90发送远处公开全局位置，不创建空间单位／揭示房间，晚加入与重新入局从当前权威投影恢复。关系更新保留队伍ID，不以聊天屏蔽重置组队。
 
-同队回城门在接受交互与目的地准备完成时复验队伍资格，队友穿门不关闭主人的门；只有主人从城镇返回野外才关门。death按同区域、活人、距死亡怪物80格以内筛队员，沿SUnitDmg的原89/256额外经验及等级比例分配原始经验，再套每位队员MPQ经验比例和装备加成，背压重试不重复发奖；loot的NoDrop人数系数采用同区域存活队员数，仍受怪物准入人数上限。友方圣骑士光环按原MPQ滤镜、半径和碰撞作用于同队玩家／随从。任务按各事件冻结资格和共享范围，规则及有限证据见[任务系统](../gameplay/quests/SYSTEM.md#资格准备与提交)。敌意／PvP、硬核尸体loot权限、完整房间邻接／特殊任务事件及其余技能的组队例外仍未完成。
+同队回城门在接受交互与目的地准备完成时复验队伍资格，队友穿门不关闭主人的门；只有主人从城镇返回野外才关门。death按同区域、活人、距死亡怪物80格以内筛队员，沿SUnitDmg的原89/256额外经验及等级比例分配原始经验，再套每位队员MPQ经验比例和装备加成，背压重试不重复发奖；loot的NoDrop人数系数采用同区域存活队员数，仍受怪物准入人数上限。友方圣骑士光环按原MPQ滤镜、半径和碰撞作用于同队玩家／随从。任务按各事件冻结资格和共享范围，规则及有限证据见[任务系统](../gameplay/quests/SYSTEM.md#资格准备与提交)。硬核尸体loot权限、耳朵战利品、完整房间邻接／特殊任务事件及其余技能的组队例外仍未完成。
+
+服务端敌意由social唯一持有，开启时双向设置位8并传播给目标队伍中等级合格成员；关闭只清除发起者到目标的方向。开启关闭本人的回城门，同队时退出队伍；同一对象重新开启需60秒，发起者回城门／传送点菜单分别有5／10秒限制，沿原真实时间而非暂停的游戏帧计时。75为接收者到行玩家的关系，8C包含所有已入场玩家对，晚加入也补齐。伤害与技能取攻击者方向，非队友不会自动成为敌人；PvP结算范围见[武器与PvP](../gameplay/combat/WEAPON_EFFECTS.md#pvp伤害)。
+
+本轮敌意按钮、入退局／击杀提示、聊天屏蔽及PvP取得双客户端有限观察；资源准入修正、实际路径及未覆盖项集中见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)。下面旧组队记录不认证全部新增行为。
 
 #### 组队有限证据
 

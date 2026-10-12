@@ -33,10 +33,11 @@ class RemoteTown {
     void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, const MapCell &);
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
     std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
-    std::unique_ptr<WorldCatalog> catalog_;
+    std::shared_ptr<const WorldCatalog> catalog_;
     const Map *map_{};
     std::optional<NativeActLayout> layout_;
     std::unique_ptr<NativeMapGenerator> nativeMap_;
+    bool nativeTerrainDirty_{true};
     std::unique_ptr<Map> nativeTerrain_;
     std::optional<size_t> nativePlayerRoom_;
     std::optional<OnlinePoint> nativePlayerPosition_;

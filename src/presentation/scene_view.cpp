@@ -109,8 +109,8 @@ void SceneView::chatSent(bool accepted) {
     chat_.sent(accepted);
     view_.chatInputOpen = chat_.inputOpen();
 }
-void SceneView::updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game) {
-    if (party_.update(social, self, game)) view_.partyOpen = false;
+void SceneView::updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town) {
+    if (party_.update(social, self, game, town)) view_.partyOpen = false;
     // D2Client 1.13c RVA 0x9DB90: another roster player's directed flag 8 toward self.
     constexpr uint16_t hostileFlag = 8;
     incomingHostility_ = self != UINT32_MAX && std::any_of(social.relationships.begin(), social.relationships.end(),

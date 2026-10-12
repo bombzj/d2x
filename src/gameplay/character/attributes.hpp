@@ -42,6 +42,7 @@ struct CharacterAttributes {
     int blockFactor = 0;
     int velocityPercent = 0;
     float manaRegen = 0;
+    int uncappedColdResist{},uncappedPoisonResist{};
 };
 float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus);
 void mergeCharacterModifiers(CharacterModifiers &target, const CharacterModifiers &source);

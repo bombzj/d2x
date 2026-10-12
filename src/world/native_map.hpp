@@ -29,10 +29,14 @@ class NativeMapGenerator {
         std::vector<size_t> rooms;
     };
     std::map<int, Level> levels_;
+    // Global game-tile buckets; only allocated rooms participate in lookups.
+    std::map<std::pair<int,int>, std::vector<size_t>> roomBuckets_;
+    std::map<std::pair<int, uint32_t>, std::shared_ptr<RetailTileSelector>> selectors_;
     std::map<std::string, MapData> patterns_;
     std::set<int> allocating_;
     NativeRoomActivation activation_;
     bool failed_{};
+    uint64_t terrainRevision_{};
     const MapData &pattern(const std::string &);
     void ensureLevel(int);
     std::vector<size_t> near(size_t);
@@ -57,6 +61,7 @@ class NativeMapGenerator {
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }
     const auto &activation() const { return activation_; }
+    uint64_t terrainRevision() const { return terrainRevision_; }
     bool valid() const { return !failed_ && tiles_.valid() && activation_.valid(); }
 };
 } // namespace d2x

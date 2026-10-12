@@ -37,6 +37,7 @@ struct NativeRealmHost {
     GamePacketObserver gamePacketObserver;
     std::map<std::string, HostedGame> games;
     std::map<GameHandle, std::map<RegionId, GeneratedArea>> terrain;
+    std::map<std::pair<GameHandle, uint64_t>, std::unique_ptr<AreaGenerator>> areaPreparations;
     std::set<NativeRealmService *> peers;
     explicit NativeRealmHost(Archives &a, std::filesystem::path directory) : archives(a), root(std::move(directory)) {}
     void initialize();

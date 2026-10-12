@@ -139,4 +139,7 @@ class WorldCatalog {
     std::vector<std::string> typeLibraries(int levelType) const;
     std::vector<std::string> terrainLibraries(int levelType, uint32_t mask) const;
 };
+// Immutable MPQ-derived records, retained by the mounted archive set and keyed
+// by difficulty. Generation seeds and room state never enter this cache.
+std::shared_ptr<const WorldCatalog> sharedWorldCatalog(Archives &, int difficulty = 0);
 } // namespace d2x

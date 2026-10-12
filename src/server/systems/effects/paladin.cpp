@@ -62,7 +62,7 @@ CharacterModifiers System::stateModifiers(EntityId id,int state,uint64_t tick) c
 }
 DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinition &a,EntityId id,uint64_t duration,bool owner,bool healing,EntityId emitter) {
     const auto *caster=ports_.players.find(actor.player);if(!caster || !caster->rules.skills) return {DomainStatus::InvalidActor,{}};
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto recipientView=participants.find(id);
     const auto source=emitter?participants.find(emitter):combat::ParticipantView{caster,nullptr};
     if(!recipientView.aliveIn(actor.area) || (id!=source.id() &&
@@ -73,8 +73,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
     spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;
     const PlayerState *recipient=recipientView.player;
     if(recipient) {
-        if(!recipient->entered || recipient->area!=actor.area || recipient->persistent.player.hp<=0 ||
-           (recipient!=caster && (a.hostile || !ports_.social.sameParty(actor.player,recipient->player)))) return {DomainStatus::InvalidActor,{}};
+        if(!recipient->entered || recipient->area!=actor.area || recipient->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
         auto next=state_;auto &r=next.players[id];
         if(r.states.size()>=128 && !r.states.hasState(spec.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
         if(spec.state.id>=0) r.states.apply(spec,actor.tick);
@@ -142,7 +141,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
 }
 StepStatus System::advancePaladinAuras(uint64_t tick) {
     bool blocked=false;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     for(const auto &[key,p]:ports_.players.all()) {
         const ActorContext actor{key,p.actor,p.area,ports_.areas.at(p.area).generation,0,tick};
         auto &cycle=paladinCycles_[p.actor];
@@ -171,8 +170,8 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
             cycle.occurrence=++paladinOccurrence_;
             cycle.targets={p.actor};cycle.target=0;
             const auto &a=cycle.aura;
-            if(!a.hostile && (a.filter&1)) for(const auto &[peerId,peer]:ports_.players.all()) {
-                if(peerId==key || !peer.entered || peer.area!=p.area || peer.persistent.player.hp<=0 || !ports_.social.sameParty(key,peerId) ||
+            if((a.filter&1) && !(a.filter&(4|0x1000))) for(const auto &[peerId,peer]:ports_.players.all()) {
+                if(peerId==key || !peer.entered || peer.area!=p.area || peer.persistent.player.hp<=0 || (a.hostile?(area.town || !participants.canHarm(p.actor,peer.actor)):!ports_.social.sameParty(key,peerId)) ||
                    !area.activation.nearby(p.position,peer.position) || !withinSkillArea(p.position,peer.position,a.radius,SkillAreaCoordinates::Continuous)) continue;
                 if((a.filter&0x200) && !area.collision.missileSegment(p.position,peer.position,{0x0805,1})) continue;
                 cycle.targets.push_back(peer.actor);
@@ -222,7 +221,7 @@ StepStatus System::advancePaladinAuras(uint64_t tick) {
         }
         if(cycle.target<cycle.targets.size()) continue;
         if(cycle.aura.element>=0 && cycle.aura.maximumDamage>0 && !area.town) {
-            std::vector<EntityId> targets;for(const auto id:cycle.targets) if(id!=p.actor) if(const auto *m=ports_.monsters.find(id);m && m->life>0 && (cycle.skill!=114 || m->rule.coldEffect<0)) targets.push_back(id);
+            std::vector<EntityId> targets;for(const auto id:cycle.targets) if(id!=p.actor) {const auto target=participants.find(id);if(target.aliveIn(p.area) && (cycle.skill!=114 || target.player || target.monster->rule.coldEffect<0)) targets.push_back(id);}
             auto random=cycle.random;const int64_t low=int64_t(cycle.aura.minimumDamage*256),spread=int64_t((cycle.aura.maximumDamage-cycle.aura.minimumDamage)*256);
             combat::SpellImpact pulse{p.actor,p.actor,p.area,DamageType(cycle.aura.element),low+(spread>0?limitedRandom(random,uint32_t(spread)):0),std::move(targets)};
             pulse.occurrence=(uint64_t(1)<<61)|cycle.occurrence;pulse.hitClass=uint8_t(cycle.aura.hitClass);pulse.reaction=true;pulse.unblockable=true;pulse.knockback=(cycle.aura.resultFlags&8)!=0;

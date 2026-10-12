@@ -45,7 +45,7 @@ void System::hirelingReact(EntityId id,EntityId attacker,CombatEffectEvent event
         if(std::holds_alternative<FreezeAttacker>(reaction.action)) unitReactions_.push_back({id,attacker,found->second.area,std::move(reaction)});
 }
 StepStatus System::advanceHirelings(uint64_t tick) {
-    bool blocked=false;const combat::Participants participants{ports_.players,ports_.monsters};
+    bool blocked=false;const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     for(auto it=hirelingCycles_.begin();it!=hirelingCycles_.end();) {
         auto &cycle=it->second;const auto *m=ports_.monsters.find(it->first);
         const auto *p=m && m->owner?ports_.players.find(*m->owner):nullptr;
@@ -88,8 +88,8 @@ StepStatus System::advanceHirelings(uint64_t tick) {
         ++it;
     }
     while(!unitReactions_.empty()) {
-        const auto &r=unitReactions_.front();const auto *m=ports_.monsters.find(r.source);const auto *target=ports_.monsters.find(r.attacker);
-        if(!m || !target || !m->owner || m->life<=0 || !target->enemyTarget() || target->life<=0 || m->area!=r.area || target->area!=r.area) {unitReactions_.pop_front();continue;}
+        const auto &r=unitReactions_.front();const auto *m=ports_.monsters.find(r.source);const auto target=participants.find(r.attacker);
+        if(!m || !m->owner || m->life<=0 || !target.aliveIn(r.area) || !participants.canHarm(r.source,r.attacker) || m->area!=r.area) {unitReactions_.pop_front();continue;}
         const auto *p=ports_.players.find(*m->owner);if(!p || !p->rules.skills) {unitReactions_.pop_front();continue;}
         combat::SpellImpact impact{r.source,r.source,r.area,DamageType::Cold,0,{r.attacker}};impact.reaction=true;impact.unblockable=true;impact.freeze=true;
         impact.coldFrames=uint64_t(std::max(0.f,std::get<FreezeAttacker>(r.effect.action).duration)*25.f);impact.coldPierce=m->petStats.attributes.combat.coldPierce;

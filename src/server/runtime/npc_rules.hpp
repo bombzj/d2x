@@ -2,6 +2,7 @@
 #include "core/id.hpp"
 #include "core/math.hpp"
 #include "gameplay/quest/id.hpp"
+#include "gameplay/combat/alignment.hpp"
 #include "world/navigation.hpp"
 #include <map>
 #include <set>
@@ -19,6 +20,7 @@ struct NpcRule {
     bool interactable=true;
     int walkVelocity{};
     MovementCollisionRule movement;
+    UnitAlignment alignment{UnitAlignment::Evil};
 };
 struct AreaNpc { EntityId id; Vec position; NpcRule rule; bool hidden{},moving{}; Vec destination{}; };
 }

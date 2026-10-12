@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/skills/system.hpp"
@@ -19,26 +20,28 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
         return StepStatus::Complete;
     }
     if(tick.tick<pet.nextDecision) return StepStatus::Complete;
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=36;
     const auto cast=ports_.skills.read().casts.find(owner->actor);
     if(cast!=ports_.skills.read().casts.end()) {
-        const auto *candidate=ports_.monsters.find(cast->second.target);
-        if(candidate && candidate->enemyTarget() && candidate->life>0 && candidate->area==body->area && missileDistance(body->position,candidate->position)<nearest) target=candidate->id;
+        const auto candidate=participants.find(cast->second.target);
+        if(candidate.aliveIn(body->area) && participants.canHarm(body->id,candidate.id()) && missileDistance(body->position,candidate.position())<nearest) target=candidate.id();
     }
-    if(!target) for(const auto &[id,candidate]:ports_.monsters.read().actors) if(candidate.enemyTarget() && candidate.life>0 && candidate.area==body->area) {
-        const int distance=missileDistance(body->position,candidate.position);
-        if(distance<nearest && area.definition.collision.segment(body->position,candidate.position)) {nearest=distance;target=id;}
+    if(!target) for(const auto id:participants.enemies(body->id,body->area)) {
+        const auto candidate=participants.find(id);
+        const int distance=missileDistance(body->position,candidate.position());
+        if(distance<nearest && area.definition.collision.segment(body->position,candidate.position())) {nearest=distance;target=id;}
     }
     auto random=pet.random;
     if(target) {
-        const auto *enemy=ports_.monsters.find(target);
-        if(meleeDistance(body->position,body->rule.size,enemy->position,enemy->rule.size)<=body->rule.meleeRange && area.definition.collision.segment(body->position,enemy->position)) {
+        const auto enemy=participants.find(target);
+        if(meleeDistance(body->position,body->rule.size,enemy.position(),enemy.size())<=body->rule.meleeRange && area.definition.collision.segment(body->position,enemy.position())) {
             ports_.monsters.stop(pet.actor);
             if(int(limitedRandom(random,100))<body->amazonPet->attackChance) {
-                const auto result=ports_.skills.requestCast({pet.actor,0,UnitTarget{target,0,1},tick.tick});
+                const auto result=ports_.skills.requestCast({pet.actor,0,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
                 if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
             }
-        } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy->position},target,body->rule.meleeRange,75,false});
+        } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
     } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});
     pet.random=random;pet.nextDecision=tick.tick+uint64_t(std::max(1,body->amazonPet->thinkFrames));return StepStatus::Complete;
 }

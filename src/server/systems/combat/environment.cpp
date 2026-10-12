@@ -14,7 +14,7 @@ namespace d2x::server::combat {
 DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
     const auto *area=ports_.areas.find(impact.area);
     if(!area || area->generation!=impact.environmentGeneration || area->definition.town) return DomainStatus::Stale;
-    const Participants participants{ports_.players,ports_.monsters};
+    const Participants participants{ports_.players,ports_.monsters,ports_.social};
     while(impact.next<impact.targets.size()) {
         const auto target=participants.find(impact.targets[impact.next]);
         if(!target.aliveIn(impact.area) || (target.monster && !target.monster->damageable())) {++impact.next;continue;}

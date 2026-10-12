@@ -1460,18 +1460,9 @@ struct RemoteScene::Impl {
             const auto suffix=worldDifficulty==1?"(N)":worldDifficulty==2?"(H)":"";
             const int configured=monstats2.number(e,"Utrans"+std::string(suffix)).value_or(0);
             if (configured && configured!=255) nativeTransform=configured;
-            // Utrans 255 is an owner/alliance transform, not a random palette.
-            // A7ACD selects 0/1 from the original owner/alliance relation.
+            // Utrans 255 is the native pet-owner hostility transform.
             if (configured==255) {
-                bool allied=false;
-                if (const auto pet=world().pets.find(u.key.id);pet!=world().pets.end()) {
-                    allied=pet->second.owner==playerId;
-                    const auto self=playerId?world().social.players.find(*playerId):world().social.players.end();
-                    const auto owner=world().social.players.find(pet->second.owner);
-                    allied|=self!=world().social.players.end() && owner!=world().social.players.end() &&
-                        self->second.partyId && *self->second.partyId!=UINT16_MAX && self->second.partyId==owner->second.partyId;
-                }
-                nativeTransform=allied?0:1;
+                nativeTransform=combatBinding?combatBinding->ownershipTransform(u):0;
             }
             if (identity.superUnique) {
                 const auto fixed=superUniqueRows.find(*identity.superUnique);
@@ -2064,16 +2055,20 @@ struct RemoteScene::Impl {
                 const auto drawn = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) { return entry.unit == effectOwner(selectedTarget); });
                 const auto at = drawn == draw.end() ? screen(local(target.position)) : screen(drawn->position) + drawn->pixelOffset;
                 if (selectedTarget.type == 0 && target.interaction == OnlineMapInteraction::Corpse) shared.drawCorpseLabel(target.name, at);
-                else shared.drawInteractionLabel(target.name, at);
+                else if (selectedTarget.type == 0) {
+                    const auto unit = v.world.units.find(selectedTarget);
+                    shared.drawPlayerLabel(target.name, at,
+                        unit != v.world.units.end() && combat.hostileSource(unit->second));
+                } else shared.drawInteractionLabel(target.name, at);
                 break;
             }
         shared.drawGroundLabels(mouse);
-        if (hoveredPlayer && !hasSelectedTarget && !combatTarget && !groundTarget) {
+        if (hoveredPlayer && !hasSelectedTarget && (!combatTarget || combatTarget->type==0) && !groundTarget) {
             const auto actor = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) {
                 return entry.unit == effectOwner(*hoveredPlayer);
             });
-            if (actor != draw.end()) shared.drawInteractionLabel(v.world.units.at(*hoveredPlayer).name,
-                screen(actor->position) + actor->pixelOffset);
+            if (actor != draw.end()) shared.drawPlayerLabel(v.world.units.at(*hoveredPlayer).name,
+                screen(actor->position) + actor->pixelOffset, combat.hostileSource(v.world.units.at(*hoveredPlayer)));
         }
         auto automap = binding.automap;
         // Native hosts send path verification sparsely. The same collision-

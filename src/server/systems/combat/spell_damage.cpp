@@ -16,8 +16,15 @@ namespace d2x::server::combat {
 // Read-only contact planning lets native missile callbacks depend on accuracy
 // without committing damage or advancing the live RNG before outbox admission.
 bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t tick,uint64_t &random) const {
+    if(const auto *player=ports_.players.findActor(id)) {
+        if(!player->entered || player->persistent.player.hp<=0) return false;
+        if(attack.automatic || (player->moving && player->runningNow)) return true;
+        const auto &weapon=attack.weapon;
+        return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
+            weapon.attackRatingPercent,weapon.target,{player->persistent.player.level,player->totals.character.defense,false,false,true},MonsterRank::Normal));
+    }
     const auto *target=ports_.monsters.find(id);
-    if(!target || target->life<=0 || !ParticipantView{nullptr,target}.hostileMonster()) return false;
+    if(!target || target->life<=0 || !target->damageable()) return false;
     if(attack.automatic) return true;
     const auto &weapon=attack.weapon;
     return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
@@ -25,7 +32,7 @@ bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t 
 }
 DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) const {
     SpellPlan plan;
-    const Participants participants{ports_.players,ports_.monsters};
+    const Participants participants{ports_.players,ports_.monsters,ports_.social};
     for (auto &impact : impacts) {
         if (!impact.projectile || !impact.source || impact.next || impact.damage < 0 || impact.damage > INT32_MAX ||
             impact.targets.size() > 65536)
@@ -56,7 +63,7 @@ DomainResult<> System::enqueue(SpellImpact impact) {
 }
 StepStatus System::resolveSpells(TickContext tick) {
     bool blocked = false;
-    const Participants participants{ports_.players, ports_.monsters};
+    const Participants participants{ports_.players, ports_.monsters, ports_.social};
     for (auto it = state_.spells.begin(); it != state_.spells.end();) {
         auto &impact = *it;
         if(impact.environment) {
@@ -68,7 +75,7 @@ StepStatus System::resolveSpells(TickContext tick) {
         const PlayerState *owner = source.player;
         const auto *area = ports_.areas.find(impact.area);
         const auto *monsterSource=source.monster;
-        const bool hirelingSource=monsterSource && (monsterSource->hireling || monsterSource->necroSummon || monsterSource->conversion) && monsterSource->owner;
+        const bool hirelingSource=monsterSource && monsterSource->owner;
         if(hirelingSource) owner=ports_.players.find(*monsterSource->owner);
         if ((!owner || !owner->entered || owner->area!=impact.area) && (!monsterSource || monsterSource->owner || monsterSource->area!=impact.area)) impact.next=impact.targets.size();
         if(!area || area->definition.town) impact.next=impact.targets.size();
@@ -79,9 +86,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 if(finishImpact(impact,owner,area->generation,tick.tick)==DomainStatus::Capacity) {blocked=true;break;}
                 continue;
             }
-            const auto participant = !owner || impact.healing > 0
-                ? participants.find(impact.targets[impact.next])
-                : ParticipantView{nullptr, ports_.monsters.find(impact.targets[impact.next])};
+            const auto participant = participants.find(impact.targets[impact.next]);
             ++state_.targetAttempts;
             if(!owner && monsterSource) {
                 if(!participants.canHarm(source,participant)) {++impact.next;continue;}
@@ -157,7 +162,7 @@ StepStatus System::resolveSpells(TickContext tick) {
                 ++impact.next;continue;
             }
             const auto *target = participant.monster;
-            if(impact.healing>0 && owner) {
+            if(impact.healing>0 && owner && participants.petOrPartyAlly(source,participant,ports_.social)) {
                 const PlayerState *patient=participant.aliveIn(impact.area)?participant.player:nullptr;
                 if(patient) {
                     const ActorContext actor{patient->player,patient->actor,patient->area,area->generation,0,tick.tick};
@@ -165,10 +170,16 @@ StepStatus System::resolveSpells(TickContext tick) {
                     if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                     ++impact.next;continue;
                 }
-                if(target && target->owner==owner->player && target->life>0 && target->area==impact.area) {
+                if(target && target->life>0 && target->area==impact.area) {
                     if(impact.healingOverlay>=0 && !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},impact.area},{OverlayFact{target->id,1,impact.area,impact.healingOverlay}}})) {blocked=true;break;}
                     ports_.monsters.heal(target->id,impact.healing);++impact.next;continue;
                 }
+            }
+            if(participant.player && owner) {
+                const auto result=resolvePlayerImpact(impact,source,*owner,*participant.player,area->generation,tick);
+                if(result==DomainStatus::Capacity) {blocked=true;break;}
+                if(!impact.targetApplied) ++impact.next;
+                continue;
             }
             if (!target || !participants.canHarm(source,participant) || target->life <= 0 || target->area != impact.area ||
                 (impact.undeadOnly && !target->rule.undead) ||

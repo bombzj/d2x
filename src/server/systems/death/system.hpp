@@ -13,12 +13,12 @@ namespace d2x::server::death {
 // Death occurrences, resurrection and corpse recovery; no duplicated persistent corpse items.
 enum class Action { Resurrect, RecoverCorpse };
 struct Request { Action action; std::optional<UnitTarget> corpse; };
-struct Transition { uint64_t occurrence{}; EntityId victim, killer; bool finalized{}; uint64_t ready{}; bool reviving{}; bool companionsSettled{}; };
+struct Transition { uint64_t occurrence{}; EntityId victim; bool finalized{}; uint64_t ready{}; bool reviving{}; bool companionsSettled{}; PlayerMessageFact message; };
 struct ExperienceShare {PlayerId player;EntityId actor;uint64_t amount{};};
 struct Reward { PlayerId player; EntityId actor; uint64_t amount{}; bool lootQueued{}; int life{},mana{};bool restored{}; CharacterRecord lootClaimant; std::optional<companions::HirelingExperienceAward> hireling{}; bool hirelingAwarded{}; std::vector<ExperienceShare> shares{};size_t awarded{}; };
 struct Recovery { ActorContext actor; EntityId corpse; uint64_t locomotion{}; };
 struct State { std::map<EntityId, Transition> transitions; std::map<EntityId, Reward> rewards; std::map<PlayerId, Recovery> recoveries; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; progression::System &progression; skills::System &skills; loot::System &loot; items::System &items; transactions::System &transactions; world::System &world; MovementSystem &movement; const AreaStore &areas; const GameSettings &settings; companions::System &companions; const social::System &social; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; progression::System &progression; skills::System &skills; loot::System &loot; items::System &items; transactions::System &transactions; world::System &world; MovementSystem &movement; const AreaStore &areas; const GameSettings &settings; companions::System &companions; const social::System &social; const effects::System &effects; };
 class System {
     State state_;
     const Ports ports_;

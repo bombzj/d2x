@@ -9,6 +9,7 @@
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/combat/poison.hpp"
+#include "gameplay/combat/alignment.hpp"
 #include "gameplay/combat/open_wounds.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
@@ -115,7 +116,8 @@ struct Actor {
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
-    bool enemyTarget() const { return hostile && !owner && !conversion && !rule.environmentController; }
+    UnitAlignment alignment() const { return owner || conversion ? UnitAlignment::Good : UnitAlignment(rule.alignment); }
+    bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
     bool damageable() const { return !burrowed && !airborne && (enemyTarget() || amazonPet || necroSummon || hireling || conversion); }
     bool combatCompanion() const { return bool(amazonPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -129,7 +131,7 @@ struct State {
     struct DeathCascade {EntityId source;uint64_t due{};};
     std::map<EntityId,DeathCascade> deathCascades;
 };
-struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; const effects::System &effects; };
+struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; const effects::System &effects; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;

@@ -37,7 +37,12 @@ ChatView::ChatView(Archives &archives)
         slider_ = graphics_.single("data/global/ui/menu/textslid.dc6");
         const ClassicStrings strings(archives);
         title_ = strings.find("strMsgLog"); close_ = strings.find("strClose");
-        for(size_t action=5;action<=9;++action) partyNotices_[action]=strings.find("Party"+std::to_string(action));
+        for(size_t action=3;action<=9;++action) partyNotices_[action]=strings.find("Party"+std::to_string(action));
+        hostileTimeout_=strings.find("strHostileTimeout");
+        notListening_=strings.find("sysmsg12");
+        slainBy_=strings.find("sysmsg7");
+        presenceNotices_[0]={std::string(strings.find("sysmsg3")),std::string(strings.find("sysmsg3a"))};
+        presenceNotices_[1]={std::string(strings.find("sysmsg4")),std::string(strings.find("sysmsg4a"))};
         if (border_.count < 22 || slider_.count < 15 || title_.empty() || close_.empty())
             throw std::runtime_error("Original message log artwork or strings are missing");
         ready_ = true;
@@ -145,7 +150,43 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         messages_.push_back(std::move(displayed));
     }
     for(const auto &notice:social.notices) {
-        if(notice.type!=7 || notice.parameter<5 || notice.parameter>9 || notice.color>=13) continue;
+        if((notice.type==2 || notice.type==3 || (notice.type==6 && notice.parameter==0)) && notice.names.size()==32 && notice.color<13) {
+            const auto nameAt=[&](size_t offset)->std::optional<std::string> {
+                const auto first=notice.names.begin()+offset,last=first+16,end=std::find(first,last,uint8_t{});
+                if(end==last || !std::all_of(first,end,[](uint8_t c){return c>=32 && c<127;})) return {};
+                return std::string(first,end);
+            };
+            const auto name=nameAt(0),accountName=nameAt(16);
+            if(!name || name->empty() || !accountName) {++unavailable_;continue;}
+            if(notice.type==6) {
+                if(accountName->empty() || slainBy_.empty()) {++unavailable_;continue;}
+                const auto glyphs=plain(*name+slainBy_+*accountName,notice.color);
+                messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});continue;
+            }
+            auto value=presenceNotices_[notice.type-2][!accountName->empty()];
+            // TBL templates use one or two %s slots; do not pass wire text to printf.
+            size_t start=0;
+            for(const auto &part:{*name,*accountName}) {
+                const auto slot=value.find("%s",start);if(slot==std::string::npos) break;
+                value.replace(slot,2,part);start=slot+part.size();
+            }
+            if(value.empty()) {++unavailable_;continue;}
+            const auto glyphs=plain(value,notice.color);
+            messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});continue;
+        }
+        if(notice.type==13 && !notListening_.empty() && notice.names.size()>=16) {
+            const auto end=std::find(notice.names.begin(),notice.names.begin()+16,uint8_t{});
+            if(end!=notice.names.begin()+16 && std::all_of(notice.names.begin(),end,[](uint8_t c){return c>=32 && c<127;})) {
+                const auto glyphs=plain(std::string(notice.names.begin(),end)+notListening_,notice.color<13?notice.color:0);
+                messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
+            }
+            continue;
+        }
+        if(notice.type==16 && !hostileTimeout_.empty()) {
+            const auto glyphs=plain(hostileTimeout_,notice.color<13?notice.color:0);
+            messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});continue;
+        }
+        if(notice.type!=7 || notice.parameter<3 || notice.parameter>9 || notice.color>=13) continue;
         auto name=notice.playerName;
         if(name.empty()) if(const auto p=social.players.find(notice.value);p!=social.players.end()) name=p->second.name;
         const auto &format=partyNotices_[notice.parameter];

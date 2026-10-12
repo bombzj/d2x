@@ -91,19 +91,35 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-当前客户端运行包为2026-10-12 Windows **Release**，D2S v96。本次构建当前工作区的d2x目标并更新dist/current，纳入[交易确认锁、金币回包及镜像增量修正](../gameplay/items/PLAYER_TRADE.md)，保留此前[寻路及本人位置回包](../modules/MAP.md#本人位置回包)、[怪物协议](../gameplay/monsters/PRESENTATION.md#已补齐的源码与复验边界)和工作区其他改动。首次编译发现成交／取消镜像清理的两处旧调用，修正后增量构建成功；已有初始化、缩进及optional相关编译警告仍在。本批完成Release编译及包哈希比对，没有启动游戏或运行测试，交易双向实机效果及其他玩法仍待复验。独立服务端dist/server保持前批产物，本次没有重新构建或打包它。
+2026-10-12随后更新当前客户端包，纳入Party敌意红字、右上角原骷髅及玩家悬停姓名背景／颜色。Release构建通过，使用包内EXE完成隔离双客户端TCP/IP画面与敌意取消方向核对；具体范围、首轮发现的友方标签分支修正及未覆盖条件见[联网表现记录](../modules/NETWORK.md#组队邀请客户端)。构建日志在`artifacts/hostility-display-20261012/build-release.log`与`build-release-final.log`，未提交Git；独立服务端包保持此前产物。
 
-打包规模核对：本批客户端最初预计188个编译／链接步骤，Ninja归因中83个对象首先受events.hpp影响、41个受trade/system.hpp影响、42个受actor_animation.hpp影响，其余来自各自源码或其他头文件；这些是依赖重编译，不是复制资源。全部目标原预计192步，现有脚本默认只构建客户端所需目标。源文档106个文件、约1.04 MiB，复制按内容跳过不变文件。dist/current/artifacts已有约3013 MiB历史文件，其中两份旧EXE各约1326 MiB，均保留且不参与本次复制；没有复制MPQ。
+当前客户端运行包为2026-10-12 Windows **Release**，D2S v96，纳入[地图缓存、坐标索引与宿主／客户端分帧准备](../modules/MAP.md#地图缓存与分帧准备)、[战斗空间索引与地面物品查询优化](../modules/SERVER_SYSTEMS.md)，并包含当前工作区此前的阵营、组队开关、进退场消息及PvP伤害改动。编译发现此前PvP弹体分支缺少effects完整类型头文件，已补齐。Release增量构建和diff空白检查通过，既有初始化／optional编译警告仍在；构建日志保存在忽略目录artifacts/area-performance-build.log及area-performance-build-final.log。独立服务端dist/server保持前批产物，本轮没有重新构建或打包它。
+
+本轮已用隔离角色完成下面的提交前有限冒烟；不将这些路径视为全部玩法或原版一致性验收。运行中的区域准备和房间消息消费采用软预算，不保证每帧严格限时或与原版一样完全无停顿；Play-Diagnostic.cmd保留双方消息和[area-load]阶段耗时。原MPQ、存档、历史程序和artifacts保持原位置，不复制进新的交付内容。
 
 前批两幕三难度、组队任务及物品补齐的基础范围分别见[第一幕](../gameplay/monsters/ACT1.md#三难度重新核对)、[第二幕](../gameplay/monsters/ACT2.md#三难度重新核对)、[任务系统](../gameplay/quests/SYSTEM.md)与[物品核对](../gameplay/items/EVIDENCE.md#客户端与服务端物品核对)。以下哈希标识当前磁盘包。
 
-前次更新保留的程序`dist/current/d2x-retained-20261012.exe`及`d2x_bncs_legacy-retained-20261012.dll`继续保留。本次未启动宿主；根目录Play-Diagnostic.cmd使用新构建及既有角色目录，包内同名入口使用包内程序／角色目录，并记录双方消息。
+前次更新保留的程序`dist/current/d2x-retained-20261012.exe`及`d2x_bncs_legacy-retained-20261012.dll`继续保留。本次只启动并关闭隔离冒烟宿主／客户端；根目录Play-Diagnostic.cmd使用新构建及既有角色目录，包内同名入口使用包内程序／角色目录，并记录双方消息。
 
 | 产物 | 目录 | SHA256 |
 | --- | --- | --- |
-| 客户端／嵌入宿主 | `dist/current/d2x.exe`（24668770字节） | `BD51E7415CB7F31B8ABD0FB596A44FFED2E27D0BA52C388DDA656E1745059F5E` |
+| 客户端／嵌入宿主 | `dist/current/d2x.exe`（24884065字节） | `12D30F8EA7C3D25C6EAF03BB54FB655364CB4148F19376E7780FE75F0CAEE49C` |
 | 独立服务端 | `dist/server/d2x_server.exe` | `796E0D45A1878B6FB049DC6C191A28562D0668727BBB953CBC41AD67E3D14FC4` |
 | 网络DLL | 两包的`d2x_bncs_legacy.dll` | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+### 本批提交前冒烟
+
+下列记录属于此前EXE SHA256 `FD5683B5224982A5D3049FD6BFF1651B51D5C7C318321C34FAEA745B8260FFD3`，不能替代本次新增表现的核对。
+
+2026-10-12 Windows Release当时工作区，原MPQ，普通难度。使用全新隔离女巫SmokeHost／SmokeGuest，管理经验准备为12级，TCP/IP仅127.0.0.1:4400；后续新进程Single Player读回同一隔离角色。证据在忽略目录`artifacts/precommit-smoke-20261012-175026`，含双方消息、宿主快照、截图和读回记录，未新增测试脚本／用例／专用程序。
+
+- 两个真实客户端入场，地图就绪、无协议错误；组队邀请／接受得到双方partyId3。通过原P面板开启敌意后双向关系位8，关闭后回0；右侧Ignore／Squelch按钮得到位2／4，普通消息送达，被屏蔽消息未进入对方历史。保存／新局不保留临时队伍关系。
+- 暂停宿主后以原技能／攻击请求和固定步观察玩家对玩家的Fire Bolt及普通攻击扣血，随后准备低生命目标，原攻击造成死亡、收到5A/type6击杀通知并正常复活回城。准备伤害不计作PvP命中证据；未逐通道复验17%数值、伤口／吸取、全部技能、金币惩罚或耳朵。
+- 原火弹击杀准入的fallen1，客户端生命比例0／模式12；管理生成hp1后正常拾取至背包、拿起和丢回地面，另一客户端看到同一GUID。新增单位的空间索引与地面物品索引没有阻断这些路径；不认证自然掉落概率或全部物品组合。
+- 管理定位到边界附近后通过普通移动完成城镇→Blood Moor→城镇，客户端地图保持就绪，权威回到区域1／(4590,4645)。此前远点绕围栏停在障碍处，不计作整段营地寻路通过；该边界样本不认证全种子／延迟条件。冷内容准备的剩余耗时见[地图限制](../modules/MAP.md#地图缓存与分帧准备)。
+- 客人正常退局收到type3离开提示，宿主失败计数0；两端正常退出。新进程Single Player恢复SmokeHost：12级、经验100001、金币1234、Fire Bolt基础1级、7件物品、地图就绪，失败计数0，随后正常退局并关闭。
+
+首轮实际打开组队面板发现资源准入错误：当前partyboxes.dc6有18帧，源码错误要求恰好16帧。已改为接受18帧并直接使用原16／17红色禁用图标；增量构建后重启两端，以修正版重复上述按钮及战斗观察。修正前结果不认证修正版面板。没有操作原版客户端、PvPGN后端、独立服务端、Linux、全部难度和职业，也没有全面性能基准；只有列出的路径有限通过。
 
 ### 前批运行证据
 

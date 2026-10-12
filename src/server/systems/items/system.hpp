@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <span>
 
 namespace d2x::server::items {
 // Canonical non-character items; character-owned items remain in PlayerStore.
@@ -34,10 +35,13 @@ class System {
         std::swap(state_, next);
     }
     State state_;
+    mutable uint64_t groundIndexRevision_{};
+    mutable std::map<RegionId,std::vector<EntityId>> groundByArea_;
     const Ports ports_;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    std::vector<EntityId> groundInAreas(std::span<const RegionId>) const;
     // Stable for this stay on the ground, including regeneration/partial pickup.
     // Removal, pickup followed by drop, or relocation retires the old identity.
     uint64_t groundGeneration(EntityId id) const {

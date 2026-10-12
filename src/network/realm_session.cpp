@@ -1753,12 +1753,23 @@ bool RealmSession::join_game(std::string name, std::string password) {
     }
 }
 bool RealmSession::chat_relation(uint32_t player,bool squelch,bool enabled) {
+    return player_relation(player,squelch?OnlineRelationAction::Squelch:OnlineRelationAction::Ignore,enabled,read().gameGeneration);
+}
+bool RealmSession::player_relation(uint32_t player,OnlineRelationAction action,bool enabled,uint64_t gameGeneration) {
     std::lock_guard lock(impl_->mutex);impl_->snapshotDirty=true;auto &p=*impl_;
     if(!p.require(OnlineStage::ProtocolReady) || snapshot_.connectionGeneration!=p.view.connectionGeneration ||
-        snapshot_.gameGeneration!=p.view.gameGeneration || player==p.view.load.playerUnitId ||
-        !p.view.world.social.players.contains(player)) return false;
-    Writer out;out.u8(0x5D);out.u8(squelch?3:2);out.u8(enabled?1:0);out.u32(player);
-    p.sent(p.gs,out.release());p.changed();return true;
+        snapshot_.gameGeneration!=p.view.gameGeneration || gameGeneration!=p.view.gameGeneration || !p.view.load.playerUnitId || player==p.view.load.playerUnitId ||
+        !p.view.world.social.players.contains(player) || !p.view.world.social.players.at(player).listed ||
+        (action!=OnlineRelationAction::Ignore && action!=OnlineRelationAction::Squelch && action!=OnlineRelationAction::Hostile)) return false;
+    if(action==OnlineRelationAction::Hostile) {
+        const auto self=p.view.world.social.players.find(*p.view.load.playerUnitId);
+        const auto &target=p.view.world.social.players.at(player);
+        if(self==p.view.world.social.players.end() || !self->second.level || !target.level || *self->second.level<9 || *target.level<9) {
+            p.error(OnlineErrorKind::Input,"Both players must be at least level 9.");return false;
+        }
+    }
+    Writer out;out.u8(0x5D);out.u8(uint8_t(action));out.u8(enabled?1:0);out.u32(player);
+    p.sent(p.gs,out.release());p.view.error.reset();p.changed();return true;
 }
 bool RealmSession::party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration) {
     std::lock_guard lock(impl_->mutex);

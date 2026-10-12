@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <chrono>
+#include <iostream>
 #include <stdexcept>
 #include "world/interaction_geometry.hpp"
 #include "core/fingerprint.hpp"
@@ -54,6 +55,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         map_ = nullptr;
         nativeMap_.reset();
         nativeTerrain_.reset();
+        nativeTerrainDirty_ = true;
         nativePlayerRoom_.reset();
         nativePlayerPosition_.reset();
         nativeSequence_ = 0;
@@ -66,7 +68,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         if (v.load.act && v.load.townArea && *v.load.act < actTownLevels.size() &&
             *v.load.townArea == actTownLevels[*v.load.act]) {
             try {
-                catalog_ = std::make_unique<WorldCatalog>(archives_, v.load.difficulty.value_or(0));
+                catalog_ = sharedWorldCatalog(archives_, v.load.difficulty.value_or(0));
                 const auto &catalog = *catalog_;
                 const auto &town = catalog.level(*v.load.townArea);
                 if (v.load.mapSeed) {
@@ -103,7 +105,10 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     }
     const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
-    if (revision_ == v.revision && !observerChanged && (!nextObjectTransition_ || now < *nextObjectTransition_))
+    const bool pendingNative = nativeMap_ && nativeReason_.empty() &&
+        (nativeTerrainDirty_ || nativeSequence_ != v.world.mapEventSequence);
+    if (revision_ == v.revision && !observerChanged && !pendingNative &&
+        (!nextObjectTransition_ || now < *nextObjectTransition_))
         return;
     revision_ = v.revision;
     view_.available = view_.movementAvailable = false;
@@ -304,22 +309,32 @@ bool RemoteTown::updateNative(const OnlineView &v) {
     view_.nativeMapReady = false;
     view_.nativeMapReason = nativeReason_;
     if (!nativeMap_ || !nativeReason_.empty()) return false;
+    const auto started = std::chrono::steady_clock::now();
     int eventLevel = 0;
     try {
         const auto &world = v.world;
         if (!nativeSequence_ && !nativePlayerPosition_)
             nativePlayerPosition_ = world.mapInitialPlayerPosition;
         bool changed = false;
+        const auto terrainRevision = nativeMap_->terrainRevision();
+        bool deferred = false;
+        const auto deadline = started + std::chrono::milliseconds(4);
+        const auto selectRoom = [&](size_t room) {
+            // The snapshot contains all active rooms in the level's walking
+            // component. Crossing a room within that level does not change it.
+            changed |= !nativePlayerRoom_ || nativeMap_->tiles().rooms().at(*nativePlayerRoom_).level !=
+                nativeMap_->tiles().rooms().at(room).level;
+            nativePlayerRoom_ = room;
+        };
         auto locatePlayerRoom = [&] {
             if (!nativePlayerPosition_) return;
             const auto room = nativeMap_->clientRoom(nativePlayerPosition_->x, nativePlayerPosition_->y);
-            if (!room) return; // Position can precede the matching room assignment.
-            changed |= nativePlayerRoom_ != room;
+            if (!room || !nativeMap_->tiles().rooms().at(*room).loaded) return;
             // D2Client 07/08 own the in-sight references. Clients::sub_6FC33020
             // changes CLIENT_IN_ROOM references on the server; repeating that
             // operation here lets a later 08 consume a propagated reference.
             // Coordinates select the snapshot, without acquiring another root.
-            nativePlayerRoom_ = room;
+            selectRoom(*room);
         };
         for (const auto &event : world.mapEvents) {
             if (event.sequence <= nativeSequence_) continue;
@@ -328,12 +343,10 @@ bool RemoteTown::updateNative(const OnlineView &v) {
             eventLevel = event.level;
             switch (event.kind) {
             case OnlineMapEvent::Kind::RevealRoom:
-                changed = true;
                 nativeMap_->reveal(event.level, event.point.x, event.point.y);
                 locatePlayerRoom();
                 break;
             case OnlineMapEvent::Kind::HideRoom:
-                changed = true;
                 nativeMap_->hide(event.level, event.point.x, event.point.y);
                 break;
             case OnlineMapEvent::Kind::PlayerPosition:
@@ -347,29 +360,34 @@ bool RemoteTown::updateNative(const OnlineView &v) {
                 break;
             }
             nativeSequence_ = event.sequence;
+            if (nativeSequence_ != world.mapEventSequence && std::chrono::steady_clock::now() >= deadline) {
+                deferred = true; break;
+            }
         }
-        if (nativeSequence_ != world.mapEventSequence)
+        if (!deferred && nativeSequence_ != world.mapEventSequence)
             throw std::runtime_error("Native map event tail is unavailable; rejoin the game");
         if (displayPlayerPosition_ && world.playerPosition) {
             if (const auto room = nativeMap_->clientRoom(displayPlayerPosition_->x, displayPlayerPosition_->y)) {
                 const auto &prepared = nativeMap_->tiles().rooms().at(*room);
                 // Presentation selects only a room already assigned by 07.
                 // No new room interest or terrain is acquired by prediction.
-                if (world.rooms.contains({uint8_t(prepared.level), uint16_t(prepared.room.x), uint16_t(prepared.room.y)})) {
-                    changed |= nativePlayerRoom_ != room;
-                    nativePlayerRoom_ = room;
+                if (prepared.loaded && world.rooms.contains({uint8_t(prepared.level), uint16_t(prepared.room.x), uint16_t(prepared.room.y)})) {
+                    selectRoom(*room);
                 }
             }
         } else locatePlayerRoom();
+        nativeTerrainDirty_ |= changed || nativeMap_->terrainRevision() != terrainRevision;
         if (!nativePlayerRoom_ || v.stage != OnlineStage::ProtocolReady ||
             !v.load.serverLoadComplete || !world.playerPosition) return false;
+        if (!nativeMap_->tiles().rooms().at(*nativePlayerRoom_).loaded) return false;
         const int level = nativeMap_->tiles().rooms().at(*nativePlayerRoom_).level;
-        if (changed || !nativeTerrain_) {
+        if (nativeTerrainDirty_ || !nativeTerrain_) {
             auto snapshot = nativeMap_->snapshot(level);
             view_.origin = OnlinePoint{uint16_t(snapshot.tileX * 5), uint16_t(snapshot.tileY * 5)};
             view_.width = snapshot.map.grid.width; view_.height = snapshot.map.grid.height;
             auto map = std::make_unique<Map>(std::move(snapshot.map));
             nativeTerrain_.swap(map);
+            nativeTerrainDirty_ = false;
             for (int cached : snapshot.levels)
                 if (std::find(view_.cachedAreas.begin(), view_.cachedAreas.end(), cached) == view_.cachedAreas.end())
                     view_.cachedAreas.push_back(uint16_t(cached));
@@ -388,6 +406,9 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         view_.collisionVerified = view_.available = view_.nativeMapReady = true;
         view_.movementAvailable = !onlinePlayerDead(world);
         view_.nativeMapReason = view_.reason = "Native room anchors and ordered lifecycle reconstructed";
+        const auto elapsed = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+        // Report work exceeding one 25 Hz simulation tick, not every movement.
+        if (elapsed >= 40) std::clog << "[area-load] client level=" << level << " map_ms=" << elapsed << '\n';
         return true;
     } catch (const std::exception &e) {
         nativeReason_ = e.what();

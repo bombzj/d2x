@@ -49,33 +49,46 @@ DomainResult<> System::settle(const ActorContext &actor) {
     }
     draft.edit.inventory.containers.at(draft.containers().belt).spec.rows = 1;
     auto record = player->persistent.player;
+    const auto transition=state_.transitions.find(actor.actor);
+    const auto message=transition==state_.transitions.end()?PlayerMessageFact{}:transition->second.message;
+    const bool pvp=!message.other.empty();
     const uint64_t total = uint64_t(record.gold) + record.bankGold;
     auto penalty = total * unsigned(std::min(record.level, 20)) / 100;
     if (ports_.settings.singlePlayer) {
         const auto protectedGold = uint64_t(record.level) * 500;
         penalty = std::min<uint64_t>(record.gold, std::min(penalty, total > protectedGold ? total - protectedGold : 0));
     }
-    if (penalty > record.gold) { record.bankGold -= unsigned(penalty - record.gold); record.gold = 0; }
-    else record.gold -= unsigned(penalty);
+    unsigned dropGold=0;
+    if(pvp) {
+        // Player::ApplyDeathPenalty drops only the penalty for PvP; it does
+        // not destroy it and then drop the victim's remaining carried gold.
+        if(penalty>record.gold) {record.bankGold-=unsigned(penalty-record.gold);record.gold=unsigned(penalty);}
+        dropGold=unsigned(penalty);record.gold-=dropGold;
+    } else {
+        if (penalty > record.gold) { record.bankGold -= unsigned(penalty - record.gold); record.gold = 0; }
+        else record.gold -= unsigned(penalty);
+        dropGold=record.gold;record.gold=0;
+    }
     // Native death gold is a normal compact item. Its prepared stats are empty;
     // the original catalog supplies the currency identity and pile capacity.
     for (const auto &[code, definition] : player->rules.items->entries()) {
         if (!definition.equipment.isType("gold")) continue;
-        while (record.gold) {
+        while (dropGold) {
             const auto position = ports_.items.placement({actor.area, player->position}, world.world);
             if (!position || !definition.maxStack || world.world.items.size() >= 4096) break;
             if (!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity, {}};
             ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = code;
-            item.quantity = std::min(record.gold, definition.maxStack); item.location = GroundLocation{actor.area, *position};
+            item.quantity = std::min(dropGold, definition.maxStack); item.location = GroundLocation{actor.area, *position};
             item.nativeSeed = uint32_t(item.id.value);
             drops.emplace_back(GroundDropFact{item});
             EquipmentValues values; values.levels.resize(player->rules.character->experience.size());
-            record.gold -= item.quantity; world.goldOwners.emplace(item.id,actor.player); world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
+            dropGold -= item.quantity; world.goldOwners.emplace(item.id,actor.player); world.equipment.items.emplace(item.id, std::move(values)); world.world.items.emplace(item.id, std::move(item));
         }
         break;
     }
     const auto &thresholds = player->rules.character->experience;
-    if (record.level > 1 && size_t(record.level + 1) < thresholds.size()) {
+    record.gold+=dropGold; // Preserve undropped gold when ground capacity is exhausted.
+    if (!pvp && record.level > 1 && size_t(record.level + 1) < thresholds.size()) {
         const auto floor = thresholds[size_t(record.level)];
         if (record.experience < floor) return {DomainStatus::InvalidRequest, {}};
         const auto loss = std::min(record.experience - floor, (thresholds[size_t(record.level + 1)] - floor) * unsigned(player->rules.character->deathExperiencePenalty) / 100);
@@ -87,6 +100,8 @@ DomainResult<> System::settle(const ActorContext &actor) {
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.character = std::move(record); edit.corpses = std::move(corpses); edit.equipment = std::move(equipment);
     edit.publicFacts = std::move(drops);
+    if(pvp) for(const auto &[id,recipient]:ports_.players.all()) if(recipient.entered)
+        edit.directed.push_back({id,{PlayerMessageFact{6,player->persistent.player.name,message.other,0,0,message.characterClass}}});
     edit.world = transactions::WorldEdit{world.revision, std::move(world)};
     auto plan = ports_.transactions.prepare(std::move(edit));
     return plan ? ports_.transactions.commit(std::move(*plan.value)) : DomainResult<>{plan.status, {}};

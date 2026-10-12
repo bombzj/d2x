@@ -130,6 +130,11 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     loadFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
     loadFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
     loadFont(uiGraphics_, archives, characterRedFont, "font16", 1);
+    // Original red font RGB, blended through the active PL2 for player labels.
+    const auto skyPalette = archives.read("data/global/palette/sky/pal.pl2");
+    constexpr size_t redFontColor = 0x6B600 + 3;
+    if (skyPalette.size() < redFontColor + 3) throw std::runtime_error("Original player name color is missing");
+    playerNameBackground = {skyPalette[redFontColor], skyPalette[redFontColor + 1], skyPalette[redFontColor + 2], 255};
     loadFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
     loadFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
     loadFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
@@ -217,7 +222,15 @@ const std::vector<Sprite> &SceneAssets::worldTileSprites(const Map &map, int pal
         worldTileSources_ = map.terrain.tiles; worldTilePalette_ = palette;
         worldTiles_.clear(); worldTiles_.reserve(worldTileSources_.size());
         auto &graphics = graphicsForAct(palette);
-        for (const auto *tile : worldTileSources_) worldTiles_.push_back(graphics.upload(tile->image));
+        for (const auto &library : map.terrain.libraries)
+            worldTileLibraries_.try_emplace(library.get(), library);
+        for (const auto *tile : worldTileSources_) {
+            const auto key = std::pair{palette, tile};
+            auto found = worldTileSprites_.find(key);
+            if (found == worldTileSprites_.end())
+                found = worldTileSprites_.emplace(key, graphics.upload(tile->image)).first;
+            worldTiles_.push_back(found->second);
+        }
     }
     return worldTiles_;
 }
@@ -257,6 +270,8 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
             [](const auto &image) { return !image.texture.id || !image.indexedTexture.id; }))
         throw std::runtime_error("Original equipment durability warning artwork is missing or incomplete");
     miniPanel = uiGraphics_.single("data/global/ui/panel/minipanel.dc6");
+    hostileIcon = uiGraphics_.single("data/global/ui/panel/hostilepic.dc6", true);
+    if (hostileIcon.frames.empty()) throw std::runtime_error("Original hostility warning artwork is missing");
     miniPanelButtons = uiGraphics_.single("data/global/ui/panel/minipanelbtn.dc6");
     miniPanelToggle = uiGraphics_.single("data/global/ui/panel/menubutton.dc6");
     if (miniPanel.frames.empty() || miniPanelButtons.frames.size() < 16 || miniPanelToggle.frames.size() < 4)

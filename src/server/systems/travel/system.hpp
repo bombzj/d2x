@@ -50,6 +50,7 @@ class System {
     DomainResult<> teleport(const ActorContext &, PointTarget, float manaCost,std::optional<SkillCharge> charge = {});
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
+    void closePlayerPortal(PlayerId id) { state_.portals.erase(id); }
     void closePortals(RegionId region) {std::erase_if(state_.portals,[&](const auto &entry){return entry.second.field==region;});std::erase_if(state_.specialPortals,[&](const auto &entry){return entry.second.field==region || entry.second.town==region;});}
 };
 }

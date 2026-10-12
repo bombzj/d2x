@@ -4,6 +4,40 @@
 #include <cmath>
 #include <algorithm>
 namespace d2x::server::items {
+namespace {
+using GroundOccupancy = std::set<std::pair<int,int>>;
+GroundOccupancy groundOccupancy(const InventoryState &world, RegionId region) {
+    GroundOccupancy result;
+    for (const auto &[id,item] : world.items) {
+        (void)id;
+        if (const auto *at=std::get_if<GroundLocation>(&item.location); at && at->region==region)
+            result.emplace(int(std::floor(at->position.x)),int(std::floor(at->position.y)));
+    }
+    return result;
+}
+std::optional<Vec> groundPlacement(const Grid &grid, Vec origin, const GroundOccupancy &occupied) {
+    for (int radius=0;radius<=4;++radius)
+        for (int y=-radius;y<=radius;++y) for (int x=-radius;x<=radius;++x) {
+            if (std::max(std::abs(x),std::abs(y))!=radius) continue;
+            const Vec point{std::floor(origin.x)+float(x),std::floor(origin.y)+float(y)};
+            if (grid.walkable(point,playerMovement) && !occupied.contains({int(point.x),int(point.y)})) return point;
+        }
+    return {};
+}
+}
+std::vector<EntityId> System::groundInAreas(std::span<const RegionId> areas) const {
+    if (groundIndexRevision_!=state_.revision) {
+        std::map<RegionId,std::vector<EntityId>> next;
+        for (const auto &[id,item] : state_.world.items)
+            if (const auto *at=std::get_if<GroundLocation>(&item.location)) next[at->region].push_back(id);
+        groundByArea_.swap(next);groundIndexRevision_=state_.revision;
+    }
+    std::vector<EntityId> result;
+    for (const auto area:areas) if (const auto found=groundByArea_.find(area);found!=groundByArea_.end())
+        result.insert(result.end(),found->second.begin(),found->second.end());
+    std::sort(result.begin(),result.end());result.erase(std::unique(result.begin(),result.end()),result.end());
+    return result;
+}
 bool System::reachable(GroundLocation target, Vec from) const {
     const auto *area = ports_.areas.find(target.region);
     return area && area->definition.collision.collisionSegment(from, target.position, 0x0801);
@@ -11,20 +45,7 @@ bool System::reachable(GroundLocation target, Vec from) const {
 std::optional<Vec> System::placement(GroundLocation origin, const InventoryState &world) const {
     const auto *area = ports_.areas.find(origin.region);
     if (!area || !std::isfinite(origin.position.x) || !std::isfinite(origin.position.y)) return {};
-    for (int radius = 0; radius <= 4; ++radius)
-        for (int y = -radius; y <= radius; ++y) for (int x = -radius; x <= radius; ++x) {
-            if (std::max(std::abs(x), std::abs(y)) != radius) continue;
-            const Vec point{std::floor(origin.position.x) + float(x), std::floor(origin.position.y) + float(y)};
-            if (!area->definition.collision.walkable(point, playerMovement)) continue;
-            bool occupied = false;
-            for (const auto &[id, item] : world.items) {
-                (void)id;
-                const auto *at = std::get_if<GroundLocation>(&item.location);
-                if (at && at->region == origin.region && std::floor(at->position.x) == point.x && std::floor(at->position.y) == point.y) { occupied = true; break; }
-            }
-            if (!occupied) return point;
-        }
-    return {};
+    return groundPlacement(area->definition.collision,origin.position,groundOccupancy(world,origin.region));
 }
 DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) {
     if (!batch.equipment || batch.items.size() > 64 || state_.world.items.size() + batch.items.size() > 4096 || state_.revision == UINT64_MAX)
@@ -37,9 +58,14 @@ DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) 
     if(!identityCapacity(identities)) return {DomainStatus::Capacity,{}};
     auto next = state_;
     auto cursor=ports_.ids.cursor();
+    const auto *area=ports_.areas.find(origin.region);
+    if (!batch.items.empty() && (!area || !std::isfinite(origin.position.x) || !std::isfinite(origin.position.y)))
+        return {DomainStatus::Conflict,{}};
+    auto occupied=groundOccupancy(next.world,origin.region);
     for (auto &item : batch.items) {
-        const auto position = placement(origin, next.world);
+        const auto position = groundPlacement(area->definition.collision,origin.position,occupied);
         if (!position) return {DomainStatus::Conflict, {}};
+        occupied.emplace(int(position->x),int(position->y));
         auto properties = batch.equipment->items.at(item.id);
         item.id = EntityId{cursor++}; item.location = GroundLocation{origin.region, *position};item.revision=1;
         for(size_t index=0;index<item.socketedItems.size();++index) {

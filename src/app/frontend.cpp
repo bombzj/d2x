@@ -307,7 +307,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     auto lastInputTime = std::chrono::steady_clock::now();
     auto chatInput = [&](FrameInput &input) {
         sharedUi->updateChat(session.read().world.social,session.read().accountChat);
-        sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration);
+        sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration,town.read().town);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
         auto trade = sharedUi->handlePlayerTrade(input);
         bool consumed = trade.consumed;
@@ -339,6 +339,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             const auto party = sharedUi->handleParty(input);
             if (party.action && !session.party_action(party.player, *party.action, party.gameGeneration))
                 sharedUi->notice(session.read().error ? session.read().error->message : "Party request could not be submitted.", true);
+            if(party.relation && !session.player_relation(party.player,*party.relation,party.enabled,party.gameGeneration))
+                sharedUi->notice(session.read().error?session.read().error->message:"Player relationship request could not be submitted.",true);
             consumed = party.consumed;
         }
         if (!consumed) return;

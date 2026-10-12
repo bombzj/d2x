@@ -28,7 +28,7 @@ struct Controller {
     std::optional<Vec> flightGoal;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;

@@ -10,6 +10,7 @@
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/monsters/damage.hpp"
 #include "gameplay/combat/poison.hpp"
+#include "gameplay/combat/open_wounds.hpp"
 #include "gameplay/combat/damage_resolution.hpp"
 #include <list>
 #include <initializer_list>
@@ -18,7 +19,14 @@
 namespace d2x::server::effects {
 std::vector<std::pair<int,int64_t>> nativeEffectStats(const SkillRules &, const CharacterModifiers &);
 struct Cycle { uint64_t next{}; EntityId last; };
-struct Recovery { std::map<int,TimedRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; uint64_t actionUntil{}, lastBlockTick{}; };
+struct Recovery { std::map<int,TimedRestoration> healing, mana; CombatEffectSet states; std::map<EffectHandle,Cycle> cycles; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{}; uint64_t actionUntil{}, lastBlockTick{}; std::optional<OpenWoundsApplication> wound; EntityId killer; std::string killerName,killerClass; };
+struct PlayerHitAdjustment {
+    int coldPierce{},poisonPierce{};
+    int64_t crushing{};
+    std::optional<OpenWoundsApplication> wound;
+    EntityId credit;
+};
+struct ReceivedDamage {float dealt{};int64_t physical{};};
 struct Reaction { ActorContext actor; EntityId attacker; TriggeredCombatEffect effect; };
 struct ItemTrigger {
     ActorContext actor;
@@ -118,7 +126,11 @@ class System {
     std::map<int,std::vector<std::pair<int,int64_t>>> unitStateStats(EntityId, uint64_t tick) const;
     DomainResult<float> receive(const ActorContext &, int64_t rawDamage, DamageType);
     // Contact RNG is staged by combat; commit it only with the character hit.
-    DomainResult<float> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {});
+    DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {}, const PlayerHitAdjustment & = {});
+    PlayerMessageFact deathMessage(EntityId actor) const {
+        const auto it=state_.players.find(actor);
+        return it==state_.players.end()?PlayerMessageFact{}:PlayerMessageFact{6,{},it->second.killerName,0,0,it->second.killerClass};
+    }
     DomainResult<> block(const ActorContext &);
     bool recovering(EntityId, uint64_t tick) const;
     bool missileHitAllowed(EntityId,uint64_t tick) const;

@@ -128,11 +128,25 @@ int Map::tileIndex(const MapCell &c, int x, int y) const {
     return terrain.tileIndex(c, x, y);
 }
 std::shared_ptr<const std::vector<Tile>> TileLibraryCache::load(const std::string &path) {
+    if (mountIdentity_ != archives_.mountIdentity()) {
+        libraries_.clear(); mountIdentity_ = archives_.mountIdentity();
+    }
+    // Separate host/client generators share immutable decoded DT1s. Weak
+    // entries allow unused libraries to die with their maps/local caches.
+    struct SharedLibraries {
+        mutable std::map<std::string, std::weak_ptr<const std::vector<Tile>>> entries;
+    };
     auto key = normalize(path);
     auto found = libraries_.find(key);
     if (found != libraries_.end())
         return found->second;
-    auto decoded = std::make_shared<const std::vector<Tile>>(decodeDt1(archives_.read(key)));
+    const auto shared = archives_.prepared<SharedLibraries>([] { return SharedLibraries{}; });
+    auto &entry = shared->entries[key];
+    auto decoded = entry.lock();
+    if (!decoded) {
+        decoded = std::make_shared<const std::vector<Tile>>(decodeDt1(archives_.read(key)));
+        entry = decoded;
+    }
     libraries_.emplace(key, decoded);
     return decoded;
 }

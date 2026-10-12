@@ -27,11 +27,16 @@ void NativeRealmHost::retire(PlayerBinding binding) {
     host.remove(binding);
     if (!host.participants(binding.game).empty()) return;
     host.destroy(binding.game); terrain.erase(binding.game);
+    std::erase_if(areaPreparations, [&](const auto &entry) { return entry.first.first == binding.game; });
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
 }
 void NativeRealmHost::advance(double seconds) {
     // Exactly one advance per scheduler call, regardless of connected clients.
     host.advance(seconds);
+    // Spread room materialization across frames while the player is still in
+    // the source area. One indivisible MPQ/layout/snapshot operation can exceed
+    // the budget; the next operation then waits for another scheduler call.
+    std::optional<std::chrono::steady_clock::time_point> preparationDeadline;
     for (auto &[game, areas] : terrain) {
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
@@ -45,16 +50,32 @@ void NativeRealmHost::advance(double seconds) {
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
         for (const auto &request : *pending) {
+            if (!preparationDeadline) preparationDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
+            if (std::chrono::steady_clock::now() >= *preparationDeadline) break;
+            const auto key = std::pair{game, request.request};
             try {
-                WorldCatalog world(archives, request.settings.difficulty);
-                const auto &level = world.level(int(request.destination));
-                auto prepared = prepareWorldArea(archives, *content, {request.settings.mapSeed, level.act, level.id, request.settings.difficulty});
+                auto &preparation = areaPreparations[key];
+                if (!preparation) {
+                    const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
+                    const auto &level = catalog->level(int(request.destination));
+                    preparation = std::make_unique<AreaGenerator>(archives,
+                        AreaGenerationRequest{request.settings.mapSeed, level.act, level.id, request.settings.difficulty});
+                    break;
+                }
+                // Do not let a smaller later request overtake this area and
+                // change entity admission/population order within the game.
+                if (!preparation->advance(*preparationDeadline)) break;
+                if (std::chrono::steady_clock::now() >= *preparationDeadline) break;
+                auto prepared = prepareWorldAreaContent(archives, *content, preparation->take());
+                areaPreparations.erase(key);
                 auto [entry, inserted] = areas.emplace(request.destination, std::move(prepared.terrain));
                 if (!inserted) throw std::logic_error("Prepared terrain already installed");
                 try {
                     if (!host.installArea(game, {request.request, std::move(prepared.authority)})) throw std::runtime_error("Prepared area handoff expired");
                 } catch (...) { areas.erase(entry); throw; }
+                break;
             } catch (const std::exception &error) {
+                areaPreparations.erase(key);
                 host.failArea(game, request.request);
                 for (auto *peer : peers) if (peer->binding && peer->binding->game == game) {
                     peer->counters.lastFailure = error.what(); ++peer->counters.failures;

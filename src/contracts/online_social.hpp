@@ -43,6 +43,10 @@ struct OnlineSocialView {
 };
 // Native 0x5E commands; 0x8B/0x75 provide the receiver-relative invitation state.
 enum class OnlinePartyAction : uint8_t { Invite = 6, Cancel = 7, Accept = 8, Leave = 9 };
+enum class OnlineRelationAction : uint8_t { Ignore = 2, Squelch = 3, Hostile = 4 };
+inline uint16_t onlineRelationMask(OnlineRelationAction action) {
+    return action==OnlineRelationAction::Ignore?2:action==OnlineRelationAction::Squelch?4:8;
+}
 inline std::optional<OnlinePartyAction> onlinePartyAction(const OnlineRosterPlayer &player) {
     if (!player.listed) return {};
     const auto state = player.partyState ? std::optional<uint16_t>{*player.partyState} : player.partyStatus;

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -178,21 +179,23 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
     if(body->necroPet && body->necroPet->aura && !ports_.effects.hirelingAuraActive(body->id,body->necroPet->aura->skill,body->necroPet->aura->rank))
         if(ports_.effects.hirelingAura(body->id,*body->necroPet->aura,tick.tick).status==DomainStatus::Capacity) return StepStatus::Blocked;
     if(tick.tick<pet.nextDecision) return StepStatus::Complete;
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=36;
-    for(const auto &[id,candidate]:ports_.monsters.read().actors) if(candidate.enemyTarget() && candidate.life>0 && candidate.area==body->area) {
-        const int distance=missileDistance(body->position,candidate.position);
-        if(distance<nearest && area.definition.collision.segment(body->position,candidate.position)) {nearest=distance;target=id;}
+    for(const auto id:participants.enemies(body->id,body->area)) {
+        const auto candidate=participants.find(id);
+        const int distance=missileDistance(body->position,candidate.position());
+        if(distance<nearest && area.definition.collision.segment(body->position,candidate.position())) {nearest=distance;target=id;}
     }
     if(target) {
         if(body->revived()) return StepStatus::Complete; // Its prepared original family AI owns combat decisions.
-        const auto *enemy=ports_.monsters.find(target);
+        const auto enemy=participants.find(target);
         const bool mage=body->necroPet && body->necroPet->kind==NecroSummonKind::Mage;
-        if((mage && missileDistance(body->position,enemy->position)<=25) || meleeDistance(body->position,body->rule.size,enemy->position,enemy->rule.size)<=body->rule.meleeRange) {
+        if((mage && missileDistance(body->position,enemy.position())<=25) || meleeDistance(body->position,body->rule.size,enemy.position(),enemy.size())<=body->rule.meleeRange) {
             ports_.monsters.stop(pet.actor);
             const uint16_t skill=body->necroPet && body->necroPet->kind==NecroSummonKind::Mage && !body->rule.skillActions.empty()?body->rule.skillActions.begin()->first:0;
-            const auto result=ports_.skills.requestCast({pet.actor,skill,UnitTarget{target,0,1},tick.tick});
+            const auto result=ports_.skills.requestCast({pet.actor,skill,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
             if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
-        } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy->position},target,body->rule.meleeRange,75,false});
+        } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
     } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});
     pet.nextDecision=tick.tick+uint64_t(std::max(1,body->rule.decisionTicks));return StepStatus::Complete;
 }

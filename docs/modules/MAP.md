@@ -18,6 +18,16 @@
 
 0x07／08只维护客户端视野引用；本人坐标选择当前房间／区域，不额外建立服务器 CLIENT_IN_ROOM 引用。房间事件历史缺口、生成失败或锚点失配明确停止显示／移动，要求重新入局，不回退近似预设。
 
+## 地图缓存与分帧准备
+
+单机的hosting与客户端共用同一Archives挂载；server内核不读取MPQ。sharedWorldCatalog按挂载／三难度复用不可变世界表，TileLibraryCache按规范化路径共享已解码DT1的弱引用，地图和本地缓存持有资源寿命；新增挂载会清除共享条目。NativeMapGenerator按LevelType／Dt1Mask复用只读瓦片选择索引，随机流仍归每个生成器／房间；已分配房间另有坐标分桶，clientRoom只检查命中桶并保留重叠歧义拒绝。
+
+运行中的宿主区域准备由AreaGenerator保留原逆序reveal和种子状态，NativeRealmHost每次调度给房间生成约4毫秒软预算，完整地形与权威内容准备成功后才installArea。首个城镇仍同步准备；相邻区域仍由world提前请求。Archives、GPU和权威提交都留在原线程，无并发MPQ读取。单次布局／DS1／DT1解码、快照或人口准备不可中断，仍可能超过预算。
+
+RemoteTown按约4毫秒软预算消费原顺序地图事件，未处理完时即使网络revision不变也继续推进；房间锚点与事件缺口校验保留，只用已物化房间选当前显示区域。地形修改的dirty状态跨帧保留；只在实际物化／释放地形或当前级别变化时重建快照，纯视野引用计数变化、同级房间内移动不再单独重建。SceneAssets以调色板／DT1瓦片身份复用Sprite，并持有对应库，避免房间集合变化时重复对已有瓦片逐像素哈希；GPU内容缓存仍负责真正的新图上传。
+
+D2MOO证据为DrlgActivate::DRLGACTIVATE_Update的房间状态和分次物化，以及AiUtil::AIUTIL_FindTargetInAdjacentRooms的邻房间单位链。当前宿主仍发布完整当前／相邻区域房间，不宣称等同原版逐房间卸载、完整活区时序或无卡顿。本轮取得普通难度隔离TCP边界往返样本，方法与未覆盖项见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)。修正版宿主同局样本中level2／3地形准备约149／198毫秒，内容准备约3659／3779毫秒；后者仍为同步阶段，不能据房间软预算宣称切区卡顿已完全消除。未作前后同负载基准、完整分位数或冷磁盘对照；Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供人工对照定位剩余开销。
+
 ## 客户端显示与操作
 
 ### 共用寻路

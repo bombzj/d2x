@@ -8,6 +8,7 @@ struct WeaponHitTarget {
     int physicalResistance{}, drain{};
     unsigned playerCount{1};
     bool hireling{}, boss{}, reducedWounds{};
+    bool player{};
 };
 struct LeechDivisors { int life{1}, mana{1}; };
 struct WeaponHitResult { int64_t crushing{}, life{}, mana{}, woundRate{}; };

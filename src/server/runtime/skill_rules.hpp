@@ -24,6 +24,7 @@ struct SkillRules {
     std::map<int,Aura> auras;
     std::map<std::string,int,std::less<>> nativeStats;
     CombatStateDefinition redeemed,holyShield,alignment,stunned,syncWarped;
+    CombatStateDefinition chilled,poisoned,openWounds;
     int poisonState{-1};
     std::set<int> dismissibleSummons;
     std::map<int,MonsterRule> amazonPetRules;

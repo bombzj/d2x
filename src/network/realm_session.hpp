@@ -76,6 +76,7 @@ class RealmSession {
     bool send_chat_input(std::string text); // Client syntax and room/BNCS routing; local actions belong to app.
     bool send_bnet_command(std::string text);
     bool chat_relation(uint32_t player, bool squelch, bool enabled);
+    bool player_relation(uint32_t player, OnlineRelationAction action, bool enabled, uint64_t gameGeneration);
     bool party_action(uint32_t player, OnlinePartyAction action, uint64_t gameGeneration);
     // Respond only to the current server invitation. Accept is TRADEBTN_PERFORM
     // (3), not the final item-exchange acceptance (4). No local trade execution.

@@ -5,18 +5,19 @@
 #include "server/area_store.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "gameplay/skills/behavior.hpp"
 namespace d2x::server::missiles {
 std::vector<EntityId> System::collisionCandidates(const Missile &missile,Vec next) const {
     const Vec center=(missile.position+next)*.5f;
     const auto candidates=ports_.spatial.query({missile.area,center,(next-missile.position).length()*.5f+float(missile.collision.size+ports_.spatial.maximumSize(missile.area)+1)});
     if(!candidates) throw std::logic_error("Missile collision index unavailable");
     std::vector<EntityId> result;result.reserve(candidates.value->size());
-    for(const auto &candidate:*candidates.value) if(candidate.kind==spatial::UnitKind::Monster || (missile.skill.warcry && candidate.kind==spatial::UnitKind::Player)) result.push_back(candidate.id);
+    for(const auto &candidate:*candidates.value) if(candidate.kind==spatial::UnitKind::Monster || candidate.kind==spatial::UnitKind::Player) result.push_back(candidate.id);
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked=false;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     // Newly committed children start on the next domain frame.
     const auto end=ports_.ids.cursor();
     for(auto it=state_.missiles.begin();it!=state_.missiles.end() && it->first.value<end;) {
@@ -36,8 +37,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             auto skill=plan.next.skill;skill.manaCost=0;skill.charge.reset();
             const ActorContext actor{m.player,m.owner,m.area,m.generation,0,tick.tick};
             const auto target=plan.curseTargets[plan.nextCurseTarget];
-            const auto *monster=ports_.monsters.find(target);
-            const auto result=monster?ports_.effects.curse(actor,skill,monster->position,target):DomainResult<>{DomainStatus::Unavailable,{}};
+            const auto recipient=participants.find(target);
+            const auto result=recipient.aliveIn(m.area)?ports_.effects.curse(actor,skill,recipient.position(),target):DomainResult<>{DomainStatus::Unavailable,{}};
             if(result.status==DomainStatus::Capacity) break;
             ++plan.nextCurseTarget;
         }

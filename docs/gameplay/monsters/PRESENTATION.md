@@ -71,9 +71,21 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 本次确认此前漏查玩家自身阵营：原版Host记录seq17给玩家发送`AA00020000000C6959F9FF1F`（state105、stat172、alignment=2），自研记录seq453为`AA00B600000008FF`，只有空状态列表。D2MOO `PLAYER_Create`明确调用`sub_6FCBDD30(pPlayer, 2, 1)`；原1.13c D2Common ordinal10830／RVA391F0对玩家缺失alignment返回0，ordinal10666／RVA84D30将0与0判断为同阵营。D2Client RVAA64E2调用该关系函数，结果进入RVAA68E0的悬停／技能资格筛选，因此缺失玩家alignment可使普通敌人被排除。补怪物alignment=0不能补偿玩家端的错误。
 
-`nativePlayerInitialStates`现从当前MPQ解析状态／属性ID，按原规则发送玩家友方值2；本人59后及远端玩家首次可见／重新入视野共用该AA编码。固定身份状态不混入临时效果差分缓存，避免后续A9误清除；当前MPQ alignment的plrstaydeath=1，死亡保留。自有客户端`remote_world`与`RemoteCombat::refresh`已经按MPQ解码玩家AA属性，无须新增包型。其既有怪物敌对筛选只查看怪物侧状态，说明D2X能选中不能认证原版的双方阵营判断。
+`nativePlayerInitialStates`从当前MPQ解析状态／属性ID，按原规则发送玩家友方值2；本人59后及远端玩家首次可见／重新入视野共用该AA编码。固定身份状态不混入临时效果差分缓存，避免后续A9误清除；当前MPQ alignment的plrstaydeath=1，死亡保留。自有客户端`remote_world`与`RemoteCombat::update`按MPQ解码玩家AA属性，无须新增包型；当前敌对筛选已读取双方阵营，具体规则见下节。此前仅看怪物侧状态的D2X表现不能认证原版的双方阵营判断。
 
-此次玩家阵营修正仅改源码、静态核对，尚未构建或复验；当前运行宿主仍是上述旧包。原版进程只读访问被Windows拒绝，未取得可选位／LOS现场值，不能宣称用户悬停已恢复。原版Host与自研Host的同种子人口、全部路径类型、动态占位、完整房间／可见性时序和逐帧位置尚未完全对齐；AStar仍为当前网格实现。新包仍需复验原版Join的怪物悬停、单位技能命中及死亡后保存重入。
+当前修正版已构建；D2X Join／Host取得敌对玩家与fallen1的有限伤害观察，见[提交前冒烟](../../development/BUILD_AND_RUN.md#本批提交前冒烟)。原版进程只读访问被Windows拒绝，未取得可选位／LOS现场值，不能宣称用户悬停已恢复。原版Host与自研Host的同种子人口、全部路径类型、动态占位、完整房间／可见性时序和逐帧位置尚未完全对齐；AStar仍为当前网格实现。新包仍需复验原版Join的怪物悬停、单位技能命中及死亡后保存重入。
+
+## 客户端与服务端阵营规则
+
+当前源码共用`gameplay/combat/alignment.hpp`的原单位枚举及同阵营比较：恶方0、中立1、善方2；只有恶／恶、善／善算同阵营，同一实体另行处理。MonStats.Align的善方1／中立2在hosting准备阶段转换，不能直接当网络属性值。原1.13c D2Common ordinal10830／10666与D2MOO的GetUnitAlignment／AreUnitsAligned提供一致的缺状态默认0及比较依据。
+
+- 客户端`RemoteCombat`消费双方AA／A7／A8／A9中的alignment状态属性，不再用怪物静态Align或“非零即友方”覆盖回包。已知单位缺阵营状态按原版取0；无法解码的状态或主人信息保留未知并拒绝敌对选取。换局、换区与单位移除清除缓存。
+- 宠物主人来自7A、佣兵归属及AC的32位佣兵主人／31位stored owner；AC组件位宽取当前MPQ。本人宠物不作为敌人，其他玩家宠物按8C方向性敌意位8判断；缺关系记录的位检查按原客户端返回0，不推导队伍关系。原D2Client RVAA62A0中的主人替换与RVA4FD90提供依据。服务端主动敌意及PvP玩家伤害已接，客户端同时处理75／8C并允许敌对玩家目标；完整PvP动态支持仍未认证。
+- 帮助技能单独判断本人、宠物主人和当前队伍。Enchant使用盟友关系，允许无主善方单位；敌对目标施法仍交权威按SrvDo025退回施法者。Holy Bolt的友方目标限本人宠物、队友及队友宠物，敌方亡灵命中另由权威过滤。转化只改变阵营／AI归属，不冒充原宠物主人；权威规则见[战斗关系](../../modules/SERVER_SYSTEMS.md#战斗关系与提交)。
+- 宿主普通怪物、宠物和NPC首次可见发送alignment AA；玩家本人及远端玩家也发送善方AA。非零阵营恢复为0时用A8带显式零属性，A7只启用状态不会清旧值。AI、伤害关系和怪物投影共用有效阵营；来源绑定包含阵营及控制代次。
+- `MonStats2.Utrans=255`按原D2Client RVAA7ACD→RVA21B10使用7A宠物名册及主人对观察者的敌意位；有主人且非敌对（含本人）取变换1，无主人或敌对取0。它不使用队伍资格，原先按同队判定和颠倒0／1的显示已修正。
+
+依据包含本地D2MOO D2StatList、SUnit、SkillSor::SrvDo025、SkillPal::SrvDo079及MissMode::SrvHit07、当前MPQ表、既有原版Host日志与原1.13c DLL静态反汇编。本轮源码取得上述隔离客户端有限观察；旧原日志不认证新实现，原版悬停恢复仍待后续实机复验。静态NPC伤亡、未实现AI、完整PvP和完整空间可选性仍按既有专题边界，不宣称消除了全部原版差异。
 
 ## 原图、声音与尸体
 

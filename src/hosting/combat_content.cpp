@@ -229,7 +229,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
 }
 std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, const ClassicData &data,
     AreaGenerationRequest request, MonsterIdentity identity, Vec position) {
-    WorldCatalog world(archives, request.difficulty);
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     MonsterCatalog catalog(archives, data.tables.at("monstats"));
     AnimDataTable animations(archives.read("data/global/animdata.d2"));
     uint64_t seed=request.seed;
@@ -238,7 +238,7 @@ std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, 
     return combatMonster(archives, data, request, std::move(identity), position, world, catalog, animations,random);
 }
 std::vector<server::PreparedMonster> prepareObjectParty(Archives &archives,const ClassicData &data,AreaGenerationRequest request,std::string code) {
-    WorldCatalog world(archives,request.difficulty);MonsterCatalog catalog(archives,data.tables.at("monstats"));AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;MonsterCatalog catalog(archives,data.tables.at("monstats"));AnimDataTable animations(archives.read("data/global/animdata.d2"));
     const auto *record=catalog.find(code);if(!record || !record->hostile()) return {};
     auto random=initialRandom(request.seed^uint32_t(request.level));MonsterIdentity identity;identity.monster=code;identity.rank=MonsterRank::Unique;identity.spawnKey="object.urn";identity.origin=SpawnOrigin::Summoned;
     auto parent=combatMonster(archives,data,request,identity,{},world,catalog,animations,random,nullptr,false);
@@ -259,7 +259,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     auto &area = prepared.authority;
     if (area.town) return;
     const auto &request = prepared.terrain.request;
-    WorldCatalog world(archives, request.difficulty);
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto &level = world.level(request.level);
     MonsterCatalog catalog(archives, data.tables.at("monstats"));
     AnimDataTable animations(archives.read("data/global/animdata.d2"));

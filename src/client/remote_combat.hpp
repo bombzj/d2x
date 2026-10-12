@@ -3,6 +3,8 @@
 #include "network/realm_session.hpp"
 #include "resources/data_table.hpp"
 #include "content/skills/skill_metadata.hpp"
+#include "gameplay/combat/alignment.hpp"
+#include <array>
 #include <map>
 
 namespace d2x {
@@ -35,6 +37,9 @@ class RemoteCombat {
     std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
     std::vector<OnlineCombatSkillView> catalog_;
     std::map<OnlineUnitKey, OnlineCombatUnitStates> unitStates_;
+    struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; };
+    std::map<OnlineUnitKey, Ownership> unitOwners_;
+    std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
     std::string reason_;
     bool reject(std::string);
@@ -42,12 +47,18 @@ class RemoteCombat {
     bool innateSkill(uint16_t) const;
     enum class MonsterDisposition { Unknown, Hostile, NonHostile };
     MonsterDisposition monsterDisposition(const OnlineUnit &) const;
+    std::optional<UnitAlignment> alignment(const OnlineUnit &) const;
+    std::optional<uint32_t> playerOwner(const OnlineUnit &) const;
+    bool sameParty(uint32_t, uint32_t) const;
+    bool hostilePlayers(uint32_t, uint32_t) const;
+    bool allied(const OnlineUnit &) const;
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand);
     void update();
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
+    uint8_t ownershipTransform(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;

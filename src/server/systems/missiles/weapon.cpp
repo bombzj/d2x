@@ -15,13 +15,16 @@ void System::weaponImpact(Advance &plan,Vec at) const {
     auto &m=plan.next;
     if(!m.skill.missileImpact) return;
     const auto &owner=*ports_.players.find(m.player);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto skill=m.skill.weapon && m.skill.weapon->commonAttack?m.skill:skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
     Spawn request{{m.player,m.owner,m.area,m.generation,0,m.created},skill,{},at,true};
     if(skill.weapon->spear && skill.weapon->spear->kind==SpearSkillSpec::Kind::Fury) {
         const auto &fury=*skill.weapon->spear;const auto &area=ports_.areas.at(m.area);
         std::vector<MissileBurstTarget> candidates;
-        for(const auto &[id,target]:ports_.monsters.read().actors) if(target.enemyTarget() && target.life>0 && target.area==m.area &&
-            area.definition.collision.missileSegment(at,target.position,{4,1})) candidates.push_back({id,target.position});
+        for(const auto id:participants.enemies(m.owner,m.area)) {
+            const auto target=participants.find(id);
+            if(area.definition.collision.missileSegment(at,target.position(),{4,1})) candidates.push_back({id,target.position()});
+        }
         for(const auto &target:missileBurstTargets(at,fury.targetRadius,fury.countBase,candidates))
             plan.children.push_back(make(request,at,target.position-at,fury.childId,
                 std::max(1,int(std::lround(fury.childLifetime*25.f))),fury.childSpeed,fury.childKillOnHit?Program::Projectile:Program::FuryBolt,m.random));
@@ -37,10 +40,10 @@ void System::weaponImpact(Advance &plan,Vec at) const {
             plan.children.push_back(make(request,position,{},bow.fire.fireId,bow.fire.fireFrames,0,Program::Fire,m.random));
         }
         std::vector<EntityId> targets;
-        for(const auto &[id,target]:ports_.monsters.read().actors)
-            if(target.enemyTarget() && target.life>0 && target.area==m.area &&
-                (Vec{std::floor(target.position.x)-std::floor(at.x),std::floor(target.position.y)-std::floor(at.y)}).length()<=bow.explosionRadius)
-                targets.push_back(id);
+        for(const auto id:participants.enemies(m.owner,m.area)) {
+            const auto position=participants.find(id).position();
+            if((Vec{std::floor(position.x)-std::floor(at.x),std::floor(position.y)-std::floor(at.y)}).length()<=bow.explosionRadius) targets.push_back(id);
+        }
         auto hit=impact(m,std::move(targets),m.weapon->channels[size_t(DamageType::Fire)]);
         hit.type=DamageType::Fire;hit.coldFrames=0;hit.freeze=false;// Range damage and the primary weapon contact are distinct native callbacks.
         hit.occurrence=(uint64_t(m.ageFrames)<<32)|(uint64_t{1}<<31)|m.weaponContacts.size();
@@ -48,9 +51,10 @@ void System::weaponImpact(Advance &plan,Vec at) const {
     }
     if(m.program==Program::GroundThrow && m.weapon && skill.missileImpact->radius>0) {
         std::vector<EntityId> targets;
-        for(const auto &[id,target]:ports_.monsters.read().actors) {
-            const Vec d{std::floor(target.position.x)-std::floor(at.x),std::floor(target.position.y)-std::floor(at.y)};
-            if(target.enemyTarget() && target.life>0 && target.area==m.area && d.x*d.x+d.y*d.y<=skill.missileImpact->radius*skill.missileImpact->radius) targets.push_back(id);
+        for(const auto id:participants.enemies(m.owner,m.area)) {
+            const auto position=participants.find(id).position();
+            const Vec d{std::floor(position.x)-std::floor(at.x),std::floor(position.y)-std::floor(at.y)};
+            if(d.x*d.x+d.y*d.y<=skill.missileImpact->radius*skill.missileImpact->radius) targets.push_back(id);
         }
         auto hit=impact(m,std::move(targets),0);hit.type=DamageType::Physical;hit.weapon=m.weapon;
         hit.occurrence=uint64_t(m.ageFrames);plan.impacts.push_back(std::move(hit));
@@ -90,21 +94,23 @@ System::Advance System::advanceGroundThrow(const Missile &original) const {
 System::Advance System::advanceWeapon(const Missile &original) const {
     Advance plan{original,{},{},false};auto &m=plan.next;const auto &area=ports_.areas.at(m.area);
     const auto &owner=*ports_.players.find(m.player);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(m.skill.weapon->bow && m.skill.weapon->bow->guided) {
         const auto &bow=*m.skill.weapon->bow;
         if(m.guidance) {
-            const auto *target=ports_.monsters.find(m.guidance);
-            if(target && target->enemyTarget() && target->life>0 && target->area==m.area)
-                if(const auto heading=missileGuidedDirection(m.position,target->position,m.lifetimeFrames-m.ageFrames,bow.retargetPeriod)) m.velocity=*heading*m.velocity.length();
+            const auto target=participants.find(m.guidance);
+            if(target.aliveIn(m.area) && participants.canHarm(m.owner,m.guidance))
+                if(const auto heading=missileGuidedDirection(m.position,target.position(),m.lifetimeFrames-m.ageFrames,bow.retargetPeriod)) m.velocity=*heading*m.velocity.length();
         } else if(!m.guidanceSearched && m.ageFrames+1>=m.lifetimeFrames) {
             m.guidanceSearched=true;
-            for(const auto &[id,target]:ports_.monsters.read().actors) if(target.enemyTarget() && target.life>0 && target.area==m.area) {
-                const int distance=missileDistance(m.position,target.position);
-                if(distance<=bow.searchRadius && area.definition.collision.missileSegment(m.position,target.position,{4,1}) && (!m.guidance || id<m.guidance)) m.guidance=id;
+            for(const auto id:participants.enemies(m.owner,m.area)) {
+                const auto target=participants.find(id);
+                const int distance=missileDistance(m.position,target.position());
+                if(distance<=bow.searchRadius && area.definition.collision.missileSegment(m.position,target.position(),{4,1}) && (!m.guidance || id<m.guidance)) m.guidance=id;
             }
             m.ageFrames=0;
             m.lifetimeFrames-=owner.rules.skills->definitions.at(m.skill.sourceId).spec.missileRangePerLevel;
-            if(m.guidance) m.velocity=(ports_.monsters.find(m.guidance)->position-m.position).unit()*m.velocity.length();
+            if(m.guidance) m.velocity=(participants.find(m.guidance).position()-m.position).unit()*m.velocity.length();
             else m.velocity=m.turnTarget.unit()*m.velocity.length();
         }
     }
@@ -122,11 +128,10 @@ System::Advance System::advanceWeapon(const Missile &original) const {
     std::vector<std::pair<float,EntityId>> contacts;
     const bool active=!m.skill.weapon->bow || m.ageFrames>=m.skill.weapon->bow->activateFrames;
     for(const auto candidate:collisionCandidates(m,next)) {
-        const auto *found=ports_.monsters.find(candidate);if(!found) continue;
-        const auto &target=*found;const auto id=target.id;
-        if(active && target.enemyTarget() && target.life>0 && target.area==m.area && !m.weaponContacts.contains(id))
+        const auto target=participants.find(candidate);const auto id=candidate;
+        if(active && target.aliveIn(m.area) && participants.canHarm(m.owner,id) && !m.weaponContacts.contains(id))
         if(!m.skill.weapon->bow || !m.skill.weapon->bow->guided || (m.guidance && id==m.guidance) || (!m.guidance && m.guidanceSearched))
-        if(const auto fraction=missileUnitIntersection(m.position,next,m.collision.size,target.position,target.rule.size)) contacts.emplace_back(*fraction,id);
+        if(const auto fraction=missileUnitIntersection(m.position,next,m.collision.size,target.position(),target.size())) contacts.emplace_back(*fraction,id);
     }
     std::sort(contacts.begin(),contacts.end());
     const Vec start=m.position;

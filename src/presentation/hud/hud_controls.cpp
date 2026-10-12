@@ -8,6 +8,19 @@
 #include <sstream>
 
 namespace d2x {
+void SceneView::drawHostilityWarning() const {
+    if (!incomingHostility_ || worldViewport().x + worldViewport().width < W) return;
+    const auto *image = assets_.hostileIcon.frame(0, 0);
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    if (!image || !blend) return;
+    // D2Client 1.13c RVA 285C0: incoming flag 8, W-58, bottom baseline
+    // 45 (115 with automap), original CelDraw mode 1 / TRANS50.
+    const float baseline = view_.automap ? 115.f : 45.f;
+    blend->drawHalf(image, {W - 58 * classicPanelScale + image->x * classicPanelScale,
+        (baseline + image->y - image->texture.height) * classicPanelScale,
+        image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+}
 namespace {
 void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     if (!image || !image->texture.id)

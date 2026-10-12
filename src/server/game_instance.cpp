@@ -30,6 +30,9 @@ PlayerId GameInstance::admit(GameDefinition definition) {
 bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
+    if(found->second.entered==active) return true;
+    if(active && !events_.publish({0,tick_,{}, {AudienceKind::Game,{},found->second.area},
+        {PlayerMessageFact{2,found->second.persistent.player.name}}})) return false;
     if (!active && !systems_.trade.cancelFor(id,tick_)) return false;
     if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
@@ -247,10 +250,8 @@ DomainResult<> GameInstance::grantHireling(PlayerId id,HirelingRecord record) {
 namespace d2x::server {
 std::vector<ItemInstance> GameInstance::groundItems(PlayerId id) const {
     std::vector<ItemInstance> result; const auto areas = visibleAreas(id);
-    for (const auto &[key, item] : systems_.items.read().world.items) {
-        (void)key; const auto &at = std::get<GroundLocation>(item.location);
-        if (std::find(areas.begin(), areas.end(), at.region) != areas.end()) result.push_back(item);
-    }
+    for (const auto key : systems_.items.groundInAreas(areas))
+        result.push_back(systems_.items.read().world.items.at(key));
     return result;
 }
 DomainResult<> GameInstance::spawnItems(PlayerId id, items::PreparedBatch batch, std::optional<Vec> position) {

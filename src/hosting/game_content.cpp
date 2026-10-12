@@ -13,13 +13,20 @@
 #include "gameplay/areas/waypoint.hpp"
 #include <algorithm>
 #include <stdexcept>
+#include <chrono>
+#include <iostream>
 
 namespace d2x {
 PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &content, AreaGenerationRequest request) {
+    return prepareWorldAreaContent(archives, content, generateArea(archives, request));
+}
+PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData &content, GeneratedArea terrain) {
+    const auto started = std::chrono::steady_clock::now();
+    const auto request = terrain.request;
     PreparedWorldArea result;
-    WorldCatalog world(archives, request.difficulty);
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto &level = world.level(request.level);
-    result.terrain = generateArea(archives, request);
+    result.terrain = std::move(terrain);
     auto &area = result.authority;
     area.id = RegionId(request.level); area.waypointIndex=level.waypoint;
     area.townRegion = RegionId(actTownLevels.at(size_t(request.act)));
@@ -115,6 +122,10 @@ PreparedWorldArea prepareWorldArea(Archives &archives, const ClassicData &conten
     prepareCombatPopulation(archives, content, result);
     prepareEnvironmentPopulation(archives,content,result);
     prepareQuestWorld(archives,content,result);
+    const auto completed = std::chrono::steady_clock::now();
+    std::clog << "[area-load] host level=" << request.level << " difficulty=" << request.difficulty
+        << " terrain_ms=" << result.terrain.preparationMilliseconds
+        << " content_ms=" << std::chrono::duration<double, std::milli>(completed - started).count() << '\n';
     return result;
 }
 server::GameDefinition prepareJoiningCharacter(const ClassicData &content, PersistentCharacter saved,
@@ -136,7 +147,7 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     const auto character = std::find_if(content.characters.begin(), content.characters.end(),
         [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
-    WorldCatalog world(archives, saved.difficulty);
+    const auto worldSource = sharedWorldCatalog(archives, saved.difficulty); const auto &world = *worldSource;
     const auto &previous = world.levels().at(int(saved.lastRegion));
     const auto &town = world.levels().at(actTownLevels.at(size_t(previous.act)));
     if (!town.town) throw std::runtime_error("Saved act lacks an original town");

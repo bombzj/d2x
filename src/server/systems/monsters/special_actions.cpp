@@ -43,7 +43,7 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
     if(unique) {
         // Fn013's unique callback accepts both Fallen and FallenShaman families,
         // excluding unique/champion corpses, with a squared coordinate metric.
-        if(!dead->enemyTarget() || (dead->rule.ai.kind!=MonsterAiKind::Fallen && dead->rule.ai.kind!=MonsterAiKind::FallenShaman) ||
+        if(!dead->enemyTarget() || dead->alignment()!=UnitAlignment::Evil || (dead->rule.ai.kind!=MonsterAiKind::Fallen && dead->rule.ai.kind!=MonsterAiKind::FallenShaman) ||
             (dead->identity.rank!=MonsterRank::Normal && dead->identity.rank!=MonsterRank::Minion)) return false;
         const Vec delta{std::floor(caster->position.x)-std::floor(dead->position.x),
             std::floor(caster->position.y)-std::floor(dead->position.y)};
@@ -137,7 +137,7 @@ void System::shortenPoison(EntityId id,uint64_t tick,int remainingPercent) {
 }
 DomainResult<> System::convert(EntityId id,const ActorContext &actor,const WeaponSkillSpec &skill) {
     auto it=state_.actors.find(id);const auto *p=ports_.players.find(actor.player);
-    if(it==state_.actors.end() || !p || !p->rules.skills || !it->second.rule.convertible || it->second.owner || it->second.life<=0 ||
+    if(it==state_.actors.end() || !p || !p->rules.skills || !it->second.rule.convertible || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || it->second.life<=0 ||
        it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique || it->second.area!=actor.area)
         return {DomainStatus::InvalidRequest,{}};
     auto &m=it->second;const int alignment=p->rules.skills->alignment.id,stat=p->rules.skills->nativeStats.at("alignment");

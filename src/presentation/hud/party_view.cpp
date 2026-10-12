@@ -54,6 +54,11 @@ PartyView::PartyView(Archives &archives)
                    std::string(strings.find("Accept"))};
         level_ = strings.find("Level");
         leave_ = strings.find("Leave"); inParty_ = strings.find("Yourparty"); otherParty_ = strings.find("Inparty");
+        const auto lines=[&](const char *first,const char *second) {return std::string(strings.find(first))+"\n"+std::string(strings.find(second));};
+        relationTips_[0]={lines("strParty17","strParty18"),lines("strParty15","strParty16")};
+        relationTips_[1]={std::string(strings.find("strParty19")),std::string(strings.find("strParty22"))};
+        relationTips_[2]={lines("strParty7","strParty8"),lines("strParty9","strParty10")};
+        townTip_=strings.find("strParty25");levelTip_=lines("StrParty26","StrParty27");
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t i = 0; i < levels.rows().size(); ++i)
             if (const auto id = levels.number(i, "Id"); id && *id >= 0 && *id <= UINT16_MAX)
@@ -71,6 +76,7 @@ PartyView::PartyView(Archives &archives)
         separator_ = graphics_.single("data/global/ui/menu/partybar.dc6");
         loadPartyFont(archives, graphics_, font_, "font8");
         loadPartyFont(archives, graphics_, greenFont_, "font8", 2);
+        loadPartyFont(archives, graphics_, redFont_, "font8", 1);
         loadPartyFont(archives, graphics_, buttonFont_, "font8");
         loadPartyFont(archives, graphics_, greenButtonFont_, "font8", 2);
         loadPartyFont(archives, graphics_, nameFont_, "font6");
@@ -81,26 +87,21 @@ PartyView::PartyView(Archives &archives)
             while (!name.empty() && width(name + "...") > 140) name.pop_back();
             name += "...";
         }
-        if (panel_.count < 4 || buttons_.count < 2 || boxes_.count < 16 || close_.count < 12 ||
+        if (panel_.count < 4 || buttons_.count < 2 || boxes_.count < 18 || close_.count < 12 ||
             separator_.count < 2 || leave_.empty() || inParty_.empty() || level_.empty() ||
             std::ranges::any_of(portraits_, [](const auto &p) { return p.frames.empty(); }) ||
             std::ranges::any_of(labels_, [](const auto &s) { return s.empty(); }))
             throw std::runtime_error("Original party panel resources are missing");
-        // Low-level hostile icon: native red font transform, retaining MPQ pixels.
-        const auto *original = graphics_.animation("data/global/ui/menu/partyboxes.dc6");
-        const auto pl2 = archives.read("data/global/palette/sky/pal.pl2");
-        constexpr size_t red = 0x6B600 + 13 * 3 + 256;
-        if (!original || pl2.size() < red + 256) throw std::runtime_error("Original red party transform is missing");
-        auto icon = original->frames.at(4);
-        for (auto &pixel : icon.pixels) if (pixel) pixel = pl2[red + pixel];
-        boxes_.frames.push_back(graphics_.upload(icon));
+        // The original DC6 has 18 frames: 16/17 already supply the red
+        // unavailable hostile icon. Keep their original pixels and palette.
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }
 }
-bool PartyView::update(const OnlineSocialView &social, uint32_t self, uint64_t game) {
+bool PartyView::update(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town) {
     const bool changed = self != self_ || game != game_;
     if (changed) { pressed_.reset(); closePressed_ = false; }
     self_ = self; game_ = game;
+    town_=town;relations_=social.relationships;
     const auto previousParty = ownParty_;
     players_.clear(); ownParty_.reset(); ownLevel_.reset();
     if (const auto own = social.players.find(self); own != social.players.end()) {
@@ -127,7 +128,18 @@ Rectangle PartyView::buttonBounds(size_t index) const {
     return partyRect(270, 136 + 38 * float(index), image ? float(image->texture.width) : 0,
                      image ? float(image->texture.height) : 0);
 }
+uint16_t PartyView::flags(uint32_t player) const {
+    const auto found=relations_.find({self_,player});
+    if(found!=relations_.end()) return found->second;
+    const auto entry=std::find_if(players_.begin(),players_.end(),[&](const auto &p){return p.id==player;});
+    return entry==players_.end()?0:entry->relationshipFlags.value_or(0);
+}
+Rectangle PartyView::relationBounds(size_t row,OnlineRelationAction action) const {
+    return partyRect(action==OnlineRelationAction::Hostile?92:action==OnlineRelationAction::Ignore?345:365,
+        (action==OnlineRelationAction::Hostile?140:136)+38*float(row),20,20);
+}
 PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
+    tooltip_.clear();
     if (!open || !input.focused) { pressed_.reset(); closePressed_ = false; return {}; }
     const bool inside = input.insideViewport && CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false));
     const bool held = pressed_.has_value() || closePressed_;
@@ -145,6 +157,17 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
                 !(ownParty_ && *ownParty_ != UINT16_MAX && players_[i].partyId == ownParty_) &&
                 CheckCollisionPointRec(rv(input.mouse), buttonBounds(i)))
                 hovered = PartyIntent{true, players_[i].id, game_, action};
+    if(inside && ready_) for(size_t i=0;i<players_.size();++i)
+        for(const auto action:{OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+            const auto bounds=relationBounds(i,action);
+            if(!CheckCollisionPointRec(rv(input.mouse),bounds)) continue;
+            const auto &player=players_[i];const bool enabled=(flags(player.id)&onlineRelationMask(action))==0;
+            const bool level=ownLevel_ && *ownLevel_>=9 && player.level && *player.level>=9;
+            tooltip_=action==OnlineRelationAction::Hostile && !level?levelTip_:action==OnlineRelationAction::Hostile && !town_?townTip_:
+                relationTips_[size_t(uint8_t(action)-2)][enabled?0:1];
+            tooltipAt_={bounds.x/classicPanelScale+10,bounds.y/classicPanelScale-5};
+            if(action!=OnlineRelationAction::Hostile || (town_ && level)) hovered=PartyIntent{true,player.id,game_,{},action,enabled};
+        }
     if (inside && ready_ && ownParty_ && *ownParty_ != UINT16_MAX &&
         CheckCollisionPointRec(rv(input.mouse), partyRect(307, 80, 53, 20)))
         hovered = PartyIntent{true, self_, game_, OnlinePartyAction::Leave};
@@ -153,7 +176,7 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
     if (input.leftReleased) {
         if (closePressed_ && close) open = false;
         if (pressed_ && hovered && pressed_->player == hovered->player &&
-            pressed_->action == hovered->action && pressed_->gameGeneration == hovered->gameGeneration)
+            pressed_->action == hovered->action && pressed_->relation==hovered->relation && pressed_->enabled==hovered->enabled && pressed_->gameGeneration == hovered->gameGeneration)
             result = *hovered;
         pressed_.reset(); closePressed_ = false;
     } else if (!input.leftHeld) { pressed_.reset(); closePressed_ = false; }
@@ -186,20 +209,24 @@ void PartyView::draw(std::string_view ownName) const {
         const auto &p = players_[i];
         const float offset = 38 * float(i);
         const bool allied = ownParty_ && *ownParty_ != UINT16_MAX && p.partyId == ownParty_;
-        const auto &font = allied ? greenFont_ : font_;
+        const bool hostile = (flags(p.id) & onlineRelationMask(OnlineRelationAction::Hostile)) != 0;
+        const auto &font = hostile ? redFont_ : allied ? greenFont_ : font_;
         text(font, p.name, 116, 152 + offset);
         const auto cls = p.characterClass && *p.characterClass < classes_.size() ? classes_[*p.characterClass] : "?";
         text(font, cls.empty() ? "?" : cls, 116, 166 + offset);
-        const bool lowLevel = (p.level && *p.level < 9) || (ownLevel_ && *ownLevel_ < 9);
-        art(lowLevel ? &boxes_.frames.back() : boxes_.frame(0, 4), 92, 140 + offset);
-        // Other relationship controls remain display-only until their workflow is verified.
-        art(boxes_.frame(0, 0), 345, 136 + offset);
-        art(boxes_.frame(0, 8), 365, 136 + offset);
+        for(const auto action:{OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+            const bool down=pressed_ && pressed_->player==p.id && pressed_->relation==action;
+            const int base=action==OnlineRelationAction::Hostile?4:action==OnlineRelationAction::Ignore?0:8;
+            const bool disabled=action==OnlineRelationAction::Hostile && (!town_ || !p.level || *p.level<9 || !ownLevel_ || *ownLevel_<9);
+            const int frame=disabled?16+int(down):base+((flags(p.id)&onlineRelationMask(action))?2:0)+int(down);
+            const auto bounds=relationBounds(i,action);
+            art(boxes_.frame(0,frame),bounds.x/classicPanelScale,bounds.y/classicPanelScale);
+        }
         text(font, level_ + ": " + (p.level ? std::to_string(*p.level) : "?"), 325, 166 + offset, 61, true);
         if (allied) {
-            text(greenFont_, inParty_, 222, 152 + offset, 115);
+            text(font, inParty_, 222, 152 + offset, 115);
             if (p.area) if (const auto area = areas_.find(*p.area); area != areas_.end())
-                text(greenFont_, area->second, 206, 166 + offset);
+                text(font, area->second, 206, 166 + offset);
         } else if (const auto action = onlinePartyAction(p)) {
             const bool down = pressed_ && pressed_->player == p.id && pressed_->action == action;
             art(buttons_.frame(0, down ? 1 : 0), 270, 136 + offset);
@@ -213,6 +240,17 @@ void PartyView::draw(std::string_view ownName) const {
         }
     }
     art(close_.frame(0, closePressed_ ? 11 : 10), 358, 455);
+    if(!tooltip_.empty()) {
+        std::vector<std::string_view> lines;size_t start=0;float width=0;
+        while(start<tooltip_.size()) {
+            const auto end=tooltip_.find('\n',start);auto line=std::string_view(tooltip_).substr(start,end==std::string::npos?end:end-start);
+            float measured=0;for(unsigned char c:line) measured+=font_.widths[c];width=std::max(width,measured);lines.push_back(line);
+            if(end==std::string::npos) break;start=end+1;
+        }
+        const float x=std::clamp(tooltipAt_.x-width/2,82.f,std::max(82.f,396-width)),y=tooltipAt_.y-float(lines.size())*14;
+        DrawRectangleRec(partyRect(x-3,y-2,width+6,float(lines.size())*14+4),BLACK);
+        for(size_t line=0;line<lines.size();++line) text(font_,lines[line],x,y+12+float(line)*14,width);
+    }
 }
 size_t PartyView::portraitCount() const {
     if (!ready_ || !ownParty_ || *ownParty_ == UINT16_MAX) return 0;

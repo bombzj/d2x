@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
+#include "server/systems/effects/system.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/player_store.hpp"
@@ -17,6 +19,7 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
     if(!p || !p->entered || p->actor!=request.actor.actor || p->area!=request.actor.area || (p->persistent.player.hp<=0 && !request.deathTrigger) ||
         !a || a->generation!=request.actor.areaGeneration || a->definition.town) return {DomainStatus::InvalidActor,{}};
     if(ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto random=ports_.random;
     Missile m; m.id=EntityId{ports_.ids.cursor()};m.player=p->player;m.owner=p->actor;m.area=p->area;m.skill=request.skill;
     m.emitter=request.emitter ? request.emitter : p->actor;m.emitterType=request.emitterType;m.definition=request.skill.missileId;m.position=request.target;m.lifetimeFrames=std::max(1,int(std::lround(request.skill.missileLifetime*25.f)));
@@ -49,25 +52,26 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
     if(request.weapon && request.skill.weapon->spear && request.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike) {
         const auto &program=*request.skill.weapon->spear;
         std::vector<uint64_t> eligible;
-        for(const auto &[id,target]:ports_.monsters.read().actors) {
-            if(target.enemyTarget() && target.life>0 && target.area==p->area && id!=primary && target.nextHitTick<=request.actor.tick &&
-                withinSkillArea(request.target,target.position,float(program.targetRadius),SkillAreaCoordinates::FlooredCells) && a->definition.collision.missileSegment(request.target,target.position,{4,1})) eligible.push_back(id.value);
+        for(const auto id:participants.enemies(p->actor,p->area)) {
+            const auto target=participants.find(id);
+            const bool delayed=target.player?!ports_.effects.missileHitAllowed(id,request.actor.tick):target.monster->nextHitTick>request.actor.tick;
+            if(id!=primary && !delayed && withinSkillArea(request.target,target.position(),float(program.targetRadius),SkillAreaCoordinates::FlooredCells) && a->definition.collision.missileSegment(request.target,target.position(),{4,1})) eligible.push_back(id.value);
         }
         const EntityId successor{missileChainSuccessor(primary.value,eligible)};
         if(successor) {
             if(state_.missiles.size()>=4096 || ports_.ids.cursor()>=UINT32_MAX-1) return {DomainStatus::Capacity,{}};
             auto burst=request;burst.weapon.reset();burst.cost.reset();burst.skill=skills::evaluate(*p,request.skill.sourceId,request.skill.rank);
             const Vec at{std::floor(request.target.x)+.5f,std::floor(request.target.y)+.5f};
-            auto child=make(burst,at,ports_.monsters.find(successor)->position-at,burst.skill.missileId,
+            auto child=make(burst,at,participants.find(successor).position()-at,burst.skill.missileId,
                 std::max(1,int(std::lround(burst.skill.missileLifetime*25.f))),burst.skill.missileVelocity,Program::Arc,random);
             child.id=EntityId{ports_.ids.cursor()+1};child.remainingHits=burst.skill.arc->count;child.lastHit=primary;
             children.emplace(child.id,std::move(child));
         }
     }
     auto facts=request.weapon?std::vector<DomainFact>{}:visuals({m});
-    if(request.skill.hitOverlayId>=0 && !prepared.value->spells.empty()) for(const auto id:prepared.value->spells.front().targets) facts.emplace_back(OverlayFact{id,1,p->area,request.skill.hitOverlayId});
+    if(request.skill.hitOverlayId>=0 && !prepared.value->spells.empty()) for(const auto id:prepared.value->spells.front().targets) facts.emplace_back(OverlayFact{id,uint8_t(participants.find(id).player?0:1),p->area,request.skill.hitOverlayId});
     if(request.skill.effect==SkillBehavior::ThunderStorm && !prepared.value->spells.empty() && !prepared.value->spells.front().targets.empty())
-        facts.emplace_back(SkillPulseFact{p->actor,prepared.value->spells.front().targets.front(),0,1,p->area,request.skill.sourceId,request.skill.rank,request.target});
+        facts.emplace_back(SkillPulseFact{p->actor,prepared.value->spells.front().targets.front(),0,uint8_t(participants.find(prepared.value->spells.front().targets.front()).player?0:1),p->area,request.skill.sourceId,request.skill.rank,request.target});
     if(!ports_.events.hasCapacity(facts.size()+1,2)) return {DomainStatus::Capacity,{}};
     if(request.cost) {
         const auto debit=ports_.transactions.commit(*request.cost);if(!debit) return debit;

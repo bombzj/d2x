@@ -15,7 +15,7 @@
 #include <cmath>
 namespace d2x::server::effects {
 DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,EntityId target,uint64_t tick) {
-    if(!combat::Participants{ports_.players,ports_.monsters}.canHarm(source,target)) return {DomainStatus::InvalidActor,{}};
+    if(!combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source,target)) return {DomainStatus::InvalidActor,{}};
     return monsterAura(source,a,target,tick,uint64_t(std::max(1,a.periodFrames)));
 }
 DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,EntityId id,uint64_t tick,uint64_t duration,bool owner) {
@@ -64,7 +64,7 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
     if(!(rollRandom(cycle.random)&3)) return;
     if(cycle.cursePending) return;
     const auto &a=*m->rule.enchantment->curse;const auto &area=ports_.areas.at(m->area).definition;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const float radius=std::clamp(a.radius,1.f,40.f);cycle.curseTargets.clear();cycle.curseTarget=0;
     for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m->area && p.persistent.player.hp>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(p.actor);}
     for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(m->id,key) && p.area==m->area && p.life>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(key);
@@ -72,7 +72,7 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
 }
 StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
     bool blocked=false;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         if(m.owner || (!m.rule.enchantment && !m.rule.nativeAura && !m.rule.hitBurst && !m.rule.deathBurst)) continue;
         const MonsterEnchantment empty;

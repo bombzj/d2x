@@ -31,6 +31,9 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for(size_t row=0;row<statTable.rows().size();++row) if(const auto id=statTable.number(row,"ID"))
         prepared->nativeStats.emplace(std::string(statTable.value(row,"Stat")),*id);
     prepared->poisonState=data.states.at("poison").definition.id;
+    prepared->chilled=data.states.at("cold").definition;
+    prepared->poisoned=data.states.at("poison").definition;
+    prepared->openWounds=data.states.at("openwounds").definition;
     prepared->redeemed=data.states.at("redeemed").definition;
     prepared->holyShield=data.states.at("holyshield").definition;
     prepared->alignment=data.states.at("alignment").definition;

@@ -6,6 +6,7 @@ namespace d2x::server::social {
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area) return {DomainStatus::InvalidActor, {}};
+    if(request.action==Action::Hostility) return hostility(actor,request);
     if(request.action==Action::Invite || request.action==Action::CancelInvite || request.action==Action::Accept || request.action==Action::LeaveParty)
         return party(actor,request);
     const auto flags=[&](PlayerId from,PlayerId to)->uint16_t {

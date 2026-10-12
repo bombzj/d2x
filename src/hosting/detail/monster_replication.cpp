@@ -78,7 +78,17 @@ void NativeRealmService::publishMonsters() {
         }
         const auto statePacket = [&](int state, bool enabled) {
             const auto stats=monster.stateStats.find(state);
-            return nativeState(*content,{monster.id,1,monster.area,state,enabled,enabled && stats!=monster.stateStats.end()?stats->second:std::vector<std::pair<int,int64_t>>{}});
+            auto values=enabled && stats!=monster.stateStats.end()?stats->second:std::vector<std::pair<int,int64_t>>{};
+            // A7 only enables a state; it does not clear an earlier GOOD stat.
+            // Send the explicit zero via A8 when alignment returns to EVIL.
+            if(enabled && values.empty() && state==content->states.at("alignment").definition.id) {
+                const auto previous=entry->second.stateStats.find(state);
+                if(previous!=entry->second.stateStats.end()) {
+                    values=previous->second;
+                    for(auto &[stat,value]:values) { (void)stat;value=0; }
+                }
+            }
+            return nativeState(*content,{monster.id,1,monster.area,state,enabled,std::move(values)});
         };
         if(fresh) packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
         else {

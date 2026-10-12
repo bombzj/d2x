@@ -36,6 +36,10 @@ class SceneAssets {
     std::unique_ptr<WorldCatalog> worldDefinitions_;
     mutable std::vector<const Tile *> worldTileSources_;
     mutable std::vector<Sprite> worldTiles_;
+    mutable std::map<std::pair<int, const Tile *>, Sprite> worldTileSprites_;
+    // Keep pointer keys alive until reset; a later map must not reuse an old
+    // DT1 address for a different image.
+    mutable std::map<const std::vector<Tile> *, std::shared_ptr<const std::vector<Tile>>> worldTileLibraries_;
     mutable int worldTilePalette_ = -1;
     void loadWorldLightDefinitions();
     mutable std::unique_ptr<ActorAnimationCatalog> actorAnimations_;
@@ -56,6 +60,7 @@ class SceneAssets {
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont;
     std::map<std::string, std::string, std::less<>> characterLabels;
     std::array<std::string, 2> globeTextFormats;
+    Color playerNameBackground{};
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
@@ -122,7 +127,7 @@ class SceneAssets {
         attributePoints, attributeSocket, weaponTabs, vendorPanel, vendorTabs,
         questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
-        storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs,
+        storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs, hostileIcon,
         globeOverlap, runButton, button, durabilityIcons;
     std::string waypointTitle;
     std::string questNoticeLabel;
@@ -161,6 +166,9 @@ class SceneAssets {
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     const LevelRecord &worldLevel(int id) const;
     const std::vector<Sprite> &worldTileSprites(const Map &, int palette) const;
-    void resetWorldTiles() { worldTileSources_.clear(); worldTiles_.clear(); worldTilePalette_ = -1; }
+    void resetWorldTiles() {
+        worldTileSources_.clear(); worldTiles_.clear(); worldTilePalette_ = -1;
+        worldTileSprites_.clear(); worldTileLibraries_.clear();
+    }
 };
 } // namespace d2x

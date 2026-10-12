@@ -46,7 +46,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
         const Vec aim=aims[index];
         const auto &rule=firewall && !index?*request.attack.groundFire:index>=quillStart && request.attack.extraQuill?*request.attack.extraQuill:*request.attack.missile;
         Missile missile;missile.owner=request.source;missile.emitter=request.source;missile.emitterType=playerEmitter?0:source?1:2;missile.environment=request.environment;
-        missile.binding=combat::Participants{ports_.players,ports_.monsters}.bind({playerEmitter?player:nullptr,source});
+        missile.binding=combat::Participants{ports_.players,ports_.monsters,ports_.social}.bind({playerEmitter?player:nullptr,source});
         if(playerEmitter) missile.player=player->player;
         if(source && (source->hireling || source->necroSummon || source->conversion) && source->owner) missile.player=*source->owner;
         missile.area=request.area;missile.generation=request.generation;missile.created=request.tick;
@@ -131,11 +131,11 @@ System::Advance System::advanceMonster(const Missile &original) const {
         missile.position=next;plan.finished=expired || bool(wall);++missile.revision;return plan;
     }
     struct Target {EntityId id;Vec position;int size;};std::vector<Target> targets;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto source=participants.find(missile.owner);
     const bool friendly=missile.player.value!=0;
     const auto *controller=ports_.monsters.find(missile.owner);
-    if(!friendly && enemy.rule.collidePlayers) for(const auto &[key,player]:ports_.players.all()) {
+    if(enemy.rule.collidePlayers) for(const auto &[key,player]:ports_.players.all()) {
         (void)key;if(player.entered && player.area==missile.area && player.persistent.player.hp>0 && (missile.environment || participants.canHarm(source,{&player,nullptr}))) targets.push_back({player.actor,player.position,2});
     }
     if(friendly || enemy.rule.collideMonsters) for(const auto &[id,pet]:ports_.monsters.read().actors)

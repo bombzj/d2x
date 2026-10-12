@@ -3,6 +3,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/skills/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -62,6 +63,9 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     if(!caster || !target || !caster->entered || !target->entered || caster->actor!=actor.actor || caster->area!=actor.area ||
         target->area!=actor.area || caster->persistent.player.hp<=0 || target->persistent.player.hp<=0 || !skill.appliedEffect ||
         caster->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    // SrvDo025: an unaligned Enchant target falls back to the caster.
+    if(skill.effect==SkillBehavior::Enchant && !participants.allied({caster,nullptr},{target,nullptr},ports_.social)) target=caster;
     auto next=state_;auto &recovery=next.players[target->actor];
     if(recovery.states.size()>=128) return {DomainStatus::Capacity,{}};
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,caster->actor,skill.sourceId,skill.rank};
@@ -96,9 +100,10 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
 }
 DomainResult<float> System::receive(const ActorContext &actor, int64_t raw, DamageType type) {
     MonsterHit hit; hit.channels[size_t(type)] = raw;
-    return receiveMonster(actor, {}, hit, {});
+    const auto result=receiveMonster(actor, {}, hit, {});
+    return {result.status,result?std::optional{result.value->dealt}:std::nullopt};
 }
-DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear,std::optional<std::reference_wrapper<uint64_t>> contactRandom) {
+DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear,std::optional<std::reference_wrapper<uint64_t>> contactRandom,const PlayerHitAdjustment &adjustment) {
     const auto *p = ports_.players.find(actor.player);
     if (!p || !p->entered || p->actor != actor.actor || p->area != actor.area || p->persistent.player.hp <= 0 ||
         hit.mana < 0 || hit.stamina < 0 || std::any_of(hit.channels.begin(), hit.channels.end(), [](int64_t n) { return n < 0; }))
@@ -107,7 +112,10 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     if(hit.channels[5]>0 && recovery.poison && actor.tick>=recovery.poison->next && recovery.poison->next<recovery.poison->until)
         return {DomainStatus::Capacity,{}};
     transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
-    float dealt = 0, absorbed = 0;
+    float dealt = 0, absorbed = 0;int64_t physical=0;
+    auto defenses=p->totals.character;
+    if(adjustment.coldPierce) defenses.coldResist=int(std::clamp<int64_t>(int64_t(defenses.uncappedColdResist)-adjustment.coldPierce,-100,std::clamp(75+defenses.combat.coldMaxResist,-100,95)));
+    if(adjustment.poisonPierce) defenses.poisonResist=int(std::clamp<int64_t>(int64_t(defenses.uncappedPoisonResist)-adjustment.poisonPierce,-100,std::clamp(75+defenses.combat.poisonMaxResist,-100,95)));
     std::optional<SkillCastSpec> shield;
     for (const auto &effect : states.entries()) {
         if (!effect.activeAt(actor.tick) || effect.spec.source.kind != CombatEffectSource::Skill || !p->rules.skills ||
@@ -133,10 +141,11 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
             const auto stopped = absorbSkillShield(raw,edit.player.mana,shield->shieldPercent,shield->shieldManaFactor);
             raw = stopped.damage; edit.player.mana = stopped.mana;
         }
-        const auto channel = mitigatePlayerDamage(raw,DamageType(i),p->totals.character);
+        const auto channel = mitigatePlayerDamage(raw,DamageType(i),defenses);
         dealt += channel.dealt; absorbed += channel.absorbed;
+        if(i==0) physical=int64_t(channel.dealt*256.f);
     }
-    edit.player.hp = std::clamp(edit.player.hp-dealt+absorbed,0.f,float(p->totals.character.maxLife));
+    edit.player.hp = std::clamp(edit.player.hp-float(adjustment.crushing)/256.f-dealt+absorbed,0.f,float(p->totals.character.maxLife));
     edit.player.mana = std::max(0.f,edit.player.mana-float(hit.mana)/256.f);
     edit.player.stamina = std::max(0.f,edit.player.stamina-float(hit.stamina)/256.f);
     if(edit.player.hp>0 && hit.stunFrames && p->rules.skills && p->rules.skills->stunned.id>=0) {
@@ -153,7 +162,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         states.apply(std::move(slow),actor.tick);
     }
     if (edit.player.hp > 0 && hit.coldFrames && !p->totals.character.combat.cannotBeFrozen && definitions.cold.id >= 0) {
-        auto duration=coldHitDuration(hit.coldFrames,p->totals.character.coldResist,0,false,p->totals.character.combat.halfFreezeDuration);
+        auto duration=coldHitDuration(hit.coldFrames,defenses.coldResist,0,false,p->totals.character.combat.halfFreezeDuration);
         for (const auto &effect : states.entries()) if (effect.spec.state.id == definitions.cold.id && effect.expiresAt && *effect.expiresAt > actor.tick)
             duration = std::max(duration,*effect.expiresAt-actor.tick);
         if (duration) {
@@ -165,8 +174,8 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         }
     }
     if (edit.player.hp > 0 && hit.poisonFrames && hit.channels[5] && !p->totals.character.combat.preventPoison && definitions.poison.id >= 0) {
-        const int64_t rate = int64_t(mitigatePlayerDamage(float(hit.channels[5])/256.f,DamageType::Poison,p->totals.character).dealt*256.f);
-        const int lengthResist = std::clamp(p->totals.character.combat.poisonLengthResist+(p->rules.character?p->rules.character->resistancePenalty:0),-100,75);
+        const int64_t rate = int64_t(mitigatePlayerDamage(float(hit.channels[5])/256.f,DamageType::Poison,defenses).dealt*256.f);
+        const int lengthResist = std::clamp(p->totals.character.combat.poisonLengthResist+(p->rules.character?p->rules.character->resistancePenalty:0)-adjustment.poisonPierce,-100,75);
         const auto duration=resistedDuration(hit.poisonFrames,lengthResist);
         if (duration && replacesPoison(recovery.poison?recovery.poison->damage.rate:0,rate)) {
             if (states.size() >= 128 && !states.hasState(definitions.poison.id,actor.tick)) return {DomainStatus::Capacity,{}};
@@ -179,6 +188,21 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
                 recovery.poison->until=actor.tick+duration;
             } else recovery.poison=PoisonStatus{{rate,duration,definitions.poison.id},source,actor.tick+duration,actor.tick+1};
         }
+    }
+    if(edit.player.hp<=0) {
+        recovery.killer=adjustment.credit?adjustment.credit:source;
+        if(const auto *killer=ports_.players.findActor(recovery.killer);killer && killer->actor!=actor.actor) {
+            recovery.killerName=killer->persistent.player.name;recovery.killerClass=killer->persistent.player.characterClass;
+        }
+    }
+    if(edit.player.hp>0 && adjustment.wound && p->rules.skills && p->rules.skills->openWounds.id>=0) {
+        const auto &definition=p->rules.skills->openWounds;
+        if(states.size()>=128 && !states.hasState(definition.id,actor.tick)) return {DomainStatus::Capacity,{}};
+        CombatEffectSpec wound;wound.state=definition;wound.duration=200;
+        wound.source={CombatEffectSource::Skill,source,definition.id,0};
+        states.apply(std::move(wound),actor.tick);
+        if(recovery.wound && recovery.wound->until>actor.tick) recovery.wound->until=adjustment.wound->until;
+        else recovery.wound=adjustment.wound;
     }
     if (edit.player.mana <= 0 && shield) {
         std::vector<EffectHandle> depleted;
@@ -198,10 +222,11 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     const bool knockback=source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor);
     if(getHit || knockback) recovery.actionUntil=actor.tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-actor.tick);
     const auto percent = playerLifePercentage(int64_t(edit.player.hp*256),int64_t(p->totals.character.maxLife)*256);
-    if(dealt>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
+    if(dealt>0 || adjustment.crushing>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
     if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->playerMode=knockback?20:6;
-    if(knockback) if(const auto *attacker=ports_.monsters.find(source)) {
-        const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker->position,3);
+    if(knockback && source) {
+        const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
+        const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker.position(),3);
         if(area.definition.collision.nativeMovementSegment(p->position,destination,playerMovement)) {
             edit.knockback=PointTarget{actor.area,area.generation,destination};
             for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->knockback=destination;
@@ -218,7 +243,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         inventory.character=resource.player;inventory.transient=resource.transient;inventory.publicFacts=resource.publicFacts;inventory.knockback=resource.knockback;
         change=std::move(inventory);
     }
-    auto itemEvents=prepareItemEvents(actor,{ItemSkillEvent::GetHit,ItemSkillEvent::Death},source,source && ports_.monsters.find(source)?ports_.monsters.find(source)->position:p->position);
+    auto itemEvents=prepareItemEvents(actor,{ItemSkillEvent::GetHit,ItemSkillEvent::Death},source,source?combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source).position():p->position);
     if(!itemEvents) return {itemEvents.status,{}};
     auto plan = ports_.transactions.prepare(std::move(change)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) {
@@ -227,7 +252,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         if(getHit || knockback) ports_.skills.interrupt(actor);
         if(dealt>0) commitItemEvents(std::move(*itemEvents.value),p->persistent.player.hp<=0);
     }
-    return {result.status,result?std::optional{dealt}:std::nullopt};
+    return {result.status,result?std::optional{ReceivedDamage{dealt,physical}}:std::nullopt};
 }
 void System::react(const ActorContext &actor, EntityId attacker, CombatEffectEvent event, bool returnFire) {
     const auto entry=state_.players.find(actor.actor);if(entry==state_.players.end()) return;

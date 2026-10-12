@@ -163,11 +163,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             }));
         } else if (const auto *relation=std::get_if<server::ChatRelationFact>(&fact)) {
             delta.push_back(encodeServerPacket(ServerMessage::PlayerRelationFlags,[&](auto &out){out.u32(uint32_t(relation->from.value));out.u32(uint32_t(relation->to.value));out.u16(relation->flags);}));
+            peer.relations[{relation->from,relation->to}]=relation->flags;
             // The roster projection carries current party/status/flags together.
         } else if(const auto *notice=std::get_if<server::PartyNoticeFact>(&fact)) {
             if(notice->recipient!=binding->player) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
-                out.u8(7);out.u8(notice->action==6 || notice->action==9?9:2);
+                out.u8(7);out.u8(notice->action==3?8:notice->action==4?0:notice->action==6 || notice->action==9?9:2);
                 out.u32(uint32_t(notice->player.value));out.u8(notice->action);out.append(std::array<uint8_t,32>{});
             }));
         } else if (const auto *trade = std::get_if<server::TradeFact>(&fact)) {
@@ -184,10 +185,17 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         } else if(const auto *items=std::get_if<server::TradeItemsFact>(&fact)) {
             delta=nativeTradeItems(*content,*items,host.read(*binding)->actor.id);
         } else if(const auto *message=std::get_if<server::PlayerMessageFact>(&fact)) {
+            auto value=message->value;
+            if(message->type==6 && message->parameter==0) {
+                const auto character=std::find_if(content->characters.begin(),content->characters.end(),[&](const auto &c){return c.name==message->characterClass;});
+                if(character==content->characters.end()) throw std::logic_error("Unknown slain-by player class");
+                value=uint32_t(character-content->characters.begin());
+            }
             delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
-                out.u8(message->type);out.u8(0);out.u32(0);out.u8(0); std::array<uint8_t,32> names{};
-                if(message->name.size()>15) throw std::logic_error("Invalid player message name");
-                std::copy(message->name.begin(),message->name.end(),names.begin());out.append(names);
+                out.u8(message->type);out.u8(message->type==2 || message->type==3 || message->type==6?4:0);out.u32(value);out.u8(message->parameter); std::array<uint8_t,32> names{};
+                if(message->name.size()>15 || message->other.size()>15) throw std::logic_error("Invalid player message name");
+                std::copy(message->name.begin(),message->name.end(),names.begin());
+                std::copy(message->other.begin(),message->other.end(),names.begin()+16);out.append(names);
             }));
         } else if (const auto *npc = std::get_if<server::NpcMessagesFact>(&fact)) {
             if(npc->messages.size()>=8) throw std::runtime_error("NPC message count exceeds native limit");

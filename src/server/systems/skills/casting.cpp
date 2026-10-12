@@ -29,13 +29,15 @@ bool inside(const Grid &g, Vec p) {return std::isfinite(p.x) && std::isfinite(p.
 bool within(Vec from,Vec to,int r) {const int x=int(to.x)-int(from.x),y=int(to.y)-int(from.y);return x*x+y*y<=r*r;}
 }
 std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget unit,SkillBehavior skill) const {
-    if(unit.type==0 && (skill==SkillBehavior::Enchant || skill==SkillBehavior::HolyBolt)) {
-        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.actor==unit.id && p.entered && p.area==actor.area && p.persistent.player.hp>0) return p.position;}
+    if(unit.type==0) {
+        const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+        const auto target=participants.find(unit.id);
+        if(target.player && target.aliveIn(actor.area) && (skill==SkillBehavior::Enchant || skill==SkillBehavior::HolyBolt || participants.canHarm(actor.actor,unit.id))) return target.position();
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
         if((skill==SkillBehavior::RaiseSkeleton || skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion || skill==SkillBehavior::FindPotion || skill==SkillBehavior::FindItem || skill==SkillBehavior::GrimWard) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick) && ((skill!=SkillBehavior::FindPotion && skill!=SkillBehavior::GrimWard) || m->rule.softCorpse)) return m->position;
-        const bool enemy=m && combat::Participants{ports_.players,ports_.monsters}.canHarm(actor.actor,m->id);
-        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? enemy || m->owner==actor.player : skill==SkillBehavior::Enchant ? bool(m->owner) : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
+        const bool enemy=m && combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(actor.actor,m->id);
+        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? enemy || bool(m->owner) : skill==SkillBehavior::Enchant ? true : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
         if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
     } else if(skill==SkillBehavior::Kick && unit.type==2) {
         const auto found=ports_.objects.read().objects.find(unit.id);
@@ -97,7 +99,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         Vec landing=target.position;
         const int distance=missileDistance(p.position,landing);
         if(skill.leap->attack) {
-            if(unit) {const auto *m=ports_.monsters.find(unit);if(m && meleeDistance(p.position,2,m->position,m->rule.size)<=p.totals.equipment.weapons[0].rangeAdder+1) return attack(actor,request,0);}
+            if(unit) {const auto m=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);if(m.id() && meleeDistance(p.position,2,m.position(),m.size())<=p.totals.equipment.weapons[0].rangeAdder+1) return attack(actor,request,0);}
             if(distance) landing=landing+Vec{float(2*(int(landing.x)-int(p.position.x))/distance),float(2*(int(landing.y)-int(p.position.y))/distance)};
         } else if(distance>skill.leap->range) landing=p.position+(landing-p.position)*(float(skill.leap->range)/float(distance));
         const int dx=std::clamp(int(p.position.x)-int(landing.x),-2,2),dy=std::clamp(int(landing.y)-int(p.position.y),-2,2);
@@ -130,10 +132,10 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         timing=sorceressCastTiming(animation->second,p.totals.character.combat.fasterCast,bool(skill.arc),inferno);
     }
     if(skill.effect==SkillBehavior::Kick) {
-        const auto *victim=ports_.monsters.find(unit);
-        if(!unit || (type!=2 && (type!=1 || !victim))) return {DomainStatus::InvalidRequest,{}};
+        const auto victim=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);
+        if(!unit || (type!=2 && (type>1 || !victim.id()))) return {DomainStatus::InvalidRequest,{}};
         // Object operation has already checked the original interaction geometry.
-        if(type!=2 && !playerMeleeReach(area.definition.collision,p.position,target.position,victim->rule.size,0)) {
+        if(type!=2 && !playerMeleeReach(area.definition.collision,p.position,target.position,victim.size(),0)) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
             const auto movement=ports_.movement.execute(actor,{MovementAction::Move,target.position,true,{},MotionTarget{unit,type}});
             return {movement==CommandStatus::Applied?DomainStatus::Conflict:DomainStatus::Unavailable,{}};
@@ -276,19 +278,20 @@ StepStatus System::release(TickContext tick) {
         if(!valid) {ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;}
         if(pending.charging) {
             if(!ports_.events.hasCapacity(1)) {blocked=true;++it;continue;}
-            const auto *victim=ports_.monsters.find(pending.unit);
-            const int stop=victim?pending.weapon->rangeAdder+1+(victim->rule.size+2)/2:0;
+            const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+            const auto victim=participants.find(pending.unit);
+            const int stop=victim.id()?pending.weapon->rangeAdder+1+(victim.size()+2)/2:0;
             const auto step=ports_.movement.chargeStep(actor,target,pending.chargeSpeed,stop);
             if(!step || tick.tick>state_.casts.at(actor.actor).started+250) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
             if(!*step.value) {pending.tick=tick.tick+1;++it;continue;}
             if(!pending.unit) {
-                for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && meleeDistance(p->position,2,m.position,m.rule.size)<=pending.weapon->rangeAdder+1) {pending.unit=id;target=m.position;break;}
+                for(const auto id:participants.enemies(actor.actor,actor.area)) {const auto m=participants.find(id);if(meleeDistance(p->position,2,m.position(),m.size())<=pending.weapon->rangeAdder+1) {pending.unit=id;pending.unitType=m.player?0:1;target=m.position();break;}}
                 if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
             }
             pending.charging=false;pending.tick=tick.tick+uint64_t(std::max(1,(3*256+pending.weaponSpeed-1)/pending.weaponSpeed));
             ports_.movement.execute(actor,{MovementAction::Stop,{},false});
             ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
-                {AttackFact{actor.actor,pending.unit,0,1,actor.area,p->position,target,tick.tick,uint16_t(pending.skill.sourceId),uint8_t(pending.skill.rank),true}}});
+                {AttackFact{actor.actor,pending.unit,0,pending.unitType,actor.area,p->position,target,tick.tick,uint16_t(pending.skill.sourceId),uint8_t(pending.skill.rank),true}}});
             pending.weaponHits={int(pending.tick-tick.tick)};
             state_.casts.at(actor.actor).until=tick.tick+uint64_t(std::max(1,(7*256+pending.weaponSpeed-1)/pending.weaponSpeed));
             ++it;continue;

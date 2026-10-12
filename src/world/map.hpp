@@ -10,6 +10,7 @@ namespace d2x {
 class TileLibraryCache {
     Archives &archives_;
     std::map<std::string, std::shared_ptr<const std::vector<Tile>>> libraries_;
+    uint64_t mountIdentity_{};
 
   public:
     explicit TileLibraryCache(Archives &archives) : archives_(archives) {}

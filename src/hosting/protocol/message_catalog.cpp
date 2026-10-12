@@ -89,7 +89,7 @@ std::span<const SubmessageDescriptor> submessages() {
         {ClientMessage::UiAction, 8, "OfferTradeGold", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::PlayerRelation, 2, "IgnoreChat", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::PlayerRelation, 3, "SquelchChat", MessageDomain::Social, MessageSupport::Implemented},
-        {ClientMessage::PlayerRelation, 4, "Hostility", MessageDomain::Social, MessageSupport::Stub},
+        {ClientMessage::PlayerRelation, 4, "Hostility", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::UiAction, 18, "CloseStash", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 19, "WithdrawGold", MessageDomain::Inventory, MessageSupport::Implemented},
         {ClientMessage::UiAction, 20, "DepositGold", MessageDomain::Inventory, MessageSupport::Implemented},

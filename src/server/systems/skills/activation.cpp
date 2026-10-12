@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -31,6 +32,7 @@
 namespace d2x::server::skills {
 DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &actor,Vec destination) {
     const auto &owner=*ports_.players.find(actor.player);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,MovementCollisionRule{0x804,2});
     if(!moved || *moved.value) {
         auto result=ports_.effects.removeState(actor,pending.skill.weapon->attackState.id);if(!result) return result.status;
@@ -46,13 +48,14 @@ DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &acto
             const auto current=std::find_if(owner.totals.equipment.weapons.begin(),last,[&](const auto &w){return w.item==hand.item;});
             if(current==last) {pending.whirlHand=count;break;}
             std::vector<uint64_t> targets;
-            for(const auto &[id,target]:ports_.monsters.read().actors) if(target.enemyTarget() && target.life>0 && target.area==actor.area &&
-                meleeDistance(owner.position,2,target.position,target.rule.size)<=current->rangeAdder+1 &&
-                ports_.areas.at(actor.area).definition.collision.segment(owner.position,target.position)) targets.push_back(id.value);
+            for(const auto id:participants.enemies(actor.actor,actor.area)) {
+                const auto target=participants.find(id);
+                if(meleeDistance(owner.position,2,target.position(),target.size())<=current->rangeAdder+1 && ports_.areas.at(actor.area).definition.collision.segment(owner.position,target.position())) targets.push_back(id.value);
+            }
             auto successor=missileChainSuccessor(pending.unit.value,targets);if(!successor && targets.size()==1) successor=targets.front();
             if(successor) {
                 WeaponSkillDamage weapon;weapon.weapon=*current;weapon.level=owner.persistent.player.level;
-                missiles::Spawn request{actor,pending.skill,{},ports_.monsters.find(EntityId{successor})->position,true};request.weapon=weapon;
+                missiles::Spawn request{actor,pending.skill,{},participants.find(EntityId{successor}).position(),true};request.weapon=weapon;
                 const auto hit=ports_.missiles.direct(request,{EntityId{successor}});if(hit.status==DomainStatus::Capacity) return hit.status;
                 pending.unit=EntityId{successor};
             }
@@ -80,11 +83,12 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
     if(!*moved.value) return DomainStatus::Applied;
     const auto cleared=ports_.effects.removeState(actor,pending.skill.leap->moving.id);if(!cleared) return cleared.status;
     if(pending.skill.leap->attack) {
-        const auto reachable=[&](const monsters::Actor *m) {return m && m->enemyTarget() && m->life>0 && m->area==actor.area && meleeDistance(landing,2,m->position,m->rule.size)<=pending.weapon->rangeAdder+1 && ports_.areas.at(actor.area).definition.collision.segment(landing,m->position);};
-        const auto *victim=ports_.monsters.find(pending.unit);
-        if(!reachable(victim)) {victim=nullptr;for(const auto &[id,m]:ports_.monsters.read().actors) {(void)id;if(reachable(&m)) {victim=&m;break;}}}
-        if(!victim) {pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+4;return DomainStatus::Unavailable;}
-        pending.unit=victim->id;pending.landed=true;
+        const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+        const auto reachable=[&](combat::ParticipantView m) {return m.aliveIn(actor.area) && participants.canHarm(actor.actor,m.id()) && meleeDistance(landing,2,m.position(),m.size())<=pending.weapon->rangeAdder+1 && ports_.areas.at(actor.area).definition.collision.segment(landing,m.position());};
+        auto victim=participants.find(pending.unit);
+        if(!reachable(victim)) {victim={};for(const auto id:participants.enemies(actor.actor,actor.area)) {const auto m=participants.find(id);if(reachable(m)) {victim=m;break;}}}
+        if(!victim.id()) {pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+4;return DomainStatus::Unavailable;}
+        pending.unit=victim.id();pending.unitType=victim.player?0:1;pending.landed=true;
         const auto sequence=barbarianSequence(14,owner.totals.equipment.animationClass);
         int hit=16;for(size_t i=15;i<sequence.size();++i) if(sequence[i].hit) {hit=int(i);break;}
         pending.weaponHits={weaponSequenceTick(hit-15,pending.weaponSpeed)};
@@ -164,10 +168,13 @@ DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,V
     const auto fire=damage*program.elementalPercent/100;
     std::vector<EntityId> physicalTargets,fireTargets;
     const auto &area=ports_.areas.at(actor.area).definition;
-    for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && area.activation.nearby(center,m.position)) {
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    for(const auto id:participants.enemies(actor.actor,actor.area)) {
+        const auto position=participants.find(id).position();
+        if(!area.activation.nearby(center,position)) continue;
         const int radius=(program.radius+1)/2,physical=program.radius/2;
-        if(withinSkillArea(center,m.position,float(radius),SkillAreaCoordinates::TruncatedCells)) fireTargets.push_back(id);
-        if(withinSkillArea(center,m.position,float(physical),SkillAreaCoordinates::TruncatedCells)) physicalTargets.push_back(id);
+        if(withinSkillArea(center,position,float(radius),SkillAreaCoordinates::TruncatedCells)) fireTargets.push_back(id);
+        if(withinSkillArea(center,position,float(physical),SkillAreaCoordinates::TruncatedCells)) physicalTargets.push_back(id);
     }
     combat::SpellImpact physical{pending.unit,actor.actor,actor.area,DamageType::Physical,damage-fire,std::move(physicalTargets)};
     combat::SpellImpact elemental{pending.unit,actor.actor,actor.area,DamageType::Fire,fire,std::move(fireTargets)};
@@ -189,11 +196,12 @@ DomainStatus System::activateUnsummon(Release &pending, const ActorContext &acto
 DomainStatus System::activateKick(Release &pending, const ActorContext &actor, Vec target) {
     if (pending.unitType == 2) return DomainStatus::Applied;
     const auto &player = *ports_.players.find(actor.player);
-    const auto *victim = ports_.monsters.find(pending.unit);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const auto victim=participants.find(pending.unit);
     const auto &area = ports_.areas.at(actor.area);
-    if (!victim || !victim->enemyTarget() || victim->life <= 0 || victim->area != actor.area ||
-        meleeDistance(player.position, 2, victim->position, victim->rule.size) > 1 ||
-        !area.definition.collision.segment(player.position, victim->position)) return DomainStatus::Unavailable;
+    if (!victim.aliveIn(actor.area) || !participants.canHarm(actor.actor,pending.unit) ||
+        meleeDistance(player.position, 2, victim.position(), victim.size()) > 1 ||
+        !area.definition.collision.segment(player.position, victim.position())) return DomainStatus::Unavailable;
     return ports_.missiles.direct({actor, pending.skill, {}, target}, {pending.unit}).status;
 }
 DomainStatus System::activateAmazonSummon(Release &pending, const ActorContext &actor, Vec target) {
@@ -228,10 +236,10 @@ DomainStatus System::activateEffect(Release &pending, const ActorContext &actor,
 std::vector<EntityId> System::staticFieldTargets(const ActorContext &actor, const SkillCastSpec &skill) const {
     const auto &player = *ports_.players.find(actor.player);
     std::vector<EntityId> targets;
-    for (const auto &[id, monster] : ports_.monsters.read().actors) {
-        if (!monster.enemyTarget() || monster.life <= 0 || monster.area != actor.area) continue;
-        const int radius = int(skill.staticRadius);
-        if (withinSkillArea(player.position,monster.position,float(radius),SkillAreaCoordinates::TruncatedCells)) targets.push_back(id);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    for (const auto id:participants.enemies(actor.actor,actor.area)) {
+        const auto target=participants.find(id);
+        if (withinSkillArea(player.position,target.position(),float(int(skill.staticRadius)),SkillAreaCoordinates::TruncatedCells)) targets.push_back(id);
     }
     return targets;
 }
@@ -244,6 +252,7 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
     const auto &skill = pending.skill;
     if (!withinSkillArea(player.position,target,float(skill.telekinesisRange),SkillAreaCoordinates::TruncatedCells)) return DomainStatus::InvalidRequest;
     switch (pending.unitType) {
+    case 0:
     case 1: return ports_.missiles.direct({actor, skill, {}, target}, {pending.unit}).status;
     case 4: return ports_.inventory.telekinesis(actor, pending.unit, skill).status;
     case 2:

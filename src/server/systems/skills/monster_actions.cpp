@@ -22,7 +22,6 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonAttacker();
-    const bool chaotic=monster->curseControl.ai==CurseAi::Confuse || bool(monster->attractionTarget);
     const auto &area=ports_.areas.at(monster->area);
     if (!ports_.events.hasCapacity(2)) return {DomainStatus::Capacity,{}};
     const auto &rule = monster->rule;
@@ -35,7 +34,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool healing=slot.action==MonsterAttackRule::Action::Heal;
     const bool selfAction=slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(!resurrection && !healing && !selfAction && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
     if(healing && !ports_.monsters.mummySupportTarget(monster->id,target->id,request.tick,false)) return {DomainStatus::InvalidActor,{}};
     if(selfAction && !destination) destination=std::pair{monster->position,0};
@@ -44,7 +43,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || ((petAttack || monster->necroSummon || monster->hireling || monster->conversion)?target->type!=1 || !victim || victim->owner:!resurrection && !healing && !selfAction && target->type==1 && (!victim || (!victim->combatCompanion() && !chaotic))) || target->type>1 || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || target->type>1 || (target->type==1 && !victim && !selfAction) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if (area.definition.town || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
@@ -127,7 +126,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
         auto &unit=std::get<UnitTarget>(pending.request.target);
         if(source->skillMotion) {pending.due=tick.tick+1;++it;continue;}
         if(pending.attack.action==MonsterAttackRule::Action::Charge) {
-            const combat::Participants participants{ports_.players,ports_.monsters};
+            const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
             const auto target=ports_.monsters.targetPosition(unit.id,pending.area);
             if(!target || !participants.canHarm(source->id,unit.id) || meleeDistance(source->position,source->rule.size,target->first,target->second)>source->rule.meleeRange+3) {
                 std::optional<UnitTarget> nearby;float distance=3.f;
@@ -161,7 +160,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
             else if(cast.appliedEffect) specialResult=ports_.effects.hirelingSkill(source->id,cast,tick.tick);
             else {
                 const auto target=ports_.monsters.targetPosition(unit.id,source->area);
-                if(!target || !combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,unit.id)) {specialResult={DomainStatus::InvalidActor,{}};break;}
+                if(!target || !combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source->id,unit.id)) {specialResult={DomainStatus::InvalidActor,{}};break;}
                 missiles::Spawn spawn{actor,cast,{},target->first,true,source->id,1,source->position};spawn.random=pending.random;
                 const auto result=ports_.missiles.spawn(spawn);specialResult={result.status,result?std::optional{std::monostate{}}:std::nullopt};
             }
@@ -191,7 +190,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
             const auto &curse=*pending.attack.curse;
             if(!pending.targetsCaptured) {
                 const auto target=ports_.monsters.targetPosition(unit.id,source->area);if(!target) {specialResult={DomainStatus::InvalidActor,{}};break;}
-                const auto eligible=[&](EntityId id,Vec point) {return combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,id) && (point-target->first).length()<=curse.radius && area->definition.activation.nearby(target->first,point);};
+                const auto eligible=[&](EntityId id,Vec point) {return combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source->id,id) && (point-target->first).length()<=curse.radius && area->definition.activation.nearby(target->first,point);};
                 for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==source->area && p.persistent.player.hp>0 && eligible(p.actor,p.position)) pending.effectTargets.push_back(p.actor);}
                 for(const auto &[key,m]:ports_.monsters.read().actors) if(m.area==source->area && m.life>0 && eligible(key,m.position)) pending.effectTargets.push_back(key);
                 pending.targetsCaptured=true;
@@ -221,7 +220,7 @@ StepStatus System::releaseMonsters(TickContext tick) {
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);
-        if(!pending.launch && !combat::Participants{ports_.players,ports_.monsters}.canHarm(source->id,unit.id)) {it=monsterReleases_.erase(it);continue;}
+        if(!pending.launch && !combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source->id,unit.id)) {it=monsterReleases_.erase(it);continue;}
         if (!target && !pending.launch) {it=monsterReleases_.erase(it);continue;}
         if(!pending.attack.missile) {
             combat::Damage damage{source->id,unit.id,DamageType::Physical,int64_t(pending.attack.minimum)*256,int64_t(pending.attack.maximum)*256,

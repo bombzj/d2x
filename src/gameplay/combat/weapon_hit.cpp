@@ -29,8 +29,8 @@ WeaponHitResult calculateWeaponHitEffects(const WeaponSkillDamage &attack, const
     WeaponHitResult result;
     // Item events are rolled at each successful contact, not once per volley.
     if (attack.crushingBlow > 0 && limitedRandom(random, 100) < unsigned(attack.crushingBlow)) {
-        int divisor = target.hireling ? 10 : target.boss ? 8 : 4;
-        if (!target.hireling) divisor += divisor * int(std::max(1u, target.playerCount) - 1) / 2;
+        int divisor = target.player || target.hireling ? 10 : target.boss ? 8 : 4;
+        if (!target.player && !target.hireling) divisor += divisor * int(std::max(1u, target.playerCount) - 1) / 2;
         if (attack.projectile) divisor *= 2;
         result.crushing = std::max<int64_t>(0, target.life) / divisor;
         result.crushing -= result.crushing * std::clamp(target.physicalResistance, 0, 100) / 100;
@@ -39,7 +39,7 @@ WeaponHitResult calculateWeaponHitEffects(const WeaponSkillDamage &attack, const
     result.life = leechedResource(dealt, attack.lifeLeech, target.drain, divisors.life);
     result.mana = leechedResource(dealt, attack.manaLeech, target.drain, divisors.mana);
     if (attack.openWounds > 0 && limitedRandom(random, 100) < unsigned(attack.openWounds))
-        result.woundRate = openWoundsRate(attack.level) / (target.reducedWounds ? 2 : 1);
+        result.woundRate = openWoundsRate(attack.level) / (target.player ? (attack.projectile ? 8 : 4) : target.reducedWounds ? 2 : 1);
     return result;
 }
 }

@@ -24,7 +24,7 @@ Missile System::make(const Spawn &r, Vec origin, Vec direction, int id, int fram
     const auto *unit=r.emitterType==1?ports_.monsters.find(r.emitter):nullptr;
     const bool hireling=unit && unit->hireling && unit->owner==r.actor.player;
     if(hireling) m.owner=unit->id;
-    m.binding=combat::Participants{ports_.players,ports_.monsters}.bind(hireling?combat::ParticipantView{nullptr,unit}:combat::ParticipantView{ports_.players.find(r.actor.player),nullptr});
+    m.binding=combat::Participants{ports_.players,ports_.monsters,ports_.social}.bind(hireling?combat::ParticipantView{nullptr,unit}:combat::ParticipantView{ports_.players.find(r.actor.player),nullptr});
     m.definition = id; m.created = r.actor.tick; m.expires = r.actor.tick + uint64_t(frames);
     if(speed>0 && !direction.length()) direction={1,1};
     m.position = origin; m.velocity = direction.unit() * speed; m.turnTarget = direction;

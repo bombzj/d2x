@@ -95,7 +95,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         // zero value (an empty state stat list on the original wire).
         if(monster.rule.alignmentState>=0 && monster.rule.alignmentStat>=0) {
             states.insert(monster.rule.alignmentState);
-            const int alignment=monster.owner || monster.conversion?2:monster.rule.alignment;
+            const int alignment=int(monster.alignment());
             if(alignment) result.back().stateStats[monster.rule.alignmentState]={{monster.rule.alignmentStat,alignment}};
             else result.back().stateStats.erase(monster.rule.alignmentState);
         }

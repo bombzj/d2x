@@ -12,6 +12,7 @@
 #include "server/systems/companions/system.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "server/systems/social/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "server/systems/loot/system.hpp"
 namespace d2x::server::death {
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
@@ -86,7 +87,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (!state_.transitions.contains(player.actor)) {
             ports_.skills.cancel(id, player.actor);
             const auto duration = player.rules.character ? player.rules.character->deathTicks : 0;
-            state_.transitions.emplace(player.actor, Transition{tick.tick + 1, player.actor, {}, false, tick.tick + uint64_t(duration), false});
+            state_.transitions.emplace(player.actor, Transition{tick.tick + 1, player.actor, false, tick.tick + uint64_t(duration), false, false, ports_.effects.deathMessage(player.actor)});
         }
         const ActorContext actor{id, player.actor, player.area, ports_.areas.at(player.area).generation, 0, tick.tick};
         auto &transition = state_.transitions.at(player.actor);

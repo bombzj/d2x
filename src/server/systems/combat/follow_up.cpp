@@ -1,16 +1,30 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include <algorithm>
 
 namespace d2x::server::combat {
 DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,uint64_t generation,uint64_t tick) {
+    if(owner && impact.source!=owner->actor) {
+        const auto *pet=ports_.monsters.find(impact.source);
+        if(pet && pet->life>0 && (impact.lifeGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
+            std::vector<DomainFact> visuals;
+            if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],uint8_t(ports_.players.findActor(impact.targets[impact.next])?0:1),impact.area,impact.contactOverlay});
+            if(impact.leechOverlay>=0 && impact.lifeGain) visuals.emplace_back(OverlayFact{impact.source,1,impact.area,impact.leechOverlay});
+            if(!ports_.events.hasCapacity(visuals.size()+2,2)) return DomainStatus::Capacity;
+            const auto result=ports_.monsters.heal(pet->id,impact.lifeGain);
+            if(result.status==DomainStatus::Capacity) return result.status;
+            if(result && !visuals.empty()) ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},impact.area},std::move(visuals)});
+        }
+        impact.lifeGain=impact.manaGain=0;impact.contactOverlay=impact.leechOverlay=-1;
+    }
     if(owner) {
         const ActorContext actor{owner->player,owner->actor,owner->area,generation,0,tick};
         if(owner->persistent.player.hp>0 && (impact.lifeGain || impact.manaGain || impact.contactOverlay>=0 || impact.leechOverlay>=0)) {
             std::vector<DomainFact> visuals;
-            if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],1,impact.area,impact.contactOverlay});
+            if(impact.contactOverlay>=0) visuals.emplace_back(OverlayFact{impact.targets[impact.next],uint8_t(ports_.players.findActor(impact.targets[impact.next])?0:1),impact.area,impact.contactOverlay});
             if(impact.leechOverlay>=0) visuals.emplace_back(OverlayFact{impact.source,0,impact.area,impact.leechOverlay});
             const auto &record=owner->persistent.player;
             const auto &attributes=owner->totals.character;

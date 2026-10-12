@@ -8,6 +8,13 @@
 
 namespace d2x {
 namespace {
+template<int Difficulty> struct CachedWorldCatalog { WorldCatalog value; };
+template<int Difficulty> std::shared_ptr<const WorldCatalog> sharedCatalog(Archives &archives) {
+    auto cached = archives.prepared<CachedWorldCatalog<Difficulty>>([&] {
+        return CachedWorldCatalog<Difficulty>{WorldCatalog(archives, Difficulty)};
+    });
+    return std::shared_ptr<const WorldCatalog>(cached, &cached->value);
+}
 std::string member(std::string_view value) {
     return value.empty() || value == "0" ? std::string{}
                                          : normalize("data/global/tiles/" + std::string(value));
@@ -27,6 +34,14 @@ template <class T> void insert(std::map<int, T> &records, int id, T record) {
         throw std::runtime_error("Duplicate MPQ world record: " + std::to_string(id));
 }
 } // namespace
+std::shared_ptr<const WorldCatalog> sharedWorldCatalog(Archives &archives, int difficulty) {
+    switch (difficulty) {
+    case 0: return sharedCatalog<0>(archives);
+    case 1: return sharedCatalog<1>(archives);
+    case 2: return sharedCatalog<2>(archives);
+    default: throw std::invalid_argument("Invalid world difficulty");
+    }
+}
 WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
     if (difficulty < 0 || difficulty > 2)
         throw std::runtime_error("Invalid world difficulty");

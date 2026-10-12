@@ -58,7 +58,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
         return {DomainStatus::InvalidRequest, {}};
     const auto &rule = *request.rule;
     if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < rule.minimumLife ||
-        rule.nativeVelocity < 0 || rule.nativeVelocity > 255 || rule.difficulty < 0 || rule.difficulty > 2 ||
+        rule.nativeVelocity < 0 || rule.nativeVelocity > 255 || rule.difficulty < 0 || rule.difficulty > 2 || rule.alignment < 0 || rule.alignment > 2 ||
         rule.level <= 0 || (rule.attacks.empty() && rule.skillActions.empty()) ||
         !area->definition.collision.walkable(request.position, rule.spawnCollision)) return {DomainStatus::InvalidRequest, {}};
     if (state_.actors.size() >= 65536 || ports_.ids.cursor() >= UINT32_MAX) return {DomainStatus::Capacity, {}};

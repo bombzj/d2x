@@ -85,6 +85,8 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
     result.coldResist = resistance(m.coldResist, m.combat.coldMaxResist);
     result.lightningResist = resistance(m.lightningResist, m.combat.lightningMaxResist);
     result.poisonResist = resistance(m.poisonResist, m.combat.poisonMaxResist);
+    result.uncappedColdResist=int(std::clamp<int64_t>(int64_t(m.coldResist)+resistancePenalty,INT32_MIN,INT32_MAX));
+    result.uncappedPoisonResist=int(std::clamp<int64_t>(int64_t(m.poisonResist)+resistancePenalty,INT32_MIN,INT32_MAX));
     result.lightRadius = int(std::clamp(int64_t(13) + m.lightRadius,
                                         int64_t(1), int64_t(18)));
     // D2Common applies diminishing returns to item FRW, then adds the ordinary

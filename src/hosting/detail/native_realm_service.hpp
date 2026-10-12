@@ -61,6 +61,7 @@ struct NativeRealmService {
         std::set<RegionId> areas;
         std::map<EntityId, std::pair<uint64_t, std::string>> roster;
         std::map<EntityId,Bytes> social,partyVitals,partyPositions;
+        std::map<std::pair<EntityId,EntityId>,uint16_t> relations;
         struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}; Bytes motion; std::set<EntityId> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
         struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<std::pair<int,int64_t>>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };

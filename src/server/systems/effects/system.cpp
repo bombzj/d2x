@@ -212,7 +212,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         auto next = entry->second;
         const bool dead = player.persistent.player.hp <= 0;
         const auto removed = dead ? next.states.onDeath(EffectUnitKind::Player) : next.states.expire(tick.tick);
-        if (dead) { next.healing.clear(); next.mana.clear(); next.poison.reset(); next.actionUntil=0;next.lastBlockTick=0; }
+        if (dead) { next.healing.clear(); next.mana.clear(); next.poison.reset(); next.wound.reset(); next.actionUntil=0;next.lastBlockTick=0; }
         if (dead) {
             if (!removed.empty()) {
                 transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
@@ -224,6 +224,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             std::swap(entry->second,next); continue;
         }
         auto record = player.persistent.player;
+        next.killer={};next.killerName.clear();next.killerClass.clear();
         std::optional<CharacterAttributes> changedAttributes;
         if (!removed.empty()) {
             const auto transient=projection(next.states,tick.tick);
@@ -251,6 +252,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             next.poison->next=last+1;
         }
         if (next.poison && next.poison->next >= next.poison->until) next.poison.reset();
+        if(next.wound) {
+            if(!player.rules.skills || !entry->second.states.hasState(player.rules.skills->openWounds.id,next.wound->next)) next.wound.reset();
+            else {
+                auto &wound=*next.wound;
+                if(tick.tick>=wound.next && wound.next<wound.until) {
+                    const auto last=std::min(tick.tick,wound.until-1);
+                    // Native EVENTS_HpRegen clamps negative regeneration to one life.
+                    lifeDelta-=int64_t(last-wound.next+1)*wound.rate;
+                    wound.next=last+1;
+                }
+                if(wound.next>=wound.until) next.wound.reset();
+            }
+        }
         const int64_t life = int64_t(record.hp * 256) + lifeDelta;
         const bool suppressMana = player.rules.character && next.states.hasState(player.rules.character->noManaRegenState,tick.tick);
         const int64_t manaDelta = mana + (suppressMana ? 0 : int64_t(std::lround(a.manaRegen * 256.f / 25.f)));

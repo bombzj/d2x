@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -22,14 +23,16 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     const auto *attracted=program.ai==CurseAi::Attract?ports_.monsters.find(selected):nullptr;
     const auto aiEligible=[](const monsters::Actor &m) {return skillAiControlAllowed(m.identity.rank,m.rule.switchAi,m.rule.boss);};
     if(program.ai==CurseAi::Attract && (!attracted || !attracted->enemyTarget() || attracted->life<=0 || attracted->area!=actor.area || !aiEligible(*attracted))) return {DomainStatus::Unavailable,{}};
-    auto next=units_;
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    auto next=units_;auto nextPlayers=state_.players;
+    std::vector<transactions::Plan> plans;
     std::map<EntityId,monsters::Actor::CurseControl> controls;
     std::vector<EntityId> attractions;
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
     debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     for(const auto &[id,monster]:ports_.monsters.read().actors) {
         if(program.singleTarget && id!=selected) continue;
-        if(!monster.enemyTarget() || monster.life<=0 || !monster.rule.curseable || monster.area!=actor.area || !(program.targetFilter&2) ||
+        if(!participants.canHarm(actor.actor,id) || monster.life<=0 || !monster.rule.curseable || monster.area!=actor.area || !(program.targetFilter&2) ||
            !area->definition.activation.nearby(center,monster.position) || (monster.rule.enchantment && monster.rule.enchantment->has(38))) continue;
         if(!withinSkillArea(center,monster.position,float(program.radius),SkillAreaCoordinates::TruncatedCells)) continue;
         if(program.ai!=CurseAi::None && !aiEligible(monster)) continue;
@@ -68,9 +71,34 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         for(const auto &[name,value]:values) if(value) stats.emplace_back(player->rules.skills->nativeStats.at(std::string(name)),value);
         debit.publicFacts.emplace_back(StateFact{id,1,actor.area,program.state.id,true,stats});
     }
+    // Native aura filters admit players for stat curses, never AI-control curses.
+    if((program.targetFilter&1) && program.ai==CurseAi::None && !area->definition.town)
+        for(const auto &[key,recipient]:ports_.players.all()) {
+            if(!recipient.entered || recipient.area!=actor.area || recipient.persistent.player.hp<=0 ||
+               !participants.canHarm(actor.actor,recipient.actor) || (program.singleTarget && recipient.actor!=selected) ||
+               !area->definition.activation.nearby(center,recipient.position) ||
+               !withinSkillArea(center,recipient.position,float(program.radius),SkillAreaCoordinates::TruncatedCells)) continue;
+            const int resistance=std::clamp(recipient.totals.character.combat.curseResistance,0,100);
+            if(resistance==100) continue;
+            auto &states=nextPlayers[recipient.actor].states;
+            if(program.skipActive && states.hasState(program.state.id,actor.tick)) continue;
+            if(states.size()>=128 && !states.hasState(program.state.id,actor.tick)) return {DomainStatus::Capacity,{}};
+            CombatEffectSpec curse;curse.state=program.state;curse.stacking=EffectStacking::CurseLevel;
+            curse.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};curse.modifiers=program.modifiers;
+            if(!program.permanent) curse.duration=uint64_t(std::max<int64_t>(1,int64_t(program.frames)*(100-resistance)/100));
+            if(!states.apply(std::move(curse),actor.tick).accepted) continue;
+            transactions::CharacterEdit edit{{key,recipient.actor,actor.area,actor.areaGeneration,0,actor.tick},recipient.inventoryRevision,recipient.characterRevision,recipient.persistent.player};
+            TransientAttributes attributes;attributes.modifiers=states.modifiers(actor.tick);
+            for(const auto &effect:states.entries()) if(effect.activeAt(actor.tick)) attributes.states.insert(effect.spec.state.id);
+            edit.transient=std::move(attributes);
+            edit.publicFacts.emplace_back(StateFact{recipient.actor,0,actor.area,program.state.id,true,nativeEffectStats(*player->rules.skills,program.modifiers)});
+            auto prepared=ports_.transactions.prepare(std::move(edit));if(!prepared) return {prepared.status,{}};
+            plans.push_back(std::move(*prepared.value));
+        }
     auto plan=ports_.transactions.prepare(std::move(debit));if(!plan) return {plan.status,{}};
-    const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) {
-        units_.swap(next);
+    plans.push_back(std::move(*plan.value));
+    const auto result=plans.size()==1?ports_.transactions.commit(std::move(plans.front())):ports_.transactions.commitCharacters(std::move(plans));if(result) {
+        units_.swap(next);state_.players.swap(nextPlayers);
         for(const auto &[id,control]:controls) {
             ports_.monsters.curseControl(id,control);ports_.monsters.stop(id);
             if(skill.missileNextDelay>0) ports_.monsters.hitDelay(id,actor.tick+uint64_t(skill.missileNextDelay));
@@ -98,13 +126,26 @@ void System::necroContact(EntityId source,EntityId target,int64_t physical,uint6
     const auto *player=ports_.players.findActor(source);
     const auto area=attacker?attacker->area:player?player->area:RegionId{};
     NecroContact contact{source,target,{},area,physical};
-    if(!missile) if(const auto entry=units_.find(source);entry!=units_.end())
-        for(const auto &effect:entry->second.states.entries()) if(effect.activeAt(tick) && effect.spec.modifiers.combat.ironMaidenPercent>0) {
-            contact.reflect=effect.spec.modifiers.combat.ironMaidenPercent;contact.caster=effect.spec.source.entity;
-            if(player || (attacker && attacker->hireling)) contact.reflect/=4;
+    const CombatEffectSet *sourceStates=nullptr;
+    if(player) {if(const auto entry=state_.players.find(source);entry!=state_.players.end()) sourceStates=&entry->second.states;}
+    else if(const auto entry=units_.find(source);entry!=units_.end()) sourceStates=&entry->second.states;
+    if(!missile && sourceStates) for(const auto &effect:sourceStates->entries()) if(effect.activeAt(tick) && effect.spec.modifiers.combat.ironMaidenPercent>0) {
+        contact.reflect=effect.spec.modifiers.combat.ironMaidenPercent;contact.caster=target;
+        if(player || (attacker && attacker->hireling)) {
+            const auto *caster=ports_.players.findActor(effect.spec.source.entity);
+            if(caster && caster->rules.skills) {
+                const auto definition=caster->rules.skills->definitions.find(effect.spec.source.definition);
+                if(definition!=caster->rules.skills->definitions.end() && definition->second.spec.curse)
+                    contact.reflect/=std::max(1,definition->second.spec.curse->reflectReducedDivisor);
+            }
         }
-    contact.tap=unitModifiers(target,tick).combat.lifeTapPercent;
-    if(contact.tap) if(const auto entry=units_.find(target);entry!=units_.end()) for(const auto &effect:entry->second.states.entries()) if(effect.activeAt(tick) && effect.spec.modifiers.combat.lifeTapPercent>0) {
+    }
+    const auto *victimPlayer=ports_.players.findActor(target);
+    contact.tap=victimPlayer?victimPlayer->totals.character.combat.lifeTapPercent:unitModifiers(target,tick).combat.lifeTapPercent;
+    const CombatEffectSet *targetStates=nullptr;
+    if(victimPlayer) {if(const auto entry=state_.players.find(target);entry!=state_.players.end()) targetStates=&entry->second.states;}
+    else if(const auto entry=units_.find(target);entry!=units_.end()) targetStates=&entry->second.states;
+    if(contact.tap && targetStates) for(const auto &effect:targetStates->entries()) if(effect.activeAt(tick) && effect.spec.modifiers.combat.lifeTapPercent>0) {
         if(const auto *caster=ports_.players.findActor(effect.spec.source.entity);caster && caster->rules.skills) {
             const auto definition=caster->rules.skills->definitions.find(effect.spec.source.definition);
             if(definition!=caster->rules.skills->definitions.end() && definition->second.spec.curse) contact.overlay=definition->second.spec.curse->healOverlay;
@@ -135,7 +176,7 @@ StepStatus System::advanceNecroContacts(uint64_t tick) {
             if(healing && contact.overlay>=0) ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},contact.area},{OverlayFact{contact.source,uint8_t(player?0:1),contact.area,contact.overlay}}});
             contact.tap=0;
         }
-        if(contact.reflect>0 && source && source->life>0) {
+        if(contact.reflect>0 && ((source && source->life>0) || (player && player->entered && player->persistent.player.hp>0))) {
             combat::SpellImpact reflected{contact.source,contact.caster,contact.area,DamageType::Physical,std::min<int64_t>(INT32_MAX,contact.physical*contact.reflect/100),{contact.source}};
             reflected.occurrence=(uint64_t(1)<<59)|(++necroOccurrence_);reflected.reaction=true;reflected.unblockable=true;reflected.hitClass=0x8d;
             const auto result=ports_.combat.enqueue(std::move(reflected));

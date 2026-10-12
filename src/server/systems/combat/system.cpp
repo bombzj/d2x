@@ -24,7 +24,7 @@ DomainResult<> System::enqueue(const Damage &damage) {
     if (state_.pending.size() >= 4096) return {DomainStatus::Capacity, {}};
     if (std::any_of(state_.pending.begin(), state_.pending.end(), [&](const auto &existing) { return !existing.cancelled && existing.source == damage.source; }))
         return {DomainStatus::Conflict, {}};
-    const Participants participants{ports_.players,ports_.monsters};
+    const Participants participants{ports_.players,ports_.monsters,ports_.social};
     state_.pending.push_back(damage);
     state_.pending.back().binding=participants.bind(participants.find(damage.source));
     return {DomainStatus::Applied, std::monostate{}};
@@ -36,7 +36,7 @@ void System::cancel(EntityId source) {
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
     state_.targetAttempts=0;
-    const Participants participants{ports_.players, ports_.monsters};
+    const Participants participants{ports_.players, ports_.monsters, ports_.social};
     for (auto it = state_.pending.begin(); it != state_.pending.end();) {
         auto &damage = *it;
         if(damage.cancelled) {it=state_.pending.erase(it);continue;}
@@ -44,14 +44,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(participants.bind(source)!=damage.binding) {it=state_.pending.erase(it);continue;}
         const auto *sourcePlayer = source.player, *targetPlayer = target.player;
         const auto *sourceMonster = source.monster, *targetMonster = target.monster;
-        const bool petAttack=sourceMonster && (sourceMonster->amazonAttacker() || sourceMonster->necroSummon || sourceMonster->hireling) && targetMonster && !targetMonster->owner;
-        const bool playerAttack = sourcePlayer && targetMonster;
-        const bool monsterAttack = sourceMonster && (targetPlayer || (targetMonster && (targetMonster->combatCompanion() || ((sourceMonster->conversion || sourceMonster->curseControl.ai==CurseAi::Confuse || sourceMonster->attractionTarget==targetMonster->id) && !targetMonster->owner))));
+        const bool petAttack=sourceMonster && (sourceMonster->amazonAttacker() || sourceMonster->necroSummon || sourceMonster->hireling) && (targetPlayer || targetMonster);
+        const bool playerAttack = sourcePlayer && (targetMonster || targetPlayer);
+        const bool monsterAttack = sourceMonster && !petAttack && (targetPlayer || targetMonster);
         const auto *area = ports_.areas.find(damage.area);
         bool valid = area && !area->definition.town && source.aliveIn(damage.area) && target.aliveIn(damage.area) && participants.canHarm(source,target) &&
             ((playerAttack && damage.weapon.has_value()) || monsterAttack || (petAttack && (damage.weapon || sourceMonster->necroSummon)));
         if (sourceMonster) valid = valid && sourceMonster->interruption==damage.sourceInterruption && sourceMonster->frozenUntil <= tick.tick && sourceMonster->stunnedUntil<=tick.tick && sourceMonster->knockedUntil<=tick.tick && (!sourceMonster->owner || petAttack || sourceMonster->conversion);
-        if (targetMonster) valid = valid && (!targetMonster->owner || (monsterAttack && targetMonster->combatCompanion()));
         if (!valid) { it = state_.pending.erase(it); continue; }
         if(targetPlayer && !damage.reactionsStarted) {
             if(!ports_.effects.reactionCapacity()) {blocked=true;++it;continue;}
@@ -63,6 +62,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const Vec from = source.position(), to = target.position();
         if (meleeDistance(from, damage.sourceSize, to, target.size()) > damage.range ||
             !area->definition.collision.segment(from, to)) { it = state_.pending.erase(it); continue; }
+        if(targetPlayer && damage.weapon && damage.binding.controller) {
+            auto random=damage.actionRandom.value_or(ports_.random);
+            SkillCastSpec skill=damage.skill.value_or(SkillCastSpec{});if(!skill.weapon) skill.weapon=WeaponSkillSpec{};
+            SpellImpact contact{damage.source,damage.source,damage.area,DamageType::Physical,0,{damage.target}};
+            contact.occurrence=damage.action;contact.binding=damage.binding;contact.meleeReactionTarget=damage.target;
+            contact.weapon=rollWeaponSkillDamage(*damage.weapon,damage.attackModifiers.value_or(sourcePlayer?sourcePlayer->totals.character.combat:sourceMonster->petStats.attributes.combat),skill,damage.level,false,random);
+            contact.coldFrames=uint64_t(std::max(0,contact.weapon->coldFrames));
+            contact.contactRandom=random;
+            const auto queued=enqueue(std::move(contact));
+            if(queued.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(queued && !damage.actionRandom) ports_.random=random;
+            it=state_.pending.erase(it);continue;
+        }
         // Reserve both private resource and public hit outputs before consuming RNG.
         if (!ports_.events.hasCapacity(4, targetPlayer ? 2 : 1) || !ports_.effects.reactionCapacity()) { blocked = true; ++it; continue; }
         auto random = damage.actionRandom.value_or(ports_.random);
@@ -153,9 +165,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (targetPlayer) {
                 const ActorContext actor{targetPlayer->player,targetPlayer->actor,targetPlayer->area,area->generation,0,tick.tick};
                 const auto wear=hit?ports_.inventory.defensiveWear(actor.player,random):std::nullopt;
-                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates,wear,std::ref(random));
+                effects::PlayerHitAdjustment adjustment;adjustment.credit=damage.binding.credit;
+                if(sourceMonster->hireling || sourceMonster->revived()) for(auto &channel:rolled.channels) channel=channel*17/100;
+                const auto received = ports_.effects.receiveMonster(actor,damage.source,rolled,sourceMonster->rule.hitStates,wear,std::ref(random),adjustment);
                 result = {received.status,received ? std::optional{std::monostate{}} : std::nullopt};
-                if (received && hit) {ports_.effects.triggerMonsterCurse(damage.source,tick.tick);if(*received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);}
+                if (received && hit) {ports_.effects.triggerMonsterCurse(damage.source,tick.tick);if(received.value->dealt>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);}
             } else {
                 int64_t amount = 0,absorbed=0;
                 for(size_t i=0;i<5;++i) {const auto resolved=ports_.effects.unitDamage(targetMonster->id,rolled.channels[i],DamageType(i),tick.tick);amount+=int64_t(resolved.dealt*256.f);absorbed+=int64_t(resolved.absorbed*256.f);}
@@ -248,7 +262,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             MonsterHit contact;contact.channels[0]=amount;contact.hitClass=uint8_t(damage.weapon?damage.weapon->hitClass:0);
             const auto received=ports_.effects.receiveMonster(actor,damage.source,contact,{}, {},std::ref(random));
             committed={received.status,received?std::optional{std::monostate{}}:std::nullopt};
-            if(received && hit && *received.value>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
+            if(received && hit && received.value->dealt>0) ports_.effects.react(actor,damage.source,CombatEffectEvent::DamagedInMelee);
         }
         if (committed) { commitRandom();if(itemEvents) ports_.effects.commitItemEvents(std::move(*itemEvents),targetMonster->life<=0); it = state_.pending.erase(it); }
         else if (committed.status == DomainStatus::Capacity) { blocked = true; ++it; }

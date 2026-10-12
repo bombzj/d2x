@@ -72,17 +72,19 @@ struct SpellImpact {
     int64_t lifeGain{}, manaGain{};
     int contactOverlay{-1}, leechOverlay{-1};
     // Authored environmental damage has no combat actor or player credit.
+    EntityId meleeReactionTarget{};
     bool environment{}, directLife{};
     uint64_t environmentGeneration{};
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
-struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; };
+struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{}; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;
     StepStatus resolveSpells(TickContext);
     DomainStatus resolveEnvironment(SpellImpact &,TickContext);
+    DomainStatus resolvePlayerImpact(SpellImpact &,ParticipantView,const PlayerState &,const PlayerState &,uint64_t generation,TickContext);
     DomainStatus finishImpact(SpellImpact &, const PlayerState *, uint64_t generation, uint64_t tick);
   public:
     explicit System(Ports ports) : ports_(ports) {}

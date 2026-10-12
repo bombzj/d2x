@@ -23,7 +23,7 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     int ownerLevel{};std::map<int,int> effectiveRanks{},hardRanks{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;

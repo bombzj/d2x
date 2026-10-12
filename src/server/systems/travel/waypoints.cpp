@@ -51,6 +51,12 @@ DomainResult<> System::openWaypoint(const ActorContext &actor,EntityId id,bool m
     if(menu) access[actor.player]={id,actor.area,actor.areaGeneration,nextWaypointRevision_}; else access.erase(actor.player);
     transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
     edit.waypoints=p->persistent.waypoints; edit.waypoints->try_emplace(actor.area,float(actor.tick)/25.f);
+    // ObjMode activates the waypoint first, but suppresses its menu for 10 s
+    // following a declaration of hostility (PlayerList's global delay).
+    if(menu && ports_.social.hostilityTravelDelay(actor.player,10000)) {
+        menu=false;access.erase(actor.player);
+        edit.facts.emplace_back(SoundFact{actor.actor,0,actor.area,0x13});
+    }
     if(menu) {
         WaypointFact fact{id,{}}; for(const auto &[region,time]:*edit.waypoints) { (void)time; fact.unlocked.push_back(region); }
         edit.facts.emplace_back(std::move(fact));
@@ -132,6 +138,10 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;
         if(!returning && !(portal.field==actor.area && portal.fieldId==request.source.id)) continue;
         if((owner!=actor.player && !ports_.social.sameParty(owner,actor.player)) || !portal.opened) return {DomainStatus::InvalidRequest,{}};
+        if(ports_.social.hostilityTravelDelay(actor.player,5000)) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{SoundFact{actor.actor,0,actor.area,0x13}}});
+            return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+        }
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
         if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : ((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement))) return {DomainStatus::InvalidRequest,{}};

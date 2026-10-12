@@ -2,8 +2,13 @@
 #include <algorithm>
 #include <stdexcept>
 #include <limits>
+#include <cmath>
 
 namespace d2x {
+namespace {
+constexpr int roomBucketTiles = 32;
+int roomBucket(int tile) { return int(std::floor(double(tile) / roomBucketTiles)); }
+}
 NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &catalog,
     TileLibraryCache &cache, int act, uint32_t mapSeed, int difficulty)
     : archives_(archives), catalog_(catalog), cache_(cache), act_(act), mapSeed_(mapSeed), difficulty_(difficulty),
@@ -12,7 +17,10 @@ NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &c
           [this](size_t room) { return near(room); },
           [this](size_t room) { prepare(room); },
           [this](size_t room) { create(room); },
-          [this](size_t room) { tiles_.releaseRoom(room); }}) {
+          [this](size_t room) {
+              if (tiles_.rooms().at(room).loaded) ++terrainRevision_;
+              tiles_.releaseRoom(room);
+          }}) {
     if (act < 0 || act > 4) throw std::runtime_error("Invalid native map act");
     if (difficulty < 0 || difficulty > 2) throw std::invalid_argument("Invalid native map difficulty");
 }
@@ -58,8 +66,13 @@ void NativeMapGenerator::ensureLevel(int level) {
     const auto slots = found == layout_.connections.end()
         ? NativeActLayout::ConnectionSlots{record.visible, record.warps} : found->second;
     for (const auto &room : *rooms) {
-        auto libraries = std::make_shared<RetailTileSelector>(cache_, catalog_, record.levelType, room.dt1Mask);
-        result.rooms.push_back(tiles_.registerRoom(level, room, std::move(libraries), slots.warps));
+        auto &libraries = selectors_[{record.levelType, room.dt1Mask}];
+        if (!libraries) libraries = std::make_shared<RetailTileSelector>(cache_, catalog_, record.levelType, room.dt1Mask);
+        const auto index = tiles_.registerRoom(level, room, libraries, slots.warps);
+        result.rooms.push_back(index);
+        for (int x = roomBucket(room.x); x <= roomBucket(room.x + room.width - 1); ++x)
+            for (int y = roomBucket(room.y); y <= roomBucket(room.y + room.height - 1); ++y)
+                roomBuckets_[{x,y}].push_back(index);
     }
     levels_.emplace(level, std::move(result));
     allocating_.erase(level);
@@ -118,6 +131,7 @@ void NativeMapGenerator::create(size_t index) {
     }
     std::erase_if(nearby, [&](size_t other) { return other != index && !tiles_.collision(other); });
     tiles_.activateCollision(index, nearby);
+    ++terrainRevision_;
 }
 size_t NativeMapGenerator::roomAt(int level, int x, int y) {
     ensureLevel(level);
@@ -159,7 +173,9 @@ void NativeMapGenerator::hide(int level, int x, int y) {
 }
 std::optional<size_t> NativeMapGenerator::clientRoom(int x, int y) const {
     std::optional<size_t> result;
-    for (size_t index = 0; index < tiles_.rooms().size(); ++index) {
+    const auto bucket = roomBuckets_.find({roomBucket(int(std::floor(x / 5.0))), roomBucket(int(std::floor(y / 5.0)))});
+    if (bucket == roomBuckets_.end()) return result;
+    for (const auto index : bucket->second) {
         const auto &room = tiles_.rooms()[index].room;
         if (x < room.x * 5 || y < room.y * 5 || x >= (room.x + room.width) * 5 ||
             y >= (room.y + room.height) * 5) continue;

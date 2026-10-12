@@ -174,14 +174,12 @@ void NativeRealmService::publishNpcs() {
             if(fresh) {
                 MonsterSnapshot snapshot; snapshot.id=npc.id; snapshot.area=area; snapshot.nativeClass=npc.rule.nativeClass; snapshot.position=npc.position; snapshot.life=128;
                 packets.push_back(nativeMonsterAssignment(snapshot,shared.terrain.at(binding->game).at(area).origin));
-                int alignment=-1,alignmentStat=-1;
-                const auto &monsters=content->tables.at("monstats"),&stats=content->tables.at("itemstatcost");
-                for(size_t row=0;row<monsters.rows().size();++row) if(monsters.number(row,"hcIdx")==npc.rule.nativeClass)
-                    alignment=monsters.number(row,"Align").value_or(0);
+                const int alignment=int(npc.rule.alignment);
+                int alignmentStat=-1;
+                const auto &stats=content->tables.at("itemstatcost");
                 for(size_t row=0;row<stats.rows().size();++row) if(stats.value(row,"Stat")=="alignment")
                     alignmentStat=stats.number(row,"ID").value_or(-1);
                 if(alignment<0 || alignment>2 || alignmentStat<0) throw std::runtime_error("Missing original NPC alignment");
-                if(alignment) alignment=3-alignment; // MonStats and unit-state enums differ.
                 std::map<int,std::vector<std::pair<int,int64_t>>> stateStats;
                 if(alignment) stateStats[alignmentState]={{alignmentStat,alignment}};
                 packets.push_back(nativeStateSnapshot(*content,npc.id,1,states,stateStats));

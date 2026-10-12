@@ -27,7 +27,7 @@ int preset(int id, int act, int level, uint64_t &random) {
 }
 void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorldArea &prepared) {
     auto &area = prepared.authority; const auto request = prepared.terrain.request;
-    WorldCatalog catalog(archives, request.difficulty);
+    const auto catalogSource = sharedWorldCatalog(archives, request.difficulty); const auto &catalog = *catalogSource;
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));

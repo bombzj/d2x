@@ -172,6 +172,7 @@ class SceneView {
     void drawWaypointMenu(Vec mouse) const;
     void drawControlPanel() const;
     void drawDurabilityWarning() const;
+    void drawHostilityWarning() const;
     void drawSkillControls(Vec mouse) const;
     void drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker = false, uint32_t owner=UINT32_MAX) const;
     void drawSkillTree(Vec mouse) const;
@@ -220,7 +221,7 @@ class SceneView {
     const auto &soundLimitations() const { return assets_.sceneAudio.limitations(); }
     void drawUi(Vec mouse) const;
     void updateChat(const OnlineSocialView &social,const OnlineSocialView &account) { chat_.update(social,account); }
-    void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game);
+    void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town);
     PartyIntent handleParty(const FrameInput &input);
     bool partyReady() const { return party_.ready(); }
     float partyPortraitOffset() const;
@@ -299,6 +300,7 @@ class SceneView {
     Vec screen(Vec position) const;
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
+    void drawPlayerLabel(const std::string &, Vec, bool hostile) const;
     bool leftSkillAllowed(int skill) const;
     struct SkillPickerSlot { std::optional<int> skill; Rectangle bounds; uint32_t owner=UINT32_MAX; };
     std::vector<SkillPickerSlot> skillPickerSlots(bool right) const;

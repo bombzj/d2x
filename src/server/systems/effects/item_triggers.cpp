@@ -14,6 +14,7 @@ DomainResult<ItemEventPlan> System::prepareItemEvents(const ActorContext &actor,
     for(const auto &[key,chance]:p->totals.character.combat.itemTriggers) {
         if(chance<=0 || std::find(events.begin(),events.end(),key.first)==events.end()) continue;
         ItemTrigger job;job.actor=actor;job.actor.areaGeneration=ports_.areas.at(actor.area).generation;job.event=key.first;job.target=target;job.position=position;job.chance=chance;
+        job.targetType=ports_.players.findActor(target)?0:1;
         const int id=key.second>>6,rank=key.second&63;
         if(p->rules.skills && p->rules.skills->definitions.contains(id)) {
             const auto &definition=p->rules.skills->definitions.at(id);job.skill=skills::evaluate(*p,id,rank);job.collision=definition.collision;job.itemTargetDo=definition.itemTargetDo;

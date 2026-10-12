@@ -84,6 +84,8 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
         auto &entry = player(social, r.u32());
         entry.partyId = r.u16(); entry.level = r.u16(); entry.relationshipFlags = r.u16();
         entry.partyStatus = r.u16(); r.finish();
+        // SCmd sends the receiver's directed flags towards this roster player.
+        if(v.load.playerUnitId) social.relationships[{*v.load.playerUnitId,entry.id}]=*entry.relationshipFlags;
         // SCmd::0x75 uses the same PlayerList field_C as 0x8B. A newer
         // roster update must replace an older invitation state.
         entry.partyState = *entry.partyStatus <= UINT8_MAX
@@ -110,6 +112,7 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
         if (social.relationships.size() >= 4096 && !social.relationships.contains({first, second}))
             throw ProtocolError("Remote relation limit exceeded");
         social.relationships[{first, second}] = flags;
+        if(v.load.playerUnitId==first) player(social,second).relationshipFlags=flags;
         break;
     }
     case 0x8D: {

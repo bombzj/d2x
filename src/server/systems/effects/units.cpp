@@ -2,6 +2,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include <algorithm>
@@ -33,8 +34,12 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
        !area || area->generation!=actor.areaGeneration || (skill.effect!=SkillBehavior::Enchant && !skill.warcry) || !skill.appliedEffect ||
        caster->persistent.player.mana<skill.manaCost) return {DomainStatus::InvalidActor,{}};
     const auto *m=ports_.monsters.find(id);
-    const bool allied=m && m->owner && m->life>0 && m->area==actor.area;
-    const bool npc=std::any_of(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==id;});
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const bool allied=m && m->life>0 && m->area==actor.area && participants.allied({caster,nullptr},{nullptr,m},ports_.social);
+    const auto npcUnit=std::find_if(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==id;});
+    const bool npc=npcUnit!=area->definition.npcs.end() && sameAlignment(UnitAlignment::Good,npcUnit->rule.alignment);
+    if(skill.effect==SkillBehavior::Enchant && !allied && !npc &&
+       ((m && m->life>0 && m->area==actor.area) || npcUnit!=area->definition.npcs.end())) return this->skill(actor,skill);
     if(!allied && !npc) return {DomainStatus::InvalidRequest,{}};
     auto next=units_;auto &target=next[id];target.area=actor.area;
     if(target.states.size()>=128) return {DomainStatus::Capacity,{}};

@@ -53,7 +53,8 @@ void System::aiRegeneration(EntityId source,int eighths) {
 bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy) const {
     const auto *caster=find(source),*other=find(target);
     if(!caster || !other || source==target || caster->life<=0 || caster->rule.ai.kind!=MonsterAiKind::GreaterMummy ||
-       other->area!=caster->area || other->owner || other->conversion || !other->hostile) return false;
+       other->area!=caster->area || other->owner || other->conversion || !other->hostile ||
+       !sameAlignment(caster->alignment(),other->alignment()) || other->alignment()==UnitAlignment::Good) return false;
     // Fn022: ordinary greater mummies support lUndead; Radament supports both
     // undead classes and accepts unique corpses only on Normal difficulty.
     const bool radament=caster->identity.monster=="radament";
@@ -199,7 +200,7 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
     if(!interrupted) {
         if(motion.target) {
             const auto target=targetPosition(motion.target,actor.area);
-            if(target && combat::Participants{ports_.players,*this}.canHarm(actor.id,motion.target)) {
+            if(target && combat::Participants{ports_.players,*this,ports_.social}.canHarm(actor.id,motion.target)) {
                 const Vec delta=target->first-actor.position;
                 const float stop=float(actor.rule.meleeRange+3)+.5f;
                 motion.destination=actor.position+delta.unit()*std::max(0.f,delta.length()-stop);

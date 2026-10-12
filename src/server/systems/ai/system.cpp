@@ -19,7 +19,7 @@ std::optional<System::ShootableTarget> System::shootableTarget(const monsters::A
     // AiUtil callback 6: clear missile ray, FullUnitSize distance <= 48,
     // and separate Threat <= 1 candidates. Do not overwrite AI acquisition.
     const auto &area=ports_.areas.at(source.area);
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     std::optional<ShootableTarget> primary,alternative;
     const bool blind=source.curseControl.until>tick.tick && source.curseControl.ai==CurseAi::DimVision;
     const auto consider=[&](UnitTarget unit,Vec position,int size,int threat) {
@@ -41,7 +41,7 @@ std::optional<System::ShootableTarget> System::shootableTarget(const monsters::A
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
-    const combat::Participants participants{ports_.players,ports_.monsters};
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     std::erase_if(state_.controllers, [&](const auto &entry) {
         const auto *actor = ports_.monsters.find(entry.first); return !actor || actor->life <= 0;
     });
@@ -105,7 +105,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (candidate < distance && visible(player.position)) { distance = candidate; target=UnitTarget{player.actor,0,0};targetPosition=player.position;targetSize=2; }
         }
         std::optional<UnitTarget> alternative;Vec alternativePosition;int alternativeSize=0;
-        if(monster.conversion || monster.revived() || monster.curseControl.ai==CurseAi::Confuse || monster.attractionTarget) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
+        if(monster.alignment()!=UnitAlignment::Evil || monster.curseControl.ai==CurseAi::Confuse || monster.attractionTarget) for(const auto &[enemyId,enemy]:ports_.monsters.read().actors) {
             if(!participants.canHarm({nullptr,&monster},{nullptr,&enemy}) || enemy.life<=0 || enemy.area!=monster.area || !area.definition.activation.nearby(enemy.position,monster.position) || !visible(enemy.position)) continue;
             const int candidate=monsterAiDistance(enemy.position,0,monster.position);
             if(candidate<distance) {distance=candidate;target=UnitTarget{enemyId,0,1};targetPosition=enemy.position;targetSize=enemy.rule.size;}

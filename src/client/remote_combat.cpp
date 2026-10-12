@@ -4,6 +4,7 @@
 #include "content/skills/skill_eligibility.hpp"
 #include "network/protocol/bits.hpp"
 #include <algorithm>
+#include <bit>
 #include <cstdlib>
 #include <stdexcept>
 
@@ -26,6 +27,26 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
     const auto &monsters = tables_.at("monstats");
     for (size_t row = 0; row < monsters.rows().size(); ++row)
         if (auto id = monsters.number(row, "hcIdx"); id && *id >= 0 && *id <= UINT16_MAX) monsters_.emplace(uint16_t(*id), row);
+    const auto &extras = tables_.at("monstats2");
+    constexpr std::array componentCodes{"HD","TR","LG","RA","LA","RH","LH","SH","S1","S2","S3","S4","S5","S6","S7","S8"};
+    for (const auto &[id, row] : monsters_)
+        for (size_t extra = 0; extra < extras.rows().size(); ++extra) {
+            if (extras.value(extra, "Id") != monsters.value(row, "MonStatsEx")) continue;
+            auto &widths = componentBits_[id];
+            for (size_t part = 0; part < widths.size(); ++part) {
+                auto variants = std::string(extras.value(extra, std::string(componentCodes[part]) + "v"));
+                std::erase(variants, '"');
+                unsigned count = 0;
+                for (size_t start = 0; start < variants.size();) {
+                    ++count;
+                    const auto end = variants.find(',', start);
+                    if (end == std::string::npos) break;
+                    start = end + 1;
+                }
+                widths[part] = count >= 3 ? std::bit_width(count - 1) : 1;
+            }
+            break;
+        }
     const auto &classes=tables_.at("playerclass"), &characters=tables_.at("charstats");
     for (size_t row=0; row<classes.rows().size(); ++row) {
         const auto code=classes.value(row,"Code");
@@ -59,35 +80,94 @@ bool RemoteCombat::innateSkill(uint16_t id) const {
 }
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     if (!hostileSource(unit)) return false;
+    if(unit.key.type==0) return true;
     const auto monster = monsters_.find(*unit.classId);
     return tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0;
 }
 bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
+    if(unit.key.type==0) {
+        const auto self=session_.read().load.playerUnitId;
+        return self && *self!=unit.key.id && hostilePlayers(*self,unit.key.id);
+    }
     return monsterDisposition(unit) == MonsterDisposition::Hostile;
+}
+std::optional<UnitAlignment> RemoteCombat::alignment(const OnlineUnit &unit) const {
+    if (unit.key.type > 1) return UnitAlignment::Good;
+    const auto snapshot = unitStates_.find(unit.key);
+    if (snapshot == unitStates_.end()) return UnitAlignment::Evil;
+    if (!snapshot->second.decoded) return {};
+    for (const auto &[id, state] : snapshot->second.states) {
+        (void)id;
+        if (state.name != "alignment") continue;
+        for (const auto &stat : state.stats)
+            if (const auto row = stats_.find(stat.id); row != stats_.end() &&
+                tables_.at("itemstatcost").value(row->second, "Stat") == "alignment") {
+                if (stat.value < 0 || stat.value > 2) return {};
+                return UnitAlignment(stat.value);
+            }
+    }
+    // Original STATLIST_GetUnitAlignment: absent state or zero stat => EVIL.
+    return UnitAlignment::Evil;
+}
+std::optional<uint32_t> RemoteCombat::playerOwner(const OnlineUnit &unit) const {
+    if (unit.key.type == 0) return unit.key.id;
+    const auto &world = session_.read().world;
+    if (const auto pet = world.pets.find(unit.key.id); pet != world.pets.end()) return pet->second.owner;
+    if (world.hireling && world.hireling->id == unit.key.id) return world.hireling->owner;
+    if (const auto owner = unitOwners_.find(unit.key); owner != unitOwners_.end() && owner->second.decoded)
+        return owner->second.player;
+    return {};
+}
+bool RemoteCombat::sameParty(uint32_t first, uint32_t second) const {
+    const auto &players = session_.read().world.social.players;
+    const auto a = players.find(first), b = players.find(second);
+    return a != players.end() && b != players.end() && a->second.partyId &&
+        *a->second.partyId != UINT16_MAX && a->second.partyId == b->second.partyId;
+}
+bool RemoteCombat::hostilePlayers(uint32_t first, uint32_t second) const {
+    const auto &relations = session_.read().world.social.relationships;
+    const auto relation = relations.find({first, second});
+    // Native 1.13c D2Client RVA 4FD90 returns zero for a missing relation.
+    return relation!=relations.end() && (relation->second & 8) != 0;
+}
+uint8_t RemoteCombat::ownershipTransform(const OnlineUnit &unit) const {
+    // RVA A7ACD -> 21B10: Utrans=255 uses the pet roster and hostility,
+    // not party membership. No roster owner returns transform zero.
+    const auto &view=session_.read();
+    const auto pet=view.world.pets.find(unit.key.id);
+    if(!view.load.playerUnitId || pet==view.world.pets.end()) return 0;
+    return pet->second.owner==*view.load.playerUnitId || !hostilePlayers(pet->second.owner,*view.load.playerUnitId) ? 1 : 0;
+}
+bool RemoteCombat::allied(const OnlineUnit &unit) const {
+    const auto &view=session_.read();
+    if(!view.load.playerUnitId) return false;
+    const auto self=view.world.units.find({0,*view.load.playerUnitId});
+    if(self==view.world.units.end()) return false;
+    if(const auto cached=unitOwners_.find(unit.key);cached!=unitOwners_.end() && !cached->second.decoded) return false;
+    if(const auto owner=playerOwner(unit)) return *owner==self->first.id || sameParty(self->first.id,*owner);
+    const auto first=alignment(self->second),second=alignment(unit);
+    return first && second && sameAlignment(*first,*second);
 }
 RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUnit &unit) const {
     if (unit.key.type != 1 || !unit.classId) return MonsterDisposition::Unknown;
-    if(session_.read().world.hireling && session_.read().world.hireling->id==unit.key.id) return MonsterDisposition::NonHostile;
-    if(session_.read().world.pets.contains(unit.key.id)) return MonsterDisposition::NonHostile;
     const auto monster = monsters_.find(*unit.classId);
     if (monster == monsters_.end()) return MonsterDisposition::Unknown;
-    const auto &table = tables_.at("monstats");
-    if (table.number(monster->second, "npc").value_or(0) ||
-        table.number(monster->second, "interact").value_or(0) ||
-        table.number(monster->second, "Align").value_or(0)) return MonsterDisposition::NonHostile;
-    if (const auto snapshot = unitStates_.find(unit.key); snapshot != unitStates_.end()) {
-        if (!snapshot->second.decoded) return MonsterDisposition::Unknown;
-        for (const auto &[id, state] : snapshot->second.states) {
-            (void)id;
-            for (const auto &stat : state.stats)
-                if (const auto row = stats_.find(stat.id); row != stats_.end() &&
-                    tables_.at("itemstatcost").value(row->second, "Stat") == "alignment" && stat.value != 0)
-                    return MonsterDisposition::NonHostile;
-        }
+    const auto &view = session_.read();
+    if (!view.load.playerUnitId) return MonsterDisposition::Unknown;
+    const auto self = view.world.units.find({0, *view.load.playerUnitId});
+    if (self == view.world.units.end()) return MonsterDisposition::Unknown;
+    if (const auto owner = unitOwners_.find(unit.key); owner != unitOwners_.end() && !owner->second.decoded)
+        return MonsterDisposition::Unknown;
+    if (const auto owner = playerOwner(unit)) {
+        if(*owner==self->first.id) return MonsterDisposition::NonHostile;
+        return hostilePlayers(self->first.id,*owner) ? MonsterDisposition::Hostile : MonsterDisposition::NonHostile;
     }
-    return MonsterDisposition::Hostile;
+    const auto sourceAlignment = alignment(self->second), targetAlignment = alignment(unit);
+    if (!sourceAlignment || !targetAlignment) return MonsterDisposition::Unknown;
+    return sameAlignment(*sourceAlignment, *targetAlignment) ? MonsterDisposition::NonHostile : MonsterDisposition::Hostile;
 }
 bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
+    if(unit.key.type!=1) return false;
     if(!targetCorpse && unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
         const auto found=monsters_.find(unit.classId.value_or(UINT16_MAX));
         if(found!=monsters_.end()) {
@@ -123,7 +203,12 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
             if(types.number(row,"idx")==pet->second.type) return types.number(row,"unsummon").value_or(0)!=0;
         return false;
     }
-    if(n("TargetAlly") && n("TargetPet")) {
+    if(n("TargetAlly") || n("TargetPet")) {
+        // SrvDo025 uses SUNIT_AreUnitsAligned, including unowned GOOD units.
+        if(n("srvdofunc")==25) return (allied(unit) || hostileSource(unit)) &&
+            (unit.key.type==1 ? !onlineMonsterCorpse(unit) : unit.key.type==0 &&
+             !session_.read().world.corpseOwners.contains(unit.key.id) &&
+             (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9));
         if(unit.key.type==1 && hostile(unit) && !onlineMonsterCorpse(unit)) {
             // Missiles::SrvHit07 permits enemy targeting as well as ally healing;
             // its undead collision restriction is resolved by the authority.
@@ -131,11 +216,22 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
             for(size_t missileRow=0;missileRow<missiles.rows().size();++missileRow)
                 if(missiles.value(missileRow,"Missile")==table.value(row->second,"srvmissile") && missiles.number(missileRow,"pSrvHitFunc")==7) return true;
         }
-        if(unit.key.type==0) return !session_.read().world.corpseOwners.contains(unit.key.id) &&
+        const auto &view=session_.read();
+        if(!view.load.playerUnitId) return false;
+        const auto owner=playerOwner(unit);
+        const bool ownPet=unit.key.type==1 && owner==view.load.playerUnitId;
+        const bool ally=owner && sameParty(*view.load.playerUnitId,*owner);
+        if(unit.key.type==0) return n("TargetAlly") && ally && !hostilePlayers(*view.load.playerUnitId,unit.key.id) &&
+            !view.world.corpseOwners.contains(unit.key.id) &&
             (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);
-        return monsterDisposition(unit)==MonsterDisposition::NonHostile && !onlineMonsterCorpse(unit);
+        return unit.key.type==1 && !onlineMonsterCorpse(unit) &&
+            ((n("TargetPet") && ownPet) || (n("TargetAlly") && ally)) &&
+            monsterDisposition(unit)==MonsterDisposition::NonHostile;
     }
     if(n("srvstfunc")==12 && n("srvdofunc")==21 && (unit.key.type==2 || unit.key.type==4)) return true;
+    if(unit.key.type==0) return !n("TargetCorpse") && hostile(unit) &&
+        !session_.read().world.corpseOwners.contains(unit.key.id) &&
+        (unit.nativeMode ? unit.mode!=0 && unit.mode!=17 : unit.mode!=8 && unit.mode!=9);
     return monsterTargetEligible(unit,n("TargetCorpse")!=0);
 }
 bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) const {
@@ -282,7 +378,7 @@ void RemoteCombat::update() {
     const auto &view = session_.read();
     const auto &world = view.world;
     if (game_ != view.gameGeneration || area_ != world.areaGeneration) {
-        game_ = view.gameGeneration; area_ = world.areaGeneration; unitStates_.clear();
+        game_ = view.gameGeneration; area_ = world.areaGeneration; unitStates_.clear(); unitOwners_.clear();
     }
     catalog_.clear();
     const auto &skills = tables_.at("skills");
@@ -303,7 +399,29 @@ void RemoteCombat::update() {
         catalog_.push_back(std::move(entry));
     }
     std::erase_if(unitStates_, [&](const auto &entry) { return !world.units.contains(entry.first); });
+    std::erase_if(unitOwners_, [&](const auto &entry) { return !world.units.contains(entry.first); });
     for (const auto &[key, unit] : world.units) {
+        if (key.type == 1 && unit.appearanceRevision) {
+            auto &owner = unitOwners_[key];
+            if (owner.revision != unit.appearanceRevision) {
+                owner = {unit.appearanceRevision, false, {}};
+                try {
+                    net::protocol::BitReader bits(unit.appearanceBits);
+                    bits.read(4);
+                    if (bits.read(1)) for (const auto width : componentBits_.at(unit.classId.value())) bits.read(width);
+                    if (bits.read(1)) {
+                        const auto rank = bits.read(5);
+                        if (rank & 4) bits.read(16);
+                        unsigned modifiers = 0;
+                        while (bits.read(8)) if (++modifiers > 9) throw std::runtime_error("Too many NPC modifiers");
+                        bits.read(16);
+                        if (bits.read(1)) owner.player = bits.read(32);
+                    }
+                    if (bits.read(1)) owner.player = bits.read(31);
+                    owner.decoded = true;
+                } catch (const std::exception &) { owner.player.reset(); }
+            }
+        }
         if (!unit.stateSequence) continue;
         auto &output = unitStates_[key];
         if (output.sequence == unit.stateSequence) continue;

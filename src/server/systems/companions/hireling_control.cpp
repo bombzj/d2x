@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
@@ -156,11 +157,12 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     if(ownerDistance>(p->moving?16:prepared.follow)) {
         ports_.monsters.requestMove({pet.actor,{body->area,area.generation,p->position},p->actor,16,(!p->moving || p->runningNow)?135:75,false});pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
     }
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=prepared.vision;
-    if(!area.definition.town) for(const auto &[id,enemy]:ports_.monsters.read().actors) {
-        if(!enemy.enemyTarget() || enemy.life<=0 || enemy.area!=body->area) continue;
-        const int distance=missileDistance(body->position,enemy.position);
-        if(distance<nearest && area.definition.collision.missileSegment(body->position,enemy.position,{4,1})) {nearest=distance;target=id;}
+    if(!area.definition.town) for(const auto id:participants.enemies(body->id,body->area)) {
+        const auto enemy=participants.find(id);
+        const int distance=missileDistance(body->position,enemy.position());
+        if(distance<nearest && area.definition.collision.missileSegment(body->position,enemy.position(),{4,1})) {nearest=distance;target=id;}
     }
     auto random=pet.random;
     if(target) {
@@ -171,7 +173,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
             const auto retreat=[&](Vec center)->bool {
                 constexpr Vec offsets[]{{0,-1},{1,-1},{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1}};
                 std::optional<Vec> best;float distance=-1;
-                const auto enemy=ports_.monsters.find(target)->position;
+                const auto enemy=participants.find(target).position();
                 for(const auto offset:offsets) {
                     const Vec at{std::floor(center.x+offset.x*4)+.5f,std::floor(center.y+offset.y*4)+.5f};
                     if(!area.definition.collision.walkable(at,body->rule.collision)) continue;
@@ -196,10 +198,10 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         if(roll>=end) for(const auto *action:eligible) {end+=unsigned(action->chance);if(roll<=end) {chosen=action;break;}}
         DomainResult<> result;
         if(chosen && chosen->aura) result=ports_.effects.hirelingAura(pet.actor,*chosen->aura,tick.tick);
-        else result=ports_.skills.requestCast({pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,1},tick.tick,uint8_t(chosen?chosen->mode:4)});
+        else result=ports_.skills.requestCast({pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)});
         if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
         pet.attackBias=0;
-        if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,ports_.monsters.find(target)->position},target,body->rule.meleeRange,75,false});
+        if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});
         pet.nextDecision=tick.tick+uint64_t(chosen && chosen->aura?10:prepared.think);
     } else {
         if(missileDistance(body->position,p->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,p->position},p->actor,4,75,false});
