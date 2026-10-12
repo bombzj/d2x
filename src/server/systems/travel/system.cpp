@@ -16,6 +16,12 @@
 #include <cmath>
 namespace d2x::server::travel {
 namespace {
+std::deque<Vec> playerRoute(const Grid &grid,Vec from,Vec to) {
+    constexpr Vec center{.5f,.5f};
+    auto route=grid.nativePlayerPath(from+center,to+center,playerMovement);
+    for(auto &point:route) point=point-center;
+    return route;
+}
 bool seamClear(const Grid &grid, Vec a, Vec b, int side) {
     // Only the short normal segment across a verified reciprocal seam. Grid
     // collision resolves its footprint into the linked neighbour on each cell.
@@ -56,11 +62,13 @@ std::optional<CommandStatus> System::walk(const ActorContext &actor, const Movem
         arrival = arrival + offset;
         if (!source.definition.collision.walkable(approach, playerMovement) || !other->definition.collision.walkable(arrival, playerMovement) ||
             !seamClear(source.definition.collision, approach, arrival - offset, edge.side)) return CommandStatus::NoRoute;
-        auto route = source.definition.collision.path(a, approach, false, playerMovement);
+        auto route = playerRoute(source.definition.collision,a,approach);
         if (route.empty()) return CommandStatus::NoRoute;
         state_.transitions[actor.player] = {actor.area, edge.destination, 0, source.generation, actor.sequence, {}, approach, arrival, target, true, command.forceRun, false, edge.side, edge.plane};
         auto &mutablePlayer = ports_.players.players_.at(actor.player);
-        mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running || command.forceRun;
+        mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = command.forceRun;
+        mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();
+        mutablePlayer.routeDestination=approach;mutablePlayer.routeObstacles=source.definition.collision.obstacleRevision;
         return CommandStatus::Applied;
     }
     return {};
@@ -75,13 +83,15 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (found == area->definition.exits.end() || (request.destination && *request.destination != found->destination)) return {DomainStatus::InvalidRequest, {}};
     if (!ports_.quests.allowsTravel(player->persistent.player,actor.area,found->destination)) return {DomainStatus::Conflict, {}};
     if ((found->position - player->position).length() > 50) return {DomainStatus::InvalidRequest, {}};
-    auto route = area->definition.collision.path(player->position, found->arrival, false, playerMovement);
+    auto route = playerRoute(area->definition.collision,player->position,found->arrival);
     if (route.empty()) return {DomainStatus::Unavailable, {}};
     const auto prepared = ports_.world.requestArea(actor, found->destination);
     if (!prepared) return {prepared.status, {}};
     state_.transitions[actor.player] = {actor.area, found->destination, *prepared.value, area->generation, actor.sequence, found->id, found->arrival, {}, {}, false, false, false, 0, 0};
     auto &mutablePlayer = ports_.players.players_.at(actor.player);
     mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running;
+    mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();
+    mutablePlayer.routeDestination=found->arrival;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
     return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, float manaCost,std::optional<SkillCharge> charge) {
@@ -92,6 +102,7 @@ DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, f
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    const auto synchronizationStatus=expireSynchronizations(tick);
     std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered;});
     std::erase_if(state_.waypoints,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || p->area!=entry.second.area || p->persistent.player.hp<=0;});
     for(auto &[owner,portal]:state_.portals) { (void)owner; if(!portal.opened && tick.tick>=portal.ready) {portal.opened=true;++portal.revision;} }
@@ -191,7 +202,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if (!destination->definition.collision.walkable(arrival, playerMovement)) { pending = state_.transitions.erase(pending); continue; }
         std::deque<Vec> route;
-        if (transition.walking || exitWalk) route = destination->definition.collision.path(arrival, exitWalk.value_or(transition.destination), true, playerMovement);
+        if (transition.walking || exitWalk) route = playerRoute(destination->definition.collision,arrival,exitWalk.value_or(transition.destination));
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, transition.walking}}};
         if(transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
@@ -222,11 +233,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
         player.area = transition.to; player.position = arrival; player.route = std::move(route);
-        player.routeRunning = player.running || transition.run; player.moving = transition.walking;
+        player.routeRunning = transition.walking?transition.run:player.running; player.moving = transition.walking;
+        player.movementTarget.reset();player.movementArrival.reset();
+        player.routeDestination=exitWalk.value_or(transition.destination);player.routeObstacles=destination->definition.collision.obstacleRevision;
         if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,tick);
         pending = state_.transitions.erase(pending);
     }
-    return state_.transitions.empty() ? StepStatus::Complete : StepStatus::Blocked;
+    return state_.transitions.empty() && synchronizationStatus==StepStatus::Complete ? StepStatus::Complete : StepStatus::Blocked;
 }
 DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::optional<Vec> requested) {
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(target);

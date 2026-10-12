@@ -37,7 +37,7 @@ class RemoteScene {
     int renderedUnits() const;
     int unavailableUnits() const;
     bool playerDisplayed() const;
-    std::optional<Vec> playerDisplayPosition() const;
+    std::optional<Vec> playerDisplayPosition(const OnlineView &) const;
     const std::vector<OnlinePlayerDisplay> &players() const;
     std::vector<std::string> effectLimitations() const;
     void effectStatus(OnlineSceneView &) const;

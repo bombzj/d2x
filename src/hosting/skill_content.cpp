@@ -1,4 +1,5 @@
 #include "skill_content.hpp"
+#include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/aura_data.hpp"
 #include "server/runtime/prepared_rules.hpp"
@@ -34,6 +35,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->holyShield=data.states.at("holyshield").definition;
     prepared->alignment=data.states.at("alignment").definition;
     prepared->stunned=data.states.at("stunned").definition;
+    prepared->syncWarped=data.states.at("sync_warped").definition;
     for(const auto &[key,animation]:data.skills.recoveryTimings) if(key.starts_with(character.appearance))
         prepared->recoveryAnimations.emplace(key.substr(character.appearance.size()),AnimationTiming{animation.frames,animation.speed});
     const auto prefix = character.appearance + "sc";
@@ -66,7 +68,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
                 server::MonsterRule pet;
                 pet.nativeClass=monsters.number(row,"hcIdx").value();
                 pet.nativeVelocity=monsters.number(row,"Velocity").value_or(0);
-                pet.coldState=data.states.at("cold").definition.id;pet.frozenState=data.states.at("freeze").definition.id;
+                prepareMonsterColdRules(data,row,pet);
                 pet.coldEffect=monsters.number(row,"ColdEffect").value_or(0);
                 pet.threat=monsters.number(row,"threat").value_or(0);
                 for(size_t extra=0;extra<extras.rows().size();++extra) if(extras.value(extra,"Id")==monsters.value(row,"MonStatsEx")) {

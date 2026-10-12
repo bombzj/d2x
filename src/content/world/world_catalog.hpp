@@ -17,7 +17,7 @@ struct LevelPopulation {
 };
 struct LevelRecord {
     int id = 0, act = 0, levelType = 0;
-    int palette = 0;
+    int palette = 0, automapLayer = 0;
     bool isInside = false, losDraw = false;
     bool town = false;
     int lightIntensity = 0, lightRed = 0, lightGreen = 0, lightBlue = 0;

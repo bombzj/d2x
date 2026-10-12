@@ -81,6 +81,7 @@ struct OnlineSceneView {
     std::vector<OnlineWaypointDestination> waypoints;
     std::vector<OnlineAutomapStamp> automapStamps;
     AutomapDrawView automap;
+    std::optional<uint32_t> automapLayer;
     std::vector<OnlineAutomapTown> automapTowns;
     std::map<uint16_t, size_t> automapRevealedCells;
     bool automapVisible{}, automapLarge{true};

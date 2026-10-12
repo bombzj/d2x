@@ -55,8 +55,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             rule.minimumLife=rule.maximumLife=stats.life;rule.defense=stats.defense;rule.attackRating=stats.attackRating;rule.minimumDamage=stats.damageMin;rule.maximumDamage=stats.damageMax;
             rule.resistances={0,0,stats.resist,stats.resist,stats.resist,stats.resist};rule.nativeVelocity=*monster->walkVelocity;rule.size=monster->collisionSize;
             rule.collision=monster->movementRule();rule.spawnCollision=monster->spawnRule();rule.meleeRange=1+monster->meleeRange;
-            rule.coldEffect=monster->coldEffect.at(size_t(source.difficulty));rule.coldDivisor=data.monsterColdDivisor.at(size_t(source.difficulty));
-            rule.coldState=data.states.at("cold").definition.id;rule.frozenState=data.states.at("freeze").definition.id;rule.stunState=data.states.at("stunned").definition.id;
+            rule.coldEffect=monster->coldEffect.at(size_t(source.difficulty));
+            rule.stunState=data.states.at("stunned").definition.id;
             rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
             const auto *timing=cache.monsters->hirelingAttackTiming(row->classId);
             const auto *death=cache.monsters->hirelingMotion(row->classId,"dt");
@@ -79,7 +79,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             if(!source.items || !source.equipmentRules) throw std::runtime_error("Hireling equipment rules unavailable");
             auto gear=server::companions::calculateHirelingEquipment(source.equipment,*source.items,*source.equipmentRules,result);
             gear.modifiers.combat.allSkills+=source.temporarySkillBonus;
-            const auto recovery=[](AnimationTiming timing,int bonus){timing.speed=effectiveRecoverySpeed(timing.speed,bonus);return timing.durationTicks();};
+            const auto recovery=[](AnimationTiming timing,int bonus){timing.speed=effectiveRecoverySpeed(timing.speed,bonus);return monsterAnimationTicks(timing);};
             if(rule.hitRecoveryAnimation) rule.hitRecoveryTicks=recovery(*rule.hitRecoveryAnimation,gear.modifiers.combat.fasterHitRecovery);
             if(rule.blockAnimation) rule.blockTicks=recovery(*rule.blockAnimation,gear.modifiers.combat.fasterBlock);
             const auto actionTiming=[&](server::MonsterAttackRule &attack,const MonsterAttackTiming &motion,bool casting) {
@@ -87,7 +87,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 const int rate=casting?effectiveCastSpeed(baseRate,gear.modifiers.combat.fasterCast):
                     effectiveAttackSpeed(baseRate,gear.equipment.weapons[0].fasterAttack,gear.equipment.weapons[0].baseSpeed,gear.modifiers.combat.attackRate);
                 const int frames=motion.sequenceFrames?motion.sequenceFrames:motion.frames;
-                attack.duration=motion.sequenceFrames?animationFrameTicks(frames,rate):AnimationTiming{frames,rate}.durationTicks();
+                attack.duration=monsterAnimationTicks({frames,rate});
                 attack.release=std::clamp(animationFrameTicks(motion.actionFrame,rate),1,attack.duration);attack.casting=casting;
                 attack.animation=AnimationTiming{frames,baseRate};attack.animationAction=motion.actionFrame;attack.animationSequence=bool(motion.sequenceFrames);
             };

@@ -59,7 +59,13 @@ Vec interactionPoint(const Grid &grid, const InteractionTarget &object) {
     return grid.segment(object.pos, object.pos, object.id) ? object.pos : object.accessPoint;
 }
 } // namespace
+bool nativePickupReach(const Grid &grid, Vec player, Vec item, EntityId id) {
+    return nativeUnitDistance(player,2,item,1)<=4 && grid.interactionSegment(player,item,1,id);
+}
 bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &object) {
+    if (object.nativeUnit)
+        return nativeUnitDistance(position,2,object.pos,object.collisionWidth)<=object.reach &&
+            (!object.collisionRequired || grid.interactionSegment(position,object.pos,object.collisionWidth,object.id));
     if (originalObject(object))
         return objectInRange(position, object) &&
             grid.interactionSegment(position, object.pos, object.collisionWidth, object.id);
@@ -69,22 +75,24 @@ bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &o
 std::optional<Vec> interactionApproach(const Grid &grid, Vec from, const InteractionTarget &object) {
     std::optional<Vec> best;
     float bestCost = std::numeric_limits<float>::infinity();
-    const int radius = originalObject(object)
-        ? std::max(object.collisionWidth, object.collisionHeight) / 2 + 3
-        : int(std::ceil(object.reach));
+    const int radius = originalObject(object) ? std::max(object.collisionWidth, object.collisionHeight) / 2 + 3
+        : object.nativeUnit ? int(std::ceil(object.reach/2))+object.collisionWidth/2+2 : int(std::ceil(object.reach));
     const int centerX = int(std::floor(object.pos.x)), centerY = int(std::floor(object.pos.y));
     for (int y = centerY - radius; y <= centerY + radius; ++y)
         for (int x = centerX - radius; x <= centerX + radius; ++x) {
             if (!grid.walkable(x, y, playerMovement))
                 continue;
-            Vec candidate{x + .5f, y + .5f};
+            Vec candidate{float(x), float(y)};
             if (!interactionClear(grid, candidate, object))
                 continue;
             if ((candidate - from).length() >= bestCost)
                 continue;
-            auto path = grid.path(from, candidate, false, playerMovement);
+            constexpr Vec center{.5f,.5f};
+            auto path = grid.nativePlayerPath(from+center, candidate+center, playerMovement);
+            for(auto &point:path) point=point-center;
             if (path.empty() && (from - candidate).length() > .01f)
                 continue;
+            if (!path.empty() && !interactionClear(grid,path.back(),object)) continue;
             float cost = 0;
             Vec previous = from;
             for (auto step : path) {

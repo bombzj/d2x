@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/movement.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -57,9 +58,16 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!area || area->generation != actor.areaGeneration || found == state_.objects.end() || found->second.area != actor.area) return {DomainStatus::Stale, {}};
     auto &object = found->second; const auto &rule = object.rule;
     const InteractionTarget target{object.id, object.position, object.position, rule.width, rule.height, float(rule.range), true};
-    if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) return {DomainStatus::InvalidRequest, {}};
+    if (!remoteRange && !interactionClear(area->definition.collision, player->position, target)) {
+        if(nativeUnitDistance(player->position,2,object.position,rule.width)>50) return {DomainStatus::InvalidRequest,{}};
+        if(ports_.movement.execute(actor,{MovementAction::Move,object.position,true,{},MotionTarget{object.id,2},target})!=CommandStatus::Applied)
+            return {DomainStatus::Unavailable,{}};
+        approaches_.insert_or_assign(actor.player,Approach{actor,request,player->locomotionSequence});
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
+    if(!remoteRange) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
     if(rule.operation==23) {
         if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
         // Native operation23 first activates and animates; only an operating
@@ -169,6 +177,23 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    for(auto it=approaches_.begin();it!=approaches_.end();) {
+        auto pending=it->second;pending.actor.tick=tick.tick;
+        const auto *player=ports_.players.find(it->first);const auto *area=ports_.areas.find(pending.actor.area);
+        const auto object=state_.objects.find(pending.request.target.id);
+        if(!player || !player->entered || player->actor!=pending.actor.actor || player->area!=pending.actor.area ||
+            player->persistent.player.hp<=0 || !area || area->generation!=pending.actor.areaGeneration ||
+            player->locomotionSequence!=pending.locomotion || object==state_.objects.end() || object->second.area!=pending.actor.area) {
+            it=approaches_.erase(it);continue;
+        }
+        const auto &at=object->second;const auto &rule=at.rule;
+        if(!interactionClear(area->definition.collision,player->position,{at.id,at.position,at.position,rule.width,rule.height,float(rule.range),true})) {
+            if(player->route.empty()) it=approaches_.erase(it);else ++it;
+            continue;
+        }
+        const auto result=execute(pending.actor,pending.request);
+        if(result.status==DomainStatus::Capacity) ++it;else it=approaches_.erase(it);
+    }
     std::set<RegionId> changed;
     for (const auto &[id, area] : ports_.areas.all()) for (const auto &source : area.definition.objects) {
         if (state_.objects.contains(source.id)) continue;

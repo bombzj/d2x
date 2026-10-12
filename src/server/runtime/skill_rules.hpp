@@ -23,7 +23,7 @@ struct SkillRules {
     struct Aura { AuraSkillSpec spec; bool immediate{}; };
     std::map<int,Aura> auras;
     std::map<std::string,int,std::less<>> nativeStats;
-    CombatStateDefinition redeemed,holyShield,alignment,stunned;
+    CombatStateDefinition redeemed,holyShield,alignment,stunned,syncWarped;
     int poisonState{-1};
     std::set<int> dismissibleSummons;
     std::map<int,MonsterRule> amazonPetRules;

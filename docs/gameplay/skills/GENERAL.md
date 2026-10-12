@@ -1,6 +1,6 @@
 # 通用攻击与卷轴／书本技能
 
-更新：2026-10-10。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。2026-10-08历史有限自研证据见下节，该历史批没有原服回归。
+更新：2026-10-12。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。有限运行证据按各批EXE身份记录，不认证全部场景或原服一致性。
 
 ## 逐项入口
 
@@ -52,6 +52,18 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 - 药瓶地面寿命与伤害已接，不等于完整抛物线高度／阴影。普通桶KK、Left Hand Throw／Swing等未运行路径见下节；左手弓／相反手弹药已有[装备代表证据](../items/EVIDENCE.md#双手剑与左右手有限冒烟)，与两项左手固有技能分别记录，源码入口不是全参数认证。
 
 ## 有限运行证据
+
+2026-10-12针对“女巫左键普通攻击沉沦魔只做动作”的报告，使用当时Windows Release `build/bin/d2x.exe`，SHA256 `BF2FDDE219A2C12E2934C9E7115460D4D6435E4B583AA6574405EED42B179B21`，对应`e53eb22`提交时构建。根目录Play在不存在根目录EXE时调用build程序。该隔离攻击复现没有重新构建、打包或修改攻击源码；当时未编译的自动地图兼容修复不在该运行范围内。随后物品诊断另构建新EXE，身份见[开发指南](../../development/BUILD_AND_RUN.md#本地诊断构建)，不将下述旧EXE观察认证为新EXE回归。
+
+隔离90级ShotSorceress副本、普通难度、当前`assets/mpq2`，证据在忽略目录`artifacts/ordinary-attack-20261012`。管理旅行／生成只准备条件；真实普通攻击经原请求或既有鼠标帧控制器提交，无新增测试脚本／用例／专用程序。
+
+| 代表诊断路径 | 实际结果 |
+| --- | --- |
+| 空手原左键请求 | 自然fallen1由2生命降至0.15234375，随后原LeftUnitRepeat击杀，rewardComplete；`field.json`、`click-after.json`、`repeat-after.json` |
+| 实际鼠标单击 | 对近处准备的fallen1，原SceneController鼠标左键后生命归零、rewardComplete；`ui-click.json`、`ui-click-after.json/png` |
+| 短杖实际持续按住 | 当前MPQ生成普通sst、正常拾取自动装备；32帧左键按下／保持输入，对准备的冠军fallen1（9生命）成功击杀；`staff-target.png`、`actual-hold-server/client.json` |
+
+宿主failures=0、characterIssues为空、stderr为空，隔离角色正常退出。中间一处鼠标覆盖掉落物的准备输入走拾取而非攻击，不计作攻击复现。上述代表路径未复现用户报告，不据此认定问题不存在或已修复；仍需读取实际失效那局的目标／请求／释放／结算状态，原版、其他武器、地形与距离组合未验证。
 
 历史2026-10-08通用十项包，EXE SHA256 `122CE3973A21D2C258CADE81B737A106DD864710198144DA7F1E0E4E73C92866`；普通难度41级亚马逊Hero（临时存档副本），种子3739460588，当时MPQ；使用现有named pipe准备物品／普通怪物并推进固定步，普通操作仍发送原C2S包。记录位于忽略目录`artifacts/common-skills-smoke-20261008`，没有新测试脚本／用例／程序。
 

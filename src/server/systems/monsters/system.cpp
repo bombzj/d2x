@@ -3,13 +3,21 @@
 #include "server/player_store.hpp"
 #include "core/random.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/combat/life.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
 #include <algorithm>
 
 namespace d2x::server::monsters {
+int movementPercent(const Actor &actor,uint64_t tick) {
+    const int64_t value=int64_t(actor.velocityPercent)+actor.effectVelocity+actor.hirelingMovementPercent+
+        (actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+
+        (actor.chilledUntil>tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0);
+    return int(std::clamp<int64_t>(value,25,INT16_MAX));
+}
 namespace {
 int recoveryTicks(const Actor &actor,const effects::System &effects,uint64_t tick,bool block) {
     const auto &clock=block?actor.rule.blockAnimation:actor.rule.hitRecoveryAnimation;
@@ -17,7 +25,7 @@ int recoveryTicks(const Actor &actor,const effects::System &effects,uint64_t tic
     auto modifiers=effects.unitModifiers(actor.id,tick).combat;
     if(actor.combatCompanion()) mergeCombatModifiers(modifiers,actor.petStats.attributes.combat);
     const int speed=effectiveRecoverySpeed(clock->speed,block?modifiers.fasterBlock:modifiers.fasterHitRecovery);
-    return AnimationTiming{clock->frames,speed}.durationTicks();
+    return monsterAnimationTicks({clock->frames,speed});
 }
 void playerCountBonus(MonsterRule &rule,unsigned count) {
     const unsigned scale=100+50*(count-1);
@@ -130,8 +138,20 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     if (actor.rule.nativeVelocity <= 0 || (request.target && !targetPosition(request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
     const auto collision=actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision;
-    auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position,request.destination.position,request.circleDistance,request.circleTurn,collision):
-        area.definition.collision.path(actor.position, request.destination.position, true, collision);
+    uint8_t pathType=request.circleTurn?1:13;
+    // MonsterMode's default obstacle-search distance is 5. Circling is
+    // published as AStar to its computed last point by SCmd, not as pursuit.
+    const uint8_t pathDistance=5;
+    const Vec center{.5f,.5f};
+    auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
+        area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision);
+    if(route.empty() && !request.circleTurn) {
+        // MonsterMode retries failed Toward paths with WallFollow. The
+        // solver raises its search bound to 40 for a live unit target.
+        pathType=15;
+        route=area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target));
+    }
+    for(auto &point:route) point=point-center;
     if (route.empty()) return {DomainStatus::Unavailable, {}};
     if(request.pathSteps<0 || request.pathSteps>255) return {DomainStatus::InvalidRequest,{}};
     // PATH_SetStepNum stores steps - 1 as a unit-distance arrival bound.
@@ -139,6 +159,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto goal=request.circleTurn?route.back():request.destination.position;
     actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
     actor.pathSteps=uint8_t(request.pathSteps);
+    actor.pathType=pathType;actor.pathDistance=pathDistance;
     actor.movementGoal = goal;
     actor.stopDistance = request.pathSteps>0?request.pathSteps-1:request.stopDistance;
     actor.velocityPercent = request.velocityPercent; actor.running = request.running;
@@ -152,38 +173,103 @@ void System::stop(EntityId id) {
         if (!actor.route.empty() || actor.moving || actor.running || actor.movementTarget) { actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision; }
     }
 }
-DomainResult<> System::beginAttack(EntityId id, uint64_t until) {
+DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;
+    actor.neutralAt=returnToNeutral?std::optional{until}:std::nullopt;
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing) {
+uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
+    auto found=state_.actors.find(id);
+    if(found==state_.actors.end()) return scheduled;
+    auto &actor=found->second;
+    if(actor.life<=0) {actor.neutralAt.reset();return scheduled;}
+    if(!actor.neutralAt || tick<*actor.neutralAt || actor.frozenUntil>tick) return scheduled;
+    const auto ended=std::max(*actor.neutralAt,actor.frozenUntil);
+    actor.neutralAt.reset();
+    // MonsterMode::sub_6FC64310 preserves an already scheduled future AI
+    // event. Default aidel starts at ENDANIM, not at attack start, and is
+    // independent of busyUntil so the neutral pause cannot extend animation.
+    if(scheduled<=ended) {
+        const uint64_t delay=actor.stunnedUntil>ended?45:uint64_t(actor.rule.neutralDelayTicks>0?actor.rule.neutralDelayTicks:15);
+        scheduled=ended+std::min(delay,UINT64_MAX-ended);
+    }
+    return scheduled;
+}
+DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0 || !it->second.damageable() || amount < 0 || crushing < 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
+    // A refresh cannot overwrite an unpaid poison interval after backpressure.
+    if(poison && actor.poison && tick>=actor.poison->next && actor.poison->next<actor.poison->until)
+        return {DomainStatus::Capacity,{}};
     // Crushing Blow changes current life before the ordinary damage channel;
     // it must not inflate the hit-recovery damage threshold.
-    const auto life = std::max(actor.hireling && poisonOnly && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0), std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed)) - crushing - amount);
-    const bool corpseUnavailable=actor.frozenUntil>tick || (actor.holyFreezeUntil>tick && actor.holyFreezeShatter);
+    // The poison rate contributes once to the contact damage as well as to
+    // HPREGEN (SUnitDmg total-damage channel). Duration immunity does not erase it.
+    if(poison) amount+=std::max<int64_t>(0,poison->rate);
+    const auto life = std::max(actor.hireling && poisonOnly && !poison && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0), std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed)) - crushing - amount);
     const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
-    auto chilled = actor.chilledUntil, frozen = actor.frozenUntil;
-    if((actor.hireling || actor.necroMaterial) && actor.petStats.attributes.combat.cannotBeFrozen) coldFrames=0;
-    else if((actor.hireling || actor.necroMaterial) && actor.petStats.attributes.combat.halfFreezeDuration) coldFrames/=2;
-    if((actor.hireling || actor.necroMaterial) && poison) poison->frames=poison->frames*uint64_t(std::clamp(100-actor.petStats.attributes.combat.poisonLengthResist,25,200))/100;
-    if (life && coldFrames && actor.rule.coldEffect < 0) {
-        coldFrames = std::min(coldFrames, UINT64_MAX - tick);
-        if (freeze && actor.identity.rank == MonsterRank::Normal) frozen = std::max(frozen, tick + coldFrames);
-        else chilled = std::max(chilled, tick + coldFrames);
-    }
-    if (!life) chilled = frozen = 0;
-    auto poisoned=actor.poison;
-    if(life && poison && poison->frames && poison->state>=0 && replacesPoison(poisoned?poisoned->damage.rate:0,poison->rate))
-        poisoned=PoisonStatus{*poison,source,tick+std::min(poison->frames,UINT64_MAX-tick),tick+1};
-    if(!life) poisoned.reset();
     auto random=actor.combatRandom;
+    auto modifiers=ports_.effects.unitModifiers(id,tick).combat;
+    if(actor.combatCompanion()) mergeCombatModifiers(modifiers,actor.petStats.attributes.combat);
+    auto chilled=actor.chilledUntil, frozen=actor.frozenUntil;
+    auto shatterActive=actor.shatterActive;
+    const auto states=ports_.effects.unitStates(id,tick);
+    const bool uninterruptable=states.contains(actor.rule.uninterruptableState) || actor.aiStates.contains(actor.rule.uninterruptableState);
+    const bool freezable=!actor.hireling && !actor.rule.boss &&
+        (actor.identity.rank==MonsterRank::Normal || actor.identity.rank==MonsterRank::Minion);
+    coldFrames=coldHitDuration(coldFrames,ports_.effects.unitResistance(id,DamageType::Cold,tick),coldPierce,
+        modifiers.cannotBeFrozen,modifiers.halfFreezeDuration);
+    bool appliedFreeze=false;
+    if(coldFrames && !(freeze && uninterruptable)) {
+        if(freeze && freezable && actor.rule.coldEffect<0) {
+            // A positive input can truncate to zero after MonsterFreezeDivisor;
+            // the state still participates in this hit's death transition.
+            appliedFreeze=true;
+            const auto duration=coldFrames/unsigned(actor.rule.freezeDivisor);
+            frozen=std::max(frozen,tick+std::min(duration,UINT64_MAX-tick));
+        } else if((!freeze || !freezable) && actor.rule.coldEffect!=0) {
+            const auto duration=std::max<uint64_t>(1,actor.rule.coldEffect<0?coldFrames/unsigned(actor.rule.coldDivisor):coldFrames);
+            chilled=std::max(chilled,tick+std::min(duration,UINT64_MAX-tick));
+            // Original 1.13c D2Game RVA DC8F8: <20 and !MonStats2.deadCol.
+            // D2MOO's corresponding reconstructed condition is reversed.
+            shatterActive=limitedRandom(random,100)<20 && !actor.rule.deadCollision;
+        }
+    }
+    auto deathStates=actor.deathStates;
+    bool corpseUnavailable=actor.corpseUnavailable;
+    if(!life) {
+        const auto retain=[&](const CombatStateDefinition &state,bool enabled) {
+            const auto kind=actor.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
+            if(enabled && state.id>=0 && state.stayOnDeath[size_t(kind)]) {
+                deathStates.insert(state.id);
+                corpseUnavailable|=state.hideOnDeath || state.shatterOnDeath || state.corpseUnselectable;
+            }
+        };
+        retain(actor.rule.frozenState,appliedFreeze || frozen>tick);
+        retain(actor.rule.shatterState,shatterActive ||
+            (actor.rule.enchantment && actor.rule.enchantment->has(35)));
+        chilled=frozen=0;shatterActive=false;
+    }
+    auto poisoned=actor.poison;
+    if(poison) {
+        const int lengthResistance=actor.hireling?
+            std::clamp(modifiers.poisonLengthResist-poison->lengthPierce+actor.rule.difficultyResistancePenalty,-100,75):
+            piercedResistance(modifiers.poisonLengthResist,poison->lengthPierce);
+        poison->frames=modifiers.preventPoison?0:resistedDuration(poison->frames,lengthResistance);
+        if(life && poison->frames && poison->state>=0 && replacesPoison(poisoned?poisoned->damage.rate:0,poison->rate)) {
+            const auto until=tick+std::min(poison->frames,UINT64_MAX-tick);
+            if(poisoned) {
+                // Native refresh changes rate/deadline, retaining the stat-list owner.
+                poisoned->damage.rate=poison->rate;poisoned->damage.frames=poison->frames;poisoned->until=until;
+            } else poisoned=PoisonStatus{*poison,source,until,tick+1};
+        }
+    }
+    if(!life) poisoned.reset();
     auto stunned=actor.stunnedUntil;
     if(clearStun) stunned=0;
     if(life && stunFrames && actor.rule.stunState>=0 && !actor.rule.boss && actor.rule.nativeVelocity &&
@@ -191,9 +277,15 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(!life) stunned=0;
     const bool recovery=life && !poisonOnly && monsterHitRecovery(amount,actor.maximumLife,hitClass,frozen>tick,poisonOnly,actor.rule.hitRecoveryTicks>0,random,stunned>tick);
     const int reactionTicks=recovery?recoveryTicks(actor,ports_.effects,tick,false):0;
-    std::vector<DomainFact> facts{HitFact{id, 1, actor.area, percent, !life, actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady}};
-    if (bool(chilled) != bool(actor.chilledUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, bool(chilled)});
-    if (bool(frozen) != bool(actor.frozenUntil)) facts.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, bool(frozen)});
+    std::vector<DomainFact> facts;
+    if(bool(chilled)!=bool(actor.chilledUntil)) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.coldState,bool(chilled)});
+    const bool freezeState=bool(frozen) || deathStates.contains(actor.rule.frozenState.id);
+    if(freezeState!=bool(actor.frozenUntil)) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.frozenState.id,freezeState});
+    const bool wasShatter=actor.shatterActive;
+    const bool shatter=shatterActive || deathStates.contains(actor.rule.shatterState.id);
+    if((shatter!=wasShatter || (!life && shatter)) && actor.rule.shatterState.id>=0) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.shatterState.id,shatter});
+    // Publish original states before the death action, including a lethal first freeze.
+    facts.emplace_back(HitFact{id,1,actor.area,percent,!life,actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady});
     if(bool(stunned)!=bool(actor.stunnedUntil)) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.stunState,bool(stunned)});
     if(bool(poisoned)!=bool(actor.poison)) facts.emplace_back(StateFact{id,1,actor.area,poisoned?poisoned->damage.state:actor.poison->damage.state,bool(poisoned)});
     if(actor.rule.openWoundsState>=0 && ((!life && actor.wound) || (life && wound && !actor.wound))) facts.emplace_back(StateFact{id,1,actor.area,actor.rule.openWoundsState,bool(life && wound)});
@@ -203,6 +295,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
+    actor.shatterActive=shatterActive;actor.deathStates=std::move(deathStates);
     actor.stunnedUntil=stunned;
     actor.poison=poisoned;
     if(!life) actor.wound.reset();
@@ -214,7 +307,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     }
     if(recovery || frozen>tick || stunned>tick || !life) {
         ++actor.interruption;stop(id);
-        if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;}
+        if(recovery) {actor.reactionMode=3;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;}
     }
     if (!life) {
         // Fn043 marks an exhausted nest NOTC before its own death action.
@@ -243,15 +336,21 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
             hit.actionTarget=MotionTarget{actor.movementTarget,uint8_t(ports_.players.findActor(actor.movementTarget)?0:1)};
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{hit}});
         if(!result) return {result.status,{}};
-        stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;++actor.revision;
+        stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;++actor.revision;
     }
     return {DomainStatus::Applied,std::monostate{}};
+}
+void System::holyFreeze(EntityId id,uint64_t until) {
+    if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.life>0) {
+        auto &actor=it->second;actor.holyFreezeUntil=until;
+        actor.shatterActive=limitedRandom(actor.combatRandom,100)<20;++actor.revision;
+    }
 }
 void System::hitDelay(EntityId id, uint64_t until) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.nextHitTick = std::max(it->second.nextHitTick, until); }
 void System::knockback(EntityId id, Vec source, uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || it->second.owner || it->second.rule.knockbackTicks<=0) return;
     auto &m=it->second;stop(id);m.knockbackSource=source;m.knockbackGoal=knockbackDestination(m.position,source,3);
-    m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;++m.hitOccurrence;++m.interruption;++m.revision;
+    m.knockedUntil=tick+uint64_t(m.rule.knockbackTicks);m.busyUntil=m.knockedUntil;m.neutralAt.reset();++m.hitOccurrence;++m.interruption;++m.revision;
 }
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
 DomainResult<> System::remove(EntityId id) {
@@ -317,15 +416,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             actor.life=std::clamp(actor.life+actor.rule.hirelingRegeneration+actor.petStats.attributes.combat.replenishLife,int64_t(1),actor.maximumLife);++actor.revision;
         }
         if(actor.poison && actor.life>0) {
-            if(tick.tick>=actor.poison->until) {
+            if(tick.tick>=actor.poison->next && actor.poison->next<actor.poison->until) {
+                const auto poison=*actor.poison;
+                const auto last=std::min(tick.tick,poison.until-1);
+                const auto result=damage(id,poison.source,poison.damage.rate*int64_t(last-poison.next+1),tick.tick,0,false,0,{},true);
+                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+                if(result) {
+                    recordHirelingKill(id,poison.damage.actualSource);
+                    if(actor.poison) actor.poison->next=last+1;
+                }
+            }
+            if(actor.poison && tick.tick>=actor.poison->until) {
                 if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.poison->damage.state,false}}})) {blocked=true;continue;}
                 actor.poison.reset();++actor.revision;
-            } else if(tick.tick>=actor.poison->next) {
-                const auto actualSource=actor.poison->damage.actualSource;
-                const auto result=damage(id,actor.poison->source,actor.poison->damage.rate,tick.tick,0,false,0,{},true);
-                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
-                if(result && actualSource.value) recordHirelingKill(id,actualSource);
-                if(actor.poison) actor.poison->next=tick.tick+1;
             }
         }
         if(actor.knockbackGoal && actor.life>0) {
@@ -342,16 +445,23 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const bool thaw = actor.frozenUntil && actor.frozenUntil <= tick.tick;
         const bool warm = actor.chilledUntil && actor.chilledUntil <= tick.tick;
         const bool unstun=actor.stunnedUntil && actor.stunnedUntil<=tick.tick;
-        if (thaw) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState, false});
-        if (warm) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.coldState, false});
+        const bool holyWarm=actor.holyFreezeUntil && actor.holyFreezeUntil<=tick.tick;
+        if (thaw) expired.emplace_back(StateFact{id, 1, actor.area, actor.rule.frozenState.id, false});
+        if (warm) {
+            expired.emplace_back(StateFact{id,1,actor.area,actor.rule.coldState,false});
+        }
+        if(actor.life>0 && (warm || holyWarm) && actor.shatterActive && actor.rule.shatterState.id>=0)
+            expired.emplace_back(StateFact{id,1,actor.area,actor.rule.shatterState.id,false});
         if(unstun) expired.emplace_back(StateFact{id,1,actor.area,actor.rule.stunState,false});
         if (!expired.empty()) {
             if (!ports_.events.publish({0, tick.tick, {}, {AudienceKind::Area, {}, actor.area}, std::move(expired)})) { blocked = true; continue; }
             if (thaw) actor.frozenUntil = 0;
-            if (warm) actor.chilledUntil = 0;
+            if(warm) actor.chilledUntil=0;
+            if(actor.life>0 && (warm || holyWarm)) actor.shatterActive=false;
             if(unstun) actor.stunnedUntil=0;
             ++actor.revision;
         }
+        if(holyWarm) actor.holyFreezeUntil=0;
         if(actor.webUntil && actor.webUntil<=tick.tick) {
             if(!ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.rule.web->aura.id,false}}})) {blocked=true;continue;}
             actor.webUntil=0;++actor.revision;
@@ -373,7 +483,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 (actor.pathSteps || grid.segment(position,target->first));
         };
         if (arrived(actor.position)) { stop(id); continue; }
-        const int speed = std::max(25,actor.velocityPercent+actor.effectVelocity+actor.hirelingMovementPercent+(actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0)+(actor.chilledUntil>tick.tick?actor.rule.coldEffect:0)+(actor.slowed?actor.slowed->percent:0));
+        const int speed = movementPercent(actor,tick.tick);
         float remaining = monsterMovementSpeed(actor.rule.nativeVelocity, speed) * TickContext::seconds;
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;

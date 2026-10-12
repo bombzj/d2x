@@ -33,7 +33,7 @@ DamageType element(SkillBehavior s) {
 }
 }
 combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, std::optional<int64_t> damage) const {
-    const auto &owner=*ports_.players.find(m.player); const auto &rules=*owner.rules.skills;
+    const auto &owner=*ports_.players.find(m.player);
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
     result.binding=m.binding;
     result.occurrence=uint64_t(m.ageFrames);
@@ -62,7 +62,8 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
     result.freeze=result.freeze || m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
     if (m.skill.freezingArea) result.coldFrames=uint64_t(m.skill.freezingArea->freezeFrames);
     const auto *unit=ports_.monsters.find(m.owner);
-    result.coldPierce=unit && unit->hireling?unit->petStats.attributes.combat.coldPierce:skills::coldPierce(owner); result.coldDivisor=rules.coldDivisor; result.freezeDivisor=rules.freezeDivisor;
+    result.coldPierce=unit && unit->hireling?unit->petStats.attributes.combat.coldPierce:skills::coldPierce(owner);
+    result.poisonPierce=unit?unit->petStats.attributes.combat.poisonPierce:owner.totals.character.combat.poisonPierce;
     result.nextDelay=uint64_t(m.skill.arc ? m.skill.arc->nextDelay : std::max(0,int(std::lround(m.skill.missileNextDelay*25.f))));
     return result;
 }
@@ -82,7 +83,7 @@ System::Advance System::advance(const Missile &original) const {
     };
     const auto areaHit = [&](Vec at,int range,int64_t damage) {
         std::vector<EntityId> targets;
-        for(const auto &[id,t]:ports_.monsters.read().actors) if(enemy(t) && radius(at,t.position,range)) targets.push_back(id);
+        for(const auto &[id,t]:ports_.monsters.read().actors) if(enemy(t) && area.definition.activation.nearby(at,t.position) && radius(at,t.position,range)) targets.push_back(id);
         plan.impacts.push_back(impact(m,std::move(targets),damage));
     };
     if(m.program==Program::GrimWard) {
@@ -226,7 +227,15 @@ System::Advance System::advance(const Missile &original) const {
         }
         return plan;
     }
-    if(expires) {plan.finished=true;m.position=next;return plan;}
+    // Native SrvDo01 dispatches the same no-unit SrvHit on both lifetime
+    // expiry and wall contact; keep area payload construction in one path.
+    const auto terminalImpact=[&](Vec at) {
+        if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
+            m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;
+            areaHit(at,m.skill.freezingArea->radius,m.damage);
+        } else if(m.radius>0) areaHit(at,int(m.radius),m.damage);
+    };
+    if(expires) {terminalImpact(next);plan.finished=true;m.position=next;return plan;}
     std::vector<std::pair<float,EntityId>> contacts;
     if(m.skill.warcry) {
         const combat::Participants participants{ports_.players,ports_.monsters};
@@ -254,8 +263,7 @@ System::Advance System::advance(const Missile &original) const {
     const bool piercing=m.program==Program::Hammer || m.program==Program::FuryBolt || m.program==Program::Arc || (m.program==Program::Ring && m.skill.effect!=SkillBehavior::PoisonNova) || m.skill.effect==SkillBehavior::Inferno || m.skill.effect==SkillBehavior::BoneSpear;
     if(!contacts.empty()) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
-            m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;
-            areaHit(next,m.skill.freezingArea->radius,m.damage); plan.finished=true;
+            terminalImpact(next);plan.finished=true;
         } else if(m.radius>0) {
             m.position=m.position+(next-m.position)*contacts.front().first;
             areaHit(m.position,int(m.radius),m.damage);plan.finished=true;
@@ -282,11 +290,7 @@ System::Advance System::advance(const Missile &original) const {
             if(m.skill.effect==SkillBehavior::Howl || m.skill.effect==SkillBehavior::BattleCry) plan.curseTargets=std::move(targets);
             else plan.impacts.push_back(impact(m,std::move(targets)));
         }
-    } else if(wall && m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
-        m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;
-        areaHit(next,m.skill.freezingArea->radius,m.damage);
-    }
-    else if(wall && m.radius>0) areaHit(next,int(m.radius),m.damage);
+    } else if(wall) terminalImpact(next);
     m.position=next; ++m.revision; if(wall) plan.finished=true; return plan;
 }
 }

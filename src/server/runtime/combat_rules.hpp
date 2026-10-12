@@ -81,7 +81,10 @@ struct MonsterRule {
     int minimumDamage{}, maximumDamage{}, criticalChance{};
     std::array<int, 6> resistances{};
     int size{}, meleeRange{}, attackTicks{}, impactTick{}, deathTicks{}, decisionTicks{};
+    int neutralDelayTicks{15};
+    uint16_t immediateAiModes{}; // SplEndGeneric exceptions; bits are native modes.
     int nativeVelocity{}, difficulty{};
+    int alignment{}, alignmentState{-1}, alignmentStat{-1};
     MovementCollisionRule collision;
     MovementCollisionRule spawnCollision;
     bool demon{}, undead{}, boss{}, lesserUndead{};
@@ -98,7 +101,10 @@ struct MonsterRule {
     std::map<std::string,std::shared_ptr<const MonsterRule>,std::less<>> shrineMinions;
     bool noTreasure{};
     bool noExperience{};
-    int coldEffect{}, coldState{-1}, frozenState{-1};
+    int coldEffect{}, coldState{-1}, uninterruptableState{-1};
+    CombatStateDefinition frozenState, shatterState;
+    bool deadCollision{};
+    int difficultyResistancePenalty{};
     int knockbackTicks{};
     std::vector<uint64_t> experience;
     uint64_t experienceBase{};

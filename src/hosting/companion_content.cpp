@@ -55,7 +55,6 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();
     rule.nativeVelocity=record->walkVelocity.value_or(0);rule.meleeRange=record->meleeRange;
     rule.difficulty=source.difficulty;rule.coldEffect=record->coldEffect.at(size_t(source.difficulty));
-    rule.coldState=data.states.at("cold").definition.id;rule.frozenState=data.states.at("freeze").definition.id;
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     rule.demon=record->demon;rule.undead=record->undead;rule.corpseSelectable=false;rule.noTreasure=true;
     const auto &table=data.tables.at("monstats");const auto suffix=source.difficulty==0?"":source.difficulty==1?"(N)":"(H)";
@@ -139,7 +138,8 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     if(animation==data.skills.attackTimings.end()) throw std::runtime_error("Missing original Valkyrie attack animation");
     const auto &a=animation->second;
     const WeaponAttackTiming timing{"a1",a.frames,effectiveAttackSpeed(a.speed,result.weapon.fasterAttack,result.weapon.baseSpeed,attributes.combat.attackRate),a.actionFrame,attackStartingFrame(equipment.player.characterClass,gear.animationClass,"a1")};
-    result.rule.attackTicks=timing.durationTicks();result.rule.impactTick=timing.actionTick();result.rule.decisionTicks=std::max(1,pet.thinkFrames);
+    result.rule.attackTicks=monsterAnimationTicks({timing.frames,timing.speed},timing.startFrame);result.rule.impactTick=timing.actionTick();result.rule.decisionTicks=std::max(1,pet.thinkFrames);
+    result.rule.neutralDelayTicks=pet.thinkFrames>0?pet.thinkFrames:15;
     auto &action=result.rule.attacks[4];
     action.minimum=result.rule.minimumDamage;action.maximum=result.rule.maximumDamage;action.rating=result.rule.attackRating;
     action.duration=result.rule.attackTicks;action.release=result.rule.impactTick;
@@ -152,7 +152,7 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
             throw std::runtime_error("Missing original Valkyrie recovery animation");
         }
         const AnimationTiming clock{recovery->second.frames,recovery->second.speed};
-        const int ticks=AnimationTiming{clock.frames,effectiveRecoverySpeed(clock.speed,0)}.durationTicks();
+        const int ticks=monsterAnimationTicks({clock.frames,effectiveRecoverySpeed(clock.speed,0)});
         if(mode=="gh") {result.rule.hitRecoveryAnimation=clock;result.rule.hitRecoveryTicks=ticks;}
         else {result.rule.blockAnimation=clock;result.rule.blockTicks=ticks;}
     }

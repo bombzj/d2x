@@ -120,6 +120,7 @@ void NativeRealmService::ping(net::protocol::Reader &in) {
 }
 void NativeRealmService::game(std::span<const uint8_t> bytes) {
     if (bytes.empty()) throw ProtocolError("Empty native client packet");
+    if (shared.gamePacketObserver) shared.gamePacketObserver(diagnosticConnection, GamePacketDirection::ClientToServer, bytes);
     auto &stats = counters.gameRequests[bytes[0]];
     ++stats.received;
     try {

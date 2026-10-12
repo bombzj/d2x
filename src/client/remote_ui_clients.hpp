@@ -6,6 +6,7 @@
 #include "client/quest_client.hpp"
 #include "client/map_client.hpp"
 #include "contracts/online_items.hpp"
+#include "core/math.hpp"
 #include <memory>
 #include <cstddef>
 #include <cstdint>
@@ -29,7 +30,7 @@ class RemoteUiClients {
   public:
     RemoteUiClients(Archives &, net::RealmSession &, RemoteInventory &, RemoteCombat &, RemoteControl &, bool running = true);
     ~RemoteUiClients();
-    void update(const OnlineSceneView &);
+    void update(const OnlineSceneView &, std::optional<Vec> displayPosition = {});
     const ClassicData &content() const;
     IActorClient &actor();
     IInventoryClient &inventory();

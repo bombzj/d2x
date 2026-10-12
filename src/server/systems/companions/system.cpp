@@ -87,6 +87,8 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     for(auto it=state_.companions.begin();it!=state_.companions.end();) {
         auto &pet=it->second;const auto *p=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
         if(!body) {it=state_.companions.erase(it);continue;}
+        // Revived monsters retain their family AI clock in ai::System.
+        if(!body->revived()) pet.nextDecision=ports_.monsters.resumeAi(pet.actor,tick.tick,pet.nextDecision);
         if(pet.kind==Kind::Hireling) {
             if(!p || !p->entered) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);continue;}
             if(hirelingStep(pet,tick)==StepStatus::Blocked) blocked=true;

@@ -1,6 +1,6 @@
 # 怪物原协议与客户端表现
 
-更新：2026-10-11。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
+更新：2026-10-12。客户端专题负责原包、动作、原图、声音与视觉限制；权威程序及覆盖范围见[怪物目录](README.md)。
 
 所连接的服务端负责出生、AI、攻击／技能、命中、复活、召唤、经验／掉落和任务。当前客户端只消费真实单位与原动作／技能／状态。
 
@@ -22,7 +22,7 @@
 
 hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／nameSeed、67／69／6C／6D和4C／4D技能；AC包含五位rank旗标。A1=10、A2=16、S1=13、S2=15、S3=26、S4=28、GH=6、BL=18按wire动作表解释，不直接套内部模式号。人物MonProp击退用原0F/action20（KB），不能当隐藏Kick。
 
-人物命中／生命修正为PlrMsg的0D/action19及整数生命0..100比例；怪物0C为旗标19、整数生命0..128比例且大于1时减一及原命中类型。两类不能互换，0D／19也不是GH动作。原编码依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，协议目录见[服务端协议](../../modules/SERVER_PROTOCOL.md)。
+人物命中／生命修正为PlrMsg的0D/action19及整数生命0..100比例；怪物软命中0C为旗标19、整数生命0..128比例且大于1时减一及原命中类型，进入GH／BL／死亡不再附加0C。独立AB只携带原0..128生命值，不能按命中触发位解码，也不重启动作。人物与怪物包不能互换，0D／19也不是GH动作。原编码依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，协议目录见[服务端协议](../../modules/SERVER_PROTOCOL.md)。
 
 晚入视野恢复当前模式、生命、阶级与已公开状态，不重播历史攻击／弹体；换区或移除清对应显示缓存。原服／自研共用消费者，不为自研宿主多发私有或强制本人消息。
 
@@ -34,13 +34,54 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 恢复行为静态对照master的SceneController.combatTarget与hud目标优先级；D2MOO MonsterUnique／SCmd提供公开阶级／词缀依据，当前MPQ提供姓名和boss字段。此修正已随此前野蛮人技能Release包纳入，第一幕历史包保留；本轮未专项复验按住锁定，不能使用上一批精英悬停截图认证它。
 
+## 原版加入自研宿主的待核实问题
+
+2026-10-12用户报告：原版1.13c加入D2X Host后，城外怪物可见但悬停没有姓名／生命条，技能未击杀。离线核对本地`artifacts/item-protocol-20261012-090747-corrected/host-packets.jsonl`的原版连接3及`vanilla-field-analysis.json`，未重新启动、构建或运行测试；该次EXE的SHA256为`5B82BE77B893472E4BEBC30EB19B367936B28A685230AA5B26E522CEA122BDD4`，不能用当前未构建源码替代该日志。
+
+- 怪物AC确实发送，城外样本为原class5僵尸和63硬毛老鼠，初始生命128；没有收到任何指向单位的攻击请求。日志不记录原版本地悬停命中检查，不能仅凭没有攻击请求确定可选标志损坏。
+- 同类原版Host旧样本`npc-host-comparison/original-combat-received.jsonl`的seq679–681／885–887为AC→AA含state105 alignment→6D；该次D2X的seq1530–1532／2412–2414为AC→空AA→6D。旧`replication::visibleMonsters`仅在转化等效果中补阵营状态，普通敌人快照缺此状态。原D2Common的GetUnitAlignment（1.13c导出10830）缺状态时默认敌方0，因此此差异尚不能认证为悬停故障根因。
+- 第一趟出城权威位置已进入荒原；第二趟在seq2411以后反复保持城镇边界内的(5802,5742)，而原版5F报告位置继续向西移动。seq2394选择64冰封球、seq2435发送坐标施法(5769,5752)，随后没有18／95资源变化或怪物命中回包。该目标已在当前权威区域西界5800外，现有技能入口会先按区域边界拒绝；不能据此认定冰封球伤害算法失效。完整命令结算状态未采集，跨界停住的具体碰撞／路线失败分支仍未确定。
+
+该次旧构建的5F仍是stub；当前源码已按D2MOO接入距离分档、房间／路径／落点校验、同步状态及15位置纠偏，细节与寻路适配边界见[服务端协议](../../modules/SERVER_PROTOCOL.md)。5F修正版SHA256为`2F915E76F9DF038FDA34D8DAC30F565F8FFBA2606F253F224699B3B06B716636`；用户复验仍不能悬停。`artifacts/position-sync-host-20261012-104706/host-packets.jsonl`的原版连接5已进入城外，存在坐标施法、资源变化、怪物受伤／死亡，但没有敌人单位目标请求；不能继续用停在城内解释此次悬停失败。
+
+同日按用户授权，以隔离一级女巫ProtocolGuest加入原版1.13c Host，走出营地并对僵尸施放36火弹。完整双向日志和对比数据在`artifacts/original-field-comparison-20261012-111137/client-packets.jsonl`及`comparison.json`：
+
+- 原僵尸class5的seq1611–1613与沉沦魔class19的seq1577–1579再次确认AC→AA含alignment105→6D。旧包普通敌人缺该阵营状态，但缺状态默认敌方的原版依据未改变。
+- 原版额外发送六个7字节AB单位生命包，如seq1693的`AB010C00000040`、seq1750的`AB010C00000035`。D2X Host旧对照为零，旧客户端世界消费者和宿主消息目录也没有AB入口。原D2MOO SCmd::SendPacket0xAB及SUnitMsg提供包型依据；AB证明生命同步缺口，不能认证为选中开关。
+- 原版该僵尸67／68携带路径类型13、最大距离5，城镇NPC样本多为类型7／距离5；D2X原版连接5的67均为类型1／距离0。SCmd普通移动重载最后一字节来自PATH_GetMaxDistance，非生命值；旧宿主普通移动写零。不能把样本13／5一律写死到全部单位。
+- 火弹单位请求确实发出，原版返回69受击及AB生命变化；隔离角色随后死亡、正常回城并退局。回传角色在本地导入时被dead状态校验拒绝，未认证重入保存。此次悬停截图未捕获移动后的目标，不能作为自有客户端悬停通过证据，也没有发现可直接认证原版选中故障根因的额外消息。
+
+### 已补齐的源码与复验边界
+
+按上述原日志、本地D2MOO与当前MPQ完成以下修改，客户端和嵌入宿主一起构建打包；按用户要求不启动游戏，以上历史日志不认证新包。
+
+| 差异 | 当前实现与依据 |
+| --- | --- |
+| 阵营状态缺失 | 普通怪物、宠物和NPC首次可见均发送含alignment的AA；状态／属性ID由MPQ读取。MonStats Align=1／2分别转换为单位good=2／neutral=1；零值只启用状态，不编造属性。依据MonsterSpawn、SUnit::sub_6FCBDD30及原AA样本；转化／主人关系仍按权威事实覆盖 |
+| 佣兵初始归属 | AC按SCmd为佣兵启用扩展位流并发送32位主人GUID，所有可见观察者均可读取；详细佣兵属性仍只发给主人。自有客户端既有AC解析已兼容该字段，归属展示继续读取7A |
+| AB无发送／消费 | 宿主记各观察者已发布生命，敌方生命与缓存相差超过4或归零时发AB；0C已携带生命时同步缓存。客户端只更新已知单位，不创建迟到单位、不改变动作／路径／技能和命中修订。依据MonsterMode再生阈值、SUnitMsg敌方过滤与SCmd原7字节格式；伙伴生命仍沿7F |
+| 命中重复 | nativeHit按SUnitDmg及MonsterMsg区分软命中0C与GH／BL／死亡，死亡保留HitClass，避免GH和0C重复触发客户端受击回调；原样本为69 GH后AB |
+| 路径类型／末点／距离 | 普通追击采用原TowardFinish13，默认障碍搜索距离5，失败由MonsterMode策略选择WallFollow15；投影保留实际类型、步数、末点和最大距离。环绕末点按SCmd映射成类型1，囚犯现有AStar路线保留类型1，不把所有单位伪装成13。移动速度与权威步进共用全部当前速度贡献 |
+| 自有客户端路线 | Grid::nativeUnitPath为两端共享纯计算，Toward／Straight与WallFollow按原方向表、射线、距离和折点规则执行；目标步数作为到达距离而非折点数。WallFollow单位目标搜索下限40在公共函数内处理，具体调用与剩余边界见[共用寻路](../../modules/MAP.md#共用寻路) |
+| 原版退局存档被拒绝 | 普通角色DEAD头位不再当作硬核永久死亡拒绝，保留原头位与尸体布局；依据PlrSave判定。格式与拒绝边界见[存档](../../modules/SAVES.md#支持与拒绝边界) |
+
+### 玩家阵营遗漏与当前修正
+
+上述包的SHA256为`FB12CA6AEA42364799072D7F4B08BCF915205FE346181260E3E89BA2290EB594`。用户原版Join复验仍不能悬停；`artifacts/hover-host-20261012-144716/host-packets.jsonl`连接3包含1707条双向记录，已确认怪物AA、AB及新67／68字段实际发送。坐标冰封球后六只怪物收到归零AB及死亡动作，但没有敌怪单位目标请求。`packet-type-audit.json`比较两份记录的全部已观察包型及计数；角色、种子、操作不同，不是全部字段的同条件一致性认证。
+
+本次确认此前漏查玩家自身阵营：原版Host记录seq17给玩家发送`AA00020000000C6959F9FF1F`（state105、stat172、alignment=2），自研记录seq453为`AA00B600000008FF`，只有空状态列表。D2MOO `PLAYER_Create`明确调用`sub_6FCBDD30(pPlayer, 2, 1)`；原1.13c D2Common ordinal10830／RVA391F0对玩家缺失alignment返回0，ordinal10666／RVA84D30将0与0判断为同阵营。D2Client RVAA64E2调用该关系函数，结果进入RVAA68E0的悬停／技能资格筛选，因此缺失玩家alignment可使普通敌人被排除。补怪物alignment=0不能补偿玩家端的错误。
+
+`nativePlayerInitialStates`现从当前MPQ解析状态／属性ID，按原规则发送玩家友方值2；本人59后及远端玩家首次可见／重新入视野共用该AA编码。固定身份状态不混入临时效果差分缓存，避免后续A9误清除；当前MPQ alignment的plrstaydeath=1，死亡保留。自有客户端`remote_world`与`RemoteCombat::refresh`已经按MPQ解码玩家AA属性，无须新增包型。其既有怪物敌对筛选只查看怪物侧状态，说明D2X能选中不能认证原版的双方阵营判断。
+
+此次玩家阵营修正仅改源码、静态核对，尚未构建或复验；当前运行宿主仍是上述旧包。原版进程只读访问被Windows拒绝，未取得可选位／LOS现场值，不能宣称用户悬停已恢复。原版Host与自研Host的同种子人口、全部路径类型、动态占位、完整房间／可见性时序和逐帧位置尚未完全对齐；AStar仍为当前网格实现。新包仍需复验原版Join的怪物悬停、单位技能命中及死亡后保存重入。
+
 ## 原图、声音与尸体
 
 MonStats→MonStats2组件／尺寸／Light、Skills／Missiles／MonSeq、AnimData、原COF／DCC及变换来自当前MPQ；ActorAnimation统一资源与动作，SoundCatalog／SceneAudio唯一解释并消费MonSounds。
 
 怪物原模式KB=13按D2Common COMPOSIT使用本身份GH组件；动画速度取BaseId的WL AnimData，变体按Velocity比例缩放。第一幕WL／RN按原BaseId准备基础速度，旧类型RN为基础WL的一半再按Run缩放，走跑时再乘原协议移动百分比。模式仍由原包决定，不把KB改写成权威GH，也不寻找MPQ不存在的KB图片。普通SC技能动作不使用攻击速度／冰冷调速，SQ沿原序列调速；权威时钟准备见hosting/monster_actions_content。
 
-0x0C与69 GH先剥离电强化触发位再读生命刻度；原动作12／13映射SKILL1，真正序列消费技能通知。原freeze可停止表现路径／动作；hide、udead与corpseSel分别控制尸体显示／选择。弹体出生与ClientSend按原程序决定，动作派生与原0x73同步去重。电强化由GH帧2／公开触发位发八条充能路径，冰强化由死亡帧4发64方向新星；RemoteMonsterEffects只持显示时钟，两端充能方向共用monsterLightningRays。
+0x0C与69 GH先剥离电强化触发位再读生命刻度；原动作12／13映射SKILL1，真正序列消费技能通知。原freeze可停止表现路径／动作；hide、udead与corpseSel分别控制尸体显示／选择。死亡时原freeze／shatter状态驱动icebreak碎冰，自研服务端保留States死亡掩码，资格及期限规则见[冰冷与毒伤](../skills/COMMON.md#冰冷冻结与毒伤)。弹体出生与ClientSend按原程序决定，动作派生与原0x73同步去重。电强化由GH帧2／公开触发位发八条充能路径，冰强化由死亡帧4发64方向新星；RemoteMonsterEffects只持显示时钟，两端充能方向共用monsterLightningRays。
 
 0x69动作9按尸体当前位置校正，GH动作6的方向槽按生命字节解释并清除旧路径；0C／69生命高位是电强化公开发射资格，不能当阶级。server/effects持MONUMOD延时／十帧冷却，RemoteMonsterEffects只持显示时钟。当前194／195速度／寿命无等级增量，不猜隐藏等级；不同MPQ启用增量时明确不可用，ClientSend为空不强发73。
 

@@ -960,12 +960,13 @@ struct RemoteScene::Impl {
             else if (localCast->started < 0) {
                 const auto row = skillRows.find(localCast->command.skill);
                 auto target = localCast->command.point;
-                int targetSize = 0;
+                int targetSize = 0, targetMotionBonus = 0;
                 if (localCast->command.target) {
                     target=targetPosition(*localCast->command.target);
                     const auto found = v.world.units.find(*localCast->command.target);
                     if (found != v.world.units.end()) {
                         targetSize = movementRule(found->second).size;
+                        targetMotionBonus = walking(found->second)?1:0;
                     }
                 }
                 bool ready = row != skillRows.end() && target.has_value();
@@ -984,8 +985,11 @@ struct RemoteScene::Impl {
                                 ranged |= kind == "bow" || kind == "xbw";
                             }
                     }
-                    ready = ranged || (targetSize > 0 && meleeDistance({float(u.position->x), float(u.position->y)}, 2,
-                        {float(target->x), float(target->y)}, targetSize) <= range + 1);
+                    const auto displayed=motion.find(u.key);
+                    const Vec feet=displayed!=motion.end() && displayed->second.last
+                        ? displayed->second.position+displayed->second.correction : Vec{float(u.position->x),float(u.position->y)};
+                    const Vec victim{float(target->x),float(target->y)};
+                    ready = ranged || (targetSize > 0 && playerMeleeReach(collision,feet-worldOrigin,victim-worldOrigin,targetSize,range+targetMotionBonus));
                 }
                 if (ready) {
                     auto actor = u; actor.actionSkill = localCast->command.skill;
@@ -1080,16 +1084,22 @@ struct RemoteScene::Impl {
             monstats.number(row->second, "opendoors").value_or(0), size);
     }
     void plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
-              bool nativeSegments) {
+              const OnlineUnit &unit, const std::optional<InteractionTarget> &arrival = {}, uint8_t targetType = 255) {
         m.route.clear(); m.goal = goal;
         m.routeOrigin = origin; m.obstacleRevision = map.grid.obstacleRevision;
         if (speed <= 0 || rule.size <= 0) return;
         // Native precise coordinates target cell centers; presentation adds
         // its half-cell offset when drawing. Match the control planner here.
         const Vec center{.5f, .5f};
-        const auto path = nativeSegments
-            ? map.grid.nativePlayerPath(m.position - origin + center, goal - origin + center, rule)
+        const bool nativeMonster=unit.key.type==1 && unit.pathType && unit.pathDistance &&
+            (*unit.pathType==1 || *unit.pathType==2 || *unit.pathType==7 || *unit.pathType==13 || *unit.pathType==15);
+        auto path = unit.key.type==0
+            ? map.grid.nativePlayerPath(m.position - origin + center, goal - origin + center, rule,targetType)
+            : nativeMonster ? map.grid.nativeUnitPath(m.position-origin+center,goal-origin+center,*unit.pathType,*unit.pathDistance,rule,unit.destinationUnit.has_value())
             : map.grid.path(m.position - origin + center, goal - origin + center, true, rule);
+        if(unit.key.type==0 && arrival && (path.empty() || !interactionClear(map.grid,path.back()-center,*arrival)))
+            if(const auto approach=interactionApproach(map.grid,m.position-origin,*arrival))
+                path=map.grid.nativePlayerPath(m.position-origin+center,*approach+center,rule);
         for (auto point : path)
             m.route.push_back(point + origin - center);
     }
@@ -1111,7 +1121,7 @@ struct RemoteScene::Impl {
             !localCast->command.stationary && world().combatRequest) {
             const auto skill = skillRows.find(localCast->command.skill);
             if (skill != skillRows.end() && skills.value(skill->second, "range") != "none")
-                request = OnlineMovementRequest{{}, localCast->command.target, mapDisplay.running,
+                request = OnlineMovementRequest{{}, localCast->command.target, true,
                     world().combatRequest->revision + 1};
         }
         const auto rule = movementRule(u);
@@ -1137,6 +1147,14 @@ struct RemoteScene::Impl {
             if (beginCast) m.castRevision = localCast->revision;
             if (request) m.invalidatedRequest = request->revision;
             activeRequest = false;
+        } else if (own && !request && m.requestRevision && !beginCast) {
+            // An interaction intent stops the local approach before the next
+            // sparse resource sample. Retain its precise endpoint until an
+            // actual position correction/new action replaces it.
+            const Vec displayed = m.position + m.correction;
+            m.castHandoff = CastHandoff{world().revision, *u.position, m.goal ? *m.goal - displayed : m.look};
+            m.position = displayed; m.correction = {}; m.correctionLeft = 0;
+            m.route.clear(); m.goal.reset(); m.movedAt = -1;
         } else if (beginCast) {
             // PlrModes changes the action at the current precise position. A
             // canceled walk request is not a native position correction.
@@ -1155,7 +1173,8 @@ struct RemoteScene::Impl {
             // the normal position correction below.
             m.position = m.position + m.correction;
             m.correction = {}; m.correctionLeft = 0; m.movedAt = -1;
-        } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position) ||
+        } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position &&
+                    !(own && u.positionRevision==u.pathVerificationRevision)) ||
                    (m.actionRevision != u.actionRevision && !walking(u)) ||
                    (own && m.requestRevision && !request && m.goal)) {
             const Vec displayed = m.position + m.correction;
@@ -1211,20 +1230,17 @@ struct RemoteScene::Impl {
             // PlrMsg may omit unchanged resources and small position deltas.
             // Finishing a predicted leg does not imply rejection: wait for the
             // same lack-of-native-progress timeout as navigation, not travel time.
-            m.invalidatedRequest = request->revision; requested = false; corrected = true;
-            const auto displayed = m.position + m.correction;
-            m.position = target; m.correction = displayed - target; m.correctionLeft = .12f;
-            if (!map.grid.segment(target - origin, displayed - origin, {}, rule)) m.correction = {};
+            m.invalidatedRequest = request->revision; requested = false;
+            // Missing progress is not a teleport. Stop at the local precise
+            // position; 5F/15 owns reconciliation with the server.
+            m.position=m.position+m.correction;m.correction={};m.correctionLeft=0;
         }
         if (requested) {
             if (request->destination) goal = Vec{float(request->destination->x), float(request->destination->y)};
             else goal = pointForUnit(request->unit);
-            // Receipt order is not an ACK: an old path verification can arrive
-            // after the next drag command. Never let it replace the new direction.
-            if (u.pathVerificationRevision > request->revision && u.verifiedDestination && goal &&
-                std::abs(float(u.verifiedDestination->x)-goal->x)<=1.f &&
-                std::abs(float(u.verifiedDestination->y)-goal->y)<=1.f)
-                goal = Vec{float(u.verifiedDestination->x), float(u.verifiedDestination->y)};
+            // 18/95/96 verify the native path; they neither replace its target
+            // nor reposition its owner. D2Client 1.13c RVA 2A1B0 sends 5F on
+            // excessive drift and leaves precise movement to the local path.
             m.running = request->run && (!world().stamina || *world().stamina != 0);
         } else if (alive && walking(u) && !m.castHandoff && !(own && request &&
                    request->revision <= m.invalidatedRequest && u.actionRevision < request->revision)) {
@@ -1232,13 +1248,15 @@ struct RemoteScene::Impl {
             else goal = pointForUnit(u.destinationUnit);
             m.running = u.key.type == 0 ? (u.nativeMode ? u.mode == 3 : (u.mode == 23 || u.mode == 24)) : u.mode == 15;
         }
+        std::optional<InteractionTarget> arrival;
         if (own && request && request->interaction && request->unit && goal) {
             const auto key = *request->unit;
             const Vec position = m.position + m.correction;
             bool reached = false;
             if (key.type == 4) {
                 const auto point = pointForUnit(request->unit);
-                reached = point && nativeUnitDistance(position, 2, *point, 1) <= 4 && map.grid.interactionSegment(position - origin, *point - origin, 1, {});
+                if(point) arrival=InteractionTarget{{},*point-origin,*point-origin,1,1,4,false,true};
+                reached = point && nativePickupReach(map.grid,position-origin,*point-origin,{});
             } else if (sceneBinding) {
                 const auto found = std::find_if(sceneBinding->mapTargets.begin(), sceneBinding->mapTargets.end(),
                     [&](const auto &entry) { return entry.unit == key; });
@@ -1252,6 +1270,14 @@ struct RemoteScene::Impl {
                 }
             }
             if (reached) goal.reset();
+        }
+        if(goal && u.key.type==1 && u.destinationUnit && u.pathSteps && *u.pathSteps) {
+            const auto targetUnit=world().units.find(*u.destinationUnit);
+            if(targetUnit!=world().units.end()) {
+                const int targetSize=movementRule(targetUnit->second).size;
+                if(targetSize>0 && nativeUnitDistance(m.position,rule.size,*goal,targetSize)<=int(*u.pathSteps)-1)
+                    goal.reset();
+            }
         }
         // Circle/knockback/leap paths need their own native client solver; never substitute a straight chase.
         if (u.key.type == 1 && u.pathType && (*u.pathType == 5 || *u.pathType == 6 ||
@@ -1269,7 +1295,8 @@ struct RemoteScene::Impl {
             if (!m.goal || (*m.goal - *goal).length() > .5f || corrected ||
                 m.actionRevision != u.actionRevision || m.obstacleRevision != map.grid.obstacleRevision ||
                 m.routeOrigin.x != origin.x || m.routeOrigin.y != origin.y)
-                plan(m, *goal, map, origin, rule, speed, u.key.type == 0);
+                plan(m, *goal, map, origin, rule, speed, u, arrival,
+                    requested && request->unit ? request->unit->type : !requested && u.destinationUnit ? u.destinationUnit->type : 255);
         } else if(!knocked) { m.route.clear(); m.goal.reset(); }
         m.actionRevision = u.actionRevision;
         m.requestRevision = request ? request->revision : 0;
@@ -1351,6 +1378,7 @@ struct RemoteScene::Impl {
                 constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc","s2","s3","s4","sq","dd","kk","kb","rn"};
                 const auto mode=u.mode.value_or(1);if(mode>=modes.size()) return nullptr;
                 ActorAnimationRequest request;request.category="chars";request.appearance=*parts;request.shadow=true;
+                request.monsterUnit=true;
                 request.mode=moving && mode==1?"wl":modes[mode];request.finalFrame=mode==12;
                 if(mode==12) request.mode="dt";
                 // D2Common COMPOSIT_GetWeaponClassCode: player death uses HTH,
@@ -1642,7 +1670,7 @@ struct RemoteScene::Impl {
                 onlineMonsterCorpse(unit)) continue;
             const bool enemy = combat.hostile(unit);
             if (!enemy && ((key.type==0 && (world().corpseOwners.contains(key.id) || playerDead(unit))) || (key.type!=0 && key.type!=1))) continue;
-            missileTargets.push_back({effectOwner(key), {float(unit.position->x) + .5f, float(unit.position->y) + .5f},
+            missileTargets.push_back({effectOwner(key), displayPosition(unit, map, origin) + Vec{.5f, .5f},
                 movementRule(unit).size, enemy});
             if(key.type==1) if(const auto row=monsterRows.find(unit.classId.value_or(UINT16_MAX));row!=monsterRows.end())
                 missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
@@ -1713,7 +1741,8 @@ struct RemoteScene::Impl {
         worldScene.map = &map; worldScene.region = shared.mapView().region;
         worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
         worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
-        worldScene.observer = camera; worldScene.roomObserver = local(*v.world.playerPosition);
+        worldScene.observer = camera;
+        worldScene.roomObserver = observer - Vec{float(origin.x), float(origin.y)};
         worldScene.terrainOrigin = {float(origin.x), float(origin.y)};
         worldScene.time = time; worldScene.elapsed = suspended ? 0.f : elapsed;
         worldScene.eclipse=v.world.eclipse;
@@ -2046,7 +2075,20 @@ struct RemoteScene::Impl {
             if (actor != draw.end()) shared.drawInteractionLabel(v.world.units.at(*hoveredPlayer).name,
                 screen(actor->position) + actor->pixelOffset);
         }
-        shared.drawAutomap(binding.automap);
+        auto automap = binding.automap;
+        // Native hosts send path verification sparsely. The same collision-
+        // checked position drives camera, visibility, effects and automap each
+        // frame; packet coordinates remain the authority/acknowledgement state.
+        automap.observer = observer;
+        for (auto &marker : automap.markers) if (marker.unit) {
+            const OnlineUnitKey key{marker.unit->first, marker.unit->second};
+            const auto unit = v.world.units.find(key);
+            const auto moving = motion.find(key);
+            if (unit != v.world.units.end() && moving != motion.end() &&
+                moving->second.assignmentRevision == unit->second.assignmentRevision)
+                marker.position = moving->second.position + moving->second.correction;
+        }
+        shared.drawAutomap(automap);
         auto &hit = intent.input;
         hit.available = !surface && !waypointOpen && !v.world.npcRequested;
         hit.targetingAvailable = !shared.ui().blocksInput() && !shared.ui().skillPicker &&
@@ -2137,10 +2179,16 @@ int RemoteScene::unavailableUnits() const {
 bool RemoteScene::playerDisplayed() const {
     return impl_->playerDisplayed;
 }
-std::optional<Vec> RemoteScene::playerDisplayPosition() const {
+std::optional<Vec> RemoteScene::playerDisplayPosition(const OnlineView &view) const {
+    if (impl_->gameGeneration != view.gameGeneration || impl_->areaGeneration != view.world.areaGeneration ||
+        impl_->playerId != view.load.playerUnitId) return {};
     if (!impl_->playerId || !impl_->playerDisplayed) return {};
     const auto found = impl_->motion.find({0, *impl_->playerId});
     if (found == impl_->motion.end()) return {};
+    const auto actor = view.world.units.find({0, *impl_->playerId});
+    if (actor == view.world.units.end() || !actor->second.position ||
+        found->second.assignmentRevision != actor->second.assignmentRevision ||
+        found->second.discontinuity != actor->second.positionDiscontinuity) return {};
     return found->second.position + found->second.correction;
 }
 const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }

@@ -5,6 +5,7 @@
 #include "gameplay/combat/weapon_values.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
+#include "world/interaction_geometry.hpp"
 #include <compare>
 #include <cstdint>
 #include <array>
@@ -28,7 +29,7 @@ struct PlayerBinding {
     GameHandle game;
     PlayerId player;
 };
-enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc };
+enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc, Synchronize, ApproachItem };
 struct MotionTarget { EntityId id; uint8_t type{1}; };
 struct MovementCommand {
     MovementAction action = MovementAction::Move;
@@ -36,6 +37,7 @@ struct MovementCommand {
     bool forceRun{};
     EntityId exit{};
     std::optional<MotionTarget> target{};
+    std::optional<InteractionTarget> arrival{};
 };
 enum class CommandStatus { Queued, Applied, NotImplemented, InvalidBinding, Stale, Paused, QueueFull, InvalidDestination, NoRoute, InvalidRequest, Unavailable, Conflict };
 struct CommandResult {
@@ -102,6 +104,8 @@ struct MonsterSnapshot {
     std::optional<EntityId> storedOwner{};
     std::optional<MotionTarget> movementTarget{};
     uint8_t pathSteps{};
+    uint8_t pathType{13}, pathDistance{5}; // MonsterMode's ordinary TowardFinish/default distance.
+    bool hostile{};
     std::vector<uint8_t> modifiers{};
     std::array<uint8_t,16> components{}, componentCounts{};
     uint8_t rankFlags{};

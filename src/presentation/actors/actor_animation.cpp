@@ -31,6 +31,7 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     key+=":"+std::to_string(request.repeatCount)+":"+std::to_string(request.rollbackPercent)+":"+std::to_string(request.sequenceRateBonus);
     key+=":"+std::to_string(request.sequenceLanding);
     key+=":"+std::to_string(request.sequenceUsesAttackRate);
+    key+=":"+std::to_string(request.monsterUnit);
     key+=":"+(request.animationRate?std::to_string(*request.animationRate):"native");
     key+=":"+std::to_string(request.persistentCycle)+":"+std::to_string(request.sequenceStart)+":"+std::to_string(request.sequenceEnd);
     key+=":"+std::to_string(request.stateColorShift);
@@ -170,6 +171,8 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
         if(record) result.durationFrames=AnimationTiming{int(record->frames),*request.animationRate}.durationTicks(result.start);
     }
     result.frameCount-=result.start;
+    if((request.category=="monsters" || request.monsterUnit) && record && result.fps>0)
+        result.durationFrames=monsterAnimationTicks({int(record->frames),int(std::lround(result.fps*256.f/25.f))},result.start);
     if(request.repeatCount>1 && (mode=="a1" || mode=="a2")) {
         const int speed=int(std::lround(result.fps*256.f/25.f));
         if(!record) return {};
@@ -297,7 +300,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     const int sequenceSpeed=request.sequenceUsesAttackRate && request.attackTiming?
         effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256;
     result.fps=float(sequenceSpeed)*25.f/256.f;
-    result.durationFrames=animationFrameTicks(result.frameCount,sequenceSpeed);
+    result.durationFrames=monsterAnimationTicks({result.frameCount,sequenceSpeed});
     for (int facing = 0; facing < first->animation.directions; ++facing)
         for (const auto &[base, frame] : samples) {
             if (base->animation.directions != first->animation.directions) return {};

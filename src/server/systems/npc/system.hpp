@@ -12,9 +12,11 @@ struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::o
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
 struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
 struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; };
 class System {
     State state_; const Ports ports_;
+    struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
+    std::map<PlayerId,Approach> approaches_;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

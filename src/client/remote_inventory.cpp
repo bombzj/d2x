@@ -60,6 +60,12 @@ EquipmentDefinition RemoteInventory::equipmentDefinition(const OnlineItem &item)
         result.types.emplace_back(code);
         const auto row = typeRows_.find(code);
         if (row == typeRows_.end()) return;
+        const auto required=types.value(row->second,"Class");
+        if(!required.empty()) {
+            if(!result.requiredClass.empty() && result.requiredClass!=required)
+                throw std::runtime_error("Conflicting MPQ equipment classes");
+            result.requiredClass=required;
+        }
         inherit(types.value(row->second, "Equiv1"));
         inherit(types.value(row->second, "Equiv2"));
     };
@@ -479,6 +485,11 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::Equip: {
         if (!cursor() || !decoded.identified || command.body < 1 || command.body > 10)
             return reject("Equip requires an identified cursor item and a native active body slot 1-10");
+        const auto equipment=equipmentDefinition(wire);
+        const auto &characters=tables_.at("charstats");
+        if(!equipment.requiredClass.empty() && (!playerClass_ || *playerClass_>=characters.rows().size() ||
+            characters.value(*playerClass_,"code")!=equipment.requiredClass))
+            return reject("This equipment is for another class");
         const auto &base = bases_.at(wire.code); const auto &table = tables_.at(base.table), &types = tables_.at("itemtypes");
         const auto type = typeRows_.find(table.value(base.row, "type"));
         const auto &locations = tables_.at("bodylocs");
@@ -486,7 +497,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         const auto code = locations.value(command.body, "Code");
         if (code.empty() || (types.value(type->second, "BodyLoc1") != code && types.value(type->second, "BodyLoc2") != code))
             return reject("MPQ item type does not fit that body slot");
-        break; // Attribute/class/two-handed combinations are finally validated by the original server.
+        break; // Attribute and hand combinations are finally validated by the original server.
     }
     case OnlineItemAction::Unequip:
         if (!owned(wire) || wire.mode != 1 || wire.body < 1 || wire.body > 10 || view_.cursor)

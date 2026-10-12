@@ -29,6 +29,7 @@ class RemoteControl {
         std::optional<OnlinePoint> progressPosition;
     };
     std::optional<Movement> movement_;
+    uint64_t verificationGame_{}, verificationArea_{}, verificationRevision_{};
     std::string reason_;
     bool reject(std::string reason);
     bool submitSegment(Movement &);
@@ -36,7 +37,8 @@ class RemoteControl {
   public:
     RemoteControl(RemoteTown &scene, net::RealmSession &session) : scene_(scene), session_(session) {}
     bool move(OnlinePoint, bool run, std::optional<OnlineIntentContext> context = {}, std::optional<Vec> requestOrigin = {});
-    bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {});
+    bool moveToUnit(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
+                    std::optional<Vec> displayOrigin = {});
     bool interact(OnlineUnitKey, bool run, std::optional<OnlineIntentContext> context = {},
                   std::optional<Vec> displayOrigin = {});
     bool townPortal();
@@ -45,7 +47,7 @@ class RemoteControl {
         approach_.reset();
     }
     void cancelMovement() { movement_.reset(); approach_.reset(); }
-    void tick();
+    void tick(std::optional<Vec> displayOrigin = {});
     const std::string &reason() const { return reason_; }
     std::optional<OnlineIntentContext> intentContext() const {
         if (approach_) return approach_->context;

@@ -50,6 +50,7 @@ struct RemoteUiClients::Impl {
     std::shared_ptr<const ClassicData> sharedData;
     const ClassicData &data;
     const OnlineSceneView *scene{};
+    std::optional<Vec> displayPosition;
     OnlineIntentContext context;
     uint64_t revision{}, generation{~uint64_t{}}, areaGeneration{~uint64_t{}};
     bool run{true};
@@ -200,7 +201,21 @@ struct RemoteUiClients::Impl {
                         }
                     }
                 }
-                if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                if constexpr (std::is_same_v<T, EquipItem>) {
+                    const auto *item=o.inventoryView.item(c.item.id);
+                    if(!item) return InventoryError::UnknownItem;
+                    if(item->revision!=c.item.revision) return InventoryError::SourceChanged;
+                    if(!c.slot) return InventoryError::None;
+                    const auto *definition=o.data.items.find(item->definition);
+                    if(!definition) return InventoryError::UnknownDefinition;
+                    if(!item->identified) return InventoryError::Unidentified;
+                    if(!definition->equipment.known || !definition->equipment.fits(*c.slot))
+                        return InventoryError::UnsupportedEquipment;
+                    const auto &required=definition->equipment.requiredClass;
+                    if(!required.empty() && required!=o.characterView.classCode) return InventoryError::WrongClass;
+                    return InventoryError::None;
+                }
+                else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
                     const auto *item=o.inventoryView.item(c.item.id);
                     if(!o.hirelingView.active || !item || item->revision!=c.item.revision) return InventoryError::AccessDenied;
                     const auto *location=std::get_if<ContainerLocation>(&item->location);
@@ -1470,6 +1485,8 @@ struct RemoteUiClients::Impl {
         mapView.act=online.load.act.value_or(0); mapView.region=RegionId(scene&&scene->area?*scene->area:1);
         mapView.palette=scene&&scene->palette?*scene->palette:mapView.act;
         if(scene && scene->origin && w.playerPosition) mapView.observer={float(int(w.playerPosition->x)-scene->origin->x),float(int(w.playerPosition->y)-scene->origin->y)};
+        if(scene && scene->origin && displayPosition)
+            mapView.observer = *displayPosition - Vec{float(scene->origin->x), float(scene->origin->y)};
         if(scene) for(const auto &d:scene->waypoints) if(d.unlocked) mapView.waypointActs[d.act]=true;
         npcView={}; npcView.revision=revision; npcView.actor=characterView.actor;
         npcScene={}; npcScene.revision=revision;
@@ -1691,8 +1708,9 @@ struct RemoteUiClients::Impl {
                 offer->level,offer->stats.life,offer->stats.defense,int(offer->stats.price)});
         }
     }
-    void update(const OnlineSceneView &binding) {
+    void update(const OnlineSceneView &binding, std::optional<Vec> position) {
         scene=&binding;
+        displayPosition = position;
         context = onlineIntentContext(session.read());
         if(generation!=session.read().gameGeneration) {
             generation=session.read().gameGeneration; transactions.clear(); waiting.reset(); waitingContext.reset(); hotkeys={};
@@ -1716,7 +1734,7 @@ std::optional<uint64_t> RemoteUiClients::waitingItemRequest() const { return imp
 std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemAction action) const {
     return action == OnlineItemAction::RepairAll ? impl_->repairAllQuote() : impl_->itemQuote(item, action);
 }
-void RemoteUiClients::update(const OnlineSceneView &s){impl_->update(s);}
+void RemoteUiClients::update(const OnlineSceneView &s, std::optional<Vec> position){impl_->update(s, position);}
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}
 IInventoryClient &RemoteUiClients::inventory(){return impl_->inventory;}

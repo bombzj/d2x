@@ -81,10 +81,11 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         destination=monster->position;target=monster->id;
         if(program.chargeVelocity>0 && meleeDistance(p.position,2,destination,monster->rule.size)<=weapon->rangeAdder+1) return attack(actor,request,0);
         if(program.whirlwind && meleeDistance(p.position,2,destination,monster->rule.size)<=weapon->rangeAdder+1) return attack(actor,request,0);
-        if(!program.whirlwind && program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown && (meleeDistance(p.position,2,destination,monster->rule.size)>weapon->rangeAdder+1 ||
-            !area.definition.collision.segment(p.position,destination))) {
+        if(!program.whirlwind && program.chargeVelocity==0 && (!weapon->ranged || program.smite) && !program.thrown &&
+            !playerMeleeReach(area.definition.collision,p.position,destination,monster->rule.size,weapon->rangeAdder+int(monster->moving))) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
-            ports_.movement.execute(actor,{MovementAction::Move,destination,false,{},MotionTarget{unit->id,unit->type}});return {DomainStatus::Conflict,{}};
+            const auto movement=ports_.movement.execute(actor,{MovementAction::Move,destination,true,{},MotionTarget{unit->id,unit->type}});
+            return {movement==CommandStatus::Applied?DomainStatus::Conflict:DomainStatus::Unavailable,{}};
         }
     } else {
         if(!weapon->ranged && !program.thrown && !fend && !zeal && !program.commonAttack && !program.chargeVelocity && !program.whirlwind) return {DomainStatus::InvalidRequest,{}};
@@ -123,7 +124,7 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     }
     if(strafe || fend || zeal) {
         std::vector<uint64_t> targets;
-        for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=program.bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):meleeDistance(p.position,2,m.position,m.rule.size)<=weapon->rangeAdder+1 && area.definition.collision.segment(p.position,m.position))) targets.push_back(id.value);
+        for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=program.bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):playerMeleeReach(area.definition.collision,p.position,m.position,m.rule.size,weapon->rangeAdder))) targets.push_back(id.value);
         const int count=targets.empty()?0:zeal?program.attacks:strafe?strafeShotCount(int(targets.size()),program.attacks,program.bow->minimumShots):std::min(int(targets.size()),program.attackLimit);
         if(!count) return {DomainStatus::Unavailable,{}};
         if(!target || std::find(targets.begin(),targets.end(),target.value)==targets.end()) target=EntityId{missileChainSuccessor(0,targets)};
@@ -197,7 +198,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     if(strafe || fend || zeal || secondSwing) {
         std::vector<uint64_t> targets;
         const auto &area=ports_.areas.at(actor.area);
-        for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=pending.skill.weapon->bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):meleeDistance(p.position,2,m.position,m.rule.size)<=found->rangeAdder+1 && area.definition.collision.segment(p.position,m.position))) targets.push_back(id.value);
+        for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && (strafe?missileDistance(p.position,m.position)<=pending.skill.weapon->bow->targetRadius && area.definition.collision.missileSegment(p.position,m.position,{4,1}):playerMeleeReach(area.definition.collision,p.position,m.position,m.rule.size,found->rangeAdder))) targets.push_back(id.value);
         auto successor=missileChainSuccessor(pending.unit.value,targets);
         if(!successor && targets.size()==1) successor=targets.front();
         const auto target=EntityId{!pending.nextWeaponHit && std::find(targets.begin(),targets.end(),pending.unit.value)!=targets.end()?pending.unit.value:successor};
@@ -237,7 +238,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     const auto *target=ports_.monsters.find(selectedTarget);
     const auto &area=ports_.areas.at(actor.area);
     if(!target || !target->enemyTarget() || target->life<=0 || target->area!=actor.area ||
-        meleeDistance(p.position,2,target->position,target->rule.size)>found->rangeAdder+1 || !area.definition.collision.segment(p.position,target->position)) return DomainStatus::Unavailable;
+        !playerMeleeReach(area.definition.collision,p.position,target->position,target->rule.size,found->rangeAdder)) return DomainStatus::Unavailable;
     WeaponSkillDamage snapshot;snapshot.weapon=*found;snapshot.level=p.persistent.player.level;
     missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
     const auto result=ports_.missiles.direct(request,{selectedTarget}).status;

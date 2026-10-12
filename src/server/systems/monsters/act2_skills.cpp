@@ -173,6 +173,7 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
     actor.skillMotion=Actor::SkillMotion{target,until,actor.interruption,speed,leap,{}};
     actor.skillMotion->target=victim;actor.skillMotion->moveState=actor.rule.skillMoveState>=0;
     actor.busyUntil=std::max(actor.busyUntil,until);actor.movementGoal=target;
+    if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) {
@@ -189,7 +190,8 @@ DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) 
     const float speed=monsterMovementSpeed(actor.rule.nativeVelocity,actor.velocityPercent+(actor.chilledUntil>tick?actor.rule.coldEffect:0));if(route.empty() || speed<=0) return {DomainStatus::Unavailable,{}};
     const auto until=tick+uint64_t(std::ceil(5.f/speed/TickContext::seconds))+1;
     actor.skillMotion=Actor::SkillMotion{route.back(),until,actor.interruption,speed,false,std::move(route)};
-    actor.busyUntil=std::max(actor.busyUntil,until);++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+    actor.busyUntil=std::max(actor.busyUntil,until);if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
     auto &motion=*actor.skillMotion;

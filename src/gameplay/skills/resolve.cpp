@@ -221,7 +221,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     const auto weightedBonus = skillSynergyBonus(spec.weightedSynergies, learned);
     const int64_t bonus = std::max<int64_t>(0, 100 + synergy * spec.synergyPercent + weightedBonus);
     const int damageMastery = spec.fireDamage ? fireMasteryPercent :
-        spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : 0;
+        spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : spec.poisonDamage ? input.poisonDamagePercent : 0;
     // D2Common separates elemental minimum/maximum evaluation; physical curves retain their own rule.
     const auto minimum = spec.fireDamage || spec.lightningDamage || spec.coldDamage || spec.poisonDamage
         ? evaluateSkillMinimumDamage : evaluateSkillDamage;

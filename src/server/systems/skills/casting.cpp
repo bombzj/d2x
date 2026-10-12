@@ -133,9 +133,10 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto *victim=ports_.monsters.find(unit);
         if(!unit || (type!=2 && (type!=1 || !victim))) return {DomainStatus::InvalidRequest,{}};
         // Object operation has already checked the original interaction geometry.
-        if(type!=2 && (meleeDistance(p.position,2,target.position,victim->rule.size)>1 || !area.definition.collision.segment(p.position,target.position))) {
+        if(type!=2 && !playerMeleeReach(area.definition.collision,p.position,target.position,victim->rule.size,0)) {
             if(request.stationary) return {DomainStatus::Unavailable,{}};
-            ports_.movement.execute(actor,{MovementAction::Move,target.position,false,{},MotionTarget{unit,type}});return {DomainStatus::Conflict,{}};
+            const auto movement=ports_.movement.execute(actor,{MovementAction::Move,target.position,true,{},MotionTarget{unit,type}});
+            return {movement==CommandStatus::Applied?DomainStatus::Conflict:DomainStatus::Unavailable,{}};
         }
         const auto kick=rules.weaponAnimations.find("kk"+p.totals.equipment.animationClass);
         if(kick==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};

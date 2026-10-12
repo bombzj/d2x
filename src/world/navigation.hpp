@@ -80,9 +80,14 @@ struct Grid {
     // Use together with segment() when a route is sent to the original server.
     bool nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
     Vec nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule = playerMovement) const;
-    // Presentation-only native Straight/Toward policy, with AStar fallback
-    // restricted to 18 cells. Never generates server movement commands.
-    std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement) const;
+    // Shared native Straight/Toward policy, with AStar fallback restricted to
+    // 18 cells. Inputs/outputs use grid cell centers; callers own route state.
+    std::deque<Vec> nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule = playerMovement, uint8_t targetType = 255) const;
+    std::deque<Vec> nativeAStarPath(Vec from, Vec to, MovementCollisionRule rule, bool unitTarget = false) const;
+    // Native ordinary unit paths: AStar(1), Toward(2/13), Straight(7), WallFollow(15).
+    // maxDistance bounds Toward's obstacle search, not its unobstructed ray.
+    std::deque<Vec> nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget = false, uint8_t targetTolerance = 1) const;
+    std::deque<Vec> nativeWallFollowPath(Vec from, Vec to, uint8_t maxDistance, MovementCollisionRule rule) const;
     std::deque<Vec> nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const;
     bool collisionSegment(Vec a, Vec b, uint16_t mask) const;
     // Object interaction uses the native shortened integer ray and flying

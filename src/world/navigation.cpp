@@ -151,9 +151,15 @@ Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     // that cell is not the path target when the whole ray succeeds.
     return {float(endX) + .5f, float(endY) + .5f};
 }
-std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule) const {
+std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule, uint8_t targetType) const {
+    return nativeUnitPath(from,to,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1);
+}
+std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget, uint8_t targetTolerance) const {
     if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
+    if(type==1) return nativeAStarPath(from,to,rule,unitTarget);
+    if(type==15) return nativeWallFollowPath(from,to,unitTarget?std::max(uint8_t(40),maxDistance):maxDistance,rule);
+    if(type!=2 && type!=7 && type!=13) return {};
     // D2MOO PathMisc (MIT, docs/licenses/D2MOO.txt): Straight first uses
     // the biased collision ray, then Toward's three direction priorities.
     // The 73-step player bound and 18-cell AStar scope are path policy,
@@ -181,7 +187,11 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
     int x = int(std::floor(clipped.x)), y = int(std::floor(clipped.y));
     std::deque<Vec> toward;
     if (x != sx || y != sy) toward.push_back(clipped);
-    if (distance(x,y) <= 1) return toward;
+    if (distance(x,y) <= targetTolerance) {
+        if(!toward.empty()) return toward;
+        const int dx=gx-sx,dy=gy-sy;
+        return type==7 && dx*dx+dy*dy<=18*18 ? nativeAStarPath(from,to,rule,unitTarget) : toward;
+    }
     int previous = -1;
     bool lastTurn = false;
     int steps = 0;
@@ -197,7 +207,7 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
         dx = std::clamp(dx,-2,2);
         return dy < -1 ? 5*dx+10 : std::min(dy,2)+5*dx+12;
     };
-    for (; steps < 73 && (x != gx || y != gy); ++steps) {
+    for (; steps < maxDistance && (x != gx || y != gy); ++steps) {
         lastTurn = false;
         const int index = directionIndex(x,y);
         int selected = -1;
@@ -209,10 +219,10 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
         x += offsetX[selected]; y += offsetY[selected]; previous=selected;
     }
     if (steps && !lastTurn) toward.push_back({float(x)+.5f,float(y)+.5f});
-    if (!toward.empty() && distance(int(toward.back().x),int(toward.back().y)) <= 1) return toward;
+    if (!toward.empty() && distance(int(toward.back().x),int(toward.back().y)) <= targetTolerance) return toward;
     const int dx = gx-sx, dy = gy-sy;
-    if (dx*dx + dy*dy <= 18*18) {
-        auto detour = path(from,to,true,rule,true);
+    if (type==7 && dx*dx + dy*dy <= 18*18) {
+        auto detour = nativeAStarPath(from,to,rule,unitTarget);
         if (!detour.empty()) return detour;
     }
     return toward;

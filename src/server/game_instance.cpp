@@ -140,20 +140,30 @@ void GameInstance::step() {
         if (player.entered) {
             if (command.area != player.area || command.areaGeneration != area.generation) result = CommandStatus::Stale;
             else {
-                if (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel)
+                const auto *movement=std::get_if<MovementCommand>(&command.payload);
+                const bool synchronization=movement && movement->action==MovementAction::Synchronize;
+                if (!synchronization && (commandSystem(command.payload) == SystemId::Movement || commandSystem(command.payload) == SystemId::Travel))
                     player.locomotionSequence = command.sequence;
                 const auto domain = commandSystem(command.payload);
-                const bool locked=(domain==SystemId::Movement || domain==SystemId::Travel) &&
+                // Native interact data has one owner. A later interaction must
+                // invalidate a queued pickup/talk/object operation just like a move.
+                const auto *talk=std::get_if<npc::Request>(&command.payload);
+                const auto *itemRequest=std::get_if<inventory::Request>(&command.payload);
+                const auto *ground=itemRequest?std::get_if<inventory::GroundTransfer>(&itemRequest->intent):nullptr;
+                if(domain==SystemId::Objects || domain==SystemId::Death ||
+                    (talk && std::holds_alternative<TalkToNpc>(talk->intent) && std::get<TalkToNpc>(talk->intent).action==TalkToNpc::Action::Talk) ||
+                    (ground && !ground->drop)) player.locomotionSequence=command.sequence;
+                const bool locked=!synchronization && (domain==SystemId::Movement || domain==SystemId::Travel) &&
                     (systems_.skills.uninterruptible(player.actor) || systems_.effects.recovering(player.actor,tick_));
-                if ((domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
+                if (!synchronization && (domain == SystemId::Movement || domain == SystemId::Travel) && !locked) systems_.skills.cancel(player.player, player.actor);
                 if (const auto *skill = std::get_if<skills::Request>(&command.payload); skill && skill->action == skills::Action::Cast) {
                     systems_.travel.cancel(player.player); player.locomotionSequence = command.sequence;
                 }
                 const bool trading=systems_.trade.find(player.player)!=nullptr;
-                const bool endsTrade=domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death;
+                const bool endsTrade=!synchronization && (domain==SystemId::Movement || domain==SystemId::Travel || domain==SystemId::Death);
                 if(locked) result=CommandStatus::Conflict;
                 else if (trading && endsTrade && !systems_.trade.cancelFor(player.player,tick_)) result=CommandStatus::QueueFull;
-                else if (trading && !endsTrade && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
+                else if (trading && !endsTrade && !synchronization && domain!=SystemId::Inventory && domain!=SystemId::Trade && domain!=SystemId::Social) result=CommandStatus::Conflict;
                 else if (domain == SystemId::Inventory && !std::holds_alternative<UseItem>(std::get<inventory::Request>(command.payload).intent) && systems_.skills.busy(player.actor, tick_)) result = CommandStatus::Conflict;
                 else result = dispatchCommand(actor, command.payload, systems_);
                 if(result==CommandStatus::Applied && domain==SystemId::Trade)
@@ -197,6 +207,8 @@ std::optional<PlayerSnapshot> GameInstance::snapshot(PlayerId id) const {
         result.socialRelations.emplace(other,PlayerSnapshot::SocialRelation{systems_.social.partyStatus(id,other),systems_.social.flags(id,other)});
     result.tick = tick_; result.revision = revision_;
     result.areaGeneration = areas_.at(player->area).generation;
+    if(systems_.travel.synchronizationState(id) && player->rules.skills)
+        result.states.insert(player->rules.skills->syncWarped.id);
     result.recovering=systems_.effects.recovering(player->actor,tick_);
     const auto potion=systems_.effects.potionRecoveryPercent(id,tick_);
     result.potionLifePercent=potion.first;result.potionManaPercent=potion.second;

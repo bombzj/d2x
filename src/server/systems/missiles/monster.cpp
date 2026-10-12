@@ -153,12 +153,15 @@ System::Advance System::advanceMonster(const Missile &original) const {
         hit.contactRandom=childRandom(missile.random);
         hit.monsterHit=enemy.hit;hit.monsterStates=enemy.states;hit.monsterLevel=enemy.level;hit.monsterRating=enemy.rating;hit.monsterToHit=enemy.rule.toHit;
         hit.freeze=enemy.rule.freeze;
+        if(const auto *caster=ports_.monsters.find(missile.owner)) {
+            hit.coldPierce=caster->petStats.attributes.combat.coldPierce;
+            hit.poisonPierce=caster->petStats.attributes.combat.poisonPierce;
+        }
         if(missile.player.value && !controller) {
             hit.monsterHit.reset();hit.type=enemy.rule.element;hit.damage=enemy.hit.channels[size_t(hit.type)];hit.coldFrames=enemy.hit.coldFrames;hit.poisonFrames=enemy.hit.poisonFrames;
         }
         if(enemy.weapon) {
             hit.monsterHit.reset();hit.weapon=enemy.weapon;hit.coldFrames=unsigned(std::max(0,enemy.weapon->coldFrames));hit.freeze=enemy.weapon->freeze;
-            if(const auto *owner=ports_.players.find(missile.player);owner && owner->rules.skills) {hit.coldDivisor=owner->rules.skills->coldDivisor;hit.freezeDivisor=owner->rules.skills->freezeDivisor;}
         }
         hit.returnFire=enemy.rule.returnFire;hit.hitClass=uint8_t(enemy.rule.hitClass);hit.nextDelay=unsigned(enemy.rule.nextDelay);
         if(enemy.rule.behavior==Behavior::FireHead) hit.sourceHeal=enemy.hit.channels[size_t(enemy.rule.element)];

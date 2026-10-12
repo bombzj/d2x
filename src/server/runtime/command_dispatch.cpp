@@ -36,6 +36,11 @@ struct Dispatch {
     const ActorContext &actor;
     GameSystems &systems;
     CommandStatus operator()(const MovementCommand &request) const {
+        if(request.action==MovementAction::Synchronize) {
+            // PlrMsg 5F must not cancel an active skill or manufacture a move.
+            if(systems.skills.busy(actor.actor,actor.tick)) return CommandStatus::Applied;
+            return status(systems.travel.synchronize(actor,request.destination,systems.skills.uninterruptible(actor.actor)).status);
+        }
         if (const auto crossing = systems.travel.walk(actor, request)) return *crossing;
         return systems.movement.execute(actor, request);
     }

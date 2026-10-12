@@ -73,13 +73,19 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
         bits.write(components,1);
         if(components) for(size_t c=0;c<monster.components.size();++c)
             bits.write(monster.components[c],monster.componentCounts[c]>=3?std::bit_width(unsigned(monster.componentCounts[c]-1)):1);
-        bits.write((!monster.modifiers.empty() || monster.rankFlags),1);
-        if((!monster.modifiers.empty() || monster.rankFlags)) {
+        const bool extended=!monster.modifiers.empty() || monster.rankFlags || bool(monster.hirelingOwner);
+        bits.write(extended,1);
+        if(extended) {
             if(monster.modifiers.size()>9) throw std::runtime_error("Native NPC modifier capacity exceeded");
             bits.write(monster.rankFlags,5);
             if(monster.rankFlags&4) bits.write(monster.superUniqueIndex,16);
             for(auto modifier:monster.modifiers) {if(!modifier) throw std::runtime_error("Invalid native NPC modifier");bits.write(modifier,8);}
-            bits.write(0,8);bits.write(monster.nameSeed,16);bits.write(0,1); // Terminator, name seed, hireling owner.
+            bits.write(0,8);bits.write(monster.nameSeed,16);
+            bits.write(bool(monster.hirelingOwner),1);
+            if(monster.hirelingOwner) {
+                if(monster.hirelingOwner.value>UINT32_MAX) throw std::runtime_error("Native hireling owner exceeds 32 bits");
+                bits.write(uint32_t(monster.hirelingOwner.value),32);
+            }
         }
         bits.write(monster.storedOwner.has_value(),1);
         if(monster.storedOwner) {
@@ -115,12 +121,12 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
         return encodeServerPacket(ServerMessage::NpcMoveUnit,[&](auto &out) {
             out.u32(uint32_t(monster.id.value));out.u8(monster.running?24:0);point(out,monster.position+origin);
             key(out,monster.movementTarget->type,monster.movementTarget->id);
-            out.u8(monster.pathSteps);out.u8(0);out.u8(2);out.u16(uint16_t(monster.velocityPercent));out.u8(0);
+            out.u8(monster.pathSteps);out.u8(0);out.u8(monster.pathType);out.u16(uint16_t(monster.velocityPercent));out.u8(monster.pathDistance);
         });
     if (monster.moving)
         return encodeServerPacket(ServerMessage::NpcMovePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.running ? 23 : 1); point(out, monster.destination + origin);
-            out.u8(monster.pathSteps); out.u8(0); out.u8(1); out.u16(uint16_t(monster.velocityPercent)); out.u8(0);
+            out.u8(monster.pathSteps); out.u8(0); out.u8(monster.pathType); out.u16(uint16_t(monster.velocityPercent)); out.u8(monster.pathDistance);
         });
     return encodeServerPacket(ServerMessage::NpcReposition, [&](auto &out) {
         out.u32(uint32_t(monster.id.value)); point(out, monster.position + origin); out.u8(monster.life);
@@ -158,8 +164,10 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
         result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
             key(out,0,fact.target);out.u8(19);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
         }));
-    } else {
+    } else if(!fact.killed && !fact.monsterMode) {
         // MonsterMsg::sub_6FC659E0 uses flag 19 for life/last hit class.
+        // SUnitDmg does not set that flag when it enters GH/BL/death. Sending
+        // both GH and 0C would run the client's hit callback twice.
         result.push_back(encodeServerPacket(ServerMessage::Hit,[&](auto &out) {
             key(out,fact.type,fact.target);out.u8(19);out.u8(fact.hitClass);out.u8(uint8_t(fact.life>1?fact.life-1:fact.life)|(fact.lightningReady?0x80:0));
         }));
@@ -183,7 +191,7 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
         }));
     if (fact.killed) {
         if (fact.type == 1) result.push_back(encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
-            out.u32(uint32_t(fact.target.value)); out.u8(8); point(out, fact.position + origin); out.u8(0); out.u8(0);
+            out.u32(uint32_t(fact.target.value)); out.u8(8); point(out, fact.position + origin); out.u8(0); out.u8(fact.hitClass);
         }));
         else result.push_back(encodeServerPacket(ServerMessage::UnitIdle, [&](auto &out) {
             key(out, 0, fact.target); out.u8(8); point(out, fact.position + origin); out.u8(0); out.u8(0);

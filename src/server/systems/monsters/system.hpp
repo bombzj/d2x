@@ -63,6 +63,7 @@ struct Actor {
     unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
+    std::optional<uint64_t> neutralAt;
     EntityId killer, movementTarget;
     EntityId hirelingKiller;
     int hirelingLootMagicFind{},hirelingLootGoldFind{};
@@ -78,14 +79,19 @@ struct Actor {
     bool shield{};
     int stopDistance{}, velocityPercent{75};
     uint8_t pathSteps{};
+    uint8_t pathType{13}, pathDistance{5};
     int effectVelocity{};
     bool running{};
     bool rewardComplete{}, moving{};
     uint64_t riseUntil{};
     uint8_t riseMode{9};
     bool corpseUnavailable{};
+    // States.txt death masks outlive the live cold timers and drive both corpse
+    // eligibility and the original client state packets.
+    std::set<int> deathStates;
+    bool shatterActive{};
     bool corpseSearched{};
-    uint64_t holyFreezeUntil{}; bool holyFreezeShatter{};
+    uint64_t holyFreezeUntil{};
     uint64_t webUntil{};
     bool burrowed{};
     bool airborne{}, holdPose{};
@@ -115,6 +121,7 @@ struct Actor {
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || necroSummon || conversion; }
 };
+int movementPercent(const Actor &, uint64_t tick);
 struct State {
     std::map<EntityId, Actor> actors;
     // Scoped to the actual instance/area/class, including dynamically born units.
@@ -134,7 +141,8 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
-    DomainResult<> beginAttack(EntityId, uint64_t until);
+    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false);
+    uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     void consumeCorpse(EntityId) noexcept;
@@ -167,9 +175,11 @@ class System {
     }
     DomainResult<> redeem(EntityId);
     DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
-    void holyFreeze(EntityId id,uint64_t until,bool shatter) {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.holyFreezeUntil=until;it->second.holyFreezeShatter=shatter;}}
+    void holyFreeze(EntityId,uint64_t until);
     DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false,int64_t crushing=0);
+    // coldFrames is the raw hit duration; qualification/resistance/difficulty
+    // are resolved here for every producer, before committing lethal damage.
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false,int64_t crushing=0,int coldPierce=0);
     void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);

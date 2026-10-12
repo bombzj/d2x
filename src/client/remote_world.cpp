@@ -1213,6 +1213,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         itemPacket(v, p);
         equipment(v, p);
         break;
+    case 0xAB: {
+        const auto target=key(r); const auto life=r.u8(); r.finish();
+        // A health refresh neither creates a unit nor interrupts its path,
+        // skill or hit animation. Removed units cannot be revived by a late AB.
+        if(auto found=w.units.find(target);found!=w.units.end()) {
+            found->second.lifePercent=life;
+            found->second.lifeCarriesTriggerFlag=false;
+        }
+        break;
+    }
     case 0xAC: {
         auto &u = unit(w, {1, r.u32()});
         u.classId = r.u16();

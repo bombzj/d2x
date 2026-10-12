@@ -41,8 +41,8 @@ struct SpellImpact {
     uint64_t occurrence{}, coldFrames{}, nextDelay{};
     bool freeze{}, knockback{};
     bool returnFire{}, reaction{};
-    int coldPierce{};
-    std::array<int,3> coldDivisor{1,1,1}, freezeDivisor{1,1,1}, staticFloors{};
+    int coldPierce{}, poisonPierce{};
+    std::array<int,3> staticFloors{};
     int staticPercent{}, staticMinimum{};
     int64_t minimumStaticDamage{};
     std::vector<int64_t> targetDamage{};

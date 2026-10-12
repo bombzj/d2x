@@ -8,17 +8,22 @@
 #include "content/world/object_mode.hpp"
 
 namespace d2x {
+namespace {
+void insertNativeCell(std::set<NativeAutomapCell> &cells, NativeAutomapCell cell) {
+    const int group = nativeAutomapCellGroup(cell.cel);
+    for (auto it = cells.lower_bound({0, cell.x, cell.y});
+         it != cells.end() && it->x == cell.x && it->y == cell.y; ++it)
+        if (group < 0 || nativeAutomapCellGroup(it->cel) == group) return;
+    cells.insert(cell);
+}
+}
 RemoteTown::RemoteTown(Archives &a)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
       skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")),
       petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a) {
-    Fingerprint content;
-    content.add("native-visible-terrain-v1"); content.add(std::to_string(a.mountIdentity()));
-    for(const auto *table:{"levels","lvlprest","lvlmaze","lvlsub","lvltypes","automap","objects"})
-        content.add(a.read("data/global/excel/"+std::string(table)+".txt"));
-    discoveryContent_=content.value();
+    nativeAutomapCelCount_ = decodeDc6(a.read("data/global/ui/automap/maximap.dc6")).frames.size();
     for (size_t row = 0; row < shrines_.rows().size(); ++row)
         if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
     for(size_t row=0;row<petTypes_.rows().size();++row)
@@ -31,10 +36,17 @@ RemoteTown::RemoteTown(Archives &a)
     for (size_t row = 0; row < monsterSizes_.rows().size(); ++row)
         monsterSizeRows_.emplace(std::string(monsterSizes_.value(row, "Id")), row);
 }
-void RemoteTown::update(const OnlineView &v) {
+void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition) {
+    std::optional<OnlinePoint> point;
+    if (displayPosition && std::isfinite(displayPosition->x) && std::isfinite(displayPosition->y) &&
+        displayPosition->x >= 0 && displayPosition->y >= 0 && displayPosition->x <= UINT16_MAX && displayPosition->y <= UINT16_MAX)
+        point = OnlinePoint{uint16_t(displayPosition->x), uint16_t(displayPosition->y)};
+    const bool observerChanged = point != displayPlayerPosition_;
+    displayPlayerPosition_ = point;
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
         if (gameGeneration_ != v.gameGeneration) {
             explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear(); actSeeds_.clear();
+            nativeAutomapCells_.clear();
         }
         gameGeneration_ = v.gameGeneration;
         areaGeneration_ = v.world.areaGeneration;
@@ -55,7 +67,6 @@ void RemoteTown::update(const OnlineView &v) {
             *v.load.townArea == actTownLevels[*v.load.act]) {
             try {
                 catalog_ = std::make_unique<WorldCatalog>(archives_, v.load.difficulty.value_or(0));
-                discoveryDifficulty_=v.load.difficulty.value_or(0);
                 const auto &catalog = *catalog_;
                 const auto &town = catalog.level(*v.load.townArea);
                 if (v.load.mapSeed) {
@@ -92,7 +103,7 @@ void RemoteTown::update(const OnlineView &v) {
     }
     const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
-    if (revision_ == v.revision && (!nextObjectTransition_ || now < *nextObjectTransition_))
+    if (revision_ == v.revision && !observerChanged && (!nextObjectTransition_ || now < *nextObjectTransition_))
         return;
     revision_ = v.revision;
     view_.available = view_.movementAvailable = false;
@@ -339,6 +350,17 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         }
         if (nativeSequence_ != world.mapEventSequence)
             throw std::runtime_error("Native map event tail is unavailable; rejoin the game");
+        if (displayPlayerPosition_ && world.playerPosition) {
+            if (const auto room = nativeMap_->clientRoom(displayPlayerPosition_->x, displayPlayerPosition_->y)) {
+                const auto &prepared = nativeMap_->tiles().rooms().at(*room);
+                // Presentation selects only a room already assigned by 07.
+                // No new room interest or terrain is acquired by prediction.
+                if (world.rooms.contains({uint8_t(prepared.level), uint16_t(prepared.room.x), uint16_t(prepared.room.y)})) {
+                    changed |= nativePlayerRoom_ != room;
+                    nativePlayerRoom_ = room;
+                }
+            }
+        } else locatePlayerRoom();
         if (!nativePlayerRoom_ || v.stage != OnlineStage::ProtocolReady ||
             !v.load.serverLoadComplete || !world.playerPosition) return false;
         const int level = nativeMap_->tiles().rooms().at(*nativePlayerRoom_).level;
@@ -354,6 +376,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         }
         map_ = nativeTerrain_.get();
         view_.area = uint16_t(level);
+        view_.automapLayer = uint32_t(catalog_->level(level).automapLayer);
         view_.palette = uint8_t(catalog_->level(level).palette);
         if (layout_) {
             const auto &placement = nativeMap_->layout().levels.at(level);
@@ -383,7 +406,7 @@ bool RemoteTown::permits(const OnlineView &v, OnlinePoint target) const {
         return p.x >= origin.x && p.y >= origin.y && int(p.x) < origin.x + view_.width &&
                int(p.y) < origin.y + view_.height;
     };
-    if (!inside(target) || !inside(*v.world.playerPosition))
+    if (!inside(target) || !inside(displayPlayerPosition_.value_or(*v.world.playerPosition)))
         return false;
     // Original coordinate movement submits the pointer even over a wall;
     // native Path prepares/clips the reachable target. Reject absent terrain,
@@ -405,27 +428,26 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
     const bool corpse = found->interaction == OnlineMapInteraction::Corpse;
     const bool tradePeer = found->interaction == OnlineMapInteraction::PlayerTrade;
     const auto &player = *v.world.playerPosition;
+    const Vec observer = displayOrigin.value_or(Vec{float(player.x), float(player.y)});
     if (target.type == 2) {
         if (!map_ || !view_.origin) return false;
         const Vec origin{float(view_.origin->x), float(view_.origin->y)};
         const Vec position{float(found->position.x) - origin.x, float(found->position.y) - origin.y};
-        return interactionClear(map_->grid, {float(player.x) - origin.x, float(player.y) - origin.y},
+        return interactionClear(map_->grid, observer - origin,
             {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
     }
-    if (target.type == 5) return nativeUnitDistance({float(player.x), float(player.y)}, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
+    if (target.type == 5) return nativeUnitDistance(observer, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
     if (found->interaction != OnlineMapInteraction::Npc && !corpse && !tradePeer) return true;
-    const Vec position = found->interaction == OnlineMapInteraction::Npc && displayOrigin
-        ? *displayOrigin : Vec{float(player.x), float(player.y)};
-    return nativeUnitDistance(position, 2,
+    return nativeUnitDistance(observer, 2,
         {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse || tradePeer ? 8 : 6);
 }
-std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target) const {
+std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin) const {
     if (!permitsInteraction(v, target) || target.type != 2 || !map_ || !view_.origin || !v.world.playerPosition) return {};
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(), [&](const auto &entry) { return entry.unit == target; });
     const Vec origin{float(view_.origin->x), float(view_.origin->y)};
     const Vec position{float(found->position.x) - origin.x, float(found->position.y) - origin.y};
     const auto point = interactionApproach(map_->grid,
-        {float(v.world.playerPosition->x) - origin.x, float(v.world.playerPosition->y) - origin.y},
+        displayOrigin.value_or(Vec{float(v.world.playerPosition->x),float(v.world.playerPosition->y)})-origin,
         {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
     if (!point) return {};
     const int x = int(std::floor(point->x)) + view_.origin->x, y = int(std::floor(point->y)) + view_.origin->y;
@@ -452,6 +474,12 @@ void RemoteTown::prepareTownAutomap(const OnlineView &v) {
         // or revealing the adjoining wilderness through the camera viewport.
         const auto snapshot = nativeMap_->snapshot(level.id, false);
         const auto &terrain = snapshot.map.terrain;
+        for (const auto &instance : terrain.instances) {
+            if (instance.type == 13 || instance.type == 15 || (instance.flags & 8)) continue;
+            const auto *tile = terrain.tiles.at(size_t(instance.tile));
+            rememberTile(v, level.id, snapshot.tileX + instance.x, snapshot.tileY + instance.y,
+                instance.type, instance.wallArray, {uint32_t((tile->main << 20) | (tile->sub << 8)), instance.type});
+        }
         for (const auto &stamp : automap_.stamps(terrain.data, level.levelType))
             discoveredCels_[{seed, act, level.id, snapshot.tileX + stamp.x, snapshot.tileY + stamp.y}].insert(stamp.cel);
     }
@@ -486,6 +514,20 @@ MapSceneView RemoteTown::automapScene(const OnlineView &v) const {
     }
     return scene;
 }
+void RemoteTown::rememberTile(const OnlineView &v, int levelId, int x, int y, int type, bool wallArray, const MapCell &cell) {
+    const auto &level = catalog_->level(levelId);
+    if (level.automapLayer < 0 || level.automapLayer >= 100 || !v.load.mapSeed || !v.load.secondarySeed) return;
+    const auto &placement = nativeMap_->layout().levels.at(levelId);
+    // D2Client 0x61880: GameTileToClientCoords / 10; lower walls (16+)
+    // receive the native 24-pixel vertical adjustment before serialization.
+    const int px = (x-y)*8, py = (x+y)*4 + (type >= 16 ? 24 : 0);
+    if (px < INT16_MIN || px > INT16_MAX || py < INT16_MIN || py > INT16_MAX)
+        throw std::runtime_error("Automap cell outside native coordinate range");
+    auto &cells = nativeAutomapCells_[{*v.load.mapSeed, uint32_t(level.automapLayer), *v.load.secondarySeed}];
+    for (const int cel : automap_.cellCels(level.levelType, cell, x-placement.x, y-placement.y))
+        if (cel >= 0 && size_t(cel) < nativeAutomapCelCount_ && cel <= INT16_MAX)
+            insertNativeCell(cells[wallArray ? 1 : 0], {uint16_t(cel), int16_t(px), int16_t(py)});
+}
 void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t> indices) {
     if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||
         v.gameGeneration != gameGeneration_ || v.world.areaGeneration != areaGeneration_) return;
@@ -509,6 +551,7 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
             visible.push_back({int(region - scene.regions.begin()), x - placement.x, y - placement.y});
         const auto *tile = terrain.tiles.at(size_t(instance.tile));
         MapCell cell{uint32_t((tile->main << 20) | (tile->sub << 8)), instance.type};
+        rememberTile(v, room.level, x, y, instance.type, instance.wallArray, cell);
         for (int cel : automap_.cellCels(level.levelType, cell, x - placement.x, y - placement.y))
             discoveredCels_[key].insert(cel);
     }
@@ -554,8 +597,15 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
     }
     if (v.world.playerPosition) view_.automap.observer = {float(v.world.playerPosition->x), float(v.world.playerPosition->y)};
     view_.automap.observerVisible=!onlinePlayerDead(v.world);
-    for (const auto &stamp : view_.automapStamps)
-        view_.automap.stamps.push_back({{stamp.tileX * 5.f + 2.5f, stamp.tileY * 5.f + 2.5f}, stamp.cel});
+    for (const auto &[key, groups] : nativeAutomapCells_) {
+        const auto &[seed, layer, objectSeed] = key;
+        if (seed != *v.load.mapSeed || layer != uint32_t(catalog_->level(*view_.area).automapLayer)) continue;
+        for (size_t group = 0; group < groups.size(); ++group) {
+            if (group == 2 && objectSeed != v.load.secondarySeed) continue;
+            for (const auto &cell : groups[group])
+                view_.automap.stamps.push_back({unproject({cell.x * 10.f, cell.y * 10.f}), cell.cel});
+        }
+    }
     for (const auto &town : view_.automapTowns)
         view_.automap.towns.push_back({town.level, town.variant, {float(town.center.x), float(town.center.y)}});
     using Mark = AutomapDrawView::UnitMark;
@@ -574,11 +624,11 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
                 // Original corpse inventory/owner admission identifies one's body;
                 // another player's corpse is not a public purple marker.
                 if(corpse->second==v.load.playerUnitId)
-                    view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,unit.name,false,true,Mark::Corpse});
+                    view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,unit.name,false,true,Mark::Corpse,std::pair{key.type,key.id}});
             } else if(key.id!=v.load.playerUnitId && unit.mode!=(unit.nativeMode?0:8) && unit.mode!=(unit.nativeMode?17:9)) {
                 const auto roster=v.world.social.players.find(key.id);
                 const auto &name=roster==v.world.social.players.end()?unit.name:roster->second.name;
-                view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,name,false,true,inParty(key.id)?Mark::Party:Mark::OtherPlayer});
+                view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,name,false,true,inParty(key.id)?Mark::Party:Mark::OtherPlayer,std::pair{key.type,key.id}});
                 drawnPlayers.insert(key.id);
             }
             continue;
@@ -596,6 +646,16 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         else if (const auto row = monsterRows_.find(*unit.classId); row != monsterRows_.end()) {
             cel = automap_.npcCel(monsters_.value(row->second, "Id"));
             name = strings_.find(monsters_.value(row->second, "NameStr"));
+        }
+        if (key.type == 2 && seen && cel >= 0 && size_t(cel) < nativeAutomapCelCount_ &&
+            cel <= INT16_MAX && v.load.secondarySeed) {
+            const auto projected = project({float(unit.position->x), float(unit.position->y)});
+            const int x = int(projected.x) / 10 + 1, y = int(projected.y) / 10 - 3;
+            const auto layer = catalog_->level(*view_.area).automapLayer;
+            if (layer >= 0 && layer < 100 && x >= INT16_MIN && x <= INT16_MAX && y >= INT16_MIN && y <= INT16_MAX)
+                insertNativeCell(nativeAutomapCells_[{*v.load.mapSeed, uint32_t(layer), *v.load.secondarySeed}][2],
+                    {uint16_t(cel), int16_t(x), int16_t(y)});
+            cel = -1;
         }
         const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == key; });
@@ -629,7 +689,7 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         // the static MPQ cell artwork, rather than nearby NPC/pet/portal marks.
         if ((seen && cel >= 0) || mark != Mark::None)
             view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)},
-                mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark});
+                mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark,std::pair{key.type,key.id}});
     }
     if (self == v.world.social.players.end() || !self->second.partyId || *self->second.partyId == UINT16_MAX) return;
     for (const auto &[id, p] : v.world.social.players) {
@@ -644,36 +704,38 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
 }
 AutomapDiscovery RemoteTown::discovery() const {
     AutomapDiscovery d;
-    d.difficulty=discoveryDifficulty_; d.contentFingerprint=discoveryContent_; d.actSeeds=actSeeds_; d.layers=explored_.layers();
-    for(const auto &[key,cels]:discoveredCels_) {
-        const auto &[seed,act,level,x,y]=key;
-        if(!cels.empty()) d.cells.push_back({seed,act,level,x,y,{cels.begin(),cels.end()}});
-    }
-    for(const auto &[key,town]:discoveredTowns_) {
-        const auto &[seed,act,level]=key;
-        d.towns.push_back({seed,act,level,town.variant,town.center.x,town.center.y});
+    for (const auto &[key, groups] : nativeAutomapCells_) {
+        const auto &[seed, layer, objectSeed] = key;
+        NativeAutomapLayer entry{seed, layer, 0, objectSeed, {}};
+        for (size_t group = 0; group < groups.size(); ++group)
+            entry.cells[group].assign(groups[group].begin(), groups[group].end());
+        d.nativeLayers.push_back(std::move(entry));
     }
     return d;
 }
 void RemoteTown::restoreDiscovery(const AutomapDiscovery &d,const OnlineView &v) {
-    if(!catalog_ || !v.load.act || !v.load.mapSeed || d.difficulty!=v.load.difficulty.value_or(0) ||
-       d.contentFingerprint!=discoveryContent_ || !d.actSeeds.contains(*v.load.act) || d.actSeeds.at(*v.load.act)!=*v.load.mapSeed)
+    if(!catalog_ || !v.load.act || !v.load.mapSeed || !v.load.secondarySeed)
         throw std::runtime_error("Automap discovery does not match entered world");
-    // Reject unknown or misassigned levels before publishing any remembered state.
-    for(const auto &[id,layer]:d.layers) (void)catalog_->level(int(id));
-    for(const auto &c:d.cells) if(catalog_->level(c.region).act!=c.act) throw std::runtime_error("Invalid automap cel act");
-    for(const auto &t:d.towns) if(catalog_->level(t.region).act!=t.act || !catalog_->level(t.region).town)
-        throw std::runtime_error("Invalid remembered town");
-    auto layers=d.layers;
-    for(const auto &[id,layer]:explored_.layers()) if(!layers.contains(id)) layers.emplace(id,layer);
-    explored_.restore(std::move(layers)); actSeeds_=d.actSeeds;
-    for(const auto &c:d.cells) discoveredCels_[{c.seed,c.act,c.region,c.x,c.y}].insert(c.cels.begin(),c.cels.end());
-    for(const auto &t:d.towns) {
-        const auto key=std::tuple{t.seed,t.act,t.region};
-        discoveredTowns_[key]={uint16_t(t.region),t.variant,{uint16_t(t.x),uint16_t(t.y)}};
-        preparedTownAutomaps_.insert(key);
+    for (const auto &layer : d.nativeLayers) {
+        if (layer.seed != *v.load.mapSeed || layer.layer >= 100)
+            throw std::runtime_error("Invalid native automap layer");
+        for (const auto &group : layer.cells) for (const auto &cell : group)
+            if (cell.cel >= nativeAutomapCelCount_) throw std::runtime_error("Automap cell does not exist in current MPQ");
     }
-    explored_.reveal(automapScene(v),{});
+    decltype(nativeAutomapCells_) restored;
+    for (const auto &layer : d.nativeLayers) {
+        auto &groups = restored[{layer.seed, layer.layer, *v.load.secondarySeed}];
+        for (size_t group = 0; group < groups.size(); ++group)
+            if (group != 2 || layer.objectSeed == *v.load.secondarySeed)
+                for (const auto &cell : layer.cells[group]) insertNativeCell(groups[group], cell);
+    }
+    for (auto &[key, groups] : restored) {
+        const auto existing = nativeAutomapCells_.find(key);
+        if (existing != nativeAutomapCells_.end())
+            for (size_t group = 0; group < groups.size(); ++group)
+                for (const auto &cell : existing->second[group]) insertNativeCell(groups[group], cell);
+        nativeAutomapCells_[key] = std::move(groups);
+    }
     updateAutomapView(v);
 }
 } // namespace d2x

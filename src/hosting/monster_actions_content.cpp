@@ -1,10 +1,12 @@
 #include "monster_actions_content.hpp"
+#include <stdexcept>
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -297,7 +299,49 @@ bool prepareMonsterComponents(const ClassicData &data,const MonsterRecord &recor
     }
     return false;
 }
+void prepareMonsterColdRules(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+    rule.alignment=data.tables.at("monstats").number(monsterRow,"Align").value_or(0);
+    if(rule.alignment<0 || rule.alignment>2) throw std::runtime_error("Invalid original monster alignment");
+    // MonStats: 1=good, 2=neutral; STAT_ALIGNMENT: 2=good, 1=neutral.
+    if(rule.alignment) rule.alignment=3-rule.alignment;
+    rule.alignmentState=data.states.at("alignment").definition.id;
+    const auto &stats=data.tables.at("itemstatcost");
+    for(size_t row=0;row<stats.rows().size();++row) if(stats.value(row,"Stat")=="alignment")
+        rule.alignmentStat=stats.number(row,"ID").value_or(-1);
+    if(rule.alignmentStat<0) throw std::runtime_error("Missing original alignment stat");
+    rule.coldState=data.states.at("cold").definition.id;
+    rule.frozenState=data.states.at("freeze").definition;
+    rule.shatterState=data.states.at("shatter").definition;
+    rule.uninterruptableState=data.states.at("uninterruptable").definition.id;
+    rule.difficultyResistancePenalty=data.resistancePenalty.at(size_t(rule.difficulty));
+    rule.coldDivisor=data.monsterColdDivisor.at(size_t(rule.difficulty));
+    rule.freezeDivisor=data.monsterFreezeDivisor.at(size_t(rule.difficulty));
+    if(rule.coldDivisor<=0 || rule.freezeDivisor<=0) throw std::runtime_error("Invalid original monster cold difficulty divisor");
+    const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
+    const auto name=monsters.value(monsterRow,"MonStatsEx");
+    for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==name) {
+        rule.deadCollision=extra.number(row,"deadCol").value_or(0)!=0;
+        return;
+    }
+    throw std::runtime_error("Missing original monster cold/death rules");
+}
 bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
+    prepareMonsterColdRules(data,record.sourceRow,rule);
+    const auto &monstats=data.tables.at("monstats");
+    const int delay=monstats.number(record.sourceRow,rule.difficulty==0?"aidel":rule.difficulty==1?"aidel(N)":"aidel(H)").value_or(0);
+    rule.neutralDelayTicks=delay>0?delay:15;
+    const auto base=monstats.value(record.sourceRow,"BaseId");
+    for(size_t row=0;row<monstats.rows().size();++row) if(monstats.value(row,"Id")==base) {
+        if(monstats.number(row,"SplEndGeneric").value_or(0)) {
+            // MonsterMode::sub_6FC63680 bypasses NU only for these modes.
+            if(base=="vulture1") rule.immediateAiModes=1u<<8;
+            else if(base=="willowisp1") rule.immediateAiModes=1u<<2;
+            else if(base=="batdemon1") rule.immediateAiModes=(1u<<10)|(1u<<11);
+            else if(base=="frogdemon1") rule.immediateAiModes=1u<<14;
+            else if(base=="firebeast" || base=="iceglobe" || base=="trappedsoul1") rule.immediateAiModes=UINT16_MAX;
+        }
+        break;
+    }
     if(!prepareMonsterComponents(data,record,rule)) return false;
     const auto &extra=data.tables.at("monstats2");
     for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx")) {
@@ -307,12 +351,12 @@ bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const An
                 if(!clock) return false;
                 const AnimationTiming timing{clock->frames,clock->speed};
                 (mode==std::string_view("gh")?rule.hitRecoveryAnimation:rule.blockAnimation)=timing;
-                *ticks=AnimationTiming{timing.frames,effectiveRecoverySpeed(timing.speed,0)}.durationTicks();
+                *ticks=monsterAnimationTicks({timing.frames,effectiveRecoverySpeed(timing.speed,0)});
             }
         }
         if(extra.number(row,"mKB").value_or(0) && extra.number(row,"mWL").value_or(0) && record.walkAnimationRate.value_or(0)>0) {
             const auto hit=loadMonsterMotionTiming(animations,record.token,"gh",monsterModeWeapon(archives,record.token,"gh",record.baseWeapon));
-            if(hit) rule.knockbackTicks=AnimationTiming{hit->frames,*record.walkAnimationRate}.durationTicks();
+            if(hit) rule.knockbackTicks=monsterAnimationTicks({hit->frames,*record.walkAnimationRate});
         }
         return true;
     }

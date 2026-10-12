@@ -55,7 +55,7 @@ DomainResult<> System::revive(const ActorContext &actor,const SkillCastSpec &ski
     body.rule.noTreasure=true;body.rule.corpseSelectable=false;body.rule.petType=skill.summon->petType;
     body.petStats.attributes.combat.damagePercent=spec.damagePercent;body.petStats.damageRegen=body.rule.damageRegen;
     body.deathTick=body.deathOccurrence=0;body.killer={};body.corpseUnavailable=true;body.rewardComplete=true;body.combatRandom=random;
-    body.busyUntil=actor.tick;body.route.clear();body.poison.reset();body.wound.reset();body.slowed.reset();body.curseControl={};body.attractionTarget={};body.attractionUntil=0;
+    body.busyUntil=actor.tick;body.neutralAt.reset();body.route.clear();body.poison.reset();body.wound.reset();body.slowed.reset();body.curseControl={};body.attractionTarget={};body.attractionUntil=0;
     body.chilledUntil=body.frozenUntil=body.stunnedUntil=body.knockedUntil=body.reactionUntil=0;
     std::map<EntityId,monsters::Actor> actors;actors.emplace(id,std::move(body));auto next=state_;
     Companion pet{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=actor.tick+uint64_t(spec.lifetimeFrames);pet.ownerTeleport=owner.teleportRevision;pet.nextDecision=actor.tick+15;pet.ownerLevel=owner.persistent.player.level;pet.effectiveRanks=owner.totals.skillRanks;pet.hardRanks=owner.persistent.player.skillRanks;next.companions.emplace(id,std::move(pet));

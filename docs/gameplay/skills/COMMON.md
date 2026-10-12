@@ -16,6 +16,22 @@
 
 职业页不重复公共规范或当前包状态；参考设计不再维护第二份职业实现台账。历史证据保留角色条件、源码／包身份、记录路径及未覆盖项，修复过程由Git追溯。
 
+## 冰冷、冻结与毒伤
+
+`gameplay/combat/damage_resolution`拥有抗性／穿透和持续时间的纯计算，`poison`拥有装备毒率支配与来源数时长计算；服务端结算和只读属性显示共用数值函数。`hosting/monster_actions_content::prepareMonsterColdRules`从当前MPQ准备States死亡掩码、MonStats2.deadCol、不可打断状态及难度除数，服务端不读取表。
+
+冷冻命中向`monsters::System::damage`提交未经抗性／难度缩短的原始帧数。目标先按CannotBeFrozen、HalfFreezeDuration、抗性／Cold Pierce处理长度，再按身份选择冻结或冰冷：普通及符合条件的仆从可冻结，首领／精英／佣兵退回冰冷，不可打断状态拒绝冻结；ColdEffect及难度除数仍取原表。冰冷最少一帧，冻结在难度除法后即使归零，也参与该次命中的死亡状态处理。各弹体、武器、反击、环境和怪物来源不重复缩短长度。
+
+死亡在同次命中安装状态后读取States的monstaydeath／bossstaydeath、hide、shatter、udead。`Actor::deathStates`保留原状态，尸体资格和原包投影共同消费；运行中的冷冻计时器清理不能撤销死亡碎冰。普通冰冷、Holy Freeze与UMod35使用原shatter状态；普通冰冷按目标随机流掷20%，且MonStats2.deadCol必须为零。冰冷与Holy Freeze对同一shatter位写入，活动状态结束时按原回调清位。原客户端继续按原状态绘制icebreak／隐藏尸体，无自研服务端专用表现。
+
+通用直线弹体的触地、碰撞与自然到期均进入原SrvHit对应路径；冰尖柱在命中时重求范围／冻结长度，火球执行范围伤害。范围查询保留活动房间限制；不为原过滤器未要求的路径添加视线条件。
+
+毒率使用固定点每帧伤害，命中当帧计入一次伤害，后续由单一毒状态的HPREGEN期限处理。伤害抗性与毒长度抗性分别求值，Poison Pierce分别作用于两个通道；玩家／佣兵毒长度应用难度惩罚和75%上限，普通怪物保留其原抗性上限。更弱毒不改当前毒率／期限；等强或更强只更新毒率／期限，保留原状态的施毒者及击杀归属，不叠加多个毒状态。持续毒对玩家保留1生命，怪物可致死；解毒、死亡和状态移除清理持续毒。
+
+毒状态的下次扣血帧随提交推进，输出背压后结清仍欠的持续帧再到期；刷新不得覆盖尚未提交的区间。装备毒率先计算Poison Mastery，淬毒匕首将技能长度和装备长度合并后除以装备毒来源数，技能不额外增加来源数。`resolveSkill`接收显式毒伤支配，服务端及原服客户端数值投影使用同一入口。Venom等未实现职业的专用毒长度覆盖不由这些公共函数代替。
+
+依据：本地D2MOO `SUnitDmg::{CalcDamage,ApplyResistancesAndAbsorb,ApplyColdState,ApplyFreezeState,ApplyPoisonDamage}`、`MonsterMode::D2GAME_MONSTER_ApplyStatRegen_6FC63440`、`MissMode::{HandleMissileCollision,SrvHit01,SrvHit13}`、`SkillNec::SrvSt16_PoisonDagger`与`SkillPal::AuraCallback_HolyFreeze`。本地原1.13c `D2Game.dll` MD5 `978f6f74cd031bce6ecee602cd5988cc`：RVA `DC4F7–DC519`包含毒率的命中总伤害，`DC780`冰冷、`DDAC0`冻结、`DCAB0`施毒、`DCBCE–DCC07`等强／更强毒刷新但不换owner。原`DC8F8–DC91C`为随机数小于20且MonStats2第19位deadCol为零才置shatter；此处与D2MOO快照的反向重建条件冲突，以1.13c为准。DLL及表导出只作证据，不作为运行依赖或提交内容。
+
 ## 职业与证据
 
 | 范围 | 当前自研服务端 | 客户端与验证边界 |
@@ -117,11 +133,11 @@ Skills／SkillDesc／CharStats、TBL及原树／图标提供ID、前置、手位
 
 `gameplay/combat/attack_timing`统一8.8固定点速度及25Hz整数帧。MPQ AnimData／COF提供帧数、速度和动作事件，宿主将纯值交给服务端。装备有效速率为整数`120×bonus/(120+bonus)`，先截断再合并。IAS合并技能AttackRate并扣武器速度，最终百分比限制15–175；双持基础武器速度在装备计算中取平均。FCR基础100、上限175，不叠加OtherAnimationRate；FHR／FBR基础50，圣盾的FBR基础100，按最终整数速度计算，不能用帧数的连续比例代替。
 
-普通动作时长为`max(1,ceil((frames-startFrame)×256/speed)-1)`，序列时长为`ceil(frames×256/speed)`；事件按同一时钟释放，攻击至少第1 tick。Amazon／Sorceress普通攻击的起始帧奖励不传入重组序列。Jab／Impale、双挥／双投使用各自帧表和事件；Inferno／Leap固定速度、Leap Attack阶段及Strafe／Fend／Zeal回滚保持专用路径。客户端采样也量化到25Hz，序列不继承单段COF的起始帧或结束时间。
+玩家普通动作时长为`max(1,ceil((frames-startFrame)×256/speed)-1)`，玩家序列时长为`ceil(frames×256/speed)`；事件按同一时钟释放，攻击至少第1 tick。Amazon／Sorceress普通攻击的起始帧奖励不传入重组序列。Jab／Impale、双挥／双投使用各自帧表和事件；Inferno／Leap固定速度、Leap Attack阶段及Strafe／Fend／Zeal回滚保持专用路径。客户端采样也量化到25Hz，序列不继承单段COF的起始帧或结束时间。
 
 玩家`effects::Recovery::actionUntil`阻止恢复期间的新技能、移动和旅行，恢复成功后中断可中断动作并清路线。GH沿原伤害／生命／完整HitClass概率判断，元素／暴击高位不剥除；再次满足受击资格会重启GH。眩晕先于普通阈值／概率判断，玩家眩晕上限250tick、佣兵13tick；周期毒伤不播放GH。非可中断动作不被GH／BL／KB打断。格挡成功与播放BL分开，`lastBlockTick`及`FBR/8+15`间隔抑制连续BL，格挡判定仍有效。KB复用GH图形，玩家固定速度213、怪物取原WalkAnimSpeed，不使用FHR；击退成功也安装动作锁，怪物Smite的击退资格取原ResultFlags。伤害、恢复状态与随机数只在事务／输出成功后安装，容量失败保留原状态。死亡清恢复锁；这些时钟均不保存到D2S，不改变v96格式。原0x0D action19仍只校正生命／位置，GH／BL另发原action6／18，KB沿原action20。
 
-怪物与佣兵恢复使用MPQ原帧／速度及当前FHR／FBR，伙伴成功格挡也发布BL；近战、技能弹体及环境弹体统一调用monsters::block，容量失败不提交接触随机或推进目标。普通怪物、死灵召唤物、女武神和佣兵动作保留原整数帧，按当前装备／状态计算事件；Kick沿当前武器IAS／WSM。第一、二幕怪物MonSeq按行次序计时，不将显示帧、倒放或A1／A2切换换算成时间；SQ初始速度256，只有原Skills.UseAttackRate允许时才按IAS更新，不套玩家SQ的-30。普通SC走FCR，其他特殊模式按原UseAttackRate选择AttackRate或OtherAnimationRate，非攻击SQ保持固定时钟。佣兵Jab保留多事件，Inferno保持引导时钟。`server-snapshot.animationTiming`只读提供当前武器类下的基础动作速度、时长、事件tick及恢复锁，不是复制／存档来源，也不代表特殊序列的最终调度。
+怪物ENDANIM使用`monsterAnimationTicks`的`max(2,ceil((frames-startFrame)×256/speed))`，与玩家普通动作的减一规则分开；动画结束后的NU思考等待另按MonStats三难度aidel安排，依据与边界见[怪物动作时钟](../monsters/COMMON.md#动作死亡与奖励)。怪物与佣兵恢复使用MPQ原帧／速度及当前FHR／FBR，伙伴成功格挡也发布BL；近战、技能弹体及环境弹体统一调用monsters::block，容量失败不提交接触随机或推进目标。普通怪物、死灵召唤物、女武神和佣兵动作保留原整数帧，按当前装备／状态计算事件；Kick沿当前武器IAS／WSM。第一、二幕怪物MonSeq按行次序计时，不将显示帧、倒放或A1／A2切换换算成时间；SQ初始速度256，只有原Skills.UseAttackRate允许时才按IAS更新，不套玩家SQ的-30。普通SC走FCR，其他特殊模式按原UseAttackRate选择AttackRate或OtherAnimationRate，非攻击SQ保持固定时钟。佣兵Jab保留多事件，Inferno保持引导时钟。`server-snapshot.animationTiming`只读提供当前武器类下的基础动作速度、时长、事件tick及恢复锁，不是复制／存档来源，也不代表特殊序列的最终调度。
 
 依据为当前MPQ、本地D2MOO `Units.cpp`／`SequenceTbls.cpp`速率与序列函数、`SUnitDmg.cpp`恢复／眩晕分支。本地1.13c `D2Common.dll`的`0x6FD7EFC0`确认玩家GH为mode4、怪物GH为mode3；`0x6FD80BD0`确认怪物按模式表继续查询UseAttackRate。重建代码分别误写BLOCK和遗漏monster分支break，不采用这些笔误；反汇编证据在`artifacts/animation-timing/native-*.txt`。德鲁伊／刺客执行和变身转换尚未接入，本路径不新增变身玩法或虚构速度；全部武器、装备、技能、难度及原服组合仍需分别认证。
 

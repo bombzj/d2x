@@ -45,20 +45,25 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         const bool dead = monster.life <= 0;
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
-            monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.front(),
+            monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.back(),
             monsterLifeRatio(monster.life,monster.maximumLife),
-            mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monster.chilledUntil > tick ? std::max(25, monster.velocityPercent + monster.rule.coldEffect) : monster.velocityPercent, monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
+            mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monsters::movementPercent(monster,tick), monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
-        result.back().pathSteps=monster.pathSteps;
+        result.back().pathSteps=std::max(uint8_t{1},monster.pathSteps);
+        result.back().pathType=monster.pathType;result.back().pathDistance=monster.pathDistance;
+        result.back().hostile=monster.enemyTarget();
         if(monster.movementTarget) {
             if(const auto *target=ports_.players.findActor(monster.movementTarget);target && target->entered && target->area==monster.area)
                 result.back().movementTarget=MotionTarget{target->actor,0};
             else if(const auto *target=ports_.monsters.find(monster.movementTarget);target && target->area==monster.area && target->life>0)
                 result.back().movementTarget=MotionTarget{target->id,1};
         }
+        // AC's hireling owner is public; only the detailed identity/stat
+        // messages below are restricted to that owner.
+        if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner))
+            result.back().hirelingOwner=owner->actor;
         if(monster.hireling && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner);owner && owner->player==id) {
             result.back().hireling=owner->persistent.player.hireling;
-            result.back().hirelingOwner=owner->actor;
             result.back().hirelingLife=monster.life;
             result.back().hirelingAttributes=monster.hirelingBaseAttributes;
             result.back().hirelingAttributes.insert({{"level",monster.rule.level},{"experience",int64_t(owner->persistent.player.hireling.experience)},
@@ -80,10 +85,20 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         }
         auto &states = result.back().states;
         states.insert(monster.aiStates.begin(),monster.aiStates.end());
+        states.insert(monster.deathStates.begin(),monster.deathStates.end());
+        if(!dead && monster.shatterActive && monster.rule.shatterState.id>=0) states.insert(monster.rule.shatterState.id);
         if(monster.skillMotion && monster.skillMotion->moveState && monster.rule.skillMoveState>=0) states.insert(monster.rule.skillMoveState);
         if(monster.revived()) {states.insert(monster.necroPet->reviveState.id);if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;}
         for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
+        // SUNIT_SetAlign always owns an alignment state, including evil's
+        // zero value (an empty state stat list on the original wire).
+        if(monster.rule.alignmentState>=0 && monster.rule.alignmentStat>=0) {
+            states.insert(monster.rule.alignmentState);
+            const int alignment=monster.owner || monster.conversion?2:monster.rule.alignment;
+            if(alignment) result.back().stateStats[monster.rule.alignmentState]={{monster.rule.alignmentStat,alignment}};
+            else result.back().stateStats.erase(monster.rule.alignmentState);
+        }
         if(monster.conversion) {
             states.insert(monster.conversion->state);states.insert(monster.conversion->alignment);
             result.back().stateStats[monster.conversion->alignment]={{monster.conversion->stat,2}};
@@ -95,7 +110,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         // clears it, including an overdue wound waiting for output capacity.
         if (!dead && monster.wound && monster.rule.openWoundsState >= 0) states.insert(monster.rule.openWoundsState);
         if (monster.chilledUntil > tick && monster.rule.coldState >= 0) states.insert(monster.rule.coldState);
-        if (monster.frozenUntil > tick && monster.rule.frozenState >= 0) states.insert(monster.rule.frozenState);
+        if (monster.frozenUntil > tick && monster.rule.frozenState.id >= 0) states.insert(monster.rule.frozenState.id);
         if(monster.stunnedUntil>tick && monster.rule.stunState>=0) states.insert(monster.rule.stunState);
     }
     return result;

@@ -149,6 +149,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         constexpr std::array states{"Pending", "Updated", "TimedOut", "Interrupted", "Rejected", "SentNoAck"};
         result["inventory"]["request"] = {{"sequence", request.sequence}, {"state", states.at(size_t(request.state))},
             {"action", int(request.command.action)}, {"itemId", request.command.item}, {"targetId", request.command.target},
+            {"x", request.command.x}, {"y", request.command.y}, {"page", request.command.page},
+            {"body", request.command.body}, {"equipVariant", request.command.equipVariant},
             {"context", context(request.command.context)}};
     }
     result["scene"]["palette"] = optional(scene.palette);
@@ -166,6 +168,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     }
     result["scene"]["automap"] = {{"visible", scene.automapVisible}, {"large", scene.automapLarge},
         {"stamps", scene.automapStamps.size()}, {"towns", scene.automapTowns.size()},
+        {"nativeCells", scene.automap.stamps.size()},
+        {"nativeLayer", scene.automapLayer ? Json(*scene.automapLayer) : Json()},
         {"revealedCells", Json::object()}};
     result["scene"]["automap"]["markers"]=Json::array();
     constexpr std::array markNames{"none","npc","party","other-player","corpse","own-pet","party-pet","stash","blue-portal","red-portal"};

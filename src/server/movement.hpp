@@ -9,9 +9,10 @@ class PlayerStore;
 namespace travel { class System; }
 namespace monsters { class System; }
 namespace effects { class System; }
+namespace items { class System; }
 struct ActorContext;
 struct TickContext;
-struct MovementPorts { PlayerStore &players; const AreaStore &areas; const travel::System &travel; const monsters::System &monsters; const effects::System &effects; };
+struct MovementPorts { PlayerStore &players; const AreaStore &areas; const travel::System &travel; const monsters::System &monsters; const effects::System &effects; const items::System &items; };
 class MovementSystem {
     const MovementPorts ports_;
     std::map<PlayerId,uint64_t> skillSteps_;

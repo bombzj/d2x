@@ -5,6 +5,7 @@
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
+#include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -208,7 +209,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         pose.action=Action::Animation;pose.nativeMode=8;pose.release=1;
         pose.animation=AnimationTiming{clock->frames,clock->speed};
         pose.animationAction=0;pose.useAttackRate=false;
-        pose.duration=pose.animation->durationTicks();
+        pose.duration=monsterAnimationTicks(*pose.animation);
         rule.attacks.emplace(8,std::move(pose));
     }
     return true;

@@ -12,6 +12,8 @@
 namespace d2x {
 // Original town montage contains diagnostic cells that the client skips.
 bool townAutomapCellVisible(int level, int frame);
+// Original D2Client program table, separate from MPQ tile-to-cel selection.
+int nativeAutomapCellGroup(int cel);
 // Automap.txt selects original DC6 cels by LvlTypes, DT1 tile type, style and sequence.
 class AutomapCatalog {
     struct Rule {

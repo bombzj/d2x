@@ -20,6 +20,7 @@ struct AutomapDrawView {
     struct Marker {
         Vec position; int cel = -1; std::string name; bool npc = false, showName = false;
         UnitMark unitMark = UnitMark::None;
+        std::optional<std::pair<uint8_t, uint32_t>> unit{};
     };
     Vec observer;
     bool observerVisible{true};

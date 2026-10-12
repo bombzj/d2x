@@ -26,6 +26,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <mutex>
 #include <iostream>
 #include <deque>
 #include <chrono>
@@ -103,6 +104,51 @@ bool gameStage(OnlineStage s) {
     return s == OnlineStage::ConnectingGame || s == OnlineStage::GameHandshake ||
            s == OnlineStage::LoadingGame || s == OnlineStage::ProtocolReady || s == OnlineStage::LeavingGame;
 }
+class GamePacketLog {
+    std::ofstream output_;
+    std::mutex mutex_;
+    std::string endpoint_;
+    std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
+    uint64_t sequence_{};
+    size_t written_{};
+  public:
+    GamePacketLog(const std::string &name, std::string endpoint) : endpoint_(std::move(endpoint)) {
+        const auto path = std::filesystem::path(name);
+        if (std::filesystem::exists(path)) throw std::runtime_error("Game packet log already exists");
+        if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
+        output_.exceptions(std::ios::badbit | std::ios::failbit);
+        output_.open(path, std::ios::binary);
+    }
+    void record(uint64_t connection, std::string_view direction, std::span<const uint8_t> bytes) {
+        std::lock_guard lock(mutex_);
+        if (bytes.empty()) throw std::logic_error("Empty diagnostic game packet");
+        // Keep native framing and lengths, without persisting Realm tickets or
+        // opaque uploaded/returned character bytes in a protocol trace.
+        size_t redactedFirst = bytes.size(), redactedEnd = bytes.size();
+        if (direction == "C2S" && bytes[0] == 0x68) {
+            redactedFirst = 1; redactedEnd = std::min(bytes.size(), size_t(7));
+        } else if (direction == "C2S" && bytes[0] == 0x6C) {
+            redactedFirst = std::min(bytes.size(), size_t(6)); redactedEnd = bytes.size() - 1;
+        } else if (direction == "S2C" && bytes[0] == 0xB3) {
+            redactedFirst = std::min(bytes.size(), size_t(7)); redactedEnd = bytes.size();
+        }
+        static constexpr char digits[] = "0123456789ABCDEF";
+        std::string hex; hex.reserve(bytes.size()*2);
+        for (size_t i=0; i<bytes.size(); ++i) {
+            const auto value = i>=redactedFirst && i<redactedEnd ? uint8_t{} : bytes[i];
+            hex += digits[value>>4]; hex += digits[value&15];
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-started_).count();
+        auto record = nlohmann::json{{"sequence",++sequence_},{"microseconds",elapsed},{"endpoint",endpoint_},
+            {"direction",direction},{"id",bytes[0]},{"length",bytes.size()},{"hex",std::move(hex)}};
+        record[endpoint_=="client" ? "gameGeneration" : "connection"] = connection;
+        if(redactedEnd>redactedFirst) record["redacted"]={{"offset",redactedFirst},{"length",redactedEnd-redactedFirst}};
+        auto row = record.dump()+"\n";
+        constexpr size_t limit = 64*1024*1024;
+        if (row.size()>limit-written_) throw std::runtime_error("Game packet log limit exceeded (64 MiB)");
+        output_.write(row.data(),std::streamsize(row.size())); output_.flush(); written_ += row.size();
+    }
+};
 } // namespace
 void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options, StartupProfile &profile) {
     const auto configPath = std::filesystem::path(options.onlineConfig);
@@ -117,27 +163,22 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     HideCursor();
     net::RealmSession session;
     if (!options.gamePacketLog.empty()) {
-        const auto path = std::filesystem::path(options.gamePacketLog);
-        if (std::filesystem::exists(path)) throw std::runtime_error("Game packet log already exists");
-        if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path());
-        auto output = std::make_shared<std::ofstream>(path, std::ios::binary);
-        output->exceptions(std::ios::badbit | std::ios::failbit);
-        const auto started = std::chrono::steady_clock::now();
-        session.observe_game_packets([output, started, sequence=uint64_t{}, written=size_t{}]
-            (uint64_t generation, const net::protocol::Packet &packet) mutable {
-            static constexpr char digits[] = "0123456789ABCDEF";
-            std::string hex; hex.reserve((packet.body.size()+1)*2);
-            const auto byte = [&](uint8_t value) { hex += digits[value>>4]; hex += digits[value&15]; };
-            byte(packet.id); for (const auto value : packet.body) byte(value);
-            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-started).count();
-            auto row = nlohmann::json{{"sequence",++sequence},{"microseconds",elapsed},{"gameGeneration",generation},
-                {"id",packet.id},{"length",packet.body.size()+1},{"hex",std::move(hex)}}.dump()+"\n";
-            constexpr size_t limit = 64*1024*1024;
-            if (row.size()>limit-written) throw std::runtime_error("Game packet log limit exceeded (64 MiB)");
-            output->write(row.data(),std::streamsize(row.size())); output->flush(); written += row.size();
+        auto log = std::make_shared<GamePacketLog>(options.gamePacketLog, "client");
+        session.observe_game_packets([log](uint64_t generation, const net::protocol::Packet &packet) {
+            Bytes bytes{packet.id}; bytes.insert(bytes.end(),packet.body.begin(),packet.body.end());
+            log->record(generation,"S2C",bytes);
+        });
+        session.observe_game_requests([log](uint64_t generation, std::span<const uint8_t> bytes) {
+            log->record(generation,"C2S",bytes);
         });
     }
     EmbeddedRealm embedded(archives, options.hostSaves);
+    if (!options.hostPacketLog.empty()) {
+        auto log = std::make_shared<GamePacketLog>(options.hostPacketLog,"host");
+        embedded.observeGamePackets([log](uint64_t connection, hosting::GamePacketDirection direction, std::span<const uint8_t> bytes) {
+            log->record(connection,direction==hosting::GamePacketDirection::ClientToServer?"C2S":"S2C",bytes);
+        });
+    }
     bool localConnection = false, enterLocalGame = false;
     bool lanConnection = false, lanListening = false;
     bool lanJoiningGame = false, tcpIpSaveFailed = false;
@@ -148,13 +189,16 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     bool localDifficultyChosen = false;
     RemoteTown town(archives);
     std::shared_ptr<hosting::AutomapStore> automapStore;
-    bool automapTcpIp=false;
+    std::optional<std::pair<uint32_t, uint32_t>> automapSeeds;
+    std::optional<uint32_t> savedAutomapLayer;
     uint64_t automapGeneration=~uint64_t{};
     std::string automapError;
     auto flushAutomap=[&] {
         if(!automapStore) return;
-        try { automapStore->save(automapTcpIp,town.discovery()); }
-        catch(const std::exception &e) { automapError="Automap: "+std::string(e.what()); std::cerr<<automapError<<'\n'; }
+        try {
+            automapStore->save(town.discovery());
+        }
+        catch(const std::exception &e) { automapError="Automap cache not saved (character saving is independent): "+std::string(e.what()); std::cerr<<automapError<<'\n'; }
     };
     auto administerLocal = [&](const hosting::AdminRequest &request) -> hosting::AdminResult {
         using namespace hosting;
@@ -216,7 +260,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     uint64_t inputAreaGeneration = ~uint64_t{};
     bool noPickup=false;
     auto sceneStatus = [&] {
-        town.update(session.read());
+        town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         auto status = town.read();
         status.noPickup=noPickup;
         status.automapVisible = mapDisplay.visible;
@@ -231,7 +275,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             status.effectLimitations = scene->effectLimitations();
             scene->effectStatus(status);
             status.playerDisplayed = scene->playerDisplayed();
-            status.playerDisplayPosition = scene->playerDisplayPosition();
+            status.playerDisplayPosition = scene->playerDisplayPosition(session.read());
             status.players = scene->players();
         }
         return status;
@@ -425,22 +469,32 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             sceneError.clear();
             renderedAct = session.read().load.act;
         }
-        town.update(session.read());
-        if(!quit && (localConnection || lanJoiningGame) && session.read().stage==OnlineStage::ProtocolReady &&
-           town.read().nativeMapReady && session.read().load.mapSeed && session.read().load.act &&
-           automapGeneration!=session.read().gameGeneration) {
-            automapStore=embedded.selectedAutomapStore();
-            if(automapStore) {
-                // A background LAN listener can remain open after returning to
-                // Single Player. Cache identity follows this game's mode.
-                automapGeneration=session.read().gameGeneration; automapTcpIp=lanConnection || lanJoiningGame;
-                try {
-                    if(auto remembered=automapStore->load(automapTcpIp,session.read().load.difficulty.value_or(0),
-                        *session.read().load.act,*session.read().load.mapSeed,town.discoveryContent()))
-                        town.restoreDiscovery(*remembered,session.read());
-                } catch(const std::exception &e) {
-                    notice="Automap: "+std::string(e.what()); std::cerr<<notice<<'\n'; automapStore.reset();
+        town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        if(!quit && session.read().stage==OnlineStage::ProtocolReady && town.read().nativeMapReady &&
+           session.read().load.mapSeed && session.read().load.secondarySeed && session.read().load.act) {
+            try {
+                if (automapGeneration != session.read().gameGeneration) {
+                    automapGeneration = session.read().gameGeneration;
+                    automapSeeds.reset();
+                    savedAutomapLayer.reset();
+                    automapStore = (localConnection || lanJoiningGame) ? embedded.selectedAutomapStore() :
+                        std::make_shared<hosting::AutomapStore>(hosting::AutomapStore::realm(options.hostSaves,
+                            session.read().selectedRealm, session.read().selectedCharacter));
                 }
+                const auto seeds = std::pair{*session.read().load.mapSeed, *session.read().load.secondarySeed};
+                if (automapStore && automapSeeds != seeds) {
+                    if (automapSeeds) flushAutomap();
+                    automapSeeds = seeds;
+                    if (auto remembered = automapStore->load(seeds.first, seeds.second))
+                        town.restoreDiscovery(*remembered, session.read());
+                }
+                if (automapStore && town.read().automapLayer != savedAutomapLayer) {
+                    if (savedAutomapLayer) flushAutomap();
+                    savedAutomapLayer = town.read().automapLayer;
+                }
+            } catch(const std::exception &e) {
+                notice="Automap cache not restored (character saving is independent): "+std::string(e.what());
+                std::cerr<<notice<<'\n'; automapStore.reset();
             }
         }
         const bool focused = debugInputs.empty() ? IsWindowFocused() : debugInputs.front().focused;
@@ -448,9 +502,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()))
             control.cancelMovement();
-        control.tick();
+        control.tick(scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         if (renderedArea != town.read().area) {
-            scene.reset();
+            // Walking into an adjacent level changes the binding, not the
+            // actor's path. RemoteScene refreshes palette/origin each frame;
+            // resetting it here rolls prediction back to a sparse host sample.
             sceneError.clear();
             renderedArea = town.read().area;
         }
@@ -702,7 +758,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         // RealmSession already reduced these packets into its remote-only view.
         // No opaque queue is retained by this value-only client.
         session.take_game_packets();
-        town.update(session.read());
+        town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         bool showScene =
             view.stage == OnlineStage::ProtocolReady && town.read().available && sceneError.empty();
         if (showScene && !scene) {
@@ -735,7 +791,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                         // Network worker remains active throughout synchronous resource loading.
                         sharedClients = std::make_unique<RemoteUiClients>(archives,session,inventory,combat,control,preferences.running);
                         profile.mark("client-content-ready");
-                        sharedClients->update(town.read());
+                        sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                         sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),sharedClients->actor(),
                             sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map());
                         profile.mark("game-ui-ready");
@@ -751,7 +807,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                         initial.automapFade = preferences.automapFade;
                         sharedController->resetInput();
                     }
-                    sharedClients->update(town.read());
+                    sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                     sharedUi->refreshUi(std::clamp(GetFrameTime(),0.f,.1f));
                     auto &panels = sharedUi->ui();
                     const auto &native = view.world;
@@ -854,7 +910,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 mouse = {input.mouse.x - offsetX, input.mouse.y - offsetY};
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
-                    sharedClients->update(town.read());
+                    sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                     sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
                     chatInput(input);
                     if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;

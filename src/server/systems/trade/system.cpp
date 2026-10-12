@@ -30,11 +30,16 @@ std::vector<EntityId> offered(const InventoryState &inventory,EntityId container
     }
     return result;
 }
-TradeItemsFact mirrors(const PlayerState &p,const Offer &own,const InventoryState &next) {
+TradeItemsFact mirrors(const PlayerState &p,const Offer &own,const transactions::InventoryEdit &change) {
+    const auto &next=change.inventory;
+    const auto changed=[&](EntityId id) {
+        return std::any_of(change.changes.begin(),change.changes.end(),[&](const auto &delta){return delta.item==id;});
+    };
     TradeItemsFact fact; fact.projection.player=p.persistent.player;
     fact.projection.containers=p.persistent.containers;
     fact.projection.inventory.containers=next.containers;
-    for (auto id : offered(p.persistent.inventory,own.container)) fact.removed.push_back(own.mirrors.at(id));
+    for (auto id : offered(p.persistent.inventory,own.container))
+        if(changed(id)) fact.removed.push_back(own.mirrors.at(id));
     const auto copy=[&](auto &&self,ItemInstance item)->ItemInstance {
         item.id=own.mirrors.at(item.id);
         for (auto &child : item.socketedItems) {
@@ -44,9 +49,15 @@ TradeItemsFact mirrors(const PlayerState &p,const Offer &own,const InventoryStat
         return item;
     };
     for (auto id : offered(next,own.container)) {
+        if(!changed(id)) continue;
         auto item=copy(copy,next.items.at(id));
         fact.projection.inventory.items.emplace(item.id,std::move(item));
     }
+    return fact;
+}
+TradeItemsFact clearMirrors(const PlayerState &p,const Offer &own) {
+    TradeItemsFact fact; fact.projection.player=p.persistent.player;
+    for(auto id:offered(p.persistent.inventory,own.container)) fact.removed.push_back(own.mirrors.at(id));
     return fact;
 }
 transactions::InventoryEdit edit(const PlayerState &p,const AreaStore &areas,uint64_t tick,InventoryState inventory) {
@@ -59,9 +70,9 @@ transactions::InventoryEdit edit(const PlayerState &p,const AreaStore &areas,uin
 std::vector<EventBatch> notifications(const PlayerStore &players,const Exchange &e,uint64_t tick,uint8_t action) {
     std::vector<EventBatch> result;
     for (const auto *own : {&e.first,&e.second}) {
-        const auto &peer=other(e,own->player); const auto &p=*players.find(own->player);
+        const auto &p=*players.find(own->player);
         result.push_back({0,tick,{}, {AudienceKind::Player,own->player,p.area},
-            {TradeFact{action,{},{},std::pair{own->gold,peer.gold}}}});
+            {TradeFact{action}}});
     }
     return result;
 }
@@ -79,20 +90,28 @@ bool System::canEdit(PlayerId id) const {
 void System::normalize(PlayerId id,PersistentCharacter &save) const {
     if (const auto *e=find(id); e && e->open) save.inventory=offer(*e,id).original;
 }
-DomainResult<> System::decorate(PlayerId id,transactions::InventoryEdit &change) {
+DomainResult<> System::decorate(PlayerId id,transactions::InventoryEdit &change,bool removedOffer) {
     const auto *e=find(id); if (!e) return applied();
     if (!canEdit(id) || e->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
     const auto &own=offer(*e,id), &peer=other(*e,id);
     const auto &p=*ports_.players.find(id);
-    change.directed.push_back({peer.player,{mirrors(p,own,change.inventory)}});
-    change.facts.emplace_back(TradeFact{6,{},{},std::pair{own.gold,peer.gold}});
-    change.facts.emplace_back(TradeFact{14});
-    change.directed.push_back({peer.player,{TradeFact{6,{},{},std::pair{peer.gold,own.gold}},TradeFact{14}}});
+    change.directed.push_back({peer.player,{mirrors(p,own,change)}});
+    // PlrTrade::sub_6FC931D0 locks removal; sub_6FC92F10 does not lock additions.
+    if(removedOffer) {
+        change.facts.emplace_back(TradeFact{14});
+        change.directed.push_back({peer.player,{TradeFact{14}}});
+    }
+    if(own.agreed || peer.agreed) {
+        change.facts.emplace_back(TradeFact{6});
+        change.directed.push_back({peer.player,{TradeFact{6}}});
+    }
     return applied();
 }
-void System::edited(PlayerId id,uint64_t tick) noexcept {
+void System::edited(PlayerId id,uint64_t tick,bool removedOffer) noexcept {
     for (auto &[key,e] : state_.exchanges) if (e.first.player==id || e.second.player==id) {
-        (void)key; e.first.agreed=e.second.agreed=false; ++e.revision; e.unlock=tick+250; return;
+        (void)key; e.first.agreed=e.second.agreed=false; ++e.revision;
+        if(removedOffer) e.unlock=tick+250;
+        return;
     }
 }
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {
@@ -147,7 +166,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
                 player.rules.character->tradeColumns,player.rules.character->tradeRows}});
             auto change=edit(player,ports_.areas,actor.tick,std::move(inventory));
             const auto &partner=*ports_.players.find(other(next,o->player).player);
-            change.facts.emplace_back(TradeFact{6,partner.actor,partner.persistent.player.name,std::pair{0u,0u}});
+            change.facts.emplace_back(TradeFact{6,partner.actor,partner.persistent.player.name});
             auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
             plans.push_back(std::move(*plan.value));
         }
@@ -155,12 +174,21 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         next.open=true; ++next.revision; state_.exchanges.at(key)=std::move(next); return applied();
     }
     if (!next.open || next.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
-    if (request.action==Action::Revoke || request.action==Action::OfferGold) {
-        if (request.action==Action::OfferGold) {
-            if (own.agreed || !cursorEmpty(*p) || request.gold>p->persistent.player.gold) return {DomainStatus::InvalidRequest,{}};
-            const auto limit=uint64_t(peer->persistent.player.level)*10000;
-            own.gold=unsigned(std::min<uint64_t>(request.gold,limit>peer->persistent.player.gold?limit-peer->persistent.player.gold:0));
-        }
+    if (request.action==Action::OfferGold) {
+        if (!cursorEmpty(*p) || request.gold>p->persistent.player.gold) return {DomainStatus::InvalidRequest,{}};
+        const auto limit=uint64_t(peer->persistent.player.level)*10000;
+        const auto amount=unsigned(std::min<uint64_t>(request.gold,limit>peer->persistent.player.gold?limit-peer->persistent.player.gold:0));
+        // Changes after agreement must first revoke it via 4F/7. A duplicate
+        // quote only acknowledges gold; it must not clear either checkbox.
+        if(amount!=own.gold && (own.agreed || peerOffer.agreed)) return {DomainStatus::Conflict,{}};
+        own.gold=amount; ++next.revision;
+        const auto published=ports_.events.publishGroup({
+            {0,actor.tick,{}, {AudienceKind::Player,p->player,p->area},{TradeFact{{},{},{},amount,{}}}},
+            {0,actor.tick,{}, {AudienceKind::Player,peer->player,peer->area},{TradeFact{{},{},{},{},amount}}}});
+        if(!published) return {published.status,{}};
+        state_.exchanges.at(key)=std::move(next); return applied();
+    }
+    if (request.action==Action::Revoke) {
         next.first.agreed=next.second.agreed=false; ++next.revision;
         auto published=ports_.events.publishGroup(notifications(ports_.players,next,actor.tick,6));
         if (!published) return {published.status,{}};
@@ -236,7 +264,7 @@ DomainResult<> System::complete(Exchange &e,uint64_t tick) {
         auto change=edit(*players[side],ports_.areas,tick,std::move(inventories[side]));
         change.changes=std::move(changes[side]); change.equipment=rules[side];
         change.character->gold=players[side]->persistent.player.gold-offers[side]->gold+offers[1-side]->gold;
-        change.facts.emplace_back(mirrors(*players[1-side],*offers[1-side],InventoryState{}));
+        change.facts.emplace_back(clearMirrors(*players[1-side],*offers[1-side]));
         change.facts.emplace_back(TradeFact{13});
         auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
         plans.push_back(std::move(*plan.value));
@@ -264,7 +292,7 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
                 change.changes.push_back({key,item.revision,ItemChangeKind::Moved,current->second.location,item.location,item.quantity});
             }
             const auto &peer=other(e,p.player);
-            change.facts.emplace_back(mirrors(*ports_.players.find(peer.player),peer,InventoryState{}));
+            change.facts.emplace_back(clearMirrors(*ports_.players.find(peer.player),peer));
             change.facts.emplace_back(TradeFact{12});
             auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
             plans.push_back(std::move(*plan.value));

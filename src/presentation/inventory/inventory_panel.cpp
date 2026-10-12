@@ -102,7 +102,10 @@ ContainerGrid playerTradeGrid(const InventoryView &inventory, bool own) {
 void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
     if (!pending) pendingPlacement.reset();
     if (const auto *item = inventory.cursorItem()) {
-        if (item->id == reserved || (pendingPlacement && pending==item->id && pendingPlacement->item==item->id)) {
+        // Suppress a newly assigned intermediate cursor during a queued take,
+        // but keep an already authoritative cursor until placement is confirmed.
+        if (item->id == reserved || (pendingPlacement && pending==item->id && pendingPlacement->item==item->id &&
+            pendingPlacement->source!=item->location)) {
             drag.reset();
             return;
         }

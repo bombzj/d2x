@@ -19,6 +19,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &
     actor.implementation=summon.kind;actor.rule=rule;actor.necroSummon=true;actor.necroPet=summon.necro;actor.petStats=summon.stats;
     actor.rule.level=summon.stats.level;actor.rule.difficulty=p->persistent.difficulty;
     actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
+    actor.rule.freezeDivisor=p->rules.skills->freezeDivisor.at(size_t(actor.rule.difficulty));
     const auto &a=summon.stats.attributes;
     actor.rule.defense=a.defense;actor.rule.attackRating=a.attackRating;
     actor.rule.minimumDamage=int(summon.stats.minimumDamage);actor.rule.maximumDamage=int(summon.stats.maximumDamage);
@@ -83,6 +84,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext 
     actor.implementation=MonsterKind::AmazonPet;actor.rule=rule;actor.amazonPet=summon.amazon;actor.petStats=summon.stats;
     actor.rule.difficulty=p->persistent.difficulty;
     actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
+    actor.rule.freezeDivisor=p->rules.skills->freezeDivisor.at(size_t(actor.rule.difficulty));
     actor.rule.level=summon.stats.level;actor.rule.defense=summon.stats.attributes.defense;actor.rule.attackRating=summon.stats.attributes.attackRating;if(summon.amazon->decoy) actor.rule.deathTicks=p->rules.character->deathTicks;
     const auto &a=summon.stats.attributes;
     actor.rule.resistances={a.combat.physicalResist,a.combat.magicResist,a.fireResist,a.lightningResist,a.coldResist,a.poisonResist};
@@ -105,7 +107,7 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
-    stop(id);pet.area=owner.area;pet.position=position;pet.busyUntil=owner.tick;pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
+    stop(id);pet.area=owner.area;pet.position=position;pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::updateHireling(EntityId id,MonsterRule rule,WeaponDamage weapon,CombatModifiers modifiers,int strength,int dexterity,int vitality,
     std::shared_ptr<const PersistentCharacter> equipment,uint64_t inventoryRevision,uint64_t characterRevision) {
@@ -126,7 +128,7 @@ void System::installHirelingPotion(EntityId id,std::map<int,TimedRestoration> he
     auto &actor=found->second;actor.healing.swap(healing);actor.potionEffects=std::move(effects);
     actor.life=std::clamp(life,int64_t(0),actor.maximumLife);actor.combatRandom=random;
     if(curePoison) actor.poison.reset();
-    if(cureCold) actor.chilledUntil=actor.frozenUntil=0;
+    if(cureCold) {actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;}
     ++actor.revision;
 }
 void System::retire(EntityId id, uint64_t tick) {
@@ -139,6 +141,6 @@ void System::retire(EntityId id, uint64_t tick) {
 }
 void System::healHireling(EntityId id) noexcept {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.combatCompanion() || found->second.life<=0) return;
-    auto &m=found->second;m.life=m.maximumLife;m.poison.reset();m.chilledUntil=m.frozenUntil=0;++m.revision;
+    auto &m=found->second;m.life=m.maximumLife;m.poison.reset();m.chilledUntil=m.frozenUntil=0;m.shatterActive=false;++m.revision;
 }
 }

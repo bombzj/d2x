@@ -18,7 +18,7 @@ endif()
 add_library(d2x_resources src/resources/atomic_file.cpp src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp src/resources/monster_palshift.cpp)
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
-add_library(d2x_navigation src/world/navigation.cpp src/world/room_activation.cpp)
+add_library(d2x_navigation src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp src/world/room_activation.cpp)
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
@@ -102,6 +102,7 @@ add_library(d2x_gameplay
   src/gameplay/combat/stat_modifiers.cpp src/gameplay/combat/geometry.cpp
   src/gameplay/combat/attack_element_ranges.cpp src/gameplay/combat/weapon_hit.cpp
   src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/attack_timing.cpp
+  src/gameplay/combat/poison.cpp
   src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
@@ -217,7 +218,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/quests/staff.cpp
   src/server/systems/quests/rewards.cpp
   src/server/systems/progression/system.cpp
-  src/server/systems/travel/system.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
+  src/server/systems/travel/system.cpp src/server/systems/travel/position_sync.cpp src/server/systems/travel/waypoints.cpp src/server/systems/travel/portals.cpp
   src/server/systems/social/system.cpp
   src/server/systems/social/party.cpp
   src/server/systems/trade/system.cpp

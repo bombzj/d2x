@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/movement.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/effects/system.hpp"
@@ -13,7 +14,7 @@ const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool convers
     const auto &npcs = area->definition.npcs;
     const auto found = std::find_if(npcs.begin(),npcs.end(),[&](const auto &entry){return entry.id == id;});
     if(found!=npcs.end() && (found->hidden || !found->rule.interactable)) return nullptr;
-    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area,found->rule.questInitFunction) || (found->position-player->position).length() > 8 || !area->definition.collision.segment(player->position,found->position,id,{0x0801,1})) return nullptr;
+    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area,found->rule.questInitFunction) || nativeUnitDistance(player->position,2,found->position,found->rule.size)>8) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
     return &*found;
 }
@@ -39,11 +40,20 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     const auto &talk = std::get<TalkToNpc>(request.intent);
     const auto *npc = find(actor,talk.target); if (!npc) return {DomainStatus::InvalidRequest,{}};
+    const auto &player = *ports_.players.find(actor.player);
+    if(talk.action==TalkToNpc::Action::Talk) {
+        if(nativeUnitDistance(player.position,2,npc->position,npc->rule.size)>6) {
+            if(ports_.movement.execute(actor,{MovementAction::ApproachNpc,{},true,npc->id})!=CommandStatus::Applied)
+                return {DomainStatus::Unavailable,{}};
+            approaches_.insert_or_assign(actor.player,Approach{actor,request,player.locomotionSequence});
+            return {DomainStatus::Applied,std::monostate{}};
+        }
+        ports_.movement.execute(actor,{MovementAction::Stop,{},false});
+    }
     // 2F confirms the conversation created by 13; do not resend 27/28 and
     // restart the client's activation/initialization exchange.
     if(talk.action==TalkToNpc::Action::Initialize)
         return {find(actor,npc->id,true)?DomainStatus::Applied:DomainStatus::Stale,{}};
-    const auto &player = *ports_.players.find(actor.player);
     auto record = player.persistent.player;
     if (talk.action == TalkToNpc::Action::Acknowledge) {
         auto current = state_.conversations.find(actor.player);
@@ -100,7 +110,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) { if (healing) ports_.effects.commit(std::move(*healing)); state_.conversations.swap(conversations); ++state_.next; } return result;
 }
-DomainResult<> System::close(PlayerId player) { state_.conversations.erase(player); return {DomainStatus::Applied,std::monostate{}}; }
+DomainResult<> System::close(PlayerId player) { approaches_.erase(player);state_.conversations.erase(player); return {DomainStatus::Applied,std::monostate{}}; }
 DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     if(state_.escapes.contains(id)) return {DomainStatus::Applied,std::monostate{}};
     const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
@@ -112,7 +122,20 @@ DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     }
     return {DomainStatus::Stale,{}};
 }
-StepStatus System::step(TickContext, FrameFacts &) {
+StepStatus System::step(TickContext tick, FrameFacts &) {
+    for(auto it=approaches_.begin();it!=approaches_.end();) {
+        auto pending=it->second;pending.actor.tick=tick.tick;
+        const auto *player=ports_.players.find(it->first);
+        const auto &talk=std::get<TalkToNpc>(pending.request.intent);
+        const auto *npc=find(pending.actor,talk.target);
+        if(!player || !npc || player->locomotionSequence!=pending.locomotion) {it=approaches_.erase(it);continue;}
+        if(nativeUnitDistance(player->position,2,npc->position,npc->rule.size)>6) {
+            if(player->route.empty()) it=approaches_.erase(it);else ++it;
+            continue;
+        }
+        const auto result=execute(pending.actor,pending.request);
+        if(result.status==DomainStatus::Capacity) ++it;else it=approaches_.erase(it);
+    }
     for(auto &[id,escape]:state_.escapes) {
         if(escape.escaped) continue;
         const auto *area=ports_.areas.find(escape.area);if(!area) continue;

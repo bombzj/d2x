@@ -92,7 +92,7 @@ StepStatus System::advanceHirelings(uint64_t tick) {
         if(!m || !target || !m->owner || m->life<=0 || !target->enemyTarget() || target->life<=0 || m->area!=r.area || target->area!=r.area) {unitReactions_.pop_front();continue;}
         const auto *p=ports_.players.find(*m->owner);if(!p || !p->rules.skills) {unitReactions_.pop_front();continue;}
         combat::SpellImpact impact{r.source,r.source,r.area,DamageType::Cold,0,{r.attacker}};impact.reaction=true;impact.unblockable=true;impact.freeze=true;
-        impact.coldFrames=uint64_t(std::max(0.f,std::get<FreezeAttacker>(r.effect.action).duration)*25.f);impact.freezeDivisor=p->rules.skills->freezeDivisor;
+        impact.coldFrames=uint64_t(std::max(0.f,std::get<FreezeAttacker>(r.effect.action).duration)*25.f);impact.coldPierce=m->petStats.attributes.combat.coldPierce;
         auto plan=ports_.combat.prepareSpells({std::move(impact)});if(!plan) {blocked=true;break;}
         ports_.combat.commitSpells(std::move(*plan.value));unitReactions_.pop_front();
     }

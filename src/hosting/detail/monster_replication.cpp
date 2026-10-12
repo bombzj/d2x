@@ -1,6 +1,7 @@
 #include "native_realm_service.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include "hosting/native_item_wire.hpp"
+#include <cstdlib>
 namespace d2x::hosting {
 void NativeRealmService::publishMonsters() {
     if (!binding || peer.phase != GamePhase::Entered) return;
@@ -43,6 +44,15 @@ void NativeRealmService::publishMonsters() {
             entry->second={};fresh=true;
         }
         if (fresh) packets.push_back(nativeMonsterAssignment(monster, origin));
+        if(fresh || !entry->second.life) entry->second.life=monster.life;
+        else if(monster.hostile && (std::abs(int(monster.life)-int(*entry->second.life))>4 || (!monster.life && *entry->second.life))) {
+            // MonsterMode stat regeneration uses >4 on the native 0..128
+            // scale. SUnitMsg publishes AB only to hostile observers.
+            packets.push_back(encodeServerPacket(ServerMessage::UnitLife,[&](auto &out) {
+                out.u8(1);out.u32(uint32_t(monster.id.value));out.u8(monster.life);
+            }));
+            entry->second.life=monster.life;
+        }
         entry->second.modifiers=monster.modifiers;entry->second.rankFlags=monster.rankFlags;entry->second.nameSeed=monster.nameSeed;
         if(monster.hireling) {
             const auto &record=*monster.hireling;

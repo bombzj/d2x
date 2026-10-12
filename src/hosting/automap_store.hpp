@@ -2,18 +2,18 @@
 #include "contracts/automap_discovery.hpp"
 #include <filesystem>
 #include <optional>
-#include <string>
+#include <string_view>
 
 namespace d2x::hosting {
-// Captured from a selected local character lease; callers never resolve UI names to paths.
+// Local/TCP characters use the selected D2S basename. Realm caches belong to
+// the client save root / realm / character, independently of server D2S files.
 class AutomapStore {
     std::filesystem::path path_;
-    std::string name_, characterClass_;
-
   public:
-    AutomapStore(std::filesystem::path character, std::string name, std::string characterClass);
-    std::optional<AutomapDiscovery> load(bool tcpIp, int difficulty, int act, uint32_t seed,
-                                         uint64_t content) const;
-    void save(bool tcpIp, const AutomapDiscovery &) const;
+    explicit AutomapStore(std::filesystem::path character);
+    static AutomapStore realm(const std::filesystem::path &saveRoot,
+                              std::string_view realm, std::string_view character);
+    std::optional<AutomapDiscovery> load(uint32_t seed, uint32_t objectSeed) const;
+    void save(const AutomapDiscovery &) const;
 };
 } // namespace d2x::hosting

@@ -75,19 +75,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         for (const auto &item : edit.spilled) change.publicFacts.emplace_back(GroundDropFact{world.value->next.world.items.at(item.id)});
         change.world = std::move(*world.value); change.equipment = std::move(rules);
     }
-    bool offerChanged=false;
+    bool offerChanged=false, removedOffer=false;
     if(trade) {
         change.playerTrade=true;
-        for(const auto &delta:change.changes) for(const auto *location:{&delta.before,&delta.after}) {
-            const auto *at=*location?std::get_if<ContainerLocation>(&**location):nullptr;
-            offerChanged=offerChanged || (at && at->container==trade);
+        for(const auto &delta:change.changes) {
+            const auto *before=delta.before?std::get_if<ContainerLocation>(&*delta.before):nullptr;
+            const auto *after=delta.after?std::get_if<ContainerLocation>(&*delta.after):nullptr;
+            removedOffer=removedOffer || (before && before->container==trade);
+            offerChanged=offerChanged || removedOffer || (after && after->container==trade);
         }
-        if(offerChanged) {const auto decorated=ports_.trade.decorate(actor.player,change);if(!decorated) return decorated;}
+        if(offerChanged) {const auto decorated=ports_.trade.decorate(actor.player,change,removedOffer);if(!decorated) return decorated;}
     }
     auto transaction = ports_.transactions.prepare(std::move(change));
     if (!transaction) return {transaction.status, {}};
     const auto result=ports_.transactions.commit(std::move(*transaction.value));
-    if(result && offerChanged) ports_.trade.edited(actor.player,actor.tick);
+    if(result && offerChanged) ports_.trade.edited(actor.player,actor.tick,removedOffer);
     return result;
 }
 DomainResult<> System::close(PlayerId player) {

@@ -36,6 +36,8 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "poisonmindam") target = &m.poisonMinimum;
     else if (stat == "poisonmaxdam") target = &m.poisonMaximum;
     else if (stat == "poisonlength") target = &m.poisonFrames;
+    else if (stat == "passive_pois_mastery") target = &m.poisonSkillDamagePercent;
+    else if (stat == "passive_pois_pierce") target = &m.poisonPierce;
     else if (stat == "maxfireresist") target = &m.fireMaxResist;
     else if (stat == "maxlightresist") target = &m.lightningMaxResist;
     else if (stat == "maxcoldresist") target = &m.coldMaxResist;

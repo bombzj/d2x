@@ -160,7 +160,7 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         std::optional<SkillCastSpec> currentCast;
         if (!entry.passive && entry.spell && effective > 0 && effective <= 255) {
             currentCast = resolveSkill(entry.spell->rules(), {effective, input.baseRanks, display.fireMastery,
-                display.lightningMastery, attributes.combat.coldSkillDamagePercent});
+                display.lightningMastery, attributes.combat.coldSkillDamagePercent, attributes.combat.poisonSkillDamagePercent});
             eligibilityInput.requiredMana = std::max(float(entry.spell->startMana), currentCast->manaCost);
         }
         const auto eligibility = evaluateSkillEligibility(entry, eligibilityInput);

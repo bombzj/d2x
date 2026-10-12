@@ -7,6 +7,19 @@
 #include <set>
 
 namespace d2x {
+int nativeAutomapCellGroup(int cel) {
+    // 1.13c D2Client RVA 0xF1528, consumed by 0x60990 / 0x61320.
+    // Equivalent artwork at the same coordinates occupies a single cell.
+    constexpr std::pair<int,int> groups[]{
+        {0,0},{1,0},{2,0},{3,0},{6,1},{7,1},{8,1},{11,2},{12,2},{13,3},{14,3},
+        {20,4},{38,4},{21,5},{39,5},{46,6},{47,6},{48,6},{49,6},
+        {51,7},{52,7},{53,7},{54,7},{60,8},{70,8},{61,9},{71,9},
+        {120,10},{169,10},{171,10},{121,11},{170,11},{172,11},
+        {257,12},{258,12},{259,12},{266,13},{267,13},{337,14},{338,14},
+        {472,15},{473,15},{474,15},{475,15},{520,16},{521,16},{522,16},{533,17},{534,17}};
+    for (const auto &[frame,group]:groups) if (cel==frame) return group;
+    return -1;
+}
 bool townAutomapCellVisible(int level, int frame) {
     if (level != 40) return true;
     // gaLuthGoleinTownCells: verified in 1.13c D2Client, also documented by

@@ -6,6 +6,7 @@ namespace d2x {
 std::vector<Bytes> nativeGameAdmission(const ClassicData &, const PersistentCharacter &, const GeneratedArea &, const PlayerSnapshot &, const server::AreaMetadata &, const server::QuestFact &);
 std::vector<Bytes> nativeAreaUnits(const GeneratedArea &, const server::AreaMetadata &);
 Bytes nativePlayerAssignment(const ClassicData &, const PersistentCharacter &, const PlayerSnapshot &, Vec);
+Bytes nativePlayerInitialStates(const ClassicData &, const PlayerSnapshot &);
 Bytes nativePlayerRoster(const ClassicData &, const CharacterRecord &);
 Bytes nativePlayerMotion(const PlayerSnapshot &, Vec origin, bool targetVisible=false);
 struct NativePlayerResources {

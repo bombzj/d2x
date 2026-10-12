@@ -1,6 +1,7 @@
 #pragma once
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/damage_type.hpp"
+#include <cstdint>
 
 namespace d2x {
 // Uncapped attribute lookup; mitigation applies its own original limits.
@@ -14,4 +15,9 @@ struct ResolvedDamage {
 ResolvedDamage mitigatePlayerDamage(float amount, MonsterDamageType type,
                                     const CharacterAttributes &defender, bool monsterRules = false);
 float mitigateMonsterDamage(float amount, int resistance);
+// Original resistance/pierce ordering shared by damage and duration channels.
+int piercedResistance(int resistance, int pierce);
+uint64_t resistedDuration(uint64_t frames, int resistance);
+uint64_t coldHitDuration(uint64_t frames, int resistance, int pierce,
+                         bool cannotBeFrozen, bool halfFreezeDuration);
 } // namespace d2x

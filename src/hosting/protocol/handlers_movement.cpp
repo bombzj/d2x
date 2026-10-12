@@ -1,9 +1,10 @@
 #include "gameplay_dispatch.hpp"
 
 namespace d2x::hosting::handlers {
-RequestResult UpdatePosition(GameplayContext &, net::protocol::Reader &in) {
-    in.u16(); in.u16(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "UpdatePosition"};
+RequestResult UpdatePosition(GameplayContext &context, net::protocol::Reader &in) {
+    const auto x = in.u16(), y = in.u16(); in.finish();
+    return submitGameplay(context, MovementCommand{MovementAction::Synchronize,
+        Vec{float(x), float(y)} - context.origin});
 }
 namespace {
 RequestResult move(GameplayContext &context, net::protocol::Reader &in, bool run) {
@@ -16,6 +17,7 @@ RequestResult approach(GameplayContext &context, net::protocol::Reader &in, bool
     if (type == 0) return submitGameplay(context, MovementCommand{MovementAction::ApproachCorpse, {}, run, EntityId{id}});
     if (type == 1) return submitGameplay(context, MovementCommand{MovementAction::ApproachNpc, {}, run, EntityId{id}});
     if (type == 2) return submitGameplay(context, MovementCommand{MovementAction::ApproachObject, {}, run, EntityId{id}});
+    if (type == 4) return submitGameplay(context, MovementCommand{MovementAction::ApproachItem, {}, run, EntityId{id}});
     if (type != 5) return {RequestStatus::NotImplemented};
     return submitGameplay(context, MovementCommand{MovementAction::ApproachExit, {}, run, EntityId{id}});
 }

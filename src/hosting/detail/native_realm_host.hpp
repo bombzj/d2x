@@ -2,6 +2,7 @@
 #include "hosting/game_host.hpp"
 #include "hosting/loot_content.hpp"
 #include "hosting/game_content.hpp"
+#include "hosting/game_packet_observer.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/realm_portrait.hpp"
 #include <chrono>
@@ -32,6 +33,8 @@ struct NativeRealmHost {
     GameHost host;
     LootContent lootContent;
     uint32_t nextGameIndex = 1;
+    uint64_t nextDiagnosticConnection{};
+    GamePacketObserver gamePacketObserver;
     std::map<std::string, HostedGame> games;
     std::map<GameHandle, std::map<RegionId, GeneratedArea>> terrain;
     std::set<NativeRealmService *> peers;

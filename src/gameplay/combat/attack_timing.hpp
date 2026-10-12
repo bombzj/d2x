@@ -24,6 +24,8 @@ int effectiveAttackSpeed(int animationSpeed, int itemIAS, int baseWeaponSpeed, i
 int effectiveOtherAnimationSpeed(int animationSpeed, int otherRate);
 int attackStartingFrame(std::string_view character, std::string_view weapon, std::string_view mode);
 int animationFrameTicks(int frame, int speed);
+// Monster ENDANIM is scheduled one frame after the last mode event.
+int monsterAnimationTicks(AnimationTiming, int startFrame = 0);
 int weaponSequenceTick(int frame, int speed);
 // SequenceTbls events share the same fixed-point clock for rendering and hits.
 template<class Frames>

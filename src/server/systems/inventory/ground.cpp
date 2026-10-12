@@ -165,17 +165,18 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         draft.edit.changes.push_back({source.id, source.revision + 1, ItemChangeKind::Removed, source.location, {}, 0});
     } else {
         const auto *position = std::get_if<GroundLocation>(&source.location);
-        if (!position || position->region != player->area || (position->position - player->position).length() > 50.f || draft.at(cursor))
+        if (!position || position->region != player->area || nativeUnitDistance(player->position,2,position->position,1)>50 || draft.at(cursor))
             return {DomainStatus::InvalidRequest, {}};
         const int dx=int(position->position.x)-int(player->position.x),dy=int(position->position.y)-int(player->position.y);
         if(telekinesis && dx*dx+dy*dy>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
-        if (!telekinesis && (position->position - player->position).length() > 1.8f) {
-            const auto status = ports_.movement.execute(actor, {MovementAction::Move, position->position, player->running});
+        if (!telekinesis && !nativePickupReach(area->definition.collision,player->position,position->position,source.id)) {
+            const auto status = ports_.movement.execute(actor, {MovementAction::Move, position->position, true,{},MotionTarget{source.id,4},
+                InteractionTarget{source.id,position->position,position->position,1,1,4,false,true}});
             if (status != CommandStatus::Applied) return {DomainStatus::Conflict, {}};
             state_.pickups.insert_or_assign(actor.player, Pickup{actor, request, player->locomotionSequence,ports_.items.groundGeneration(request.item.id)});
             return {DomainStatus::Applied, std::monostate{}};
         }
-        if (!telekinesis && !ports_.items.reachable(*position, player->position)) return {DomainStatus::InvalidRequest, {}};
+        if(!telekinesis) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
         if (definition->equipment.isType("gold")) {
             // ItemMode only shares natural gold. Player-dropped/death piles keep
             // their owner provenance even when a partial pickup creates a new id.
@@ -310,8 +311,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             ports_.items.groundGeneration(pending.request.item.id)!=pending.groundGeneration) { it = state_.pickups.erase(it); continue; }
         const auto &at = std::get<GroundLocation>(item->second.location);
         if(at.region!=pending.actor.area) {it=state_.pickups.erase(it);continue;}
-        if ((at.position - player->position).length() > 1.8f && !player->route.empty()) { ++it; continue; }
-        if ((at.position - player->position).length() <= 1.8f) {
+        const bool reached=nativePickupReach(area->definition.collision,player->position,at.position,item->first);
+        if (!reached && !player->route.empty()) { ++it; continue; }
+        if (reached) {
             pending.actor.tick = tick.tick;
             pending.request.item=item->second.handle();
             const auto result = ground(pending.actor, pending.request);

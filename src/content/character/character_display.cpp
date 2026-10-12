@@ -1,3 +1,4 @@
+#include "gameplay/combat/poison.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -63,14 +64,20 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
             int(int64_t(weapon.meleeBaseMaximum) * skillDamage / 100);
         WeaponModifiers own;
         if (auto found = combat.weapons.find(weapon.item); found != combat.weapons.end()) own = found->second;
-        const int64_t itemFrames=(int64_t(combat.poisonFrames)+own.poisonFrames)/std::max(1,combat.poisonSources+own.poisonSources);
-        int64_t poisonMinimum = (int64_t(combat.poisonMinimum)+own.poisonMinimum)*itemFrames/256;
-        int64_t poisonMaximum = (int64_t(combat.poisonMaximum)+own.poisonMaximum)*itemFrames/256;
-        if (skill && skill->poisonDuration > 0) {
-            const int64_t frames = (int64_t(skill->poisonDuration * 25.f + .001f) + combat.poisonFrames + own.poisonFrames) /
-                std::max(1, 1+combat.poisonSources + own.poisonSources);
-            poisonMinimum = (int64_t(skill->minimumDamage * 256.f) + combat.poisonMinimum + own.poisonMinimum) * frames / 256;
-            poisonMaximum = (int64_t(skill->maximumDamage * 256.f) + combat.poisonMaximum + own.poisonMaximum) * frames / 256;
+        const auto itemMinimum=poisonMasteryRate(int64_t(combat.poisonMinimum)+own.poisonMinimum,combat.poisonSkillDamagePercent);
+        const auto itemMaximum=poisonMasteryRate(int64_t(combat.poisonMaximum)+own.poisonMaximum,combat.poisonSkillDamagePercent);
+        const auto itemFrames=weaponPoisonLength(int64_t(combat.poisonFrames)+own.poisonFrames,combat.poisonSources+own.poisonSources);
+        int64_t poisonMinimum=itemMinimum*itemFrames/256,poisonMaximum=itemMaximum*itemFrames/256;
+        if(skill && skill->poisonDuration>0) {
+            const auto skillFrames=int64_t(skill->poisonDuration*25.f+.001f);
+            if(skill->weapon->spear) {
+                poisonMinimum=int64_t(skill->minimumDamage*256.f)*skillFrames/256;
+                poisonMaximum=int64_t(skill->maximumDamage*256.f)*skillFrames/256;
+            } else {
+                const auto frames=weaponPoisonLength(int64_t(combat.poisonFrames)+own.poisonFrames,combat.poisonSources+own.poisonSources,skillFrames);
+                poisonMinimum=(int64_t(skill->minimumDamage*256.f)+itemMinimum)*frames/256;
+                poisonMaximum=(int64_t(skill->maximumDamage*256.f)+itemMaximum)*frames/256;
+            }
         }
         const int rating = int(std::clamp<int64_t>(int64_t(weapon.baseAttackRating) *
             std::max(0, 100 + weapon.attackRatingPercent + (skill ? skill->weapon->attackRating : 0)) / 100,
@@ -110,7 +117,7 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         if (rank < 1) return {};
         if (rank > 255) return {"?", ""};
         const auto cast = resolveSkill(entry->spell->rules(), {rank, context.learned, context.fireMastery,
-            context.lightningMastery, context.attributes.combat.coldSkillDamagePercent});
+            context.lightningMastery, context.attributes.combat.coldSkillDamagePercent, context.attributes.combat.poisonSkillDamagePercent});
         if (cast.curse || cast.amazonMagic || cast.summon) return {};
         if (cast.weapon) return weaponStats(context, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||

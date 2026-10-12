@@ -159,9 +159,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             } else {
                 int64_t amount = 0,absorbed=0;
                 for(size_t i=0;i<5;++i) {const auto resolved=ports_.effects.unitDamage(targetMonster->id,rolled.channels[i],DamageType(i),tick.tick);amount+=int64_t(resolved.dealt*256.f);absorbed+=int64_t(resolved.absorbed*256.f);}
-                const auto cold = rolled.coldFrames * unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(targetMonster->rule.coldDivisor));
+                const auto cold=rolled.coldFrames;
                 std::optional<PoisonApplication> poison;
-                if (rolled.poisonFrames && rolled.channels[5]) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
+                if (rolled.channels[5]>0) poison = PoisonApplication{int64_t(mitigateMonsterDamage(float(rolled.channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),rolled.poisonFrames,sourceMonster->rule.hitStates.poison.id};
                 if(poison && sourceMonster->necroSummon) poison->actualSource=sourceMonster->id;
                 result = ports_.monsters.damage(damage.target,sourceMonster->necroSummon?damage.binding.credit:damage.source,amount,tick.tick,cold,false,rolled.hitClass,poison,false,rolled.stunFrames,{},absorbed);
                 if(result && hit && rolled.knockback && targetMonster->life>0) ports_.monsters.knockback(targetMonster->id,sourceMonster->position,tick.tick);
@@ -185,17 +185,17 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 for(auto &channel:channels) channel=channel*hirelingDamagePercent(*sourceMonster,*targetMonster)/100;
                 if(sourceMonster->rule.criticalChance>0 && int(limitedRandom(random,100))<sourceMonster->rule.criticalChance) channels[0]*=2;
                 physicalContact=ports_.effects.physicalContactDamage(targetMonster->id,channels[0],tick.tick);
-                for(size_t element=0;element<5;++element) amount+=int64_t(mitigateMonsterDamage(float(channels[element])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType(element),tick.tick))*256.f);
+                for(size_t element=0;element<5;++element) amount+=int64_t(mitigateMonsterDamage(float(channels[element])/256.f,piercedResistance(ports_.effects.unitResistance(targetMonster->id,DamageType(element),tick.tick),element==4?sourceMonster->petStats.attributes.combat.coldPierce:0))*256.f);
                 if(sourceMonster->hireling || sourceMonster->necroMaterial) {
                     const int resistance=ports_.effects.unitResistance(targetMonster->id,DamageType::Physical,tick.tick);
                     const auto physical=int64_t(mitigateMonsterDamage(float(channels[0])/256.f,resistance)*256.f);
                     extras=weaponHitEffects(rolled,*targetMonster,sourceMonster->id,damage.binding.credit,resistance,physical,{},tick.tick,random);
                 }
-                if(rolled.coldFrames>0 && ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick)<100) cold=uint64_t(rolled.coldFrames)*unsigned(std::clamp(100-ports_.effects.unitResistance(targetMonster->id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(owner->rules.skills->coldDivisor[size_t(targetMonster->rule.difficulty)]));
-                if(channels[5]>0 && rolled.poisonFrames>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick))*256.f),uint64_t(rolled.poisonFrames),owner->rules.skills->poisonState};
+                cold=uint64_t(std::max(0,rolled.coldFrames));
+                if(channels[5]>0) poison=PoisonApplication{int64_t(mitigateMonsterDamage(float(channels[5])/256.f,piercedResistance(ports_.effects.unitResistance(targetMonster->id,DamageType::Poison,tick.tick),sourceMonster->petStats.attributes.combat.poisonPierce))*256.f),uint64_t(std::max(0,rolled.poisonFrames)),owner->rules.skills->poisonState,{},sourceMonster->petStats.attributes.combat.poisonPierce};
             }
             if(poison) poison->actualSource=sourceMonster->id;
-            const auto committed=ports_.monsters.damage(damage.target,damage.binding.credit,amount,tick.tick,cold,snapshot.freeze,uint8_t(damage.weapon->hitClass),poison,false,uint64_t(std::max(0,snapshot.stunFrames)),extras.wound,0,false,extras.crushing);
+            const auto committed=ports_.monsters.damage(damage.target,damage.binding.credit,amount,tick.tick,cold,snapshot.freeze,uint8_t(damage.weapon->hitClass),poison,false,uint64_t(std::max(0,snapshot.stunFrames)),extras.wound,0,false,extras.crushing,sourceMonster->petStats.attributes.combat.coldPierce);
             if(committed.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
             if(committed) {
                 if(hit) ports_.effects.necroContact(damage.source,damage.target,physicalContact,tick.tick,false,previousLife);

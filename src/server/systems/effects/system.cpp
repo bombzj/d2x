@@ -140,7 +140,7 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
         if(m.poison) plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.poison->damage.state,false});
         if(m.chilledUntil || m.frozenUntil) {
             plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.coldState,false});
-            plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState,false});
+            plan.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState.id,false});
         }
     }
     return {DomainStatus::Applied, std::move(plan)};
@@ -171,7 +171,7 @@ DomainResult<> System::restore(const ActorContext &actor,float life,float mana,f
         if(!changed) continue;
         used=true;pets.push_back(id);
         if(m.poison) edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.poison->damage.state,false});
-        if(m.chilledUntil || m.frozenUntil) {edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.coldState,false});edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState,false});}
+        if(m.chilledUntil || m.frozenUntil) {edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.coldState,false});edit.publicFacts.emplace_back(StateFact{id,1,m.area,m.rule.frozenState.id,false});}
     }
     if(!used) return {DomainStatus::Conflict,{}};
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};

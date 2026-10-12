@@ -18,6 +18,9 @@ struct PlayerState {
     Vec position, look{0, 1};
     std::deque<Vec> route;
     std::optional<MotionTarget> movementTarget;
+    std::optional<InteractionTarget> movementArrival;
+    Vec routeDestination;
+    uint64_t routeObstacles{};
     bool running{}, routeRunning{}, runningNow{}, moving{};
     uint64_t acceptedSequence{}, movementSequence{}, locomotionSequence{};
     uint64_t teleportRevision{};

@@ -19,7 +19,8 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
     const auto &definition=rules.definitions.at(skill).spec;
     auto result=resolveSkill(definition,
         {rank, player.persistent.player.skillRanks, mastery(player, rules.fireMasteries),
-         mastery(player, rules.lightningMasteries), player.totals.character.combat.coldSkillDamagePercent});
+         mastery(player, rules.lightningMasteries), player.totals.character.combat.coldSkillDamagePercent,
+         player.totals.character.combat.poisonSkillDamagePercent});
     if(definition.summon && definition.summon->amazon) result.summon=resolveAmazonSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,player.totals.character,player.persistent.player.skillRanks);
     else if(definition.summon) {
         const auto effective=[&](int id) {const auto found=player.totals.skillRanks.find(id);return found==player.totals.skillRanks.end()?0:found->second;};

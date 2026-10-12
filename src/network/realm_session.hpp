@@ -6,6 +6,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -85,6 +86,8 @@ class RealmSession {
     // Raw original movement request. Application must first validate its current
     // MPQ scene binding; neither this method nor the replica predicts a position.
     bool move_to(OnlinePoint target, bool run = true, std::optional<OnlineIntentContext> context = {});
+    // Native 5F reports a local path discrepancy; it is not a move/interaction.
+    bool update_position(OnlinePoint, uint64_t verificationRevision, const OnlineIntentContext &);
     bool move_to_unit(OnlineUnitKey target, bool run = true, std::optional<OnlineIntentContext> context = {});
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
@@ -121,6 +124,8 @@ class RealmSession {
     // Opt-in diagnostic observer on the service thread, before reduction.
     // Includes handshake/leave packets; only D2GS server packets are exposed.
     void observe_game_packets(std::function<void(uint64_t, const protocol::Packet &)> observer);
+    // Original D2GS requests after successful enqueue; no SID/MCP credentials.
+    void observe_game_requests(std::function<void(uint64_t, std::span<const uint8_t>)> observer);
 
   private:
     void authenticate(LoginOptions options, bool createAccount);

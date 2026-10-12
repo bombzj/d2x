@@ -31,8 +31,12 @@ void NativeRealmService::sendRealm(uint8_t id, Writer out) {
 void NativeRealmService::sendGame(Bytes packet) {
     validateServerPacket(packet);
     const auto id = packet[0];
+    Bytes observed;
+    if (shared.gamePacketObserver) observed = packet;
     gameOutput(std::move(packet));
+    peer.pendingPlayerUpdate = true;
     ++counters.gameResponses[id];
+    if (!observed.empty()) shared.gamePacketObserver(diagnosticConnection, GamePacketDirection::ServerToClient, observed);
 }
 void NativeRealmService::result(uint8_t id, uint32_t code) {
     Writer out; if (id == 0x0A) out.u16(0); out.u32(code); sendRealm(id, std::move(out));
@@ -83,6 +87,7 @@ void NativeRealmService::close(bool save, bool keepReload) {
 }
 void NativeRealmService::connectTcpIp() {
     if (binding || peer.phase != GamePhase::Closed) throw ProtocolError("TCP/IP peer is already connected");
+    diagnosticConnection = ++shared.nextDiagnosticConnection;
     directTcpIp = true; tcpIpUploadComplete = false; tcpIpUploadSize = 0; tcpIpUpload.reset();
     peer = {}; peer.phase = GamePhase::Connected; sendGame({0xAF, 0});
     externalSave = [this](const PersistentCharacter &character) {
@@ -115,6 +120,7 @@ void NativeRealmService::connectGame(bool announce) {
     // Tickets authorize exactly one connection. Never silently replace a live peer.
     if (!ticket || !binding || peer.phase != GamePhase::Closed)
         throw ProtocolError("Game connection has no unused admission ticket");
+    diagnosticConnection = ++shared.nextDiagnosticConnection;
     peer = {}; peer.phase = GamePhase::Connected;
     if (announce) sendGame({0xAF, 0});
 }
@@ -140,13 +146,31 @@ void NativeRealmService::publishMotion(bool force) {
     const auto view = host.read(*binding);
     if (!view) throw std::logic_error("Active game binding expired");
     if (!force && view->revision == peer.sentRevision) return;
+    if (view->movementSequence != peer.sentMovement && view->command.sequence == view->movementSequence &&
+        view->command.status != CommandStatus::Applied && view->command.status != CommandStatus::Queued)
+        force = true; // A rejected movement still needs an authoritative correction.
     const auto resources=nativePlayerResources(*view,terrain.origin);
     const auto &old=peer.resources;
     uint8_t resourceMessage=0;
-    if(!old || old->potionLife!=resources.potionLife || old->potionMana!=resources.potionMana) resourceMessage=0x18;
-    else if(old->life!=resources.life || old->mana!=resources.mana) resourceMessage=0x95;
-    else if(force || peer.resourceArea!=view->actor.region || old->stamina!=resources.stamina || view->movementSequence!=peer.sentMovement ||
-        (view->tick>=peer.resourceTick+4 && (std::abs(int(old->x)-resources.x)>=2 || std::abs(int(old->y)-resources.y)>=2 || old->offsetX!=resources.offsetX || old->offsetY!=resources.offsetY))) resourceMessage=0x96;
+    // Game::sub_6FC39030 gates PlrMsg::sub_6FC82360. Its four idle
+    // checks are resource checks, NOT four simulation frames. Evaluating the
+    // inner condition at 25 Hz hid stale-coordinate clients on D2X hosts.
+    const bool urgentLife = old && view->attributes.maxLife > 0 &&
+        100 * std::abs(int(old->life)-int(resources.life)) / view->attributes.maxLife >= 10 &&
+        (resources.life != 0 || old->life == 0);
+    const bool check = force || !old || peer.resourceArea != view->actor.region || urgentLife ||
+        view->tick >= peer.resourceCheckTick + 20 ||
+        (peer.pendingPlayerUpdate && view->tick >= peer.resourceCheckTick + 10);
+    if (check) {
+        peer.resourceCheckTick = view->tick;
+        if(!old || old->potionLife!=resources.potionLife || old->potionMana!=resources.potionMana) resourceMessage=0x18;
+        else if(old->life!=resources.life || old->mana!=resources.mana) resourceMessage=0x95;
+        else if(force || peer.resourceArea!=view->actor.region || old->stamina!=resources.stamina) resourceMessage=0x96;
+        else if (peer.resourceInactivity > 3 &&
+            (std::abs(int(old->x)-resources.x)>=2 || std::abs(int(old->y)-resources.y)>=2)) resourceMessage=0x96;
+        if (resourceMessage) peer.resourceInactivity = 0;
+        else if (peer.resourceInactivity < 4) ++peer.resourceInactivity;
+    }
     std::vector<Bytes> packets;
     if(resourceMessage) packets.push_back(nativeResourceUpdate(resources,resourceMessage));
     // Locomotion is predicted by the original owner client. Death and forced
@@ -157,7 +181,8 @@ void NativeRealmService::publishMotion(bool force) {
     // A processed/rejected move still needs its authoritative correction.
     if(!packet.empty() && (force || packet!=peer.lastMotion || view->movementSequence!=peer.sentMovement)) packets.push_back(packet);
     if(!packets.empty()) sendGameBatch(std::move(packets));
-    if(resourceMessage) {peer.resources=resources;peer.resourceTick=view->tick;peer.resourceArea=view->actor.region;}
+    if(resourceMessage) {peer.resources=resources;peer.resourceArea=view->actor.region;}
+    peer.pendingPlayerUpdate = false;
     peer.lastMotion=std::move(packet);
     peer.sentRevision = view->revision; peer.sentMovement = view->movementSequence;
 }

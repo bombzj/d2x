@@ -35,7 +35,8 @@ NativePlayerResources nativePlayerResources(const PlayerSnapshot &view,Vec origi
         throw std::runtime_error("Resource position exceeds native coordinates");
     const auto resource=[](float value) {if(!std::isfinite(value)) throw std::runtime_error("Invalid native resource");return uint16_t(std::clamp(value,0.f,32767.f));};
     const auto x=uint16_t(std::lround(position.x)),y=uint16_t(std::lround(position.y));
-    // PlrMsg sends the signed low byte of current minus first path point.
+    // PlrMsg sends current minus PathGetFirstPoint (tTargetCoord), not the
+    // next bend in the route. The historical helper name is misleading.
     return {resource(view.life),resource(view.mana),resource(view.stamina),x,y,
         view.potionLifePercent,view.potionManaPercent,uint8_t(int(x)-int(std::lround(target.x))),uint8_t(int(y)-int(std::lround(target.y)))};
 }
@@ -96,6 +97,22 @@ Bytes nativePlayerAssignment(const ClassicData &data, const PersistentCharacter 
         point(out, view.actor.position + origin);
     });
 }
+Bytes nativePlayerInitialStates(const ClassicData &data, const PlayerSnapshot &view) {
+    // PLAYER_Create assigns GOOD (2). Missing alignment defaults to EVIL (0)
+    // in the native client, making ordinary enemies allies of the player.
+    const int alignmentState = data.states.at("alignment").definition.id;
+    const auto &table = data.tables.at("itemstatcost");
+    int alignmentStat = -1;
+    for (size_t row = 0; row < table.rows().size(); ++row)
+        if (table.value(row, "Stat") == "alignment") {
+            alignmentStat = table.number(row, "ID").value_or(-1);
+            break;
+        }
+    if (alignmentStat < 0) throw std::runtime_error("Missing native player alignment stat");
+    auto states = view.states;
+    states.insert(alignmentState);
+    return nativeStateSnapshot(data, view.actor.id, 0, states, {{alignmentState, {{alignmentStat, 2}}}});
+}
 Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player) {
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
     if (found == data.characters.end()) throw std::runtime_error("Missing roster class");
@@ -121,6 +138,7 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
         for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
         point(out, view.actor.position + area.origin);
     });
+    result.push_back(nativePlayerInitialStates(data, view));
     // 5E initializes the original client's quest table, including the flag
     // consulted when NPCs are assigned in quest-controlled levels.
     result.push_back(nativeQuestInitialization(quests));
@@ -139,9 +157,6 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     }
     if(!initialPortalFlags) throw std::runtime_error("Missing Rogue Encampment portal flag");
     emit(ServerMessage::PlayerPortalFlags, [&](auto &out) { out.u32(initialPortalFlags); });
-    // SUNITMSG_FirstFn sends AA even for an empty initial state list. A new
-    // admission has no transient stat lists; later A7/A8/A9 carry updates.
-    result.push_back(nativeStateSnapshot(data,player.id,0,view.states,{}));
     server::attributes::Totals totals;
     totals.character = view.attributes; totals.equipment = view.equipment; totals.skillRanks = view.skillRanks;
     auto character = nativeCharacterPackets(data, state.player, totals);

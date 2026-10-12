@@ -50,7 +50,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
         // pursues or attacks, including its permitted content substitute.
         if(monster.implementation==MonsterKind::PrisonDoor) {ports_.monsters.stop(id);continue;}
-        if (monster.life <= 0 || monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || (monster.owner && !monster.conversion && !monster.revived()) || ports_.skills.busy(id,tick.tick)) continue;
+        if (monster.life <= 0 || (monster.owner && !monster.conversion && !monster.revived())) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) {
@@ -58,7 +58,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=tick.tick+uint64_t(monster.rule.ai.params[0]);
             if(monster.rule.ai.kind==MonsterAiKind::FoulCrowNest) controller.lastSpawn=tick.tick;
         }
-        if (controller.nextDecision > tick.tick) continue;
+        controller.nextDecision=ports_.monsters.resumeAi(id,tick.tick,controller.nextDecision);
+        if (monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || ports_.skills.busy(id,tick.tick) || controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
         const auto &area=ports_.areas.at(monster.area);
         bool active=false;

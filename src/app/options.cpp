@@ -31,6 +31,7 @@ AppOptions parseOptions(int argc, char **argv) {
         }
         else if (arg == "--debug-pipe") options.debugPipe = value();
         else if (arg == "--game-packet-log") options.gamePacketLog = value();
+        else if (arg == "--host-packet-log") options.hostPacketLog = value();
         else if (arg == "--startup-profile") options.startupProfile = value();
         else if (arg == "--online-character") options.onlineCharacter = value();
         else if (arg == "--online-play") options.onlinePlay = value();

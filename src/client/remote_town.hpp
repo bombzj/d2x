@@ -26,9 +26,11 @@ class RemoteTown {
     using Discovery = std::tuple<uint32_t, int, int, int, int>;
     AutomapExploration explored_;
     std::map<int,uint32_t> actSeeds_;
-    int discoveryDifficulty_{};
-    uint64_t discoveryContent_{};
     std::map<Discovery, std::set<int>> discoveredCels_;
+    using NativeCells = std::array<std::set<NativeAutomapCell>, 4>;
+    std::map<std::tuple<uint32_t, uint32_t, uint32_t>, NativeCells> nativeAutomapCells_;
+    size_t nativeAutomapCelCount_{};
+    void rememberTile(const OnlineView &, int level, int x, int y, int type, bool wallArray, const MapCell &);
     std::map<std::tuple<uint32_t, int, int>, OnlineAutomapTown> discoveredTowns_;
     std::set<std::tuple<uint32_t, int, int>> preparedTownAutomaps_;
     std::unique_ptr<WorldCatalog> catalog_;
@@ -38,6 +40,7 @@ class RemoteTown {
     std::unique_ptr<Map> nativeTerrain_;
     std::optional<size_t> nativePlayerRoom_;
     std::optional<OnlinePoint> nativePlayerPosition_;
+    std::optional<OnlinePoint> displayPlayerPosition_;
     uint64_t nativeSequence_{};
     std::string nativeReason_;
     std::map<int, std::string> nativeErrors_;
@@ -52,15 +55,14 @@ class RemoteTown {
 
   public:
     explicit RemoteTown(Archives &a);
-    void update(const OnlineView &);
+    void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
     const Map *map() const { return map_; }
     bool permits(const OnlineView &, OnlinePoint target) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}) const;
-    std::optional<OnlinePoint> interactionApproachPoint(const OnlineView &, OnlineUnitKey target) const;
+    std::optional<OnlinePoint> interactionApproachPoint(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
-    uint64_t discoveryContent() const { return discoveryContent_; }
     AutomapDiscovery discovery() const;
     void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);
 };

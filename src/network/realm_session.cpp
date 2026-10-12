@@ -121,6 +121,7 @@ struct RealmSession::Impl {
     std::string pendingCharacter, gameName, gamePassword;
     std::vector<GamePacket> worldPackets;
     std::function<void(uint64_t, const Packet &)> gamePacketObserver;
+    std::function<void(uint64_t, std::span<const uint8_t>)> gameRequestObserver;
     size_t worldBytes{};
     Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
@@ -317,12 +318,15 @@ struct RealmSession::Impl {
         const auto byteCount = bytes.size();
         const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
         const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
+        Bytes observed;
+        if (&stream == &gs && gameRequestObserver) observed = bytes;
         if (!stream.send(std::move(bytes)))
             throw ProtocolError("Protocol send queue unavailable");
         auto &counts = &stream == &sid ? view.sidProtocol : &stream == &mcp ? view.mcpProtocol : view.gameProtocol;
         if (id) ++counts.sent[*id];
         counts.sentBytes += byteCount;
         changed();
+        if (!observed.empty()) gameRequestObserver(view.gameGeneration, observed);
     }
     void send_sid(uint8_t id, Writer out = {}) { sent(sid, frame(Framing::Sid, id, out.release())); }
     void send_mcp(uint8_t id, Writer out = {}) { sent(mcp, frame(Framing::Mcp, id, out.release())); }
@@ -1986,6 +1990,22 @@ bool RealmSession::leave_game() {
         return false;
     }
 }
+bool RealmSession::update_position(OnlinePoint reported, uint64_t verificationRevision, const OnlineIntentContext &context) {
+    std::lock_guard lock(impl_->mutex);
+    auto &p=*impl_;
+    if(p.view.stage!=OnlineStage::ProtocolReady || !onlineWorldMatches(context,p.view) ||
+        !p.view.load.serverLoadComplete || !p.view.load.playerUnitId || onlinePlayerDead(p.view.world)) return false;
+    const auto player=p.view.world.units.find({0,*p.view.load.playerUnitId});
+    if(player==p.view.world.units.end() || player->second.pathVerificationRevision!=verificationRevision ||
+        player->second.positionRevision!=verificationRevision) return false;
+    try {
+        Writer out;out.u8(0x5f);out.u16(reported.x);out.u16(reported.y);
+        p.sent(p.gs,out.release());impl_->snapshotDirty=true;
+        return true;
+    } catch(const std::exception &) {
+        p.fail(OnlineErrorKind::Transport,"Position verification could not be queued");return false;
+    }
+}
 bool RealmSession::move_to(OnlinePoint target, bool run, std::optional<OnlineIntentContext> context) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
@@ -2638,5 +2658,9 @@ std::vector<GamePacket> RealmSession::take_game_packets() {
 void RealmSession::observe_game_packets(std::function<void(uint64_t, const protocol::Packet &)> observer) {
     std::lock_guard lock(impl_->mutex);
     impl_->gamePacketObserver = std::move(observer);
+}
+void RealmSession::observe_game_requests(std::function<void(uint64_t, std::span<const uint8_t>)> observer) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->gameRequestObserver = std::move(observer);
 }
 } // namespace d2x::net

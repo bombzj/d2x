@@ -20,7 +20,13 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 ## 原服收包记录
 
-需要核对原服实际回包时，可在启动客户端时指定`--game-packet-log <新.jsonl>`。应用层将每条成功完成分帧的D2GS S2C按接收顺序记录为JSONL，含sequence、相对启动微秒、gameGeneration、包号、含包头长度及完整十六进制字节；观察发生在副本消费之前，握手、离局和触发消费错误的包也会记录。网络层不读写日志文件，默认关闭；已有文件拒绝覆盖，达到64 MiB或写盘失败明确停止当前连接，不静默丢包。不记录BNCS／MCP认证内容；未知长度导致不能分帧的原始TCP块不在此日志中。诊断文件放忽略目录`artifacts/`，不提交角色保存字节或日志。
+需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
+
+应用层持有日志文件，network／宿主只有可选字节观察回调，默认关闭。已有文件拒绝覆盖，每文件达到64 MiB或写盘失败明确停止对应连接，不静默丢包。C2S68票据／令牌字段及C2S6C、S2CB3的角色字节置零，`redacted.offset/length`标明原字节范围；保留原长度／分片头，不把置零部分视为实际发包。BNCS／MCP认证内容不记录；未知长度导致不能分帧的TCP块也不在日志中。文件放忽略目录`artifacts/`，不提交。
+
+根目录`Play-Diagnostic.cmd`调用现有`play.ps1 -Diagnostic`：使用与Play相同的EXE、MPQ和角色目录，开启默认`d2x-debug`管道，每次创建独立`artifacts/diagnostics/<时间>-<随机标识>/`，保存`client-packets.jsonl`、`host-packets.jsonl`、`stdout.log`、`stderr.log`及含实际EXE路径／SHA256的`run.json`。该入口不构建、迁移角色或覆盖旧日志；Windows PowerShell原生stderr按诊断输出记录，不因非致命提示中断游戏。自选文件可用`play.ps1 -GamePacketLog <新文件> -HostPacketLog <另一新文件>`，不能与Diagnostic合用。宿主无游戏连接时宿主日志可为空；原服Join只产生客户端游戏消息。
+
+旧版`s2c.jsonl`只有S2C，不能补取过去的请求字段。问题出现后保持原局，读取`online-items`／`online-status`的最近请求及副本、`server-snapshot`的真实库存／Cursor和命令状态，另看`server-protocol`拒绝计数；与原消息顺序一起保存。最近物品请求另含x／y／page／body／equipVariant，避免混淆原InvPage与S2C的page=InvPage+1。默认Play不开启文件记录；超时只表示缺少关联确认，不能仅凭物品暂时不显示认定服务端已删除。
 
 ## 嵌入宿主管理命令
 

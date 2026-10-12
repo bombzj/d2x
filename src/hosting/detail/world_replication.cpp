@@ -168,16 +168,32 @@ void NativeRealmService::publishNpcs() {
             if(!host.npcVisible(*binding,npc.rule.code,area,npc.rule.questInitFunction)) continue;
             next.insert(npc.id);
             const bool fresh=!peer.npcs.contains(npc.id);
+            auto states=host.unitStates(binding->game,npc.id);
+            const int alignmentState=content->states.at("alignment").definition.id;
+            states.insert(alignmentState);
             if(fresh) {
-            MonsterSnapshot snapshot; snapshot.id=npc.id; snapshot.area=area; snapshot.nativeClass=npc.rule.nativeClass; snapshot.position=npc.position; snapshot.life=128;
-            packets.push_back(nativeMonsterAssignment(snapshot,shared.terrain.at(binding->game).at(area).origin));
+                MonsterSnapshot snapshot; snapshot.id=npc.id; snapshot.area=area; snapshot.nativeClass=npc.rule.nativeClass; snapshot.position=npc.position; snapshot.life=128;
+                packets.push_back(nativeMonsterAssignment(snapshot,shared.terrain.at(binding->game).at(area).origin));
+                int alignment=-1,alignmentStat=-1;
+                const auto &monsters=content->tables.at("monstats"),&stats=content->tables.at("itemstatcost");
+                for(size_t row=0;row<monsters.rows().size();++row) if(monsters.number(row,"hcIdx")==npc.rule.nativeClass)
+                    alignment=monsters.number(row,"Align").value_or(0);
+                for(size_t row=0;row<stats.rows().size();++row) if(stats.value(row,"Stat")=="alignment")
+                    alignmentStat=stats.number(row,"ID").value_or(-1);
+                if(alignment<0 || alignment>2 || alignmentStat<0) throw std::runtime_error("Missing original NPC alignment");
+                if(alignment) alignment=3-alignment; // MonStats and unit-state enums differ.
+                std::map<int,std::vector<std::pair<int,int64_t>>> stateStats;
+                if(alignment) stateStats[alignmentState]={{alignmentStat,alignment}};
+                packets.push_back(nativeStateSnapshot(*content,npc.id,1,states,stateStats));
+                peer.npcStates[npc.id]=states;
+                packets.push_back(nativeMonsterMotion(snapshot,shared.terrain.at(binding->game).at(area).origin));
             }
             if(npc.rule.code=="act5pow") {
-                MonsterSnapshot snapshot;snapshot.id=npc.id;snapshot.area=area;snapshot.position=npc.position;snapshot.destination=npc.destination;snapshot.life=128;snapshot.moving=npc.moving;
+                MonsterSnapshot snapshot;snapshot.id=npc.id;snapshot.area=area;snapshot.position=npc.position;snapshot.destination=npc.destination;snapshot.life=128;snapshot.moving=npc.moving;snapshot.pathType=1;snapshot.pathSteps=1;
                 auto motion=nativeMonsterMotion(snapshot,shared.terrain.at(binding->game).at(area).origin);
                 if(fresh || peer.npcMotion[npc.id]!=motion) {peer.npcMotion[npc.id]=motion;packets.push_back(std::move(motion));}
             }
-            const auto states=host.unitStates(binding->game,npc.id);auto &previous=peer.npcStates[npc.id];
+            auto &previous=peer.npcStates[npc.id];
             for(const int id:states) if(!previous.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::EnableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
             for(const int id:previous) if(!states.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::DisableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
             previous=states;

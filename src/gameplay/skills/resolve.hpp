@@ -10,6 +10,7 @@ struct SkillEvaluationInput {
     int rank;
     const std::map<int, int> &synergyRanks;
     int fireMasteryPercent = 0, lightningMasteryPercent = 0, coldDamagePercent = 0;
+    int poisonDamagePercent = 0;
 };
 SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput &input);
 } // namespace d2x

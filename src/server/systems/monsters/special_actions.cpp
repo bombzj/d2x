@@ -31,7 +31,7 @@ DomainResult<> System::lightningEmission(EntityId id,bool emitted,uint64_t tick)
 DomainResult<> System::introduction(EntityId id,uint64_t tick) {
     const auto *actor=find(id);if(!actor || actor->life<=0) return {DomainStatus::InvalidActor,{}};
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor->area},{SoundFact{id,1,actor->area,16}}})) return {DomainStatus::Capacity,{}};
-    stop(id);return beginAttack(id,tick+20);
+    stop(id);return beginAttack(id,tick+20,true);
 }
 bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const {
     const auto *caster=find(source),*dead=find(corpse);
@@ -61,8 +61,9 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     for(const auto &[id,other]:state_.actors) if(id!=corpse && other.area==actor.area && other.life>0 && (actor.position-other.position).length()<1.f) return {DomainStatus::Unavailable,{}};
     for(const auto &[id,p]:ports_.players.all()) { (void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && (actor.position-p.position).length()<1.f) return {DomainStatus::Unavailable,{}}; }
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{corpse,1,actor.area,128,false,actor.position}}})) return {DomainStatus::Capacity,{}};
-    actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.poison.reset();
+    actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.deathStates.clear();actor.poison.reset();
     actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;
+    actor.neutralAt=actor.riseUntil;
     actor.killer={};actor.route.clear();actor.moving=actor.running=false;actor.movementTarget={};
     actor.hitOccurrence=0;actor.knockedUntil=0;actor.knockbackGoal.reset();++actor.revision;
     // rewardComplete remains set: SKILLS_ResurrectUnit gives NOXP | NOTC.

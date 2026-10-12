@@ -64,7 +64,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         else if(slot.useAttackRate) animationSpeed=effectiveAttackSpeed(slot.animation->speed,weapon?weapon->fasterAttack:0,weapon?weapon->baseSpeed:0,modifiers.attackRate+coldRate);
         else if(slot.animationSequence) animationSpeed=slot.animation->speed;
         else animationSpeed=effectiveOtherAnimationSpeed(slot.animation->speed,buffs.otherAnimationRate+(monster->combatCompanion()?monster->petStats.attributes.otherAnimationRate:0)+coldRate);
-        duration=uint64_t(slot.animationSequence?animationFrameTicks(slot.animation->frames,animationSpeed):AnimationTiming{slot.animation->frames,animationSpeed}.durationTicks(slot.animationStartFrame));
+        duration=uint64_t(monsterAnimationTicks({slot.animation->frames,animationSpeed},slot.animationStartFrame));
         releaseTick=uint64_t(std::clamp(animationFrameTicks(std::max(0,slot.animationAction-slot.animationStartFrame),animationSpeed),1,int(duration)));
     }
     DamageType type = DamageType::Physical;
@@ -104,7 +104,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
     if (!event) { ports_.combat.cancel(monster->id); monsterReleases_.erase(monster->id); return {event.status, {}}; }
     if(!petAttack) ports_.monsters.commitCombatRandom(monster->id,reserved);
-    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration);
+    const bool neutral=request.monsterMode<16 && !(rule.immediateAiModes & (uint16_t(1)<<request.monsterMode));
+    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration,neutral);
     if(begun && slot.action==MonsterAttackRule::Action::Charge) {
         const auto delta=destination->first-monster->position;
         const float stop=float(rule.meleeRange+3)+.5f;

@@ -62,11 +62,11 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
                 else {const auto resolved=ports_.effects.unitDamage(unit.id,hit.channels[channel],DamageType(channel),tick.tick);amount+=int64_t(resolved.dealt*256.f);absorbed+=int64_t(resolved.absorbed*256.f);}
             }
             std::optional<PoisonApplication> poison;
-            if(hit.poisonFrames && hit.channels[5]>0) {
+            if(hit.channels[5]>0) {
                 const auto damage=ports_.effects.unitDamage(unit.id,hit.channels[5],DamageType::Poison,tick.tick);
                 poison=PoisonApplication{int64_t(damage.dealt*256.f),hit.poisonFrames,impact.monsterStates.poison.id};
             }
-            const auto cold=hit.coldFrames*unsigned(std::clamp(100-ports_.effects.unitResistance(unit.id,DamageType::Cold,tick.tick),0,200))/(100u*unsigned(std::max(1,unit.rule.coldDivisor)));
+            const auto cold=hit.coldFrames;
             result=impact.directLife?ports_.monsters.reduceShrineLife(unit.id,amount):ports_.monsters.damage(unit.id,{},amount,tick.tick,cold,false,hit.hitClass,poison,impact.type==DamageType::Poison);
             if(result && absorbed) ports_.monsters.heal(unit.id,absorbed);
         }

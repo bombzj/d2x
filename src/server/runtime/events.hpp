@@ -6,6 +6,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include <deque>
 #include <array>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -19,7 +20,7 @@ struct SoundFact { EntityId actor; uint8_t type{}; RegionId area; uint8_t sound{
 struct OverlayFact { EntityId actor; uint8_t type{}; RegionId area; int overlay{}; };
 struct LifeFact { EntityId actor; float life{}; };
 struct ManaFact { EntityId actor; float mana{}; };
-struct RepositionFact { EntityId actor; RegionId area; Vec position; };
+struct RepositionFact { EntityId actor; RegionId area; Vec position; bool notifyOwner=true; };
 struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<std::pair<int,int64_t>> stats{}; };
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
 struct ItemSkillFact { EntityId owner,target; uint8_t targetType{1}; RegionId area; int skill{},rank{}; Vec position; uint16_t flags{}; };
@@ -57,10 +58,10 @@ struct GroundRestoredFact {EntityId item;uint64_t revision{};};
 struct HirelingListFact { EntityId npc; std::vector<std::pair<uint16_t,uint32_t>> offers; };
 // Private native trade UI and offer projection; mirror items never own inventory.
 struct TradeFact {
-    uint8_t action{};
+    std::optional<uint8_t> action{}; // Gold acknowledgements do not reopen/reset the UI.
     EntityId partner{};
     std::string name{};
-    std::optional<std::pair<unsigned,unsigned>> gold{}; // own, peer
+    std::optional<unsigned> ownGold{}, peerGold{};
 };
 struct TradeItemsFact { PersistentCharacter projection; std::vector<EntityId> removed; };
 struct PlayerMessageFact { uint8_t type{}; std::string name; };

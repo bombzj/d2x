@@ -15,6 +15,13 @@ int AnimationTiming::durationTicks(int startFrame) const {
         throw std::invalid_argument("Unprepared animation frames");
     return std::max(1, animationFrameTicks(frames-startFrame,speed)-1);
 }
+int monsterAnimationTicks(AnimationTiming timing, int startFrame) {
+    if (timing.frames <= 0 || startFrame < 0 || startFrame >= timing.frames)
+        throw std::invalid_argument("Unprepared monster animation frames");
+    // SUnit::sub_6FCBCE70: ENDANIM = last MODECHANGE frame + 1,
+    // with at least one mode tick before it. Do not borrow player rollback.
+    return std::max(2, animationFrameTicks(timing.frames-startFrame,timing.speed));
+}
 int effectiveFasterRate(int itemBonus) {
     if (itemBonus <= -120) throw std::invalid_argument("Animation bonus exceeds the native supported range");
     return int(120LL*itemBonus/(120LL+itemBonus));

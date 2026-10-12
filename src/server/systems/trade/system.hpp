@@ -36,8 +36,9 @@ class System {
     EntityId container(PlayerId) const;
     bool canEdit(PlayerId) const;
     // Attach immutable peer mirrors/reset facts before the inventory commit.
-    DomainResult<> decorate(PlayerId, transactions::InventoryEdit &);
-    void edited(PlayerId, uint64_t tick) noexcept;
+    // Only withdrawing an existing offer starts/extends the confirmation lock.
+    DomainResult<> decorate(PlayerId, transactions::InventoryEdit &, bool removedOffer);
+    void edited(PlayerId, uint64_t tick, bool removedOffer) noexcept;
     void normalize(PlayerId, PersistentCharacter &) const;
     StepStatus step(TickContext);
     DomainResult<> execute(const ActorContext &, const Request &);

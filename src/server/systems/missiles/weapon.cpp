@@ -136,7 +136,6 @@ System::Advance System::advanceWeapon(const Missile &original) const {
         hit.binding=m.binding;
         hit.weapon=m.weapon;hit.weaponHit=ports_.combat.weaponContact(*m.weapon,id,m.created+uint64_t(m.ageFrames),m.random);hit.coldFrames=uint64_t(std::max(0,m.weapon->coldFrames));hit.freeze=m.weapon->freeze;
         hit.occurrence=(uint64_t(m.ageFrames)<<32)|m.weaponContacts.size();
-        hit.coldDivisor=owner.rules.skills->coldDivisor;hit.freezeDivisor=owner.rules.skills->freezeDivisor;
         const bool hitSuccessful=*hit.weaponHit;
         plan.impacts.push_back(std::move(hit));
         if(hitSuccessful || owner.rules.skills->alwaysExplodingMissiles.contains(m.definition)) weaponImpact(plan,m.position);

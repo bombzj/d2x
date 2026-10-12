@@ -276,7 +276,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id))
-                        ui.drag.reset();
+                        if(!ui.drag->onCursor) ui.drag.reset();
                 } else if (drop.error != InventoryError::None)
                     view_.notice(inventoryErrorText(drop.error), true);
             }
@@ -289,7 +289,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id)) {
-                        ui.drag.reset();
+                        if(!ui.drag->onCursor) ui.drag.reset();
                         return true;
                     }
                 }

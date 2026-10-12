@@ -28,6 +28,7 @@ struct NativeRealmService {
     std::unique_ptr<RealmPortraitCatalog> &portraits;
     std::unique_ptr<CharacterStore> store;
     GameHost &host;
+    uint64_t diagnosticConnection{};
     bool authenticated{}, ticket{};
     bool multiplayerEndpoint{};
     bool tcpIpHost{}, directTcpIp{}, tcpIpUploadComplete{};
@@ -53,14 +54,16 @@ struct NativeRealmService {
         uint64_t sequence{}, sentRevision{}, sentMovement{};
         Bytes lastMotion;
         std::optional<NativePlayerResources> resources;
-        uint64_t resourceTick{};
+        uint64_t resourceCheckTick{};
+        unsigned resourceInactivity{};
+        bool pendingPlayerUpdate{};
         RegionId resourceArea{};
         std::set<RegionId> areas;
         std::map<EntityId, std::pair<uint64_t, std::string>> roster;
         std::map<EntityId,Bytes> social,partyVitals,partyPositions;
         struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}; Bytes motion; std::set<EntityId> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
-        struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<std::pair<int,int64_t>>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; };
+        struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<std::pair<int,int64_t>>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
         std::map<EntityId, Bytes> pets;
         std::map<EntityId, Bytes> petVitals;

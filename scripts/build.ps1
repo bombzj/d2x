@@ -1,4 +1,7 @@
-param([ValidateSet('Release','Debug')][string]$Configuration='Release')
+param(
+    [ValidateSet('Release','Debug')][string]$Configuration='Release',
+    [ValidateSet('d2x','d2x_pvpgn','d2x_assets','all')][string]$Target='d2x'
+)
 $ErrorActionPreference='Stop'
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 Push-Location $projectRoot
@@ -10,7 +13,7 @@ try {
     }
     & cmake @configureArgs
     if($LASTEXITCODE -ne 0){throw 'CMake configuration failed.'}
-    & cmake --build build --config $Configuration --parallel 8
+    & cmake --build build --config $Configuration --target $Target --parallel 8
     if($LASTEXITCODE -ne 0){throw 'C++ build failed.'}
-    Write-Host 'Build complete. Run Play.cmd.'
+    Write-Host "Build complete: $Target ($Configuration)."
 } finally {Pop-Location}

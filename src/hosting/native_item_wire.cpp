@@ -138,7 +138,8 @@ Bytes packed(const ClassicData &data, const D2sItem &item) {
     return bits.release();
 }
 void emitItem(std::vector<Bytes> &result, const ClassicData &data, const PersistentCharacter &state,
-              const ItemInstance &item, ItemAction action, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {}) {
+              const ItemInstance &item, ItemAction action, unsigned ownerType, uint32_t owner, std::optional<unsigned> page = {},
+              std::optional<ItemLocation> previous = {}) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto wireItem=item;
     if (const auto *at=std::get_if<ContainerLocation>(&item.location); at &&
@@ -147,15 +148,31 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
         if(!page) page=3;
     }
     auto saved = exportD2sItem(state, wireItem, data);
+    bool bodyPosition = saved.mode == 1;
+    if (saved.mode == 4 && previous) {
+        // Native removal receipts describe the new cursor mode but retain the
+        // old body/grid address. The original client uses it to detach the item;
+        // a cursor-only D2S projection has already discarded that address.
+        auto source = wireItem; source.location = *previous;
+        bool tradeSource = false;
+        if (const auto *at = std::get_if<ContainerLocation>(&*previous); at &&
+            state.inventory.containers.at(at->container).spec.kind == ContainerKind::Trade) {
+            source.location = ContainerLocation{state.containers.backpack, at->cell}; tradeSource = true;
+        }
+        const auto old = exportD2sItem(state, source, data);
+        saved.body = old.body; saved.x = old.x; saved.y = old.y; saved.page = tradeSource ? 3 : old.page;
+        bodyPosition = old.mode == 1;
+    }
     if(page) saved.page=*page;
     saved.flags = (saved.flags & ~0x4000u) | (item.nativeFlags & 0x4000u);
     if(item.nativeFlags&0x2000000u) saved.flags|=0x2000000u;
     // D2S stores fixed weapon sets; GS body 4/5 always mean active hands.
     // The common client maps these through the original 0x97 weapon-set state.
-    if (saved.mode == 1 && state.player.weaponSet) {
+    if (bodyPosition && state.player.weaponSet) {
         if (saved.body == 4 || saved.body == 5) saved.body += 7;
         else if (saved.body == 11 || saved.body == 12) saved.body -= 7;
     }
+    if (bodyPosition) { saved.x = saved.body; saved.y = 0; }
     if (action == ItemAction::WeaponSwitch) {
         // Native transient SWITCHIN/OUT flags; never write these to D2S.
         saved.flags &= ~uint32_t(0xC0);
@@ -167,8 +184,8 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
     if (body.size() + prefix > 255) throw std::runtime_error("Item exceeds native packet capacity");
     const auto *def = data.items.find(item.definition);
     unsigned component = unsigned(def->appearance.component);
-    if (saved.mode == 1 && (saved.body == 4 || saved.body == 11)) component = 5;
-    if (saved.mode == 1 && (saved.body == 5 || saved.body == 12)) component = def->equipment.isType("shld") ? 7 : 6;
+    if (bodyPosition && (saved.body == 4 || saved.body == 11)) component = 5;
+    if (bodyPosition && (saved.body == 5 || saved.body == 12)) component = def->equipment.isType("shld") ? 7 : 6;
     net::protocol::Writer out;
     out.u8(ownedPacket ? 0x9D : 0x9C); out.u8(uint8_t(action));
     out.u8(uint8_t(body.size() + prefix)); out.u8(uint8_t(component)); out.u32(uint32_t(item.id.value));
@@ -327,7 +344,8 @@ std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::I
         else if (to == ContainerKind::Belt) { action = replaced ? ItemAction::SwapBelt : ItemAction::PutBelt; }
         else if (to == ContainerKind::Backpack || to == ContainerKind::Stash || to == ContainerKind::Cube || to == ContainerKind::Trade) { action = replaced ? ItemAction::SwapStored : ItemAction::Put; }
         else throw std::logic_error("Unsupported inventory destination");
-        emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value));
+        emitItem(result, data, state, state.inventory.items.at(change.item), action, 0, uint32_t(state.player.id.value), {},
+            to == ContainerKind::Cursor ? change.before : std::nullopt);
     }
     if (fact.switchedWeapons) {
         for (const auto &[id, item] : state.inventory.items) {

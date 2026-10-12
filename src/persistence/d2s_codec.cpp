@@ -166,7 +166,9 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
 CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
     require(bytes.size() <= maxSaveBytes, "file too large");
     auto header = readD2sHeader(bytes);
-    require(!(header.flags & (4 | 8 | 0x40)), "hardcore, dead or ladder character unsupported");
+    // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
+    // retain this flag after resurrection; its corpse is the JM section.
+    require(!(header.flags & (4 | 0x40)), "hardcore or ladder character unsupported");
     auto sections = readD2sFixedSections(bytes);
     CharacterSaveData snapshot;
     initializeD2sInventory(snapshot, content);

@@ -35,7 +35,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     rule.minimumLife=rule.environmentController?1:scale(request.difficulty==0?"minHP":"MinHP","L-HP");rule.maximumLife=rule.environmentController?1:scale(request.difficulty==0?"maxHP":"MaxHP","L-HP");
     if(rule.minimumLife<=0 || rule.maximumLife<rule.minimumLife) return {};
     rule.defense=scale("AC","L-AC");rule.damageRegen=stats.number(record->sourceRow,"DamageRegen").value_or(0);rule.criticalChance=stats.number(record->sourceRow,"Crit").value_or(0);
-    rule.coldEffect=record->coldEffect[size_t(request.difficulty)];rule.coldDivisor=data.monsterColdDivisor[size_t(request.difficulty)];rule.coldState=data.states.at("cold").definition.id;rule.frozenState=data.states.at("freeze").definition.id;rule.stunState=data.states.at("stunned").definition.id;
+    rule.coldEffect=record->coldEffect[size_t(request.difficulty)];prepareMonsterColdRules(data,record->sourceRow,rule);rule.stunState=data.states.at("stunned").definition.id;
     rule.noTreasure=rule.trap==Trap::Soul;
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     constexpr const char *resistance[]{"ResDm","ResMa","ResFi","ResLi","ResCo","ResPo"};for(size_t i=0;i<6;++i) rule.resistances[i]=stats.number(record->sourceRow,std::string(resistance[i])+suffix).value_or(0);

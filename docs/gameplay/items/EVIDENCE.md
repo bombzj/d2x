@@ -135,6 +135,30 @@
 
 ## 其他代表证据与尚未覆盖范围
 
+### 职业装备与原版拒绝对照
+
+2026-10-12用户操作现有Windows Release客户端，EXE SHA256 `BF2FDDE219A2C12E2934C9E7115460D4D6435E4B583AA6574405EED42B179B21`、当前MPQ、女巫ShotSorceress。忽略目录`artifacts/diagnostics/20261012-074253-556462fc`保存S2C记录及只读快照。自研单机拒绝ktr装备后，权威GUID24仍在Cursor、原dgr仍装备，客户端同样保留mode4，但UI隐藏至超时；命令为invalid-request，未发生物品删除。源码补齐职业预览／提交检查及已确认Cursor的持续显示，不把这个旧EXE现场当新修改运行通过。
+
+随后原版1.13c Host／D2X Join入场以9C/action18指派ktr GUID15到Cursor（本人GUID2），客户端发送计数含两次18放置和一次1D装备交换。用户报告放回背包和装备均超时；此局除了入场指派，没有ktr后续物品位置／删除回包。原2C消息为NPC GUID7的事件0x12，不能当本人库存拒绝ACK；正常退局收到B3／B0／05／06。旧记录未捕获C2S原字节，也不保存每次请求参数历史，因此背包放置失败原因仍未确定，不能归因于职业限制或补造通用ACK。新双向诊断用于对照原版Join／自研Host的实际GUID／x／y／InvPage／body及宿主处理结果，人工操作待完成。
+
+本地D2MOO PlrMsg::Rcv0x18及ItemMode::sub_6FC45E60用于解释资格分支：背包原InvPage为0，S2C存储page为InvPage+1；装备交换的身体／职业资格可在无物品回包的分支直接返回。存档Cursor加载另核对PlrSave::sub_6FC895E0及sub_6FC4B9D0，不能仅凭入场手持指派断言原版指针恢复失效。当前存档格式和旧档保持不变，证据不足部分保留为开放项。
+
+原版Join／自研Host使用诊断EXE `34BA7883B448FCBEB01E70E5451764E8A8DACACFABDF7BD22E88C1D06FFC78E3`，用户报告原版单机库存正常，加入后卸装／拿取无鼠标反馈。`artifacts/item-protocol-20261012-080843/host-packets.jsonl`连接3记录C2S1C/body4，随后S2C9D/action8把dgr GUID205移到Cursor；后续重复1C及19/GUID204、203没有位置回包。恢复存档也保存dgr为mode4。因此这不是所有拿取请求都未执行，首次卸装已提交但客户端未呈现，之后Cursor占用阻止继续取物。
+
+该9D/action8的mode4、body0／x0／y0／page0与既有原版Host记录不同：`npc-host-comparison/original-items-received.jsonl`序号560为body4／x4，序号618为body8／x8；`original-combat-received.jsonl`序号1062为body3／x3。原版19取背包／箱子回包另保留来源page1／5。D2MOO ItemMode::sub_6FC45B30及Items::ITEMS_SerializeItemToBitstream确认移入Cursor时保留原body／坐标／InvPage用于移除原位置。源码改从InventoryFact.before提供这些仅用于原包的来源字段，并让装备x对应原body；不修改D2S格式或借此强制刷新原版。自有客户端仍以mode4判定Cursor，不要求body／page为零；兼容检查及修正版列出操作的原版人工结果见下文。
+
+准备存档时的错误另明确保留：提供的1127字节`native-character/ShotSorceress.d2s`经物品头核对实际含15个记录（包括孔内子项），没有ktr或Cursor。C2S6C总长度也是1127，入场输出与该清单一致。因此用户此次两种模式“没有刺客爪”不能说明新宿主吞掉爪；该副本未复现最初条件。原件及原日志保留，后续含爪隔离副本须重新确认物品清单，不覆盖用户角色。
+
+修正版Windows Release诊断EXE SHA256 `5B82BE77B893472E4BEBC30EB19B367936B28A685230AA5B26E522CEA122BDD4`，证据在`artifacts/item-protocol-20261012-090747-corrected`。使用现有程序和独立ShotSorceress副本，自有客户端经原1C卸下dgr，收到mode4／body4／x4；18放背包(7,0)、19拿取收到mode4／x7／page1、1A重新装备均确认更新，Cursor随回包变化。原包字段见probe-client／host日志，快照self-unequipped／self-backpack-taken；这不是原版客户端实机认证。
+
+管理入口按当前MPQ生成普通ktr，仅准备对照条件；真实16拾取到Cursor、客户端拒绝异职业Equip（`This equipment is for another class`）、18放背包及19拿回Cursor后正常quit保存。权威failures=0，准备进程正常退出、stderr为空。新的1155字节副本已只读核对含16个物品记录及ktr/mode4，save-info通过既有D2S v96校验；没有覆盖原角色或沿用先前错误副本。修正后的8人普通难度Host已恢复到ProtocolReady，原版保存重入尚未验证；旧失败现场保留。
+
+用户随后用原版1.13c Join完成操作并确认鼠标显示、拿取／放置均正常，无消失或超时。连接3的原18把ktr GUID206放背包(8,0)，19拿起返回9D/action5、mode4／x8／page1，再18放回；原1C/body4卸下dgr GUID205返回9D/action8、mode4／body4／x4，随后18放背包(7,1)。前五次权威命令快照均applied、Cursor为空，两件物品位置与回包一致，failures=0、characterIssues为空、stderr为空；随后原19拿起dgr及1A/body4重装也收到对应9D/action5／6（序号1257／1265）。现场为vanilla-after-actions-status／snapshot／item-fields及host-packets原日志。没有收到1A／1D装备爪的请求，用户确认原版本地直接禁止异职业装备；这是原版已有规则，不是D2X给原版新增的检查。D2X预览／提交补齐同一职业限制，自有客户端上述拒绝另有证据。此轮不认证原版箱子／方块／腰带及保存重入；反向原Host对照见下文。
+
+同一修正版D2X Join原版1.13c Host（ShotDruid）采用独立1155字节含Cursor爪的ShotSorceress副本，证据`artifacts/item-protocol-20261012-093315-original-host`。入场ktr GUID16为mode4，原18立即放背包(8,0)、19拿回Cursor均Updated；异职业Equip在客户端直接拒绝，不发送1A／1D。实际UI装备位为红色，点击后Cursor仍为16、无待发队列或Pending，截图claw-hand-preview／claw-denied-click及claw-after-denied-click保存。再18放回，原1C卸下dgr GUID15、18放背包(7,1)、19拿起及1A/body4重装全部确认，无超时或连接错误。request-comparison把物品GUID归一到类型后，与此前原版Join／D2X Host七条C2S的包号／坐标／page／body逐条一致；原Host的卸装回包同样保留body4／x4，背包拿取保留来源page1。当前请求编码未发现该组差异，旧只有S2C的失败记录仍不足以断言其历史根因；本次同类隔离条件未复现旧放置失败。
+
+反向保存使用正常69退局，收到B3／B0／05／06返回选角，无错误；本机隔离D2S写为1150字节。同进程重入及随后全新进程再次Join都恢复ktr为背包(8,0)、dgr为右手body4，Cursor为空，decoded=true；证据after-save-leave／rejoined／fresh-process-reentry及独立reentry原包日志。两个D2X进程均正常quit退出，stderr为空，用户原版Host保持运行。没有重建／打包或修改该固定运行副本，也不认证全部容器、存档组合、三难度、多人争用、原服账号环境或Linux。
+
 历史873ac34的`artifacts/closeout-smoke-20261008`保留库存／腰带／装备／切组、成长加点、两区旅行、普通近战／初始法术及跨进程保存代表路径，同机TCP观察同房互见／移动／成长隔离及嵌入宿主双房，不认证独立EXE或跨机器。历史8623446的`artifacts/p1-smoke-20261008`保留掉落／金币／鉴定、药水、普通死亡／拾尸、物件／商店／仓库、洞穴奖励与回城保存；普通箱桶不等于陷阱或特殊机关。
 
 通用卷轴／书本及弹药／药瓶见[GENERAL](../skills/GENERAL.md#有限运行证据)，施法表现中的开门代表路径见[COMMON](../skills/COMMON.md#通用施法表现有限证据)。原服交易／金币、药剂和商店的既有有限观察归[NETWORK](../../modules/NETWORK.md#既有有限证据)，不复制其失败和包记录。

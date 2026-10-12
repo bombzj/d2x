@@ -106,8 +106,6 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
     rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);
     rule.introduction=data.tables.at("monstats").number(record->sourceRow,"boss").value_or(0)!=0 || identity.rank==MonsterRank::Unique || identity.rank==MonsterRank::SuperUnique;
-    rule.coldDivisor=data.monsterColdDivisor.at(size_t(request.difficulty));
-    rule.freezeDivisor=data.monsterFreezeDivisor.at(size_t(request.difficulty));
     const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
     rule.drain=data.tables.at("monstats").number(record->sourceRow,std::string("Drain")+suffix).value_or(0);
     rule.openWoundsState=data.states.at("openwounds").definition.id;
@@ -130,8 +128,6 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.skillMoveState=data.states.at("skill_move").definition.id;
     rule.boss=record->boss;rule.stunState=data.states.at("stunned").definition.id;
     rule.coldEffect = record->coldEffect.at(size_t(request.difficulty));
-    rule.coldState = data.states.at("cold").definition.id;
-    rule.frozenState = data.states.at("freeze").definition.id;
     if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) return {};
     rule.ai = *record->aiProfiles.at(size_t(request.difficulty));
     if(fixed && fixed->id=="The Countess") {rule.ai.kind=MonsterAiKind::Countess;rule.firewall=catalog.countessFirewall();if(!rule.firewall) return {};}

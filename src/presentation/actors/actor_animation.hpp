@@ -14,6 +14,7 @@ namespace d2x {
 struct ActorAnimationRequest {
     std::string category, mode;
     bool sequenceUsesAttackRate{};
+    bool monsterUnit{}; // Includes monsters using player graphics.
     ActorAppearance appearance;
     int paletteTransform = -1;
     bool randomTransform = false, finalFrame = false, shadow = false;

@@ -104,6 +104,8 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         hit.mana < 0 || hit.stamina < 0 || std::any_of(hit.channels.begin(), hit.channels.end(), [](int64_t n) { return n < 0; }))
         return {DomainStatus::InvalidActor,{}};
     auto next = state_; auto &recovery = next.players[actor.actor]; auto &states = recovery.states;
+    if(hit.channels[5]>0 && recovery.poison && actor.tick>=recovery.poison->next && recovery.poison->next<recovery.poison->until)
+        return {DomainStatus::Capacity,{}};
     transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
     float dealt = 0, absorbed = 0;
     std::optional<SkillCastSpec> shield;
@@ -114,7 +116,6 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         if (skill.effect == SkillBehavior::EnergyShield) { shield = std::move(skill); break; }
     }
     for (size_t i = 0; i < hit.channels.size(); ++i) {
-        if (i == 5 && hit.poisonFrames) continue;
         float raw = float(hit.channels[i]) / 256.f;
         if(i==0 && raw>0) {
             std::vector<RemovedCombatEffect> removed;
@@ -128,7 +129,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
             }
             raw=remaining;
         }
-        if (shield) {
+        if (shield && i!=size_t(DamageType::Poison)) {
             const auto stopped = absorbSkillShield(raw,edit.player.mana,shield->shieldPercent,shield->shieldManaFactor);
             raw = stopped.damage; edit.player.mana = stopped.mana;
         }
@@ -152,8 +153,7 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
         states.apply(std::move(slow),actor.tick);
     }
     if (edit.player.hp > 0 && hit.coldFrames && !p->totals.character.combat.cannotBeFrozen && definitions.cold.id >= 0) {
-        auto duration = hit.coldFrames * uint64_t(std::clamp(100-p->totals.character.coldResist,0,200)) / 100;
-        if (p->totals.character.combat.halfFreezeDuration) duration /= 2;
+        auto duration=coldHitDuration(hit.coldFrames,p->totals.character.coldResist,0,false,p->totals.character.combat.halfFreezeDuration);
         for (const auto &effect : states.entries()) if (effect.spec.state.id == definitions.cold.id && effect.expiresAt && *effect.expiresAt > actor.tick)
             duration = std::max(duration,*effect.expiresAt-actor.tick);
         if (duration) {
@@ -167,13 +167,17 @@ DomainResult<float> System::receiveMonster(const ActorContext &actor, EntityId s
     if (edit.player.hp > 0 && hit.poisonFrames && hit.channels[5] && !p->totals.character.combat.preventPoison && definitions.poison.id >= 0) {
         const int64_t rate = int64_t(mitigatePlayerDamage(float(hit.channels[5])/256.f,DamageType::Poison,p->totals.character).dealt*256.f);
         const int lengthResist = std::clamp(p->totals.character.combat.poisonLengthResist+(p->rules.character?p->rules.character->resistancePenalty:0),-100,75);
-        const auto duration = hit.poisonFrames * unsigned(100-lengthResist) / 100;
+        const auto duration=resistedDuration(hit.poisonFrames,lengthResist);
         if (duration && replacesPoison(recovery.poison?recovery.poison->damage.rate:0,rate)) {
             if (states.size() >= 128 && !states.hasState(definitions.poison.id,actor.tick)) return {DomainStatus::Capacity,{}};
             CombatEffectSpec poison; poison.state = definitions.poison; poison.duration = duration;
-            poison.source = {CombatEffectSource::Monster,source,definitions.poison.id,0};
+            const auto poisonOwner=recovery.poison?recovery.poison->source:source;
+            poison.source = {CombatEffectSource::Monster,poisonOwner,definitions.poison.id,0};
             states.apply(std::move(poison),actor.tick);
-            recovery.poison = PoisonStatus{{rate,duration,definitions.poison.id},source,actor.tick+duration,actor.tick+1};
+            if(recovery.poison) {
+                recovery.poison->damage.rate=rate;recovery.poison->damage.frames=duration;
+                recovery.poison->until=actor.tick+duration;
+            } else recovery.poison=PoisonStatus{{rate,duration,definitions.poison.id},source,actor.tick+duration,actor.tick+1};
         }
     }
     if (edit.player.mana <= 0 && shield) {

@@ -112,7 +112,7 @@ Bytes EmbeddedRealm::selectedTcpIpSave() {
 std::shared_ptr<hosting::AutomapStore> EmbeddedRealm::selectedAutomapStore() const {
     const auto &service=impl_->primary->connection->service;
     if(!service.lease || !service.selected) return {};
-    return std::make_shared<hosting::AutomapStore>(service.lease->path,service.selected->player.name,service.selected->player.characterClass);
+    return std::make_shared<hosting::AutomapStore>(service.lease->path);
 }
 void EmbeddedRealm::receiveTcpIpSave(Bytes bytes) {
     auto &o = *impl_;
@@ -123,6 +123,9 @@ void EmbeddedRealm::receiveTcpIpSave(Bytes bytes) {
 void EmbeddedRealm::pump(double seconds, bool paused) {
     try { impl_->pump(seconds, paused); }
     catch (const std::exception &error) { impl_->failure = error.what(); }
+}
+void EmbeddedRealm::observeGamePackets(hosting::GamePacketObserver observer) {
+    impl_->host.gamePacketObserver = std::move(observer);
 }
 hosting::HostDiagnostics EmbeddedRealm::diagnostics() const {
     const auto &o = *impl_; auto result = o.primary->connection->service.diagnostics();

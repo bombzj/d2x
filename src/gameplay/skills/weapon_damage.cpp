@@ -3,6 +3,7 @@
 #include "spear_spec.hpp"
 #include "behavior.hpp"
 #include "core/random.hpp"
+#include "gameplay/combat/poison.hpp"
 #include <algorithm>
 namespace d2x {
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool demon,bool undead) {
@@ -77,7 +78,8 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.channels[2]=roll(int64_t(ranges.fire.minimum)*256,int64_t(ranges.fire.maximum)*256);
     value.channels[3]=roll(int64_t(ranges.lightning.minimum)*256,int64_t(ranges.lightning.maximum)*256);
     value.channels[4]=roll(int64_t(ranges.cold.minimum)*256,int64_t(ranges.cold.maximum)*256);
-    value.channels[5]=roll(mods.poisonMinimum+extra.poisonMinimum,mods.poisonMaximum+extra.poisonMaximum);
+    const auto poisonMastery=[&](int64_t rate) {return poisonMasteryRate(rate,mods.poisonSkillDamagePercent);};
+    value.channels[5]=roll(poisonMastery(int64_t(mods.poisonMinimum)+extra.poisonMinimum),poisonMastery(int64_t(mods.poisonMaximum)+extra.poisonMaximum));
     value.coldFrames=mods.coldFrames+extra.coldFrames;
     if(skill.effect==SkillBehavior::Vengeance) {
         const auto flat=int64_t(mods.normalDamage+extra.normalDamage)*256;
@@ -86,7 +88,7 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
         for(size_t i=0;i<3;++i) value.channels[channels[i]]+=base*skill.weapon->elementPercent[i]/100;
         value.coldFrames+=int(skill.coldDuration*25.f+.001f);
     }
-    value.poisonFrames=(mods.poisonFrames+extra.poisonFrames)/std::max(1,mods.poisonSources+extra.poisonSources);
+    value.poisonFrames=weaponPoisonLength(int64_t(mods.poisonFrames)+extra.poisonFrames,mods.poisonSources+extra.poisonSources);
     value.pierceChance=mods.pierce;
     const int mastery = projectile ? weapon.projectileMasteryCritical : weapon.masteryCritical;
     bool critical = mastery > 0 && limitedRandom(random,100) < unsigned(std::clamp(mastery,0,100));
@@ -95,7 +97,10 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     value.critical=critical;
     const auto elemental=roll(int64_t(skill.minimumDamage*256.f),int64_t(skill.maximumDamage*256.f));
     if(skill.poisonDuration>0 && !skill.weapon->spear) {
-        value.channels[5]+=elemental;value.poisonFrames=mods.poisonFrames+extra.poisonFrames+int(skill.poisonDuration*25.f+.001f);
+        value.channels[5]+=elemental;
+        // SUnitDmg divides the combined skill/item length by item poison count;
+        // the skill itself does not add an equipment source.
+        value.poisonFrames=weaponPoisonLength(int64_t(mods.poisonFrames)+extra.poisonFrames,mods.poisonSources+extra.poisonSources,int(skill.poisonDuration*25.f+.001f));
     }
     if(skill.weapon->bow) {
         const auto &bow=*skill.weapon->bow;

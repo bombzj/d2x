@@ -62,7 +62,7 @@ bool RemoteControl::submitSegment(Movement &movement) {
 bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntentContext> context, std::optional<Vec> requestOrigin) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Movement intent belongs to a previous game, area or interaction");
-    scene_.update(session_.read());
+    scene_.update(session_.read(), requestOrigin);
     const auto player = session_.read().world.playerPosition;
     if (requestOrigin && (!std::isfinite(requestOrigin->x) || !std::isfinite(requestOrigin->y)))
         return reject("Movement projection origin is invalid");
@@ -83,17 +83,21 @@ bool RemoteControl::move(OnlinePoint point, bool run, std::optional<OnlineIntent
     if (!submitSegment(movement)) return false;
     movement_ = std::move(movement); approach_.reset(); reason_.clear(); return true;
 }
-bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context) {
+bool RemoteControl::moveToUnit(OnlineUnitKey target, bool run, std::optional<OnlineIntentContext> context,
+                               std::optional<Vec> displayOrigin) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Unit movement intent belongs to a previous game, area or interaction");
-    scene_.update(session_.read());
+    scene_.update(session_.read(), displayOrigin);
     if (!scene_.permitsInteraction(session_.read(), target)) return reject("Target is not assigned in the current scene");
     const auto player = *session_.read().world.playerPosition;
     const auto point = *session_.read().world.units.at(target).position;
-    if (std::abs(int(player.x) - point.x) > 50 || std::abs(int(player.y) - point.y) > 50)
+    const Vec origin = displayOrigin.value_or(Vec{float(player.x), float(player.y)});
+    if (!std::isfinite(origin.x) || !std::isfinite(origin.y) ||
+        std::abs(origin.x - point.x) > 50 || std::abs(origin.y - point.y) > 50)
         return reject("Target exceeds the native 50-subtile request range");
     const auto now = std::chrono::steady_clock::now();
     Movement movement; movement.goal = point; movement.unit = target; movement.run = run;
+    movement.requestOrigin = origin;
     movement.context = *context;
     movement.game = session_.read().gameGeneration; movement.area = session_.read().world.areaGeneration;
     movement.deadline = now + std::chrono::seconds(onlineMovementProgressTimeoutSeconds);
@@ -106,7 +110,7 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
                              std::optional<Vec> displayOrigin) {
     if (!context) context = onlineIntentContext(session_.read());
     if (!onlineInteractionMatches(*context, session_.read())) return reject("Interaction intent belongs to a previous game, area or interaction");
-    scene_.update(session_.read());
+    scene_.update(session_.read(), displayOrigin);
     const auto &world = session_.read();
     if (!scene_.permitsInteraction(world, target)) return reject("Target is not assigned in the current scene");
     const auto player = *world.world.playerPosition;
@@ -114,7 +118,8 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
     if (displayOrigin && (!std::isfinite(displayOrigin->x) || !std::isfinite(displayOrigin->y) ||
         displayOrigin->x < 0 || displayOrigin->y < 0 || displayOrigin->x > UINT16_MAX || displayOrigin->y > UINT16_MAX))
         return reject("Interaction projection origin is invalid");
-    if (std::abs(int(player.x) - point.x) > 50 || std::abs(int(player.y) - point.y) > 50)
+    const Vec origin = displayOrigin.value_or(Vec{float(player.x), float(player.y)});
+    if (std::abs(origin.x - point.x) > 50 || std::abs(origin.y - point.y) > 50)
         return reject("Target exceeds the native 50-subtile request range");
     if ((target.type == 1 && world.world.npcRequested == target.id) || (approach_ && approach_->target == target))
         return reject("Unit interaction is already pending or open");
@@ -128,18 +133,19 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
         (actor == world.world.units.end() || actor->second.positionRevision <= movement->revision);
     // PlrMsg ignores NPC interaction outside distance 8. A previous native
     // sample may still be near while the player has already walked away.
-    // Display can veto immediate interaction, but can never authorize it.
+    // Without a current display sample, retain the conservative native-sample
+    // guard. A current sample may submit an intent; only the host opens it.
     const bool requirePositionUpdate = target.type == 1 && nativeReady &&
         (!scene_.interactionReady(world, target, displayOrigin) || pendingMovement);
-    if (nativeReady && !requirePositionUpdate) {
+    if (displayOrigin ? scene_.interactionReady(world, target, displayOrigin) : nativeReady && !requirePositionUpdate) {
         if (!submitInteraction(target, *context)) return false;
         cancelMovement(); reason_.clear(); return true;
     }
     if (target.type == 2) {
-        const auto point = scene_.interactionApproachPoint(world, target);
+        const auto point = scene_.interactionApproachPoint(world, target, displayOrigin);
         if (!point) return reject("No reachable interaction position in active native collision");
-        if (!move(*point, run, context)) return false;
-    } else if (!moveToUnit(target, run, context)) return false;
+        if (!move(*point, run, context, displayOrigin)) return false;
+    } else if (!moveToUnit(target, run, context, displayOrigin)) return false;
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
         std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player,
@@ -176,9 +182,40 @@ bool RemoteControl::townPortal() {
     }
     return reject("No available town-portal scroll or tome skill has been reported by the server");
 }
-void RemoteControl::tick() {
+void RemoteControl::tick(std::optional<Vec> displayOrigin) {
     const auto &view = session_.read();
     const auto now = std::chrono::steady_clock::now();
+    if(displayOrigin && view.stage==OnlineStage::ProtocolReady && view.load.playerUnitId && !onlinePlayerDead(view.world)) {
+        const auto found=view.world.units.find({0,*view.load.playerUnitId});
+        if(found!=view.world.units.end() && found->second.position && found->second.pathVerificationRevision &&
+            found->second.positionRevision==found->second.pathVerificationRevision &&
+            (verificationGame_!=view.gameGeneration || verificationArea_!=view.world.areaGeneration || verificationRevision_!=found->second.pathVerificationRevision)) {
+            const auto &unit=found->second;
+            verificationGame_=view.gameGeneration;verificationArea_=view.world.areaGeneration;verificationRevision_=unit.pathVerificationRevision;
+            if(std::isfinite(displayOrigin->x) && std::isfinite(displayOrigin->y) &&
+                displayOrigin->x>=0 && displayOrigin->y>=0 && displayOrigin->x<=UINT16_MAX && displayOrigin->y<=UINT16_MAX) {
+                const OnlinePoint local{uint16_t(std::lround(displayOrigin->x)),uint16_t(std::lround(displayOrigin->y))};
+                const auto previous=view.world.movementRequest;
+                const bool run=previous?previous->run:unit.nativeMode?unit.mode==3:unit.mode==23 || unit.mode==24;
+                const bool idle=!previous && !view.world.combatRequest && !scene_.read().town &&
+                    (unit.nativeMode?unit.mode==1:unit.mode==7);
+                // Original 1.13c D2Client RVA 2A1B0: own-unit verification
+                // tolerates per-axis drift, then asks the server with 5F. It
+                // never overwrites the local path with resource coordinates.
+                const auto tolerance=uint64_t(idle?3:run?7:5)+(uint64_t(view.latencyMilliseconds.value_or(0))+50)/128;
+                const int dx=int(local.x)-unit.position->x,dy=int(local.y)-unit.position->y;
+                bool report=uint64_t(std::abs(dx))>tolerance || uint64_t(std::abs(dy))>tolerance;
+                const int64_t squared=int64_t(dx)*dx+int64_t(dy)*dy;
+                if(report && squared<100 && unit.verifiedDestination) {
+                    const int x=2*int(unit.position->x)-unit.verifiedDestination->x;
+                    const int y=2*int(unit.position->y)-unit.verifiedDestination->y;
+                    const int64_t backX=int(local.x)-x,backY=int(local.y)-y;
+                    if(x>0 && backX*backX+backY*backY<squared) report=false;
+                }
+                if(report) session_.update_position(local,unit.pathVerificationRevision,onlineIntentContext(view));
+            }
+        }
+    }
     if (movement_) {
         const auto &world = view.world;
         if (view.stage != OnlineStage::ProtocolReady || view.gameGeneration != movement_->game ||
@@ -231,7 +268,10 @@ void RemoteControl::tick() {
     const auto actor = view.load.playerUnitId ? view.world.units.find({0, *view.load.playerUnitId}) : view.world.units.end();
     const bool positionUpdated = !approach_->requirePositionUpdate ||
         (actor != view.world.units.end() && actor->second.positionRevision > approach_->requestRevision);
-    if (positionUpdated && scene_.interactionReady(view, approach_->target)) {
+    // This authorizes a C2S intent only; the host still owns interaction and
+    // rewards. Like the native client, do not wait for a periodic 96 merely
+    // to submit the click after the collision-checked approach has arrived.
+    if ((displayOrigin || positionUpdated) && scene_.interactionReady(view, approach_->target, displayOrigin)) {
         const bool sent = submitInteraction(approach_->target, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }

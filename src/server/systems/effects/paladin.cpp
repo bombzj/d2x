@@ -137,10 +137,7 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
     units_.swap(next);
     if(a.harmfulDurationPercent<100) ports_.monsters.shortenPoison(id,actor.tick,a.harmfulDurationPercent);
     if(healing && a.lifePerPulse>0) ports_.monsters.heal(id,int64_t(a.lifePerPulse*256));
-    if(a.skill==114) {
-        auto random=ports_.random;const bool shatter=limitedRandom(random,100)<20;
-        ports_.monsters.holyFreeze(id,actor.tick+duration,shatter);ports_.random=random;
-    }
+    if(a.skill==114) ports_.monsters.holyFreeze(id,actor.tick+duration);
     return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::advancePaladinAuras(uint64_t tick) {

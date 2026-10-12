@@ -6,6 +6,7 @@
 #include "gameplay/items/handle.hpp"
 
 #include <map>
+#include <array>
 #include <set>
 #include <string>
 #include <vector>
@@ -18,15 +19,17 @@ struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destinati
 struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival, destination; bool walking{}, run{}, crossing{}; int side{}, plane{}; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; };
 struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{}; };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
-struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; };
+struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
+struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; };
+struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; };
 class System {
     State state_;
     const Ports ports_;
     uint64_t nextWaypointRevision_=1;
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
+    StepStatus expireSynchronizations(TickContext);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
@@ -39,6 +42,11 @@ class System {
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);
     std::optional<CommandStatus> walk(const ActorContext &, const MovementCommand &);
+    DomainResult<> synchronize(const ActorContext &, Vec, bool uninterruptible);
+    bool synchronizationState(PlayerId id) const {
+        const auto found=state_.synchronizations.find(id);
+        return found!=state_.synchronizations.end() && found->second.until!=0;
+    }
     DomainResult<> teleport(const ActorContext &, PointTarget, float manaCost,std::optional<SkillCharge> charge = {});
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }

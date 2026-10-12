@@ -6,6 +6,18 @@
 #include <stdexcept>
 
 namespace d2x {
+int piercedResistance(int resistance, int pierce) {
+    return resistance < 100 ? int(std::clamp<int64_t>(int64_t(resistance) - pierce,-100,INT32_MAX)) : resistance;
+}
+uint64_t resistedDuration(uint64_t frames, int resistance) {
+    // Native duration channels are signed 32-bit; widen before multiplication.
+    return std::min<uint64_t>(frames, INT32_MAX) * uint64_t(100 - std::clamp(resistance, -100, 100)) / 100;
+}
+uint64_t coldHitDuration(uint64_t frames, int resistance, int pierce, bool cannotBeFrozen, bool halfFreezeDuration) {
+    if (cannotBeFrozen) return 0;
+    if (halfFreezeDuration) frames /= 2;
+    return resistedDuration(frames, piercedResistance(resistance, pierce));
+}
 namespace {
 int64_t units(float amount) {
     if (!std::isfinite(amount)) throw std::runtime_error("Non-finite combat damage");

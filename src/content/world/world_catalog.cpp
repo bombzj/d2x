@@ -63,6 +63,7 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.id = number("Id");
                 record.act = number("Act");
                 record.palette = number("Pal");
+                record.automapLayer = number("Layer");
                 if (record.palette < 0 || record.palette > 4)
                     throw std::runtime_error("Unsupported MPQ level palette: " + std::to_string(record.id));
                 record.town = std::find(actTownLevels.begin(), actTownLevels.end(), record.id) != actTownLevels.end();

@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-11。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)。这是源码契约，不是逐包运行认证。
+更新：2026-10-12。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)。这是源码契约，不是逐包运行认证。
 
 ## 编码约定
 
@@ -101,7 +101,7 @@
 | 59 | MoveNpc，stub | 17 | u32 type,guid,x,y |
 | 5D | PlayerRelation，stub | 7 | u8 relation,toggle; u32 player |
 | 5E | PartyAction，权威及客户端邀请／取消／接受／离队已接 | 6 | u8 action（6邀请／7取消／8接受／9离队）; u32 player（离队为本人GUID） |
-| 5F | UpdatePosition，stub | 5 | xy，不能信任为权威坐标 |
+| 5F | UpdatePosition | 5 | xy；绑定本人，按距离／房间／精确路径和落点校验受控同步，失败15纠偏 |
 | 60 | SwitchWeapons | 1 | 无 |
 | 61 | MercenaryItem，partial | 3 | u16 bodySlot；空光标取装备，有光标按真实物品执行装备或支持的喂药 |
 | 62 | ResurrectMercenary，第一幕已接 | 5 | u32 npc |
@@ -173,6 +173,7 @@
 | 5E／5F | 任务初始化／本人门户资格，38／5 | 5E为当前1.13c初始化表顺序的37个u8 bNotIntro；不是48个任务记录槽位。5F为u32本局已访问门户区域位，不是跨幕任务完成标志 |
 | 60／63／82 | 门状态／传送点／主人，7／21／29 | 63为u32 waypoint,u16 marker=0102,112位历史；其余见事件编码 |
 | 67／68／69／6A／6B／6C／6D | NPC移动／动作，16／21／12／12／16／16／10 | u32 npc前缀；[战斗编码](../../src/hosting/native_combat_wire.cpp)保留不同动作格式，6D为u32 npc,xy,u8 life |
+| AB | UnitLife／7 | unit; u8 life，原0..128比例，不含0C／69的命中触发位；只更新已存在单位生命，不重启动作 |
 | 73 | Missile／32 | 身份、位置、方向、主人、pierce见事件编码；仅MPQ ClientSend |
 | 74／75／77／78／79 | 尸体／队伍／UI／交易方／金币，10／13／2／21／6 | 世界／社交消费者；不代表宿主交易已实现 |
 | 7A／7B | 宠物归属／热键，13／8 | 7A原owner/pet布局见事件编码；7B为u8 slot,u16 packedSkill,u32 owner |
@@ -199,7 +200,7 @@
 | 54／A4 | 3 |
 | 5F／7E | 5 |
 | 76／7C／92 | 6 |
-| 4E／62／65／66／98／9B／9E／A1／AB | 7 |
+| 4E／62／65／66／98／9B／9E／A1 | 7 |
 | 93／9F／A2／A5 | 8 |
 | A0 | 10 |
 | 47／48 | 11 |

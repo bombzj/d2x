@@ -21,7 +21,11 @@ void NativeRealmService::sendGameBatch(std::vector<Bytes> packets) {
     // One stream write accepts the entire fact or fails the connection. The
     // existing native stream decoder splits the concatenated original packets.
     gameOutput(std::move(bytes));
-    for (const auto &packet : packets) ++counters.gameResponses[packet[0]];
+    peer.pendingPlayerUpdate = true;
+    for (const auto &packet : packets) {
+        ++counters.gameResponses[packet[0]];
+        if (shared.gamePacketObserver) shared.gamePacketObserver(diagnosticConnection, GamePacketDirection::ServerToClient, packet);
+    }
 }
 void NativeRealmService::publishEvents() {
     if (binding) shared.publishEvents(binding->game);
@@ -47,6 +51,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         else if (const auto *life = std::get_if<server::LifeFact>(&fact)) delta = nativeLife(*content, *life);
         else if (const auto *mana = std::get_if<server::ManaFact>(&fact)) delta = nativeMana(*content, *mana);
         else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
+            if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == position->actor; })) continue;
             delta.push_back(nativeReposition(*position, shared.terrain.at(binding->game).at(position->area).origin));
@@ -74,6 +79,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             auto projected=*hit;
             if(projected.actionTarget && !visibleActor(projected.actionTarget->id,projected.actionTarget->type)) projected.actionTarget.reset();
             delta = nativeHit(projected, shared.terrain.at(binding->game).at(hit->area).origin);
+            if(auto found=peer.monsters.find(hit->target);hit->type==1 && found!=peer.monsters.end() &&
+                (!hit->monsterMode || hit->killed)) found->second.life=hit->life;
             if (auto found = peer.monsters.find(hit->target); found != peer.monsters.end() && hit->killed) found->second.motion.clear();
         } else if (const auto *inventory = std::get_if<server::InventoryFact>(&fact)) {
             delta = nativeInventoryDelta(*content, *inventory);
@@ -164,14 +171,16 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u32(uint32_t(notice->player.value));out.u8(notice->action);out.append(std::array<uint8_t,32>{});
             }));
         } else if (const auto *trade = std::get_if<server::TradeFact>(&fact)) {
-            delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(trade->action);}));
+            if(trade->action) delta.push_back(encodeServerPacket(ServerMessage::UiAction,[&](auto &out){out.u8(*trade->action);}));
             if(trade->partner) delta.push_back(encodeServerPacket(ServerMessage::TradePeer,[&](auto &out) {
                 std::array<uint8_t,16> name{};
                 if(trade->name.empty() || trade->name.size()>15) throw std::logic_error("Invalid trade peer name");
                 std::copy(trade->name.begin(),trade->name.end(),name.begin());out.append(name);out.u32(uint32_t(trade->partner.value));
             }));
-            if(trade->gold) for(const auto side : {uint8_t(1),uint8_t(0)})
-                delta.push_back(encodeServerPacket(ServerMessage::TradeGold,[&](auto &out){out.u8(side);out.u32(side?trade->gold->first:trade->gold->second);}));
+            for(const auto side : {uint8_t(1),uint8_t(0)}) {
+                const auto amount=side?trade->ownGold:trade->peerGold;
+                if(amount) delta.push_back(encodeServerPacket(ServerMessage::TradeGold,[&](auto &out){out.u8(side);out.u32(*amount);}));
+            }
         } else if(const auto *items=std::get_if<server::TradeItemsFact>(&fact)) {
             delta=nativeTradeItems(*content,*items,host.read(*binding)->actor.id);
         } else if(const auto *message=std::get_if<server::PlayerMessageFact>(&fact)) {

@@ -15,7 +15,9 @@ PlayerSnapshot projectPlayer(const PlayerState &p) {
     result.attributes = p.totals.character; result.equipment = p.totals.equipment; result.skillRanks = p.totals.skillRanks;
     auto &actor = result.actor;
     actor.id = p.actor; actor.region = p.area; actor.position = p.position; actor.look = p.look;
-    actor.nextPosition = p.route.empty() ? p.position : p.route.front();
+    // PathGetFirstPoint reads tTargetCoord, not PathPoints[0]. Point paths
+    // publish their reachable endpoint; unit paths retain the unit's position.
+    actor.nextPosition = p.route.empty() ? p.position : p.movementTarget ? p.routeDestination : p.route.back();
     actor.moving = p.moving && p.persistent.player.hp > 0; actor.running = p.runningNow;
     if(actor.moving && !p.route.empty()) actor.target=p.movementTarget;
     actor.movementSpeed = p.runningNow ? p.totals.character.runSpeed : p.totals.character.walkSpeed;

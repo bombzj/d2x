@@ -66,7 +66,7 @@ StepStatus System::advanceUnits(uint64_t tick) {
             for(const auto &effect:next.entries()) if(effect.spec.stacking==EffectStacking::AuraLevel || effect.spec.source.kind==CombatEffectSource::Monster) handles.push_back(effect.handle);
             for(const auto handle:handles) {auto removed=next.remove(handle);allegianceRemoved.insert(allegianceRemoved.end(),removed.begin(),removed.end());}
         }
-        const auto removed=m && m->life<=0 ? next.onDeath(EffectUnitKind::Monster):next.expire(tick);
+        const auto removed=m && m->life<=0 ? next.onDeath(m->rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster):next.expire(tick);
         std::vector<DomainFact> facts;
         for(const auto &e:allegianceRemoved) if(!next.hasState(e.effect.spec.state.id,tick)) facts.emplace_back(StateFact{it->first,1,it->second.area,e.effect.spec.state.id,false});
         for(const auto &e:removed) if(!next.hasState(e.effect.spec.state.id,tick)) facts.emplace_back(StateFact{it->first,1,it->second.area,e.effect.spec.state.id,false});

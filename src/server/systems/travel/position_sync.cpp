@@ -1,0 +1,172 @@
+#include "system.hpp"
+#include "server/player_store.hpp"
+#include "server/movement.hpp"
+#include "server/systems/npc/system.hpp"
+#include "server/systems/inventory/system.hpp"
+#include "server/systems/trade/system.hpp"
+#include "gameplay/combat/geometry.hpp"
+#include "core/random.hpp"
+#include <algorithm>
+#include <cmath>
+
+namespace d2x::server::travel {
+namespace {
+// PlrMsg::Rcv0x5F uses WALL | NOPLAYER | OBJECT for reachability,
+// then SUnit::sub_6FCBDFE0 uses the ordinary player mask for placement.
+constexpr MovementCollisionRule synchronizationPath{0x409,2};
+constexpr uint64_t attemptLifetime=90*25;
+bool recent(uint64_t frame,uint64_t now) {return frame && now>=frame && now-frame<=attemptLifetime;}
+bool exactPath(const Grid &grid,Vec from,Vec to,int &steps) {
+    const auto route=grid.path(from,to,false,synchronizationPath,true);
+    if(route.empty()) return false;
+    for(const auto point:route) {
+        steps+=std::max(std::abs(int(std::floor(point.x))-int(std::floor(from.x))),
+                        std::abs(int(std::floor(point.y))-int(std::floor(from.y))));
+        if(steps>77) return false;
+        from=point;
+    }
+    return true;
+}
+bool acrossPath(const AreaState &source,const AreaState &destination,const Grid::BoundaryNeighbour &edge,Vec from,Vec to) {
+    const Vec offset{float(edge.offsetX),float(edge.offsetY)};
+    const bool positive=edge.side==0 || edge.side==3;
+    const int center=std::clamp(int(std::floor(edge.side%2?to.y:to.x)),edge.start,edge.end-1);
+    // Search only the prepared reciprocal walking seam, never a warp or a
+    // disconnected region. Each candidate must retain exact reachability.
+    for(int distance=0;distance<77;++distance) for(int sign:{1,-1}) {
+        if(!distance && sign<0) continue;
+        const int lateral=center+distance*sign;
+        if(lateral<edge.start || lateral>=edge.end) continue;
+        Vec approach,arrival;
+        const float before=float(edge.plane)+(positive?-1.5f:1.5f);
+        const float after=float(edge.plane)+(positive?1.5f:-1.5f);
+        if(edge.side%2) {approach={before,float(lateral)+.5f};arrival={after,float(lateral)+.5f};}
+        else {approach={float(lateral)+.5f,before};arrival={float(lateral)+.5f,after};}
+        int steps=3;
+        bool clear=true;
+        const int begin=int(std::floor(before)),end=int(std::floor(after));
+        for(int normal=std::min(begin,end);normal<=std::max(begin,end);++normal)
+            if(!source.definition.collision.movementClear(edge.side%2?normal:lateral,
+                edge.side%2?lateral:normal,synchronizationPath)) {clear=false;break;}
+        if(clear &&
+           exactPath(source.definition.collision,from,approach,steps) &&
+           exactPath(destination.definition.collision,arrival+offset,to+offset,steps)) return true;
+    }
+    return false;
+}
+}
+
+DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool uninterruptible) {
+    const auto *found=ports_.players.find(actor.player);
+    const auto *source=ports_.areas.find(actor.area);
+    if(!found || !source || !found->entered || found->actor!=actor.actor || found->area!=actor.area)
+        return {DomainStatus::InvalidActor,{}};
+    if(source->generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
+    if(found->persistent.player.hp<=0) return {DomainStatus::Applied,std::monostate{}};
+    if(!std::isfinite(reported.x) || !std::isfinite(reported.y) ||
+       std::abs(reported.x)>65535 || std::abs(reported.y)>65535) return {DomainStatus::InvalidRequest,{}};
+    const auto correction=[&]() -> DomainResult<> {
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+            {RepositionFact{actor.actor,actor.area,found->position}}});
+        return output?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{output.status,{}};
+    };
+    const int distance=missileDistance(found->position,reported);
+    if(distance<5) return {DomainStatus::Applied,std::monostate{}};
+    const auto previous=state_.synchronizations.find(actor.player);
+    const bool synchronized=previous!=state_.synchronizations.end() && previous->second.until>actor.tick;
+    if(synchronized || distance<15 || distance>45) {
+        if(found->movementTarget && (!found->route.empty() || found->moving)) return {DomainStatus::Applied,std::monostate{}};
+        if(ports_.trade.find(actor.player)) return correction();
+        auto &player=ports_.players.players_.at(actor.player);
+        const MovementCommand movement{MovementAction::Move,reported,player.runningNow};
+        const auto crossing=walk(actor,movement);
+        const auto moved=crossing?*crossing:applyMovement(player,*source,movement);
+        if(moved!=CommandStatus::Applied) return correction();
+        player.locomotionSequence=actor.sequence;
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(uninterruptible || ports_.trade.find(actor.player) || !found->rules.skills) return correction();
+    RegionId region=actor.area;
+    const AreaState *destination=source;
+    Vec at=reported;
+    const Grid::BoundaryNeighbour *seam=nullptr;
+    const auto contains=[](const Grid &grid,Vec p) {return p.x>=0 && p.y>=0 && p.x<grid.width && p.y<grid.height;};
+    if(!contains(source->definition.collision,reported)) {
+        destination=nullptr;
+        for(const auto &edge:source->definition.collision.neighbours) {
+            const Vec point=reported+Vec{float(edge.offsetX),float(edge.offsetY)};
+            if(!contains(*edge.grid,point)) continue;
+            for(const auto &boundary:source->definition.boundaries) {
+                const auto *candidate=ports_.areas.find(boundary.destination);
+                if(candidate && &candidate->definition.collision==edge.grid) {
+                    region=boundary.destination;destination=candidate;at=point;seam=&edge;break;
+                }
+            }
+            if(destination) break;
+        }
+    }
+    if(!destination || !destination->definition.activation.room(at) ||
+       (!seam && !source->definition.activation.nearby(found->position,reported))) return correction();
+    // Native free-coordinate search has radius zero here. No nearest-cell warp.
+    if(!destination->definition.collision.walkable(at,playerMovement) ||
+       !destination->definition.collision.walkable(at,synchronizationPath)) return correction();
+    int steps=0;
+    if(seam?!acrossPath(*source,*destination,*seam,found->position,reported):
+            !exactPath(source->definition.collision,found->position,reported,steps)) return correction();
+    const int state=found->rules.skills->syncWarped.id;
+    if(state<0 || state>=255) return {DomainStatus::Unavailable,{}};
+    auto next=previous==state_.synchronizations.end()?PositionSynchronization{}:previous->second;
+    for(auto &frame:next.attempts) if(!recent(frame,actor.tick)) frame=actor.tick;
+    uint64_t random=ports_.random;
+    uint64_t delay=125;
+    if(ports_.settings.singlePlayer && std::all_of(next.attempts.begin(),next.attempts.end(),[&](auto frame){return recent(frame,actor.tick);})) {
+        const auto roll=limitedRandom(random,100);
+        delay=roll<50?1500:roll<75?3000:4500;
+    }
+    next.until=actor.tick+delay;
+    std::deque<Vec> route;
+    if(!found->route.empty()) {
+        Vec goal=found->route.back()+source->definition.origin-destination->definition.origin;
+        const auto pending=state_.transitions.find(actor.player);
+        if(pending!=state_.transitions.end() && pending->second.walking && pending->second.to==region)
+            goal=pending->second.destination;
+        constexpr Vec center{.5f,.5f};
+        route=destination->definition.collision.nativePlayerPath(at+center,goal+center,playerMovement);
+        for(auto &point:route) point=point-center;
+    }
+    std::vector<EventBatch> events;
+    if(region!=actor.area) events.push_back({0,actor.tick,{}, {AudienceKind::Player,actor.player,region},
+        {TravelFact{actor.player,actor.actor,actor.area,region,destination->generation,at,true}}});
+    events.push_back({0,actor.tick,{}, {AudienceKind::Area,{},region},
+        {RepositionFact{actor.actor,region,at,false},StateFact{actor.actor,0,region,state,true}}});
+    const auto output=ports_.events.publishGroup(std::move(events));
+    if(!output) return {output.status,{}};
+    ports_.npc.close(actor.player);ports_.inventory.close(actor.player);
+    state_.waypoints.erase(actor.player);cancel(actor.player);
+    auto &player=ports_.players.players_.at(actor.player);
+    player.area=region;player.position=at;player.route=std::move(route);
+    player.movementTarget.reset();player.movementArrival.reset();
+    player.routeDestination=player.route.empty()?at:player.route.back();player.routeObstacles=destination->definition.collision.obstacleRevision;
+    player.moving=!player.route.empty();player.locomotionSequence=actor.sequence;
+    ++player.teleportRevision;
+    state_.synchronizations[actor.player]=next;ports_.random=random;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+
+StepStatus System::expireSynchronizations(TickContext tick) {
+    bool blocked=false;
+    for(auto entry=state_.synchronizations.begin();entry!=state_.synchronizations.end();) {
+        const auto *player=ports_.players.find(entry->first);
+        if(!player || !player->entered) {entry=state_.synchronizations.erase(entry);continue;}
+        auto &sync=entry->second;
+        if(sync.until && (sync.until<=tick.tick || player->persistent.player.hp<=0)) {
+            const int state=player->rules.skills->syncWarped.id;
+            if(ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},player->area},
+                {StateFact{player->actor,0,player->area,state,false}}})) sync.until=0;
+            else blocked=true;
+        }
+        ++entry;
+    }
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+}
