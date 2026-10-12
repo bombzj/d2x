@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "core/text.hpp"
 #include "hireling_panel.hpp"
 #include <algorithm>
 #include <cmath>
@@ -13,16 +14,16 @@ void hirelingText(const ClassicFont &font,const std::string &value,float left,fl
     const auto clip=hirelingArtRect(left,baseline-20,right-left+1,40);
     BeginScissorMode(int(clip.x),int(clip.y),int(clip.width),int(clip.height));
     for(size_t row=0;row<lines.size();++row) {
-        float width=0;for(unsigned char ch:lines[row]) width+=font.widths[ch];
+        float width=0;for(uint32_t ch:utf8Decode(lines[row])) width+=font.widthOf(ch);
         const float inset=align==HirelingTextAlign::Left?0:std::max(0.f,right-left+1-width)*(align==HirelingTextAlign::Center?.5f:1.f);
         const auto origin=hirelingArtRect(left+std::floor(inset),baseline+(float(row)-(float(lines.size())-1)*.5f)*8,0,0);
         float x=origin.x;
-        for(unsigned char ch:lines[row]) {
-            if(const auto *glyph=font.glyphs.frame(0,font.indices[ch]);glyph && ch!=' ')
+        for(uint32_t ch:utf8Decode(lines[row])) {
+            if(const auto *glyph=font.glyphOf(ch);glyph && ch!=' ')
                 DrawTexturePro(glyph->texture,{0,0,float(glyph->texture.width),float(glyph->texture.height)},
                     {x+glyph->x*classicPanelScale,origin.y+(glyph->y-glyph->texture.height)*classicPanelScale,
                         glyph->texture.width*classicPanelScale,glyph->texture.height*classicPanelScale},{},0,WHITE);
-            x+=font.widths[ch]*classicPanelScale;
+            x+=font.widthOf(ch)*classicPanelScale;
         }
     }
     EndScissorMode();
@@ -41,7 +42,10 @@ void SceneView::drawHirelingList(Vec mouse) const {
     const auto cancel = hirelingListCancel();
     DrawLineEx({p.x, p.y + 42 * classicPanelScale}, {p.x + p.width, p.y + 42 * classicPanelScale}, 1, gold);
     DrawRectangleLinesEx(cancel, 1, gold);
-    const auto header = "Your Gold: " + std::to_string(list.gold) + "     Hire which Mercenary?";
+    const auto &labels = assets_.characterLabels;
+    std::string header = labels.at("ItemDesc1s");
+    if (const auto at = header.find("%d"); at != std::string::npos)
+        header.replace(at, 2, std::to_string(list.gold));
     const int size = int(16 * classicPanelScale);
     painter_.label(header, int(p.x + (p.width - painter_.measure(header, size)) / 2),
                    int(p.y + 12 * classicPanelScale), size, gold);
@@ -52,9 +56,10 @@ void SceneView::drawHirelingList(Vec mouse) const {
         const auto &offer = offers->at(size_t(entry));
         const auto row = hirelingListRow(index);
         const auto color = CheckCollisionPointRec(rv(mouse), row) ? Color{94, 112, 200, 255} : parchment;
-        std::string line = offer.name + " - Lvl: " + std::to_string(offer.level) +
-            "  Life: " + std::to_string(offer.life) + "  Def: " + std::to_string(offer.defense) +
-            "  Cost: " + std::to_string(offer.price);
+        std::string line = offer.name + " - " + labels.at("Level") + ": " + std::to_string(offer.level) +
+            "  " + labels.at("StrSkill42") + std::to_string(offer.life) +
+            "  " + labels.at("strchrdef") + ": " + std::to_string(offer.defense) +
+            "  " + labels.at("cost") + std::to_string(offer.price);
         int rowSize = size;
         while (rowSize > 9 && painter_.measure(line, rowSize) > row.width) --rowSize;
         painter_.label(line, int(row.x), int(row.y), rowSize, color);

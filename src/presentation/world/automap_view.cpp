@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -95,12 +96,12 @@ void SceneView::drawAutomap(const AutomapDrawView &map) const {
             marker.unitMark==Mark::OtherPlayer || marker.unitMark==Mark::Corpse ? assets_.automapOtherFont :
             marker.npc ? assets_.automapNpcFont : assets_.characterLabelFont;
         int width = 0;
-        for (unsigned char c : marker.name) width += font.widths[c];
+        for (uint32_t c : utf8Decode(marker.name)) width += font.widthOf(c);
         float x = position.x - width / 2;
-        for (unsigned char c : marker.name) {
-            if (const auto *glyph = font.glyphs.frame(0, font.indices[c]); glyph && c != ' ')
+        for (uint32_t c : utf8Decode(marker.name)) {
+            if (const auto *glyph = font.glyphOf(c); glyph && c != ' ')
                 DrawTexture(glyph->texture, int(x + glyph->x), int(position.y - 10 + glyph->y - glyph->texture.height), WHITE);
-            x += font.widths[c];
+            x += font.widthOf(c);
         }
     }
     if(map.observerVisible) unitMark(map.observer, {0,0,255,255});

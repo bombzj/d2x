@@ -1,6 +1,7 @@
 #include "party_view.hpp"
 #include "classic_panel.hpp"
 #include "content/string_table.hpp"
+#include "core/text.hpp"
 #include "resources/data_table.hpp"
 #include "presentation/world/palette_blend_view.hpp"
 #include <algorithm>
@@ -21,28 +22,25 @@ void art(const Sprite *image, float x, float y) {
 }
 void loadPartyFont(Archives &archives, Graphics &graphics, ClassicFont &font,
                    const char *name, int color = 0) {
-    const auto path = std::string("data/local/font/latin/") + name;
+    const auto path = "data/local/font/" + archives.languageFontDirectory + "/" + name;
     const auto tbl = archives.read(path + ".tbl");
-    if (tbl.size() < 3596) throw std::runtime_error("Original party font metrics are missing");
-    if (!color) font.glyphs = graphics.single(path + ".dc6");
-    else {
-        const auto *original = graphics.animation(path + ".dc6");
+    if (tbl.size() < 12) throw std::runtime_error("Original party font metrics are missing");
+    const auto *original = graphics.animation(path + ".dc6");
+    if (!original) throw std::runtime_error("Original party font is missing");
+    font.graphics = &graphics;
+    font.source = original;
+    if (color) {
         const auto pl2 = archives.read("data/global/palette/sky/pal.pl2");
         const size_t shift = 0x6B600 + 13 * 3 + size_t(color) * 256;
-        if (!original || pl2.size() < shift + 256)
+        if (pl2.size() < shift + 256)
             throw std::runtime_error("Original party font color transform is missing");
-        font.glyphs.directions = original->directions;
-        font.glyphs.count = original->framesPerDirection;
-        for (auto glyph : original->frames) {
-            for (auto &pixel : glyph.pixels) if (pixel) pixel = pl2[shift + pixel];
-            font.glyphs.frames.push_back(graphics.upload(glyph));
-        }
+        for (size_t i = 0; i < font.transform.size(); ++i)
+            font.transform[i] = pl2[shift + i];
+        font.transformed = true;
     }
-    if (font.glyphs.frames.empty()) throw std::runtime_error("Original party font is missing");
-    for (size_t i = 0; i < 256; ++i) {
-        font.widths[i] = tbl[12 + i * 14 + 3];
-        font.indices[i] = tbl[12 + i * 14 + 8];
-    }
+    if (original->frames.empty() ||
+        !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(tbl.data()), tbl.size()), font))
+        throw std::runtime_error("Original party font is missing");
     font.ready = true;
 }
 }
@@ -76,7 +74,7 @@ PartyView::PartyView(Archives &archives)
         loadPartyFont(archives, graphics_, nameFont_, "font6");
         // Native Party.cpp limits the public area label to 140 font pixels.
         for (auto &[id, name] : areas_) {
-            auto width = [&](std::string_view value) { int w = 0; for (unsigned char c : value) w += font_.widths[c]; return w; };
+            auto width = [&](std::string_view value) { int w = 0; for (uint32_t c : utf8Decode(value)) w += font_.widthOf(c); return w; };
             if (width(name) <= 140) continue;
             while (!name.empty() && width(name + "...") > 140) name.pop_back();
             name += "...";
@@ -162,13 +160,13 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
 void PartyView::text(const ClassicFont &font, std::string_view value, float x, float baseline,
                      float width, bool right) const {
     float measured = 0;
-    for (unsigned char c : value) measured += font.widths[c];
+    for (uint32_t c : utf8Decode(value)) measured += font.widthOf(c);
     if (width) x += right ? width - measured : (width - measured) / 2;
-    for (unsigned char c : value) {
-        const auto *glyph = font.glyphs.frame(0, font.indices[c]);
+    for (uint32_t c : utf8Decode(value)) {
+        const auto *glyph = font.glyphOf(c);
         if (glyph && c != ' ')
             art(glyph, x + glyph->x, baseline + glyph->y - glyph->texture.height);
-        x += font.widths[c];
+        x += font.widthOf(c);
     }
 }
 void PartyView::draw(std::string_view ownName) const {
@@ -238,7 +236,7 @@ void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
             DrawRectangleRec({bar.x, bar.y, std::floor(width * life / 100.f) * classicPanelScale, bar.height}, blend.paletteColor(color));
         }
         auto name = p.name;
-        auto measured = [&] { int width = 0; for (unsigned char c : name) width += nameFont_.widths[c]; return width; };
+        auto measured = [&] { int width = 0; for (uint32_t c : utf8Decode(name)) width += nameFont_.widthOf(c); return width; };
         while (!name.empty() && measured() > 66) name.pop_back();
         text(nameFont_, name, std::max(0.f, x + 22 - measured() / 2.f), column % 2 ? 62 : 72);
         x += 56;

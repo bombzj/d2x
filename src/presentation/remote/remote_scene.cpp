@@ -2064,7 +2064,10 @@ struct RemoteScene::Impl {
                 const auto drawn = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) { return entry.unit == effectOwner(selectedTarget); });
                 const auto at = drawn == draw.end() ? screen(local(target.position)) : screen(drawn->position) + drawn->pixelOffset;
                 if (selectedTarget.type == 0 && target.interaction == OnlineMapInteraction::Corpse) shared.drawCorpseLabel(target.name, at);
-                else shared.drawInteractionLabel(target.name, at);
+                else {
+                    const auto localized = strings.find(target.name);
+                    shared.drawInteractionLabel(localized.empty() ? target.name : std::string(localized), at);
+                }
                 break;
             }
         shared.drawGroundLabels(mouse);

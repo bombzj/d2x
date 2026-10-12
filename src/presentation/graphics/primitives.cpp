@@ -1,7 +1,87 @@
 #include "primitives.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <rlgl.h>
+#include <stdexcept>
 namespace d2x {
+bool parseClassicFontTable(std::string_view tbl, ClassicFont &font) {
+    if (tbl.size() < 12) return false;
+    const size_t count = (tbl.size() - 12) / 14;
+    if (count == 0) return false;
+    struct Record {
+        uint32_t code;
+        uint16_t frame;
+        uint8_t width;
+    };
+    std::vector<Record> records;
+    records.reserve(count);
+    const auto *bytes = reinterpret_cast<const uint8_t *>(tbl.data());
+    for (size_t i = 0; i < count; ++i) {
+        const uint8_t *r = bytes + 12 + i * 14;
+        records.push_back({uint32_t(r[0]) | (uint32_t(r[1]) << 8),
+                           uint16_t(r[8]) | (uint16_t(r[9]) << 8), r[3]});
+    }
+    std::stable_sort(records.begin(), records.end(),
+                     [](const Record &a, const Record &b) { return a.code < b.code; });
+    font.codes.clear();
+    font.frames.clear();
+    font.widths.clear();
+    font.sprites.clear();
+    font.uploaded.clear();
+    font.codes.reserve(count);
+    font.frames.reserve(count);
+    font.widths.reserve(count);
+    for (const auto &record : records) {
+        font.codes.push_back(record.code);
+        font.frames.push_back(record.frame);
+        font.widths.push_back(record.width);
+    }
+    return true;
+}
+void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
+                     std::string_view name, int color) {
+    const auto path = "data/local/font/" + archives.languageFontDirectory + "/" + std::string(name);
+    const auto *original = graphics.animation(path + ".dc6");
+    if (!original)
+        throw std::runtime_error("Original UI font is missing: " + path);
+    font.graphics = &graphics;
+    font.source = original;
+    if (color) {
+        constexpr size_t fontShifts = 0x6B600 + 13 * 3;
+        const auto palette = archives.read("data/global/palette/sky/pal.pl2");
+        if (color < 0 || color >= 13 || palette.size() < fontShifts + 13 * 256)
+            throw std::runtime_error("Original UI font color transform is missing: " + path);
+        for (size_t i = 0; i < font.transform.size(); ++i)
+            font.transform[i] = palette[fontShifts + size_t(color) * 256 + i];
+        font.transformed = true;
+    }
+    auto tbl = archives.read(path + ".tbl", false);
+    if (original->frames.empty() ||
+        !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(tbl.data()), tbl.size()), font))
+        throw std::runtime_error("Original UI font is missing: " + path);
+    font.ready = true;
+}
+Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font) {
+    if (font.transformed) {
+        auto glyph = frame;
+        for (auto &pixel : glyph.pixels)
+            if (pixel) pixel = font.transform[pixel];
+        return graphics.upload(glyph);
+    }
+    return graphics.upload(frame);
+}
+const Sprite *ClassicFont::glyphFrame(uint16_t frame) const {
+    if (!graphics || !source || frame >= source->frames.size()) return nullptr;
+    if (sprites.size() != source->frames.size()) {
+        sprites.resize(source->frames.size());
+        uploaded.assign(source->frames.size(), 0);
+    }
+    if (!uploaded[frame]) {
+        sprites[frame] = rasterizeGlyph(*graphics, source->frames[frame], *this);
+        uploaded[frame] = 1;
+    }
+    return &sprites[frame];
+}
 void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
     if (pieces.count < 22 || bounds.width <= 0 || bounds.height <= 0) return;
     const auto *corner = pieces.frame(0, 0);
@@ -35,8 +115,8 @@ void originalBox(const GpuAnimation &pieces, Rectangle bounds, float scale) {
 int UiPainter::measure(const std::string &text, int size) const {
     if (font.ready) {
         float width = 0;
-        for (unsigned char c : text)
-            width += font.widths[c] + glyphGap;
+        for (uint32_t code : utf8Decode(text))
+            width += font.widthOf(code) + glyphGap;
         return int(width * size / 16.f);
     }
     return MeasureText(text.c_str(), size);
@@ -102,13 +182,13 @@ void spriteShadow(const Sprite *s, Vec p) {
 void UiPainter::label(const std::string &text, int x, int y, int size, Color c) const {
     if (font.ready) {
         float cursor = float(x), scale = size / 16.f;
-        for (unsigned char ch : text) {
-            auto s = font.glyphs.frame(0, font.indices[ch]);
+        for (uint32_t ch : utf8Decode(text)) {
+            const auto *s = font.glyphOf(ch);
             if (s && ch != ' ')
                 DrawTexturePro(s->texture, {0, 0, float(s->texture.width), float(s->texture.height)},
                                {cursor, float(y), s->texture.width * scale, s->texture.height * scale},
                                {0, 0}, 0, c);
-            cursor += (font.widths[ch] + glyphGap) * scale;
+            cursor += (font.widthOf(ch) + glyphGap) * scale;
         }
         return;
     }
@@ -122,8 +202,8 @@ void UiPainter::inBox(const std::string &text, Rectangle bounds, int size, Color
     float top = 0, bottom = float(size);
     bool found = false;
     if (font.ready)
-        for (unsigned char ch : text) {
-            const auto *glyph = font.glyphs.frame(0, font.indices[ch]);
+        for (uint32_t ch : utf8Decode(text)) {
+            const auto *glyph = font.glyphOf(ch);
             if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
             const float start = (glyph->hitY - glyph->y) * size / 16.f;
             const float end = start + glyph->hitHeight * size / 16.f;

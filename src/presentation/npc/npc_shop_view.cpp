@@ -231,7 +231,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
         }
     }
     const std::string stashGold = std::to_string(shop.bankGold);
-    painter_.label("STASH", int(panel.x + 20 * scale), int(panel.y + 362 * scale), 13, WHITE);
+    painter_.label(assets_.characterLabels.at("stash"), int(panel.x + 20 * scale), int(panel.y + 362 * scale), 13, WHITE);
     painter_.label(stashGold, int(panel.x + 199 * scale) - painter_.measure(stashGold, 13),
                    int(panel.y + 362 * scale), 13, WHITE);
     const int buttonFrames[] = {2, 18, 6, 10};
@@ -247,9 +247,9 @@ void SceneView::drawNpcShop(Vec mouse) const {
                        WHITE);
         if (index == 2 && view_.shopRepair) DrawRectangleLinesEx(shopButton(index), 1, gold);
         if (index == 2 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
-            painter_.label("Repair", int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
+            painter_.label(assets_.characterLabels.at("NPCRepairItems"), int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
         if (index == 1 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
-            drawItemText({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale}, shop.repairAllPrice, "COST");
+            drawItemText({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale}, shop.repairAllPrice, assets_.characterLabels.at("Cost"));
     }
     if (maximumPage(items) > (view_.shopCategory == 1 || view_.shopCategory == 2 ? 1 : 0)) {
         painter_.label("<", int(pageButton(false).x + 14), int(pageButton(false).y + 8), 15, gold);
@@ -260,7 +260,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
     }
     if (hovered && !view_.shopConfirm && !view_.inventory.drag) {
         if (const auto *detail = npcClient_.inspectShopOffer(view_.dialogueObject, hovered->slot, view_.shopGamble))
-            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, "COST");
+            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, assets_.characterLabels.at("Cost"));
     }
     if (view_.shopConfirm) {
         auto popup = confirmBounds();

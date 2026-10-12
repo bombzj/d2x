@@ -22,31 +22,24 @@ void wipe(std::string &s) {
 }
 ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 0) {
     ClassicFont f;
-    const auto base = "data/local/font/latin/" + name;
-    f.glyphs = g.single(base + ".dc6");
+    const auto base = "data/local/font/" + a.languageFontDirectory + "/" + name;
+    const auto *source = g.animation(base + ".dc6");
+    if (!source) throw std::runtime_error("Missing original frontend font");
+    f.graphics = &g;
+    f.source = source;
     if (color) {
         constexpr size_t shifts = 0x6B600 + 13 * 3;
         const auto palette = a.read("data/global/palette/sky/pal.pl2");
         if (color < 0 || color >= 13 || palette.size() < shifts + 13 * 256)
             throw std::runtime_error("Missing original frontend font color transforms");
-        const auto *source = g.animation(base + ".dc6");
-        if (!source) throw std::runtime_error("Missing original frontend font");
-        f.glyphs.frames.clear();
-        f.glyphs.directions = source->directions;
-        f.glyphs.count = source->framesPerDirection;
-        for (auto glyph : source->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[shifts + size_t(color) * 256 + pixel];
-            f.glyphs.frames.push_back(g.upload(glyph));
-        }
+        for (size_t i = 0; i < f.transform.size(); ++i)
+            f.transform[i] = palette[shifts + size_t(color) * 256 + i];
+        f.transformed = true;
     }
     const auto table = a.read(base + ".tbl");
-    if (table.size() < 3596 || f.glyphs.frames.empty())
+    if (source->frames.empty() ||
+        !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(table.data()), table.size()), f))
         throw std::runtime_error("Missing original frontend font");
-    for (int i = 0; i < 256; ++i) {
-        f.widths[i] = table[12 + i * 14 + 3];
-        f.indices[i] = table[12 + i * 14 + 8];
-    }
     f.ready = true;
     return f;
 }

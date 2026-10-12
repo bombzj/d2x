@@ -1,5 +1,6 @@
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
+#include "core/text.hpp"
 #include "classic_panel.hpp"
 #include "skill_tooltip.hpp"
 #include "presentation/scene_view.hpp"
@@ -227,13 +228,13 @@ void SceneView::drawSkillControls(Vec mouse) const {
         const float center = mana ? W - 80 * hudScale : 65 * hudScale;
         const float baseline = H - 95 * hudScale;
         float x = center - nativeFont.measure(text, 16) * hudTextScale / 2;
-        for (unsigned char character : text) {
-            const auto *glyph = assets_.font.glyphs.frame(0, assets_.font.indices[character]);
+        for (uint32_t character : utf8Decode(text)) {
+            const auto *glyph = assets_.font.glyphOf(character);
             if (glyph && character != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
                     {x + glyph->x * hudTextScale, baseline + (glyph->y - glyph->texture.height) * hudTextScale,
                      glyph->texture.width * hudTextScale, glyph->texture.height * hudTextScale}, {}, 0, WHITE);
-            x += assets_.font.widths[character] * hudTextScale;
+            x += assets_.font.widthOf(character) * hudTextScale;
         }
     }
     std::string hint;

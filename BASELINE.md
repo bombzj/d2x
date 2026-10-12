@@ -23,7 +23,7 @@ Single Player、TCP/IP与原服共用一套D2GS客户端。自研宿主拥有权
 | 战斗／技能 | 普攻／投射／六通道、武器吸血／吸魔／压碎／撕裂及原命中叠加／伤口喷血、通用十项、女巫／亚马逊／圣骑士／死灵／野蛮人各30项 | 德鲁伊／刺客、完整双持组合／专用触发、PvP；[技能](docs/gameplay/skills/README.md)、[武器命中效果](docs/gameplay/combat/WEAPON_EFFECTS.md) |
 | 怪物／伙伴 | 第一幕三难度各63战斗类型／25类AI、第二幕三难度各74身份／33类AI、原移动停止距离／绕行／独立射击目标、巢生间隔／次数、当前精英等级攻击、动画与30项技能槽接线、精英／首领、随机姓名／勇士标签／原调色及血乌／安达利尔死亡表现，Hydra、诱饵／女武神、四类原佣兵、死灵召唤／重生及原宠物头像／数量／生命条 | 第三至第五幕与召唤、完整伙伴服务与表现；具体支持条件见[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕27项个人主流程、分任务组队资格／物品交付、本局无法完成约束与保存 | 原完整房间邻接身份、中立AI／囚犯伤亡、复杂剧情／机关及特殊多人事件；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务系统](docs/gameplay/quests/SYSTEM.md) |
-| 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环；任务事件冻结及各自奖励、游戏内命令分流、BNCS私聊／命令回复、宿主虚拟人数 | 特殊任务材料清除／牛王等事件、敌意／PvP、尸体权限、中文聊天与头顶气泡；[联网](docs/modules/NETWORK.md#游戏内命令分流)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
+| 多人 | 1–8人名册／移动／聊天／交易、邀请／离队、同队头像／地图标记、共享门户、附近经验／NoDrop及友方光环；任务事件冻结及各自奖励、游戏内命令分流、BNCS私聊／命令回复、宿主虚拟人数 | 特殊任务材料清除／牛王等事件、敌意／PvP、尸体权限；中文聊天／头顶气泡与界面已按 `--lang`、`data/local/lng`／`data/local/font/<语言>` 及 UTF-8 TBL 绘制，但原版基础 MPQ 不含中日韩字体，需资源包提供对应字体，见[构建运行](docs/development/BUILD_AND_RUN.md)；[联网](docs/modules/NETWORK.md#游戏内命令分流)、[交易](docs/gameplay/items/PLAYER_TRADE.md) |
 
 ## 公共计算与客户端显示
 

@@ -19,7 +19,10 @@ Animation decodeDc6(const Bytes &b) {
     Animation a;
     a.directions = r.u32();
     a.framesPerDirection = r.u32();
-    if (a.directions < 1 || a.directions > 32 || a.framesPerDirection < 1 || a.framesPerDirection > 4096)
+    // CJK font DC6 art stores every glyph as a frame in one direction (the
+    // Chinese font16 has 16651), so the per-direction limit is much higher than
+    // a normal animation.
+    if (a.directions < 1 || a.directions > 32 || a.framesPerDirection < 1 || a.framesPerDirection > 65536)
         throw std::runtime_error("Invalid DC6 frames");
     std::vector<uint32_t> offsets(a.directions * a.framesPerDirection);
     for (auto &o : offsets)

@@ -1,12 +1,14 @@
 #include "original_menu.hpp"
+#include "core/text.hpp"
 #include <algorithm>
+#include <cstdint>
 #include <stdexcept>
 #include <utility>
 
 namespace d2x {
 namespace {
-unsigned char menuCharacter(unsigned char c) {
-    return c >= 'a' && c <= 'z' ? static_cast<unsigned char>(c-'a'+'A') : c;
+uint32_t menuCharacter(uint32_t c) {
+    return c >= 'a' && c <= 'z' ? c - 'a' + 'A' : c;
 }
 }
 OriginalMenu::OriginalMenu(Archives &archives, const ClassicFont &font)
@@ -15,22 +17,25 @@ OriginalMenu::OriginalMenu(Archives &archives, const ClassicFont &font)
         border_ = graphics_.single("data/global/ui/menu/boxpieces.dc6");
         const auto palette = archives.read("data/global/palette/sky/pal.pl2");
         constexpr size_t shifts = 0x6B600 + 13*3;
-        const auto *art = graphics_.animation("data/local/font/latin/font16.dc6");
+        const auto *art = graphics_.animation("data/local/font/" + archives.languageFontDirectory + "/font16.dc6");
         if (!font.ready || border_.count < 22 || !art || palette.size() < shifts+5*256)
             throw std::runtime_error("Original menu artwork or font transforms are missing");
         for (const auto &[color, target] : {std::pair{3, &selectedFont_}, std::pair{4, &titleFont_}}) {
-            target->directions = art->directions; target->count = art->framesPerDirection;
-            for (auto glyph : art->frames) {
-                for (auto &pixel : glyph.pixels) if (pixel) pixel = palette[shifts+size_t(color)*256+pixel];
-                target->frames.push_back(graphics_.upload(glyph));
-            }
+            *target = font_;
+            target->graphics = &graphics_;
+            target->source = art;
+            target->sprites.clear();
+            target->uploaded.clear();
+            for (size_t i = 0; i < target->transform.size(); ++i)
+                target->transform[i] = palette[shifts+size_t(color)*256+i];
+            target->transformed = true;
         }
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }
 }
 float OriginalMenu::measure(std::string_view text) const {
     float width{};
-    for (unsigned char c : text) width += font_.widths[menuCharacter(c)];
+    for (uint32_t c : utf8Decode(text)) width += font_.widthOf(menuCharacter(c));
     return width;
 }
 Vec OriginalMenu::size(std::string_view title, std::span<const std::string> options) const {
@@ -55,15 +60,15 @@ int OriginalMenu::hit(Rectangle box, bool title, size_t count, Vec mouse) const 
 }
 void OriginalMenu::label(std::string_view text, Rectangle box, int color) const {
     if (!ready_) return;
-    const auto &glyphs = color == 3 ? selectedFont_ : color == 4 ? titleFont_ : font_.glyphs;
+    const ClassicFont &painter = color == 3 ? selectedFont_ : color == 4 ? titleFont_ : font_;
     float x = box.x+(box.width-measure(text))/2;
-    for (unsigned char character : text) {
+    for (uint32_t character : utf8Decode(text)) {
         const auto c = menuCharacter(character);
-        const auto *glyph = glyphs.frame(0,font_.indices[c]);
+        const auto *glyph = painter.glyphOf(c);
         if (glyph && c != ' ') DrawTexturePro(glyph->texture,
             {0,0,float(glyph->texture.width),float(glyph->texture.height)},
             {x,box.y,float(glyph->texture.width),float(glyph->texture.height)},{0,0},0,WHITE);
-        x += font_.widths[c];
+        x += font_.widthOf(c);
     }
 }
 void OriginalMenu::draw(Rectangle box, std::string_view title, std::span<const std::string> options,

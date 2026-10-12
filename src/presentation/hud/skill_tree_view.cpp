@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "core/text.hpp"
 #include "skill_tree.hpp"
 #include "skill_tooltip.hpp"
 #include <algorithm>
@@ -12,18 +13,18 @@ void drawTreeLabel(const ClassicFont &font, const std::string &text, Rectangle b
     for (std::string line; std::getline(input, line);) lines.push_back(std::move(line));
     for (size_t index = 0; index < lines.size(); ++index) {
         float width = 0;
-        for (unsigned char c : lines[index]) width += font.widths[c] * classicPanelScale;
+        for (uint32_t c : utf8Decode(lines[index])) width += font.widthOf(c) * classicPanelScale;
         float x = bounds.x + (bounds.width - width) / 2;
         const float baseline = bounds.y + bounds.height / 2 +
             (float(index) * 16 - float(lines.size() - 1) * 8 + 6) * classicPanelScale;
-        for (unsigned char c : lines[index]) {
-            const auto *glyph = font.glyphs.frame(0, font.indices[c]);
+        for (uint32_t c : utf8Decode(lines[index])) {
+            const auto *glyph = font.glyphOf(c);
             if (glyph && c != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
                     {x + glyph->x * classicPanelScale,
                      baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
                      glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
-            x += font.widths[c] * classicPanelScale;
+            x += font.widthOf(c) * classicPanelScale;
         }
     }
 }
@@ -32,14 +33,14 @@ void drawSkillRank(const ClassicFont &font, const std::string &text, Rectangle i
     // the original four-pixel adjustment for the compact two-digit font.
     float x = icon.x + icon.width + (compact ? 0 : 4) * classicPanelScale;
     const float baseline = icon.y + icon.height + 12 * classicPanelScale;
-    for (unsigned char character : text) {
-        const auto *glyph = font.glyphs.frame(0, font.indices[character]);
+    for (uint32_t character : utf8Decode(text)) {
+        const auto *glyph = font.glyphOf(character);
         if (glyph && character != ' ')
             DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
                 {x + glyph->x * classicPanelScale,
                  baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
                  glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
-        x += font.widths[character] * classicPanelScale;
+        x += font.widthOf(character) * classicPanelScale;
     }
 }
 }

@@ -116,7 +116,7 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
     // transforms at 0x6B600, then thirteen 256-entry font index transforms.
     constexpr size_t shifts = 0x6B600 + 13 * 3;
     const auto palette = archives.read("data/global/palette/sky/pal.pl2");
-    const auto *glyphs = graphics.animation("data/local/font/latin/font16.dc6");
+    const auto *glyphs = graphics.animation("data/local/font/" + archives.languageFontDirectory + "/font16.dc6");
     if (palette.size() < shifts + 13 * 256 || !glyphs)
         throw std::runtime_error("Original waypoint font transforms are missing");
     constexpr int colors[]{0, 3, 5};
@@ -126,12 +126,11 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
         // White uses the original glyph indices. The sky PL2 white table is
         // all zeroes, so applying it would make every glyph transparent.
         if (colors[index] == 0) continue;
-        font.glyphs.frames.clear();
-        for (auto glyph : glyphs->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[shifts + colors[index] * 256 + pixel];
-            font.glyphs.frames.push_back(graphics.upload(glyph));
-        }
+        font.sprites.clear();
+        font.uploaded.clear();
+        for (size_t i = 0; i < font.transform.size(); ++i)
+            font.transform[i] = palette[shifts + colors[index] * 256 + i];
+        font.transformed = true;
     }
 }
 } // namespace d2x

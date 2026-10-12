@@ -11,28 +11,15 @@ std::string speechKey(std::string_view value) {
     for(const unsigned char c:value) if(std::isalnum(c)) key+=char(std::tolower(c));
     return key;
 }
-std::string speechText(std::string_view value) {
-    std::string text="text:";
-    for(size_t index=0;index<value.size();++index) {
-        const auto sequence=value.substr(index,3);
-        // Authored UTF-16 NPC text is decoded to UTF-8, while TBL strings
-        // retain their original single-byte punctuation.
-        if(sequence=="\xE2\x80\xA6") {text+="...";index+=2;continue;}
-        if(sequence=="\xE2\x80\x98" || sequence=="\xE2\x80\x99") {text+='\'';index+=2;continue;}
-        if(sequence=="\xE2\x80\x9C" || sequence=="\xE2\x80\x9D") {text+='"';index+=2;continue;}
-        const auto c=static_cast<unsigned char>(value[index]);
-        if(std::isspace(c)) continue;
-        if(c==0x85) text+="...";
-        else if(c==0x91 || c==0x92) text+='\'';
-        else if(c==0x93 || c==0x94) text+='"';
-        else text+=char(c);
-    }
-    return text;
-}
 using SpeechIndexes=std::map<std::string,uint16_t,std::less<>>;
 server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &indexes,const std::set<uint16_t> &callbacks,const MonsterRecord &record,std::string_view name,int act) {
     const auto message = [&](const NpcSpeech *speech) -> std::optional<uint16_t> {
         if (!speech) return {};
+        // The language-independent TBL key resolved at load time is the same in
+        // every language, so it localizes introductions and acknowledgements.
+        if(!speech->stringKey.empty()) {
+            if(const auto keyed=indexes.find(speechKey(speech->stringKey));keyed!=indexes.end()) return keyed->second;
+        }
         // Authored names such as MeshifAct3 differ from Sounds' speaker Meshif.
         // Accept only a verified TBL key or the same MPQ text after wrapping.
         if(!speech->quest.empty()) {
@@ -41,7 +28,7 @@ server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &inde
             // original TBL key uses the MPQ NPC name instead of a voice ID.
             if(const auto keyed=indexes.find(speechKey(speech->quest+speech->state+std::string(name)));keyed!=indexes.end()) return keyed->second;
         }
-        const auto found=indexes.find(speechText(speech->text));
+        const auto found=indexes.find(npcSpeechText(speech->text));
         return found==indexes.end()?std::nullopt:std::optional<uint16_t>{found->second};
     };
     server::NpcRule rule; rule.code = record.id; rule.nativeClass = record.index; rule.size = record.collisionSize;
@@ -77,7 +64,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         (void)value;const auto index=strings.index(key);
         if(index>=0 && index<=UINT16_MAX) if(const auto text=strings.speech(index);!text.empty()) {
             speechIndexes.try_emplace(speechKey(key),uint16_t(index));
-            speechIndexes.try_emplace(speechText(text),uint16_t(index));
+            speechIndexes.try_emplace(npcSpeechText(text),uint16_t(index));
         }
     }
     std::set<uint16_t> callbacks;

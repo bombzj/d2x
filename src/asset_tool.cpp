@@ -34,7 +34,7 @@ int main(int argc, char **argv) {
         if (argc < 3) {
             std::cout
                 << "d2x_assets <archive-or-folder> list [wildcard]\n  ... text <txt-member>\n  ... hex <member> [byte-count]\n  ... ds1-paths <ds1-member>\n  ... extract <member> <destination>\n  "
-                   "... preview <dc6-or-dcc-member> <sheet.png> [first-frame] [columns] [frame-count]\n  ... pack <manifest.txt> <new.mpq>\n"
+                   "... preview <dc6-or-dcc-member> <sheet.png> [first-frame] [columns] [frame-count]\n  ... pack <manifest.txt> <new.mpq>\n  ... pack-dir <prefix> <new.mpq> (first argument is the loose source directory)\n"
                    "  ... item <code>\n  ... drops <monster-class>\n  ... maps [level-ID] [map-seed]\n"
                    "  ... presets [name-filter]\n  ... maze <level-ID> [map-seed] [difficulty:0-2]\n"
                    "  ... outdoor <level-ID> [map-seed]\n"
@@ -851,6 +851,9 @@ int main(int argc, char **argv) {
                     a.read(name);
             a.packUsed(argv[4]);
             std::cout << "Packed " << a.used.size() << " members\n";
+        } else if (command == "pack-dir" && argc == 5) {
+            a.packDirectory(argv[1], argv[3], argv[4]);
+            std::cout << "Packed directory " << argv[1] << " into " << argv[4] << '\n';
         } else
             throw std::runtime_error("Invalid command");
         return 0;

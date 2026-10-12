@@ -18,6 +18,7 @@
 #include "presentation/scene_view.hpp"
 #include "presentation/controller.hpp"
 #include "content/string_table.hpp"
+#include "content/language.hpp"
 #include "input.hpp"
 #include "network/realm_session.hpp"
 #include "presentation/frontend/realm_frontend.hpp"
@@ -350,7 +351,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         quiet.focused = input.focused; quiet.leftHeld = input.leftHeld; quiet.rightHeld = input.rightHeld;
         input = std::move(quiet);
     };
-    ClassicStrings strings(archives);
+    const auto lang = languageOf(archives);
+    ClassicStrings strings(archives, lang);
     FrontendPage page = FrontendPage::Main;
     std::string notice, gateway = "D2X-Local";
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
@@ -385,6 +387,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             gateway = std::move(config.gateway);
             config.login.account = std::move(account);
             config.login.password = std::move(password);
+            config.login.localeId = lang.localeId;
+            config.login.languageCode = lang.languageCode;
+            config.login.gameLocale = lang.gameLocale;
             session.login(std::move(config.login));
             page = FrontendPage::Login;
         } catch (const std::exception &e) {
@@ -522,6 +527,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 [&] {
                     auto config = configuration(configPath);
                     gateway = std::move(config.gateway);
+                    config.login.localeId = lang.localeId;
+                    config.login.languageCode = lang.languageCode;
+                    config.login.gameLocale = lang.gameLocale;
                     return std::move(config.login);
                 },
                 quit,
@@ -1063,6 +1071,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 ui.setLogin(action.name, action.password);
                 config.login.account = std::move(action.name);
                 config.login.password = std::move(action.password);
+                config.login.localeId = lang.localeId;
+                config.login.languageCode = lang.languageCode;
+                config.login.gameLocale = lang.gameLocale;
                 notice.clear();
                 dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
                 manualRealm = false;

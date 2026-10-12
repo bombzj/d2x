@@ -16,15 +16,15 @@ struct ChatIntent {
 class ChatView {
     mutable Graphics graphics_;
     std::array<ClassicFont, 2> fonts_{};
-    mutable std::array<std::array<std::optional<GpuAnimation>, 13>, 2> colored_{};
+    mutable std::array<std::array<ClassicFont, 13>, 2> colored_{};
     Bytes palette_;
     GpuAnimation border_, slider_;
-    std::string title_, close_, reason_, draft_;
+    std::string title_, close_, reason_, draft_, fontDirectory_{"latin"};
     bool ready_{}, inputOpen_{}, logOpen_{}, dragging_{};
     size_t caret_{}, scroll_{}, unavailable_{};
     uint64_t sequence_{}, accountSequence_{};
     std::array<std::string,10> partyNotices_;
-    struct Glyph { uint8_t character{}, color{}; };
+    struct Glyph { uint32_t character{}; uint8_t color{}; };
     using Line = std::vector<Glyph>;
     struct Message {
         uint64_t sequence{}, receivedMilliseconds{};
@@ -33,7 +33,7 @@ class ChatView {
     };
     std::vector<Message> messages_;
     std::vector<Line> rows_;
-    const GpuAnimation &font(int kind, int color) const;
+    const ClassicFont &font(int kind, int color) const;
     float width(int kind, const Line &) const;
     void text(int kind, const Line &, Vec) const;
     Line plain(std::string_view, uint8_t color = 0) const;

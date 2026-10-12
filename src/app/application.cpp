@@ -3,6 +3,7 @@
 #include "options.hpp"
 #include "startup_profile.hpp"
 #include "input.hpp"
+#include "content/language.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <algorithm>
@@ -77,6 +78,7 @@ int runGame(int argc, char **argv) {
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"
                      "--online-play <character> logs in once and creates a uniquely named normal game.\n"
                      "Quick entry uses remembered credentials and the normal server handshake once.\n"
+                     "--lang <eng|chi|deu|fra|esp|ita|jpn|kor|pol|rus or 0-9>: language override; else reads USE from MPQ\n"
                      "--hidden --frames N --screenshot <png> --pack <new.mpq>\n";
         return 0;
     }
@@ -85,6 +87,7 @@ int runGame(int argc, char **argv) {
     archives.mountDirectory(options.mpq);
     if (archives.names.empty())
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
+    applyLanguage(archives, detectLanguage(options.language, archives));
     profile.mark("archives-ready");
     Platform platform(options.hidden);
     profile.mark("platform-ready");
