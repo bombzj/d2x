@@ -155,7 +155,7 @@
 | 11／15 | Overlay／Reposition，8／11 | 11为unit,u16 overlay；15为unit,xy,u8 flag |
 | 16／18／95／96 | 位置／资源位流，变长／15／13／9 | [世界消费者](../../src/client/remote_world.cpp) |
 | 19／1A／1B／1C | 金币／经验，2／2／3／5 | u8／u8／u16／u32；1A/1B增量，1C绝对经验 |
-| 1D／1E／1F／20 | 属性，3／4／6／10 | 前三种u8 stat后u8/u16/u32 value；20含单位字段，见世界消费者 |
+| 1D／1E／1F／20 | 属性，3／4／6／10 | 前三种u8 stat后u8/u16/u32 value；20为u32玩家GUID,u8 stat,u32 value，宿主同步可见玩家基础属性，先于装备 |
 | 21 | SkillRank／12 | u8 type,flags; u32 guid; u16 skill; u8 base,bonus,reserved |
 | 22／23 | 物品技能次数／选技，12／13 | 23为unit,u8 left,u16 skill,u32 owner；22见[事件编码](../../src/hosting/detail/game_events.cpp) |
 | 26 | Chat／变长 | 10字节固定头后发送者和文本双NUL，见[社交消费者](../../src/client/remote_social.cpp) |

@@ -12,6 +12,7 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/social/system.hpp"
+#include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
@@ -22,56 +23,49 @@ std::deque<Vec> playerRoute(const Grid &grid,Vec from,Vec to) {
     for(auto &point:route) point=point-center;
     return route;
 }
-bool seamClear(const Grid &grid, Vec a, Vec b, int side) {
-    // Only the short normal segment across a verified reciprocal seam. Grid
-    // collision resolves its footprint into the linked neighbour on each cell.
-    const int lateral = int(std::floor(side % 2 ? a.y : a.x));
-    const int begin = int(std::floor(side % 2 ? a.x : a.y)), end = int(std::floor(side % 2 ? b.x : b.y));
-    for (int normal = std::min(begin, end); normal <= std::max(begin, end); ++normal)
-        if (!grid.movementClear(side % 2 ? normal : lateral, side % 2 ? lateral : normal, playerMovement)) return false;
-    return true;
-}
 }
 
-std::optional<CommandStatus> System::walk(const ActorContext &actor, const MovementCommand &command) {
-    cancel(actor.player);
-    if (command.action != MovementAction::Move) return {};
-    const auto *player = ports_.players.find(actor.player);
-    if (!player || !player->entered || player->persistent.player.hp <= 0) return CommandStatus::InvalidBinding;
-    const auto &source = ports_.areas.at(player->area);
-    if (!std::isfinite(command.destination.x) || !std::isfinite(command.destination.y)) return CommandStatus::InvalidDestination;
-    for (const auto &edge : source.definition.boundaries) {
-        const Vec a = player->position, b = command.destination;
-        const float an = edge.side % 2 ? a.x : a.y, bn = edge.side % 2 ? b.x : b.y;
-        const bool positive = edge.side == 0 || edge.side == 3;
-        if ((positive ? an >= edge.plane || bn < edge.plane : an < edge.plane || bn >= edge.plane) || an == bn) continue;
-        const float fraction = (float(edge.plane) - an) / (bn - an);
-        const Vec intersection = a + (b - a) * fraction;
-        const float lateral = edge.side % 2 ? intersection.y : intersection.x;
-        if (lateral < edge.start || lateral >= edge.end) continue;
-        const auto *other = ports_.areas.find(edge.destination);
-        if (!other) { ports_.world.requestArea(actor, edge.destination); return CommandStatus::Unavailable; }
-        const Vec offset = source.definition.origin - other->definition.origin;
-        const Vec target = b + offset;
-        if (!other->definition.collision.walkable(target, playerMovement)) return CommandStatus::InvalidDestination;
-        Vec approach = intersection;
-        const float normal = float(edge.plane) + (positive ? -1.5f : 1.5f);
-        if (edge.side % 2) approach.x = normal; else approach.y = normal;
-        Vec arrival = intersection;
-        if (edge.side % 2) arrival.x += positive ? 1.5f : -1.5f; else arrival.y += positive ? 1.5f : -1.5f;
-        arrival = arrival + offset;
-        if (!source.definition.collision.walkable(approach, playerMovement) || !other->definition.collision.walkable(arrival, playerMovement) ||
-            !seamClear(source.definition.collision, approach, arrival - offset, edge.side)) return CommandStatus::NoRoute;
-        auto route = playerRoute(source.definition.collision,a,approach);
-        if (route.empty()) return CommandStatus::NoRoute;
-        state_.transitions[actor.player] = {actor.area, edge.destination, 0, source.generation, actor.sequence, {}, approach, arrival, target, true, command.forceRun, false, edge.side, edge.plane};
-        auto &mutablePlayer = ports_.players.players_.at(actor.player);
-        mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = command.forceRun;
-        mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();
-        mutablePlayer.routeDestination=approach;mutablePlayer.routeObstacles=source.definition.collision.obstacleRevision;
-        return CommandStatus::Applied;
+DomainResult<> System::walked(const ActorContext &actor) {
+    auto *player = ports_.players.find(actor.player);
+    const auto *source = ports_.areas.find(actor.area);
+    if (!player || !source || !player->entered || player->actor != actor.actor || player->area != actor.area ||
+        source->generation != actor.areaGeneration) return {DomainStatus::InvalidActor, {}};
+    constexpr Vec center{.5f, .5f};
+    if (source->definition.activation.room(player->position + center)) return {DomainStatus::Applied, std::monostate{}};
+    Vec navigationOrigin;
+    const auto navigation = source->definition.collision.linkedNavigation(navigationOrigin);
+    const AreaState *destination = nullptr;
+    Vec position;
+    for (const auto &[id, candidate] : ports_.areas.all()) {
+        (void)id;
+        if (candidate.definition.act != source->definition.act ||
+            std::none_of(navigation.navigationSources.begin(), navigation.navigationSources.end(),
+                [&](const auto &entry) { return entry.grid == &candidate.definition.collision; })) continue;
+        const Vec point = player->position + source->definition.origin - candidate.definition.origin;
+        if (!candidate.definition.activation.room(point + center)) continue;
+        if (destination) return {DomainStatus::Conflict, {}};
+        destination = &candidate; position = point;
     }
-    return {};
+    if (!destination) return {DomainStatus::Unavailable, {}};
+    // D2MOO Step::PATH_RecacheRoomAtCoordIfNeeded: preserve the continuous
+    // position and remaining path; room ownership follows the occupied cell.
+    // Publish before transferring authority, so backpressure can retry safely.
+    const auto output = ports_.events.publish({0, actor.tick, {}, {AudienceKind::Player, actor.player, destination->definition.id},
+        {TravelFact{actor.player, actor.actor, actor.area, destination->definition.id, destination->generation, position, true}}});
+    if (!output) return {output.status, {}};
+    ports_.npc.close(actor.player); ports_.inventory.close(actor.player); state_.waypoints.erase(actor.player); cancel(actor.player);
+    const Vec offset = source->definition.origin - destination->definition.origin;
+    auto &moving = ports_.players.players_.at(actor.player);
+    moving.area = destination->definition.id;
+    moving.position = moving.pathStep.translate(moving.position + center, offset) - center;
+    for (auto &point : moving.route) point = point + offset;
+    moving.routeDestination = moving.routeDestination + offset;
+    if (moving.movementArrival) {
+        moving.movementArrival->pos = moving.movementArrival->pos + offset;
+        moving.movementArrival->accessPoint = moving.movementArrival->accessPoint + offset;
+    }
+    moving.routeObstacles = destination->definition.collision.navigationRevision();
+    return {DomainStatus::Applied, std::monostate{}};
 }
 DomainResult<> System::execute(const ActorContext &actor, const Request &request) {
     if (request.kind != Kind::Exit) return useSpecial(actor,request);
@@ -82,14 +76,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const auto found = std::find_if(area->definition.exits.begin(), area->definition.exits.end(), [&](const auto &e) { return e.id == request.source.id; });
     if (found == area->definition.exits.end() || (request.destination && *request.destination != found->destination)) return {DomainStatus::InvalidRequest, {}};
     if (!ports_.quests.allowsTravel(player->persistent.player,actor.area,found->destination)) return {DomainStatus::Conflict, {}};
-    if ((found->position - player->position).length() > 50) return {DomainStatus::InvalidRequest, {}};
-    auto route = playerRoute(area->definition.collision,player->position,found->arrival);
-    if (route.empty()) return {DomainStatus::Unavailable, {}};
+    const int distance = nativeUnitDistance(player->position, 2, found->position, 1);
+    if (distance > 50) return {DomainStatus::InvalidRequest, {}};
+    std::deque<Vec> route;
+    if (distance > 4) {
+        route = playerRoute(area->definition.collision,player->position,found->arrival);
+        if (route.empty()) return {DomainStatus::Unavailable, {}};
+    }
     const auto prepared = ports_.world.requestArea(actor, found->destination);
     if (!prepared) return {prepared.status, {}};
-    state_.transitions[actor.player] = {actor.area, found->destination, *prepared.value, area->generation, actor.sequence, found->id, found->arrival, {}, {}, false, false, false, 0, 0};
+    state_.transitions[actor.player] = {actor.area, found->destination, *prepared.value, area->generation, actor.sequence, found->id, found->position, {}};
     auto &mutablePlayer = ports_.players.players_.at(actor.player);
     mutablePlayer.route = std::move(route); mutablePlayer.routeRunning = mutablePlayer.running;
+    mutablePlayer.pathStep.reset();
     mutablePlayer.movementTarget.reset();mutablePlayer.movementArrival.reset();
     mutablePlayer.routeDestination=found->arrival;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
     return {DomainStatus::Applied, std::monostate{}};
@@ -97,6 +96,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, float manaCost,std::optional<SkillCharge> charge) {
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
+    if (target.area == actor.area) ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
     const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge);
     if (result) cancel(actor.player);
     return result;
@@ -129,9 +129,32 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if (!prepared) { pending = state_.transitions.erase(pending); continue; }
             ++pending; continue;
         }
-        if (!player.route.empty()) { ++pending; continue; }
-        if (!transition.crossing && (player.position - transition.approach).length() > .1f) { pending = state_.transitions.erase(pending); continue; }
+        if (transition.kind == Kind::Exit) {
+            if (nativeUnitDistance(player.position, 2, transition.approach, 1) > 4) {
+                if (!player.route.empty()) { ++pending; continue; }
+                pending = state_.transitions.erase(pending); continue;
+            }
+        } else {
+            if (!player.route.empty()) { ++pending; continue; }
+            if ((player.position - transition.approach).length() > .1f) { pending = state_.transitions.erase(pending); continue; }
+        }
         Vec arrival = transition.arrival;
+        // Warp/waypoint arrival must acquire the destination's real room before
+        // free-coordinate and collision queries, including a previously retired room.
+        const auto &targetDefinition = destination->definition;
+        if (transition.kind == Kind::Waypoint && targetDefinition.waypointAnchor)
+            ports_.world.activate(transition.to, *targetDefinition.waypointAnchor);
+        else if (transition.kind == Kind::Npc) ports_.world.activate(transition.to, targetDefinition.spawn);
+        else if (transition.kind == Kind::Exit) {
+            for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
+                ports_.world.activate(transition.to, exit.arrival);
+        } else if (transition.kind == Kind::QuestObject) {
+            if (targetDefinition.questArrival) ports_.world.activate(transition.to, *targetDefinition.questArrival);
+            if (targetDefinition.portalArrival) ports_.world.activate(transition.to, *targetDefinition.portalArrival);
+            for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
+                ports_.world.activate(transition.to, exit.arrival);
+            if (targetDefinition.town) ports_.world.activate(transition.to, targetDefinition.spawn);
+        } else ports_.world.activate(transition.to, arrival);
         if(transition.kind==Kind::Npc) {
             const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
             // The original client follows 0x38 travel with 0x30 close. The
@@ -147,21 +170,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             arrival=destination->definition.spawn;
         }
         std::optional<Vec> exitWalk;
-        if (transition.walking) {
-            transition.crossing = true;
-            const Vec offset = source->definition.origin - destination->definition.origin;
-            const Vec across = transition.arrival - offset;
-            const Vec delta = across - player.position;
-            const auto speed = player.runningNow ? player.totals.character.runSpeed : player.totals.character.walkSpeed;
-            const Vec next = player.position + delta.unit() * std::min(delta.length(), speed * TickContext::seconds);
-            if (!seamClear(source->definition.collision, player.position, next, transition.side)) {
-                player.moving = false; pending = state_.transitions.erase(pending); continue;
-            }
-            const float normal = transition.side % 2 ? next.x : next.y;
-            const bool crossed = transition.side == 0 || transition.side == 3 ? normal >= transition.plane : normal < transition.plane;
-            if (!crossed) { player.position = next; player.look = delta.unit(); player.moving = true; ++pending; continue; }
-            arrival = next + offset;
-        }
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
         if (transition.kind==Kind::Portal) {
             const auto portal=std::find_if(state_.portals.begin(),state_.portals.end(),[&](const auto &entry){
@@ -189,10 +197,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!marker && int(transition.from)==73 && counterpart!=destination->definition.objects.end()) marker=counterpart->position;
             if(!marker) for(const auto &warp:destination->definition.exits) if(warp.destination==transition.from) {marker=warp.arrival;break;}
             if(!marker) {pending=state_.transitions.erase(pending);continue;}
+            ports_.world.activate(transition.to, *marker);
             const auto point=destination->definition.collision.nativeSpawn(*marker,50,playerMovement);
             if(!point) {pending=state_.transitions.erase(pending);continue;}arrival=*point;
         }
-        if (!transition.walking && transition.kind==Kind::Exit) {
+        if (transition.kind==Kind::Exit) {
             const AreaExit *back = nullptr;
             for (const auto &exit : destination->definition.exits) if (exit.destination == transition.from) {
                 if (back) { back = nullptr; break; } back = &exit;
@@ -202,9 +211,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if (!destination->definition.collision.walkable(arrival, playerMovement)) { pending = state_.transitions.erase(pending); continue; }
         std::deque<Vec> route;
-        if (transition.walking || exitWalk) route = playerRoute(destination->definition.collision,arrival,exitWalk.value_or(transition.destination));
+        if (exitWalk) route = playerRoute(destination->definition.collision,arrival,*exitWalk);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
-            {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, transition.walking}}};
+            {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, false}}};
         if(transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
             transactions::CharacterEdit edit{{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
             if(int(transition.to)==40 && int(transition.from)==1) {
@@ -233,9 +242,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
         player.area = transition.to; player.position = arrival; player.route = std::move(route);
-        player.routeRunning = transition.walking?transition.run:player.running; player.moving = transition.walking;
+        player.pathStep.reset();
+        player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();
-        player.routeDestination=exitWalk.value_or(transition.destination);player.routeObstacles=destination->definition.collision.obstacleRevision;
+        player.routeDestination=exitWalk.value_or(arrival);player.routeObstacles=destination->definition.collision.obstacleRevision;
         if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,tick);
         pending = state_.transitions.erase(pending);
     }

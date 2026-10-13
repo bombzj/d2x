@@ -1,6 +1,8 @@
 #include "server_snapshot.hpp"
 #include "hosting/administration.hpp"
 #include <nlohmann/json.hpp>
+#include <cmath>
+#include <stdexcept>
 
 namespace d2x {
 namespace {
@@ -24,6 +26,23 @@ Json area(const server::AreaView &value) {
     return result;
 }
 }
+Json debugNavigationSnapshot(const Grid &grid, Vec origin, Vec from, Vec goal, int radius) {
+    if (radius < 0 || radius > 24 || !std::isfinite(from.x) || !std::isfinite(from.y) ||
+        !std::isfinite(goal.x) || !std::isfinite(goal.y)) throw std::invalid_argument("Invalid navigation inspection");
+    Json result{{"origin", point(origin)}, {"from", point(from)}, {"goal", point(goal)},
+        {"radius", radius}, {"route", Json::array()}, {"collision", Json::array()}};
+    constexpr Vec center{.5f,.5f};
+    const auto route = grid.nativePlayerPath(from-origin+center, goal-origin+center);
+    for (const auto p : route) result["route"].push_back(point(p+origin-center));
+    const int column = int(std::floor(from.x+.5f)), row = int(std::floor(from.y+.5f));
+    for (int y = row-radius; y <= row+radius; ++y)
+        for (int x = column-radius; x <= column+radius; ++x) {
+            const int localX = x-int(origin.x), localY = y-int(origin.y);
+            result["collision"].push_back({{"x",x},{"y",y},{"mask",grid.movementMask(localX,localY)},
+                {"objectMask",grid.objectMask(localX,localY)},{"playerClear",grid.movementClear(localX,localY,playerMovement)}});
+        }
+    return result;
+}
 Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, uint64_t commandSince) {
     const auto origin = s.area.definition.origin;
     const auto &p = s.player; const auto &r = s.record; const auto &a = p.attributes;
@@ -34,6 +53,9 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    result["collision"] = Json::array();
+    for(const auto &cell:s.collision) result["collision"].push_back({{"x",cell.x},{"y",cell.y},
+        {"mask",cell.mask},{"objectMask",cell.objectMask},{"playerClear",cell.playerClear}});
     result["animationTiming"]={{"recoveryUntil",s.recoveryUntil},{"lastBlockTick",s.lastBlockTick},{"modes",Json::array()}};
     for(const auto &animation:s.animations) result["animationTiming"]["modes"].push_back({{"mode",animation.mode},{"frames",animation.frames},{"startFrame",animation.startFrame},{"speed",animation.speed},{"duration",animation.duration},{"action",animation.action}});
     result["combatMetrics"]={{"queueDepth",s.combatQueueDepth},{"targetAttempts",s.combatTargetAttempts},{"stages",Json::array()}};
@@ -114,7 +136,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"definition", missile.definition}, {"position", point(missile.position + origin)}, {"created", missile.created},
         {"expires", missile.expires}, {"impactPending", missile.impact.has_value()}, {"skill",missile.skill.sourceId},{"rank",missile.skill.rank},{"program",int(missile.program)},{"ageFrames",missile.ageFrames},{"lifetimeFrames",missile.lifetimeFrames},{"remainingHits",missile.remainingHits}});
     for (const auto &damage : s.damage) result["damage"].push_back({{"source", damage.source.value}, {"target", damage.target.value}, {"impact", damage.impact}});
-    if (s.travel) result["travel"] = {{"from", int(s.travel->from)}, {"to", int(s.travel->to)}, {"walking", s.travel->walking}, {"crossing", s.travel->crossing}};
+    if (s.travel) result["travel"] = {{"from", int(s.travel->from)}, {"to", int(s.travel->to)}, {"kind", int(s.travel->kind)}};
     for (const auto value : s.path) result["path"].push_back(point(value));
     result["eventHistory"] = {{"first", s.eventFirst}, {"last", s.eventLast},
         {"gap", since < s.eventFirst - 1}, {"records", Json::array()}};
@@ -125,7 +147,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
     result["objects"]=Json::array();
-    for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses}});
+    for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses},
+        {"collision",{{"width",object.rule.width},{"height",object.rule.height},{"mask",object.rule.collisionMask},{"enabled",object.rule.collision.at(size_t(object.mode))}}}});
     result["npcs"]=Json::array();
     for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)},{"hidden",npc.hidden},{"moving",npc.moving}});
     result["merchantDeferred"]=s.merchantDeferred;

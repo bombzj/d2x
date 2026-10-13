@@ -7,11 +7,38 @@
 #include "gameplay/combat/geometry.hpp"
 #include "runtime/contracts.hpp"
 #include "world/interaction_geometry.hpp"
+#include "world/native_target_path.hpp"
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <utility>
 
 namespace d2x::server {
 namespace {
+bool nativeUnitRequestRange(Vec player, Vec target) {
+    // PlrMsg 02/04 use sub_6FC83C60: native integer X/Y deltas <=50.
+    // D2Common_10399 is the separate interaction/attack distance metric.
+    const int x = int(std::floor(player.x+.5f)), y = int(std::floor(player.y+.5f));
+    return std::abs(x-int(std::floor(target.x+.5f))) <= 50 &&
+        std::abs(y-int(std::floor(target.y+.5f))) <= 50;
+}
+std::optional<Vec> movementPoint(const AreaStore &areas, RegionId from, RegionId to, Vec point) {
+    const auto &source = areas.at(from);
+    const auto *destination = areas.find(to);
+    if (!destination || destination->definition.act != source.definition.act) return {};
+    if (from != to) {
+        Vec origin; const auto view = source.definition.collision.linkedNavigation(origin);
+        if (std::none_of(view.navigationSources.begin(), view.navigationSources.end(),
+            [&](const auto &entry) { return entry.grid == &destination->definition.collision; })) return {};
+    }
+    return point + destination->definition.origin - source.definition.origin;
+}
+std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas, RegionId region, EntityId id) {
+    for (const auto &[key, area] : areas.all()) for (const auto &npc : area.definition.npcs)
+        if (npc.id == id && !npc.hidden && npc.rule.interactable)
+            if (const auto point = movementPoint(areas, region, key, npc.position)) return std::pair{*point, npc.rule.size};
+    return {};
+}
 bool barrierSegment(const monsters::System &monsters,RegionId area,Vec from,Vec to,int size) {
     for(const auto &[id,body]:monsters.read().actors) {(void)id;if(body.area==area && body.life>0 && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(from,to,size,body.position,body.rule.size)) return false;}
     return true;
@@ -60,20 +87,30 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
         const auto found=ports.items.read().world.items.find(command.exit);
         if(found==ports.items.read().world.items.end()) return CommandStatus::InvalidRequest;
         const auto *at=std::get_if<GroundLocation>(&found->second.location);
-        if(!at || at->region!=actor.area || nativeUnitDistance(player.position,2,at->position,1)>50) return CommandStatus::InvalidRequest;
+        if(!at || at->region!=actor.area || !nativeUnitRequestRange(player.position,at->position)) return CommandStatus::InvalidRequest;
         return applyMovement(player,area,{MovementAction::Move,at->position,command.forceRun,{},MotionTarget{command.exit,4},
             InteractionTarget{command.exit,at->position,at->position,1,1,4,false,true}});
     }
-    if(command.action==MovementAction::ApproachNpc) if(const auto *target=ports.monsters.find(command.exit);target && target->area==actor.area && target->life>0) {
-        if((target->position-player.position).length()>50) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->id,1}});
+    if(command.action==MovementAction::ApproachNpc) {
+        if(const auto *target=ports.monsters.find(command.exit);target && target->life>0) {
+            const auto point = movementPoint(ports.areas, actor.area, target->area, target->position);
+            if (!point || !nativeUnitRequestRange(player.position,*point)) return CommandStatus::InvalidRequest;
+            return applyMovement(player,area,{MovementAction::Move,*point,command.forceRun,{},MotionTarget{target->id,1},
+                InteractionTarget{target->id,*point,*point,target->rule.size,target->rule.size,0.f,false,true,false}});
+        }
+        if (const auto npc = npcPoint(ports.areas, actor.area, command.exit)) {
+            if (!nativeUnitRequestRange(player.position,npc->first)) return CommandStatus::InvalidRequest;
+            return applyMovement(player,area,{MovementAction::Move,npc->first,command.forceRun,{},MotionTarget{command.exit,1},
+                InteractionTarget{command.exit,npc->first,npc->first,npc->second,npc->second,0.f,false,true,false}});
+        }
     }
     if(command.action==MovementAction::ApproachCorpse) if(const auto *target=ports.players.findActor(command.exit);target && target->entered && target->area==actor.area && target->actor!=actor.actor) {
-        if((target->position-player.position).length()>50) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0}});
+        if(!nativeUnitRequestRange(player.position,target->position)) return CommandStatus::InvalidRequest;
+        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0},
+            InteractionTarget{target->actor,target->position,target->position,2,2,0.f,false,true,false}});
     }
     if(command.action==MovementAction::ApproachObject) if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
-        if((*position-player.position).length()>50) return CommandStatus::InvalidRequest;
+        if(!nativeUnitRequestRange(player.position,*position)) return CommandStatus::InvalidRequest;
         return applyMovement(player,area,{MovementAction::Move,*position,command.forceRun,{},MotionTarget{command.exit,2}});
     }
     return applyMovement(player, area, command);
@@ -93,8 +130,9 @@ void MovementSystem::step(TickContext tick) {
             bool dynamic=false;
             if(target.type==1) {
                 if(const auto *unit=ports.monsters.find(target.id)) {
-                    dynamic=true;if(unit->area==player.area && unit->life>0) position=unit->position;
+                    dynamic=true;if(unit->life>0) position=movementPoint(ports.areas,player.area,unit->area,unit->position);
                 }
+                else if (const auto npc = npcPoint(ports.areas, player.area, target.id)) { dynamic = true; position = npc->first; }
             } else if(target.type==0 && target.id!=player.actor) {
                 dynamic=true;
                 if(const auto *unit=ports.players.findActor(target.id);unit && unit->entered && unit->area==player.area) position=unit->position;
@@ -105,17 +143,33 @@ void MovementSystem::step(TickContext tick) {
                     if(const auto *at=std::get_if<GroundLocation>(&found->second.location);at && at->region==player.area) position=at->position;
             }
             if(dynamic && !position) {player.route.clear();player.movementTarget.reset();player.movementArrival.reset();}
-            else if(position && (std::floor(position->x)!=std::floor(player.routeDestination.x) || std::floor(position->y)!=std::floor(player.routeDestination.y))) {
+            else if(position && (std::floor(position->x+.5f)!=std::floor(player.routeDestination.x+.5f) || std::floor(position->y+.5f)!=std::floor(player.routeDestination.y+.5f))) {
                 auto arrival=player.movementArrival;if(arrival) arrival->pos=arrival->accessPoint=*position;
                 applyMovement(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,arrival});
             }
         }
         const auto from=player.position;
         const auto &area=ports.areas.at(player.area);
-        if(!player.route.empty() && player.routeObstacles!=area.definition.collision.obstacleRevision)
-            applyMovement(player,area,{MovementAction::Move,player.routeDestination,player.routeRunning,{},player.movementTarget,player.movementArrival});
+        // D2Common_10226 keeps its remaining points while rooms are recached.
+        // Unrelated room/object changes must not rebuild an in-flight route;
+        // entered-cell collision is checked by the native step itself.
+        const auto previousRoute = player.route;
+        const auto previousStep = player.pathStep;
         advanceMovement(player, area, TickContext::seconds);
         if(!barrierSegment(ports.monsters,player.area,from,player.position,2)) {player.position=from;player.route.clear();player.moving=false;}
+        const ActorContext actor{player.player, player.actor, player.area, area.generation, player.locomotionSequence, tick.tick};
+        if (!ports.travel.walked(actor)) {
+            player.position = from; player.route = previousRoute; player.pathStep = previousStep; player.moving = false;
+        }
+        if(player.moving) {
+            const auto origin=ports.areas.at(player.area).definition.origin;
+            const Vec point{std::floor(player.position.x+.5f)+origin.x,std::floor(player.position.y+.5f)+origin.y};
+            const Vec travelled=player.movementHistory.empty()?point:point-player.movementHistory.back();
+            if(player.movementHistory.empty() || travelled.x*travelled.x+travelled.y*travelled.y>45) {
+                player.movementHistory.push_back(point);
+                if(player.movementHistory.size()>20) player.movementHistory.pop_front();
+            }
+        }
     }
 }
 void MovementSystem::suspend() {
@@ -150,61 +204,49 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     if (command.action == MovementAction::ApproachExit) {
         const auto &exits = area.definition.exits;
         const auto found = std::find_if(exits.begin(), exits.end(), [&](const auto &exit) { return exit.id == command.exit; });
-        if (found == exits.end() || std::abs(found->position.x - player.position.x) > 50 ||
-            std::abs(found->position.y - player.position.y) > 50) return CommandStatus::InvalidRequest;
+        if (found == exits.end() || !nativeUnitRequestRange(player.position,found->position)) return CommandStatus::InvalidRequest;
         target = found->arrival;
     }
     if (command.action == MovementAction::ApproachCorpse) {
         const auto &corpses = player.persistent.corpses;
         const auto corpse = std::find_if(corpses.begin(), corpses.end(), [&](const auto &value) { return value.id == command.exit && value.region == player.area && value.owner == player.actor; });
-        if (corpse == corpses.end() || (corpse->position - player.position).length() > 50) return CommandStatus::InvalidRequest;
+        if (corpse == corpses.end() || !nativeUnitRequestRange(player.position,corpse->position)) return CommandStatus::InvalidRequest;
         target = corpse->position;
-    }
-    if (command.action == MovementAction::ApproachNpc) {
-        const auto &npcs=area.definition.npcs; const auto found=std::find_if(npcs.begin(),npcs.end(),[&](const auto &npc){return npc.id==command.exit;});
-        if (found==npcs.end() || (found->position-player.position).length()>50) return CommandStatus::InvalidRequest;
-        arrival=InteractionTarget{found->id,found->position,found->position,found->rule.size,found->rule.size,6.f,false,true,false};
-        target=found->position;
     }
     if (command.action == MovementAction::ApproachObject) {
         const auto &objects = area.definition.objects;
         const auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &object) { return object.id == command.exit; });
-        if (found == objects.end() || (found->position - player.position).length() > 50) return CommandStatus::InvalidRequest;
+        if (found == objects.end() || !nativeUnitRequestRange(player.position,found->position)) return CommandStatus::InvalidRequest;
         const auto &rule = found->rule;
         arrival=InteractionTarget{found->id, found->position, found->position, rule.width, rule.height, float(rule.range), true};
         target=found->position;
     }
-    if (!std::isfinite(target.x) || !std::isfinite(target.y) || target.x < 0 || target.y < 0 ||
-        target.x >= grid.width || target.y >= grid.height) return CommandStatus::InvalidDestination;
+    constexpr Vec center{.5f,.5f};
+    if (!grid.navigationContains(target + center)) return CommandStatus::InvalidDestination;
     if(arrival && interactionClear(grid,player.position,*arrival))
         return applyMovement(player,area,{MovementAction::Stop,{},false});
     const bool sameTarget=(!command.target && !player.movementTarget) ||
         (command.target && player.movementTarget && command.target->id==player.movementTarget->id && command.target->type==player.movementTarget->type);
-    if(!player.route.empty() && sameTarget && player.routeObstacles==grid.obstacleRevision &&
-        std::floor(target.x)==std::floor(player.routeDestination.x) && std::floor(target.y)==std::floor(player.routeDestination.y)) {
+    const auto obstacleRevision = grid.navigationRevision();
+    if(!player.route.empty() && sameTarget && player.routeObstacles==obstacleRevision &&
+        std::floor(target.x+.5f)==std::floor(player.routeDestination.x+.5f) && std::floor(target.y+.5f)==std::floor(player.routeDestination.y+.5f)) {
         player.routeRunning=command.forceRun;player.movementArrival=arrival;
         return CommandStatus::Applied;
     }
-    player.routeDestination=target;player.routeObstacles=grid.obstacleRevision;
+    player.routeDestination=target;player.routeObstacles=obstacleRevision;
     // D2Common Straight is shared with prediction. Convert only at the grid
     // boundary; native packet coordinates name subtiles, not cell centers.
-    constexpr Vec center{.5f,.5f};
     const uint8_t targetType=command.target?command.target->type:command.action==MovementAction::ApproachObject?2:
         command.action==MovementAction::ApproachNpc?1:command.action==MovementAction::ApproachCorpse?0:255;
     auto route = grid.nativePlayerPath(player.position+center, target+center, playerMovement,targetType);
     for(auto &point:route) point=point-center;
-    if(arrival && (route.empty() || !interactionClear(grid,route.back(),*arrival))) {
-        if(const auto approach=interactionApproach(grid,player.position,*arrival)) {
-            route=grid.nativePlayerPath(player.position+center,*approach+center,playerMovement);
-            for(auto &point:route) point=point-center;
-        }
-    }
     if (route.empty()) {
         player.route.clear(); player.moving = false;
         player.movementTarget.reset();player.movementArrival.reset();
         return CommandStatus::NoRoute;
     }
     player.route = std::move(route);
+    player.pathStep.reset();
     player.movementTarget=command.target;
     player.movementArrival=arrival;
     if(command.exit) {
@@ -221,24 +263,30 @@ void advanceMovement(PlayerState &player, const AreaState &area, float seconds) 
     if (!player.entered || player.persistent.player.hp <= 0) { player.route.clear(); return; }
     player.runningNow = player.routeRunning && (area.definition.town || player.persistent.player.stamina >= 1.f);
     float remaining = (player.runningNow ? player.totals.character.runSpeed : player.totals.character.walkSpeed) * seconds;
+    bool obstructed = false;
     while (remaining > 0 && !player.route.empty()) {
         if(player.movementArrival && interactionClear(area.definition.collision,player.position,*player.movementArrival)) {
             player.route.clear();break;
         }
         const Vec delta = player.route.front() - player.position;
-        const float distance = delta.length();
-        if (distance < .0001f) { player.route.pop_front(); continue; }
-        const float step = std::min(remaining, distance);
-        const Vec next = player.position + delta * (step / distance);
-        // Step.cpp checks the travelled cells; re-running PATH_RayTrace on a
-        // fractional frame changes its major-axis bias and can reject a valid leg.
         constexpr Vec center{.5f,.5f};
-        if (!area.definition.collision.segment(player.position+center, next+center, {}, playerMovement)) {
-            player.route.clear(); break;
-        }
-        player.look = delta.unit(); player.position = next; player.moving = true;
-        remaining -= step;
-        if (step >= distance) player.route.pop_front();
+        const auto step = player.pathStep.advance(area.definition.collision, player.position + center,
+            player.route.front() + center, remaining);
+        player.look = delta.unit();
+        player.moving = player.moving || step.travelled > 0;
+        player.position = step.position - center;
+        if (step.blocked) { player.route.clear(); obstructed = true; break; }
+        if (!step.reached) break;
+        remaining -= step.travelled;
+        player.route.pop_front();
+        if (step.travelled > 0) break; // D2Common_10226 advances one precise path point per game frame.
+    }
+    if (!obstructed && player.moving && player.route.empty() &&
+        player.movementTarget && player.movementArrival &&
+        (player.movementArrival->nativeObject || player.movementArrival->nativeUnit)) {
+        player.route = nativeTargetPath(area.definition.collision, player.position, *player.movementArrival,
+            player.movementTarget->type);
+        player.pathStep.reset();
     }
 }
 } // namespace d2x::server

@@ -9,11 +9,12 @@ namespace d2x {
 class RemoteControl;
 class RemoteInventory;
 class RemoteCombat;
+class RemoteTown;
 std::string onlineDebugCommand(const std::string &, net::RealmSession &,
                                const std::function<net::LoginOptions()> &loginConfiguration, bool &quit,
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &scene,
-                               RemoteControl &, RemoteInventory &, RemoteCombat &,
+                               RemoteControl &, RemoteInventory &, RemoteCombat &, const RemoteTown &,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &input,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,

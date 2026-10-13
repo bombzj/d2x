@@ -2,6 +2,7 @@
 #include "hosting/game_host.hpp"
 #include "hosting/loot_content.hpp"
 #include "hosting/game_content.hpp"
+#include "hosting/area_preparation.hpp"
 #include "hosting/game_packet_observer.hpp"
 #include "content/classic_data.hpp"
 #include "content/character/realm_portrait.hpp"
@@ -37,7 +38,8 @@ struct NativeRealmHost {
     GamePacketObserver gamePacketObserver;
     std::map<std::string, HostedGame> games;
     std::map<GameHandle, std::map<RegionId, GeneratedArea>> terrain;
-    std::map<std::pair<GameHandle, uint64_t>, std::unique_ptr<AreaGenerator>> areaPreparations;
+    std::unique_ptr<AreaPreparation> areaPreparation;
+    std::map<std::pair<GameHandle, uint64_t>, uint64_t> areaPreparations;
     std::set<NativeRealmService *> peers;
     explicit NativeRealmHost(Archives &a, std::filesystem::path directory) : archives(a), root(std::move(directory)) {}
     void initialize();

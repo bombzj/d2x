@@ -148,7 +148,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
                 {AttackFact{pet.actor,target,1,uint8_t(enemy.player?0:1),body->area,body->position,enemy.position(),tick.tick+1,uint16_t(pet.attackSkill),uint8_t(pet.rank)}}});
             if(!published) {blocked=true;++it;continue;}
             pet.target=target;pet.release=tick.tick+uint64_t(body->rule.impactTick);
-            pet.nextDecision=tick.tick+uint64_t(body->rule.attackTicks);ports_.monsters.beginAttack(pet.actor,pet.nextDecision);
+            pet.nextDecision=tick.tick+uint64_t(body->rule.attackTicks);ports_.monsters.beginAttack(pet.actor,pet.nextDecision,false,target);
         } else pet.nextDecision=tick.tick+10;
         pet.random=random;++it;
     }

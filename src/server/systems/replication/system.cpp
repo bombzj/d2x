@@ -8,10 +8,9 @@
 namespace d2x::server::replication {
 std::vector<PlayerId> System::visible(PlayerId id) const {
     const auto *recipient = ports_.players.find(id); if (!recipient || !recipient->entered) return {};
-    std::set<RegionId> areas{recipient->area};
-    for (const auto &edge : ports_.areas.at(recipient->area).definition.boundaries) if (ports_.areas.find(edge.destination)) areas.insert(edge.destination);
     std::vector<PlayerId> result;
-    for (const auto &[key, player] : ports_.players.all()) if (player.entered && areas.contains(player.area) && key != id) result.push_back(key);
+    for (const auto &[key, player] : ports_.players.all())
+        if (player.entered && key != id && ports_.areas.nearby(recipient->area, recipient->position + Vec{.5f,.5f}, player.area, player.position + Vec{.5f,.5f})) result.push_back(key);
     return result;
 }
 StepStatus System::step(TickContext, FrameFacts &) {
@@ -31,17 +30,9 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
     std::vector<MonsterSnapshot> result;
     const auto *player = ports_.players.find(id);
     if (!player || !player->entered) return result;
-    std::vector<RegionId> visible{player->area};
-    for (const auto &edge : ports_.areas.at(player->area).definition.boundaries)
-        if (ports_.areas.find(edge.destination)) visible.push_back(edge.destination);
     for (const auto &[key, monster] : ports_.monsters.read().actors) {
-        if (std::find(visible.begin(), visible.end(), monster.area) == visible.end()) continue;
+        if (!ports_.areas.nearby(player->area, player->position + Vec{.5f,.5f}, monster.area, monster.position)) continue;
         if(monster.life<=0 && monster.corpseUnavailable && tick>=monster.busyUntil) continue;
-        const auto &area = ports_.areas.at(monster.area).definition;
-        const Vec observer = player->position + ports_.areas.at(player->area).definition.origin - area.origin;
-        if (player->area == monster.area) {
-            if (!area.activation.nearby(observer, monster.position)) continue;
-        } else if ((observer - monster.position).length() > 35) continue;
         const bool dead = monster.life <= 0;
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,

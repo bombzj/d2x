@@ -13,7 +13,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 领域 | 能力概况 | 主要缺口／专题入口 |
 | --- | --- | --- |
 | 连接／宿主 | 单机、TCP/IP、原服连接及独立游戏服务 | 完整故障恢复；[联网](docs/modules/NETWORK.md)、[独立服务](docs/development/PVPGN_SERVER.md) |
-| 地图／世界 | 五幕地图生成、碰撞、旅行、探索缓存及常见环境物件 | 复杂寻路、完整活动房间与特殊内容；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
+| 地图／世界 | 五幕地图生成、原房间引用／活动碰撞、异步蓝图准备、连续跨区寻路、旅行、探索缓存及常见环境物件 | 动态单位占位、怪物跨级追击、逐房间蓝图／休眠实体内存回收与特殊内容；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存、装备、掉落、商店、合成、角色成长及死亡／尸体 | 全属性与配方组合、复杂争用、硬核与多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能 | 德鲁伊／刺客、完整双持与触发组合、完整PvP规则；[技能](docs/gameplay/skills/README.md)、[战斗](docs/gameplay/combat/FACTIONS.md) |
 | 怪物／伙伴 | 第一、第二幕三难度怪物行为、精英／首领、佣兵及部分召唤物 | 第三至第五幕、完整召唤与伙伴行为；[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |

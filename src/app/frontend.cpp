@@ -528,7 +528,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 },
                 quit,
                 [&](const std::string &path) { saveFrontendScreenshot(target, path); },
-                sceneStatus, control, inventory, combat, [&](bool visible, bool large) {
+                sceneStatus, control, inventory, combat, town, [&](bool visible, bool large) {
                     mapDisplay.visible = visible; mapDisplay.large = large;
                     if (sharedUi) { sharedUi->ui().automap = visible; sharedUi->ui().automapLarge = large; }
                 }, presentationPaused, [&](std::vector<FrameInput> queued) {

@@ -39,6 +39,14 @@ struct AreaGenerator::Impl {
         result.staffTomb = generator.layout().staffTomb;
         result.recipe = generator.recipe(request.level);
         result.rooms = std::move(anchors);
+        for (const auto id : rooms) {
+            const auto &room = generator.tiles().rooms().at(id);
+            auto &near = result.nearRooms[{room.room.x, room.room.y}];
+            for (const auto adjacent : room.near) {
+                const auto &other = generator.tiles().rooms().at(adjacent);
+                near.push_back({other.level, other.room.x, other.room.y});
+            }
+        }
         result.map = std::make_shared<const Map>(std::move(snapshot.map));
         return result;
     }

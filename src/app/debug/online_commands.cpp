@@ -1,5 +1,7 @@
 #include "online_commands.hpp"
 #include "ui_input.hpp"
+#include "server_snapshot.hpp"
+#include "client/remote_town.hpp"
 #include "client/remote_control.hpp"
 #include "client/remote_inventory.hpp"
 #include "client/remote_combat.hpp"
@@ -413,7 +415,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<net::LoginOptions()> &configuration, bool &quit,
                                const std::function<void(const std::string &)> &screenshot,
                                const std::function<OnlineSceneView()> &sceneSnapshot,
-                               RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat,
+                               RemoteControl &control, RemoteInventory &inventory, RemoteCombat &combat, const RemoteTown &town,
                                const std::function<void(bool, bool)> &automap, bool &presentationPaused,
                                const std::function<void(std::vector<FrameInput>)> &inputFrames,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
@@ -827,6 +829,15 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
         combat.update();
         Json response{{"ok", accepted}, {"presentationPaused", presentationPaused},
             {"online", snapshot(session.read(), sceneSnapshot(), inventory.read())}};
+        if (command == "online-world" && request.contains("fromX") && request.contains("fromY") &&
+            request.contains("x") && request.contains("y")) {
+            const auto *map = town.map(); const auto &display = town.read();
+            if (!map || !display.origin) throw std::invalid_argument("Client collision is unavailable");
+            response["navigation"] = debugNavigationSnapshot(map->grid,
+                {float(display.origin->x),float(display.origin->y)},
+                {request.at("fromX").get<float>(),request.at("fromY").get<float>()},
+                {request.at("x").get<float>(),request.at("y").get<float>()},request.value("radius",8));
+        }
         response["online"]["inventory"]["reason"] = inventory.reason();
         auto &combatView = response["online"]["combat"];
         combatView = {{"skills", Json::array()}, {"states", Json::array()}, {"events", Json::array()},

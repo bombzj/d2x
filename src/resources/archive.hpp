@@ -16,6 +16,7 @@ Bytes readFile(const std::filesystem::path &path);
 void writeFile(const std::filesystem::path &path, std::span<const uint8_t> data);
 class Archives {
     std::vector<void *> handles;
+    std::vector<std::filesystem::path> mountedPaths_;
     std::function<void()> loadingPulse;
     mutable bool listed_{};
     // Owned by this mounted resource set, not by a player, room or connection.
@@ -33,6 +34,7 @@ class Archives {
     ~Archives();
     void mount(const std::filesystem::path &path);
     uint64_t mountIdentity() const { return mountIdentity_.value(); }
+    const auto &mountedPaths() const { return mountedPaths_; }
     void mountDirectory(const std::filesystem::path &path);
     Bytes read(const std::string &name, bool required = true) const;
     template<class T, class Loader> std::shared_ptr<const T> prepared(Loader &&loader) const {

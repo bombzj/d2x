@@ -41,7 +41,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     std::optional<OnlinePoint> point;
     if (displayPosition && std::isfinite(displayPosition->x) && std::isfinite(displayPosition->y) &&
         displayPosition->x >= 0 && displayPosition->y >= 0 && displayPosition->x <= UINT16_MAX && displayPosition->y <= UINT16_MAX)
-        point = OnlinePoint{uint16_t(displayPosition->x), uint16_t(displayPosition->y)};
+        point = OnlinePoint{uint16_t(std::lround(displayPosition->x)), uint16_t(std::lround(displayPosition->y))};
     const bool observerChanged = point != displayPlayerPosition_;
     displayPlayerPosition_ = point;
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
@@ -173,8 +173,10 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             const int width = monsterSizes_.number(size->second, "SizeX").value_or(0);
             const int height = monsterSizes_.number(size->second, "SizeY").value_or(0);
             if (width <= 0 || height <= 0) continue;
+            const auto nameKey = monsters_.value(record->second, "NameStr");
+            const auto name = strings_.find(nameKey);
             view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Npc,
-                std::string(monsters_.value(record->second, "NameStr")), {}, width, height});
+                std::string(name.empty() ? nameKey : name), {}, width, height});
             continue;
         }
         if (key.type == 5) {
@@ -383,6 +385,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         const int level = nativeMap_->tiles().rooms().at(*nativePlayerRoom_).level;
         if (nativeTerrainDirty_ || !nativeTerrain_) {
             auto snapshot = nativeMap_->snapshot(level);
+            snapshot.map.grid.fullTerrainCollision = std::move(snapshot.collision);
             view_.origin = OnlinePoint{uint16_t(snapshot.tileX * 5), uint16_t(snapshot.tileY * 5)};
             view_.width = snapshot.map.grid.width; view_.height = snapshot.map.grid.height;
             auto map = std::make_unique<Map>(std::move(snapshot.map));
@@ -442,7 +445,7 @@ bool RemoteTown::permitsInteraction(const OnlineView &v, OnlineUnitKey target) c
         std::any_of(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == target; });
 }
-bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin) const {
+bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin, bool approaching) const {
     if (!permitsInteraction(v, target) || !v.world.playerPosition) return false;
     const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
         [&](const auto &entry) { return entry.unit == target; });
@@ -460,20 +463,7 @@ bool RemoteTown::interactionReady(const OnlineView &v, OnlineUnitKey target, std
     if (target.type == 5) return nativeUnitDistance(observer, 2, {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= 4;
     if (found->interaction != OnlineMapInteraction::Npc && !corpse && !tradePeer) return true;
     return nativeUnitDistance(observer, 2,
-        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (corpse || tradePeer ? 8 : 6);
-}
-std::optional<OnlinePoint> RemoteTown::interactionApproachPoint(const OnlineView &v, OnlineUnitKey target, std::optional<Vec> displayOrigin) const {
-    if (!permitsInteraction(v, target) || target.type != 2 || !map_ || !view_.origin || !v.world.playerPosition) return {};
-    const auto found = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(), [&](const auto &entry) { return entry.unit == target; });
-    const Vec origin{float(view_.origin->x), float(view_.origin->y)};
-    const Vec position{float(found->position.x) - origin.x, float(found->position.y) - origin.y};
-    const auto point = interactionApproach(map_->grid,
-        displayOrigin.value_or(Vec{float(v.world.playerPosition->x),float(v.world.playerPosition->y)})-origin,
-        {EntityId{uint64_t(target.id) + 1}, position, position, found->collisionWidth, found->collisionHeight, 0, true});
-    if (!point) return {};
-    const int x = int(std::floor(point->x)) + view_.origin->x, y = int(std::floor(point->y)) + view_.origin->y;
-    if (x < 0 || y < 0 || x > UINT16_MAX || y > UINT16_MAX) return {};
-    return OnlinePoint{uint16_t(x), uint16_t(y)};
+        {float(found->position.x), float(found->position.y)}, found->collisionWidth) <= (approaching ? 0 : corpse || tradePeer ? 8 : 6);
 }
 void RemoteTown::prepareTownAutomap(const OnlineView &v) {
     if (!view_.nativeMapReady || !view_.area || !v.load.mapSeed || !v.load.act) return;

@@ -16,6 +16,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
 #include "gameplay/effects/state.hpp"
+#include "world/native_path_step.hpp"
 #include <deque>
 #include <map>
 #include <set>
@@ -30,6 +31,7 @@ struct MoveRequest {
     int stopDistance{}, velocityPercent{75}; bool running{};
     int pathSteps{}; // Nonzero stores native unit arrival distance + 1.
     int circleTurn{},circleDistance{};
+    uint8_t pathType{13},pathDistance{5};
 };
 struct Actor {
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
@@ -63,9 +65,10 @@ struct Actor {
     int64_t life{}, maximumLife{};
     unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
+    NativePathStep pathStep;
     uint64_t busyUntil{}, deathTick{}, deathOccurrence{};
     std::optional<uint64_t> neutralAt;
-    EntityId killer, movementTarget;
+    EntityId killer, movementTarget; // Native path target persists across walking/attack/BL stops.
     EntityId hirelingKiller;
     int hirelingLootMagicFind{},hirelingLootGoldFind{};
     std::optional<OpenWoundsApplication> wound;
@@ -136,6 +139,7 @@ class System {
     State state_;
     const Ports ports_;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
+    bool recacheHirelingRoom(Actor &);
   public:
     void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement,std::map<std::string,int64_t,std::less<>> base) {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
@@ -143,7 +147,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
-    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false);
+    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {});
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;

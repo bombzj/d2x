@@ -62,8 +62,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (monster.busyUntil > tick.tick || monster.frozenUntil > tick.tick || monster.stunnedUntil>tick.tick || ports_.skills.busy(id,tick.tick) || controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
         const auto &area=ports_.areas.at(monster.area);
-        bool active=false;
-        for(const auto &[key,player]:ports_.players.all()) { (void)key;if(player.entered && player.area==monster.area && area.definition.activation.nearby(player.position,monster.position)) {active=true;break;} }
+        const bool active = ports_.areas.active(monster.area, monster.position);
         if(!active || area.definition.town) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
         // AiUtil::sub_6FCF2110 and DRLGROOM_CheckLOSDraw: initial acquisition
         // in rooms without LOSDraw requires a clear missile-barrier ray.

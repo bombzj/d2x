@@ -61,8 +61,7 @@ class RemoteTown {
     const Map *map() const { return map_; }
     bool permits(const OnlineView &, OnlinePoint target) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
-    bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}) const;
-    std::optional<OnlinePoint> interactionApproachPoint(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}) const;
+    bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
     AutomapDiscovery discovery() const;
     void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);

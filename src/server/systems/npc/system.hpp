@@ -17,6 +17,7 @@ class System {
     State state_; const Ports ports_;
     struct Approach { ActorContext actor; Request request; uint64_t locomotion; };
     std::map<PlayerId,Approach> approaches_;
+    Vec position(const ActorContext &, const AreaNpc &) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

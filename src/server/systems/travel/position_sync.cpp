@@ -16,43 +16,11 @@ namespace {
 constexpr MovementCollisionRule synchronizationPath{0x409,2};
 constexpr uint64_t attemptLifetime=90*25;
 bool recent(uint64_t frame,uint64_t now) {return frame && now>=frame && now-frame<=attemptLifetime;}
-bool exactPath(const Grid &grid,Vec from,Vec to,int &steps) {
-    const auto route=grid.path(from,to,false,synchronizationPath,true);
-    if(route.empty()) return false;
-    for(const auto point:route) {
-        steps+=std::max(std::abs(int(std::floor(point.x))-int(std::floor(from.x))),
-                        std::abs(int(std::floor(point.y))-int(std::floor(from.y))));
-        if(steps>77) return false;
-        from=point;
-    }
-    return true;
-}
-bool acrossPath(const AreaState &source,const AreaState &destination,const Grid::BoundaryNeighbour &edge,Vec from,Vec to) {
-    const Vec offset{float(edge.offsetX),float(edge.offsetY)};
-    const bool positive=edge.side==0 || edge.side==3;
-    const int center=std::clamp(int(std::floor(edge.side%2?to.y:to.x)),edge.start,edge.end-1);
-    // Search only the prepared reciprocal walking seam, never a warp or a
-    // disconnected region. Each candidate must retain exact reachability.
-    for(int distance=0;distance<77;++distance) for(int sign:{1,-1}) {
-        if(!distance && sign<0) continue;
-        const int lateral=center+distance*sign;
-        if(lateral<edge.start || lateral>=edge.end) continue;
-        Vec approach,arrival;
-        const float before=float(edge.plane)+(positive?-1.5f:1.5f);
-        const float after=float(edge.plane)+(positive?1.5f:-1.5f);
-        if(edge.side%2) {approach={before,float(lateral)+.5f};arrival={after,float(lateral)+.5f};}
-        else {approach={float(lateral)+.5f,before};arrival={float(lateral)+.5f,after};}
-        int steps=3;
-        bool clear=true;
-        const int begin=int(std::floor(before)),end=int(std::floor(after));
-        for(int normal=std::min(begin,end);normal<=std::max(begin,end);++normal)
-            if(!source.definition.collision.movementClear(edge.side%2?normal:lateral,
-                edge.side%2?lateral:normal,synchronizationPath)) {clear=false;break;}
-        if(clear &&
-           exactPath(source.definition.collision,from,approach,steps) &&
-           exactPath(destination.definition.collision,arrival+offset,to+offset,steps)) return true;
-    }
-    return false;
+bool exactPath(const Grid &grid, Vec from, Vec to) {
+    constexpr Vec center{.5f, .5f};
+    const auto route = grid.nativeUnitPath(from + center, to + center, 15, 77, synchronizationPath);
+    return !route.empty() && int(std::floor(route.back().x)) == int(std::floor(to.x + .5f)) &&
+        int(std::floor(route.back().y)) == int(std::floor(to.y + .5f));
 }
 }
 
@@ -79,8 +47,8 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
         if(ports_.trade.find(actor.player)) return correction();
         auto &player=ports_.players.players_.at(actor.player);
         const MovementCommand movement{MovementAction::Move,reported,player.runningNow};
-        const auto crossing=walk(actor,movement);
-        const auto moved=crossing?*crossing:applyMovement(player,*source,movement);
+        cancel(actor.player);
+        const auto moved=applyMovement(player,*source,movement);
         if(moved!=CommandStatus::Applied) return correction();
         player.locomotionSequence=actor.sequence;
         return {DomainStatus::Applied,std::monostate{}};
@@ -89,30 +57,23 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     RegionId region=actor.area;
     const AreaState *destination=source;
     Vec at=reported;
-    const Grid::BoundaryNeighbour *seam=nullptr;
-    const auto contains=[](const Grid &grid,Vec p) {return p.x>=0 && p.y>=0 && p.x<grid.width && p.y<grid.height;};
-    if(!contains(source->definition.collision,reported)) {
-        destination=nullptr;
-        for(const auto &edge:source->definition.collision.neighbours) {
-            const Vec point=reported+Vec{float(edge.offsetX),float(edge.offsetY)};
-            if(!contains(*edge.grid,point)) continue;
-            for(const auto &boundary:source->definition.boundaries) {
-                const auto *candidate=ports_.areas.find(boundary.destination);
-                if(candidate && &candidate->definition.collision==edge.grid) {
-                    region=boundary.destination;destination=candidate;at=point;seam=&edge;break;
-                }
-            }
-            if(destination) break;
+    if (!source->definition.activation.room(reported + Vec{.5f,.5f})) {
+        destination = nullptr;
+        Vec origin; const auto navigation = source->definition.collision.linkedNavigation(origin);
+        for (const auto &[id, candidate] : ports_.areas.all()) {
+            if (std::none_of(navigation.navigationSources.begin(), navigation.navigationSources.end(),
+                [&](const auto &entry) { return entry.grid == &candidate.definition.collision; })) continue;
+            const Vec point = reported + source->definition.origin - candidate.definition.origin;
+            if (!candidate.definition.activation.room(point + Vec{.5f,.5f})) continue;
+            if (destination) return correction();
+            region = id; destination = &candidate; at = point;
         }
     }
-    if(!destination || !destination->definition.activation.room(at) ||
-       (!seam && !source->definition.activation.nearby(found->position,reported))) return correction();
-    // Native free-coordinate search has radius zero here. No nearest-cell warp.
-    if(!destination->definition.collision.walkable(at,playerMovement) ||
-       !destination->definition.collision.walkable(at,synchronizationPath)) return correction();
-    int steps=0;
-    if(seam?!acrossPath(*source,*destination,*seam,found->position,reported):
-            !exactPath(source->definition.collision,found->position,reported,steps)) return correction();
+    if (!destination || !ports_.areas.nearby(actor.area, found->position + Vec{.5f,.5f}, region, at + Vec{.5f,.5f})) return correction();
+    // PlrMsg 5F uses the original 77-step wall-follow path in the same room
+    // collision domain. Never search hand-picked seam entrances or warp nearby.
+    if (!destination->definition.collision.walkable(at + Vec{.5f,.5f}, playerMovement) ||
+        !exactPath(source->definition.collision, found->position, reported)) return correction();
     const int state=found->rules.skills->syncWarped.id;
     if(state<0 || state>=255) return {DomainStatus::Unavailable,{}};
     auto next=previous==state_.synchronizations.end()?PositionSynchronization{}:previous->second;
@@ -127,9 +88,6 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     std::deque<Vec> route;
     if(!found->route.empty()) {
         Vec goal=found->route.back()+source->definition.origin-destination->definition.origin;
-        const auto pending=state_.transitions.find(actor.player);
-        if(pending!=state_.transitions.end() && pending->second.walking && pending->second.to==region)
-            goal=pending->second.destination;
         constexpr Vec center{.5f,.5f};
         route=destination->definition.collision.nativePlayerPath(at+center,goal+center,playerMovement);
         for(auto &point:route) point=point-center;
@@ -145,6 +103,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     state_.waypoints.erase(actor.player);cancel(actor.player);
     auto &player=ports_.players.players_.at(actor.player);
     player.area=region;player.position=at;player.route=std::move(route);
+    player.pathStep.reset();
     player.movementTarget.reset();player.movementArrival.reset();
     player.routeDestination=player.route.empty()?at:player.route.back();player.routeObstacles=destination->definition.collision.obstacleRevision;
     player.moving=!player.route.empty();player.locomotionSequence=actor.sequence;

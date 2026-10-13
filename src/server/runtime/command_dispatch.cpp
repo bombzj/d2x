@@ -41,7 +41,7 @@ struct Dispatch {
             if(systems.skills.busy(actor.actor,actor.tick)) return CommandStatus::Applied;
             return status(systems.travel.synchronize(actor,request.destination,systems.skills.uninterruptible(actor.actor)).status);
         }
-        if (const auto crossing = systems.travel.walk(actor, request)) return *crossing;
+        systems.travel.cancel(actor.player);
         return systems.movement.execute(actor, request);
     }
     CommandStatus operator()(const inventory::Request &request) const {

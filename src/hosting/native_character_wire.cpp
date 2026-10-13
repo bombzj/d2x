@@ -1,12 +1,15 @@
 #include "native_character_wire.hpp"
 #include "content/classic_data.hpp"
+#include "gameplay/character/attributes.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <set>
 #include <stdexcept>
+#include <utility>
 namespace d2x {
 namespace {
 using Values = std::map<std::string, double, std::less<>>;
@@ -119,6 +122,30 @@ std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const Charact
         }
     }));
     for (const auto &[id, effective] : totals.skillRanks) skillPacket(result, record.id, id, rank(record.skillRanks, id), effective);
+    return result;
+}
+std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data, const CharacterRecord &record) {
+    if (record.id.value > UINT32_MAX) throw std::runtime_error("Public character exceeds native GUID capacity");
+    const auto definition = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &entry) {
+        return entry.name == record.characterClass;
+    });
+    if (definition == data.characters.end()) throw std::runtime_error("Missing public character definition");
+    const auto base = deriveCharacterAttributes(*definition, record.level, record.allocated);
+    // PlrMsg::sub_6FC82830 sends base stats before another player's equipment.
+    // Equipped item/state lists supply their own bonuses in the native client.
+    // PlrSave2 initializes both native base rate percentages to 100.
+    const std::array<std::pair<const char *, int>, 5> source{{
+        {"velocitypercent", 100}, {"attackrate", 100}, {"level", record.level},
+        {"strength", base.strength}, {"dexterity", base.dexterity}
+    }};
+    std::vector<Bytes> result;
+    for (const auto &[name, value] : source) {
+        const auto native = nativeValues(data, {{name, value}});
+        const auto [stat, number] = *native.begin();
+        result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::UnitAttribute, [&](auto &out) {
+            out.u32(uint32_t(record.id.value)); out.u8(stat); out.u32(number);
+        }));
+    }
     return result;
 }
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::CharacterFact &fact) {

@@ -7,7 +7,7 @@ namespace d2x::server {
 GameSystems::GameSystems(PlayerStore &players, AreaStore &areas, EntityIds &ids, uint64_t &random,
                          EventOutbox &events, const PreparedRules &rules, const GameSettings &settings)
     : movement(MovementPorts{players, areas, travel, monsters, effects, items}),
-      world(d2x::server::world::Ports{areas, players, settings, ids}),
+      world(d2x::server::world::Ports{areas, players, settings, ids, travel, monsters, missiles, skills, objects, loot}),
       spatial(d2x::server::spatial::Ports{areas, players, monsters, objects, missiles, items}),
       items(d2x::server::items::Ports{players, areas, ids, random, rules.items.get(), events}),
       inventory(d2x::server::inventory::Ports{players, items, transactions, rules.items.get(), movement, effects, areas, events, travel, trade, quests, social}),

@@ -7,16 +7,36 @@
 #include "server/systems/world/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
+#include <stdexcept>
 namespace d2x::server::npc {
+Vec System::position(const ActorContext &actor, const AreaNpc &npc) const {
+    for (const auto &[id, area] : ports_.areas.all()) {
+        (void)id;
+        for (const auto &entry : area.definition.npcs) if (&entry == &npc)
+            return npc.position + area.definition.origin - ports_.areas.at(actor.area).definition.origin;
+    }
+    throw std::logic_error("NPC has no owning area");
+}
 const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool conversation) const {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || player->persistent.player.hp <= 0 || !area || area->generation != actor.areaGeneration) return nullptr;
-    const auto &npcs = area->definition.npcs;
-    const auto found = std::find_if(npcs.begin(),npcs.end(),[&](const auto &entry){return entry.id == id;});
-    if(found!=npcs.end() && (found->hidden || !found->rule.interactable)) return nullptr;
-    if (found == npcs.end() || !ports_.quests.npcVisible(player->persistent.player,found->rule.code,actor.area,found->rule.questInitFunction) || nativeUnitDistance(player->position,2,found->position,found->rule.size)>8) return nullptr;
+    // PlrMsg::sub_6FC828D0 resolves the real GUID across active rooms. An
+    // adjacent level is not a different act or a different game instance.
+    Vec origin; const auto navigation = area->definition.collision.linkedNavigation(origin);
+    const AreaNpc *found = nullptr;
+    RegionId npcArea = actor.area;
+    for (const auto &[region, candidate] : ports_.areas.all()) {
+        if (candidate.definition.act != area->definition.act ||
+            std::none_of(navigation.navigationSources.begin(), navigation.navigationSources.end(),
+                [&](const auto &entry) { return entry.grid == &candidate.definition.collision; })) continue;
+        for (const auto &entry : candidate.definition.npcs) if (entry.id == id) { found = &entry; npcArea = region; break; }
+        if (found) break;
+    }
+    if (!found || found->hidden || !found->rule.interactable ||
+        !ports_.quests.npcVisible(player->persistent.player,found->rule.code,npcArea,found->rule.questInitFunction) ||
+        nativeUnitDistance(player->position,2,position(actor,*found),found->rule.size)>8) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
-    return &*found;
+    return found;
 }
 std::optional<ServiceAccess> System::service(const ActorContext &actor, EntityId id) const {
     const auto *target = find(actor, id, true);
@@ -42,7 +62,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const auto *npc = find(actor,talk.target); if (!npc) return {DomainStatus::InvalidRequest,{}};
     const auto &player = *ports_.players.find(actor.player);
     if(talk.action==TalkToNpc::Action::Talk) {
-        if(nativeUnitDistance(player.position,2,npc->position,npc->rule.size)>6) {
+        if(nativeUnitDistance(player.position,2,position(actor,*npc),npc->rule.size)>6) {
             if(ports_.movement.execute(actor,{MovementAction::ApproachNpc,{},true,npc->id})!=CommandStatus::Applied)
                 return {DomainStatus::Unavailable,{}};
             approaches_.insert_or_assign(actor.player,Approach{actor,request,player.locomotionSequence});
@@ -129,7 +149,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         const auto &talk=std::get<TalkToNpc>(pending.request.intent);
         const auto *npc=find(pending.actor,talk.target);
         if(!player || !npc || player->locomotionSequence!=pending.locomotion) {it=approaches_.erase(it);continue;}
-        if(nativeUnitDistance(player->position,2,npc->position,npc->rule.size)>6) {
+        if(!player->route.empty() || nativeUnitDistance(player->position,2,position(pending.actor,*npc),npc->rule.size)>6) {
             if(player->route.empty()) it=approaches_.erase(it);else ++it;
             continue;
         }

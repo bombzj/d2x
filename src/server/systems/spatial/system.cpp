@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include <algorithm>
@@ -63,7 +64,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     for(const auto &[id,player]:ports_.players.all())
         if(player.entered && player.persistent.player.hp>0) insert(player.area,player.position,{player.actor,UnitKind::Player,0},2);
     for(const auto &[id,monster]:ports_.monsters.read().actors)
-        if(monster.life>0) insert(monster.area,monster.position,{id,UnitKind::Monster,monster.revision},monster.rule.size);
+        if(monster.life>0 && ports_.areas.loaded(monster.area,monster.position)) insert(monster.area,monster.position,{id,UnitKind::Monster,monster.revision},monster.rule.size);
     std::erase_if(locations_,[&](const auto &entry) {
         if(entry.second.generation==generation) return false;
         erase(entry.first,entry.second);return true;

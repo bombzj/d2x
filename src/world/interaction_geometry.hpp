@@ -1,7 +1,6 @@
 #pragma once
 #include "core/id.hpp"
 #include "core/math.hpp"
-#include <optional>
 
 namespace d2x {
 struct Grid;
@@ -18,5 +17,4 @@ struct InteractionTarget {
     bool collisionRequired = true;
 };
 bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &target);
-std::optional<Vec> interactionApproach(const Grid &grid, Vec from, const InteractionTarget &target);
 } // namespace d2x

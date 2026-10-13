@@ -265,16 +265,25 @@ std::vector<Bytes> nativeMonsterEquipment(const ClassicData &data,PersistentChar
     }
     return result;
 }
-std::vector<Bytes> nativePublicEquipment(const ClassicData &data, PersistentCharacter projection) {
-    for (auto &[id, item] : projection.inventory.items) {
-        (void)id;
-        const auto conceal = [&](auto &&self, ItemInstance &value) -> void {
-            value.identified = false; value.nativeFlags &= ~uint32_t(0x10);
-            for (auto &child : value.socketedItems) self(self, child);
-        };
-        conceal(conceal, item);
-    }
+std::vector<Bytes> nativePublicEquipment(const ClassicData &data, const PersistentCharacter &projection) {
+    // PLAYER_SynchronizeItemsToClient sends the actual equipped items, including
+    // identification and socket/property data. The native client rechecks their
+    // requirements after 9D; clearing IDENTIFIED makes even a normal staff fail
+    // and acquire NOEQUIP. The public 0x20 base stats must precede these packets.
+    // publicEquipment already restricts this projection to
+    // equipment containers, so inventory privacy does not require changing gear.
     return nativeInventoryPackets(data, projection);
+}
+std::vector<Bytes> nativePublicUnequip(const ClassicData &data, const PersistentCharacter &projection, const ItemInstance &item) {
+    auto state = projection;
+    state.inventory.containers.emplace(state.containers.cursor,
+        ContainerState{state.containers.cursor, {state.player.id, ContainerKind::Cursor, 1, 1}});
+    auto removed = item;
+    removed.location = ContainerLocation{state.containers.cursor, {}};
+    std::vector<Bytes> result;
+    emitItem(result, data, state, removed, ItemAction::Unequip, 0, uint32_t(state.player.id.value), {}, item.location);
+    result.resize(1);
+    return result;
 }
 std::vector<Bytes> nativeInventoryDelta(const ClassicData &data, const server::InventoryFact &fact) {
     const auto &state = fact.projection;

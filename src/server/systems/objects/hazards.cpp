@@ -83,6 +83,7 @@ DomainResult<> System::explode(Object &object,const ActorContext &actor) {
 StepStatus System::hazardStep(TickContext tick) {
     bool blocked=false;std::set<RegionId> changed;
     for(auto &[id,object]:state_.objects) {
+        if (!ports_.areas.loaded(object.area, object.position)) continue;
         (void)id;if(!object.hazardAt || tick.tick<object.hazardAt) continue;
         const auto &area=ports_.areas.at(object.area);
         bool occupied=false,active=false;

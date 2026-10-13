@@ -74,7 +74,8 @@ server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &inde
 }
 }
 void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
-    MonsterCatalog catalog(archives, data.tables.at("monstats")); ClassicStrings strings(archives);
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource; ClassicStrings strings(archives);
     SpeechIndexes speechIndexes;
     for(const auto &[key,value]:strings.entries()) {
         (void)value;const auto index=strings.index(key);

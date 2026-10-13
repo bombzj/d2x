@@ -113,6 +113,10 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 客户端只补原版启动通知的等待处理：中性传送点收到0x0E/mode1后结束激活等待，下一次点击才能正常请求菜单；若多人先后点击引起随后0x63到达，只在同一交互代次接受该真实菜单。关闭、移动、换区等代次失效后不重新打开。两种服务端共用此处理，没有自研协议或自行解锁。
 
+物件入场和进入视野统一由publishObjects使用权威初始化后的模式指派；nativeAreaWarps仅指派warp，不再从AreaMetadata发模式0的第二份物件。这样城镇InitFn17／mode2会以真实51模式首次送达，野外中性WP及开门／箱子／神坛也使用同一物件状态出口。旧WP模式1→2的ENDANIM仍静默衔接，不能用额外默认点亮补包掩盖入场基线错误。
+
+23:38用户诊断中，城镇WP GUID51／class119的三次入场51均为mode0，后续无相应模式更新；同局只读宿主快照为operation23／mode2。原因是入场先发虚构中性基线并记peer.objects revision0，后续WP特例只发送mode1，跳过已有的mode2。源码现已删除中性物件入场路径与其缓存登记，按D2MOO ObjRgn::OBJECTS_InitFunction17_Waypoint的城镇OBJMODE_OPENED初始化值指派；个人解锁位、WP菜单和旅行资格没有改变。证据在`artifacts/akara-waypoint-20261012`及`artifacts/diagnostics/20261012-233827-395a3c2d`；2026-10-13 Release单机入场51已为mode2，远处单击WP得到原63菜单，Rogue Encampment为unlocked；证据在artifacts/path-smoke-20261013-002214/delivery-final。新房间中立物件首次入场无模式变化时也刷新权威碰撞，原SUNIT_Add／SUNIT_Restore按HasCollision[当前模式]建立占位；原遗漏导致Objects[37]／GUID52、54、64只在客户端有0x0400障碍。
+
 依据：D2Game ObjMode::OperateFunction23／WAYPOINT、ObjRgn::InitFunction17、PlrMsg::Rcv0x49、SUnitNpc::WARRIV1；D2Common D2Waypoints、DrlgDrlgWarp::GetWaypointRoomExFromLevel、D2Dungeon::FindActSpawnLocationEx及D2Collision::GetFreeCoordinatesImpl。当前MPQ为39个传送点及16种OperateFn23物件；容量112是原布局，不代表新增传送点或解锁后续幕任务。
 
 尚有前置依赖：PvP敌意变更后的10秒禁用规则需要真实敌意时钟；五幕个人任务的城镇解锁已随旅行事务接入，完整组队／特殊旅行边界仍待补。原WAYPOINT到达分支额外发送0x0D/action1、坐标+3的短动作通知，当前仍使用既有TravelFact／0x15位置同步；需先核实原客户端该动作的坐标／路径消费，不能直接追加一个会被当前客户端解释为新权威位置的包。精细房间生命周期与动态拥挤亦未完成一致性认证，不能据本轮源码核对宣称全路径与原服完全相同。调试观察入口见[调试管道](../../development/DEBUG_PIPE.md)。

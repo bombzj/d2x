@@ -20,6 +20,56 @@ bool sameHireling(const HirelingRecord &current, const HirelingRecord &prepared)
     return current.sourceRow == prepared.sourceRow && current.level == prepared.level &&
         current.classId == prepared.classId && current.seed == prepared.seed && current.nameKey == prepared.nameKey;
 }
+Vec nativePosition(Vec point) {return {std::floor(point.x+.5f),std::floor(point.y+.5f)};}
+int coordinateDistance(Vec first,Vec second) {
+    const int x=std::abs(int(first.x)-int(second.x)),y=std::abs(int(first.y)-int(second.y));
+    return std::max(x,y)+std::min(x,y)/2;
+}
+int ownerDistance(Vec body,Vec owner,int size) {
+    // AiUtil::AIUTIL_GetDistanceToCoordinates_FullUnitSize differs from 10399:
+    // subtract the hireling's full SizeX on each axis, then take absolute values.
+    const int x=std::abs(std::abs(int(body.x)-int(owner.x))-size);
+    const int y=std::abs(std::abs(int(body.y)-int(owner.y))-size);
+    return std::max(x,y)+std::min(x,y)/2;
+}
+bool walkingConnection(const AreaStore &areas,RegionId from,RegionId to) {
+    if(from==to) return true;
+    const auto &source=areas.at(from),&destination=areas.at(to);
+    if(source.definition.act!=destination.definition.act) return false;
+    Vec origin;const auto view=source.definition.collision.linkedNavigation(origin);
+    return std::any_of(view.navigationSources.begin(),view.navigationSources.end(),
+        [&](const auto &entry){return entry.grid==&destination.definition.collision;});
+}
+void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner,
+                      const monsters::Actor &body,int distance) {
+    const auto &area=ports.areas.at(body.area);
+    const auto bodyWorld=nativePosition(body.position)+area.definition.origin;
+    const auto finalWorld=nativePosition(owner.routeDestination)+ports.areas.at(owner.area).definition.origin;
+    const auto move=[&](Vec world,uint8_t type,uint8_t bound,int velocity,bool run) {
+        monsters::MoveRequest request{pet.actor,{body.area,area.generation,world-area.definition.origin},{},0,velocity,run};
+        request.pathSteps=1;request.pathType=type;request.pathDistance=bound;
+        return bool(ports.monsters.requestMove(request));
+    };
+    // PETAI_PetMove motion 1 follows the owner's twenty sampled positions,
+    // newest first. Walking outside town uses the final target instead.
+    if(owner.moving && !owner.runningNow && !ports.areas.at(owner.area).definition.town) {
+        move(finalWorld,13,100,75,false);return;
+    }
+    for(auto it=owner.movementHistory.rbegin();it!=owner.movementHistory.rend();++it) {
+        if(coordinateDistance(bodyWorld,*it)<=5) continue;
+        if(move(*it,13,100,135,false) || move(*it,15,100,135,true) || move(*it,7,100,135,true)) return;
+    }
+    // This is the final native PETAI motion-1 WanderToTarget branch, not an
+    // extra search/teleport policy invented for failed bridge paths.
+    const auto ownerWorld=nativePosition(owner.position)+ports.areas.at(owner.area).definition.origin;
+    const unsigned radius=unsigned(std::max(distance/4,4));
+    int x=0,y=0;
+    if(rollRandom(pet.random)&1) {x=int(radius);y=int(limitedRandom(pet.random,radius));}
+    else {x=int(limitedRandom(pet.random,radius));y=int(radius);}
+    if(rollRandom(pet.random)&1) x=-x;
+    if(rollRandom(pet.random)&1) y=-y;
+    move(ownerWorld+Vec{float(x),float(y)},13,100,90,false);
+}
 }
 std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const monsters::Actor &victim) const {
     const auto *player=ports_.players.find(owner);const auto prepared=hirelingRules_.find(owner);
@@ -144,8 +194,11 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan || !ports_.transactions.commit(std::move(*plan.value))) return StepStatus::Blocked;
     }
     if(body->life<=0 || p->persistent.player.hp<=0) {ports_.monsters.stop(pet.actor);return StepStatus::Complete;}
-    const int ownerDistance=std::max(0,missileDistance(body->position,p->position)-2);
-    if(body->area!=p->area || ownerDistance>prepared.warp || pet.ownerTeleport!=p->teleportRevision) {
+    const auto &bodyArea=ports_.areas.at(body->area);
+    const int distanceToOwner=ownerDistance(nativePosition(body->position)+bodyArea.definition.origin,
+        nativePosition(p->position)+area.definition.origin,body->rule.size);
+    const bool walking=!body->route.empty() || body->moving;
+    if(!walkingConnection(ports_.areas,body->area,p->area) || (!walking && distanceToOwner>prepared.warp) || pet.ownerTeleport!=p->teleportRevision) {
         for(int radius=1;radius<=4;++radius) for(int x=-radius;x<=radius;++x) for(int y=-radius;y<=radius;++y) {
             if(std::max(std::abs(x),std::abs(y))!=radius) continue;
             const Vec at{std::floor(p->position.x)+x+.5f,std::floor(p->position.y)+y+.5f};
@@ -154,8 +207,19 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         return StepStatus::Complete;
     }
     if(tick.tick<pet.nextDecision || tick.tick<body->busyUntil || body->frozenUntil>tick.tick) return StepStatus::Complete;
-    if(ownerDistance>(p->moving?16:prepared.follow)) {
-        ports_.monsters.requestMove({pet.actor,{body->area,area.generation,p->position},p->actor,16,(!p->moving || p->runningNow)?135:75,false});pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
+    // Fn061 returns while WALK/RUN is active instead of replacing a partially
+    // executed detour every AI interval.
+    if(walking) return StepStatus::Complete;
+    if(body->area!=p->area || distanceToOwner>prepared.follow) {
+        followOwnerTrail(ports_,pet,*p,*body,distanceToOwner);
+        pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
+    }
+    if(distanceToOwner>16 && p->moving) {
+        // Near-owner motion remains a unit approach; publish its true native
+        // arrival bound as PATH_SetStepNum instead of sending zero to clients.
+        monsters::MoveRequest request{pet.actor,{body->area,area.generation,p->position},p->actor,16,p->runningNow?135:75,false};
+        request.pathSteps=17;request.pathDistance=40;
+        ports_.monsters.requestMove(request);pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;
     }
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=prepared.vision;
@@ -181,7 +245,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
                 }
                 return best && bool(ports_.monsters.requestMove({pet.actor,{body->area,area.generation,*best},{},0,75,false}));
             };
-            if((ownerDistance>4 && retreat(p->position)) || retreat(body->position)) {pet.random=random;pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;}
+            if((distanceToOwner>4 && retreat(p->position)) || retreat(body->position)) {pet.random=random;pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;}
         }
         if(!attackNow) {pet.attackBias+=10;pet.random=random;pet.nextDecision=tick.tick+10;return StepStatus::Complete;}
         std::vector<const HirelingAction *> eligible;
@@ -204,7 +268,10 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});
         pet.nextDecision=tick.tick+uint64_t(chosen && chosen->aura?10:prepared.think);
     } else {
-        if(missileDistance(body->position,p->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,p->position},p->actor,4,75,false});
+        if(missileDistance(body->position,p->position)>4) {
+            monsters::MoveRequest request{pet.actor,{body->area,area.generation,p->position},p->actor,4,75,false};
+            request.pathSteps=5;request.pathDistance=40;ports_.monsters.requestMove(request);
+        }
         pet.nextDecision=tick.tick+uint64_t(prepared.think);
     }
     pet.random=random;return StepStatus::Complete;

@@ -196,6 +196,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     std::set<RegionId> changed;
     for (const auto &[id, area] : ports_.areas.all()) for (const auto &source : area.definition.objects) {
+        if (!ports_.areas.loaded(id, source.position)) continue;
         if (state_.objects.contains(source.id)) continue;
         if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=id || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
         Object object{source.id, source.type, id, source.position, 1, 0, source.rule, 0, 0, false, 2 * source.rule.parameters[2]};
@@ -204,10 +205,14 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
         if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
         initialize(object,tick.tick);
-        if(object.mode) changed.insert(id);
+        // SUNIT_Add blocks the new object's current-mode footprint,
+        // including NEUTRAL. Admission is a collision change even without an
+        // initialization mode transition.
+        changed.insert(id);
         state_.objects.emplace(source.id, std::move(object));
     }
     for (auto &[id, object] : state_.objects) {
+        if (!ports_.areas.loaded(object.area, object.position)) continue;
         if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
             object.mode=*mode;object.until=0;++object.revision;changed.insert(object.area);
         }

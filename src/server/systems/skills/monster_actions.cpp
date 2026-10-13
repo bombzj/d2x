@@ -104,7 +104,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     if (!event) { ports_.combat.cancel(monster->id); monsterReleases_.erase(monster->id); return {event.status, {}}; }
     if(!petAttack) ports_.monsters.commitCombatRandom(monster->id,reserved);
     const bool neutral=request.monsterMode<16 && !(rule.immediateAiModes & (uint16_t(1)<<request.monsterMode));
-    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration,neutral);
+    const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration,neutral,
+        request.position || slot.action==MonsterAttackRule::Action::Web ? EntityId{} : target->id);
     if(begun && slot.action==MonsterAttackRule::Action::Charge) {
         const auto delta=destination->first-monster->position;
         const float stop=float(rule.meleeRange+3)+.5f;

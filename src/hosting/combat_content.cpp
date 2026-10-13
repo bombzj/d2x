@@ -230,15 +230,19 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
 std::optional<server::PreparedMonster> prepareCombatMonster(Archives &archives, const ClassicData &data,
     AreaGenerationRequest request, MonsterIdentity identity, Vec position) {
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
-    MonsterCatalog catalog(archives, data.tables.at("monstats"));
-    AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource;
+    const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
+    const auto &animations = *animationSource;
     uint64_t seed=request.seed;
     for(const unsigned char c:identity.spawnKey) seed=(seed^c)*0x100000001b3ULL;
     auto random=initialRandom(uint32_t(seed^(seed>>32)));
     return combatMonster(archives, data, request, std::move(identity), position, world, catalog, animations,random);
 }
 std::vector<server::PreparedMonster> prepareObjectParty(Archives &archives,const ClassicData &data,AreaGenerationRequest request,std::string code) {
-    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;MonsterCatalog catalog(archives,data.tables.at("monstats"));AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource;const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
+    const auto &animations = *animationSource;
     const auto *record=catalog.find(code);if(!record || !record->hostile()) return {};
     auto random=initialRandom(request.seed^uint32_t(request.level));MonsterIdentity identity;identity.monster=code;identity.rank=MonsterRank::Unique;identity.spawnKey="object.urn";identity.origin=SpawnOrigin::Summoned;
     auto parent=combatMonster(archives,data,request,identity,{},world,catalog,animations,random,nullptr,false);
@@ -261,8 +265,10 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     const auto &request = prepared.terrain.request;
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto &level = world.level(request.level);
-    MonsterCatalog catalog(archives, data.tables.at("monstats"));
-    AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource;
+    const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
+    const auto &animations = *animationSource;
     PresetRecord preset;
     if (prepared.terrain.recipe.preset) preset = world.presets().at(prepared.terrain.recipe.preset);
     // Generated maps use each room's MPQ Populate flag in planPopulation.

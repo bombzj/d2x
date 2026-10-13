@@ -7,6 +7,7 @@
 #include <stdexcept>
 #include <bit>
 #include <algorithm>
+#include <optional>
 namespace d2x {
 namespace {
 void stateStats(net::protocol::BitWriter &bits,const ClassicData &data,const std::vector<std::pair<int,int64_t>> &stats) {
@@ -61,6 +62,17 @@ uint8_t direction(Vec from, Vec to) {
     const auto delta = to - from;
     return uint8_t(int(std::lround(7.5 + std::atan2(-delta.x, delta.y) * 32. / std::numbers::pi)) & 63);
 }
+Bytes monsterBlock(EntityId actor, const std::optional<MotionTarget> &target) {
+    // Retail 1.13c action 18 (RVA 4E253) consumes a unit type/GUID, never
+    // XY coordinates. A missing/invisible target uses a valid lookup type and
+    // the native absent GUID (-1); PATH_SetTargetUnit accepts the null result.
+    return encodeServerPacket(ServerMessage::NpcModeUnit, [&](auto &out) {
+        out.u32(uint32_t(actor.value)); out.u8(18);
+        if (target) key(out, target->type, target->id);
+        else { out.u8(0); out.u32(UINT32_MAX); }
+        out.u8(0);
+    });
+}
 }
 Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
     return encodeServerPacket(ServerMessage::AssignNpc, [&](auto &out) {
@@ -97,12 +109,19 @@ Bytes nativeMonsterAssignment(const MonsterSnapshot &monster, Vec origin) {
     });
 }
 Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
-    if(monster.mode==3 || monster.mode==6)
-        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==3?6:18);point(out,monster.position+origin);out.u8(monster.mode==3?uint8_t(monster.life>1?monster.life-1:monster.life)|(monster.lightningReady?0x80:0):0);out.u8(0);});
+    if(monster.mode==6) return monsterBlock(monster.id,monster.movementTarget);
+    if(monster.mode==3)
+        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(6);point(out,monster.position+origin);out.u8(uint8_t(monster.life>1?monster.life-1:monster.life)|(monster.lightningReady?0x80:0));out.u8(0);});
     if(monster.mode==8 && monster.moving)
         return encodeServerPacket(ServerMessage::NpcMovePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(12);point(out,monster.destination+origin);out.u8(8);out.u8(0);out.u8(0);out.u16(uint16_t(monster.velocityPercent));out.u8(0);});
     if(monster.mode>=8 && monster.mode<=11)
-        return encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){out.u32(uint32_t(monster.id.value));out.u8(monster.mode==8?12:monster.mode==9?14:monster.mode==10?26:28);point(out,monster.position+origin);out.u8(0);out.u8(0);});
+        return encodeServerPacket(monster.movementTarget?ServerMessage::NpcAction:ServerMessage::NpcActionPoint,[&](auto &out) {
+            out.u32(uint32_t(monster.id.value));
+            out.u8(monster.mode==8?(monster.movementTarget?13:12):monster.mode==9?(monster.movementTarget?15:14):monster.mode==10?(monster.movementTarget?27:26):(monster.movementTarget?29:28));
+            if(monster.movementTarget) key(out,monster.movementTarget->type,monster.movementTarget->id);
+            else point(out,monster.destination+origin);
+            out.u8(0);if(!monster.movementTarget) out.u8(0);point(out,monster.position+origin);
+        });
     if (monster.mode == 0 || monster.mode == 12)
         return encodeServerPacket(ServerMessage::NpcModePoint, [&](auto &out) {
             out.u32(uint32_t(monster.id.value)); out.u8(monster.mode == 12 ? 9 : 8);
@@ -179,10 +198,8 @@ std::vector<Bytes> nativeHit(const server::HitFact &fact, Vec origin) {
         result.push_back(encodeServerPacket(ServerMessage::UnitIdle,[&](auto &out) {
             key(out,0,fact.target);out.u8(fact.playerMode);point(out,fact.position+origin);out.u8(fact.hitClass);out.u8(fact.life);
         }));
-    if(fact.type==1 && !fact.killed && fact.monsterMode==6 && fact.actionTarget)
-        result.push_back(encodeServerPacket(ServerMessage::NpcModeUnit,[&](auto &out) {
-            out.u32(uint32_t(fact.target.value));out.u8(18);key(out,fact.actionTarget->type,fact.actionTarget->id);out.u8(0);
-        }));
+    if(fact.type==1 && !fact.killed && fact.monsterMode==6)
+        result.push_back(monsterBlock(fact.target,fact.actionTarget));
     else if(fact.type==1 && !fact.killed && fact.monsterMode)
         result.push_back(encodeServerPacket(ServerMessage::NpcModePoint,[&](auto &out){
             out.u32(uint32_t(fact.target.value));out.u8(fact.monsterMode==3?6:18);point(out,fact.position+origin);

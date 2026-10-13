@@ -1,6 +1,7 @@
 #include "remote_social.hpp"
 #include <algorithm>
 #include <chrono>
+#include <string>
 
 namespace d2x::net {
 namespace {
@@ -39,6 +40,12 @@ bool apply_social_packet(OnlineView &v, const protocol::Packet &packet) {
     case 0x5A: {
         OnlineSocialView::Notice notice; notice.type=r.u8();notice.color=r.u8();notice.value=r.u32();notice.parameter=r.u8();
         const auto names=r.take(32);notice.names.assign(names.begin(),names.end());r.finish();
+        // Original D2Client suppresses PLAYERJOIN for its own character name.
+        // D2MOO broadcasts the event even to the entering client.
+        if(notice.type==2 && !v.selectedCharacter.empty()) {
+            const auto end=std::find(names.begin(),names.begin()+16,uint8_t{});
+            if(end!=names.begin()+16 && std::string(names.begin(),end)==v.selectedCharacter) break;
+        }
         notice.sequence=++social.chatSequence;
         notice.receivedMilliseconds=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
         if(const auto identity=social.players.find(notice.value);identity!=social.players.end()) notice.playerName=identity->second.name;

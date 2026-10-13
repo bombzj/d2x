@@ -14,6 +14,8 @@ struct GeneratedArea {
     int palette{};
     std::optional<int> staffTomb;
     std::vector<std::pair<int, int>> rooms; // Original tile anchors, activation order.
+    struct RoomLink { int level{}, x{}, y{}; };
+    std::map<std::pair<int, int>, std::vector<RoomLink>> nearRooms;
     std::shared_ptr<const Map> map;
     double preparationMilliseconds{};
 };

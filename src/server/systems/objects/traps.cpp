@@ -60,6 +60,7 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
 StepStatus System::trapStep(TickContext tick) {
     bool blocked=false;
     for(auto &[id,object]:state_.objects) {
+        if (!ports_.areas.loaded(object.area, object.position)) continue;
         (void)id;if(!object.trapAt) continue;
         bool active=false;const auto &area=ports_.areas.at(object.area);
         for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==object.area && area.definition.activation.nearby(p.position,object.position)) active=true;}
@@ -74,6 +75,7 @@ StepStatus System::trapStep(TickContext tick) {
     }
     using Trap=MonsterRule::Trap;
     for(const auto &[id,monster]:ports_.monsters.read().actors) {
+        if (!ports_.areas.loaded(monster.area, monster.position)) continue;
         const auto &rule=monster.rule;if(rule.trap==Trap::None || monster.life<=0) continue;
         auto &clock=traps_[id];if(clock.release && clock.interruption!=monster.interruption) {clock.release=0;clock.next=monster.busyUntil;}const auto &area=ports_.areas.at(monster.area);if(area.definition.town) continue;
         const PlayerState *target=nullptr;float distance=std::numeric_limits<float>::max();
@@ -147,7 +149,8 @@ StepStatus System::trapStep(TickContext tick) {
         const bool skill=rule.trap==Trap::Poison || rule.trap==Trap::Nova || rule.trap==Trap::Turret || ((rule.trap==Trap::RightArrow || rule.trap==Trap::LeftArrow) && mode==8);
         const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},monster.area},{AttackFact{id,rule.trap==Trap::Turret?EntityId{}:target->actor,1,0,monster.area,monster.position,aim,monster.revision,uint16_t(skill?rule.skillIds[0]:0),attack.rank,false,mode}}});
         if(!sent) {clock=before;blocked=true;continue;}
-        const auto result=ports_.monsters.beginAttack(id,tick.tick+uint64_t(attack.duration));if(!result) continue;
+        const auto result=ports_.monsters.beginAttack(id,tick.tick+uint64_t(attack.duration),false,
+            rule.trap==Trap::Turret?EntityId{}:target->actor);if(!result) continue;
         clock.interruption=monster.interruption;clock.mode=mode;clock.aim=aim;clock.target=target->actor;clock.release=tick.tick+uint64_t(attack.release);clock.next=tick.tick+uint64_t(attack.duration)+delay;
     }
     std::erase_if(traps_,[&](const auto &entry){const auto *m=ports_.monsters.find(entry.first);return !m || m->life<=0;});

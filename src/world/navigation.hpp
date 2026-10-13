@@ -5,6 +5,7 @@
 #include "core/id.hpp"
 #include <deque>
 #include <optional>
+#include <vector>
 namespace d2x {
 struct RoomBounds {
     int x, y, width, height;
@@ -22,6 +23,8 @@ class RoomLayout {
   public:
     RoomLayout() = default;
     RoomLayout(int width, int height, std::vector<RoomBounds> rooms);
+    // Ownership never falls back to a nearby room outside its footprint.
+    const std::vector<RoomBounds> &rooms() const { return rooms_; }
     const RoomBounds *room(Vec point) const;
     std::vector<const RoomBounds *> nearRooms(const RoomBounds &observer) const;
     bool nearby(Vec observer, Vec point) const;
@@ -52,6 +55,10 @@ struct Grid {
         int offsetX, offsetY, side, plane, start, end;
     };
     std::vector<BoundaryNeighbour> neighbours;
+    // Ephemeral read-only room lookup used by navigation, never authority or
+    // imported terrain. Offsets convert a view cell to each owning grid.
+    struct NavigationSource { const Grid *grid; int offsetX, offsetY; };
+    std::vector<NavigationSource> navigationSources;
     Grid() = default;
     Grid(int w, int h) : width(w), height(h), blocked(size_t(w) * h), lightBlocked(size_t(w) * h),
                          terrainCollision(size_t(w) * h), objectCollision(size_t(w) * h),
@@ -59,6 +66,9 @@ struct Grid {
     void setObstacles(std::vector<Obstacle> next);
     uint16_t objectMask(int x, int y, EntityId ignored = {}) const;
     uint16_t movementMask(int x, int y, EntityId ignored = {}) const;
+    Grid linkedNavigation(Vec &origin) const;
+    bool navigationContains(Vec point) const;
+    uint64_t navigationRevision() const;
     bool movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored = {}) const;
     bool walkable(int x, int y) const {
         return x >= 0 && y >= 0 && x < width && y < height && !blocked[y * width + x] &&

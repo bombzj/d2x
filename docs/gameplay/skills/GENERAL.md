@@ -25,6 +25,8 @@ Kick不是其他职业可学习或应展示在选择器中的踢腿技能；刺�
 
 `common_actions.hpp::commonAttackWeapon`迁用master的装备选择逻辑；`commonProjectileSkill`把物品弹体规则投影为同一施放规格，避免普通攻击恢复第二套伤害执行器。`weapon_damage`已有六通道、目标加成、物理转换、致命／双倍与显式随机；普通攻击和职业武器技能使用同一实现。
 
+通用攻击的服务端释放tick取当前MPQ AnimData动作帧；客户端预测动作不证明服务端接受或命中。`loadSkillAnimations`按CharacterDefinition.appearance读取角色COF／AnimData，不使用技能树图标token；刺客ai／as、德鲁伊dz／dr不可混用。原依据为D2MOO D2Composit::COMPOSIT_GetCof使用PlrType类token，以及Units::UNITS_SetAnimActionFrame／UNITS_GetEventFrameInfo消费动画事件。2026-10-12诊断`artifacts/diagnostics/20261012-211833-371733d4`记录刺客对同一怪物40次普攻请求均到宿主、无扣血回包，源码确认旧图标token路径导致时序缺失；修正后的攻击效果等待用户测试，不沿用下节女巫历史成功样本认证刺客。
+
 Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀、弓／弩和六种投掷药瓶；不依物品名字猜等级。普通投掷按真实武器计算，弓弩按shoots匹配活动组的箭袋。开始时检查可用弹药，释放时重新选择并复验同一物品／手位／武器类型及数量；最后一发药瓶删除物品，普通投掷武器保留零数量以供补充。最后一件删除后不再读取失效物品；扣费与背压的公共要求见COMMON。
 
 药瓶遵循SrcDamage=0与原SrvHit2／3：火瓶采用原Missiles固定物理／火通道及范围；毒瓶生成原毒云子弹体并执行毒伤／期限。`rollPotionDamage`不继承装备元素、武器增强伤害或致命概率。地面目标不在沿途撞到单位时提前触发，地形或寿命结束时执行一次原命中程序。
@@ -36,6 +38,12 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 通用动作的本人通知省略及ClientSend原则沿COMMON；普通箭矢／投掷由原Clt程序创建，原73仍用于合格同步。原3F固定8字节：cursor、source GUID、skill；取消为cursor FF、skill FFFF。服务端输出真实来源／技能，并在鉴定事务后清除目标光标，不发通用成功ACK。
 
 公共客户端按原表修复：CltDo2不再排除药瓶，左手投掷按手位选择可见装备弹体；Unsummon目标按原7A本人归属及PetType.unsummon过滤；3F驱动鉴定准备视图。光标准备使用事件revision，支持Escape后再次选择同一来源、入局代次重置及来源物品迟到；界面只读取状态、提交原27，不自行消费或鉴定。原服和自研宿主走相同代码。普通桶另补本人KK预测；只读取真实物件身份、原OperateFn5和已发送的0x13交互，复用已有动作表现，不决定木桶破坏或掉落。
+
+2026-10-13当前Release包单机验证使用ShotAssassin存档副本（种子210），自然步行出城后对自然fallen1 GUID84发送原左键普通攻击；生命1→0、rewardComplete，攻击释放／伤害事实已记录，随后原03返城，两端位置一致。未使用伤害、刷怪或授予命令；证据在`artifacts/path-smoke-20261013-002214/assassin-final`，实际EXE SHA256 `EA5256D2423A04B11B49073361F859B49F0A001F50AB815DE583CC591E2FA4F0`。这认证该普通攻击样本，不代替所有技能／武器组合核对。
+
+按住近战的客户端追击以当前待执行攻击、本地连续人物／目标位置和原近战范围为准，自行启动路径／决定起手，不等本人96或服务端移动确认。localUnitPosition读取同一单位本地路径的位置；首次指派／真实位置不连续时从原指派坐标开始，不能把稀疏位置样本当作连续追击目标。旧CastHandoff只抑制先前动作的稀疏原走路目标，不能抑制敌人逃出范围后的下一次攻击靠近；合成的本地靠近意图使用LocalCast自己的revision，不借最新世界／其他战斗请求的revision。起手距离使用MonStats2原SizeX与playerMeleeReach，保持moving增量及武器rangeadder，目标换格重算按floor(position+0.5)的原生子格，客户端与权威分别执行；Shift站定和已经开始的攻击动画仍沿原语义。依据为PlrMsg::Rcv0x06／09→sub_6FC836D0与UNITS_IsInMeleeRange：范围外保存单位目标并改RUN，范围内才改技能动作。
+
+2026-10-13用户TCP/IP验收日志`artifacts/diagnostics/20261013-073805-98adbcb5`对应EA5256包：D2X本人两次06／33次09，没有07／0A；攻击GUID139期间权威96位置由(4584,4567)继续至(4606,4558)，且目标逃跑后死亡，证明服务端在追击，不能把客户端站定表现判成站定请求或服务端没有寻路。当前源码修正动作交接后重新靠近；证据与MPQ Attack.range=both、敌方SizeX=2核对在`artifacts/melee-hold-crash-20261013`。本轮未构建、运行或重打包，画面及原版Host方向仍需新程序验证。
 
 ## 原版依据
 

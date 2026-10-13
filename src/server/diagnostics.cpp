@@ -169,12 +169,19 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         if (damage.area == player->area && result.damage.size() < limit) result.damage.push_back(damage);
     result.spellImpacts = systems_.combat.read().spells.size(); result.spellTargets = systems_.combat.read().spellTargets;
     if (const auto found = systems_.travel.read().transitions.find(id); found != systems_.travel.read().transitions.end()) result.travel = found->second;
+    if (!destination) for(const auto point:player->route) result.path.push_back(point+area.definition.origin);
     if (destination && std::isfinite(destination->x) && std::isfinite(destination->y)) {
-        const auto path = area.definition.collision.path(player->position, *destination - area.definition.origin, false, playerMovement);
+        const auto &grid = area.definition.collision;
+        constexpr Vec center{.5f,.5f};
+        const auto path = grid.nativePlayerPath(player->position+center, *destination-area.definition.origin+center);
         for (const auto point : path) {
             if (result.path.size() >= 1024) break;
-            result.path.push_back(point + area.definition.origin);
+            result.path.push_back(point + area.definition.origin-center);
         }
+        const int column=int(std::floor(player->position.x+.5f)), row=int(std::floor(player->position.y+.5f));
+        for(int y=row-24;y<=row+24;++y) for(int x=column-24;x<=column+24;++x)
+            result.collision.push_back({x+int(area.definition.origin.x),y+int(area.definition.origin.y),
+                grid.movementMask(x,y),grid.objectMask(x,y),grid.movementClear(x,y,playerMovement)});
     }
     return result;
 }

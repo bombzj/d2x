@@ -59,10 +59,12 @@ struct NativeRealmService {
         bool pendingPlayerUpdate{};
         RegionId resourceArea{};
         std::set<RegionId> areas;
+        std::set<server::RoomView> rooms;
+        std::set<EntityId> warps;
         std::map<EntityId, std::pair<uint64_t, std::string>> roster;
         std::map<EntityId,Bytes> social,partyVitals,partyPositions;
         std::map<std::pair<EntityId,EntityId>,uint16_t> relations;
-        struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}; Bytes motion; std::set<EntityId> equipment; };
+        struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}, characterRevision{}; Bytes motion; std::vector<Bytes> attributes; std::map<EntityId, std::vector<Bytes>> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
         struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<std::pair<int,int64_t>>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
@@ -108,6 +110,7 @@ struct NativeRealmService {
     void publishPortals();
     void publishItemSkills();
     void publishAreas(RegionId area);
+    void publishRoomRemovals();
     void changeArea(const server::TravelFact &);
     void initialize();
     void sendRealm(uint8_t, net::protocol::Writer);

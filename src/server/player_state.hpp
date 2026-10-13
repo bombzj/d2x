@@ -2,6 +2,7 @@
 #include "server/game_messages.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/character/persistent_character.hpp"
+#include "world/native_path_step.hpp"
 #include <deque>
 
 namespace d2x::server {
@@ -17,6 +18,10 @@ struct PlayerState {
     bool entered{};
     Vec position, look{0, 1};
     std::deque<Vec> route;
+    NativePathStep pathStep;
+    // PlrModes: twenty global native positions, sampled after squared travel >45.
+    // Runtime follow history only; never serialized with the character.
+    std::deque<Vec> movementHistory;
     std::optional<MotionTarget> movementTarget;
     std::optional<InteractionTarget> movementArrival;
     Vec routeDestination;

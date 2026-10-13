@@ -240,6 +240,13 @@ void itemPacket(OnlineView &v, const Packet &p) {
     const auto packed = r.take(r.remaining()); item.packed.assign(packed.begin(), packed.end());
     BitReader bits(packed);
     item.flags = bits.read(32); bits.read(10); item.mode = uint8_t(bits.read(3));
+    if (p.id == 0x9D && item.action == 8 && item.ownerType == 0 && item.owner != v.load.playerUnitId) {
+        const auto previous = v.world.items.find(item.id);
+        if (previous != v.world.items.end() && previous->second.mode == 1 &&
+            previous->second.ownerType == item.ownerType && previous->second.owner == item.owner)
+            removeItem(v.world, item.id);
+        return;
+    }
     // A successful sale receipt can precede the seller's removal packet.
     // Its ONCURSOR mode describes equipment removal, not a new owned cursor.
     if ((item.action == 5 || item.action == 8 || item.action == 15 || item.action == 17) &&
@@ -376,7 +383,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             (k.type == 1 && (w.npcRequested == k.id || w.shopRequested == k.id || w.shopSource == k.id ||
                 (w.npcConversation && w.npcConversation->source == k.id))))
             ++w.interactionGeneration;
-        if (k.type == 4) removeItem(w, k.id);
+        if (k.type == 4) {
+            const auto item = w.items.find(k.id);
+            const bool remoteEquipment = item != w.items.end() && item->second.mode == 1 &&
+                item->second.ownerType == 0 && item->second.owner && item->second.owner != v.load.playerUnitId;
+            if (!remoteEquipment) removeItem(w, k.id);
+        }
         if (k.type == 2 && w.waypointSource == k.id) w.waypointSource.reset();
         if (k.type == 2 && w.waypointRequested == k.id) w.waypointRequested.reset();
         if (k.type == 2 && w.waypointActivation && w.waypointActivation->source == k.id) w.waypointActivation.reset();

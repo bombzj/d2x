@@ -10,6 +10,7 @@
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x::server::monsters {
 int movementPercent(const Actor &actor,uint64_t tick) {
@@ -128,6 +129,33 @@ std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId ar
     if(m && m->area==area && m->life>0 && m->damageable()) return std::pair{m->position,m->rule.size};
     return {};
 }
+bool System::recacheHirelingRoom(Actor &actor) {
+    if(!actor.hireling) return true;
+    constexpr Vec center{.5f,.5f};
+    const auto &source=ports_.areas.at(actor.area);
+    if(source.definition.activation.room(actor.position+center)) return true;
+    Vec navigationOrigin;
+    const auto navigation=source.definition.collision.linkedNavigation(navigationOrigin);
+    const AreaState *destination=nullptr;Vec offset;
+    for(const auto &[region,candidate]:ports_.areas.all()) {
+        (void)region;
+        if(candidate.definition.act!=source.definition.act ||
+            std::none_of(navigation.navigationSources.begin(),navigation.navigationSources.end(),
+                [&](const auto &entry){return entry.grid==&candidate.definition.collision;})) continue;
+        const Vec translation=source.definition.origin-candidate.definition.origin;
+        if(!candidate.definition.activation.room(actor.position+translation+center)) continue;
+        if(destination) return false;
+        destination=&candidate;offset=translation;
+    }
+    if(!destination) return false;
+    // PATH_RecacheRoomAtCoordIfNeeded moves room ownership without restarting
+    // the path or treating a continuous level boundary as a pet teleport.
+    actor.area=destination->definition.id;
+    actor.position=actor.pathStep.translate(actor.position+center,offset)-center;
+    actor.movementGoal=actor.movementGoal+offset;
+    for(auto &point:actor.route) point=point+offset;
+    return true;
+}
 DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto it = state_.actors.find(request.actor);
     if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
@@ -138,14 +166,17 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     if (actor.rule.nativeVelocity <= 0 || (request.target && !targetPosition(request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
     const auto collision=actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision;
-    uint8_t pathType=request.circleTurn?1:13;
-    // MonsterMode's default obstacle-search distance is 5. Circling is
+    uint8_t pathType=request.circleTurn?1:request.pathType;
+    // MonsterMode's default obstacle-search distance is 5; pet tactics supply
+    // their own 40/100 bounds. Circling is
     // published as AStar to its computed last point by SCmd, not as pursuit.
-    const uint8_t pathDistance=5;
+    const uint8_t pathDistance=request.pathDistance;
+    if((pathType!=1 && pathType!=2 && pathType!=7 && pathType!=13 && pathType!=15) || !pathDistance)
+        return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
     auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
         area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision);
-    if(route.empty() && !request.circleTurn) {
+    if(route.empty() && !request.circleTurn && (pathType==2 || pathType==7 || pathType==13)) {
         // MonsterMode retries failed Toward paths with WallFollow. The
         // solver raises its search bound to 40 for a live unit target.
         pathType=15;
@@ -158,6 +189,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // It never limits the number of route points (D2Common PathMisc).
     const auto goal=request.circleTurn?route.back():request.destination.position;
     actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
+    actor.pathStep.reset();
     actor.pathSteps=uint8_t(request.pathSteps);
     actor.pathType=pathType;actor.pathDistance=pathDistance;
     actor.movementGoal = goal;
@@ -170,16 +202,19 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
 void System::stop(EntityId id) {
     if (auto it = state_.actors.find(id); it != state_.actors.end()) {
         auto &actor = it->second;
-        if (!actor.route.empty() || actor.moving || actor.running || actor.movementTarget) { actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision; }
+        // Step::PATH_ResetMovement clears points and velocity, not pTargetUnit.
+        if (!actor.route.empty() || actor.moving || actor.running) { actor.route.clear(); actor.moving = false; actor.running = false; ++actor.revision; }
     }
 }
-DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral) {
+DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral, EntityId target) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;
     actor.neutralAt=returnToNeutral?std::optional{until}:std::nullopt;
-    actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; ++actor.revision;
+    // MonsterMode's mode change installs the action target on the same path.
+    // BL must retain that identity after an attacking actor stops walking.
+    actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = target; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
 }
 uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
@@ -369,6 +404,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         it=state_.deathCascades.erase(it);
     }
     for (auto &[id, actor] : state_.actors) {
+        if (!ports_.areas.loaded(actor.area, actor.position+Vec{.5f,.5f})) {
+            actor.moving = false; actor.route.clear(); actor.movementTarget = {};
+            continue;
+        }
         if(actor.curseControl.ai!=CurseAi::None && actor.curseControl.until<=tick.tick) actor.curseControl={};
         if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
         (void)id; actor.moving = false;
@@ -478,7 +517,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(!target) {stop(id);continue;}
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         auto arrived=[&](Vec position) {
-            if (!actor.movementTarget) return (position - actor.movementGoal).length() < .25f;
+            // Coordinate paths finish by consuming their last precise point,
+            // not by an extra floating stopping radius.
+            if (!actor.movementTarget) return false;
             return meleeDistance(position,actor.rule.size,target->first,target->second)<=actor.stopDistance &&
                 (actor.pathSteps || grid.segment(position,target->first));
         };
@@ -488,16 +529,28 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         while (!actor.route.empty() && remaining > 0) {
             const Vec delta = actor.route.front() - actor.position;
             const float distance = delta.length();
-            if (distance < .001f) { actor.route.pop_front(); continue; }
-            const Vec next = actor.position + delta.unit() * std::min(distance, remaining);
-            if (!grid.nativeMovementSegment(actor.position, next, actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision)) { actor.route.clear(); break; }
+            if (distance == 0) { actor.route.pop_front(); continue; }
+            constexpr Vec center{.5f,.5f};
+            const auto previousStep=actor.pathStep;
+            const auto step=actor.pathStep.advance(grid,actor.position+center,actor.route.front()+center,
+                remaining,actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision);
+            const Vec next=step.position-center;
+            const bool atGoal=arrived(next);
             bool barrier=false;
             if(!actor.airborne) for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
             if(barrier) {actor.route.clear();actor.moving=false;break;}
-            actor.position = next; remaining -= std::min(distance, remaining); actor.moving = true; ++actor.revision;
-            if (arrived(next)) { actor.route.clear(); break; }
-            if ((actor.route.front() - next).length() < .001f) actor.route.pop_front();
+            const auto previous=actor.position;actor.position=next;
+            if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;break;}
+            actor.moving=actor.moving || step.travelled>0;++actor.revision;
+            if(step.blocked) {actor.route.clear();break;}
+            if (atGoal) { actor.route.clear(); break; }
+            if(!step.reached) break;
+            remaining-=step.travelled;actor.route.pop_front();
+            if(step.travelled>0) break; // D2Common_10226: one nonzero path point per frame.
         }
+        // Path exhaustion/collision returns FALSE from D2Common_10226 and
+        // leaves WALK/RUN in this frame; do not publish a stale chase target.
+        if(actor.route.empty()) {actor.moving=false;actor.running=false;}
     }
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }

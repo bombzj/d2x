@@ -18,13 +18,13 @@ endif()
 add_library(d2x_resources src/resources/atomic_file.cpp src/resources/archive.cpp src/resources/formats.cpp src/resources/dcc.cpp src/resources/data_table.cpp src/resources/text.cpp src/resources/anim_data.cpp src/resources/monster_palshift.cpp)
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
-add_library(d2x_navigation src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp src/world/room_activation.cpp)
+add_library(d2x_navigation src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp src/world/native_path_step.cpp src/world/room_activation.cpp src/world/native_room_activation.cpp)
 target_link_libraries(d2x_navigation PUBLIC d2x_core)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
-target_sources(d2x_world PRIVATE src/world/native_room_activation.cpp src/world/native_map.cpp)
+target_sources(d2x_world PRIVATE src/world/native_map.cpp)
 target_sources(d2x_world PRIVATE src/world/generated_area.cpp)
 target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/world/retail/outdoor_grid.cpp
   src/world/outdoor/native_jungle_layout.cpp src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
@@ -146,6 +146,8 @@ target_sources(d2x_server PRIVATE
   src/server/runtime/simulation.cpp
   src/server/runtime/events.cpp
   src/server/systems/world/system.cpp
+  src/server/systems/world/rooms.cpp
+  src/server/area_store.cpp
   src/server/systems/spatial/system.cpp
   src/server/systems/items/system.cpp
   src/server/systems/inventory/system.cpp
@@ -238,7 +240,7 @@ add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/autom
   src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
   src/hosting/detail/realm_characters.cpp src/hosting/detail/realm_games.cpp
   src/hosting/detail/game_protocol.cpp src/hosting/detail/host_administration.cpp
-  src/hosting/detail/game_events.cpp src/hosting/detail/native_realm_host.cpp
+  src/hosting/detail/game_events.cpp src/hosting/detail/native_realm_host.cpp src/hosting/area_preparation.cpp
   src/hosting/detail/realm_connection.cpp src/hosting/detail/lan_realm.cpp
   src/hosting/detail/world_replication.cpp src/hosting/detail/player_replication.cpp
   src/hosting/protocol/message_catalog.cpp src/hosting/protocol/gameplay_dispatch.cpp
@@ -248,6 +250,7 @@ add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/autom
   src/hosting/protocol/handlers_progression.cpp src/hosting/protocol/handlers_social.cpp)
 target_link_libraries(d2x_character_host PUBLIC d2x_host d2x_game_content d2x_network PRIVATE d2x_persistence d2x_d2gs_protocol nlohmann_json::nlohmann_json)
 include(cmake/Networking.cmake)
+target_link_libraries(d2x_character_host PRIVATE Threads::Threads)
 add_library(d2x_client src/client/inventory_view.cpp src/client/automap_exploration.cpp
   src/client/character_projection.cpp src/client/quest_projection.cpp src/client/pet_projection.cpp)
 target_link_libraries(d2x_client PUBLIC d2x_client_api PRIVATE d2x_content)

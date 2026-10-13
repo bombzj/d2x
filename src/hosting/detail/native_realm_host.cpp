@@ -14,6 +14,7 @@ void NativeRealmHost::initialize() {
     auto previews = std::make_unique<RealmPortraitCatalog>(archives);
     items = std::shared_ptr<const ItemCatalog>(data, &data->items);
     content = std::move(data); portraits = std::move(previews);
+    areaPreparation = std::make_unique<AreaPreparation>(archives, content);
 }
 const HostedGame *NativeRealmHost::find(GameHandle handle) const {
     for (const auto &[name, game] : games) { (void)name; if (game.handle == handle) return &game; }
@@ -27,16 +28,17 @@ void NativeRealmHost::retire(PlayerBinding binding) {
     host.remove(binding);
     if (!host.participants(binding.game).empty()) return;
     host.destroy(binding.game); terrain.erase(binding.game);
-    std::erase_if(areaPreparations, [&](const auto &entry) { return entry.first.first == binding.game; });
+    std::erase_if(areaPreparations, [&](const auto &entry) {
+        if (entry.first.first != binding.game) return false;
+        areaPreparation->cancel(entry.second); return true;
+    });
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
 }
 void NativeRealmHost::advance(double seconds) {
     // Exactly one advance per scheduler call, regardless of connected clients.
     host.advance(seconds);
-    // Spread room materialization across frames while the player is still in
-    // the source area. One indivisible MPQ/layout/snapshot operation can exceed
-    // the budget; the next operation then waits for another scheduler call.
-    std::optional<std::chrono::steady_clock::time_point> preparationDeadline;
+    // Resource preparation never occupies the simulation scheduler. Consume
+    // only the oldest request per game so completion timing cannot reorder IDs.
     for (auto &[game, areas] : terrain) {
         preparePendingLoot(host, game, archives, *content, lootContent);
         prepareMerchant(host, game, *content);
@@ -50,24 +52,21 @@ void NativeRealmHost::advance(double seconds) {
         const auto pending = host.pendingAreas(game);
         if (!pending) continue;
         for (const auto &request : *pending) {
-            if (!preparationDeadline) preparationDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(4);
-            if (std::chrono::steady_clock::now() >= *preparationDeadline) break;
             const auto key = std::pair{game, request.request};
             try {
-                auto &preparation = areaPreparations[key];
-                if (!preparation) {
+                const auto found = areaPreparations.find(key);
+                if (found == areaPreparations.end()) {
                     const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
                     const auto &level = catalog->level(int(request.destination));
-                    preparation = std::make_unique<AreaGenerator>(archives,
-                        AreaGenerationRequest{request.settings.mapSeed, level.act, level.id, request.settings.difficulty});
+                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty});
+                    areaPreparations.emplace(key, ticket);
                     break;
                 }
-                // Do not let a smaller later request overtake this area and
-                // change entity admission/population order within the game.
-                if (!preparation->advance(*preparationDeadline)) break;
-                if (std::chrono::steady_clock::now() >= *preparationDeadline) break;
-                auto prepared = prepareWorldAreaContent(archives, *content, preparation->take());
-                areaPreparations.erase(key);
+                auto result = areaPreparation->take(found->second);
+                if (!result) break;
+                areaPreparations.erase(found);
+                if (!result->error.empty()) throw std::runtime_error(result->error);
+                auto prepared = std::move(result->area.value());
                 auto [entry, inserted] = areas.emplace(request.destination, std::move(prepared.terrain));
                 if (!inserted) throw std::logic_error("Prepared terrain already installed");
                 try {
@@ -75,7 +74,9 @@ void NativeRealmHost::advance(double seconds) {
                 } catch (...) { areas.erase(entry); throw; }
                 break;
             } catch (const std::exception &error) {
-                areaPreparations.erase(key);
+                if (const auto found = areaPreparations.find(key); found != areaPreparations.end()) {
+                    areaPreparation->cancel(found->second); areaPreparations.erase(found);
+                }
                 host.failArea(game, request.request);
                 for (auto *peer : peers) if (peer->binding && peer->binding->game == game) {
                     peer->counters.lastFailure = error.what(); ++peer->counters.failures;
@@ -87,7 +88,8 @@ void NativeRealmHost::advance(double seconds) {
     for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishPlayers(); peer->publishMonsters(); peer->publishGroundItems(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
+            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
+            peer->publishRoomRemovals();
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }
@@ -108,7 +110,7 @@ void NativeRealmHost::publishEvents(GameHandle game) {
         if (!peer->binding || peer->binding->game != game || peer->peer.phase != GamePhase::Entered) continue;
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishPlayers(); peer->publishMonsters();
+            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters();
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
         }

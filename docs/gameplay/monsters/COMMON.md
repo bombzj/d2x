@@ -1,6 +1,6 @@
 # 怪物公共规范与生命周期
 
-更新：2026-10-12。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+更新：2026-10-13。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
 
 ## 身份与完成口径
 
@@ -58,6 +58,12 @@ combat保存待命中计划，effects投影动态防御／抗性与状态；人�
 death首次捕获活击杀者身份及经验，loot携带真实rank／固定TC／rewardModifiers；成功提交或经验封顶后才完成奖励。巢生与血乌召唤NOXP／NOTC，死亡连锁不凭空获得玩家归属。自然身份死亡由quests计算个人资格；任务清场继续消费实际人口死亡／复活，完整组队经验、NoDrop和首杀／任务掉落另有缺口，不能由AI代办。
 
 运行态身份、动作、位置、时钟、词缀和短时效果不写人物D2S；伙伴持久身份的例外见[佣兵](../characters/HIRELINGS.md)与[存档](../../modules/SAVES.md)。视觉尸体和原模式解释归[PRESENTATION](PRESENTATION.md)，玩家尸体事务归[人物死亡](../characters/PLAYER_DEATH.md)。
+
+怪物停止路径保留原DynamicPath目标，开始单位动作把真实目标写入同一个路径目标，不增设第二份攻击目标。D2MOO Step::PATH_ResetMovement只清路径点／速度；MonsterMode.cpp的模式切换按请求设置PATH_SetTargetUnit。死亡、卸载和显式点目标继续按各自生命周期清目标。
+
+BL按本机1.13c action18的单位分支编码为6A/type/GUID，事件与后续快照共用monsterBlock。不可见或不存在的目标使用合法查询类型及原无目标GUID(-1)，本机D2Common ordinal11129／PATH_SetTargetUnit接受查询返回的null；不把坐标装进身份字段。特殊攻击动作的快照也按MonsterMsg／SCmd选择完整6B／6C结构，保留目标及当前位置。
+
+用户EA5256包原版Join于2026-10-13 07:40:04在D2Client RVA A4E27崩溃。日志117.894664秒的`69 86000000 12 C511 CF11 0000`为fallen1 GUID134／class19格挡。原客户端action18跳4E253，再由A604F按单位类型扩展单位表；异常ecx=4559，edx=6FDF3008，减查询表基址6FBBA608并除512恰为4549，即错误包的Y／X。坐标被当作身份导致越界查表，已直接对应异常寄存器，不能把本次异常归为已证实的掉落问题。原日志、DLL哈希及只读反汇编在`artifacts/melee-hold-crash-20261013`。本轮仅修正源码／静态核对，未构建、运行或打包；原版Join实测尚未认证。
 
 ## 迁入流程与台账
 

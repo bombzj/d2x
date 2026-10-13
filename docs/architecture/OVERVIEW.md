@@ -19,7 +19,7 @@
 
 **服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
 
-**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞，monsters持活动非玩家实体，companions持伙伴控制关系，social持队伍关系；skills／missiles／effects分别持动作、弹体、效果。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
+**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持房间引用／压缩地形恢复数据，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系；skills／missiles／effects分别持动作、弹体、效果。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
 
 修改时先找状态所属领域，通过窄Ports协作；不把GameSystems、网络会话或内容加载器传给玩法。共享算法不共享运行态，协议值不等于磁盘值。新内容沿“MPQ准备 → 领域资格／执行 → 事务／事实 → 原包投影”接入，未实现路径明确拒绝。
 
@@ -43,7 +43,7 @@
 | server/runtime | 类型化命令、穷尽分派、系统组合／窄依赖、固定步顺序、只读规则和有界事件出口 |
 | server/systems/* | 独立领域State／Ports／操作；已执行范围与保留Scaffold分开，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | hosting/game_host | 多实例槽位、代次、绑定、25Hz固定步、暂停与内部快照 |
-| hosting/game_content、character_creation | MPQ输入准备、初始角色／物品；不负责客户端绘制 |
+| hosting/game_content、character_creation、area_preparation | MPQ输入准备、初始角色／物品；区域蓝图工作线程独占MPQ句柄及缓存，按票据交回纯值；不负责客户端绘制或玩法提交 |
 | hosting/embedded_realm | 内存端点、selector、分帧与断开／调度组装，不实现具体玩法 |
 | server_main、hosting/pvpgn_server | 独立控制台组合根；D2CS房间／票据、D2DBS角色锁／保存、游戏监听与停服，不实现另一套玩法 |
 | network/protocol/pvpgn | D2CS／D2DBS八字节头有界分帧，与客户端MCP／D2GS分帧分离 |

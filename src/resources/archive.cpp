@@ -40,6 +40,7 @@ void Archives::mount(const std::filesystem::path &p) {
     if (!SFileOpenArchive(p.string().c_str(), 0, MPQ_OPEN_READ_ONLY | MPQ_OPEN_NO_LISTFILE, &h))
         throw std::runtime_error("Cannot open MPQ: " + p.string());
     handles.push_back(h);
+    mountedPaths_.push_back(std::filesystem::absolute(p));
     names.push_back(p.filename().string());
     mountIdentity_.add(p.filename().string());
     mountIdentity_.add(std::to_string(std::filesystem::file_size(p)));

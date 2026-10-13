@@ -76,9 +76,9 @@ DomainResult<> System::install(PreparedArea prepared) {
     AreaStore::validate(prepared.definition);
     assign(prepared.definition);
     const auto id = prepared.definition.id;
-    ports_.areas.areas_.emplace(id, AreaState{std::move(prepared.definition)});
+    ports_.areas.areas_.emplace(id, AreaState{std::move(prepared.definition), 1, {}});
     state_.residency.emplace(id, AreaLease{id, 1, Residency::Prepared});
-    state_.preparation.erase(pending); link();
+    state_.preparation.erase(pending); link(); invalidateRooms();
     return {DomainStatus::Applied, std::monostate{}};
 }
 void System::fail(uint64_t requestId) {
@@ -86,9 +86,11 @@ void System::fail(uint64_t requestId) {
     const auto found = std::find_if(pending.begin(), pending.end(), [&](const auto &p) { return p.request == requestId; });
     if (found != pending.end()) { failed_[found->destination] = requestId; pending.erase(found); }
 }
-void System::openTombWall(RegionId id) noexcept {
+void System::openTombWall(RegionId id) {
+    openedTombs_.insert(id);
     auto &grid=ports_.areas.areas_.at(id).definition.collision;
     for(const auto &cell:ports_.areas.areas_.at(id).definition.openedTombWall) {
+        if (!ports_.areas.loaded(id, {float(cell.index % grid.width), float(cell.index / grid.width)})) continue;
         grid.blocked[cell.index]=cell.blocked;grid.lightBlocked[cell.index]=cell.light;
         grid.terrainCollision[cell.index]=cell.terrain;
         if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[cell.index]=cell.full;
@@ -98,17 +100,18 @@ void System::openTombWall(RegionId id) noexcept {
 std::vector<RegionId> System::visible(PlayerId id) const {
     const auto *player = ports_.players.find(id); if (!player || !player->entered) return {};
     std::vector<RegionId> result{player->area};
-    for (const auto &edge : ports_.areas.at(player->area).definition.boundaries)
-        if (ports_.areas.find(edge.destination) && std::find(result.begin(), result.end(), edge.destination) == result.end()) result.push_back(edge.destination);
+    for (const auto &room : visibleRooms(id))
+        if (std::find(result.begin(), result.end(), room.area) == result.end()) result.push_back(room.area);
     return result;
 }
-StepStatus System::step(TickContext, FrameFacts &) {
+StepStatus System::step(TickContext tick, FrameFacts &) {
+    updateRooms(tick);
     std::set<RegionId> resident;
     for (const auto &[id, player] : ports_.players.all()) {
         (void)id;
         if (!player.entered) continue;
         for (auto area : visible(player.player)) resident.insert(area);
-        for (const auto &edge : ports_.areas.at(player.area).definition.boundaries) request(edge.destination);
+
     }
     for (auto &[id, lease] : state_.residency) lease.residency = resident.contains(id) ? Residency::Active : Residency::Sleeping;
     return state_.preparation.empty() ? StepStatus::Complete : StepStatus::Blocked;

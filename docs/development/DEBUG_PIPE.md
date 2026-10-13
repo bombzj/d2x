@@ -44,7 +44,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
-| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。可给全局x／y，只读计算当前区域路径（最多1024点），不移动角色。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；componentCounts为MPQ十六槽选择数，componentVariants为当前区域该类型池的组合数（0表示原单体路径）；运行列components为实际十六槽选择，另含盾牌、巢生计数、蛛网和中断 |
+| `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。不给坐标时path为剩余权威路径；可给全局x／y，只读计算同一nativePlayerPath（最多1024点），同时返回以当前人物格为中心的49×49 collision窗口（mask／objectMask／playerClear），不移动角色。objects.collision显示权威尺寸、掩码及当前模式占位。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；componentCounts为MPQ十六槽选择数，componentVariants为当前区域该类型池的组合数（0表示原单体路径）；运行列components为实际十六槽选择，另含盾牌、巢生计数、蛛网和中断 |
 | `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为原比例生命（人物100、怪物128；怪物0C编码另减一），character为经验且secondary为等级，travel为源／目标区域 |
 | `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
 | `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
@@ -99,7 +99,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore或squelch，enabled布尔值；原5D/action2或3。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；不实现敌意或队伍 |
 | `online-trade-respond` | accept布尔值、revision为当前world.playerTrade.revision；true接受邀请（button3），false拒绝／取消（button2）。accepted仅表示发送；真实身份等0x78，完成等0x77/13。 |
 | `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由服务端确认，自研权威边界见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。 |
-| `online-world` | 只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
+| `online-world` | 可选fromX／fromY／x／y及radius（0–24）只读当前客户端原生路径和碰撞窗口，返回navigation；不移动角色或改碰撞。只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
 | `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
@@ -116,7 +116,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标，至少间隔100ms，不切18格短段等待回包；可达点／障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
 | `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围，直接发原0x02／0x04跟随真实GUID，不发交谈 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |
-| `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。地图对象发原0x13；NPC远处先按GUID移动，服务端确认到原交谈距离后才0x13；accepted不代表已操作、交谈打开或换区 |
+| `online-interact` | unitId、unitType（默认2，支持1／2／5）、run（NPC靠近默认true）；目标必须在scene.mapTargets中。近处发原0x13；远处先按真实GUID发02／04，本地普通单位路径到达后才13，交互资格及菜单仍由服务端确认；accepted不代表已操作、交谈打开或换区 |
 | `online-town-portal` | 无参数；要求存活／原生地图可移动／非城镇及原服已报告可用卷轴或书技能、右技能。选原右技能并施放，后续world.townPortalPending及实际type2门户回包给出等待／分配状态；不发放卷轴 |
 | `online-npc-interact` | unitId、run（默认true）；online-interact的type1入口。只接MPQ允许交谈的实际NPC，远处先靠近；等待scene.npcConversation |
 | `online-npc-message` | stringId（0–65535）、可选npcRevision；必须为当前服务端对白列表且未确认，版本不符拒绝。发0x31，acknowledged只表示入队，不是任务成功回执 |

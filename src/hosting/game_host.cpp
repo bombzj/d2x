@@ -72,6 +72,14 @@ std::vector<PlayerId> GameHost::visiblePlayers(PlayerBinding binding) const {
 std::vector<RegionId> GameHost::visibleAreas(PlayerBinding binding) const {
     const auto *slot = find(binding.game); return slot ? slot->game->visibleAreas(binding.player) : std::vector<RegionId>{};
 }
+std::vector<server::RoomView> GameHost::visibleRooms(PlayerBinding binding) const {
+    const auto *slot = find(binding.game);
+    return slot ? slot->game->visibleRooms(binding.player) : std::vector<server::RoomView>{};
+}
+bool GameHost::visiblePoint(PlayerBinding binding, RegionId area, Vec point) const {
+    const auto *slot = find(binding.game);
+    return slot && slot->game->visiblePoint(binding.player, area, point);
+}
 bool GameHost::npcVisible(PlayerBinding binding,std::string_view code,RegionId area,int initFunction) const {
     const auto *slot=find(binding.game);return slot && slot->game->npcVisible(binding.player,code,area,initFunction);
 }

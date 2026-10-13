@@ -1,6 +1,7 @@
 #include "native_realm_service.hpp"
 #include "hosting/native_game_wire.hpp"
 #include "hosting/native_item_wire.hpp"
+#include "hosting/native_character_wire.hpp"
 #include "gameplay/combat/life.hpp"
 #include <cmath>
 #include <algorithm>
@@ -92,7 +93,7 @@ void NativeRealmService::publishPlayers() {
             // Removed players may no longer have a snapshot; roster is cached
             // by actor identity separately from instance-local participant IDs.
             const auto actor = it->second.actor;
-            for (const auto item : it->second.equipment)
+            for (const auto &[item, removal] : it->second.equipment)
                 packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(item.value)); }));
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(0); out.u32(uint32_t(actor.value)); }));
             it = peer.visible.erase(it);
@@ -104,19 +105,34 @@ void NativeRealmService::publishPlayers() {
         auto [entry, fresh] = peer.visible.try_emplace(id);
         auto &sent = entry->second;
         const auto &area = shared.terrain.at(binding->game).at(view->actor.region);
-        if (fresh || sent.inventoryRevision != view->inventoryRevision) {
+        const bool inventoryChanged = fresh || sent.inventoryRevision != view->inventoryRevision;
+        const bool characterChanged = fresh || sent.characterRevision != view->characterRevision;
+        if (inventoryChanged || characterChanged) {
             auto equipment = *host.publicEquipment(source);
             if (fresh) {
                 sent.actor = view->actor.id;
                 packets.push_back(nativePlayerAssignment(*content, equipment, *view, area.origin));
-                packets.push_back(nativePlayerInitialStates(*content, *view));
-            } else for (const auto item : sent.equipment)
-                packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(item.value)); }));
-            auto appearance = nativePublicEquipment(*content, equipment);
-            for (auto &packet : appearance) packets.push_back(std::move(packet));
-            sent.equipment.clear();
-            for (const auto &[key, item] : equipment.inventory.items) { (void)item; sent.equipment.insert(key); }
-            sent.inventoryRevision = view->inventoryRevision;
+            }
+            if (characterChanged) {
+                auto attributes = nativePublicCharacterAttributes(*content, equipment.player);
+                if (fresh || attributes != sent.attributes) {
+                    sent.attributes = attributes;
+                    for (auto &packet : attributes) packets.push_back(std::move(packet));
+                }
+                sent.characterRevision = view->characterRevision;
+            }
+            if (inventoryChanged) {
+                if (!fresh) for (const auto &[item, removal] : sent.equipment)
+                    if (!equipment.inventory.items.contains(item) && !peer.groundItems.contains(item))
+                        for (const auto &packet : removal) packets.push_back(packet);
+                auto appearance = nativePublicEquipment(*content, equipment);
+                for (auto &packet : appearance) packets.push_back(std::move(packet));
+                sent.equipment.clear();
+                for (const auto &[key, item] : equipment.inventory.items)
+                    sent.equipment.emplace(key, nativePublicUnequip(*content, equipment, item));
+                sent.inventoryRevision = view->inventoryRevision;
+            }
+            if (fresh) packets.push_back(nativePlayerInitialStates(*content, *view));
         }
         const auto targetVisible=[&] {
             if(!view->actor.target) return false;

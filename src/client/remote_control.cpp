@@ -123,33 +123,16 @@ bool RemoteControl::interact(OnlineUnitKey target, bool run, std::optional<Onlin
         return reject("Target exceeds the native 50-subtile request range");
     if ((target.type == 1 && world.world.npcRequested == target.id) || (approach_ && approach_->target == target))
         return reject("Unit interaction is already pending or open");
-    const bool nativeReady = scene_.interactionReady(world, target);
-    const auto actor = world.load.playerUnitId ? world.world.units.find({0, *world.load.playerUnitId}) : world.world.units.end();
-    const auto &movement = world.world.movementRequest;
-    const bool leavingTarget = movement && (movement->unit ? movement->unit != target :
-        (movement->destination && !scene_.interactionReady(world, target,
-            Vec{float(movement->destination->x), float(movement->destination->y)})));
-    const bool pendingMovement = movement && leavingTarget &&
-        (actor == world.world.units.end() || actor->second.positionRevision <= movement->revision);
-    // PlrMsg ignores NPC interaction outside distance 8. A previous native
-    // sample may still be near while the player has already walked away.
-    // Without a current display sample, retain the conservative native-sample
-    // guard. A current sample may submit an intent; only the host opens it.
-    const bool requirePositionUpdate = target.type == 1 && nativeReady &&
-        (!scene_.interactionReady(world, target, displayOrigin) || pendingMovement);
-    if (displayOrigin ? scene_.interactionReady(world, target, displayOrigin) : nativeReady && !requirePositionUpdate) {
+    // The current local path position authorizes only the original request.
+    // PlrMsg validates eligibility before the server opens a conversation.
+    if (scene_.interactionReady(world, target, displayOrigin)) {
         if (!submitInteraction(target, *context)) return false;
         cancelMovement(); reason_.clear(); return true;
     }
-    if (target.type == 2) {
-        const auto point = scene_.interactionApproachPoint(world, target, displayOrigin);
-        if (!point) return reject("No reachable interaction position in active native collision");
-        if (!move(*point, run, context, displayOrigin)) return false;
-    } else if (!moveToUnit(target, run, context, displayOrigin)) return false;
+    if (!moveToUnit(target, run, context, displayOrigin)) return false;
     approach_ = Approach{target, world.gameGeneration, world.world.areaGeneration,
         world.world.movementRequest ? world.world.movementRequest->revision : 0,
-        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player,
-        requirePositionUpdate};
+        std::chrono::steady_clock::now() + std::chrono::seconds(15), onlineIntentContext(session_.read()), player};
     return true;
 }
 bool RemoteControl::submitInteraction(OnlineUnitKey target, const OnlineIntentContext &context) {
@@ -265,13 +248,11 @@ void RemoteControl::tick(std::optional<Vec> displayOrigin) {
     if (now >= approach_->deadline) {
         cancelApproach(); reason_ = "Server unit approach did not arrive before timeout"; return;
     }
-    const auto actor = view.load.playerUnitId ? view.world.units.find({0, *view.load.playerUnitId}) : view.world.units.end();
-    const bool positionUpdated = !approach_->requirePositionUpdate ||
-        (actor != view.world.units.end() && actor->second.positionRevision > approach_->requestRevision);
-    // This authorizes a C2S intent only; the host still owns interaction and
-    // rewards. Like the native client, do not wait for a periodic 96 merely
-    // to submit the click after the collision-checked approach has arrived.
-    if ((displayOrigin || positionUpdated) && scene_.interactionReady(view, approach_->target, displayOrigin)) {
+    // PathMisc::sub_6FD5DB70 stops an ordinary unit path at nStepNum=0.
+    // The original client submits 13 on local arrival, before a sparse 96.
+    // PlrMsg independently validates its <=6 menu / 7-8 approach distances;
+    // this only authorizes the request, never a local conversation or reward.
+    if (scene_.interactionReady(view, approach_->target, displayOrigin, true)) {
         const bool sent = submitInteraction(approach_->target, approach_->context);
         if (sent) { cancelMovement(); reason_.clear(); }
     }

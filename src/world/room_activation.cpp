@@ -1,6 +1,5 @@
 #include "navigation.hpp"
 #include <algorithm>
-#include <limits>
 
 namespace d2x {
 RoomLayout::RoomLayout(int width, int height, std::vector<RoomBounds> rooms)
@@ -19,24 +18,11 @@ RoomLayout::RoomLayout(int width, int height, std::vector<RoomBounds> rooms)
     }
 }
 int RoomLayout::roomAt(Vec point) const {
-    int x = int(std::floor(point.x)), y = int(std::floor(point.y));
-    if (x >= 0 && y >= 0 && x < width_ && y < height_) {
-        int index = cells_[y * width_ + x];
-        if (index >= 0)
-            return index;
-    }
-    // DS1's shared extra row/column belongs to the closest authored room.
-    int best = -1, distance = std::numeric_limits<int>::max();
-    for (int i = 0; i < int(rooms_.size()); ++i) {
-        const auto &r = rooms_[i];
-        int d = std::max({r.x - x, x - r.x - r.width, 0}) + std::max({r.y - y, y - r.y - r.height, 0});
-        if (d < distance) {
-            distance = d;
-            best = i;
-        }
-    }
-    return best;
+    if (!std::isfinite(point.x) || !std::isfinite(point.y) || point.x < 0 || point.y < 0 ||
+        point.x >= width_ || point.y >= height_) return -1;
+    return cells_[size_t(int(std::floor(point.y))) * width_ + int(std::floor(point.x))];
 }
+
 const RoomBounds *RoomLayout::room(Vec point) const {
     const int index = roomAt(point);
     return index < 0 ? nullptr : &rooms_[size_t(index)];

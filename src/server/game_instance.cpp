@@ -36,6 +36,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
     if (!active && !systems_.trade.cancelFor(id,tick_)) return false;
     if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
+    if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
         found->second.route.clear(); found->second.moving = false; systems_.travel.cancel(id);
@@ -96,6 +97,7 @@ std::optional<PersistentCharacter> GameInstance::publicEquipment(PlayerId id) co
     projection.player.id = player->actor; projection.player.name = saved.player.name;
     projection.player.characterClass = saved.player.characterClass; projection.player.level = saved.player.level;
     projection.player.weaponSet = saved.player.weaponSet;
+    projection.player.allocated = saved.player.allocated;
     projection.containers = saved.containers;
     for (const auto container : {saved.containers.equipment, saved.containers.beltEquipment})
         if (const auto found = saved.inventory.containers.find(container); found != saved.inventory.containers.end())
@@ -250,8 +252,11 @@ DomainResult<> GameInstance::grantHireling(PlayerId id,HirelingRecord record) {
 namespace d2x::server {
 std::vector<ItemInstance> GameInstance::groundItems(PlayerId id) const {
     std::vector<ItemInstance> result; const auto areas = visibleAreas(id);
-    for (const auto key : systems_.items.groundInAreas(areas))
-        result.push_back(systems_.items.read().world.items.at(key));
+    for (const auto key : systems_.items.groundInAreas(areas)) {
+        const auto &item = systems_.items.read().world.items.at(key);
+        const auto &location = std::get<GroundLocation>(item.location);
+        if (visiblePoint(id, location.region, location.position)) result.push_back(item);
+    }
     return result;
 }
 DomainResult<> GameInstance::spawnItems(PlayerId id, items::PreparedBatch batch, std::optional<Vec> position) {
@@ -276,6 +281,7 @@ std::vector<CorpseView> GameInstance::visibleCorpses(PlayerId id) const {
         (void)key;
         for (const auto &corpse : player.persistent.corpses) {
             if (std::find(visible.begin(), visible.end(), corpse.region) == visible.end()) continue;
+            if (!visiblePoint(id, corpse.region, corpse.position)) continue;
             CorpseView view{corpse, {}, player.inventoryRevision};
             view.equipment.player = player.persistent.player; view.equipment.player.id = corpse.id;
             view.equipment.inventory.containers.emplace(corpse.items, player.persistent.inventory.containers.at(corpse.items));
@@ -294,7 +300,8 @@ namespace d2x::server {
 std::vector<objects::Object> GameInstance::visibleObjects(PlayerId id) const {
     std::vector<objects::Object> result; const auto areas = visibleAreas(id);
     for (const auto &[key, object] : systems_.objects.read().objects) {
-        (void)key; if (std::find(areas.begin(), areas.end(), object.area) != areas.end()) result.push_back(object);
+        (void)key;
+        if (std::find(areas.begin(), areas.end(), object.area) != areas.end() && visiblePoint(id, object.area, object.position)) result.push_back(object);
     }
     return result;
 }
@@ -302,9 +309,9 @@ std::vector<objects::Object> GameInstance::visibleObjects(PlayerId id) const {
 
 namespace d2x::server {
 std::vector<travel::Portal> GameInstance::visiblePortals(PlayerId player) const {
-    const auto areas=visibleAreas(player); std::vector<travel::Portal> result;
-    for(const auto &[owner,portal]:systems_.travel.read().portals) { (void)owner; if(std::find(areas.begin(),areas.end(),portal.field)!=areas.end() || std::find(areas.begin(),areas.end(),portal.town)!=areas.end()) result.push_back(portal); }
-    for(const auto &[destination,portal]:systems_.travel.read().specialPortals) {(void)destination;if(std::find(areas.begin(),areas.end(),portal.field)!=areas.end() || std::find(areas.begin(),areas.end(),portal.town)!=areas.end()) result.push_back(portal);}
+    std::vector<travel::Portal> result;
+    for(const auto &[owner,portal]:systems_.travel.read().portals) { (void)owner; if(visiblePoint(player,portal.field,portal.fieldPosition) || visiblePoint(player,portal.town,portal.townPosition)) result.push_back(portal); }
+    for(const auto &[destination,portal]:systems_.travel.read().specialPortals) {(void)destination;if(visiblePoint(player,portal.field,portal.fieldPosition) || visiblePoint(player,portal.town,portal.townPosition)) result.push_back(portal);}
     return result;
 }
 }

@@ -6,6 +6,60 @@
 #include <stdexcept>
 namespace d2x {
 namespace {
+int nativeDirectionIndex(int dx, int dy) {
+    const int ax = std::abs(dx), ay = std::abs(dy);
+    if (ax < 2 * ay) {
+        if (ay >= 2 * ax) {
+            if (dx < 0) return dy < -1 ? 5 : std::min(dy, 2) + 7;
+            dx &= 1;
+        }
+    } else dy = dy >= 0 ? dy & 1 : -1;
+    dx = std::clamp(dx, -2, 2);
+    return dy < -1 ? 5 * dx + 10 : std::min(dy, 2) + 5 * dx + 12;
+}
+std::optional<Vec> preparedPlayerTarget(const Grid &grid, Vec from, Vec to, MovementCollisionRule rule) {
+    const int sx = int(std::floor(from.x)), sy = int(std::floor(from.y));
+    int x = int(std::floor(to.x)), y = int(std::floor(to.y));
+    if (grid.movementClear(x, y, rule)) return to;
+    // Straight's 0x1000 policy in D2MOO Path::D2Common_10142 and
+    // PathMisc::PATH_PreparePathTargetForPathUpdate (MIT; docs/licenses/D2MOO.txt).
+    // Three cardinal rays start at the obstructed target, towards the player.
+    constexpr std::array<std::array<int, 3>, 25> priorities{{
+        {4,6,-1},{4,6,-1},{4,2,6},{4,2,-1},{4,2,-1},
+        {6,4,-1},{4,6,-1},{4,2,6},{4,2,-1},{2,4,-1},
+        {6,0,4},{6,0,4},{6,0,4},{2,0,4},{2,0,4},
+        {6,0,-1},{0,6,-1},{0,2,6},{2,0,-1},{2,0,-1},
+        {0,6,-1},{0,6,-1},{0,2,6},{0,2,-1},{0,2,-1}}};
+    constexpr std::array<int, 8> offsetX{1,1,0,-1,-1,-1,0,1}, offsetY{0,1,1,1,0,-1,-1,-1};
+    auto directions = priorities[size_t(nativeDirectionIndex(sx-x, sy-y))];
+    std::array<std::array<int, 2>, 3> points{{{x,y},{x,y},{x,y}}};
+    while (points[0][0] != sx || points[0][1] != sy) {
+        for (size_t index = 0; index < points.size(); ++index) {
+            const int direction = directions[index];
+            if (direction < 0) continue;
+            auto &point = points[index];
+            point[0] += offsetX[size_t(direction)]; point[1] += offsetY[size_t(direction)];
+            if (!grid.movementClear(point[0], point[1], rule)) continue;
+            // The native routine checks its primary ray even if a secondary
+            // ray found a free cell on the same iteration.
+            if (points[0][0] == sx && points[0][1] == sy) return {};
+            x = point[0]; y = point[1];
+            const int dx = x-sx, dy = y-sy, ax = std::abs(dx), ay = std::abs(dy);
+            if (ax < 5 && ay < 5 && (dx || dy)) {
+                // Independent derivation of Path's 9x9 cardinal-snap table.
+                const int stepX = ax >= std::max(1, ay) ? (dx < 0 ? -1 : 1) : 0;
+                const int stepY = ay >= std::max(1, ax) ? (dy < 0 ? -1 : 1) : 0;
+                int distance = std::max(ax, ay);
+                while (distance < 5 && grid.movementClear(x+stepX, y+stepY, rule)) {
+                    x += stepX; y += stepY; ++distance;
+                }
+            }
+            return Vec{float(x)+.5f, float(y)+.5f};
+        }
+        directions[0] = priorities[size_t(nativeDirectionIndex(sx-points[0][0], sy-points[0][1]))][0];
+    }
+    return {};
+}
 template <class Clear>
 bool clearSegment(Vec a, Vec b, int width, int height, Clear clear, bool blockCorners) {
     const auto inside = [=](Vec p) {
@@ -68,6 +122,26 @@ uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
     return mask;
 }
 uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
+    if (!navigationSources.empty()) {
+        for (const auto &source : navigationSources) {
+            const auto &grid = *source.grid;
+            const int column = x + source.offsetX, row = y + source.offsetY;
+            if (column < 0 || row < 0 || column >= grid.width || row >= grid.height) continue;
+            const size_t index = size_t(row) * grid.width + column;
+            const auto terrain = grid.fullTerrainCollision.empty() ? grid.terrainCollision[index] : grid.fullTerrainCollision[index];
+            if (terrain == 0xffff) continue; // No materialized collision room here.
+            return terrain | grid.objectMask(column, row, ignored) |
+                (grid.blocked[index] && !(grid.terrainCollision[index] & 0x09) ? 0x01 : 0);
+        }
+        return 0xffff;
+    }
+    // D2Collision resolves the owning room before consulting adjacent rooms.
+    if (x >= 0 && y >= 0 && x < width && y < height) {
+        const size_t index = size_t(y) * width + x;
+        const auto terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
+        if (terrain != 0xffff) return terrain | objectMask(x, y, ignored) |
+            (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
+    }
     for (const auto &neighbour : neighbours) {
         const int lateral = neighbour.side % 2 ? y : x;
         const int normal = neighbour.side % 2 ? x : y;
@@ -91,6 +165,46 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
     return terrain | objectMask(x, y, ignored) |
         (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
 }
+Grid Grid::linkedNavigation(Vec &origin) const {
+    // Path.cpp prepares the target room; D2Collision queries room collision
+    // across active near-room links. Keep those grids borrowed, not copied.
+    std::vector<NavigationSource> sources{{this, 0, 0}};
+    int left = 0, top = 0, right = width, bottom = height;
+    for (size_t index = 0; index < sources.size(); ++index) {
+        const auto source = sources[index];
+        for (const auto &edge : source.grid->neighbours) {
+            const int x = source.offsetX + edge.offsetX, y = source.offsetY + edge.offsetY;
+            const auto found = std::find_if(sources.begin(), sources.end(), [&](const auto &entry) { return entry.grid == edge.grid; });
+            if (found != sources.end()) {
+                if (found->offsetX != x || found->offsetY != y) throw std::logic_error("Inconsistent linked collision origins");
+                continue;
+            }
+            sources.push_back({edge.grid, x, y});
+            left = std::min(left, -x); top = std::min(top, -y);
+            right = std::max(right, edge.grid->width - x); bottom = std::max(bottom, edge.grid->height - y);
+        }
+    }
+    Grid view; view.width = right - left; view.height = bottom - top;
+    origin = {float(left), float(top)};
+    for (auto &source : sources) { source.offsetX += left; source.offsetY += top; }
+    view.navigationSources = std::move(sources);
+    return view;
+}
+bool Grid::navigationContains(Vec point) const {
+    if (!std::isfinite(point.x) || !std::isfinite(point.y)) return false;
+    Vec origin;
+    const auto view = linkedNavigation(origin);
+    point = point - origin;
+    return point.x >= 0 && point.y >= 0 && point.x < view.width && point.y < view.height &&
+        view.movementMask(int(std::floor(point.x)), int(std::floor(point.y))) != 0xffff;
+}
+uint64_t Grid::navigationRevision() const {
+    if (neighbours.empty()) return obstacleRevision;
+    Vec origin; const auto view = linkedNavigation(origin);
+    uint64_t revision = view.navigationSources.size();
+    for (const auto &source : view.navigationSources) revision = revision * 0x100000001b3ULL + source.grid->obstacleRevision;
+    return revision;
+}
 bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored) const {
     if (rule.size < 0 || rule.size > 3) return false;
     const auto clear = [&](int column, int row) { return !(movementMask(column, row, ignored) & rule.mask); };
@@ -103,6 +217,10 @@ bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId igno
         clear(x - 1, y + 1) && clear(x + 1, y + 1));
 }
 bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule rule) const {
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        return view.segment(a - origin, b - origin, ignoredObject, rule);
+    }
     return clearSegment(a, b, width, height, [&](int x, int y) {
         return movementClear(x, y, rule, ignoredObject);
     }, rule.size <= 1);
@@ -152,9 +270,25 @@ Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     return {float(endX) + .5f, float(endY) + .5f};
 }
 std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule, uint8_t targetType) const {
-    return nativeUnitPath(from,to,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1);
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        auto route = view.nativePlayerPath(from - origin, to - origin, rule, targetType);
+        for (auto &point : route) point = point + origin;
+        return route;
+    }
+    if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
+        to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
+    const auto target = preparedPlayerTarget(*this, from, to, rule);
+    return target ? nativeUnitPath(from,*target,7,73,rule,targetType!=255,targetType==2 || targetType==4?2:1)
+                  : std::deque<Vec>{};
 }
 std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget, uint8_t targetTolerance) const {
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        auto route = view.nativeUnitPath(from - origin, to - origin, type, maxDistance, rule, unitTarget, targetTolerance);
+        for (auto &point : route) point = point + origin;
+        return route;
+    }
     if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height) return {};
     if(type==1) return nativeAStarPath(from,to,rule,unitTarget);
@@ -195,21 +329,9 @@ std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t max
     int previous = -1;
     bool lastTurn = false;
     int steps = 0;
-    auto directionIndex = [&](int x, int y) {
-        int dx = gx-x, dy = gy-y;
-        const int ax = std::abs(dx), ay = std::abs(dy);
-        if (ax < 2*ay) {
-            if (ay >= 2*ax) {
-                if (dx < 0) return dy < -1 ? 5 : std::min(dy,2)+7;
-                dx &= 1;
-            }
-        } else dy = dy >= 0 ? dy & 1 : -1;
-        dx = std::clamp(dx,-2,2);
-        return dy < -1 ? 5*dx+10 : std::min(dy,2)+5*dx+12;
-    };
     for (; steps < maxDistance && (x != gx || y != gy); ++steps) {
         lastTurn = false;
-        const int index = directionIndex(x,y);
+        const int index = nativeDirectionIndex(gx-x,gy-y);
         int selected = -1;
         for (int d : directions[size_t(index)])
             if (movementClear(x+offsetX[d],y+offsetY[d],rule)) { selected=d; break; }
@@ -279,17 +401,24 @@ bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     }, false);
 }
 bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        return view.collisionSegment(a - origin, b - origin, mask);
+    }
     return clearSegment(a, b, width, height, [&](int x, int y) {
-        return x >= 0 && y >= 0 && x < width && y < height &&
-            !((terrainCollision[size_t(y) * width + x] | objectMask(x, y)) & mask);
+        return !(movementMask(x, y) & mask);
     }, false);
 }
 bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) const {
+    if (!neighbours.empty()) {
+        Vec origin; const auto view = linkedNavigation(origin);
+        return view.interactionSegment(a - origin, b - origin, targetSize, target);
+    }
     if (!std::isfinite(a.x) || !std::isfinite(a.y) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
         a.x < 0 || a.y < 0 || a.x >= width || a.y >= height ||
         b.x < 0 || b.y < 0 || b.x >= width || b.y >= height || targetSize < 0) return false;
-    int x = int(std::floor(a.x)), y = int(std::floor(a.y));
-    int endX = int(std::floor(b.x)), endY = int(std::floor(b.y));
+    int x = int(std::floor(a.x+.5f)), y = int(std::floor(a.y+.5f));
+    int endX = int(std::floor(b.x+.5f)), endY = int(std::floor(b.y+.5f));
     const int dx = std::abs(endX - x), dy = std::abs(endY - y);
     const int size = std::min(targetSize, 2);
     // UNITS_TestCollisionBetweenInteractingUnits removes only the interacting

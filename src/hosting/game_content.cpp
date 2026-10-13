@@ -34,6 +34,12 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.staffTomb=result.terrain.staffTomb;
     area.collision = result.terrain.map->grid;
     area.activation = result.terrain.map->activation;
+    for (const auto &room : area.activation.rooms()) {
+        const auto anchor = std::pair{(int(area.origin.x) + room.x) / 5, (int(area.origin.y) + room.y) / 5};
+        auto &near = area.roomNear.emplace_back();
+        for (const auto &other : result.terrain.nearRooms.at(anchor))
+            near.push_back({RegionId(other.level), other.x, other.y});
+    }
     if (auto allowed = content.teleportByLevel.find(request.level); allowed != content.teleportByLevel.end()) area.teleportAllowed = allowed->second != 0;
     prepareObjects(archives, content, result);
     prepareNpcs(archives, content, result);

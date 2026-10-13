@@ -91,21 +91,41 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-2026-10-12随后更新当前客户端包，纳入Party敌意红字、右上角原骷髅及玩家悬停姓名背景／颜色。Release构建通过，使用包内EXE完成隔离双客户端TCP/IP画面与敌意取消方向核对；具体范围、首轮发现的友方标签分支修正及未覆盖条件见[联网表现记录](../modules/NETWORK.md#组队邀请客户端)。构建日志在`artifacts/hostility-display-20261012/build-release.log`与`build-release-final.log`，未提交Git；独立服务端包保持此前产物。
+当前客户端包为2026-10-13 Windows **Release**，D2S v96，保留刺客动作、房间引用／活动碰撞、连续跨区寻路、NativePathStep、NPC停止与请求距离、城镇WP真实入场模式、中立物件入场碰撞及途中路径保留，另纳入当前工作区的CastHandoff、怪物格挡包、公开装备基础属性和衣服拾取同步修正。本轮用户授权构建与打包，Release目标d2x成功；修正native_combat_wire的MotionTarget命名空间编译错误，保留prepareReload的非致命未初始化警告。未启动游戏或执行玩法测试，留待用户双客户端复验；未新增测试脚本／用例／专用程序。独立服务端`dist/server`未重建，本轮不能用其旧程序验收新修正。
 
-当前客户端运行包为2026-10-12 Windows **Release**，D2S v96，纳入[地图缓存、坐标索引与宿主／客户端分帧准备](../modules/MAP.md#地图缓存与分帧准备)、[战斗空间索引与地面物品查询优化](../modules/SERVER_SYSTEMS.md)，并包含当前工作区此前的阵营、组队开关、进退场消息及PvP伤害改动。编译发现此前PvP弹体分支缺少effects完整类型头文件，已补齐。Release增量构建和diff空白检查通过，既有初始化／optional编译警告仍在；构建日志保存在忽略目录artifacts/area-performance-build.log及area-performance-build-final.log。独立服务端dist/server保持前批产物，本轮没有重新构建或打包它。
+房间改造阶段Release首次计划365个构建步骤，三份日志共涉及350个不同C++编译单元、365次编译动作（包括失败与重编译）。大范围重编译来自navigation.hpp、area_store.hpp、旅行接口及resources/archive.hpp等公共依赖变化，未清空构建缓存／切换配置或构建all目标。两次失败分别为spatial缺AreaStore完整头文件、调试快照仍读取已删除的旧跨界字段，均修正后增量续建。最终收尾为2个C++编译及3个链接步骤，成功生成d2x.exe。证据为`artifacts/flavie-boundary-20261012/build-rooms-release.log`、`build-rooms-release-2.log`和`build-rooms-release-3.log`；更早的连续寻路构建见同目录`build-release.log`。现有非致命警告保留，diff空白核对通过。原D2MOO结构尚未完全复刻的范围由[地图限制](../modules/MAP.md#地图缓存与分帧准备)及[基线](../../BASELINE.md)列明。
 
-本轮已用隔离角色完成下面的提交前有限冒烟；不将这些路径视为全部玩法或原版一致性验收。运行中的区域准备和房间消息消费采用软预算，不保证每帧严格限时或与原版一样完全无停顿；Play-Diagnostic.cmd保留双方消息和[area-load]阶段耗时。原MPQ、存档、历史程序和artifacts保持原位置，不复制进新的交付内容。
+用户23:38对照诊断发现普通04预测走到NPC中心、等96才交谈、入场WP模式0及stash斜角预测／权威分叉。本轮已构建、打包并重放；规则与证据维护在[NPC交互](../gameplay/npc/INTERACTIONS.md)、[自研传送点](../gameplay/world/OBJECTS.md#自研传送点)和[共用寻路](../modules/MAP.md#共用寻路)。构建共涉及170个不同C++单元、526次编译动作（含迭代、失败和重编译，并非一次编译526文件）；三次较大增量分别150／168／145次，原因是PlayerState持有定点状态、公共interaction_geometry头经game_messages等广泛传播，期间公共接口多次调整重复触发依赖。诊断快照类型调整另触发43次；后续私有源码修改每次1–4个C++单元。没有清缓存、切配置或构建all。一次链接失败来自构建过程中修改源码导致旧导航库与新调用方不一致；另一次诊断编译错误是误把AreaMetadata当成含Grid的AreaDefinition，均修正后续建成功。日志在`artifacts/path-smoke-20261013-002214/build*.log`，最终构建为1个C++单元及2次链接。
+
+包中保留此前地图缓存／分帧准备、战斗索引、阵营／组队、进退场与PvP，以及Party敌意红字、右上角骷髅和姓名颜色能力。此前表现的有限运行范围见[联网记录](../modules/NETWORK.md#组队邀请客户端)，旧构建日志在`artifacts/hostility-display-20261012`及`artifacts/area-performance-build*.log`；这些记录不等于当前包重新运行通过。
+
+下面的提交前有限冒烟属于此前EXE；不将这些路径视为当前新增修正或全部玩法验收。宿主区域蓝图在独立MPQ线程准备，客户端房间消息消费仍为软预算，不保证每帧严格限时或完全无停顿；Play-Diagnostic.cmd保留双方消息和[area-load]阶段耗时。原MPQ、存档、历史程序和artifacts保持原位置，不复制进新的交付内容。
 
 前批两幕三难度、组队任务及物品补齐的基础范围分别见[第一幕](../gameplay/monsters/ACT1.md#三难度重新核对)、[第二幕](../gameplay/monsters/ACT2.md#三难度重新核对)、[任务系统](../gameplay/quests/SYSTEM.md)与[物品核对](../gameplay/items/EVIDENCE.md#客户端与服务端物品核对)。以下哈希标识当前磁盘包。
 
-前次更新保留的程序`dist/current/d2x-retained-20261012.exe`及`d2x_bncs_legacy-retained-20261012.dll`继续保留。本次只启动并关闭隔离冒烟宿主／客户端；根目录Play-Diagnostic.cmd使用新构建及既有角色目录，包内同名入口使用包内程序／角色目录，并记录双方消息。
+前次保留的程序`dist/current/d2x-retained-20261012.exe`及`d2x_bncs_legacy-retained-20261012.dll`继续保留。本轮更新前的包内EXE／DLL另留在`artifacts/flavie-boundary-20261012/d2x-before.exe`与`dll-before.dll`，更早备份在`artifacts/diagnostics-fix-20261012`。根目录Play-Diagnostic.cmd使用新构建及既有角色目录，包内同名入口使用包内程序／角色目录，并记录双方消息。
 
 | 产物 | 目录 | SHA256 |
 | --- | --- | --- |
-| 客户端／嵌入宿主 | `dist/current/d2x.exe`（24884065字节） | `12D30F8EA7C3D25C6EAF03BB54FB655364CB4148F19376E7780FE75F0CAEE49C` |
+| 客户端／嵌入宿主 | `dist/current/d2x.exe`（25120666字节） | `33E69352223C0F4D8BCA5E7728E03A7A38D50A7CE21672FB6FA62680F77F6FA6` |
 | 独立服务端 | `dist/server/d2x_server.exe` | `796E0D45A1878B6FB049DC6C191A28562D0668727BBB953CBC41AD67E3D14FC4` |
 | 网络DLL | 两包的`d2x_bncs_legacy.dll` | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+用户此前用EA5256包进行TCP/IP近战验收，发现D2X本地重复攻击不恢复追击及原版Join崩溃。CastHandoff与格挡单位包／路径目标保留现已随当前包构建；证据及边界见[普通攻击](../gameplay/skills/GENERAL.md#原协议及客户端修复)和[怪物动作](../gameplay/monsters/COMMON.md#动作死亡与奖励)。公开装备与最后一次衣服拾取修正见[物品协议](../gameplay/items/PRESENTATION.md#已接显示与反馈)。这些新增修改尚未运行复验，下节单机记录仍只认证此前EA5256程序。
+
+### 当前包单机消息日志冒烟
+
+2026-10-13，包内EXE为上述EA5256哈希，当前MPQ；角色aaa（种子2119970076）与ShotAssassin（种子210）使用存档副本，未修改原始存档。日志及快照在`artifacts/path-smoke-20261013-002214/delivery-final`和`assassin-final`。
+
+| 路径 | 实际观察 |
+| --- | --- |
+| stash转角 | 原03至(5461,4712)，两端均到该点，碰撞轮廓未缩小 |
+| Akara／城镇WP | 远处单击Akara，两端在(5530.7841796875,4689.2158203125)停止，13至27／28约34.5毫秒；WP入场51 mode2，远处点击收到63且城镇unlocked |
+| 城镇出口及野外转角 | 自然步行1→2→1→2，两端位置一致；此前失败的(5692,4944)两端均到达 |
+| Flavie及2／3边界 | 鼠标显示Flavie，点击得到真实会话，关闭后可移动；自然步行Blood Moor／Cold Plains边界重复往返，两端位置一致 |
+| 刺客普通攻击 | 出城后附近quillrat移动；原左键普通攻击自然fallen GUID84，生命1→0并rewardComplete，攻击释放后正常返城 |
+
+上述有限样本宿主failures=0、characterIssues为空；自然走路／点击未使用travel、spawn、unlock、damage等管理准备命令。完整种子、延迟、动态单位占位、客户端全速度修饰及房间内存回收仍按[地图限制](../modules/MAP.md)列明，不能宣称全玩法与原版逐帧一致。
 
 ### 本批提交前冒烟
 

@@ -48,6 +48,8 @@ class GameInstance {
     const GameSettings &settings() const { return settings_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
     std::vector<RegionId> visibleAreas(PlayerId) const;
+    std::vector<RoomView> visibleRooms(PlayerId id) const { return systems_.world.visibleRooms(id); }
+    bool visiblePoint(PlayerId id, RegionId region, Vec point) const { return systems_.world.visible(id, region, point); }
     bool npcVisible(PlayerId player,std::string_view code,RegionId area,int initFunction=0) const {
         const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area,initFunction);
     }

@@ -133,6 +133,10 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
         (void)id;
         if (unequipped || item.ownerType!=u.key.type || item.owner != u.key.id || item.bodyLocation >= 11)
             continue;
+        // ITEMS_CanBeEquipped excludes BROKEN and NOEQUIP from the native
+        // composite. Repair/property packets rebuild this view with new flags.
+        if (item.flags & (0x100u | 0x4000u))
+            continue;
         const auto found = items_.find(item.code);
         if (found == items_.end())
             return {};

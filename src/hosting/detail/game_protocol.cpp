@@ -90,6 +90,10 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();
     peer.areas.insert(RegionId(terrain.request.level));
+    for (const auto &[x, y] : terrain.rooms) peer.rooms.insert({RegionId(terrain.request.level), x, y});
+    if (const auto area = host.area(binding->game, RegionId(terrain.request.level))) {
+        for (const auto &exit : area->definition.exits) peer.warps.insert(exit.id);
+    }
     setPaused(false);
 }
 void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {

@@ -50,6 +50,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if (!prepared) { if (prepared.status != DomainStatus::Capacity) death->second.reviving = false; return {prepared.status, {}}; }
         return {DomainStatus::Applied, std::monostate{}};
     }
+    ports_.world.activate(townId, town->definition.spawn);
     auto record = player->persistent.player; record.hp = 1;
     transactions::CharacterEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(record), transactions::ResourceRefresh::LevelUp};
     edit.revival = PointTarget{townId, town->generation, town->definition.spawn};

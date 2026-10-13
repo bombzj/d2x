@@ -18,34 +18,46 @@ void NativeRealmService::publishAreas(RegionId region) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
             out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(0);
         }));
-        peer.areas.clear(); peer.visible.clear(); peer.monsters.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcs.clear();peer.npcStates.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
+        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcs.clear();peer.npcStates.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
     std::set<RegionId> desired{region};
-    const auto definition = host.area(binding->game, region);
-    for (const auto &edge : definition->definition.boundaries) if (areas.contains(edge.destination)) desired.insert(edge.destination);
+    const auto rooms = host.visibleRooms(*binding);
+    for (const auto &room : rooms) desired.insert(room.area);
     std::vector<Bytes> packets;
-    for (const auto old : peer.areas) if (!desired.contains(old)) {
-        const auto &area = areas.at(old);
-        for (const auto &[x, y] : area.rooms) packets.push_back(encodeServerPacket(ServerMessage::HideRoom, [&](auto &out) {
-            out.u16(uint16_t(x)); out.u16(uint16_t(y)); out.u8(uint8_t(old));
+    // Add references first, then remove the old ones, like ChangeClientRoom.
+    // A shared seam never temporarily loses both of its collision owners.
+    for (const auto &room : rooms) if (!peer.rooms.contains(room))
+        packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
+            out.u16(uint16_t(room.x)); out.u16(uint16_t(room.y)); out.u8(uint8_t(room.area));
         }));
-        const auto state = host.area(binding->game, old);
-        const auto remove = [&](uint8_t type, EntityId id) { packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(type); out.u32(uint32_t(id.value)); })); };
-        for (const auto &object : state->definition.objects) remove(2, object.id);
-        for (const auto &exit : state->definition.exits) remove(5, exit.id);
+    std::set<EntityId> warps;
+    for (const auto next : desired) {
+        auto definition = host.area(binding->game, next)->definition;
+        std::erase_if(definition.exits, [&](const auto &exit) {
+            if (!host.visiblePoint(*binding, next, exit.position)) return true;
+            warps.insert(exit.id);
+            return peer.warps.contains(exit.id);
+        });
+        for (auto &packet : nativeAreaWarps(areas.at(next), definition)) packets.push_back(std::move(packet));
     }
-    for (const auto next : desired) if (!peer.areas.contains(next)) {
-        const auto &area = areas.at(next);
-        for (const auto &[x, y] : area.rooms) packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
-            out.u16(uint16_t(x)); out.u16(uint16_t(y)); out.u8(uint8_t(next));
-        }));
-        auto units = nativeAreaUnits(area, host.area(binding->game, next)->definition);
-        for (auto &packet : units) packets.push_back(std::move(packet));
-    }
+    for (const auto id : peer.warps) if (!warps.contains(id))
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(5); out.u32(uint32_t(id.value)); }));
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.areas = std::move(desired);
+    peer.rooms.insert(rooms.begin(), rooms.end()); peer.warps = std::move(warps);
     if (terrain.request.level != int(region)) terrain = destination;
     if (crossAct) sendGame(encodeServerPacket(ServerMessage::LoadComplete, [](auto &) {}));
+}
+void NativeRealmService::publishRoomRemovals() {
+    const auto rooms = host.visibleRooms(*binding);
+    const std::set<server::RoomView> desiredRooms(rooms.begin(), rooms.end());
+    std::vector<Bytes> packets;
+    for (const auto &room : peer.rooms) if (!desiredRooms.contains(room))
+        packets.push_back(encodeServerPacket(ServerMessage::HideRoom, [&](auto &out) {
+            out.u16(uint16_t(room.x)); out.u16(uint16_t(room.y)); out.u8(uint8_t(room.area));
+        }));
+    if (!packets.empty()) sendGameBatch(std::move(packets));
+    peer.rooms = desiredRooms;
 }
 void NativeRealmService::changeArea(const server::TravelFact &fact) {
     if (fact.player != binding->player) throw std::logic_error("Travel recipient mismatch");
@@ -153,6 +165,10 @@ void NativeRealmService::publishObjects() {
             out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : 0);
         }));
     }
+    for (const auto &[id, revision] : peer.objects) if (!next.contains(id)) {
+        (void)revision;
+        packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(2); out.u32(uint32_t(id.value)); }));
+    }
     if (!packets.empty()) sendGameBatch(std::move(packets));
     peer.objects.swap(next);
 }
@@ -165,6 +181,7 @@ void NativeRealmService::publishNpcs() {
         const auto view=host.area(binding->game,area); if (!view) continue;
         for (const auto &npc : view->definition.npcs) {
             if(npc.hidden) continue;
+            if (!host.visiblePoint(*binding, area, npc.position)) continue;
             if(!host.npcVisible(*binding,npc.rule.code,area,npc.rule.questInitFunction)) continue;
             next.insert(npc.id);
             const bool fresh=!peer.npcs.contains(npc.id);
@@ -224,7 +241,7 @@ void NativeRealmService::publishShop() {
 
 namespace d2x::hosting {
 void NativeRealmService::publishPortals() {
-    std::map<EntityId,uint64_t> next; std::vector<Bytes> packets; const auto areas=host.visibleAreas(*binding);
+    std::map<EntityId,uint64_t> next; std::vector<Bytes> packets;
     for(const auto &portal:host.visiblePortals(*binding)) {
         bool changed=false;
         // 0x82 introduces both GUIDs, including the endpoint outside visibility.
@@ -232,7 +249,8 @@ void NativeRealmService::publishPortals() {
         next.emplace(portal.fieldId, 0);
         next.emplace(portal.townId, 0);
         for(const bool town:{false,true}) {
-            const auto area=town?portal.town:portal.field; if(std::find(areas.begin(),areas.end(),area)==areas.end()) continue;
+            const auto area=town?portal.town:portal.field;
+            if (!host.visiblePoint(*binding, area, town ? portal.townPosition : portal.fieldPosition)) continue;
             const auto id=town?portal.townId:portal.fieldId; next.insert_or_assign(id,portal.revision);
             if(peer.portals.contains(id) && peer.portals.at(id)==portal.revision) continue;
             changed=true; const auto position=(town?portal.townPosition:portal.fieldPosition)+shared.terrain.at(binding->game).at(area).origin;

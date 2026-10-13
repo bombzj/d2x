@@ -14,7 +14,6 @@ class RemoteControl {
         std::chrono::steady_clock::time_point deadline;
         OnlineIntentContext context;
         std::optional<OnlinePoint> progressPosition;
-        bool requirePositionUpdate = false;
     };
     std::optional<Approach> approach_;
     struct Movement {

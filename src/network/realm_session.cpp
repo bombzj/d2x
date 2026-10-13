@@ -2073,7 +2073,7 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
         Writer out;
         out.u8(run ? 0x04 : 0x02); out.u32(target.type); out.u32(target.id);
         p.sent(p.gs, out.release());
-        p.view.world.movementRequest = OnlineMovementRequest{{}, target, run, ++p.view.world.revision};
+        p.view.world.movementRequest = OnlineMovementRequest{{}, target, run, ++p.view.world.revision, target.type == 2};
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
@@ -2502,7 +2502,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         const auto selected = command.hand == OnlineSkillHand::Left ? world.leftSkill : world.rightSkill;
         const bool cursor = onlineHasCursorItem(world.items, p.view.load.playerUnitId);
         if (!selected || selected->skill != command.skill || selected->owner != command.owner || cursor ||
-            world.npcRequested || world.waypointSource || world.waypointRequested ||
+            (world.npcRequested && world.npcConversation) || world.waypointSource || world.waypointRequested ||
             world.storage.kind != OnlineStorageKind::None || world.storage.requested != OnlineStorageKind::None) {
             p.error(OnlineErrorKind::Input, "Cast requires the confirmed skill and an idle player"); return false;
         }
@@ -2528,6 +2528,7 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         out.u8(0x12); request.state = OnlineCombatRequest::State::SentNoAck; break;
     }
     try {
+        if (command.action == Action::Cast && world.npcRequested && !world.npcConversation) p.close_interaction();
         p.sent(p.gs, out.release());
         if (command.action == Action::Cast) {
             p.finish_pickup(OnlineItemRequest::State::Interrupted);

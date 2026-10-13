@@ -74,13 +74,8 @@ Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin, bool targetVisi
     else { point(out, position); out.u8(0); out.u8(playerLifePercentage(int64_t(view.life*256),int64_t(view.attributes.maxLife)*256)); }
     return out.release();
 }
-std::vector<Bytes> nativeAreaUnits(const GeneratedArea &area, const server::AreaMetadata &definition) {
+std::vector<Bytes> nativeAreaWarps(const GeneratedArea &area, const server::AreaMetadata &definition) {
     std::vector<Bytes> result;
-    for (const auto &object : definition.objects)
-        result.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
-            out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.type));
-            point(out, object.position + area.origin); out.u8(0); out.u8(0);
-        }));
     for (const auto &exit : definition.exits)
         result.push_back(encodeServerPacket(ServerMessage::AssignWarp, [&](auto &out) {
             if (exit.warp < 0 || exit.warp > 255 || !exit.id) throw std::runtime_error("Invalid prepared native warp");
@@ -173,7 +168,9 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     // Player-private quest initialization and the game quest record are
     // distinct original messages, even in a one-player game.
     for(auto &packet:nativeQuestUpdate(data,quests)) result.push_back(std::move(packet));
-    for (auto &packet : nativeAreaUnits(area, definition)) result.push_back(std::move(packet));
+    // Objects are assigned by publishObjects after the authority's original
+    // init callback. Admission must not invent neutral-mode object baselines.
+    for (auto &packet : nativeAreaWarps(area, definition)) result.push_back(std::move(packet));
     emit(ServerMessage::LoadComplete, [](auto &) {});
     return result;
 }

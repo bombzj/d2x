@@ -56,6 +56,8 @@ class GameHost {
     std::set<size_t> usedUniques(GameHandle) const;
     server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string);
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
+    std::vector<server::RoomView> visibleRooms(PlayerBinding) const;
+    bool visiblePoint(PlayerBinding, RegionId, Vec) const;
     bool npcVisible(PlayerBinding,std::string_view code,RegionId area,int initFunction=0) const;
     server::DomainResult<> relocate(PlayerBinding,RegionId,std::optional<Vec>);
     std::optional<uint16_t> npcQuestAlert(PlayerBinding,const server::NpcRule &,RegionId) const;

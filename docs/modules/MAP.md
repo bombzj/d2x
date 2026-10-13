@@ -24,9 +24,19 @@
 
 运行中的宿主区域准备由AreaGenerator保留原逆序reveal和种子状态，NativeRealmHost每次调度给房间生成约4毫秒软预算，完整地形与权威内容准备成功后才installArea。首个城镇仍同步准备；相邻区域仍由world提前请求。Archives、GPU和权威提交都留在原线程，无并发MPQ读取。单次布局／DS1／DT1解码、快照或人口准备不可中断，仍可能超过预算。
 
+world另以本人实际房间和共同RoomLayout.nearRooms提前请求已准备邻区中近邻房间接触的出口依赖，依据D2MOO DrlgActivate::DRLGACTIVATE_RoomExPropagateSetStatus／DRLGACTIVATE_ChangeClientRoom的近邻传播。准备触发不再只等待人物换级，但当前仍整区域准备／发布，不能宣称原版逐房间物化、引用计数与卸载时序已完整实现；4毫秒预算仍为软预算。
+
+宿主NPC、战斗人口、环境单位和任务内容准备按Archives挂载复用不可变MonsterCatalog及AnimDataTable，首次完成后才发布，追加挂载清除缓存。原先环境单位逐类型构造完整目录及区域内多入口重复解析已移除；难度／区域等级、精英随机、人口身份与实体规则仍逐请求准备，不缓存随机结果。既有诊断`artifacts/diagnostics/20261012-211833-371733d4`的level2／3内容耗时3456／3615毫秒属于修正前EXE；修正后的耗时等待人工运行，不能据缓存改动宣称无卡顿。
+
 RemoteTown按约4毫秒软预算消费原顺序地图事件，未处理完时即使网络revision不变也继续推进；房间锚点与事件缺口校验保留，只用已物化房间选当前显示区域。地形修改的dirty状态跨帧保留；只在实际物化／释放地形或当前级别变化时重建快照，纯视野引用计数变化、同级房间内移动不再单独重建。SceneAssets以调色板／DT1瓦片身份复用Sprite，并持有对应库，避免房间集合变化时重复对已有瓦片逐像素哈希；GPU内容缓存仍负责真正的新图上传。
 
-D2MOO证据为DrlgActivate::DRLGACTIVATE_Update的房间状态和分次物化，以及AiUtil::AIUTIL_FindTargetInAdjacentRooms的邻房间单位链。当前宿主仍发布完整当前／相邻区域房间，不宣称等同原版逐房间卸载、完整活区时序或无卡顿。本轮取得普通难度隔离TCP边界往返样本，方法与未覆盖项见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)。修正版宿主同局样本中level2／3地形准备约149／198毫秒，内容准备约3659／3779毫秒；后者仍为同步阶段，不能据房间软预算宣称切区卡顿已完全消除。未作前后同负载基准、完整分位数或冷磁盘对照；Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供人工对照定位剩余开销。
+服务端活动房间由[world::RoomRuntime](../../src/server/systems/world/rooms.cpp)持有，使用生成器导出的原始有序near-room列表，包含跨级邻接，不用距离环补猜。NativeRoomActivation在d2x_navigation中为双方共用纯状态机；服务端ChangeClientRoom先增加新房间引用，再释放旧引用，传播0／1／2／3级状态。碰撞按真实房间恢复，未物化格保持0xffff，快照外沿没有房间归属的补边不参与跨区碰撞。Population／Objects只准入已加载房间；休眠怪物不参与AI／移动和空间索引，GUID、生命和物件状态保留在各领域唯一状态中，回访不重新抽取或复制实体。原07／08按玩家实际近房间增减，物件／NPC／怪物／玩家和地面单位随房间可见性投影。
+
+时序依据为本地D2MOO `DrlgActivate.cpp::DRLGACTIVATE_Update`（服务端7 tick、客户端5 tick初始化间隔，单次物化一个视野外房间）、`Game.cpp::GAME_Update`（每12帧检查、无客户端计数超过10才考虑卸载）、`D2Dungeon.cpp::D2Common_10081_GetTileCountFromRoom`及`DRLGACTIVATE_TestRoomCanUnTile`的城镇／Rocky Summit／portal保留条件。D2X另外保留正在提交动作、伤害、弹体或掉落的房间，避免事务背压时释放其碰撞。传送、WP、复活和新入场先激活真实目的房间，再查落点。
+
+宿主[AreaPreparation](../../src/hosting/area_preparation.cpp)以独立MPQ句柄／缓存准备不可变区域蓝图，不共享可变Archives、地图生成器或UI回调；主循环只接收完成结果并按每局原请求顺序提交，离局取消票据，过期结果不进入新局。第一次蓝图准备仍按区域读取／生成，已生成地形压缩为逐房间恢复数据；当前并非D2MOO的逐房间MPQ分配和SUNITINACTIVE结构逐字复刻，蓝图及休眠实体内存也尚未逐房间回收。客户端原图上传仍在渲染线程，不能仅据工作线程宣称所有卡顿消除。
+
+旧包有限运行证据仍见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)；其中内容同步准备约3.7秒属于旧实现。21:55用户诊断同局level2／3内容阶段约205／226毫秒，仍不是当前房间生命周期版的运行验收。Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供人工定位剩余开销；新包构建身份和未运行范围统一见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 
 ## 客户端显示与操作
 
@@ -36,13 +46,29 @@ D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)�
 
 双方共享算法而不共享运行状态：宿主决定移动、目标和实际路径类型，自有客户端用原67／68已公开的参数生成表现路径。原环绕算法另由nativeMonsterCirclePath提供；特殊技能／击退不冒充普通Toward。[nativeAStarPath](../../src/world/navigation_astar.cpp)按D2MOO的200节点上限、正交2／斜向3代价、八邻接顺序、同分先插、已访问节点代价传播及78折点边界实现；不再用通用A*的全图搜索／任意直线简化代替原版路径。
 
-玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。世界坐标与网格中心只在入口转换，逐帧经过的格子用segment检查；不在每个小数步重跑有偏的PATH_RayTrace。追击保留目标未换格且碰撞版本未变的路径，目标移动或对象碰撞变化再重算；无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性验证、部分AI查询及囚犯路线仍有独立用途的Grid::path调用；动态单位占位、门的专用目标偏移和完整房间状态尚不等价，不能据共享函数宣称所有种子逐帧一致。
+玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。玩家及普通非玩家动态路径执行共用[NativePathStep](../../src/world/native_path_step.cpp)：保存16.16定点位置，每个25Hz游戏帧从定点位置重算到下一折点的12位量化方向，单帧最多推进到一个折点，按Step.cpp实际进入的子格检查对应MPQ移动碰撞轮廓；碰撞后停在最后接受格的中心。客户端渲染帧只累积25Hz时间，浮点Vec仅为输出投影，不按渲染帧重算方向或用于DDA经过格扫描。世界／区域原点仅用于碰撞格转换，换房间平移保留定点位置，旅行发布背压回退同时恢复步进状态。128个方向值以数学公式独立推导，源码核对与D2MOO表逐项相同；依据为Step::PATH_GetDirectionVector／sub_6FDAB810／sub_6FDACEC0和PathMisc::D2Common_10226／PATH_ComputeVelocityAndDirectionVectorsToNextPoint。普通玩家路径按D2Common_10226保留剩余折点；房间物化／卸载和无关物件变化不重算途中路径。目标单位换格、显式新命令及原单位目标部分路径续算分别处理；实际新障碍由每步进入格的碰撞检测阻止。无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性使用同一跨区碰撞域中的原WallFollow 15／77步；部分AI查询及囚犯路线仍有独立用途的Grid::path调用。动态单位占位、目标单位碰撞占位临时撤销、门的专用目标偏移、完整移动速度修饰的客户端投影和原版完整房间内存回收尚不等价，不能据共享函数宣称所有种子逐帧一致。
+
+自然边界沿同一完整目标寻路，不再使用接近点／接缝扫描／人为跨界段。Grid::linkedNavigation临时借用已准备、步行相连区域的真实完整碰撞，通过整数原点转换调用同一nativePlayerPath；不复制或修改地形，也不跨越未准备区域或warp。玩家每步由NativePathStep检查进入格的公共movementClear，travel::walked按实际占用子格的RoomLayout归属提交换区事实，保留连续位置、剩余路径、目标GUID和交互接近点；事件背压回退该步、保留路径重试。碰撞版本仅参与显式命令去重；相邻区域的加载／卸载不自动重算已执行的路径。原依据为D2MOO Path.cpp目标房间准备、D2Collision::COLLISION_GetRoomBySubTileCoordinates和Step::PATH_RecacheRoomAtCoordIfNeeded。
+
+stash分叉证据来自同一旧包的`artifacts/diagnostics/20261012-233827-395a3c2d`：1083.621133秒C2S03目标(5461,4712)，1083.840463秒向原版Join发0D停止在(5466,4707)，1084.151148秒向本人发96同位置。只读现场保存在`artifacts/akara-waypoint-20261012/stash-snapshot.json`和`stash-client-world.json`：服务端局部位置(145.7688446044922,67.23116302490234)，原点(5320,4640)，客户端显示已到(5461,4712)。旧浮点DDA在斜向折点附近先跨y格线，检查(5466,4708)时十字轮廓覆盖stash(5466,4709)；世界坐标浮点投影舍入则可把两条格线合并为同时跨越。原MPQ Objects[267]的SizeX／SizeY均1、HasCollision0=1，双方已收到同一51／模式0；没有据此把stash删除、缩小轮廓或放宽5F校验距离。2026-10-13 Release单机原03重放经(5467,4705)、(5466,4704)至(5461,4712)，最终两端均为(5461,4712)；证据在artifacts/path-smoke-20261013-002214/delivery-final。
+
+野外新增现场位于artifacts/path-smoke-20261013-002214/navigation-compare：同一起点到(5692,4944)的原生路径及49×49碰撞窗口两端一致，旧服务端途中停在(5695,4930/4931)。源码删除双方由全图碰撞版本变化触发的自动重算，按PathMisc::D2Common_10226及Step::PATH_RecacheRoomAtCoordIfNeeded保留剩余折点；room-path-verified重放双方到达(5692,4944)，且Flavie交谈后可继续移动、两次跨2/3边界往返。共享算法、相同碰撞值和相同执行时序分别核对，不以其中一项替代另外两项。
+
+2026-10-13雇佣兵桥头修订将普通非玩家权威及表现也接入NativePathStep；佣兵区域归属可随实际步行转换，保留剩余路径。远距主人移动历史和原100步参数、现场证据、尚未构建的状态及近处逻辑区限制统一见[佣兵](../gameplay/characters/HIRELINGS.md#原数据与执行入口)。敌对怪物跨级追击限制没有据此解除。
+
+客户端RemoteTown保留snapshot.collision的完整16位值，与宿主一致，不再只消费低8位；房间选择使用与人物子格中心相符的四舍五入坐标。NPC单位靠近支持同幕步行相连区域中的真实GUID／坐标，不因目标在相邻级别拒绝原02／04；交談仍按原距离6／8门槛复验。公共算法不等于所有原版路径已认证，完整动态单位占位、房间内存回收、怪物跨级追击及全种子／延迟组合仍有边界。
+
+修正依据为Windows Release旧EXE `2CB12EFC1A26DF297A24ADEAB93600195C1B243E13B4D0F35C97581AFABD6468`的诊断`artifacts/diagnostics/20261012-215502-00bb5001`：28.779秒起对Flavie GUID70提交04，29.809–39.662秒九次15重置均为(5702,5080)，41.594秒13后未收到会话。当前MPQ、种子2119970076的只读区域报告在`artifacts/flavie-boundary-20261012`：Blood Moor原点(5600,4600)、高度480，Cold Plains原点(5400,5080)，共同边界y=5080；旧交接可能在浮点尚属内侧时先换区，整数回包／加0.5路径起点落到源Grid之外。该种子level2／3没有因16位高位丢失新增的阻挡格，不把高位差异当作本次故障已证实的原因。修正后的自然移动效果等待用户运行。
 
 ### 到达与交互
 
-拾取双方共用nativePickupReach：D2Common_10399单位距离不大于4，尺寸为玩家2／物品1，另检查0x0804缩短交互射线；移除服务端原有的1.8格欧氏距离门槛。02／04支持地面物品目标。物件使用UNITS_IsObjectInInteractRange对应几何；交谈以单位距离6判断，原13请求在距离7–8时排队走近。物件13与NPC13都保留待执行意图，到达后执行；新移动／攻击／交互、死亡、离区或目标失效会使旧意图失效。背压重试不重复执行已经成功的交互。
+UNIT_TILE入口按原D2MOO PlrMsg的D2Common_10399单位距离判断：超过50拒绝，超过4先走近，不大于4进入目的区域；不要求站到为目的地准备的半格落点。2026-10-13源码修正了旧旅行等待路径清空后再用0.1格误差比较半格arrival的问题，复用nativeUnitDistance，任务限制与目的房间激活仍由权威旅行处理。
 
-普通攻击起手、伤害释放和客户端就绪检查共用playerMeleeReach，按单位距离、武器rangeadder及原0x0804缩短射线判断，不再把整条行走碰撞轮廓当成近战视线；追击起手包含移动目标的范围增量。客户端以当前连续显示位置检查起手，命中和伤害仍只认服务端。物件接近点也从当前显示位置规划，不从滞后的服务端采样重新选边。
+本次D2X Host／原版Join现场见忽略目录artifacts/diagnostics/20261013-080501-37ec6510和artifacts/cave-disconnect-20261013：两端反复交互Cold Plains入口GUID158，level9已准备但未旅行；原版连接5在324.29秒通过WP回城，324.30秒先收到旧level3的9个08撤房，随后才有旧单位移除与本人15移位，之后停止通信且没有69正常退局。原D2MOO Level::LEVEL_RemoveClient先移除单位再撤房；源码将08延后到旅行事实与本轮所有单位投影完成后，07仍先揭示，保留待撤房集合避免重复揭示。原版当天日志没有此次约08:10的对应异常，不能将较早崩溃地址或撤房顺序直接认定为此次掉线根因。这两处修正仅完成源码及编辑器诊断核对，未构建、运行或打包，进洞及回城稳定性待原版双端复验。
+
+拾取双方共用nativePickupReach：D2Common_10399单位距离不大于4，尺寸为玩家2／物品1，另检查0x0804缩短交互射线；移除服务端原有的1.8格欧氏距离门槛。02／04支持地面物品目标。物件使用UNITS_IsObjectInInteractRange对应几何；交谈以单位距离6判断，原13请求在距离7–8时排队走近。普通NPC单位路径按Path.cpp初始化nStepNum=0、PathMisc::sub_6FD5DB70单位距离不大于0停止，预测对普通02／04也逐步执行该判据；不把菜单资格6作为04移动终点。客户端已有足够近的直接点击仍按原13资格，远点靠近在当前本地普通单位路径到达后发送13，服务端复验交談资格；不把稀疏96位置采样当作请求门槛。移除枚举交互距离环并选最近候选点的第二套寻路，物件接近直接使用原单位目标路径。物件13与NPC13都保留待执行意图，到达后执行；新移动／攻击／交互、死亡、离区或目标失效会使旧意图失效。背压重试不重复执行已经成功的交互。
+
+普通攻击起手、伤害释放和客户端就绪检查共用playerMeleeReach，按单位距离、武器rangeadder及原0x0804缩短射线判断，不再把整条行走碰撞轮廓当成近战视线；追击起手包含移动目标的范围增量。客户端以本人及目标的本地连续显示位置检查起手和执行靠近；按原生目标子格变化重算单位路径，不等待本人96／移动回包。服务端独立检查同样的原生子格、资格及路径，命中和伤害仍只认服务端。物件靠近从当前显示位置启动原02／04 GUID路径，不再预选地面终点或要求部分路径已经满足交互资格；旧interactionApproach／RemoteTown::interactionApproachPoint接口已删除。物件部分路径到头且尚未进入交互范围时，双方共用nativeTargetPath按真实目标类型续算Straight；依据为PathMisc::sub_6FD5DB70／D2Common_10236，不能把它解释为无条件改用WallFollow。公共nativePlayerPath另按Straight的0x1000策略准备被阻挡目标：原三条有序正交射线及玩家近目标修整，对应PATH_PreparePathTargetForPathUpdate／PATH_FindValidTargetCoordsByMovingOrthogonally；后者9×9表由公式独立推导，81项逐项核对相同。
 
 ### 本人位置回包
 
@@ -50,7 +76,7 @@ D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)�
 
 本机原1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）的S2C表RVA `0xDDE60`把18／95／96分派到`0xAECA0`／`0xAEBE0`／`0xAD950`，三者调用`0x2A1B0`：记录服务端整数位置，在每轴偏差超过动作阈值和延迟补偿后，经`0x2A3EA–0x2A40D`上报5F；本人分支不调用他人单位的重新定位。模式1／3／其他的阈值分别为3／7／5，加`(latency+50)>>7`，另有平方距离小于100时的位置趋势判断。15独立走`0xAF640`重新定位。静态证据在忽略目录`artifacts/movement-alignment-20261012/native-client-position-verification.txt`，未运行原版游戏。
 
-D2X的RemoteWorld保留18／95／96的权威位置和路径校验值供诊断／交互约束；RemoteScene不再用这些采样拉回本人，也不拿接近的校验目标替换本地目的地。结束拾取／交谈／移动请求以及无进展超时只停止本地路径，不把旧资源坐标当成传送。RemoteControl按上述距离／趋势核对新采样，通过RealmSession发送原5F；不会取消当前交互或自行修改权威。原15、入场重建及真正的动作／区域变化仍各走原有处理。原版跨房间可见性条件及全部延迟组合尚未实机认证。
+D2X的RemoteWorld保留18／95／96的权威位置和路径校验值供诊断／路径校验；RemoteScene不再用这些采样拉回本人，也不拿接近的校验目标替换本地目的地。结束拾取／交谈／移动请求以及无进展超时只停止本地路径，不把旧资源坐标当成传送。RemoteControl按上述距离／趋势核对新采样，通过RealmSession发送原5F；不会取消当前交互或自行修改权威。原15、入场重建及真正的动作／区域变化仍各走原有处理。原版跨房间可见性条件及全部延迟组合尚未实机认证。
 
 SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输入。SceneView／SceneAssets 共用原地形、Pops、Warp、原对象／单位动画及光照，原服模式与显示模式分开。地图交互和传送点解锁／菜单／旅行都等原服，面板不推断成功。
 

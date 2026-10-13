@@ -1,15 +1,18 @@
 #include "interaction_geometry.hpp"
 #include "world/navigation.hpp"
+#include "world/native_target_path.hpp"
 #include <algorithm>
 #include <cmath>
-#include <limits>
 
 namespace d2x {
 // D2MOO Units.cpp::D2Common_10399 (MIT; docs/licenses/D2MOO.txt).
 // Shared by native object checks and server-confirmed NPC approach checks.
 int nativeUnitDistance(Vec first, int firstSize, Vec second, int secondSize) {
-    const int dx = std::abs(int(std::floor(first.x)) - int(std::floor(second.x)));
-    const int dy = std::abs(int(std::floor(first.y)) - int(std::floor(second.y)));
+    // Vec projects native precise feet with the drawing half-cell removed.
+    // Restore that offset before reading the integer subtile, just as the
+    // movement pattern, room ownership and native wire projection do.
+    const int dx = std::abs(int(std::floor(first.x+.5f)) - int(std::floor(second.x+.5f)));
+    const int dy = std::abs(int(std::floor(first.y+.5f)) - int(std::floor(second.y+.5f)));
     if (dx >= 8 || dy >= 8 || firstSize >= 4 || secondSize >= 4) {
         const int size = firstSize / 2 + secondSize / 2;
         const int x = std::max(0, dx - size), y = std::max(0, dy - size);
@@ -35,8 +38,8 @@ bool originalObject(const InteractionTarget &object) {
 // (MIT; docs/licenses/D2MOO.txt). The server does not use OperateRange as
 // a center-to-center radius. Player SizeX/SizeY are both 2.
 bool objectInRange(Vec position, const InteractionTarget &object) {
-    const int x = int(std::floor(position.x)), y = int(std::floor(position.y));
-    const int ox = int(std::floor(object.pos.x)), oy = int(std::floor(object.pos.y));
+    const int x = int(std::floor(position.x+.5f)), y = int(std::floor(position.y+.5f));
+    const int ox = int(std::floor(object.pos.x+.5f)), oy = int(std::floor(object.pos.y+.5f));
     const int dx = std::abs(x - ox), dy = std::abs(y - oy);
     const int width = object.collisionWidth, height = object.collisionHeight;
     if (dx >= 8 || dy >= 8 || width >= 4) {
@@ -72,38 +75,14 @@ bool interactionClear(const Grid &grid, Vec position, const InteractionTarget &o
     return (position - object.pos).length() <= object.reach &&
         grid.segment(position, interactionPoint(grid, object), object.id);
 }
-std::optional<Vec> interactionApproach(const Grid &grid, Vec from, const InteractionTarget &object) {
-    std::optional<Vec> best;
-    float bestCost = std::numeric_limits<float>::infinity();
-    const int radius = originalObject(object) ? std::max(object.collisionWidth, object.collisionHeight) / 2 + 3
-        : object.nativeUnit ? int(std::ceil(object.reach/2))+object.collisionWidth/2+2 : int(std::ceil(object.reach));
-    const int centerX = int(std::floor(object.pos.x)), centerY = int(std::floor(object.pos.y));
-    for (int y = centerY - radius; y <= centerY + radius; ++y)
-        for (int x = centerX - radius; x <= centerX + radius; ++x) {
-            if (!grid.walkable(x, y, playerMovement))
-                continue;
-            Vec candidate{float(x), float(y)};
-            if (!interactionClear(grid, candidate, object))
-                continue;
-            if ((candidate - from).length() >= bestCost)
-                continue;
-            constexpr Vec center{.5f,.5f};
-            auto path = grid.nativePlayerPath(from+center, candidate+center, playerMovement);
-            for(auto &point:path) point=point-center;
-            if (path.empty() && (from - candidate).length() > .01f)
-                continue;
-            if (!path.empty() && !interactionClear(grid,path.back(),object)) continue;
-            float cost = 0;
-            Vec previous = from;
-            for (auto step : path) {
-                cost += (step - previous).length();
-                previous = step;
-            }
-            if (cost < bestCost) {
-                best = candidate;
-                bestCost = cost;
-            }
-        }
-    return best;
+std::deque<Vec> nativeTargetPath(const Grid &grid, Vec position, const InteractionTarget &target, uint8_t targetType) {
+    if (interactionClear(grid, position, target)) return {};
+    // PathMisc::sub_6FD5DB70 / D2Common_10236: object and unreached living
+    // unit targets recompute at a partial endpoint. Straight stays Straight;
+    // this is not an unconditional switch to WallFollow or an unbounded solver.
+    constexpr Vec center{.5f, .5f};
+    auto route = grid.nativePlayerPath(position + center, target.pos + center, playerMovement, targetType);
+    for (auto &point : route) point = point - center;
+    return route;
 }
 } // namespace d2x

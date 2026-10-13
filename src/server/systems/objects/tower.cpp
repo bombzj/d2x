@@ -8,6 +8,7 @@ namespace d2x::server::objects {
 void System::towerStep(TickContext tick) {
     if(!ports_.quests.read().objectives.at(questIndex(QuestId::ForgottenTower))) return;
     for(auto &[id,object]:state_.objects) {
+        if (!ports_.areas.loaded(object.area, object.position)) continue;
         if(!object.rule.towerReward || int(object.area)!=25) continue;
         const auto &rule=*object.rule.towerReward;
         auto [at,fresh]=towerClocks_.try_emplace(id,TowerClock{rule.lifetimeFrames,false,initialRandom(id.value)});

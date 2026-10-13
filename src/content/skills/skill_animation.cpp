@@ -7,9 +7,11 @@
 #include <stdexcept>
 #include <cctype>
 #include <set>
+#include <algorithm>
 
 namespace d2x {
-void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const DataTable &weapons, Archives &archives) {
+void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const DataTable &weapons,
+                         std::span<const CharacterDefinition> characters, Archives &archives) {
     const AnimDataTable animations(archives.read("data/global/animdata.d2"));
     std::set<std::string> classes{"hth", "1js", "1jt", "1ss", "1st", "ht2"};
     for (size_t row = 0; row < weapons.rows().size(); ++row)
@@ -21,16 +23,22 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
     std::set<std::string> modes{"sc", "s1", "bl", "gh", "a2", "kk"};
     for (const auto &[id, skill] : catalog.skills)
         if (skill.basicAction != BasicSkillAction::None) modes.insert(skill.animationMode);
-    for (const auto &tree : catalog.classes)
+    for (const auto &tree : catalog.classes) {
+        const auto character = std::find_if(characters.begin(), characters.end(),
+            [&](const auto &entry) { return entry.code == tree.classCode; });
+        if (character == characters.end()) throw std::runtime_error("Skill animation class lacks a character definition");
+        // D2MOO COMPOSIT_GetCof uses the player class token, not SkillDesc's
+        // icon token (Assassin ai/as and Druid dz/dr are different).
+        const auto &token = character->appearance;
         for (const auto &weapon : classes)
             for (const auto &mode : modes) {
                 if (mode == "s1" && tree.classCode != "pal" && tree.classCode != "ama") continue;
-                const auto key = tree.iconToken + mode + weapon;
+                const auto key = token + mode + weapon;
                 auto upper = key;
                 for (auto &letter : upper) letter = char(std::toupper(static_cast<unsigned char>(letter)));
                 const auto *anim = animations.find(upper);
                 if (!anim || anim->frames <= 1 || anim->frames > 144 || anim->speed <= 0 ||
-                    !archives.contains("data/global/chars/" + tree.iconToken + "/cof/" + key + ".cof")) continue;
+                    !archives.contains("data/global/chars/" + token + "/cof/" + key + ".cof")) continue;
                 // Native frame events: 1 = melee/skill, 2 = missile release.
                 if(mode=="gh" || mode=="bl")
                     catalog.recoveryTimings.emplace(key,SkillCatalog::CastTiming{int(anim->frames),anim->speed,0});
@@ -44,6 +52,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
                     target.emplace(key,SkillCatalog::CastTiming{timing->frames,timing->speed,timing->actionFrame});
                 }
             }
+    }
     const DataTable monsters(archives.read("data/global/excel/monstats.txt"));
     const DataTable extras(archives.read("data/global/excel/monstats2.txt"));
     HydraSpec hydra;

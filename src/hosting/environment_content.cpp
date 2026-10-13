@@ -15,7 +15,8 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     const auto &table=data.tables.at("monstats");size_t candidate=0;while(candidate<table.rows().size() && table.value(candidate,"Id")!=identity.monster) ++candidate;
     if(candidate==table.rows().size()) return {};
     const auto ai=table.value(candidate,"AI");if(!ai.starts_with("Trap-") && ai!="TrappedSoul" && ai!="DesertTurret") return {};
-    MonsterCatalog catalog(archives,table);const auto *record=catalog.find(identity.monster);if(!record) return {};
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, table); });
+    const auto &catalog = *catalogSource;const auto *record=catalog.find(identity.monster);if(!record) return {};
     using Trap=server::MonsterRule::Trap;
     const std::map<std::string,Trap,std::less<>> types{{"Trap-Missile",Trap::Missile},{"Trap-Poison",Trap::Poison},{"Trap-Nova",Trap::Nova},{"Trap-RightArrow",Trap::RightArrow},{"Trap-LeftArrow",Trap::LeftArrow},{"Trap-Melee",Trap::Melee},{"DesertTurret",Trap::Turret},{"TrappedSoul",Trap::Soul}};
     const auto type=types.find(record->ai);if(type==types.end()) return {};
@@ -41,7 +42,8 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     constexpr const char *resistance[]{"ResDm","ResMa","ResFi","ResLi","ResCo","ResPo"};for(size_t i=0;i<6;++i) rule.resistances[i]=stats.number(record->sourceRow,std::string(resistance[i])+suffix).value_or(0);
     for(size_t i=0;i<8;++i) rule.trapParameters[i]=stats.number(record->sourceRow,"aip"+std::to_string(i+1)+suffix).value_or(0);
     if(!prepareMonsterComponents(data,*record,rule)) return {};
-    AnimDataTable animations(archives.read("data/global/animdata.d2"));
+    const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
+    const auto &animations = *animationSource;
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const auto make=[&](std::string mode,std::string missile,int rank,bool sequence=false)->std::optional<server::MonsterAttackRule> {
         const int event=rule.trap==Trap::Turret?4:missile.empty()?1:2;
@@ -93,7 +95,8 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
 }
 void prepareEnvironmentPopulation(Archives &archives,const ClassicData &data,PreparedWorldArea &prepared) {
     auto &area=prepared.authority;if(area.town) return;
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource;
     for(const auto &[code,record]:catalog.monsters()) {
         if(record.ai!="Trap-Missile" && record.ai!="Trap-Poison" && record.ai!="Trap-Nova" && record.ai!="Trap-RightArrow" && record.ai!="Trap-LeftArrow" && record.ai!="Trap-Melee" && record.ai!="DesertTurret" && record.ai!="TrappedSoul") continue;
         MonsterIdentity identity;identity.monster=code;identity.origin=SpawnOrigin::Summoned;identity.spawnKey="environment."+code;

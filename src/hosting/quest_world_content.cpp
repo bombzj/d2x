@@ -6,7 +6,8 @@
 namespace d2x {
 void prepareQuestWorld(Archives &archives,const ClassicData &data,PreparedWorldArea &prepared) {
     auto &area=prepared.authority;
-    MonsterCatalog catalog(archives,data.tables.at("monstats"));
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto &catalog = *catalogSource;
     const auto add=[&](std::string key,std::string code,std::string unique,Vec position,MonsterRank rank,std::string suffix=std::string{},std::string owner=std::string{}) {
         const auto *record=catalog.find(code);
         if(!record || !record->hostile()) {area.populationDeferred.push_back("Missing original quest monster: "+code);return;}

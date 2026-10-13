@@ -12,7 +12,8 @@ enum class GroundItemAction : uint8_t { Add = 0, Drop = 2 };
 Bytes nativeGroundItem(const ClassicData &, const ItemInstance &, Vec origin,
                        GroundItemAction = GroundItemAction::Add);
 std::vector<Bytes> nativeMonsterEquipment(const ClassicData &, PersistentCharacter,EntityId,bool conceal = true);
-std::vector<Bytes> nativePublicEquipment(const ClassicData &, PersistentCharacter);
+std::vector<Bytes> nativePublicEquipment(const ClassicData &, const PersistentCharacter &);
+std::vector<Bytes> nativePublicUnequip(const ClassicData &, const PersistentCharacter &, const ItemInstance &);
 std::vector<Bytes> nativeInventoryPackets(const ClassicData &, const PersistentCharacter &);
 std::vector<Bytes> nativeInventoryDelta(const ClassicData &, const server::InventoryFact &);
 std::vector<Bytes> nativeTradeItems(const ClassicData &, const server::TradeItemsFact &, EntityId receiver);

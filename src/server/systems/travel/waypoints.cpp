@@ -80,7 +80,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         if((!east && !west && !sail && !returnSail) || ((east || west) && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
             (sail && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) || (returnSail && !p->persistent.player.completedActs.at(size_t(p->persistent.difficulty)).at(1))) return {DomainStatus::InvalidRequest,{}};
         const auto prepared=ports_.world.request(*request.destination);if(!prepared) return {prepared.status,{}};
-        Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,npc->id,p->position,{},{},false,false,false,0,0};next.kind=Kind::Npc;
+        Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,npc->id,p->position,{}};next.kind=Kind::Npc;
         next.npcConversation=ports_.npc.conversation(actor.player)->revision;
         state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;
         return {DomainStatus::Applied,std::monostate{}};
@@ -93,7 +93,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         if(!request.destination || int(*request.destination)==0 || *request.destination==actor.area) {dismiss();return {DomainStatus::Applied,std::monostate{}};}
         if(!p->rules.character || !p->rules.character->waypointIndices.contains(*request.destination) || !p->persistent.waypoints.contains(*request.destination)) {dismiss();return {DomainStatus::InvalidRequest,{}};}
         auto prepared=ports_.world.requestWaypoint(actor,*request.destination); if(!prepared) return {prepared.status,{}};
-        Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,request.source.id,p->position,{},{},false,false,false,0,0}; next.kind=Kind::Waypoint;
+        Transition next{actor.area,*request.destination,*prepared.value,actor.areaGeneration,actor.sequence,request.source.id,p->position,{}}; next.kind=Kind::Waypoint;
         next.waypointRevision=access->second.revision;
         state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
         return {DomainStatus::Applied,std::monostate{}};
@@ -114,7 +114,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         }
         if(!level || !ports_.quests.allowsTravel(p->persistent.player,actor.area,RegionId(level))) return {DomainStatus::Conflict,{}};
         const auto prepared=ports_.world.request(RegionId(level));if(!prepared) return {prepared.status,{}};
-        Transition next{actor.area,RegionId(level),*prepared.value,actor.areaGeneration,actor.sequence,object->id,p->position,{},{},false,false,false,0,0};next.kind=Kind::QuestObject;
+        Transition next{actor.area,RegionId(level),*prepared.value,actor.areaGeneration,actor.sequence,object->id,p->position,{}};next.kind=Kind::QuestObject;
         state_.transitions.insert_or_assign(actor.player,next);auto &player=ports_.players.players_.at(actor.player);
         // This transition originates in Objects, so GameInstance's direct
         // Travel-command branch has not bound its locomotion sequence.
@@ -131,7 +131,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         if(int(portal.town)==39 && p->persistent.player.cowKingKilled.at(size_t(p->persistent.difficulty))) return {DomainStatus::Unavailable,{}};
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         if((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement)) return {DomainStatus::InvalidRequest,{}};
-        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition,{},false,false,false,0,0};next.kind=Kind::SpecialPortal;
+        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition};next.kind=Kind::SpecialPortal;
         state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
     }
     for(const auto &[owner,portal]:state_.portals) {
@@ -145,7 +145,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         const int x=int(at.x)-int(p->position.x),y=int(at.y)-int(p->position.y);
         if(remoteRange ? x*x+y*y>*remoteRange * *remoteRange : ((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement))) return {DomainStatus::InvalidRequest,{}};
-        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition,{},false,false,false,0,0}; next.kind=Kind::Portal;
+        Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition}; next.kind=Kind::Portal;
         state_.transitions[actor.player]=next; auto &mutablePlayer=ports_.players.players_.at(actor.player); mutablePlayer.route.clear(); mutablePlayer.moving=false;
         return {DomainStatus::Applied,std::monostate{}};
     }

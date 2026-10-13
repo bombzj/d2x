@@ -59,6 +59,7 @@ struct DiagnosticMonster {
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticAnimation { std::string mode; int frames{},startFrame{},speed{},duration{},action{}; };
+struct DiagnosticCollision { int x{},y{}; uint16_t mask{},objectMask{}; bool playerClear{}; };
 struct DiagnosticSnapshot {
     unsigned virtualPlayers{1};
     SystemMetrics stageMetrics{};
@@ -103,6 +104,7 @@ struct DiagnosticSnapshot {
     size_t spellImpacts{}, spellTargets{}, pendingReleases{};
     std::optional<travel::Transition> travel;
     std::vector<Vec> path;
+    std::vector<DiagnosticCollision> collision;
     std::vector<DiagnosticEvent> events;
     std::vector<DiagnosticCommand> commands;
 };
