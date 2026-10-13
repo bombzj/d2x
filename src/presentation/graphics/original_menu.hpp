@@ -9,7 +9,8 @@ namespace d2x {
 // Menus use native resource pixels; only the outer viewport scales the canvas.
 class OriginalMenu {
     Graphics graphics_;
-    GpuAnimation border_, selectedFont_, titleFont_;
+    GpuAnimation border_;
+    ClassicFont selectedFont_, titleFont_;
     const ClassicFont &font_;
     std::string reason_;
     bool ready_{};

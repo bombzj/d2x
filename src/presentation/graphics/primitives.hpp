@@ -1,19 +1,77 @@
 #pragma once
 #include "core/math.hpp"
 #include "graphics.hpp"
+#include <algorithm>
+#include <array>
+#include <cstdint>
 #include <numbers>
+#include <string_view>
+#include <vector>
 namespace d2x {
 inline constexpr int W = 1066, H = 680, HUD = 74;
 inline constexpr float pi = std::numbers::pi_v<float>;
+// The scene renders into a window-sized target; UI coordinates stay in the
+// virtual W x H space and are scaled to native pixels by rlScalef(uiScale).
+inline float uiScale = 1.f;
+inline void uiScissor(float x, float y, float width, float height) {
+    const int left = int(x * uiScale + 0.5f), top = int(y * uiScale + 0.5f);
+    const int right = int((x + width) * uiScale + 0.5f), bottom = int((y + height) * uiScale + 0.5f);
+    BeginScissorMode(left, top, right - left, bottom - top);
+}
 inline constexpr Color gold{196, 164, 102, 255}, parchment{209, 196, 162, 255};
 inline Vector2 rv(Vec v) {
     return {v.x, v.y};
 }
+// Original font .tbl maps a Unicode code point to a DC6 glyph frame. Latin
+// tables cover 0..255; CJK tables cover thousands of sorted code points. Glyph
+// textures are uploaded on first use: a CJK font can hold over 16k frames, so
+// uploading every frame up front is slow and memory heavy.
 struct ClassicFont {
-    GpuAnimation glyphs;
-    std::array<int, 256> widths{}, indices{};
+    Graphics *graphics = nullptr;   // owns lazily uploaded glyph textures
+    const Animation *source = nullptr; // decoded DC6 frames
+    std::array<uint8_t, 256> transform{}; // optional PL2 index transform
+    bool transformed = false;
+    std::vector<uint32_t> codes;  // sorted code points
+    std::vector<uint16_t> frames; // parallel DC6 frame
+    std::vector<uint8_t> widths;  // parallel advance width
+    mutable std::vector<Sprite> sprites; // uploaded frames, indexed by DC6 frame
+    mutable std::vector<uint8_t> uploaded;
     bool ready = false;
+
+    int indexOf(uint32_t code) const {
+        const auto it = std::lower_bound(codes.begin(), codes.end(), code);
+        return it != codes.end() && *it == code ? int(it - codes.begin()) : -1;
+    }
+    int widthOf(uint32_t code) const {
+        const int i = indexOf(code);
+        return i < 0 ? 0 : widths[size_t(i)];
+    }
+    const Sprite *glyphFrame(uint16_t frame) const;
+    const Sprite *glyphOf(uint32_t code) const {
+        const int i = indexOf(code);
+        return i < 0 ? nullptr : glyphFrame(frames[size_t(i)]);
+    }
 };
+// Populate a ClassicFont from an original "Woo!" font table. Returns false when
+// the table is too small or holds no records.
+bool parseClassicFontTable(std::string_view tbl, ClassicFont &font);
+// Reads an original DC6 font set and its codepoint table into ClassicFont.
+// Extracted so a future TTF backend can populate a font through one entry point
+// instead of the DC6 loader.
+void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
+                     std::string_view name, int color = 0);
+// Rasterizes one decoded DC6 glyph frame into a GPU sprite. Kept separate from
+// text layout so a TTF backend can supply glyphs without DC6 source frames.
+Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font);
+// Shared TTF text backend. When a CJK outline font is available, text is drawn
+// from it instead of the upscaled DC6 glyph atlas. The atlas is built lazily
+// from the code points the DC6 font tables report, so only glyphs the game can
+// show are rasterized.
+void collectFontCodepoints(const std::vector<uint32_t> &codes);
+void setTtfSearchDirectory(std::string_view directory);
+bool ttfTextReady();
+Vector2 ttfMeasure(std::string_view text, float size, float spacing);
+void ttfDraw(std::string_view text, float x, float y, float size, float spacing, Color color);
 class UiPainter {
     const ClassicFont &font;
     int glyphGap;

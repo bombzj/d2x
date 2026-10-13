@@ -20,6 +20,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | NPC／任务 | 城镇服务、五幕个人任务主流程、组队任务及奖励保存 | 复杂剧情、机关和特殊多人任务；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
 | 多人／表现 | 组队、聊天、交易、敌意、共享收益及相关界面 | 特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md) |
 
+
 已接能力不代表全部组合或原版客户端兼容性完成；具体支持条件和未覆盖范围由对应专题维护。
 
 ## 保存边界

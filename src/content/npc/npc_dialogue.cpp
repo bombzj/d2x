@@ -1,5 +1,6 @@
 #include "resources/archive.hpp"
 #include "npc_dialogue.hpp"
+#include "content/string_table.hpp"
 #include "resources/text.hpp"
 #include <charconv>
 #include <algorithm>
@@ -16,6 +17,25 @@ std::string_view trim(std::string_view value) {
     return value;
 }
 } // namespace
+
+std::string npcSpeechText(std::string_view value) {
+    std::string text;
+    for(size_t index=0;index<value.size();++index) {
+        const auto sequence=value.substr(index,3);
+        // Authored UTF-16 NPC text is decoded to UTF-8, while TBL strings
+        // retain their original single-byte punctuation.
+        if(sequence=="\xE2\x80\xA6") {text+="...";index+=2;continue;}
+        if(sequence=="\xE2\x80\x98" || sequence=="\xE2\x80\x99") {text+='\'';index+=2;continue;}
+        if(sequence=="\xE2\x80\x9C" || sequence=="\xE2\x80\x9D") {text+='"';index+=2;continue;}
+        const auto c=static_cast<unsigned char>(value[index]);
+        if(std::isspace(c)) continue;
+        if(c==0x85) text+="...";
+        else if(c==0x91 || c==0x92) text+='\'';
+        else if(c==0x93 || c==0x94) text+='"';
+        else text+=char(c);
+    }
+    return text;
+}
 
 namespace {
 NpcDialogues loadNpcDialogueFile(Archives &archives, int act) {
@@ -137,7 +157,8 @@ std::string npcIntroductionKey(std::string_view npc, int act) {
     return act == 0 ? std::string(npc) : "act" + std::to_string(act + 1) + ":" + std::string(npc);
 }
 NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, const DataTable &presets,
-                             const std::map<std::string, std::string, std::less<>> &strings) {
+                             const std::map<std::string, std::string, std::less<>> &strings,
+                             const ClassicStrings &english) {
     NpcDialogues result;
     for (int act = 0; act < 5; ++act) {
         auto source = loadNpcDialogueFile(archives, act);
@@ -150,8 +171,22 @@ NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, con
     std::map<std::string, std::string> soundNames;
     for (size_t row = 0; row < sounds.rows().size(); ++row)
         soundNames.try_emplace(normalize(std::string(sounds.value(row, "FileName"))), sounds.value(row, "Sound"));
+    // The authored dialogue is English, so resolving its original TBL key needs
+    // the English table regardless of the selected language. The key is shared
+    // by all languages and lets callers display the localized string.
+    std::map<std::string, std::string, std::less<>> byText;
+    for (const auto &[key, value] : english.entries()) {
+        (void)value;
+        const int index = english.index(key);
+        if (index < 0 || index > 65535) continue;
+        const auto text = english.speech(index);
+        if (text.empty()) continue;
+        byText.try_emplace(npcSpeechText(text), key);
+    }
     for (auto &[group, speeches] : result)
         for (auto &speech : speeches) {
+            if (const auto found = byText.find(npcSpeechText(speech.text)); found != byText.end())
+                speech.stringKey = found->second;
             auto sound = soundNames.find(normalize(speech.wave));
             if (sound == soundNames.end()) continue;
             const auto &name = sound->second;

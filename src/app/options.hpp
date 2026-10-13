@@ -14,6 +14,7 @@ struct AppOptions {
     uint16_t realmPort = 6113, gamePort = 4000;
     bool hidden = false, help = false;
     int frameLimit = 0;
+    std::string language;
 };
 AppOptions parseOptions(int argc, char **argv);
 } // namespace d2x

@@ -42,6 +42,7 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--load") options.load = value();
         else if (arg == "--save") options.save = value();
         else if (arg == "--class") options.characterClass = value();
+        else if (arg == "--lang" || arg == "--language") { options.language = value(); }
         else if (arg == "--frames") {
             const auto text = value();
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), options.frameLimit);

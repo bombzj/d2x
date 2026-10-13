@@ -2,11 +2,13 @@
 #include "core/bytes.hpp"
 #include "path.hpp"
 #include "core/fingerprint.hpp"
+#include <cstdint>
 #include <filesystem>
 #include <functional>
 #include <set>
 #include <span>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <map>
 #include <memory>
@@ -28,6 +30,16 @@ class Archives {
   public:
     std::vector<std::string> names;
     mutable std::set<std::string> used;
+    // Selected language resource set (shared by every consumer of this mount).
+    // Primitive fields keep resources independent of content definitions.
+    std::string languageDirectory{"eng"};
+    std::string languageFontDirectory{"latin"};
+    // Root supplied through --mpq; used to locate loose game assets such as
+    // optional outline fonts under <gameDirectory>/fonts.
+    std::filesystem::path gameDirectory;
+    uint32_t languageLocaleId{1033};
+    uint32_t languageCode{0x656E5553u};
+    uint8_t languageGameLocale{0};
     Archives() = default;
     Archives(const Archives &) = delete;
     Archives &operator=(const Archives &) = delete;
@@ -50,5 +62,9 @@ class Archives {
     bool contains(const std::string &name) const;
     std::vector<std::string> list(const std::string &pattern = "*") const;
     void packUsed(const std::filesystem::path &destination) const;
+    // Packs loose files (e.g. a mounted game's Data folder) into a new MPQ.
+    // Member names are prefix + path relative to source, normalized.
+    void packDirectory(const std::filesystem::path &source, std::string_view prefix,
+                       const std::filesystem::path &destination) const;
 };
 } // namespace d2x

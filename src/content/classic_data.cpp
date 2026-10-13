@@ -393,9 +393,12 @@ ClassicData loadClassicData(Archives &archives) {
     data.petPortraits = loadPetPortraitData(data.tables.at("pettype"), strings);
     data.armorTypes = std::move(armorTypes);
     data.vendors = loadVendorData(data.tables, data.items);
-    if (archives.contains("data/local/docs/eng/a1npc.txt"))
+    if (archives.contains("data/local/docs/eng/a1npc.txt")) {
+        const Language english;
+        const ClassicStrings englishStrings(archives, english);
         data.npcDialogues = loadNpcDialogues(archives, data.tables.at("monstats"),
-            DataTable(archives.read("data/global/excel/monpreset.txt")), data.itemStrings);
+            DataTable(archives.read("data/global/excel/monpreset.txt")), data.itemStrings, englishStrings);
+    }
     data.questContent = loadQuestContent(archives, data.npcDialogues, data.questStrings);
     loadItemConsumables(data);
     {

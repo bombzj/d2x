@@ -8,6 +8,7 @@ param(
     [string]$GamePacketLog='',
     [string]$HostPacketLog='',
     [switch]$Diagnostic,
+    [string]$Lang='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
     [switch]$NoDebugPipe
 )
@@ -60,6 +61,7 @@ try{
     if($Mpq){$arguments+=@('--mpq',$Mpq)}
     if($GamePacketLog){$arguments+=@('--game-packet-log',$GamePacketLog)}
     if($HostPacketLog){$arguments+=@('--host-packet-log',$HostPacketLog)}
+    if($Lang){$arguments+=@('--lang',$Lang)}
     if(-not $NoDebugPipe){
         $arguments+=@('--debug-pipe',$PipeName)
         Write-Host "Local debug pipe: $PipeName (current Windows user only)"

@@ -275,8 +275,6 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             frame.shadowY = shadow.y;
             gpu.frames.push_back(frame);
         }
-    std::cout << "Composite " << token << mode << weapon << ": " << parts.size() << '/' << cof.layers
-              << " parts, " << gpu.frames.size() << " frames\n";
     return gpu;
 }
 } // namespace d2x

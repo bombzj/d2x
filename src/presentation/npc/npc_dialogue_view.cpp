@@ -134,8 +134,8 @@ void SceneView::drawNpcDialogue() const {
     auto bounds = speechBounds();
     DrawRectangleRec(bounds, {0, 0, 0, 200});
     DrawRectangleLinesEx(bounds, 1, gold);
-    BeginScissorMode(int(bounds.x) + 14, int(bounds.y) + 8,
-                     textWidth() + 4, int(bounds.height) - 16);
+    uiScissor(bounds.x + 14, bounds.y + 8,
+              float(textWidth() + 4), bounds.height - 16);
     const float firstY = bounds.y + bounds.height - 16 - view_.dialogueOffset;
     for (size_t index = 0; index < view_.dialogueLines.size(); ++index) {
         const float y = firstY + float(index) * lineHeight;

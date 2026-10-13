@@ -34,7 +34,7 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
     const auto *definition = catalog.find(item.definition);
     std::string name = definition ? definition->name : item.definition;
     if (item.quality == ItemQuality::Superior)
-        return "Superior " + name;
+        return localized("Hiquality") + " " + name;
     if (item.quality == ItemQuality::Inferior) {
         auto found = std::find_if(content.inferiorGrades.begin(),
                                   content.inferiorGrades.end(),
@@ -83,6 +83,10 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
     auto line = [&](std::string value, ItemTextTone tone = ItemTextTone::Normal) {
         if (!value.empty()) display.tooltip.push_back({std::move(value), tone});
     };
+    auto localize = [&](std::string_view key, std::string_view fallback) -> std::string {
+        const auto found = content.itemStrings.find(key);
+        return found == content.itemStrings.end() ? std::string(fallback) : found->second;
+    };
     if (item.definition == "toa")
         if (const auto text = content.itemStrings.find("toa"); text != content.itemStrings.end())
             if (const auto separator = text->second.rfind('}'); separator != std::string::npos)
@@ -97,7 +101,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             return result;
         };
         const auto &base = definition.base;
-        auto damage = [&](const char *label, std::optional<int> low, std::optional<int> high, bool thrown = false) {
+        auto damage = [&](std::string label, std::optional<int> low, std::optional<int> high, bool thrown = false) {
             if (!low || !high) return;
             if (item.nativeFlags & 0x400000u) { low = *low * 3 / 2; high = *high * 3 / 2; }
             if (item.quality == ItemQuality::Inferior) {
@@ -106,27 +110,29 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             }
             const int minimum = std::max(1, *low * (100 + sum("item_mindamage_percent")) / 100 + sum("mindamage"));
             const int maximum = std::max(minimum + 1, *high * (100 + sum("item_maxdamage_percent")) / 100 + sum("maxdamage"));
-            line(std::string(label) + std::to_string(minimum) + " - " + std::to_string(maximum));
+            line(label + std::to_string(minimum) + " - " + std::to_string(maximum));
         };
         if (definition.family == ItemFamily::Weapon) {
-            if (definition.equipment.throwable) damage("Throw Damage: ", base.throwMin, base.throwMax, true);
+            if (definition.equipment.throwable)
+                damage(localize("ItemStats1n", "Throw Damage:") + " ", base.throwMin, base.throwMax, true);
             if (!definition.equipment.twoHanded || canUseWeaponOneHanded(definition.equipment, context.characterClass))
-                damage("One-Hand Damage: ", base.minDamage, base.maxDamage);
+                damage(localize("ItemStats1l", "One-Hand Damage:") + " ", base.minDamage, base.maxDamage);
             if (definition.equipment.twoHanded)
-                damage("Two-Hand Damage: ", base.twoHandMin, base.twoHandMax);
+                damage(localize("ItemStats1m", "Two-Hand Damage:") + " ", base.twoHandMin, base.twoHandMax);
         }
         if (definition.family == ItemFamily::Armor) {
             const int percent = sum("item_armor_percent");
             const int baseArmor = item.defense;
-            line("Defense: " + std::to_string(baseArmor * std::max(0, 100 + percent) / 100 + sum("armorclass")));
+            line(localize("ItemStats1h", "Defense:") + " " +
+                 std::to_string(baseArmor * std::max(0, 100 + percent) / 100 + sum("armorclass")));
         }
         if (definition.maxStack > 1 && !definition.equipment.isType("gold"))
-            line("Quantity: " + std::to_string(item.quantity));
+            line(localize("ItemStats1i", "Quantity:") + " " + std::to_string(item.quantity));
         if (definition.bookCapacity)
-            line("Quantity: " + std::to_string(item.charges));
+            line(localize("ItemStats1i", "Quantity:") + " " + std::to_string(item.charges));
         if (definition.maxDurability && !definition.equipment.throwable)
-            line("Durability: " + std::to_string(item.durability) + " of " +
-                 std::to_string(context.maximumDurability));
+            line(localize("ItemStats1d", "Durability:") + " " + std::to_string(item.durability) + " " +
+                 localize("ItemStats1j", "of") + " " + std::to_string(context.maximumDurability));
         if (definition.beltRows)
             line("Belt capacity: " + std::to_string(4 * definition.beltRows));
         if (const auto *potion = content.potion(item.definition)) {
@@ -134,25 +140,29 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
                 line("Heals " + std::to_string(int(potion->amount)) + " Life");
             else if (potion->kind == PotionKind::Mana)
                 line("Restores " + std::to_string(int(potion->amount)) + " Mana");
-            else if (potion->kind == PotionKind::Rejuvenation)
-                line("Restores " + std::to_string(int(potion->amount * 100)) + "% Life and Mana");
+            else if (potion->kind == PotionKind::Rejuvenation) {
+                const int percent = int(potion->amount * 100);
+                const auto text = content.itemStrings.find(percent >= 100 ? "ItemStatsrejuv2" : "ItemStatsrejuv1");
+                line(text != content.itemStrings.end() ? text->second
+                     : "Restores " + std::to_string(percent) + "% Life and Mana");
+            }
             else if (potion->kind == PotionKind::Stamina)
                 line("Restores Stamina");
             if (potion->curesPoison) line("Cures Poison");
             if (potion->curesCold) line("Cures Cold");
             if (potion->seconds > 0) line("Duration: " + std::to_string(int(potion->seconds)) + " seconds");
         }
-        auto requirement = [&](const char *label, int required, int actual) {
-            if (required > 0) line(std::string(label) + std::to_string(required), actual < required ? ItemTextTone::Error : ItemTextTone::Normal);
+        auto requirement = [&](std::string label, int required, int actual) {
+            if (required > 0) line(label + std::to_string(required), actual < required ? ItemTextTone::Error : ItemTextTone::Normal);
         };
         auto required = [&](std::optional<int> value) {
             const int baseValue = value.value_or(0);
             return std::max(0, baseValue + baseValue * sum("item_req_percent") / 100 - ((item.nativeFlags & 0x400000u) ? 10 : 0));
         };
-        requirement("Required Strength: ", required(base.requiredStrength), context.strength);
-        requirement("Required Dexterity: ", required(base.requiredDexterity), context.dexterity);
-        requirement("Required Level: ", std::max({base.requiredLevel.value_or(0), item.requiredLevel, item.socketRequiredLevel}), context.level);
-        if (!item.identified) line("Unidentified", ItemTextTone::Error);
+        requirement(localize("ItemStats1e", "Required Strength:") + " ", required(base.requiredStrength), context.strength);
+        requirement(localize("ItemStats1f", "Required Dexterity:") + " ", required(base.requiredDexterity), context.dexterity);
+        requirement(localize("ItemStats1p", "Required Level:") + " ", std::max({base.requiredLevel.value_or(0), item.requiredLevel, item.socketRequiredLevel}), context.level);
+        if (!item.identified) line(localize("ItemStats1b", "Unidentified"), ItemTextTone::Error);
         else {
             for (auto &description : describeItemStats(content, item, context.level))
                 line(std::move(description), ItemTextTone::Property);

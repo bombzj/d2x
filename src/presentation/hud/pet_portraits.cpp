@@ -1,8 +1,10 @@
 #include "presentation/scene_view.hpp"
 #include "presentation/npc/hireling_panel.hpp"
+#include "core/text.hpp"
 #include "skill_tooltip.hpp"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <string_view>
@@ -11,18 +13,24 @@ namespace d2x {
 namespace {
 int textWidth(const ClassicFont &font, std::string_view value) {
     int width=0;
-    for (unsigned char character : value) width+=font.widths[character];
+    for (uint32_t character : utf8Decode(value)) width+=font.widthOf(character);
     return width;
 }
+void popCodePoint(std::string &value) {
+    if (value.empty()) return;
+    size_t i=value.size()-1;
+    while (i>0 && (uint8_t(value[i])&0xC0)==0x80) --i;
+    value.erase(i);
+}
 void portraitText(const ClassicFont &font, std::string value, float x, float baseline, int maximumWidth, bool centered) {
-    while (!value.empty() && textWidth(font,value)>maximumWidth) value.pop_back();
+    while (!value.empty() && textWidth(font,value)>maximumWidth) popCodePoint(value);
     if (centered) x=std::max(0.f,x+22-textWidth(font,value)/2.f);
-    for (unsigned char character : value) {
-        if (const auto *glyph=font.glyphs.frame(0,font.indices[character]);glyph && character!=' ')
+    for (uint32_t character : utf8Decode(value)) {
+        if (const auto *glyph=font.glyphOf(character);glyph && character!=' ')
             DrawTexturePro(glyph->texture,{0,0,float(glyph->texture.width),float(glyph->texture.height)},
                 {(x+glyph->x)*classicPanelScale,(baseline+glyph->y-glyph->texture.height)*classicPanelScale,
                     glyph->texture.width*classicPanelScale,glyph->texture.height*classicPanelScale},{},0,WHITE);
-        x+=font.widths[character];
+        x+=font.widthOf(character);
     }
 }
 }
