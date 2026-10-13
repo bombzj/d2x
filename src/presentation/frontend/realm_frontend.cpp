@@ -222,8 +222,10 @@ struct RealmFrontend::Impl {
             }
         }
     }
-    // Fullscreen backgrounds compose one tile block (columns wide) and repeat it
-    // so the original artwork still fills windows wider or taller than the block.
+    // Fullscreen backgrounds compose one tile block (columns wide); the block is
+    // stretched to fill the window so artwork designed for the fixed screen still
+    // covers wider or taller resolutions. Drawn from the untranslated origin so
+    // the centered foreground layout stays aligned on top of it.
     void background(const char *id, int columns = 4, Color tint = WHITE) {
         const auto &a = art.at(id);
         if (a.frames.empty()) return;
@@ -243,20 +245,20 @@ struct RealmFrontend::Impl {
             }
         }
         if (blockW <= 0 || blockH <= 0) return;
-        // Draw from a negative origin so the pattern still covers the window
-        // after the frontend applies its centering translation.
-        for (int by = -blockH; by < H + blockH; by += blockH)
-            for (int bx = -blockW; bx < W + blockW; bx += blockW) {
-                int dx = bx, dy = by, rowH = 0, col = 0;
-                for (int i = 0; i < a.count; ++i) {
-                    const auto *cel = a.frame(0, i);
-                    if (!cel) break;
-                    DrawTexture(cel->texture, dx, dy, tint);
-                    dx += cel->texture.width;
-                    rowH = std::max(rowH, int(cel->texture.height));
-                    if (++col == columns) { dx = bx; dy += rowH; rowH = 0; col = 0; }
-                }
-            }
+        const float originX = -(float(GetScreenWidth()) - 800.f) / 2.f;
+        const float originY = -(float(GetScreenHeight()) - 600.f) / 2.f;
+        const float sx = float(W) / float(blockW), sy = float(H) / float(blockH);
+        int gx = 0, gy = 0, rowH = 0, col = 0;
+        for (int i = 0; i < a.count; ++i) {
+            const auto *cel = a.frame(0, i);
+            if (!cel) break;
+            DrawTexturePro(cel->texture, {0, 0, float(cel->texture.width), float(cel->texture.height)},
+                {originX + gx * sx, originY + gy * sy,
+                 cel->texture.width * sx, cel->texture.height * sy}, {0, 0}, 0, tint);
+            gx += cel->texture.width;
+            rowH = std::max(rowH, int(cel->texture.height));
+            if (++col == columns) { gx = 0; gy += rowH; rowH = 0; col = 0; }
+        }
     }
     void emit(FrontendCommand command) {
         if (intent.command == FrontendCommand::None)
