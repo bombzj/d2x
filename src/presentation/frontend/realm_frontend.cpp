@@ -3,6 +3,7 @@
 #include "content/string_table.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/data_table.hpp"
+#include <rlgl.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -667,6 +668,15 @@ struct RealmFrontend::Impl {
     }
     void characters(const OnlineView &v, bool allowRealmSelection) {
         background("characters");
+        // The original layout leaves the right half for a 3D character model that
+        // this client does not draw, so the slot grid would sit left of center.
+        // Shift the selection UI so the character boxes are centered on screen.
+        const auto &box = art.at("highlight");
+        const int slotWidth = box.frame(0, 0)->texture.width + box.frame(0, 1)->texture.width;
+        const float centerShift = 400.f - (37.f + slotWidth);
+        mouse.x -= centerShift;
+        rlPushMatrix();
+        rlTranslatef(centerShift, 0, 0);
         if (allowRealmSelection) {
             image("realm", 608, 8);
             text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
@@ -704,8 +714,7 @@ struct RealmFrontend::Impl {
         if (enabled)
             changePage(input.pageDelta + (input.wheel < 0 ? 1 : input.wheel > 0 ? -1 : 0));
         else lastClickedCharacter = -1;
-        const auto &box = art.at("highlight");
-        const int width = box.frame(0, 0)->texture.width + box.frame(0, 1)->texture.width;
+        const int width = slotWidth;
         const int height = std::max(box.frame(0, 0)->texture.height, box.frame(0, 1)->texture.height);
         if (v.characters.size() > 8) {
             // Keep paging controls in the gutter, outside the fourth character row.
@@ -781,6 +790,8 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::SelectCharacter);
             intent.name = v.characters[size_t(selected)].name;
         }
+        rlPopMatrix();
+        mouse.x += centerShift;
     }
     void spinner(int x, int y, int &value, int low, int high) {
         label(std::to_string(value), x + 8, y + 5, WHITE);
