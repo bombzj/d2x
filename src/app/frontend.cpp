@@ -940,7 +940,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
-                    const float oxs=(float(GetScreenWidth())-800.f)/2.f, oys=(float(GetScreenHeight())-600.f)/2.f; uiScissor(oxs, oys, 800, 600);
+                    // Fullscreen backgrounds expand to the whole window; the
+                    // fixed 800x600 artwork stays centered via the translation.
+                    uiScissor(0, 0, (float)GetScreenWidth(), (float)GetScreenHeight());
                     rlPushMatrix();
                     const float ox=(float(GetScreenWidth())-800.f)/2.f, oy=(float(GetScreenHeight())-600.f)/2.f; rlTranslatef(ox, oy, 0);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,

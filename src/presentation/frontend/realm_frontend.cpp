@@ -207,25 +207,56 @@ struct RealmFrontend::Impl {
     // DC6 screen and control tiles retain their native dimensions; no stretched tiles.
     void tiles(const char *id, int x, int y, int columns, int first = 0, int count = -1, Color tint = WHITE) {
         const auto &a = art.at(id);
-        if (count < 0) count = a.count - first;
-        const auto *firstCel = a.frame(0, first);
-        if (!firstCel) return;
-        const int tw = firstCel->texture.width;
-        const int th = firstCel->texture.height;
-        const int startX = x < 0 ? ((-x) % tw) : 0;
-        const int startY = y < 0 ? ((-y) % th) : 0;
-        const int blockRows = (count + columns - 1) / columns;
-        for (int cy = -th; cy < H + th; cy += blockRows * th) {
-            for (int cx = -tw; cx < W + tw; cx += columns * tw) {
-                int row = 0, col = 0;
-                for (int i = 0; i < count; ++i) {
-                    const auto *cel = a.frame(0, first + i);
-                    if (cel) DrawTexture(cel->texture, cx + col * tw, cy + row * th, tint);
-                    col++;
-                    if (col == columns) { col = 0; row++; }
-                }
+        if (count < 0)
+            count = a.count - first;
+        int dx = x, dy = y, rowHeight = 0;
+        for (int i = 0; i < count; ++i) {
+            const auto *cel = a.frame(0, first + i);
+            image(id, dx, dy, first + i, tint);
+            dx += cel->texture.width;
+            rowHeight = std::max(rowHeight, cel->texture.height);
+            if ((i + 1) % columns == 0) {
+                dx = x;
+                dy += rowHeight;
+                rowHeight = 0;
             }
         }
+    }
+    // Fullscreen backgrounds compose one tile block (columns wide) and repeat it
+    // so the original artwork still fills windows wider or taller than the block.
+    void background(const char *id, int columns = 4, Color tint = WHITE) {
+        const auto &a = art.at(id);
+        if (a.frames.empty()) return;
+        int blockW = 0, blockH = 0;
+        for (int i = 0, col = 0, rowW = 0, rowH = 0; i < a.count; ++i) {
+            const auto *cel = a.frame(0, i);
+            if (!cel) break;
+            rowW += cel->texture.width;
+            rowH = std::max(rowH, int(cel->texture.height));
+            if (++col == columns) {
+                blockW = std::max(blockW, rowW);
+                blockH += rowH;
+                col = 0; rowW = 0; rowH = 0;
+            } else if (i == a.count - 1) {
+                blockW = std::max(blockW, rowW);
+                blockH += rowH;
+            }
+        }
+        if (blockW <= 0 || blockH <= 0) return;
+        // Draw from a negative origin so the pattern still covers the window
+        // after the frontend applies its centering translation.
+        for (int by = -blockH; by < H + blockH; by += blockH)
+            for (int bx = -blockW; bx < W + blockW; bx += blockW) {
+                int dx = bx, dy = by, rowH = 0, col = 0;
+                for (int i = 0; i < a.count; ++i) {
+                    const auto *cel = a.frame(0, i);
+                    if (!cel) break;
+                    DrawTexture(cel->texture, dx, dy, tint);
+                    dx += cel->texture.width;
+                    rowH = std::max(rowH, int(cel->texture.height));
+                    if (++col == columns) { dx = bx; dy += rowH; rowH = 0; col = 0; }
+                }
+            }
     }
     void emit(FrontendCommand command) {
         if (intent.command == FrontendCommand::None)
@@ -342,7 +373,7 @@ struct RealmFrontend::Impl {
             sprite(cel, {float(x), float(y)});
     }
     void main(std::string_view gateway) {
-        tiles("main", 0, 0, 4);
+        background("main");
         logo();
         if (button("wide", 265, 290, s(5106), true, 2))
             emit(FrontendCommand::SinglePlayer);
@@ -379,7 +410,7 @@ struct RealmFrontend::Impl {
     }
     void tcpIp(bool joining) {
         prepareLanArt();
-        tiles("tcpip", 0, 0, 4);
+        background("tcpip");
         lanTitle.inBox(s(5117), {0, 35, 800, 50}, 16, parchment);
         centered(s(5121), 110);
         wrap(lanAddresses.empty() ? s(5124) : lanAddresses, 180, 130, 440, true, 168);
@@ -425,7 +456,7 @@ struct RealmFrontend::Impl {
         }
     }
     void login() {
-        tiles("main", 0, 0, 4);
+        background("main");
         logo();
         wrap(s(5205), 180, 233, 440, true);
         label(s(5224), 300, 289);
@@ -449,7 +480,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
     }
     void registration() {
-        tiles("main", 0, 0, 4);
+        background("main");
         logo();
         wrap(s(5223), 180, 218, 440, true);
         label(s(5224), 300, 276);
@@ -474,7 +505,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
     }
     void realms(const OnlineView &v) {
-        tiles("realms", 0, 0, 4);
+        background("realms");
         title.inBox(s(5289), {0, 30, 800, 40}, 16, parchment);
         wrap(s(5291), 180, 95, 440, true);
         realmSelected = std::clamp(realmSelected, 0, std::max(0, int(v.realms.size()) - 1));
@@ -548,7 +579,7 @@ struct RealmFrontend::Impl {
                 }
             }
         }
-        tiles("creation", 0, 0, 4);
+        background("creation");
         title.inBox(s(5127), {0, 17, 800, 36}, 16, parchment);
         if (hero >= 0) {
             centered(classes[size_t(ids[size_t(hero)])], 65);
@@ -633,7 +664,7 @@ struct RealmFrontend::Impl {
         }
     }
     void characters(const OnlineView &v, bool allowRealmSelection) {
-        tiles("characters", 0, 0, 4);
+        background("characters");
         if (allowRealmSelection) {
             image("realm", 608, 8);
             text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
@@ -773,7 +804,7 @@ struct RealmFrontend::Impl {
         if (button("medium", 330, 411, s(5103))) emit(FrontendCommand::Back);
     }
     void lobby(const OnlineView &v) {
-        tiles("lobby", 0, 0, 4);
+        background("lobby");
         if (lobbyGeneration != v.gameGeneration) {
             lobbyGeneration = v.gameGeneration;
             difficulty = 0;
@@ -1059,7 +1090,7 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::Lobby)
             lobby(v);
         else {
-            tiles("main", 0, 0, 4);
+            background("main");
             logo();
             centered(v.stage == OnlineStage::ProtocolReady ? "Connected to game server" : s(5243), 315);
             if (v.stage == OnlineStage::ProtocolReady) {
