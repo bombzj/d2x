@@ -56,9 +56,9 @@ struct InventoryUi {
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
 inline float inventoryScale() { return classicPanelScale(); }
 inline float inventoryCellSize() { return 29 * inventoryScale(); }
-inline Rectangle orificeBounds() {return {106*inventoryScale,98*inventoryScale,108*inventoryScale,164*inventoryScale};}
-inline Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale,p.y+12*inventoryScale,76*inventoryScale,108*inventoryScale};}
-inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale,p.y+126*inventoryScale,32*inventoryScale,32*inventoryScale};}
+inline Rectangle orificeBounds() {return {106*inventoryScale(),98*inventoryScale(),108*inventoryScale(),164*inventoryScale()};}
+inline Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale(),p.y+12*inventoryScale(),76*inventoryScale(),108*inventoryScale()};}
+inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale(),p.y+126*inventoryScale(),32*inventoryScale(),32*inventoryScale()};}
 inline Rectangle inventoryBounds() {
     return classicPanelBounds(true);
 }
@@ -69,20 +69,20 @@ inline Rectangle inventoryGrid() {
 }
 inline Rectangle inventoryClose() {
     auto p = inventoryBounds();
-    return {p.x + 19 * inventoryScale(), p.y + 389 * inventoryScale,
+    return {p.x + 19 * inventoryScale(), p.y + 389 * inventoryScale(),
             32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle inventoryGold() {
     auto p = inventoryBounds();
-    return {p.x + 82 * inventoryScale, p.y + 391 * inventoryScale,
-            120 * inventoryScale, 20 * inventoryScale};
+    return {p.x + 82 * inventoryScale(), p.y + 391 * inventoryScale(),
+            120 * inventoryScale(), 20 * inventoryScale()};
 }
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
 }
 inline Rectangle equippedBeltBounds() {
     auto p = inventoryBounds();
-    return {p.x + 136 * inventoryScale, p.y + 179 * inventoryScale, 52 * inventoryScale, 25 * inventoryScale};
+    return {p.x + 136 * inventoryScale(), p.y + 179 * inventoryScale(), 52 * inventoryScale(), 25 * inventoryScale()};
 }
 Rectangle equipmentBounds(EquipmentSlot slot);
 std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet);

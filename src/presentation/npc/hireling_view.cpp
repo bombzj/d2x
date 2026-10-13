@@ -21,9 +21,9 @@ void hirelingText(const ClassicFont &font,const std::string &value,float left,fl
         for(uint32_t ch:utf8Decode(lines[row])) {
             if(const auto *glyph=font.glyphOf(ch);glyph && ch!=' ')
                 DrawTexturePro(glyph->texture,{0,0,float(glyph->texture.width),float(glyph->texture.height)},
-                    {x+glyph->x*classicPanelScale,origin.y+(glyph->y-glyph->texture.height)*classicPanelScale,
-                        glyph->texture.width*classicPanelScale,glyph->texture.height*classicPanelScale},{},0,WHITE);
-            x+=font.widthOf(ch)*classicPanelScale;
+                    {x+glyph->x*classicPanelScale(),origin.y+(glyph->y-glyph->texture.height)*classicPanelScale(),
+                        glyph->texture.width*classicPanelScale(),glyph->texture.height*classicPanelScale()},{},0,WHITE);
+            x+=font.widthOf(ch)*classicPanelScale();
         }
     }
     EndScissorMode();
@@ -40,15 +40,15 @@ void SceneView::drawHirelingList(Vec mouse) const {
     DrawRectangleRec(p, {0, 0, 0, 210});
     DrawRectangleLinesEx(p, 1, gold);
     const auto cancel = hirelingListCancel();
-    DrawLineEx({p.x, p.y + 42 * classicPanelScale}, {p.x + p.width, p.y + 42 * classicPanelScale}, 1, gold);
+    DrawLineEx({p.x, p.y + 42 * classicPanelScale()}, {p.x + p.width, p.y + 42 * classicPanelScale()}, 1, gold);
     DrawRectangleLinesEx(cancel, 1, gold);
     const auto &labels = assets_.characterLabels;
     std::string header = labels.at("ItemDesc1s");
     if (const auto at = header.find("%d"); at != std::string::npos)
         header.replace(at, 2, std::to_string(list.gold));
-    const int size = int(16 * classicPanelScale);
+    const int size = int(16 * classicPanelScale());
     painter_.label(header, int(p.x + (p.width - painter_.measure(header, size)) / 2),
-                   int(p.y + 12 * classicPanelScale), size, gold);
+                   int(p.y + 12 * classicPanelScale()), size, gold);
     const auto *offers = &list.offers;
     for (int index = 0; index < hirelingVisibleRows; ++index) {
         const int entry = view_.hireListScroll + index;
@@ -64,8 +64,8 @@ void SceneView::drawHirelingList(Vec mouse) const {
         while (rowSize > 9 && painter_.measure(line, rowSize) > row.width) --rowSize;
         painter_.label(line, int(row.x), int(row.y), rowSize, color);
         if (!offer.description.empty())
-            painter_.label(offer.description, int(row.x + 20 * classicPanelScale),
-                           int(row.y + 18 * classicPanelScale), size, color);
+            painter_.label(offer.description, int(row.x + 20 * classicPanelScale()),
+                           int(row.y + 18 * classicPanelScale()), size, color);
     }
     const auto bar = hirelingScrollBounds();
     DrawRectangleLinesEx(bar, 1, gold);
@@ -73,16 +73,16 @@ void SceneView::drawHirelingList(Vec mouse) const {
         if (const auto *image = assets_.hirelingScroll.frame(0, frame)) {
             const auto &t = image->texture;
             DrawTexturePro(t, {0, 0, float(t.width), float(t.height)},
-                {bar.x, y, 10 * classicPanelScale, 10 * classicPanelScale}, {0, 0}, 0, WHITE);
+                {bar.x, y, 10 * classicPanelScale(), 10 * classicPanelScale()}, {0, 0}, 0, WHITE);
         }
     };
-    arrow(0, bar.y); arrow(1, bar.y + bar.height - 10 * classicPanelScale);
+    arrow(0, bar.y); arrow(1, bar.y + bar.height - 10 * classicPanelScale());
     const int maximum = offers ? std::max(0, int(offers->size()) - hirelingVisibleRows) : 0;
-    arrow(5, bar.y + 11 * classicPanelScale +
-        (maximum ? float(view_.hireListScroll) / maximum : 0) * (bar.height - 32 * classicPanelScale));
+    arrow(5, bar.y + 11 * classicPanelScale() +
+        (maximum ? float(view_.hireListScroll) / maximum : 0) * (bar.height - 32 * classicPanelScale()));
     const auto label = list.cancelLabel;
     painter_.label(label, int(cancel.x + (cancel.width - painter_.measure(label, size)) / 2),
-        int(cancel.y + 12 * classicPanelScale), size,
+        int(cancel.y + 12 * classicPanelScale()), size,
         CheckCollisionPointRec(rv(mouse), cancel) ? Color{94, 112, 200, 255} : parchment);
 }
 void SceneView::drawHireling(Vec mouse) const {
@@ -96,8 +96,8 @@ void SceneView::drawHireling(Vec mouse) const {
         if (!frame) continue;
         const auto &t = frame->texture;
         DrawTexturePro(t, {0, 0, float(t.width), float(t.height)},
-            {p.x + (index % 2) * 256 * classicPanelScale, p.y + (index / 2) * 256 * classicPanelScale,
-             t.width * classicPanelScale, t.height * classicPanelScale}, {0, 0}, 0, WHITE);
+            {p.x + (index % 2) * 256 * classicPanelScale(), p.y + (index / 2) * 256 * classicPanelScale(),
+             t.width * classicPanelScale(), t.height * classicPanelScale()}, {0, 0}, 0, WHITE);
     }
     const auto &inventory = inventoryView_;
     auto slots = inventoryView_.containers;

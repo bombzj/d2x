@@ -9,14 +9,14 @@ std::optional<unsigned> SceneView::inventoryVendorPrice(ItemHandle item) const {
 }
 
 namespace {
-constexpr float scale = inventoryScale;
+const float scale = inventoryScale();
 Rectangle panelBounds() {
     return storageBounds();
 }
 Rectangle shopGrid() {
     auto panel = panelBounds();
     return {panel.x + 14 * scale, panel.y + 62 * scale,
-            10 * inventoryCellSize, 10 * inventoryCellSize};
+            10 * inventoryCellSize(), 10 * inventoryCellSize()};
 }
 Rectangle tabBounds(int index) {
     auto panel = panelBounds();
@@ -75,10 +75,10 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
             for (int x = (*cell)[0]; x < (*cell)[0] + item->width; ++x)
                 occupied[size_t(y * 10 + x)] = true;
         result.push_back({&offer, page,
-                          {grid.x + (*cell)[0] * inventoryCellSize,
-                           grid.y + (*cell)[1] * inventoryCellSize,
-                           item->width * inventoryCellSize,
-                           item->height * inventoryCellSize}});
+                          {grid.x + (*cell)[0] * inventoryCellSize(),
+                           grid.y + (*cell)[1] * inventoryCellSize(),
+                           item->width * inventoryCellSize(),
+                           item->height * inventoryCellSize()}});
     }
     return result;
 }

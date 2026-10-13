@@ -22,7 +22,7 @@ bool SceneController::handleHirelingList(const FrameInput &input) {
         if (input.insideViewport && input.leftPressed) {
             const auto bar = hirelingScrollBounds();
             if (CheckCollisionPointRec(rv(input.mouse), bar)) {
-                const float local = (input.mouse.y - bar.y) / classicPanelScale;
+                const float local = (input.mouse.y - bar.y) / classicPanelScale();
                 if (local < 10) --ui.hireListScroll;
                 else if (local > 320) ++ui.hireListScroll;
                 else ui.hireListScroll = int(std::clamp((local - 10) / 310.f, 0.f, 1.f) * maximum + .5f);

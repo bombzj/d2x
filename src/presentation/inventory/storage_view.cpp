@@ -12,22 +12,22 @@ void SceneView::drawStorage(Vec mouse) const {
     for (int i = 0; i < 4; ++i) {
         auto tile = assets_.storagePanel.frames[i].texture;
         DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                       {panel.x + (i % 2) * 256 * inventoryScale, panel.y + (i / 2) * 256 * inventoryScale,
-                        tile.width * inventoryScale, tile.height * inventoryScale},
+                       {panel.x + (i % 2) * 256 * inventoryScale(), panel.y + (i / 2) * 256 * inventoryScale(),
+                        tile.width * inventoryScale(), tile.height * inventoryScale()},
                        {0, 0}, 0, WHITE);
     }
     const auto &layout = inventoryView_.stashLayout;
     auto goldField = storageGold(layout.expansion);
     auto bankGold = std::to_string(inventoryView_.bankGold);
-    const int textSize = int(16 * inventoryScale);
+    const int textSize = int(16 * inventoryScale());
     if (const auto *coin = assets_.goldCoin.frame(0, 0))
         DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                       {goldField.x + 3 * inventoryScale, goldField.y + 4 * inventoryScale,
-                        coin->texture.width * inventoryScale, coin->texture.height * inventoryScale},
+                       {goldField.x + 3 * inventoryScale(), goldField.y + 4 * inventoryScale(),
+                        coin->texture.width * inventoryScale(), coin->texture.height * inventoryScale()},
                        {0, 0}, 0, WHITE);
     painter_.label(bankGold,
                    int(goldField.x + (goldField.width - painter_.measure(bankGold, textSize)) / 2),
-                   int(goldField.y + 5 * inventoryScale), textSize, WHITE);
+                   int(goldField.y + 5 * inventoryScale()), textSize, WHITE);
     const auto &inventory = inventoryView_;
     for (const auto &grid : inventoryGrids(inventoryView_, ui)) {
         if (grid.container != ui.storage)
@@ -40,7 +40,7 @@ void SceneView::drawStorage(Vec mouse) const {
     }
     const auto maximum = "Gold Max: " + std::to_string(inventoryView_.bankGoldLimit);
     painter_.label(maximum, int(goldField.x + (goldField.width - painter_.measure(maximum, textSize)) / 2),
-                   int(goldField.y + 30 * inventoryScale), textSize, WHITE);
+                   int(goldField.y + 30 * inventoryScale()), textSize, WHITE);
     if (const auto *close = assets_.questClose.frame(0, 10))
         DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
                        storageClose(), {0, 0}, 0, WHITE);

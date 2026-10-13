@@ -28,8 +28,8 @@ void portraitText(const ClassicFont &font, std::string value, float x, float bas
     for (uint32_t character : utf8Decode(value)) {
         if (const auto *glyph=font.glyphOf(character);glyph && character!=' ')
             DrawTexturePro(glyph->texture,{0,0,float(glyph->texture.width),float(glyph->texture.height)},
-                {(x+glyph->x)*classicPanelScale,(baseline+glyph->y-glyph->texture.height)*classicPanelScale,
-                    glyph->texture.width*classicPanelScale,glyph->texture.height*classicPanelScale},{},0,WHITE);
+                {(x+glyph->x)*classicPanelScale(),(baseline+glyph->y-glyph->texture.height)*classicPanelScale(),
+                    glyph->texture.width*classicPanelScale(),glyph->texture.height*classicPanelScale()},{},0,WHITE);
         x+=font.widthOf(character);
     }
 }
@@ -53,9 +53,9 @@ void SceneView::drawHirelingPortrait(Vec mouse) const {
         const auto art=assets_.petPortraits.find(entry.art);
         const auto *image=art==assets_.petPortraits.end()?nullptr:art->second.frame(0,0);
         if (!image) continue;
-        const Rectangle bounds{(x+image->x)*classicPanelScale,
-            (60+image->y-image->texture.height)*classicPanelScale,
-            image->texture.width*classicPanelScale,image->texture.height*classicPanelScale};
+        const Rectangle bounds{(x+image->x)*classicPanelScale(),
+            (60+image->y-image->texture.height)*classicPanelScale(),
+            image->texture.width*classicPanelScale(),image->texture.height*classicPanelScale()};
         const bool hovered=entry.hireling && entry.single==view_.hirelingPortraitHovered &&
             CheckCollisionPointRec(rv(mouse),hirelingPortraitHitBounds(partyPortraitOffset()));
         const bool hint=hovered && !view_.inventory.drag && !view_.inventory.identify &&
@@ -64,17 +64,17 @@ void SceneView::drawHirelingPortrait(Vec mouse) const {
         else blend->drawHalf(image,bounds);
         if (entry.lifePercentage && *entry.lifePercentage>0) {
             const auto life=std::min<uint16_t>(*entry.lifePercentage,100);
-            const float filled=std::floor(46*life/100.f)*classicPanelScale;
+            const float filled=std::floor(46*life/100.f)*classicPanelScale();
             const Color color=life<25?Color{255,0,0,255}:life<50?Color{192,192,0,255}:Color{0,128,0,255};
-            const float left=x*classicPanelScale;
-            DrawRectangleRec({left,14*classicPanelScale,filled,5*classicPanelScale},blend->paletteColor(color));
-            DrawRectangleRec({left+filled,14*classicPanelScale,46*classicPanelScale-filled,5*classicPanelScale},BLACK);
+            const float left=x*classicPanelScale();
+            DrawRectangleRec({left,14*classicPanelScale(),filled,5*classicPanelScale()},blend->paletteColor(color));
+            DrawRectangleRec({left+filled,14*classicPanelScale(),46*classicPanelScale()-filled,5*classicPanelScale()},BLACK);
         }
         if (entry.showCount) portraitText(assets_.characterLabelFont,std::to_string(entry.count),x+8,55,46,false);
         const float baseline=column%2?62:72;
         if (!entry.name.empty()) portraitText(assets_.characterLabelFont,entry.name,x,baseline,66,true);
         if (hint) drawSkillTooltip(UiPainter(assets_.font,0),{assets_.hirelingPotionHint,assets_.hirelingInventoryHint},
-            {x*classicPanelScale,(baseline+36)*classicPanelScale},nullptr,{},true);
+            {x*classicPanelScale(),(baseline+36)*classicPanelScale()},nullptr,{},true);
         x+=56;
         ++column;
     }

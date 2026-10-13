@@ -9,8 +9,8 @@ namespace d2x {
 inline Rectangle questBounds() { return classicPanelBounds(false, 64); }
 inline Rectangle questArtRect(float x, float y, float width, float height) {
     const auto panel = questBounds();
-    return {panel.x + x * inventoryScale, panel.y + y * inventoryScale,
-            width * inventoryScale, height * inventoryScale};
+    return {panel.x + x * inventoryScale(), panel.y + y * inventoryScale(),
+            width * inventoryScale(), height * inventoryScale()};
 }
 inline Rectangle questIconBounds(int index) {
     return questArtRect(20.f + float(index % 3) * 100.f,
@@ -20,7 +20,7 @@ inline Rectangle questTabBounds(int index) { return questArtRect(6.f + index * 6
 inline Rectangle questCloseBounds() { return questArtRect(278, 391, 32, 32); }
 inline Rectangle questReplayBounds() { return questArtRect(228, 393, 32, 32); }
 inline Rectangle questNoticeBounds() {
-    const float size = 32 * classicPanelScale;
-    return {32 * classicPanelScale, hudGlobe(false).y - size, size, size};
+    const float size = 32 * classicPanelScale();
+    return {32 * classicPanelScale(), hudGlobe(false).y - size, size, size};
 }
 } // namespace d2x

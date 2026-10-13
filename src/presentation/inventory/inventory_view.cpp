@@ -21,7 +21,7 @@ void SceneView::drawItemArt(const std::string &key, const std::string &code, Rec
     auto found = assets_.itemIcons.find(key);
     auto icon = found == assets_.itemIcons.end() ? nullptr : found->second.frame(0, 0);
     if (icon && icon->texture.id) {
-        float scale = std::min({inventoryScale, (bounds.width - 4) / icon->texture.width,
+        float scale = std::min({inventoryScale(), (bounds.width - 4) / icon->texture.width,
                                 (bounds.height - 4) / icon->texture.height});
         float width = icon->texture.width * scale, height = icon->texture.height * scale;
         DrawTexturePro(
@@ -53,9 +53,9 @@ void SceneView::drawInventory(Vec mouse) const {
         for (int i = 0; i < 4; ++i) {
             const auto &tile = assets_.inventoryPanel.frames[4 + i].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                           {panel.x + (i % 2) * 256 * inventoryScale,
-                            panel.y + (i / 2) * 256 * inventoryScale, tile.width * inventoryScale,
-                            tile.height * inventoryScale},
+                           {panel.x + (i % 2) * 256 * inventoryScale(),
+                            panel.y + (i / 2) * 256 * inventoryScale(), tile.width * inventoryScale(),
+                            tile.height * inventoryScale()},
                            {0, 0}, 0, WHITE);
         }
     auto hoverCell = inventoryCell(mouse);
@@ -68,9 +68,9 @@ void SceneView::drawInventory(Vec mouse) const {
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                {panel.x + (hand ? 247.f : 16.f) * inventoryScale,
-                 panel.y + 23 * inventoryScale, tile.width * inventoryScale,
-                 tile.height * inventoryScale}, {0, 0}, 0, WHITE);
+                {panel.x + (hand ? 247.f : 16.f) * inventoryScale(),
+                 panel.y + 23 * inventoryScale(), tile.width * inventoryScale(),
+                 tile.height * inventoryScale()}, {0, 0}, 0, WHITE);
         }
     for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index) {
         auto slot = EquipmentSlot(index);
@@ -102,18 +102,18 @@ void SceneView::drawInventory(Vec mouse) const {
     const auto goldField = inventoryGold();
     if (const auto *coin = assets_.goldCoin.frame(0, 0))
         DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                       {goldField.x + 3 * inventoryScale, goldField.y + 4 * inventoryScale,
-                        coin->texture.width * inventoryScale, coin->texture.height * inventoryScale},
+                       {goldField.x + 3 * inventoryScale(), goldField.y + 4 * inventoryScale(),
+                        coin->texture.width * inventoryScale(), coin->texture.height * inventoryScale()},
                        {0, 0}, 0, WHITE);
     if (const auto *close = assets_.questClose.frame(0, 10))
         DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
                        inventoryClose(), {0, 0}, 0, WHITE);
     painter_.label(std::to_string(inventoryView_.gold),
-                   int(goldField.x + 28 * inventoryScale), int(goldField.y + 4 * inventoryScale),
-                   int(16 * inventoryScale), WHITE);
+                   int(goldField.x + 28 * inventoryScale()), int(goldField.y + 4 * inventoryScale()),
+                   int(16 * inventoryScale()), WHITE);
     if (ui.identify)
-        painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale),
-                       int(panel.y + 364 * inventoryScale), 12, gold);
+        painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale()),
+                       int(panel.y + 364 * inventoryScale()), 12, gold);
     if (!ui.split && !ui.drag) {
         if (auto item = inventory.item(hovered); item && !ui.hidesItem(*item))
             drawItemTooltip(*item, {mouse.x + 170, mouse.y},
@@ -173,7 +173,7 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     const auto &definition = *inventoryView_.definition(item->definition);
     drawItemIcon(*item,
                  {mouse.x - ui.drag->pixelOffset.x, mouse.y - ui.drag->pixelOffset.y,
-                  definition.width * inventoryCellSize, definition.height * inventoryCellSize});
+                  definition.width * inventoryCellSize(), definition.height * inventoryCellSize()});
     return true;
 }
 } // namespace d2x

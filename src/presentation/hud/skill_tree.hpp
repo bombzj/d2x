@@ -7,7 +7,7 @@ namespace d2x {
 inline Rectangle skillTreeBounds() { return classicPanelBounds(true, 64); }
 inline Rectangle skillTreeRect(float x, float y, float width, float height) {
     auto panel = skillTreeBounds();
-    constexpr float scale = classicPanelScale;
+    float scale = classicPanelScale();
     return {panel.x + x * scale, panel.y + y * scale, width * scale, height * scale};
 }
 inline Rectangle skillTreeNode(int row, int column) {

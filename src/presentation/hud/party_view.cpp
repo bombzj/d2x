@@ -11,8 +11,8 @@
 namespace d2x {
 namespace {
 Rectangle partyRect(float x, float y, float width, float height) {
-    return {x * classicPanelScale, y * classicPanelScale,
-            width * classicPanelScale, height * classicPanelScale};
+    return {x * classicPanelScale(), y * classicPanelScale(),
+            width * classicPanelScale(), height * classicPanelScale()};
 }
 void art(const Sprite *image, float x, float y) {
     if (!image) return;
@@ -163,7 +163,7 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
             const bool level=ownLevel_ && *ownLevel_>=9 && player.level && *player.level>=9;
             tooltip_=action==OnlineRelationAction::Hostile && !level?levelTip_:action==OnlineRelationAction::Hostile && !town_?townTip_:
                 relationTips_[size_t(uint8_t(action)-2)][enabled?0:1];
-            tooltipAt_={bounds.x/classicPanelScale+10,bounds.y/classicPanelScale-5};
+            tooltipAt_={bounds.x/classicPanelScale()+10,bounds.y/classicPanelScale()-5};
             if(action!=OnlineRelationAction::Hostile || (town_ && level)) hovered=PartyIntent{true,player.id,game_,{},action,enabled};
         }
     if (inside && ready_ && ownParty_ && *ownParty_ != UINT16_MAX &&
@@ -218,7 +218,7 @@ void PartyView::draw(std::string_view ownName) const {
             const bool disabled=action==OnlineRelationAction::Hostile && (!town_ || !p.level || *p.level<9 || !ownLevel_ || *ownLevel_<9);
             const int frame=disabled?16+int(down):base+((flags(p.id)&onlineRelationMask(action))?2:0)+int(down);
             const auto bounds=relationBounds(i,action);
-            art(boxes_.frame(0,frame),bounds.x/classicPanelScale,bounds.y/classicPanelScale);
+            art(boxes_.frame(0,frame),bounds.x/classicPanelScale(),bounds.y/classicPanelScale());
         }
         text(font, level_ + ": " + (p.level ? std::to_string(*p.level) : "?"), 325, 166 + offset, 61, true);
         if (allied) {
@@ -271,7 +271,7 @@ void PartyView::drawPortraits(float x, const PaletteBlendView &blend) const {
         if (p.lifePercentage) {
             const auto life = std::min<uint16_t>(*p.lifePercentage, 100);
             const Color color = life < 25 ? Color{255,0,0,255} : life < 50 ? Color{192,192,0,255} : Color{0,128,0,255};
-            DrawRectangleRec({bar.x, bar.y, std::floor(width * life / 100.f) * classicPanelScale, bar.height}, blend.paletteColor(color));
+            DrawRectangleRec({bar.x, bar.y, std::floor(width * life / 100.f) * classicPanelScale(), bar.height}, blend.paletteColor(color));
         }
         auto name = p.name;
         auto measured = [&] { int width = 0; for (uint32_t c : utf8Decode(name)) width += nameFont_.widthOf(c); return width; };

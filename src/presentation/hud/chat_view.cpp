@@ -73,7 +73,7 @@ ChatView::Line ChatView::plain(std::string_view value, uint8_t color) const {
 float ChatView::width(int kind, const Line &line) const {
     float value = 0;
     for (auto glyph : line) value += fonts_[size_t(kind)].widthOf(glyph.character);
-    return value * hudTextScale;
+    return value * hudTextScale();
 }
 void ChatView::text(int kind, const Line &line, Vec at) const {
     const auto &base = fonts_[size_t(kind)];
@@ -81,8 +81,8 @@ void ChatView::text(int kind, const Line &line, Vec at) const {
         const auto *image = font(kind, glyph.color).glyphOf(glyph.character);
         if (image && glyph.character != ' ')
             DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-                {at.x, at.y, image->texture.width * hudTextScale, image->texture.height * hudTextScale}, {0, 0}, 0, WHITE);
-        at.x += base.widthOf(glyph.character) * hudTextScale;
+                {at.x, at.y, image->texture.width * hudTextScale(), image->texture.height * hudTextScale()}, {0, 0}, 0, WHITE);
+        at.x += base.widthOf(glyph.character) * hudTextScale();
     }
 }
 std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) const {
@@ -92,7 +92,7 @@ std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) 
         size_t end = start, space = start;
         float used = 0;
         while (end < glyphs.size() && glyphs[end].character != '\n') {
-            const float advance = fonts_[0].widthOf(glyphs[end].character) * hudTextScale;
+            const float advance = fonts_[0].widthOf(glyphs[end].character) * hudTextScale();
             if (end > start && used + advance > available) break;
             used += advance;
             if (glyphs[end].character == ' ') space = end;
@@ -227,29 +227,29 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
     }
     scroll_ = std::min(scroll_, maximumScroll());
 }
-Rectangle ChatView::bounds() const { return {8 * hudScale, 30 * hudScale, W - 16 * hudScale, H - 124 * hudScale}; }
+Rectangle ChatView::bounds() const { return {8 * hudScale(), 30 * hudScale(), W - 16 * hudScale(), H - 124 * hudScale()}; }
 Rectangle ChatView::body() const {
     const auto outer = bounds();
-    return {40 * hudScale, outer.y + 48 * hudScale, W - 88 * hudScale, outer.height - 94 * hudScale};
+    return {40 * hudScale(), outer.y + 48 * hudScale(), W - 88 * hudScale(), outer.height - 94 * hudScale()};
 }
 Rectangle ChatView::closeBounds() const {
     const auto outer = bounds();
-    return {outer.x, outer.y + outer.height - 36 * hudScale, outer.width, 36 * hudScale};
+    return {outer.x, outer.y + outer.height - 36 * hudScale(), outer.width, 36 * hudScale()};
 }
 Rectangle ChatView::track() const {
     const auto content = body();
-    return {W - 26 * hudScale, content.y + 13 * hudScale, 12 * hudScale, content.height - 26 * hudScale};
+    return {W - 26 * hudScale(), content.y + 13 * hudScale(), 12 * hudScale(), content.height - 26 * hudScale()};
 }
-size_t ChatView::visibleRows() const { return size_t(std::max(1.f, std::floor(body().height / (lineHeight * hudTextScale)))); }
+size_t ChatView::visibleRows() const { return size_t(std::max(1.f, std::floor(body().height / (lineHeight * hudTextScale())))); }
 size_t ChatView::maximumScroll() const { return rows_.size() > visibleRows() ? rows_.size() - visibleRows() : 0; }
 Rectangle ChatView::thumb() const {
     const auto gutter = track();
     return {gutter.x, gutter.y + (maximumScroll() ? float(scroll_) / maximumScroll() : 0.f) *
-        (gutter.height - 13 * hudScale), gutter.width, 13 * hudScale};
+        (gutter.height - 13 * hudScale()), gutter.width, 13 * hudScale()};
 }
 void ChatView::scrollTo(Vec mouse) {
     const auto gutter = track();
-    const auto fraction = std::clamp((mouse.y - gutter.y - 6.5f * hudScale) / (gutter.height - 13 * hudScale), 0.f, 1.f);
+    const auto fraction = std::clamp((mouse.y - gutter.y - 6.5f * hudScale()) / (gutter.height - 13 * hudScale()), 0.f, 1.f);
     scroll_ = size_t(std::round(fraction * maximumScroll()));
 }
 void ChatView::setLogOpen(bool open) {
@@ -288,8 +288,8 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
         if (input.entryEnd) scroll_ = maximumScroll();
         if (input.insideViewport && input.leftPressed) {
             const auto gutter = track();
-            if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y - 13 * hudScale, gutter.width, 13 * hudScale})) --delta;
-            else if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y + gutter.height, gutter.width, 13 * hudScale})) ++delta;
+            if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y - 13 * hudScale(), gutter.width, 13 * hudScale()})) --delta;
+            else if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y + gutter.height, gutter.width, 13 * hudScale()})) ++delta;
             else if (CheckCollisionPointRec(rv(input.mouse), gutter)) dragging_ = true;
         }
         scroll_ = size_t(std::clamp(int(scroll_) + delta, 0, int(maximumScroll())));
@@ -307,16 +307,16 @@ void ChatView::sent(bool accepted) {
 void ChatView::piece(const GpuAnimation &art, int frame, Vec point) const {
     const auto *image = art.frame(0, frame);
     if (image) DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-        {point.x, point.y, image->texture.width * hudScale, image->texture.height * hudScale}, {0, 0}, 0, WHITE);
+        {point.x, point.y, image->texture.width * hudScale(), image->texture.height * hudScale()}, {0, 0}, 0, WHITE);
 }
 void ChatView::horizontal(float x, float y, float available, bool bottom) const {
     const auto *image = border_.frame(0, bottom ? 16 : 2);
-    const float step = (image->texture.width - 2) * hudScale;
+    const float step = (image->texture.width - 2) * hudScale();
     for (int index = 0; index * step < available; ++index)
         piece(border_, (bottom ? 16 : 2) + index % 6, {x + index * step, y});
 }
 void ChatView::box(Rectangle rectangle) const {
-    originalBox(border_, rectangle, hudScale);
+    originalBox(border_, rectangle, hudScale());
 }
 void ChatView::draw(Rectangle worldViewport) const {
     if (!ready_) return;
@@ -324,25 +324,25 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto outer = bounds(), content = body(), close = closeBounds(), gutter = track();
         DrawRectangleRec(outer, {0, 0, 0, 150});
         box(outer);
-        horizontal(outer.x, outer.y + 36 * hudScale, outer.width, true);
+        horizontal(outer.x, outer.y + 36 * hudScale(), outer.width, true);
         horizontal(outer.x, close.y, outer.width, false);
         const auto title = plain(title_, 4), closeLabel = plain(close_);
-        text(1, title, {(W - width(1, title)) * .5f, outer.y + (36*hudScale-16*hudTextScale)*.5f});
-        text(1, closeLabel, {(W - width(1, closeLabel)) * .5f, close.y + (close.height-16*hudTextScale)*.5f});
+        text(1, title, {(W - width(1, title)) * .5f, outer.y + (36*hudScale()-16*hudTextScale())*.5f});
+        text(1, closeLabel, {(W - width(1, closeLabel)) * .5f, close.y + (close.height-16*hudTextScale())*.5f});
         uiScissor(content.x, content.y, content.width, content.height);
         for (size_t row = 0; row < visibleRows() && scroll_ + row < rows_.size(); ++row)
-            text(0, rows_[scroll_ + row], {content.x, content.y + row * lineHeight * hudTextScale});
+            text(0, rows_[scroll_ + row], {content.x, content.y + row * lineHeight * hudTextScale()});
         EndScissorMode();
         uiScissor(gutter.x, gutter.y, gutter.width, gutter.height);
-        for (float y = gutter.y; y < gutter.y + gutter.height; y += 12 * hudScale) piece(slider_, 13, {gutter.x, y});
+        for (float y = gutter.y; y < gutter.y + gutter.height; y += 12 * hudScale()) piece(slider_, 13, {gutter.x, y});
         EndScissorMode();
-        piece(slider_, scroll_ ? 11 : 9, {gutter.x, gutter.y - 13 * hudScale});
+        piece(slider_, scroll_ ? 11 : 9, {gutter.x, gutter.y - 13 * hudScale()});
         piece(slider_, scroll_ < maximumScroll() ? 10 : 8, {gutter.x, gutter.y + gutter.height});
         if (maximumScroll()) piece(slider_, 12, {thumb().x, thumb().y});
     } else if (!messages_.empty()) {
         const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-        const float margin = 10 * hudScale;
+        const float margin = 10 * hudScale();
         const Rectangle content{worldViewport.x + margin, worldViewport.y + margin,
             worldViewport.width - 2 * margin, worldViewport.height - 2 * margin};
         if (content.width > 0 && content.height > 0) {
@@ -355,7 +355,7 @@ void ChatView::draw(Rectangle worldViewport) const {
                 if (now >= message.receivedMilliseconds && now - message.receivedMilliseconds >= messageLifetimeMilliseconds)
                     continue;
                 for (const auto &line : wrap(message.glyphs, content.width)) {
-                    text(0, line, {content.x, y}); y += lineHeight * hudTextScale;
+                    text(0, line, {content.x, y}); y += lineHeight * hudTextScale();
                 }
             }
             EndScissorMode();
@@ -365,9 +365,9 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto input = hudRect(145, 120, 540, 54);
         DrawRectangleRec(input, {0, 0, 0, 150});
         const auto value = plain(draft_), prefix = plain(std::string_view(draft_).substr(0, caret_));
-        const float overflow = std::max(0.f, width(1, prefix) + 16 * hudTextScale - input.width);
-        const Vec point{input.x + 5 * hudScale - overflow, input.y + 6 * hudScale};
-        uiScissor(input.x + 4 * hudScale, input.y, input.width - 8 * hudScale, input.height);
+        const float overflow = std::max(0.f, width(1, prefix) + 16 * hudTextScale() - input.width);
+        const Vec point{input.x + 5 * hudScale() - overflow, input.y + 6 * hudScale()};
+        uiScissor(input.x + 4 * hudScale(), input.y, input.width - 8 * hudScale(), input.height);
         text(1, value, point);
         if (int(GetTime() * 2) % 2 == 0) text(1, plain("_"), {point.x + width(1, prefix), point.y});
         EndScissorMode();

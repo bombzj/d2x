@@ -13,7 +13,7 @@ void characterText(const ClassicFont &font, const std::string &value, float left
     if (value.empty()) return;
     // Original two-line labels use baselines four pixels either side of the row.
     constexpr float lineStep = 8;
-    const float scale = classicPanelScale;
+    const float scale = classicPanelScale();
     std::vector<std::string> lines;
     std::istringstream input(value);
     std::string line;
@@ -52,9 +52,9 @@ void SceneView::drawCharacter(Vec mouse) const {
     for (int index = 0; index < 4; ++index) {
         const auto &tile = assets_.inventoryPanel.frames.at(size_t(index)).texture;
         DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-            {panel.x + (index % 2) * 256 * classicPanelScale,
-             panel.y + (index / 2) * 256 * classicPanelScale,
-             tile.width * classicPanelScale, tile.height * classicPanelScale}, {}, 0, WHITE);
+            {panel.x + (index % 2) * 256 * classicPanelScale(),
+             panel.y + (index / 2) * 256 * classicPanelScale(),
+             tile.width * classicPanelScale(), tile.height * classicPanelScale()}, {}, 0, WHITE);
     }
     const auto art = [](const Sprite &sprite, Rectangle box) {
         DrawTexturePro(sprite.texture, {0, 0, float(sprite.texture.width), float(sprite.texture.height)},
@@ -92,8 +92,8 @@ void SceneView::drawCharacter(Vec mouse) const {
         if (player.unspentAttributes > 0 && !player.unknownStats.contains("statpts")) {
             const auto button = characterAddButton(index);
             const auto *socket = assets_.attributeSocket.frame(0, 0);
-            art(*socket, {button.x - 3 * classicPanelScale, button.y - 2 * classicPanelScale,
-                socket->texture.width * classicPanelScale, socket->texture.height * classicPanelScale});
+            art(*socket, {button.x - 3 * classicPanelScale(), button.y - 2 * classicPanelScale(),
+                socket->texture.width * classicPanelScale(), socket->texture.height * classicPanelScale()});
             art(*assets_.attributeButtons.frame(0, 0), button);
         }
     }

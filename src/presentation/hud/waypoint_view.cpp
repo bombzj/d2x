@@ -6,7 +6,7 @@
 
 namespace d2x {
 namespace {
-constexpr float scaleX = classicPanelScale, scaleY = classicPanelScale;
+const float scaleX = classicPanelScale(), scaleY = classicPanelScale();
 constexpr int visibleWaypoints = 9;
 Vec panelOrigin() { const auto panel = classicPanelBounds(false); return {panel.x, panel.y}; }
 Rectangle waypointRow(int row) {

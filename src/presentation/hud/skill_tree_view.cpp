@@ -13,34 +13,34 @@ void drawTreeLabel(const ClassicFont &font, const std::string &text, Rectangle b
     for (std::string line; std::getline(input, line);) lines.push_back(std::move(line));
     for (size_t index = 0; index < lines.size(); ++index) {
         float width = 0;
-        for (uint32_t c : utf8Decode(lines[index])) width += font.widthOf(c) * classicPanelScale;
+        for (uint32_t c : utf8Decode(lines[index])) width += font.widthOf(c) * classicPanelScale();
         float x = bounds.x + (bounds.width - width) / 2;
         const float baseline = bounds.y + bounds.height / 2 +
-            (float(index) * 16 - float(lines.size() - 1) * 8 + 6) * classicPanelScale;
+            (float(index) * 16 - float(lines.size() - 1) * 8 + 6) * classicPanelScale();
         for (uint32_t c : utf8Decode(lines[index])) {
             const auto *glyph = font.glyphOf(c);
             if (glyph && c != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
-                    {x + glyph->x * classicPanelScale,
-                     baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
-                     glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
-            x += font.widthOf(c) * classicPanelScale;
+                    {x + glyph->x * classicPanelScale(),
+                     baseline + (glyph->y - glyph->texture.height) * classicPanelScale(),
+                     glyph->texture.width * classicPanelScale(), glyph->texture.height * classicPanelScale()}, {}, 0, WHITE);
+            x += font.widthOf(c) * classicPanelScale();
         }
     }
 }
 void drawSkillRank(const ClassicFont &font, const std::string &text, Rectangle icon, bool compact) {
     // Center the rank in the MPQ background's cell outside the icon. Keep
     // the original four-pixel adjustment for the compact two-digit font.
-    float x = icon.x + icon.width + (compact ? 0 : 4) * classicPanelScale;
-    const float baseline = icon.y + icon.height + 12 * classicPanelScale;
+    float x = icon.x + icon.width + (compact ? 0 : 4) * classicPanelScale();
+    const float baseline = icon.y + icon.height + 12 * classicPanelScale();
     for (uint32_t character : utf8Decode(text)) {
         const auto *glyph = font.glyphOf(character);
         if (glyph && character != ' ')
             DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
-                {x + glyph->x * classicPanelScale,
-                 baseline + (glyph->y - glyph->texture.height) * classicPanelScale,
-                 glyph->texture.width * classicPanelScale, glyph->texture.height * classicPanelScale}, {}, 0, WHITE);
-        x += font.widthOf(character) * classicPanelScale;
+                {x + glyph->x * classicPanelScale(),
+                 baseline + (glyph->y - glyph->texture.height) * classicPanelScale(),
+                 glyph->texture.width * classicPanelScale(), glyph->texture.height * classicPanelScale()}, {}, 0, WHITE);
+        x += font.widthOf(character) * classicPanelScale();
     }
 }
 }
@@ -65,9 +65,9 @@ void SceneView::drawSkillTree(Vec mouse) const {
         for (int index = 0; index < 4; ++index) {
             const auto &tile = art->second.frames[first + index].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                {panel.x + (index % 2) * 256.f * classicPanelScale,
-                 panel.y + (index / 2) * 256.f * classicPanelScale,
-                 tile.width * classicPanelScale, tile.height * classicPanelScale}, {0, 0}, 0, WHITE);
+                {panel.x + (index % 2) * 256.f * classicPanelScale(),
+                 panel.y + (index / 2) * 256.f * classicPanelScale(),
+                 tile.width * classicPanelScale(), tile.height * classicPanelScale()}, {0, 0}, 0, WHITE);
         }
     };
     layer(0);
