@@ -216,13 +216,12 @@ struct RealmFrontend::Impl {
         const int startY = y < 0 ? ((-y) % th) : 0;
         for (int dy = startY - th; dy < H + th; dy += th) {
             for (int dx = startX - tw; dx < W + tw; dx += tw) {
-                for (int i = 0; i < count && (i % columns == 0 || true);) {
-                    const int col = i % columns;
+                int row = 0, col = 0;
+                for (int i = 0; i < count; ++i) {
                     const auto *cel = a.frame(0, first + i);
-                    if (!cel) break;
-                    DrawTexture(cel->texture, dx + col * tw, dy + (i/columns)*th, tint);
-                    i++;
-                    if (col == columns - 1) break;
+                    if (cel) DrawTexture(cel->texture, dx + col * tw, dy + row * th, tint);
+                    col++;
+                    if (col == columns) { col = 0; row++; }
                 }
             }
         }
