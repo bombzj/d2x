@@ -214,12 +214,13 @@ struct RealmFrontend::Impl {
         const int th = firstCel->texture.height;
         const int startX = x < 0 ? ((-x) % tw) : 0;
         const int startY = y < 0 ? ((-y) % th) : 0;
-        for (int dy = startY - th; dy < H + th; dy += th) {
-            for (int dx = startX - tw; dx < W + tw; dx += tw) {
+        const int blockRows = (count + columns - 1) / columns;
+        for (int cy = -th; cy < H + th; cy += blockRows * th) {
+            for (int cx = -tw; cx < W + tw; cx += columns * tw) {
                 int row = 0, col = 0;
                 for (int i = 0; i < count; ++i) {
                     const auto *cel = a.frame(0, first + i);
-                    if (cel) DrawTexture(cel->texture, dx + col * tw, dy + row * th, tint);
+                    if (cel) DrawTexture(cel->texture, cx + col * tw, cy + row * th, tint);
                     col++;
                     if (col == columns) { col = 0; row++; }
                 }
