@@ -176,8 +176,7 @@ void TradeInviteView::panelLabel(std::string_view text, Rectangle box, bool righ
     const float scale = classicPanelScale;
     float width{}; for (uint32_t c : utf8Decode(text)) width += font_.widthOf(c)*scale;
     float x = box.x + (right ? box.width-width : 4*scale);
-    const int left = std::max(0,int(box.x)), top = std::max(0,int(box.y));
-    BeginScissorMode(left,top,int(box.width),int(box.height));
+    uiScissor(std::max(0.f, box.x), std::max(0.f, box.y), box.width, box.height);
     for (uint32_t c : utf8Decode(text)) {
         const auto *glyph = font_.glyphOf(c);
         if (glyph && c != ' ') drawTradeSprite(glyph,{x,box.y,float(glyph->texture.width)*scale,float(glyph->texture.height)*scale});

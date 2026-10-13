@@ -288,11 +288,11 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto title = plain(title_, 4), closeLabel = plain(close_);
         text(1, title, {(W - width(1, title)) * .5f, outer.y + (36*hudScale-16*hudTextScale)*.5f});
         text(1, closeLabel, {(W - width(1, closeLabel)) * .5f, close.y + (close.height-16*hudTextScale)*.5f});
-        BeginScissorMode(int(content.x), int(content.y), int(content.width), int(content.height));
+        uiScissor(content.x, content.y, content.width, content.height);
         for (size_t row = 0; row < visibleRows() && scroll_ + row < rows_.size(); ++row)
             text(0, rows_[scroll_ + row], {content.x, content.y + row * lineHeight * hudTextScale});
         EndScissorMode();
-        BeginScissorMode(int(gutter.x), int(gutter.y), int(gutter.width), int(gutter.height));
+        uiScissor(gutter.x, gutter.y, gutter.width, gutter.height);
         for (float y = gutter.y; y < gutter.y + gutter.height; y += 12 * hudScale) piece(slider_, 13, {gutter.x, y});
         EndScissorMode();
         piece(slider_, scroll_ ? 11 : 9, {gutter.x, gutter.y - 13 * hudScale});
@@ -305,7 +305,7 @@ void ChatView::draw(Rectangle worldViewport) const {
         const Rectangle content{worldViewport.x + margin, worldViewport.y + margin,
             worldViewport.width - 2 * margin, worldViewport.height - 2 * margin};
         if (content.width > 0 && content.height > 0) {
-            BeginScissorMode(int(content.x), int(content.y), int(content.width), int(content.height));
+            uiScissor(content.x, content.y, content.width, content.height);
             float y = content.y;
             // History is newest-first; the transient overlay places newer
             // messages below older ones and expires each by its receive time.
@@ -326,7 +326,7 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto value = plain(draft_), prefix = plain(std::string_view(draft_).substr(0, caret_));
         const float overflow = std::max(0.f, width(1, prefix) + 16 * hudTextScale - input.width);
         const Vec point{input.x + 5 * hudScale - overflow, input.y + 6 * hudScale};
-        BeginScissorMode(int(input.x + 4 * hudScale), int(input.y), int(input.width - 8 * hudScale), int(input.height));
+        uiScissor(input.x + 4 * hudScale, input.y, input.width - 8 * hudScale, input.height);
         text(1, value, point);
         if (int(GetTime() * 2) % 2 == 0) text(1, plain("_"), {point.x + width(1, prefix), point.y});
         EndScissorMode();

@@ -33,6 +33,9 @@ class Archives {
     // Primitive fields keep resources independent of content definitions.
     std::string languageDirectory{"eng"};
     std::string languageFontDirectory{"latin"};
+    // Root supplied through --mpq; used to locate loose game assets such as
+    // optional outline fonts under <gameDirectory>/fonts.
+    std::filesystem::path gameDirectory;
     uint32_t languageLocaleId{1033};
     uint32_t languageCode{0x656E5553u};
     uint8_t languageGameLocale{0};

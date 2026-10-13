@@ -25,6 +25,7 @@
 #include "presentation/graphics/primitives.hpp"
 #include "presentation/remote/remote_scene.hpp"
 #include <algorithm>
+#include <rlgl.h>
 #include <array>
 #include <fstream>
 #include <mutex>
@@ -151,7 +152,7 @@ class GamePacketLog {
     }
 };
 } // namespace
-void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options, StartupProfile &profile) {
+void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &options, StartupProfile &profile) {
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
@@ -631,9 +632,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             const auto closingViewport = currentViewport();
             BeginDrawing();
             ClearBackground(BLACK);
-            DrawTexturePro(target.texture, {0, 0, float(W), -float(H)},
+            DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
                 {closingViewport.offset.x, closingViewport.offset.y,
-                 W * closingViewport.scale, H * closingViewport.scale}, {0, 0}, 0, WHITE);
+                 float(target.texture.width), float(target.texture.height)}, {0, 0}, 0, WHITE);
             EndDrawing();
             if (quit) continue;
         }
@@ -780,6 +781,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
         }
         const auto viewport = currentViewport();
+        uiScale = viewport.scale;
+        const int targetWidth = std::max(1, int(W * viewport.scale + 0.5f));
+        const int targetHeight = std::max(1, int(H * viewport.scale + 0.5f));
+        if (target.texture.width != targetWidth || target.texture.height != targetHeight) {
+            if (target.texture.id) UnloadRenderTexture(target);
+            target = LoadRenderTexture(targetWidth, targetHeight);
+            SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
+        }
         const auto raw = GetMousePosition();
         Vector2 mouse{(raw.x - viewport.offset.x) / viewport.scale - offsetX,
                   (raw.y - viewport.offset.y) / viewport.scale - offsetY};
@@ -793,6 +802,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         if (!presentationPaused) {
             BeginTextureMode(target);
             ClearBackground(BLACK);
+            rlPushMatrix();
+            rlScalef(viewport.scale, viewport.scale, 1.f);
             if (showScene) {
                 try {
                     if (!sharedClients) {
@@ -928,7 +939,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
-                    BeginScissorMode(int(offsetX), int(offsetY), 800, 600);
+                    uiScissor(offsetX, offsetY, 800, 600);
                     rlPushMatrix();
                     rlTranslatef(offsetX, offsetY, 0);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,
@@ -937,13 +948,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     EndScissorMode();
                 }
             }
+            rlPopMatrix();
             EndTextureMode();
         }
         BeginDrawing();
         ClearBackground(BLACK);
-        DrawTexturePro(target.texture, {0, 0, float(W), -float(H)},
-                       {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
-                       0, WHITE);
+        DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
+                       {viewport.offset.x, viewport.offset.y, float(target.texture.width),
+                        float(target.texture.height)}, {0, 0}, 0, WHITE);
         EndDrawing();
         profile.mark("first-presented-frame");
         if (showScene && scene && scene->playerDisplayed()) profile.mark("first-game-frame");

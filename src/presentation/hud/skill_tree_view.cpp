@@ -60,7 +60,7 @@ void SceneView::drawSkillTree(Vec mouse) const {
     if (art == assets_.skillTrees.end()) return;
     const auto panel = skillTreeBounds();
     drawPanelFrame(true);
-    BeginScissorMode(int(panel.x), int(panel.y), int(panel.width), int(panel.height));
+    uiScissor(panel.x, panel.y, panel.width, panel.height);
     auto layer = [&](int first) {
         for (int index = 0; index < 4; ++index) {
             const auto &tile = art->second.frames[first + index].texture;

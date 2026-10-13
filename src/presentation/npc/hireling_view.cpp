@@ -12,7 +12,7 @@ void hirelingText(const ClassicFont &font,const std::string &value,float left,fl
     std::vector<std::string> lines;std::istringstream input(value);std::string line;
     while(std::getline(input,line)) lines.push_back(line);
     const auto clip=hirelingArtRect(left,baseline-20,right-left+1,40);
-    BeginScissorMode(int(clip.x),int(clip.y),int(clip.width),int(clip.height));
+    uiScissor(clip.x, clip.y, clip.width, clip.height);
     for(size_t row=0;row<lines.size();++row) {
         float width=0;for(uint32_t ch:utf8Decode(lines[row])) width+=font.widthOf(ch);
         const float inset=align==HirelingTextAlign::Left?0:std::max(0.f,right-left+1-width)*(align==HirelingTextAlign::Center?.5f:1.f);

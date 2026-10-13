@@ -59,7 +59,7 @@ void SceneView::drawAutomap(const AutomapDrawView &map) const {
             clipped(fadedCenter, 128);
         }
     };
-    BeginScissorMode(int(area.x), int(area.y), int(area.width), int(area.height));
+    uiScissor(area.x, area.y, area.width, area.height);
     BeginBlendMode(BLEND_ALPHA);
     for (const auto &town : map.towns)
         for (const auto &image : assets_.townAutomapSprites(town.level, town.variant, large))

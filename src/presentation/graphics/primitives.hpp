@@ -10,6 +10,14 @@
 namespace d2x {
 inline constexpr int W = 1066, H = 680, HUD = 74;
 inline constexpr float pi = std::numbers::pi_v<float>;
+// The scene renders into a window-sized target; UI coordinates stay in the
+// virtual W x H space and are scaled to native pixels by rlScalef(uiScale).
+inline float uiScale = 1.f;
+inline void uiScissor(float x, float y, float width, float height) {
+    const int left = int(x * uiScale + 0.5f), top = int(y * uiScale + 0.5f);
+    const int right = int((x + width) * uiScale + 0.5f), bottom = int((y + height) * uiScale + 0.5f);
+    BeginScissorMode(left, top, right - left, bottom - top);
+}
 inline constexpr Color gold{196, 164, 102, 255}, parchment{209, 196, 162, 255};
 inline Vector2 rv(Vec v) {
     return {v.x, v.y};
@@ -55,6 +63,15 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
 // Rasterizes one decoded DC6 glyph frame into a GPU sprite. Kept separate from
 // text layout so a TTF backend can supply glyphs without DC6 source frames.
 Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font);
+// Shared TTF text backend. When a CJK outline font is available, text is drawn
+// from it instead of the upscaled DC6 glyph atlas. The atlas is built lazily
+// from the code points the DC6 font tables report, so only glyphs the game can
+// show are rasterized.
+void collectFontCodepoints(const std::vector<uint32_t> &codes);
+void setTtfSearchDirectory(std::string_view directory);
+bool ttfTextReady();
+Vector2 ttfMeasure(std::string_view text, float size, float spacing);
+void ttfDraw(std::string_view text, float x, float y, float size, float spacing, Color color);
 class UiPainter {
     const ClassicFont &font;
     int glyphGap;

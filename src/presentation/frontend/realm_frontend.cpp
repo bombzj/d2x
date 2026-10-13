@@ -23,6 +23,7 @@ void wipe(std::string &s) {
 ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 0) {
     ClassicFont f;
     const auto base = "data/local/font/" + a.languageFontDirectory + "/" + name;
+    setTtfSearchDirectory(a.gameDirectory.string());
     const auto *source = g.animation(base + ".dc6");
     if (!source) throw std::runtime_error("Missing original frontend font");
     f.graphics = &g;
@@ -40,6 +41,7 @@ ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 
     if (source->frames.empty() ||
         !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(table.data()), table.size()), f))
         throw std::runtime_error("Missing original frontend font");
+    collectFontCodepoints(f.codes);
     f.ready = true;
     return f;
 }

@@ -48,6 +48,7 @@ void Archives::mount(const std::filesystem::path &p) {
     readCache_.clear(); cacheBytes_ = 0; prepared_.clear();
 }
 void Archives::mountDirectory(const std::filesystem::path &p) {
+    gameDirectory = std::filesystem::is_regular_file(p) ? p.parent_path() : p;
     if (std::filesystem::is_regular_file(p)) {
         mount(p);
         return;

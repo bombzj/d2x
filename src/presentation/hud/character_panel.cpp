@@ -19,7 +19,7 @@ void characterText(const ClassicFont &font, const std::string &value, float left
     std::string line;
     while (std::getline(input, line)) lines.push_back(line);
     const auto box = characterArtRect(left, baseline - 20, right - left + 1, 40);
-    BeginScissorMode(int(box.x), int(box.y), int(box.width), int(box.height));
+    uiScissor(box.x, box.y, box.width, box.height);
     for (size_t row = 0; row < lines.size(); ++row) {
         float width = 0;
         for (uint32_t character : utf8Decode(lines[row])) width += font.widthOf(character);
