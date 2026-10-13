@@ -48,12 +48,12 @@ std::optional<Cell> inventoryCell(Vec mouse) {
     auto grid = inventoryGrid();
     if (!CheckCollisionPointRec(rv(mouse), grid))
         return std::nullopt;
-    return Cell{int((mouse.x - grid.x) / inventoryCellSize), int((mouse.y - grid.y) / inventoryCellSize)};
+    return Cell{int((mouse.x - grid.x) / inventoryCellSize()), int((mouse.y - grid.y) / inventoryCellSize())};
 }
 Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition) {
     auto grid = inventoryGrid();
-    return {grid.x + cell.x * inventoryCellSize, grid.y + cell.y * inventoryCellSize,
-            definition.width * inventoryCellSize, definition.height * inventoryCellSize};
+    return {grid.x + cell.x * inventoryCellSize(), grid.y + cell.y * inventoryCellSize(),
+            definition.width * inventoryCellSize(), definition.height * inventoryCellSize()};
 }
 std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui) {
     const auto &c = inventory.containers;
@@ -68,7 +68,7 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
     if (ui.open && inventory.container(c.backpack)) {
         auto p = inventoryGrid();
         grids.push_back(
-            {c.backpack, {p.x, p.y}, {inventoryCellSize, inventoryCellSize}, 10, 4, inventoryCellSize});
+            {c.backpack, {p.x, p.y}, {inventoryCellSize(), inventoryCellSize()}, 10, 4, inventoryCellSize()});
     }
     if (ui.storage && inventory.storage == ui.storage) {
         auto p = storageBounds();
@@ -112,7 +112,7 @@ void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) 
         if (!drag || !drag->onCursor || drag->item.id != item->id) {
             const auto &definition = *inventory.definition(item->definition);
             drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},
-                {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
+                {definition.width * inventoryCellSize() / 2, definition.height * inventoryCellSize() / 2},
                 true, true, true};
         } else drag->item = item->handle();
         identify.reset();

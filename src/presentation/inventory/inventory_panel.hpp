@@ -54,7 +54,8 @@ struct InventoryUi {
     }
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
-inline constexpr float inventoryScale = classicPanelScale, inventoryCellSize = 29 * inventoryScale;
+inline float inventoryScale() { return classicPanelScale(); }
+inline float inventoryCellSize() { return 29 * inventoryScale(); }
 inline Rectangle orificeBounds() {return {106*inventoryScale,98*inventoryScale,108*inventoryScale,164*inventoryScale};}
 inline Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale,p.y+12*inventoryScale,76*inventoryScale,108*inventoryScale};}
 inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale,p.y+126*inventoryScale,32*inventoryScale,32*inventoryScale};}
@@ -63,13 +64,13 @@ inline Rectangle inventoryBounds() {
 }
 inline Rectangle inventoryGrid() {
     auto p = inventoryBounds();
-    return {p.x + 19 * inventoryScale, p.y + 255 * inventoryScale, 10 * inventoryCellSize,
-            4 * inventoryCellSize};
+    return {p.x + 19 * inventoryScale(), p.y + 255 * inventoryScale(), 10 * inventoryCellSize(),
+            4 * inventoryCellSize()};
 }
 inline Rectangle inventoryClose() {
     auto p = inventoryBounds();
-    return {p.x + 19 * inventoryScale, p.y + 389 * inventoryScale,
-            32 * inventoryScale, 32 * inventoryScale};
+    return {p.x + 19 * inventoryScale(), p.y + 389 * inventoryScale,
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle inventoryGold() {
     auto p = inventoryBounds();
@@ -104,27 +105,27 @@ inline Rectangle storageBounds() {
     return classicPanelBounds(false);
 }
 inline Rectangle storageClose() {
-    return {storageBounds().x + 274 * inventoryScale, storageBounds().y + 384 * inventoryScale,
-            31 * inventoryScale, 34 * inventoryScale};
+    return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),
+            31 * inventoryScale(), 34 * inventoryScale()};
 }
 inline Rectangle cubeBounds() {
     return classicPanelBounds(false);
 }
 inline Rectangle cubeClose() {
     auto p = cubeBounds();
-    return {p.x + 272 * inventoryScale, p.y + 383 * inventoryScale,
-            32 * inventoryScale, 32 * inventoryScale};
+    return {p.x + 272 * inventoryScale(), p.y + 383 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle cubeTransmute() {
     auto p = cubeBounds();
-    return {p.x + 109 * inventoryScale, p.y + 297 * inventoryScale,
-            102 * inventoryScale, 35 * inventoryScale};
+    return {p.x + 109 * inventoryScale(), p.y + 297 * inventoryScale(),
+            102 * inventoryScale(), 35 * inventoryScale()};
 }
 inline Rectangle storageGold(bool expansion) {
     auto p = storageBounds();
-    return {p.x + 74 * inventoryScale,
-            p.y + (expansion ? 20 : 218) * inventoryScale,
-            176 * inventoryScale, 22 * inventoryScale};
+    return {p.x + 74 * inventoryScale(),
+            p.y + (expansion ? 20 : 218) * inventoryScale(),
+            176 * inventoryScale(), 22 * inventoryScale()};
 }
 inline Rectangle goldDialogBounds() {
     return {inventoryBounds().x + 28, 192, 344, 166};

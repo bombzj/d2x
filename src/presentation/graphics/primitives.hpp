@@ -8,7 +8,8 @@
 #include <string_view>
 #include <vector>
 namespace d2x {
-inline constexpr int W = 1066, H = 680, HUD = 74;
+inline int W = 1066, H = 680;
+inline constexpr int HUD = 74;
 inline constexpr float pi = std::numbers::pi_v<float>;
 // The scene renders into a window-sized target; UI coordinates stay in the
 // virtual W x H space and are scaled to native pixels by rlScalef(uiScale).

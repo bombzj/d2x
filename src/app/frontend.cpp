@@ -361,7 +361,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
     std::optional<uint64_t> worldNoticeSequence;
     uint64_t worldNoticeGeneration{};
-    constexpr float offsetX = (W - 800) / 2, offsetY = (H - 600) / 2;
+    float offsetX = (float(GetScreenWidth()) - 800.f)/2.f, offsetY = (float(GetScreenHeight()) - 600.f)/2.f;
     // Quick entry executes the real login/Realm/character/game protocol once.
     // No credentials in argv and no retry of non-idempotent room creation.
     bool quickCharacter = !options.onlineCharacter.empty();
@@ -635,8 +635,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             BeginDrawing();
             ClearBackground(BLACK);
             DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
-                {closingViewport.offset.x, closingViewport.offset.y,
-                 float(target.texture.width), float(target.texture.height)}, {0, 0}, 0, WHITE);
+                {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
             EndDrawing();
             if (quit) continue;
         }
@@ -784,23 +783,23 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         const auto viewport = currentViewport();
         uiScale = viewport.scale;
-        const int targetWidth = std::max(1, int(W * viewport.scale + 0.5f));
-        const int targetHeight = std::max(1, int(H * viewport.scale + 0.5f));
+        const int targetWidth = std::max(1, GetScreenWidth());
+        const int targetHeight = std::max(1, GetScreenHeight());
+        if (W != targetWidth || H != targetHeight) { W = targetWidth; H = targetHeight; }
         if (target.texture.width != targetWidth || target.texture.height != targetHeight) {
             if (target.texture.id) UnloadRenderTexture(target);
             target = LoadRenderTexture(targetWidth, targetHeight);
             SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
         }
         const auto raw = GetMousePosition();
-        Vector2 mouse{(raw.x - viewport.offset.x) / viewport.scale - offsetX,
-                  (raw.y - viewport.offset.y) / viewport.scale - offsetY};
+        Vector2 mouse{raw.x - (float(GetScreenWidth()) - 800.f)/2.f,
+                      raw.y - (float(GetScreenHeight()) - 600.f)/2.f};
         bool captureRequested = false;
         FrontendIntent action;
         if (quit) debugInputs.clear();
         RemoteSceneFrame worldFrame;
         bool leaveGame = false;
-        const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
-                             (raw.y - viewport.offset.y) / viewport.scale};
+        const Vec worldMouse{raw.x, raw.y};
         if (!presentationPaused) {
             BeginTextureMode(target);
             ClearBackground(BLACK);
@@ -928,7 +927,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 auto input = pollInput(viewport);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 captureRequested = input.screenshot;
-                mouse = {input.mouse.x - offsetX, input.mouse.y - offsetY};
+                mouse = {input.mouse.x - (float(GetScreenWidth())-800.f)/2.f, input.mouse.y - (float(GetScreenHeight())-600.f)/2.f};
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
@@ -941,9 +940,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
-                    uiScissor(offsetX, offsetY, 800, 600);
+                    const float oxs=(float(GetScreenWidth())-800.f)/2.f, oys=(float(GetScreenHeight())-600.f)/2.f; uiScissor(oxs, oys, 800, 600);
                     rlPushMatrix();
-                    rlTranslatef(offsetX, offsetY, 0);
+                    const float ox=(float(GetScreenWidth())-800.f)/2.f, oy=(float(GetScreenHeight())-600.f)/2.f; rlTranslatef(ox, oy, 0);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,
                                       !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();
@@ -956,8 +955,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         BeginDrawing();
         ClearBackground(BLACK);
         DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
-                       {viewport.offset.x, viewport.offset.y, float(target.texture.width),
-                        float(target.texture.height)}, {0, 0}, 0, WHITE);
+                       {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
         EndDrawing();
         profile.mark("first-presented-frame");
         if (showScene && scene && scene->playerDisplayed()) profile.mark("first-game-frame");

@@ -301,8 +301,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
             else {
                 const auto &definition = *inventory.definition(source->definition);
                 ui.drag->grab = {definition.width / 2, definition.height / 2};
-                ui.drag->pixelOffset = {definition.width * inventoryCellSize / 2,
-                                        definition.height * inventoryCellSize / 2};
+                ui.drag->pixelOffset = {definition.width * inventoryCellSize() / 2,
+                                        definition.height * inventoryCellSize() / 2};
                 ui.drag->pickedUp = true;
                 ui.drag->moved = true;
             }
@@ -453,8 +453,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 const auto &location = std::get<ContainerLocation>(item->location);
                 if (equipment)
                     ui.drag = InventoryDrag{item->handle(), {}, input.mouse,
-                                            {def->width * inventoryCellSize / 2,
-                                             def->height * inventoryCellSize / 2}};
+                                            {def->width * inventoryCellSize() / 2,
+                                             def->height * inventoryCellSize() / 2}};
                 else {
                     auto bounds = hitGrid->itemBounds(location.cell, *def);
                     ui.drag = InventoryDrag{item->handle(),

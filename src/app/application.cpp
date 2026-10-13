@@ -19,6 +19,8 @@ class Platform {
         SetTraceLogLevel(LOG_WARNING);
         SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | (hidden ? FLAG_WINDOW_HIDDEN : 0));
         InitWindow(1280, 816, "D2X - Diablo II Expansion / C++");
+        W = GetScreenWidth();
+        H = GetScreenHeight();
         if (!IsWindowReady())
             throw std::runtime_error("Unable to create OpenGL window");
         SetWindowMinSize(800, 510);

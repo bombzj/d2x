@@ -18,9 +18,9 @@ void SceneView::drawHostilityWarning() const {
     // D2Client 1.13c RVA 285C0: incoming flag 8, W-58, bottom baseline
     // 45 (115 with automap), original CelDraw mode 1 / TRANS50.
     const float baseline = view_.automap ? 115.f : 45.f;
-    blend->drawHalf(image, {W - 58 * classicPanelScale + image->x * classicPanelScale,
-        (baseline + image->y - image->texture.height) * classicPanelScale,
-        image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+    blend->drawHalf(image, {W - 58 * classicPanelScale() + image->x * classicPanelScale(),
+        (baseline + image->y - image->texture.height) * classicPanelScale(),
+        image->texture.width * classicPanelScale(), image->texture.height * classicPanelScale()});
 }
 namespace {
 void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
@@ -82,9 +82,9 @@ void SceneView::drawDurabilityWarning() const {
         if (frame < 0) continue;
         const auto *image = assets_.durabilityIcons.frame(0, frame);
         if (!image) continue;
-        blend->drawHalf(image, {W - 60 * classicPanelScale + image->x * classicPanelScale,
-            (baseline + image->y - image->texture.height) * classicPanelScale,
-            image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+        blend->drawHalf(image, {W - 60 * classicPanelScale() + image->x * classicPanelScale(),
+            (baseline + image->y - image->texture.height) * classicPanelScale(),
+            image->texture.width * classicPanelScale(), image->texture.height * classicPanelScale()});
     }
 }
 void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker,uint32_t owner) const {

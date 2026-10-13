@@ -24,7 +24,8 @@ class ChatView {
     size_t caret_{}, scroll_{}, unavailable_{};
     uint64_t sequence_{}, accountSequence_{};
     std::array<std::string,10> partyNotices_;
-
+    std::string hostileTimeout_,notListening_,slainBy_;
+    std::array<std::array<std::string,2>,2> presenceNotices_;
     struct Glyph { uint32_t character{}; uint8_t color{}; };
     using Line = std::vector<Glyph>;
     struct Message {
