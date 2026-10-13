@@ -207,18 +207,23 @@ struct RealmFrontend::Impl {
     // DC6 screen and control tiles retain their native dimensions; no stretched tiles.
     void tiles(const char *id, int x, int y, int columns, int first = 0, int count = -1, Color tint = WHITE) {
         const auto &a = art.at(id);
-        if (count < 0)
-            count = a.count - first;
-        int dx = x, dy = y, rowHeight = 0;
-        for (int i = 0; i < count; ++i) {
-            const auto *cel = a.frame(0, first + i);
-            image(id, dx, dy, first + i, tint);
-            dx += cel->texture.width;
-            rowHeight = std::max(rowHeight, cel->texture.height);
-            if ((i + 1) % columns == 0) {
-                dx = x;
-                dy += rowHeight;
-                rowHeight = 0;
+        if (count < 0) count = a.count - first;
+        const auto *firstCel = a.frame(0, first);
+        if (!firstCel) return;
+        const int tw = firstCel->texture.width;
+        const int th = firstCel->texture.height;
+        const int startX = x < 0 ? ((-x) % tw) : 0;
+        const int startY = y < 0 ? ((-y) % th) : 0;
+        for (int dy = startY - th; dy < H + th; dy += th) {
+            for (int dx = startX - tw; dx < W + tw; dx += tw) {
+                for (int i = 0; i < count && (i % columns == 0 || true);) {
+                    const int col = i % columns;
+                    const auto *cel = a.frame(0, first + i);
+                    if (!cel) break;
+                    DrawTexture(cel->texture, dx + col * tw, dy + (i/columns)*th, tint);
+                    i++;
+                    if (col == columns - 1) break;
+                }
             }
         }
     }
