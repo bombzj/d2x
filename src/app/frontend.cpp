@@ -361,7 +361,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
     std::optional<uint64_t> worldNoticeSequence;
     uint64_t worldNoticeGeneration{};
-    float offsetX = (float(GetScreenWidth()) - 800.f)/2.f, offsetY = (float(GetScreenHeight()) - 600.f)/2.f;
     // Quick entry executes the real login/Realm/character/game protocol once.
     // No credentials in argv and no retry of non-idempotent room creation.
     bool quickCharacter = !options.onlineCharacter.empty();
@@ -631,7 +630,6 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             debugInputs.clear();
             // Keep the final scene/screenshot while the independent service completes
             // the bounded save/leave exchange; no further world input is accepted.
-            const auto closingViewport = currentViewport();
             BeginDrawing();
             ClearBackground(BLACK);
             DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
@@ -783,6 +781,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         const auto viewport = currentViewport();
         uiScale = viewport.scale;
+        uiScaleX = uiScaleY = 1.f;
         const int targetWidth = std::max(1, GetScreenWidth());
         const int targetHeight = std::max(1, GetScreenHeight());
         if (W != targetWidth || H != targetHeight) { W = targetWidth; H = targetHeight; }
@@ -792,14 +791,48 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
         }
         const auto raw = GetMousePosition();
-        Vector2 mouse{raw.x - (float(GetScreenWidth()) - 800.f)/2.f,
-                      raw.y - (float(GetScreenHeight()) - 600.f)/2.f};
+        Vector2 mouse{float(raw.x), float(raw.y)};
         bool captureRequested = false;
         FrontendIntent action;
         if (quit) debugInputs.clear();
         RemoteSceneFrame worldFrame;
         bool leaveGame = false;
         const Vec worldMouse{raw.x, raw.y};
+        // The NPC trade screen keeps its original 800x600 art. Both its input
+        // handling and its drawing run on a fixed 800x600 canvas stretched across
+        // the window, so panel layout and hit testing share one coordinate space;
+        // the world keeps rendering at window size.
+        int tradeSavedW = W, tradeSavedH = H;
+        auto enterTradeCanvas = [&] {
+            tradeSavedW = W;
+            tradeSavedH = H;
+            W = 800;
+            H = 600;
+            uiScaleX = float(GetScreenWidth()) / 800.f;
+            uiScaleY = float(GetScreenHeight()) / 600.f;
+        };
+        auto leaveTradeCanvas = [&] {
+            W = tradeSavedW;
+            H = tradeSavedH;
+            uiScaleX = uiScaleY = 1.f;
+        };
+        auto tradeCanvasMouse = [](Vec windowMouse) {
+            return Vec{windowMouse.x * 800.f / float(GetScreenWidth()),
+                       windowMouse.y * 600.f / float(GetScreenHeight())};
+        };
+        auto drawGameUi = [&](Vec windowMouse) {
+            if (!sharedUi) return;
+            if (!sharedUi->ui().shopOpen) {
+                sharedUi->drawUi(windowMouse);
+                return;
+            }
+            enterTradeCanvas();
+            rlPushMatrix();
+            rlScalef(uiScaleX, uiScaleY, 1.f);
+            sharedUi->drawUi(tradeCanvasMouse(windowMouse));
+            rlPopMatrix();
+            leaveTradeCanvas();
+        };
         if (!presentationPaused) {
             BeginTextureMode(target);
             ClearBackground(BLACK);
@@ -900,8 +933,18 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         } catch (const std::exception &e) { sharedUi->notice(e.what(), true); }
                         input.save = input.load = false;
                     }
+                    const bool tradeCanvas = panels.shopOpen;
+                    const Vec windowMouse = input.mouse;
+                    if (tradeCanvas) {
+                        enterTradeCanvas();
+                        input.mouse = tradeCanvasMouse(windowMouse);
+                    }
                     chatInput(input);
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
+                    if (tradeCanvas) {
+                        input.mouse = windowMouse;
+                        leaveTradeCanvas();
+                    }
                     if (!keepGame) leaveGame = true;
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
@@ -913,7 +956,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
-                    sharedUi->drawUi(input.mouse);
+                    drawGameUi(input.mouse);
                 } catch (const std::exception &e) {
                     // Resource construction can fail after creating the clients
                     // but before creating the view. Retire the whole group so
@@ -927,35 +970,45 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 auto input = pollInput(viewport);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 captureRequested = input.screenshot;
-                mouse = {input.mouse.x - (float(GetScreenWidth())-800.f)/2.f, input.mouse.y - (float(GetScreenHeight())-600.f)/2.f};
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                     sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
+                    const bool tradeCanvas = sharedUi->ui().shopOpen;
+                    const Vec windowMouse = input.mouse;
+                    if (tradeCanvas) {
+                        enterTradeCanvas();
+                        input.mouse = tradeCanvasMouse(windowMouse);
+                    }
                     chatInput(input);
                     if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;
+                    if (tradeCanvas) {
+                        input.mouse = windowMouse;
+                        leaveTradeCanvas();
+                    }
                     WorldInputView unavailable;
                     unavailable.gameGeneration = view.gameGeneration;
                     unavailable.areaGeneration = view.world.areaGeneration;
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
-                    sharedUi->drawUi(worldMouse);
+                    drawGameUi(worldMouse);
                 } else {
-                    // The frontend is laid out in a fixed 800x600 canvas.
-                    // Character selection (and its difficulty picker) stretch
-                    // that canvas to fill the window; other pages stay centered.
-                    const bool fillCanvas = page == FrontendPage::Characters || page == FrontendPage::Difficulty;
+                    // Fullscreen frontend pages are original 800x600 art: lay them
+                    // out in a fixed 800x600 canvas and stretch that canvas over
+                    // the window, so title, character list and difficulty screens
+                    // fill the window like the NPC trade screen does.
                     const float Wf = float(GetScreenWidth()), Hf = float(GetScreenHeight());
-                    const float sx = fillCanvas ? Wf / 800.f : 1.f, sy = fillCanvas ? Hf / 600.f : 1.f;
-                    const float ox = fillCanvas ? 0.f : (Wf - 800.f) / 2.f, oy = fillCanvas ? 0.f : (Hf - 600.f) / 2.f;
-                    mouse = {(input.mouse.x - ox) / sx, (input.mouse.y - oy) / sy};
-                    uiScissor(0, 0, Wf, Hf);
+                    const float sx = Wf / 800.f, sy = Hf / 600.f;
+                    mouse = {input.mouse.x / sx, input.mouse.y / sy};
+                    uiScaleX = sx;
+                    uiScaleY = sy;
+                    uiScissor(0.f, 0.f, 800.f, 600.f);
                     rlPushMatrix();
-                    rlTranslatef(ox, oy, 0);
                     rlScalef(sx, sy, 1.f);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,
                                       !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();
                     EndScissorMode();
+                    uiScaleX = uiScaleY = 1.f;
                 }
             }
             rlPopMatrix();

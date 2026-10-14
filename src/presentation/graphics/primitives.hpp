@@ -12,11 +12,16 @@ inline int W = 1066, H = 680;
 inline constexpr int HUD = 74;
 inline constexpr float pi = std::numbers::pi_v<float>;
 // The scene renders into a window-sized target; UI coordinates stay in the
-// virtual W x H space and are scaled to native pixels by rlScalef(uiScale).
-inline float uiScale = 1.f;
+// virtual W x H space. Normal frames scale by viewport.scale and uiScale stays
+// uniform for text metrics. The three fixed 800x600 screens (title, character
+// list, NPC trade) draw into a sub-canvas stretched across the window, so
+// scissors need separate horizontal/vertical layout -> pixel factors
+// (uiScaleX/uiScaleY) matching the rlScalef used for that canvas.
+inline float uiScale = 1.f, uiScaleX = 1.f, uiScaleY = 1.f;
 inline void uiScissor(float x, float y, float width, float height) {
-    const int left = int(x * uiScale + 0.5f), top = int(y * uiScale + 0.5f);
-    const int right = int((x + width) * uiScale + 0.5f), bottom = int((y + height) * uiScale + 0.5f);
+    const int left = int(x * uiScaleX + 0.5f), top = int(y * uiScaleY + 0.5f);
+    const int right = int((x + width) * uiScaleX + 0.5f);
+    const int bottom = int((y + height) * uiScaleY + 0.5f);
     BeginScissorMode(left, top, right - left, bottom - top);
 }
 inline constexpr Color gold{196, 164, 102, 255}, parchment{209, 196, 162, 255};
