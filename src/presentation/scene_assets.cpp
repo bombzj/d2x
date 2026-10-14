@@ -252,10 +252,18 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     for (const auto &[code, item] : content.items.entries())
         if (item.targetCursor >= 0 && item.targetCursor >= targetingCursors.count)
             throw std::runtime_error("Original targeting cursor is missing for " + code);
+    // The original builds these labels as data/local/ui/<language>/<name>.dc6;
+    // a locale without its own copy falls back to the English artwork.
+    auto localizedLabel = [&](const char *name) {
+        for (const std::string &dir : {archives.languageDirectory, std::string("eng")}) {
+            auto art = unitsGraphics_.single("data/local/ui/" + dir + "/" + name + ".dc6");
+            if (!art.frames.empty()) return art;
+        }
+        return GpuAnimation{};
+    };
     constexpr std::array menuLabels{"options", "exit", "returntogame"};
     for (size_t index = 0; index < menuLabels.size(); ++index) {
-        gameMenuLabels[index] = unitsGraphics_.single(
-            std::string("data/local/ui/eng/") + menuLabels[index] + ".dc6");
+        gameMenuLabels[index] = localizedLabel(menuLabels[index]);
         if (gameMenuLabels[index].frames.empty())
             throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
     }
@@ -265,7 +273,7 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     constexpr std::array optionValues{"full", "mini", "smalloff", "smallon", "smallno", "smallyes", "auto",
         "no", "everything", "center"};
     auto menuArt = [&](const char *name) {
-        auto art = unitsGraphics_.single(std::string("data/local/ui/eng/") + name + ".dc6");
+        auto art = localizedLabel(name);
         if (art.frames.empty()) throw std::runtime_error("Original options label missing: " + std::string(name));
         return art;
     };

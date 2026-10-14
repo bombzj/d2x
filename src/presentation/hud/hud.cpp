@@ -150,7 +150,7 @@ void SceneView::drawHelp() const {
                            "F1 through F8              Select bound mouse skill",
                            "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
-                           "W / O                      Weapon swap / Hireling",
+                           "W / O / P                Weapon swap / Hireling / Party",
                            "Q / Home                   Quest log / Center map",
                            "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
@@ -184,6 +184,7 @@ float SceneView::partyPortraitOffset() const {
         float(party_.portraitCount()) * 56 * classicPanelScale() : 0;
 }
 void SceneView::drawUi(Vec mouse) const {
+    deferredTooltip_.active = false;
     drawControlPanel();
     drawDurabilityWarning();
     drawHostilityWarning();
@@ -222,6 +223,9 @@ void SceneView::drawUi(Vec mouse) const {
     drawGameMenu();
     tradeInvite_.draw(worldViewport());
     tradeInvite_.drawGoldDialog();
+    if (deferredTooltip_.active)
+        drawItemText(deferredTooltip_.lines, deferredTooltip_.quality, deferredTooltip_.anchor,
+                     deferredTooltip_.price, deferredTooltip_.priceLabel);
     if (!itemCursor) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
         Vec hotspot = handCursorHotspot(pointer);

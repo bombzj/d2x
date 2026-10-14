@@ -4,6 +4,7 @@
 namespace d2x {
 struct AppOptions {
     std::string mpq = "assets/mpq2";
+    std::string mpqSupplement; // assets/mpq packs mounted below the original archives
     std::string screenshot, pack, debugPipe, startupProfile;
     std::string gamePacketLog, hostPacketLog;
     std::string onlineConfig = "online.local.json";

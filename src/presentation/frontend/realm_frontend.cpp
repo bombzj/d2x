@@ -3,7 +3,6 @@
 #include "content/string_table.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "resources/data_table.hpp"
-#include <rlgl.h>
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -80,7 +79,9 @@ struct PortraitKeyLess {
 } // namespace
 struct RealmFrontend::Impl {
     FrameInput input;
-    Graphics sky, units, lobbyControls, checkboxControls;
+    Graphics sky, units, lobbyControls, checkboxControls, loadingArt;
+    int loadingFrame{};
+    double loadingStart{};
     std::unique_ptr<Graphics> heroGraphics;
     struct Hero {
         GpuAnimation idle, hover, forward, chosen, back, forwardOverlay, chosenOverlay, backOverlay;
@@ -126,6 +127,7 @@ struct RealmFrontend::Impl {
         : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
           lobbyControls(a, "data/global/palette/act1/pal.dat"),
           checkboxControls(a, "data/global/palette/fechar/pal.dat"),
+          loadingArt(a, "data/global/palette/loading/pal.dat"),
           archives(a), portraitCatalog(a), strings(a),
           normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
           inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
@@ -173,6 +175,26 @@ struct RealmFrontend::Impl {
                                 {"chatButton", "bigmenu/chatrightbuttons"},
                                 {"leftButton", "bigmenu/chatleftbuttons"}})
             load(lobbyControls, id, path);
+        // Entering a game plays the original door animation. Locale 0 (eng) reads
+        // the global screen, every other locale the local override, matching the
+        // original Loadingscreen path choice; either member may be absent.
+        {
+            const bool english = a.languageDirectory == "eng";
+            const char *paths[] = {english ? "data/global/ui/loading/loadingscreen.dc6"
+                                           : "data/local/ui/loadingscreen.dc6",
+                                   english ? "data/local/ui/loadingscreen.dc6"
+                                           : "data/global/ui/loading/loadingscreen.dc6"};
+            for (const auto *path : paths)
+                if (archives.contains(path)) {
+                    auto screen = loadingArt.single(path);
+                    if (screen.count > 0) {
+                        art.emplace("loading", std::move(screen));
+                        break;
+                    }
+                }
+            if (!art.count("loading"))
+                throw std::runtime_error("Missing original loading screen art");
+        }
         DataTable stats(a.read("data/global/excel/charstats.txt"));
         for (size_t i = 0; i < stats.rows().size(); ++i) {
             auto name = stats.value(i, "class");
@@ -221,45 +243,6 @@ struct RealmFrontend::Impl {
                 dy += rowHeight;
                 rowHeight = 0;
             }
-        }
-    }
-    // Fullscreen backgrounds compose one tile block (columns wide); the block is
-    // stretched to cover either the whole window (translated pages) or the fixed
-    // 800x600 canvas (pages that are then scaled to the window).
-    void background(const char *id, int columns = 4, Color tint = WHITE, bool fillCanvas = false) {
-        const auto &a = art.at(id);
-        if (a.frames.empty()) return;
-        int blockW = 0, blockH = 0;
-        for (int i = 0, col = 0, rowW = 0, rowH = 0; i < a.count; ++i) {
-            const auto *cel = a.frame(0, i);
-            if (!cel) break;
-            rowW += cel->texture.width;
-            rowH = std::max(rowH, int(cel->texture.height));
-            if (++col == columns) {
-                blockW = std::max(blockW, rowW);
-                blockH += rowH;
-                col = 0; rowW = 0; rowH = 0;
-            } else if (i == a.count - 1) {
-                blockW = std::max(blockW, rowW);
-                blockH += rowH;
-            }
-        }
-        if (blockW <= 0 || blockH <= 0) return;
-        const float targetW = fillCanvas ? 800.f : float(W);
-        const float targetH = fillCanvas ? 600.f : float(H);
-        const float originX = fillCanvas ? 0.f : -(float(W) - 800.f) / 2.f;
-        const float originY = fillCanvas ? 0.f : -(float(H) - 600.f) / 2.f;
-        const float sx = targetW / float(blockW), sy = targetH / float(blockH);
-        int gx = 0, gy = 0, rowH = 0, col = 0;
-        for (int i = 0; i < a.count; ++i) {
-            const auto *cel = a.frame(0, i);
-            if (!cel) break;
-            DrawTexturePro(cel->texture, {0, 0, float(cel->texture.width), float(cel->texture.height)},
-                {originX + gx * sx, originY + gy * sy,
-                 cel->texture.width * sx, cel->texture.height * sy}, {0, 0}, 0, tint);
-            gx += cel->texture.width;
-            rowH = std::max(rowH, int(cel->texture.height));
-            if (++col == columns) { gx = 0; gy += rowH; rowH = 0; col = 0; }
         }
     }
     void emit(FrontendCommand command) {
@@ -377,7 +360,7 @@ struct RealmFrontend::Impl {
             sprite(cel, {float(x), float(y)});
     }
     void main(std::string_view gateway) {
-        background("main");
+        tiles("main", 0, 0, 4);
         logo();
         if (button("wide", 265, 290, s(5106), true, 2))
             emit(FrontendCommand::SinglePlayer);
@@ -414,7 +397,7 @@ struct RealmFrontend::Impl {
     }
     void tcpIp(bool joining) {
         prepareLanArt();
-        background("tcpip");
+        tiles("tcpip", 0, 0, 4);
         lanTitle.inBox(s(5117), {0, 35, 800, 50}, 16, parchment);
         centered(s(5121), 110);
         wrap(lanAddresses.empty() ? s(5124) : lanAddresses, 180, 130, 440, true, 168);
@@ -460,7 +443,7 @@ struct RealmFrontend::Impl {
         }
     }
     void login() {
-        background("main");
+        tiles("main", 0, 0, 4);
         logo();
         wrap(s(5205), 180, 233, 440, true);
         label(s(5224), 300, 289);
@@ -484,7 +467,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
     }
     void registration() {
-        background("main");
+        tiles("main", 0, 0, 4);
         logo();
         wrap(s(5223), 180, 218, 440, true);
         label(s(5224), 300, 276);
@@ -509,7 +492,7 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::Back);
     }
     void realms(const OnlineView &v) {
-        background("realms");
+        tiles("realms", 0, 0, 4);
         title.inBox(s(5289), {0, 30, 800, 40}, 16, parchment);
         wrap(s(5291), 180, 95, 440, true);
         realmSelected = std::clamp(realmSelected, 0, std::max(0, int(v.realms.size()) - 1));
@@ -583,7 +566,7 @@ struct RealmFrontend::Impl {
                 }
             }
         }
-        background("creation");
+        tiles("creation", 0, 0, 4);
         title.inBox(s(5127), {0, 17, 800, 36}, 16, parchment);
         if (hero >= 0) {
             centered(classes[size_t(ids[size_t(hero)])], 65);
@@ -668,16 +651,7 @@ struct RealmFrontend::Impl {
         }
     }
     void characters(const OnlineView &v, bool allowRealmSelection) {
-        background("characters", 4, WHITE, true);
-        // The original layout leaves the right half for a 3D character model that
-        // this client does not draw, so the slot grid would sit left of center.
-        // Shift the selection UI so the character boxes are centered on screen.
-        const auto &box = art.at("highlight");
-        const int slotWidth = box.frame(0, 0)->texture.width + box.frame(0, 1)->texture.width;
-        const float centerShift = 400.f - (37.f + slotWidth);
-        mouse.x -= centerShift;
-        rlPushMatrix();
-        rlTranslatef(centerShift, 0, 0);
+        tiles("characters", 0, 0, 4);
         if (allowRealmSelection) {
             image("realm", 608, 8);
             text.inBox(s(11058), {608, 10, 182, 22}, 16, parchment);
@@ -715,7 +689,8 @@ struct RealmFrontend::Impl {
         if (enabled)
             changePage(input.pageDelta + (input.wheel < 0 ? 1 : input.wheel > 0 ? -1 : 0));
         else lastClickedCharacter = -1;
-        const int width = slotWidth;
+        const auto &box = art.at("highlight");
+        const int width = box.frame(0, 0)->texture.width + box.frame(0, 1)->texture.width;
         const int height = std::max(box.frame(0, 0)->texture.height, box.frame(0, 1)->texture.height);
         if (v.characters.size() > 8) {
             // Keep paging controls in the gutter, outside the fourth character row.
@@ -791,8 +766,6 @@ struct RealmFrontend::Impl {
             emit(FrontendCommand::SelectCharacter);
             intent.name = v.characters[size_t(selected)].name;
         }
-        rlPopMatrix();
-        mouse.x += centerShift;
     }
     void spinner(int x, int y, int &value, int low, int high) {
         label(std::to_string(value), x + 8, y + 5, WHITE);
@@ -818,7 +791,7 @@ struct RealmFrontend::Impl {
         if (button("medium", 330, 411, s(5103))) emit(FrontendCommand::Back);
     }
     void lobby(const OnlineView &v) {
-        background("lobby");
+        tiles("lobby", 0, 0, 4);
         if (lobbyGeneration != v.gameGeneration) {
             lobbyGeneration = v.gameGeneration;
             difficulty = 0;
@@ -1073,10 +1046,18 @@ struct RealmFrontend::Impl {
                 wipe(gamePassword);
                 description.clear();
             }
+            if (current == FrontendPage::Loading) {
+                loadingFrame = 0;
+                loadingStart = GetTime();
+            }
             previous = current;
         }
         bool confirmation = !deleteName.empty() || confirmHardcore;
-        bool modal = !notice.empty() || busy(v.stage) || confirmation;
+        // The Loading page plays the original door animation and covers the whole
+        // connection with it; connection progress is not a modal there. Errors and
+        // confirmations still interrupt, and Escape leaves the game.
+        bool modal = !notice.empty() || confirmation ||
+                     (busy(v.stage) && current != FrontendPage::Loading);
         enabled = !modal;
         if (enabled && input.tab)
             focus = (focus + 1) %
@@ -1104,13 +1085,19 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::Lobby)
             lobby(v);
         else {
-            background("main");
-            logo();
-            centered(v.stage == OnlineStage::ProtocolReady ? "Connected to game server" : s(5243), 315);
+            // Entering a game plays the original Loadingscreen door: one 256x256
+            // frame sequence centered on black that opens once and then holds the
+            // open frame for as long as the load takes.
+            const auto &screen = art.at("loading");
+            loadingFrame = std::min(std::max(screen.count, 1) - 1,
+                                    int((GetTime() - loadingStart) * 9.0));
+            if (const auto *cel = screen.frame(0, loadingFrame))
+                sprite(cel, {272.f, 172.f});
             if (v.stage == OnlineStage::ProtocolReady) {
+                centered("Connected to game server", 448);
                 wrap(worldNotice.empty() ? "Waiting for server world data." : std::string(worldNotice),
-                     220, 350, 360, true);
-                if (button("medium", 330, 405, s(5101)))
+                     220, 472, 360, true);
+                if (button("medium", 330, 520, s(5101)))
                     emit(FrontendCommand::LeaveGame);
             }
         }

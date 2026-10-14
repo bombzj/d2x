@@ -68,6 +68,29 @@ FrameInput pollInput(const Viewport &viewport) {
         input.menuCancel = int(IsKeyPressed(KEY_ESCAPE));
         input.menuDelta = int(IsKeyPressed(KEY_DOWN)) - int(IsKeyPressed(KEY_UP));
         input.weaponSwap = !input.control && IsKeyPressed(KEY_W);
+        // Classic gameplay shortcuts; the in-game help panel lists this table.
+        // Ctrl/Alt keep their debug and modifier roles, so plain letters drive
+        // the panels the same way the debug ui-input keys do.
+        const auto plain = !input.control && !input.alt;
+        input.inventory = plain && IsKeyPressed(KEY_I);
+        input.character = plain && IsKeyPressed(KEY_A);
+        input.skillTree = plain && IsKeyPressed(KEY_S);
+        input.quests = plain && IsKeyPressed(KEY_Q);
+        input.hireling = plain && IsKeyPressed(KEY_O);
+        input.party = plain && IsKeyPressed(KEY_P);
+        input.run = plain && IsKeyPressed(KEY_R);
+        input.expandBelt = plain && IsKeyPressed(KEY_B);
+        input.minimapSide = plain && IsKeyPressed(KEY_V);
+        input.automap = input.tab;
+        input.automapCenter = IsKeyPressed(KEY_HOME);
+        input.automapNames = plain && IsKeyPressed(KEY_F12);
+        input.screenshot = input.control && IsKeyPressed(KEY_F12);
+        input.help = input.control && IsKeyPressed(KEY_F1);
+        input.showLoot = input.alt;
+        for (int i = 0; i < int(input.belt.size()); ++i)
+            input.belt[size_t(i)] = plain && IsKeyPressed(KEY_ONE + i);
+        for (size_t i = 0; i < input.skills.size(); ++i)
+            input.skills[i] = plain && IsKeyPressed(KEY_F1 + int(i));
     } else {
         input.focused = false;
         input.insideViewport = false;

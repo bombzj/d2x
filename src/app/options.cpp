@@ -1,5 +1,7 @@
 #include "options.hpp"
 #include <raylib.h>
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <filesystem>
 #include <stdexcept>
@@ -98,6 +100,38 @@ AppOptions parseOptions(int argc, char **argv) {
         }
         if (!discovered.empty())
             options.mpq = discovered;
+    }
+    {
+        // Supplementary packs (PD2 language tables and fonts, demo packs) live in
+        // assets/mpq. They mount below the original archives, so an original member
+        // always wins and these only fill gaps the original set does not ship.
+        auto hasMpqs = [](const std::filesystem::path &path) {
+            std::error_code error;
+            if (!std::filesystem::is_directory(path, error)) return false;
+            for (const auto &entry : std::filesystem::directory_iterator(path, error)) {
+                auto extension = entry.path().extension().string();
+                std::transform(extension.begin(), extension.end(), extension.begin(),
+                               [](unsigned char c) { return char(std::tolower(c)); });
+                if (extension == ".mpq") return true;
+            }
+            return false;
+        };
+        auto supplement = [&](const std::filesystem::path &root) {
+            const auto directory = root / "assets" / "mpq";
+            if (options.mpqSupplement.empty() && hasMpqs(directory))
+                options.mpqSupplement = directory.string();
+        };
+        auto workingDirectory = std::filesystem::current_path();
+        auto directory = std::filesystem::path(GetApplicationDirectory());
+        if (!directory.has_filename())
+            directory = directory.parent_path();
+        supplement(workingDirectory);
+        for (int depth = 0; depth < 6 && options.mpqSupplement.empty(); ++depth) {
+            supplement(directory);
+            if (directory == directory.parent_path())
+                break;
+            directory = directory.parent_path();
+        }
     }
     return options;
 }

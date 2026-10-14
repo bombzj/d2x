@@ -86,6 +86,13 @@ int runGame(int argc, char **argv) {
     }
     StartupProfile profile(options.startupProfile);
     Archives archives;
+    // assets/mpq holds supplementary packs (PD2 language tables and fonts, demo
+    // packs). They mount first: every original member still resolves to the
+    // original archive, these only fill paths the original set does not ship.
+    std::error_code equivalentError;
+    if (!options.mpqSupplement.empty() &&
+        !std::filesystem::equivalent(options.mpqSupplement, options.mpq, equivalentError))
+        archives.mountDirectory(options.mpqSupplement);
     archives.mountDirectory(options.mpq);
     if (archives.names.empty())
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
