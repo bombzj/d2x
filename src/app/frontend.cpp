@@ -940,11 +940,18 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
                     sharedUi->drawUi(worldMouse);
                 } else {
-                    // Fullscreen backgrounds expand to the whole window; the
-                    // fixed 800x600 artwork stays centered via the translation.
-                    uiScissor(0, 0, (float)GetScreenWidth(), (float)GetScreenHeight());
+                    // The frontend is laid out in a fixed 800x600 canvas.
+                    // Character selection (and its difficulty picker) stretch
+                    // that canvas to fill the window; other pages stay centered.
+                    const bool fillCanvas = page == FrontendPage::Characters || page == FrontendPage::Difficulty;
+                    const float Wf = float(GetScreenWidth()), Hf = float(GetScreenHeight());
+                    const float sx = fillCanvas ? Wf / 800.f : 1.f, sy = fillCanvas ? Hf / 600.f : 1.f;
+                    const float ox = fillCanvas ? 0.f : (Wf - 800.f) / 2.f, oy = fillCanvas ? 0.f : (Hf - 600.f) / 2.f;
+                    mouse = {(input.mouse.x - ox) / sx, (input.mouse.y - oy) / sy};
+                    uiScissor(0, 0, Wf, Hf);
                     rlPushMatrix();
-                    const float ox=(float(GetScreenWidth())-800.f)/2.f, oy=(float(GetScreenHeight())-600.f)/2.f; rlTranslatef(ox, oy, 0);
+                    rlTranslatef(ox, oy, 0);
+                    rlScalef(sx, sy, 1.f);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,
                                       !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();

@@ -224,10 +224,9 @@ struct RealmFrontend::Impl {
         }
     }
     // Fullscreen backgrounds compose one tile block (columns wide); the block is
-    // stretched to fill the window so artwork designed for the fixed screen still
-    // covers wider or taller resolutions. Drawn from the untranslated origin so
-    // the centered foreground layout stays aligned on top of it.
-    void background(const char *id, int columns = 4, Color tint = WHITE) {
+    // stretched to cover either the whole window (translated pages) or the fixed
+    // 800x600 canvas (pages that are then scaled to the window).
+    void background(const char *id, int columns = 4, Color tint = WHITE, bool fillCanvas = false) {
         const auto &a = art.at(id);
         if (a.frames.empty()) return;
         int blockW = 0, blockH = 0;
@@ -246,9 +245,11 @@ struct RealmFrontend::Impl {
             }
         }
         if (blockW <= 0 || blockH <= 0) return;
-        const float originX = -(float(GetScreenWidth()) - 800.f) / 2.f;
-        const float originY = -(float(GetScreenHeight()) - 600.f) / 2.f;
-        const float sx = float(W) / float(blockW), sy = float(H) / float(blockH);
+        const float targetW = fillCanvas ? 800.f : float(W);
+        const float targetH = fillCanvas ? 600.f : float(H);
+        const float originX = fillCanvas ? 0.f : -(float(W) - 800.f) / 2.f;
+        const float originY = fillCanvas ? 0.f : -(float(H) - 600.f) / 2.f;
+        const float sx = targetW / float(blockW), sy = targetH / float(blockH);
         int gx = 0, gy = 0, rowH = 0, col = 0;
         for (int i = 0; i < a.count; ++i) {
             const auto *cel = a.frame(0, i);
@@ -667,7 +668,7 @@ struct RealmFrontend::Impl {
         }
     }
     void characters(const OnlineView &v, bool allowRealmSelection) {
-        background("characters");
+        background("characters", 4, WHITE, true);
         // The original layout leaves the right half for a 3D character model that
         // this client does not draw, so the slot grid would sit left of center.
         // Shift the selection UI so the character boxes are centered on screen.
