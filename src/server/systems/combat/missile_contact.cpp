@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/combat/weapon_block.hpp"
 #include "player_contact.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -6,6 +7,8 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/inventory/system.hpp"
+#include "server/runtime/equipment_rules.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/unit_values.hpp"
@@ -110,6 +113,15 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
     }
     if(preludeOnly || !contact.hit) return DomainStatus::Applied;
     if(!source.id()) return DomainStatus::Unavailable;
+    if(impact.nativeSkill) {
+        const auto prepared=prepareNativeSkillContact(impact,source,target,tick);
+        if(prepared!=DomainStatus::Applied) return prepared;
+        contact.hit=impact.nativeSkill->hit;
+        if(!contact.hit) return DomainStatus::Applied;
+        const Participants participants{ports_.players,ports_.monsters,ports_.social};
+        source=participants.find(impact.source);target=participants.find(impact.targets[impact.next]);
+        if(!source.id() || !target.id()) return DomainStatus::Stale;
+    }
     if(!contact.damagePrepared) {
         const auto *monster=target.monster;
         int32_t typeBonus{};
@@ -221,7 +233,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             if(target.player && target.player->transient.effects) uninterruptable=target.player->transient.effects->hasState(missile.uninterruptableState,tick.tick);
             else if(target.monster) uninterruptable=ports_.effects.unitStates(target.id(),tick.tick).contains(missile.uninterruptableState) ||
                 target.monster->aiStates.contains(missile.uninterruptableState);
-            contact.damage.getHit=(impact.areaDamage?(contact.resultSuccessful || (impact.areaDamage->resultFlags&4)!=0):missile.getHit) && !uninterruptable;
+            contact.damage.getHit=(impact.areaDamage?(impact.areaDamage->resultFlags&4)!=0:missile.getHit) && !uninterruptable;
             if(!uninterruptable) {
                 contact.damage.softHit|=!impact.areaDamage && !missile.getHit && missile.softHit;
                 if(!impact.areaDamage && missile.knockbackChance && rollRandom(missile.random)%100<missile.knockbackChance) contact.damage.knockback=true;
@@ -244,11 +256,10 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             int weaponBlock{};bool dualClaws{};
             if(target.player) {
                 const auto &equipment=target.player->totals.equipment;dualClaws=equipment.animationClass=="ht2";
-                const auto id=rules.names.at("passive_weaponblock");size_t count{};
-                for(const auto &[key,value]:values->values) if(key.id==id && count++<32) {
-                    const auto matches=[&](const WeaponDamage &weapon){return weapon.item && std::find(weapon.typeLayers.begin(),weapon.typeLayers.end(),key.layer)!=weapon.typeLayers.end();};
-                    if(!key.layer || ((matches(equipment.weapons[0]) || matches(equipment.weapons[1])) && value>weaponBlock)) weaponBlock=value;
-                }
+                weaponBlock=nativeWeaponBlockChance(equipment,*values,rules);
+            } else if(target.monster->equipmentStats) {
+                const auto &equipment=*target.monster->equipmentStats;dualClaws=equipment.animationClass=="ht2";
+                weaponBlock=nativeWeaponBlockChance(equipment,*values,rules);
             }
             const auto defense=rollNativeBlockOrDodge(block,!impact.areaDamage && contact.damage.channels[0]!=0,target.moving(),weaponBlock,dualClaws,modifiers,true,random);
             contact.blocked=defense.block;contact.avoidance=defense.avoidance;
@@ -308,6 +319,45 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
 DomainStatus System::finishMissileArmor(SpellImpact &impact,ParticipantView target,TickContext tick) {
     auto &contact=*impact.missileContact;
     if(contact.armorCommitted) return DomainStatus::Applied;
+    if(impact.nativeSkill && impact.nativeSkill->melee) {
+        if(!contact.weaponWearCommitted) {
+            if(const auto *player=ports_.players.findActor(impact.source)) {
+            const auto &attack=*impact.weapon;const auto item=player->persistent.inventory.items.find(attack.weapon.item);
+            if(item!=player->persistent.inventory.items.end() && attack.wearChance>0) {
+                const auto expected=player->combatRandom;auto random=expected;
+                const auto &properties=player->rules.equipment->at(item->first,player->persistent.player.level);
+                const bool destructible=properties.maximumDurability && item->second.durability &&
+                    std::none_of(properties.stats.begin(),properties.stats.end(),[](const auto &stat){return stat.effect=="item_indesctructible" && stat.value;});
+                const bool wear=destructible && limitedRandom(random,100)<unsigned(attack.wearChance);
+                const ActorContext actor{player->player,player->actor,player->area,ports_.areas.at(player->area).generation,0,tick.tick};
+                if(wear) {
+                    auto plan=ports_.inventory.weaponCost(actor,attack.weapon,attack.wearSkill,false,false,unsigned(std::max(attack.wearAmount,1)));
+                    if(!plan) return plan.status;
+                    plan.value->random=transactions::UnitRandomEdit{expected,random};
+                    const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result.status;
+                } else {
+                    const auto result=ports_.transactions.consumeRandom(actor,expected,random);if(!result) return result.status;
+                }
+            }
+            }
+            contact.weaponWearCommitted=true;
+        }
+        if(!contact.defenderWearCommitted) {
+            if(target.player) {
+                const auto &player=*target.player;const auto expected=player.combatRandom;auto random=expected;
+                const auto wear=ports_.inventory.defensiveWear(player.player,random);
+                const ActorContext actor{player.player,player.actor,player.area,ports_.areas.at(player.area).generation,0,tick.tick};
+                if(wear) {
+                    auto plan=ports_.inventory.wearCost(actor,*wear);if(!plan) return plan.status;
+                    plan.value->random=transactions::UnitRandomEdit{expected,random};
+                    const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result.status;
+                } else {
+                    const auto result=ports_.transactions.consumeRandom(actor,expected,random);if(!result) return result.status;
+                }
+            }
+            contact.defenderWearCommitted=true;
+        }
+    }
     const auto adjustment=impact.missileDamage->data.targetArmor;
     if(target.monster && !target.monster->hireling && !impact.areaDamage && adjustment) {
         const auto &actor=*target.monster;

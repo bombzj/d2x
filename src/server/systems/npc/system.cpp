@@ -7,9 +7,14 @@
 #include "server/systems/world/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "world/interaction_geometry.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <stdexcept>
 namespace d2x::server::npc {
+void System::initializeControl(uint64_t &gameRandom) {
+    if(state_.controlRandom) throw std::logic_error("NPC control is already initialized");
+    state_.controlRandom=childRandom(gameRandom);
+}
 Vec System::position(const ActorContext &actor, const AreaNpc &npc) const {
     const auto *unit=ports_.monsters.find(npc.id);
     if(!unit || !unit->questNpc) throw std::logic_error("NPC has no live actor");

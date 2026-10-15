@@ -39,6 +39,9 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         const auto *item=usable(EquipmentSlot(index));if(!item) continue;
         const auto &definition=*loadout.find(item->id).definition;
         result.appearanceDefinitions[index]=definition.code;
+        if(EquipmentSlot(index)==EquipmentSlot::Feet && definition.equipment.isType("boot"))
+            result.kickBoots={true,definition.base.minDamage.value_or(0),definition.base.maxDamage.value_or(0),
+                definition.base.strengthBonus.value_or(0),definition.base.dexterityBonus.value_or(0)};
         if(definition.equipment.isType("shld")) {
             result.shield=item->id;
             result.smiteMinimum=definition.base.minDamage.value_or(0);result.smiteMaximum=definition.base.maxDamage.value_or(0);

@@ -16,6 +16,7 @@
 namespace d2x::server::effects {struct PlayerEffectsPublication;struct AuraUnitPublication;struct PlayerPoisonCandidate;}
 namespace d2x {struct FrameEventPublication;}
 namespace d2x::server::missiles {class NativeBirthPublication;}
+namespace d2x::server {struct RoomRandomLoan;}
 namespace d2x::server::transactions {
 using InitialEffectMutation=std::function<void(CombatEffectSet &,const attributes::AuraSourceObserver &,const attributes::AuraSourceReader &,effects::PlayerPoisonCandidate &)>;
 struct ItemTransfer { std::optional<PlayerId> from, to; ItemHandle item; ItemDestination destination; };
@@ -88,5 +89,6 @@ struct Plan { TransactionId id; std::vector<RevisionGuard> expected; Change chan
     std::shared_ptr<effects::PlayerEffectsPublication> effects;std::vector<Plan> auraPlayers;
     std::shared_ptr<effects::AuraUnitPublication> auraUnits;bool auraRecipient{};std::optional<UnitRandomEdit> random;
     std::shared_ptr<FrameEventPublication> periodicEvents;
-    std::shared_ptr<missiles::NativeBirthPublication> missileBirth; };
+    std::shared_ptr<missiles::NativeBirthPublication> missileBirth;
+    std::shared_ptr<const RoomRandomLoan> roomRandom; };
 }

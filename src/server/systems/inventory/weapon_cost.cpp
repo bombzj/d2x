@@ -103,4 +103,15 @@ std::optional<ItemHandle> System::defensiveWear(PlayerId id,uint64_t &random) co
     }
     return {};
 }
+DomainResult<transactions::Plan> System::wearCost(const ActorContext &actor,ItemHandle handle,unsigned wear) const {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area) return {DomainStatus::InvalidActor,{}};
+    const auto found=player->persistent.inventory.items.find(handle.id);
+    if(found==player->persistent.inventory.items.end() || found->second.revision!=handle.revision || !wear || found->second.revision==UINT64_MAX)
+        return {DomainStatus::Stale,{}};
+    transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.inventory,{},player->persistent.player.weaponSet};
+    auto &item=edit.inventory.items.at(handle.id);item.durability-=std::min(item.durability,wear);++item.revision;
+    edit.changes.push_back({item.id,item.revision,ItemChangeKind::DurabilityChanged,item.location,item.location,item.quantity});
+    edit.character=player->persistent.player;return ports_.transactions.prepare(std::move(edit));
+}
 }

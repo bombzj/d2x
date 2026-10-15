@@ -29,8 +29,11 @@ int meleeDistance(Vec from, int fromSize, Vec to, int toSize) {
 bool playerMeleeReach(const Grid &grid, Vec from, Vec to, int targetSize, int rangeAdder) {
     // Units.cpp::UNITS_IsInMeleeRange: zero distance is already in range;
     // otherwise test the shortened PLAYER_FLYING ray, not a walking footprint.
-    const int distance=nativeUnitDistance(from,2,to,targetSize);
-    return distance<=0 || (distance<=rangeAdder+1 && grid.interactionSegment(from,to,targetSize,{}));
+    return unitMeleeReach(grid,from,2,to,targetSize,rangeAdder);
+}
+bool unitMeleeReach(const Grid &grid,Vec from,int sourceSize,Vec to,int targetSize,int range,int rangeBonus) {
+    const int distance=nativeUnitDistance(from,sourceSize,to,targetSize);
+    return distance<=0 || (distance<=range+rangeBonus+1 && grid.interactionSegment(from,to,targetSize,{}));
 }
 int missileDistance(Vec from, Vec to) {
     return unitCoordinateDistance(int(std::floor(from.x)), int(std::floor(from.y)),

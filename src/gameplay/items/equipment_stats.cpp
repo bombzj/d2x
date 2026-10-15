@@ -25,6 +25,9 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             continue;
         const auto &definition = *loadout.find(item->id).definition;
         result.appearanceDefinitions[size_t(index)] = definition.code;
+        if(EquipmentSlot(index)==EquipmentSlot::Feet && definition.equipment.isType("boot"))
+            result.kickBoots={true,definition.base.minDamage.value_or(0),definition.base.maxDamage.value_or(0),
+                definition.base.strengthBonus.value_or(0),definition.base.dexterityBonus.value_or(0)};
         if (definition.family == ItemFamily::Armor) {
             int64_t armor = item->defense;
             if (auto found = combat.armorPercent.find(item->id); found != combat.armorPercent.end()) {

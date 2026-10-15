@@ -51,7 +51,20 @@ std::optional<NativeSkillSlot> State::usedSkill(EntityId actor) const {
 void State::removeUsedSkills(EntityId actor,std::span<const SkillUseRemoval> removals) noexcept {
     const auto found=usedSkills_.find(actor);
     if(found!=usedSkills_.end()) removeSkillUse(found->second,removals);
+    if(const auto values=skillParameters_.find(actor);values!=skillParameters_.end()) {
+        std::erase_if(values->second,[&](const auto &entry) {
+            return std::any_of(removals.begin(),removals.end(),[&](const auto &removed) {
+                return entry.first.skill==removed.skill && (!removed.owner || entry.first.owner==*removed.owner);
+            });
+        });
+    }
 }
+int32_t State::skillParameter(EntityId actor,NativeSkillSlot skill,size_t index) const {
+    const auto owner=skillParameters_.find(actor);if(owner==skillParameters_.end()) return 0;
+    const auto value=owner->second.find(skill);return value==owner->second.end()?0:value->second.at(index);
+}
+void State::skillParameter(EntityId actor,NativeSkillSlot skill,size_t index,int32_t value) {skillParameters_[actor][skill].at(index)=value;}
+void State::pruneSkillParameters(const std::function<bool(EntityId)> &exists) {std::erase_if(skillParameters_,[&](const auto &entry){return !exists(entry.first);});}
 void State::pruneUsedSkills(const PlayerStore &players) {
     std::erase_if(usedSkills_,[&](const auto &entry){return players.findActor(entry.first)==nullptr;});
 }
@@ -71,10 +84,18 @@ bool State::coolingDown(EntityId actor, uint64_t tick) const {
     return found != casts.end() && found->second.cooldownUntil > tick;
 }
 void State::cancel(EntityId actor) {
-    releases_->pending.erase(actor);
-    releases_->monsters.erase(actor);
+    const auto current=releases_->pending.find(actor);
+    if(current!=releases_->pending.end() && (current->second.nativeCallbackStarted ||
+        std::find(executingReleases_.begin(),executingReleases_.end(),actor)!=executingReleases_.end())) current->second.cancelled=true;
+    else releases_->pending.erase(actor);
+    const auto monster=releases_->monsters.find(actor);
+    if(monster!=releases_->monsters.end() && (monster->second.nativeCallbackStarted ||
+        std::find(executingReleases_.begin(),executingReleases_.end(),actor)!=executingReleases_.end())) monster->second.cancelled=true;
+    else releases_->monsters.erase(actor);
     if (const auto found = casts.find(actor); found != casts.end()) found->second.interrupted = true;
 }
+State::ReleaseGuard::ReleaseGuard(State &state,EntityId actor):state_(state) {state_.executingReleases_.push_back(actor);}
+State::ReleaseGuard::~ReleaseGuard() {state_.executingReleases_.pop_back();}
 void State::interrupt(EntityId actor, uint64_t tick) {
     if (const auto found = casts.find(actor); found != casts.end()) {
         found->second.interrupted = true;

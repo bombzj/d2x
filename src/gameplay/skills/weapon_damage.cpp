@@ -7,6 +7,28 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 namespace d2x {
+namespace {
+std::pair<int32_t,int32_t> meleePhysicalRange(const WeaponSkillDamage &attack,bool demon,bool undead) {
+    auto low=nativeChecked(attack.physicalMinimum),high=nativeChecked(attack.physicalMaximum);
+    if(low<1) low=256;
+    if(high<=low) high=nativeAdd(low,256);
+    const int demonBonus=demon?std::max(0,attack.weapon.target.demonDamage):0;
+    const int undeadBonus=undead?std::max(0,nativeAdd(attack.weapon.target.undeadDamage,attack.weapon.blunt?50:0)):0;
+    const auto percent=std::max(-90,nativeAdd(attack.physicalPercent,nativeAdd(demonBonus,undeadBonus)));
+    return {nativeAdd(low,nativePercentage(low,nativeAdd(percent,attack.weapon.minimumDamagePercent),100)),
+        nativeAdd(high,nativePercentage(high,nativeAdd(percent,attack.weapon.maximumDamagePercent),100))};
+}
+bool weaponCritical(const WeaponDamage &weapon,const CombatModifiers &mods,const SkillCastSpec &skill,bool projectile,uint64_t &random) {
+    const auto own=mods.weapons.find(weapon.item);const WeaponModifiers extra=own==mods.weapons.end()?WeaponModifiers{}:own->second;
+    const int mastery=weapon.nativeModifiers?(weapon.throwable && skill.weapon->useThrowMastery?weapon.throwMastery[2]:weapon.meleeMastery[2]):
+        projectile?weapon.projectileMasteryCritical:weapon.masteryCritical;
+    bool critical=mastery>0 && limitedRandom(random,100)<unsigned(std::clamp(mastery,0,100));
+    if(!critical && mods.criticalStrike>0) critical=limitedRandom(random,100)<unsigned(mods.criticalStrike);
+    const auto deadly=nativeAdd(mods.deadlyStrike,extra.deadlyStrike);
+    if(!critical && deadly>0) critical=limitedRandom(random,100)<unsigned(deadly);
+    return critical;
+}
+}
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool demon,bool undead) {
     auto channels=attack.channels;
     const int demonBonus=demon?attack.weapon.target.demonDamage:0;
@@ -23,13 +45,14 @@ std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool 
     }
     // MissMode::FillDamageParams rolls stored projectile min/max first, then
     // applies target ED. SUnitDmg melee modifies the min/max range before roll.
-    if(attack.projectile) {
+    if(attack.nativeFixedPhysical) {
+        channels[0]=attack.channels[0];
+    } else if(attack.projectile) {
         const auto raw=nativeAdd(baseLow,baseHigh>baseLow?int32_t(attack.physicalRoll%uint32_t(nativeSubtract(baseHigh,baseLow))):0);
         channels[0]=nativeMultiply(nativeAdd(raw,nativeMultiplyDivide(raw,percent,100)),attack.critical?2:1);
     } else {
-        const auto low=nativeAdd(baseLow,nativePercentage(baseLow,nativeAdd(percent,attack.weapon.minimumDamagePercent),100));
-        const auto high=nativeAdd(baseHigh,nativePercentage(baseHigh,nativeAdd(percent,attack.weapon.maximumDamagePercent),100));
-        auto raw=std::max(0,nativeAdd(low,high>low?int32_t(attack.physicalRoll%uint32_t(nativeSubtract(high,low))):0));
+        const auto [low,high]=meleePhysicalRange(attack,demon,undead);
+        auto raw=std::max(0,nativeAdd(nativeChecked(attack.physicalAddition),nativeAdd(low,high>low?int32_t(attack.physicalRoll%uint32_t(nativeSubtract(high,low))):0)));
         if(attack.sourceDamage!=128) raw=nativePercentage(raw,attack.sourceDamage,128);
         channels[0]=nativeMultiply(raw,attack.critical?2:1);
     }
@@ -37,6 +60,12 @@ std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &attack,bool 
     const auto converted=nativePercentage(nativeChecked(channels[0]),attack.conversionPercent,100);
     channels[0]=nativeSubtract(nativeChecked(channels[0]),converted);
     channels[size_t(attack.conversionElement)]=nativeAdd(nativeChecked(channels[size_t(attack.conversionElement)]),converted);
+    for(const auto &conversion:attack.progressiveConversions) {
+        const auto base=nativeChecked(channels[0]);
+        const auto part=std::min(nativePercentage(base,conversion.percent,100),base);
+        channels[0]=nativeSubtract(base,part);
+        channels[size_t(conversion.element)]=nativeAdd(nativeChecked(channels[size_t(conversion.element)]),part);
+    }
     return channels;
 }
 WeaponSkillDamage rollPotionDamage(const WeaponDamage &weapon,int level,uint64_t &random) {
@@ -69,6 +98,7 @@ WeaponSkillDamage prepareWeaponSkillProcedures(const WeaponDamage &weapon,const 
     const SkillCastSpec &skill,int level,bool projectile) {
     const auto &mods=weapon.nativeModifiers?*weapon.nativeModifiers:input;
     WeaponSkillDamage value; value.weapon=weapon;value.level=level;
+    value.wearSkill=skill;
     value.selfDamagePercent=skill.weapon->selfDamagePercent;
     value.conversionPercent=std::clamp(skill.weapon->magicConversionPercent,0,100);value.conversionElement=DamageType::Magic;
     if(!projectile && weapon.item) {value.wearChance=4;value.wearAmount=1;value.wearSkill=skill;}
@@ -106,6 +136,14 @@ WeaponSkillDamage prepareWeaponSkillProcedures(const WeaponDamage &weapon,const 
     }
     return value;
 }
+WeaponSkillDamage rollNativeWeaponPhysical(const WeaponDamage &weapon,const CombatModifiers &input,const SkillCastSpec &skill,int level,bool demon,bool undead,uint64_t &random,NativeWeaponPhysicalInput native) {
+    const auto &mods=weapon.nativeModifiers?*weapon.nativeModifiers:input;
+    auto value=prepareWeaponSkillProcedures(weapon,input,skill,level,false);const auto [low,high]=meleePhysicalRange(value,demon,undead);
+    value.sourceDamage=native.sourceDamage?native.sourceDamage:128;value.physicalAddition=native.initialDamage;
+    value.physicalRoll=high>low?limitedRandom(random,uint32_t(nativeSubtract(high,low))):0;
+    value.critical=weaponCritical(weapon,mods,skill,false,random);
+    value.channels[0]=targetWeaponChannels(value,demon,undead)[0];return value;
+}
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatModifiers &input,
     const SkillCastSpec &skill,int level,bool projectile,uint64_t &random) {
     const auto &mods=weapon.nativeModifiers?*weapon.nativeModifiers:input;
@@ -137,13 +175,7 @@ WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &weapon,const CombatM
     }
     value.poisonFrames=weaponPoisonLength(int64_t(mods.poisonFrames)+extra.poisonFrames,mods.poisonSources+extra.poisonSources,0,nativeAdd(mods.poisonOverrideFrames,extra.poisonOverrideFrames));
     value.pierceChance=mods.pierce;
-    const int mastery = weapon.nativeModifiers?(weapon.throwable && skill.weapon->useThrowMastery?weapon.throwMastery[2]:weapon.meleeMastery[2]):
-        projectile ? weapon.projectileMasteryCritical : weapon.masteryCritical;
-    bool critical = mastery > 0 && limitedRandom(random,100) < unsigned(std::clamp(mastery,0,100));
-    if (!critical && mods.criticalStrike>0) critical=limitedRandom(random,100)<unsigned(mods.criticalStrike);
-    const auto deadly=nativeAdd(mods.deadlyStrike,extra.deadlyStrike);
-    if(!critical && deadly>0) critical=limitedRandom(random,100)<unsigned(deadly);
-    value.critical=critical;
+    value.critical=weaponCritical(weapon,mods,skill,projectile,random);
     const auto elemental=roll(skill.minimumDamage.raw(),skill.maximumDamage.raw());
     if(skill.poisonDuration>0 && !skill.weapon->spear) {
         value.channels[5]+=elemental;

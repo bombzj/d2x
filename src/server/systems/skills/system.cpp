@@ -1,6 +1,8 @@
 #include "system.hpp"
 #include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
+#include "assassin_kick.hpp"
 #include "gameplay/skills/use_source.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -40,6 +42,7 @@ void System::cancel(PlayerId player, EntityId actor) {
     auto &pending_=runtime_->pending;
     ports_.companions.cancel(actor);
     pending_.erase(player);
+    runtime_->assassinStarts.erase(actor);
     state_.cancel(actor);
     ports_.combat.cancel(actor);
 }
@@ -70,6 +73,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::Stop) {
+        if(const auto result=ports_.effects.setNativeSkillState(actor.actor,player->rules.skills->formulas->infernoState,false,actor.tick);!result) return result;
         const auto channel=releases_.find(actor.actor);
         if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
         // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
@@ -118,11 +122,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     auto &pending_=runtime_->pending;
+    std::erase_if(runtime_->assassinStarts,[&](const auto &entry) {
+        const auto *player=ports_.players.findActor(entry.first);const auto *monster=ports_.monsters.find(entry.first);
+        const auto *area=ports_.areas.find(entry.second.actor.area);
+        const bool alive=area && area->generation==entry.second.actor.areaGeneration && (player?
+            player->entered && player->persistent.player.hp>0 && player->area==entry.second.actor.area:
+            monster && monster->alive() && monster->area==entry.second.actor.area);
+        if(!alive && entry.second.assassinKick && entry.second.assassinKick->contact) entry.second.assassinKick->contact->cancelled=true;
+        return !alive;
+    });
     const auto playerStatus = release(tick);
     const auto monsterStatus = releaseMonsters(tick);
     const auto status = playerStatus == StepStatus::Blocked || monsterStatus == StepStatus::Blocked ? StepStatus::Blocked : StepStatus::Complete;
     state_.expire(tick.tick);
     state_.pruneUsedSkills(ports_.players);
+    state_.pruneSkillParameters([&](EntityId id){return ports_.players.findActor(id) || ports_.monsters.find(id);});
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;
         const auto result = attack(actor, it->second.request);

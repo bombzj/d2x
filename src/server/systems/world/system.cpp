@@ -63,8 +63,7 @@ DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view co
 }
 void System::registerAreaUnits(RegionId region) {
     ports_.areas.initializeUnitRooms(region);
-    for(const auto &npc:ports_.areas.at(region).definition.npcs)
-        ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+    ports_.areas.areas_.at(region).definition.collision.setObstacles({});
 }
 void System::assign(AreaDefinition &area) {
     for (auto &exit : area.exits) exit.id = ports_.ids.allocate();

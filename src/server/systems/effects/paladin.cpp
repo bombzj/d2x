@@ -52,7 +52,11 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto owner=source?combat::ParticipantView{nullptr,source}:participants.find(actor);const auto &area=ports_.areas.at(region).definition;
     const uint32_t filter=query.filter || query.mode==NativeAuraTargetMode::TargetRange?query.filter:0x583;
-    if(filter&(8|0x10|0x20|0x20000))
+    // MISSILES_Initialize/CreateMissileFromParams clear ISVALIDTARGET.
+    // The shipped BladesOfIce filter includes missiles (8) together with
+    // the valid-target requirement (0x400), so none reach its callback.
+    // Other noncombat-unit filters still need their own native finder.
+    if((filter&(0x10|0x20|0x20000)) || ((filter&8) && !(filter&0x400)))
         throw std::runtime_error("Aura recipient filter requires its native unit finder");
     if((filter&0x80000) && !query.tick) throw std::invalid_argument("Missing native JUSTHIT query frame");
     const auto sourcePosition=query.sourcePosition?*query.sourcePosition-area.origin:owner.position();
@@ -397,6 +401,7 @@ bool System::validateAuraUnits(const AuraUnitPublication &plan) const {
     for(const auto &[id,timers]:plan.timers) if(!plan.units.contains(id) || !ports_.frameEvents.validate(timers)) return false;
     for(const auto &[id,timers]:plan.resetTimers) if(!plan.life.contains(id) || !plan.life.at(id).aiResetTimers || !ports_.frameEvents.validate(timers)) return false;
     for(const auto &[id,timers]:plan.skillTimers) if(timers.owner!=FrameEventOwner{FrameEventUnit::Monster,id} || !ports_.frameEvents.validate(timers)) return false;
+    for(const auto &[id,timers]:plan.nativeSkillTimers) if(timers.owner!=FrameEventOwner{FrameEventUnit::Monster,id} || !ports_.frameEvents.validate(timers)) return false;
     for(const auto &[id,timers]:plan.regenerationTimers) if(!plan.life.contains(id) || !ports_.frameEvents.validate(timers)) return false;
     for(const auto &[id,life]:plan.life) if(life.periodicEvents &&
         (life.periodicEvents->edit.owner!=FrameEventOwner{FrameEventUnit::Monster,id} || !validatePeriodicEvents(*life.periodicEvents))) return false;
@@ -462,6 +467,7 @@ void System::publishAuraUnits(AuraUnitPublication &plan) noexcept {
     for(auto &[id,timers]:plan.timers) {(void)id;ports_.frameEvents.publish(std::move(timers));}
     for(auto &[id,timers]:plan.resetTimers) {(void)id;ports_.frameEvents.publish(std::move(timers));}
     for(auto &[id,timers]:plan.skillTimers) {(void)id;ports_.frameEvents.publish(std::move(timers));}
+    for(auto &[id,timers]:plan.nativeSkillTimers) {(void)id;ports_.frameEvents.publish(std::move(timers));}
     for(auto &[id,timers]:plan.regenerationTimers) {(void)id;ports_.frameEvents.publish(std::move(timers));}
     const auto publishLife=[&](EntityId id,monsters::LifeChange &life) {
         auto *staged=plan.actors && plan.actors->actors.contains(id)?&plan.actors->actors.at(id):nullptr;
@@ -490,7 +496,11 @@ void System::publishAuraUnits(AuraUnitPublication &plan) noexcept {
                 if(life.tauntPostActions) staged->mainOwnerCleared=true;
                 if(life.restoreNeutral || life.tauntPostActions || life.aiThinkAt) {++staged->aiThinkRevision;staged->aiThinkAt=life.aiThinkAt.value_or(0);}
                 if(life.tauntTarget) staged->movementTarget=staged->tauntTarget=*life.tauntTarget;
-                if(life.detachedMinion) staged->detachedMinion=*life.detachedMinion;
+                if(life.detachedMinion) {
+                    staged->detachedMinion=*life.detachedMinion;
+                    if(*life.detachedMinion) staged->nativeMinionOwner=EntityId{};
+                }
+                if(life.nativeMinions) staged->nativeMinions=std::move(*life.nativeMinions);
                 if(life.specialTargetNode && !*life.specialTargetNode) staged->specialTargetOrder=0;
                 if(life.stopMovement) {staged->route.clear();staged->moving=false;staged->running=false;}
                 if(life.hitDelay) staged->nextHitTick=std::max(staged->nextHitTick,*life.hitDelay);

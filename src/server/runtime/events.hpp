@@ -26,7 +26,7 @@ struct ManaFact { EntityId actor; Fixed8 mana; };
 struct ResourcesFact { EntityId actor; ResourceValues before,after; };
 struct RepositionFact { EntityId actor; RegionId area; Vec position; bool notifyOwner=true; };
 struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<StatValue> stats{}; };
-struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
+struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; uint8_t parameter{};uint32_t argumentX{},argumentY{}; };
 struct ItemSkillFact { EntityId owner,target; uint8_t targetType{1}; RegionId area; int skill{},rank{}; Vec position; uint16_t flags{}; };
 struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; EntityId missile; };
 struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };

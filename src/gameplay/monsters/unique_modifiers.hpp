@@ -2,10 +2,15 @@
 #include "gameplay/skills/aura.hpp"
 #include "gameplay/monsters/reward.hpp"
 #include <array>
+#include <cstdint>
 #include <optional>
+#include <span>
 #include <vector>
 
 namespace d2x {
+struct MonsterModifierChoice {int id{},weight{};};
+std::vector<int> chooseMonsterModifiers(std::span<const MonsterModifierChoice>,
+    std::span<const int> existing,int count,uint64_t &random);
 using MonsterAura = AuraDefinition;
 struct MonsterEnchantment {
     std::vector<int> ids;

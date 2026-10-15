@@ -4,6 +4,7 @@
 #include "gameplay/monsters/population_settings.hpp"
 #include "map.hpp"
 #include <iosfwd>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -19,7 +20,8 @@ struct PopulationPlan {
 // Generated maps supply room footprints and linked warp arrivals. Complete presets
 // retain the scene adapter; the original room allocation/stream scheduling is not reproduced byte for byte.
 PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *level,
-                              const PresetRecord &preset, const Map &map, PopulationSettings settings);
+                              const PresetRecord &preset, const Map &map, PopulationSettings settings,
+                              const std::vector<std::string> *roster = nullptr,std::span<const size_t> excludedPresets = {});
 void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,
                            const PresetRecord &preset, PopulationSettings settings);
 } // namespace d2x

@@ -259,6 +259,9 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     const Vec desired=requested.value_or(area->definition.town?area->definition.spawn:
         area->definition.portalArrival.value_or(area->definition.exits.empty()?area->definition.spawn:area->definition.exits.front().arrival));
     if(!std::isfinite(desired.x) || !std::isfinite(desired.y) || desired.x<0 || desired.y<0 || desired.x>=area->definition.collision.width || desired.y>=area->definition.collision.height) return {DomainStatus::InvalidRequest,{}};
+    // Administrative relocation needs the same room collision lease as the
+    // normal warp path before searching for an arrival cell.
+    ports_.world.activate(target,desired);
     const Vec at=area->definition.collision.nearest(desired,playerMovement);
     if(!area->definition.collision.walkable(at,playerMovement) || (at-desired).length()>8) return {DomainStatus::Unavailable,{}};
     const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{TravelFact{actor.player,actor.actor,p->area,target,area->generation,at,false}}});

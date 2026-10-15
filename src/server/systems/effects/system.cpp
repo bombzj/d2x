@@ -215,7 +215,7 @@ EffectApplication applyCurseState(CombatEffectSet &states,const CurseSpec &progr
             // The first stat is already seeded before posting a new list;
             // an equal-level reused list preserves that original first stat.
             if(slot==0 && program.primaryStat && values[slot].key==*program.primaryStat) continue;
-            if(values[slot].value) writes.push_back(values[slot]);
+            if(values[slot].value || program.writeZeroSecondary) writes.push_back(values[slot]);
         }
         auto incoming=spec;incoming.unitEvents=program.unitEvents;
         if(!states.writeNativeStats(result.handle,writes,rules,incoming,observe)) throw std::runtime_error("Missing allocated native curse state");
@@ -296,12 +296,12 @@ DomainResult<PotionPlan> System::skillState(const ActorContext &actor,CombatEffe
     if(!applied.accepted) return {DomainStatus::Conflict,{}};
     if(spec.nativeValues && !states.writeNativeStats(applied.handle,writes,*player->rules.character->stats,spec,observe))
         throw std::runtime_error("Missing native attack state list");
-    for(const auto &removed:previousModes) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
+    for(const auto &removed:previousModes) if(removed.effect.spec.state.id>=0 && !states.hasState(removed.effect.spec.state.id,actor.tick))
         plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
-    for(const auto &removed:applied.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
+    for(const auto &removed:applied.removed) if(removed.effect.spec.state.id>=0 && !states.hasState(removed.effect.spec.state.id,actor.tick))
         plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
     const auto *installed=states.find(applied.handle);if(!installed) throw std::runtime_error("Missing posted attack state list");
-    plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
+    if(spec.state.id>=0) plan.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
     plan.character=resources.record();plan.resourceBase=resources.maximum();
     plan.transient=projectEffectAttributes(states,actor.tick);return {DomainStatus::Applied,std::move(plan)};
 }
@@ -389,6 +389,7 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
     return {DomainStatus::Applied,std::move(plan)};
 }
 DomainResult<> System::removeState(const ActorContext &actor,int state) {
+    if(ports_.monsters.find(actor.actor)) return removeUnitState(actor.actor,state,actor.tick);
     const auto *player=ports_.players.find(actor.player);
     if(!player || player->actor!=actor.actor || !player->entered || player->area!=actor.area) return {DomainStatus::InvalidActor,{}};
     auto next=state_;auto &states=next.players[actor.actor].states;
@@ -553,7 +554,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 edit.resourceBase=resources->maximum();
                 edit.transient=projectEffectAttributes(next.states,tick.tick);
                 edit.cancelItemAuras=true;
-                for(const auto &effect:removed) if(!next.states.hasState(effect.effect.spec.state.id,tick.tick))
+                for(const auto &effect:removed) if(effect.effect.spec.state.id>=0 && !next.states.hasState(effect.effect.spec.state.id,tick.tick))
                     edit.publicFacts.emplace_back(StateFact{player.actor,0,player.area,effect.effect.spec.state.id,false});
                 for(const int state:clearedStates) if(!player.rules.character->states->at(state).noSend &&
                     std::none_of(removed.begin(),removed.end(),[&](const auto &effect){return effect.effect.spec.state.id==state;}))
@@ -571,7 +572,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             auto record=resources->record();restoreStaminaOnEffectRemoval(record.stamina,resources->maximum().stamina,removed);
             transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)};
             edit.transient=projectEffectAttributes(next.states,tick.tick);edit.resourceBase=resources->maximum();
-            for(const auto &effect:removed) if(!next.states.hasState(effect.effect.spec.state.id,tick.tick))
+            for(const auto &effect:removed) if(effect.effect.spec.state.id>=0 && !next.states.hasState(effect.effect.spec.state.id,tick.tick))
                 edit.publicFacts.emplace_back(StateFact{player.actor,0,player.area,effect.effect.spec.state.id,false});
             auto plan=ports_.transactions.prepare(std::move(edit));
             if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {blocked=true;continue;}

@@ -13,6 +13,7 @@ using net::protocol::BitReader;
 RemoteInventory::RemoteInventory(Archives &archives) : strings_(archives) {
     for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats", "hireling"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
+    characters_=loadCharacterDefinitions(tables_.at("charstats"));
     for (const char *name : {"weapons", "armor", "misc"}) {
         const auto &table = tables_.at(name);
         for (size_t row = 0; row < table.rows().size(); ++row)
@@ -277,10 +278,10 @@ void RemoteInventory::update(const OnlineView &online) {
     if (online.load.playerUnitId) {
         const auto player = online.world.units.find({0, *online.load.playerUnitId});
         if (player != online.world.units.end() && player->second.classId) {
-            const auto &characters = tables_.at("charstats"), &inventory = tables_.at("inventory");
+            const auto &inventory = tables_.at("inventory");
             const size_t classId = *player->second.classId;
-            if (classId < characters.rows().size()) {
-                const auto name = std::string(characters.value(classId, "class")) + "2";
+            if (classId < characters_.size()) {
+                const auto name = characters_[classId].name + "2";
                 for (size_t row = 0; row < inventory.rows().size(); ++row)
                     if (inventory.value(row, "class") == name) {
                         view_.columns = inventory.number(row, "gridX").value_or(0);
@@ -486,9 +487,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (!cursor() || !decoded.identified || command.body < 1 || command.body > 10)
             return reject("Equip requires an identified cursor item and a native active body slot 1-10");
         const auto equipment=equipmentDefinition(wire);
-        const auto &characters=tables_.at("charstats");
-        if(!equipment.requiredClass.empty() && (!playerClass_ || *playerClass_>=characters.rows().size() ||
-            characters.value(*playerClass_,"code")!=equipment.requiredClass))
+        if(!equipment.requiredClass.empty() && (!playerClass_ || *playerClass_>=characters_.size() ||
+            characters_[*playerClass_].code!=equipment.requiredClass))
             return reject("This equipment is for another class");
         const auto &base = bases_.at(wire.code); const auto &table = tables_.at(base.table), &types = tables_.at("itemtypes");
         const auto type = typeRows_.find(table.value(base.row, "type"));
@@ -617,7 +617,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     if (command.action == OnlineItemAction::Equip && (command.body == 4 || command.body == 5)) {
         const auto opposite = bodyItem(command.body == 4 ? 5 : 4);
-        const std::string_view characterClass = playerClass_ == 4 ? "bar" : playerClass_ == 6 ? "ass" : "";
+        const std::string_view characterClass = playerClass_ && *playerClass_<characters_.size()?characters_[*playerClass_].code:std::string_view{};
         const auto incoming = equipmentDefinition(wire);
         if (opposite && !compatibleWeaponHands(incoming, equipmentDefinition(*opposite), characterClass)) {
             const bool twoHanded = requiresBothWeaponHands(incoming, characterClass);

@@ -45,6 +45,8 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 2026-10-13用户TCP/IP验收日志`artifacts/diagnostics/20261013-073805-98adbcb5`对应EA5256包：D2X本人两次06／33次09，没有07／0A；攻击GUID139期间权威96位置由(4584,4567)继续至(4606,4558)，且目标逃跑后死亡，证明服务端在追击，不能把客户端站定表现判成站定请求或服务端没有寻路。当前源码修正动作交接后重新靠近；证据与MPQ Attack.range=both、敌方SizeX=2核对在`artifacts/melee-hold-crash-20261013`。该动作交接修正已随前序Windows Release构建／打包；按住近战画面及原版Host方向未专项运行复验，不能沿用EA5256记录认证后续程序。
 
+客户端起手与自动靠近共用`castMeleeRange`，只对单位目标的`h2h`或持近战武器的`both`检查近战距离；`rng`和`none`直接在当前位置起手，点目标与Shift站定不创建追击路径。当前MPQ的Throw／Left Hand Throw／Double Throw／Poison Javelin均为`rng`，不因手持标枪或飞刀而走近目标。依据为D2MOO `D2Common_11016`对`both`的弓弩分支及PlrMsg `sub_6FC836D0`的范围分类；服务端`skills::System::weaponCast`已排除投掷靠近并在起手后停止移动。本次修正公共客户端误把所有非`none`技能当作近战的问题，尚未构建、运行或打包。
+
 ## 原版依据
 
 卷轴／书本的公共客户端资格由skill_eligibility统一计算，MPQ的scroll标记与SrvDo113识别物品技能；CharStats固有资格不代替原0x22数量。选择器、热键和施放读取同一已知数量，零数量／尚未知不授权，数量不写入有效等级，也不与装备充能混用。依据D2Common D2Skills.cpp的SKILLS_GetUseState（scroll且nQuantity<=0返回NOQUANTITY）及ItemMode.cpp的数量维护／0x22发送。原表四项range=none，SrvDo113调用物品程序时使用本人位置；公共RemoteCombat不获取悬停单位，施放前将点目标归一本人坐标，再发送原0x0C／0x0F。这样鼠标位于地图外沿时不会因无关目标边界拒绝自身物品技能，原服与自研宿主代码一致。2026-10-10修订时仅更新源码，此修正后已纳入前序构建／打包；卷轴／书本的这些资格与落点组合未专项运行复验，不沿用下节历史证据。

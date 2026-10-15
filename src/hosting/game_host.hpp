@@ -59,6 +59,10 @@ class GameHost {
     std::vector<server::travel::Portal> visiblePortals(PlayerBinding) const;
     server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);
     std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
+    std::optional<server::objects::GroundGenerationRequest> pendingGroundGeneration(GameHandle) const;
+    std::optional<server::monsters::ModifierPreparation> pendingModifiers(GameHandle) const;
+    server::DomainResult<> prepareModifiers(GameHandle,server::monsters::PreparedModifiers);
+    server::DomainResult<> prepareGroundGeneration(GameHandle,uint64_t,server::items::PreparedBatch,std::string);
     std::optional<ItemSeeds> reserveLootSeeds(GameHandle,EntityId,uint64_t occurrence,size_t index);
     std::optional<server::loot::Preparation> beginLootPreparation(GameHandle,EntityId);
     std::set<size_t> usedUniques(GameHandle) const;

@@ -109,6 +109,7 @@ StepStatus System::actFourStep(TickContext tick) {
                 cleared=cleared && killed;
             }
             if(cleared && !world.diabloAt) {
+                world.sanctumCleared=true;
                 // ACT4Q2_KillAllMonstersInCS: remaining original hostiles die
                 // before Diablo's spawn. Keep normal death/event ownership.
                 bool retired=true;

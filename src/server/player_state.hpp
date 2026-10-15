@@ -23,6 +23,7 @@ struct PlayerState {
     // PlrModes: twenty global native positions, sampled after squared travel >45.
     // Runtime follow history only; never serialized with the character.
     std::deque<Vec> movementHistory;
+    Vec lastTeleportPosition; // Native PlayerData path-history slots 40/41, global coordinates.
     std::optional<MotionTarget> movementTarget;
     std::optional<InteractionTarget> movementArrival;
     Vec routeDestination;

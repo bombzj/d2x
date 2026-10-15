@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
+#include "server/systems/attributes/monster_resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/stats/modifier_values.hpp"
@@ -76,7 +77,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     };
     for (const auto &[id, actor] : state_.actors)
         if (actor.area == request.area && actor.identity.spawnKey == request.identity.spawnKey) return finish(id);
-    if(!area->definition.collision.walkable(request.position,rule.spawnCollision)) return {DomainStatus::InvalidRequest,{}};
+    if(!area->definition.collision.walkable(request.position,rule.spawnCollision)) return {DomainStatus::Unavailable,{}};
     if (state_.actors.size() >= 65536 || ports_.ids.cursor() >= UINT32_MAX) return {DomainStatus::Capacity, {}};
     auto random=ports_.random;ComponentPaletteState palettes;
     auto actor=prepareAdmissionActor(request,EntityId{ports_.ids.cursor()},random,palettes);
@@ -90,6 +91,7 @@ Actor System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_
     const auto &rule=*request.rule;
     Actor actor;
     actor.hostile=request.hostile;
+    actor.questNpc=!request.hostile;actor.rewardComplete=!request.hostile;
     const auto entered=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}));
     actor.admittedPlayerCount=rule.alignment?1u:std::clamp(std::max(entered,ports_.settings.virtualPlayers),1u,8u);
     actor.id = id; actor.identity = request.identity; actor.implementation = request.implementation;
@@ -103,8 +105,25 @@ Actor System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_
     const auto lifeBonus=int32_t(50*(actor.admittedPlayerCount-1));
     const auto admittedLife=std::min(nativeAdd(rolledLife,nativePercentage(rolledLife,lifeBonus,100)),(1<<23)-1);
     actor.life=actor.maximumLife=nativeShiftLeft(admittedLife,8);actor.modeAlive=admittedLife==0;
+    if(request.deadMode) {actor.life=0;actor.modeAlive=false;actor.deathTick=request.tick;actor.rewardComplete=true;}
     playerCountBonus(actor.rule,actor.admittedPlayerCount);
     actor.nativeStats=attributes::prepareMonsterStatSources(actor,ports_.areas.statTime(actor.area));
+    if(rule.enchantment) {
+        attributes::MonsterResourceTrace resources(actor,request.tick);
+        auto maximum=resources.read().maximum.raw();
+        maximum=nativeAdd(maximum,nativePercentage(maximum,rule.enchantment->lifePercent,100));
+        resources.writeBaseStat("maxhp",maximum,{});
+        if(!request.deadMode) resources.seedLife(Fixed8::fromRaw(maximum));
+        if(rule.enchantment->stopRegeneration) resources.writeBaseStat("hpregen",0,{});
+        if(rule.enchantment->lifeScalePercent!=100) {
+            maximum=resources.read().maximum.raw();
+            maximum=nativeAdd(maximum,nativePercentage(maximum,nativeSubtract(rule.enchantment->lifeScalePercent,100),100));
+            resources.writeBaseStat("maxhp",maximum,{});
+            if(!request.deadMode) resources.seedLife(Fixed8::fromRaw(maximum));
+        }
+        auto change=resources.take();actor.nativeStats=std::move(change.intrinsic);
+        actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
+    }
     actor.roomAdmission=ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
     return actor;
 }
@@ -176,11 +195,12 @@ DomainResult<> System::moveNpc(EntityId id,RegionId region,Vec position,Vec dest
 }
 EntityId System::minionOwner(EntityId id) const {
     const auto *unit=find(id);if(!unit) return {};
+    if(unit->detachedMinion) return {};
     if(unit->nativeMinionOwner) return *unit->nativeMinionOwner;
     if(unit->owner && !unit->conversion) {
         const auto *owner=ports_.players.find(*unit->owner);return owner?owner->actor:EntityId{};
     }
-    if(unit->detachedMinion || unit->identity.ownerSpawnKey.empty()) return {};
+    if(unit->identity.ownerSpawnKey.empty()) return {};
     for(const auto &[key,owner]:state_.actors)
         if(owner.area==unit->area && owner.identity.spawnKey==unit->identity.ownerSpawnKey) return key;
     return {};
@@ -226,6 +246,7 @@ void System::maximumLife(EntityId id,int64_t value) {
 bool System::canCommitLife(const LifeChange &change) const {
     const auto *unit=find(change.actor);
     if(!unit) return false;
+    if(change.nativeMinions && !change.changed) return false;
     if(change.random && (unit->combatRandom!=change.random->first || !change.changed)) return false;
     if(change.itemAuraTimers && !change.periodicEvents && (!change.itemAuraTimers->empty() ||
         ports_.frameEvents.hasEvent({FrameEventUnit::Monster,change.actor},FrameEventType::PeriodicStats))) return false;
@@ -281,7 +302,11 @@ bool System::commitLife(LifeChange &&change) noexcept {
             ++unit.aiThinkRevision;unit.aiThinkAt=change.aiThinkAt.value_or(0);
         }
         if(change.tauntTarget) unit.movementTarget=unit.tauntTarget=*change.tauntTarget;
-        if(change.detachedMinion) unit.detachedMinion=*change.detachedMinion;
+        if(change.detachedMinion) {
+            unit.detachedMinion=*change.detachedMinion;
+            if(*change.detachedMinion) unit.nativeMinionOwner=EntityId{};
+        }
+        if(change.nativeMinions) unit.nativeMinions=std::move(*change.nativeMinions);
         if(change.specialTargetNode) {
             if(!*change.specialTargetNode) unit.specialTargetOrder=0;
             else if(!unit.specialTargetOrder && !unit.owner) unit.specialTargetOrder=state_.nextSpecialTargetOrder++;
@@ -349,7 +374,26 @@ std::vector<Actor> System::prepareMinionDeaths(Actor candidate,uint64_t tick,con
     std::vector<EntityId> pending{first};
     for(size_t cursor=0;cursor<pending.size();++cursor) {
         auto &unit=changed.at(pending[cursor]);
-        if(unit.alive() || !unit.killMinionsOnDeath || unit.minionDeathHandled) continue;
+        if(unit.alive()) continue;
+        if(unit.ownsNativeMinions && !unit.ownershipDeathHandled) {
+            unit.ownershipDeathHandled=true;
+            if(!unit.transferMinionsOnDeath) {
+                for(const auto id:unit.nativeMinions)
+                    if(auto *child=edit(id)) child->nativeMinionOwner=EntityId{};
+            } else {
+                for(const auto id:unit.nativeMinions) if(id!=unit.id) if(auto *successor=edit(id)) {
+                    successor->nativeMinionOwner=id;successor->ownsNativeMinions=true;
+                    successor->transferMinionsOnDeath=true;unit.nativeMinionOwner=id;
+                    successor->nativeMinions.insert(successor->nativeMinions.begin(),unit.id);
+                    for(const auto other:unit.nativeMinions) if(other!=id) if(auto *child=edit(other)) {
+                        child->nativeMinionOwner=id;
+                        successor->nativeMinions.insert(successor->nativeMinions.begin(),other);
+                    }
+                    break;
+                }
+            }
+        }
+        if(!unit.killMinionsOnDeath || unit.minionDeathHandled) continue;
         unit.minionDeathHandled=true;
         const auto owner=unit.nativeMinionOwner.value_or(minionOwner(unit.id));
         if(!owner || (!find(owner) && !ports_.players.findActor(owner))) continue;
@@ -407,22 +451,162 @@ DomainResult<> System::reduceShrineLife(EntityId id,int64_t amount) {
 DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::Stale,{}};
     auto &actor=found->second;
-    if(!actor.enemyTarget() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineUpgrade || actor.moving || actor.busyUntil>tick || actor.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
-    auto rule=*actor.rule.shrineUpgrade;
-    playerCountBonus(rule,actor.admittedPlayerCount);
-    const auto minions=actor.rule.shrineMinions;
-    const auto enchantment=rule.enchantment;if(!enchantment) return {DomainStatus::Unavailable,{}};
-    actor.maximumLife=actor.maximumLife*(100+enchantment->lifePercent)/100*enchantment->lifeScalePercent/100;
-    actor.life=actor.maximumLife;actor.rule=std::move(rule);actor.identity.rank=MonsterRank::Unique;actor.identity.ownerSpawnKey.clear();++actor.revision;actor.combatRandom=childRandom(actor.combatRandom);
-    actor.nativeStats=attributes::prepareMonsterStatSources(actor);
-    for(auto &[otherId,minion]:state_.actors) {
-        if(otherId==id || minion.area!=actor.area || minion.life<=0 || !minion.enemyTarget() || minionOwner(otherId)!=id) continue;
-        const auto inherited=minions.find(minion.identity.monster);if(inherited==minions.end()) continue;
-        const auto &next=*inherited->second;const auto &mods=*next.enchantment;
-        minion.maximumLife=minion.maximumLife*(100+mods.lifePercent)/100*mods.lifeScalePercent/100;minion.life=minion.maximumLife;minion.rule=next;playerCountBonus(minion.rule,minion.admittedPlayerCount);minion.identity.rank=MonsterRank::Minion;++minion.revision;
-        minion.nativeStats=attributes::prepareMonsterStatSources(minion);
+    if(modifierPending_) return {DomainStatus::Conflict,{}};
+    if(!actor.enemyTarget() || actor.life<=0 || actor.identity.rank!=MonsterRank::Normal || !actor.rule.shrineEligible || !actor.rule.modifierChoices ||
+        (actor.moving && actor.running) || actor.busyUntil>tick || actor.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
+    if(nextModifierToken_==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    ModifierPreparation request;request.token=nextModifierToken_;request.tick=tick;request.area=actor.area;
+    request.generation=ports_.areas.at(actor.area).generation;request.expectedRandom=request.nextRandom=actor.combatRandom;
+    request.leader={id,actor.revision,actor.identity,actor.rule.level,actor.rule.nativeClass};
+    const auto &choices=*actor.rule.modifierChoices;
+    const bool champion=limitedRandom(request.nextRandom,100)<uint32_t(choices.championChance);
+    request.leader.identity.rank=champion?MonsterRank::Champion:MonsterRank::Unique;
+    const int count=champion?1:actor.rule.difficulty+int(limitedRandom(request.nextRandom,1))+1;
+    request.selection.ids=chooseMonsterModifiers(choices.candidates[champion?1:0],actor.rule.nativeModifiers,count,request.nextRandom);
+    std::vector<EntityId> minions;
+    for(const auto otherId:actor.nativeMinions) {
+        const auto *minion=find(otherId);
+        if(!minion || otherId==id || minion->area!=actor.area || minion->life<=0 || !minion->enemyTarget() || minionOwner(otherId)!=id) continue;
+        minions.push_back(otherId);
     }
+    return prepareBirthModifiers(id,request.leader.identity.rank,std::move(request.selection.ids),minions,tick,
+        std::pair{request.expectedRandom,request.nextRandom});
+}
+DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::vector<int> modifiers,
+    std::span<const EntityId> minions,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random,bool promoteMinions) {
+    const auto *actor=find(id);
+    if(!actor || !actor->alive() || modifiers.size()>9 ||
+        (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique))
+        return {DomainStatus::InvalidRequest,{}};
+    if(modifierPending_) return {DomainStatus::Conflict,{}};
+    if(nextModifierToken_==UINT64_MAX || actor->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    if(random && actor->combatRandom!=random->first) return {DomainStatus::Stale,{}};
+    ModifierPreparation request;request.token=nextModifierToken_;request.tick=tick;request.area=actor->area;
+    request.promoteMinions=promoteMinions;
+    request.generation=ports_.areas.at(actor->area).generation;request.expectedRandom=actor->combatRandom;
+    request.nextRandom=random?random->second:actor->combatRandom;
+    const auto currentLevel=[&](const Actor &unit) {
+        attributes::MonsterResourceTrace resources(unit,tick);
+        return resources.values(ports_.effects.unitStatSources(unit.id,tick)).get({unit.rule.stats->names.at("level"),0});
+    };
+    request.leader={id,actor->revision,actor->identity,currentLevel(*actor),actor->rule.nativeClass};request.leader.identity.rank=rank;
+    request.selection.ids=std::move(modifiers);request.selection.nameSeed=uint16_t(rollRandom(request.nextRandom));
+    for(const auto child:minions) {
+        const auto *minion=find(child);
+        if(!minion || minion->area!=actor->area || !minion->alive() || child==id) return {DomainStatus::Stale,{}};
+        if(minion->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        request.minions.push_back({child,minion->revision,minion->identity,currentLevel(*minion),minion->rule.nativeClass,minion->rule.nativeModifiers});
+    }
+    modifierPending_=std::move(request);++nextModifierToken_;
     return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::prepareModifiers(PreparedModifiers prepared) {
+    if(!modifierPending_ || modifierPrepared_ || prepared.token!=modifierPending_->token) return {DomainStatus::Stale,{}};
+    if(prepared.deferred.empty()) {
+        const auto &request=*modifierPending_;
+        const auto valid=[&](const MonsterRule &rule,const ModifierPreparation::Unit &unit) {
+            return rule.nativeClass==unit.nativeClass && rule.difficulty==ports_.settings.difficulty &&
+                rule.stats && rule.formulas && rule.enchantment &&
+                rule.level==unit.level+rule.enchantment->levelBonus;
+        };
+        if(!valid(prepared.leader,request.leader) || prepared.leader.enchantment->ids!=request.selection.ids ||
+            prepared.leader.enchantment->nameSeed!=request.selection.nameSeed || prepared.minions.size()!=request.minions.size())
+            return {DomainStatus::InvalidRequest,{}};
+        for(const auto &unit:request.minions) if(!prepared.minions.contains(unit.id) || !valid(prepared.minions.at(unit.id),unit))
+            return {DomainStatus::InvalidRequest,{}};
+    }
+    modifierPrepared_=std::move(prepared);return {DomainStatus::Applied,std::monostate{}};
+}
+StepStatus System::finishModifiers(TickContext context) {
+    if(!modifierPending_) return StepStatus::Complete;
+    if(!modifierPrepared_) return StepStatus::Blocked;
+    if(!modifierPrepared_->deferred.empty()) return StepStatus::NotImplemented;
+    const auto &request=*modifierPending_;const auto id=request.leader.id;const auto tick=context.tick;
+    const auto found=state_.actors.find(id);
+    if(found==state_.actors.end() || ports_.areas.at(request.area).generation!=request.generation)
+        throw std::logic_error("Native modifier recipient disappeared during preparation");
+    auto &actor=found->second;
+    if(!modifierCommitted_) {
+    if(actor.revision!=request.leader.revision || actor.combatRandom!=request.expectedRandom)
+        throw std::logic_error("Native modifier recipient changed during preparation");
+    for(const auto &unit:request.minions) {
+        const auto *current=find(unit.id);
+        if(!current || current->revision!=unit.revision) throw std::logic_error("Native modifier minion changed during preparation");
+    }
+    auto rule=modifierPrepared_->leader;
+    playerCountBonus(rule,actor.admittedPlayerCount);
+    const auto upgrade=[&](const Actor &current,MonsterRule next,MonsterRank rank,bool unique) {
+        auto candidate=current;candidate.rule=std::move(next);candidate.identity.rank=rank;
+        candidate.rule.baseSkillRanks=current.rule.baseSkillRanks;
+        candidate.rule.noTreasure=current.rule.noTreasure;candidate.rule.noExperience=current.rule.noExperience;
+        const auto &mods=*candidate.rule.enchantment;
+        attributes::MonsterResourceTrace resources(candidate,tick);
+        const auto sources=ports_.effects.unitStatSources(current.id,tick);
+        resources.sampleSources(sources);
+        auto maximum=resources.read().maximum.raw();
+        maximum=nativeAdd(maximum,nativePercentage(maximum,mods.lifePercent,100));
+        resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(maximum));
+        if(mods.stopRegeneration) resources.writeBaseStat("hpregen",0,sources);
+        const auto value=[&](std::string_view name) {return resources.values(sources).get({candidate.rule.stats->names.at(std::string(name)),0});};
+        resources.writeBaseStat("level",nativeAdd(value("level"),mods.levelBonus),sources);
+        constexpr std::array<std::string_view,6> names{"damageresist","magicresist","fireresist","lightresist","coldresist","poisonresist"};
+        if(unique) for(const int modifier:mods.ids) {
+            if(modifier==28) resources.writeBaseStat("armorclass",nativeMultiply(value("armorclass"),2),sources);
+            if(modifier==37) resources.writeBaseStat("item_armor_percent",-70,sources);
+            if(modifier==36) resources.writeBaseStat("damageresist",80,sources);
+            if(modifier!=8 && modifier!=9 && modifier!=17 && modifier!=18 && modifier!=23 && modifier!=25 && modifier!=27 && modifier!=28) continue;
+            std::array<int32_t,6> resistances;
+            for(size_t channel=0;channel<names.size();++channel) resistances[channel]=value(names[channel]);
+            int immunities=int(std::count_if(resistances.begin(),resistances.end(),[](int32_t resistance){return resistance>=100;}));
+            const auto addResistance=[&](size_t channel,int amount) {
+                const auto nextValue=nativeAdd(resistances[channel],amount);
+                resources.writeBaseStat(names[channel],nextValue,sources);
+                if(resistances[channel]<100 && nextValue>=100) ++immunities;
+            };
+            if(immunities>=2) continue;
+            if(modifier==8 || modifier==27) {
+                for(const size_t channel:{size_t{4},size_t{2},size_t{3}})
+                    if(immunities<2 && resistances[channel]<(modifier==8?100:75)) addResistance(channel,modifier==8?40:20);
+            } else {
+                const size_t channel=modifier==9?2:modifier==17?3:modifier==18?4:modifier==23?5:modifier==25?1:0;
+                addResistance(channel,modifier==25?20:modifier==28?50:75);
+            }
+        }
+        if(mods.lifeScalePercent!=100) {
+            maximum=resources.read().maximum.raw();
+            maximum=nativeAdd(maximum,nativePercentage(maximum,nativeSubtract(mods.lifeScalePercent,100),100));
+            resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(maximum));
+        }
+        auto change=resources.take();candidate.nativeStats=std::move(change.intrinsic);
+        candidate.life=change.life.raw();candidate.maximumLife=change.maximum.raw();++candidate.revision;
+        if(unique && mods.has(26)) {
+            const auto *effects=ports_.effects.unitEffects(current.id);
+            attributes::assignMonsterSkill(candidate,effects?*effects:CombatEffectSet{},184,1,tick,{});
+        }
+        return candidate;
+    };
+    std::map<EntityId,Actor> candidates;
+    auto leader=upgrade(actor,std::move(rule),request.leader.identity.rank,true);
+    leader.identity.ownerSpawnKey.clear();leader.combatRandom=request.nextRandom;
+    leader.rule.nativeModifiers=request.selection.ids;
+    candidates.emplace(id,std::move(leader));
+    for(const auto &unit:request.minions) {
+        const auto &minion=state_.actors.at(unit.id);
+        auto next=modifierPrepared_->minions.at(unit.id);playerCountBonus(next,minion.admittedPlayerCount);
+        next.nativeModifiers=next.enchantment->ids;
+        candidates.emplace(unit.id,upgrade(minion,std::move(next),request.promoteMinions?MonsterRank::Minion:minion.identity.rank,false));
+    }
+    for(auto &[otherId,candidate]:candidates) state_.actors.at(otherId)=std::move(candidate);
+    modifierCommitted_=true;
+    }
+    if(actor.rule.enchantment->aura) {
+        const auto &aura=*actor.rule.enchantment->aura;
+        const auto assigned=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
+        if(!assigned) return assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Conflict
+            ?StepStatus::Blocked:StepStatus::NotImplemented;
+    }
+    modifierPending_.reset();modifierPrepared_.reset();modifierCommitted_=false;
+    return StepStatus::Complete;
 }
 std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId area) const {
     for(const auto &[key,p]:ports_.players.all()) {
@@ -513,6 +697,8 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeu
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || !it->second.alive()) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
+    if(actor.nativeActionRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    ++actor.nativeActionRevision;actor.nativeActionInterruption=actor.interruption;actor.nativeActionUntil=until;
     if(modeStats) actor.nativeStats=std::move(modeStats);
     actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;
     actor.neutralAt=returnToNeutral?std::optional{until}:std::nullopt;
@@ -520,6 +706,15 @@ DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeu
     // BL must retain that identity after an attacking actor stops walking.
     actor.busyUntil = until; actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = target; ++actor.revision;
     return {DomainStatus::Applied, std::monostate{}};
+}
+DomainResult<> System::extendAttack(EntityId id,uint64_t until) {
+    const auto found=state_.actors.find(id);
+    if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    actor.nativeActionUntil=std::max(actor.nativeActionUntil,until);
+    actor.busyUntil=std::max(actor.busyUntil,until);
+    if(actor.neutralAt) actor.neutralAt=std::max(*actor.neutralAt,until);
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
     auto found=state_.actors.find(id);
@@ -540,7 +735,7 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce,bool softHit,std::optional<uint64_t> freezeLength,std::optional<bool> getHit,DamageStatus status) {
     auto it = state_.actors.find(id);
-    if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
     if(it->second.revision>UINT64_MAX-4) return {DomainStatus::Capacity,{}};
     auto actor = it->second;
     if(wound && !actor.rule.stateTarget.acceptsCurseList()) wound.reset();
@@ -551,7 +746,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(poison) amount=nativeAdd(nativeChecked(amount),nativeChecked(std::max<int64_t>(0,poison->rate)));
     const auto restoredLife=std::min(actor.maximumLife,actor.life+std::max<int64_t>(0,absorbed));
     const auto afterCrushing=std::max<int64_t>(0,restoredLife-crushing);
-    const auto remainingLife=poisonOnly && !poison?std::max<int64_t>(0,afterCrushing-amount):subtractContactResource(afterCrushing,amount);
+    const auto remainingLife=status.actionOnly?actor.life:poisonOnly && !poison?std::max<int64_t>(0,afterCrushing-amount):subtractContactResource(afterCrushing,amount);
     const auto life=std::max(actor.hireling && poisonOnly && !poison && ports_.areas.at(actor.area).definition.town?int64_t(256):int64_t(0),remainingLife);
     const uint8_t percent = monsterLifeRatio(life,actor.maximumLife);
     auto random=actor.combatRandom;
@@ -563,7 +758,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     const bool uninterruptable=states.contains(actor.rule.uninterruptableState) || actor.aiStates.contains(actor.rule.uninterruptableState);
     if(actor.delayedDeathSource && (amount || uninterruptable)) return {DomainStatus::Unavailable,{}};
     const bool delayDeath=!life && uninterruptable;
-    const bool dead=!life && !delayDeath;
+    const bool dead=!life && !delayDeath && !status.deferAction;
     const bool freezable=!actor.hireling && !actor.rule.boss && !nativeUniqueMonster(actor.identity.rank);
     coldFrames=coldHitDuration(coldFrames,ports_.effects.unitResistance(id,DamageType::Cold,tick,coldPierce),0,
         modifiers.cannotBeFrozen,modifiers.halfFreezeDuration);
@@ -627,7 +822,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(stunFrames && unique && !status.stunApplied) throw std::logic_error("Unique stun requires its actual attacker seed decision");
     if(life && stunFrames && actor.rule.stunState>=0 && status.stunApplied.value_or(!unique && !actor.rule.boss && actor.rule.nativeVelocity!=0)) {appliedStun=true;stunned=tick+std::min<uint64_t>(actor.hireling?13:250,stunFrames);}
     if(dead) stunned=0;
-    const bool recovery=life && !poisonOnly && getHit.value_or(!softHit) && monsterHitRecovery(amount,actor.maximumLife,hitClass,appliedFreeze || states.contains(actor.rule.frozenState.id),poisonOnly,actor.rule.hitRecoveryTicks>0,random,stunned>tick);
+    const bool recovery=!status.deferAction && life && !poisonOnly && getHit.value_or(!softHit) && monsterHitRecovery(amount,actor.maximumLife,hitClass,appliedFreeze || states.contains(actor.rule.frozenState.id),poisonOnly,actor.rule.hitRecoveryTicks>0,random,stunned>tick);
     const int reactionTicks=recovery?recoveryTicks(actor,ports_.effects,tick,false):0;
     std::vector<DomainFact> facts;
     const bool wasShatter=actor.shatterActive;
@@ -636,10 +831,11 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     // Publish original states before the death action, including a lethal first freeze.
     facts.emplace_back(HitFact{id,1,actor.area,percent,dead,actor.position,hitClass,uint8_t(recovery?3:0),{},actor.lightningReady});
     actor.life = life;
+    if(status.deferAction && !life) actor.modeAlive=true;
     if(delayDeath) {actor.modeAlive=true;actor.delayedDeathSource=status.source?status.source:source;actor.killer=source;}
     else if(dead) {actor.modeAlive=false;actor.delayedDeathSource.reset();}
     if(dead && actor.petRegistrationOrder) actor.inactivePet=true;
-    ++actor.revision; if(amount>0 && !poisonOnly) ++actor.damageOccurrence;
+    ++actor.revision; if(amount>0 && !poisonOnly && !status.actionOnly) ++actor.damageOccurrence;
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
@@ -671,7 +867,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     effects::UnitDamageStates updates{status.source?status.source:source,receivedCold,receivedFreeze,appliedStun?stunned:0,status.burn,status.burnFrames};
     updates.clearStun=clearStun;updates.poisonApplied=appliedPoison;updates.woundApplied=appliedWound;
     updates.freezeThinkAt=freezeThinkAt;updates.deathDelay=delayDeath;
-    updates.resetRegeneration=life && poison && poison->frames && poison->state>=0;updates.contact=amount>0;
+    updates.resetRegeneration=life && poison && poison->frames && poison->state>=0;updates.contact=amount>0 && !status.actionOnly;
     auto publication=ports_.effects.prepareDamageStates(std::move(actor),std::move(updates),tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Conflict,{}};
     facts.insert(facts.begin(),std::make_move_iterator(publication.facts.begin()),std::make_move_iterator(publication.facts.end()));
@@ -685,6 +881,11 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     }
     for(auto &cascade:cascades) ports_.frameEvents.publish(std::move(cascade));
     return {DomainStatus::Applied, std::monostate{}};
+}
+DomainResult<> System::finishDamageAction(EntityId id,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit) {
+    const auto *unit=find(id);if(!unit || !unit->alive() || unit->delayedDeathSource) return {DomainStatus::Applied,std::monostate{}};
+    DamageStatus status;status.source=source;status.actionOnly=true;
+    return damage(id,source,amount,tick,0,false,hitClass,{},false,0,{},0,false,0,0,softHit,{},getHit,status);
 }
 DomainResult<> System::block(EntityId id,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
@@ -774,7 +975,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
         }
         (void)id; if(!actor.questNpc) actor.moving = false;
-        if(actor.conversion && (tick.tick>=actor.conversion->until || actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
+        if(actor.conversion && (actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
             const auto result=ports_.effects.endConversion(id,tick.tick);
             if(!result) {blocked=true;continue;}
         }

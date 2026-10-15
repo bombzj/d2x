@@ -167,6 +167,7 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.outdoors = number("Outdoors") != 0;
                 record.automap = number("AutoMap") != 0;
                 record.animate = number("Animate") != 0;
+                record.logicals = number("Logicals") != 0;
                 record.animationSpeed = number("AnimSpeed");
                 record.pops = number("Pops");
                 record.popPad = number("PopPad");

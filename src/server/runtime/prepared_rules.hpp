@@ -19,6 +19,7 @@
 #include "gameplay/loot/loot.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/effects/definition.hpp"
+#include "gameplay/monsters/region_generation.hpp"
 #include <map>
 #include <set>
 #include <memory>
@@ -82,6 +83,7 @@ struct TransientAttributes {
     }
 };
 struct PreparedRules {
+    std::shared_ptr<const MonsterRegionRules> monsterRegions;
     std::shared_ptr<const PotionRules> potions;
     std::shared_ptr<const MeleeRules> melee;
     std::shared_ptr<const ItemCatalog> items;

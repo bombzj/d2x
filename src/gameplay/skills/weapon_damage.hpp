@@ -19,16 +19,25 @@ struct WeaponSkillDamage {
     bool smite{};
     int stunFrames{};
     int lifeLeech{},manaLeech{},physicalFlat{};
+    int staminaLeech{};
+    bool nativeFixedPhysical{};
+    int hitClass{-1};
     int crushingBlow{},openWounds{};
     bool knockback{};
     bool clearTargetStun{};
     SkillCastSpec wearSkill{};
+    struct Conversion {DamageType element;int percent;};
+    std::vector<Conversion> progressiveConversions;
+    int freezeFrames{};
+    bool softHit{};
 };
 WeaponSkillDamage rollPotionDamage(const WeaponDamage &, int level, uint64_t &random);
 WeaponSkillDamage rollSmiteDamage(const WeaponDamage &,const EquipmentStats &,const CharacterAttributes &,const SkillCastSpec &,int,uint64_t &);
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &,bool demon,bool undead);
 // Procedure parameters never allocate a unit or consume a random draw.
 WeaponSkillDamage prepareWeaponSkillProcedures(const WeaponDamage &,const CombatModifiers &,const SkillCastSpec &,int level,bool projectile);
+struct NativeWeaponPhysicalInput {int sourceDamage{128};int32_t initialDamage{};};
+WeaponSkillDamage rollNativeWeaponPhysical(const WeaponDamage &,const CombatModifiers &,const SkillCastSpec &,int level,bool demon,bool undead,uint64_t &random,NativeWeaponPhysicalInput = {});
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &, const CombatModifiers &,
     const SkillCastSpec &, int level, bool projectile, uint64_t &random);
 }

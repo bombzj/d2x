@@ -1,8 +1,11 @@
 #include "system.hpp"
 #include "runtime.hpp"
+#include "assassin_kick.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/skills/leap_spec.hpp"
 #include "gameplay/skills/barbarian_sequence.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
@@ -11,6 +14,7 @@
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/travel/system.hpp"
@@ -57,7 +61,9 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(!p.rules.skills) return {DomainStatus::Unavailable,{}};
     const auto &rules=*p.rules.skills;const auto found=rules.definitions.find(selected);if(found==rules.definitions.end()) return {};
     const auto &definition=found->second;
-    if(definition.spec.weapon && !definition.spec.leap) return weaponCast(actor,request,selected);
+    if(definition.spec.weapon && !definition.spec.leap && !(definition.spec.assassin &&
+       (definition.spec.assassin->program==AssassinProgram::DragonTalon || definition.spec.assassin->program==AssassinProgram::DragonTail ||
+        definition.spec.assassin->program==AssassinProgram::DragonFlight))) return weaponCast(actor,request,selected);
     if(!request.target) return {DomainStatus::InvalidRequest,{}};
     const bool itemSkill=definition.spec.effect==SkillBehavior::ItemSkill;
     PointTarget target{actor.area,actor.areaGeneration,{}};EntityId unit;uint8_t type=1;
@@ -75,6 +81,25 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const auto source=selectedSource(p,selected,request.right);
     if(!source) return {DomainStatus::Unavailable,{}};
     const NativeSkillSlot selectedUse{selected,source->charged?source->charged->item.id:EntityId{}};
+    if(auto channel=releases_.find(actor.actor);channel!=releases_.end() && channel->second.skill.assassin &&
+       channel->second.skill.assassin->program==AssassinProgram::BladeFury && selected==channel->second.skill.sourceId && state_.usedSkill(actor.actor)==selectedUse) {
+        auto &current=channel->second;
+        if(!ports_.events.hasCapacity(2,2)) return {DomainStatus::Capacity,{}};
+        if(current.pulses) {
+            const auto start=startBladeFury(current,actor);if(!start) return {start.status,{}};
+            if(*start.value) {
+                const auto result=activateAssassin(current,actor,target.position);if(result!=DomainStatus::Applied) return {result,{}};
+                current.tick=std::min(current.tick,actor.tick+1);
+            } else {current.tick=actor.tick+12;current.pulses=0;state_.casts.at(actor.actor).until=actor.tick+19;}
+        }
+        if((current.target.position-target.position).length()>0 || current.unit!=unit || current.unitType!=type) {
+            const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
+                {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(current.skill.rank)}}});
+            if(!sent) return {sent.status,{}};
+            current.target=target;current.unit=unit;current.unitType=type;
+        }
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if(auto channel=releases_.find(actor.actor);channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno &&
         selected==channel->second.skill.sourceId && state_.usedSkill(actor.actor)==selectedUse) {
         auto &current=channel->second;
@@ -128,7 +153,19 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         !area.definition.collision.missileSegment(target.position,target.position,{5,1})) return {DomainStatus::Unavailable,{}};
     const bool inferno=skill.effect==SkillBehavior::Inferno;
     CastTiming timing;
-    if(skill.effect!=SkillBehavior::Kick) {
+    if(skill.assassin && skill.assassin->sequence==23) {
+        const auto sequence=assassinSequence(23,p.totals.equipment.animationClass);
+        const auto hits=weaponSequenceHitTicks(sequence,256);if(hits.empty()) return {DomainStatus::Unavailable,{}};
+        timing={int(sequence.size()),hits.front(),256};
+    } else if(skill.assassin && skill.assassin->mode=="s2") {
+        const auto animation=rules.weaponAnimations.find("s2"+p.totals.equipment.animationClass);
+        if(animation==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
+        const auto &a=animation->second;const auto &weapon=p.totals.equipment.weapons[0];
+        const auto speed=skill.assassin->useAttackRate?
+            effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate):a.speed;
+        const WeaponAttackTiming clock{"s2",a.frames,speed,a.actionFrame,0};
+        timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+    } else if(skill.effect!=SkillBehavior::Kick) {
         const auto animation=rules.animations.find(p.totals.equipment.animationClass);
         if(animation==rules.animations.end()) return {DomainStatus::Unavailable,{}};
         timing=sorceressCastTiming(animation->second,p.totals.character.combat.fasterCast,bool(skill.arc),inferno);
@@ -153,6 +190,23 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(skill.leap) timing=playerCastSequenceTiming(*playerCastSequence(13),256);
     if(!ports_.events.hasCapacity(inferno?2:1,inferno?2:1)) return {DomainStatus::Capacity,{}};
     Release release{actor,std::move(skill),definition.collision,target,unit,actor.tick+uint64_t(timing.impact),type};
+    if(release.skill.assassin && (release.skill.assassin->program==AssassinProgram::DragonTalon ||
+       release.skill.assassin->program==AssassinProgram::DragonTail || release.skill.assassin->program==AssassinProgram::DragonFlight)) {
+        const auto start=startAssassinKick(release,actor);if(!start) return start;
+        const auto kick=rules.weaponAnimations.find("kk"+p.totals.equipment.animationClass);
+        if(kick==rules.weaponAnimations.end()) return {DomainStatus::Unavailable,{}};
+        const auto &a=kick->second;const auto &weapon=p.totals.equipment.weapons[0];
+        const auto speed=effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate);
+        WeaponAttackTiming clock{"kk",a.frames,speed,a.actionFrame,0};
+        timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+        release.weaponHits={timing.impact};
+        if(release.skill.assassin->program==AssassinProgram::DragonFlight) {
+            const auto sequence=assassinSequence(21,p.totals.equipment.animationClass);
+            release.weaponHits=weaponSequenceHitTicks(sequence,256);
+            timing={weaponSequenceTick(int(sequence.size()),256),release.weaponHits.front(),256};
+        }
+        release.weaponFrames=timing.duration;release.tick=actor.tick+uint64_t(timing.impact);
+    }
     if(release.skill.leap && release.skill.leap->attack) {
         const auto end=p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount;
         const auto weapon=std::find_if(p.totals.equipment.weapons.begin(),end,[&](const auto &w){return !w.leftHand && std::find(w.types.begin(),w.types.end(),release.skill.weapon->requiredType)!=w.types.end();});
@@ -169,7 +223,11 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     auto &staged=preparedRelease.at(actor.actor);
     const auto action=AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,
         uint16_t(selected),uint8_t(effectiveRank),bool(staged.skill.leap)};
-    if(inferno) {
+    if(staged.assassinKick || (staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::PsychicHammer)) {
+        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action});
+        if(!debit) return debit;
+        staged.manaPaid=true;runtime_->assassinStarts.erase(actor.actor);
+    } else if(inferno) {
         const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action});
         if(!debit) return debit;
         if(staged.skill.charge) {
@@ -178,6 +236,14 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             // Resource-only release must not replay an older removal ledger.
             removeSkillUse(preparedUse.mapped(),p.totals.clearedSkillUses);
         }
+        staged.manaPaid=true;
+    } else if(staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::BladeFury) {
+        const std::array<DomainFact,1> facts{action};const auto started=startBladeFury(staged,actor,facts);if(!started) return {started.status,{}};
+    } else if(staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::BladeShield) {
+        if(!staged.skill.appliedEffect || !staged.skill.appliedEffect->duration || !*staged.skill.appliedEffect->duration || staged.skill.missileId<=0)
+            return {DomainStatus::Unavailable,{}};
+        const std::array<DomainFact,1> facts{action};
+        const auto installed=ports_.effects.skill(actor,staged.skill,{},facts);if(!installed) return installed;
         staged.manaPaid=true;
     } else {
         const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{action}});
@@ -214,6 +280,7 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
         Entry{ActivationProgram::StaticField, &System::activateStaticField},
         Entry{ActivationProgram::Telekinesis, &System::activateTelekinesis},
         Entry{ActivationProgram::Missile, &System::activateMissile},
+        Entry{ActivationProgram::Assassin, &System::activateAssassin},
         Entry{ActivationProgram::Unsupported, &System::activateUnsupported},
     };
     static_assert([] {
@@ -241,19 +308,23 @@ StepStatus System::release(TickContext tick) {
     for(auto it=releases_.begin();it!=releases_.end();) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-        bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 && area && area->generation==actor.areaGeneration;
+        const bool continuing=pending.nativeCallbackStarted;
+        bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && (p->persistent.player.hp>0 || continuing) && area && area->generation==actor.areaGeneration;
         const auto used=state_.usedSkill(actor.actor);
-        if(valid) valid=used && used->skill==pending.skill.sourceId &&
+        if(valid && !continuing) valid=used && used->skill==pending.skill.sourceId &&
             nativeSkillSlotLevel(*used,p->totals.skillOrder,p->totals.skillRanks,p->totals.chargedSkills,
                 p->rules.character->formulas->maximumSkillRank)>0;
-        if(valid && pending.skill.charge) valid=std::any_of(p->totals.chargedSkills.begin(),p->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==pending.skill.charge->item.id && c.layer==pending.skill.charge->layer && c.charges>0;});
+        if(valid && !continuing && pending.skill.charge) valid=std::any_of(p->totals.chargedSkills.begin(),p->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==pending.skill.charge->item.id && c.layer==pending.skill.charge->layer && c.charges>0;});
         Vec target=pending.target.position;
-        if(valid && pending.skill.requiresShield) valid=bool(p->totals.equipment.shield);
-        if(valid && pending.unit && !pending.whirlwind && !pending.skill.leap && !(pending.skill.weapon && (pending.skill.weapon->dualWield || pending.skill.effect==SkillBehavior::Zeal || (pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
+        if(valid && !continuing && pending.skill.requiresShield) valid=bool(p->totals.equipment.shield);
+        if(valid && !continuing && pending.unit && !pending.whirlwind && !pending.skill.leap && !(pending.skill.weapon && (pending.skill.weapon->dualWield || pending.skill.effect==SkillBehavior::Zeal || (pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {
             const auto position=unitPosition(actor,{pending.unit,0,pending.unitType},pending.skill.effect);valid=position.has_value();if(valid) target=*position;
         }
         const bool channel=pending.skill.effect==SkillBehavior::Inferno;
-        if(!valid) {ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;}
+        if(!valid) {
+            if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
+            ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
+        }
         if(pending.charging) {
             if(!ports_.events.hasCapacity(1)) {blocked=true;++it;continue;}
             const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -275,6 +346,8 @@ StepStatus System::release(TickContext tick) {
             ++it;continue;
         }
         DomainStatus status;
+        {
+        auto execution=state_.executingRelease(actor.actor);
         if(channel) {
             auto skill=evaluate(*p,pending.skill.sourceId,pending.skill.rank);
             if(pending.skill.charge) {skill.charge=pending.skill.charge;skill.manaCost=skill.startMana=0;}
@@ -282,9 +355,25 @@ StepStatus System::release(TickContext tick) {
             if(consume && p->persistent.player.mana<skill.manaCost) {it=releases_.erase(it);continue;}
             status=ports_.missiles.spawn({actor,skill,pending.collision,target,!consume}).status;
         } else status=activate(pending,actor,target);
+        }
+        if(pending.cancelled && (status!=DomainStatus::Capacity || !pending.nativeCallbackStarted)) {
+            if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
+            ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
+        }
         if(status==DomainStatus::Capacity) {blocked=true;++it;continue;}
         if(status==DomainStatus::Applied) {
             auto &cast=state_.casts.at(actor.actor);
+            if(pending.assassinKick && pending.assassinKick->phase!=AssassinKickExecution::Phase::Complete) {
+                cast.until=std::max(cast.until,tick.tick+uint64_t(std::max(1,pending.weaponFrames)));
+                ++it;continue;
+            }
+            if(pending.skill.assassin && pending.skill.assassin->program==AssassinProgram::BladeFury) {
+                ++pending.pulses;
+                if(ports_.effects.unitStates(actor.actor,tick.tick).contains(p->rules.skills->formulas->infernoState)) {
+                    pending.tick=tick.tick+1;cast.until=std::max(cast.until,tick.tick+7);++it;continue;
+                }
+                cast.until=tick.tick+7;
+            }
             if(pending.whirlwind) {pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.leaping && !pending.landed) {pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.leaping && pending.landed && pending.tick>tick.tick) {++it;continue;}
@@ -299,6 +388,7 @@ StepStatus System::release(TickContext tick) {
             }
         }
         ports_.companions.cancel(actor.actor);
+        if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
         it=releases_.erase(it);
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
@@ -316,12 +406,13 @@ DomainResult<> System::objectKick(const ActorContext &actor, UnitTarget target) 
         }
     return {DomainStatus::Unavailable,{}};
 }
-DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill,MissileCollisionRule collision,EntityId target,Vec position,bool dead,bool itemTargetDo) {
+DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill,MissileCollisionRule collision,EntityId target,Vec position,bool dead,bool itemTargetDo,std::shared_ptr<actions::SkillRelease> *continuation) {
     const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || (p->persistent.player.hp<=0 && !dead)) return {DomainStatus::InvalidActor,{}};
+    const bool continuing=continuation && *continuation && (*continuation)->nativeCallbackStarted;
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || (p->persistent.player.hp<=0 && !dead && !continuing)) return {DomainStatus::InvalidActor,{}};
     if(itemTargetDo || skill.weapon || skill.effect==SkillBehavior::ItemSkill || skill.effect==SkillBehavior::Kick || skill.effect==SkillBehavior::Unsummon) return {DomainStatus::NotImplemented,{}};
     skill.manaCost=skill.startMana=0;skill.delayFrames=0;skill.charge.reset();
-    if(!dead && skill.appliedEffect) {
+    if(!dead && skill.appliedEffect && !(skill.assassin && skill.assassin->program==AssassinProgram::BladeShield)) {
         if(skill.effect==SkillBehavior::Enchant && target) {
             for(const auto &[id,recipient]:ports_.players.all()) if(recipient.actor==target && recipient.entered && recipient.area==actor.area) return ports_.effects.skill(actor,skill,id);
             return ports_.effects.skillUnit(actor,skill,target);
@@ -331,6 +422,13 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     if(dead && (skill.appliedEffect || skill.summon || skill.effect==SkillBehavior::Teleport || skill.effect==SkillBehavior::Hydra)) return {DomainStatus::Unavailable,{}};
     const auto program = activationProgram(skill);
     switch (program) {
+    case ActivationProgram::Assassin: {
+        std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
+        if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
+        const auto result=activateAssassin(*pending,actor,position);
+        if(result!=DomainStatus::Capacity) pending.reset();
+        return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+    }
     case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
     case ActivationProgram::Curse: return ports_.effects.curse(actor,skill,position,target);
     case ActivationProgram::Corpse: {

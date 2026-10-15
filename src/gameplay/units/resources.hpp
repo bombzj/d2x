@@ -15,6 +15,7 @@ struct ConversionResourceChange {ConversionResourceSave saved;Fixed8 life,maximu
 // preserve its distinct retail MAXHP write and subsequent StatList callback.
 std::optional<ConversionResourceChange> conversionResources(Fixed8 life,Fixed8 maximum,int32_t targetLevel,int32_t casterLevel);
 Fixed8 conversionRestoredLife(const ConversionResourceSave &,Fixed8 life,Fixed8 maximum);
+Fixed8 mindBlastRestoredLife(const ConversionResourceSave &,Fixed8 life,Fixed8 maximum);
 struct RemovedCombatEffect;
 struct ResourceRecovery {
     Fixed8 maximumLife=1,maximumMana=1;

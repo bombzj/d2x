@@ -35,7 +35,7 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
@@ -99,8 +99,9 @@ struct MonsterRule {
     bool environmentController{};
     enum class Trap { None, Missile, Poison, Nova, RightArrow, LeftArrow, Melee, Turret, Soul } trap{};
     std::array<int,8> trapParameters{};
-    std::shared_ptr<const MonsterRule> shrineUpgrade;
-    std::map<std::string,std::shared_ptr<const MonsterRule>,std::less<>> shrineMinions;
+    struct ModifierChoices {int championChance{};std::array<std::vector<MonsterModifierChoice>,2> candidates;};
+    std::shared_ptr<const ModifierChoices> modifierChoices;
+    bool shrineEligible{};
     bool noTreasure{};
     bool noExperience{};
     int coldEffect{}, coldState{-1}, uninterruptableState{-1};
@@ -151,6 +152,8 @@ struct MonsterRule {
     uint8_t hitClass{};
     std::vector<bool> shieldChoices;
     std::optional<MonsterEnchantment> enchantment{};
+    std::vector<int> nativeModifiers;
+    bool bossTransfer{};
     int superUniqueIndex{-1}, uniqueTranslation{-1};
     std::optional<MonsterFirewall> firewall;
     std::map<int,MonsterMissileRule> enchantmentMissiles;

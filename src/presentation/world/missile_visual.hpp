@@ -13,6 +13,12 @@
 #include <optional>
 
 namespace d2x {
+struct ClientMissileInitialization {
+    enum class Path { None,Charged,Spiral } path{};
+    std::optional<uint32_t> seed;
+    std::optional<std::array<int32_t,2>> parameters;
+    std::optional<int> streamMissile,streamRange;
+};
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
     int function{}, hitFunction{}, velocity{}, velocityPerLevel{}, acceleration{}, maximumVelocity{};
@@ -24,6 +30,8 @@ struct ClientMissileProgram {
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
     bool childServerSent{}, returnFire{};
+    bool clientSend{};
+    int serverTurnPeriod{};
     bool canSlow{}, groundThrow{};
     int guidedRadius{};
     std::array<int,2> poisonVelocity{};
@@ -53,6 +61,8 @@ struct ClientMissileVisual {
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
     Vec turnTarget;
     int emissionCountdown{};
+    std::optional<std::array<int32_t,2>> nativeParameters;
+    int streamMissile{-1},streamRange{};
     Vec pixelOffset, pixelVelocity, pixelAcceleration;
     EntityId owner;
     bool hostile{};
@@ -64,7 +74,7 @@ struct ClientMissileVisual {
     uint8_t creationSources{};
     Vec creationPosition, creationDirection;
     EntityId soundEmitter;
-    uint64_t random = 0; // Presentation stream; the server's unit seed is not transmitted.
+    uint64_t random = 0; // Presentation stream; A3 may provide a progressive seed explicitly.
     std::deque<Vec> path{};
     std::vector<EntityId> contacts{};
 };

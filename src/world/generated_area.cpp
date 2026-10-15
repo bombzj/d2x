@@ -41,6 +41,23 @@ struct AreaGenerator::Impl {
         result.rooms = std::move(anchors);
         for (const auto id : rooms) {
             const auto &room = generator.tiles().rooms().at(id);
+            bool protectedRoom=(room.room.flags&0x00030000u)!=0;
+            for(size_t slot=0;slot<room.warpSlots.size() && !protectedRoom;++slot)
+                protectedRoom=(room.room.flags&(0x10u<<slot))!=0 && room.warpSlots[slot]!=-1;
+            if(protectedRoom)
+                result.populationWarpCenters.push_back(Vec{float((room.room.x+room.room.width/2)*5),
+                    float((room.room.y+room.room.height/2)*5)}-result.origin);
+            RoomPopulationLayout logical;
+            logical.x=room.room.x;logical.y=room.room.y;
+            logical.width=room.room.width;logical.height=room.room.height;
+            logical.single=room.singleLogicalRegion;logical.cells=room.logicalCells;
+            for(const auto floor:room.floors) {
+                const auto &tile=generator.tiles().tiles().at(floor);
+                logical.floors.push_back({tile.x,tile.y,tile.tile?tile.tile->materialFlags:uint16_t{}});
+            }
+            for(const auto &region:room.logicalRegions)
+                logical.regions.push_back({region.index,region.left,region.top,region.right,region.bottom,region.node});
+            result.populationRooms.emplace(std::pair{room.room.x,room.room.y},std::move(logical));
             if(room.initialActiveRandom)
                 result.initialRoomRandom.emplace(std::pair{room.room.x,room.room.y},*room.initialActiveRandom);
             auto &near = result.nearRooms[{room.room.x, room.room.y}];

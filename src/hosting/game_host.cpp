@@ -306,6 +306,20 @@ server::DomainResult<> GameHost::spawnItems(PlayerBinding binding, server::items
     auto result = slot->game->spawnItems(binding.player, std::move(batch), position); if (result) publish(size_t(binding.game.slot)); return result;
 }
 std::map<EntityId, server::loot::Preparation> GameHost::pendingLoot(GameHandle game) const { const auto *slot = find(game); return slot ? slot->game->pendingLoot() : std::map<EntityId, server::loot::Preparation>{}; }
+std::optional<server::objects::GroundGenerationRequest> GameHost::pendingGroundGeneration(GameHandle game) const {
+    const auto *slot=find(game);return slot?slot->game->pendingGroundGeneration():std::nullopt;
+}
+std::optional<server::monsters::ModifierPreparation> GameHost::pendingModifiers(GameHandle game) const {
+    const auto *slot=find(game);return slot?slot->game->pendingModifiers():std::nullopt;
+}
+server::DomainResult<> GameHost::prepareModifiers(GameHandle game,server::monsters::PreparedModifiers prepared) {
+    auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};
+    return slot->game->prepareModifiers(std::move(prepared));
+}
+server::DomainResult<> GameHost::prepareGroundGeneration(GameHandle game,uint64_t request,server::items::PreparedBatch batch,std::string deferred) {
+    auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};
+    return slot->game->prepareGroundGeneration(request,std::move(batch),std::move(deferred));
+}
 std::optional<ItemSeeds> GameHost::reserveLootSeeds(GameHandle game,EntityId source,uint64_t occurrence,size_t index) {
     auto *slot=find(game);return slot?slot->game->reserveLootSeeds(source,occurrence,index):std::nullopt;
 }

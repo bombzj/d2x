@@ -1,6 +1,8 @@
 #pragma once
 #include "core/id.hpp"
+#include "core/math.hpp"
 #include <memory>
+#include <optional>
 
 namespace d2x::server::monsters {
 class System;
@@ -18,5 +20,6 @@ class NativeBirthPublication {
     bool validate() const;
     void publish() noexcept;
     EntityId actor() const;
+    std::optional<Vec> position() const;
 };
 }

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include "player_contact.hpp"
 #include "weapon_hit.hpp"
 #include "participants.hpp"
@@ -8,6 +9,7 @@
 #include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/avoidance.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/scaling.hpp"
 #include "gameplay/combat/weapon_hit.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -75,12 +77,24 @@ DomainResult<> System::enqueue(SpellImpact impact) {
     auto plan = prepareSpells(std::move(values)); if (!plan) return {plan.status, {}};
     commitSpells(std::move(*plan.value)); return {DomainStatus::Applied, std::monostate{}};
 }
-StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<EntityId,uint64_t>> selected) {
+StepStatus System::drainNativeMelee(EntityId source,uint64_t occurrence,TickContext tick) {
+    for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence) impact.nativeDrainHeld=false;
+    return resolveSpells(tick,std::pair{source,occurrence});
+}
+void System::discardNativeMelee(EntityId source,uint64_t occurrence) {
+    for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence && impact.nativeDrainHeld && impact.nativeSkill)
+        impact.nativeSkill->cancelled=true;
+}
+StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<EntityId,uint64_t>> selected,bool allocateOnly) {
     bool blocked = false;
     const Participants participants{ports_.players, ports_.monsters, ports_.social};
     for (auto it = state_.spells.begin(); it != state_.spells.end();) {
         auto &impact = *it;
         if(selected && (impact.projectile!=selected->first || impact.occurrence!=selected->second)) {++it;continue;}
+        if(impact.nativeDrainHeld) {
+            if(impact.nativeSkill && impact.nativeSkill->cancelled) {state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;}
+            if(!allocateOnly || (impact.nativeSkill && impact.nativeSkill->heldPrepared)) {++it;continue;}
+        }
         if(impact.environment && !impact.missileDamage) {
             if(resolveEnvironment(impact,tick)==DomainStatus::Capacity) return StepStatus::Blocked;
             state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;
@@ -109,6 +123,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 const auto result=impact.playerContact && retained.player?finishPlayerContact(impact,*retained.player,tick):
                     impact.monsterContact && retained.monster?finishMonsterContact(impact,*retained.monster,tick):DomainStatus::Stale;
                 if(result==DomainStatus::Capacity) return StepStatus::Blocked;
+                if(impact.nativeDrainHeld && impact.nativeSkill && impact.nativeSkill->heldPrepared) return StepStatus::Complete;
                 if(result!=DomainStatus::Applied) {impact.playerContact.reset();impact.monsterContact.reset();}
                 if(impact.phase==ImpactPhase::Contact) ++impact.next;
                 continue;
@@ -128,7 +143,8 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             const auto participant = participants.find(impact.targets[impact.next]);
             if(impact.nativeAura) {
                 const auto sourceArea=source.player?source.player->area:source.monster?source.monster->area:RegionId{};
-                if(!source.aliveIn(sourceArea) || !ports_.areas.nearby(sourceArea,source.position(),impact.area,participant.position())) {++impact.next;continue;}
+                const bool retainedSource=impact.retainDeadSource && ((source.player && source.player->entered) || source.monster);
+                if((!source.aliveIn(sourceArea) && !retainedSource) || !ports_.areas.nearby(sourceArea,source.position(),impact.area,participant.position())) {++impact.next;continue;}
             }
             ++state_.targetAttempts;
             if(impact.missileDamage) {
@@ -139,6 +155,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 const auto prepared=prepareMissileContact(impact,source,participant,area->generation,tick);
                 if(prepared==DomainStatus::Capacity) return StepStatus::Blocked;
                 auto &contact=*impact.missileContact;
+                if(impact.nativeDrainHeld && impact.nativeSkill && !impact.nativeSkill->hit) {
+                    impact.nativeSkill->heldPrepared=true;return StepStatus::Complete;
+                }
                 if(prepared!=DomainStatus::Applied || !contact.hit || contact.blocked || contact.avoidance!=WeaponAvoidance::None) {
                     if(prepared==DomainStatus::Applied && contact.hit) {
                         const auto completed=finishMissileArmor(impact,participants.find(impact.targets[impact.next]),tick);
@@ -177,7 +196,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     if(contact.playerExtras.woundRate>0) execution->adjustment.wound=OpenWoundsApplication{contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
                     execution->extras=contact.playerExtras;execution->itemEvents=std::move(contact.itemEvents);
                     execution->remainingLife=std::max<int64_t>(0,int64_t(player.persistent.player.hp.raw())-contact.playerExtras.crushing);
-                    execution->nativeMissile=execution->missile=execution->hostile=true;
+                    execution->nativeMissile=execution->hostile=true;execution->missile=!impact.melee;
                     impact.playerContact=std::move(execution);
                 } else {
                     const auto &unit=*participant.monster;
@@ -236,6 +255,11 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                         const auto result=ports_.monsters.block(pet->id,tick.tick);
                         if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                     }
+                }
+                if(hit && !stateOnly && !impact.unblockable) {
+                    const auto result=prepareWeaponBlock(participant,tick,impact.weaponBlock);
+                    if(!result) {blocked=true;break;}
+                    hit=!*result.value;
                 }
                 if(!hit) {commitRandom();if(impact.melee) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;}
                 const auto avoided=(stateOnly || impact.unblockable)?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
@@ -352,6 +376,12 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     const auto result=ports_.monsters.block(target->id,tick.tick);
                     if(result.status==DomainStatus::Capacity) {blocked=true;break;}
                     if(!attack.projectile) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;
+                }
+                if(attack.wearSkill.assassin && attack.wearSkill.assassin->chargeStat>=0 && impact.progressiveChargeTarget!=impact.next) {
+                    const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
+                    const auto result=ports_.effects.progressiveCharge(actor,attack.wearSkill);
+                    if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
+                    impact.progressiveChargeTarget=impact.next;
                 }
                 auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
                 for(auto &channel:channels) channel=scale(channel);

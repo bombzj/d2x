@@ -36,6 +36,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `server-snapshot.monsters`另含当前难度、MPQ Drain和实际physicalResistance；`openWounds`只读返回固定点每帧rate、until／next及实际source／credit，空状态为零。rate单位为1/256生命，快照tick为下一待执行帧；事件背压时next可落后，恢复后补齐期限内应付伤害。字段不允许直接修改怪物或授予效果，结算见[武器命中效果](../gameplay/combat/WEAPON_EFFECTS.md)。
 
+刺客陷阱／影子的怪物记录另含可选 `assassin`：`parameters` 为实际AI参数，`nextDecision`、`expires`、`removeAt`、`lastCorpse`、`missile` 分别观察决策、期限、撤出、所选尸体与附属飞弹。数据只读复制伙伴运行态，不是第二份AI、客户端协议或修改单位的入口。活动单位可能仍在移动／动作中，不能仅以 `nextDecision` 小于当前帧判定阻塞；应一并查看固定步进度、实际动作／事件及队列。有限运行范围见[刺客](../gameplay/skills/ASSASSIN.md)。
+
 当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间每步同步两次，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。新字段未运行认证，后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
 
 `online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。跨进程探索保存只在本地单机／TCP/IP角色入口工作，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。

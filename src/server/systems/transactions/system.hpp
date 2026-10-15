@@ -37,6 +37,7 @@ class System {
     DomainResult<> initializeItemAuras(PlayerId,uint64_t tick);
     // Native draws publish without manufacturing a client attribute change.
     DomainResult<> consumeRandom(const ActorContext &,uint64_t expected,uint64_t next);
+    DomainResult<> consumeRoomRandom(const RoomRandomLoan &);
     DomainResult<> commit(Plan);
     // Character-only skill groups, or up to eight same-area wallets coupled to
     // one ground-item edit. Reserve every projection before committing any owner.

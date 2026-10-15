@@ -15,7 +15,8 @@ AuraUnitPublication System::prepareDamageStates(monsters::Actor candidate,UnitDa
 }
 void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candidate,UnitDamageStates damage,uint64_t tick) const {
     const auto id=candidate.id;
-    if(!candidate.alive() && candidate.killMinionsOnDeath && !candidate.minionDeathHandled) {
+    if(!candidate.alive() && ((candidate.killMinionsOnDeath && !candidate.minionDeathHandled) ||
+        (candidate.ownsNativeMinions && !candidate.ownershipDeathHandled))) {
         auto expanded=ports_.monsters.prepareMinionDeaths(std::move(candidate),tick,plan.actors?&plan.actors->actors:nullptr);
         for(auto &unit:expanded) {
             const auto other=unit.id;const auto area=unit.area;const auto position=unit.position;

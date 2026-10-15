@@ -5,6 +5,10 @@
 #include <utility>
 #include <vector>
 namespace d2x::server::transactions {
+DomainResult<> System::consumeRoomRandom(const RoomRandomLoan &loan) {
+    if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};
+    ports_.areas.publishRoomRandom(loan);return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::consumeRandom(const ActorContext &actor,uint64_t expected,uint64_t next) {
     const auto found=ports_.players.players_.find(actor.player);
     if(found==ports_.players.players_.end()) return {DomainStatus::InvalidActor,{}};
@@ -38,7 +42,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         if(relocation) edit.publicFacts.emplace_back(RepositionFact{player.actor,player.area,relocation->position});
         auto plan=prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=commit(std::move(*plan.value));
-        if(result && relocation) {player.position=relocation->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;++player.teleportRevision;}
+        if(result && relocation) {player.position=relocation->position;player.lastTeleportPosition=player.position+area->definition.origin;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;++player.teleportRevision;}
         return result;
     }
     const auto mana = player.persistent.player.mana - cost;
@@ -57,7 +61,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     if (!result) return {result.status, {}};
     player.persistent.player.mana = mana; ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
     if(random) player.combatRandom=random->next;
-    if (relocation) { player.position = relocation->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false; ++player.teleportRevision; }
+    if (relocation) { player.position = relocation->position;player.lastTeleportPosition=player.position+area->definition.origin;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false; ++player.teleportRevision; }
     return {DomainStatus::Applied, std::monostate{}};
 }
 }

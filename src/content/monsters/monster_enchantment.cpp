@@ -50,27 +50,16 @@ bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster
     const auto &stats = data.tables.at("monstats"), &extra = data.tables.at("monstats2");
     if (number(stats, monster.sourceRow, "primeevil")) return false;
     const auto row = namedRow(extra, "Id", stats.value(monster.sourceRow, "MonStatsEx"));
-    return number(extra, row, "mDT") && number(extra, row, "Height");
+    return number(extra, row, "mWL") && number(extra, row, "Height");
 }
-MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
-    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
-    bool preserveRank, bool enableSkillEffects, bool championVariantAllowed, const SuperUniqueRecord *fixed) {
+std::vector<MonsterModifierChoice> prepareMonsterModifierChoices(const ClassicData &data,const MonsterRecord &monster,
+    int difficulty,bool champion) {
+    if(difficulty<0 || difficulty>2) throw std::invalid_argument("Invalid native modifier difficulty");
     const auto &mods = data.tables.at("monumod"), &stats = data.tables.at("monstats");
     const auto &extra = data.tables.at("monstats2"), &types = data.tables.at("montype");
     const auto extraRow = namedRow(extra, "Id", stats.value(monster.sourceRow, "MonStatsEx"));
     constexpr const char *suffix[]{"", " (N)", " (H)"};
-    const bool champion = fixed ? false : preserveRank ? rank == MonsterRank::Champion :
-        roll(random, 100) < unsigned(number(mods, 0, "constants"));
-    rank = fixed ? MonsterRank::SuperUnique : champion ? MonsterRank::Champion : MonsterRank::Unique;
-    MonsterEnchantment result;
-    result.skillEffectsEnabled = enableSkillEffects;
-    result.resistances = base.resistances;
-    result.melee = number(stats, monster.sourceRow, "isMelee") != 0;
-    if (fixed)
-        for (int modifier : fixed->modifiers) {
-            if (!modifier) break;
-            if (modifier != 24) result.ids.push_back(modifier);
-        }
+    const bool melee=number(stats,monster.sourceRow,"isMelee")!=0;
     std::set<std::string> lineage;
     std::vector<std::string> pending{std::string(stats.value(monster.sourceRow, "MonType"))};
     while (!pending.empty()) {
@@ -80,31 +69,50 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
         pending.emplace_back(types.value(row, "equiv1"));
         pending.emplace_back(types.value(row, "equiv2"));
     }
-    if (champion && !championVariantAllowed) result.ids.push_back(16);
-    for (int pick = 0; pick < (fixed ? difficulty : champion ? championVariantAllowed ? 1 : 0 : difficulty + 1); ++pick) {
-        std::vector<std::pair<int, unsigned>> candidates;
-        unsigned total = 0;
-        for (size_t row = 0; row < mods.rows().size(); ++row) {
-            const int id = number(mods, row, "id");
-            const int weight = number(mods, row, std::string(champion ? "cpick" : "upick") + suffix[difficulty]);
-            if (!id || result.has(id) || weight <= 0 || !number(mods, row, "enabled") ||
-                bool(number(mods, row, "champion")) != champion ||
-                lineage.contains(std::string(mods.value(row, "exclude1"))) ||
-                lineage.contains(std::string(mods.value(row, "exclude2")))) continue;
-            const int filter = number(mods, row, "fPick");
-            if ((filter == 1 && !number(extra, extraRow, "mA1")) ||
-                (filter == 2 && (result.melee || number(stats, monster.sourceRow, "nomultishot"))) ||
-                (filter == 3 && !number(extra, extraRow, "mWL"))) continue;
-            candidates.emplace_back(id, unsigned(weight)); total += unsigned(weight);
-        }
-        if (!total) break;
-        auto selection = roll(random, total);
-        for (const auto &[id, weight] : candidates) {
-            if (selection < weight) { result.ids.push_back(id); break; }
-            selection -= weight;
-        }
+    std::vector<MonsterModifierChoice> candidates;
+    for (size_t row = 0; row < mods.rows().size(); ++row) {
+        const int id = number(mods, row, "id");
+        const int weight = number(mods, row, std::string(champion ? "cpick" : "upick") + suffix[difficulty]);
+        if (!id || weight <= 0 || !number(mods, row, "enabled") ||
+            bool(number(mods, row, "champion")) != champion ||
+            lineage.contains(std::string(mods.value(row, "exclude1"))) ||
+            lineage.contains(std::string(mods.value(row, "exclude2")))) continue;
+        const int filter = number(mods, row, "fPick");
+        if ((filter == 1 && !number(extra, extraRow, "mA1")) ||
+            (filter == 2 && (melee || number(stats, monster.sourceRow, "nomultishot"))) ||
+            (filter == 3 && !number(extra, extraRow, "mWL"))) continue;
+        candidates.push_back({id,weight});
     }
-    result.nameSeed = uint16_t(roll(random, 0));
+    return candidates;
+}
+MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
+    const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
+    bool preserveRank, bool enableSkillEffects, bool championVariantAllowed, const SuperUniqueRecord *fixed) {
+    if(difficulty<0 || difficulty>2) throw std::invalid_argument("Invalid native modifier difficulty");
+    const bool champion=fixed?false:preserveRank?rank==MonsterRank::Champion:
+        roll(random,100)<unsigned(number(data.tables.at("monumod"),0,"constants"));
+    rank=fixed?MonsterRank::SuperUnique:champion?MonsterRank::Champion:MonsterRank::Unique;
+    std::vector<int> existing;
+    if(fixed) for(const int modifier:fixed->modifiers) {
+        if(!modifier) break;
+        if(modifier!=24) existing.push_back(modifier);
+    }
+    if(champion && !championVariantAllowed) existing.push_back(16);
+    const auto candidates=prepareMonsterModifierChoices(data,monster,difficulty,champion);
+    const int picks=fixed?difficulty:champion?(championVariantAllowed?1:0):difficulty+int(limitedRandom(random,1))+1;
+    auto selected=chooseMonsterModifiers(candidates,existing,picks,random);
+    const auto nameSeed=uint16_t(rollRandom(random));
+    return resolveMonsterEnchantment(data,monster,base,difficulty,rank,std::move(selected),nameSeed,enableSkillEffects,fixed);
+}
+MonsterEnchantment resolveMonsterEnchantment(const ClassicData &data,const MonsterRecord &monster,
+    const MonsterCombatProfile &base,int difficulty,MonsterRank rank,std::vector<int> modifiers,uint16_t nameSeed,bool enableSkillEffects,
+    const SuperUniqueRecord *fixed) {
+    if(difficulty<0 || difficulty>2 || modifiers.size()>9) throw std::invalid_argument("Invalid native modifier inputs");
+    const auto &mods=data.tables.at("monumod"),&stats=data.tables.at("monstats");
+    const bool champion=rank==MonsterRank::Champion;
+    MonsterEnchantment result;
+    result.ids=std::move(modifiers);result.nameSeed=nameSeed;result.skillEffectsEnabled=enableSkillEffects;
+    result.resistances=base.resistances;result.melee=number(stats,monster.sourceRow,"isMelee")!=0;
     auto constant = [&](int id) { return number(mods, size_t(id), "constants"); };
     const int championDamage = number(data.tables.at("difficultylevels"), size_t(difficulty), "ChampionDamageBonus");
     result.lifePercent = constant(difficulty + (champion ? 4 : 7));
@@ -130,6 +138,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
     for (int id : result.ids) {
         switch (id) {
         case 1: break; // Original random-name modifier; fixed uniques keep their MPQ name.
+        case 10: case 13: case 14: case 15: case 20: case 33: case 34: case 35: break;
         case 5:
             result.damagePercent += constant(15) * championDamage / 100;
             result.attackRatingPercent += constant(13) * championDamage / 100;
@@ -160,7 +169,7 @@ MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const Monster
             constexpr int skills[]{98, 102, 108, 114, 123, 122, 118};
             constexpr int divisors[]{6, 6, 5, 7, 8, 8, 8};
             uint64_t auraSeed = (uint64_t(666) << 32) | result.nameSeed;
-            const int choice = int(roll(auraSeed, level >= 20 ? 7 : 6));
+            const int choice = fixed && fixed->id=="Lord De Seis"?5:int(roll(auraSeed, level >= 20 ? 7 : 6));
             const int auraRank = std::clamp(level / divisors[choice], 1, 99);
             if (enableSkillEffects) result.aura = resolveBaseAura(data, skills[choice], auraRank);
             else result.aura = resolveAura(data, skills[choice], auraRank);
@@ -231,8 +240,6 @@ MonsterEnchantment inheritedMonsterEnchantment(const ClassicData &data, const Mo
 MonsterCombatProfile enchantedMonsterCombat(MonsterCombatProfile result, const MonsterEnchantment &mods) {
     result.level += mods.levelBonus;
     auto scale = [](int value, int percent) { return int(int64_t(value) * std::max(0, 100 + percent) / 100); };
-    result.damage.minLife = scale(scale(result.damage.minLife, mods.lifePercent), mods.lifeScalePercent - 100);
-    result.damage.maxLife = scale(scale(result.damage.maxLife, mods.lifePercent), mods.lifeScalePercent - 100);
     if (result.defense) result.defense = scale(*result.defense, mods.defensePercent);
     result.resistances = mods.resistances;
     if (mods.stopRegeneration) result.damageRegen = 0;

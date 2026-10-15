@@ -1,6 +1,7 @@
 #include "loot_content.hpp"
 #include "item_content.hpp"
 #include "character_content.hpp"
+#include "combat_content.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_loot.hpp"
 #include "content/world/world_catalog.hpp"
@@ -73,7 +74,7 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
             else plan.randomState=seed;
         }
         }
-        objectRandom=object.chest?seed:plan.randomState;
+        objectRandom=object.chest && object.definition!=371?seed:plan.randomState;
     } else {
         auto sourceRequest=request.request.source;
         const auto &monstats=data.tables.at("monstats");
@@ -118,6 +119,72 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
 
 namespace d2x {
 void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
+    if(const auto request=host.pendingModifiers(game)) {
+        server::monsters::PreparedModifiers prepared;prepared.token=request->token;
+        try {
+            const auto settings=host.settings(game);const auto area=host.area(game,request->area);
+            if(!settings || !area || area->generation!=request->generation) throw std::runtime_error("Native modifier area expired");
+            const AreaGenerationRequest generation{settings->mapSeed,area->definition.act,int(request->area),settings->difficulty,settings->ladderMonsterStats()};
+            const auto actualIdentity=[&](const server::monsters::ModifierPreparation::Unit &unit) {
+                auto identity=unit.identity;const auto &stats=data.tables.at("monstats");
+                for(size_t row=0;row<stats.rows().size();++row) if(stats.number(row,"hcIdx")==unit.nativeClass) {
+                    identity.monster=std::string(stats.value(row,"Id"));return identity;
+                }
+                throw std::runtime_error("Missing actual native modifier class");
+            };
+            const auto leader=prepareSelectedMonster(archives,data,generation,actualIdentity(request->leader),
+                request->leader.level,request->selection);
+            if(!leader || !leader->rule.enchantment) throw std::runtime_error("Native modifier leader rules unavailable");
+            prepared.leader=leader->rule;
+            for(const auto &unit:request->minions) {
+                auto identity=actualIdentity(unit);identity.rank=MonsterRank::Minion;
+                const auto minion=prepareSelectedMonster(archives,data,generation,std::move(identity),unit.level,
+                    request->selection,&*leader->rule.enchantment);
+                if(!minion) throw std::runtime_error("Native modifier minion rules unavailable");
+                auto rule=minion->rule;
+                if(rule.enchantment) rule.enchantment->ids=unit.modifiers;
+                if(request->promoteMinions && rule.enchantment) {
+                    const auto &mods=data.tables.at("monumod");
+                    size_t inspected=unit.modifiers.size();
+                    for(const int modifier:request->selection.ids) {
+                        if(inspected++>=9) break;
+                        for(size_t row=0;row<mods.rows().size();++row)
+                            if(mods.number(row,"id")==modifier && mods.number(row,"xfer").value_or(0)) {
+                                rule.enchantment->ids.push_back(modifier);break;
+                            }
+                    }
+                }
+                prepared.minions.emplace(unit.id,std::move(rule));
+            }
+        } catch(const std::exception &error) {prepared.deferred=error.what();}
+        const auto installed=host.prepareModifiers(game,std::move(prepared));
+        if(installed.status==server::DomainStatus::InvalidRequest) {
+            server::monsters::PreparedModifiers failure;failure.token=request->token;
+            failure.deferred="Native modifier rules failed authority validation";
+            host.prepareModifiers(game,std::move(failure));
+        }
+        return;
+    }
+    if(const auto request=host.pendingGroundGeneration(game)) {
+        try {
+            auto plan=planCreatedItem(data,request->code,request->level,request->uniques,request->seeds);
+            if(!plan.deferred.empty() || plan.drops.size()!=1) {
+                host.prepareGroundGeneration(game,request->request,{},plan.deferred.empty()?"Native ground generation produced no item":plan.deferred);
+                return;
+            }
+            uint64_t unused{};
+            auto item=prepareItem(data,plan.drops.front(),unused,request->difficulty);
+            item.id=EntityId{1};item.nativeFlags|=0x82010;
+            PersistentCharacter context;context.inventory.items.emplace(item.id,item);
+            server::items::PreparedBatch batch;batch.equipment=prepareEquipmentRules(data,context);
+            if(item.quality==ItemQuality::Unique && item.specialRow>=0 &&
+                !data.tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0))
+                batch.limitedUniques.insert(size_t(item.specialRow));
+            batch.items.push_back(std::move(item));
+            host.prepareGroundGeneration(game,request->request,std::move(batch),{});
+        } catch(const std::exception &error) {host.prepareGroundGeneration(game,request->request,{},error.what());}
+        return;
+    }
     try { prepareOneLoot(host, game, archives, data, cache); }
     catch (const std::exception &error) {
         const auto pending = host.pendingLoot(game); if (pending.empty()) return;

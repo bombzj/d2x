@@ -10,6 +10,7 @@ SkillActivationProgram skillActivationProgram(const SkillCastSpec &skill) {
     case SkillBehavior::ItemSkill: return Program::Item;
     case SkillBehavior::Unsummon: return Program::Unsummon;
     case SkillBehavior::Kick: return Program::Kick;
+    case SkillBehavior::Assassin: return Program::Assassin;
     default: break;
     }
     if (skill.summon || (skill.bone && skill.bone->barrier)) return Program::AmazonSummon;

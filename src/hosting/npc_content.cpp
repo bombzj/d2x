@@ -77,6 +77,45 @@ server::NpcRule prepareNpcRule(const ClassicData &data,const SpeechIndexes &inde
     return rule;
 }
 }
+std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &archives,const ClassicData &data,
+    AreaGenerationRequest request,const MonsterRecord &record) {
+    if(record.hostile()) throw std::invalid_argument("Hostile class passed to neutral rule preparation");
+    const auto world=sharedWorldCatalog(archives,request.difficulty);
+    const auto animations=archives.prepared<AnimDataTable>([&]{return AnimDataTable(archives.read("data/global/animdata.d2"));});
+    const auto profile=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),
+        request.difficulty,world->level(request.level).population.level.at(size_t(request.difficulty)),{},request.ladderMonsterStats,MonsterStatPurpose::NativeNpc);
+    if(!profile || !profile->defense) throw std::runtime_error("Missing original NPC stat profile: "+record.id);
+    auto rule=std::make_shared<server::MonsterRule>();
+    rule->stats=data.nativeStats;rule->formulas=data.nativeFormulas;rule->auraPrograms=data.nativeAuraPrograms;
+    rule->nativeClass=record.index;rule->level=profile->level;rule->difficulty=request.difficulty;rule->statGameType=request.ladderMonsterStats;
+    rule->minimumLife=profile->damage.minLife;rule->maximumLife=profile->damage.maxLife;
+    rule->defense=*profile->defense;rule->attackRating=profile->attack1Rating.value_or(0);rule->resistances=profile->resistances;
+    if(profile->damage.attack1Damage) {rule->minimumDamage=profile->damage.attack1Damage->first;rule->maximumDamage=profile->damage.attack1Damage->second;}
+    rule->damageRegen=profile->damageRegen;rule->criticalChance=profile->criticalChance;
+    rule->size=record.collisionSize;rule->meleeRange=record.meleeRange;
+    rule->nativeVelocity=record.walkVelocity.value_or(0);rule->collision=record.movementRule();rule->spawnCollision=record.spawnRule();
+    rule->demon=record.demon;rule->undead=record.undead;rule->boss=record.boss;rule->switchAi=record.switchAi;
+    rule->noTreasure=true;rule->noExperience=true;
+    rule->corpseSelectable=record.corpseSelectable;rule->corpseSize=record.corpseSize;rule->softCorpse=record.soft;
+    rule->coldEffect=record.coldEffect.at(size_t(request.difficulty));
+    rule->hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
+    rule->stunState=data.states.at("stunned").definition.id;rule->openWoundsState=data.states.at("openwounds").definition.id;
+    rule->preventHealState=data.states.at("preventheal").definition.id;rule->corpseNoSelectState=data.states.at("corpse_noselect").definition.id;
+    rule->noManaRegenState=data.states.at("nomanaregen").definition.id;
+    const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
+    rule->blockChance=data.tables.at("monstats").number(record.sourceRow,std::string("ToBlock")+suffix).value_or(0);
+    rule->drain=data.tables.at("monstats").number(record.sourceRow,std::string("Drain")+suffix).value_or(0);
+    rule->blockWithoutShield=data.tables.at("monstats").number(record.sourceRow,"NoShldBlock").value_or(0)!=0;
+    rule->threat=data.tables.at("monstats").number(record.sourceRow,"threat").value_or(0);
+    if(!prepareMonsterLifecycle(archives,data,*animations,record,*rule)) throw std::runtime_error("Missing original NPC lifecycle: "+record.id);
+    const auto &extra=data.tables.at("monstats2");
+    for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx") && extra.number(row,"mDT").value_or(0)) {
+        const auto death=loadMonsterMotionTiming(*animations,record.token,"dt",monsterModeWeapon(archives,record.token,"dt",record.baseWeapon));
+        if(!death) throw std::runtime_error("Missing original NPC death animation: "+record.id);
+        rule->deathTicks=monsterAnimationTicks({death->frames,death->speed});
+    }
+    return rule;
+}
 void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
     const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
     const auto &catalog = *catalogSource; ClassicStrings strings(archives);
@@ -91,49 +130,12 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
     std::set<uint16_t> callbacks;
     for(int index=64;index<=452;++index) if(!strings.speech(index).empty()) callbacks.insert(uint16_t(index));
     auto &area = prepared.authority;
-    const auto world=sharedWorldCatalog(archives,prepared.terrain.request.difficulty);
-    const auto animations=archives.prepared<AnimDataTable>([&]{return AnimDataTable(archives.read("data/global/animdata.d2"));});
     std::map<int,std::shared_ptr<const server::MonsterRule>> combatRules;
     const auto npcRule=[&](const MonsterRecord &record) {
         const auto name=strings.find(record.name);
         auto result=prepareNpcRule(data,speechIndexes,callbacks,record,name.empty()?std::string_view(record.name):name,area.act);
         auto [entry,fresh]=combatRules.try_emplace(record.index);
-        if(fresh) {
-            const auto &request=prepared.terrain.request;
-            const auto profile=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),
-                request.difficulty,world->level(request.level).population.level.at(size_t(request.difficulty)),{},request.ladderMonsterStats,MonsterStatPurpose::NativeNpc);
-            if(!profile || !profile->defense) throw std::runtime_error("Missing original NPC stat profile: "+record.id);
-            auto rule=std::make_shared<server::MonsterRule>();
-            rule->stats=data.nativeStats;rule->formulas=data.nativeFormulas;rule->auraPrograms=data.nativeAuraPrograms;
-            rule->nativeClass=record.index;rule->level=profile->level;rule->difficulty=request.difficulty;rule->statGameType=request.ladderMonsterStats;
-            rule->minimumLife=profile->damage.minLife;rule->maximumLife=profile->damage.maxLife;
-            rule->defense=*profile->defense;rule->attackRating=profile->attack1Rating.value_or(0);rule->resistances=profile->resistances;
-            if(profile->damage.attack1Damage) {rule->minimumDamage=profile->damage.attack1Damage->first;rule->maximumDamage=profile->damage.attack1Damage->second;}
-            rule->damageRegen=profile->damageRegen;rule->criticalChance=profile->criticalChance;
-            rule->size=record.collisionSize;rule->meleeRange=record.meleeRange;
-            rule->nativeVelocity=record.walkVelocity.value_or(0);rule->collision=record.movementRule();rule->spawnCollision=record.spawnRule();
-            rule->demon=record.demon;rule->undead=record.undead;rule->boss=record.boss;rule->switchAi=record.switchAi;
-            rule->noTreasure=true;rule->noExperience=true;
-            rule->corpseSelectable=record.corpseSelectable;rule->corpseSize=record.corpseSize;rule->softCorpse=record.soft;
-            rule->coldEffect=record.coldEffect.at(size_t(request.difficulty));
-            rule->hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
-            rule->stunState=data.states.at("stunned").definition.id;rule->openWoundsState=data.states.at("openwounds").definition.id;
-            rule->preventHealState=data.states.at("preventheal").definition.id;rule->corpseNoSelectState=data.states.at("corpse_noselect").definition.id;
-            rule->noManaRegenState=data.states.at("nomanaregen").definition.id;
-            const auto suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
-            rule->blockChance=data.tables.at("monstats").number(record.sourceRow,std::string("ToBlock")+suffix).value_or(0);
-            rule->drain=data.tables.at("monstats").number(record.sourceRow,std::string("Drain")+suffix).value_or(0);
-            rule->blockWithoutShield=data.tables.at("monstats").number(record.sourceRow,"NoShldBlock").value_or(0)!=0;
-            rule->threat=data.tables.at("monstats").number(record.sourceRow,"threat").value_or(0);
-            if(!prepareMonsterLifecycle(archives,data,*animations,record,*rule)) throw std::runtime_error("Missing original NPC lifecycle: "+record.id);
-            const auto &extra=data.tables.at("monstats2");
-            for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx") && extra.number(row,"mDT").value_or(0)) {
-                const auto death=loadMonsterMotionTiming(*animations,record.token,"dt",monsterModeWeapon(archives,record.token,"dt",record.baseWeapon));
-                if(!death) throw std::runtime_error("Missing original NPC death animation: "+record.id);
-                rule->deathTicks=monsterAnimationTicks({death->frames,death->speed});
-            }
-            entry->second=std::move(rule);
-        }
+        if(fresh) entry->second=prepareNeutralMonsterRule(archives,data,prepared.terrain.request,record);
         result.combat=entry->second;return result;
     };
     unsigned prisonerGroups=0;
@@ -143,7 +145,8 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         const auto *record=catalog.find(code);
         if(wanted && record && record->interact && !record->hostile()) area.questNpcs.emplace(code,npcRule(*record));
     }
-    for (const auto &source : prepared.terrain.map->terrain.data.objects) {
+    for (size_t sourceIndex=0;sourceIndex<prepared.terrain.map->terrain.data.objects.size();++sourceIndex) {
+        const auto &source=prepared.terrain.map->terrain.data.objects[sourceIndex];
         if(int(area.id)==111 && source.type==2 && source.nativeIdentity && source.id>=0) {
             const auto &objects=data.tables.at("objects");bool cage=false;
             for(size_t row=0;row<objects.rows().size();++row) if(objects.number(row,"Id")==source.id && objects.number(row,"InitFn")==62) cage=true;
@@ -157,7 +160,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
                     if(std::max(std::abs(x),std::abs(y))!=radius) continue;
                     const Vec at{float(source.x+x),float(source.y+y)};
                     if(!area.collision.walkable(at,prisoner->spawnRule()) || std::any_of(area.npcs.begin(),area.npcs.end(),[&](const auto &n){return (n.spawnPosition-at).length()<1;})) continue;
-                    area.npcs.push_back({{},at,npcRule(*prisoner)});++count;
+                    area.npcs.push_back({{},at,npcRule(*prisoner),sourceIndex,Vec{float(source.x),float(source.y)},source.id});++count;
                 }
                 if(count!=5) area.populationDeferred.push_back("Incomplete original prisoner placement");
             }
@@ -189,7 +192,9 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         const auto position = area.collision.nearest(marker,record->movementRule());
         if (!area.collision.walkable(position,record->movementRule()) || (position-marker).length()>15)
             throw std::runtime_error("Original NPC spawn is obstructed: "+record->id);
-        area.npcs.push_back({{}, position, std::move(rule)});
+        area.npcs.push_back({{}, position, std::move(rule),sourceIndex,
+            source.type==2?std::optional<Vec>{Vec{float(source.x),float(source.y)}}:std::nullopt,
+            source.type==2?source.id:-1});
     }
     // InitFunction60 is an object callback. It creates a distinct native
     // UNIT_MONSTER even when DS1's object identity came through a preset alias.
@@ -199,7 +204,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         const auto *record=catalog.find("compellingorb");
         if(!record || record->hostile()) throw std::runtime_error("Missing original Compelling Orb carrier");
         auto rule=npcRule(*record);rule.questInitFunction=60;
-        area.npcs.push_back({{},object.position,std::move(rule)});
+        area.npcs.push_back({{},object.position,std::move(rule),{},object.position,object.type});
     }
 }
 }

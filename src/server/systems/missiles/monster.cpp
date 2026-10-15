@@ -13,6 +13,7 @@
 #include "core/random.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
+#include "gameplay/skills/assassin_progressive.hpp"
 #include "server/systems/effects/system.hpp"
 #include "gameplay/skills/passive_stats.hpp"
 #include "gameplay/skills/damage_curve.hpp"
@@ -95,10 +96,43 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             !ports_.nativeRules->formulas->missiles.contains(request.definition)) return {DomainStatus::InvalidRequest,{}};
         MonsterSpawn spawn;spawn.source=request.owner;spawn.area=request.area;spawn.generation=request.generation;spawn.tick=request.tick;
         spawn.position=request.position;spawn.target=request.target;spawn.attack.missile=nativeDamageRule(*ports_.nativeRules,request.definition,request.rank);
-        spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=true;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;
+        if(request.ownerSeedEdit) {
+            if(data->ownerNext!=request.ownerSeedEdit->first) return {DomainStatus::Conflict,{}};
+            data->ownerNext=request.ownerSeedEdit->second;
+        }
+        if(request.ownerLowSeed) data->ownerNext=initialRandom(*request.ownerLowSeed);
+        if(request.scatterRadius>=2) {
+            const auto offset=[&] {return nativeSubtract(int32_t(limitedRandom(data->ownerNext,uint32_t(nativeMultiply(request.scatterRadius,2)))),request.scatterRadius);};
+            spawn.target.x+=float(offset());spawn.target.y+=float(offset());
+        }
+        if(request.minimumTargetDistanceSquared>0) {
+            const int x=int(spawn.target.x)-int(spawn.position.x),y=int(spawn.target.y)-int(spawn.position.y);
+            if(x*x+y*y<request.minimumTargetDistanceSquared) continue;
+        }
+        spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=!request.copyMonsterAttackBonus;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;
+        if(request.nativeVelocity) {
+            const auto fixed=missileVelocityFixed(*request.nativeVelocity,0,0);if(!fixed) return {DomainStatus::InvalidRequest,{}};
+            spawn.speeds={float(*fixed)*25.f/4096.f};
+        }
         bool drawn{};auto built=buildMonster(spawn,data->randomNext,data->ownerNext,drawn);
         if(!built) return {built.status,{}};
-        for(auto &missile:*built.value) {missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));}
+        for(auto &missile:*built.value) {
+            if(request.initialization==NativeSpawn::Initialization::ChargedSkill) {
+                missile.pathInitialization={MissilePathInitialization::Kind::ChargedSkill,request.initializationIndex};initializePath(missile);
+            } else if(request.initialization!=NativeSpawn::Initialization::None) {
+                int frames=request.initialization==NativeSpawn::Initialization::ProgressiveCharged?int(uint8_t(missile.nativeTotalFrames)):missile.nativeTotalFrames;
+                if(frames>=78) {frames=77;missile.nativeTotalFrames=77;missile.setCurrentFrame(77);}
+                missile.random=initialRandom(request.initialSeed);
+                const auto path=request.initialization==NativeSpawn::Initialization::ProgressiveCharged?
+                    chargedBoltPath(missile.position,request.target,frames,missile.random):
+                    assassinProgressiveSpiral(missile.position,request.target,frames,missile.random);
+                missile.path.assign(path.begin(),path.end());
+            }
+            if(request.finalParameters) missile.parameters=*request.finalParameters;
+            if(request.totalFrames) {missile.nativeTotalFrames=*request.totalFrames;missile.setCurrentFrame(*request.totalFrames);}
+            if(request.storedOwner) missile.owner=*request.storedOwner;
+            missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));
+        }
     }
     data->facts=visuals(launched);
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
@@ -115,18 +149,24 @@ std::optional<int> System::nativeDefinition(std::string_view name) const {
 DomainResult<EntityId> System::spawnNative(const NativeSpawn &request) {
     auto prepared=prepareNativeBirth(std::span{&request,size_t{1}});
     if(!prepared) return {prepared.status,{}};
-    auto &publication=**prepared.value;
+    auto result=commitNativeBirth(std::move(*prepared.value));
+    if(result && !*result.value) return {DomainStatus::Unavailable,{}};
+    return result;
+}
+DomainResult<EntityId> System::commitNativeBirth(std::shared_ptr<NativeBirthPublication> prepared) {
+    if(!prepared) return {DomainStatus::InvalidRequest,{}};
+    auto &publication=*prepared;
     if(!publication.validate()) return {DomainStatus::Stale,{}};
     const auto first=publication.first();
     std::vector<EventBatch> batches;
-    for(const auto &fact:publication.facts()) batches.push_back({0,request.tick,{},
+    for(const auto &fact:publication.facts()) batches.push_back({0,prepared->data_->context.tick,{},
         {AudienceKind::Area,{},std::get<MissileFact>(fact).area},{fact}});
     if(!batches.empty()) {
         const auto sent=ports_.events.publishGroup(std::move(batches));
         if(!sent) return {sent.status,{}};
     }
     publication.publish();
-    return first?DomainResult<EntityId>{DomainStatus::Applied,first}:DomainResult<EntityId>{DomainStatus::Unavailable,{}};
+    return {DomainStatus::Applied,first};
 }
 DomainResult<MonsterMissileRule> System::sampleMonsterRule(MonsterMissileRule rule,EntityId owner,uint64_t tick,std::shared_ptr<const StatList> mode,std::optional<int> assignedRank) const {
     const auto *source=ports_.monsters.find(owner);

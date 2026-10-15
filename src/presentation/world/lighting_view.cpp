@@ -48,6 +48,14 @@ void LightingView::resetEnvironment() {
     environments_ = {};
     frameRemainder_ = 0;
     eclipse_ = false;
+    cloakLevel_=-1;cloakFactor_=1;
+}
+void LightingView::beginCloak(int duration,int level) {
+    // D2Client 1.13c StateSet2: five ticks down, 3/5 duration dark,
+    // 2/5 back up (25 if zero). Ambient only; unit lights survive.
+    cloakLevel_=level;cloakFrame_=cloakAngle_=0;cloakFactor_=1;
+    cloakRise_=2*duration/5;if(!cloakRise_) cloakRise_=25;
+    cloakTotal_=3*duration/5+cloakRise_+5;
 }
 void LightingView::setEclipse(bool active) {
     if (eclipse_ == active) return;
@@ -67,6 +75,14 @@ void LightingView::advance(float dt, const LevelRecord &level) {
     const int rate = eclipse ? 4 : timeRate;
     const auto &cycles = eclipse ? eclipseCycles : level.act == 3 ? actFourCycles : normalCycles;
     for (int frame = 0; frame < frames; ++frame) {
+        if(cloakLevel_!=level.id || cloakFrame_>cloakTotal_) {cloakLevel_=-1;cloakFactor_=1;}
+        if(cloakLevel_>=0) {
+            if(cloakFrame_<5 || cloakFrame_>=cloakTotal_-cloakRise_) {
+                cloakFactor_=std::clamp(float(std::cos(double(cloakAngle_)*3.14159265358979323846/256.0)),0.f,1.f);
+                cloakAngle_=cloakFrame_<5?cloakFrame_*128/5:128-(cloakFrame_-cloakTotal_+cloakRise_)*128/cloakRise_;
+            } else cloakFactor_=0;
+            ++cloakFrame_;
+        }
         // GAME_UpdateProgress -> GAME_UpdateEnvironment: one update per 25 Hz frame.
         ++environment.ticks;
         if (level.act == 3) environment.ticks += 15;
@@ -131,10 +147,11 @@ void LightingView::draw(const PaletteBlendView &palette, const LevelRecord &leve
                         float zoom, int radius, std::span<const SceneLight> lights) const {
     if (!lightMap_.id) return;
     const auto &environment = environments_[size_t(std::clamp(level.act, 0, 4))];
-    const Color ambient = level.isInside
+    Color ambient = level.isInside
         ? environmentColor(std::clamp(level.lightIntensity, 0, 255),
                            {uint8_t(level.lightRed), uint8_t(level.lightGreen), uint8_t(level.lightBlue), 255})
         : environmentColor(environment.intensity, environment.color);
+    ambient.r=uint8_t(float(ambient.r)*cloakFactor_);ambient.g=uint8_t(float(ambient.g)*cloakFactor_);ambient.b=uint8_t(float(ambient.b)*cloakFactor_);
     std::fill(lightPixels_.begin(), lightPixels_.end(), ambient);
     auto add = [&](const SceneLight &source, bool playerSource) {
         if (source.radius <= 0) return;

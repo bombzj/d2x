@@ -58,7 +58,15 @@ StepStatus System::baalStep(TickContext tick) {
             for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && !m.questNpc && !m.owner && m.life>0 && (m.position-unit->position).length()<64) occupied=true;}
             const auto admitted=ports_.population.read().areas.find(p.area);
             if(admitted==ports_.population.read().areas.end()) occupied=true;
-            else for(const auto &pending:area.definition.population) if(!admitted->second.admittedSpawnKeys.contains(pending.identity.spawnKey) && (pending.position-unit->position).length()<64) occupied=true;
+            else for(const auto &pending:area.definition.population) if(!admitted->second.admittedSpawnKeys.contains(pending.identity.spawnKey) &&
+                !admitted->second.rejectedDensityKeys.contains(pending.identity.spawnKey) && (pending.position-unit->position).length()<64) occupied=true;
+            if(admitted!=ports_.population.read().areas.end()) for(size_t index=0;index<area.definition.activation.rooms().size();++index) {
+                const auto &room=area.definition.activation.rooms()[index];if(!room.populate) continue;
+                const float nearestX=std::clamp(unit->position.x,float(room.x),float(room.x+room.width));
+                const float nearestY=std::clamp(unit->position.y,float(room.y),float(room.y+room.height));
+                if((Vec{nearestX,nearestY}-unit->position).length()<64 &&
+                    (!admitted->second.roomStages.contains(index) || admitted->second.roomStages.at(index)<3)) occupied=true;
+            }
             if(occupied || (world.waveAt && tick.tick<world.waveAt)) continue;
             if(!world.wavePrepared) {world.wavePrepared=true;world.waveAt=tick.tick+250;continue;}
             if(world.wave<5) {

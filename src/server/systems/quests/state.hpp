@@ -57,6 +57,7 @@ struct ActThreeState {
 };
 struct ActFourState {
     bool izualSlain{},ghostSpawned{},hammerDropped{},forgePlaced{},forgeSmashed{},diabloSlain{},diabloSpawned{},portalOpened{};
+    bool sanctumCleared{};
     Vec ghostPosition;
     unsigned forgeHits{};
     std::set<int> seals;

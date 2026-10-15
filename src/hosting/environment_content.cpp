@@ -114,7 +114,9 @@ void prepareEnvironmentPopulation(Archives &archives,const ClassicData &data,Pre
         const auto preset=catalog.preset(area.act,source.id,prepared.terrain.map->terrain.data.version,source.nativeIdentity);
         const auto unit=area.environmentMonsters.find(preset.id);if(unit==area.environmentMonsters.end()) continue;
         if(std::any_of(area.population.begin(),area.population.end(),[&](const auto &m){return m.identity.spawnKey==key;})) continue;
-        auto monster=unit->second;monster.identity.spawnKey=key;monster.identity.origin=SpawnOrigin::Preset;monster.position={source.x+.5f,source.y+.5f};area.population.push_back(std::move(monster));
+        auto monster=unit->second;monster.identity.spawnKey=key;monster.identity.origin=SpawnOrigin::Preset;
+        monster.identity.presetOrder=index-1;
+        monster.position={source.x+.5f,source.y+.5f};area.population.push_back(std::move(monster));
     }
     // OBJRGN_GetTrapMonsterId uses native class families in population order.
     std::string selected="flyingscimitar";

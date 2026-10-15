@@ -35,7 +35,7 @@ target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/wor
   src/world/retail/preset_scan.cpp src/world/retail/room_grids.cpp
   src/world/retail/room_themes.cpp src/world/retail/tile_selector.cpp
   src/world/retail/room_data.cpp src/world/retail/preset_room.cpp
-  src/world/retail/tile_materialization.cpp)
+  src/world/retail/tile_materialization.cpp src/world/retail/room_logicals.cpp)
 target_sources(d2x_world PRIVATE
   src/world/outdoor/outdoor_substitution.cpp
   src/world/outdoor/outdoor_shrines.cpp
@@ -77,6 +77,7 @@ target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skil
 target_sources(d2x_content PRIVATE src/content/skills/defensive_buff_data.cpp src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
     src/content/skills/bone_data.cpp src/content/skills/barbarian_data.cpp src/content/skills/amazon_bow_data.cpp src/content/skills/amazon_spear_data.cpp src/content/skills/amazon_magic_data.cpp src/content/skills/amazon_summon_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/assassin_data.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_combat.cpp src/content/monsters/monster_type_data.cpp)
@@ -119,6 +120,9 @@ add_library(d2x_gameplay
   src/gameplay/effects/queries.cpp
   src/gameplay/skills/use_source.cpp
   src/gameplay/skills/activation_program.cpp
+  src/gameplay/skills/assassin_progressive.cpp
+  src/gameplay/skills/assassin_summon.cpp
+  src/gameplay/skills/native_damage.cpp
   src/gameplay/skills/item_trigger_policy.cpp
   src/gameplay/missiles/damage.cpp
   src/gameplay/missiles/motion.cpp
@@ -158,7 +162,7 @@ add_library(d2x_gameplay
   src/gameplay/monsters/curse_decision.cpp
     src/gameplay/monsters/ranged_decision.cpp
     src/gameplay/monsters/special_decision.cpp
-    src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/components.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
+    src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/components.cpp src/gameplay/monsters/region_generation.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
   src/gameplay/rewards/experience.cpp)
@@ -224,6 +228,22 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
     src/server/systems/skills/activation.cpp
+    src/server/systems/skills/assassin.cpp
+    src/server/systems/skills/assassin_pet.cpp
+    src/server/systems/skills/assassin_kick.cpp
+    src/server/systems/skills/native_caster.cpp
+    src/server/systems/ai/target_query.cpp
+    src/server/systems/companions/assassin.cpp
+    src/server/systems/companions/assassin_ai.cpp
+    src/server/systems/companions/shadow_ai.cpp
+    src/server/systems/effects/corpse_explosion.cpp
+    src/server/systems/effects/native_area.cpp
+    src/server/systems/combat/native_skill_contact.cpp
+    src/server/systems/combat/progressive_contact.cpp
+    src/server/systems/missiles/native_weapon_contact.cpp
+    src/server/systems/effects/assassin.cpp
+    src/server/systems/effects/blade_shield.cpp
+    src/server/systems/effects/mind_blast.cpp
     src/server/systems/skills/evaluation.cpp
     src/server/systems/skills/weapon.cpp src/server/systems/inventory/weapon_cost.cpp src/server/systems/inventory/replenishment.cpp
   src/server/systems/missiles/system.cpp
@@ -258,6 +278,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/companions/necro.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
+  src/server/systems/objects/population.cpp
   src/server/systems/objects/shrines.cpp
   src/server/systems/objects/hazards.cpp
   src/server/systems/objects/traps.cpp
@@ -391,6 +412,7 @@ target_sources(d2x_content PRIVATE src/content/npc/gamble_stock.cpp)
 
 target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/assassin_summon_content.cpp)
 target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp)
@@ -425,5 +447,6 @@ target_sources(d2x_game_content PRIVATE src/hosting/hireling_content.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/companions/hireling.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/enchantment_damage.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/unique_modifiers.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/effects/monster_enchantments.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/ai/unique_actions.cpp)

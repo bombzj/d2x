@@ -494,6 +494,7 @@ void RetailTileMaterializer::loadOutdoor(size_t index, const RetailOutdoorRoomDa
     // DRLGOUTROOM_InitializeDrlgOutdoorRoom: wall grid precedes floor grid.
     layer(index, near, data.grids.walls, data.grids.width, true, false, false, false);
     layer(index, near, data.grids.floors, data.grids.width, false, false, false, false);
+    initializeLogicals(index);
     r.loaded = true;
     failed_ = false;
 }
@@ -564,6 +565,7 @@ void RetailTileMaterializer::loadPreset(size_t index, const RetailPresetRoomData
         layer(index, near, data.grids.shadows, data.grids.width, false, false, data.killEdgeX, data.killEdgeY);
     const auto &preset = catalog_.presets().at(r.room.preset);
     if (preset.animate) animate(index, preset.animationSpeed);
+    initializeLogicals(index);
     r.loaded = true;
     failed_ = false;
 }
@@ -583,6 +585,7 @@ void RetailTileMaterializer::releaseRoom(size_t index) {
     r.mapLinks = {};
     r.animations.clear(); r.roofPopups.clear(); r.units.clear();
     r.grids = {};
+    r.logicalRegions.clear();r.logicalCells.clear();
     for (auto &warp : r.warps) { warp.visible.reset(); warp.lit.reset(); }
     r.loaded = false;
     r.initialActiveRandom.reset();

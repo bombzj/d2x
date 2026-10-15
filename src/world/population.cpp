@@ -1,4 +1,5 @@
 #include "gameplay/monsters/implementation.hpp"
+#include "gameplay/monsters/region_generation.hpp"
 #include "population.hpp"
 #include "core/random.hpp"
 // Population rules adapted with reference to D2MOO (MIT), commit 5596f5cb6c5251a0a07c6637d26458b06099d516.
@@ -18,6 +19,7 @@ class Random {
     explicit Random(uint32_t seed) : state_(initialRandom(seed)) {}
     uint32_t below(uint32_t bound) { return limitedRandom(state_, bound); }
     uint64_t state() const { return state_; }
+    uint64_t &stream() { return state_; }
     int between(int first, int last) {
         if (first < 0 || last < first || last > 1024)
             throw std::runtime_error("Invalid MPQ monster group range");
@@ -37,11 +39,15 @@ class Planner {
     std::set<std::string> fixedUniques_;
     std::vector<uint8_t> occupied_;
     uint32_t group_ = 0;
+    std::optional<size_t> presetOrder_;
+    std::span<const size_t> excludedPresets_;
     const Map::RoomBounds *densityRoom_ = nullptr;
     static constexpr size_t maxActors = 8192;
 
     void diagnostic(std::string message) { diagnostics_.insert(std::move(message)); }
     bool valid(Vec p, bool protectArrival, MovementCollisionRule rule) const {
+        if(protectArrival && densityRoom_ && (p.x<densityRoom_->x || p.y<densityRoom_->y ||
+            p.x>=densityRoom_->x+densityRoom_->width || p.y>=densityRoom_->y+densityRoom_->height)) return false;
         if (!map_.grid.walkable(p, rule))
             return false;
         if (protectArrival) {
@@ -118,6 +124,7 @@ class Planner {
         result_.spawns.push_back({{monster.id, unique, key, rank, origin, group_},
                                   monsterImplementation(monster.id).kind,
                                   *location});
+        result_.spawns.back().identity.presetOrder=presetOrder_;
         return location;
     }
     void party(const MonsterRecord &leader, Vec pos, SpawnOrigin origin, const std::string &key) {
@@ -129,35 +136,28 @@ class Planner {
             if (auto minion = lookup(leader.minions[i % classes]))
                 // A normal monster's party uses normal monster creation. Flag 64
                 // suppresses recursion; it does not grant an elite minion rank.
-                if (add(*minion, pos, 4, MonsterRank::Normal, origin, key + ".party." + std::to_string(i)) &&
-                    leader.ownsParty)
-                    result_.spawns.back().identity.ownerSpawnKey = key;
+                if (add(*minion, pos, 4, MonsterRank::Normal, origin, key + ".party." + std::to_string(i))) {
+                    result_.spawns.back().identity.spawnParentKey=key;
+                    if(leader.ownsParty) result_.spawns.back().identity.ownerSpawnKey = key;
+                }
     }
     const MonsterRecord *choose(bool elite) {
-        const MonsterRecord *monster = nullptr;
-        if (elite && settings_.difficulty == 0 && level_) {
-            const auto &pool = level_->population.unique;
-            if (!pool.empty())
-                monster = lookup(pool[random_.below(uint32_t(pool.size()))]);
-        } else {
-            uint32_t total = 0;
-            for (auto entry : roster_)
-                total += uint32_t(std::max(0, entry->rarity));
-            if (total) {
-                uint32_t roll = random_.below(total);
-                for (auto entry : roster_) {
-                    auto weight = uint32_t(std::max(0, entry->rarity));
-                    if (roll < weight) {
-                        monster = entry;
-                        break;
-                    }
-                    roll -= weight;
-                }
+        std::vector<const MonsterRecord *> definitions;
+        std::vector<MonsterPopulationChoice> choices;
+        std::vector<int> uniques;
+        for(const auto *entry:roster_) {
+            const int definition=int(definitions.size());definitions.push_back(entry);
+            int replacement=-1;
+            if(entry->placeSpawn && !entry->spawn.empty()) {
+                replacement=int(definitions.size());definitions.push_back(lookup(entry->spawn));
             }
+            choices.push_back({definition,entry->rarity,replacement,entry->placeSpawn});
         }
-        if (monster && monster->placeSpawn && !monster->spawn.empty() &&
-            random_.below(100) > uint32_t(elite ? 0 : 20))
-            monster = lookup(monster->spawn);
+        if(level_) for(const auto &code:level_->population.unique) {
+            uniques.push_back(int(definitions.size()));definitions.push_back(lookup(code));
+        }
+        const auto selected=choosePopulationMonster(choices,uniques,settings_.difficulty,elite,random_.stream());
+        const auto *monster=selected?definitions.at(size_t(*selected)):nullptr;
         return monster && monster->hostile() ? monster : nullptr;
     }
     void selectRoster() {
@@ -218,6 +218,7 @@ class Planner {
         for (int i = 0; minion && i < count; ++i)
             if (add(*minion, *leader, 4, rank == MonsterRank::Champion ? rank : MonsterRank::Minion, origin,
                     key + ".minion." + std::to_string(i))) {
+                result_.spawns.back().identity.spawnParentKey=key+".leader";
                 if (rank == MonsterRank::Champion) result_.spawns.back().identity.championVariantAllowed = false;
                 else result_.spawns.back().identity.ownerSpawnKey = key + ".leader";
             }
@@ -262,6 +263,8 @@ class Planner {
     }
     void fixed() {
         for (size_t i = 0; i < map_.terrain.data.objects.size(); ++i) {
+            if(std::find(excludedPresets_.begin(),excludedPresets_.end(),i)!=excludedPresets_.end()) continue;
+            presetOrder_=i;
             const auto &o = map_.terrain.data.objects[i];
             if (o.type != 1)
                 continue;
@@ -315,6 +318,7 @@ class Planner {
         }
     }
     void density() {
+        presetOrder_.reset();
         if (!level_ || !level_->population.supported || !preset_.populate)
             return;
         const auto &p = level_->population;
@@ -325,7 +329,10 @@ class Planner {
         auto rooms = map_.rooms;
         if (rooms.empty())
             rooms.push_back({0, 0, (map_.terrain.data.width - 1) * 5, (map_.terrain.data.height - 1) * 5, true});
+        const int populatedRooms=int(std::count_if(rooms.begin(),rooms.end(),[](const auto &room){return room.populate;}));
+        int processedRooms=0;
         for (const auto &room : rooms) {
+            ++processedRooms;
             if (!room.populate)
                 continue;
             densityRoom_ = &room;
@@ -337,9 +344,8 @@ class Planner {
                 auto monster = choose(false);
                 if (!monster)
                     continue;
-                bool boss =
-                    result_.eliteGroups < p.uniqueMin[settings_.difficulty] ||
-                    (result_.eliteGroups < p.uniqueMax[settings_.difficulty] && random_.below(100) <= 5);
+                const bool boss=choosePopulationGroup(result_.eliteGroups,p.uniqueMin[settings_.difficulty],
+                    p.uniqueMax[settings_.difficulty],processedRooms,populatedRooms,random_.stream())==0;
                 auto key = "density." + std::to_string(result_.densityTrials - 1);
                 ++group_;
                 if (boss) {
@@ -362,8 +368,10 @@ class Planner {
                 for (int member = 0; member < count; ++member) {
                     auto memberKey = key + "." + std::to_string(member);
                     auto point = add(*monster, *pos, 3, MonsterRank::Normal, SpawnOrigin::Density, memberKey);
-                    if (point)
+                    if (point) {
+                        if(member) result_.spawns.back().identity.spawnParentKey=key+".0";
                         party(*monster, *point, SpawnOrigin::Density, memberKey);
+                    } else if(!member) break;
                 }
             }
         }
@@ -377,7 +385,8 @@ class Planner {
           occupied_(map.grid.blocked.size()) {
         result_.sceneSeed = seed;
     }
-    PopulationPlan run() {
+    PopulationPlan run(const std::vector<std::string> *roster,std::span<const size_t> excludedPresets) {
+        excludedPresets_=excludedPresets;
         if (!catalog_.supported()) {
             result_.diagnostics = catalog_.diagnostics();
             return result_;
@@ -386,10 +395,16 @@ class Planner {
             diagnostic(message);
         if (level_ && level_->id == 1)
             return result_; // Town is never a hostile population.
-        selectRoster();
+        if(roster) {
+            for(const auto &code:*roster) {
+                const auto *monster=lookup(code);
+                if(!monster) throw std::runtime_error("Missing prepared region monster");
+                roster_.push_back(monster);result_.roster.push_back(code);
+            }
+        } else selectRoster();
         result_.componentRandom = random_.state();
         fixed();
-        density();
+        if(settings_.density) density();
         if (!level_)
             diagnostic("Template preview: no native level roster/density; fixed presets only.");
         if (level_ && !level_->population.supported)
@@ -400,12 +415,13 @@ class Planner {
 };
 } // namespace
 PopulationPlan planPopulation(const MonsterCatalog &catalog, const LevelRecord *level,
-                              const PresetRecord &preset, const Map &map, PopulationSettings settings) {
+                              const PresetRecord &preset, const Map &map, PopulationSettings settings,
+                              const std::vector<std::string> *roster,std::span<const size_t> excludedPresets) {
     if (settings.difficulty < 0 || settings.difficulty > 2)
         throw std::runtime_error("Population difficulty must be 0..2");
     auto parent = initialRandom(settings.seed);
     const uint32_t seed = rollRandom(parent) + uint32_t(level ? level->id : preset.id);
-    return Planner(catalog, level, preset, map, settings, seed).run();
+    return Planner(catalog, level, preset, map, settings, seed).run(roster,excludedPresets);
 }
 void writePopulationReport(std::ostream &out, const PopulationPlan &plan, const LevelRecord *level,
                            const PresetRecord &preset, PopulationSettings settings) {

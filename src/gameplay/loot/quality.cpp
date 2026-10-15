@@ -19,7 +19,7 @@ const char *dropQualityName(DropQuality quality) {
 }
 QualityRoll rollCreatedItemQuality(const ItemQualityRules &rules,int itemLevel,uint64_t seed) {
     QualityRoll result;result.randomState=seed;
-    const int difference=std::max(1,itemLevel-rules.baseLevel);
+    const int difference=rules.miscellaneous?1:std::max(1,itemLevel-rules.baseLevel);
     for(const auto quality:{DropQuality::Unique,DropQuality::Rare,DropQuality::Set,DropQuality::Magic,DropQuality::Superior,DropQuality::Normal}) {
         const auto &ratio=rules.ratios[size_t(quality)];
         if(ratio.divisor<=0) throw std::runtime_error("Invalid item creation quality divisor");

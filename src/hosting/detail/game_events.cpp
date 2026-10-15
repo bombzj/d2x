@@ -121,8 +121,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         else if (const auto *pulse = std::get_if<server::SkillPulseFact>(&fact)) {
             if(!visibleActor(pulse->owner,pulse->ownerType) || !visibleActor(pulse->target,pulse->targetType)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::SkillEvent, [&](auto &out) {
-                out.u8(0);out.u16(uint16_t(pulse->skill));out.u16(uint16_t(pulse->rank));
-                out.u8(pulse->ownerType);out.u32(uint32_t(pulse->owner.value));out.u8(pulse->targetType);out.u32(uint32_t(pulse->target.value));out.u32(0);out.u32(0);
+                out.u8(pulse->parameter);out.u16(uint16_t(pulse->skill));out.u16(uint16_t(pulse->rank));
+                out.u8(pulse->ownerType);out.u32(uint32_t(pulse->owner.value));out.u8(pulse->targetType);out.u32(uint32_t(pulse->target.value));out.u32(pulse->argumentX);out.u32(pulse->argumentY);
             }));
         }
         else if (const auto *missile = std::get_if<server::MissileFact>(&fact)) {

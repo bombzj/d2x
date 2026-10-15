@@ -17,6 +17,7 @@ struct AmazonMagicSpec;
 struct CorpseSearchSpec;
 struct LeapSpec;
 struct GrimWardSpec;
+struct AssassinSkillSpec;
 struct SkillCastSpec {
     SkillBehavior effect{};
     std::shared_ptr<const BoneSkillSpec> bone;
@@ -24,6 +25,7 @@ struct SkillCastSpec {
     std::shared_ptr<const CorpseSearchSpec> corpseSearch;
     std::shared_ptr<const LeapSpec> leap;
     std::shared_ptr<const GrimWardSpec> grimWard;
+    std::shared_ptr<const AssassinSkillSpec> assassin;
     int rank = 0;
     int stunFrames = 0;
     Fixed8 healingMinimum, healingMaximum;

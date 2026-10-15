@@ -31,7 +31,7 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
     const auto &lead=unitContext?*unitContext:leadInventory?leadInventory->actor:leadCharacter->actor;
     const auto region=lead.area;const auto generation=lead.areaGeneration,tick=lead.tick;
     for(const auto &plan:plans) {
-        if(!plan.auraPlayers.empty() || !plan.player || plan.missileBirth) return {DomainStatus::InvalidRequest,{}};
+        if(!plan.auraPlayers.empty() || !plan.player || plan.missileBirth || plan.roomRandom) return {DomainStatus::InvalidRequest,{}};
         const auto *inventory=std::get_if<InventoryEdit>(&plan.change);
         const auto *character=std::get_if<CharacterEdit>(&plan.change);
         if(!inventory && !character) return {DomainStatus::InvalidRequest,{}};
@@ -93,7 +93,11 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         const auto *state=std::get_if<StateFact>(&fact);const auto *hit=std::get_if<HitFact>(&fact);
         batches.push_back({0,tick,publication,{AudienceKind::Area,{},state?state->area:hit?hit->area:region},{fact}});
     }
-    const auto output=ports_.events.publishGroup(std::move(batches));if(!output) return {output.status,{}};
+    // Native unit skill assignments may change only authoritative attributes.
+    // They still commit atomically, without reserving an empty output batch.
+    if(!batches.empty()) {
+        const auto output=ports_.events.publishGroup(std::move(batches));if(!output) return {output.status,{}};
+    }
     if(world) {++world->next.revision;ports_.items.commit(std::move(world->next));}
     for(auto &plan:plans) {
         std::visit([&](auto &edit) {

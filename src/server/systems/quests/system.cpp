@@ -18,7 +18,12 @@
 #include "gameplay/quest/acts/act_four_state.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include <algorithm>
+#include "core/random.hpp"
 namespace d2x::server::quests {
+void System::initializeControl() {
+    if(state_.controlRandom) throw std::logic_error("Quest control is already initialized");
+    state_.controlRandom=childRandom(ports_.random);
+}
 std::optional<Dialogue> System::dialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *area=ports_.areas.find(actor.area);
     if(!area) return {};
@@ -171,18 +176,25 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
 StepStatus System::denStep(TickContext tick) {
     const auto *area=ports_.areas.find(RegionId(8));
     if(area) {
-        size_t alive=area->definition.populationMissing, killed=0, admitted=0;
+        size_t alive=area->definition.populationMissing, killed=0;
         for(const auto &[id,m]:ports_.monsters.read().actors) {
-            (void)id;if(m.area!=RegionId(8) || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
-            ++admitted;if(m.life>0) {++alive;continue;}++killed;
+            (void)id;if(m.area!=RegionId(8) || m.owner || m.questNpc || m.rule.environmentController || m.identity.origin==SpawnOrigin::Debug) continue;
+            if(m.life>0) {++alive;continue;}++killed;
             if(const auto *killer=ports_.players.findActor(m.killer)) state_.actOne.contributors[killer->player]=killer->actor;
             else if(const auto pet=ports_.monsters.read().actors.find(m.killer);pet!=ports_.monsters.read().actors.end() && pet->second.owner)
                 if(const auto *owner=ports_.players.find(*pet->second.owner)) state_.actOne.contributors[owner->player]=owner->actor;
         }
-        alive+=area->definition.population.size()>admitted?area->definition.population.size()-admitted:0;
-        state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
         const auto population=ports_.population.read().areas.find(RegionId(8));
-        if(!state_.actOne.denCleared && killed && !alive && population!=ports_.population.read().areas.end() && population->second.generation==area->generation) {
+        const bool current=population!=ports_.population.read().areas.end() && population->second.generation==area->generation;
+        bool generated=current;
+        for(size_t room=0;room<area->definition.activation.rooms().size();++room) {
+            if(!area->definition.activation.rooms()[room].populate) continue;
+            if(!current || !population->second.roomStages.contains(room) || population->second.roomStages.at(room)<3) generated=false;
+        }
+        for(const auto &spawn:area->definition.population)
+            if(!current || !population->second.admittedSpawnKeys.contains(spawn.identity.spawnKey)) ++alive;
+        state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
+        if(!state_.actOne.denCleared && killed && !alive && generated) {
             captureGoal(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),RegionId(8));
             state_.actOne.denCleared=true;
         }

@@ -72,11 +72,33 @@ struct DiagnosticMonster {
     bool aiResetsTracked{};
     uint64_t specialTargetOrder{},aiFunctionRevision{};
     bool detachedMinion{};
+    struct Assassin {
+        std::array<int64_t,3> parameters{};
+        uint64_t nextDecision{},expires{},removeAt{};
+        EntityId lastCorpse{},missile{};
+    };
+    std::optional<Assassin> assassin;
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticAnimation { std::string mode; int frames{},startFrame{},speed{},duration{},action{}; };
 struct DiagnosticCollision { int x{},y{}; uint16_t mask{},objectMask{}; bool playerClear{}; };
+struct DiagnosticDensity {
+    RegionId area;
+    size_t room{},logical{};
+    std::string phase,deferred;
+    int definition{},trial{},search{},remaining{},partyRemaining{},champions{};
+    int processedRooms{},successfulRooms{},uniqueCount{};
+    EntityId leader;
+    std::optional<size_t> preset;
+};
 struct DiagnosticSnapshot {
+    uint64_t gameRandom{};
+    std::optional<uint64_t> objectControlRandom,monsterRegionRandom,npcControlRandom,questControlRandom;
+    std::map<RegionId,objects::ObjectRegionPopulation> objectPopulation;
+    std::map<RegionId,std::set<std::string>> rejectedDensity;
+    std::vector<DiagnosticDensity> densityPopulation;
+    bool modifiersPending{};
+    std::string modifierFailure;
     unsigned virtualPlayers{1};
     SystemMetrics stageMetrics{};
     uint64_t spatialTick{},spatialGeneration{},spatialQueries{},spatialCandidates{},spatialReturned{};

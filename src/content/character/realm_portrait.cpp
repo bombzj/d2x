@@ -198,7 +198,9 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineChara
     };
     const auto *right = hand(5), *left = hand(6);
     if (right && left) {
-        if (right->weapon == left->weapon && (right->weapon == "bow" || right->weapon == "xbw"))
+        if (right->weapon == "ht1" && left->weapon == "ht1")
+            p.weapon = "ht2";
+        else if (right->weapon == left->weapon && (right->weapon == "bow" || right->weapon == "xbw"))
             p.weapon = right->weapon;
         else if (right->weapon == "1hs" || right->weapon == "1ht") {
             if (left->weapon != "1hs" && left->weapon != "1ht")

@@ -1,0 +1,91 @@
+#include "target_query.hpp"
+#include "server/player_store.hpp"
+#include "server/area_store.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/participants.hpp"
+#include "gameplay/monsters/melee_decision.hpp"
+#include "gameplay/monsters/movement_math.hpp"
+#include "core/random.hpp"
+#include <algorithm>
+namespace d2x::server::ai {
+std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) {
+    const auto &area=ports_.areas.at(source.area);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    auto search=source;const bool confused=source.curseControl.ai==CurseAi::Confuse;
+    if(confused) {
+        auto random=source.combatRandom;const bool flip=(rollRandom(random)&1)!=0;
+        const auto original=source.alignment();
+        const auto alignment=original==UnitAlignment::Neutral?(flip?UnitAlignment::Good:UnitAlignment::Evil):
+            flip?(original==UnitAlignment::Evil?UnitAlignment::Good:UnitAlignment::Evil):original;
+        if(!search.nativeStats || !search.rule.stats) return {};
+        search.nativeStats->values.values[{search.rule.stats->names.at("alignment"),0}]=int(alignment);
+        search.curseControl.ai=CurseAi::None;
+        if(!ports_.monsters.consumeRandom(source.id,source.combatRandom,random)) return {};
+    }
+    const auto position=[&](combat::ParticipantView target) {
+        const auto region=target.player?target.player->area:target.monster->area;
+        return target.position()+ports_.areas.at(region).definition.origin-area.definition.origin;
+    };
+    const auto alive=[&](combat::ParticipantView target) {
+        return target.player?target.player->entered && target.player->persistent.player.hp>0:target.monster && target.monster->alive();
+    };
+    const auto clearRay=[&](Vec point) {return (!missileRay && !requireSight) || area.definition.collision.missileSegment(source.position,point,{4,1});};
+    // MonsterData's direct selector survives list removal until AIRESET. Its
+    // target bypasses normal alignment/range acquisition, but never death/rays.
+    const auto selector=source.attractionTarget?source.attractionTarget:source.curseControl.ai==CurseAi::Terror?source.curseControl.target:EntityId{};
+    if(selector) {
+        const auto target=participants.find(selector);
+        if(alive(target)) {
+            const auto point=position(target);
+            if(clearRay(point)) return NativeAiTarget{{target.id(),0,uint8_t(target.monster?1:0)},point,target.size(),monsterAiDistance(point,target.monster?target.size():0,source.position)};
+        }
+    }
+    std::optional<NativeAiTarget> primary,alternative;
+    const bool nodeQuery=!confused && !missileRay && source.alignment()==UnitAlignment::Evil;
+    const int maximum=missileRay?48:nodeQuery?(source.rule.ai.searchDistance?source.rule.ai.searchDistance:35):35;
+    const auto consider=[&](EntityId id,bool special=false) {
+        const auto target=participants.find(id);if(!alive(target) || id==source.id || !target.damageable()) return;
+        const auto region=target.player?target.player->area:target.monster->area;
+        if(ports_.areas.at(region).definition.act!=area.definition.act) return;
+        if(!special && !participants.canHarm({nullptr,&search},target)) return;
+        const auto point=position(target);
+        const int distance=monsterAiDistance(point,nodeQuery?0:target.monster?target.size():0,source.position);
+        if((!special && (nodeQuery?distance>=maximum:distance>maximum)) || !clearRay(point)) return;
+        const int threat=target.player?14:target.monster->rule.threat;
+        auto &selected=special || (!nodeQuery && threat<=1)?alternative:primary;
+        if(!selected || distance<selected->distance) selected=NativeAiTarget{{id,0,uint8_t(target.monster?1:0)},point,target.size(),distance};
+    };
+    if(nodeQuery) {
+        // Targets::First reserves 0..7; UpdateSummonAI inserts immediately
+        // after its player head, independently of PlayerPets' append order.
+        for(uint8_t slot=0;slot<8;++slot) for(const auto &[key,player]:ports_.players.all()) {
+            (void)key;if(player.targetNodeIndex!=slot || !player.entered) continue;
+            const auto &ownerArea=ports_.areas.at(player.area);
+            if(ownerArea.definition.act!=area.definition.act || ownerArea.definition.town ||
+               monsterAiDistance(position({&player,nullptr}),0,source.position)>=55) continue;
+            consider(player.actor);
+            auto pets=ports_.monsters.pets(player.player);
+            std::sort(pets.begin(),pets.end(),[&](EntityId left,EntityId right) {
+                return ports_.monsters.find(left)->petRegistrationOrder>ports_.monsters.find(right)->petRegistrationOrder;
+            });
+            for(const auto id:pets) consider(id);
+        }
+        for(const auto id:ports_.monsters.specialTargets()) consider(id,true);
+    } else if(const auto *room=area.definition.activation.room(source.position)) {
+        const auto current=RoomView{source.area,int(area.definition.origin.x)+room->x,int(area.definition.origin.y)+room->y};
+        const auto visit=[&](RoomView view) {for(const auto id:ports_.areas.roomUnitOrder(view)) consider(id);};
+        if(confused && !missileRay) visit(current);
+        else {
+            const auto index=size_t(room-area.definition.activation.rooms().data());
+            for(const auto near:area.definition.roomNear.at(index)) visit(near);
+        }
+    }
+    if(confused) {
+        if(!primary) ports_.monsters.curseControl(source.id,{});
+        return primary;
+    }
+    if(alternative && (!primary || (alternative->distance<=5 &&
+       area.definition.collision.path(source.position,primary->position,true,source.rule.collision).empty()))) return alternative;
+    return primary;
+}
+}

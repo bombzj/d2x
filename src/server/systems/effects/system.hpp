@@ -11,6 +11,7 @@
 #include "gameplay/units/restoration.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/skills/cast_spec.hpp"
+#include "gameplay/skills/conversion_spec.hpp"
 #include "gameplay/combat/damage_type.hpp"
 #include "gameplay/combat/avoidance.hpp"
 #include "gameplay/monsters/damage.hpp"
@@ -30,11 +31,16 @@
 #include <map>
 #include <utility>
 namespace d2x::server {struct PlayerState;}
+namespace d2x {struct WeaponSkillDamage;struct AssassinCharge;}
 namespace d2x {struct AuraSkillSpec;}
 namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
 namespace d2x::server::combat {struct SpellImpact;}
 namespace d2x::server::attributes {class MonsterResourceTrace;}
 namespace d2x::server::effects {
+struct BladeShieldPulse;
+struct MindBlastPulse;
+struct CorpseExplosionPulse;
+struct NativeAreaSpec;struct NativeAreaPulse;
 std::vector<StatValue> nativeEffectStats(const SkillRules &, const CharacterModifiers &);
 std::vector<StatValue> nativeEffectStats(const SkillRules &,const CombatEffectSpec &);
 std::vector<StatValue> nativeEffectStats(const StatRuleCatalog &,const CombatEffectSpec &);
@@ -139,6 +145,7 @@ struct AuraUnitPublication {
     std::map<EntityId,FrameEventQueue::PreparedEdit> timers;
     std::map<EntityId,FrameEventQueue::PreparedEdit> resetTimers;
     std::map<EntityId,FrameEventQueue::PreparedEdit> skillTimers;
+    std::map<EntityId,FrameEventQueue::PreparedEdit> nativeSkillTimers;
     std::map<EntityId,FrameEventQueue::PreparedEdit> regenerationTimers;
     std::set<EntityId> resetRegeneration;
     uint64_t tick{};
@@ -194,6 +201,13 @@ class System {
     std::map<FrameEventHandle,StormPulse> stormPulses_;
     std::map<std::pair<EntityId,int>,EntityId> stormLast_;
     DomainResult<> stormEvent(const FrameEvent &,uint64_t);
+    DomainResult<> bladeShieldEvent(const FrameEvent &,uint64_t);
+    DomainResult<> advanceBladeShield(BladeShieldPulse &,uint64_t);
+    std::map<FrameEventHandle,std::pair<FrameEventOwner,std::shared_ptr<BladeShieldPulse>>> bladeShieldPulses_;
+    uint64_t bladeShieldOccurrence_{};
+    uint64_t mindBlastOccurrence_{};
+    uint64_t corpseExplosionOccurrence_{};
+    uint64_t nativeAreaOccurrence_{};
     DomainResult<> advanceNativeCallback(NativeContactBatch &,uint64_t);
     struct PaladinCycle {
         int skill{-1},rank{}; RegionId area{}; uint64_t next{},occurrence{},duration{},eventOrder{};
@@ -264,6 +278,7 @@ class System {
         const attributes::AuraSourceObserver &,const attributes::AuraSourceReader &,PlayerPoisonCandidate &,std::vector<DomainFact> &,
         const AuraRecipientPreparation &,bool force);
     DomainResult<> assignUnitAura(EntityId,const AuraDefinition &,uint64_t tick,std::optional<int> assignedRank={});
+    DomainResult<> assignUnitSkills(EntityId,std::span<const std::pair<int,int>>,uint64_t tick);
     void prepareUnitItemAura(AuraUnitPublication &,monsters::Actor &,const SkillAuraChange &,uint64_t,
         const AuraRecipientPreparation &);
     void prepareUnitItemAuras(AuraUnitPublication &,monsters::Actor &,uint64_t tick,const AuraRecipientPreparation &);
@@ -280,19 +295,33 @@ class System {
     DomainResult<PotionPlan> potion(const ActorContext &, const PotionDefinition &) const;
     DomainResult<PotionPlan> skillState(const ActorContext &, CombatEffectSpec,std::span<const StatValue> writes={}) const;
     DomainResult<> frenzy(const ActorContext &,const SkillCastSpec &);
+    DomainResult<> progressiveCharge(const ActorContext &,const SkillCastSpec &);
+    bool hasProgressive(EntityId) const;
+    std::vector<AssassinCharge> progressiveCharges(EntityId) const;
+    DomainResult<> progressiveValue(const ActorContext &,const AssassinCharge &,int count);
+    int32_t progressivePhysicalPercent(EntityId) const;
+    void progressiveDamage(EntityId,WeaponSkillDamage &,uint64_t &random) const;
     DomainResult<PotionPlan> heal(const ActorContext &) const;
     DomainResult<WellRestoration> restoreWell(const ActorContext &,Fixed8 life,Fixed8 mana,Fixed8 stamina,const std::vector<NativeStateCure> &cureStates);
     void commit(PotionPlan &&plan) noexcept;
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false,
         std::span<const StatValue> writes={},bool refreshPassives=false);
     DomainResult<> removeState(const ActorContext &,int state);
-    DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {});
+    DomainResult<> removeUnitState(EntityId,int state,uint64_t tick);
+    DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
+    DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {},std::span<const DomainFact> facts={});
+    DomainResult<> bladeShield(const ActorContext &,const SkillCastSpec &,std::shared_ptr<BladeShieldPulse> &);
+    bool bladeShieldStarted(const std::shared_ptr<BladeShieldPulse> &) const;
+    DomainResult<> mindBlast(const ActorContext &,const SkillCastSpec &,Vec,std::shared_ptr<MindBlastPulse> &);
+    DomainResult<> corpseExplosion(EntityId source,EntityId corpse,int skill,int rank,uint64_t tick,std::shared_ptr<CorpseExplosionPulse> &);
+    DomainResult<> nativeArea(const NativeAreaSpec &,uint64_t tick,std::shared_ptr<NativeAreaPulse> &);
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);
     DomainResult<> unitSkill(EntityId,const SkillCastSpec &,uint64_t);
     DomainResult<> hirelingAura(EntityId,const AuraDefinition &,uint64_t);
     bool hirelingAuraActive(EntityId,int skill,int rank) const;
     DomainResult<> convert(const ActorContext &,EntityId,const WeaponSkillSpec &);
+    DomainResult<> convert(const ActorContext &,EntityId,const NativeConversionSpec &);
     DomainResult<> endConversion(EntityId,uint64_t tick);
     DomainResult<> amazonMagic(const ActorContext &, const SkillCastSpec &,std::optional<EntityId> emitter = {});
     // Borrowed view of the affected unit's canonical skill/state lists.
@@ -326,13 +355,14 @@ class System {
     DomainResult<UnitReceptionPlan> prepareUnitReception(EntityId target,EntityId source,const MonsterHit &,uint64_t,
         const std::array<int,6> &pierce={},bool bypass=false,bool sanctuary=false,bool directDrain=true) const;
     DomainResult<> commitUnitReception(UnitReceptionPlan &);
-    DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool nativeUnitRandom=false);
+    DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool nativeUnitRandom=false,bool deferAction=false);
     PlayerMessageFact deathMessage(EntityId actor) const {
         const auto it=state_.players.find(actor);
         return it==state_.players.end()?PlayerMessageFact{}:PlayerMessageFact{6,{},it->second.killerName,0,0,it->second.killerClass};
     }
     DomainResult<> block(const ActorContext &);
     DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
+    DomainResult<> nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &,int64_t amount,uint64_t tick);
     bool recovering(EntityId, uint64_t tick) const;
     bool missileHitAllowed(EntityId,uint64_t tick) const;
     DomainResult<> nativeMissileHitDelay(EntityId,const CombatStateDefinition &,uint64_t duration,uint64_t tick);
@@ -342,6 +372,8 @@ class System {
     StepStatus finishContacts(uint64_t tick);
     NativeContactBatch prepareDamageEvents(EntityId source,EntityId target,int64_t physical,int64_t total,bool missile,bool returnFire,uint64_t tick,bool suppress=false) const;
     NativeContactBatch prepareAttackEvents(EntityId source,EntityId target,uint64_t tick) const;
+    NativeContactBatch prepareMeleeDrainEvents(EntityId source,EntityId target,uint64_t tick) const;
+    NativeContactBatch prepareThornsEvents(EntityId source,EntityId target,int64_t physical,uint64_t tick) const;
     NativeContactBatch prepareMissileEvents(EntityId source,EntityId target,uint64_t tick,bool returnFire=true) const;
     DomainResult<> advanceDamageEvents(NativeContactBatch &,uint64_t tick);
     bool hasContactEffects() const {return !monsterCurses_.empty();}

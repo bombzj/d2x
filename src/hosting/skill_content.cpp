@@ -140,7 +140,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
         if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
-            !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar") continue;
+            !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar" && skill.classCode != "ass") continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
         if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);

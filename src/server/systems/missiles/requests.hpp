@@ -12,6 +12,7 @@
 #include <vector>
 
 namespace d2x::server {struct SkillRules;}
+namespace d2x::server::combat {struct NativeSkillContact;}
 namespace d2x::server::missiles {
 struct Spawn {
     ActorContext actor;
@@ -32,9 +33,13 @@ struct Spawn {
     std::shared_ptr<const SkillRules> preparedRules;
     std::array<int32_t,2> parameters{};
     MissilePathInitialization pathInitialization;
+    std::optional<uint64_t> nativeMeleeOccurrence;
+    std::shared_ptr<const MissileHitDamage> nativeMeleeBase;
+    std::shared_ptr<combat::NativeSkillContact> nativeMeleeContact;
+    bool nativeMeleeHeld{};
 };
 enum class DirectNotice { Publish,DeferPulse };
-struct DirectContact {EntityId projectile;std::vector<DomainFact> deferredFacts;};
+struct DirectContact {EntityId projectile;std::vector<DomainFact> deferredFacts;std::optional<uint64_t> occurrence;};
 struct MonsterSpawn {
     EntityId source;
     RegionId area;
@@ -67,5 +72,19 @@ struct NativeSpawn {
     std::array<int32_t,2> parameters{};
     bool distanceCountdown{};
     std::optional<int> startFrame;
+    // SkillAss::sub_6FCF8330 calls InitLowSeed (high word 666) once, then
+    // interleaves coordinate draws with each missile's native constructor.
+    std::optional<uint32_t> ownerLowSeed;
+    int32_t scatterRadius{};
+    int32_t minimumTargetDistanceSquared{};
+    std::optional<std::pair<uint64_t,uint64_t>> ownerSeedEdit;
+    enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill } initialization{};
+    uint32_t initialSeed{};
+    std::optional<int32_t> nativeVelocity;
+    std::optional<std::array<int32_t,2>> finalParameters;
+    int initializationIndex{};
+    std::optional<int> totalFrames;
+    std::optional<EntityId> storedOwner;
+    bool copyMonsterAttackBonus{}; // SKILLS_CreateMissile, as distinct from raw params.
 };
 }

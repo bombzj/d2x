@@ -10,6 +10,7 @@
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/forgotten_tower.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "gameplay/quest/sisters_to_slaughter.hpp"
@@ -30,7 +31,7 @@ DomainResult<> System::cairnFx(RegionId area,Vec position,int destination,uint64
 }
 void System::orderStones() {
     if(state_.actOne.stonesOrdered) return;
-    auto random=ports_.random;
+    auto random=state_.controlRandom.value();
     // ACT1Q4_SetMonolithOrder: assign each original class to a random empty
     // position, retaining rejection draws. It is per game, not map-seed UI data.
     for(int stone=17;stone<=21;++stone) {
@@ -38,7 +39,7 @@ void System::orderStones() {
         do {slot=limitedRandom(random,5);} while(state_.actOne.stones[slot]);
         state_.actOne.stones[slot]=stone;
     }
-    ports_.random=random;state_.actOne.stonesOrdered=true;
+    state_.controlRandom=random;state_.actOne.stonesOrdered=true;
 }
 bool System::npcVisible(const CharacterRecord &record,std::string_view code,RegionId area,int initFunction) const {
     if(code=="hratli" && int(area)==75 && (initFunction==49 || initFunction==50)) {
@@ -149,6 +150,8 @@ StepStatus System::actOneStep(TickContext tick) {
         const uint32_t stage=*goal==QuestId::ForgottenTower?uint32_t(TowerStage::CountessSlain):*goal==QuestId::SistersBurialGrounds?uint32_t(BurialStage::BloodRavenSlain):uint32_t(SlaughterStage::AndarielSlain);
         captureGoal(*goal,stage,m.area,*goal==QuestId::SistersBurialGrounds?std::optional<Vec>{m.position}:std::nullopt,
             *goal==QuestId::SistersBurialGrounds?std::nullopt:killerPlayer(m.killer));
+        if(*goal==QuestId::ForgottenTower && !(state_.initialFlags[questDefinition(*goal).nativeSlot]&0x8000))
+            ports_.objects.countessKilled(m.position,tick.tick);
         // Game.cpp calls QuestUpdater every 20 frames; timeout 1 uses a
         // strict '<', hence each invocation consumes two updater ticks.
         if(*goal==QuestId::SistersToTheSlaughter) state_.actOne.andarielPortalAt=(tick.tick/20+9*2)*20;

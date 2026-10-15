@@ -137,8 +137,8 @@ StepStatus System::actTwoStep(TickContext tick) {
         auto &radament=book.at(questIndex(QuestId::RadamentsLair));
         if(available(QuestId::RadamentsLair) && area.definition.act==1 && int(p.area)!=40 && radament.stage==uint32_t(RadamentStage::Assigned)) radament.stage=uint32_t(RadamentStage::LeftTown);
         if((int(p.area)==44 || int(p.area)==45) && !state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed) {
-            auto random=ports_.random;const auto delay=limitedRandom(random,2)+15;
-            state_.actTwo.sunAt=(tick.tick/20+delay+1)*20;state_.actTwo.sunScheduled=true;ports_.random=random;
+            auto random=state_.controlRandom.value();const auto delay=limitedRandom(random,2)+15;
+            state_.actTwo.sunAt=(tick.tick/20+delay+1)*20;state_.actTwo.sunScheduled=true;state_.controlRandom=random;
         }
         auto &sun=book.at(questIndex(QuestId::TaintedSun));
         if(available(QuestId::TaintedSun) && area.definition.act==1 && state_.actTwo.dark && !sun.stage) sun.stage=uint32_t(SunStage::Darkness);

@@ -14,6 +14,21 @@
 #include <utility>
 
 namespace d2x::server::effects {
+DomainResult<> System::assignUnitSkills(EntityId id,std::span<const std::pair<int,int>> skills,uint64_t tick) {
+    const auto *live=ports_.monsters.find(id);
+    if(!live || !live->alive() || !live->rule.stats || !live->rule.formulas) return {DomainStatus::InvalidActor,{}};
+    if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto plan=std::make_shared<AuraUnitPublication>();auto candidate=*live;++candidate.revision;
+    stageAuraActors(*plan,{{id,std::move(candidate)}},0);
+    const std::vector<std::pair<int,int>> assignments(skills.begin(),skills.end());
+    stageAuraSource(*plan,id,[assignments,tick](monsters::Actor &unit,const CombatEffectSet &states,const AuraUnitPublication::SourceMutation &mutation) {
+        for(const auto &[skill,rank]:assignments) attributes::assignMonsterSkill(unit,states,skill,rank,tick,mutation);
+    });
+    auto prepared=ports_.transactions.prepareUnitAuras(plan,[&](const AuraRecipientPreparation &recipient){prepareStagedItemAuras(*plan,tick,recipient);});
+    if(!prepared) return {prepared.status,{}};
+    const ActorContext actor{live->owner.value_or(PlayerId{}),id,live->area,ports_.areas.at(live->area).generation,0,tick};
+    return ports_.transactions.commitUnitAuras(std::move(*prepared.value),std::move(plan),actor);
+}
 DomainResult<> System::assignUnitAura(EntityId id,const AuraDefinition &definition,uint64_t tick,std::optional<int> assignedRank) {
     const auto *live=ports_.monsters.find(id);
     if(!live || !live->alive() || !live->rule.stats || !live->rule.formulas || !live->rule.auraPrograms ||

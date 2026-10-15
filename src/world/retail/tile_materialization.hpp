@@ -43,6 +43,13 @@ struct RetailTileRoom {
     struct Animation { std::vector<size_t> frames; int speed{}; };
     std::vector<Animation> animations{};
     MapData grids{}; // Logical layers for offline arrivals/automap/exit consumers.
+    struct LogicalRegion {
+        int index{},left{},top{},right{},bottom{};
+        bool node{};
+    };
+    std::vector<LogicalRegion> logicalRegions;
+    std::vector<size_t> logicalCells;
+    bool singleLogicalRegion{};
     bool loaded{};
     std::optional<uint64_t> initialActiveRandom; // DUNGEON_AllocRoom's separate seed.
 };
@@ -59,6 +66,7 @@ class RetailTileMaterializer {
     std::deque<RetailMaterializedTile> tiles_;
     std::map<size_t, RetailRoomCollision> collisions_;
     std::map<RetailPresetKey, std::vector<RetailPresetUnit>> presetUnits_;
+    std::map<int,int> logicalCounters_;
     bool failed_{};
     struct Change { size_t tile{}; const Tile *before{}, *after{}; };
     std::vector<Change> changes_;
@@ -79,6 +87,7 @@ class RetailTileMaterializer {
     void layer(size_t current, std::span<const size_t> near, std::span<const MapCell>,
         int stride, bool orientations, bool fillBlanks, bool killX, bool killY);
     void animate(size_t current, int speed);
+    void initializeLogicals(size_t current);
   public:
     explicit RetailTileMaterializer(const WorldCatalog &catalog) : catalog_(catalog) {}
     // Supply only warp IDs for which native room-to-room warp links exist.

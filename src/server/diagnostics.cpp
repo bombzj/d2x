@@ -83,6 +83,33 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.tombOpen=actTwo.tombOpen;result.durielSlain=actTwo.durielSlain;result.tombAt=actTwo.tombAt;result.staffTombOffset=actTwo.tombOffset;
     result.actThree=systems_.quests.read().actThree;result.actFour=systems_.quests.read().actFour;result.actFive=systems_.quests.read().actFive;
     result.hirelingDeferred=systems_.companions.hirelingDeferred(id);
+    result.gameRandom=random_;
+    result.objectControlRandom=systems_.objects.read().controlRandom;
+    result.monsterRegionRandom=systems_.population.read().regionRandom;
+    result.npcControlRandom=systems_.npc.read().controlRandom;
+    result.questControlRandom=systems_.quests.read().controlRandom;
+    result.objectPopulation=systems_.objects.population();
+    result.modifiersPending=systems_.monsters.modifiersPending();result.modifierFailure=systems_.monsters.modifierFailure();
+    for(const auto &[region,population]:systems_.population.read().areas)
+        if(!population.rejectedDensityKeys.empty()) result.rejectedDensity.emplace(region,population.rejectedDensityKeys);
+    constexpr std::array densityPhases{"trial","search","leader","leaderSetup","partySetup","party","hut","group",
+        "modifiers","champions","championModifiers","extras","done"};
+    for(const auto &[region,population]:systems_.population.read().areas) {
+        for(const auto &[room,cursor]:population.density)
+            result.densityPopulation.push_back({region,room,cursor.logical,densityPhases.at(size_t(cursor.phase)),cursor.deferred,
+                cursor.definition,cursor.trial,cursor.search,cursor.remaining,cursor.partyRemaining,cursor.champions,
+                population.processedRooms,population.successfulRooms,population.uniqueCount,cursor.leader});
+        const auto &definition=areas_.at(region).definition;
+        for(const auto &[order,cursor]:population.presets) {
+            const auto source=std::find_if(definition.nativePresetMonsters.begin(),definition.nativePresetMonsters.end(),
+                [&](const auto &entry){return entry.order==order;});
+            if(source==definition.nativePresetMonsters.end()) continue;
+            const auto *room=definition.activation.room(source->position);if(!room) continue;
+            result.densityPopulation.push_back({region,size_t(room-definition.activation.rooms().data()),cursor.logical,
+                densityPhases.at(size_t(cursor.phase)),cursor.deferred,cursor.definition,cursor.trial,cursor.search,cursor.remaining,
+                cursor.partyRemaining,cursor.champions,population.processedRooms,population.successfulRooms,population.uniqueCount,cursor.leader,order});
+        }
+    }
     for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
     result.area = {area.definition, area.generation, area.definition.populationDeferred, area.definition.populationMissing};
@@ -160,6 +187,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.attractionTarget=monster.attractionTarget;value.attractionUntil=monster.attractionUntil;
         value.aiResetTimers=monster.aiResetTimers;value.aiResetsTracked=monster.nativeAiResetTracked;
         value.specialTargetOrder=monster.specialTargetOrder;value.aiFunctionRevision=monster.aiFunctionRevision;value.detachedMinion=monster.detachedMinion;
+        if(monster.assassinPet) if(const auto pet=systems_.companions.read().companions.find(key);pet!=systems_.companions.read().companions.end())
+            value.assassin=DiagnosticMonster::Assassin{pet->second.assassinAi,pet->second.nextDecision,pet->second.expires,
+                pet->second.removeAt,pet->second.lastCorpse,pet->second.assassinMissile};
         if(const auto region=systems_.monsters.read().componentPalettes.find(monster.area);region!=systems_.monsters.read().componentPalettes.end())
             if(const auto palette=region->second.find(monster.rule.nativeClass);palette!=region->second.end()) value.componentVariants=palette->second.size();
         for(const auto &[mode,rule]:monster.rule.attacks) {(void)rule;value.attacks.push_back(mode);}

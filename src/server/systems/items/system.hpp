@@ -61,6 +61,7 @@ class System {
     EntityId reserveIdentity() { if (ports_.ids.cursor() > UINT32_MAX) throw std::overflow_error("Native item identity exhausted"); return ports_.ids.allocate(); }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
+    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick);
     // Raw CreateItemEx spawn type 3: placement has already been resolved by
     // the caller. Uses the unit seed for quantity, the item seed for quality.
     DomainResult<EntityId> createNativeGold(GroundLocation,unsigned level,uint64_t tick);

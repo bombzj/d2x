@@ -1,6 +1,7 @@
 #pragma once
 #include "contracts/online.hpp"
 #include "content/string_table.hpp"
+#include "content/character/character_attributes.hpp"
 #include "resources/data_table.hpp"
 #include "network/realm_session.hpp"
 #include <map>
@@ -9,6 +10,7 @@ namespace d2x {
 struct EquipmentDefinition;
 class RemoteInventory {
     std::map<std::string, DataTable, std::less<>> tables_;
+    std::vector<CharacterDefinition> characters_;
     struct Base { std::string table; size_t row{}; };
     std::map<std::string, Base, std::less<>> bases_;
     std::map<std::string, size_t, std::less<>> typeRows_;

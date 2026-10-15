@@ -590,7 +590,7 @@ DomainResult<> System::commit(Plan plan) {
     std::set<PlayerId> auraOwners{player.player};
     for(const auto &peer:plan.auraPlayers) {
         const auto *change=std::get_if<CharacterEdit>(&peer.change);
-        if(!change || !peer.player || !peer.auraPlayers.empty() || peer.auraUnits || peer.missileBirth || !auraOwners.insert(change->actor.player).second ||
+        if(!change || !peer.player || !peer.auraPlayers.empty() || peer.auraUnits || peer.missileBirth || peer.roomRandom || !auraOwners.insert(change->actor.player).second ||
            change->revival || change->knockback || change->waypoints || change->experienceAward || change->charge ||
            change->actor.tick!=request->actor.tick ||
            peer.id.value<=state_.lastCommitted || peer.id.value>=plan.id.value) return {DomainStatus::InvalidRequest,{}};
@@ -606,6 +606,7 @@ DomainResult<> System::commit(Plan plan) {
         if(peer.random && peer.random->expected!=target->combatRandom) return {DomainStatus::Stale,{}};
     }
     if(plan.auraUnits && !ports_.effects.validateAuraUnits(*plan.auraUnits)) return {DomainStatus::Stale,{}};
+    if(plan.roomRandom && !ports_.areas.validateRoomRandom(*plan.roomRandom)) return {DomainStatus::Stale,{}};
     if(plan.missileBirth) {
         const size_t prefix=plan.auraUnits && plan.auraUnits->actors?plan.auraUnits->actors->allocatedIds:0;
         if(plan.missileBirth->owner()!=player.actor) return {DomainStatus::InvalidRequest,{}};
@@ -720,6 +721,7 @@ DomainResult<> System::commit(Plan plan) {
     }
     if(plan.auraUnits) ports_.effects.publishAuraUnits(*plan.auraUnits);
     if(plan.missileBirth) plan.missileBirth->publish();
+    if(plan.roomRandom) ports_.areas.publishRoomRandom(*plan.roomRandom);
     ports_.actions.removeUsedSkills(player.actor,player.totals.clearedSkillUses);
     if (characterChange && characterChange->revival) {
         player.area = characterChange->revival->area; player.position = characterChange->revival->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false;

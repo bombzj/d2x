@@ -23,6 +23,7 @@ ItemQualityRules loadItemQualityRules(const ClassicData &data, const DataTable &
             throw std::runtime_error("Missing item quality type column: " + std::string(column));
     ItemQualityRules result;
     result.baseLevel = *item->base.level;
+    result.miscellaneous = item->equipment.isType("misc");
     result.normalOnly = types.number(typeRow, "Normal").value_or(0) != 0;
     result.magicOnly = types.number(typeRow, "Magic").value_or(0) != 0;
     result.rareAllowed = types.number(typeRow, "Rare").value_or(0) != 0;

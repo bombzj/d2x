@@ -11,6 +11,7 @@
 #include "gameplay/combat/scaling.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include <algorithm>
 
 namespace d2x::server::combat {
@@ -40,9 +41,20 @@ DomainStatus System::resolvePlayerImpact(SpellImpact &impact,ParticipantView sou
     const bool physicalMissile=impact.weapon || (impact.monsterHit?impact.monsterHit->channels[0]>0:impact.type==DamageType::Physical && targetDamage>0);
     if(!impact.unblockable && physicalMissile && !(impact.weapon && impact.weapon->smite) && target.totals.equipment.shield &&
        limitedRandom(random,100)<unsigned(target.totals.equipment.blockChance/(running?3:1))) return miss(ports_.effects.block(victim).status);
+    if(!impact.unblockable) {
+        const auto block=prepareWeaponBlock({&target,nullptr},tick,impact.weaponBlock);
+        if(!block) return block.status;
+        if(*block.value) return miss();
+    }
     const bool missile=!impact.melee && (!impact.weapon || impact.weapon->projectile);
     const auto avoided=impact.unblockable?WeaponAvoidance::None:rollWeaponAvoidance(target.totals.character.combat,target.moving,missile,random);
     if(avoided!=WeaponAvoidance::None) return miss(ports_.effects.avoidance(victim,avoided,impact.source).status);
+    if(impact.weapon && impact.weapon->wearSkill.assassin && impact.weapon->wearSkill.assassin->chargeStat>=0 &&
+       impact.progressiveChargeTarget!=impact.next) {
+        const auto result=ports_.effects.progressiveCharge(attacker,impact.weapon->wearSkill);
+        if(!result) return result.status;
+        impact.progressiveChargeTarget=impact.next;
+    }
     MonsterHit hit=impact.monsterHit.value_or(MonsterHit{});
     hit.softHit=hit.softHit || impact.softHit || impact.staticPercent!=0;
     hit.coldFrames=std::max(hit.coldFrames,impact.coldFrames);hit.poisonFrames=std::max(hit.poisonFrames,impact.poisonFrames);hit.stunFrames=std::max(hit.stunFrames,impact.stunFrames);
@@ -118,7 +130,7 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
     const Participants participants{ports_.players,ports_.monsters,ports_.social};const auto caster=participants.find(impact.source);
     const bool melee=!execution.missile && !impact.reaction;
     if(!execution.fillEventComplete) {
-        if(melee && (caster.player || (caster.monster && caster.monster->hireling))) {
+        if(!impact.nativeSkill && melee && (caster.player || (caster.monster && caster.monster->hireling))) {
             if(!impact.pendingAttempts) impact.pendingAttempts=1;
             const auto attempted=advanceMeleeAttempts(impact,tick);if(attempted!=DomainStatus::Applied) return attempted;
         }
@@ -134,8 +146,17 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         const auto committed=ports_.effects.commitPlayerReception(std::move(publication));if(!committed) return committed.status;
         execution.defenseCommitted=true;
     }
+    if(impact.nativeDrainHeld && impact.nativeSkill) {
+        impact.nativeSkill->allocatedPhysical=nativeChecked(execution.defense.damage.channels[0].dealt);
+        impact.nativeSkill->heldPrepared=true;return DomainStatus::Applied;
+    }
+    if(!nativeMeleeDrainReach(impact)) return DomainStatus::Unavailable;
+    {const auto result=postNativeSkillCharge(impact,tick);if(result!=DomainStatus::Applied) return result;}
+    if(impact.nativeSkill && impact.nativeSkill->progressive) {
+        const auto result=advanceProgressive(impact,tick,execution.damageCommitted);if(!result) return result.status;
+    }
     if(!execution.meleeEventComplete) {
-        if(melee) {
+        if(melee && !(impact.nativeSkill && impact.nativeSkill->melee)) {
             if(!impact.pendingAttempts) impact.pendingAttempts=1;
             const auto attempted=advanceMeleeAttempts(impact,tick);if(attempted!=DomainStatus::Applied) return attempted;
         }
@@ -145,6 +166,8 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         execution.callbacks=ports_.effects.prepareDamageEvents(impact.source,target.actor,execution.defense.damage.channels[0].dealt,
             execution.defense.damage.dealt,execution.missile,impact.returnFire || !execution.missile,tick.tick,impact.reaction);
         execution.callbacks.suppressAttacker=impact.suppressSourceEvents;
+        if(impact.nativeSkill && impact.nativeSkill->melee) execution.callbacks.thorns=0;
+        if(impact.nativeDamageFlagsOnly && impact.areaDamage && !(impact.areaDamage->hitFlags&0x20)) execution.callbacks.suppress=true;
         execution.callbacksPrepared=true;
     }
     if(!execution.callbacksComplete) {
@@ -160,9 +183,31 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         reception.drain.stamina=impact.missileContact->drain.staminaField;
     }
     auto &random=execution.random;const auto &rules=*target.rules.skills;
-    const auto received=ports_.effects.receiveMonster(execution.victim,impact.source,execution.hit,execution.states,execution.wear,
-        std::ref(random),execution.adjustment,&reception,execution.nativeMissile);
-    if(!received) return received.status;
+    if(!execution.damageCommitted) {
+        const auto received=ports_.effects.receiveMonster(execution.victim,impact.source,execution.hit,execution.states,execution.wear,
+            std::ref(random),execution.adjustment,&reception,execution.nativeMissile,bool(impact.nativeSkill));
+        if(!received) return received.status;
+        execution.receivedPhysical=received.value->physical;execution.damageCommitted=true;
+    }
+    if(impact.nativeSkill) {
+        const auto result=finishNativeSkillFlags(impact,tick);if(result!=DomainStatus::Applied) return result;
+        if(impact.nativeSkill->psychicHammer && !impact.nativeSkill->reactionPrepared) {
+            auto hit=execution.hit;hit.knockback|=impact.knockback;
+            const auto reaction=ports_.effects.nativeMeleeReaction(target.actor,impact.source,hit,execution.callbacks.total,tick.tick);
+            if(!reaction) return reaction.status;impact.nativeSkill->reactionPrepared=true;
+        }
+    }
+    if(impact.nativeSkill && impact.nativeSkill->melee) {
+        const auto result=finishMissileArmor(impact,{&target,nullptr},tick);if(result!=DomainStatus::Applied) return result;
+        const auto events=finishNativeMeleeDrain(impact,execution.defense.damage.channels[0].dealt,tick);if(events!=DomainStatus::Applied) return events;
+        if(!impact.nativeSkill->actionComplete) {
+            const auto action=ports_.effects.nativeMeleeReaction(target.actor,impact.source,execution.hit,execution.callbacks.total,tick.tick);
+            if(!action) return action.status;impact.nativeSkill->actionComplete=true;
+        }
+    }
+    if(impact.nativeSkill && impact.nativeSkill->progressive) {
+        const auto result=advanceProgressive(impact,tick,true);if(!result) return result.status;
+    }
     const auto hitClass=execution.hitClass;
     auto events=std::move(execution.itemEvents);const auto remainingLife=execution.remainingLife;
     auto leech=std::move(execution.leech);const auto extras=execution.extras;
@@ -177,9 +222,9 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         leech->crushingBlow=leech->openWounds=0;
         const auto difficulty=size_t(owner?owner->persistent.difficulty:target.persistent.difficulty);
         const auto divisors=source.player?LeechDivisors{rules.lifeStealDivisor.at(difficulty),rules.manaStealDivisor.at(difficulty)}:LeechDivisors{};
-        const auto gains=calculateWeaponHitEffects(*leech,{remainingLife,0,100,1,false,false,false,true},received.value->physical,divisors,random);
+        const auto gains=calculateWeaponHitEffects(*leech,{remainingLife,0,100,1,false,false,false,true},execution.receivedPhysical,divisors,random);
         impact.lifeGain=gains.life;impact.manaGain=gains.mana;
-        impact.selfDamage=source.player?nativePercentage(nativeChecked(received.value->physical),leech->selfDamagePercent,100):0;
+        impact.selfDamage=source.player?nativePercentage(nativeChecked(execution.receivedPhysical),leech->selfDamagePercent,100):0;
         if(gains.life && gains.mana) impact.leechOverlay=limitedRandom(random,2)?rules.manaStealOverlay:rules.lifeStealOverlay;
         else if(gains.life || gains.mana) impact.leechOverlay=gains.life?rules.lifeStealOverlay:rules.manaStealOverlay;
         if(extras.crushing>0) impact.contactOverlay=rules.crushingOverlay;
@@ -196,7 +241,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     const Participants participants{ports_.players,ports_.monsters,ports_.social};const auto caster=participants.find(impact.source);
     const bool missile=!impact.melee && (!impact.weapon || impact.weapon->projectile),melee=!missile && !impact.reaction;
     if(!execution.fillEventComplete) {
-        if(melee && (caster.player || (caster.monster && caster.monster->hireling))) {
+        if(!impact.nativeSkill && melee && (caster.player || (caster.monster && caster.monster->hireling))) {
             if(!impact.pendingAttempts) impact.pendingAttempts=1;
             const auto attempted=advanceMeleeAttempts(impact,tick);if(attempted!=DomainStatus::Applied) return attempted;
         }
@@ -217,8 +262,17 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
         const auto committed=ports_.effects.commitUnitReception(*execution.defense);if(!committed) return committed.status;
         execution.defenseCommitted=true;
     }
+    if(impact.nativeDrainHeld && impact.nativeSkill) {
+        impact.nativeSkill->allocatedPhysical=nativeChecked(execution.physical);
+        impact.nativeSkill->heldPrepared=true;return DomainStatus::Applied;
+    }
+    if(!nativeMeleeDrainReach(impact)) return DomainStatus::Unavailable;
+    {const auto result=postNativeSkillCharge(impact,tick);if(result!=DomainStatus::Applied) return result;}
+    if(impact.nativeSkill && impact.nativeSkill->progressive) {
+        const auto result=advanceProgressive(impact,tick,execution.damageCommitted);if(!result) return result.status;
+    }
     if(!execution.meleeEventComplete) {
-        if(melee) {
+        if(melee && !(impact.nativeSkill && impact.nativeSkill->melee)) {
             if(!impact.pendingAttempts) impact.pendingAttempts=1;
             const auto attempted=advanceMeleeAttempts(impact,tick);if(attempted!=DomainStatus::Applied) return attempted;
         }
@@ -227,6 +281,8 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(!execution.callbacksPrepared) {
         execution.callbacks=ports_.effects.prepareDamageEvents(impact.source,execution.target,execution.physical,execution.amount,missile,impact.returnFire,tick.tick,impact.reaction);
         execution.callbacks.suppressAttacker=impact.suppressSourceEvents;
+        if(impact.nativeSkill && impact.nativeSkill->melee) execution.callbacks.thorns=0;
+        if(impact.nativeDamageFlagsOnly && impact.areaDamage && !(impact.areaDamage->hitFlags&0x20)) execution.callbacks.suppress=true;
         execution.callbacksPrepared=true;
     }
     if(!execution.callbacksComplete) {
@@ -282,6 +338,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     const auto poisonContact=execution.poison?std::max<int64_t>(0,execution.poison->rate):0;
     const auto direct=nativeSubtract(nativeChecked(execution.callbacks.total),nativeChecked(poisonContact));
     if(!execution.damageCommitted) {
+        execution.statuses.deferAction=bool(impact.nativeSkill);
         const auto result=ports_.monsters.damage(live->id,impact.binding.credit,direct,tick.tick,
             execution.cold,impact.freeze,execution.hitClass,execution.poison,
             impact.type==DamageType::Poison && !impact.weapon,execution.stun,execution.extras.wound,execution.absorbed,
@@ -293,9 +350,19 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
             impact.missileContact->drain.manaField,impact.missileContact->drain.staminaField,tick.tick);
         execution.damageCommitted=true;
     }
-    if(execution.nativeMissile) {
+    if(impact.nativeSkill) {const auto result=finishNativeSkillFlags(impact,tick);if(result!=DomainStatus::Applied) return result;}
+    if(execution.nativeMissile || (impact.nativeSkill && impact.nativeSkill->melee)) {
         const auto completed=finishMissileArmor(impact,participants.find(execution.target),tick);
         if(completed!=DomainStatus::Applied) return completed;
+    }
+    {const auto result=finishNativeMeleeDrain(impact,execution.physical,tick);if(result!=DomainStatus::Applied) return result;}
+    if(impact.nativeSkill && !impact.nativeSkill->actionComplete) {
+        const auto action=ports_.monsters.finishDamageAction(execution.target,impact.binding.credit,execution.callbacks.total,tick.tick,execution.hitClass,
+            impact.softHit || impact.staticPercent!=0,execution.getHit);
+        if(!action) return action.status;impact.nativeSkill->actionComplete=true;
+    }
+    if(impact.nativeSkill && impact.nativeSkill->progressive) {
+        const auto result=advanceProgressive(impact,tick,true);if(!result) return result.status;
     }
     if(execution.hostile && !impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);
     const auto *source=ports_.monsters.find(impact.source);

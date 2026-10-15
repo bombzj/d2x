@@ -38,6 +38,7 @@ struct PresetRecord {
     bool scan = false, outdoors = false;
     bool automap = false;
     bool animate = false;
+    bool logicals = false;
     int animationSpeed = 0;
     int pops = 0, popPad = 0;
     std::array<std::string, 6> variants;

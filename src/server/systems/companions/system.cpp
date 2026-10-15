@@ -50,7 +50,9 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
         const auto *p=ports_.players.find(source.actor.player);
-        if(!p || !p->entered || p->persistent.player.hp<=0 || p->area!=source.actor.area || p->actor!=source.actor.actor || p->persistent.player.level!=source.ownerLevel || p->persistent.player.skillRanks!=source.hardRanks || p->inventoryRevision!=source.inventoryRevision) stale.push_back(id);
+        const auto *caster=source.summon.assassin?ports_.monsters.find(source.actor.actor):nullptr;
+        const bool controlled=caster && caster->assassinPet && caster->owner==source.actor.player && caster->alive() && caster->area==source.actor.area;
+        if(!p || !p->entered || p->persistent.player.hp<=0 || p->area!=source.actor.area || (p->actor!=source.actor.actor && !controlled) || p->persistent.player.level!=source.ownerLevel || p->persistent.player.skillRanks!=source.hardRanks || p->inventoryRevision!=source.inventoryRevision) stale.push_back(id);
     }
     for(auto id:stale) cancel(id);
     for(auto it=state_.companions.begin();it!=state_.companions.end();) {
@@ -98,6 +100,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             } else ++it;continue;
         }
         if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
+        if(body->assassinPet) {if(assassinStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked) blocked=true;if(necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
         if(body->amazonPet) {++it;continue;}

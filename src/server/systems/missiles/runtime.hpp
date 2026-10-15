@@ -14,7 +14,9 @@ struct System::Advance {
     bool finished{};
     std::vector<EntityId> curseTargets;
     std::vector<EntityId> buffTargets;
-    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn };
+    enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound };
+    struct TowerGold {RegionId area;Vec observer,position;std::optional<GroundLocation> destination;bool resolved{};};
+    std::vector<TowerGold> towerGold;
     struct LevelSpawn {RegionId area;Vec observer,position;std::shared_ptr<monsters::NativeBirthPublication> publication;};
     std::vector<LevelSpawn> levelSpawns;
     struct MissileField {RegionId area;Vec position;int size{};};

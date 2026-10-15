@@ -68,6 +68,30 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"pendingReleases", s.pendingReleases}, {"spellImpacts", s.spellImpacts}, {"spellTargets", s.spellTargets},
         {"path", Json::array()}};
     result["effects"] = Json::array();
+    const auto seed=[](uint64_t value) {return Json{{"low",uint32_t(value)},{"high",uint32_t(value>>32)}};};
+    result["generationRandom"]={{"game",seed(s.gameRandom)},
+        {"objectControl",s.objectControlRandom?seed(*s.objectControlRandom):Json(nullptr)},
+        {"monsterRegions",s.monsterRegionRandom?seed(*s.monsterRegionRandom):Json(nullptr)},
+        {"npcControl",s.npcControlRandom?seed(*s.npcControlRandom):Json(nullptr)},
+        {"questControl",s.questControlRandom?seed(*s.questControlRandom):Json(nullptr)}};
+    result["objectPopulation"]=Json::array();
+    result["rejectedDensity"]=Json::array();
+    result["modifierPreparation"]={{"pending",s.modifiersPending},{"failure",s.modifierFailure}};
+    result["densityPopulation"]=Json::array();
+    for(const auto &room:s.densityPopulation)
+        result["densityPopulation"].push_back({{"area",int(room.area)},{"room",room.room},{"phase",room.phase},
+            {"logical",room.logical},{"definition",room.definition},{"trial",room.trial},{"search",room.search},
+            {"remaining",room.remaining},{"partyRemaining",room.partyRemaining},{"champions",room.champions},
+            {"processedRooms",room.processedRooms},{"successfulRooms",room.successfulRooms},{"uniqueCount",room.uniqueCount},
+            {"leader",room.leader.value},{"preset",room.preset?Json(*room.preset):Json(nullptr)},{"deferred",room.deferred}});
+    for(const auto &[region,keys]:s.rejectedDensity)
+        result["rejectedDensity"].push_back({{"area",int(region)},{"spawnKeys",keys}});
+    for(const auto &[region,population]:s.objectPopulation)
+        result["objectPopulation"].push_back({{"area",int(region)},{"generation",population.generation},
+            {"completedRooms",population.rooms},{"processed",population.processed},
+            {"healingShrines",population.healingShrines},{"shrines",population.shrines.size()},
+            {"wells",population.wells.size()},{"deferredObjects",population.deferred},
+            {"deferredThemes",population.deferredThemes}});
     result["collision"] = Json::array();
     for(const auto &cell:s.collision) result["collision"].push_back({{"x",cell.x},{"y",cell.y},
         {"mask",cell.mask},{"objectMask",cell.objectMask},{"playerClear",cell.playerClear}});
@@ -136,6 +160,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"target",monster.curseControl.target.value},{"until",monster.curseControl.until}};
         if(monster.curseControl.origin) value["curseControl"]["origin"]={{"x",monster.curseControl.origin->x},{"y",monster.curseControl.origin->y}};
         value["specialTargetOrder"]=monster.specialTargetOrder;value["aiFunctionRevision"]=monster.aiFunctionRevision;value["detachedMinion"]=monster.detachedMinion;
+        if(monster.assassin) value["assassin"]={{"parameters",monster.assassin->parameters},{"nextDecision",monster.assassin->nextDecision},
+            {"expires",monster.assassin->expires},{"removeAt",monster.assassin->removeAt},{"lastCorpse",monster.assassin->lastCorpse.value},{"missile",monster.assassin->missile.value}};
         value["attraction"]={{"target",monster.attractionTarget.value},{"until",monster.attractionUntil}};
         value["aiResetTimers"]=Json::array();value["aiResetsTracked"]=monster.aiResetsTracked;
         for(const auto &timer:monster.aiResetTimers) value["aiResetTimers"].push_back({{"due",timer.due},{"continuous",timer.continuous},{"identity",timer.identity}});

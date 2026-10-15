@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
@@ -186,6 +187,67 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     return result;
 }
+StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom,TickContext tick,std::optional<EntityId> only) {
+    std::set<RegionId> changed;
+    for(const auto &[region,area]:ports_.areas.all()) for(const auto &source:area.definition.objects) {
+        if(only && source.id!=*only) continue;
+        if(region!=requestedRegion || requestedRoom>=area.definition.activation.rooms().size() ||
+            area.definition.activation.room(source.position)!=&area.definition.activation.rooms()[requestedRoom]) continue;
+        if(!ports_.areas.loaded(region,source.position)) continue;
+        const auto admitChildren=[&] {
+            for(const auto &npc:area.definition.npcs) {
+                if(!npc.sourceObjectPosition || npc.sourceObjectClass!=source.type ||
+                    npc.sourceObjectPosition->x!=source.position.x || npc.sourceObjectPosition->y!=source.position.y ||
+                    admittedPresetNpcs_.contains(npc.id)) continue;
+                if(ports_.monsters.read().actors.size()>=65536) return StepStatus::Blocked;
+                if(!ports_.monsters.find(npc.id)) ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+                admittedPresetNpcs_.insert(npc.id);
+            }
+            return StepStatus::Complete;
+        };
+        if(state_.objects.contains(source.id)) {
+            const auto children=admitChildren();if(children!=StepStatus::Complete) return children;
+            continue;
+        }
+        if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=region || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
+        if(state_.objects.size()>=65536) return StepStatus::Blocked;
+        Object object{source.id,source.type,region,source.position,1,0,source.rule,0,0,false,2*source.rule.parameters[2]};
+        auto random=ports_.random,controlRandom=state_.controlRandom.value();
+        if(source.preset==580 || source.preset==581) {
+            int selected=0;
+            if(area.definition.act==1) {
+                constexpr int tomb[]{87,88},arcane[]{387,389,390,391};
+                selected=int(region)==74?arcane[limitedRandom(controlRandom,4)]:tomb[limitedRandom(controlRandom,2)];
+            } else if(area.definition.act==2) {
+                constexpr int jungle[]{181,183},temple[]{329,330,331,332};
+                selected=int(region)==83?temple[limitedRandom(controlRandom,4)]:jungle[limitedRandom(controlRandom,2)];
+            } else {
+                constexpr int classes[]{5,6,139,140,141,144,176,177,198,240,241,242,243};
+                selected=classes[limitedRandom(controlRandom,13)];
+            }
+            if(source.preset==580 && int(region)==25) selected=371;
+            object.definition=selected;
+            object.rule=area.definition.objectRules.at(selected);
+            object.rule.specialChest=source.preset==580;
+            if(selected==371) object.rule.towerReward=source.rule.towerReward;
+            object.uses=2*object.rule.parameters[2];
+        }
+        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);}
+        if(source.rule.operation==23 && area.definition.town) object.mode=2;
+        if(source.rule.operation==10 && int(region)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5;
+        if(source.rule.operation==9 && int(region)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
+        initialize(object,tick.tick,random,controlRandom);
+        auto room=ports_.areas.prepareRoomUnit(source.id,2,region,object.position);
+        state_.objects.emplace(source.id,std::move(object));ports_.areas.publishRoomUnit(*room);
+        if(state_.objects.at(source.id).rule.initialization==47 && towerChests_.size()<8)
+            towerChests_.push_back(source.id);
+        ports_.random=random;state_.controlRandom=controlRandom;changed.insert(region);
+        collision(region);
+        const auto children=admitChildren();if(children!=StepStatus::Complete) return children;
+    }
+    for(const auto region:changed) collision(region);
+    return StepStatus::Complete;
+}
 StepStatus System::step(TickContext tick, FrameFacts &) {
     for(auto it=approaches_.begin();it!=approaches_.end();) {
         auto pending=it->second;pending.actor.tick=tick.tick;
@@ -203,26 +265,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         const auto result=execute(pending.actor,pending.request);
         if(result.status==DomainStatus::Capacity) ++it;else it=approaches_.erase(it);
+        if(ports_.monsters.pendingModifiers()) return StepStatus::Blocked;
     }
     std::set<RegionId> changed;
-    for (const auto &[id, area] : ports_.areas.all()) for (const auto &source : area.definition.objects) {
-        if (!ports_.areas.loaded(id, source.position)) continue;
-        if (state_.objects.contains(source.id)) continue;
-        if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=id || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
-        Object object{source.id, source.type, id, source.position, 1, 0, source.rule, 0, 0, false, 2 * source.rule.parameters[2]};
-        if(source.questSpawn) {object.mode=ports_.quests.read().actTwo.tombOpen?2:1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);changed.insert(id);}
-        if(source.rule.operation==23 && area.definition.town) object.mode=2; // ObjRgn::InitFunction17.
-        if(source.rule.operation==10 && int(id)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5; // A1Q4 saved gibbet SPECIAL1.
-        if(source.rule.operation==9 && int(id)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
-        initialize(object,tick.tick);
-        // SUNIT_Add blocks the new object's current-mode footprint,
-        // including NEUTRAL. Admission is a collision change even without an
-        // initialization mode transition.
-        changed.insert(id);
-        auto room=ports_.areas.prepareRoomUnit(source.id,2,id,object.position);
-        state_.objects.emplace(source.id, std::move(object));
-        ports_.areas.publishRoomUnit(*room);
-    }
     for (auto &[id, object] : state_.objects) {
         if (!ports_.areas.loaded(object.area, object.position)) continue;
         if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
@@ -254,7 +299,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             object.pending=false;
             if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
         }
-        if (object.pending) if (const auto result = ports_.loot.takeCompletion(id)) {
+        if (object.pending && !towerOpening_.contains(id)) if (const auto result = ports_.loot.takeCompletion(id)) {
             object.pending = false;
             if (*result) {
                 if(object.rule.shrine) object.specialPending=true;
@@ -291,7 +336,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             ++object.revision; changed.insert(object.area);
         }
     }
-    towerStep(tick);
     for (const auto area : changed) collision(area);
     const bool blocked=hazardStep(tick)==StepStatus::Blocked;
     return trapStep(tick)==StepStatus::Blocked || blocked?StepStatus::Blocked:StepStatus::Complete;

@@ -14,7 +14,9 @@ namespace d2x {
 struct ActorAnimationRequest {
     std::string category, mode;
     bool sequenceUsesAttackRate{};
+    bool skillUsesAttackRate{};
     bool monsterUnit{}; // Includes monsters using player graphics.
+    bool monsterKick{}; // Native transformed Assassin maps MONMODE_A1 to KK.
     ActorAppearance appearance;
     int paletteTransform = -1;
     bool randomTransform = false, finalFrame = false, shadow = false;
@@ -29,6 +31,7 @@ struct ActorAnimationRequest {
     std::optional<int> animationRate;
     bool persistentCycle{};
     int sequenceStart{},sequenceEnd{-1};
+    int animationHoldFrame{-1};
     int stateColorShift{-1};
 };
 struct ActorAnimation {

@@ -18,6 +18,8 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/amazon_sequence.hpp"
 #include "gameplay/skills/barbarian_sequence.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -59,7 +61,9 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
     if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
     const auto *weapon=program.commonAttack?commonAttackWeapon(p.totals.equipment,program.thrown,program.leftHand):std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
-        [&](const auto &w){return !w.leftHand && (program.smite || std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end());});
+        [&](const auto &w){return !w.leftHand && (program.smite ||
+            (skill.assassin && !w.item && program.requiredType=="mele") ||
+            std::find(w.types.begin(),w.types.end(),program.requiredType)!=w.types.end());});
     if(!weapon || weapon==p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount || weapon->fasterAttack<=-120 ||
         (program.thrown && !weapon->throwable) || p.persistent.player.mana<skill.manaCost) return {DomainStatus::Unavailable,{}};
     if((program.commonAttack || program.dualWield) && (weapon->ranged || program.thrown)) {
@@ -75,6 +79,9 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         offhand=&*second;
     }
     if(program.whirlwind) for(const auto &other:p.totals.equipment.weapons) if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
+    if(skill.assassin && skill.assassin->program==AssassinProgram::ElementalCharge)
+        for(const auto &other:p.totals.equipment.weapons)
+            if(other.item && other.leftHand && std::find(other.types.begin(),other.types.end(),program.requiredType)!=other.types.end()) offhand=&other;
     const bool fend=program.spear && program.spear->kind==SpearSkillSpec::Kind::Fend;
     const bool zeal=skill.effect==SkillBehavior::Zeal;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -104,6 +111,13 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     const auto &a=animation->second;
     WeaponAttackTiming timing{mode,a.frames,effectiveAttackSpeed(a.speed,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,a.startFrame};
     std::vector<int> hits{timing.actionTick()};
+    if(skill.assassin && program.sequence==16) {
+        const auto sequence=assassinSequence(program.sequence,p.totals.equipment.animationClass);
+        if(sequence.empty()) return {DomainStatus::Unavailable,{}};
+        timing.sequence=true;timing.frames=int(sequence.size());timing.startFrame=0;
+        timing.speed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate-30);
+        hits=weaponSequenceHitTicks(sequence,timing.speed);
+    }
     if(program.sequence==11 || program.sequence==15) {
         timing.sequence=true;
         const auto sequence=barbarianSequence(program.sequence,p.totals.equipment.animationClass);
@@ -230,6 +244,10 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
 DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Vec destination) {
+    if(pending.nativeMeleeOccurrence) {
+        if(ports_.combat.advanceAuraPulse(actor.actor,*pending.nativeMeleeOccurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
+        pending.nativeMeleeOccurrence.reset();pending.nativeCallbackStarted=false;return DomainStatus::Applied;
+    }
     const auto &p=*ports_.players.find(actor.player);
     const auto &hand=pending.offhand && pending.nextWeaponHit%2?*pending.offhand:*pending.weapon;
     const auto found=std::find_if(p.totals.equipment.weapons.begin(),p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount,
@@ -240,7 +258,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     const bool strafe=pending.skill.weapon->bow && pending.skill.weapon->bow->strafe;
     const bool fend=pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend;
     const bool zeal=pending.skill.effect==SkillBehavior::Zeal;
-    const bool secondSwing=pending.offhand && !pending.skill.weapon->thrown && pending.nextWeaponHit>0;
+    const bool secondSwing=pending.offhand && !pending.skill.assassin && !pending.skill.weapon->thrown && pending.nextWeaponHit>0;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId selectedTarget=pending.unit;
     if(strafe || fend || zeal || secondSwing) {
@@ -261,7 +279,11 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         if(!found->projectile) return DomainStatus::Unavailable;
         pending.skill=commonProjectileSkill(pending.skill,*found->projectile);
     }
-    auto event=ports_.itemTriggers.prepare(actor,{ItemSkillEvent::Attack},selectedTarget,destination);if(!event) return event.status;
+    const bool nativeMelee=!projectile && (pending.skill.assassin ||
+        (pending.skill.weapon->commonAttack && (p.definition.code=="ass" || ports_.effects.hasProgressive(actor.actor))));
+    auto event=nativeMelee?DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}}:
+        ports_.itemTriggers.prepare(actor,{ItemSkillEvent::Attack},selectedTarget,destination);
+    if(!event) return event.status;
     if(pending.skill.charge) {
         const auto source=p.persistent.inventory.items.find(pending.skill.charge->item.id);
         if(source==p.persistent.inventory.items.end() || !p.totals.activeEquipment.contains(source->first)) return DomainStatus::Stale;
@@ -292,8 +314,15 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         !playerMeleeReach(area.definition.collision,p.position,target.position(),target.size(),found->rangeAdder)) return DomainStatus::Unavailable;
     WeaponSkillDamage snapshot;snapshot.weapon=*found;snapshot.level=p.persistent.player.level;
     missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
-    const auto result=ports_.missiles.direct(request,{selectedTarget}).status;
-    if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.itemTriggers.commit(std::move(*event.value),true);}
-    return result;
+    const auto result=ports_.missiles.directContact(request,{selectedTarget});
+    if(!result) return result.status;
+    pending.unit=selectedTarget;ports_.itemTriggers.commit(std::move(*event.value),true);
+    if(result.value->occurrence) {
+        pending.nativeMeleeOccurrence=result.value->occurrence;
+        pending.nativeCallbackStarted=true;
+        if(ports_.combat.advanceAuraPulse(actor.actor,*pending.nativeMeleeOccurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
+        pending.nativeMeleeOccurrence.reset();pending.nativeCallbackStarted=false;
+    }
+    return DomainStatus::Applied;
 }
 }

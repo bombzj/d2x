@@ -12,6 +12,7 @@ struct ItemQualityRules {
     int baseLevel = 0;
     bool normalOnly = false, uniqueOnly = false, magicOnly = false, rareAllowed = false;
     std::array<QualityRatio, 6> ratios;
+    bool miscellaneous = false;
 };
 struct QualityCheck {
     DropQuality quality;

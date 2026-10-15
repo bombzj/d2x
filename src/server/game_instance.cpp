@@ -10,6 +10,11 @@ GameInstance::GameInstance(GameDefinition definition)
       entities_(definition.persistent.nextEntityId), random_(initialRandom(settings_.mapSeed)),
       rules_(std::move(definition.rules)),
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
+        if(!rules_.monsterRegions) throw std::runtime_error("Missing native monster region rules");
+        systems_.population.initializeRegions(*rules_.monsterRegions);
+        systems_.objects.initializeControl();
+        systems_.npc.initializeControl(random_);
+        systems_.quests.initializeControl();
     systems_.world.initialize();
     systems_.world.activateAct(definition.persistent.lastRegion);
     players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_));
@@ -153,8 +158,10 @@ CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
     return result;
 }
 void GameInstance::step() {
+    if(systems_.monsters.finishModifiers({tick_})!=StepStatus::Complete) return;
     if(!simulationPending_) {
     if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
+    size_t processedCommands=0;
     for (const auto &pending : commands_) {
         auto &player = players_.players_.at(pending.player);
         const auto &command = pending.command;
@@ -205,8 +212,11 @@ void GameInstance::step() {
         observeCommand(pending.player, command.sequence, result);
         if (commandSystem(command.payload) == SystemId::Movement)
             player.movementSequence = command.sequence;
+        ++processedCommands;
+        if(systems_.monsters.pendingModifiers()) break;
     }
-    commands_.clear();
+    commands_.erase(commands_.begin(),commands_.begin()+processedCommands);
+    if(systems_.monsters.pendingModifiers()) return;
     simulationPending_=true;
     }
     if(!simulation_.step({tick_},systems_)) return;

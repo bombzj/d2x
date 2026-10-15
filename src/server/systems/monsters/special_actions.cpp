@@ -9,6 +9,7 @@
 #include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/combat/reception.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/rules/event_frame.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
 #include "server/systems/effects/system.hpp"
 #include "core/random.hpp"
@@ -27,11 +28,13 @@ struct NativeBirthPublication::Data {
     ActorPublication actors;
     ComponentPaletteState palettes;
     EntityId actor;
+    std::optional<Vec> position;
     bool published{};
 };
 NativeBirthPublication::NativeBirthPublication(std::unique_ptr<Data> data):data_(std::move(data)) {}
 NativeBirthPublication::~NativeBirthPublication()=default;
 EntityId NativeBirthPublication::actor() const {return data_->actor;}
+std::optional<Vec> NativeBirthPublication::position() const {return data_->position;}
 bool NativeBirthPublication::validate() const {
     const auto &d=*data_;const auto &system=*d.system;
     const auto *area=system.ports_.areas.find(d.area);
@@ -70,34 +73,117 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareLevelSpawn(
     const auto found=area->definition.nativeMonsterClasses.find(*definition);
     if(found==area->definition.nativeMonsterClasses.end()) return {DomainStatus::NotImplemented,{}};
     const auto &prototype=found->second;const auto &rule=prototype.rule;
-    if(rule.nativeSpawnFloor || rule.enchantment) return {DomainStatus::NotImplemented,{}};
-    if(rule.nativeClass!=*definition || !rule.stats || !rule.formulas || rule.minimumLife<0 || rule.maximumLife<rule.minimumLife)
+    auto identity=prototype.identity;identity.spawnKey="native."+std::to_string(ports_.ids.cursor());
+    identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    return prepareRoomSpawn({identity,prototype.implementation,room->area,global-area->definition.origin,true,rule,{},tick},
+        *data->room,5,{},false,collision);
+}
+DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(const Admission &request,RoomRandomLoan loan,
+    int attempts,std::optional<size_t> logicalRegion,bool probe,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    if(!request.rule || !collision || !std::isfinite(request.position.x) || !std::isfinite(request.position.y) ||
+        request.area!=loan.room.area || request.identity.spawnKey.empty()) return {DomainStatus::InvalidRequest,{}};
+    if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};
+    const auto &area=ports_.areas.at(request.area);const auto &roomArea=area.definition;
+    const auto global=request.position+roomArea.origin;const auto room=loan.room;
+    const auto &rule=*request.rule;
+    if(rule.enchantment) return {DomainStatus::NotImplemented,{}};
+    if(rule.nativeClass<0 || !rule.stats || !rule.formulas || rule.minimumLife<0 || rule.maximumLife<rule.minimumLife)
         return {DomainStatus::InvalidRequest,{}};
-    const auto &roomArea=ports_.areas.at(room->area).definition;
-    const auto *bounds=roomArea.activation.room(global-roomArea.origin);if(!bounds) return {DomainStatus::Unavailable,{}};
-    const int left=int(roomArea.origin.x)+bounds->x,top=int(roomArea.origin.y)+bounds->y;
+    const auto *bounds=roomArea.activation.room(Vec{float(room.x*5),float(room.y*5)}-roomArea.origin);
+    if(!bounds) return {DomainStatus::Unavailable,{}};
+    int left=int(roomArea.origin.x)+bounds->x,top=int(roomArea.origin.y)+bounds->y;
+    int right=left+bounds->width,bottom=top+bounds->height;
+    const RoomPopulationLayout *layout=nullptr;int logicalIndex=0;
+    if(logicalRegion) {
+        const auto roomIndex=size_t(bounds-roomArea.activation.rooms().data());
+        if(roomIndex>=roomArea.populationRooms.size()) return {DomainStatus::InvalidRequest,{}};
+        layout=&roomArea.populationRooms[roomIndex];
+        if(*logicalRegion>=layout->regions.size()) return {DomainStatus::InvalidRequest,{}};
+        const auto &region=layout->regions[*logicalRegion];logicalIndex=region.index;
+        left=region.left*5;top=region.top*5;right=region.right*5;bottom=region.bottom*5;
+    }
+    auto data=std::make_unique<NativeBirthPublication::Data>();data->system=this;data->area=request.area;
+    data->generation=area.generation;data->room=loan;
+    const auto finish=[&]()->DomainResult<std::shared_ptr<NativeBirthPublication>> {
+        return {DomainStatus::Applied,std::shared_ptr<NativeBirthPublication>(new NativeBirthPublication(std::move(data)))};
+    };
     const auto clear=[&](int column,int row) {
-        if(column<left || row<top || column>=left+bounds->width || row>=top+bounds->height) return false;
+        if(column<left || row<top || column>=right || row>=bottom) return false;
+        if(layout) {
+            const auto tileColumn=column/5-layout->x,tileRow=row/5-layout->y;
+            if(tileColumn<0 || tileRow<0 || tileColumn>layout->width || tileRow>layout->height) return false;
+            const auto index=layout->single?0:layout->cells.at(size_t(tileRow)*(layout->width+1)+tileColumn);
+            if(layout->regions.at(index).index!=logicalIndex) return false;
+        }
         if(rule.spawnAuxiliary) {
             const auto &[offset,mask]=*rule.spawnAuxiliary;
             const int atX=column+int(offset.x),atY=row+int(offset.y);
-            const auto adjacent=ports_.areas.roomAtPosition(room->area,global-roomArea.origin,atX,atY);
+            const auto adjacent=ports_.areas.roomAtPosition(room.area,Vec{float(room.x*5),float(room.y*5)}-roomArea.origin,atX,atY);
             if(!adjacent || ports_.areas.nativeCollisionMask(*adjacent,atX,atY,mask.size,mask.mask,collision)) return false;
         }
-        return !ports_.areas.nativeCollisionMask(*room,column,row,rule.spawnCollision.size,rule.spawnCollision.mask,collision);
+        return !ports_.areas.nativeCollisionMask(room,column,row,rule.spawnCollision.size,rule.spawnCollision.mask,collision);
     };
-    const auto point=nativeMonsterRingPosition(x,y,5,data->room->next,clear);
+    std::optional<std::pair<int,int>> point;
+    if(rule.nativeSpawnFloor) {
+        const auto roomIndex=size_t(bounds-roomArea.activation.rooms().data());
+        if(roomIndex>=roomArea.populationRooms.size()) return {DomainStatus::NotImplemented,{}};
+        const auto &floors=roomArea.populationRooms[roomIndex].floors;
+        if(floors.empty()) return finish();
+        if(floors.size()==1) return {DomainStatus::NotImplemented,{}};
+        size_t index=std::max(size_t(limitedRandom(data->room->next,uint32_t(floors.size()))),size_t{1});
+        const auto stop=index-1;
+        constexpr std::array<std::pair<int,int>,4> banks{{{0,-3},{3,0},{0,3},{-3,0}}};
+        do {
+            const auto &floor=floors[index];
+            const int column=floor.x*5+3,row=floor.y*5+3;
+            if((floor.material&2) && !ports_.areas.nativeCollisionMask(room,column,row,1,0x100,collision))
+                for(const auto &[offsetX,offsetY]:banks)
+                    if(!ports_.areas.nativeCollisionMask(room,column+offsetX,row+offsetY,2,0x1c09,collision)) {
+                        point=std::pair{column,row};break;
+                    }
+            if(point) break;
+            index=(index+1)%floors.size();
+        } while(index!=stop);
+    } else point=nativeMonsterRingPosition(int(std::floor(global.x)),int(std::floor(global.y)),attempts,data->room->next,clear);
     if(!point || !point->first || !point->second) return finish();
+    data->position=Vec{float(point->first)+.5f,float(point->second)+.5f}-roomArea.origin;
+    if(probe) return finish();
     if(state_.actors.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
-    auto identity=prototype.identity;identity.spawnKey="native."+std::to_string(ports_.ids.cursor());
-    identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
-    const Vec at=Vec{float(point->first)+.5f,float(point->second)+.5f}-roomArea.origin;
-    Admission request{identity,prototype.implementation,room->area,at,true,rule,{},tick};
+    auto admission=request;admission.position=*data->position;
+    if(rule.nativeSpawnFloor) {
+        const auto destination=ports_.areas.roomAtPosition(request.area,Vec{float(room.x*5),float(room.y*5)}-roomArea.origin,point->first,point->second);
+        if(!destination) return finish();
+        if(destination->area!=request.area) return {DomainStatus::NotImplemented,{}};
+    }
     data->randomExpected=data->randomNext=ports_.random;data->actor=EntityId{ports_.ids.cursor()};
-    auto actor=prepareAdmissionActor(request,data->actor,data->randomNext,data->palettes);
+    auto actor=prepareAdmissionActor(admission,data->actor,data->randomNext,data->palettes);
+    if(request.ownsMinions) {
+        actor.nativeMinionOwner=actor.id;actor.ownsNativeMinions=true;
+        actor.transferMinionsOnDeath=request.transferMinions;
+    }
+    if(request.minionOwner) actor.nativeMinionOwner=request.minionOwner;
     std::map<EntityId,Actor> actors;actors.emplace(data->actor,std::move(actor));
+    if(request.minionOwner) {
+        const auto *owner=find(request.minionOwner);
+        if(!owner || owner->area!=request.area) return {DomainStatus::Stale,{}};
+        if(owner->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto candidate=*owner;candidate.nativeMinions.insert(candidate.nativeMinions.begin(),data->actor);++candidate.revision;
+        actors.emplace(candidate.id,std::move(candidate));
+    }
     data->actors=prepareActorPublication(std::move(actors),1);
     return finish();
+}
+DomainResult<> System::finishSuperUniqueBirth(EntityId id,bool corpseUnavailable) {
+    const auto found=state_.actors.find(id);
+    if(found==state_.actors.end() || found->second.identity.rank!=MonsterRank::SuperUnique) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    if(actor.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    if(actor.rule.nativeModifiers.size()<9) {
+        actor.rule.nativeModifiers.push_back(22);
+        if(actor.rule.enchantment) actor.rule.enchantment->ids.push_back(22);
+    }
+    actor.corpseUnavailable|=corpseUnavailable;++actor.revision;
+    return {DomainStatus::Applied,std::monostate{}};
 }
 void System::disableTreasure(EntityId id) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || found->second.rule.noTreasure) return;
@@ -260,21 +346,27 @@ void System::shortenPoison(EntityId id,uint64_t tick,int remainingPercent) {
     if(it!=state_.actors.end() && it->second.poison && it->second.poison->until>tick)
         it->second.poison->until=nativeAuraDurationTick(tick,it->second.poison->until,remainingPercent);
 }
-DomainResult<> System::convert(EntityId id,const ActorContext &actor,const WeaponSkillSpec &skill,LifeChange resources,
+DomainResult<> System::convert(EntityId id,const ActorContext &actor,const NativeConversionSpec &skill,LifeChange resources,
     std::optional<ConversionResourceSave> saved,std::vector<DomainFact> facts) {
     auto it=state_.actors.find(id);const auto *p=ports_.players.find(actor.player);
-    if(it==state_.actors.end() || !p || !p->rules.skills || !it->second.rule.convertible || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || it->second.life<=0 ||
-       it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique || it->second.area!=actor.area)
+    const auto *source=find(actor.actor);const auto origin=source?source->position:p?p->position:Vec{};
+    if(it==state_.actors.end() || !p || !p->rules.skills || (skill.procedure==NativeConversionProcedure::Paladin && !it->second.rule.convertible) || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || it->second.life<=0 ||
+       it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique ||
+       (it->second.area!=actor.area && (skill.procedure!=NativeConversionProcedure::MindBlast || !ports_.areas.nearby(actor.area,origin,it->second.area,it->second.position))))
         return {DomainStatus::InvalidRequest,{}};
     if(resources.actor!=id || !resources.intrinsic || !resources.intrinsic->sources || !it->second.rule.stats || !canCommitLife(resources))
         return {DomainStatus::Conflict,{}};
     auto &m=it->second;const int alignment=p->rules.skills->alignment.id,stat=p->rules.skills->nativeStats.at("alignment");
-    facts.insert(facts.begin(),StateFact{id,1,actor.area,alignment,true,{{stat,2}}});
-    facts.insert(facts.begin(),StateFact{id,1,actor.area,skill.conversionState.id,true});
-    if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
+    facts.insert(facts.begin(),StateFact{id,1,m.area,alignment,true,{{stat,2}}});
+    facts.insert(facts.begin(),StateFact{id,1,m.area,skill.state.id,true});
+    const auto deadline=nativeEventDeadline(actor.tick,nativeAdd(nativeNarrow(uint32_t(actor.tick)),skill.frames));
+    auto timer=ports_.frameEvents.prepareInsertion({{}, {FrameEventUnit::Monster,id},FrameEventType::RemoveState,deadline.due,deadline.continuous,
+        effects::conversionTimerHandler,skill.state.id});
+    if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},m.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
     if(!commitLife(std::move(resources))) throw std::logic_error("Native conversion resource commit lost its prepared revision");
-    const auto frames=uint64_t(std::max(1,skill.conversionFrames));
-    m.conversion=Actor::Conversion{skill.conversionState.id,alignment,stat,actor.tick+std::min(frames,UINT64_MAX-actor.tick),saved,skill.conversionSaveState.id};
+    m.conversion=Actor::Conversion{skill.state.id,alignment,stat,deadline.due,saved,skill.saveState.id,skill.procedure};
+    ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,id},FrameEventType::RemoveState,effects::conversionTimerHandler);
+    ports_.frameEvents.publish(std::move(timer));
     m.rule.level=logicalStatValue(m.nativeStats->values,*m.rule.stats,"level");
     m.owner=actor.player;++m.allegianceRevision;++m.interruption;stop(id);++m.revision;return {DomainStatus::Applied,std::monostate{}};
 }
@@ -288,6 +380,7 @@ DomainResult<> System::finishConversion(EntityId id,uint64_t tick,LifeChange res
     facts.insert(facts.begin(),StateFact{id,1,m.area,conversion.state,false});
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
     if(!commitLife(std::move(resources))) throw std::logic_error("Native conversion removal resource commit lost its prepared revision");
+    ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,id},FrameEventType::RemoveState,effects::conversionTimerHandler);
     m.rule.level=logicalStatValue(m.nativeStats->values,*m.rule.stats,"level");
     m.owner.reset();m.conversion.reset();++m.allegianceRevision;++m.interruption;stop(id);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};
@@ -306,10 +399,11 @@ DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,ui
     const auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},live->area},std::move(plan.facts)});if(!result) return {result.status,{}};
     ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal) {
+DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal,bool nativeFreePosition) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &m=it->second;const auto &grid=ports_.areas.at(m.area).definition.collision;
-    if(!grid.walkable(point,{0x3c01,m.rule.size}) || !grid.segment(m.position,point,{}, {0x0c01,1})) return {DomainStatus::Unavailable,{}};
+    if(!grid.walkable(point,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
+       (!nativeFreePosition && !grid.segment(m.position,point,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
     for(const auto &[key,other]:state_.actors) if(key!=id && other.area==m.area && other.life>0 && meleeDistance(point,m.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
     for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && meleeDistance(point,m.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     // Native monster relocation is projected by 0x6D snapshot correction.

@@ -66,28 +66,34 @@ DomainResult<ItemEventPlan> ItemTriggers::prepare(const ActorContext &actor,std:
     return {DomainStatus::Applied,std::move(plan)};
 }
 StepStatus ItemTriggers::advance(uint64_t tick) {
-    for(auto it=pending_.begin();it!=pending_.end();) {
+    return advanceJobs(pending_,tick);
+}
+StepStatus ItemTriggers::advance(ItemEventPlan &plan,uint64_t tick) {
+    return advanceJobs(plan.jobs,tick);
+}
+StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick) {
+    for(auto it=jobs.begin();it!=jobs.end();) {
         auto &job=*it;const auto *player=ports_.players.find(job.actor.player);const auto *area=ports_.areas.find(job.actor.area);
-        if(!player || !player->entered || player->actor!=job.actor.actor || player->area!=job.actor.area || !area || area->generation!=job.actor.areaGeneration) {it=pending_.erase(it);continue;}
+        if(!player || !player->entered || player->actor!=job.actor.actor || player->area!=job.actor.area || !area || area->generation!=job.actor.areaGeneration) {it=jobs.erase(it);continue;}
         auto actor=job.actor;actor.tick=tick;
         if(!job.rolled) {
             const auto expected=player->combatRandom;auto random=expected;
             const bool accepted=int(limitedRandom(random,100))<job.chance;
             const auto consumed=ports_.transactions.consumeRandom(actor,expected,random);
             if(consumed.status==DomainStatus::Capacity) return StepStatus::Blocked;
-            if(!consumed) {it=pending_.erase(it);continue;}
+            if(!consumed) {it=jobs.erase(it);continue;}
             job.rolled=accepted;
         }
-        if(!*job.rolled) {it=pending_.erase(it);continue;}
-        if(!job.supported) {deferred_="Item trigger skill program is not implemented: "+std::to_string(job.skill.sourceId);it=pending_.erase(it);continue;}
-        if(job.policy.support==ItemTriggerSupport::NoEffect) {it=pending_.erase(it);continue;}
+        if(!*job.rolled) {it=jobs.erase(it);continue;}
+        if(!job.supported) {deferred_="Item trigger skill program is not implemented: "+std::to_string(job.skill.sourceId);it=jobs.erase(it);continue;}
+        if(job.policy.support==ItemTriggerSupport::NoEffect) {it=jobs.erase(it);continue;}
         if(job.policy.support==ItemTriggerSupport::AlternativeProgram) {
             deferred_="Original alternative ItemEffect program is not implemented: "+std::to_string(job.skill.sourceId);
-            it=pending_.erase(it);continue;
+            it=jobs.erase(it);continue;
         }
         if(job.phase==ItemTriggerPhase::ResolveTarget) {
             if(job.policy.support==ItemTriggerSupport::TargetProgram) {
-                deferred_="Item trigger requires a victim/corpse/start-check program: "+std::to_string(job.skill.sourceId);it=pending_.erase(it);continue;
+                deferred_="Item trigger requires a victim/corpse/start-check program: "+std::to_string(job.skill.sourceId);it=jobs.erase(it);continue;
             }
             if(job.policy.target==ItemTriggerTarget::Self) {job.target=actor.actor;job.targetType=0;job.position=player->position;}
             if(job.policy.target==ItemTriggerTarget::RandomPosition) {
@@ -100,23 +106,23 @@ StepStatus ItemTriggers::advance(uint64_t tick) {
                 }
                 const auto consumed=ports_.transactions.consumeRandom(actor,expected,random);
                 if(consumed.status==DomainStatus::Capacity) return StepStatus::Blocked;
-                if(!consumed) {it=pending_.erase(it);continue;}
+                if(!consumed) {it=jobs.erase(it);continue;}
                 if(found) {job.position=chosen;job.target={};}
-                if(!found) {it=pending_.erase(it);continue;}
+                if(!found) {it=jobs.erase(it);continue;}
             }
             job.phase=ItemTriggerPhase::Execute;
         }
         if(job.phase==ItemTriggerPhase::Execute) {
-            const auto result=ports_.skills.itemTrigger(actor,job.skill,job.collision,job.target,job.position,job.policy.death,false);
+            const auto result=ports_.skills.itemTrigger(actor,job.skill,job.collision,job.target,job.position,job.policy.death,false,&job.continuation);
             if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
             if(!result) {
                 if(result.status==DomainStatus::NotImplemented) deferred_="Original item trigger behavior requires its skill program: "+std::to_string(job.skill.sourceId);
-                it=pending_.erase(it);continue;
+                it=jobs.erase(it);continue;
             }
             job.phase=ItemTriggerPhase::Notify;
         }
         if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{ItemSkillFact{actor.actor,job.target,job.targetType,actor.area,job.skill.sourceId,job.skill.rank,job.position,uint16_t(job.policy.alternativeProgram)}}})) return StepStatus::Blocked;
-        it=pending_.erase(it);
+        it=jobs.erase(it);
     }
     return StepStatus::Complete;
 }

@@ -37,6 +37,7 @@ DomainResult<> System::enqueue(const Damage &damage) {
 void System::cancel(EntityId source) {
     // Reactions can cancel another action while step is traversing this queue.
     for(auto &entry:state_.pending) if(entry.source==source) entry.cancelled=true;
+    for(auto &entry:state_.spells) if(entry.source==source && entry.nativeDrainHeld && entry.nativeSkill) entry.nativeSkill->cancelled=true;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
@@ -121,6 +122,11 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto result=ports_.monsters.block(targetMonster->id,tick.tick);
             if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
             commitRandom();it=state_.pending.erase(it);continue;
+        }
+        if(hit) {
+            const auto result=prepareWeaponBlock(target,tick,damage.weaponBlock);
+            if(!result) {blocked=true;++it;continue;}
+            if(*result.value) {commitRandom();it=state_.pending.erase(it);continue;}
         }
         if(hit && targetPlayer) {
             const auto avoided=rollWeaponAvoidance(targetPlayer->totals.character.combat,targetPlayer->moving,false,random);

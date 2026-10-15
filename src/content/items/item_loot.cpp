@@ -12,7 +12,7 @@ namespace {
 bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const TreasureSelection &selection,
     int itemLevel,std::string_view characterClass,int magicFind,int goldFind,std::optional<DropQuality> forcedQuality,
     bool superiorFloor,uint64_t &sourceRandom,LootPlan &plan,std::set<size_t> &selectedUniques,bool hellBovine,
-    const ItemSeedSource &seedSource) {
+    const ItemSeedSource &seedSource,bool nativeCreation=false) {
     std::string_view code = selection.code;
     unsigned goldMultiplier = 256;
     if (code.size() >= 2 && code.front() == '"' && code.back() == '"')
@@ -48,7 +48,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
     std::optional<ItemSeeds> creationSeeds;
     std::optional<uint64_t> creationRandom;
     DropQuality requested;
-    if(superiorFloor && !forcedQuality) {
+    if((superiorFloor || nativeCreation) && !forcedQuality) {
         creationSeeds=seedSource?seedSource():ItemSeeds{rollRandom(sourceRandom),rollRandom(sourceRandom)};
         const auto quality=rollCreatedItemQuality(rules,itemLevel,initialRandom(creationSeeds->properties));
         creationRandom=quality.randomState;requested=quality.quality;
@@ -252,5 +252,14 @@ LootPlan planSelectedItem(const ClassicData &data,std::string_view code,int leve
     LootPlan plan;auto random=seed;auto uniques=used;
     appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds);
     plan.randomState=random;return plan;
+}
+LootPlan planCreatedItem(const ClassicData &data,std::string_view code,int level,
+    const std::set<size_t> &used,const ItemSeeds &seeds) {
+    if(level<1 || level>99) throw std::runtime_error("Created item level is outside native bounds");
+    LootPlan plan;uint64_t sourceRandom{};auto uniques=used;
+    appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,{},0,0,{},false,
+        sourceRandom,plan,uniques,false,[&] {return seeds;},true);
+    plan.randomState=sourceRandom;
+    return plan;
 }
 } // namespace d2x

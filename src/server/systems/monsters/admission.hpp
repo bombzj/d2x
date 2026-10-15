@@ -8,6 +8,15 @@
 
 namespace d2x::server::monsters {
 struct Actor;
+struct ModifierPreparation {
+    struct Unit {EntityId id;uint64_t revision{};MonsterIdentity identity;int level{},nativeClass{};std::vector<int> modifiers;};
+    uint64_t token{},tick{},generation{},expectedRandom{},nextRandom{};
+    RegionId area;Unit leader;MonsterEnchantment selection;std::vector<Unit> minions;
+    bool promoteMinions{};
+};
+struct PreparedModifiers {
+    uint64_t token{};MonsterRule leader;std::map<EntityId,MonsterRule> minions;std::string deferred;
+};
 struct Admission {
     MonsterIdentity identity;
     std::optional<MonsterKind> implementation;
@@ -17,5 +26,9 @@ struct Admission {
     std::optional<MonsterRule> rule;
     std::vector<Vec> skillPositions{};
     uint64_t tick{};
+    bool deadMode{};
+    EntityId minionOwner;
+    bool ownsMinions{};
+    bool transferMinions{};
 };
 }

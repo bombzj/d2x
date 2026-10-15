@@ -6,6 +6,7 @@
 #include "server/systems/social/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/spatial/system.hpp"
 namespace d2x::server::loot {
 std::optional<Preparation> System::beginPreparation(EntityId source) {
     const auto found=state_.pending.find(source);
@@ -53,9 +54,12 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     if (state_.pending.contains(request.source.source)) return {DomainStatus::Applied, std::monostate{}};
     if (state_.pending.size() >= 256 || state_.nextOrder==UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *player = ports_.players.find(request.beneficiary);
-    if (!player) return {DomainStatus::InvalidActor, {}};
-    Preparation pending{request, player->persistent, player->definition.code, 0,
-        player->totals.character.combat.magicFind, player->totals.character.combat.goldFind, state_.uniques};
+    const bool ownerless=request.environment && !request.beneficiary.value && (request.object || request.towerGold);
+    if (!player && !ownerless) return {DomainStatus::InvalidActor, {}};
+    if(ownerless && (payment || request.questClaimant || (request.object && (request.object->key.id || request.object->ingredient.id))))
+        return {DomainStatus::InvalidRequest,{}};
+    Preparation pending{request, player?player->persistent:PersistentCharacter{}, player?player->definition.code:std::string{}, 0,
+        player?player->totals.character.combat.magicFind:0, player?player->totals.character.combat.goldFind:0, state_.uniques};
     pending.magicFind=int(std::clamp(int64_t(pending.magicFind)+request.additionalMagicFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     pending.goldFind=int(std::clamp(int64_t(pending.goldFind)+request.additionalGoldFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     if(request.environment) pending.magicFind=pending.goldFind=0;
@@ -73,7 +77,7 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     // party bonus uses living members (Items::ITEMS_DropItemByMonster).
     const unsigned count=std::clamp(std::max(ports_.settings.virtualPlayers,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}))),1u,8u);
     unsigned members=1;
-    if(ports_.social.partyId(player->player)!=UINT16_MAX)
+    if(player && ports_.social.partyId(player->player)!=UINT16_MAX)
         members=std::max(1u,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry){
             return entry.second.entered && entry.second.area==request.source.region && entry.second.persistent.player.hp>0 && ports_.social.sameParty(player->player,entry.first);
         })));
@@ -127,7 +131,38 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
             ports_.objects.commitLootRandom(source,*found->second.objectSeed,objectRandom?*objectRandom:*sourceRandom);
     }
     batch=*found->second.prepared;
-    if(request.object) {
+    const bool ownerless=request.environment && !request.beneficiary.value;
+    if(ownerless && request.object) {
+        const auto *area=ports_.areas.find(request.source.region);
+        if(!area || !batch.equipment) return {DomainStatus::InvalidRequest,{}};
+        const auto global=request.position+area->definition.origin;
+        const auto room=ports_.areas.roomAtPosition(request.source.region,request.position,int(global.x),int(global.y));
+        if(!room) return {DomainStatus::Stale,{}};
+        const auto sample=ports_.spatial.nativeCollisionSample();
+        std::vector<std::pair<items::PreparedBatch,GroundLocation>> placed;
+        const auto collision=[&](RoomView owner,int32_t column,int32_t row) {
+            auto mask=sample(owner,column,row);
+            for(const auto &entry:placed) {
+                const auto point=entry.second.position+ports_.areas.at(entry.second.region).definition.origin;
+                if(owner.area==entry.second.region && column==int(point.x) && row==int(point.y)) mask|=0x200;
+            }
+            return mask;
+        };
+        for(auto &item:batch.items) {
+            const auto position=ports_.areas.nativeFreeSpace(*room,int(global.x),int(global.y),1,collision);
+            if(!position) continue;
+            items::PreparedBatch single;single.equipment=batch.equipment;
+            single.items.push_back(std::move(item));
+            placed.emplace_back(std::move(single),GroundLocation{position->room.area,position->position});
+        }
+        auto completions=state_.completed;
+        if(request.object->reportCompletion) completions.insert_or_assign(source,true);
+        const auto installed=ports_.items.installNativeGroundBatch(placed,request.occurrence);
+        if(!installed) return installed;
+        state_.completed.swap(completions);state_.pending.erase(found);state_.deferred.clear();
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(request.object && !ownerless) {
         const auto *player=ports_.players.find(request.beneficiary);
         if(!player || !player->entered || player->area!=request.source.region || player->persistent.player.hp<=0) {
             if(request.object->reportCompletion) state_.completed.insert_or_assign(source,false);
@@ -146,7 +181,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
     std::vector<DomainFact> drops;
     for(const auto &[id,item]:next.value->world.items)
         if(!ports_.items.read().world.items.contains(id)) drops.emplace_back(GroundDropFact{item});
-    if (request.object) {
+    if (request.object && !ownerless) {
         const auto *player = ports_.players.find(request.beneficiary);
         const auto fail = [&]() { if(request.object->reportCompletion) state_.completed.insert_or_assign(source, false); state_.pending.erase(found); return DomainResult<>{DomainStatus::Applied, std::monostate{}}; };
         if (!player || !player->entered || player->area != request.source.region || player->persistent.player.hp <= 0) return fail();
@@ -182,6 +217,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         }
         // The prepared state already contains final identities and placement.
         ports_.items.commit(std::move(*next.value));
+        state_.completed.swap(completions);
     }
     state_.deferred = std::move(deferred); state_.pending.erase(found);
     // GameInstance snapshots current unique availability at each preparation.

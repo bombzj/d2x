@@ -8,6 +8,7 @@
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/effects/state.hpp"
 #include "gameplay/skills/summon_spec.hpp"
+#include "gameplay/skills/assassin_summon.hpp"
 #include "gameplay/monsters/life_stats.hpp"
 #include "core/random.hpp"
 #include <array>
@@ -421,6 +422,7 @@ void assignSummonSkill(monsters::Actor &unit,MonsterResourceTrace &resources,std
     std::span<const ModifierStatSource> sources) {
     const auto &rules=*unit.rule.stats;const auto &formulas=*unit.rule.formulas;
     assigned.insert_or_assign(id,rank);unit.rule.baseSkillRanks=assigned;
+    if(std::find(unit.nativeSkillOrder.begin(),unit.nativeSkillOrder.end(),id)==unit.nativeSkillOrder.end()) unit.nativeSkillOrder.push_back(id);
     auto sampled=resources.values(sources);auto effective=nativeMonsterSkillRanks(assigned,sampled,rules,formulas);
     if(formulas.skills.at(id).passiveState<=0) return;
     std::shared_ptr<StatList> passive;
@@ -486,6 +488,7 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
         throw std::runtime_error("Missing native summon source context");
     const auto &program=*summon.native;const auto &base=program.base;
     unit.nativeCharges.clear();unit.nativeChargesTracked=true;
+    unit.nativeSkillOrder.clear();
     const auto &rules=*unit.rule.stats;const auto &formulas=*unit.rule.formulas;
     auto root=std::make_shared<StatList>();root->source={StatSourceKind::Base,unit.id,unit.rule.nativeClass,0};
     root->ownerKind=StatOwnerKind::Monster;root->hasOwner=root->unitRoot=root->hasAct=true;
@@ -526,8 +529,35 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
         resources.addBaseStat("tohit",program.levelRating[size_t(unit.rule.statGameType!=0)],{});
     }
     for(const auto &[id,rank]:program.prePassiveSkills) assignSummonSkill(unit,resources,assigned,id,rank,{});
-    applySummonPassiveStats(unit,resources,program,assigned,{});
+    if(program.assassinShadow) {
+        resources.writeBaseStat("level",summon.stats.level,{});
+        if(program.rank>1) {
+            const auto maximum=resources.read().maximum.raw();
+            const auto life=nativeAdd(maximum,nativePercentage(maximum,program.lifePercent,100));
+            resources.writeBaseStat("maxhp",life,{});resources.seedLife(Fixed8::fromRaw(life));
+            auto list=std::make_shared<StatList>();list->extended=false;list->ownerKind=StatOwnerKind::Monster;
+            list->source={StatSourceKind::Effect,unit.id,program.skill,0};
+            resources.postIntrinsicSource(std::make_shared<const StatList>(*list),{});
+            const auto &record=formulas.skills.at(program.skill);
+            const auto write=[&](std::string_view field,std::string_view calculation) {
+                const auto key=rules.names.find(record.reference(field));if(key==rules.names.end()) return;
+                auto sample=resources.values({});auto effective=nativeMonsterSkillRanks(assigned,sample,rules,formulas);
+                SkillFormulaInput input{assigned,effective};input.statRules=&rules;input.stats=&sample;
+                input.actor=resources.read().intrinsic->sources.get();
+                input.currentResources.insert_or_assign(StatKey{rules.names.at("hitpoints"),0},resources.read().life.raw());
+                input.referenceRanks=prepareSkillFormulaRanks(assigned,effective,{},monsterChargedSkills(unit,*input.actor),formulas.maximumSkillRank);
+                SkillFormulaValues values(formulas,input);const auto value=values.calculation(FormulaDomain::Skill,program.skill,program.rank,calculation);
+                if(!value) throw std::runtime_error("Missing native shadow summon stat formula");
+                list->base.insert_or_assign(StatKey{key->second,0},*value);
+                resources.replaceIntrinsicSource(std::make_shared<const StatList>(*list),{});
+            };
+            // Do49 uses calculation index 1 for ALL slots, including zeros.
+            for(int i=1;i<=6;++i) write("aurastat"+std::to_string(i),"aurastatcalc2");
+            for(int i=1;i<=5;++i) write("passivestat"+std::to_string(i),"passivecalc2");
+        }
+    } else applySummonPassiveStats(unit,resources,program,assigned,{});
     if(!program.materialBeforeStats) postEquipment();
+    if(program.finalLevel) resources.writeBaseStat("level",*program.finalLevel,{});
     if(program.summonResistance) {
         auto resistance=std::make_shared<StatList>();resistance->extended=false;resistance->ownerKind=StatOwnerKind::Monster;
         resistance->source={StatSourceKind::Effect,unit.id,program.resistSkill,0};resources.postIntrinsicSource(std::make_shared<const StatList>(*resistance),{});

@@ -8,9 +8,11 @@ SuperUniques读取十三条第一幕记录：Bishibosh、Bonebreak、Coldcrow、
 
 hosting按每个出生身份滚独立词缀，仆从继承已准备领队数值；不把已滚暗金规则按类型缓存。MonUMod的权重、排斥、类型限制、难度常数与MonLvl、DifficultyLevels、Skills共同准备生命／等级／经验、物理增伤、命中、抗性、速度、元素、法力燃烧、冠军变体及光环／诅咒。runtime只接纯值，不读MPQ。实际经验／掉落携带真实rank及rewardModifiers；首领任务资格、首杀TC、组队／人数规则另属任务／奖励领域，尚未完整接入。
 
-普通A1／A2与原元素附伤按MonMode实际攻击时的单位等级重新准备，包含冠军／暗金／仆从等级加成，不沿用出生前基础等级伤害／命中。生命、防御、经验的出生初始化倍率仍保持原独立顺序，不把全部属性一并重算。S1与技能借用A1／A2也使用当前等级攻击快照，之后应用词缀／人数／技能加成。依据为D2MOO MonsterMode的DATATBLS_CalculateMonsterStatsByLevel与当前MPQ三难度MonLvl。
+普通A1／A2与原元素附伤按MonMode实际攻击时的单位等级重新准备，包含冠军／暗金／仆从等级加成，不沿用出生前基础等级伤害／命中。生命、防御、经验不一并重算。S1与技能借用A1／A2也使用当前等级攻击快照，之后应用词缀／人数／技能加成。依据为D2MOO MonsterMode的DATATBLS_CalculateMonsterStatsByLevel与当前MPQ三难度MonLvl。
 
 ## 当前运行效果
+
+2026-10-15后续源码将生命加成移到实际Actor出生：基础范围投掷与人数加成之后，在定点生命上执行UMod2，再应用Possessed／Berserk修正，复用原整数比例函数；不再先放大最小／最大生命再抽样。怪物祭坛升级共用此计算。MonUMod有序加权选择已提取为纯规则，并补普通暗金的RollLimitedRandom(1)消耗；目前调用者仍是hosting，词缀／姓名／随从的完整出生顺序尚未迁到单位流。本段源码已纳入2026-10-16的all构建与两包；本轮未专项对照完整精英出生随机顺序，不能据构建成功认证精确一致。
 
 | 程序 | 权威行为及数据 |
 | --- | --- |

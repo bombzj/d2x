@@ -80,6 +80,8 @@ struct System::RoomRuntime {
             if (!--remaining && ++run < room.terrain.size()) remaining = room.terrain[run].count;
         });
         auto &active=state.rooms.at(room.index);
+        if(owner.ports_.areas.roomCreationOrder_==UINT64_MAX) throw std::overflow_error("Native room creation order exhausted");
+        active.creationOrder=++owner.ports_.areas.roomCreationOrder_;
         active.loaded = true;
         if(active.randomRevision!=UINT64_MAX) {
             ++active.randomRevision;

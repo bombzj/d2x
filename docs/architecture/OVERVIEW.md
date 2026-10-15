@@ -19,7 +19,7 @@
 
 **服务端三层边界：** hosting把原包转为绑定玩家的类型化命令，并从MPQ准备规则；server校验资格、执行领域操作、提交事实；hosting把事实编码成原回包，并持有保存／传输边界。`GameInstance`和`GameSystems`只组装，`runtime/simulation`只安排执行顺序，不成为万能游戏会话。
 
-**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持房间引用／压缩地形恢复数据，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系。GameSystems中的frameEvents持原生实例定时器，与可靠输出EventOutbox分开；已发布包接状态期限／AIRESET，此前飞弹／周期切片通过Windows Release构建与代表路径冒烟；后续统一弹体数值／接触与跨单位源码尚未构建或运行，完整迁移仍未完成。actions状态持施放记录、玩家恢复动作及玩家／怪物待释放队列，skills解释技能程序并推进释放；missiles／effects分别持弹体／效果，reactions持物品触发队列。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
+**状态各有唯一主人：** PlayerStore持角色持久值与玩家状态，AreaStore持区域／碰撞和房间活动投影，world持房间引用／压缩地形恢复数据，monsters持活动及休眠非玩家实体，companions持伙伴控制关系，social持队伍关系。GameSystems中的frameEvents持原生实例定时器，与可靠输出EventOutbox分开；状态期限／AIRESET、飞弹／周期／再生及跨单位属性／接触已有切片；完整AI／动作／物件／物品及原全局顺序仍未迁完。实际阶段见[总计划2.3节](MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)，构建与有限运行只见运行包记录。actions状态持施放记录、玩家恢复动作及玩家／怪物待释放队列，skills解释技能程序并推进释放；missiles／effects分别持弹体／效果，reactions持物品触发队列。combat结算伤害，death处理死亡与奖励协作，transactions提交跨领域人物／物品变更。索引、客户端副本和诊断都不是第二份权威。
 
 修改时先找状态所属领域，通过窄Ports协作；不把GameSystems、网络会话或内容加载器传给玩法。共享算法不共享运行态，协议值不等于磁盘值。新内容沿“MPQ准备 → 领域资格／执行 → 事务／事实 → 原包投影”接入，未实现路径明确拒绝。
 

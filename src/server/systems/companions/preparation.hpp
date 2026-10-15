@@ -5,6 +5,7 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "server/runtime/prepared_rules.hpp"
+#include "gameplay/monsters/components.hpp"
 #include <vector>
 #include <memory>
 namespace d2x::server::companions {
@@ -14,11 +15,15 @@ struct Preparation {
     int skill{},rank{},difficulty{},ownerLevel{};std::map<int,int> hardRanks;SummonCastSpec summon;MonsterRule rule;
     std::optional<ItemInstance> material{};
     std::optional<EntityId> refresh{};
+    std::optional<PersistentCharacter> ownerEquipment{};
+    std::optional<std::pair<uint64_t,uint64_t>> birthRandom{};
 };
 struct Prepared {
     Preparation source;PersistentCharacter equipment;SummonCastSpec summon;MonsterRule rule;
     WeaponDamage weapon;uint64_t random{};std::string deferred;
     std::vector<std::shared_ptr<const StatList>> equipmentSources;
+    std::optional<EquipmentStats> equipmentStats;
+    std::optional<MonsterComponents> components;
 };
 struct HirelingPreparation {
     ActorContext actor;

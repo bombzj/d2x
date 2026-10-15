@@ -98,7 +98,7 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
     ports_.skills.interrupt({player.player,target,player.area,area.generation,0,tick});
     return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &skill, std::optional<PlayerId> recipient) {
+DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &skill, std::optional<PlayerId> recipient,std::span<const DomainFact> facts) {
     const auto *caster=ports_.players.find(actor.player);const auto *target=ports_.players.find(recipient.value_or(actor.player));
     if(!caster || !target || !caster->entered || !target->entered || caster->actor!=actor.actor || caster->area!=actor.area ||
         ports_.areas.at(target->area).definition.act!=ports_.areas.at(actor.area).definition.act || caster->persistent.player.hp<=0 || target->persistent.player.hp<=0 || !skill.appliedEffect ||
@@ -135,10 +135,11 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
          {caster->rules.skills->nativeStats.at("bonearmormax"),installed->spec.physicalShieldMaximum}}});
     if(skill.effect==SkillBehavior::BoneArmor && skill.castOverlayId>=0) edit.publicFacts.emplace_back(OverlayFact{target->actor,0,target->area,skill.castOverlayId});
     std::vector<transactions::Change> changesToPrepare;
-    if(target==caster) edit.charge=skill.charge;
+    if(target==caster) {edit.charge=skill.charge;edit.publicFacts.insert(edit.publicFacts.end(),facts.begin(),facts.end());}
     else {
         transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
         debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+        debit.publicFacts.insert(debit.publicFacts.end(),facts.begin(),facts.end());
         changesToPrepare.emplace_back(std::move(debit));
     }
     changesToPrepare.emplace_back(std::move(edit));
@@ -240,7 +241,51 @@ DomainResult<> System::commitPlayerReception(PlayerReceptionPlan &&plan) {
     const auto result=ports_.transactions.commit(std::move(*prepared.value));if(result) publishPlayers(next.players);
     return result;
 }
-DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear,std::optional<std::reference_wrapper<uint64_t>> contactRandom,const PlayerHitAdjustment &adjustment,const DamageReception *preparedReception,bool nativeUnitRandom) {
+DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const MonsterHit &hit,int64_t amount,uint64_t tick) {
+    const auto *player=ports_.players.findActor(target);if(!player || !player->entered) return {DomainStatus::Unavailable,{}};
+    const auto &area=ports_.areas.at(player->area);
+    if(player->persistent.player.hp<=0) {
+        const auto output=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},player->area},
+            {HitFact{target,0,player->area,0,true,player->position,hit.hitClass}}});
+        return {output.status,output?std::optional{std::monostate{}}:std::nullopt};
+    }
+    const bool interruptible=!ports_.skills.uninterruptible(target);
+    const auto clock=reactionTiming(*player,"gh"),knockbackClock=hit.knockback?reactionTiming(*player,"kb"):std::optional<AnimationTiming>{};
+    const bool knockback=source && amount>0 && knockbackClock && interruptible;
+    auto random=player->combatRandom;const auto states=unitEffects(target);
+    const bool getHit=source && hit.getHit.value_or(!hit.softHit) && (amount>0 || hit.stunFrames) && !hit.knockback && clock && interruptible &&
+        monsterHitRecovery(amount,player->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
+            hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
+            player->rules.skills && states && states->hasState(player->rules.skills->stunned.id,tick));
+    if(!getHit && !knockback && random==player->combatRandom) return {DomainStatus::Applied,std::monostate{}};
+    const ActorContext actor{player->player,target,player->area,area.generation,0,tick};
+    transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+    edit.random=transactions::UnitRandomEdit{player->combatRandom,random};
+    actions::State::PreparedRecovery recovery;
+    if(getHit || knockback) {
+        recovery=ports_.actions.prepareRecovery(target);
+        recovery.mapped().until=tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-tick);
+        HitFact fact{target,0,player->area,playerLifePercentage(player->persistent.player.hp.raw(),player->totals.character.maxLifeFixed.raw()),false,player->position,hit.hitClass};
+        fact.playerMode=knockback?20:6;
+        if(knockback) {
+            const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
+            if(attacker.id()) {
+                const auto region=attacker.player?attacker.player->area:attacker.monster->area;
+                const auto point=attacker.position()+ports_.areas.at(region).definition.origin-area.definition.origin;
+                const auto destination=knockbackDestination(player->position,point,3);
+                if(area.definition.collision.nativeMovementSegment(player->position,destination,playerMovement)) {
+                    edit.knockback=PointTarget{player->area,area.generation,destination};fact.knockback=destination;
+                }
+            }
+        }
+        edit.publicFacts.emplace_back(fact);
+    }
+    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
+    if(getHit || knockback) {ports_.actions.commitRecovery(std::move(recovery));ports_.skills.interrupt(actor);}
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, EntityId source, const MonsterHit &hit, const MonsterHitStates &definitions,std::optional<ItemHandle> wear,std::optional<std::reference_wrapper<uint64_t>> contactRandom,const PlayerHitAdjustment &adjustment,const DamageReception *preparedReception,bool nativeUnitRandom,bool deferAction) {
     const auto *p=ports_.players.find(actor.player);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0) return {DomainStatus::InvalidActor,{}};
     auto next=state_;auto &recovery=next.players[actor.actor];auto &states=recovery.states;
@@ -342,20 +387,20 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     edit.player=resources.record();edit.resourceBase=resources.maximum();
     edit.transient = projectEffectAttributes(states,actor.tick);
     const auto clock=reactionTiming(*p,"gh");
-    const bool getHit=source && hit.getHit.value_or(!hit.softHit) && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
+    const bool getHit=!deferAction && source && hit.getHit.value_or(!hit.softHit) && (dealt>0 || hit.stunFrames) && edit.player.hp>0 && !hit.knockback && clock &&
         !ports_.skills.uninterruptible(actor.actor) &&
         monsterHitRecovery(dealtFixed,p->totals.character.maxLifeFixed.raw(),hit.hitClass,false,
             hit.channels[5]>0 && std::all_of(hit.channels.begin(),hit.channels.begin()+5,[](auto n){return n==0;}),true,random,
             p->rules.skills && states.hasState(p->rules.skills->stunned.id,actor.tick));
     const auto knockbackClock=hit.knockback?reactionTiming(*p,"kb"):std::optional<AnimationTiming>{};
-    const bool knockback=source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor);
+    const bool knockback=!deferAction && source && dealt>0 && edit.player.hp>0 && knockbackClock && !ports_.skills.uninterruptible(actor.actor);
     actions::State::PreparedRecovery recoveryAction;
     if(getHit || knockback) {
         recoveryAction=ports_.actions.prepareRecovery(actor.actor);
         recoveryAction.mapped().until=actor.tick+std::min<uint64_t>((knockback?knockbackClock:clock)->durationTicks(),UINT64_MAX-actor.tick);
     }
     const auto percent = playerLifePercentage(int64_t(edit.player.hp.raw()),p->totals.character.maxLifeFixed.raw());
-    if(dealt>0 || adjustment.crushing>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,edit.player.hp<=0,p->position,hit.hitClass});
+    if(dealt>0 || adjustment.crushing>0 || hit.mana>0 || hit.stamina>0 || getHit) edit.publicFacts.emplace_back(HitFact{actor.actor,0,actor.area,percent,!deferAction && edit.player.hp<=0,p->position,hit.hitClass});
     if(getHit || knockback) for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->playerMode=knockback?20:6;
     if(knockback && source) {
         const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);

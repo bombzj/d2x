@@ -108,6 +108,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     player.routeDestination=player.route.empty()?at:player.route.back();player.routeObstacles=destination->definition.collision.obstacleRevision;
     player.moving=!player.route.empty();player.locomotionSequence=actor.sequence;
     ++player.teleportRevision;
+    player.lastTeleportPosition=at+destination->definition.origin;
     state_.synchronizations[actor.player]=next;ports_.random=random;
     return {DomainStatus::Applied,std::monostate{}};
 }

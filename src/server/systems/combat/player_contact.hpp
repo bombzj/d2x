@@ -22,6 +22,7 @@ struct MissileContactExecution {
     bool flagsPrepared{};
     bool resultSuccessful{true};
     bool proceduresPrepared{},armorCommitted{};
+    bool weaponWearCommitted{},defenderWearCommitted{};
     WeaponHitEffects extras;
     WeaponHitResult playerExtras;
     reactions::ItemEventPlan itemEvents;
@@ -47,6 +48,7 @@ struct PlayerContactExecution {
     uint64_t random{};
     uint32_t hitClass{};
     int64_t remainingLife{};
+    bool damageCommitted{};int64_t receivedPhysical{};
     bool defensePrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},missile{},hostile{},fillEventComplete{},meleeEventComplete{};
 };
 struct MonsterContactExecution {

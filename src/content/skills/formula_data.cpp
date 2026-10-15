@@ -19,6 +19,8 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
     }
     auto result=std::make_shared<SkillFormulaCatalog>();
     result->skillShrineState=data.states.at("shrine_skill").definition.id;
+    result->corpseNoDrawState=data.states.at("corpse_nodraw").definition.id;
+    result->infernoState=data.states.at("inferno").definition.id;
     for(const auto &character:data.characters) if(character.sourceRow==0)
         result->maximumSkillRank=int(data.experienceByClass.at(character.name).size())-1;
     if(result->maximumSkillRank<1 || result->maximumSkillRank>255) throw std::runtime_error("Missing native skill maximum from Experience class zero");

@@ -3,6 +3,7 @@
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
 #include "gameplay/effects/definition.hpp"
+#include "target_query.hpp"
 
 #include <map>
 #include <array>
@@ -44,7 +45,7 @@ class System {
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
-    struct ShootableTarget { UnitTarget unit; Vec position; int size{}, distance{}; };
+    using ShootableTarget=NativeAiTarget;
     std::optional<ShootableTarget> shootableTarget(const monsters::Actor &, TickContext) const;
     std::optional<ShootableTarget> acquireTarget(const monsters::Actor &,TickContext,bool missileRay,bool requireSight) const;
   public:

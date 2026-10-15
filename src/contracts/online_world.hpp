@@ -74,6 +74,7 @@ struct OnlineCombatEvent {
     std::optional<OnlineUnitKey> target;
     std::optional<OnlinePoint> point;
     std::optional<std::array<uint32_t, 2>> missileDestination; // Native first path point, not spawn origin.
+    std::optional<std::array<uint32_t,2>> skillArguments; // A3 raw arguments also carry progressive RNG seeds.
     std::optional<uint8_t> pierce;
     std::optional<uint16_t> skill, level, overlay, missile;
     std::optional<uint8_t> action, hitClass, life, direction;

@@ -16,13 +16,13 @@
 namespace d2x {
 namespace {
 // Native callback identities where the authored preset is not an Objects row.
-int preset(int id, int act, int level, uint64_t &random) {
+int preset(int id, int act, int level) {
     if (id >= 574 && id <= 579) return 136;
     if (id != 580 && id != 581) return id;
-    if (id == 580 && level == 25) return 371;
-    if (act == 1) { constexpr int tomb[]{87,88}, arcane[]{387,389,390,391}; return level == 74 ? arcane[limitedRandom(random,4)] : tomb[limitedRandom(random,2)]; }
-    if (act == 2) { constexpr int jungle[]{181,183}, temple[]{329,330,331,332}; return level == 83 ? temple[limitedRandom(random,4)] : jungle[limitedRandom(random,2)]; }
-    return resolveAct1ChestPreset(id,level,random);
+    if(id==580 && level==25) return 371;
+    if(act==1) return level==74?387:87;
+    if(act==2) return level==83?329:181;
+    return 5;
 }
 }
 void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorldArea &prepared) {
@@ -32,8 +32,42 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
     if(request.act==4) {ClassicStrings strings(archives);if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);}
-    const auto groups = decodeTable(archives.read("data/global/excel/objgroup.txt"));
-    const auto shrines = decodeTable(archives.read("data/global/excel/shrines.txt"));
+    const DataTable groups(archives.read("data/global/excel/objgroup.txt"));
+    area.objectPopulation.groups=catalog.level(request.level).objectGroups;
+    area.objectPopulation.probabilities=catalog.level(request.level).objectProbabilities;
+    const auto &levels=content.tables.at("levels");
+    for(size_t row=0;row<levels.rows().size();++row) if(levels.number(row,"Id")==request.level) {
+        area.objectPopulation.themes=uint32_t(levels.number(row,"Themes").value_or(0));
+        break;
+    }
+    const int itemLevel=std::min(std::max(area.monsterLevel-1,1),64);
+    area.objectPopulation.itemSelectionAct=catalog.level(itemLevel).act;
+    constexpr const char *itemTables[]{"armor","weapons","misc"};
+    for(size_t family=0;family<std::size(itemTables);++family) {
+        const auto &table=content.tables.at(itemTables[family]);
+        for(size_t row=0;row<table.rows().size();++row) {
+            const auto code=table.value(row,"code");if(code.empty()) continue;
+            area.objectPopulation.itemCandidates[family].push_back({std::string(code),
+                table.number(row,"level").value_or(0),table.number(row,"rarity").value_or(0),
+                table.number(row,"spawnable").value_or(0)!=0,table.number(row,"quest").value_or(0)!=0,
+                table.value(row,"type")=="body"});
+        }
+    }
+    area.objectPopulation.firstItemCode=std::string(content.tables.at("weapons").value(0,"code"));
+    for(size_t row=0;row<groups.rows().size();++row) {
+        const auto offset=groups.number(row,"Offset");if(!offset) continue;
+        auto &entries=area.objectPopulation.entries[*offset];
+        for(size_t slot=0;slot<entries.size();++slot) {
+            const auto suffix=std::to_string(slot);
+            entries[slot]={groups.number(row,"ID"+suffix).value_or(0),groups.number(row,"PROB"+suffix).value_or(0),groups.number(row,"DENSITY"+suffix).value_or(0)};
+        }
+    }
+    const DataTable shrines(archives.read("data/global/excel/shrines.txt"));
+    for(size_t row=0;row<shrines.rows().size();++row) {
+        const auto code=shrines.number(row,"Code");
+        if(!code || *code!=int(row)) throw std::runtime_error("Shrine generation requires native row identities");
+        area.shrineGeneration.push_back({*code,shrines.number(row,"effectclass").value_or(0),shrines.number(row,"LevelMin").value_or(0)});
+    }
     const auto portalRule=[&](const WorldObject &object,int opening) {
         return server::PortalRule{object.objectClass,int(object.reach),opening,object.collisionWidth,object.collisionHeight,
             object.collisionMask,object.hasCollision};
@@ -71,10 +105,22 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     for(size_t row=0;row<objectTable.rows().size();++row) {
         const auto definition=objectTable.number(row,"Id");if(!definition) continue;
         WorldObject object;object.appearance.category="objects";object.objectClass=*definition;configureWorldObject(object,rows);
+        area.objectPopulation.objects.emplace(*definition,server::ObjectGenerationRule{
+            objectTable.number(row,"PopulateFn").value_or(0),objectTable.number(row,"Gore").value_or(0),
+            objectTable.number(row,"Orientation").value_or(0),objectTable.number(row,"XSpace").value_or(0),
+            objectTable.number(row,"YSpace").value_or(0),objectTable.number(row,"SubClass").value_or(0)});
         server::ObjectRule rule;rule.operation=object.operateFn;rule.width=object.collisionWidth;rule.height=object.collisionHeight;rule.range=int(object.reach);
         rule.collisionMask=object.collisionMask;rule.collision=object.hasCollision;rule.light=object.blocksLight;rule.parameters=object.parameters;
         rule.door=object.interaction==Interaction::Door;rule.stash=object.interaction==Interaction::Stash;
         rule.initialization=objectTable.number(row,"InitFn").value_or(0);rule.damage=objectTable.number(row,"Damage").value_or(0);
+        rule.lockable=objectTable.number(row,"Lockable").value_or(0)!=0;
+        rule.preOperate=objectTable.number(row,"PreOperate").value_or(0)!=0;
+        rule.openingMode=objectTable.number(row,"Mode1").value_or(0)!=0;
+        if(rule.initialization==2 || rule.initialization==3 || rule.initialization==57) {
+            const auto level=catalog.level(request.level).objectLevel;
+            if(!level || *level<0) throw std::runtime_error("Missing native object initialization level");
+            rule.initializationLevel=*level;
+        }
         rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;
         if(rule.operation==22) {
             // Well healing removes poison/freeze first, then NPCRemoveStates
@@ -111,10 +157,15 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     Region region; region.definition.id = area.id; region.definition.safe = area.town;
     region.map = *prepared.terrain.map; region.objectSeed = initialRandom(request.seed + uint32_t(request.level));
     EntityIds ids(uint64_t{1} << 32); size_t symbol = 0;
-    for (const auto &source : region.map.terrain.data.objects) {
+    std::map<EntityId,int> presetCallbacks;
+    std::map<EntityId,size_t> presetOrders;
+    for (size_t sourceIndex=0;sourceIndex<region.map.terrain.data.objects.size();++sourceIndex) {
+        const auto &source=region.map.terrain.data.objects[sourceIndex];
         if (source.type != 2 || !source.nativeIdentity) continue;
         WorldObject object; object.id = ids.allocate(); object.act = area.act;
-        object.objectClass = preset(source.id, area.act, request.level, region.objectSeed);
+        presetOrders.emplace(object.id,sourceIndex);
+        object.objectClass = preset(source.id, area.act, request.level);
+        if(source.id==580 || source.id==581) presetCallbacks.emplace(object.id,source.id);
         if (source.id == 582) {
             if (request.level != 74) { area.objectDeferred.push_back(source.id); continue; }
             if(!area.staffTomb || *area.staffTomb<66 || *area.staffTomb>72) throw std::runtime_error("Missing generated true tomb for Arcane symbols");
@@ -123,30 +174,25 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         }
         object.pos = {float(source.x), float(source.y)}; object.appearance.category = "objects"; object.appearance.mode = "nu";
         configureWorldObject(object, rows);
-        if (source.id == 580) { object.chest.emplace(); object.chest->sparkly = request.level < 62 || request.level > 64 || limitedRandom(region.objectSeed,100) <= 50; }
-        assignShrine(object, shrines, request.level, region.objectSeed);
-        if (source.id >= 574 && source.id <= 579) {
-            constexpr int low[]{2,7,8,12,1,14}, high[]{6,7,11,12,5,14}; const auto index = source.id - 574;
-            object.shrineCode = low[index] + int(limitedRandom(region.objectSeed, unsigned(high[index] - low[index])));
-            if(object.shrineCode==4) object.shrineCode=2;
-            if(object.shrineCode==5) object.shrineCode=3;
-        }
+        if (source.id == 580) { object.chest.emplace(); object.chest->sparkly = true; }
+        if (source.id >= 574 && source.id <= 579) object.shrineCode = source.id;
         region.objects.push_back(std::move(object));
     }
     // ACT5Q3_SpawnFrozenDrehya creates OBJECT_FROZEN_ANYA at the
     // authored Init67 marker; the invisible marker itself is not usable.
     if(request.level==114) {
-        std::vector<Vec> frozenMarkers;
+        std::vector<std::pair<Vec,size_t>> frozenMarkers;
         for(const auto &object:region.objects) for(size_t row=0;row<objectTable.rows().size();++row)
-            if(objectTable.number(row,"Id")==object.objectClass && objectTable.number(row,"InitFn")==67) frozenMarkers.push_back(object.pos);
-        for(const auto position:frozenMarkers) {
+            if(objectTable.number(row,"Id")==object.objectClass && objectTable.number(row,"InitFn")==67)
+                frozenMarkers.emplace_back(object.pos,presetOrders.at(object.id));
+        for(const auto &[position,order]:frozenMarkers) {
             WorldObject frozen;frozen.id=ids.allocate();frozen.act=4;frozen.objectClass=558;frozen.pos=position;
+            presetOrders.emplace(frozen.id,order);
             frozen.appearance.category="objects";frozen.appearance.mode="op";configureWorldObject(frozen,rows);
             if(frozen.operateFn!=67) throw std::runtime_error("Missing original Frozen Anya object rule");
             region.objects.push_back(std::move(frozen));
         }
     }
-    populateAct1WorldObjects(region, ids, catalog, rows, groups, request.seed + uint32_t(request.level));
     // A2Q6 creates the original Duriel entrance relative to the authored
     // orifice. It is prepared now and admitted only when its quest timer fires.
     if(request.act==1) {
@@ -169,14 +215,15 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
             region.objects.push_back(std::move(entrance));
         }
     }
-    initializeChests(region, catalog, rows);
     for (auto &object : region.objects) {
-        if (object.interaction == Interaction::Shrine && !object.shrineCode) assignShrine(object, shrines, request.level, region.objectSeed);
         server::AreaObject entry{object.id, object.objectClass, object.pos, {}}; auto &rule = entry.rule;
+        if(const auto callback=presetCallbacks.find(object.id);callback!=presetCallbacks.end()) entry.preset=callback->second;
+        if(const auto order=presetOrders.find(object.id);order!=presetOrders.end()) entry.presetOrder=order->second;
         rule=area.objectRules.at(object.objectClass);
         rule.operation = object.operateFn; rule.width = object.collisionWidth; rule.height = object.collisionHeight; rule.range = int(object.reach);
         rule.collisionMask = object.collisionMask; rule.collision = object.hasCollision; rule.light = object.blocksLight; rule.parameters = object.parameters;
         rule.door = object.interaction == Interaction::Door; rule.stash = object.interaction == Interaction::Stash; rule.chest = object.chest;
+        rule.specialChest=object.chest && object.chest->sparkly;
         for(size_t row=0;row<objectTable.rows().size();++row) if(objectTable.number(row,"Id")==object.objectClass && objectTable.number(row,"InitFn")==47) {
             for(size_t m=0;m<missiles.rows().size();++m) if(missiles.value(m,"Missile")=="towerchestspawner" && missiles.number(m,"pSrvDoFunc")==18) {
                 TowerReward reward{missiles.number(m,"Range").value_or(0),missiles.number(m,"Param1").value_or(-1),std::max(1,4*missiles.number(m,"Param2").value_or(0)),missiles.number(m,"Param3").value_or(-1)};
@@ -196,13 +243,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         }
         const auto &animation = object.animationRules[1];
         rule.openingTicks=uint64_t(std::max(1,animation.frames+1));
-        if (object.shrineCode) {
-            rule.shrine = area.shrineRules.at(object.shrineCode);
-        }
-        if((rule.initialization==2 || rule.initialization==27) && !rule.chest) {
-            if(rule.initialization==2) {const auto level=catalog.level(request.level).objectLevel;if(!level) throw std::runtime_error("Missing native object trap level");if(limitedRandom(region.objectSeed,100)<unsigned(*level/8+5)) rule.trap=1+int(limitedRandom(region.objectSeed,8));}
-            else if(limitedRandom(region.objectSeed,1000)<333) rule.trap=3;
-        }
+        if (object.shrineCode >= 574 && object.shrineCode <= 579) rule.shrinePreset=object.shrineCode;
         area.objects.push_back(std::move(entry));
         if(object.objectClass==100 && !area.openedTombWall.empty()) area.objects.back().questSpawn=true;
     }

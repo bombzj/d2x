@@ -24,7 +24,7 @@ struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, statio
 using CastRequest = actions::MonsterCastRequest;
 using Cast = actions::SkillAction;
 using State = actions::State;
-struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; };
 class System {
   State &state_;
     const Ports ports_;
@@ -33,6 +33,9 @@ class System {
     struct Runtime;
     std::unique_ptr<Runtime> runtime_;
     StepStatus releaseMonsters(TickContext);
+    DomainResult<bool> releaseAssassinPet(MonsterRelease &,TickContext);
+    DomainResult<bool> releaseShadowSkill(MonsterRelease &,TickContext);
+    DomainResult<std::shared_ptr<actions::SkillRelease>> startShadowSkill(const CastRequest &,const MonsterAttackRule &);
     DomainResult<> cast(const ActorContext &, const Request &, int skill);
     DomainResult<> weaponCast(const ActorContext &, const Request &, int);
     DomainStatus weaponRelease(Release &, const ActorContext &, Vec);
@@ -58,6 +61,11 @@ class System {
     DomainStatus activateStaticField(Release &, const ActorContext &, Vec);
     DomainStatus activateTelekinesis(Release &, const ActorContext &, Vec);
     DomainStatus activateMissile(Release &, const ActorContext &, Vec);
+    DomainStatus activateAssassin(Release &, const ActorContext &, Vec);
+    DomainResult<bool> startBladeFury(Release &,const ActorContext &,std::span<const DomainFact> facts={});
+    DomainResult<> startAssassinKick(Release &,const ActorContext &);
+    DomainStatus activateAssassinKick(Release &,const ActorContext &,Vec);
+    DomainStatus allocateAssassinKick(Release &,const ActorContext &,bool held,bool knockback);
     DomainStatus activateUnsupported(Release &, const ActorContext &, Vec);
     std::vector<EntityId> staticFieldTargets(const ActorContext &, const SkillCastSpec &) const;
     std::optional<Vec> unitPosition(const ActorContext &, UnitTarget, SkillBehavior) const;
@@ -74,7 +82,7 @@ class System {
     size_t pendingReleases() const;
     bool busy(EntityId id, uint64_t tick) const;
     DomainResult<> requestCast(const CastRequest &);
-    DomainResult<> itemTrigger(const ActorContext &,SkillCastSpec,MissileCollisionRule,EntityId,Vec,bool dead,bool itemTargetDo);
+    DomainResult<> itemTrigger(const ActorContext &,SkillCastSpec,MissileCollisionRule,EntityId,Vec,bool dead,bool itemTargetDo,std::shared_ptr<actions::SkillRelease> *continuation=nullptr);
     // Native OperateFn05 invokes the hidden Kick without changing either hand.
     DomainResult<> objectKick(const ActorContext &, UnitTarget);
     DomainResult<> avoidance(const ActorContext &, WeaponAvoidance, EntityId attacker);

@@ -9,6 +9,8 @@ LootPlan planSelectedItem(const ClassicData &,std::string_view code,int level,ui
     const std::set<size_t> &used = {},std::string_view characterClass = {},
     std::optional<DropQuality> forcedQuality = {},bool superiorFloor = false,
     const ItemSeedSource &seeds = {});
+LootPlan planCreatedItem(const ClassicData &,std::string_view code,int level,
+    const std::set<size_t> &used,const ItemSeeds &);
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques = {}, std::string_view characterClass = {},

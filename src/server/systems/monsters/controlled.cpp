@@ -14,6 +14,14 @@
 #include <vector>
 #include <span>
 namespace d2x::server::monsters {
+DomainResult<> System::toggleAiState(EntityId id,int state,bool active,uint64_t tick) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || state<0) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;if(actor.aiStates.contains(state)==active) return {DomainStatus::Applied,std::monostate{}};
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,state,active}}});
+    if(!sent) return {sent.status,{}};
+    if(active) actor.aiStates.insert(state);else actor.aiStates.erase(state);
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 void System::curseControl(EntityId id,Actor::CurseControl control) noexcept {
     if(auto found=state_.actors.find(id);found!=state_.actors.end()) {
         auto &actor=found->second;
@@ -202,19 +210,20 @@ void System::commitHydra(std::map<EntityId,Actor> &&actors) noexcept {
     for(auto &[id,actor]:actors) {registerPet(actor);ports_.areas.publishRoomUnit(*actor.roomAdmission);}
     state_.actors.merge(actors);
 }
-DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,std::shared_ptr<PersistentCharacter> equipment,size_t items,std::optional<WeaponDamage> weapon,std::span<const std::shared_ptr<const StatList>> sources,uint64_t random) const {
+DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,std::shared_ptr<PersistentCharacter> equipment,size_t items,std::optional<WeaponDamage> weapon,std::span<const std::shared_ptr<const StatList>> sources,uint64_t random,std::optional<EquipmentStats> equipmentStats) const {
     if(state_.actors.size()>=65536 || items+1>UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
     const auto *p=ports_.players.find(owner.player);if(!p) return {DomainStatus::InvalidActor,{}};
     if(!summon.native || !rule.stats || !rule.formulas) return {DomainStatus::Unavailable,{}};
     uint64_t cursor=ports_.ids.cursor();Actor actor;actor.id=EntityId{cursor++};actor.area=owner.area;actor.position=position;actor.revision=1;actor.owner=owner.player;
     actor.identity.monster=summon.monster;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
-    actor.implementation=MonsterKind::AmazonPet;actor.rule=rule;actor.rule.petType=summon.petType;actor.amazonPet=summon.amazon;actor.petStats=summon.stats;
+    actor.implementation=summon.kind;actor.rule=rule;actor.rule.petType=summon.petType;actor.amazonPet=summon.amazon;actor.assassinPet=summon.assassin;actor.petStats=summon.stats;
+    actor.nativeMinionOwner=p->actor;
     actor.rule.alignment=2;
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.rule.difficulty=p->persistent.difficulty;
     actor.rule.coldDivisor=p->rules.skills->coldDivisor.at(size_t(actor.rule.difficulty));
     actor.rule.freezeDivisor=p->rules.skills->freezeDivisor.at(size_t(actor.rule.difficulty));
-    actor.rule.level=summon.stats.level;actor.rule.defense=summon.stats.attributes.defense;actor.rule.attackRating=summon.stats.attributes.attackRating;if(summon.amazon->decoy) actor.rule.deathTicks=p->rules.character->deathTicks;
+    actor.rule.level=summon.stats.level;actor.rule.defense=summon.stats.attributes.defense;actor.rule.attackRating=summon.stats.attributes.attackRating;if(summon.amazon && summon.amazon->decoy) actor.rule.deathTicks=p->rules.character->deathTicks;
     const auto &a=summon.stats.attributes;
     actor.rule.resistances={a.combat.physicalResist,a.combat.magicResist,a.fireResist,a.lightningResist,a.coldResist,a.poisonResist};
     actor.life=actor.maximumLife=a.maxLifeFixed.raw();actor.rewardComplete=true;actor.combatRandom=random;
@@ -225,12 +234,17 @@ DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext 
     if(equipment) for(auto &[id,item]:equipment->inventory.items) {const auto old=id;remap(remap,item);if(weapon && weapon->item==old) weapon->item=item.id;
         if(const auto modifier=actor.petStats.attributes.combat.weapons.find(old);modifier!=actor.petStats.attributes.combat.weapons.end()) {auto value=modifier->second;actor.petStats.attributes.combat.weapons.erase(modifier);actor.petStats.attributes.combat.weapons.emplace(item.id,std::move(value));}mapped.emplace(item.id,std::move(item));}
     if(equipment) equipment->inventory.items.swap(mapped);
+    if(equipmentStats) {
+        for(auto &hand:equipmentStats->weapons) if(hand.item) hand.item=itemIds.at(hand.item);
+        if(equipmentStats->shield) equipmentStats->shield=itemIds.at(equipmentStats->shield);
+        actor.equipmentStats=std::move(equipmentStats);
+    }
     actor.petWeapon=std::move(weapon);actor.equipment=std::move(equipment);
     StatList binding;binding.ownerKind=StatOwnerKind::Monster;binding.source.owner=EntityId{1};
     binding.contributions.assign(sources.begin(),sources.end());
     const auto bound=statListWithOwner(binding,actor.id,itemIds);
     actor.nativeStats=attributes::prepareSummonStatSources(actor,summon,bound->contributions,ports_.areas.statTime(actor.area));
-    actor.rule.level=summon.stats.level;
+    actor.rule.level=nativeStatValue(actor.nativeStats->values,*actor.rule.stats,"level");
     actor.petStats.attributes.maxLifeFixed=Fixed8::fromRaw(nativeStatValue(actor.nativeStats->values,*actor.rule.stats,"maxhp"));
     actor.petStats.attributes.maxLife=std::max(1,actor.petStats.attributes.maxLifeFixed.raw()>>8);
     actor.petStats.attributes.combat=nativeCombatModifiers(actor.nativeStats->values,*actor.rule.stats,actor.petStats.attributes.combat);
@@ -245,7 +259,7 @@ void System::commitAmazon(std::map<EntityId,Actor> &&actors,size_t items) noexce
 }
 DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec position) {
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
-    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !(found->second.assassinPet && found->second.assassinPet->definition->warp) && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }

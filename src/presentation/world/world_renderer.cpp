@@ -20,6 +20,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     }
     view_.camera = project(scene.observer);
     if(scene.eclipse) lighting_.setEclipse(*scene.eclipse);
+    if(scene.cloakDuration) lighting_.beginCloak(*scene.cloakDuration,level.id);
     lighting_.advance(scene.elapsed, level);
     lighting_.update(map.grid, level, scene.region, scene.observer, actorClient_.controlledActor().lightRadius);
     const auto &tiles = assets_.worldTileSprites(map, scene.palette);

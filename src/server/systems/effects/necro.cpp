@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
@@ -119,12 +120,19 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     auto selectedLife=initial.take();selectedLife.specialTargetNode=true;selectedLife.changed=true;
     const auto leader=ports_.monsters.minionOwner(selected);
     if(leader==selected) {
+        selectedLife.nativeMinions=std::vector<EntityId>{};
         for(const auto &[id,child]:ports_.monsters.read().actors) if(id!=selected && ports_.monsters.minionOwner(id)==selected) {
             auto &unit=next[id];unit.area=child.area;
             monsters::LifeChange life{id,child.revision,Fixed8::fromRaw(child.life),Fixed8::fromRaw(child.maximumLife),child.nativeStats,true};
             life.detachedMinion=true;changes.push_back(std::move(life));
         }
-    } else if(leader && ports_.monsters.find(leader)) selectedLife.detachedMinion=true;
+    } else if(const auto *parent=ports_.monsters.find(leader)) {
+        selectedLife.detachedMinion=true;
+        auto &unit=next[leader];unit.area=parent->area;
+        monsters::LifeChange life{leader,parent->revision,Fixed8::fromRaw(parent->life),Fixed8::fromRaw(parent->maximumLife),parent->nativeStats,true};
+        life.nativeMinions=parent->nativeMinions;std::erase(*life.nativeMinions,selected);
+        changes.push_back(std::move(life));
+    }
     publication->facts.emplace_back(StateFact{selected,1,monster->area,player->rules.skills->alignment.id,true,
         {{player->rules.skills->nativeStats.at("alignment"),1}}});
     const Vec center=monster->position+ports_.areas.at(monster->area).definition.origin;
@@ -175,11 +183,13 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     return ports_.transactions.commit(std::move(*prepared.value));
 }
 DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skill,Vec center,EntityId selected) {
-    const auto *player=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
-    if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0 ||
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    const auto *player=caster?caster->controller:nullptr;const auto *area=ports_.areas.find(actor.area);
+    if(!caster || !player || !player->entered || caster->area()!=actor.area || (caster->player?player->persistent.player.hp<=0:!caster->monster->alive()) ||
        !area || area->generation!=actor.areaGeneration || !skill.curse || player->persistent.player.mana<skill.manaCost)
         return {DomainStatus::InvalidActor,{}};
     const auto &program=*skill.curse;
+    if(caster->monster && program.targetProcedure!=CurseSpec::TargetProcedure::Cloak) return {DomainStatus::Unavailable,{}};
     if(program.targetProcedure==CurseSpec::TargetProcedure::TerrorUtility) return nativeTerror(actor,skill,selected);
     if(program.ai==CurseAi::Attract) return nativeAttract(actor,skill,selected);
     const auto aiEligible=[](const monsters::Actor &m) {return skillAiControlAllowed(m.identity.rank,m.rule.switchAi,m.rule.boss);};
@@ -187,9 +197,40 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     auto next=units_;auto nextPlayers=state_.players;
     std::vector<transactions::Change> changesToPrepare;
     std::vector<monsters::LifeChange> lifeChanges;
-    transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
+    const auto payment=caster->monster?ActorContext{player->player,player->actor,player->area,ports_.areas.at(player->area).generation,actor.sequence,actor.tick}:actor;
+    transactions::CharacterEdit debit{payment,player->inventoryRevision,player->characterRevision,player->persistent.player};
     debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
     auto publication=std::make_shared<AuraUnitPublication>();
+    const bool cloak=program.targetProcedure==CurseSpec::TargetProcedure::Cloak;
+    if(cloak) {
+        const auto *current=unitEffects(caster->id());
+        if(!skill.appliedEffect || (current && current->hasState(skill.appliedEffect->state.id,actor.tick)))
+            return {DomainStatus::Unavailable,{}};
+        if(caster->monster) {
+            const auto &body=*caster->monster;auto &unit=next[body.id];unit.area=body.area;
+            MonsterResourceTrace resources(body,actor.tick,&unit.states);
+            auto own=*skill.appliedEffect;own.source={CombatEffectSource::Skill,body.id,skill.sourceId,skill.rank};
+            const auto applied=applySkillState(unit.states,skill,own,*body.rule.stats,*body.rule.states,actor.tick,[&]{resources.sample(unit.states,true);});
+            if(!applied.accepted) return {DomainStatus::Unavailable,{}};
+            for(const auto &removed:applied.removed) if(!unit.states.hasState(removed.effect.spec.state.id,actor.tick))
+                publication->facts.emplace_back(StateFact{body.id,1,body.area,removed.effect.spec.state.id,false});
+            const auto *installed=unit.states.find(applied.handle);if(!installed) throw std::logic_error("Missing native monster Cloak owner list");
+            auto stats=nativeEffectStats(*body.rule.stats,installed->spec);unit.nativeStats[own.state.id]=stats;
+            publication->facts.emplace_back(StateFact{body.id,1,body.area,own.state.id,true,std::move(stats)});
+            resources.sample(unit.states);lifeChanges.push_back(resources.take());
+        } else {
+        auto &states=nextPlayers[player->actor].states;
+        PlayerResourceTrace resources(*player,actor.tick,skill.manaCost,ports_.areas.statTime(actor.area));
+        const auto applied=applySkillState(states,skill,*skill.appliedEffect,*player->rules.skills->stats,*player->rules.character->states,actor.tick,
+            [&]{resources.sample(states,true);});
+        if(!applied.accepted) return {DomainStatus::Unavailable,{}};
+        debit.player=resources.record();debit.resourceBase=resources.maximum();debit.transient=projectEffectAttributes(states,actor.tick);
+        for(const auto &removed:applied.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
+            debit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,removed.effect.spec.state.id,false});
+        const auto *installed=states.find(applied.handle);if(!installed) throw std::logic_error("Missing native Cloak owner list");
+        debit.publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,installed->spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
+        }
+    }
     Vec origin=center+area->definition.origin;
     if(selected) {
         const auto target=participants.find(selected);
@@ -203,11 +244,12 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             if(std::find(eligible.begin(),eligible.end(),selected)!=eligible.end()) targets.push_back(selected);
         } else if(selected) targets.push_back(selected);
     }
-    else targets=nativeAuraCandidateRecipients({actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),false,origin,NativeAuraTargetMode::TargetRange});
+    else targets=nativeAuraCandidateRecipients({actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),cloak,
+        cloak?std::optional<Vec>{}:origin,cloak?NativeAuraTargetMode::OwnerRange:NativeAuraTargetMode::TargetRange});
     for(const auto id:targets) {
         if(const auto *peer=ports_.players.findActor(id)) {
             const auto &recipient=*peer;
-            if(!(program.targetFilter&1) || program.ai!=CurseAi::None || !recipient.entered || recipient.persistent.player.hp<=0 ||
+            if(!(program.targetFilter&1) || (!cloak && program.ai!=CurseAi::None) || !recipient.entered || recipient.persistent.player.hp<=0 ||
                !participants.canHarm(actor.actor,id)) continue;
             const auto duration=curseStateDuration(program.permanent?0:program.frames,recipient.totals.character.combat.curseResistance,program.state.curse);
             if(!duration) continue;
@@ -238,7 +280,8 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(!(program.targetFilter&2) || !participants.canHarm(actor.actor,id) || !monster.alive() || (necromancerFilter && !monster.rule.curseable) ||
            !monster.rule.stateTarget.acceptsCurseList() ||
            (necromancerFilter && monster.rule.enchantment && monster.rule.enchantment->has(38))) continue;
-        if(program.ai!=CurseAi::None && (!aiEligible(monster) || monster.alignment()==UnitAlignment::Neutral)) continue;
+        if(!cloak && program.ai!=CurseAi::None && (!aiEligible(monster) || monster.alignment()==UnitAlignment::Neutral)) continue;
+        const auto controlAi=cloak && !aiEligible(monster)?CurseAi::None:program.ai;
         if((program.ai==CurseAi::Confuse || program.ai==CurseAi::Attract) && monster.alignment()!=UnitAlignment::Evil) continue;
         if(program.targetLevelBonus && skill.rank+program.targetLevelBonus+player->persistent.player.level<=monster.rule.level) continue;
         if(program.skipActive && unitStates(id,actor.tick).contains(program.state.id)) continue;
@@ -257,7 +300,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         curse.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};
         if(*duration) curse.duration=uint32_t(*duration);
         curse.modifiers=program.modifiers;
-        curse.curseAi=program.ai;
+        curse.curseAi=controlAi;
         // SkillNec tests STAT_UNITBASE independently for each immune channel.
         auto &modifiers=curse.modifiers;
         auto nativeWrites=program.nativeWrites;
@@ -288,7 +331,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         const bool targetControl=program.ai==CurseAi::Confuse || program.ai==CurseAi::Attract;
         const auto applied=applyCurseState(recipient.states,program,curse,nativeWrites,*player->rules.skills->stats,actor.tick,
             [&]{if(resources) resources->sample(recipient.states,true);},[&](const EffectApplication &application) {
-                if(resources && program.ai!=CurseAi::None && !targetControl) {
+                if(resources && controlAi!=CurseAi::None && !targetControl) {
                     const auto *installed=recipient.states.find(application.handle);
                     if(!installed) throw std::runtime_error("Missing posted AI curse state");
                     resources->seedCurseControl({installed->spec.curseAi,installed->spec.source.entity,program.ai==CurseAi::Terror?monster.movementTarget:EntityId{},UINT64_MAX,program.fearOrigin,installed->spec.state.id},
@@ -300,7 +343,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
         if(resources && program.ai==CurseAi::Confuse)
             resources->writeBaseStat("alignment",1,combatEffectStatSources(recipient.states.entries(),actor.tick,true));
         auto life=resources?resources->take():monsters::LifeChange{id,monster.revision,Fixed8::fromRaw(monster.life),Fixed8::fromRaw(monster.maximumLife),monster.nativeStats,false};
-        if(program.ai!=CurseAi::None && !targetControl) {life.reselectAi=true;life.changed=true;}
+        if(controlAi!=CurseAi::None && !targetControl) {life.reselectAi=true;life.changed=true;}
         if(program.ai==CurseAi::Confuse) {life.targetCallbackEpoch=recipient.states.targetResetEpoch();life.specialTargetNode=true;life.changed=true;}
         const auto *installed=recipient.states.find(applied.handle);
         if(!installed) throw std::runtime_error("Missing installed native unit curse");
@@ -311,7 +354,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
             const auto deadline=nativeEventDeadline(actor.tick,frame);
             life.aiResetTimers=monster.aiResetTimers;life.aiResetTimers->push_back({deadline.due,deadline.continuous,ports_.frameEvents.reserveIdentity()});
         }
-        if(targetControl || (!resources && program.ai!=CurseAi::None)) {
+        if(targetControl || (!resources && controlAi!=CurseAi::None)) {
             life.curseControl=monsters::CurseControl{installed->spec.curseAi,installed->spec.source.entity,program.ai==CurseAi::Terror?monster.movementTarget:EntityId{},UINT64_MAX,program.fearOrigin,installed->spec.state.id};
             life.controlCallbackEpoch=recipient.states.controlResetEpoch();life.changed=true;
         }

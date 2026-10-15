@@ -48,7 +48,6 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
     while(object.spawned<object.spawnCount) {
         auto prepared=entry->second;prepared.identity.origin=SpawnOrigin::Summoned;
         prepared.identity.spawnKey="object."+std::to_string(object.id.value)+"."+std::to_string(object.spawned);
-        if(object.trap==11 && prepared.rule.shrineUpgrade) {prepared.identity.rank=MonsterRank::Unique;prepared.rule=*prepared.rule.shrineUpgrade;}
         const auto position=area.definition.collision.nativeSpawn(object.position,8,prepared.rule.spawnCollision);
         if(!position) return {DomainStatus::Applied,std::monostate{}};
         const auto result=ports_.monsters.admit({prepared.identity,prepared.implementation,object.area,*position,true,prepared.rule,{},tick.tick});

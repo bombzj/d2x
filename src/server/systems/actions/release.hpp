@@ -9,6 +9,8 @@
 #include <utility>
 #include <vector>
 
+namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;}
+namespace d2x::server::skills {struct AssassinKickExecution;}
 namespace d2x::server::actions {
 struct SkillRelease {
     ActorContext actor;
@@ -27,6 +29,13 @@ struct SkillRelease {
     bool charging{}; float chargeSpeed{};
     bool leaping{},landed{};
     bool whirlwind{};uint64_t nextWhirlHit{};int whirlPeriod{};size_t whirlHand{};
+    std::optional<uint64_t> nativeMeleeOccurrence;
+    bool cancelled{};
+    bool nativeCallbackStarted{};
+    bool nativeStartPrepared{};
+    std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse;
+    std::shared_ptr<effects::MindBlastPulse> mindBlastPulse;
+    std::shared_ptr<skills::AssassinKickExecution> assassinKick;
 };
 struct MonsterRelease {
     MonsterCastRequest request;
@@ -42,5 +51,9 @@ struct MonsterRelease {
     size_t effectTarget{};
     bool targetsCaptured{};
     bool hitReleased{};
+    uint64_t infernoUntil{};
+    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
+    bool nativeCallbackStarted{},cancelled{};
+    std::shared_ptr<SkillRelease> shadow;
 };
 }

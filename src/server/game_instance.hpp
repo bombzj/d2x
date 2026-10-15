@@ -94,6 +94,12 @@ class GameInstance {
     DomainResult<> installMerchant(merchant::Prepared prepared) { return systems_.merchant.install(std::move(prepared)); }
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
     auto pendingLoot() const { auto pending=systems_.loot.read().pending; for(auto &[id,value]:pending) { (void)id; value.uniques=systems_.loot.read().uniques; } return pending; }
+    auto pendingGroundGeneration() const {return systems_.objects.pendingGroundGeneration();}
+    auto pendingModifiers() const {return systems_.monsters.pendingModifiers();}
+    DomainResult<> prepareModifiers(monsters::PreparedModifiers prepared) {return systems_.monsters.prepareModifiers(std::move(prepared));}
+    DomainResult<> prepareGroundGeneration(uint64_t request,items::PreparedBatch batch,std::string deferred) {
+        return systems_.objects.prepareGroundGeneration(request,std::move(batch),std::move(deferred));
+    }
     const auto &usedUniques() const {return systems_.loot.read().uniques;}
     auto reserveLootSeeds(EntityId source,uint64_t occurrence,size_t index) {return systems_.loot.reserveSeeds(source,occurrence,index);}
     auto beginLootPreparation(EntityId source) {return systems_.loot.beginPreparation(source);}

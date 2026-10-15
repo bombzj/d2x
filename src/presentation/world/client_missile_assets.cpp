@@ -4,6 +4,7 @@
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -37,8 +38,9 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
         program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
-        program.function = number("pCltDoFunc");
+        program.function = content.nativeFormulas->missiles.at(id).number("pcltdofunc");
         program.localBlood = number("LocalBlood") != 0;
+        program.clientSend=number("ClientSend")!=0;
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
         const auto serverHitFunction=table.value(row,"pSrvHitFunc");
         program.holyBolt=!serverHitFunction.starts_with('*') && number("pSrvHitFunc")==7;
@@ -60,11 +62,8 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
             if(record.spell->effect==SkillBehavior::ChainLightning) {program.chain=record.spell->arc;program.chainCountDivisor=5;}
             if(record.spell->weapon && record.spell->weapon->spear && record.spell->weapon->spear->kind==SpearSkillSpec::Kind::Strike) program.chain=record.spell->arc;
         }
-        // The retail table contains annotated values such as "*16". Keep
-        // these hit programs unresolved instead of treating the annotation as
-        // a verified function index or aborting all scene resource loading.
-        const auto hitFunction = table.value(row, "pCltHitFunc");
-        program.hitFunction = hitFunction.starts_with('*') ? -1 : number("pCltHitFunc");
+        // Retail *16 is WORD 64952, outside the callback table; it is not 16.
+        program.hitFunction = content.nativeFormulas->missiles.at(id).number("pclthitfunc");
         program.velocity = number("Vel"); program.velocityPerLevel = number("VelLev");
         program.acceleration = number("Accel"); program.maximumVelocity = number("MaxVel") << 8;
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");
@@ -73,12 +72,13 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.collide = number("ClientCol") != 0;program.returnFire=number("ReturnFire")!=0;
         program.canSlow=number("CanSlow")!=0;
         // CltDo2 creates throwing potions with the original distance-limited flag.
-        program.groundThrow=number("CollideType")==6 && (program.hitFunction==2 || program.hitFunction==3);
+        program.groundThrow=number("CollideType")==6 && (program.hitFunction==2 || program.hitFunction==3 || program.hitFunction==44);
         program.killOnContact = number("CollideKill") != 0;
         program.explodeOnExpiry = number("AlwaysExplode") != 0;
         program.explosion = linked(row, "ExplosionMissile");
         for (size_t i = 0; i < program.parameters.size(); ++i)
             program.parameters[i] = number("CltParam" + std::to_string(i + 1));
+        program.serverTurnPeriod=number("Param1");
         for (size_t i = 0; i < program.hitParameters.size(); ++i) {
             program.hitParameters[i] = number("cHitPar" + std::to_string(i + 1));
             program.children[i] = linked(row, "CltSubMissile" + std::to_string(i + 1));

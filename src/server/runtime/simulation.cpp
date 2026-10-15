@@ -11,6 +11,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     // owning system's state, never to this per-step scratch buffer.
     if(!frame_) {frame_=tick.tick;facts_={};for(auto &metric:metrics_) metric.nanoseconds=0;}
     else if(*frame_!=tick.tick) throw std::logic_error("Simulation resumed an unfinished frame with another timestamp");
+    if(systems.monsters.finishModifiers(tick)!=StepStatus::Complete) return false;
     const auto run=[&](SystemId id,auto &&operation) {
         const auto started=std::chrono::steady_clock::now();
         const auto status=operation();
@@ -50,7 +51,14 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     systems.social.step(tick);
     steps_[size_t(SystemId::Social)] = StepStatus::Complete;
     steps_[size_t(SystemId::World)] = systems.world.step(tick, facts_);
-    steps_[size_t(SystemId::Population)] = systems.population.step(tick, facts_);
+    phase_=Phase::Population;
+    }
+    if(phase_==Phase::Population) {
+    run(SystemId::Population,[&]{return systems.population.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Population)]!=StepStatus::Complete) return false;
+    phase_=Phase::Actors;
+    }
+    if(phase_==Phase::Actors) {
     steps_[size_t(SystemId::Attributes)] = systems.attributes.step(tick, facts_);
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
     run(SystemId::Companions,[&]{return systems.companions.step(tick,facts_);});
@@ -79,12 +87,31 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     if (steps_[size_t(SystemId::Trade)]==StepStatus::Blocked) return false;
     phase_=Phase::Tail;
     }
+    if(phase_==Phase::Tail) {
     steps_[size_t(SystemId::Death)] = systems.death.step(tick, facts_);
     steps_[size_t(SystemId::Npc)] = systems.npc.step(tick, facts_);
     steps_[size_t(SystemId::Merchant)] = systems.merchant.step(tick, facts_);
     steps_[size_t(SystemId::Crafting)] = systems.crafting.step(tick, facts_);
+    phase_=Phase::Objects;
+    }
+    if(phase_==Phase::Objects) {
     steps_[size_t(SystemId::Objects)] = systems.objects.step(tick, facts_);
+    if(systems.monsters.pendingModifiers()) return false;
+    phase_=Phase::Modifiers;
+    }
+    if(phase_==Phase::Modifiers) {
+        if(systems.monsters.finishModifiers(tick)!=StepStatus::Complete) return false;
+        phase_=Phase::Quests;
+    }
+    if(phase_==Phase::Quests) {
     steps_[size_t(SystemId::Quests)] = systems.quests.step(tick, facts_);
+    phase_=Phase::Tower;
+    }
+    if(phase_==Phase::Tower) {
+        const auto status=systems.objects.towerStep(tick);
+        if(status!=StepStatus::Complete) {steps_[size_t(SystemId::Objects)]=status;return false;}
+        phase_=Phase::Publication;
+    }
     steps_[size_t(SystemId::Loot)] = systems.loot.step(tick, facts_);
     steps_[size_t(SystemId::Progression)] = systems.progression.step(tick, facts_);
     steps_[size_t(SystemId::Travel)] = systems.travel.step(tick, facts_);

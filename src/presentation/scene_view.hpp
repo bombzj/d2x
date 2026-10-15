@@ -241,7 +241,8 @@ class SceneView {
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
-                               ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {},int velocityBonus = 0);
+                               ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {},int velocityBonus = 0,
+                               ClientMissileInitialization initialization = {});
     void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
     void clearClientMissiles(bool retainDeathPrograms = false) {
         if(retainDeathPrograms) std::erase_if(clientMissiles_,[](const auto &effect){return !effect.deathProgram;});

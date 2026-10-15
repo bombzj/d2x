@@ -163,6 +163,29 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             if(applied.status==DomainStatus::Capacity) return applied.status;
             if(applied.status==DomainStatus::Conflict || applied.status==DomainStatus::Stale) return applied.status;
             if(state.posted) *state.posted=bool(applied);
+        } else if(operation.kind==Advance::OperationKind::TowerOpen) {
+            const auto result=ports_.objects.openTowerChest(EntityId{uint32_t(operation.index)},tick.tick);
+            if(!result) return result.status;plan.started=true;
+        } else if(operation.kind==Advance::OperationKind::TowerGold) {
+            auto &entry=plan.towerGold.at(operation.index);
+            if(!entry.resolved) {
+                const auto global=entry.observer+ports_.areas.at(entry.area).definition.origin;
+                const auto room=ports_.areas.roomAtPosition(entry.area,entry.observer,int(global.x),int(global.y));
+                if(room) if(const auto position=ports_.areas.nativeFreeSpace(*room,int(entry.position.x),int(entry.position.y),1,ports_.spatial.nativeCollisionSample()))
+                    entry.destination=GroundLocation{position->room.area,position->position};
+                entry.resolved=true;
+            }
+            if(entry.destination) {
+                const auto result=ports_.objects.towerGold(*entry.destination,tick.tick);
+                if(!result) return result.status;plan.started=true;
+            }
+        } else if(operation.kind==Advance::OperationKind::TowerSound) {
+            const auto object=ports_.objects.read().objects.find(EntityId{uint32_t(operation.index)});
+            if(object!=ports_.objects.read().objects.end()) {
+                const auto result=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object->second.area},
+                    {SoundFact{object->first,2,object->second.area,0x5c}}});
+                if(!result) return result.status;plan.started=true;
+            }
         } else if(operation.kind==Advance::OperationKind::OrbMist) {
             const auto result=ports_.objects.openOrbMist(EntityId{uint32_t(operation.index)},tick.tick);
             if(!result) return result.status;plan.started=true;

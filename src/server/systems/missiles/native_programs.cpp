@@ -34,7 +34,7 @@ void System::initializePath(Missile &missile) const {
     const auto &area=ports_.areas.at(missile.area);
     const auto target=missile.position+missile.turnTarget;
     const auto low=uint32_t(int32_t(std::floor(target.x+area.definition.origin.x))+missile.pathInitialization.index);
-    missile.random=(missile.random&0xffffffff00000000ULL)|low;
+    missile.random=initialRandom(low);
     int distance{};
     if(missile.pathInitialization.kind==MissilePathInitialization::Kind::ChargedSkill) {
         distance=uint8_t(missile.nativeTotalFrames);
@@ -148,14 +148,29 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
     constexpr std::array commonHits{0,1,2,3,4,5,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,55,56,57,58,59};
     const bool common=function==1 && std::find(commonHits.begin(),commonHits.end(),original.nativeDamage->rule.serverHitFunction)!=commonHits.end();
     const bool dedicated=common || function==0 || function==4 || function>=38 || function==2 || function==3 || function==5 || function==6 || function==7 || function==8 || function==9 || function==10 || function==11 || function==12 || function==13 || function==14 || function==15 || function==16 || function==17 || function==19 || function==20 || function==21 || function==22 || function==23 || function==24 || function==25 || function==26 || function==27 || function==28 || function==29 || function==30 || function==31 || function==32 || function==33 || function==34 || function==35 || function==36 || function==37;
-    if(!original.nativeProgram && !dedicated) return {};
-    if(function!=0 && function!=1 && function!=3 && function!=5 && function!=6 && !dedicated)
+    if(!original.nativeProgram && !dedicated && function!=18) return {};
+    if(function!=0 && function!=1 && function!=3 && function!=5 && function!=6 && function!=18 && !dedicated)
         throw std::logic_error("Native missile requires its dedicated server program");
     auto result=std::make_unique<Advance>(Advance{original,{},{},false});auto &plan=*result;auto &missile=plan.next;
     plan.damageRolls=damageRolls(original);const auto &rule=missile.nativeDamage->rule;
     const auto countdown=missile.currentFrame(),elapsed=missile.elapsedFrames();
     const auto &area=ports_.areas.at(missile.area);
     if(function==0 || function==4 || function>=38) return result; // Null native Do slots leave the missile untouched.
+    if(function==18) {
+        if(countdown==1) plan.operations.push_back({Advance::OperationKind::TowerSound,uint32_t(missile.parameters[0])});
+        if(countdown==nativeSubtract(rule.frames,rule.serverParameters[0])) {
+            plan.operations.push_back({Advance::OperationKind::TowerOpen,uint32_t(missile.parameters[0])});
+            missile.parameters[1]=1;
+        }
+        if(missile.parameters[1] && countdown%std::max(nativeMultiply(4,rule.serverParameters[1]),1)==0) {
+            const auto radius=rule.serverParameters[2],width=nativeAdd(nativeMultiply(2,radius),1);
+            const auto global=missile.position+area.definition.origin;
+            const auto column=nativeAdd(int32_t(std::floor(global.x)),nativeSubtract(int32_t(limitedRandom(plan.damageRolls->random,uint32_t(width))),radius));
+            const auto row=nativeAdd(int32_t(std::floor(global.y)),nativeSubtract(int32_t(limitedRandom(plan.damageRolls->random,uint32_t(width))),radius));
+            plan.operations.push_back({Advance::OperationKind::TowerGold,plan.towerGold.size()});
+            plan.towerGold.push_back({missile.area,missile.position,Vec{float(column),float(row)}});
+        }
+    }
     const auto markField=[&](int size) {
         plan.operations.push_back({Advance::OperationKind::MissileField,plan.missileFields.size()});
         plan.missileFields.push_back({missile.area,missile.position,size});

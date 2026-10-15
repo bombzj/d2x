@@ -20,6 +20,8 @@ struct GeneratedArea {
     std::shared_ptr<const Map> map;
     double preparationMilliseconds{};
     std::map<std::pair<int, int>, uint64_t> initialRoomRandom;
+    std::map<std::pair<int, int>, RoomPopulationLayout> populationRooms;
+    std::vector<Vec> populationWarpCenters;
 };
 // Incremental host preparation; every operation stays on the archive owner's
 // thread. No partial terrain is published and reveal/RNG order is unchanged.

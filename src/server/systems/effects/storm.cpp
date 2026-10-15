@@ -7,6 +7,7 @@
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
@@ -31,7 +32,9 @@ FrameEventQueue::PreparedEdit System::prepareStormTimers(const ActorContext &act
             const auto skill=effect.spec.source.definition;
             const auto definition=player.rules.skills->definitions.find(skill);
             if(effect.spec.source.kind!=CombatEffectSource::Skill || definition==player.rules.skills->definitions.end() ||
-               definition->second.spec.effect!=SkillBehavior::ThunderStorm || !states.hasState(effect.spec.state.id,actor.tick)) continue;
+               (definition->second.spec.effect!=SkillBehavior::ThunderStorm &&
+                !(definition->second.spec.assassin && definition->second.spec.assassin->program==AssassinProgram::BladeShield)) ||
+               !states.hasState(effect.spec.state.id,actor.tick)) continue;
             const auto old=std::find_if(existing.begin(),existing.end(),[&](const auto &event){return event.type==FrameEventType::PeriodicSkills && event.customId==skill;});
             const auto *oldEffect=previous==state_.players.end()?nullptr:previous->second.states.find(effect.handle);
             if(old!=existing.end() && oldEffect && oldEffect->revision==effect.revision && oldEffect->spec.source==effect.spec.source) {
@@ -49,6 +52,9 @@ FrameEventQueue::PreparedEdit System::prepareStormTimers(const ActorContext &act
 }
 DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
     const auto *player=ports_.players.findActor(event.owner.unit);
+    if(bladeShieldPulses_.contains(event.handle)) return bladeShieldEvent(event,tick);
+    if(player) if(const auto definition=player->rules.skills->definitions.find(event.customId);definition!=player->rules.skills->definitions.end() &&
+        definition->second.spec.assassin && definition->second.spec.assassin->program==AssassinProgram::BladeShield) return bladeShieldEvent(event,tick);
     const auto retained=stormPulses_.find(event.handle);
     if((!player || !player->entered || player->persistent.player.hp<=0) && (retained==stormPulses_.end() || !retained->second.launched)) {
         ports_.frameEvents.cancel(event.handle);stormPulses_.erase(event.handle);return {DomainStatus::Applied,std::monostate{}};

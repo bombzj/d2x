@@ -39,12 +39,18 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     for (const auto &room : area.activation.rooms()) {
         const auto anchor = std::pair{(int(area.origin.x) + room.x) / 5, (int(area.origin.y) + room.y) / 5};
         const auto seed=result.terrain.initialRoomRandom.find(anchor);
+        const auto logical=result.terrain.populationRooms.find(anchor);
+        if(logical==result.terrain.populationRooms.end() || logical->second.regions.empty())
+            throw std::runtime_error("Missing native population room layout");
+        area.populationRooms.push_back(logical->second);
         area.initialRoomRandom.push_back(seed==result.terrain.initialRoomRandom.end()?std::nullopt:std::optional<uint64_t>{seed->second});
         auto &near = area.roomNear.emplace_back();
         for (const auto &other : result.terrain.nearRooms.at(anchor))
             near.push_back({RegionId(other.level), other.x, other.y});
     }
-    if (auto allowed = content.teleportByLevel.find(request.level); allowed != content.teleportByLevel.end()) area.teleportAllowed = allowed->second != 0;
+    if (auto allowed = content.teleportByLevel.find(request.level); allowed != content.teleportByLevel.end()) {
+        area.teleportMode=allowed->second;area.teleportAllowed=allowed->second!=0;
+    }
     prepareObjects(archives, content, result);
     prepareNpcs(archives, content, result);
     if (level.town) {
@@ -169,6 +175,7 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
     result.authority.rules.melee = prepareMeleeRules(content, *character);
+    result.authority.rules.monsterRegions=prepareMonsterRegionRules(archives,content);
     auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);
     const auto &area = result.authority.area;

@@ -11,6 +11,7 @@
 #include "gameplay/units/resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include <algorithm>
 #include <optional>
 #include <stdexcept>
@@ -79,6 +80,7 @@ void retainPreparedUnitControl(monsters::LifeChange &next,const monsters::LifeCh
     if(!next.targetCallbackEpoch) next.targetCallbackEpoch=previous.targetCallbackEpoch;
     if(!next.specialTargetNode) next.specialTargetNode=previous.specialTargetNode;
     if(!next.detachedMinion) next.detachedMinion=previous.detachedMinion;
+    if(!next.nativeMinions) next.nativeMinions=previous.nativeMinions;
     next.tauntPostActions|=previous.tauntPostActions;next.reselectAi|=previous.reselectAi;
     if(!next.chilledUntil) next.chilledUntil=previous.chilledUntil;
     if(!next.frozenUntil) next.frozenUntil=previous.frozenUntil;
@@ -115,12 +117,15 @@ std::set<int> System::unitStates(EntityId id,uint64_t tick) const {
     return states;
 }
 DomainResult<> System::convert(const ActorContext &actor,EntityId id,const WeaponSkillSpec &skill) {
+    return convert(actor,id,NativeConversionSpec{skill.conversionState,skill.conversionSaveState,skill.conversionFrames,NativeConversionProcedure::Paladin});
+}
+DomainResult<> System::convert(const ActorContext &actor,EntityId id,const NativeConversionSpec &skill) {
     const auto *monster=ports_.monsters.find(id);
-    const auto *caster=ports_.players.find(actor.player);
-    if(!monster || !caster || !caster->rules.skills) return {DomainStatus::InvalidActor,{}};
-    if(!monster->nativeStats || !monster->nativeStats->sources || !monster->rule.stats || skill.conversionSaveState.id<0)
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!monster || !caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
+    if(!monster->nativeStats || !monster->nativeStats->sources || !monster->rule.stats || skill.saveState.id<0)
         return {DomainStatus::Unavailable,{}};
-    auto next=units_;auto &unit=next[id];unit.area=actor.area;
+    auto next=units_;auto &unit=next[id];unit.area=monster->area;
     MonsterResourceTrace resources(*monster,actor.tick,&unit.states);
     const auto sources=[&]{return combatEffectStatSources(unit.states.entries(),actor.tick,true);};
     const auto observe=[&] {resources.sample(unit.states,true);};
@@ -135,12 +140,12 @@ DomainResult<> System::convert(const ActorContext &actor,EntityId id,const Weapo
     resources.sample(unit.states);
     const auto sampled=resources.values(combatEffectStatSources(unit.states.entries(),actor.tick));
     const int targetLevel=nativeStatValue(sampled,*monster->rule.stats,"level");
-    const int casterLevel=nativeStatValue(caster->totals.nativeStats,*caster->rules.skills->stats,"level");
+    const int casterLevel=caster->level();
     std::optional<ConversionResourceSave> saved;
     if(const auto change=conversionResources(resources.read().life,resources.read().maximum,targetLevel,casterLevel)) {
         saved=change->saved;
         auto source=std::make_shared<StatList>();source->extended=false;source->ownerKind=StatOwnerKind::Monster;
-        source->source={StatSourceKind::Effect,id,skill.conversionSaveState.id,0};
+        source->source={StatSourceKind::Effect,id,skill.saveState.id,0};
         setNativeStat(*source,*monster->rule.stats,"conversion_level",saved->level,0,true);
         setNativeStat(*source,*monster->rule.stats,"conversion_maxhp",saved->maximumWhole,0,true);
         resources.postIntrinsicSource(std::move(source),sources());
@@ -166,13 +171,16 @@ DomainResult<> System::endConversion(EntityId id,uint64_t tick) {
     std::vector<DomainFact> facts;
     if(conversion.savedResources) {
         const auto &saved=*conversion.savedResources;
-        const auto life=conversionRestoredLife(saved,resources.read().life,resources.read().maximum);
+        const auto life=conversion.procedure==NativeConversionProcedure::MindBlast?
+            mindBlastRestoredLife(saved,resources.read().life,resources.read().maximum):conversionRestoredLife(saved,resources.read().life,resources.read().maximum);
         resources.writeBaseStat("level",saved.level,sources());
         resources.seedLife(life);
         // Retail 1.13c Paladin callback RVA 98A1A writes the saved whole
         // MAXHP directly. Mind Blast's other callback shifts it; do not merge.
-        resources.writeBaseStat("maxhp",saved.maximumWhole,sources());
+        resources.writeBaseStat("maxhp",conversion.procedure==NativeConversionProcedure::MindBlast?nativeShiftLeft(saved.maximumWhole,8):saved.maximumWhole,sources());
         resources.withdrawIntrinsicSource(StatSourceKind::Effect,conversion.savedState,sources());
+    }
+    if(conversion.savedResources || conversion.procedure==NativeConversionProcedure::MindBlast) {
         std::vector<EffectHandle> handles;
         for(const auto &effect:unit.states.entries()) if(effect.spec.state.aura) handles.push_back(effect.handle);
         for(const auto handle:handles) for(const auto &removed:unit.states.remove(handle,[&]{resources.sample(unit.states,true);})) {
@@ -237,7 +245,7 @@ DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t
     const auto *m=ports_.monsters.find(id);
     if(!m || !m->alive() || !skill.appliedEffect) return {DomainStatus::InvalidActor,{}};
     if(!m->rule.stats || !m->rule.states || !m->nativeStats || !m->nativeStats->sources ||
-       (!skill.warcry && !m->rule.stateTarget.acceptsCurseList())) return {DomainStatus::Unavailable,{}};
+       (!skill.warcry && !skill.appliedEffect->nativeDirectAllocation && !m->rule.stateTarget.acceptsCurseList())) return {DomainStatus::Unavailable,{}};
     UnitEffect unit;if(const auto current=units_.find(id);current!=units_.end()) unit=current->second;unit.area=m->area;
     auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,id,skill.sourceId,skill.rank};
     MonsterResourceTrace resources(*m,tick,&unit.states);
@@ -249,15 +257,31 @@ DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t
     auto stats=nativeEffectStats(*m->rule.stats,installed->spec);
     AuraUnitPublication publication;
     for(const int state:application.clearedStates) if(!unit.states.hasState(state,tick)) publication.facts.emplace_back(StateFact{id,1,m->area,state,false});
-    for(const auto &removed:application.removed) if(!unit.states.hasState(removed.effect.spec.state.id,tick))
+    for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !unit.states.hasState(removed.effect.spec.state.id,tick))
         publication.facts.emplace_back(StateFact{id,1,m->area,removed.effect.spec.state.id,false});
-    publication.facts.emplace_back(StateFact{id,1,m->area,spec.state.id,true,stats});
+    if(spec.state.id>=0) publication.facts.emplace_back(StateFact{id,1,m->area,spec.state.id,true,stats});
     if(skill.castOverlayId>=0) publication.facts.emplace_back(OverlayFact{id,1,m->area,skill.castOverlayId});
-    unit.nativeStats[spec.state.id]=std::move(stats);resources.sample(unit.states);
+    if(spec.state.id>=0) unit.nativeStats[spec.state.id]=std::move(stats);resources.sample(unit.states);
     prepareUnitEffects(publication,id,unit,resources.take(),tick);
     if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
     const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},std::move(publication.facts)});
     if(!sent) return {sent.status,{}};
+    publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::removeUnitState(EntityId id,int state,uint64_t tick) {
+    const auto *body=ports_.monsters.find(id);if(!body) return {DomainStatus::InvalidActor,{}};
+    const auto found=units_.find(id);if(found==units_.end()) return {DomainStatus::Applied,std::monostate{}};
+    auto unit=found->second;MonsterResourceTrace resources(*body,tick,&unit.states);
+    const auto removed=unit.states.removeState(state,[&]{resources.sample(unit.states,true);});
+    AuraUnitPublication publication;
+    for(const auto &entry:removed) if(!unit.states.hasState(entry.effect.spec.state.id,tick))
+        publication.facts.emplace_back(StateFact{id,1,body->area,entry.effect.spec.state.id,false});
+    resources.sample(unit.states);prepareUnitEffects(publication,id,unit,resources.take(),tick);
+    if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
+    if(!publication.facts.empty()) {
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},body->area},std::move(publication.facts)});
+        if(!sent) return {sent.status,{}};
+    }
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
 void System::forgetUnit(EntityId id) noexcept {
@@ -270,11 +294,13 @@ StepStatus System::advanceUnits(uint64_t tick) {
         const auto *m=ports_.monsters.find(it->first);
         if(!m) {const auto id=it->first;++it;ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});forgetUnit(id);continue;}
         if(m && m->area!=it->second.area) it->second.area=m->area;
+        const auto modeRevision=m->alive() && tick<m->nativeActionUntil && m->nativeActionInterruption==m->interruption?
+            std::optional<uint64_t>{m->nativeActionRevision}:std::nullopt;
         // Native state writes and RemoveState callbacks already publish their
         // FullStats/control/velocity changes synchronously. An unchanged live
         // list has no expiry work and must not be reposted on every frame.
         if(m->alive() && m->nativeStats && m->nativeStats->sources && m->nativeStats->sources->fullValues && m->rule.stats &&
-           !it->second.states.hasDueExpiration(tick)) {
+           !it->second.states.hasDueExpiration(tick) && !it->second.states.hasEndedModeEffects(modeRevision)) {
             if(!m->conversion) it->second.converted=false;
             if(!it->second.states.size() && !it->second.states.hasUnitEvents()) it=units_.erase(it);
             else ++it;
@@ -292,7 +318,10 @@ StepStatus System::advanceUnits(uint64_t tick) {
             if(!m->rule.states) throw std::runtime_error("Missing native unit death masks");
             clearedStates=next.clearNonDeathStates(kind,*m->rule.states,tick,observe);
             auto expired=next.expireOrdinary(tick,observe,kind);removed.insert(removed.end(),expired.begin(),expired.end());
-        } else removed=next.expireOrdinary(tick,observe);
+        } else {
+            removed=next.endModeEffects(modeRevision,observe);
+            auto expired=next.expireOrdinary(tick,observe);removed.insert(removed.end(),expired.begin(),expired.end());
+        }
         if(resources) {
             if(m && !m->alive() && !m->itemAuraTimers.empty()) {
                 resources->seedItemAuraTimers({});
@@ -314,7 +343,7 @@ StepStatus System::advanceUnits(uint64_t tick) {
         for(const int state:clearedStates) if(!m->rule.states->at(state).noSend &&
             std::none_of(removed.begin(),removed.end(),[&](const auto &effect){return effect.effect.spec.state.id==state;}))
             facts.emplace_back(StateFact{it->first,1,it->second.area,state,false});
-        for(const auto &e:removed) if(!next.hasState(e.effect.spec.state.id,tick)) facts.emplace_back(StateFact{it->first,1,it->second.area,e.effect.spec.state.id,false});
+        for(const auto &e:removed) if(e.effect.spec.state.id>=0 && !next.hasState(e.effect.spec.state.id,tick)) facts.emplace_back(StateFact{it->first,1,it->second.area,e.effect.spec.state.id,false});
         auto timers=ports_.frameEvents.prepareEdit({FrameEventUnit::Monster,it->first},FrameEventType::RemoveState,next.expirationEvents());
         if(!facts.empty()) {
             const auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},it->second.area},std::move(facts)});

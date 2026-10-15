@@ -49,7 +49,8 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
     }
     if(request.action==Action::Buy && state_.gambling.contains(actor.player)!=request.gamble) return {DomainStatus::InvalidRequest,{}};
     auto random=ports_.random;
-    state_.pending.emplace(actor.player,Pending{actor,request,state_.next++,initialRandom(rollRandom(random)),conversation->revision});
+    const auto seed=request.action==Action::Open || request.action==Action::Gamble?childRandom(random):uint64_t{};
+    state_.pending.emplace(actor.player,Pending{actor,request,state_.next++,seed,conversation->revision});
     ports_.random=random;
     return {DomainStatus::Applied,std::monostate{}};
 }

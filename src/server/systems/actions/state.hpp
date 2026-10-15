@@ -8,6 +8,9 @@
 #include <memory>
 #include <optional>
 #include <span>
+#include <vector>
+#include <array>
+#include <functional>
 
 namespace d2x::server { class PlayerStore; }
 namespace d2x::server::skills { class System; }
@@ -36,9 +39,20 @@ struct State {
         // Player used-skill identity survives action expiry; deleting a source
         // clears the pointer without cancelling already released effects.
         std::map<EntityId,std::optional<NativeSkillSlot>> usedSkills_;
+        std::vector<EntityId> executingReleases_;
+        std::map<EntityId,std::map<NativeSkillSlot,std::array<int32_t,4>>> skillParameters_;
         std::map<EntityId, SkillRelease> &releases();
         std::map<EntityId, MonsterRelease> &monsterReleases();
     public:
+        class ReleaseGuard {
+            State &state_;
+          public:
+            ReleaseGuard(State &,EntityId);
+            ~ReleaseGuard();
+            ReleaseGuard(const ReleaseGuard &)=delete;
+            ReleaseGuard &operator=(const ReleaseGuard &)=delete;
+        };
+        ReleaseGuard executingRelease(EntityId actor) {return {*this,actor};}
         State();
         ~State();
         State(const State &) = delete;
@@ -56,6 +70,9 @@ struct State {
     std::optional<NativeSkillSlot> usedSkill(EntityId actor) const;
     void removeUsedSkills(EntityId actor,std::span<const SkillUseRemoval>) noexcept;
     void pruneUsedSkills(const PlayerStore &players);
+    int32_t skillParameter(EntityId,NativeSkillSlot,size_t index) const;
+    void skillParameter(EntityId,NativeSkillSlot,size_t index,int32_t value);
+    void pruneSkillParameters(const std::function<bool(EntityId)> &exists);
     bool recovering(EntityId actor, uint64_t tick) const;
     bool busy(EntityId actor, uint64_t tick) const;
     bool coolingDown(EntityId actor, uint64_t tick) const;

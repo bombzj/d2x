@@ -50,5 +50,6 @@ struct EquipmentStats {
     int level = 1;
     EntityId shield;
     int smiteMinimum = 0, smiteMaximum = 0;
+    struct KickBoots {bool equipped{};int minimum{},maximum{},strengthBonus{},dexterityBonus{};} kickBoots;
 };
 } // namespace d2x

@@ -11,6 +11,7 @@ namespace d2x::server::quests {
 enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
+  std::optional<uint64_t> controlRandom;
     ActOneState actOne;
     ActTwoState actTwo;
     ActThreeState actThree;
@@ -76,6 +77,7 @@ class System {
     void orderStones();
   public:
     explicit System(Ports ports) : ports_(ports) {}
+    void initializeControl();
     const State &read() const { return state_; }
     void initialize(const CharacterRecord &);
     std::array<uint16_t,48> gameFlags() const;

@@ -8,6 +8,7 @@
 #include "world/identity.hpp"
 #include "gameplay/monsters/components.hpp"
 #include "gameplay/monsters/native_spawn.hpp"
+#include "gameplay/monsters/region_generation.hpp"
 #include "gameplay/environment/time.hpp"
 #include <map>
 #include <cstdint>
@@ -32,7 +33,7 @@ struct RoomRandomLoan {RoomView room;uint64_t areaGeneration{},revision{},expect
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
-struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; };
+struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder; };
 struct PortalRule {
     int definition{},range{},openingTicks{};
     int width{},height{};uint16_t collisionMask{};std::array<bool,8> collision{};
@@ -54,6 +55,7 @@ struct AreaMetadata {
     std::vector<TerrainCell> openedTombWall;
     unsigned tombOpeningTicks{};
     bool town{}, teleportAllowed{};
+    int teleportMode{};
     std::vector<AreaExit> exits;
     std::vector<AreaBoundary> boundaries;
     std::vector<AreaObject> objects;
@@ -62,11 +64,42 @@ struct AreaMetadata {
     int monsterLevel{}; // Current MPQ area level for this difficulty/expansion.
 };
 struct AreaDefinition : AreaMetadata {
+    struct NativePresetMonster {
+        size_t order{};
+        int definition{-1},collisionObject{};
+        Vec position;
+        bool retry{};
+        std::string superUnique;
+        int uniqueIndex{-1},minimum{},maximum{};
+        std::array<int,3> modifiers{};
+        bool automatic{},stacks{};
+        int place{-1};
+        bool group{},dead{};
+        std::string deferred;
+        std::vector<Vec> skillPositions;
+        struct Extra {int definition{-1},minimum{},maximum{},attempts{};bool owned{},party{};};
+        std::vector<Extra> extras;
+    };
+    std::vector<NativePresetMonster> nativePresetMonsters;
+    struct PopulationClass {
+        int minimum{},maximum{},sparse{},partyMinimum{},partyMaximum{};
+        std::array<int,2> minions{-1,-1};
+        bool ownsParty{},singleGroup{},waterParty{},objectHut{},hostile{};
+    };
+    struct PopulationRules {
+        int density{},uniqueMinimum{},uniqueMaximum{},warpDistance{};
+        std::vector<MonsterPopulationChoice> roster;
+        std::vector<int> uniques;
+        std::map<int,PopulationClass> classes;
+        std::vector<Vec> warpArrivals;
+    } populationRules;
     std::shared_ptr<const CollisionField> collisionField;
     std::map<std::string,PreparedMonster,std::less<>> environmentMonsters;
     std::map<std::string,std::vector<PreparedMonster>,std::less<>> environmentGroups;
     std::vector<std::string> populationRoster;
     std::map<int,ShrineRule> shrineRules;
+    std::vector<ShrineGenerationEntry> shrineGeneration;
+    ObjectPopulationRules objectPopulation;
     std::map<int,ObjectRule> objectRules;
     Grid collision;
     RoomLayout activation;
@@ -79,6 +112,7 @@ struct AreaDefinition : AreaMetadata {
     size_t populationMissing{};
     std::vector<Vec> populationMissingPositions;
     std::vector<std::optional<uint64_t>> initialRoomRandom;
+    std::vector<RoomPopulationLayout> populationRooms;
     std::vector<NativeLevelSpawnEntry> normalSpawnRoster;
     std::map<int,PreparedMonster> nativeMonsterClasses;
 };
@@ -93,6 +127,7 @@ struct AreaState {
         bool portalRetained{}; // Native HASPORTAL: ToggleHasPortalFlag(0) sets, (1) clears.
         std::optional<uint64_t> random;
         uint64_t randomRevision{};
+        uint64_t creationOrder{};
     };
     std::vector<RoomState> rooms;
     std::vector<EntityId> unitHeads; // Native pUnitFirst, separate from room residency.
@@ -109,6 +144,7 @@ class AreaStore {
     struct ActTime {NativeActEnvironment value;uint64_t revision{1};};
     std::array<std::optional<ActTime>,5> actTimes_;
     std::map<EntityId,RoomUnitEntry> roomUnits_;
+    uint64_t roomCreationOrder_{};
     std::optional<std::pair<RegionId,size_t>> unitRoom(RegionId,Vec) const noexcept;
     void unlinkRoomUnit(EntityId,RoomUnitEntry &) noexcept;
     void linkRoomUnit(EntityId,RoomUnitEntry &) noexcept;
@@ -150,6 +186,7 @@ class AreaStore {
     }
     const auto &all() const { return areas_; }
     const AreaState &at(RegionId id) const { return areas_.at(id); }
+    std::vector<std::pair<RegionId,size_t>> loadedRoomOrder() const;
     void initializeUnitRooms(RegionId);
     std::shared_ptr<RoomUnitRegistration> prepareRoomUnit(EntityId,uint8_t kind,RegionId,Vec) const;
     void publishRoomUnit(RoomUnitRegistration &) noexcept;

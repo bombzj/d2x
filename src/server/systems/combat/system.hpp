@@ -17,14 +17,18 @@
 #include <vector>
 
 namespace d2x::server::combat {
-struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; };
+struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{},progressiveOccurrence{}; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; };
 class System {
     State state_;
     const Ports ports_;
-    StepStatus resolveSpells(TickContext,std::optional<std::pair<EntityId,uint64_t>> selected={});
+    StepStatus resolveSpells(TickContext,std::optional<std::pair<EntityId,uint64_t>> selected={},bool allocateOnly=false);
     DomainStatus resolveEnvironment(SpellImpact &,TickContext);
     DomainStatus prepareMissileContact(SpellImpact &,ParticipantView,ParticipantView,uint64_t generation,TickContext,bool preludeOnly=false);
+    DomainStatus prepareNativeSkillContact(SpellImpact &,ParticipantView,ParticipantView,TickContext);
+    DomainResult<bool> prepareWeaponBlock(ParticipantView,TickContext,WeaponBlockCursor &);
+    DomainStatus finishNativeSkillFlags(SpellImpact &,TickContext);
+    DomainResult<bool> advanceProgressive(SpellImpact &,TickContext,bool mainDrained=false);
     DomainStatus finishMissileArmor(SpellImpact &,ParticipantView,TickContext);
     DomainStatus advanceMissileDrain(SpellImpact &,ParticipantView,int64_t physical,int64_t life,int64_t mana,int64_t stamina,TickContext);
     DomainStatus resolvePlayerImpact(SpellImpact &,ParticipantView,const PlayerState &,const PlayerState &,uint64_t generation,TickContext);
@@ -42,6 +46,12 @@ class System {
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;
     void commitSpells(SpellPlan &&) noexcept;
     StepStatus advanceAuraPulse(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence});}
+    StepStatus allocateNativeMelee(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence},true);}
+    StepStatus drainNativeMelee(EntityId source,uint64_t occurrence,TickContext tick);
+    bool nativeMeleeDrainReach(SpellImpact &);
+    DomainStatus postNativeSkillCharge(SpellImpact &,TickContext);
+    DomainStatus finishNativeMeleeDrain(SpellImpact &,int64_t physical,TickContext);
+    void discardNativeMelee(EntityId source,uint64_t occurrence);
     void cancel(EntityId);
     StepStatus step(TickContext, FrameFacts &);
 };

@@ -11,7 +11,7 @@ struct Request { Intent intent; };
 struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; std::optional<uint16_t> pendingIntroduction; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
 struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
-struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; };
+struct State { std::map<PlayerId, Conversation> conversations; uint64_t next = 1; std::map<EntityId,Escape> escapes; std::optional<uint64_t> controlRandom; };
 struct Ports { const PlayerStore &players; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; quests::System &quests; effects::System &effects; world::System &world; MovementSystem &movement; const monsters::System &monsters; };
 class System {
     State state_; const Ports ports_;
@@ -20,6 +20,7 @@ class System {
     Vec position(const ActorContext &, const AreaNpc &) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
+    void initializeControl(uint64_t &gameRandom);
     const State &read() const { return state_; }
     const AreaNpc *find(const ActorContext &, EntityId, bool conversation = false) const;
     const Conversation *conversation(PlayerId) const;

@@ -4,6 +4,9 @@
 #include "gameplay/skills/item_trigger_policy.hpp"
 #include "world/collision.hpp"
 #include <optional>
+#include <memory>
+
+namespace d2x::server::actions {struct SkillRelease;}
 
 namespace d2x::server::reactions {
 enum class ItemTriggerPhase { ResolveTarget, Execute, Notify };
@@ -20,5 +23,6 @@ struct ItemTrigger {
     ItemTriggerPhase phase{ItemTriggerPhase::ResolveTarget};
     uint8_t targetType{1};
     std::optional<bool> rolled;
+    std::shared_ptr<actions::SkillRelease> continuation;
 };
 }

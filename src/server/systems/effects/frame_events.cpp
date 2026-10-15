@@ -4,6 +4,8 @@
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/skills/evaluation.hpp"
+#include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/rules/event_frame.hpp"
@@ -29,9 +31,13 @@ std::shared_ptr<FrameEventPublication> System::prepareItemAuraEvents(FrameEventO
 }
 bool System::validatePeriodicEvents(const FrameEventPublication &plan) const {return ports_.frameEvents.validate(plan.edit);}
 void System::publishPeriodicEvents(FrameEventPublication &plan) noexcept {ports_.frameEvents.publish(std::move(plan.edit));}
-void System::cancelPeriodicSkills(FrameEventOwner owner) noexcept {ports_.frameEvents.cancel(owner,FrameEventType::PeriodicSkills);}
+void System::cancelPeriodicSkills(FrameEventOwner owner) noexcept {
+    ports_.frameEvents.cancel(owner,FrameEventType::PeriodicSkills);
+    // FrameEventQueue retains an executing callback even when cancelled.
+    // Its private pulse must also survive until that callback finishes.
+}
 void System::prepareUnitTimers(AuraUnitPublication &plan) const {
-    plan.timers.clear();plan.resetTimers.clear();plan.regenerationTimers.clear();
+    plan.timers.clear();plan.resetTimers.clear();plan.regenerationTimers.clear();plan.nativeSkillTimers.clear();
     for(const auto &[id,unit]:plan.units) {
         const auto *area=ports_.areas.find(unit.area);
         if(!area) throw std::invalid_argument("Missing effect recipient area");
@@ -42,6 +48,34 @@ void System::prepareUnitTimers(AuraUnitPublication &plan) const {
             plan.recipients.emplace(id,guard);
         }
         plan.timers.emplace(id,ports_.frameEvents.prepareEdit({FrameEventUnit::Monster,id},FrameEventType::RemoveState,unit.states.expirationEvents()));
+        const auto *body=ports_.monsters.find(id);
+        if(plan.actors) if(const auto found=plan.actors->actors.find(id);found!=plan.actors->actors.end()) body=&found->second;
+        if(body && body->rule.formulas && body->nativeStats) {
+            auto sampled=*body;
+            if(const auto changed=plan.life.find(id);changed!=plan.life.end()) {
+                sampled.nativeStats=changed->second.intrinsic;sampled.life=changed->second.life.raw();sampled.maximumLife=changed->second.maximum.raw();
+            }
+            const FrameEventOwner owner{FrameEventUnit::Monster,id};const auto existing=ports_.frameEvents.events(owner);
+            std::vector<FrameEvent> timers;
+            if(sampled.alive()) for(const auto &effect:unit.states.entries()) {
+                if(effect.spec.source.kind!=CombatEffectSource::Skill || !unit.states.hasState(effect.spec.state.id,plan.tick)) continue;
+                const auto record=sampled.rule.formulas->skills.find(effect.spec.source.definition);
+                if(record==sampled.rule.formulas->skills.end() || record->second.number("srvdofunc")!=54) continue;
+                const auto old=std::find_if(existing.begin(),existing.end(),[&](const auto &event) {
+                    return event.type==FrameEventType::PeriodicSkills && event.handler==nativeUnitSkillTimerHandler && event.customId==record->first;
+                });
+                const auto previous=units_.find(id);const auto *oldEffect=previous==units_.end()?nullptr:previous->second.states.find(effect.handle);
+                if(old!=existing.end() && oldEffect && oldEffect->revision==effect.revision && oldEffect->spec.source==effect.spec.source) {
+                    auto event=*old;event.handle={event.payload};timers.push_back(event);continue;
+                }
+                auto input=skills::formulaInput(sampled,sampled.nativeStats->values);SkillFormulaValues values(*sampled.rule.formulas,input);
+                const auto period=values.calculation(FormulaDomain::Skill,record->first,effect.spec.source.level,"perdelay");
+                if(!period) throw std::logic_error("Missing native unit periodic skill period");
+                timers.push_back({{ports_.frameEvents.reserveIdentity()},owner,FrameEventType::PeriodicSkills,skillPeriodicTick(plan.tick,*period),
+                    skillPeriodicFrame(nativeNarrow(uint32_t(plan.tick)),*period)==-1,nativeUnitSkillTimerHandler,record->first,effect.spec.source.level});
+            }
+            plan.nativeSkillTimers.emplace(id,ports_.frameEvents.prepareEdit(owner,FrameEventType::PeriodicSkills,timers,nativeUnitSkillTimerHandler));
+        }
     }
     for(auto &[id,life]:plan.life) if(life.aiResetTimers) {
         std::vector<FrameEvent> events;events.reserve(life.aiResetTimers->size());
@@ -74,6 +108,8 @@ void System::prepareUnitTimers(AuraUnitPublication &plan) const {
     }
 }
 DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
+    if(event.type==FrameEventType::PeriodicSkills && event.owner.type==FrameEventUnit::Monster && event.handler==nativeUnitSkillTimerHandler)
+        return bladeShieldEvent(event,tick);
     if(event.type==FrameEventType::StatRegeneration && event.owner.type==FrameEventUnit::Player) return regeneratePlayer(event.owner.unit,tick);
     if(event.type==FrameEventType::PeriodicStats && !event.handler) return itemAuraEvent(event,tick);
     if(event.type==FrameEventType::PeriodicSkills && !event.handler && event.customId==-1)

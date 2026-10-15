@@ -8,6 +8,7 @@
 #include "gameplay/combat/weapon_values.hpp"
 #include "content/skills/skill_data.hpp"
 #include "gameplay/skills/amazon_magic_spec.hpp"
+#include "gameplay/skills/assassin_spec.hpp"
 #include "content/skills/description_values.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -102,8 +103,9 @@ CharacterActionDisplay weaponStats(const CharacterDisplayContext &context, bool 
 }
 } // namespace
 
-CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,
-    const SkillRecord *entry, int rank, bool available) {
+namespace {
+CharacterActionDisplay describeAction(const CharacterDisplayContext &context,
+    const SkillRecord *entry, int rank, bool available, SkillDescriptionValues *description = nullptr) {
     if (!entry) return weaponStats(context, false, false);
     if (!available || entry->passive) return {};
     if (entry->aura) return {};
@@ -116,8 +118,15 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
     if (entry->spell && !entry->passive) {
         if (rank < 1) return {};
         if (rank > 255) return {"?", ""};
-        const auto cast = resolveSkill(entry->spell->rules(), {rank, context.learned, context.fireMastery,
+        auto cast = resolveSkill(entry->spell->rules(), {rank, context.learned, context.fireMastery,
             context.lightningMastery, context.attributes.combat.coldSkillDamagePercent, context.attributes.combat.poisonSkillDamagePercent});
+        if(cast.assassin && cast.assassin->program==AssassinProgram::DragonClaw) {
+            // The client has descriptor inputs, not an authority formula
+            // context. Evaluate the same MPQ Calc1 with the observed ranks.
+            const auto percent=description?description->parameter("clc1"):DescriptionNumber{};
+            if(!percent) return {"?","?"};
+            cast.weapon->damagePercent=*percent;
+        }
         if (cast.curse || cast.amazonMagic || cast.summon) return {};
         if (cast.weapon) return weaponStats(context, cast.weapon->thrown, false, &cast);
         if (cast.effect == SkillBehavior::Teleport || cast.effect == SkillBehavior::StaticField ||
@@ -128,6 +137,11 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         return {damageText(int64_t(cast.minimumDamage), int64_t(cast.maximumDamage)), ""};
     }
     return {};
+}
+}
+CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,
+    const SkillRecord *entry, int rank, bool available) {
+    return describeAction(context,entry,rank,available);
 }
 
 CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &context,const SkillDescriptionCatalog &catalog,
@@ -170,7 +184,7 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         if(physical.minimum && physical.maximum && elemental.minimum && elemental.maximum)
             result.damage=damageText(int64_t(*physical.minimum)+*elemental.minimum,int64_t(*physical.maximum)+*elemental.maximum);
         else result.damage="?";
-    } else result=describeCharacterAction(context,&entry,input.rank.value_or(0),available);
+    } else result=describeAction(context,&entry,input.rank.value_or(0),available,&values);
     if(!description.damageProgram) result.damage.clear();
     if(!description.attackProgram) result.attackRating.clear();
     else if(result.attackRating.empty()) {

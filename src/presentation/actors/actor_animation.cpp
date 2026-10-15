@@ -1,4 +1,5 @@
 #include "actor_animation.hpp"
+#include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
 #include "content/monsters/monster_animation.hpp"
@@ -31,9 +32,10 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
     key+=":"+std::to_string(request.repeatCount)+":"+std::to_string(request.rollbackPercent)+":"+std::to_string(request.sequenceRateBonus);
     key+=":"+std::to_string(request.sequenceLanding);
     key+=":"+std::to_string(request.sequenceUsesAttackRate);
-    key+=":"+std::to_string(request.monsterUnit);
+    key+=":"+std::to_string(request.skillUsesAttackRate);
+    key+=":"+std::to_string(request.monsterUnit)+":"+std::to_string(request.monsterKick);
     key+=":"+(request.animationRate?std::to_string(*request.animationRate):"native");
-    key+=":"+std::to_string(request.persistentCycle)+":"+std::to_string(request.sequenceStart)+":"+std::to_string(request.sequenceEnd);
+    key+=":"+std::to_string(request.persistentCycle)+":"+std::to_string(request.sequenceStart)+":"+std::to_string(request.sequenceEnd)+":"+std::to_string(request.animationHoldFrame);
     key+=":"+std::to_string(request.stateColorShift);
     for (const auto &part : request.appearance.components) key += ":" + part;
     return key;
@@ -156,7 +158,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
             result.durationFrames=AnimationTiming{int(record->frames),speed}.durationTicks();
             result.releaseTime=-1;
         }
-        if(request.attackTiming && (mode=="a1" || mode=="a2" || (request.category=="chars" && (mode=="kk" || mode=="th" || mode=="s1" || mode=="s3" || mode=="s4")))) {
+        if(request.attackTiming && (mode=="a1" || mode=="a2" || (request.category=="chars" && (mode=="kk" || mode=="th" || mode=="s1" || mode=="s3" || mode=="s4" || (mode=="s2" && request.skillUsesAttackRate))))) {
             const auto &known=*request.attackTiming;
             int action=0;
             for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
@@ -174,7 +176,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
     result.frameCount-=result.start;
     if((request.category=="monsters" || request.monsterUnit) && record && result.fps>0)
         result.durationFrames=monsterAnimationTicks({int(record->frames),int(std::lround(result.fps*256.f/25.f))},result.start);
-    if(request.repeatCount>1 && (mode=="a1" || mode=="a2")) {
+    if(request.repeatCount>1 && (mode=="a1" || mode=="a2" || mode=="kk")) {
         const int speed=int(std::lround(result.fps*256.f/25.f));
         if(!record) return {};
         int action=-1;for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
@@ -200,6 +202,27 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
     // its constituent COFs (maggot down can contain a one-frame NU pose).
     baseRequest.sequenceStart = 0; baseRequest.sequenceEnd = -1;
     baseRequest.persistentCycle = false;
+    if(request.category=="chars" && (request.playerSequence==16 || request.playerSequence==21 || request.playerSequence==23)) {
+        const auto sequence=assassinSequence(request.playerSequence,request.appearance.weapon);if(sequence.empty()) return {};
+        std::map<std::string_view,const ActorAnimation *> modes;
+        for(const auto &sample:sequence) if(!modes.contains(sample.mode)) {
+            baseRequest.mode=sample.mode;const auto *animation=resolve(graphics,palette,baseRequest);
+            if(!animation) return {};modes.emplace(sample.mode,animation);
+        }
+        const auto *first=modes.at(sequence.front().mode);result=*first;result.start=0;
+        result.animation.frames.clear();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
+        const auto speed=request.playerSequence==16 && request.attackTiming?
+            effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate-30):256;
+        for(int facing=0;facing<first->animation.directions;++facing) for(const auto &sample:sequence) {
+            const auto *animation=modes.at(sample.mode);
+            if(animation->animation.directions!=first->animation.directions || sample.frame<0 || sample.frame>=animation->animation.count) return {};
+            result.animation.frames.push_back(*animation->animation.frame(facing,sample.frame));
+        }
+        result.fps=float(speed)*25.f/256.f;result.releaseTimes.clear();result.cycle=false;
+        for(const auto tick:weaponSequenceHitTicks(sequence,speed)) result.releaseTimes.push_back(float(tick)/25.f);
+        if(result.releaseTimes.empty()) return {};
+        result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.size()),speed,0,0,true}.durationTicks();return result;
+    }
     if(request.category=="chars" && request.playerSequence==10) {
         baseRequest.mode="a1";const auto *attack=resolve(graphics,palette,baseRequest);if(!attack || attack->animation.count<7) return {};
         constexpr int frames[]{0,1,2,3,3,4,5,6};result=*attack;result.animation.frames.clear();result.animation.count=8;
@@ -279,14 +302,15 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         if(request.playerSequence==13 && request.sequenceLanding) {result.start=11;result.frameCount-=11;result.holdFrame=-1;result.durationFrames=result.frameCount;}
         return result;
     }
-    if (request.playerSequence >= 0 || request.category != "monsters") return result;
+    if (request.playerSequence >= 0 || (request.category != "monsters" && !request.monsterUnit)) return result;
     const auto rows = sequenceRows_.find(request.mode);
     if (rows == sequenceRows_.end() || rows->second.empty()) return result;
     std::vector<std::pair<const ActorAnimation *, int>> samples;
     for (const auto row : rows->second) {
         baseRequest.mode = lower(std::string(sequences_.value(row, "mode")));
+        if(request.monsterKick && baseRequest.mode=="a1") baseRequest.mode="kk";
         if (baseRequest.mode.starts_with("seq_") || baseRequest.mode == "sq") return result;
-        baseRequest.appearance.weapon = monsterModeWeapon(archives_, request.appearance.token, baseRequest.mode,
+        if(request.category=="monsters") baseRequest.appearance.weapon = monsterModeWeapon(archives_, request.appearance.token, baseRequest.mode,
             request.appearance.weapon);
         // UNITS_AdvanceAnimation reads MonSeq.dir but retains the unit facing.
         if (baseRequest.appearance.weapon.empty()) return result;
@@ -321,6 +345,7 @@ const ActorAnimation *ActorAnimationCatalog::resolve(Graphics &graphics, int pal
         return found->second.ready() ? &found->second : nullptr;
     auto result = request.playerSequence >= 0 || request.mode.starts_with("seq_")
         ? sequence(graphics, palette, request) : composite(graphics,palette,request);
+    if(request.animationHoldFrame>=0 && request.animationHoldFrame<result.frameCount) result.holdFrame=request.animationHoldFrame;
     if(request.sequenceStart || request.sequenceEnd>=0) {
         const int end=request.sequenceEnd>=0?std::min(request.sequenceEnd,result.frameCount):result.frameCount;
         if(request.sequenceStart<0 || end<=request.sequenceStart) return nullptr;

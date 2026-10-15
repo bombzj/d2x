@@ -7,6 +7,7 @@
 #include "corpse_search_spec.hpp"
 #include "leap_spec.hpp"
 #include "grim_ward_spec.hpp"
+#include "assassin_spec.hpp"
 #include "damage_curve.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "rank_bonus.hpp"
@@ -44,6 +45,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         throw std::runtime_error("Unsupported original skill rank or shift");
     SkillCastSpec result;
     result.effect = spec.effect;
+    result.assassin = spec.assassin;
     result.rank = rank;
     result.warcry = spec.warcry;
     if(spec.leap) {
@@ -152,7 +154,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.healingMaximum=Fixed8(calculation("calc2"));
         }
     }
-    result.delayFrames = spec.delayFrames;
+    result.delayFrames = spec.assassin && input.nativeFormulas?calculation("delay"):spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
     result.telekinesisKnockbackChance = spec.telekinesisKnockbackChance;
@@ -341,6 +343,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.poisonDurationFrames=nativeChecked(poisonFrames);
     result.weapon = spec.weapon;
     if (result.weapon) {
+        if(input.nativeFormulas && spec.assassin && spec.assassin->program==AssassinProgram::DragonClaw)
+            result.weapon->damagePercent=calculation("calc1");
         result.delayFrames=std::max(result.delayFrames,result.weapon->delayFrames);
         if (result.weapon->spear) {
             auto program = std::make_shared<SpearSkillSpec>(*result.weapon->spear);
@@ -474,7 +478,12 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     const bool defensiveBuff=spec.holyShield || spec.effect==SkillBehavior::FrozenArmor || spec.effect==SkillBehavior::ShiverArmor ||
         spec.effect==SkillBehavior::ChillingArmor || spec.effect==SkillBehavior::BoneArmor || spec.effect==SkillBehavior::NativeDefensiveBuff;
     const bool nativeWarcry=spec.effect==SkillBehavior::Shout || spec.effect==SkillBehavior::BattleOrders || spec.effect==SkillBehavior::BattleCommand;
-    const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm;
+    const bool bladeShield=spec.assassin && spec.assassin->program==AssassinProgram::BladeShield;
+    if(bladeShield && input.nativeFormulas) {
+        CombatEffectSpec effect;effect.state=spec.assassin->state;effect.source={CombatEffectSource::Skill,{},spec.sourceId,rank};
+        result.appliedEffect=std::move(effect);
+    }
+    const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm || bladeShield;
     if(input.nativeFormulas && result.appliedEffect && (defensiveBuff || spec.effect==SkillBehavior::Enchant || nativeWarcry || nativeTimedBuff)) {
         auto &effect=*result.appliedEffect;effect.nativeValues.emplace();
         effect.stacking=nativeWarcry?EffectStacking::ReuseState:EffectStacking::SkillLevel;

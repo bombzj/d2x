@@ -18,6 +18,13 @@ Fixed8 conversionRestoredLife(const ConversionResourceSave &saved,Fixed8 life,Fi
     const auto restored=maximumWhole?nativePercentage(saved.maximumWhole,life.raw()>>8,maximumWhole):1;
     return Fixed8::fromRaw(nativeShiftLeft(restored,8));
 }
+Fixed8 mindBlastRestoredLife(const ConversionResourceSave &saved,Fixed8 life,Fixed8 maximum) {
+    const auto current=maximum.raw()>>8;
+    const auto cap=current?std::max(1,nativePercentage(saved.maximumWhole,life.raw()>>8,current)):1;
+    // Retail 1.13c Mind Blast removal RVA 914F0 clamps to the converted
+    // maximum before shifting. Paladin's callback has a different write.
+    return Fixed8::fromRaw(nativeShiftLeft(std::min(current,cap),8));
+}
 void advanceResourceRecovery(Fixed8 &life, Fixed8 &mana, const ResourceRecovery &recovery) {
     if (!recovery.suppressMana)
         mana = Fixed8::fromRaw(std::clamp(nativeAdd(mana.raw(), recovery.manaPerFrame), 0, recovery.maximumMana.raw()));

@@ -90,6 +90,7 @@ class FrameEventQueue {
         FrameEventType type{};
         std::vector<FrameEventHandle> expected,removed;
         std::vector<PreparedInsertion> added;
+        std::optional<uint32_t> handler{0};
     };
     // Insertion normalizes signed native deadlines; -1 ignores the explicit
     // callback like D2GAME_InitTimer and goes to the continuous queue head.
@@ -102,7 +103,7 @@ class FrameEventQueue {
     // Nodes and owner-index nodes were allocated during preparation. Native
     // chain links are attached only after the domain accepts its publication.
     FrameEventHandle publish(PreparedInsertion &&) noexcept;
-    PreparedEdit prepareEdit(FrameEventOwner,FrameEventType,const std::vector<FrameEvent> &localEvents);
+    PreparedEdit prepareEdit(FrameEventOwner,FrameEventType,const std::vector<FrameEvent> &localEvents,std::optional<uint32_t> handler=0);
     bool validate(const PreparedEdit &) const;
     void publish(PreparedEdit &&) noexcept;
     bool cancel(FrameEventHandle);

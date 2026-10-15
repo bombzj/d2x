@@ -32,6 +32,7 @@ struct LifeChange {
     std::optional<uint64_t> targetCallbackEpoch;
     std::optional<bool> specialTargetNode;
     std::optional<bool> detachedMinion;
+    std::optional<std::vector<EntityId>> nativeMinions;
     bool tauntPostActions{},reselectAi{};
     std::optional<EntityId> tauntTarget;
     std::optional<uint64_t> aiThinkAt;

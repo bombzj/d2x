@@ -9,7 +9,7 @@
 
 namespace d2x {
 struct CurseSpec {
-    enum class TargetProcedure { Necromancer, DirectList, TerrorUtility } targetProcedure{TargetProcedure::Necromancer};
+    enum class TargetProcedure { Necromancer, DirectList, TerrorUtility, Cloak } targetProcedure{TargetProcedure::Necromancer};
     CombatStateDefinition state;
     int targetFilter = 0; // Skills.aurafilter: original player/monster type bits.
     int radius = 0, radiusPerLevel = 0, frames = 0, framesPerLevel = 0;
@@ -31,6 +31,7 @@ struct CurseSpec {
     std::vector<StatValue> nativeWrites;
     std::optional<StatKey> primaryStat;
     bool rejectZeroPrimary{true};
+    bool writeZeroSecondary{}; // SrvDo047 writes all valid secondary slots.
     std::vector<SkillUnitEventBinding> unitEvents;
 };
 } // namespace d2x

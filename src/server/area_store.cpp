@@ -5,6 +5,17 @@
 #include <cmath>
 
 namespace d2x::server {
+std::vector<std::pair<RegionId,size_t>> AreaStore::loadedRoomOrder() const {
+    std::vector<std::pair<RegionId,size_t>> result;
+    for(const auto &[region,area]:areas_)
+        for(size_t index=0;index<area.rooms.size();++index)
+            if(area.rooms[index].loaded) result.emplace_back(region,index);
+    std::sort(result.begin(),result.end(),[&](const auto &first,const auto &second) {
+        return areas_.at(first.first).rooms.at(first.second).creationOrder<
+            areas_.at(second.first).rooms.at(second.second).creationOrder;
+    });
+    return result;
+}
 DomainResult<RoomRandomLoan> AreaStore::roomRandom(RoomView room) const {
     const auto *area=find(room.area);if(!area) return {DomainStatus::Unavailable,{}};
     const auto &layout=area->definition.activation;

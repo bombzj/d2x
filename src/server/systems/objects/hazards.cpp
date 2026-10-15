@@ -11,13 +11,69 @@
 #include <set>
 
 namespace d2x::server::objects {
-void System::initialize(Object &object,uint64_t tick) {
-    object.random=initialRandom(uint32_t(object.id.value)^ports_.settings.mapSeed);
+void System::initializeControl() {
+    if(state_.controlRandom) throw std::logic_error("Object control is already initialized");
+    state_.controlRandom=childRandom(ports_.random);
+}
+void System::initialize(Object &object,uint64_t tick,uint64_t &random,uint64_t &controlRandom) {
+    object.random=childRandom(random);
+    auto &rule=object.rule;
+    if(rule.initialization==1) {
+        const auto &area=ports_.areas.at(object.area).definition;
+        const auto &entries=area.shrineGeneration;
+        if(entries.size()<2) throw std::logic_error("Missing native shrine generation table");
+        int shrineClass=0;
+        if(rule.parameters[0]) {
+            shrineClass=rule.parameters[0]==1?2:rule.parameters[0]==2?3:4;
+            if(shrineClass==4 && limitedRandom(controlRandom,10)==0) shrineClass=1;
+        }
+        std::vector<size_t> candidates;
+        if(shrineClass) {
+            for(size_t index=0;index<entries.size();++index)
+                if(entries[index].effectClass==shrineClass) candidates.push_back(index);
+            if(candidates.empty()) throw std::logic_error("Missing native shrine effect class");
+        }
+        size_t selected=0;
+        for(int attempt=0;attempt<8;++attempt) {
+            selected=shrineClass?candidates[limitedRandom(controlRandom,uint32_t(candidates.size()))]
+                :1+limitedRandom(controlRandom,uint32_t(entries.size()-1));
+            if(!selected) selected=1;
+            if(int(object.area)>=entries[selected].minimumLevel) break;
+        }
+        int code=entries[selected].code;
+        code=code==4?2:code==5?3:code==16?18:code;
+        rule.shrine=area.shrineRules.at(code);
+    }
+    if(rule.initialization==3 || rule.initialization==57) {
+        const bool sparkly=rule.initialization==57 || (rule.chest && rule.chest->sparkly);
+        rule.chest.emplace();rule.chest->lockable=rule.lockable;rule.chest->sparkly=sparkly;
+        resetChestRandom(*rule.chest,rule.initializationLevel,controlRandom);
+        object.random=rule.chest->lootSeed;
+    } else if(rule.initialization==2) {
+        rule.trap=limitedRandom(controlRandom,100)<unsigned(rule.initializationLevel/8+5)
+            ? 1+int(limitedRandom(controlRandom,8)):0;
+    } else if(rule.initialization==27) {
+        rule.trap=limitedRandom(controlRandom,1000)<333?3:0;
+    }
     if(object.rule.initialization==22 || object.rule.initialization==24) object.hazardAt=tick+25;
     if(object.rule.initialization==22 && !object.mode) object.mode=object.rule.initialMode;
-    if(object.rule.initialization==34 && limitedRandom(object.random,2)) object.mode=1;
+    if(object.rule.initialization==34 && limitedRandom(controlRandom,2)) object.mode=1;
     if(object.rule.initialization==51 && (object.mode==1 || object.mode==2)) object.hazardAt=tick+35;
-    if(object.rule.initialization==58) object.hazardAt=tick+25+limitedRandom(object.random,250);
+    if(object.rule.initialization==58) object.hazardAt=tick+25+limitedRandom(controlRandom,250);
+    if(rule.preOperate && limitedRandom(controlRandom,14)==0) object.mode=2;
+    if(rule.shrinePreset>=574 && rule.shrinePreset<=579) {
+        constexpr int minimum[]{2,7,8,12,1,14},maximum[]{6,7,11,12,5,14};
+        const auto index=size_t(rule.shrinePreset-574);
+        int code=minimum[index]+int(limitedRandom(object.random,unsigned(maximum[index]-minimum[index])));
+        if(code==4 || code==5) code=2;
+        rule.shrine=ports_.areas.at(object.area).definition.shrineRules.at(code);
+    }
+    if(rule.specialChest) {
+        const bool sparkly=int(object.area)<62 || int(object.area)>64 || limitedRandom(controlRandom,100)<=50;
+        if(rule.chest) rule.chest->sparkly=sparkly;
+        if(sparkly && int(object.area)==25) rule.trap=3;
+        object.mode=0;
+    }
 }
 DomainResult<EntityId> System::admit(const Admission &request) {
     const auto *area=ports_.areas.find(request.area);
@@ -37,9 +93,18 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     }
     if(state_.objects.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     const auto id=ports_.ids.allocate();Object object{id,request.definition,request.area,request.position,1,request.mode,std::move(rule)};
-    object.uses=2*object.rule.parameters[2];initialize(object,request.tick);
+    auto random=ports_.random;
+    auto controlRandom=state_.controlRandom.value();
+    object.uses=2*object.rule.parameters[2];initialize(object,request.tick,random,controlRandom);
+    if(request.shrine) {
+        const int code=*request.shrine==4?2:*request.shrine==5?3:*request.shrine==16?18:*request.shrine;
+        object.rule.shrine=area->definition.shrineRules.at(code);
+    }
+    if(request.trap && object.rule.chest) object.rule.chest->trap=uint8_t(*request.trap);
     auto room=ports_.areas.prepareRoomUnit(id,2,object.area,object.position);
     state_.objects.emplace(id,std::move(object));ports_.areas.publishRoomUnit(*room);collision(request.area);
+    ports_.random=random;
+    state_.controlRandom=controlRandom;
     return {DomainStatus::Applied,id};
 }
 DomainResult<> System::damage(Object &object,DamageType type,bool playersOnly,int radius,TickContext tick,std::optional<EntityId> only) {

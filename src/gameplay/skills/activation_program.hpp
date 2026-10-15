@@ -5,7 +5,7 @@ struct SkillCastSpec;
 enum class SkillActivationProgram {
     Weapon, Item, Unsummon, Kick, AmazonSummon, AmazonMagic,
     Teleport, Hydra, Leap, GrimWard, Effect, Warcry, Curse, Corpse, CorpseSearch,
-    StaticField, Telekinesis, Missile, Unsupported, Count
+    StaticField, Telekinesis, Missile, Assassin, Unsupported, Count
 };
 SkillActivationProgram skillActivationProgram(const SkillCastSpec &skill);
 }

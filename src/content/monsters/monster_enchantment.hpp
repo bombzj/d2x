@@ -7,6 +7,10 @@
 
 namespace d2x {
 bool monsterShrineEligible(const ClassicData &data, const MonsterRecord &monster);
+std::vector<MonsterModifierChoice> prepareMonsterModifierChoices(const ClassicData &,const MonsterRecord &,int difficulty,bool champion);
+MonsterEnchantment resolveMonsterEnchantment(const ClassicData &,const MonsterRecord &,const MonsterCombatProfile &,
+    int difficulty,MonsterRank,std::vector<int> modifiers,uint16_t nameSeed,bool enableSkillEffects=true,
+    const SuperUniqueRecord *fixed=nullptr);
 MonsterEnchantment rollMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,
     const MonsterCombatProfile &base, int difficulty, uint64_t &random, MonsterRank &rank,
     bool preserveRank = false, bool enableSkillEffects = true, bool championVariantAllowed = true,

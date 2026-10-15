@@ -50,6 +50,22 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 ## 自研野外祭坛与环境机关
 
+### 自然生成源码边界
+
+自然生成正在由宿主蓝图计划迁入服务端，当前工作区尚未完成，不能作为完整功能交付。`hosting/object_content.cpp`准备ObjGroup／Objects纯值，服务端路径不再调用旧第一幕撒点；`server/systems/objects/population.cpp`使用活动房间随机贷款、ObjectControl候选与同步碰撞，已接PopulateFn1–9、治疗保底及原主题分派。后续簇程序、主题、排序、逻辑区域和塔楼源码已随2026-10-16刺客交付通过Windows／MinGW／Ninja Release的CMake配置、all编译链接并入两包；构建结果不认证完整自然生成，专项运行与原版逐随机对照仍待完成。旧`world/object_population.cpp`仍是世界工具的适配路径，不代表服务端原随机顺序。
+
+实例按怪物区域、ObjectControl、NPCControl、QuestControl顺序分出子流，再创建玩家。石柱顺序及日蚀延迟使用任务控制流；NPC控制流已保存，完整商人消费尚未迁入。物件准入不再按GUID派生种子，而按SUNIT_InitSeed取游戏子流。Init1/2/3/27/34/57/58、PreOperate与特殊祭坛覆盖使用准入候选，宝箱重置后的单位种子供掉落使用。特殊箱资格／模式及574–579覆盖位于普通初始化之后，后者用单位流；宿主只提供有序Shrines目录。完整任务回调、失败分支和初始化交错仍未认证。
+
+当前源码按D2MOO Objects／ObjRgn及本地1.13c核对：传送点房间跳过随机物件；空组槽仍抽概率；组内保留Gore门控；公共物件使用SizeX/Y加六和完整16位碰撞，CreateObject全局坐标保留uint16截断。祭坛按Orientation寻位，井尺寸为两倍加一；成功坐标和数量上限独立登记。治疗保底只改类别及效果，保留原ObjectTxt规则。Fn1保留各类别簇／步长，Fn4首桶1/3、后续1/4及最多八只，Fn5保留双重瓮类别抽签与后续成员八只上限，Fn7保留四组坐标；间距读XSpace/YSpace。Fn6只按末次返回值抽class103，Fn9首个成功后停止。未知非零PopulateFn记录到服务端诊断并返回NotImplemented，不发布房间完成状态。
+
+Fn5循环以1.13c D2Game VA6FC50528–6FC50576为准：停止抽签和前次成功为AND，固定D2MOO的OR有反编译差异。主题资格保留1.13c VA6FC4EC22的“主题ID小于候选数量”判断；空主题、桶场、地面物品及架子主题已分派，非活动主题继续普通组。主题物品按原表顺序选择，使用房间流，成功落点后才取游戏双种子；内容层异步准备单件，服务端在同一帧重放候选并原子发布。直接构造品质与TC掉落分开，misc类型等级差固定1。未知物品属性或准备失败仍会阻止该房间完成，完整物品构造失败语义未逐项认证。
+
+塔楼580预设继续执行默认箱型抽签后覆盖为371，不提前返回。574–579预设祭坛按`OBJECTS_SpawnShrine`将4／5均归一为2，与普通Init1的5→3不同。宝箱Init3／57的陷阱、锁和65534范围种子初始化、Init2／27陷阱概率及ObjRgn区域陷阱家族选择本轮核对后保持既有实现；概率和尺寸仍由当前MPQ准备，没有增加自定义掉落或怪物参数。
+
+当前调度按活动房间创建序号执行。依据SUNIT_SpawnPresetUnitsInRoom，两遍预设遍历先物件、再NPC／怪物，各阶段按DS1源序号稳定排序；随后随机物件，再既有密度人口。关联NPC在源物件初始化后创建，已出生记录独立于存活实体，避免逃离／移除后重复准入。逻辑区域与格索引已从地图导出，但尚未接实时密度。诊断输出游戏、区域、物件、NPC、任务随机低／高字及房间完成／暂缓集合。原预设链的完整次序、GUID分配、密度与精英单位流、任务回调、恢复仍待闭合，不能宣称同种子逐单位等价。
+
+塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍未认证，本段源码已纳入2026-10-16的all构建与两包，塔楼完整流程未在本轮专项运行认证。
+
 2026-10-10源码对照master单机的session_objects／session_shrines、本地D2MOO及当前MPQ补全野外路径。hosting从Objects／Shrines／MonStats／MonLvl／Missiles／Skills、MonSeq与AnimData准备规则；server的objects、monsters、missiles、combat、effects和loot只消费准备值。客户端继续接收原物件、状态、怪物与弹体包，界面不结算伤害。
 
 限时祭坛6–15的状态程序现集中于server/systems/objects/shrines.cpp，按当前MPQ准备参数，使用公共诅咒期限和原始状态列表。主属性在投递前分配，同类型复用保留主项；战斗祭坛随后写tohit，耐力祭坛随后写stamina及staminarecoverybonus。技能祭坛以真实shrine_skill状态经公共技能等级入口增加原算法的2级，不伪造item_allskills或使用Arg0替代；申请和移除各保留原被动刷新，特殊移除保留二次刷新。耐力祭坛先恢复现有上限，再投递列表；撤销时先传播属性，再执行独立耐力恢复回调。人物当前资源与派生来源分开，列表stamina差值由资源轨迹消费。依据D2MOO ObjMode的CombatBoost／SkillBoost／Stamina和D2Common技能等级入口。此迁移已纳入前序Windows Release构建，技能／防御／耐力祭坛的列出路径有有限Single Player观察，实例帧队列包另观察了防御祭坛准确到期与带临时状态退出重载，见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；全部1.13c专用回调、完整同帧排序及组合仍未认证。

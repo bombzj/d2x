@@ -3,6 +3,10 @@
 
 namespace d2x::server {
 DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,TickContext tick) {
+    if(event.handler==effects::conversionTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::RemoveState)
+        return systems.effects.endConversion(event.owner.unit,tick.tick);
+    if(event.handler==effects::nativeUnitSkillTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::PeriodicSkills)
+        return systems.effects.frameEvent(event,tick.tick);
     if(event.handler) return {DomainStatus::NotImplemented,{}};
     switch(event.owner.type) {
     case FrameEventUnit::Player:

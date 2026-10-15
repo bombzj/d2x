@@ -12,6 +12,18 @@ struct RoomBounds {
     bool populate;
     bool checkLosDraw{true};
 };
+struct RoomPopulationRegion {
+    int index{},left{},top{},right{},bottom{};
+    bool node{};
+};
+struct RoomPopulationLayout {
+    struct Floor {int x{},y{};uint16_t material{};};
+    int x{},y{},width{},height{};
+    bool single{};
+    std::vector<RoomPopulationRegion> regions;
+    std::vector<size_t> cells;
+    std::vector<Floor> floors;
+};
 // Immutable spatial room index. Activity is derived from the observer's room and
 // DRLG near-room list, following its same-level six-tile gap criterion.
 class RoomLayout {

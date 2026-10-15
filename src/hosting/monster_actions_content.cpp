@@ -394,7 +394,19 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
     rule.freezeDivisor=data.monsterFreezeDivisor.at(size_t(rule.difficulty));
     if(rule.coldDivisor<=0 || rule.freezeDivisor<=0) throw std::runtime_error("Invalid original monster cold difficulty divisor");
     const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
+    rule.bossTransfer=monsters.number(monsterRow,"bossxfer").value_or(0)!=0;
     const auto id=monsters.value(monsterRow,"Id");
+    const auto baseId=monsters.value(monsterRow,"BaseId");
+    rule.nativeModifiers.clear();
+    if(baseId=="brute2") rule.nativeModifiers.push_back(13);
+    else if(baseId=="scarab1") rule.nativeModifiers.push_back(20);
+    else if(baseId=="mummy1") rule.nativeModifiers.push_back(10);
+    else if(baseId=="boneprison1" || baseId=="boneprison2" || baseId=="boneprison3" || baseId=="boneprison4") rule.nativeModifiers.push_back(15);
+    else if(baseId=="trap_firebolt" || baseId=="trap_horzmissile" || baseId=="trap_vertmissile" ||
+        baseId=="trap_poison" || baseId=="trap_lightning" || baseId=="trap_melee") rule.nativeModifiers.push_back(14);
+    else if(baseId=="suicideminion1") rule.nativeModifiers.push_back(33);
+    else if(baseId=="reanimatedhorde1") rule.nativeModifiers.push_back(34);
+    else if(baseId=="frozenhorror1") rule.nativeModifiers.push_back(35);
     rule.sharedRandomComponents=id=="doomknight2"?uint16_t(1u<<10):id=="doomknight3"?uint16_t((1u<<10)|(1u<<11)):0;
     rule.skipRegionComponents=id=="act2male" || id=="act2female" || id=="act3male" || id=="act3female";
     const auto name=monsters.value(monsterRow,"MonStatsEx");

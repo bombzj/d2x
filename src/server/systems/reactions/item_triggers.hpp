@@ -33,6 +33,7 @@ class ItemTriggers {
     const ItemTriggerPorts ports_;
     std::list<ItemTrigger> pending_;
     std::string deferred_;
+    StepStatus advanceJobs(std::list<ItemTrigger> &,uint64_t tick);
   public:
     explicit ItemTriggers(ItemTriggerPorts ports);
     ~ItemTriggers();
@@ -43,5 +44,6 @@ class ItemTriggers {
     DomainResult<ItemEventPlan> prepare(const ActorContext &, std::initializer_list<ItemSkillEvent>, EntityId, Vec) const;
     void commit(ItemEventPlan plan, bool terminal) noexcept;
     StepStatus advance(uint64_t tick);
+    StepStatus advance(ItemEventPlan &,uint64_t tick);
 };
 }

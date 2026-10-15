@@ -89,14 +89,14 @@ FrameEventHandle FrameEventQueue::publish(PreparedInsertion &&plan) noexcept {
     }
     return event.handle;
 }
-FrameEventQueue::PreparedEdit FrameEventQueue::prepareEdit(FrameEventOwner owner,FrameEventType type,const std::vector<FrameEvent> &localEvents) {
-    PreparedEdit plan;plan.owner=owner;plan.type=type;
+FrameEventQueue::PreparedEdit FrameEventQueue::prepareEdit(FrameEventOwner owner,FrameEventType type,const std::vector<FrameEvent> &localEvents,std::optional<uint32_t> handler) {
+    PreparedEdit plan;plan.owner=owner;plan.type=type;plan.handler=handler;
     const auto existing=events(owner);
     const auto same=[](const FrameEvent &published,const FrameEvent &local) {
         return published.payload==local.handle.value && published.due==local.due && published.continuous==local.continuous &&
             published.handler==local.handler && published.customId==local.customId && published.customParameter==local.customParameter;
     };
-    for(const auto &event:existing) if(event.type==type) {
+    for(const auto &event:existing) if(event.type==type && (!handler || event.handler==*handler)) {
         plan.expected.push_back(event.handle);
         if(std::none_of(localEvents.begin(),localEvents.end(),[&](const auto &local){return same(event,local);})) plan.removed.push_back(event.handle);
     }
@@ -114,7 +114,7 @@ bool FrameEventQueue::validate(const PreparedEdit &plan) const {
     auto handle=found==owners_.end()?FrameEventHandle{}:found->second;size_t index=0;
     for(;handle;handle=nodes_.at(handle).unitNext) {
         const auto &node=nodes_.at(handle);
-        if(node.event.type!=plan.type) continue;
+        if(node.event.type!=plan.type || (plan.handler && node.event.handler!=*plan.handler)) continue;
         if(index==plan.expected.size() || plan.expected[index++]!=handle) return false;
     }
     return index==plan.expected.size();

@@ -4,6 +4,7 @@
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/common_actions.hpp"
+#include "gameplay/skills/assassin_progressive.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "world/navigation.hpp"
 #include "core/random.hpp"
@@ -25,7 +26,7 @@ bool matchesCreation(const ClientMissileVisual &effect, int id, EntityId owner, 
 }
 bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, float delay,
                                   std::optional<float> remaining, int pathIndex,
-                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source,int slowPercent,EntityId guidedTarget,int velocityBonus) {
+                                  EntityId owner, bool hostile, int pierce, ClientMissileSource source,int slowPercent,EntityId guidedTarget,int velocityBonus,ClientMissileInitialization initialization) {
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
@@ -58,7 +59,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     // Stationary 73 sends FirstX/FirstY = 0; these are not an aimed ray.
     if (capabilities->stationary) target = start;
     const auto sources = uint8_t(source);
-    const bool reconstructed = capabilities->pairCreationSources && source!=ClientMissileSource::Death;
+    const bool reconstructed = (capabilities->pairCreationSources || program.clientSend) && source!=ClientMissileSource::Death;
     if (sources && reconstructed) {
         // 73 has no missile GUID. Pair the two creation sources for the same
         // owner/class/origin/ray within the cast release and event freshness window.
@@ -82,7 +83,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     effect.flight = true; effect.level = level;
     effect.deathProgram=source==ClientMissileSource::Death;
     effect.slowPercent=slowPercent;effect.guidance=guidedTarget;
-    effect.creationSources = reconstructed ? sources : 0;
+    effect.creationSources = sources;
     effect.creationPosition = start; effect.creationDirection = (target - start).unit();
     if(program.chain) effect.remainingHits=std::max(1,skillRankBonus({program.chain->count,program.chain->countPerLevel},level)/program.chainCountDivisor);
     effect.velocityFixed = velocity;
@@ -100,6 +101,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         effect.nativeSequenceFrame=nativeShiftLeft(animationFrame,8);
     }
     effect.turnTarget = target - start;
+    effect.nativeParameters=initialization.parameters;
+    effect.streamMissile=initialization.streamMissile.value_or(-1);effect.streamRange=initialization.streamRange.value_or(0);
+    if(initialization.seed) effect.random=initialRandom(*initialization.seed);
     if(program.function==21) effect.emissionCountdown=50; // Retail BloodRaven callback RVA 52320.
     if(program.deathFlame) {
         effect.pixelVelocity.y=float(program.parameters[0]); effect.pixelAcceleration.y=float(program.parameters[2]);
@@ -114,6 +118,12 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     }
     if(program.blessedHammer) {
         const auto path=blessedHammerPath(start);effect.path.assign(path.begin(),path.end());
+    }
+    if(initialization.path!=ClientMissileInitialization::Path::None) {
+        int frames=initialization.path==ClientMissileInitialization::Path::Charged?int(uint8_t(effect.nativeTotalFrames)):effect.nativeTotalFrames;
+        if(frames>=78) {frames=77;effect.nativeTotalFrames=77;effect.setCurrentFrame(77);effect.duration=77.f/25.f;}
+        const auto path=initialization.path==ClientMissileInitialization::Path::Charged?chargedBoltPath(start,target,frames,effect.random):assassinProgressiveSpiral(start,target,frames,effect.random);
+        effect.path.assign(path.begin(),path.end());
     }
     if(const auto fall=assets_.blizzardFalls.find(id);fall!=assets_.blizzardFalls.end()) {
         effect.flight=false;effect.duration=float((fall->second.fallDistance+fall->second.fallRate-1)/fall->second.fallRate)/25.f;
@@ -175,6 +185,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         child.age = std::max(0.f, age); pending.push_back(std::move(child));
     };
     auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot) {
+        if(program.hitFunction==44 && program.hitChildren[0]>=0 && !program.childServerSent)
+            emit(program.hitChildren[0],effect.pos,{},effect,overshoot);
         if(program.hitFunction==28 && program.hitChildren[0]>=0) {
             const auto &cloud=assets_.clientMissilePrograms.at(program.hitChildren[0]);
             constexpr std::array<Vec,8> directions{Vec{0,2},Vec{2,2},Vec{2,0},Vec{2,-2},Vec{0,-2},Vec{-2,-2},Vec{-2,0},Vec{-2,2}};
@@ -280,6 +292,33 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             const float childAge = std::max(0.f, effect.age - float(frame) / 25.f);
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
+            case 17: {
+                // 1.13c CltDo17 (6FB6BB40 -> 6FB66D40): the constructor
+                // supplies the skill's range, not a missile Param radius.
+                if(effect.streamRange<=0) {finished=true;break;}
+                const int child=effect.streamMissile>0?effect.streamMissile:program.children[0];
+                if(elapsedFrames<program.parameters[0] && elapsedFrames%3==0) {
+                    const int radius=effect.streamRange;
+                    const int stride=radius>4?2:1, chance=radius>4?radius/2:radius;
+                    for(int y=-radius;y<=radius;y+=stride)
+                        for(int x=-radius;x<=radius;x+=stride)
+                            if(x*x+y*y<=radius*radius && limitedRandom(effect.random,uint32_t(chance))==0)
+                                emit(child,effect.pos+Vec{float(x),float(y)},{},effect,childAge);
+                }
+                break;
+            }
+            case 58:
+                if(elapsedFrames%std::max(1,program.serverTurnPeriod)==0) {
+                    if(effect.nativeParameters) effect.random=initialRandom(uint32_t((*effect.nativeParameters)[0]));
+                    const int packed=effect.nativeParameters?(*effect.nativeParameters)[1]:0;
+                    const int x=effect.nativeParameters?int16_t(packed):int(effect.turnTarget.x),y=effect.nativeParameters?int16_t(uint32_t(packed)>>16):int(effect.turnTarget.y);
+                    const bool clockwise=(rollRandom(effect.random)&1)!=0;
+                    int nextX=(4*x+(clockwise?-y:y))/4,nextY=(4*y+(clockwise?x:-x))/4;
+                    if(!nextX) nextX=1;if(!nextY) nextY=1;
+                    effect.turnTarget={float(nextX),float(nextY)};effect.velocity=effect.turnTarget.unit()*(float(effect.velocityFixed)*25.f/4096.f);
+                    effect.nativeParameters=std::array<int32_t,2>{nativeNarrow(uint32_t(effect.random)),nativeNarrow(uint32_t(uint16_t(nextX))|(uint32_t(uint16_t(nextY))<<16))};
+                }
+                break;
             case 5:
                 effect.nativeSequenceFrame=firewallMissileSequence(effect.nativeSequenceFrame,effect.nativeCurrentFrames,
                     program.animation.subStart,program.animation.subStop,effect.random);
@@ -428,6 +467,12 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 }
             }
             const Vec start = effect.pos;
+            if(program.function==52 && !wall && missileChangedCell(start,next)) {
+                const Vec direction=effect.nativeParameters?Vec{float((*effect.nativeParameters)[0]),float((*effect.nativeParameters)[1])}:Vec{-effect.turnTarget.y,effect.turnTarget.x};
+                const Vec position{float(int(next.x))+.5f,float(int(next.y))+.5f};
+                emit(program.children[0],position,direction,effect,childAge);
+                emit(program.children[0],position,direction*-1.f,effect,childAge);
+            }
             if ((program.function==6 || program.function==22 || program.function==27) && !wall && missileChangedCell(start,next))
                 emit(program.children[0],{float(int(next.x))+.5f,float(int(next.y))+.5f},{},effect,childAge);
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;

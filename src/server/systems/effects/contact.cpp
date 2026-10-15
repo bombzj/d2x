@@ -45,6 +45,16 @@ NativeContactBatch System::prepareAttackEvents(EntityId source,EntityId target,u
         result.callbacks.push_back({target,source,callback});
     return result;
 }
+NativeContactBatch System::prepareMeleeDrainEvents(EntityId source,EntityId target,uint64_t tick) const {
+    NativeContactBatch result;result.source=source;result.target=target;result.eventStage=5;
+    if(const auto *states=unitEffects(source)) for(const auto &callback:states->unitEvents(NativeUnitEvent::MeleeAttack,tick))
+        result.callbacks.push_back({source,target,callback});
+    return result;
+}
+NativeContactBatch System::prepareThornsEvents(EntityId source,EntityId target,int64_t physical,uint64_t tick) const {
+    auto result=prepareDamageEvents(source,target,physical,physical,false,false,tick,false);
+    result.suppress=true;return result;
+}
 NativeContactBatch System::prepareMissileEvents(EntityId source,EntityId target,uint64_t tick,bool returnFire) const {
     NativeContactBatch result;result.source=source;result.target=target;result.eventStage=4;result.returnFire=returnFire;
     if(const auto *states=unitEffects(target)) for(const auto &callback:states->unitEvents(NativeUnitEvent::HitByMissile,tick))
@@ -81,6 +91,12 @@ DomainResult<> System::advanceDamageEvents(NativeContactBatch &batch,uint64_t ti
             const auto result=advanceNativeCallback(batch,tick);
             if(!result) return result;
             ++batch.next;resetCallback();
+        }
+        if(batch.eventStage==5) {
+            batch.callbacks.clear();batch.next=0;batch.eventStage=6;
+            if(const auto *states=unitEffects(batch.target)) for(const auto &callback:states->unitEvents(NativeUnitEvent::AttackedInMelee,tick))
+                batch.callbacks.push_back({batch.target,batch.source,callback});
+            continue;
         }
         if(batch.eventStage>=3) return {DomainStatus::Applied,std::monostate{}};
         batch.callbacks.clear();batch.next=0;

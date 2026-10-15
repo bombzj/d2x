@@ -43,6 +43,7 @@ class System {
     struct Advance;
     struct Runtime;
     std::unique_ptr<Runtime> runtime_;
+    DomainResult<DirectContact> nativeWeaponContact(const Spawn &,std::vector<EntityId>);
     Missile make(const Spawn &, Vec origin, Vec direction, int definition, int frames, float speed, Program, uint64_t &,bool deferSeed=false,uint64_t *ownerRandom=nullptr,
         const Missile *originSource=nullptr,uint64_t *originRandom=nullptr) const;
     using ChildSetup=std::function<void(Missile &,const SkillCastSpec &)>;
@@ -116,6 +117,7 @@ class System {
     std::optional<int> nativeDefinition(std::string_view) const;
     DomainResult<EntityId> spawnNative(const NativeSpawn &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0);
+    DomainResult<EntityId> commitNativeBirth(std::shared_ptr<NativeBirthPublication>);
     DomainResult<> direct(const Spawn &, std::vector<EntityId> targets);
     DomainResult<DirectContact> directContact(const Spawn &,std::vector<EntityId>,DirectNotice=DirectNotice::Publish);
     DomainResult<> frameEvent(EntityId,TickContext);

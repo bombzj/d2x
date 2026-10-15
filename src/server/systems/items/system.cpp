@@ -84,6 +84,36 @@ DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {
     auto next = prepare(std::move(batch), origin); if (!next) return {next.status, {}};
     commit(std::move(*next.value)); return {DomainStatus::Applied, std::monostate{}};
 }
+DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &batch,uint64_t tick) {
+    if(batch.empty()) return {DomainStatus::Applied,std::monostate{}};
+    if(batch.size()>32 || state_.revision==UINT64_MAX || state_.world.items.size()+batch.size()>4096 ||
+        !identityCapacity(batch.size())) return {DomainStatus::Capacity,{}};
+    auto next=state_;auto ids=ports_.ids;
+    std::vector<EventBatch> events;
+    for(const auto &[prepared,location]:batch) {
+        if(!prepared.equipment || prepared.items.size()!=1 || !prepared.items.front().socketedItems.empty() ||
+            !std::isfinite(location.position.x) || !std::isfinite(location.position.y))
+            return {DomainStatus::InvalidRequest,{}};
+        const auto *area=ports_.areas.find(location.region);
+        if(!area || !ports_.areas.loaded(location.region,location.position) || !area->definition.activation.room(location.position))
+            return {DomainStatus::Stale,{}};
+        auto item=prepared.items.front();
+        const auto values=prepared.equipment->items.find(item.id);
+        if(values==prepared.equipment->items.end()) return {DomainStatus::InvalidRequest,{}};
+        item.id=ids.allocate();item.location=location;item.revision=1;
+        next.equipment.items.emplace(item.id,values->second);
+        next.equipment.includeSets(*prepared.equipment);
+        next.world.items.emplace(item.id,item);
+        if(events.empty() || events.back().audience.area!=location.region)
+            events.push_back({0,tick,{}, {AudienceKind::Area,{},location.region},{}});
+        events.back().facts.emplace_back(GroundDropFact{std::move(item)});
+    }
+    ++next.revision;
+    const auto sent=ports_.events.publishGroup(std::move(events));
+    if(!sent) return {sent.status,{}};
+    ports_.ids=ids;commit(std::move(next));
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<EntityId> System::createNativeGold(GroundLocation origin,unsigned level,uint64_t tick) {
     const auto *area=ports_.areas.find(origin.region);
     const auto *base=ports_.definitions?ports_.definitions->find("gld"):nullptr;

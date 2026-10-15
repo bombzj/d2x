@@ -20,7 +20,7 @@ struct ObjectSource { int definition{}, operation{}; std::optional<ChestState> c
 struct Request { uint64_t occurrence{}; LootRequest source; PlayerId beneficiary; Vec position; std::optional<ObjectSource> object{}; std::optional<CharacterRecord> questClaimant; bool towerGold{},environment{}; int additionalMagicFind{},additionalGoldFind{}; };
 struct Preparation { Request request; PersistentCharacter character; std::string classCode; uint64_t seed{}; int magicFind{}, goldFind{}; std::set<size_t> uniques; unsigned effectivePlayers=1; std::vector<ItemSeeds> itemSeeds; std::optional<items::PreparedBatch> prepared; std::optional<uint64_t> monsterSeed,objectSeed; std::optional<RoomRandomLoan> roomSeed; uint64_t order{}; };
 struct State { std::map<EntityId, Preparation> pending; std::set<size_t> uniques; std::string deferred; std::map<EntityId, bool> completed; uint64_t nextOrder{1}; };
-struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; const social::System &social; monsters::System &monsters; objects::System &objects; AreaStore &areas; };
+struct Ports { const PlayerStore &players; const quests::System &quests; items::System &items; transactions::System &transactions; uint64_t &random; const TreasureRules *definitions; const GameSettings &settings; EventOutbox &events; const social::System &social; monsters::System &monsters; objects::System &objects; AreaStore &areas; const spatial::System &spatial; };
 class System {
     State state_;
     const Ports ports_;
