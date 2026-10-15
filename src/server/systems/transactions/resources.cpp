@@ -18,7 +18,7 @@ DomainResult<> System::consumeRandom(const ActorContext &actor,uint64_t expected
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fixed8 cost, std::optional<PointTarget> relocation,
-    std::optional<SkillCharge> charge,std::vector<DomainFact> publicFacts) {
+    std::optional<SkillCharge> charge,std::vector<DomainFact> publicFacts,std::optional<UnitRandomEdit> random) {
     const auto found = ports_.players.players_.find(actor.player);
     if (found == ports_.players.players_.end()) return {DomainStatus::InvalidActor, {}};
     auto &player = found->second;
@@ -26,12 +26,14 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     if (!player.entered || player.actor != actor.actor || player.area != actor.area || player.persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
     if (!area || area->generation != actor.areaGeneration || expected != player.characterRevision) return {DomainStatus::Stale, {}};
+    if(random && player.combatRandom!=random->expected) return {DomainStatus::Stale,{}};
     if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     if (cost < 0 || player.persistent.player.mana < cost) return {DomainStatus::Unavailable, {}};
     if (relocation && (relocation->area != player.area || relocation->generation != area->generation || !area->definition.teleportAllowed ||
         !area->definition.collision.walkable(relocation->position, playerMovement))) return {DomainStatus::Unavailable, {}};
     if(charge) {
         CharacterEdit edit{actor,player.inventoryRevision,expected,player.persistent.player};edit.player.mana-=cost;edit.charge=charge;
+        edit.random=random;
         edit.publicFacts=std::move(publicFacts);
         if(relocation) edit.publicFacts.emplace_back(RepositionFact{player.actor,player.area,relocation->position});
         auto plan=prepare(std::move(edit));if(!plan) return {plan.status,{}};
@@ -40,12 +42,21 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         return result;
     }
     const auto mana = player.persistent.player.mana - cost;
-    std::vector<EventBatch> events{{0, actor.tick, {}, {AudienceKind::Player, player.player, player.area}, {ManaFact{player.actor, mana}}}};
+    DomainFact resourceFact=ManaFact{player.actor,mana};
+    if(random) {
+        // This narrow release replaces a CharacterEdit carrying the unit's
+        // random candidate. Retain its attribute-delta encoding, including
+        // suppression when a free release leaves mana unchanged.
+        const auto &before=player.persistent.player;
+        resourceFact=ResourcesFact{player.actor,{before.hp,before.mana,before.stamina},{before.hp,mana,before.stamina}};
+    }
+    std::vector<EventBatch> events{{0, actor.tick, {}, {AudienceKind::Player, player.player, player.area}, {std::move(resourceFact)}}};
     if (relocation) publicFacts.emplace_back(RepositionFact{player.actor, player.area, relocation->position});
     if (!publicFacts.empty()) events.push_back({0, actor.tick, {}, {AudienceKind::Area, {}, player.area},std::move(publicFacts)});
     auto result = ports_.events.publishGroup(std::move(events));
     if (!result) return {result.status, {}};
     player.persistent.player.mana = mana; ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
+    if(random) player.combatRandom=random->next;
     if (relocation) { player.position = relocation->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false; ++player.teleportRevision; }
     return {DomainStatus::Applied, std::monostate{}};
 }
@@ -60,14 +71,16 @@ DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, F
     const auto *area = ports_.areas.find(actor.area);
     if (!player.entered || player.actor != actor.actor || player.area != actor.area || player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (!area || area->generation != actor.areaGeneration || player.characterRevision != expected) return {DomainStatus::Stale, {}};
-    if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     if (life <= 0 || life > totals.maxLifeFixed || mana < 0 || mana > totals.maxManaFixed || stamina < 0 || stamina > totals.maxStaminaFixed) return {DomainStatus::InvalidRequest, {}};
-    auto record = player.persistent.player; record.hp = life; record.mana = mana; record.stamina = stamina;
-    const bool changed = record.hp != player.persistent.player.hp || record.mana != player.persistent.player.mana || record.stamina != player.persistent.player.stamina;
+    const bool changed = life != player.persistent.player.hp || mana != player.persistent.player.mana || stamina != player.persistent.player.stamina;
     if (!changed && publicFacts.empty()) return {DomainStatus::Applied, std::monostate{}};
+    if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     std::vector<EventBatch> events;
-    if (changed) events.push_back({0, actor.tick, {}, {AudienceKind::Player, player.player, player.area},
-        {CharacterFact{player.persistent.player, record, player.totals, player.totals}}});
+    if (changed) {
+        const auto &before=player.persistent.player;
+        events.push_back({0, actor.tick, {}, {AudienceKind::Player, player.player, player.area},
+            {ResourcesFact{player.actor,{before.hp,before.mana,before.stamina},{life,mana,stamina}}}});
+    }
     if (!publicFacts.empty()) events.push_back({0, actor.tick, {}, {AudienceKind::Area, {}, player.area}, std::move(publicFacts)});
     const auto result = ports_.events.publishGroup(std::move(events));
     if (!result) return {result.status, {}};

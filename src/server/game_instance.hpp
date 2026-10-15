@@ -41,6 +41,7 @@ class GameInstance {
     GameInstance &operator=(const GameInstance &) = delete;
     CommandStatus enqueue(PlayerId, GameCommand);
     void step();
+    uint64_t tick() const noexcept {return tick_;}
     void suspend();
     PlayerId admit(GameDefinition);
     bool remove(PlayerId);
@@ -94,7 +95,9 @@ class GameInstance {
     auto shop(PlayerId id) const { return systems_.merchant.shop(id); }
     auto pendingLoot() const { auto pending=systems_.loot.read().pending; for(auto &[id,value]:pending) { (void)id; value.uniques=systems_.loot.read().uniques; } return pending; }
     const auto &usedUniques() const {return systems_.loot.read().uniques;}
-    DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred) { return systems_.loot.install(source, std::move(batch), std::move(deferred)); }
+    auto reserveLootSeeds(EntityId source,uint64_t occurrence,size_t index) {return systems_.loot.reserveSeeds(source,occurrence,index);}
+    auto beginLootPreparation(EntityId source) {return systems_.loot.beginPreparation(source);}
+    DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={}) { return systems_.loot.install(source, std::move(batch), std::move(deferred),random,objectRandom); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }

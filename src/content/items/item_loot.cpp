@@ -2,6 +2,7 @@
 #include "item_quality.hpp"
 #include "item_magic_loot.hpp"
 #include "item_grades.hpp"
+#include "item_properties.hpp"
 #include <algorithm>
 #include <charconv>
 #include <stdexcept>
@@ -10,7 +11,8 @@ namespace d2x {
 namespace {
 bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const TreasureSelection &selection,
     int itemLevel,std::string_view characterClass,int magicFind,int goldFind,std::optional<DropQuality> forcedQuality,
-    bool superiorFloor,uint64_t &random,LootPlan &plan,std::set<size_t> &selectedUniques,bool hellBovine=false) {
+    bool superiorFloor,uint64_t &sourceRandom,LootPlan &plan,std::set<size_t> &selectedUniques,bool hellBovine,
+    const ItemSeedSource &seedSource) {
     std::string_view code = selection.code;
     unsigned goldMultiplier = 256;
     if (code.size() >= 2 && code.front() == '"' && code.back() == '"')
@@ -26,6 +28,12 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
             goldMultiplier = 256;
         code = "gld";
     }
+    const SpecialItemRecord *preferred=nullptr;
+    if(!data.items.find(code)) {
+        for(const auto &record:data.uniqueItems) if(record.name==code) {preferred=&record;forcedQuality=DropQuality::Unique;break;}
+        if(!preferred) for(const auto &record:data.setItems) if(record.name==code) {preferred=&record;forcedQuality=DropQuality::Set;break;}
+        if(preferred) code=preferred->code;
+    }
     const auto *item = data.items.find(code);
     if (!item) {
         plan.deferred = "Unresolved TC token: " + selection.code;
@@ -37,20 +45,39 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
         return true;
     }
     auto rules = loadItemQualityRules(data, ratios, item->code);
+    std::optional<ItemSeeds> creationSeeds;
+    std::optional<uint64_t> creationRandom;
     DropQuality requested;
-    if (forcedQuality) {
+    if(superiorFloor && !forcedQuality) {
+        creationSeeds=seedSource?seedSource():ItemSeeds{rollRandom(sourceRandom),rollRandom(sourceRandom)};
+        const auto quality=rollCreatedItemQuality(rules,itemLevel,initialRandom(creationSeeds->properties));
+        creationRandom=quality.randomState;requested=quality.quality;
+    } else if (forcedQuality) {
         // ItemMode::sub_6FC4C5F0: type restrictions still apply to forced qualities.
         requested = rules.normalOnly ? DropQuality::Normal
             : rules.uniqueOnly ? DropQuality::Unique : *forcedQuality;
     } else {
-        auto quality = rollItemQuality(rules, itemLevel, std::clamp(magicFind, 0, 1000000),
-                                       selection.quality, random);
-        random = quality.randomState;
+        auto quality = rollItemQuality(rules, itemLevel, std::clamp(magicFind, -1000000, 1000000),
+                                       selection.quality, sourceRandom);
+        sourceRandom = quality.randomState;
         requested = quality.quality;
     }
     if(superiorFloor && requested==DropQuality::Inferior) requested=DropQuality::Superior;
+    if(rules.magicOnly && (requested==DropQuality::Inferior || requested==DropQuality::Normal || requested==DropQuality::Superior)) requested=DropQuality::Magic;
+    if(rules.uniqueOnly) requested=DropQuality::Unique;
+    if(rules.normalOnly) requested=DropQuality::Normal;
+    ItemSeeds seeds=creationSeeds?*creationSeeds:seedSource?seedSource():ItemSeeds{rollRandom(sourceRandom),rollRandom(sourceRandom)};
+    auto random=creationRandom.value_or(initialRandom(seeds.properties));
+    auto unitRandom=initialRandom(seeds.unit);
     ItemGeneration generation;
+    bool unforcedCreation=creationRandom.has_value();
+    const auto restartQuality=[&](uint64_t restart) {
+        random=restart;seeds.properties=uint32_t(restart);
+        if(unforcedCreation) random=rollCreatedItemQuality(rules,itemLevel,random).randomState;
+        unforcedCreation=false;
+    };
     while (requested != DropQuality::Normal) {
+        const auto restart=initialRandom(uint32_t(random));
         if (requested == DropQuality::Unique || requested == DropQuality::Set) {
             const bool unique = requested == DropQuality::Unique;
             const char *table = unique ? "uniqueitems" : "setitems";
@@ -60,7 +87,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
             }
             const auto &records = unique ? data.uniqueItems : data.setItems;
             auto choice = rollSpecialItem(records, item->code, itemLevel, random,
-                                          unique ? selectedUniques : std::set<size_t>{}, hellBovine);
+                                          unique ? selectedUniques : std::set<size_t>{}, hellBovine,preferred?std::optional<size_t>{preferred->row}:std::nullopt);
             random = choice.randomState;
             if (choice.row && !choice.alreadyDropped) {
                 auto found = std::find_if(records.begin(), records.end(),
@@ -71,7 +98,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
                     plan.deferred = "Original special item art missing: " + found->name;
                     return true;
                 }
-                auto properties = rollSpecialProperties(*found, random);
+                auto properties = rollItemProperties(data,found->properties, random,itemLevel);
                 random = properties.randomState;
                 generation.quality = unique ? ItemQuality::Unique : ItemQuality::Set;
                 generation.specialRow = int32_t(found->row);
@@ -79,9 +106,11 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
                     selectedUniques.insert(found->row);
                 generation.requiredLevel = found->requiredLevel;
                 generation.propertyRolls = std::move(properties.values);
+                generation.operationRolls=std::move(properties.operations);
                 break;
             }
             generation.durabilityMultiplier=unique?3u:2u;
+            restartQuality(restart);
             requested = unique ? DropQuality::Rare : DropQuality::Magic;
             continue;
         }
@@ -111,6 +140,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
             }
             requested = requested == DropQuality::Rare ? DropQuality::Magic
                                                        : DropQuality::Superior;
+            restartQuality(restart);
             continue;
         }
         if (requested == DropQuality::Superior || requested == DropQuality::Inferior) {
@@ -125,9 +155,12 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
                                            random);
             random = generated.randomState;
             if (generated.deferred.empty()) {
+                const auto multiplier=generation.durabilityMultiplier;
                 generation = std::move(generated.generation);
+                generation.durabilityMultiplier=multiplier;
                 break;
             }
+            restartQuality(restart);
             requested = DropQuality::Normal;
             continue;
         }
@@ -157,15 +190,13 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
     auto below = [&](unsigned bound) {
         if (!bound)
             return 0u;
-        rollRandom(random);
-        return uint32_t(random) % bound;
+        return limitedRandom(unitRandom,bound);
     };
     unsigned quantity = 1;
     if (gold) {
         quantity = unsigned(itemLevel) + below(5 * unsigned(itemLevel));
         quantity = unsigned(uint64_t(quantity) * goldMultiplier / 256);
-        quantity = unsigned(std::min<uint64_t>(item->maxStack,
-            uint64_t(quantity) * uint64_t(100 + std::max(0, goldFind)) / 100));
+        quantity = unsigned(std::clamp<int64_t>(int64_t(quantity)*(100+int64_t(goldFind))/100,1,item->maxStack));
         if (!quantity || quantity > item->maxStack) {
             plan.deferred = "Gold pile exceeds supported original stack limit";
             return true;
@@ -173,7 +204,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
     }
     else if (item->maxStack > 1) {
         auto minimum = source.number(item->base.sourceRow, "minstack");
-        auto maximum = source.number(item->base.sourceRow, quiver ? "maxstack" : "spawnstack");
+        auto maximum = source.number(item->base.sourceRow, quiver || item->family==ItemFamily::Weapon ? "maxstack" : "spawnstack");
         if (!minimum || *minimum < 0 || unsigned(*minimum) > item->maxStack) {
             plan.deferred = "Unverified stack bounds: " + item->code;
             return true;
@@ -188,6 +219,9 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
     }
     generation.rollNaturalSockets = true;
     generation.rollNaturalEthereal = true;
+    generation.seeds=seeds;
+    generation.propertyRandom=random;
+    generation.unitRandom=unitRandom;
     plan.drops.push_back({item->code, quantity, {2, 3}, unsigned(itemLevel),
                           std::move(generation)});
     return plan.drops.size() < 6;
@@ -197,7 +231,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
                       int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop,
-                      bool hellBovine) {
+                      bool hellBovine,const ItemSeedSource &seeds) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -206,17 +240,17 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
     std::set<size_t> selectedUniques = usedUniques;
     auto roll = selectTreasure(data.treasures, root, seed, upgradeLevel,
         [&](const TreasureSelection &selection, uint64_t &random) {
-            return appendSelectedItem(data,ratios,selection,itemLevel,characterClass,magicFind,goldFind,forcedQuality,false,random,plan,selectedUniques,hellBovine);
+            return appendSelectedItem(data,ratios,selection,itemLevel,characterClass,magicFind,goldFind,forcedQuality,false,random,plan,selectedUniques,hellBovine,seeds);
         }, effectivePlayers, ignoreNoDrop);
     plan.randomState = roll.randomState;
     plan.noDrops = roll.noDrops;
     return plan;
 }
 LootPlan planSelectedItem(const ClassicData &data,std::string_view code,int level,uint64_t seed,
-    const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor) {
+    const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor,const ItemSeedSource &seeds) {
     if(level<1 || level>99) throw std::runtime_error("Selected item level is outside native bounds");
     LootPlan plan;auto random=seed;auto uniques=used;
-    appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques);
+    appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds);
     plan.randomState=random;return plan;
 }
 } // namespace d2x

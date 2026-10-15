@@ -5,6 +5,8 @@
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_quality.hpp"
 #include "content/items/item_grades.hpp"
+#include "content/items/item_properties.hpp"
+#include "persistence/d2s_inventory.hpp"
 #include "gameplay/loot/special.hpp"
 #include "core/random.hpp"
 #include "content/npc/hireling_data.hpp"
@@ -19,6 +21,7 @@ HostDiagnostics NativeRealmService::diagnostics() const {
         result.tick = view->tick; result.paused = view->paused;
         result.command = view->command;
         result.systemSteps = host.systemSteps(binding->game);
+        result.fixedSteps = host.stepProgress(binding->game);
     }
     switch (peer.phase) {
     case GamePhase::Connected: result.phase = "connected"; break;
@@ -49,6 +52,10 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
     if (!valid) return {AdminStatus::InvalidArguments, "Wrong argument type for host operation"};
     if (reload && request.operation != AdminOperation::CancelReload)
         return {AdminStatus::Unavailable, "A prepared reload must finish or be cancelled"};
+    if(const auto steps=host.stepProgress(binding->game);steps && steps->pending() &&
+       request.operation!=AdminOperation::CancelStep && request.operation!=AdminOperation::Pause &&
+       request.operation!=AdminOperation::Resume && request.operation!=AdminOperation::AutoPause)
+        return {AdminStatus::Unavailable,"A fixed-step job is still pending; observe its progress or cancel its sequence before another mutation"};
     try {
         switch (request.operation) {
         case AdminOperation::Save:
@@ -60,10 +67,15 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminOperation::Step: {
             const auto frames = std::get<AdminStep>(request.arguments).frames;
             if (!frames || frames > 250) return {AdminStatus::InvalidArguments, "Step requires 1-250 frames"};
-            if (peer.phase != GamePhase::Entered || !host.step(binding->game, frames))
+            if (peer.phase != GamePhase::Entered || !host.step(*binding, frames))
                 return {AdminStatus::Unavailable, "Pause the entered host game before stepping"};
-            publishEvents(); publishPlayers(); publishMonsters(); publishMissiles(); publishGroundItems(); publishCorpses(); publishObjects(); publishNpcs(); publishShop(); publishPortals(); publishItemSkills(); publishMotion();
-            return {AdminStatus::Applied, "Authority advanced by " + std::to_string(frames) + " fixed frames"};
+            return {AdminStatus::Applied, "Queued " + std::to_string(frames) + " fixed frames; completion is reported by server.fixedSteps"};
+        }
+        case AdminOperation::CancelStep: {
+            const auto sequence=std::get<AdminAmount>(request.arguments).value;
+            if(sequence<=0) return {AdminStatus::InvalidArguments,"Supply the fixed-step sequence as amount"};
+            if(!host.cancelStep(binding->game,uint64_t(sequence))) return {AdminStatus::InvalidTarget,"Fixed-step sequence has expired"};
+            return {AdminStatus::Applied,"Fixed-step job cancelled; completed frames are retained and the game stays paused"};
         }
         // Each privileged mutation has an explicit slot. Implement inside the
         // corresponding server domain, then project native packets; never edit
@@ -124,13 +136,40 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminOperation::SpawnItem: {
             const auto &spawn = std::get<AdminSpawn>(request.arguments);
             if (peer.phase != GamePhase::Entered || spawn.level < 1 || spawn.level > 99 || !content->items.find(spawn.code)) return {AdminStatus::InvalidArguments, "Enter a game and supply an MPQ item code and level 1..99"};
+            if(spawn.propertyQuery) {
+                if(spawn.propertyQuery->size()>64 || !spawn.properties.empty() || !spawn.affixes.empty() || spawn.sockets || spawn.durability || spawn.position || (spawn.quality!="magic" && spawn.quality!="rare"))
+                    return {AdminStatus::InvalidArguments,"propertyQuery requires magic/rare quality and no generation overrides"};
+                const auto &base=*content->items.find(spawn.code);
+                const auto rules=loadItemQualityRules(*content,content->tables.at("itemratio"),spawn.code);
+                if(rules.normalOnly || rules.uniqueOnly || base.questTag || (spawn.quality=="rare" && !rules.rareAllowed))
+                    return {AdminStatus::InvalidArguments,"This base cannot have the requested affix quality"};
+                const int magic=base.base.magicLevel.value_or(0),level=itemAffixLevel(spawn.level,base.base.level.value_or(0),magic);
+                AdminResult result{AdminStatus::Applied,"Eligible original affixes; query only, no item created"};
+                result.propertyCandidates.emplace();
+                for(bool prefix:{true,false}) for(const auto &record:prefix?content->magicPrefixes:content->magicSuffixes) {
+                    if(!spawn.propertyQuery->empty() && std::none_of(record.properties.begin(),record.properties.end(),[&](const auto &property){return property.code.find(*spawn.propertyQuery)!=std::string::npos;})) continue;
+                    const auto eligible=rollMagicAffix(std::span(&record,1),base.equipment.types,base.equipment.requiredClass,level,magic,
+                        spawn.quality=="rare",base.base.sockets.value_or(0)>0,{},true,initialRandom(0),int(record.row)+1);
+                    if(!eligible.row) continue;
+                    AdminPropertyCandidate candidate{prefix,int(record.row),record.group,record.requiredLevel,record.name,{}};
+                    for(const auto &property:record.properties) candidate.properties.push_back({property.code,property.parameter,property.minimum.value_or(0),property.maximum.value_or(0),property.directRoll});
+                    result.propertyCandidates->push_back(std::move(candidate));
+                }
+                return result;
+            }
             const auto saved=host.exportCharacter(*binding); if(!saved) return {AdminStatus::Unavailable,"Character settlement is pending"};
             auto character = *saved; character.inventory.items.clear();
             auto random = initialRandom(spawn.seed.value_or(uint32_t(host.nextEntity(binding->game))));
+            const auto commandSeed=uint32_t(random);
+            if(!spawn.properties.empty() && (!spawn.affixes.empty() || (spawn.quality!="magic" && spawn.quality!="rare")))
+                return {AdminStatus::InvalidArguments,"properties requires magic or rare quality and cannot be combined with affixes"};
             if(!spawn.affixes.empty() && spawn.quality!="magic" && spawn.quality!="rare")
                 return {AdminStatus::InvalidArguments,"Explicit affixes require magic or rare quality"};
             ItemGeneration generation;
-            if (spawn.quality == "magic" || spawn.quality=="rare") {
+            if(!spawn.properties.empty()) {
+                auto rolled=generatePropertyItem(*content,*content->items.find(spawn.code),spawn.quality=="magic"?ItemQuality::Magic:ItemQuality::Rare,spawn.level,random,spawn.properties);
+                generation=std::move(rolled.generation);random=rolled.randomState;
+            } else if (spawn.quality == "magic" || spawn.quality=="rare") {
                 const auto quality=spawn.quality=="magic"?ItemQuality::Magic:ItemQuality::Rare;
                 auto rolled = rollAffixItem(*content, *content->items.find(spawn.code), quality, spawn.level, random, {});
                 if (!rolled.deferred.empty() || rolled.generation.quality != quality)
@@ -166,7 +205,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
                         return {AdminStatus::InvalidArguments,"Affix is unavailable for this base, level, quality or group"};
                     random=choice.randomState;
                     const auto record=std::find_if(records.begin(),records.end(),[&](const auto &entry){return entry.row==*choice.row;});
-                    auto rolled=rollDisplayProperties(record->properties,random);random=rolled.randomState;
+                    auto rolled=rollItemProperties(*content,record->properties,random,spawn.level);random=rolled.randomState;
                     if(requested.rolls) {
                         if(requested.rolls->size()!=record->properties.size())
                             return {AdminStatus::InvalidArguments,"rolls must match the original affix property count"};
@@ -175,19 +214,31 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
                             if(property.directRoll && property.minimum && property.maximum) {
                                 if(value<std::min(*property.minimum,*property.maximum) || value>std::max(*property.minimum,*property.maximum))
                                     return {AdminStatus::InvalidArguments,"Affix value is outside its original MPQ range"};
+                                std::fill(rolled.operations[index].begin(),rolled.operations[index].end(),value);
                             } else if(value!=property.minimum.value_or(0))
                                 return {AdminStatus::InvalidArguments,"This property uses fixed original parameters, not a direct value roll"};
                         }
                         rolled.values=*requested.rolls;
                     }
-                    generation.affixes.push_back({requested.prefix,requested.row,std::move(rolled.values)});
+                    generation.affixes.push_back({requested.prefix,requested.row,std::move(rolled.values),std::move(rolled.operations)});
                     generation.requiredLevel=std::max(generation.requiredLevel,record->requiredLevel);
                     groups.push_back(record->group);
                 }
+                generation.propertyRandom=random;
+            }
+            AdminItemDescription description;
+            description.code=spawn.code;description.quality=spawn.quality;description.seed=commandSeed;description.preview=spawn.preview;
+            for(const auto &affix:generation.affixes) {
+                const auto &records=affix.prefix?content->magicPrefixes:content->magicSuffixes;
+                const auto record=std::find_if(records.begin(),records.end(),[&](const auto &entry){return int32_t(entry.row)==affix.row;});
+                if(record==records.end()) return {AdminStatus::InvalidArguments,"Generated affix has no original record"};
+                description.affixes.push_back({affix.prefix,affix.row,record->name,affix.propertyRolls});
             }
             auto item = prepareItem(*content, {spawn.code, 1, {}, unsigned(spawn.level), std::move(generation)}, random, character.difficulty);
             if (spawn.durability) {
-                if (!item.durability || *spawn.durability > item.durability) return {AdminStatus::InvalidArguments, "Durability requires a durable item and cannot exceed its prepared MPQ maximum"};
+                auto identified=item;identified.identified=true;
+                const auto maximum=itemMaximumDurability(*content,identified,resolveItemStats(*content,identified,int(item.level)));
+                if (!maximum || *spawn.durability > maximum) return {AdminStatus::InvalidArguments, "Durability requires a durable item and cannot exceed its prepared MPQ maximum"};
                 item.durability = *spawn.durability;
             }
             if(spawn.sockets) {
@@ -200,13 +251,29 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             }
             item.id = EntityId{1}; item.location = ContainerLocation{character.containers.backpack, {}};
             character.inventory.items.emplace(item.id, item);
+            try {
+                const auto encoded=writeD2sItem(exportD2sItem(character,item,*content),*content);
+                (void)readD2sItem(encoded,*content);
+            } catch(const std::exception &error) {
+                return {AdminStatus::InvalidArguments,std::string("Generated item failed native save validation: ")+error.what()};
+            }
+            description.itemSeed=item.nativeSeed;description.level=int(item.level);description.requiredLevel=item.requiredLevel;
+            description.defense=item.defense;description.durability=item.durability;description.sockets=item.sockets;description.ethereal=(item.nativeFlags&0x400000u)!=0;
+            auto identified=item;identified.identified=true;
+            description.maximumDurability=itemMaximumDurability(*content,identified,resolveItemStats(*content,identified,int(item.level)));
+            for(const auto &stat:item.savedStats) {
+                const auto definition=std::find_if(content->itemStats.begin(),content->itemStats.end(),[&](const auto &entry){return entry.id==stat.id;});
+                if(definition==content->itemStats.end()) return {AdminStatus::InvalidArguments,"Unknown generated native stat"};
+                description.stats.push_back({definition->name,stat.id,stat.parameter,stat.value});
+            }
             server::items::PreparedBatch batch{{item}, prepareEquipmentRules(*content, character), {}};
+            if(spawn.preview) return {AdminStatus::Applied,"Item validated; preview only, no item spawned or unique registered",{},std::move(description)};
             if(item.quality==ItemQuality::Unique && item.specialRow>=0 && !content->tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0)) batch.limitedUniques.insert(size_t(item.specialRow));
             const auto view = host.read(*binding);
             const auto origin = shared.terrain.at(binding->game).at(view->actor.region).origin;
             const auto result = host.spawnItems(*binding, std::move(batch), spawn.position ? std::optional<Vec>{*spawn.position - origin} : std::nullopt);
             if (!result) return {AdminStatus::Unavailable, "Item placement rejected"};
-            publishGroundItems(); return {AdminStatus::Applied, "MPQ item materialized through ground item authority"};
+            publishGroundItems(); return {AdminStatus::Applied, "MPQ item materialized through ground item authority",{},std::move(description)};
         }
         case AdminOperation::SpawnMonster: {
             if (peer.phase != GamePhase::Entered) return {AdminStatus::Unavailable, "Enter the host game before spawning a monster"};
@@ -274,7 +341,8 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminOperation::ResetAttributes: return {AdminStatus::NotImplemented, "Attribute reset administration is not implemented"};
         case AdminOperation::ResetSkills: return {AdminStatus::NotImplemented, "Skill reset administration is not implemented"};
         }
-    } catch (const std::exception &e) { return {AdminStatus::Failed, e.what()}; }
+    } catch (const std::invalid_argument &e) { return {AdminStatus::InvalidArguments,e.what()}; }
+    catch (const std::exception &e) { return {AdminStatus::Failed, e.what()}; }
     return {AdminStatus::InvalidArguments, "Unknown host operation"};
 }
 }

@@ -16,9 +16,11 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 .\scripts\Send-D2XCommand.ps1 -Command online-leave-game
 ```
 
-自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
+自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。该修复已随当前Release包完成快照、250帧任务、取消及正常退出的有限运行观察，身份和耗时见[运行包记录](BUILD_AND_RUN.md#当前性能修复与实测)。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
 
 ## 原服收包记录
+
+`online-status`和`server-status`另返回`performance`：最近120个已完成呈现帧的`milliseconds`按host、network、client、debug、scene、present、other和total记录mean／p95／max，`completedFrames`及`over100ms`为本进程累计计数。present包含垂直同步／限帧等待，host包含嵌入宿主工作，scene包含场景及UI更新／绘制；这是实际墙钟耗时，不是25 Hz权威帧。统计有界保存且不逐帧写磁盘；查询看到上一完整帧为止的样本，暂停或切换场景后须等待窗口刷新再比较。
 
 需要核对原服实际消息时，可在启动客户端时指定`--game-packet-log <新.jsonl>`，记录D2X客户端成功入发送队列的C2S和完成分帧、消费之前的S2C；`--host-packet-log <另一新.jsonl>`记录嵌入／TCP/IP宿主完成分帧、校验分派之前的C2S，以及成功入输出队列的S2C（批量输出拆成原包）。两者独立按JSONL记录sequence、相对启动微秒、endpoint、direction、包号、含包头长度和十六进制字节；客户端用gameGeneration区分入局，宿主用connection区分每次游戏字节连接，包含内存房主和TCP客人。握手和离局同样记录；入发送队列不表示对方已执行，收到C2S也不表示事务提交成功。
 
@@ -45,17 +47,18 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | 命令 | 参数和当前结果 |
 | --- | --- |
 | `server-snapshot` | 同一调度tick的权威人物、资源／成长／库存revision、物品位置、当前区域怪物及AI、技能动作、待释放数量、弹体、伤害队列、换区和已准备区域／出口。limit默认128、范围1–256；Count是过滤前总数，列表达到limit时不能视为完整。不给坐标时path为剩余权威路径；可给全局x／y，只读计算同一nativePlayerPath（最多1024点），同时返回以当前人物格为中心的49×49 collision窗口（mask／objectMask／playerClear），不移动角色。objects.collision显示权威尺寸、掩码及当前模式占位。monsters.rules列AI家族／searchDistance／aip、再生／Threat／速度／碰撞／格挡及动作／技能；componentCounts为MPQ十六槽选择数，componentVariants为当前区域该类型池的组合数（0表示原单体路径）；运行列components为实际十六槽选择，另含盾牌、巢生计数、蛛网和中断 |
-| `server-events` | 返回已提交领域事实及命令入队／执行记录；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为原比例生命（人物100、怪物128；怪物0C编码另减一），character为经验且secondary为等级，travel为源／目标区域 |
+| `server-events` | 返回已提交领域事实及命令入队／执行记录；resources类型的value／secondary为生命／法力raw值，当前耐力读取snapshot.player.staminaRaw；since／commandSince是各自观察序号，默认0，limit同上。事件环1024条、命令环512条，first／last／gap表示覆盖缺口。记录不被网络发送／ACK清除，不代表客户端已收到；原回包另查online-*。事件value按type解释：life／mana为256固定点，attack为技能ID，hit为原比例生命（人物100、怪物128；怪物0C编码另减一），character为经验且secondary为等级，travel为源／目标区域 |
 | `server-pause`／`server-resume`／`server-auto-pause` | 对选中玩家所在整个实例设置调试时钟覆盖：pause保留当前行动并停止推进；原协议命令仍可入队，在step执行。resume连续推进；这两者显式覆盖失焦／ESC自动暂停，不冻结客户端表现。auto-pause解除覆盖，恢复应用自动暂停策略；若恢复到暂停会沿原规则取消行动。所有参与者共用时钟，仅本机宿主管理可调用 |
 | `refill-resources` | 经人物事务恢复当前玩家生命／法力／体力至派生最大值，并发送原人物增量；只允许存活、已入局角色，不承担复活 |
 | `server-status` | 只读phase、tick、paused、hostSlot／hostGeneration／hostPlayer、实际command序号／结果、最近分派和失败、characterIssues；command是最新诊断，不能作为可靠事务回执 |
 | `server-protocol` | 返回已登记C2S／S2C／MCP和4F／38子命令；profile、阶段、分帧、固定长度或长度偏移／最低包长、实现状态、领域和收发／queued／stub／rejected／malformed计数。partial区分部分子操作；frameSupported独立于宿主实现。unknownGameRequests只列到达服务分派层的未知请求。定义见[消息速查](../modules/MESSAGES.md)，不输出原始载荷 |
-| `server-commands` | 当前管理命令、参数类别及implemented标志 |
+| `server-commands` | 当前管理命令、参数类别及implemented标志；item-spawn另返回itemGeneration，说明seed、affixes行号／rolls和两侧数量限制 |
 | `server-systems` | 28个内核目录项的name／phase／scope／lastStep；执行范围以各项scope和内核子系统文档为准。lastStep=null表示未调度或没有固定步入口，不表示实现；详见[内核子系统](../modules/SERVER_SYSTEMS.md) |
 | `save` | 无参数；从服务端导出当前角色，校验租约版本并原子保存／备份。applied表示保存已完成，失败保留实例和租约 |
 | `load` | 无参数；准备暂停候选实例，成功后经原69／MCP／D2GS离局重入；applied仅表示准备成功且原离局已排队。最后是否入局仍查online-status，候选复用且保留当前难度 |
 | `cancel-load` | 原离局尚未接受时释放候选；已经离局后须关闭宿主或完成重新入局 |
-| `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例，以1/25秒固定步推进，返回更新后的tick。普通pause会清路径和待执行移动，step不恢复被清除的路径；server-pause保留行动，也不推进原服 |
+| `step` | frames默认1，范围1–250；只允许已入局且权威paused的实例。当前源码先返回queued及server.fixedSteps任务序号，每次宿主调度只尝试一个1/25秒固定帧，帧间继续发布／消费原包、心跳和绘制。completed只计真正完成的逻辑帧，背压重试不扣配额；同实例只保留一个未完成任务。原脚本默认提交一次后查询到完成，-NoWait只返回受理；TimeoutMs限制单次请求及连续无进展时长，进度增加重置等待计时，超时尝试按原任务序号取消，不重发step。普通pause会清路径和待执行移动，step不恢复这些行动；建议用server-pause准备，原服拒绝 |
+| `server-cancel-step` | amount为server.fixedSteps.sequence；只取消匹配的未完成配额，不回滚已提交的帧／帧内事实，不改变暂停策略。恢复运行、任务发起者离局及实例撤出取消对应任务；任务期间其他管理变更拒绝，只读查询及暂停／恢复／取消仍可用。fixedSteps返回requested／completed／pending／blocked／cancelled；最后结果保留至下一任务或实例撤出 |
 | `grant-experience` | amount为正的有符号整数；宿主progression授予、封顶／升级／余点事务，原包更新同一客户端；暂停时可用，原服拒绝 |
 | `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
 | `set-players` | amount为1–8；设置当前本地实例虚拟人数，与游戏内/players共用类型化宿主入口。仅已入局的本机宿主角色可用，客人及账号Realm拒绝；不写D2S，人数规则见[命令分流](../modules/NETWORK.md#游戏内命令分流) |
@@ -71,7 +74,36 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
-item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix原TXT的零基行号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。源码已接，尚未构建／运行验证。
+item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。已纳入当前Release构建，显式Magic词缀实际生成及原位流／保存重入获有限观察，范围见[运行包记录](BUILD_AND_RUN.md#当前物品显示与生成收尾)。
+
+### 按目标属性生成
+
+同一item-spawn提供三个步骤，不新增私有游戏协议：
+
+1. `propertyQuery`为Properties代码子串，空字符串列出全部；按code／level／quality返回合法词缀行、组、需求等级及每条属性的code／param／min／max／input。默认quality=magic，可指定rare。只读查询不创建物品；不能与properties、affixes、durability、sockets或坐标混用。
+2. `properties`为1–12个目标，和affixes互斥，默认quality=magic，仅支持magic／rare。单值属性使用`{code,value,param?}`；固定复合属性使用`{code,min,max,param?}`，两种形式互斥。param可为非负整数或原Skills精确技能名称；空参数按0匹配。属性代码使用Properties原键，不接受中文显示文案、任意stat ID或浮点值。未知字段明确拒绝。
+3. `preview:true`完整准备并验证后返回item，不落地、不登记暗金、不分配世界物品ID。使用返回的seed重发相同参数并设preview=false，可复现本项目生成入口；当前MPQ与暗金可用性等输入必须保持一致。预览不验证地面落点，实际生成仍可能因位置／容量拒绝。
+
+目标匹配当前MPQ的spawnable词缀、基底类型／职业、物品affix level、品质rare许可、互斥组、前后缀容量和原数值范围。每个目标对应一条词缀中的一个Properties槽，不把多个词缀数值拆分求和；min/max必须匹配原固定参数，不能拿它请求随机范围。Magic每侧最多一条；Rare每侧最多三条，至少三条，总计最多六条（珠宝最多四条），不足时补入不重复目标属性的合法词缀。补充词缀、选中词缀自带的其他属性以及StaffMods／AutoMagic会保留；因此目标值不等于最终面板或同stat总和。搜索有100000节点上限，超限明确拒绝，不假称无解。该模式不是自然掉落概率模拟，也不是任意自定义装备编辑器；暗金／套装沿原生成路径，不用目标属性改写。
+
+返回item包含code、quality、seed、itemSeed、level、requiredLevel、defense、durability、maximumDurability、sockets、ethereal、affixes及stats。affixes列原行号、名称、实际rolls；stats列原ItemStatCost名称／ID／参数层和保存值（不是角色面板换算值），用于检查附带属性。所有item-spawn产物在安装前通过现有D2S导出／编码／解码与装备规则准备；无法编码的位宽、重复属性层和不支持布局会拒绝。输入错误返回invalid-arguments，目标缺候选包含properties下标和代码；组／容量无解单独报告。编码通过不等于已完成真实保存／重入或所有属性消费者认证。
+
+下面的短剑20%攻击速度示例已静态核对本地MPQ导出的swing2词缀；该合法目标已在当前包中完成预览；完整执行仍按各步返回值确认：
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{
+	code='ssd'; level=50; quality='magic'; propertyQuery='swing'
+}
+$spec = @{
+	code='ssd'; level=50; quality='magic'; seed=12345; preview=$true
+	properties=@(@{code='swing2'; value=20})
+}
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments $spec
+$spec.preview=$false
+.\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments $spec
+```
+
+复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数。当前已纳入Release构建；propertyQuery、显式词缀生成及properties预览的有限观察见[运行包记录](BUILD_AND_RUN.md#当前物品显示与生成收尾)，不扩大为全目标属性或自然掉落认证。
 
 后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred／populationMissing提供原人口准备缺口诊断。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
 

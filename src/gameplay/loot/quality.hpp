@@ -24,6 +24,7 @@ struct QualityRoll {
     std::vector<QualityCheck> checks;
 };
 const char *dropQualityName(DropQuality quality);
+QualityRoll rollCreatedItemQuality(const ItemQualityRules &,int itemLevel,uint64_t seed);
 QualityRoll rollItemQuality(const ItemQualityRules &rules, int itemLevel, int magicFind,
                            const std::array<int, 4> &modifiers, uint64_t seed);
 } // namespace d2x

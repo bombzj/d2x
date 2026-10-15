@@ -191,4 +191,13 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
     }
     return result;
 }
+std::vector<Bytes> nativeResources(const ClassicData &data,const server::ResourcesFact &fact) {
+    std::vector<Bytes> result;
+    // Reuse the exact fixed-point/native attribute delta encoder, with only
+    // the three resources that can change in this transaction.
+    emitAttributes(result,data,
+        nativeValues(data,{{"hitpoints",fact.after.life},{"mana",fact.after.mana},{"stamina",fact.after.stamina}}),
+        nativeValues(data,{{"hitpoints",fact.before.life},{"mana",fact.before.mana},{"stamina",fact.before.stamina}}));
+    return result;
+}
 }

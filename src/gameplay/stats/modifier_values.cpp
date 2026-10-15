@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
+#include <vector>
 
 namespace d2x {
 std::shared_ptr<const StatList> prepareModifierStatSource(const StatRuleCatalog &rules,const ModifierStatSource &input,StatOwnerKind owner) {
@@ -43,10 +44,33 @@ StatSnapshot evaluateStatListWithSources(const StatRuleCatalog &rules,const Stat
         return part && part->source.kind==StatSourceKind::State;
     });
     if(sources.empty() && !storedStates) return evaluateStatList(rules,base,context);
+    std::vector<std::shared_ptr<const StatList>> prepared;prepared.reserve(sources.size());
+    for(const auto &source:sources) prepared.push_back(prepareModifierStatSource(rules,source,base.ownerKind));
+    const bool sameTime=!context.time || (base.sampledActTime &&
+        base.sampledActTime->period==context.time->period && base.sampledActTime->baseTime==context.time->baseTime);
+    if(base.extended && base.fullValues && sameTime && !context.character && !context.storedRoot &&
+       !context.storedValues && (!context.unit || context.unit==&base)) {
+        // Native UnitGetStatValue reads the posted FullStats. A query of the
+        // same flat state-list suffix must not invalidate that stored graph.
+        // Compare ordered identities and normalized values, never just state IDs.
+        size_t index=0;bool seenState=false,same=true;
+        for(const auto &part:base.contributions) {
+            if(!part || part->source.kind!=StatSourceKind::State) {if(seenState) same=false;continue;}
+            seenState=true;
+            if(index>=prepared.size()) {same=false;break;}
+            const auto &expected=*prepared[index++];
+            if(part->source.kind!=expected.source.kind || part->source.owner!=expected.source.owner ||
+               part->source.definition!=expected.source.definition || part->source.occurrence!=expected.source.occurrence ||
+               part->ownerKind!=expected.ownerKind || part->base!=expected.base || !part->contributions.empty() ||
+               part->extended || part->hasOwner || part->unitRoot || part->excludeDamage || part->hasAct ||
+               part->handWeapon || part->hasUnit || part->sampledActTime || part->fullValues) same=false;
+        }
+        if(same && index==prepared.size()) return evaluateStatList(rules,base,context);
+    }
     auto root=std::make_shared<StatList>(base);
     root->fullValues.reset();
     std::erase_if(root->contributions,[](const auto &part){return part && part->source.kind==StatSourceKind::State;});
-    for(const auto &source:sources) root->contributions.push_back(prepareModifierStatSource(rules,source,base.ownerKind));
+    for(auto &source:prepared) root->contributions.push_back(std::move(source));
     context.unit=root.get();return evaluateStatList(rules,*root,context);
 }
 StatSnapshot evaluateStatListWithModifiers(const StatRuleCatalog &rules,const StatList &base,const CharacterModifiers &modifiers,

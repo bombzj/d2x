@@ -15,7 +15,9 @@ ObjectTreasureEntry resolveObjectTreasure(const ClassicData &data, const WorldCa
 LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry,
                       const ChestState &chest, int objectClass, uint64_t &objectSeed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind, int difficulty = 0, unsigned effectivePlayers = 1);
+                      int magicFind, int goldFind, int difficulty = 0, unsigned effectivePlayers = 1,
+                      const ItemSeedSource &seeds = {});
 LootPlan planRackLoot(const ClassicData &data, const WorldCatalog &world, RegionId region,
-    int difficulty,bool weapon,uint64_t seed,const std::set<size_t> &used = {},std::string_view characterClass = {});
+    int difficulty,bool weapon,uint64_t seed,const std::set<size_t> &used = {},std::string_view characterClass = {},
+    const ItemSeedSource &seeds = {});
 } // namespace d2x

@@ -107,8 +107,11 @@ void SceneView::drawHireling(Vec mouse) const {
         if (const auto *item = inventory.item(id)) {
             drawInventoryDrop(drop, box);
             const bool dragged = view_.inventory.hidesItem(*item);
-            if (!dragged)
-                drawItemIcon(*item, box);
+            if (!dragged) {
+                const bool over = !view_.inventory.drag && CheckCollisionPointRec(rv(mouse), box);
+                if (over) drawItemBackground(*item, box, true);
+                drawItemIcon(*item, box, over);
+            }
             if (!dragged && CheckCollisionPointRec(rv(mouse), box)) hovered = id;
         } else {
             const auto *art = index == 0 ? &assets_.hirelingHead :

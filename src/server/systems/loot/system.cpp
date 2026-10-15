@@ -4,13 +4,54 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/social/system.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/objects/system.hpp"
 namespace d2x::server::loot {
+std::optional<Preparation> System::beginPreparation(EntityId source) {
+    const auto found=state_.pending.find(source);
+    if(found==state_.pending.end()) return {};
+    auto &pending=found->second;
+    if(!pending.prepared) {
+        pending.uniques=state_.uniques;
+        if(pending.monsterSeed) if(const auto *monster=ports_.monsters.find(source)) {
+            pending.seed=monster->combatRandom;pending.monsterSeed=pending.seed;
+        }
+        if(pending.objectSeed) {
+            const auto object=ports_.objects.read().objects.find(source);
+            if(object!=ports_.objects.read().objects.end()) {pending.seed=object->second.random;pending.objectSeed=pending.seed;}
+        }
+        if(pending.request.object && (pending.request.object->operation==19 || pending.request.object->operation==20)) {
+            const auto &request=pending.request;
+            const auto *area=ports_.areas.find(request.source.region);
+            if(!area) return {};
+            const auto position=request.position+area->definition.origin;
+            const auto room=ports_.areas.roomAtPosition(request.source.region,request.position,int(position.x),int(position.y));
+            if(!room) return {};
+            const auto loan=ports_.areas.roomRandom(*room);
+            if(!loan) return {};
+            pending.roomSeed=*loan.value;pending.seed=loan.value->next;
+        }
+    }
+    return pending;
+}
+std::optional<ItemSeeds> System::reserveSeeds(EntityId source,uint64_t occurrence,size_t index) {
+    const auto found=state_.pending.find(source);
+    if(found==state_.pending.end() || found->second.request.occurrence!=occurrence) return {};
+    auto &seeds=found->second.itemSeeds;
+    if(index<seeds.size()) return seeds[index];
+    if(index!=seeds.size() || index>=64) return {};
+    auto random=ports_.random;
+    const ItemSeeds next{rollRandom(random),rollRandom(random)};
+    seeds.push_back(next);
+    ports_.random=random;
+    return next;
+}
 std::set<size_t> System::prepareUniques(const std::set<size_t> &additions) const {
     auto next=state_.uniques; next.insert(additions.begin(),additions.end()); return next;
 }
 DomainResult<> System::queue(const Request &request,std::optional<transactions::CharacterEdit> payment) {
     if (state_.pending.contains(request.source.source)) return {DomainStatus::Applied, std::monostate{}};
-    if (state_.pending.size() >= 256) return {DomainStatus::Capacity, {}};
+    if (state_.pending.size() >= 256 || state_.nextOrder==UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *player = ports_.players.find(request.beneficiary);
     if (!player) return {DomainStatus::InvalidActor, {}};
     Preparation pending{request, player->persistent, player->definition.code, 0,
@@ -19,7 +60,15 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     pending.goldFind=int(std::clamp(int64_t(pending.goldFind)+request.additionalGoldFind,int64_t(INT32_MIN),int64_t(INT32_MAX)));
     if(request.environment) pending.magicFind=pending.goldFind=0;
     if(request.questClaimant) pending.character.player=*request.questClaimant;
-    auto random = ports_.random; pending.seed = initialRandom(rollRandom(random));
+    if(request.source.sourceSeed) {
+        const auto *monster=ports_.monsters.find(request.source.source);
+        if(!monster) return {DomainStatus::Stale,{}};
+        pending.seed=request.source.random.value_or(monster->combatRandom);
+        pending.monsterSeed=pending.seed;
+    } else if(const auto object=ports_.objects.read().objects.find(request.source.source);object!=ports_.objects.read().objects.end()) {
+        pending.seed=object->second.random;
+        pending.objectSeed=pending.seed;
+    } else pending.seed=request.source.random.value_or(0);
     // PLAYER_GetPlayerCount includes entered dead players; only the same-level
     // party bonus uses living members (Items::ITEMS_DropItemByMonster).
     const unsigned count=std::clamp(std::max(ports_.settings.virtualPlayers,unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}))),1u,8u);
@@ -30,25 +79,54 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
         })));
     pending.effectivePlayers=std::min(std::clamp((count-members)/2+members,1u,8u),request.source.monsterPlayerCount);
     pending.character.inventory.items.clear();
+    pending.order=state_.nextOrder;
     std::map<EntityId,Preparation> candidate;candidate.emplace(request.source.source,std::move(pending));
     if(payment) {
         auto plan=ports_.transactions.prepare(std::move(*payment));if(!plan) return {plan.status,{}};
         const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
     }
-    state_.pending.merge(candidate); ports_.random = random;
+    state_.pending.merge(candidate);
+    ++state_.nextOrder;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std::string deferred) {
+DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std::string deferred,
+    std::optional<uint64_t> sourceRandom,std::optional<uint64_t> objectRandom) {
     const auto found = state_.pending.find(source);
     if (found == state_.pending.end()) return {DomainStatus::Stale, {}};
     std::set<size_t> uniques = state_.uniques;
     uniques.insert(batch.limitedUniques.begin(), batch.limitedUniques.end());
     const auto &request = found->second.request;
     if (!deferred.empty()) {
+        if(found->second.prepared) {
+            state_.deferred=std::move(deferred);
+            return {DomainStatus::Conflict,{}};
+        }
         if(request.object && request.object->reportCompletion) state_.completed.insert_or_assign(source, false);
         state_.deferred = std::move(deferred); state_.pending.erase(found);
         return {DomainStatus::Applied, std::monostate{}};
     }
+    if(!found->second.prepared) {
+        if(found->second.roomSeed && !ports_.areas.validateRoomRandom(*found->second.roomSeed)) return {DomainStatus::Stale,{}};
+        if(found->second.monsterSeed) if(const auto *monster=ports_.monsters.find(source))
+            if(monster->combatRandom!=*found->second.monsterSeed) return {DomainStatus::Conflict,{}};
+        if(!found->second.roomSeed && found->second.objectSeed) {
+            const auto object=ports_.objects.read().objects.find(source);
+            if(object!=ports_.objects.read().objects.end() && object->second.random!=*found->second.objectSeed) return {DomainStatus::Conflict,{}};
+        }
+        found->second.prepared=std::move(batch);
+        state_.uniques.swap(uniques);
+        if(found->second.roomSeed && sourceRandom) {
+            auto loan=*found->second.roomSeed;loan.next=*sourceRandom;ports_.areas.publishRoomRandom(loan);
+        }
+        if(sourceRandom && found->second.monsterSeed) {
+            const auto *monster=ports_.monsters.find(source);
+            if(monster && monster->combatRandom==*found->second.monsterSeed)
+                ports_.monsters.commitCombatRandom(source,*sourceRandom);
+        }
+        if(!found->second.roomSeed && found->second.objectSeed && (objectRandom || sourceRandom))
+            ports_.objects.commitLootRandom(source,*found->second.objectSeed,objectRandom?*objectRandom:*sourceRandom);
+    }
+    batch=*found->second.prepared;
     if(request.object) {
         const auto *player=ports_.players.find(request.beneficiary);
         if(!player || !player->entered || player->area!=request.source.region || player->persistent.player.hp<=0) {
@@ -105,7 +183,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         // The prepared state already contains final identities and placement.
         ports_.items.commit(std::move(*next.value));
     }
-    state_.uniques.swap(uniques); state_.deferred = std::move(deferred); state_.pending.erase(found);
+    state_.deferred = std::move(deferred); state_.pending.erase(found);
     // GameInstance snapshots current unique availability at each preparation.
     return {DomainStatus::Applied, std::monostate{}};
 }

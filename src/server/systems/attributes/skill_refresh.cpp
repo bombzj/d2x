@@ -44,7 +44,15 @@ std::map<int,int> PlayerSkillRefresh::ranks() const {
     return result;
 }
 int PlayerSkillRefresh::highest(int id) const {
-    const auto current=ranks();if(const auto found=current.find(id);found!=current.end()) return found->second;
+    // A native single-skill lookup must not reconstruct every assigned rank.
+    if(std::find(order_.begin(),order_.end(),NativeSkillSlot{id,{}})!=order_.end()) {
+        const auto values=projectNativeStatValues(input_.stats,*rankOwner_,values_);
+        const auto &skill=input_.formulas.skills.at(id);
+        const auto found=base_.find(id);const int level=found==base_.end()?0:found->second;
+        return resolveNativePlayerSkillRank({id,level,input_.playerClass,skill.page,skill.classId==input_.playerClass},
+            values,input_.stats,skill.elementType,input_.formulas.maximumSkillRank,false,
+            nativeShrineSkillBonus(input_.formulas,input_.states),true).value_or(0);
+    }
     int level=0;for(const auto &charge:charges_) if(charge.skill==id) level=std::max(level,charge.rank);
     return std::min(level,input_.formulas.maximumSkillRank);
 }

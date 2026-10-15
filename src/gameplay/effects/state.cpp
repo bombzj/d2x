@@ -176,6 +176,7 @@ void CombatEffectSet::afterRemoval(const ActiveCombatEffect &effect,const std::f
 }
 template<class Predicate>
 std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, EffectRemoval reason,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
+    if(std::none_of(storage_->effects.begin(),storage_->effects.end(),predicate)) return {};
     detach();
     std::vector<RemovedCombatEffect> removed;
     if(observe) {

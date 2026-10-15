@@ -8,6 +8,7 @@
 #include <stdexcept>
 #include <charconv>
 #include <limits>
+#include "core/random.hpp"
 
 namespace d2x {
 void loadPropertyData(ClassicData &data) {
@@ -29,8 +30,8 @@ void loadPropertyData(ClassicData &data) {
             for (int slot = 1; slot <= 7; ++slot) {
                 auto suffix = std::to_string(slot);
                 auto function = table.number(row, "func" + suffix);
-                if (!function)
-                    continue;
+                if (!function || !*function)
+                    break;
                 if (*function < 0 || *function > 255)
                     throw std::runtime_error("Invalid original property function: " + definition.code);
                 definition.operations.push_back({*function, std::string(table.value(row, "stat" + suffix)),
@@ -159,8 +160,66 @@ bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     if (found == data.properties.end() || found->operations.empty()) return false;
     return propertyUsesDirectRoll(found->operations.front().function);
 }
+SpecialPropertyRoll rollItemProperties(const ClassicData &data,std::span<const PropertyRange> properties,uint64_t seed,int itemLevel) {
+    SpecialPropertyRoll result;
+    result.randomState=seed;
+    for(const auto &property:properties) {
+        const auto definition=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.code==property.code;});
+        if(definition==data.properties.end()) throw std::runtime_error("Unknown generated property: "+property.code);
+        std::vector<int32_t> values;
+        int first=0;
+        const auto range=[&] {
+            const int low=std::min(property.minimum.value_or(0),property.maximum.value_or(0));
+            const int high=std::max(property.minimum.value_or(0),property.maximum.value_or(0));
+            const auto width=int64_t(high)-low+1;
+            if(width>INT32_MAX) throw std::runtime_error("Generated property range exceeds native bounds");
+            return low+(low==high?0:int(limitedRandom(result.randomState,uint32_t(width))));
+        };
+        for(const auto &operation:definition->operations) {
+            int value=0,returned=0;
+            switch(operation.function) {
+            case 1: case 2: case 12: case 13: case 21: case 22: case 36:
+                value=range();returned=value;break;
+            case 3: case 4: case 5: case 6: case 7: case 8: case 9: case 10: case 24:
+                value=first?first:range();returned=value;break;
+            case 14: value=first>0?first:range();returned=value;break;
+            case 15: value=property.minimum.value_or(0);returned=value;break;
+            case 16: value=property.maximum.value_or(0);returned=value;break;
+            case 17: {
+                const auto [end,error]=std::from_chars(property.parameter.data(),property.parameter.data()+property.parameter.size(),value);
+                if(error!=std::errc{} || end!=property.parameter.data()+property.parameter.size()) value=0;
+                if(!value) value=range();
+                returned=value;break;
+            }
+            case 11: value=property.minimum.value_or(0);returned=value>0?value:5;break;
+            case 19: {
+                const auto stats=resolvePropertyStats(data,property,0,itemLevel,itemLevel);
+                const auto charges=std::find_if(stats.begin(),stats.end(),[&](const auto &entry){return entry.name==operation.stat;});
+                if(charges==stats.end()) throw std::runtime_error("Missing generated charged skill");
+                const int maximum=(charges->rawValue>>8)&255;
+                value=int(limitedRandom(result.randomState,unsigned(maximum-maximum/8)))+maximum/8+1;
+                returned=maximum;break;
+            }
+            case 20: case 23: value=returned=1;break;
+            default: throw std::runtime_error("Unsupported generated property function: "+std::to_string(operation.function));
+            }
+            if(operation.function==12) {
+                const auto [end,error]=std::from_chars(property.parameter.data(),property.parameter.data()+property.parameter.size(),returned);
+                if(error!=std::errc{} || end!=property.parameter.data()+property.parameter.size()) returned=0;
+            } else if(operation.function==36) {
+                const auto [end,error]=std::from_chars(operation.value.data(),operation.value.data()+operation.value.size(),returned);
+                if(error!=std::errc{} || end!=operation.value.data()+operation.value.size()) returned=0;
+            }
+            if(values.empty()) first=returned;
+            values.push_back(value);
+        }
+        result.values.push_back(values.empty()?property.minimum.value_or(0):values.front());
+        result.operations.push_back(std::move(values));
+    }
+    return result;
+}
 std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
-    const PropertyRange &property, int roll, int level, int itemLevel) {
+    const PropertyRange &property, int roll, int level, int itemLevel,std::span<const int32_t> operations) {
     std::vector<ResolvedItemStat> result;
     const auto found = std::find_if(data.properties.begin(), data.properties.end(),
         [&](const auto &p) { return p.code == property.code; });
@@ -177,10 +236,12 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
                 if (skills->second.value(row, "skill") == property.parameter)
                     parameter = skills->second.number(row, "Id").value_or(0);
     PropertyProgramInput input{roll,parameter,property.minimum.value_or(0),property.maximum.value_or(0),level,itemLevel,{}};
+    input.operationRolls=operations;
+    if(!operations.empty() && operations.size()!=found->operations.size()) throw std::runtime_error("Item property operation roll count mismatch");
     std::vector<PropertyInstruction> program;
     program.reserve(found->operations.size());
     for (const auto &op : found->operations) {
-        program.push_back({op.function,op.stat,number(op.value)});
+        program.push_back({op.function,op.stat,number(op.value),number(op.set)!=0});
         if ((op.function == 11 || op.function == 19) && !input.skill) {
             const auto *skill = data.skills.find(parameter);
             if (!skill) throw std::runtime_error("Unknown item property skill: " + property.parameter);
@@ -190,7 +251,12 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     for (const auto &stat : evaluatePropertyProgram(program,input)) {
         const auto definition = std::find_if(data.itemStats.begin(), data.itemStats.end(),
             [&](const auto &entry) { return entry.name == stat.name; });
-        if (definition != data.itemStats.end()) result.push_back(evaluateItemStat(*definition,stat.value,stat.layer,level));
+        if (definition != data.itemStats.end()) {
+            if(stat.set) std::erase_if(result,[&](const auto &entry){return entry.name==stat.name && entry.layer==stat.layer;});
+            auto resolved=evaluateItemStat(*definition,stat.value,stat.layer,level);
+            resolved.replace=stat.set;
+            result.push_back(std::move(resolved));
+        }
     }
     return result;
 }
@@ -207,26 +273,52 @@ std::vector<ResolvedItemStat> resolveOwnItemStats(const ClassicData &data,
         }
         return result;
     }
-    auto append = [&](const auto &properties, const auto &rolls) {
+    auto append = [&](const auto &properties, const auto &rolls,const auto &operations) {
         if (properties.size() != rolls.size()) throw std::runtime_error("Item property roll count mismatch");
+        if(!operations.empty() && operations.size()!=properties.size()) throw std::runtime_error("Item property program count mismatch");
         for (size_t i = 0; i < properties.size(); ++i) {
-            auto stats = resolvePropertyStats(data, properties[i], rolls[i], level, int(item.level));
+            auto stats = resolvePropertyStats(data, properties[i], rolls[i], level, int(item.level),operations.empty()?std::span<const int32_t>{}:operations[i]);
+            const auto *base=data.items.find(item.definition);
+            const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &entry){return entry.code==properties[i].code;});
+            if(base && base->equipment.isType("weap") && program!=data.properties.end() &&
+                std::any_of(program->operations.begin(),program->operations.end(),[](const auto &operation){return operation.function==7;})) {
+                const int maximum=std::max(base->base.maxDamage.value_or(0),base->base.twoHandMax.value_or(0));
+                const auto operation=std::find_if(program->operations.begin(),program->operations.end(),[](const auto &entry){return entry.function==7;});
+                const auto index=size_t(operation-program->operations.begin());
+                const int percent=operations.empty()?rolls[i]:operations[i][index];
+                if(int64_t(maximum)*percent/100<=0) {
+                    std::erase_if(stats,[](const auto &entry){return entry.name=="item_mindamage_percent" || entry.name=="item_maxdamage_percent";});
+                    const auto maximumStat=std::find_if(data.itemStats.begin(),data.itemStats.end(),[](const auto &entry){return entry.name=="maxdamage";});
+                    if(maximumStat==data.itemStats.end()) throw std::runtime_error("Missing maximum damage stat");
+                    stats.push_back(evaluateItemStat(*maximumStat,1,0,level));
+                }
+            }
+            for(const auto &stat:stats) if(stat.replace)
+                std::erase_if(result,[&](const auto &entry){return entry.name==stat.name && entry.layer==stat.layer;});
             result.insert(result.end(), stats.begin(), stats.end());
         }
     };
     if (item.specialRow >= 0) {
         const auto &records = item.quality == ItemQuality::Unique ? data.uniqueItems : data.setItems;
         for (const auto &r : records)
-            if (int32_t(r.row) == item.specialRow) { append(r.properties, item.propertyRolls); break; }
+            if (int32_t(r.row) == item.specialRow) { append(r.properties, item.propertyRolls,item.operationRolls); break; }
     }
-    for (const auto &affix : item.affixes) {
+    std::vector<const ItemAffixInstance*> ordered;
+    if(item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted) {
+        for(int slot=0;slot<3;++slot) for(bool prefix:{true,false}) {
+            int current=0;
+            for(const auto &affix:item.affixes) if(affix.prefix==prefix && current++==slot) {ordered.push_back(&affix);break;}
+        }
+    } else for(const auto &affix:item.affixes) ordered.push_back(&affix);
+    for (const auto *selected : ordered) {
+        const auto &affix=*selected;
         const auto &records = affix.prefix ? data.magicPrefixes : data.magicSuffixes;
         for (const auto &r : records)
-            if (int32_t(r.row) == affix.row) { append(r.properties, affix.propertyRolls); break; }
+            if (int32_t(r.row) == affix.row) { append(r.properties, affix.propertyRolls,affix.operationRolls); break; }
     }
     if (item.quality == ItemQuality::Superior)
         for (const auto &r : data.superiorGrades)
-            if (int32_t(r.row) == item.gradeRow) { append(r.properties, item.propertyRolls); break; }
+            if (int32_t(r.row) == item.gradeRow) { append(r.properties, item.propertyRolls,item.operationRolls); break; }
     return result;
 }
 std::vector<ResolvedItemStat> resolveItemStats(const ClassicData &data, const ItemInstance &item, int level) {

@@ -22,6 +22,12 @@ struct InventoryDefinitionView {
     bool shield = false, quiver = false;
     bool fits(EquipmentSlot slot) const { return slots.at(size_t(slot)); }
 };
+struct InventorySocketView {
+    std::string artKey;
+    std::array<int, 2> colorTransform{};
+    uint32_t nativeFlags = 0;
+};
+enum class InventoryCellTone { Unknown, Unusable, Usable };
 struct InventoryItemView {
     EntityId id;
     uint64_t revision = 0;
@@ -41,6 +47,12 @@ struct InventoryItemView {
     int specialRow = -1; // Only supplied when the native special-item index is known.
     // Original integer percentage, capped at 100; absent for unknown/ineligible items.
     std::optional<unsigned> durabilityPercentage{};
+    std::array<int, 2> colorTransform{};
+    unsigned artFrame = 0;
+    std::array<int, 2> iconCells{}; // Also supplied for read-only shop shelves.
+    std::vector<InventorySocketView> socketItems;
+    bool socketContentsKnown = false;
+    InventoryCellTone cellTone = InventoryCellTone::Unknown;
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {
@@ -70,6 +82,7 @@ struct InventoryView {
     unsigned bankGoldLimit = 0, groundGoldLimit = 0, walletLimit = 0;
     bool dead = false;
     bool goldKnown = false;
+    std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
     InventoryLayoutView stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;
     EntityId ownTrade, peerTrade;

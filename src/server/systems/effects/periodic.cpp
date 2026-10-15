@@ -20,10 +20,10 @@ StepStatus System::advanceSkills(const ActorContext &actor, Recovery &recovery) 
     for(const auto &effect:recovery.states.entries()) {
         if(!effect.activeAt(actor.tick) || effect.spec.source.kind!=CombatEffectSource::Skill || !p.rules.skills ||
             !p.rules.skills->definitions.contains(effect.spec.source.definition)) continue;
-        auto skill=skills::evaluate(p,effect.spec.source.definition,effect.spec.source.level);
-        if(skill.effect==SkillBehavior::Blaze) {
+        if(p.rules.skills->definitions.at(effect.spec.source.definition).spec.effect==SkillBehavior::Blaze) {
             if(!area.definition.town && p.moving && recovery.previous &&
                 (int(recovery.previous->x)!=int(p.position.x) || int(recovery.previous->y)!=int(p.position.y))) {
+                auto skill=skills::evaluate(p,effect.spec.source.definition,effect.spec.source.level);
                 const auto result=ports_.missiles.spawn({actor,skill,{},p.position,true});
                 if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
             }

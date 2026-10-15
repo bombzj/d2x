@@ -116,6 +116,11 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         for (size_t destination = 0; destination < 256; ++destination)
             blend[source * 256 + destination] = colors[bytes[0x13500 + destination * 256 + source]];
     halfTable_ = upload(blend.data(), 256, 256);
+    // Socket holes use CelDraw mode 0, trans[2], before the child icon.
+    for (size_t source = 0; source < 256; ++source)
+        for (size_t destination = 0; destination < 256; ++destination)
+            blend[source * 256 + destination] = colors[bytes[0x23500 + destination * 256 + source]];
+    socketTable_ = upload(blend.data(), 256, 256);
     // D2WinPalette builds the HIGHLIGHT shift by brightening current PL2 RGB
     // to 170% and finding the nearest original palette index. D2DDraw RVA
     // 6DA7 selects that shift (PaletteTable + 118) for CelDraw mode 7.
@@ -155,7 +160,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     paletteLocation_ = GetShaderLocation(shader_, "palette");
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
-    if (!palette_.id || !screenTable_.id || !halfTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+    if (!palette_.id || !screenTable_.id || !halfTable_.id || !socketTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 ||
         GetShaderLocation(lightingShader_, "lightTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
@@ -167,6 +172,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         UnloadTexture(paletteIndices_);
         UnloadTexture(screenTable_);
         UnloadTexture(halfTable_);
+        UnloadTexture(socketTable_);
         UnloadTexture(highlightTable_);
         UnloadTexture(rectangleTable_);
         UnloadTexture(lightTable_);
@@ -181,6 +187,7 @@ PaletteBlendView::~PaletteBlendView() {
     UnloadRenderTexture(destination_);
     UnloadTexture(screenTable_);
     UnloadTexture(halfTable_);
+    UnloadTexture(socketTable_);
     UnloadTexture(highlightTable_);
     UnloadTexture(rectangleTable_);
     UnloadTexture(lightTable_);
@@ -259,6 +266,9 @@ void PaletteBlendView::draw(const Sprite *image, Vec position) const {
 void PaletteBlendView::drawHalf(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, halfTable_);
 }
+void PaletteBlendView::drawSocket(const Sprite *image, Rectangle bounds) const {
+    drawSprite(image, bounds, socketTable_);
+}
 void PaletteBlendView::drawHighlight(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, highlightTable_);
 }
@@ -267,7 +277,7 @@ void PaletteBlendView::drawSprite(const Sprite *image, Rectangle bounds, Texture
     const int x = int(bounds.x), y = int(bounds.y);
     const int left = std::max(0, x), top = std::max(0, y);
     const int right = std::min(W, int(std::ceil(bounds.x + bounds.width)));
-    const int bottom = std::min(H - HUD, int(std::ceil(bounds.y + bounds.height)));
+    const int bottom = std::min(H, int(std::ceil(bounds.y + bounds.height)));
     if (left >= right || top >= bottom) return;
     rlDrawRenderBatchActive();
     const auto target = rlGetActiveFramebuffer();

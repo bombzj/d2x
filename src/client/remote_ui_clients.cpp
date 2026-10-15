@@ -12,6 +12,7 @@
 #include "content/skills/description_values.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/item_display.hpp"
+#include "content/items/item_appearance.hpp"
 #include "content/items/item_pricing.hpp"
 #include "content/items/item_properties.hpp"
 #include "gameplay/character/attributes.hpp"
@@ -985,9 +986,9 @@ struct RemoteUiClients::Impl {
             }
             for (bool prefix:{true,false}) for (auto index:prefix?di.prefixes:di.suffixes) {
                 if (!index) continue;
+                item.affixes.push_back({prefix,int32_t(index-1),{}});
                 const auto &records=prefix?data.magicPrefixes:data.magicSuffixes;
                 for (const auto &record:records) if(record.row==unsigned(index-1)) {
-                    item.affixes.push_back({prefix,int32_t(index-1),{}});
                     item.requiredLevel=std::max(item.requiredLevel,record.requiredLevel);
                 }
             }
@@ -1183,7 +1184,23 @@ struct RemoteUiClients::Impl {
             auto item = complete.value_or(itemInstance(native, di, location));
             const auto stats = resolveItemStats(data, item, characterView.level);
             const auto maximum = itemMaximumDurability(data, item, stats);
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,session.read().world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode});
+            const auto &online = session.read();
+            std::vector<int32_t> equippedSets;
+            bool equipmentKnown = false;
+            if (item.quality == ItemQuality::Set && online.load.playerUnitId) {
+                const auto actor = online.world.units.find({0, *online.load.playerUnitId});
+                equipmentKnown = actor != online.world.units.end() && actor->second.equipmentObserved;
+                for (const auto &[id, equipped] : online.world.items) {
+                    if (equipped.ownerType != 0 || equipped.owner != online.load.playerUnitId || equipped.mode != 1 || equipped.body > 10 || (equipped.flags & 0x4100u)) continue;
+                    const auto decoded = items.read().items.find(id);
+                    if (decoded == items.read().items.end() || !decoded->second.decoded || decoded->second.revision != equipped.revision) { equipmentKnown = false; continue; }
+                    const auto piece = itemInstance(equipped, decoded->second, SocketLocation{{}, 0});
+                    if (piece.identified && piece.quality == ItemQuality::Set && piece.specialRow >= 0 &&
+                        std::find(equippedSets.begin(), equippedSets.end(), piece.specialRow) == equippedSets.end())
+                        equippedSets.push_back(piece.specialRow);
+                }
+            }
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,online.world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode,equippedSets,equipmentKnown});
             if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
@@ -1195,6 +1212,26 @@ struct RemoteUiClients::Impl {
             }
             InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
             projection.specialRow = item.specialRow;
+            projection.iconCells = {di.width, di.height};
+            projection.colorTransform = inventoryColorTransform(data, data.items, item);
+            if (definition->equipment.isType("gold"))
+                projection.artFrame = item.quantity < 100 ? 0 : item.quantity < 500 ? 1 : item.quantity < 5000 ? 2 : 3;
+            projection.socketContentsKnown = complete.has_value();
+            if (complete)
+                for (const auto &child : item.socketedItems) {
+                    const auto detail = items.read().items.find(guid(child.id));
+                    if (detail == items.read().items.end()) { projection.socketContentsKnown = false; break; }
+                    auto art = detail->second.artKey;
+                    if (child.identified && child.specialRow >= 0) {
+                        const auto &records = child.quality == ItemQuality::Unique ? data.uniqueItems : data.setItems;
+                        for (const auto &record : records)
+                            if (int32_t(record.row) == child.specialRow && !record.icon.empty()) art = record.icon;
+                    }
+                    projection.socketItems.push_back({std::move(art), inventoryColorTransform(data, data.items, child), child.nativeFlags});
+                }
+            if (complete && di.revision == native.revision)
+                projection.cellTone = display.requirementsMet && item.identified && !(native.flags & 0x4104u) &&
+                    (!definition->bookCapacity || item.charges) ? InventoryCellTone::Usable : InventoryCellTone::Unusable;
             const auto &source = data.tables.at(definition->base.sourceTable);
             int64_t indestructible = 0;
             for (const auto &stat : stats)
@@ -1360,6 +1397,9 @@ struct RemoteUiClients::Impl {
     void projectInventory() {
         const auto &online=session.read(); const auto &w=online.world; const auto &decoded=items.read();
         InventoryView v; v.revision=revision; v.gameGeneration=online.gameGeneration; v.areaGeneration=w.areaGeneration;
+        const auto &inventoryTable = data.tables.at("inventory");
+        v.itemCellSize = {inventoryTable.number(0, "gridBoxWidth").value_or(0),
+                          inventoryTable.number(0, "gridBoxHeight").value_or(0)};
         v.containers={containerId(1),containerId(2),containerId(3),containerId(4),containerId(5),containerId(6),containerId(7),containerId(8)};
         const auto &owned=v.containers;
         for (const auto &[id,kind,columns,rows]:std::vector<std::tuple<EntityId,ContainerKind,int,int>>{

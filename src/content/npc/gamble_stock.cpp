@@ -68,12 +68,13 @@ std::vector<VendorOffer> planGambleStock(const ClassicData &data, unsigned playe
             if (selected.row && !selected.alreadyDropped) {
                 const auto found = std::find_if(records.begin(), records.end(), [&](const auto &r) { return r.row == *selected.row; });
                 if (!found->artAvailable) throw std::runtime_error("Missing original gambling item art: " + found->name);
-                auto properties = rollSpecialProperties(*found, seed);
+                auto properties = rollItemProperties(data,found->properties, seed,level);
                 seed = properties.randomState;
                 generated.quality = quality;
                 generated.specialRow = int32_t(found->row);
                 generated.requiredLevel = found->requiredLevel;
                 generated.propertyRolls = std::move(properties.values);
+                generated.operationRolls=std::move(properties.operations);
                 if (unique && !found->noLimit) uniques.insert(found->row);
             } else {quality = unique ? ItemQuality::Rare : ItemQuality::Magic;failedDurability=unique?3u:2u;}
         }

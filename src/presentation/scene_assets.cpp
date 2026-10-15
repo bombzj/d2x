@@ -136,6 +136,12 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     if (skyPalette.size() < redFontColor + 3) throw std::runtime_error("Original player name color is missing");
     playerNameBackground = {skyPalette[redFontColor], skyPalette[redFontColor + 1], skyPalette[redFontColor + 2], 255};
     loadFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
+    itemTextFonts[0] = font;
+    itemTextFonts[1] = characterRedFont;
+    itemTextFonts[2] = skillGreenFont;
+    itemTextFonts[3] = skillLevelBlueFont;
+    for (int color : {4, 5, 8, 9})
+        loadFont(uiGraphics_, archives, itemTextFonts[size_t(color)], "font16", color);
     loadFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
     loadFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
     loadFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
@@ -413,11 +419,43 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     }
  }
 void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
-    for (const auto &[id, item] : inventory.items) {
-        if (!itemIcons.contains(item.artKey)) {
-            auto image=graphics_.single(item.artKey,true);
-            if (!image.frames.empty()) itemIcons.emplace(item.artKey,std::move(image));
+    auto &graphics = graphicsForAct(palette);
+    auto loadIcon = [&](const std::string &art, std::array<int, 2> transform) {
+        if (art.empty()) return;
+        const auto key = std::tuple{palette, art, transform[0], transform[1]};
+        if (itemIcons.contains(key)) return;
+        const auto *source = graphics.animation(art);
+        if (!source) return;
+        const uint8_t *shift = nullptr;
+        if (transform[0] > 0 && transform[0] < 9 && transform[1] >= 0 && transform[1] < 21) {
+            // D2CMP 1.13c RVA 150D0: original transform group registration.
+            static constexpr const char *names[]{"", "grey", "grey2", "gold", "brown",
+                "greybrown", "invgrey", "invgrey2", "invgreybrown"};
+            auto found = itemTransforms_.find(transform[0]);
+            if (found == itemTransforms_.end()) {
+                auto bytes = archives_.read("data/global/items/palette/" + std::string(names[transform[0]]) + ".dat");
+                if (bytes.size() < 21 * 256) throw std::runtime_error("Original item palette transform is truncated");
+                found = itemTransforms_.emplace(transform[0], std::move(bytes)).first;
+            }
+            shift = found->second.data() + transform[1] * 256;
         }
+        GpuAnimation image;
+        image.directions = source->directions;
+        image.count = source->framesPerDirection;
+        for (const auto &frame : source->frames) {
+            auto pixels = frame;
+            if (shift) for (auto &pixel : pixels.pixels) if (pixel) pixel = shift[pixel];
+            image.frames.push_back(graphics.upload(pixels, true));
+        }
+        itemIcons.emplace(key, std::move(image));
+    };
+    if (itemSockets.at(size_t(palette)).frames.empty())
+        itemSockets.at(size_t(palette)) = graphics.single("data/global/ui/panel/gemsocket.dc6", true);
+    for (const auto &[id, item] : inventory.items) {
+        loadIcon(item.artKey, item.colorTransform);
+        // Unshifted variant also serves undisclosed shop offers.
+        loadIcon(item.artKey, {});
+        for (const auto &socket : item.socketItems) loadIcon(socket.artKey, socket.colorTransform);
         if (!std::holds_alternative<GroundLocation>(item.location) || item.groundArt.empty()) continue;
         const auto key=item.artKey+":"+item.groundArt;
         if (itemGround.contains(key)) continue;
@@ -426,6 +464,13 @@ void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) 
         for(auto &frame:image.frames) frame.y-=frame.texture.height;
         itemGround.emplace(key,std::move(image));
     }
+}
+
+const Sprite *SceneAssets::inventoryIcon(const std::string &art, std::array<int, 2> transform,
+                                         int palette, unsigned frame) const {
+    const auto found = itemIcons.find({palette, art, transform[0], transform[1]});
+    if (found == itemIcons.end() || frame >= unsigned(found->second.count)) return nullptr;
+    return found->second.frame(0, int(frame));
 }
 
 Graphics &SceneAssets::graphicsForAct(int act) const {

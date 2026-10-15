@@ -4,6 +4,7 @@
 #include "gameplay/items/operations.hpp"
 #include "gameplay/quest/id.hpp"
 #include "gameplay/character/persistent_character.hpp"
+#include "gameplay/units/resources.hpp"
 #include <deque>
 #include <array>
 #include <optional>
@@ -20,6 +21,9 @@ struct SoundFact { EntityId actor; uint8_t type{}; RegionId area; uint8_t sound{
 struct OverlayFact { EntityId actor; uint8_t type{}; RegionId area; int overlay{}; };
 struct LifeFact { EntityId actor; Fixed8 life; };
 struct ManaFact { EntityId actor; Fixed8 mana; };
+// Resource-only commits do not clone equipment/passive graphs into output.
+// Before/after values keep native delta encoding independent of later writes.
+struct ResourcesFact { EntityId actor; ResourceValues before,after; };
 struct RepositionFact { EntityId actor; RegionId area; Vec position; bool notifyOwner=true; };
 struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; bool enabled{}; std::vector<StatValue> stats{}; };
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; };
@@ -68,7 +72,7 @@ struct TradeItemsFact { PersistentCharacter projection; std::vector<EntityId> re
 struct PlayerMessageFact { uint8_t type{}; std::string name; std::string other{}; uint32_t value{}; uint8_t parameter{}; std::string characterClass{}; };
 struct ChatRelationFact { EntityId from,to; uint16_t flags{}, reverse{}, fromLevel{}, toLevel{}; };
 struct PartyNoticeFact {PlayerId recipient;EntityId player;uint8_t action{};};
-using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact, PartyNoticeFact, EnvironmentFact>;
+using DomainFact = std::variant<ManaFact, RepositionFact, LifeFact, AttackFact, HitFact, DeathFact, ItemFact, InventoryFact, CharacterFact, QuestFact, AttributeFact, TravelFact, ObjectFact, ChatFact, CommandFact, NpcMessagesFact, MerchantFact, UiFact, WaypointFact, StateFact, MissileFact, SkillPulseFact, SoundFact, OverlayFact, ItemTargetingFact, GroundDropFact, NpcServiceFact, GroundRemoveFact, ItemSkillFact, GroundRestoredFact, HirelingListFact, TradeFact, TradeItemsFact, PlayerMessageFact, ChatRelationFact, PartyNoticeFact, EnvironmentFact, ResourcesFact>;
 // Compact bounded observation, independent of reliable delivery and acknowledgement.
 struct DiagnosticEvent {
     uint64_t sequence{}, batch{}, tick{}, transaction{};

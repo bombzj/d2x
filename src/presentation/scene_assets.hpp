@@ -8,6 +8,7 @@
 #include "presentation/world/missile_visual.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <set>
+#include <array>
 #include <memory>
 #include <tuple>
 
@@ -48,6 +49,7 @@ class SceneAssets {
     void loadUi(Archives &, const ClassicData &);
     void loadNpcAlert(const DataTable &);
     void loadIceShatter();
+    std::map<int, Bytes> itemTransforms_;
     void loadSkillIcons(Archives &archives, const ClassicData &content);
 
   public:
@@ -58,6 +60,7 @@ class SceneAssets {
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont;
+    std::array<ClassicFont, 13> itemTextFonts; // Original PL2 text-color indices.
     std::map<std::string, std::string, std::less<>> characterLabels;
     std::array<std::string, 2> globeTextFormats;
     Color playerNameBackground{};
@@ -121,7 +124,9 @@ class SceneAssets {
     std::map<int, MonsterLight> monsterLights;
     std::map<std::string, GpuAnimation> petPortraits;
     std::string hirelingPotionHint, hirelingInventoryHint;
-    std::map<std::string, GpuAnimation> itemGround, itemIcons;
+    std::map<std::string, GpuAnimation> itemGround;
+    std::map<std::tuple<int, std::string, int, int>, GpuAnimation> itemIcons;
+    std::array<GpuAnimation, 5> itemSockets;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, targetingCursors, inventoryPanel, attributeButtons,
         attributePoints, attributeSocket, weaponTabs, vendorPanel, vendorTabs,
@@ -154,6 +159,8 @@ class SceneAssets {
     const ProjectileVisual *ensureProjectile(int id);
     const SkillOverlayVisual *ensureOverlay(int id);
     void loadInventoryArt(const InventoryView &inventory, int palette);
+    const Sprite *inventoryIcon(const std::string &art, std::array<int, 2> transform,
+                                int palette, unsigned frame = 0) const;
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &, int palette) const;
     const ActorAnimation *objectAnimation(int identity, int mode, int palette) const;
     std::array<int, 2> objectShrineOverlays(int identity, int code) const;

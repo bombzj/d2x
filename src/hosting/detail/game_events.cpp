@@ -50,6 +50,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         }
         else if (const auto *life = std::get_if<server::LifeFact>(&fact)) delta = nativeLife(*content, *life);
         else if (const auto *mana = std::get_if<server::ManaFact>(&fact)) delta = nativeMana(*content, *mana);
+        else if (const auto *resources = std::get_if<server::ResourcesFact>(&fact)) delta = nativeResources(*content, *resources);
         else if (const auto *position = std::get_if<server::RepositionFact>(&fact)) {
             if(!position->notifyOwner && position->actor==host.read(*binding)->actor.id) continue;
             if (position->actor != host.read(*binding)->actor.id &&

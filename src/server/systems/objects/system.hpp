@@ -40,6 +40,10 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
+    void commitLootRandom(EntityId id,uint64_t expected,uint64_t next) {
+      const auto found=state_.objects.find(id);
+      if(found!=state_.objects.end() && found->second.random==expected) found->second.random=next;
+    }
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);

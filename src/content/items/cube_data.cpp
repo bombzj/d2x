@@ -47,7 +47,9 @@ std::vector<ItemInstance::SavedStat> encode(const ClassicData &data, const std::
         const auto found = std::find_if(data.itemStats.begin(), data.itemStats.end(),
             [&](const auto &record) { return record.name == stat.name; });
         if (found == data.itemStats.end() || !found->id) throw std::runtime_error("Unknown cube stat: " + stat.name);
-        sums[{*found->id, stat.layer}] += stat.rawValue;
+        auto &value=sums[{*found->id, stat.layer}];
+        if(stat.replace) value=stat.rawValue;
+        else value+=stat.rawValue;
     }
     std::vector<ItemInstance::SavedStat> result;
     for (const auto &[key, value] : sums) result.push_back({key.first, key.second, value});
@@ -193,17 +195,20 @@ void freezeCubeItem(const ClassicData &data, ItemInstance &item, uint64_t *gener
         for (const auto &record : data.setItems) {
             if (int(record.row) != item.specialRow) continue;
             for (const auto &bonus : record.setBonuses) {
-                if (!bonus.perItem || (record.setAddFunction != 1 && record.setAddFunction != 2)) continue;
+                if (!bonus.perItem) continue;
                 if (bonus.pieces < 2 || bonus.pieces > 6) throw std::runtime_error("Invalid original set bonus tier");
-                int value=bonus.property.minimum.value_or(0);
-                if(bonus.property.directRoll && bonus.property.minimum!=bonus.property.maximum) {
-                    if(!generationRandom || !bonus.property.minimum || !bonus.property.maximum) throw std::runtime_error("Original variable set bonus has no preserved roll");
-                    const int low=std::min(*bonus.property.minimum,*bonus.property.maximum),high=std::max(*bonus.property.minimum,*bonus.property.maximum);
-                    value=low+int(limitedRandom(*generationRandom,unsigned(high-low+1)));
+                const auto initial=generationRandom?*generationRandom:initialRandom(0);
+                auto rolled=rollItemProperties(data,std::span(&bonus.property,1),initial,int(item.level));
+                if(generationRandom) *generationRandom=rolled.randomState;
+                else if(rolled.randomState!=initial) throw std::runtime_error("Original variable set bonus has no generation state");
+                auto &list = record.setAddFunction?item.savedSetStats[size_t(bonus.pieces - 2)]:item.savedStats;
+                const auto resolved=resolvePropertyStats(data,bonus.property,rolled.values.front(),int(item.level),int(item.level),rolled.operations.front());
+                for(const auto &stat:resolved) if(stat.replace) {
+                    const auto definition=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &entry){return entry.name==stat.name;});
+                    if(definition!=data.itemStats.end() && definition->id)
+                        std::erase_if(list,[&](const auto &entry){return entry.id==*definition->id && entry.parameter==stat.layer;});
                 }
-                auto &list = item.savedSetStats[size_t(bonus.pieces - 2)];
-                for (const auto &stat : encode(data, resolvePropertyStats(data, bonus.property,
-                    value, int(item.level), int(item.level)))) {
+                for (const auto &stat : encode(data,resolved)) {
                     auto existing = std::find_if(list.begin(), list.end(), [&](const auto &entry) {
                         return entry.id == stat.id && entry.parameter == stat.parameter;
                     });
@@ -213,7 +218,8 @@ void freezeCubeItem(const ClassicData &data, ItemInstance &item, uint64_t *gener
             }
         }
     item.nativeProperties = true;
-    item.propertyRolls.clear(); for (auto &affix : item.affixes) affix.propertyRolls.clear();
+    item.propertyRolls.clear();item.operationRolls.clear();
+    for (auto &affix : item.affixes) {affix.propertyRolls.clear();affix.operationRolls.clear();}
     item.nativeFlags |= 0x800000u;
 }
 void updateCubeRequiredLevel(const ClassicData &data, ItemInstance &item) {
@@ -240,11 +246,9 @@ void applyCubeProperties(const ClassicData &data, const CubeOutput &output, Item
     for (const auto &entry : output.properties) {
         if (entry.chance > 0 && entry.chance < 100 && int(limitedRandom(random, 100)) > entry.chance) continue;
         const auto &p = entry.property;
-        int value = p.minimum.value_or(0);
-        if (p.directRoll && p.minimum && p.maximum && p.minimum != p.maximum) {
-            const int low = std::min(*p.minimum, *p.maximum), high = std::max(*p.minimum, *p.maximum);
-            value = low + int(limitedRandom(random, unsigned(high - low + 1)));
-        }
+        const auto rolled=rollItemProperties(data,std::span(&p,1),random,int(item.level));
+        random=rolled.randomState;
+        const int value=rolled.values.front();
         if (p.code == "sock") {
             const auto &base = *data.items.find(item.definition);
             const int limit = std::max(0, std::min({base.base.sockets.value_or(0),
@@ -254,8 +258,12 @@ void applyCubeProperties(const ClassicData &data, const CubeOutput &output, Item
         } else {
             if (p.code == "ac%" && value > 0 && data.items.find(item.definition)->family == ItemFamily::Armor)
                 item.defense = data.items.find(item.definition)->base.maxDefense.value_or(item.defense) + 1;
-            for (const auto &stat : encode(data, resolvePropertyStats(data, p, value, int(item.level), int(item.level))))
-                sums[{stat.id, stat.parameter}] += stat.value;
+            const auto resolved=resolvePropertyStats(data,p,value,int(item.level),int(item.level),rolled.operations.front());
+            for(const auto &stat:resolved) if(stat.replace) {
+                const auto definition=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &entry){return entry.name==stat.name;});
+                if(definition!=data.itemStats.end() && definition->id) sums.erase({*definition->id,stat.layer});
+            }
+            for (const auto &stat : encode(data,resolved)) sums[{stat.id, stat.parameter}] += stat.value;
         }
     }
     item.savedStats.clear();

@@ -47,7 +47,7 @@ ObjectTreasureEntry resolveObjectTreasure(const ClassicData &data, const WorldCa
     return result;
 }
 LootPlan planRackLoot(const ClassicData &data, const WorldCatalog &world, RegionId region,
-    int difficulty,bool weapon,uint64_t seed,const std::set<size_t> &used,std::string_view characterClass) {
+    int difficulty,bool weapon,uint64_t seed,const std::set<size_t> &used,std::string_view characterClass,const ItemSeedSource &seeds) {
     LootPlan plan;
     plan.randomState = seed;
     auto area = world.levels().find(int(region));
@@ -57,27 +57,26 @@ LootPlan planRackLoot(const ClassicData &data, const WorldCatalog &world, Region
     }
     int level = std::max(1, area->second.population.level[size_t(difficulty)] - 1);
     auto random = [&](uint32_t bound) {
-        rollRandom(plan.randomState);
-        return bound ? uint32_t(plan.randomState) % bound : 0;
+        return limitedRandom(plan.randomState,bound);
     };
+    const auto &source=data.tables.at(weapon?"weapons":"armor");
+    const auto nativeArea=world.levels().find(level);
+    if(nativeArea==world.levels().end()) {plan.deferred="Rack rarity requires original level-to-act lookup";return plan;}
     for (int attempt = 0; attempt < (weapon ? 6 : 1); ++attempt) {
         std::vector<const ItemDefinition *> candidates;
-        for (const auto &[code, item] : data.items.entries()) {
-            if (item.family != (weapon ? ItemFamily::Weapon : ItemFamily::Armor) ||
-                !item.artAvailable || !item.base.spawnable.value_or(0) ||
-                item.base.level.value_or(100) > level) continue;
-            const auto &source = data.tables.at(item.base.sourceTable);
-            if (source.number(item.base.sourceRow, "quest").value_or(0)) continue;
-            const int rarity = item.base.rarity.value_or(1);
-            if (random(uint32_t(std::max(1, rarity))) != 0) continue;
-            candidates.push_back(&item);
+        for(size_t row=0;row<source.rows().size();++row) {
+            const auto *item=data.items.find(source.value(row,"code"));
+            if(!item || !item->base.spawnable.value_or(0) || item->base.level.value_or(100)>level || source.number(row,"quest").value_or(0)) continue;
+            const int rarity=item->base.rarity.value_or(0)-nativeArea->second.act;
+            if(random(uint32_t(rarity))) continue;
+            if(candidates.size()<1023) candidates.push_back(item);
         }
         if (candidates.empty()) continue;
         const auto *chosen = candidates[size_t(random(uint32_t(candidates.size())))];
         const auto &source = data.tables.at(chosen->base.sourceTable);
-        if (weapon && !(source.number(chosen->base.sourceRow, "bitfield1").value_or(0) & 2))
+        if (weapon && attempt<5 && !(source.number(chosen->base.sourceRow, "bitfield1").value_or(0) & 2))
             continue;
-        plan=planSelectedItem(data,chosen->code,level,plan.randomState,used,characterClass,{},true);
+        plan=planSelectedItem(data,chosen->code,level,plan.randomState,used,characterClass,{},true,seeds);
         break;
     }
     return plan;

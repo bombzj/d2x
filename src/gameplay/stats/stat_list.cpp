@@ -67,6 +67,14 @@ class Evaluation {
         const auto definition=rules_.definitions.find(key.id);
         if(definition==rules_.definitions.end()) return 0;
         const auto &rule=definition->second;
+        // A non-extended native list is literal BaseStats: it has no owner-
+        // dependent operations or children to memoize. Caching each absent
+        // stat here allocated two map nodes per leaf/key during FullStats
+        // evaluation, including the many zero values of equipment/passives.
+        if(!list.extended) {
+            if(!list.contributions.empty()) throw std::runtime_error("A native leaf stat list cannot own contributions");
+            const auto base=list.base.find(key);return base==list.base.end()?0:base->second;
+        }
         if(list.unitRoot) owner=&list;
         auto &cached=cache_[&list][owner];
         if(const auto value=cached.find(key);value!=cached.end()) return value->second;
@@ -75,10 +83,6 @@ class Evaluation {
         active_.push_back({&list,key});
         const auto base=list.base.find(key);
         auto value=base==list.base.end()?0:base->second;
-        if(!list.extended) {
-            if(!list.contributions.empty()) throw std::runtime_error("A native leaf stat list cannot own contributions");
-            active_.pop_back();cached.emplace(key,value);return value;
-        }
         for(const auto &child:list.contributions) {
             if(!child) throw std::runtime_error("Missing native stat contribution");
             if(rule.damageRelated && child->excludeDamage) continue;
@@ -154,6 +158,7 @@ class Evaluation {
         active_.pop_back();cached.emplace(key,value);return value;
     }
     int32_t stored(const StatList &list,StatKey key,const StatList *owner) {
+        if(!list.extended) return compute(list,key,owner);
         if(list.extended && list.fullValues) {
             const auto found=list.fullValues->find(key);return found==list.fullValues->end()?0:found->second;
         }

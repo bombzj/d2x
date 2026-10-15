@@ -2,6 +2,7 @@
 #include "character_content.hpp"
 #include "item_content.hpp"
 #include "content/items/item_magic_loot.hpp"
+#include "content/items/item_properties.hpp"
 #include "gameplay/loot/special.hpp"
 #include "content/items/item_quality.hpp"
 #include "content/items/object_loot.hpp"
@@ -24,9 +25,9 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                 const auto unique=rollSpecialItem(data.uniqueItems,code,99,random);random=unique.randomState;
                 if(!unique.row) throw std::runtime_error("Missing original unique quest item: "+code);
                 const auto row=std::find_if(data.uniqueItems.begin(),data.uniqueItems.end(),[&](const auto &r){return r.row==*unique.row;});
-                const auto properties=rollSpecialProperties(*row,random);random=properties.randomState;
+                const auto properties=rollItemProperties(data,row->properties,random,99);random=properties.randomState;
                 ItemGeneration generation;generation.quality=ItemQuality::Unique;generation.specialRow=int32_t(row->row);
-                generation.requiredLevel=row->requiredLevel;generation.propertyRolls=properties.values;return generation;
+                generation.requiredLevel=row->requiredLevel;generation.propertyRolls=properties.values;generation.operationRolls=properties.operations;return generation;
             };
             using server::quests::RewardKind;
             switch(source.kind) {
@@ -116,9 +117,9 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                     if(source.kind!=RewardKind::Cube) random=unique.randomState;
                     if(unique.row) {
                         const auto row=std::find_if(data.uniqueItems.begin(),data.uniqueItems.end(),[&](const auto &r){return r.row==*unique.row;});
-                        const auto properties=rollSpecialProperties(*row,random);random=properties.randomState;
+                        const auto properties=rollItemProperties(data,row->properties,random,int(level));random=properties.randomState;
                         generation.quality=ItemQuality::Unique;generation.specialRow=int32_t(row->row);
-                        generation.requiredLevel=row->requiredLevel;generation.propertyRolls=properties.values;
+                        generation.requiredLevel=row->requiredLevel;generation.propertyRolls=properties.values;generation.operationRolls=properties.operations;
                     }
                     add(code,level,std::move(generation));
                 }

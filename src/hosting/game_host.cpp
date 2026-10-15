@@ -1,4 +1,5 @@
 #include "game_host.hpp"
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -39,7 +40,7 @@ PlayerBinding GameHost::create(server::GameDefinition definition) {
         slots_.emplace_back();
     }
     auto &slot = slots_[index];
-    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = false; slot.debugPaused.reset();
+    slot.game = std::move(game); slot.accumulator = 0; slot.paused = slot.resumed = false; slot.debugPaused.reset();slot.fixedSteps.reset();
     slot.generation = nextGeneration_++;
     try { publish(index); }
     catch (...) { slot.game.reset(); slot.snapshots.clear(); throw; }
@@ -56,11 +57,13 @@ PlayerBinding GameHost::admit(GameHandle handle, server::GameDefinition definiti
 bool GameHost::remove(PlayerBinding binding) {
     auto *slot = find(binding.game);
     if (!slot || !slot->game->remove(binding.player)) return false;
+    if(slot->fixedSteps && slot->fixedSteps->pending() && slot->stepOwner==binding.player) slot->fixedSteps->cancelled=true;
     publish(size_t(binding.game.slot)); return true;
 }
 bool GameHost::enter(PlayerBinding binding, bool active) {
     auto *slot = find(binding.game);
     if (!slot || !slot->game->enter(binding.player, active)) return false;
+    if(!active && slot->fixedSteps && slot->fixedSteps->pending() && slot->stepOwner==binding.player) slot->fixedSteps->cancelled=true;
     publish(size_t(binding.game.slot)); return true;
 }
 std::vector<PlayerId> GameHost::participants(GameHandle handle) const {
@@ -107,7 +110,7 @@ uint64_t GameHost::nextEntity(GameHandle handle) const {
 bool GameHost::destroy(GameHandle handle) {
     auto *slot = find(handle);
     if (!slot) return false;
-    slot->game.reset(); slot->snapshots.clear(); slot->accumulator = 0;
+    slot->game.reset(); slot->snapshots.clear(); slot->accumulator = 0;slot->fixedSteps.reset();
     return true;
 }
 bool GameHost::pause(GameHandle handle, bool paused) {
@@ -125,14 +128,32 @@ void GameHost::advance(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0) return;
     for (size_t index = 0; index < slots_.size(); ++index) {
         auto &slot = slots_[index];
-        if (!slot.game || slot.debugPaused.value_or(slot.paused)) continue;
+        if (!slot.game) continue;
+        if(slot.fixedSteps && slot.fixedSteps->pending()) {
+            if(!slot.debugPaused.value_or(slot.paused)) slot.fixedSteps->cancelled=true;
+            else {
+                const auto before=slot.game->tick();
+                slot.game->step();
+                slot.fixedSteps->blocked=slot.game->tick()==before;
+                if(!slot.fixedSteps->blocked) ++slot.fixedSteps->completed;
+                slot.accumulator=0;publish(index);
+                continue;
+            }
+        }
+        if(slot.debugPaused.value_or(slot.paused)) continue;
         if (!slot.resumed) slot.accumulator += seconds;
         slot.resumed = false;
         // Bound work per scheduler call, retaining debt instead of variable steps.
         bool changed = false;
+        const auto started=std::chrono::steady_clock::now();
         for (int steps = 0; slot.accumulator >= .04 && steps < 8; ++steps) {
-            slot.game->step(); slot.accumulator -= .04;
+            const auto before=slot.game->tick();slot.game->step();
             changed = true;
+            // Backpressure retries the same native frame after publication.
+            // Neither retries nor wall-clock budgets discard logical frames.
+            if(slot.game->tick()==before) break;
+            slot.accumulator -= .04;
+            if(std::chrono::steady_clock::now()-started>=std::chrono::milliseconds(4)) break;
         }
         if (changed) publish(index);
     }
@@ -143,12 +164,24 @@ CommandStatus GameHost::submit(PlayerBinding binding, server::GameCommand comman
     if (slot->paused && !slot->debugPaused) return CommandStatus::Paused;
     return slot->game->enqueue(binding.player, std::move(command));
 }
-bool GameHost::step(GameHandle handle, uint32_t frames) {
-    auto *slot = find(handle);
-    if (!slot || !slot->debugPaused.value_or(slot->paused) || !frames || frames > 250) return false;
-    for (uint32_t i = 0; i < frames; ++i) slot->game->step();
+bool GameHost::step(PlayerBinding binding, uint32_t frames) {
+    auto *slot = find(binding.game);
+    if (!slot || !slot->debugPaused.value_or(slot->paused) || !frames || frames > 250 ||
+        (slot->fixedSteps && slot->fixedSteps->pending()) || nextStepSequence_>uint64_t(INT64_MAX)) return false;
+    const auto participant=slot->snapshots.find(binding.player);
+    if(participant==slot->snapshots.end() || !participant->second->entered) return false;
+    slot->fixedSteps=FixedStepProgress{nextStepSequence_++,frames};
+    slot->stepOwner=binding.player;
     slot->accumulator = 0;
-    publish(size_t(handle.slot));
+    return true;
+}
+std::optional<FixedStepProgress> GameHost::stepProgress(GameHandle handle) const {
+    const auto *slot=find(handle);return slot?slot->fixedSteps:std::nullopt;
+}
+bool GameHost::cancelStep(GameHandle handle,uint64_t sequence) {
+    auto *slot=find(handle);
+    if(!slot || !slot->fixedSteps || slot->fixedSteps->sequence!=sequence) return false;
+    if(slot->fixedSteps->pending()) slot->fixedSteps->cancelled=true;
     return true;
 }
 void GameHost::publish(size_t index) {
@@ -228,6 +261,7 @@ bool GameHost::debugPause(GameHandle handle, std::optional<bool> paused) {
     const bool wasPaused = slot->debugPaused.value_or(slot->paused);
     slot->debugPaused = paused; slot->accumulator = 0;
     slot->resumed = !slot->debugPaused.value_or(slot->paused);
+    if(slot->resumed && slot->fixedSteps && slot->fixedSteps->pending()) slot->fixedSteps->cancelled=true;
     if (wasPaused != slot->debugPaused.value_or(slot->paused) && !paused && slot->paused) slot->game->suspend();
     publish(size_t(handle.slot));
     return true;
@@ -272,9 +306,15 @@ server::DomainResult<> GameHost::spawnItems(PlayerBinding binding, server::items
     auto result = slot->game->spawnItems(binding.player, std::move(batch), position); if (result) publish(size_t(binding.game.slot)); return result;
 }
 std::map<EntityId, server::loot::Preparation> GameHost::pendingLoot(GameHandle game) const { const auto *slot = find(game); return slot ? slot->game->pendingLoot() : std::map<EntityId, server::loot::Preparation>{}; }
-server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, server::items::PreparedBatch batch, std::string deferred) {
+std::optional<ItemSeeds> GameHost::reserveLootSeeds(GameHandle game,EntityId source,uint64_t occurrence,size_t index) {
+    auto *slot=find(game);return slot?slot->game->reserveLootSeeds(source,occurrence,index):std::nullopt;
+}
+std::optional<server::loot::Preparation> GameHost::beginLootPreparation(GameHandle game,EntityId source) {
+    auto *slot=find(game);return slot?slot->game->beginLootPreparation(source):std::nullopt;
+}
+server::DomainResult<> GameHost::installLoot(GameHandle game, EntityId source, server::items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random,std::optional<uint64_t> objectRandom) {
     auto *slot = find(game); if (!slot) return {server::DomainStatus::InvalidActor, {}};
-    auto result = slot->game->installLoot(source, std::move(batch), std::move(deferred)); if (result) publish(size_t(game.slot)); return result;
+    auto result = slot->game->installLoot(source, std::move(batch), std::move(deferred),random,objectRandom); if (result) publish(size_t(game.slot)); return result;
 }
 }
 

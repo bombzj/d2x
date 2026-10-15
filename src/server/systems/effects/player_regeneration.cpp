@@ -7,6 +7,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
 #include "gameplay/stats/modifier_values.hpp"
+#include <algorithm>
 #include <vector>
 #include <stdexcept>
 
@@ -30,6 +31,37 @@ DomainResult<> System::regeneratePlayer(EntityId id,uint64_t tick) {
         ports_.frameEvents.publish(std::move(timer));return {DomainStatus::Applied,std::monostate{}};
     }
     const auto current=state_.players.find(id);if(current==state_.players.end()) throw std::logic_error("Missing admitted player effects");
+    const auto &posted=player->transient.effects?*player->transient.effects:current->second.states;
+    const auto &statRules=*player->rules.character->stats;
+    const auto &record=player->persistent.player;
+    const auto &values=player->totals.character;
+    const auto hpRateNow=nativeStatValue(player->totals.nativeStats,statRules,"hpregen");
+    const auto manaRateNow=nativeAdd(nativeStatValue(player->totals.nativeStats,statRules,"manarecovery"),
+        posted.hasState(player->rules.character->noManaRegenState,tick)?0:values.manaRegenPerFrame);
+    const bool withdrawLife=hpRateNow && nativeAdd(record.hp.raw(),hpRateNow)>values.maxLifeFixed.raw() &&
+        (posted.findState(player->rules.skills->healthPotion.id) || posted.hasState(player->rules.skills->healthPotion.id,tick));
+    const bool withdrawMana=record.mana>=values.maxManaFixed && manaRateNow>0 &&
+        (posted.findState(player->rules.skills->manaPotion.id) || posted.hasState(player->rules.skills->manaPotion.id,tick));
+    if(!withdrawLife && !withdrawMana) {
+        // D2MOO PlrModes::EVENTS_{Hp,Stamina,Mana}Regen consume posted FullStats.
+        // Resource writes do not
+        // repost equipment/passives or rebuild the immutable stat-source graph.
+        auto life=record.hp,stamina=record.stamina;
+        if(hpRateNow) life=Fixed8::fromRaw(std::max(256,std::min(nativeAdd(life.raw(),hpRateNow),values.maxLifeFixed.raw())));
+        advanceStamina(stamina,{values.maxStaminaFixed,values.staminaDrainPerFrame,values.staminaRecoveryBonus},
+            {player->moving,player->runningNow,!player->moving && !ports_.skills.busy(id,tick),ports_.areas.at(player->area).definition.town});
+        // Native ManaRegen clamps high first, then low, using the sampled
+        // mana/max pair. Do not require ordered bounds via std::clamp.
+        const auto manaRate=std::max(std::min(manaRateNow,nativeSubtract(values.maxManaFixed.raw(),record.mana.raw())),
+            nativeSubtract(0,record.mana.raw()));
+        const auto mana=Fixed8::fromRaw(nativeAdd(record.mana.raw(),manaRate));
+        if(!ports_.frameEvents.validate(timer)) return {DomainStatus::Conflict,{}};
+        const auto &area=ports_.areas.at(player->area);
+        const auto result=ports_.transactions.resources({player->player,id,player->area,area.generation,0,tick},
+            player->characterRevision,life,mana,stamina);
+        if(result) ports_.frameEvents.publish(std::move(timer));
+        return result;
+    }
     auto next=current->second;if(player->transient.effects) next.states=*player->transient.effects;
     auto &states=next.states;const auto &rules=*player->rules.character->stats;
     PlayerResourceTrace resources(*player,tick,{},ports_.areas.statTime(player->area));
@@ -44,8 +76,11 @@ DomainResult<> System::regeneratePlayer(EntityId id,uint64_t tick) {
     if(hpRate) {
         const auto before=resources.record();const auto maximum=resources.maximum().life.raw();
         const auto raw=nativeAdd(before.hp.raw(),hpRate);
-        resources.seedResources(Fixed8::fromRaw(std::max(256,std::min(raw,maximum))),before.mana,before.stamina);
+        // HpRegen caches the result before withdrawing HEALTHPOT, but writes
+        // HITPOINTS after its callbacks. Preserve their other resource writes.
         if(raw>maximum) remove(player->rules.skills->healthPotion.id);
+        const auto record=resources.record();
+        resources.seedResources(Fixed8::fromRaw(std::max(256,std::min(raw,maximum))),record.mana,record.stamina);
     }
     {
         auto record=resources.record();const auto &values=resources.totals().character;
@@ -59,8 +94,13 @@ DomainResult<> System::regeneratePlayer(EntityId id,uint64_t tick) {
         const bool suppress=states.hasState(player->rules.character->noManaRegenState,tick);
         auto rate=nativeAdd(recovery,suppress?0:resources.totals().character.manaRegenPerFrame);
         if(before.mana.raw()>=maximum && rate>0) remove(player->rules.skills->manaPotion.id);
-        rate=std::clamp(rate,nativeSubtract(0,before.mana.raw()),nativeSubtract(maximum,before.mana.raw()));
-        const auto record=resources.record();resources.seedResources(record.hp,Fixed8::fromRaw(nativeAdd(before.mana.raw(),rate)),record.stamina);
+        rate=std::max(std::min(rate,nativeSubtract(maximum,before.mana.raw())),nativeSubtract(0,before.mana.raw()));
+        // ManaRegen adds its cached/clamped delta to the current MANA after
+        // MANAPOT callbacks; it does not overwrite their result with old mana.
+        if(rate) {
+            const auto record=resources.record();
+            resources.seedResources(record.hp,Fixed8::fromRaw(nativeAdd(record.mana.raw(),rate)),record.stamina);
+        }
     }
     resources.sample(states);const auto &area=ports_.areas.at(player->area);
     transactions::CharacterEdit edit{{player->player,id,player->area,area.generation,0,tick},player->inventoryRevision,player->characterRevision,resources.record()};

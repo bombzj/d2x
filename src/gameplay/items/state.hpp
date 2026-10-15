@@ -54,6 +54,7 @@ struct ItemInstance {
     int32_t rarePrefixRow = -1, rareSuffixRow = -1;
     int32_t grantedSkill = -1; // Original CharStats.StartSkill on the first starter item.
     std::vector<int32_t> propertyRolls;
+    std::vector<std::vector<int32_t>> operationRolls;
     std::vector<ItemAffixInstance> affixes;
     bool nativeProperties = false;
     std::vector<SavedStat> savedStats;

@@ -17,10 +17,23 @@ const char *dropQualityName(DropQuality quality) {
     }
     return "Unknown";
 }
+QualityRoll rollCreatedItemQuality(const ItemQualityRules &rules,int itemLevel,uint64_t seed) {
+    QualityRoll result;result.randomState=seed;
+    const int difference=std::max(1,itemLevel-rules.baseLevel);
+    for(const auto quality:{DropQuality::Unique,DropQuality::Rare,DropQuality::Set,DropQuality::Magic,DropQuality::Superior,DropQuality::Normal}) {
+        const auto &ratio=rules.ratios[size_t(quality)];
+        if(ratio.divisor<=0) throw std::runtime_error("Invalid item creation quality divisor");
+        const int chance=ratio.base-difference/ratio.divisor;
+        const auto roll=limitedRandom(result.randomState,uint32_t(chance));
+        result.checks.push_back({quality,chance,roll});
+        if(!roll) {result.quality=quality;return result;}
+    }
+    return result;
+}
 QualityRoll rollItemQuality(const ItemQualityRules &rules, int itemLevel, int magicFind,
                            const std::array<int, 4> &modifiers, uint64_t seed) {
     if (itemLevel < 1 || itemLevel > 99 || rules.baseLevel < 0 || rules.baseLevel > 99 ||
-        magicFind < 0 || magicFind > 1000000)
+        magicFind < -1000000 || magicFind > 1000000)
         throw std::runtime_error("Unsupported item quality level or magic find");
     for (int modifier : modifiers)
         if (modifier < 0 || modifier > 1024)
@@ -33,6 +46,7 @@ QualityRoll rollItemQuality(const ItemQualityRules &rules, int itemLevel, int ma
     }
     const int difference = itemLevel - rules.baseLevel;
     for (size_t index = 0; index < rules.ratios.size(); ++index) {
+        if(index<4 && magicFind<=-100) continue;
         if (index == 2 && !rules.rareAllowed)
             continue;
         const auto quality = DropQuality(index);

@@ -223,10 +223,13 @@ void SceneView::drawNpcShop(Vec mouse) const {
     for (const auto &entry : items) {
         if (entry.page != view_.shopPage) continue;
         const auto *item = inventoryView_.item(EntityId{uint64_t(entry.offer->slot) + 1});
-        if (item) drawItemIcon(*item, entry.bounds);
-        else drawItemArt(entry.offer->artKey, entry.offer->definition, entry.bounds, WHITE);
+        const bool over = !view_.inventory.drag && CheckCollisionPointRec(rv(mouse), entry.bounds);
+        if (item) {
+            drawItemBackground(*item, entry.bounds, over);
+            drawItemIcon(*item, entry.bounds, over);
+        }
+        else drawItemArt(entry.offer->artKey, entry.bounds);
         if (CheckCollisionPointRec(rv(mouse), entry.bounds)) {
-            DrawRectangleLinesEx(entry.bounds, 1, gold);
             hovered = entry.offer;
         }
     }

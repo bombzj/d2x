@@ -16,7 +16,7 @@ bool magical(ItemQuality quality) {
 LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry,
                       const ChestState &chest, int objectClass, uint64_t &objectSeed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind, int difficulty, unsigned effectivePlayers) {
+                      int magicFind, int goldFind, int difficulty, unsigned effectivePlayers,const ItemSeedSource &seeds) {
     LootPlan plan;
     plan.randomState = chest.lootSeed;
     plan.deferred = entry.deferred;
@@ -31,7 +31,7 @@ LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry
     // independent calls. Never cap their combined output at six or duplicate one roll.
     auto drop = [&](std::optional<DropQuality> quality = std::nullopt) {
         auto batch = planItemLoot(data, ratios->second, entry.treasureClass, entry.itemLevel,
-                                 0, plan.randomState, uniques, characterClass, magicFind, goldFind, quality, effectivePlayers);
+                                 0, plan.randomState, uniques, characterClass, magicFind, goldFind, quality, effectivePlayers,false,false,seeds);
         plan.randomState = batch.randomState;
         plan.noDrops += batch.noDrops;
         if (!batch.deferred.empty()) plan.deferred = batch.deferred;
@@ -52,9 +52,13 @@ LootPlan planChestLoot(const ClassicData &data, const ObjectTreasureEntry &entry
         for (int index = 0; index < count; ++index) {
             // OBJMODE_DropItemWithCodeAndQuality has no player MF/GF source.
             // ITEMS_GetItemLevelForNewItem(object, 0) returns 1 for these extras.
-            const unsigned quantity = item->equipment.isType("gold")
-                ? 1 + roll(plan.randomState, 5) : 1;
-            plan.drops.push_back({code, quantity, {2, 3}, 1, {}});
+            ItemGeneration generation;
+            generation.seeds=seeds?seeds():ItemSeeds{rollRandom(plan.randomState),rollRandom(plan.randomState)};
+            auto unitRandom=initialRandom(generation.seeds->unit);
+            const unsigned quantity = item->equipment.isType("gold") ? 1 + roll(unitRandom, 5) : 1;
+            generation.unitRandom=unitRandom;
+            generation.propertyRandom=initialRandom(generation.seeds->properties);
+            plan.drops.push_back({code, quantity, {2, 3}, 1, std::move(generation)});
         }
     };
     std::optional<DropQuality> quality;

@@ -81,7 +81,7 @@ ClassicData loadClassicData(Archives &archives) {
             tables.emplace("itemratio", DataTable(archives.read("data/global/excel/itemratio.txt")));
         for (auto name : {"uniqueitems", "setitems", "sets", "magicprefix", "magicsuffix",
                           "rareprefix", "raresuffix", "automagic",
-                          "properties", "itemstatcost", "qualityitems", "lowqualityitems"})
+                          "properties", "itemstatcost", "qualityitems", "lowqualityitems", "colors"})
             if (archives.contains(std::string("data/global/excel/") + name + ".txt"))
                 tables.emplace(name, DataTable(archives.read(std::string("data/global/excel/") + name + ".txt")));
     }
@@ -112,7 +112,7 @@ ClassicData loadClassicData(Archives &archives) {
             const auto displayName = strings.find(nameKey.empty() ? item.code : nameKey);
             item.name = displayName.empty() ? value("name") : std::string(displayName);
             if (item.code == "toa")
-                if (const auto separator = item.name.rfind('}'); separator != std::string::npos)
+                if (const auto separator = item.name.rfind('\n'); separator != std::string::npos)
                     item.name.erase(0, separator + 1);
             item.family = family;
             item.questTag = number("quest").value_or(0);
@@ -333,6 +333,9 @@ ClassicData loadClassicData(Archives &archives) {
         data.khalimRecipe = loadKhalimRecipeContent(data.items, data.tables);
         data.hirelingLayout = loadHirelingLayout(data.tables.at("inventory"));
         data.itemStrings = strings.entries();
+        // The native tooltip uses numeric TBL IDs; the ethereal entry shares key "X".
+        data.itemStrings["itemEthereal"] = strings.find(22745);
+        data.itemStrings["itemEnhancedDamage"] = strings.find(10023);
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
         for (size_t row = 0; row < hireDescriptions.rows().size(); ++row) {
             const auto code = hireDescriptions.value(row, "Code");

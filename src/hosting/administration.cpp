@@ -8,6 +8,7 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::Reload, "load", AdminArgumentKind::None, true},
         {AdminOperation::CancelReload, "cancel-load", AdminArgumentKind::None, true},
         {AdminOperation::Step, "step", AdminArgumentKind::Step, true},
+        {AdminOperation::CancelStep, "server-cancel-step", AdminArgumentKind::Amount, true},
         {AdminOperation::Pause, "server-pause", AdminArgumentKind::None, true},
         {AdminOperation::Resume, "server-resume", AdminArgumentKind::None, true},
         {AdminOperation::AutoPause, "server-auto-pause", AdminArgumentKind::None, true},

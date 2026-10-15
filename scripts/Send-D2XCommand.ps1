@@ -5,7 +5,7 @@ param(
     [ValidateSet(
         'status', 'pause', 'resume',
         'server-status', 'server-protocol', 'server-commands', 'server-systems', 'server-snapshot', 'server-events',
-        'server-pause', 'server-resume', 'server-auto-pause', 'refill-resources',
+        'server-pause', 'server-resume', 'server-auto-pause', 'server-cancel-step', 'refill-resources',
         'save', 'load', 'cancel-load', 'step',
         'grant-gold', 'set-players', 'player-damage', 'missile-hit', 'grant-experience', 'item-spawn', 'monster-spawn', 'object-spawn',
         'monster-damage', 'monster-kill', 'travel', 'unlock-waypoints',
@@ -28,7 +28,8 @@ param(
         'ui-input', 'screenshot', 'quit')]
     [string]$Command,
     [hashtable]$Arguments = @{},
-    [ValidateRange(100, 60000)][int]$TimeoutMs = 10000
+    [ValidateRange(100, 60000)][int]$TimeoutMs = 10000,
+    [switch]$NoWait
 )
 $ErrorActionPreference = 'Stop'
 $request = @{ command = $Command }
@@ -36,31 +37,77 @@ foreach ($key in $Arguments.Keys) {
     if ($key -eq 'command') { throw 'Arguments cannot replace command' }
     $request[$key] = $Arguments[$key]
 }
-$pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', $PipeName, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
-$cancellation = [System.Threading.CancellationTokenSource]::new($TimeoutMs)
-try {
-    $pipe.Connect($TimeoutMs)
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($request | ConvertTo-Json -Compress -Depth 10) + "`n")
-    if ($bytes.Length -gt 16384) { throw 'Request exceeds 16 KiB' }
-    $pipe.WriteAsync($bytes, 0, $bytes.Length, $cancellation.Token).GetAwaiter().GetResult() | Out-Null
-    $stream = [System.IO.MemoryStream]::new()
+function Send-D2XRequest([hashtable]$Payload) {
+    $pipe = [System.IO.Pipes.NamedPipeClientStream]::new('.', $PipeName, [System.IO.Pipes.PipeDirection]::InOut, [System.IO.Pipes.PipeOptions]::Asynchronous)
+    $cancellation = [System.Threading.CancellationTokenSource]::new($TimeoutMs)
     try {
-        $buffer = [byte[]]::new(4096)
-        $finished = $false
-        while (-not $finished) {
-            $count = $pipe.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()
-            if ($count -eq 0) { throw 'Pipe closed before response' }
-            for ($index = 0; $index -lt $count; $index++) {
-                if ($buffer[$index] -eq 10) { $finished = $true; break }
-                $stream.WriteByte($buffer[$index])
+        $pipe.Connect($TimeoutMs)
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes(($Payload | ConvertTo-Json -Compress -Depth 10) + "`n")
+        if ($bytes.Length -gt 16384) { throw 'Request exceeds 16 KiB' }
+        $pipe.WriteAsync($bytes, 0, $bytes.Length, $cancellation.Token).GetAwaiter().GetResult() | Out-Null
+        $stream = [System.IO.MemoryStream]::new()
+        try {
+            $buffer = [byte[]]::new(4096)
+            $finished = $false
+            while (-not $finished) {
+                $count = $pipe.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()
+                if ($count -eq 0) { throw 'Pipe closed before response' }
+                $end = [Array]::IndexOf($buffer, [byte]10, 0, $count)
+                $length = if ($end -ge 0) { $end } else { $count }
+                $stream.Write($buffer, 0, $length)
+                $finished = $end -ge 0
+                if ($stream.Length -gt 4194304) { throw 'Response exceeds 4 MiB' }
             }
-            if ($stream.Length -gt 4194304) { throw 'Response exceeds 4 MiB' }
+            $response = [System.Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
+            if (-not $response.ok) { throw $response.error }
+            $response
+        } finally { $stream.Dispose() }
+    } finally {
+        $cancellation.Dispose()
+        $pipe.Dispose()
+    }
+}
+$response = Send-D2XRequest $request
+if ($Command -ne 'step' -or $NoWait -or -not $response.server.fixedSteps) {
+    $response
+    return
+}
+# A step request is submitted exactly once. Observe its generation-bound job;
+# the game pumps native packets and heartbeats between individual frames.
+$job = $response.server.fixedSteps
+$sequence = $job.sequence
+$target = @{
+    hostSlot = $response.server.hostSlot
+    hostGeneration = $response.server.hostGeneration
+    hostPlayer = $response.server.hostPlayer
+}
+$observe = @{command='server-status'}
+$cancel = @{command='server-cancel-step'; amount=$sequence}
+foreach ($key in $target.Keys) { $observe[$key]=$target[$key]; $cancel[$key]=$target[$key] }
+$pending = $job.pending
+$progress = $job.completed
+$watch = [Diagnostics.Stopwatch]::StartNew()
+try {
+    while ($pending) {
+        Start-Sleep -Milliseconds 20
+        $response = Send-D2XRequest $observe
+        $job = $response.server.fixedSteps
+        if (-not $job -or $job.sequence -ne $sequence) { throw "Fixed-step job $sequence expired or was replaced; do not resubmit the step request." }
+        $pending = $job.pending
+        if ($job.cancelled) { throw "Fixed-step job $sequence was cancelled after $($job.completed)/$($job.requested) completed frames." }
+        if ($job.completed -ne $progress) { $progress=$job.completed; $watch.Restart() }
+        if ($pending -and $watch.ElapsedMilliseconds -ge $TimeoutMs) {
+            throw "Fixed-step job $sequence stopped progressing at $progress/$($job.requested) frames (blocked=$($job.blocked))."
         }
-        $response = [System.Text.Encoding]::UTF8.GetString($stream.ToArray()) | ConvertFrom-Json
-        if (-not $response.ok) { throw $response.error }
-        $response
-    } finally { $stream.Dispose() }
+    }
+    if ($job.completed -ne $job.requested) { throw 'Fixed-step completion count does not match the request.' }
+    $response | Add-Member -NotePropertyName status -NotePropertyValue 'applied' -Force
+    $response | Add-Member -NotePropertyName message -NotePropertyValue "Authority advanced by $($job.completed) fixed frames" -Force
+    $response
 } finally {
-    $cancellation.Dispose()
-    $pipe.Dispose()
+    $watch.Stop()
+    if ($pending) {
+        try { Send-D2XRequest $cancel | Out-Null }
+        catch { Write-Warning "Could not cancel fixed-step job $sequence; inspect server-status before further mutations: $_" }
+    }
 }

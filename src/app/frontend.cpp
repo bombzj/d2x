@@ -30,6 +30,7 @@
 #include <iostream>
 #include <deque>
 #include <chrono>
+#include <cstdint>
 #include <limits>
 #include <utility>
 #include <nlohmann/json.hpp>
@@ -37,6 +38,48 @@
 
 namespace d2x {
 namespace {
+// Bounded diagnostics of completed presentation frames, independent of game time.
+class FrontendTimings {
+  public:
+    enum Stage { Host, Network, Client, Debug, Scene, Present, Other, Count };
+    class Frame {
+        FrontendTimings &owner_;
+        std::chrono::steady_clock::time_point previous_=std::chrono::steady_clock::now();
+        std::array<double,Count> values_{};
+      public:
+        explicit Frame(FrontendTimings &owner):owner_(owner) {}
+        Frame(const Frame &)=delete;
+        void mark(Stage stage) {
+            const auto now=std::chrono::steady_clock::now();
+            values_[stage]+=std::chrono::duration<double,std::milli>(now-previous_).count();previous_=now;
+        }
+        ~Frame() {mark(Other);owner_.record(values_);}
+    };
+    nlohmann::json summary() const {
+        constexpr std::array names{"host","network","client","debug","scene","present","other","total"};
+        nlohmann::json result={{"windowFrames",size_},{"completedFrames",completed_},{"over100ms",slow_}};
+        for(size_t stage=0;stage<names.size();++stage) {
+            std::array<double,120> values{};double sum=0;
+            for(size_t index=0;index<size_;++index) {
+                if(stage<Count) values[index]=samples_[index][stage];
+                else for(auto value:samples_[index]) values[index]+=value;
+                sum+=values[index];
+            }
+            std::sort(values.begin(),values.begin()+size_);
+            result["milliseconds"][names[stage]]={{"mean",size_?sum/size_:0},
+                {"p95",size_?values[(size_-1)*95/100]:0},{"max",size_?values[size_-1]:0}};
+        }
+        return result;
+    }
+  private:
+    std::array<std::array<double,Count>,120> samples_{};
+    size_t size_{},next_{};
+    uint64_t completed_{},slow_{};
+    void record(const std::array<double,Count> &values) {
+        samples_[next_]=values;next_=(next_+1)%samples_.size();size_=std::min(size_+1,samples_.size());++completed_;
+        double total=0;for(auto value:values) total+=value;if(total>100) ++slow_;
+    }
+};
 struct OnlineConfiguration {
     net::LoginOptions login;
     std::string gateway;
@@ -406,7 +449,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         } catch (const std::exception &e) { reloadCharacter.clear(); notice = e.what(); }
     }
     profile.mark("frontend-ready");
+    FrontendTimings frameTimings;
     while (true) {
+        FrontendTimings::Frame frameTiming(frameTimings);
         if (options.frameLimit > 0 && ++frames > options.frameLimit) quit = true;
         if (WindowShouldClose())
             quit = true;
@@ -418,11 +463,13 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         embedded.pump(std::chrono::duration<double>(hostNow - hostFrame).count(),
             !hostFocused || presentationPaused || (sharedUi && sharedUi->ui().gameMenuOpen));
         hostFrame = hostNow;
+        frameTiming.mark(FrontendTimings::Host);
         if (auto error = embedded.takeError(); !error.empty()) {
             notice = std::move(error); quit = false; frames = 0; enterLocalGame = false; reloadCharacter.clear();
         }
         const auto previousStage = session.read().stage;
         session.tick();
+        frameTiming.mark(FrontendTimings::Network);
         if(automapStore && (automapGeneration!=session.read().gameGeneration ||
             (previousStage==OnlineStage::ProtocolReady && session.read().stage!=OnlineStage::ProtocolReady))) {
             flushAutomap(); automapStore.reset();
@@ -517,6 +564,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         if (previousStage == OnlineStage::ListingCharacters &&
             session.read().stage == OnlineStage::CharacterSelection)
             page = FrontendPage::Characters;
+        frameTiming.mark(FrontendTimings::Client);
         pipe.poll([&](const std::string &request) {
             const auto before = session.read().revision;
             const auto beforeStage = session.read().stage;
@@ -583,6 +631,8 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 {"waitingItemRequest", waiting ? nlohmann::json(*waiting) : nlohmann::json(nullptr)}};
             constexpr std::array pageNames{"Main", "Login", "Register", "Realms", "Characters", "CreateCharacter", "Lobby", "Loading", "TcpIp", "JoinHost", "Difficulty"};
             reply["frontend"] = {{"page", pageNames.at(size_t(page))}, {"notice", notice}};
+            if(request.find("online-status")!=std::string::npos || request.find("server-status")!=std::string::npos)
+                reply["performance"]=frameTimings.summary();
             if (sharedClients && request.find("online-status") != std::string::npos) {
                 const auto &player = sharedClients->character().read();
                 const auto &merc = sharedClients->npc().hireling();
@@ -611,13 +661,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             return reply.dump();
         });
+        frameTiming.mark(FrontendTimings::Debug);
         if (quit) {
             if (session.read().stage == OnlineStage::ProtocolReady ||
                 session.read().stage == OnlineStage::LoadingGame)
                 session.leave_game();
             // Keep pumping the same bounded leave exchange when the window closes
             // or command quit is requested. Closing TCP immediately can skip saving.
-            if (session.read().stage != OnlineStage::LeavingGame) {
+            if (session.read().stage != OnlineStage::LeavingGame && !pipe.responsePending()) {
                 try { embedded.shutdown(); break; }
                 catch (const std::exception &e) { notice = e.what(); quit = false; frames = 0; }
             }
@@ -787,6 +838,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
                              (raw.y - viewport.offset.y) / viewport.scale};
         if (!presentationPaused) {
+            frameTiming.mark(FrontendTimings::Client);
             BeginTextureMode(target);
             ClearBackground(BLACK);
             if (showScene) {
@@ -935,12 +987,14 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
             EndTextureMode();
         }
+        frameTiming.mark(FrontendTimings::Scene);
         BeginDrawing();
         ClearBackground(BLACK);
         DrawTexturePro(target.texture, {0, 0, float(W), -float(H)},
                        {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
                        0, WHITE);
         EndDrawing();
+        frameTiming.mark(FrontendTimings::Present);
         profile.mark("first-presented-frame");
         if (showScene && scene && scene->playerDisplayed()) profile.mark("first-game-frame");
         syncPreferences();

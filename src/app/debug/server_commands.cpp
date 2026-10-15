@@ -40,6 +40,11 @@ Json status(const HostDiagnostics &state) {
     }
     if (state.command) result["command"] = {{"sequence", state.command->sequence},
         {"status", commandStatusName(state.command->status)}};
+    if(state.fixedSteps) {
+        const auto &steps=*state.fixedSteps;
+        result["fixedSteps"]={{"sequence",steps.sequence},{"requested",steps.requested},{"completed",steps.completed},
+            {"pending",steps.pending()},{"blocked",steps.blocked},{"cancelled",steps.cancelled}};
+    } else result["fixedSteps"]=nullptr;
     return result;
 }
 std::string_view argumentName(AdminArgumentKind kind) {
@@ -56,8 +61,19 @@ std::string_view argumentName(AdminArgumentKind kind) {
 }
 Json commands() {
     Json result = Json::array();
-    for (const auto &entry : adminCommands())
+    for (const auto &entry : adminCommands()) {
         result.push_back({{"command", entry.command}, {"implemented", entry.implemented}, {"argumentKind", argumentName(entry.arguments)}});
+        if(entry.operation==AdminOperation::SpawnItem) {
+            result.back()["itemGeneration"]={{"seed","optional uint32"},{"affixes",{{"kind","prefix or suffix"},{"row","zero-based original MagicPrefix/MagicSuffix TXT row"},{"rolls","optional values in nonempty mod1..mod3 order; original ranges required"}}},{"limits","magic: one per side; rare: three per side; no repeated group"}};
+            auto &generation=result.back()["itemGeneration"];
+            generation["properties"]={{"code","original Properties code"},{"value","exact roll for a direct-roll property"},
+                {"min/max","both required instead of value for fixed compound properties"},{"param","optional integer or exact MPQ skill name"},
+                {"limits","1..12 targets, magic/rare only, incompatible with affixes; each target must match one property slot"}};
+            generation["propertyQuery"]="optional property-code substring (empty lists all); returns eligible affixes and ranges without spawning";
+            generation["preview"]="boolean; validates and describes the prepared item without spawning; preserve seed to reproduce";
+            generation["propertyPolicy"]="legal affix combinations only; rare gets at least three affixes (jewels at most four); incidental and innate properties remain";
+        }
+    }
     return result;
 }
 Json systems(const HostDiagnostics &state) {
@@ -183,9 +199,49 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("x") || request.contains("y")) position = Vec{float(unsignedValue(request.at("x"), 65535)), float(unsignedValue(request.at("y"), 65535))};
             if (entry->operation == AdminOperation::SpawnMonster && request.contains("level"))
                 throw std::invalid_argument("Monster level comes from the current MPQ area and difficulty; omit level");
-            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets") || request.contains("seed") || request.contains("affixes")))
-                throw std::invalid_argument("quality/durability/sockets/seed/affixes apply only to item-spawn");
+            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets") || request.contains("seed") || request.contains("affixes") || request.contains("properties") || request.contains("preview") || request.contains("propertyQuery")))
+                throw std::invalid_argument("Item generation fields apply only to item-spawn");
             AdminSpawn spawn{std::move(code), int(level), position};
+            if(request.contains("propertyQuery")) {
+                spawn.propertyQuery=request.at("propertyQuery").get<std::string>();
+                if(spawn.propertyQuery->size()>64) throw std::invalid_argument("propertyQuery exceeds 64 bytes");
+                if(request.contains("properties") || request.contains("affixes") || request.contains("durability") || request.contains("sockets") || position)
+                    throw std::invalid_argument("propertyQuery cannot be combined with properties/affixes/durability/sockets/coordinates");
+                if(!request.contains("quality")) spawn.quality="magic";
+            }
+            if(request.contains("properties")) {
+                if(request.contains("affixes")) throw std::invalid_argument("properties and affixes are mutually exclusive");
+                const auto &properties=request.at("properties");
+                if(!properties.is_array() || properties.empty() || properties.size()>12) throw std::invalid_argument("properties requires 1..12 targets");
+                if(!request.contains("quality")) spawn.quality="magic";
+                for(size_t index=0;index<properties.size();++index) {
+                    const auto &entry=properties[index];const auto path="properties["+std::to_string(index)+"]";
+                    if(!entry.is_object()) throw std::invalid_argument(path+" must be an object");
+                    for(auto field=entry.begin();field!=entry.end();++field)
+                        if(field.key()!="code" && field.key()!="value" && field.key()!="min" && field.key()!="max" && field.key()!="param")
+                            throw std::invalid_argument(path+": unknown field "+field.key());
+                    if(!entry.contains("code") || !entry.at("code").is_string()) throw std::invalid_argument(path+".code must be a Properties code string");
+                    ItemPropertyTarget property;property.code=entry.at("code").get<std::string>();
+                    if(property.code.empty() || property.code.size()>64) throw std::invalid_argument(path+".code must contain 1..64 bytes");
+                    const auto number=[&](const char *key)->std::optional<int> {
+                        if(!entry.contains(key)) return {};
+                        const auto value=signedValue(entry.at(key));
+                        if(value<INT32_MIN || value>INT32_MAX) throw std::invalid_argument(path+"."+key+" exceeds signed 32-bit range");
+                        return int(value);
+                    };
+                    property.value=number("value");property.minimum=number("min");property.maximum=number("max");
+                    if(entry.contains("param")) {
+                        if(entry.at("param").is_string()) property.parameter=entry.at("param").get<std::string>();
+                        else property.parameter=std::to_string(unsignedValue(entry.at("param"),INT32_MAX));
+                        if(property.parameter.size()>64) throw std::invalid_argument(path+".param exceeds 64 bytes");
+                    }
+                    spawn.properties.push_back(std::move(property));
+                }
+            }
+            if(request.contains("preview")) {
+                if(!request.at("preview").is_boolean()) throw std::invalid_argument("preview must be boolean");
+                spawn.preview=request.at("preview").get<bool>();
+            }
             if(request.contains("rank") || request.contains("superUnique")) {
                 if(entry->operation!=AdminOperation::SpawnMonster) throw std::invalid_argument("rank/superUnique apply only to monster-spawn");
                 const auto rank=request.value("rank",std::string("normal"));
@@ -200,6 +256,7 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             }
             if (request.contains("quality")) spawn.quality = request.at("quality").get<std::string>();
             if (spawn.quality != "normal" && spawn.quality != "magic" && spawn.quality!="rare" && spawn.quality!="unique" && spawn.quality!="set" && spawn.quality!="superior" && spawn.quality!="inferior") throw std::invalid_argument("Unknown original generated quality");
+            if(!spawn.properties.empty() && spawn.quality!="magic" && spawn.quality!="rare") throw std::invalid_argument("properties requires magic or rare quality");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
             if(request.contains("sockets")) spawn.sockets=unsigned(unsignedValue(request.at("sockets"),6));
             if(request.contains("seed")) spawn.seed=uint32_t(unsignedValue(request.at("seed"),UINT32_MAX));
@@ -250,6 +307,27 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
         Json response{{"ok", result.applied()}, {"status", adminStatusName(result.status)},
             {"message", result.message}, {"server", status(refreshed)}};
         if (result.entity) response["entityId"] = result.entity->value;
+        if(result.propertyCandidates) {
+            response["propertyCandidates"]=Json::array();
+            for(const auto &candidate:*result.propertyCandidates) {
+                Json entry{{"kind",candidate.prefix?"prefix":"suffix"},{"row",candidate.row},{"name",candidate.name},
+                    {"group",candidate.group},{"requiredLevel",candidate.requiredLevel},{"properties",Json::array()}};
+                for(const auto &property:candidate.properties) entry["properties"].push_back({{"code",property.code},{"param",property.parameter},
+                    {"min",property.minimum},{"max",property.maximum},{"input",property.direct?"value":"min/max/param"}});
+                response["propertyCandidates"].push_back(std::move(entry));
+            }
+        }
+        if(result.item) {
+            const auto &item=*result.item;
+            Json description{{"code",item.code},{"quality",item.quality},{"seed",item.seed},{"itemSeed",item.itemSeed},
+                {"level",item.level},{"requiredLevel",item.requiredLevel},{"defense",item.defense},{"durability",item.durability},
+                {"maximumDurability",item.maximumDurability},{"sockets",item.sockets},{"ethereal",item.ethereal},
+                {"preview",item.preview},{"affixes",Json::array()},{"stats",Json::array()}};
+            for(const auto &affix:item.affixes) description["affixes"].push_back({{"kind",affix.prefix?"prefix":"suffix"},{"row",affix.row},{"name",affix.name},{"rolls",affix.rolls}});
+            for(const auto &stat:item.stats) description["stats"].push_back({{"stat",stat.name},{"id",stat.id},{"param",stat.parameter},{"value",stat.value}});
+            response["item"]=std::move(description);
+        }
+        if(result.applied() && entry->operation==AdminOperation::Step) response["queued"]=true;
         if (!result.applied()) response["error"] = result.message;
         return response.dump();
     } catch (const Json::exception &) {

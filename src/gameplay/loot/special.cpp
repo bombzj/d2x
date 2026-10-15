@@ -7,7 +7,7 @@
 namespace d2x {
 SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std::string_view code,
                                 int itemLevel, uint64_t seed, const std::set<size_t> &used,
-                                bool hellBovine) {
+                                bool hellBovine,std::optional<size_t> preferred) {
     if (itemLevel < 1 || itemLevel > 99)
         throw std::invalid_argument("Invalid special item level");
     int64_t total = 0;
@@ -24,6 +24,9 @@ SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std:
     result.randomState = seed;
     if (!total)
         return result;
+    if(preferred) for(const auto *record:eligible) if(record->row==*preferred) {
+        result.row=record->row;result.alreadyDropped=!record->noLimit && used.contains(record->row);return result;
+    }
     rollRandom(result.randomState);
     int64_t chosen = uint32_t(result.randomState) % uint32_t(total);
     for (const auto *record : eligible) {

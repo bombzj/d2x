@@ -21,10 +21,12 @@ void SceneView::drawBelt(Vec mouse) const {
             auto item = inventory.item(inventory.itemAt(belt->id, {column, row}));
             if (item) {
                 bool dragged = ui.drag && ui.drag->item.id == item->id;
-                if (!dragged) drawItemIcon(*item, box);
+                if (!dragged) {
+                    const bool over = !ui.drag && CheckCollisionPointRec(rv(mouse), box);
+                    if (over) drawItemBackground(*item, box, true);
+                    drawItemIcon(*item, box);
+                }
             }
-            if (!ui.drag && CheckCollisionPointRec(rv(mouse), box))
-                DrawRectangleLinesEx(box, 1, parchment);
             if (row == 0)
                 painter_.label(std::to_string(column + 1), int(box.x + box.width / 2 - 3), H - 13, 10, gold);
         }

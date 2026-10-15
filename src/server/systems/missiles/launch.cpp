@@ -274,7 +274,11 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     const auto id=prepared.begin()->first;
     auto timers=prepareTimers(prepared);
     auto cost=r.cost;
-    if(!nativeOwner && !cost && (!r.free || ownerRandom!=p->combatRandom)) {
+    // Ordinary missile release changes mana and the owner's random cursor,
+    // not equipment/passive sources. Publish those with the prepared visuals
+    // in one resource transaction; charged items retain their full item edit.
+    const bool resourcePayment=!nativeOwner && !cost && !r.deathTrigger && !r.skill.charge && (!r.free || ownerRandom!=p->combatRandom);
+    if(!nativeOwner && !cost && !resourcePayment && (!r.free || ownerRandom!=p->combatRandom)) {
         transactions::CharacterEdit edit{r.actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
         if(!r.free) {edit.player.mana-=r.skill.manaCost;edit.charge=r.skill.charge;}
         edit.random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
@@ -282,8 +286,11 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
         cost=std::move(*transaction.value);
     } else if(cost) cost->random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
     const auto released=nativeOwner?ports_.monsters.consumeRandom(nativeOwner->id,ownerExpected,ownerRandom):
+        resourcePayment?ports_.transactions.release(r.actor,p->characterRevision,r.free?Fixed8{}:r.skill.manaCost,
+            {},{},std::move(facts),transactions::UnitRandomEdit{ownerExpected,ownerRandom}):
         cost?ports_.transactions.commit(std::move(*cost)):DomainResult<>{DomainStatus::Applied,std::monostate{}};
     if (!released) return {released.status,{}};
+    if(resourcePayment) facts.clear();
     if (!facts.empty()) ports_.events.publish({0,r.actor.tick,{}, {AudienceKind::Area,{},r.actor.area},std::move(facts)});
     for (size_t i=0;i<prepared.size();++i) ports_.ids.allocate();
     state_.missiles.merge(prepared);publishTimers(timers);ports_.random=random;

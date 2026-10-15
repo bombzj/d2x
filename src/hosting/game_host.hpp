@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/environment/time.hpp"
+#include "fixed_step_job.hpp"
 #include "server/game_instance.hpp"
 #include <memory>
 #include <vector>
@@ -15,10 +16,13 @@ class GameHost {
         bool paused{};
         std::optional<bool> debugPaused;
         bool resumed{};
+        std::optional<FixedStepProgress> fixedSteps;
+        PlayerId stepOwner;
         std::map<PlayerId, std::shared_ptr<const PlayerSnapshot>> snapshots;
     };
     std::vector<Slot> slots_;
     uint64_t nextGeneration_ = 1;
+    uint64_t nextStepSequence_ = 1;
     Slot *find(GameHandle);
     const Slot *find(GameHandle) const;
     void publish(size_t slot);
@@ -55,8 +59,10 @@ class GameHost {
     std::vector<server::travel::Portal> visiblePortals(PlayerBinding) const;
     server::DomainResult<> spawnItems(PlayerBinding, server::items::PreparedBatch, std::optional<Vec>);
     std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
+    std::optional<ItemSeeds> reserveLootSeeds(GameHandle,EntityId,uint64_t occurrence,size_t index);
+    std::optional<server::loot::Preparation> beginLootPreparation(GameHandle,EntityId);
     std::set<size_t> usedUniques(GameHandle) const;
-    server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string);
+    server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={});
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
     std::vector<server::RoomView> visibleRooms(PlayerBinding) const;
     bool visiblePoint(PlayerBinding, RegionId, Vec) const;
@@ -70,8 +76,11 @@ class GameHost {
     bool pause(GameHandle, bool);
     bool debugPause(GameHandle, std::optional<bool>);
     void advance(double seconds);
-    // Explicit authority stepping while paused; no accumulated wall-clock debt.
-    bool step(GameHandle, uint32_t frames);
+    // Queue paused stepping; each scheduler turn attempts one fixed frame and
+    // returns to protocol publication/IO. No accumulated wall-clock debt.
+    bool step(PlayerBinding, uint32_t frames);
+    std::optional<FixedStepProgress> stepProgress(GameHandle) const;
+    bool cancelStep(GameHandle,uint64_t sequence);
     CommandStatus submit(PlayerBinding, server::GameCommand);
     std::shared_ptr<const PlayerSnapshot> read(PlayerBinding) const;
     // Host storage boundary only; never exposed on a client transport.

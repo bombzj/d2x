@@ -1,5 +1,6 @@
 #include "presentation/scene_view.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x {
 void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const {
@@ -17,25 +18,128 @@ void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) 
     blend->drawRectangle(bounds, drop.error == InventoryError::None ? Color{0, 128, 0, 255}
                                                                    : Color{128, 0, 0, 255});
 }
-void SceneView::drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const {
-    auto found = assets_.itemIcons.find(key);
-    auto icon = found == assets_.itemIcons.end() ? nullptr : found->second.frame(0, 0);
+void SceneView::drawItemArt(const std::string &key, Rectangle bounds) const {
+    const auto *icon = assets_.inventoryIcon(key, {}, mapView().palette);
     if (icon && icon->texture.id) {
-        float scale = std::min({inventoryScale, (bounds.width - 4) / icon->texture.width,
-                                (bounds.height - 4) / icon->texture.height});
-        float width = icon->texture.width * scale, height = icon->texture.height * scale;
         DrawTexturePro(
             icon->texture, {0, 0, float(icon->texture.width), float(icon->texture.height)},
-            {bounds.x + (bounds.width - width) / 2, bounds.y + (bounds.height - height) / 2, width, height},
-            {0, 0}, 0, tint);
-    } else {
-        diamond({bounds.x + bounds.width / 2, bounds.y + bounds.height / 2}, 9, gold);
-        painter_.label(code, int(bounds.x + 4), int(bounds.y + 4), 10, tint);
+            {bounds.x + icon->x * inventoryScale, bounds.y + icon->y * inventoryScale,
+             icon->texture.width * inventoryScale, icon->texture.height * inventoryScale},
+            {0, 0}, 0, WHITE);
     }
 }
-void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint) const {
-    if (item.nativeFlags & 0x00400000u) tint.a = uint8_t((unsigned(tint.a) + 1) / 2);
-    drawItemArt(item.artKey, item.definition, bounds, tint);
+void SceneView::drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const {
+    if (!hovered && item.cellTone == InventoryCellTone::Unknown) return;
+    const int act = mapView().palette;
+    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    if (!blend) return;
+    const Color color = hovered ? Color{0, 128, 0, 255} :
+        item.cellTone == InventoryCellTone::Usable ? Color{0, 0, 128, 255} : Color{128, 0, 0, 255};
+    blend->drawRectangle(bounds, color);
+}
+void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets) const {
+    const auto [width, height] = item.iconCells;
+    if (width < 1 || height < 1) return;
+    const auto [cellWidth, cellHeight] = inventoryView_.itemCellSize;
+    if (cellWidth < 1 || cellHeight < 1) return;
+    const int act = mapView().palette;
+    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    // Equipment centers the occupied grid, rather than shrinking the DC6 to fit.
+    const Vec origin{bounds.x + std::floor((bounds.width / inventoryScale - width * cellWidth) / 2) * inventoryScale,
+                     bounds.y + std::floor((bounds.height / inventoryScale - height * cellHeight) / 2) * inventoryScale};
+    auto draw = [&](const std::string &art, std::array<int, 2> transform, uint32_t flags, Vec position, unsigned frame = 0) {
+        const auto *icon = assets_.inventoryIcon(art, transform, act, frame);
+        if (!icon || !icon->texture.id) return;
+        const Rectangle pixels{position.x + icon->x * inventoryScale, position.y + icon->y * inventoryScale,
+            icon->texture.width * inventoryScale, icon->texture.height * inventoryScale};
+        if (flags & 0x400000u) {
+            if (blend) blend->drawHalf(icon, pixels);
+        } else
+            DrawTexturePro(icon->texture, {0, 0, float(icon->texture.width), float(icon->texture.height)}, pixels, {}, 0, WHITE);
+    };
+    draw(item.artKey, item.colorTransform, item.nativeFlags, origin, item.artFrame);
+    if (!showSockets || !item.identified || !item.socketContentsKnown || !(item.nativeFlags & 0x800u) ||
+        item.sockets < 1 || item.sockets > 6 || width > 2 || height > 4) return;
+    // D2Client 1.13c RVA 95140 / D0A98, coordinates in half-cell units.
+    static constexpr int socketPositions[6][8][12]{
+        {
+            {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+        },
+        {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 1, 3, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 2, 1, 4, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 3, 1, 5, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 3, 1, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 1, 2, 3, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 2, 2, 4, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 2, 2, 6, 0, 0, 0, 0, 0, 0, 0, 0},
+        },
+        {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 1, 3, 1, 5, 0, 0, 0, 0, 0, 0},
+            {1, 2, 1, 4, 1, 6, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 3, 1, 2, 3, 0, 0, 0, 0, 0, 0},
+            {2, 1, 2, 3, 2, 5, 0, 0, 0, 0, 0, 0},
+            {2, 2, 2, 4, 2, 6, 0, 0, 0, 0, 0, 0},
+        },
+        {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 1, 3, 1, 5, 1, 7, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 3, 3, 1, 3, 3, 1, 0, 0, 0, 0},
+            {1, 2, 3, 4, 1, 4, 3, 2, 0, 0, 0, 0},
+            {2, 1, 2, 3, 2, 5, 2, 7, 0, 0, 0, 0},
+        },
+        {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {2, 3, 1, 1, 3, 5, 1, 5, 3, 1, 0, 0},
+            {2, 4, 1, 2, 3, 6, 1, 6, 3, 2, 0, 0},
+        },
+        {
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0},
+            {1, 1, 1, 3, 1, 5, 3, 1, 3, 3, 3, 5},
+            {1, 2, 1, 4, 1, 6, 3, 2, 3, 4, 3, 6},
+        },
+        };
+    const auto &positions = socketPositions[item.sockets - 1][(width - 1) * 4 + height - 1];
+    const auto *hole = assets_.itemSockets.at(size_t(act)).frame(0, 0);
+    for (unsigned index = 0; index < item.sockets; ++index) {
+        const int x = positions[index * 2], y = positions[index * 2 + 1];
+        if (!x || !y) continue; // No native layout for this footprint/socket count.
+        const Vec socket{origin.x + ((x - 1) * cellWidth / 2) * inventoryScale,
+                         origin.y + ((y + 1) * cellHeight / 2) * inventoryScale};
+        if (hole && blend)
+            blend->drawSocket(hole, {socket.x + (hole->x - 1) * inventoryScale,
+                socket.y + (hole->y - hole->texture.height) * inventoryScale,
+                hole->texture.width * inventoryScale, hole->texture.height * inventoryScale});
+        if (index < item.socketItems.size()) {
+            const auto &child = item.socketItems[index];
+            draw(child.artKey, child.colorTransform, child.nativeFlags,
+                 {socket.x, socket.y - cellHeight * inventoryScale});
+        }
+    }
 }
 void SceneView::drawItemTooltip(const InventoryItemView &item, Vec anchor,
                                 std::optional<unsigned> price, std::string_view priceLabel) const {
@@ -80,15 +184,27 @@ void SceneView::drawInventory(Vec mouse) const {
         drawInventoryDrop(drop, bounds);
         auto equipped = inventory.item(inventory.equipped(inventoryView_.containers, slot));
         if (equipped && !ui.hidesItem(*equipped)) {
-            drawItemIcon(*equipped, bounds);
-            if (inventory.definition(equipped->definition)->maxStack > 1) {
-                auto quantity = std::to_string(equipped->quantity);
-                painter_.label(quantity, int(bounds.x + bounds.width - painter_.measure(quantity, 12) - 4),
-                               int(bounds.y + bounds.height - 16), 12, equipped->quantity ? WHITE : RED);
+            const bool over = !ui.drag && CheckCollisionPointRec(rv(mouse), bounds);
+            if (over || equipped->cellTone != InventoryCellTone::Usable)
+                drawItemBackground(*equipped, bounds, over);
+            auto artBounds = bounds;
+            // Native body-location adjustments after centering the grid.
+            if (slot == EquipmentSlot::Neck || slot == EquipmentSlot::RightRing ||
+                slot == EquipmentSlot::LeftRing || slot == EquipmentSlot::Gloves || slot == EquipmentSlot::Belt)
+                artBounds.y -= 2 * inventoryScale;
+            if (slot == EquipmentSlot::Torso) artBounds.x += 3 * inventoryScale;
+            if (slot == EquipmentSlot::Belt || slot == EquipmentSlot::Feet) artBounds.x += 2 * inventoryScale;
+            if (slot == EquipmentSlot::Feet) artBounds.y -= 4 * inventoryScale;
+            // Original 0x97 handler RVA ABF50 toggles the secondary-set flag;
+            // RVA 953CA adds this offset only to its hand slots in expansion.
+            if (inventoryView_.stashLayout.expansion && weaponSet &&
+                (slot == EquipmentSlot::AlternateRightHand || slot == EquipmentSlot::AlternateLeftHand)) {
+                artBounds.x += 4 * inventoryScale;
+                artBounds.y -= 4 * inventoryScale;
             }
+            drawItemIcon(*equipped, artBounds, over);
         }
         if (CheckCollisionPointRec(rv(mouse), bounds)) {
-            if (!ui.drag) DrawRectangleLinesEx(bounds, 1, parchment);
             if (equipped)
                 hovered = equipped->id;
         }
@@ -171,8 +287,12 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     if (!item || item->revision != ui.drag->item.revision)
         return false;
     const auto &definition = *inventoryView_.definition(item->definition);
+    const auto *icon = assets_.inventoryIcon(item->artKey, item->colorTransform, mapView().palette, item->artFrame);
+    if (!icon) return true;
+    // Native cursor RVA 169B8 centers the DC6 dimensions, not its grid footprint.
     drawItemIcon(*item,
-                 {mouse.x - ui.drag->pixelOffset.x, mouse.y - ui.drag->pixelOffset.y,
+                 {mouse.x - (icon->texture.width / 2) * inventoryScale,
+                  mouse.y - (icon->texture.height / 2) * inventoryScale,
                   definition.width * inventoryCellSize, definition.height * inventoryCellSize});
     return true;
 }

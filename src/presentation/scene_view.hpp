@@ -200,8 +200,9 @@ class SceneView {
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     static Color itemColor(ItemQuality quality);
     void itemButton(Rectangle bounds, const char *label, Color color) const;
-    void drawItemIcon(const InventoryItemView &item, Rectangle bounds, Color tint = WHITE) const;
-    void drawItemArt(const std::string &key, const std::string &code, Rectangle bounds, Color tint) const;
+    void drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets = false) const;
+    void drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const;
+    void drawItemArt(const std::string &key, Rectangle bounds) const;
     bool drawInventoryCursor(Vec mouse) const;
 
   public:

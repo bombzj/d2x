@@ -270,6 +270,16 @@ StepStatus System::advanceUnits(uint64_t tick) {
         const auto *m=ports_.monsters.find(it->first);
         if(!m) {const auto id=it->first;++it;ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});forgetUnit(id);continue;}
         if(m && m->area!=it->second.area) it->second.area=m->area;
+        // Native state writes and RemoveState callbacks already publish their
+        // FullStats/control/velocity changes synchronously. An unchanged live
+        // list has no expiry work and must not be reposted on every frame.
+        if(m->alive() && m->nativeStats && m->nativeStats->sources && m->nativeStats->sources->fullValues && m->rule.stats &&
+           !it->second.states.hasDueExpiration(tick)) {
+            if(!m->conversion) it->second.converted=false;
+            if(!it->second.states.size() && !it->second.states.hasUnitEvents()) it=units_.erase(it);
+            else ++it;
+            continue;
+        }
         auto next=it->second.states;
         std::optional<MonsterResourceTrace> resources;
         if(m && m->nativeStats && m->nativeStats->sources && m->rule.stats) resources.emplace(*m,tick,&it->second.states);

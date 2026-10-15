@@ -54,7 +54,7 @@ bool isGradeEligible(const QualityGradeRecord &record, const ItemDefinition &ite
     bool allowed = !special && ((record.weapon && item.family == ItemFamily::Weapon) ||
                                 (record.armor && item.family == ItemFamily::Armor));
     allowed |= std::any_of(record.specificTypes.begin(), record.specificTypes.end(),
-                           [&](const auto &type) { return item.equipment.isType(type); });
+                           [&](const auto &type) { return item.base.type==type; });
     return allowed;
 }
 GradeGenerationResult rollItemGrade(const ClassicData &data, const ItemDefinition &item,
@@ -66,30 +66,32 @@ GradeGenerationResult rollItemGrade(const ClassicData &data, const ItemDefinitio
         result.deferred = "Unsupported grade item base: " + item.code;
         return result;
     }
-    std::vector<const QualityGradeRecord *> candidates;
     const auto &records = quality == ItemQuality::Superior ? data.superiorGrades : data.inferiorGrades;
-    for (const auto &record : records) {
-        if (quality == ItemQuality::Inferior) {
-            candidates.push_back(&record);
-            continue;
-        }
-        if ((item.equipment.throwable || item.maxDurability == 0) && record.row >= 4)
-            continue;
-        if (isGradeEligible(record, item))
-            candidates.push_back(&record);
-    }
-    if (candidates.empty()) {
+    const auto &table=data.tables.at(item.base.sourceTable);
+    const size_t count=quality==ItemQuality::Superior && (item.equipment.throwable || table.number(item.base.sourceRow,"nodurability").value_or(0))
+        ? std::min(size_t(4),records.size()):records.size();
+    if (!count) {
         result.deferred = "No original grade row for " + item.code;
         return result;
     }
-    rollRandom(result.randomState);
-    const auto *selected = candidates[uint32_t(result.randomState) % candidates.size()];
+    std::vector<bool> checked(count);
+    size_t remaining=count;
+    const QualityGradeRecord *selected=nullptr;
+    while(remaining) {
+        const auto index=limitedRandom(result.randomState,unsigned(count));
+        if(checked[index]) continue;
+        if(quality==ItemQuality::Inferior || isGradeEligible(records[index],item)) {selected=&records[index];break;}
+        checked[index]=true;--remaining;
+    }
+    if(!selected) {result.deferred="No original grade row for "+item.code;return result;}
     result.generation.gradeRow = int32_t(selected->row);
     if (quality == ItemQuality::Superior) {
-        auto rolls = rollDisplayProperties(selected->properties, result.randomState);
+        auto rolls = rollItemProperties(data,selected->properties, result.randomState,1);
         result.randomState = rolls.randomState;
         result.generation.propertyRolls = std::move(rolls.values);
+        result.generation.operationRolls=std::move(rolls.operations);
     }
+    result.generation.propertyRandom=result.randomState;
     return result;
 }
 } // namespace d2x

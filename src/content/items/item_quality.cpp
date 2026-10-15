@@ -29,8 +29,6 @@ ItemQualityRules loadItemQualityRules(const ClassicData &data, const DataTable &
     const bool quest = source.number(item->base.sourceRow, "quest").value_or(0) != 0;
     result.uniqueOnly = source.number(item->base.sourceRow, "unique").value_or(0) ||
                         (result.magicOnly && quest);
-    if (result.normalOnly || result.uniqueOnly)
-        return result;
     const bool classSpecific = !types.value(typeRow, "Class").empty();
     const bool uber = (item->equipment.isType("armo") || item->equipment.isType("weap")) &&
                       !quest && item->base.type != "tpot" &&

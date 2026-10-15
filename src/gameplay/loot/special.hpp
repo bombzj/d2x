@@ -37,10 +37,11 @@ struct SpecialItemRoll {
 struct SpecialPropertyRoll {
     std::vector<int32_t> values;
     uint64_t randomState = 0;
+    std::vector<std::vector<int32_t>> operations;
 };
 SpecialPropertyRoll rollDisplayProperties(std::span<const PropertyRange> properties, uint64_t seed);
 SpecialPropertyRoll rollSpecialProperties(const SpecialItemRecord &record, uint64_t seed);
 SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std::string_view code,
                                 int itemLevel, uint64_t seed, const std::set<size_t> &used = {},
-                                bool hellBovine = false);
+                                bool hellBovine = false,std::optional<size_t> preferred = {});
 } // namespace d2x

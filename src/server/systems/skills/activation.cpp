@@ -117,6 +117,7 @@ DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &a
     if(found && !program.potion) {
         LootRequest source;source.source=pending.unit;source.identity=corpse.identity;source.region=actor.area;source.difficulty=owner.persistent.difficulty;
         source.sourceSeed=true;source.rewardModifiers=monsterRewardModifiers(corpse.rule.enchantment);source.monsterPlayerCount=corpse.admittedPlayerCount;source.ignoreNoDrop=true;
+        source.random=random;
         result=ports_.loot.queue({actor.sequence,source,actor.player,center},std::move(payment));
     } else if(found) {
         const int act=ports_.areas.at(actor.area).definition.act;
@@ -126,6 +127,7 @@ DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &a
         LootRequest source;source.source=pending.unit;source.identity=corpse.identity;source.region=actor.area;source.difficulty=owner.persistent.difficulty;
         loot::Request request{actor.sequence,source,actor.player,center};request.object=loot::ObjectSource{};
         request.object->reportCompletion=false;
+        request.source.random=random;
         request.object->dropCode=program.potions.at(index).at(size_t(column));request.object->dropCount=1;request.object->dropLevel=corpse.rule.level;
         result=ports_.loot.queue(request,std::move(payment));
     } else {

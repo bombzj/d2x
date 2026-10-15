@@ -16,5 +16,6 @@ struct LootRequest {
     std::optional<MonsterRewardModifiers> rewardModifiers;
     unsigned monsterPlayerCount = 8; // Original admission-time cap; objects use the room count.
     bool ignoreNoDrop = false; // Native Find Item's DropTC a7 flag.
+    std::optional<uint64_t> random;
 };
 } // namespace d2x

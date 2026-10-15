@@ -5,6 +5,7 @@ namespace d2x {
 struct ClassicData;
 std::vector<Bytes> nativeMana(const ClassicData &, const server::ManaFact &);
 std::vector<Bytes> nativeLife(const ClassicData &, const server::LifeFact &);
+std::vector<Bytes> nativeResources(const ClassicData &, const server::ResourcesFact &);
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &, const CharacterRecord &, const server::attributes::Totals &);
 std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &, const CharacterRecord &);
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &, const server::CharacterFact &);

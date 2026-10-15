@@ -145,6 +145,7 @@ ItemInstance vendorItem(const VendorOffer &offer, const ClassicData &data, bool 
         item.rarePrefixRow = g.rarePrefixRow;
         item.rareSuffixRow = g.rareSuffixRow;
         item.propertyRolls = g.propertyRolls;
+        item.operationRolls=g.operationRolls;
         item.affixes = g.affixes;
         int durabilityPercent = 0, durabilityAdd = 0;
         for (const auto &stat : resolveItemStats(data, item, 1)) {
