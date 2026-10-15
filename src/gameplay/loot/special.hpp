@@ -41,5 +41,6 @@ struct SpecialPropertyRoll {
 SpecialPropertyRoll rollDisplayProperties(std::span<const PropertyRange> properties, uint64_t seed);
 SpecialPropertyRoll rollSpecialProperties(const SpecialItemRecord &record, uint64_t seed);
 SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std::string_view code,
-                                int itemLevel, uint64_t seed, const std::set<size_t> &used = {});
+                                int itemLevel, uint64_t seed, const std::set<size_t> &used = {},
+                                bool hellBovine = false);
 } // namespace d2x

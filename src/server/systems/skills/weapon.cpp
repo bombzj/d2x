@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/systems/combat/system.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
 #include "runtime.hpp"
 #include "evaluation.hpp"
 #include "server/player_store.hpp"
@@ -9,6 +11,7 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/companions/system.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
@@ -19,6 +22,8 @@
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/skills/common_actions.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
+#include "server/systems/effects/attribute_projection.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
 DomainResult<> System::avoidance(const ActorContext &actor,WeaponAvoidance result,EntityId attacker) {
@@ -44,14 +49,12 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     const auto &rules=*p.rules.skills;
     if(area.definition.town || !request.target) return {DomainStatus::Unavailable,{}};
     if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
-    const auto rank=p.totals.skillRanks.find(id);
-    const auto charge=chargedSource(p,id,request.right);
-    const auto owner=p.persistent.player.selectedSkillOwners.at(p.persistent.player.weaponSet*2+(request.right?1:0));
-    if(owner!=UINT32_MAX && !charge) return {DomainStatus::Unavailable,{}};
-    const int effectiveRank=charge?charge->rank:p.rules.character->innateSkills.contains(id)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    const auto source=selectedSource(p,id,request.right);
+    if(!source) return {DomainStatus::Unavailable,{}};
+    const int effectiveRank=source->rank;
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,id,effectiveRank);
-    if(charge) {skill.charge=SkillCharge{charge->item,charge->layer};skill.manaCost=skill.startMana=0;}
+    if(source->charged) {skill.charge=SkillCharge{source->charged->item,source->charged->layer};skill.manaCost=skill.startMana=0;}
     const auto &program=*skill.weapon;
     if(program.smite && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
     if(p.persistent.player.mana<skill.manaCost && (program.frenzy || (program.spear && program.spear->attackWithoutMana) || skill.effect==SkillBehavior::PoisonDagger)) return attack(actor,request,0);
@@ -140,21 +143,57 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
     if(prior!=state_.casts.end() && skill.delayFrames>0 && prior->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
     std::optional<effects::PotionPlan> attackState;
     if(program.attackState.id>=0) {
-        CombatEffectSpec effect;effect.state=program.attackState;effect.duration=uint64_t(std::max(1,program.attackDuration>0?program.attackDuration:volleyDuration));
-        effect.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};effect.stacking=EffectStacking::ReplaceState;
-        effect.modifiers.combat.defensePercent=program.attackDefense;
-        effect.modifiers.combat.armorOverridePercent=program.armorOverridePercent;effect.modifiers.combat.physicalResist=program.attackPhysicalResist;
-        auto prepared=ports_.effects.skillState(actor,std::move(effect));if(!prepared) return {prepared.status,{}};
+        if(!p.rules.skills->formulas || !p.rules.skills->stats) return {DomainStatus::Unavailable,{}};
+        auto context=formulaInput(p);SkillFormulaValues formulas(*p.rules.skills->formulas,context);
+        const auto &rules=*p.rules.skills->stats;
+        CombatEffectSpec effect;effect.state=program.attackState;
+        effect.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};
+        effect.nativeState=true;effect.refreshPassivesOnRemoval=true;effect.nativeValues.emplace();
+        effect.stacking=program.whirlwind?EffectStacking::SkillLevel:EffectStacking::ReuseState;
+        std::vector<StatValue> writes;
+        const auto append=[&](const auto &stats) {for(const auto &write:stats) {
+            writes.push_back(write);
+            if(write.key.id==rules.names.at("attackrate")) writes.emplace_back(StatKey{rules.names.at("other_animrate"),0},write.value);
+        }};
+        append(formulas.auraStats(id,effectiveRank,6,true));
+        if(program.whirlwind) {
+            const auto length=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"auralencalc");
+            if(!length) return {DomainStatus::Unavailable,{}};
+            if(*length) effect.duration=uint32_t(*length);
+            append(formulas.passiveBuffStats(id,effectiveRank));
+            writes.emplace_back(StatKey{rules.names.at("modifierlist_skill"),0},id);
+            writes.emplace_back(StatKey{rules.names.at("modifierlist_level"),0},effectiveRank);
+        } else if(program.attackDurationMaximum>0) {
+            const auto length=formulas.calculation(FormulaDomain::Skill,id,effectiveRank,"calc2");
+            if(!length) return {DomainStatus::Unavailable,{}};
+            effect.duration=uint32_t(*length>0?*length:10);
+            effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
+        } else effect.modeActionRevision=actor.sequence;
+        auto prepared=ports_.effects.skillState(actor,std::move(effect),writes);if(!prepared) return {prepared.status,{}};
         attackState=std::move(*prepared.value);
         if(program.whirlwind) {
-            CombatEffectSpec moving;moving.state=program.movingState;moving.duration=uint64_t(std::max(1,volleyDuration));
-            moving.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};
+            CombatEffectSpec moving;moving.state=program.movingState;moving.nativeState=true;
+            moving.modeActionRevision=actor.sequence;moving.source={CombatEffectSource::Skill,actor.actor,id,effectiveRank};
             auto &states=attackState->next.players[actor.actor].states;
             if(!states.apply(std::move(moving),actor.tick).accepted) return {DomainStatus::Conflict,{}};
-            attackState->transient.states.insert(program.movingState.id);
+            attackState->transient=effects::projectEffectAttributes(states,actor.tick);
+            attackState->publicFacts.emplace_back(StateFact{actor.actor,0,actor.area,program.movingState.id,true});
         }
     }
     auto cost=ports_.inventory.weaponCost(actor,*weapon,skill,!program.manaOnRelease,strafe,0,attackState?std::optional{attackState->transient}:std::nullopt);if(!cost) return {cost.status,{}};
+    if(attackState) {
+        auto change=std::move(cost.value->change);
+        auto record=attackState->character;if(!program.manaOnRelease) record.mana-=skill.manaCost;
+        std::visit([&](auto &edit) {
+            using Edit=std::decay_t<decltype(edit)>;
+            if constexpr(std::is_same_v<Edit,transactions::CharacterEdit>) edit.player=record;
+            else if constexpr(std::is_same_v<Edit,transactions::InventoryEdit>) edit.character=record;
+            if constexpr(std::is_same_v<Edit,transactions::CharacterEdit> || std::is_same_v<Edit,transactions::InventoryEdit>) {
+                edit.resourceBase=attackState->resourceBase;edit.publicFacts=attackState->publicFacts;
+            }
+        },change);
+        cost=ports_.transactions.prepare(std::move(change));if(!cost) return {cost.status,{}};
+    }
     const auto fact=AttackFact{actor.actor,target,0,targetType,actor.area,p.position,destination,actor.sequence,uint16_t(id),uint8_t(effectiveRank),program.whirlwind};
     if(auto *edit=std::get_if<transactions::CharacterEdit>(&cost.value->change)) edit->publicFacts.emplace_back(fact);
     else std::get<transactions::InventoryEdit>(cost.value->change).publicFacts.emplace_back(fact);
@@ -175,14 +214,19 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
         release.chargeSpeed=float(p.definition.runVelocity)*25.f/16.f*float(program.chargeVelocity+std::max(50,p.totals.character.velocityPercent))/100.f;
     }
     auto cast=Cast{actor.actor,uint16_t(id),actor.tick,actor.sequence,actor.tick+uint64_t(volleyDuration),actor.area,target};
+    cast.usesSkillPointer=true;
     if(program.chargeVelocity>0) cast.until=actor.tick+250;
     if(prior!=state_.casts.end()) cast.cooldownUntil=prior->second.cooldownUntil;
     // Allocate candidate nodes before publishing inventory/mana/action as one transaction.
     std::map<EntityId,Release> preparedRelease;preparedRelease.emplace(actor.actor,std::move(release));
     std::map<EntityId,Cast> preparedCast;preparedCast.emplace(actor.actor,cast);
+    auto preparedUse=state_.prepareUsedSkill(actor.actor,{id,source->charged?source->charged->item.id:EntityId{}});
+    removeSkillUse(preparedUse.mapped(),cost.value->player->totals.clearedSkillUses);
     const auto committed=ports_.transactions.commit(std::move(*cost.value));if(!committed) return committed;
     if(attackState) ports_.effects.commit(std::move(*attackState));
+    if(releases_.contains(actor.actor)) ports_.companions.cancel(actor.actor);
     releases_.erase(actor.actor);releases_.merge(preparedRelease);state_.casts.erase(actor.actor);state_.casts.merge(preparedCast);
+    state_.commitUsedSkill(std::move(preparedUse));
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
 DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Vec destination) {
@@ -217,7 +261,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         if(!found->projectile) return DomainStatus::Unavailable;
         pending.skill=commonProjectileSkill(pending.skill,*found->projectile);
     }
-    auto event=ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::Attack},selectedTarget,destination);if(!event) return event.status;
+    auto event=ports_.itemTriggers.prepare(actor,{ItemSkillEvent::Attack},selectedTarget,destination);if(!event) return event.status;
     if(pending.skill.charge) {
         const auto source=p.persistent.inventory.items.find(pending.skill.charge->item.id);
         if(source==p.persistent.inventory.items.end() || !p.totals.activeEquipment.contains(source->first)) return DomainStatus::Stale;
@@ -234,12 +278,12 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
         missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
         request.guidedTarget=selectedTarget;
         const auto result=ports_.missiles.spawn(request).status;
-        if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.effects.commitItemEvents(std::move(*event.value));}
+        if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.itemTriggers.commit(std::move(*event.value),true);}
         return result;
     }
     if(pending.skill.weapon->commonAttack && !selectedTarget) {
         const auto result=cost?ports_.transactions.commit(std::move(*cost)).status:DomainStatus::Applied;
-        if(result==DomainStatus::Applied) ports_.effects.commitItemEvents(std::move(*event.value));
+        if(result==DomainStatus::Applied) ports_.itemTriggers.commit(std::move(*event.value),true);
         return result;
     }
     const auto target=participants.find(selectedTarget);
@@ -249,7 +293,7 @@ DomainStatus System::weaponRelease(Release &pending,const ActorContext &actor,Ve
     WeaponSkillDamage snapshot;snapshot.weapon=*found;snapshot.level=p.persistent.player.level;
     missiles::Spawn request{actor,pending.skill,{},destination,true};request.weapon=snapshot;request.cost=std::move(cost);
     const auto result=ports_.missiles.direct(request,{selectedTarget}).status;
-    if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.effects.commitItemEvents(std::move(*event.value));}
+    if(result==DomainStatus::Applied) {pending.unit=selectedTarget;ports_.itemTriggers.commit(std::move(*event.value),true);}
     return result;
 }
 }

@@ -55,6 +55,9 @@ std::shared_ptr<const server::EquipmentRules> prepareEquipmentRules(const Classi
 void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data, const PersistentCharacter &saved) {
     rules.potions = std::make_shared<const server::PotionRules>(data.potions);
     auto character = std::make_shared<server::CharacterRules>();
+    character->stats=data.nativeStats;
+    character->states=data.nativeStates;
+    if(!character->stats) throw std::runtime_error("Missing shared native stat catalog");
     const auto &inventory = data.tables.at("inventory");
     for (size_t row = 0; row < inventory.rows().size(); ++row)
         if (inventory.value(row, "class") == "Trade Page 2-2") {
@@ -79,22 +82,25 @@ void prepareCharacterRules(server::PreparedRules &rules, const ClassicData &data
     for (const auto &[name, state] : data.states) {
         if (state.definition.curable || name == "poison" || name == "freeze") character->healerCureStates.insert(state.definition.id);
         if (name == "nomanaregen") character->noManaRegenState = state.definition.id;
+        if (name == "blood_mana") character->bloodManaState = state.definition.id;
     }
     if (character->noManaRegenState < 0) throw std::runtime_error("Missing original no-mana-regeneration state");
     for (const auto &[id, skill] : data.skills.skills)
         character->learning.emplace(id, server::LearningRule{skill.classCode, skill.page, skill.requiredLevel,
-            skill.maximumRank, skill.requiredAttributes, skill.prerequisites, skill.passiveContribution, skill.manaRecoveryPerRank, !skill.passive, skill.leftAllowed});
+            skill.maximumRank, skill.requiredAttributes, skill.prerequisites, skill.passiveContribution, skill.manaRecoveryPerRank, !skill.passive, skill.leftAllowed,skill.fireMasteryPerRank,skill.lightningMasteryPerRank,skill.coldPiercePerRank});
     const size_t levels = character->experience.size();
     if (levels < 3 || character->experience.back() > UINT32_MAX || saved.player.level < 1 || size_t(saved.player.level) >= levels)
         throw std::runtime_error("Missing character progression rules");
     auto equipment = prepareEquipmentRules(data, saved);
     const auto definition = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (definition == data.characters.end()) throw std::runtime_error("Missing player death class");
-    for (auto id : loadInnateSkillIds(data.tables.at("skills"), data.tables.at("charstats"), definition->sourceRow)) character->innateSkills.insert(id);
+    character->innateSkillOrder=loadInnateSkillIds(data.tables.at("skills"), data.tables.at("charstats"), definition->sourceRow);
+    for (const auto id:character->innateSkillOrder) character->innateSkills.insert(id);
     const auto &death = data.playerDeath.timings.at(definition->appearance + "dthth");
     character->deathExperiencePenalty = data.playerDeath.experiencePenalty.at(size_t(saved.difficulty));
     character->deathTicks = std::max(1, (death.frames * 256 + death.speed - 1) / death.speed);
     prepareSkillRules(rules, data, *definition);
+    character->formulas=rules.skills->formulas;
     rules.equipment = std::move(equipment);
     const auto &skills=data.tables.at("skills"), &books=data.tables.at("books");
     for(size_t row=0;row<books.rows().size();++row) {

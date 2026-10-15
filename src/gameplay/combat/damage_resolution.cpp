@@ -1,4 +1,6 @@
 #include "damage_resolution.hpp"
+#include "mitigation.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -9,24 +11,28 @@ namespace d2x {
 int piercedResistance(int resistance, int pierce) {
     return resistance < 100 ? int(std::clamp<int64_t>(int64_t(resistance) - pierce,-100,INT32_MAX)) : resistance;
 }
+std::optional<int32_t> staticFieldDamageFixed(int32_t life,int32_t maximumLife,
+    int damagePercent,int minimumPercent,int32_t minimumDamage,int resistance) {
+    const auto wholeLife=life >> 8;
+    if(wholeLife<1) return {};
+    if(minimumPercent && wholeLife<=nativePercentage(maximumLife >> 8,minimumPercent,100)) return {};
+    auto damage=nativeShiftLeft(std::min(nativeSubtract(wholeLife,1),nativePercentage(wholeLife,damagePercent,100)),8);
+    damage=std::max(minimumDamage,damage);
+    if(resistance<0) damage=nativePercentage(100,damage,nativeSubtract(100,resistance));
+    return damage;
+}
 uint64_t resistedDuration(uint64_t frames, int resistance) {
-    // Native duration channels are signed 32-bit; widen before multiplication.
-    return std::min<uint64_t>(frames, INT32_MAX) * uint64_t(100 - std::clamp(resistance, -100, 100)) / 100;
+    if (frames > INT32_MAX) throw std::overflow_error("Duration exceeds native frame range");
+    return uint64_t(std::max(0, nativePercentage(int32_t(frames),
+        100 - std::clamp(resistance, -100, 100), 100)));
 }
 uint64_t coldHitDuration(uint64_t frames, int resistance, int pierce, bool cannotBeFrozen, bool halfFreezeDuration) {
     if (cannotBeFrozen) return 0;
     if (halfFreezeDuration) frames /= 2;
     return resistedDuration(frames, piercedResistance(resistance, pierce));
 }
-namespace {
-int64_t units(float amount) {
-    if (!std::isfinite(amount)) throw std::runtime_error("Non-finite combat damage");
-    if (amount <= 0) return 0;
-    return int64_t(std::min(double(amount) * 256.0,
-                            double(std::numeric_limits<int32_t>::max())));
-}
-}
 int rawResistance(const CharacterAttributes &stats, DamageType type) {
+    if(stats.rawResistances) return stats.rawResistances->at(size_t(type));
     switch (type) {
     case DamageType::Physical: return stats.combat.physicalResist;
     case DamageType::Magic: return stats.combat.magicResist;
@@ -37,43 +43,43 @@ int rawResistance(const CharacterAttributes &stats, DamageType type) {
     }
     return 0;
 }
-ResolvedDamage mitigatePlayerDamage(float amount, MonsterDamageType type,
-                                    const CharacterAttributes &s, bool monsterRules) {
+int damageResistance(int raw,int maximumBonus,bool monsterRules,bool physical,int pierce) {
+    if (pierce && (raw<100 || !monsterRules)) raw=nativeSubtract(raw,pierce);
+    if(raw<=0) return std::max(raw,-100);
+    if(monsterRules) return std::min(raw,100);
+    const auto maximum=physical?50:std::min(nativeAdd(75,maximumBonus),95);
+    return std::clamp(raw,-100,std::max(-100,maximum));
+}
+DamageMitigation damageMitigation(MonsterDamageType type, const CharacterAttributes &s, bool monsterRules,int pierce,bool bypass,bool sanctuary) {
     const auto &m = s.combat;
-    int resist = 0, flat = 0, absorbPercent = 0, absorb = 0;
+    int maximum = 0, flat = 0, absorbPercent = 0, absorb = 0;
     switch (type) {
     case MonsterDamageType::Physical:
-        resist = std::clamp(m.physicalResist, -100, monsterRules ? 100 : 50);
         flat = m.flatPhysicalReduction;
         break;
     case MonsterDamageType::Magic:
-        resist = std::clamp(m.magicResist, -100, monsterRules ? 100 : std::max(-100, std::min(95, 75 + m.magicMaxResist)));
+        maximum = m.magicMaxResist;
         flat = m.flatMagicReduction;
         absorbPercent = m.magicAbsorbPercent; absorb = m.magicAbsorb;
         break;
     case MonsterDamageType::Fire:
-        resist = s.fireResist; flat = m.flatMagicReduction;
+        maximum = m.fireMaxResist; flat = m.flatMagicReduction;
         absorbPercent = m.fireAbsorbPercent; absorb = m.fireAbsorb;
         break;
     case MonsterDamageType::Lightning:
-        resist = s.lightningResist; flat = m.flatMagicReduction;
+        maximum = m.lightningMaxResist; flat = m.flatMagicReduction;
         absorbPercent = m.lightningAbsorbPercent; absorb = m.lightningAbsorb;
         break;
     case MonsterDamageType::Cold:
-        resist = s.coldResist; flat = m.flatMagicReduction;
+        maximum = m.coldMaxResist; flat = m.flatMagicReduction;
         absorbPercent = m.coldAbsorbPercent; absorb = m.coldAbsorb;
         break;
     case MonsterDamageType::Poison:
-        resist = s.poisonResist;
+        maximum = m.poisonMaxResist;
         break;
     }
-    int64_t value = std::max<int64_t>(0, units(amount) - int64_t(flat) * 256);
-    value = value * (100 - std::clamp(resist, -100, 100)) / 100;
-    const int64_t percent = value * std::clamp(absorbPercent, 0, 40) / 100;
-    const int64_t fixed = std::min<int64_t>(std::max<int64_t>(0, int64_t(absorb) * 256), value - percent);
-    return {float(value - percent - fixed) / 256.f, float(percent + fixed) / 256.f};
-}
-float mitigateMonsterDamage(float amount, int resistance) {
-    return float(units(amount) * (100 - std::clamp(resistance, -100, 100)) / 100) / 256.f;
+    auto resist=damageResistance(rawResistance(s,type),maximum,monsterRules,type==DamageType::Physical,pierce);
+    if(sanctuary && type==DamageType::Physical && resist>0) resist=0;
+    return {resist, flat, absorbPercent, absorb,bypass};
 }
 } // namespace d2x

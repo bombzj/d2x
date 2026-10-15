@@ -1,4 +1,5 @@
 #include "monster_difficulty_combat.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -7,13 +8,16 @@
 
 namespace d2x {
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
-    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel) {
-    if (difficulty < 0 || difficulty > 2 || areaLevel < 1) return std::nullopt;
+    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel,bool ladderStats,MonsterStatPurpose purpose) {
+    const bool npc=purpose==MonsterStatPurpose::NativeNpc;
+    if (difficulty < 0 || difficulty > 2 || areaLevel < (npc?0:1)) return std::nullopt;
     static constexpr std::array suffix{"", "(N)", "(H)"};
     const std::string ending = suffix[size_t(difficulty)];
-    const auto nativeLevel = stats.number(row, "Level" + ending);
+    // Compiled MonStats blanks are zero. Service NPCs are living native
+    // monsters with level/maxhp zero, rather than fabricated level-1 actors.
+    const auto nativeLevel = npc?std::optional{stats.number(row,"Level"+ending).value_or(0)}:stats.number(row,"Level"+ending);
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;
-    if (!nativeLevel || *nativeLevel < 1) return std::nullopt;
+    if (!nativeLevel || *nativeLevel < (npc?0:1)) return std::nullopt;
     const bool boss = stats.number(row, "boss").value_or(0) != 0;
     const int level = forcedLevel.value_or(difficulty == 0 || noRatio || boss ? *nativeLevel : areaLevel);
     size_t levelRow = 0;
@@ -21,14 +25,13 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
         if (levels.number(levelRow, "Level") == level) break;
     if (levelRow == levels.rows().size()) return std::nullopt;
     auto scale = [&](std::string_view field, std::string_view ratioField) -> std::optional<int> {
-        const auto source = stats.number(row, std::string(field) + ending);
+        const auto source = npc?std::optional{stats.number(row,std::string(field)+ending).value_or(0)}:stats.number(row,std::string(field)+ending);
         if (!source || *source < 0) return std::nullopt;
         if (noRatio) return source;
-        const auto ratio = levels.number(levelRow, std::string(ratioField) + ending);
+        const auto ratioName=ladderStats?ratioField:ratioField.substr(2);
+        const auto ratio = levels.number(levelRow, std::string(ratioName) + ending);
         if (!ratio || *ratio < 0) return std::nullopt;
-        const int64_t value = int64_t(*source) * *ratio / 100;
-        if (value > std::numeric_limits<int>::max()) return std::nullopt;
-        return int(value);
+        return nativePercentage(*ratio,*source,100);
     };
     auto lowHp = scale(difficulty == 0 ? "minHP" : "MinHP", "L-HP");
     auto highHp = scale(difficulty == 0 ? "maxHP" : "MaxHP", "L-HP");
@@ -41,7 +44,7 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     auto defense = scale("AC", "L-AC");
     auto critical = stats.number(row, "Crit");
     auto regen = stats.number(row, "DamageRegen");
-    if (!lowHp || !highHp || *lowHp < 1 || *highHp < *lowHp ||
+    if (!lowHp || !highHp || *lowHp < (npc?0:1) || *highHp < *lowHp ||
         *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
         (regen && (*regen < 0 || *regen > 4096)))
         return std::nullopt;

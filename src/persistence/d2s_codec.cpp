@@ -2,6 +2,7 @@
 #include "d2s_header.hpp"
 #include "d2s_fixed_sections.hpp"
 #include "d2s_inventory.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
 #include "d2s_quests.hpp"
@@ -196,7 +197,11 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     player.allocated = {int(values[0]) - definition.strength, int(values[2]) - definition.dexterity,
                         int(values[3]) - definition.vitality, int(values[1]) - definition.energy};
     player.unspentAttributes = int(values[4]); player.unspentSkills = int(values[5]);
-    player.hp = float(values[6]) / 256.f; player.mana = float(values[8]) / 256.f; player.stamina = float(values[10]) / 256.f;
+    require(values[6] <= INT32_MAX && values[7] <= INT32_MAX && values[8] <= INT32_MAX && values[9] <= INT32_MAX && values[10] <= INT32_MAX && values[11] <= INT32_MAX,
+        "resource exceeds native signed fixed-point range");
+    player.hp = Fixed8::fromRaw(int32_t(values[6]));
+    player.mana = Fixed8::fromRaw(int32_t(values[8]));
+    player.stamina = Fixed8::fromRaw(int32_t(values[10]));
     player.experience = uint64_t(values[13]); player.gold = unsigned(values[14]); player.bankGold = unsigned(values[15]);
     auto skills = readD2sSkills(bytes.subspan(cursor), header.characterClass, header.skillCount, content.tables.at("skills"));
     cursor += skills.bytesRead;
@@ -342,10 +347,11 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     require(std::none_of(snapshot.inventory.containers.begin(),snapshot.inventory.containers.end(),
         [](const auto &entry){return entry.second.spec.kind==ContainerKind::Trade;}),"unsettled player trade inventory");
     std::map<uint32_t,unsigned> sourceSlots;
-    for(const auto &[id,item]:snapshot.inventory.items) if(const auto *at=std::get_if<ContainerLocation>(&item.location);
+    const auto itemOrder=inventoryItemOrder(snapshot.inventory);
+    for(const auto id:itemOrder) {const auto &item=snapshot.inventory.items.at(id);if(const auto *at=std::get_if<ContainerLocation>(&item.location);
         at && at->container!=snapshot.containers.hirelingEquipment && snapshot.inventory.containers.at(at->container).spec.kind!=ContainerKind::Corpse) {
         characterRoots.push_back(&item);sourceSlots.emplace(uint32_t(id.value),unsigned(characterRoots.size()));
-    }
+    }}
     require(characterRoots.size()<=1024,"too many character items");
     const auto sourceSlot=[&](uint32_t guid)->uint32_t {const auto found=sourceSlots.find(guid);return found==sourceSlots.end()?0:found->second;};
     for (size_t index = 0; index < player.skillHotkeys.size(); ++index) {
@@ -363,13 +369,13 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     CharacterModifiers questModifiers;
     questModifiers.baseLife = questBaseLife(player.quests);
     const auto base = deriveCharacterAttributes(definition, player.level, player.allocated, questModifiers);
-    auto fixed = [](float value) -> int64_t {
-        require(std::isfinite(value) && value >= 0 && value < float(UINT32_MAX / 256), "resource value");
-        return int64_t(value * 256.f);
+    auto fixed = [](Fixed8 value) -> int64_t {
+        require(value.raw() >= 0, "resource value");
+        return value.raw();
     };
     std::vector<D2sStat> stats{{0, base.strength}, {1, base.energy}, {2, base.dexterity}, {3, base.vitality},
-        {4, player.unspentAttributes}, {5, player.unspentSkills}, {6, fixed(player.hp)}, {7, int64_t(base.maxLife) * 256},
-        {8, fixed(player.mana)}, {9, int64_t(base.maxMana) * 256}, {10, fixed(player.stamina)}, {11, int64_t(base.maxStamina) * 256},
+        {4, player.unspentAttributes}, {5, player.unspentSkills}, {6, fixed(player.hp)}, {7, base.maxLifeFixed.raw()},
+        {8, fixed(player.mana)}, {9, base.maxManaFixed.raw()}, {10, fixed(player.stamina)}, {11, base.maxStaminaFixed.raw()},
         {12, player.level}, {13, int64_t(player.experience)}, {14, player.gold}, {15, player.bankGold}};
     writeD2sStats(bytes, stats, content.tables.at("itemstatcost"));
     std::map<int, uint8_t> ranks;
@@ -378,12 +384,13 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     auto items = [&](bool hireling, EntityId corpse = EntityId{}) {
         std::vector<const ItemInstance *> entries;
         if(!hireling && !corpse) entries=characterRoots;
-        else for (const auto &[id, item] : snapshot.inventory.items)
+        else for (const auto id:itemOrder) {const auto &item=snapshot.inventory.items.at(id);
             if (const auto *location = std::get_if<ContainerLocation>(&item.location);
                 location && (corpse ? location->container == corpse :
                     snapshot.inventory.containers.at(location->container).spec.kind != ContainerKind::Corpse &&
                     (location->container == snapshot.containers.hirelingEquipment) == hireling))
                 entries.push_back(&item);
+        }
         require(entries.size() <= 1024, "too many character items");
         appendWord(bytes, 0x4D4A); appendWord(bytes, unsigned(entries.size()));
         for (const auto *item : entries) {

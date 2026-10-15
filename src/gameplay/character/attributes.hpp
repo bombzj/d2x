@@ -1,11 +1,16 @@
 #pragma once
+#include "core/fixed.hpp"
 #include "gameplay/character/allocation.hpp"
 #include <cstdint>
 #include <cstddef>
+#include <array>
+#include <optional>
 #include <string>
 #include "gameplay/combat/stat_modifiers.hpp"
 
 namespace d2x {
+struct StatRuleCatalog;
+struct StatSnapshot;
 struct CharacterDefinition {
     std::string name, code, appearance;
     size_t sourceRow = 0;
@@ -20,6 +25,7 @@ struct CharacterModifiers {
     int strength = 0, dexterity = 0, vitality = 0, energy = 0;
     int maxLife = 0, maxMana = 0, maxStamina = 0;
     int baseLife = 0; // Permanent quest life participates in maximum-life percentages.
+    int lifeAfterPercentFixed = 0, manaAfterPercentFixed = 0, staminaAfterPercentFixed = 0;
     int attackRating = 0, defense = 0;
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     int lightRadius = 0;
@@ -31,23 +37,28 @@ struct CharacterModifiers {
 struct CharacterAttributes {
     int strength = 0, dexterity = 0, vitality = 0, energy = 0;
     int maxLife = 1, maxMana = 1, maxStamina = 1;
+    Fixed8 maxLifeFixed=Fixed8::fromRaw(256),maxManaFixed=Fixed8::fromRaw(256),maxStaminaFixed=Fixed8::fromRaw(256);
     int attackRating = 0, defense = 0;
     int baseAttackRating = 0; // Before percentage and selected-weapon contributions.
     int fireResist = 0, coldResist = 0, lightningResist = 0, poisonResist = 0;
     int lightRadius = 13;
-    float walkSpeed = 0, runSpeed = 0, staminaDrain = 0;
+    float walkSpeed = 0, runSpeed = 0;
+    int staminaDrainPerFrame = 0;
     float walkAnimationRate = 0, runAnimationRate = 0;
     int staminaRecoveryBonus = 0, staminaPercent = 0, otherAnimationRate = 0;
     CombatModifiers combat;
     int blockFactor = 0;
     int velocityPercent = 0;
-    float manaRegen = 0;
+    int manaRegenPerFrame = 0;
     int uncappedColdResist{},uncappedPoisonResist{};
+    // Native totals before resistance caps. Presentation keeps capped fields.
+    std::optional<std::array<int,6>> rawResistances;
 };
-float manaRecoveryRate(int maximumMana, int denominator, int recoveryBonus);
+int manaRecoveryPerFrame(int32_t maximumManaFixed, int denominator, int recoveryBonus);
 void mergeCharacterModifiers(CharacterModifiers &target, const CharacterModifiers &source);
 CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &definition, int level,
                                                const AttributeAllocation &allocation,
                                                const CharacterModifiers &modifiers = {},
-                                               int resistancePenalty = 0);
+                                               int resistancePenalty = 0,
+                                               const StatRuleCatalog *statRules = nullptr,const StatSnapshot *nativeStats = nullptr);
 } // namespace d2x

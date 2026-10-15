@@ -4,7 +4,8 @@
 #include <array>
 #include <cstdint>
 namespace d2x {
-// Native launch snapshot: fixed HP channels, explicit RNG, no world or rendering.
+// Weapon contact values and procedure parameters. Missile ranges and their
+// per-target rolls live in MissileDamageData, without cached HP channels.
 struct WeaponSkillDamage {
     std::array<int64_t,6> channels{};
     WeaponDamage weapon;
@@ -26,6 +27,8 @@ struct WeaponSkillDamage {
 WeaponSkillDamage rollPotionDamage(const WeaponDamage &, int level, uint64_t &random);
 WeaponSkillDamage rollSmiteDamage(const WeaponDamage &,const EquipmentStats &,const CharacterAttributes &,const SkillCastSpec &,int,uint64_t &);
 std::array<int64_t,6> targetWeaponChannels(const WeaponSkillDamage &,bool demon,bool undead);
+// Procedure parameters never allocate a unit or consume a random draw.
+WeaponSkillDamage prepareWeaponSkillProcedures(const WeaponDamage &,const CombatModifiers &,const SkillCastSpec &,int level,bool projectile);
 WeaponSkillDamage rollWeaponSkillDamage(const WeaponDamage &, const CombatModifiers &,
     const SkillCastSpec &, int level, bool projectile, uint64_t &random);
 }

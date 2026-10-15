@@ -1,4 +1,5 @@
 #include "planning.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include <limits>
 
 namespace d2x::server::inventory::detail {
@@ -86,6 +87,7 @@ DomainStatus Draft::move(EntityId id, ContainerLocation destination) {
     edit.changes.push_back({id, item.revision + 1, ItemChangeKind::Moved, item.location, destination, item.quantity});
     item.location = destination;
     ++item.revision;
+    reinsertInventoryItem(edit.inventory,id);
     return DomainStatus::Applied;
 }
 DomainStatus Draft::resizeBelt(int rows) {

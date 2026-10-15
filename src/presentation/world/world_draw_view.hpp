@@ -25,6 +25,7 @@ struct WorldDrawItem {
     float age = 0, remaining = 0;
     bool loop = false;
     int height = 1;
+    std::optional<int> missileFrame;
 };
 struct WorldDrawView {
     struct Alert { EntityId unit; Vec position; };

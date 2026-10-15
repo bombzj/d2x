@@ -16,7 +16,7 @@ struct Admission { int definition{}; RegionId area; Vec position; std::optional<
 struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId; bool specialPending{}; int spawnCount{},spawned{},secondaryTrap{}; bool trapWarned{};uint64_t lootAt{}; };
 struct State { std::map<EntityId, Object> objects; };
 struct TowerClock { int remaining{}; bool opened{}; uint64_t random{}; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; quests::System &quests; loot::System &loot; effects::System &effects; transactions::System &transactions; EntityIds &ids; world::System &world; monsters::System &monsters; const GameSettings &settings; inventory::System &inventory; travel::System &travel; skills::System &skills; EventOutbox &events; combat::System &combat; missiles::System &missiles; MovementSystem &movement; };
+struct Ports { const PlayerStore &players; AreaStore &areas; quests::System &quests; loot::System &loot; effects::System &effects; transactions::System &transactions; EntityIds &ids; world::System &world; monsters::System &monsters; const GameSettings &settings; inventory::System &inventory; travel::System &travel; skills::System &skills; EventOutbox &events; combat::System &combat; missiles::System &missiles; MovementSystem &movement; };
 class System {
     State state_;
     const Ports ports_;
@@ -43,6 +43,7 @@ class System {
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);
+    DomainResult<> openOrbMist(EntityId,uint64_t tick);
     void onWaypointArrival(RegionId,TickContext);
     StepStatus step(TickContext, FrameFacts &);
 };

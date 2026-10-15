@@ -1,5 +1,8 @@
 #include "item_properties.hpp"
 #include "gameplay/items/state.hpp"
+#include "gameplay/items/stat_evaluation.hpp"
+#include "gameplay/items/property_program.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "socket_data.hpp"
 #include <algorithm>
 #include <stdexcept>
@@ -59,20 +62,102 @@ void loadPropertyData(ClassicData &data) {
                 stat.operationParameter = table.number(row, "op param").value_or(0);
                 stat.operationBase = table.value(row, "op base");
                 stat.operationStat = table.value(row, "op stat1");
+                for(size_t slot=0;slot<stat.operationStats.size();++slot)
+                    stat.operationStats[slot]=table.value(row,"op stat"+std::to_string(slot+1));
+                stat.hasMinimum=table.number(row,"fMin").value_or(0)!=0;
+                stat.keepZero=table.number(row,"keepzero").value_or(0)!=0;
+                stat.damageRelated=table.number(row,"damagerelated").value_or(0)!=0;
+                stat.minimumAccrual=table.number(row,"MinAccr").value_or(0);
+                stat.valueShift = table.number(row,"ValShift").value_or(0);
+                if(stat.valueShift<0 || stat.valueShift>31) throw std::runtime_error("Invalid native stat value shift");
                 data.itemStats.push_back(std::move(stat));
             }
         }
+        for(auto &stat:data.itemStats) if(!stat.operationStat.empty()) {
+            const auto target=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &entry){return entry.name==stat.operationStat;});
+            if(target==data.itemStats.end()) throw std::runtime_error("Missing native op target stat");
+            stat.operationTargetShift=target->valueShift;
+        }
     }
+}
+std::shared_ptr<const StatRuleCatalog> prepareNativeStatRules(const ClassicData &data) {
+    auto rules=std::make_shared<StatRuleCatalog>();
+    std::map<uint16_t,const ItemStatDefinition*> originals;
+    for(const auto &definition:data.itemStats) {
+        if(!definition.id || *definition.id<0 || *definition.id>=512) throw std::runtime_error("Invalid native stat identity");
+        const auto id=uint16_t(*definition.id);
+        if(!rules->names.emplace(definition.name,id).second || !originals.emplace(id,&definition).second)
+            throw std::runtime_error("Duplicate native stat definition");
+        rules->definitions.emplace(id,StatRule{id,definition.name,uint8_t(definition.valueShift),definition.minimumAccrual,
+            definition.hasMinimum,definition.keepZero,definition.damageRelated,{}});
+    }
+    if(rules->definitions.empty()) throw std::runtime_error("Missing native stat rule catalog");
+    const auto &events=data.tables.at("events"),&costs=data.tables.at("itemstatcost");
+    for(const auto &[id,definition]:originals) {
+        auto &rule=rules->definitions.at(id);
+        rule.direct=costs.number(definition->row,"direct").value_or(0)!=0;
+        const auto maximum=costs.value(definition->row,"maxstat");
+        if(maximum.find_first_not_of(" \t\r\n")!=std::string_view::npos) {
+            const auto found=rules->names.find(maximum);
+            if(found==rules->names.end()) throw std::runtime_error("Missing native maximum stat link: "+std::string(maximum));
+            rule.maximumStat=found->second;
+        }
+    }
+    std::map<std::string,int16_t,std::less<>> eventIds;
+    for(size_t row=0;row<events.rows().size();++row) {
+        const auto name=events.value(row,"event");
+        if(name.empty() || row>INT16_MAX || !eventIds.emplace(std::string(name),int16_t(row)).second)
+            throw std::runtime_error("Invalid native unit event linker identity");
+    }
+    for(const auto &[id,definition]:originals) for(size_t slot=0;slot<2;++slot) {
+        const auto suffix=std::to_string(slot+1);
+        const auto name=costs.value(definition->row,"itemevent"+suffix);
+        auto &binding=rules->definitions.at(id).itemEvents[slot];
+        if(name.find_first_not_of(" \t\r\n")!=std::string_view::npos) {
+            const auto event=eventIds.find(name);
+            if(event==eventIds.end()) throw std::runtime_error("Missing native item event link: "+std::string(name));
+            binding.event=event->second;
+        }
+        const int function=costs.number(definition->row,"itemeventfunc"+suffix).value_or(0);
+        if(function<INT16_MIN || function>INT16_MAX) throw std::runtime_error("Invalid native item event function");
+        binding.function=int16_t(function);
+    }
+    // ItemsTbls appends reverse operations by original stat id, not by caller
+    // contribution order. This preserves the pre-op percentage reference.
+    for(const auto &[id,definition]:originals) {
+        if(definition->operation<=0 || definition->operation>=14) continue;
+        if(definition->operationParameter<0 || definition->operationParameter>=32)
+            throw std::runtime_error("Invalid native stat operation parameter");
+        std::optional<uint16_t> base;
+        if(!definition->operationBase.empty()) {
+            const auto found=rules->names.find(definition->operationBase);
+            if(found==rules->names.end()) throw std::runtime_error("Missing native operation base stat");
+            base=found->second;
+        }
+        auto &sourceRule=rules->definitions.at(id);
+        sourceRule.producer=StatOperation{uint8_t(definition->operation),uint8_t(definition->operationParameter),id,base};
+        if(base) {
+            auto &dependents=rules->definitions.at(*base).baseDependents;
+            if(dependents.size()>=64) throw std::runtime_error("Native operation-base table exceeds capacity");
+            dependents.push_back(id);
+        }
+        for(const auto &name:definition->operationStats) {
+            if(name.empty()) break;
+            const auto target=rules->names.find(name);
+            if(target==rules->names.end()) throw std::runtime_error("Missing native operation target stat");
+            sourceRule.targets.push_back(target->second);
+            auto &operations=rules->definitions.at(target->second).operations;
+            if(operations.size()>=16) throw std::runtime_error("Native reverse operation table exceeds capacity");
+            operations.push_back({uint8_t(definition->operation),uint8_t(definition->operationParameter),id,base});
+        }
+    }
+    return rules;
 }
 bool isDirectPropertyRoll(const ClassicData &data, std::string_view code) {
     auto found = std::find_if(data.properties.begin(), data.properties.end(),
                               [&](const auto &property) { return property.code == code; });
     if (found == data.properties.end() || found->operations.empty()) return false;
-    switch (found->operations.front().function) {
-    case 1: case 2: case 3: case 4: case 5: case 6: case 7: case 8:
-    case 9: case 10: case 12: case 13: case 14: case 21: case 22: case 24: case 36: return true;
-    default: return false;
-    }
+    return propertyUsesDirectRoll(found->operations.front().function);
 }
 std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
     const PropertyRange &property, int roll, int level, int itemLevel) {
@@ -91,72 +176,21 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
             for (size_t row = 0; row < skills->second.rows().size(); ++row)
                 if (skills->second.value(row, "skill") == property.parameter)
                     parameter = skills->second.number(row, "Id").value_or(0);
-    auto append = [&](std::string stat, int value, int layer = 0) {
-        const int rawValue = value;
-        auto definition = std::find_if(data.itemStats.begin(), data.itemStats.end(),
-            [&](const auto &s) { return s.name == stat; });
-        if (definition == data.itemStats.end()) return;
-        std::string effect = stat;
-        if (definition->operationBase == "level" &&
-            (definition->operation == 2 || definition->operation == 4 || definition->operation == 5)) {
-            value = int(int64_t(value) * std::clamp(level, 1, 99) /
-                        (int64_t(1) << std::clamp(definition->operationParameter, 0, 30)));
-            effect = definition->operationStat;
-            if (definition->operation == 5) {
-                if (effect == "armorclass") effect = "item_armor_percent";
-                else if (effect == "maxdamage") effect = "item_maxdamage_percent";
-                else if (effect == "mindamage") effect = "item_mindamage_percent";
-            }
-        }
-        result.push_back({std::move(stat), std::move(effect), value, layer, rawValue});
-    };
+    PropertyProgramInput input{roll,parameter,property.minimum.value_or(0),property.maximum.value_or(0),level,itemLevel,{}};
+    std::vector<PropertyInstruction> program;
+    program.reserve(found->operations.size());
     for (const auto &op : found->operations) {
-        switch (op.function) {
-        case 1: case 2: case 3: case 4: case 8: case 13:
-            // Func13 stores the rolled durability percent; item creation/repair
-            // separately initializes current durability from the resulting max.
-            append(op.stat, roll); break;
-        case 9: append(op.stat, roll, parameter); break;
-        // ItemMods PropertyFunc12 rolls the skill id, retaining Param as rank.
-        // Freeze this result like other property rolls; never reroll on equip.
-        case 12: append(op.stat, parameter, roll); break;
-        case 36: append(op.stat, number(op.value), roll); break; // Random class, fixed Properties.val rank (Torch).
-        case 5: append("mindamage", roll); break;
-        case 6: append("maxdamage", roll); break;
-        case 7:
-            append("item_mindamage_percent", roll);
-            append("item_maxdamage_percent", roll); break;
-        case 15: append(op.stat, property.minimum.value_or(0)); break;
-        case 16: append(op.stat, property.maximum.value_or(0)); break;
-        case 17: append(op.stat, parameter); break;
-        case 20: append("item_indesctructible", 1); break;
-        case 10: append(op.stat, roll, parameter % 3 + 8 * (parameter / 3)); break;
-        case 21: append(op.stat, roll, number(op.value)); break;
-        case 22: append(op.stat, roll, parameter); break;
-        case 24: append(op.stat, roll, parameter); break;
-        case 14: append("item_numsockets", roll > 0 ? roll : std::max(1, parameter)); break;
-        case 11: case 19: {
-            const int sourceLevel = itemLevel > 0 ? itemLevel : level;
+        program.push_back({op.function,op.stat,number(op.value)});
+        if ((op.function == 11 || op.function == 19) && !input.skill) {
             const auto *skill = data.skills.find(parameter);
             if (!skill) throw std::runtime_error("Unknown item property skill: " + property.parameter);
-            int rank = property.maximum.value_or(0);
-            if (!rank) rank = std::clamp((sourceLevel - skill->requiredLevel) / 4 + 1, 1,
-                skill->maximumRank > 0 ? skill->maximumRank : 20);
-            else if (rank < 0) rank = std::max(1, (sourceLevel - skill->requiredLevel) /
-                std::max(1, -(std::max(1, 99 - skill->requiredLevel) / rank)));
-            int amount = property.minimum.value_or(0);
-            if (op.function == 11) append(op.stat, amount > 0 ? amount : 5, (parameter << 6) | (rank & 63));
-            else {
-                if (amount < 0) amount = rank * -amount / 8 - amount;
-                amount = amount ? std::clamp(amount, 1, 255) : 5;
-                append(op.stat, (amount << 8) | amount, (parameter << 6) | (rank & 63));
-            }
-            break;
+            input.skill=PropertySkillLevels{skill->requiredLevel,skill->maximumRank};
         }
-        case 23: break; // Physical ethereality belongs to the instance, not a stat.
-        case 0: break;
-        default: throw std::runtime_error("Unsupported item property function: " + std::to_string(op.function));
-        }
+    }
+    for (const auto &stat : evaluatePropertyProgram(program,input)) {
+        const auto definition = std::find_if(data.itemStats.begin(), data.itemStats.end(),
+            [&](const auto &entry) { return entry.name == stat.name; });
+        if (definition != data.itemStats.end()) result.push_back(evaluateItemStat(*definition,stat.value,stat.layer,level));
     }
     return result;
 }
@@ -169,20 +203,7 @@ std::vector<ResolvedItemStat> resolveOwnItemStats(const ClassicData &data,
             auto definition = std::find_if(data.itemStats.begin(), data.itemStats.end(),
                 [&](const auto &entry) { return entry.id == saved.id; });
             if (definition == data.itemStats.end()) throw std::runtime_error("Unknown saved item stat");
-            int value = saved.value;
-            std::string effect = definition->name;
-            if (definition->operationBase == "level" &&
-                (definition->operation == 2 || definition->operation == 4 || definition->operation == 5)) {
-                value = int(int64_t(value) * std::clamp(level, 1, 99) /
-                    (int64_t(1) << std::clamp(definition->operationParameter, 0, 30)));
-                effect = definition->operationStat;
-                if (definition->operation == 5) {
-                    if (effect == "armorclass") effect = "item_armor_percent";
-                    else if (effect == "maxdamage") effect = "item_maxdamage_percent";
-                    else if (effect == "mindamage") effect = "item_mindamage_percent";
-                }
-            }
-            result.push_back({definition->name, std::move(effect), value, saved.parameter, saved.value});
+            result.push_back(evaluateItemStat(*definition,saved.value,saved.parameter,level));
         }
         return result;
     }

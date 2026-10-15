@@ -29,6 +29,7 @@ class GameInstance {
     EventOutbox events_;
     GameSystems systems_;
     Simulation simulation_;
+    bool simulationPending_{};
     struct Pending { PlayerId player; GameCommand command; };
     std::deque<Pending> commands_;
     std::array<DiagnosticCommand, 512> commandHistory_{};
@@ -47,6 +48,7 @@ class GameInstance {
     uint64_t nextEntity() const { return entities_.cursor(); }
     const GameSettings &settings() const { return settings_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
+    std::optional<NativeActEnvironment> environment(RegionId id) const {return areas_.environment(id);}
     std::vector<RegionId> visibleAreas(PlayerId) const;
     std::vector<RoomView> visibleRooms(PlayerId id) const { return systems_.world.visibleRooms(id); }
     bool visiblePoint(PlayerId id, RegionId region, Vec point) const { return systems_.world.visible(id, region, point); }
@@ -61,6 +63,7 @@ class GameInstance {
     }
     std::vector<PlayerId> visiblePlayers(PlayerId) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerId) const;
+    std::vector<MissileFact> visibleMissiles(PlayerId id) const {return systems_.missiles.visible(id);}
     std::vector<PetOwnershipSnapshot> pets(PlayerId id) const {return systems_.replication.pets(id);}
     std::set<int> unitStates(EntityId id) const {return systems_.effects.unitStates(id,tick_); }
     std::optional<PlayerSnapshot> snapshot(PlayerId) const;

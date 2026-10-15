@@ -1,4 +1,5 @@
 #pragma once
+#include "core/fixed.hpp"
 #include "gameplay/skills/behavior_fwd.hpp"
 #include "gameplay/skills/curse_spec.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
@@ -25,9 +26,9 @@ struct SkillCastSpec {
     std::shared_ptr<const GrimWardSpec> grimWard;
     int rank = 0;
     int stunFrames = 0;
-    float healingMinimum = 0, healingMaximum = 0;
+    Fixed8 healingMinimum, healingMaximum;
     float castDuration = 0, castImpact = 0, castRate = 0;
-    float manaCost = 0, minimumDamage = 0, maximumDamage = 0;
+    Fixed8 manaCost, minimumDamage, maximumDamage;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;
     float poisonDuration = 0;
     std::optional<WeaponSkillSpec> weapon;
@@ -51,9 +52,11 @@ struct SkillCastSpec {
     int missileId = -1;
     float missileNextDelay = 0;
     int missileCount = 1;
-    float startMana = 0;
+    Fixed8 startMana;
     float missileAcceleration = 0, missileMaxVelocity = 0;
-    float staticPercent = 0, staticRadius = 0, staticMinDamage = 0;
+    int staticPercent = 0;
+    float staticRadius = 0;
+    Fixed8 staticMinDamage;
     int castOverlayId = -1, hitOverlayId = -1;
     float visualDuration = 0, hitOverlayDuration = 0;
     int hitClass = 0;
@@ -63,5 +66,7 @@ struct SkillCastSpec {
     std::optional<CombatEffectSpec> appliedEffect;
     bool warcry = false;
     std::optional<SkillCharge> charge;
+    std::vector<StatValue> nativeEffectWrites;
+    std::optional<int32_t> coldDurationFrames,poisonDurationFrames;
 };
 } // namespace d2x

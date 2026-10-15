@@ -31,6 +31,7 @@ SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2,
         auto &stats = spec.base[difficulty];
         auto &attributes = stats.attributes;
         attributes.maxLife = number(monstats, monster, difficulty ? "MinHP" + suffix : "minHP");
+        attributes.maxLifeFixed=Fixed8(attributes.maxLife);stats.level=number(monstats,monster,"Level"+suffix);
         if (attributes.maxLife != number(monstats, monster, difficulty ? "MaxHP" + suffix : "maxHP"))
             throw std::runtime_error("Unsupported randomized skeleton life");
         attributes.defense = number(monstats, monster, "AC" + suffix);
@@ -59,13 +60,15 @@ SummonSkillSpec nativePet(const DataTable &monstats, const DataTable &monstats2,
         stats.drain = monstats.number(monster, "Drain" + suffix).value_or(0);
     }
     for (size_t level = 0; level < monlvl.rows().size(); ++level) {
-        std::array<int, 3> defense{}, attack{};
+        std::array<int, 3> defense{}, attack{},plainDefense{},plainAttack{};
         for (int difficulty = 0; difficulty < 3; ++difficulty) {
             const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
             defense[difficulty] = number(monlvl, level, "L-AC" + suffix);
             attack[difficulty] = number(monlvl, level, "L-TH" + suffix);
+            plainDefense[difficulty]=number(monlvl,level,"AC"+suffix);plainAttack[difficulty]=number(monlvl,level,"TH"+suffix);
         }
         spec.levelDefense.push_back(defense); spec.levelAttack.push_back(attack);
+        spec.levelDefenseNonL.push_back(plainDefense);spec.levelAttackNonL.push_back(plainAttack);
     }
     return spec;
 }
@@ -97,6 +100,7 @@ void loadRemainingNecromancerSummons(SkillCatalog &catalog, const DataTable &ski
             spec.lifePerRank = number(skills, row, "Param2"); spec.defensePerRank = number(skills, row, "Param5");
             for (auto &base : spec.base) base.undead = true;
             const auto missileSkill = rowOf(skills, "skill", skills.value(row, "sumskill1"));
+            program->missileSkill=number(skills,missileSkill,"Id");
             expect(skills, missileSkill, "srvdofunc", "149");
             const auto first = rowOf(missiles, "Missile", skills.value(missileSkill, "srvmissilea"));
             for (int element = 0; element < 4; ++element) {

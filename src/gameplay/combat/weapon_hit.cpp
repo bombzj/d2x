@@ -1,16 +1,23 @@
 #include "weapon_hit.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "drain.hpp"
 #include <algorithm>
 
 namespace d2x {
+int32_t nativeThornsDamage(int32_t physical,int32_t percent,bool playerOrHirelingAttacker) {
+    if(percent<=0) return 0;
+    if(playerOrHirelingAttacker) percent=nativeDivide(nativeAdd(percent,4),8);
+    return percent>0?nativePercentage(physical,percent,100):0;
+}
 namespace {
 int64_t leechedResource(int64_t physical, int percent, int drain, int divisor) {
     if (physical <= 0 || percent <= 0 || drain <= 0 || divisor <= 0) return 0;
     // SUNITDMG_ExecuteEvents retains six fractional bits in the percentage
     // until after difficulty, physical damage and MonStats Drain scaling.
-    const int64_t scaled = int64_t(percent) * 64 / divisor;
-    return physical * scaled / 100 * drain / 100 / 64;
+    const auto scaled = nativeDivide(nativeShiftLeft(percent, 6), divisor);
+    return nativeLeechFromScaledPercent(nativeChecked(physical),scaled,drain);
 }
 int64_t openWoundsRate(int level) {
     int64_t rate = 40;
@@ -30,10 +37,12 @@ WeaponHitResult calculateWeaponHitEffects(const WeaponSkillDamage &attack, const
     // Item events are rolled at each successful contact, not once per volley.
     if (attack.crushingBlow > 0 && limitedRandom(random, 100) < unsigned(attack.crushingBlow)) {
         int divisor = target.player || target.hireling ? 10 : target.boss ? 8 : 4;
-        if (!target.player && !target.hireling) divisor += divisor * int(std::max(1u, target.playerCount) - 1) / 2;
-        if (attack.projectile) divisor *= 2;
+        if (!target.player && !target.hireling) divisor=nativeAdd(divisor,nativePercentage(divisor,nativeMultiply(nativeChecked(std::max(1u,target.playerCount)-1),50),100));
+        if (attack.projectile) divisor=nativeMultiply(divisor,2);
         result.crushing = std::max<int64_t>(0, target.life) / divisor;
-        result.crushing -= result.crushing * std::clamp(target.physicalResistance, 0, 100) / 100;
+        const auto crushing = nativeChecked(result.crushing);
+        result.crushing = nativeSubtract(crushing, nativePercentage(crushing,
+            std::clamp(target.physicalResistance, 0, 100), 100));
     }
     const int64_t dealt = std::min(std::max<int64_t>(0, target.life - result.crushing), std::max<int64_t>(0, physical));
     result.life = leechedResource(dealt, attack.lifeLeech, target.drain, divisors.life);

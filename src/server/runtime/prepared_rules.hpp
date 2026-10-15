@@ -1,7 +1,10 @@
 #pragma once
 #include "combat_rules.hpp"
 #include "skill_rules.hpp"
+#include "equipment_rules.hpp"
 #include "gameplay/consumables/potions.hpp"
+#include "gameplay/stats/stat_list.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "core/id.hpp"
 #include "world/identity.hpp"
 #include "gameplay/items/definitions.hpp"
@@ -21,24 +24,10 @@
 #include <memory>
 #include <vector>
 
+namespace d2x {class CombatEffectSet;}
 namespace d2x::server {
 using EffectRules = std::map<int, CombatStateDefinition>;
 using TreasureRules = std::vector<TreasureClass>;
-// Hosting resolves the admitted property instructions at each MPQ-supported
-// character level. Runtime selects values; it never retains content callbacks.
-struct ItemLevelValues {
-    std::vector<ResolvedItemStat> stats;
-    std::array<std::vector<ResolvedItemStat>, 5> setStats;
-    unsigned maximumDurability{};
-};
-struct EquipmentValues { std::vector<ItemLevelValues> levels; bool singleCarry{}; };
-struct EquipmentRules {
-    std::map<EntityId, EquipmentValues> items;
-    std::vector<EquipmentSetPiece> sets;
-    std::map<std::pair<size_t, size_t>, std::vector<std::vector<ResolvedItemStat>>> setBonuses;
-    const ItemLevelValues &at(EntityId, int level) const;
-    void includeSets(const EquipmentRules &);
-};
 struct LearningRule {
     std::string classCode;
     int page{}, requiredLevel{}, maximumRank{};
@@ -47,11 +36,15 @@ struct LearningRule {
     SkillPassiveSpec passive;
     std::optional<std::pair<int, int>> manaRecoveryPerRank;
     bool selectable{}, leftAllowed{};
+    std::optional<std::pair<int,int>> fireMasteryPerRank,lightningMasteryPerRank,coldMasteryPerRank;
 };
 enum class ItemSkillAction { Identify, Portal };
 struct ItemSkillRule { int skill{}; bool book{}; ItemSkillAction action{}; int cursor{-1}; };
 enum class QuestConsumable { SkillBook, LifePotion, ResistanceScroll, RespecToken };
 struct CharacterRules {
+    std::shared_ptr<const CombatStateRules> states;
+    std::shared_ptr<const StatRuleCatalog> stats;
+    std::shared_ptr<const SkillFormulaCatalog> formulas;
     int tradeColumns{}, tradeRows{}; // Original Inventory.Trade Page 2-2.
     struct ActTwoItems {
         std::string cube, scroll, shaft, amulet, staff, book;
@@ -64,6 +57,7 @@ struct CharacterRules {
     } laterQuests;
     std::map<RegionId,int> waypointIndices; // Immutable MPQ Levels identities, including unloaded areas.
     std::set<int> innateSkills;
+    std::vector<int> innateSkillOrder; // CharStats order, following native Attack initialization.
     std::map<std::string,ItemSkillRule,std::less<>> itemSkills;
     std::vector<uint64_t> experience;
     std::map<int, LearningRule> learning;
@@ -71,13 +65,22 @@ struct CharacterRules {
     int deathTicks{}, deathExperiencePenalty{};
     std::set<int> healerCureStates;
     int noManaRegenState = -1;
+    int bloodManaState = -1;
     std::map<std::string,QuestConsumable,std::less<>> questConsumables;
 };
 // Immutable value definitions prepared by hosting/content, with instance-long
 // ownership. Null means not prepared, never "use invented default rules".
 // Additional native tables belong in their domain's typed value contract.
 using PotionRules = std::map<std::string, PotionDefinition, std::less<>>;
-struct TransientAttributes { CharacterModifiers modifiers; std::set<int> states; };
+struct TransientAttributes {
+    CharacterModifiers modifiers;std::set<int> states;
+    std::optional<std::vector<ModifierStatSource>> sources;
+    std::shared_ptr<const CombatEffectSet> effects; // Runtime lifecycle snapshot; never serialized.
+    std::optional<std::span<const ModifierStatSource>> statSources() const {
+        if(sources) return std::span<const ModifierStatSource>{*sources};
+        return {};
+    }
+};
 struct PreparedRules {
     std::shared_ptr<const PotionRules> potions;
     std::shared_ptr<const MeleeRules> melee;

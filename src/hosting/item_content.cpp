@@ -39,9 +39,15 @@ void innateProperties(const ClassicData &data,const ItemDefinition &base,ItemIns
     if(group) {
         std::vector<MagicAffixRecord> candidates;
         for(const auto &record:data.autoMagic) if(record.group==group) candidates.push_back(record);
+        std::vector<int> usedGroups;
+        for(const auto &affix:item.affixes) {
+            const auto &records=affix.prefix?data.magicPrefixes:data.magicSuffixes;
+            for(const auto &record:records) if(int32_t(record.row)==affix.row) usedGroups.push_back(record.group);
+        }
         const int magic=base.base.magicLevel.value_or(0);
+        const bool rare=item.quality==ItemQuality::Rare || item.quality==ItemQuality::Crafted || item.quality==ItemQuality::Tempered;
         auto roll=rollMagicAffix(candidates,base.equipment.types,base.equipment.requiredClass,
-            itemAffixLevel(int(item.level),base.base.level.value_or(0),magic),magic,false,base.base.sockets.value_or(0)>0,{},true,random);
+            itemAffixLevel(int(item.level),base.base.level.value_or(0),magic),magic,rare,base.base.sockets.value_or(0)>0,usedGroups,true,random);
         random=roll.randomState;
         if(roll.row) {
             const auto found=std::find_if(candidates.begin(),candidates.end(),[&](const auto &v){return v.row==*roll.row;});

@@ -32,12 +32,12 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
     if (!player || !player->entered) return result;
     for (const auto &[key, monster] : ports_.monsters.read().actors) {
         if (!ports_.areas.nearby(player->area, player->position + Vec{.5f,.5f}, monster.area, monster.position)) continue;
-        if(monster.life<=0 && monster.corpseUnavailable && tick>=monster.busyUntil) continue;
-        const bool dead = monster.life <= 0;
+        if(!monster.alive() && monster.corpseUnavailable && tick>=monster.busyUntil) continue;
+        const bool dead = !monster.alive();
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,
-            monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.back(),
-            monsterLifeRatio(monster.life,monster.maximumLife),
+            monster.questNpc?monster.movementGoal:monster.skillMotion?monster.skillMotion->destination:monster.route.empty()?monster.position:monster.route.back(),
+            monster.modeAlive && !monster.maximumLife?uint8_t{128}:monsterLifeRatio(monster.life,monster.maximumLife),
             mode, monster.revision, monster.moving, !dead && tick < monster.busyUntil, monsters::movementPercent(monster,tick), monster.running, ports_.effects.unitStates(key,tick),monster.knockbackSource});
         result.back().equipment=monster.equipment;
         result.back().pathSteps=std::max(uint8_t{1},monster.pathSteps);
@@ -70,39 +70,22 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             result.back().nameSeed=mods.nameSeed;result.back().superUniqueIndex=uint16_t(std::max(0,monster.rule.superUniqueIndex));
         }
         if(monster.amazonPet) {
-            result.back().states.insert(monster.amazonPet->state.id);result.back().appearOverlay=monster.amazonPet->appearOverlay;
+            result.back().appearOverlay=monster.amazonPet->appearOverlay;
             if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
             if(monster.amazonPet->decoy) result.back().modifiers.push_back(21); // SkillAma::SrvDo015 expiration UMod.
         }
-        auto &states = result.back().states;
-        states.insert(monster.aiStates.begin(),monster.aiStates.end());
-        states.insert(monster.deathStates.begin(),monster.deathStates.end());
-        if(!dead && monster.shatterActive && monster.rule.shatterState.id>=0) states.insert(monster.rule.shatterState.id);
-        if(monster.skillMotion && monster.skillMotion->moveState && monster.rule.skillMoveState>=0) states.insert(monster.rule.skillMoveState);
-        if(monster.revived()) {states.insert(monster.necroPet->reviveState.id);if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;}
-        for(const auto &effect:monster.potionEffects.entries()) if(effect.activeAt(tick) && effect.spec.state.id>=0) states.insert(effect.spec.state.id);
+        if(monster.revived() && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
         // SUNIT_SetAlign always owns an alignment state, including evil's
         // zero value (an empty state stat list on the original wire).
         if(monster.rule.alignmentState>=0 && monster.rule.alignmentStat>=0) {
-            states.insert(monster.rule.alignmentState);
             const int alignment=int(monster.alignment());
             if(alignment) result.back().stateStats[monster.rule.alignmentState]={{monster.rule.alignmentStat,alignment}};
             else result.back().stateStats.erase(monster.rule.alignmentState);
         }
         if(monster.conversion) {
-            states.insert(monster.conversion->state);states.insert(monster.conversion->alignment);
             result.back().stateStats[monster.conversion->alignment]={{monster.conversion->stat,2}};
         }
-        if(monster.poison) states.insert(monster.poison->damage.state);
-        if(monster.webUntil>tick && monster.rule.web) states.insert(monster.rule.web->aura.id);
-        if(monster.slowed && monster.slowed->until>tick) states.insert(monster.slowed->state);
-        // Keep the native state until its owning damage/expiry transaction
-        // clears it, including an overdue wound waiting for output capacity.
-        if (!dead && monster.wound && monster.rule.openWoundsState >= 0) states.insert(monster.rule.openWoundsState);
-        if (monster.chilledUntil > tick && monster.rule.coldState >= 0) states.insert(monster.rule.coldState);
-        if (monster.frozenUntil > tick && monster.rule.frozenState.id >= 0) states.insert(monster.rule.frozenState.id);
-        if(monster.stunnedUntil>tick && monster.rule.stunState>=0) states.insert(monster.rule.stunState);
     }
     return result;
 }
@@ -113,7 +96,7 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
     if(!recipient || !recipient->entered) return result;
     // PlayerPets broadcasts ownership to the game independently of room interest.
     for(const auto &[key,body]:ports_.monsters.read().actors) {
-        if((!body.amazonPet && !(body.necroSummon && body.rule.petType>0) && !body.hireling) || !body.owner || body.life<=0) continue;
+        if((!body.amazonPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive()) continue;
         const auto *owner=ports_.players.find(*body.owner);
         if(owner && owner->entered)
             result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),

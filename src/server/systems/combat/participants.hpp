@@ -2,6 +2,8 @@
 #include "core/id.hpp"
 #include "world/identity.hpp"
 #include "gameplay/combat/alignment.hpp"
+#include "gameplay/combat/source.hpp"
+#include "gameplay/combat/relation.hpp"
 #include <vector>
 
 namespace d2x { struct Vec; }
@@ -11,14 +13,8 @@ class PlayerStore;
 namespace monsters { struct Actor; class System; }
 namespace social { class System; }
 namespace combat {
-enum class Relation { Unknown, Self, Allied, Neutral, Hostile };
-struct SourceBinding {
-    EntityId actor, controller, credit;
-    bool hostile{}, converted{};
-    UnitAlignment alignment{UnitAlignment::Evil};
-    uint64_t allegianceRevision{};
-    auto operator<=>(const SourceBinding &) const = default;
-};
+using Relation = CombatRelation;
+using SourceBinding = CombatSourceBinding;
 struct ParticipantView {
     const PlayerState *player{};
     const monsters::Actor *monster{};
@@ -48,7 +44,9 @@ class Participants {
     bool canHarm(ParticipantView source, ParticipantView target) const;
     bool canHarm(EntityId source, EntityId target) const;
     bool allied(ParticipantView source, ParticipantView target, const social::System &social) const;
+    bool auraAligned(ParticipantView source,ParticipantView target) const;
     bool petOrPartyAlly(ParticipantView source, ParticipantView target, const social::System &social) const;
+    bool skillFriendlyTarget(ParticipantView source,ParticipantView target,bool targetPet,bool targetAlly) const;
 };
 }
 }

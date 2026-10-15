@@ -33,7 +33,7 @@ NativePlayerResources nativePlayerResources(const PlayerSnapshot &view,Vec origi
     const auto position=view.actor.position+origin,target=view.actor.nextPosition+origin;
     if(!std::isfinite(position.x) || !std::isfinite(position.y) || position.x<0 || position.y<0 || position.x>65535 || position.y>65535)
         throw std::runtime_error("Resource position exceeds native coordinates");
-    const auto resource=[](float value) {if(!std::isfinite(value)) throw std::runtime_error("Invalid native resource");return uint16_t(std::clamp(value,0.f,32767.f));};
+    const auto resource=[](Fixed8 value) {return uint16_t(std::clamp(value.raw() >> 8,0,32767));};
     const auto x=uint16_t(std::lround(position.x)),y=uint16_t(std::lround(position.y));
     // PlrMsg sends current minus PathGetFirstPoint (tTargetCoord), not the
     // next bend in the route. The historical helper name is misleading.
@@ -118,7 +118,7 @@ Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player)
     });
 }
 std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const PersistentCharacter &state,
-    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition, const server::QuestFact &quests) {
+    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition, const server::QuestFact &quests,const NativeActEnvironment &environment) {
     std::vector<Bytes> result;
     const auto &player = state.player;
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
@@ -167,6 +167,7 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     }
     // Player-private quest initialization and the game quest record are
     // distinct original messages, even in a one-player game.
+    emit(ServerMessage::Environment,[&](auto &out) {out.u32(uint32_t(environment.cycle));out.u32(uint32_t(environment.ticks));out.u8(environment.eclipse?1:0);});
     for(auto &packet:nativeQuestUpdate(data,quests)) result.push_back(std::move(packet));
     // Objects are assigned by publishObjects after the authority's original
     // init callback. Admission must not invent neutral-mode object baselines.

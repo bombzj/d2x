@@ -10,7 +10,7 @@ namespace d2x {
 namespace {
 bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const TreasureSelection &selection,
     int itemLevel,std::string_view characterClass,int magicFind,int goldFind,std::optional<DropQuality> forcedQuality,
-    bool superiorFloor,uint64_t &random,LootPlan &plan,std::set<size_t> &selectedUniques) {
+    bool superiorFloor,uint64_t &random,LootPlan &plan,std::set<size_t> &selectedUniques,bool hellBovine=false) {
     std::string_view code = selection.code;
     unsigned goldMultiplier = 256;
     if (code.size() >= 2 && code.front() == '"' && code.back() == '"')
@@ -60,7 +60,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
             }
             const auto &records = unique ? data.uniqueItems : data.setItems;
             auto choice = rollSpecialItem(records, item->code, itemLevel, random,
-                                          unique ? selectedUniques : std::set<size_t>{});
+                                          unique ? selectedUniques : std::set<size_t>{}, hellBovine);
             random = choice.randomState;
             if (choice.row && !choice.alreadyDropped) {
                 auto found = std::find_if(records.begin(), records.end(),
@@ -196,7 +196,8 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
 LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::string_view root,
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques, std::string_view characterClass,
-                      int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop) {
+                      int magicFind, int goldFind, std::optional<DropQuality> forcedQuality, unsigned effectivePlayers, bool ignoreNoDrop,
+                      bool hellBovine) {
     if (data.profile != "lod-named-txt-v1" || itemLevel < 1 || itemLevel > 99 ||
         upgradeLevel < 0 || upgradeLevel > 99)
         throw std::runtime_error("Unsupported item loot profile or level");
@@ -205,7 +206,7 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
     std::set<size_t> selectedUniques = usedUniques;
     auto roll = selectTreasure(data.treasures, root, seed, upgradeLevel,
         [&](const TreasureSelection &selection, uint64_t &random) {
-            return appendSelectedItem(data,ratios,selection,itemLevel,characterClass,magicFind,goldFind,forcedQuality,false,random,plan,selectedUniques);
+            return appendSelectedItem(data,ratios,selection,itemLevel,characterClass,magicFind,goldFind,forcedQuality,false,random,plan,selectedUniques,hellBovine);
         }, effectivePlayers, ignoreNoDrop);
     plan.randomState = roll.randomState;
     plan.noDrops = roll.noDrops;

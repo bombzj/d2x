@@ -1,4 +1,7 @@
 #pragma once
+#include "admission.hpp"
+#include "curse_control.hpp"
+#include "gameplay/events/frame_queue.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
@@ -15,17 +18,28 @@
 #include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
+#include "gameplay/units/resources.hpp"
 #include "gameplay/effects/state.hpp"
+#include "gameplay/skills/stat_callbacks.hpp"
+#include "gameplay/skills/use_source.hpp"
+#include "gameplay/combat/stats.hpp"
+#include "life_change.hpp"
+#include "damage_status.hpp"
+#include <span>
+#include <stdexcept>
 #include "world/native_path_step.hpp"
 #include <deque>
 #include <map>
 #include <set>
 #include <string>
 #include <vector>
+#include <functional>
+namespace d2x::server::effects {struct AuraUnitPublication;}
 
+namespace d2x::server {struct HydraRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;}
 namespace d2x::server::monsters {
+class NativeBirthPublication;
 // Sole owner of monster/NPC/companion actor runtime; content identity is preserved.
-struct Admission { MonsterIdentity identity; std::optional<MonsterKind> implementation; RegionId area; Vec position; bool hostile{}; std::optional<MonsterRule> rule; std::vector<Vec> skillPositions{}; };
 struct MoveRequest {
     EntityId actor; PointTarget destination; EntityId target;
     int stopDistance{}, velocityPercent{75}; bool running{};
@@ -34,21 +48,45 @@ struct MoveRequest {
     uint8_t pathType{13},pathDistance{5};
 };
 struct Actor {
+    std::shared_ptr<RoomUnitRegistration> roomAdmission;
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     bool hostile{};
+    bool questNpc{}; // Quest/service capability; never a substitute hostile AI.
     uint64_t allegianceRevision{};
     MonsterRule rule;
+    std::optional<NativeCollisionPattern> collisionPattern;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
     bool necroSummon{};
     bool revived() const {return necroPet && necroPet->kind==NecroSummonKind::Revive;}
     std::shared_ptr<const NecroPetSpec> necroPet;
     std::optional<ItemInstance> necroMaterial;
-    struct CurseControl {CurseAi ai{CurseAi::None};EntityId caster,target;uint64_t until{};std::optional<Vec> origin;};
+    using CurseControl=d2x::server::monsters::CurseControl;
     CurseControl curseControl;
     EntityId attractionTarget;uint64_t attractionUntil{};
+    std::vector<AiResetTimer> aiResetTimers;
+    bool nativeAiResetTracked{};
+    uint64_t specialTargetOrder{}; // Group 9 head insertion; zero means no node.
+    bool detachedMinion{}; // Runtime OwnerGUIDEx; spawn identity stays intact.
+    uint64_t aiFunctionRevision{};
+    std::optional<NativeSkillSlot> rightSkill; // Native right selection, separate from used/action skill.
+    uint64_t aiThinkAt{};
+    uint64_t aiThinkRevision{};
+    EntityId tauntTarget;
+    bool mainOwnerCleared{};
+    // AIGENERAL owner/list are distinct from UNITS_StoreOwner and PlayerPets.
+    // Present zero explicitly clears AI ownership; absent retains preset rules.
+    std::optional<EntityId> nativeMinionOwner;
+    std::vector<EntityId> nativeMinions;
+    bool killMinionsOnDeath{},minionDeathHandled{};
     bool hireling{};
-    struct Conversion {int state{-1},alignment{-1},stat{-1},level{};int64_t maximum{};uint64_t until{};};
+    uint64_t petRegistrationOrder{}; // PlayerPets appends to each type's list.
+    bool inactivePet{}; // PlayerPets nFlags & 1; kept independently of GUID.
+    struct Conversion {
+        int state{-1},alignment{-1},stat{-1};uint64_t until{};
+        std::optional<ConversionResourceSave> savedResources;
+        int savedState{-1};
+    };
     std::optional<Conversion> conversion;
     uint64_t hirelingInventoryRevision{}, hirelingCharacterRevision{};
     int hirelingStrength{},hirelingDexterity{};
@@ -57,12 +95,20 @@ struct Actor {
     std::map<std::string,int64_t,std::less<>> hirelingBaseAttributes;
     unsigned hirelingPassiveMask{};
     int hirelingMovementPercent{};
-    std::map<int,TimedRestoration> healing;
-    CombatEffectSet potionEffects;
     UnitCombatStats petStats;
+    std::optional<NativeUnitStats> nativeStats;
     std::optional<WeaponDamage> petWeapon;
     std::shared_ptr<const PersistentCharacter> equipment;
+    std::vector<ItemAuraTimer> itemAuraTimers;
+    std::vector<ItemStatEvent> itemStatEvents;
+    std::vector<ChargedSkill> nativeCharges;
+    bool nativeChargesTracked{}; // Updated at the item stat callback, not inferred from final equipment.
+    std::vector<SkillAuraChange> preparedItemAuras; // Unconsumed preparation callbacks, not final aura totals.
     int64_t life{}, maximumLife{};
+    bool modeAlive{}; // Zero-HP native units remain active until a death mode.
+    std::optional<EntityId> delayedDeathSource;
+    bool alive() const {return life>0 || modeAlive;}
+    bool hydra() const {return implementation==MonsterKind::Hydra1 || implementation==MonsterKind::Hydra2 || implementation==MonsterKind::Hydra3;}
     unsigned admittedPlayerCount = 1;
     std::deque<Vec> route;
     NativePathStep pathStep;
@@ -105,8 +151,6 @@ struct Actor {
     struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{};};
     std::optional<SkillMotion> skillMotion;
     int nestSpawned{};
-    struct Slow {int state{-1},percent{};uint64_t until{};};
-    std::optional<Slow> slowed;
     Vec webOrigin;
     uint64_t webRandom{};
     Vec home;
@@ -119,43 +163,82 @@ struct Actor {
     Vec knockbackSource;
     std::optional<Vec> knockbackGoal;
     std::optional<PoisonStatus> poison;
-    UnitAlignment alignment() const { return owner || conversion ? UnitAlignment::Good : UnitAlignment(rule.alignment); }
+    UnitAlignment alignment() const {
+        if(nativeStats && rule.stats) {
+            const auto stat=rule.stats->names.find("alignment");
+            if(stat!=rule.stats->names.end()) return UnitAlignment(nativeStats->values.get({stat->second,0}));
+        }
+        return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
+    }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool damageable() const { return !burrowed && !airborne && (enemyTarget() || amazonPet || necroSummon || hireling || conversion); }
+    bool damageable() const { return !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || amazonPet || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
-    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || necroSummon || conversion; }
+    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || necroSummon || conversion || hydra(); }
 };
 int movementPercent(const Actor &, uint64_t tick);
+struct ActorPublication {
+    std::map<EntityId,Actor> actors;
+    std::map<EntityId,uint64_t> expected;
+    uint64_t cursor{};
+    size_t allocatedIds{};
+};
+using ComponentPaletteState=std::map<RegionId,std::map<int,MonsterComponentPalette>>;
 struct State {
     std::map<EntityId, Actor> actors;
+    uint64_t nextSpecialTargetOrder{1};
+    uint64_t nextPetRegistrationOrder{1};
     // Scoped to the actual instance/area/class, including dynamically born units.
-    std::map<RegionId, std::map<int, MonsterComponentPalette>> componentPalettes;
-    struct DeathCascade {EntityId source;uint64_t due{};};
-    std::map<EntityId,DeathCascade> deathCascades;
+    ComponentPaletteState componentPalettes;
 };
-struct Ports { const AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; const effects::System &effects; const social::System &social; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; };
 class System {
+    friend class NativeBirthPublication;
     State state_;
     const Ports ports_;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
     bool recacheHirelingRoom(Actor &);
+    ComponentPaletteState prepareComponents(Actor &) const;
+    void publishComponents(ComponentPaletteState &) noexcept;
+    Actor prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &) const;
+    void registerPet(Actor &) noexcept;
+    std::vector<FrameEventQueue::PreparedInsertion> prepareDeathSweep(Actor &,uint64_t tick) const;
+    DomainResult<Actor> prepareDeathActor(EntityId,uint64_t tick) const;
+    DomainResult<Actor> prepareDeathActor(const Actor &,uint64_t tick) const;
   public:
     void hirelingProjection(EntityId id,uint64_t next,unsigned passives,int movement,std::map<std::string,int64_t,std::less<>> base) {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
     }
     explicit System(Ports ports) : ports_(ports) {}
+    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
+        const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     const State &read() const { return state_; }
+    ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds) const;
+    bool validateActors(const ActorPublication &) const;
+    void publishActors(ActorPublication &) noexcept;
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
-    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {});
+    void admitNpc(EntityId,RegionId,Vec,const NpcRule &);
+    DomainResult<> moveNpc(EntityId,RegionId,Vec,Vec,bool escaped);
+    DomainResult<> regenerate(EntityId,uint64_t tick);
+    bool frozen(EntityId,uint64_t tick) const;
+    EntityId minionOwner(EntityId) const;
+    std::vector<EntityId> specialTargets() const;
+    std::vector<EntityId> pets(PlayerId) const;
+    bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
+    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {});
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
+    DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
+    DomainResult<> modifierEvent(const FrameEvent &,uint64_t tick);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
+    bool deadMode(EntityId,uint64_t tick) const;
+    bool selectableCorpse(EntityId,uint64_t tick) const;
+    bool consumableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     void consumeCorpse(EntityId) noexcept;
     void searchCorpse(EntityId id) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpseSearched=true;++it->second.revision;}}
-    void commitRevive(std::map<EntityId,Actor> &&actors) noexcept {for(const auto &[id,body]:actors) {(void)body;state_.actors.erase(id);}state_.actors.merge(actors);}
-    void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>);
-    void curseControl(EntityId id,Actor::CurseControl control) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.curseControl=control;++it->second.revision;}}
+    void commitRevive(std::map<EntityId,Actor> &&actors) noexcept;
+    void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>,std::optional<NativeUnitStats> = {},uint64_t tick=0);
+    void curseControl(EntityId id,Actor::CurseControl control) noexcept;
     void attract(EntityId id,EntityId target,uint64_t until) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.attractionTarget=target;it->second.attractionUntil=until;}}
     DomainResult<> resurrect(EntityId source,EntityId corpse,uint64_t tick);
     bool mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy=false) const;
@@ -165,6 +248,7 @@ class System {
     DomainResult<> startSwarmMove(EntityId source,Vec target,uint64_t tick);
     bool advanceSkillMotion(Actor &,uint64_t tick);
     bool canLand(EntityId) const;
+    DomainResult<> consumeRandom(EntityId,uint64_t expected,uint64_t next);
     DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick);
     DomainResult<> aiColor(EntityId,int color,int overlay,uint64_t tick);
     void aiRegeneration(EntityId,int eighths);
@@ -174,19 +258,19 @@ class System {
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0);
     DomainResult<> activateWeb(EntityId,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
-    void maximumLife(EntityId id,int64_t value) {
-        if(auto it=state_.actors.find(id);it!=state_.actors.end() && it->second.maximumLife!=value) {
-            it->second.maximumLife=std::max<int64_t>(256,value);it->second.life=std::min(it->second.life,it->second.maximumLife);++it->second.revision;
-        }
-    }
-    DomainResult<> redeem(EntityId);
-    DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &);
-    void holyFreeze(EntityId,uint64_t until);
-    DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick);
+    void maximumLife(EntityId,int64_t);
+    bool canCommitLife(const LifeChange &) const;
+    bool commitLife(LifeChange &&) noexcept;
+    DomainResult<> convert(EntityId,const ActorContext &,const WeaponSkillSpec &,LifeChange,std::optional<ConversionResourceSave>,std::vector<DomainFact>);
+    DomainResult<> finishConversion(EntityId,uint64_t,LifeChange,std::vector<DomainFact>);
+    DomainResult<> holyFreeze(EntityId,uint64_t until,uint64_t tick);
+    DomainResult<> slow(EntityId,int state,int percent,uint64_t frames,uint64_t tick,EntityId source={});
     // coldFrames is the raw hit duration; qualification/resistance/difficulty
     // are resolved here for every producer, before committing lethal damage.
-    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false,int64_t crushing=0,int coldPierce=0);
+    DomainResult<> damage(EntityId, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames = 0, bool freeze = false, uint8_t hitClass = 0, std::optional<PoisonApplication> poison = {},bool poisonOnly=false,uint64_t stunFrames=0,std::optional<OpenWoundsApplication> wound={},int64_t absorbed=0,bool clearStun=false,int64_t crushing=0,int coldPierce=0,bool softHit=false,std::optional<uint64_t> freezeLength={},std::optional<bool> getHit={},DamageStatus status={});
     void shortenPoison(EntityId,uint64_t tick,int remainingPercent);
+    void drainResources(EntityId,int32_t mana,int32_t stamina,uint64_t tick);
+    void disableTreasure(EntityId);
     DomainResult<> block(EntityId,uint64_t tick);
     DomainResult<> lightningEmission(EntityId,bool emitted,uint64_t tick);
     void rewardComplete(EntityId);
@@ -206,24 +290,26 @@ class System {
     DomainResult<EntityId> admit(const Admission &);
     DomainResult<> upgradeShrine(EntityId,uint64_t tick);
     DomainResult<> finishTrap(EntityId,uint64_t tick);
+    DomainResult<> scriptDeath(EntityId,uint64_t tick);
+    std::vector<Actor> prepareMinionDeaths(Actor,uint64_t tick,const std::map<EntityId,Actor> *staged=nullptr) const;
     DomainResult<> reduceShrineLife(EntityId,int64_t amount);
     DomainResult<> requestMove(const MoveRequest &);
     void stop(EntityId);
     void hitDelay(EntityId id, uint64_t until);
     void knockback(EntityId, Vec source, uint64_t tick);
+    DomainResult<> missileReaction(EntityId target,EntityId source,bool getHit,bool knockback,uint8_t hitClass,uint64_t tick);
     DomainResult<> remove(EntityId);
     void withdrawQuestGroup(RegionId,std::string_view);
-    DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraSpec &, Vec) const;
-    DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random) const;
-    DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {}) const;
-    DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0) const;
+    DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,Vec,uint64_t &random) const;
+    DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random,NativeUnitStats) const;
+    DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {},std::span<const std::shared_ptr<const StatList>> = {},uint64_t random=0) const;
+    DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0,std::span<const std::shared_ptr<const StatList>> = {}) const;
     void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;
-    void retire(EntityId, uint64_t tick);
+    DomainResult<> retire(EntityId, uint64_t tick);
+    DomainResult<> stageRetirements(effects::AuraUnitPublication &,std::span<const EntityId>,uint64_t tick) const;
     DomainResult<> updateHireling(EntityId,MonsterRule,WeaponDamage,CombatModifiers,int strength,int dexterity,int vitality,
-        std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision);
-    void installHirelingPotion(EntityId,std::map<int,TimedRestoration>,CombatEffectSet,int64_t life,bool curePoison,bool cureCold,uint64_t random);
-    void healHireling(EntityId) noexcept;
+        std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision,NativeUnitStats,Fixed8 maximum);
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     StepStatus step(TickContext, FrameFacts &);

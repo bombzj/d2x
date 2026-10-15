@@ -2,6 +2,8 @@
 
 更新：2026-10-09。自研服务端执行24项主动、6项被动，原服与自研使用同一原协议客户端。本页维护逐技能职责、亚马逊专属Clt／Srv差异及历史有限证据；公共规范见[COMMON](COMMON.md)，当前包见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
 
+内视／慢速箭的本轮源码迁移开始从当前MPQ AuraRangeCalc／AuraLenCalc／AuraStatCalc1读取原公式，公共期限算子保留Curse状态的抗性取整。首项属性在原始列表投递前分配，同级重施保留原首项；状态事实读取实际复用列表。玩家费用、目标属性／资源、旧诅咒撤出及控制回调随同一候选提交，不再只改变单位状态显示。依据D2MOO SkillAma::SrvDo006及AuraCallback_InnerSight_SlowMissiles。内视／慢速箭又开始使用与光环共用的nativeAuraCandidateRecipients：半径保留signed32、目标按当前MPQ相邻房间及房间单位链顺序采样，保留NoAura、Boss过滤、城镇／伤害资格／敌意及整数距离。玩家PvP接收者和非玩家共用首项来源／同级复用规则，扣费与多个玩家／单位候选一起复验；跨区域状态事实按接收者区域发送。零或负半径不遍历目标。这些状态／接收者迁移已纳入前序Windows Release构建；全部等级／多人／跨房组合、原资格掩码完整闭包及全局事件时序仍未运行认证，下方历史冒烟不认证全部重构路径。
+
 ## 30项职责核对
 
 SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未实现；被动由属性／战斗计算消费。公共计算不拥有世界候选、命中、扣费或实体；表中Clt程序只创建视觉效果。等级／耗蓝／武器伤害等通用语义见[跨职业计算](COMMON.md#跨职业公共计算)。
@@ -30,11 +32,11 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 | 25 瘟疫标枪 Plague Javelin | 4／— | 原毒曲线／期限、16方向云团和整数速度；弹体爆散与每目标持续毒由独立领域执行 |
 | 26 炮轰 Strafe | 8／12 | strafeShotCount及weaponVolley原回滚时钟；CltDo20和服务端共享事件计算，各自筛选目标 |
 | 27 牺牲之箭 Immolation Arrow | 4／— | 原箭伤、独立范围伤／地面火及missileDiskOffsets；Srv期限与CltHit12期限／概率分别取原参数 |
-| 28 诱饵 Dopplezon | —／15 | resolveAmazonSummon：生命／抗性／期限；原人物伪装／主人信息，不复制物品；固定位置、单体替换及死亡清理 |
+| 28 诱饵 Dopplezon | —／15 | resolveAmazonSummon采样原Calc及Aura属性；主人生命保留raw 8.8，基础／召唤来源逐步安装；原人物伪装／主人信息，不复制物品；固定位置、单体替换及死亡清理 |
 | 29 回避 Evade | 被动 | weaponAvoidance的移动分支；移动时仅执行Evade，服务端提交原躲避动作 |
 | 30 击退 Fend | 9／13 | weaponVolley原目标数／回滚；每次释放重新取近战敌人，CltDo21使用已知单位表现 |
 | 31 冻结之箭 Freezing Arrow | 4／— | 箭本体与冷范围分开；服务端范围冻结，CltHit14按原3组／8方向生成碎片 |
-| 32 女武神 Valkyrie | —／16 | resolveAmazonSummon、继承被动及原MonEquip；宿主准备装备，companions持有归属／AI，monsters持有生命／动作 |
+| 32 女武神 Valkyrie | —／16 | 原Calc／SumSkill赋值、原层被动及MonEquip来源；宿主准备装备贡献，属性模块构建原始快照，companions持有归属／AI，monsters持有生命／动作 |
 | 33 穿透 Pierce | 被动 | amazonPassiveValue及missilePierceCount；原owner pierce_idx独立种子，最多4次穿透，不污染战斗随机流 |
 | 34 闪电攻击 Lightning Strike | 10／14 | skillRankBonus完整弹跳数、missileChainSuccessor；主近战与独立连锁分开，CltDo22不套女巫的／5规则 |
 | 35 闪电之怒 Lightning Fury | 4／— | MissileTargetBurst／missileBurstTargets：半径、数量及顺序；SrvHit20／CltHit25在单位、墙及期限回调分裂，子雷弹无武器伤害 |
@@ -49,7 +51,13 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 | 效果／回避 | `effects/amazon`安装Inner Sight／Slow Missiles及属性；poison处理强毒替换／同强续期，avoidance区分近远程／移动。弹体减速和单位状态分别消费原参数 |
 | 召唤 | `resolveAmazonSummon`求纯数值；hosting准备MonEquip，companions持有归属／期限／AI，monsters唯一持有生命／位置／装备。诱饵无装备／空库存替身，女武神持有独立真实物品 |
 
-女武神准备结果绑定请求、独立种子、装备revision、等级、基础技能及区域代次；自然回蓝不取消准备，提交时仍复验法力。物品及孔内项使用实例统一新ID，伙伴退役不发敌怪经验／掉落。死亡、替换、到期及主人离开由companions清理；女武神攻击／同行／换区在 `companions/amazon_ai`，诱饵保持固定位置。
+诱饵和女武神现在都经过现有准备边界，结果绑定请求、独立种子、装备revision、等级、基础技能及区域代次；自然回蓝不取消准备，提交时仍复验法力。物品及孔内项使用实例统一新ID，伙伴退役不发敌怪经验／掉落。死亡、替换、到期及主人离开由companions清理；女武神攻击／同行／换区在 `companions/amazon_ai`，诱饵保持固定位置。
+
+召唤来源迁移已纳入前序Windows Release构建；完整诱饵／女武神重构流程未运行复验。NativeSummonStats保存显式主人公式输出：Calc1／Calc2／诱饵Calc3、五项Passive加值、六项Aura非零写入、五个SumSkill／SumSkCalc槽及普通／L列MonLvl加值。诱饵主人生命不先截成整点；初始及百分比生命使用原整数算子并保留Fixed8。当前两个MonStats记录按已核实noRatio=1准备，初始生命先掷整点、限23位再左移8位；其他ratio模式不由此推断支持。
+
+attributes/prepareSummonStatSources从基础列表依序安装初始技能、召唤等级／MonLvl加值、Passive基础AddStat、Aura独立列表、生命Calc增长和SumSkill赋值，再投递装备来源。继承技能按参数层与原同等级缓存调用共享被动刷新；装备加技能后重新求有效等级。最大生命变化沿MonsterResourceTrace回调，原始生命／上限与来源一起落入单位候选。MonEquip贡献从同一native_sources入口保留原始属性、孔内项和参数层，临时物品ID及其嵌套来源统一绑定实际ID；基础MonStats抗性与技能／装备抗性不合并为另一份基础值。怪物公式、状态和选定武器查询已能读取这份来源，模式表共用当前MPQ的不可变目录。
+
+宿主仍保留部分装备动画／过程参数准备；原随机种子和消费点、异步准备期间的完整主人属性采样、所有物品／Aura事件订阅、动作／移动／恢复时序及生命周期仍待后续迁移。这里是源码来源接入，不能认证完整SrvDo015／016逐帧流程；下方历史V2不认证本轮改动。
 
 ## 原版依据与客户端差异
 

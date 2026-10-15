@@ -1,18 +1,143 @@
 #include "system.hpp"
+#include "native_birth.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/life.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/skills/aura_resolve.hpp"
+#include "gameplay/combat/reception.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "server/systems/attributes/monster_resources.hpp"
+#include "server/systems/effects/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
+#include <optional>
+#include <stdexcept>
+#include <utility>
+#include <exception>
 namespace d2x::server::monsters {
+struct NativeBirthPublication::Data {
+    System *system{};
+    RegionId area;uint64_t generation{};
+    std::optional<RoomRandomLoan> room;
+    uint64_t randomExpected{},randomNext{};
+    ActorPublication actors;
+    ComponentPaletteState palettes;
+    EntityId actor;
+    bool published{};
+};
+NativeBirthPublication::NativeBirthPublication(std::unique_ptr<Data> data):data_(std::move(data)) {}
+NativeBirthPublication::~NativeBirthPublication()=default;
+EntityId NativeBirthPublication::actor() const {return data_->actor;}
+bool NativeBirthPublication::validate() const {
+    const auto &d=*data_;const auto &system=*d.system;
+    const auto *area=system.ports_.areas.find(d.area);
+    return !d.published && area && area->generation==d.generation &&
+        (!d.room || system.ports_.areas.validateRoomRandom(*d.room)) &&
+        (!d.actor || (system.ports_.random==d.randomExpected && system.validateActors(d.actors)));
+}
+void NativeBirthPublication::publish() noexcept {
+    if(!validate()) std::terminate();
+    auto &d=*data_;auto &system=*d.system;
+    if(d.room) system.ports_.areas.publishRoomRandom(*d.room);
+    if(d.actor) {
+        system.publishComponents(d.palettes);system.publishActors(d.actors);
+        system.ports_.random=d.randomNext;
+    }
+    d.published=true;
+}
+DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareLevelSpawn(RegionId region,Vec observer,Vec position,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto *area=ports_.areas.find(region);
+    if(!area || !collision || !std::isfinite(position.x) || !std::isfinite(position.y) ||
+        !std::isfinite(observer.x) || !std::isfinite(observer.y)) return {DomainStatus::InvalidRequest,{}};
+    const auto global=position+area->definition.origin;
+    const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
+    const auto room=ports_.areas.roomAtPosition(region,observer,x,y);if(!room) return {DomainStatus::Unavailable,{}};
+    area=ports_.areas.find(room->area);if(!area) return {DomainStatus::Unavailable,{}};
+    auto data=std::make_unique<NativeBirthPublication::Data>();data->system=this;data->area=room->area;data->generation=area->generation;
+    const auto finish=[&]()->DomainResult<std::shared_ptr<NativeBirthPublication>> {
+        return {DomainStatus::Applied,std::shared_ptr<NativeBirthPublication>(new NativeBirthPublication(std::move(data)))};
+    };
+    if(area->definition.normalSpawnRoster.empty()) return finish();
+    auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
+    data->room=*loan.value;
+    const auto definition=nativeLevelSpawnClass(area->definition.normalSpawnRoster,data->room->next);
+    if(!definition) return finish();
+    const auto found=area->definition.nativeMonsterClasses.find(*definition);
+    if(found==area->definition.nativeMonsterClasses.end()) return {DomainStatus::NotImplemented,{}};
+    const auto &prototype=found->second;const auto &rule=prototype.rule;
+    if(rule.nativeSpawnFloor || rule.enchantment) return {DomainStatus::NotImplemented,{}};
+    if(rule.nativeClass!=*definition || !rule.stats || !rule.formulas || rule.minimumLife<0 || rule.maximumLife<rule.minimumLife)
+        return {DomainStatus::InvalidRequest,{}};
+    const auto &roomArea=ports_.areas.at(room->area).definition;
+    const auto *bounds=roomArea.activation.room(global-roomArea.origin);if(!bounds) return {DomainStatus::Unavailable,{}};
+    const int left=int(roomArea.origin.x)+bounds->x,top=int(roomArea.origin.y)+bounds->y;
+    const auto clear=[&](int column,int row) {
+        if(column<left || row<top || column>=left+bounds->width || row>=top+bounds->height) return false;
+        if(rule.spawnAuxiliary) {
+            const auto &[offset,mask]=*rule.spawnAuxiliary;
+            const int atX=column+int(offset.x),atY=row+int(offset.y);
+            const auto adjacent=ports_.areas.roomAtPosition(room->area,global-roomArea.origin,atX,atY);
+            if(!adjacent || ports_.areas.nativeCollisionMask(*adjacent,atX,atY,mask.size,mask.mask,collision)) return false;
+        }
+        return !ports_.areas.nativeCollisionMask(*room,column,row,rule.spawnCollision.size,rule.spawnCollision.mask,collision);
+    };
+    const auto point=nativeMonsterRingPosition(x,y,5,data->room->next,clear);
+    if(!point || !point->first || !point->second) return finish();
+    if(state_.actors.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
+    auto identity=prototype.identity;identity.spawnKey="native."+std::to_string(ports_.ids.cursor());
+    identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    const Vec at=Vec{float(point->first)+.5f,float(point->second)+.5f}-roomArea.origin;
+    Admission request{identity,prototype.implementation,room->area,at,true,rule,{},tick};
+    data->randomExpected=data->randomNext=ports_.random;data->actor=EntityId{ports_.ids.cursor()};
+    auto actor=prepareAdmissionActor(request,data->actor,data->randomNext,data->palettes);
+    std::map<EntityId,Actor> actors;actors.emplace(data->actor,std::move(actor));
+    data->actors=prepareActorPublication(std::move(actors),1);
+    return finish();
+}
+void System::disableTreasure(EntityId id) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || found->second.rule.noTreasure) return;
+    if(found->second.revision==UINT64_MAX) throw std::overflow_error("Native target flag revision exhausted");
+    found->second.rule.noTreasure=true;++found->second.revision;
+}
+void System::drainResources(EntityId id,int32_t mana,int32_t stamina,uint64_t tick) {
+    if(mana<=0 && stamina<=0) return;
+    const auto *unit=find(id);if(!unit) return;
+    attributes::MonsterResourceTrace resources(*unit,tick);
+    const auto sources=ports_.effects.unitStatSources(id,tick);
+    resources.sampleSources(sources);
+    const auto drain=[&](std::string_view name,int32_t amount) {
+        if(amount<=0) return;
+        const auto values=resources.values(sources);
+        const auto current=values.get({unit->rule.stats->names.at(std::string(name)),0});
+        resources.writeBaseStat(name,nativeChecked(subtractContactResource(current,amount)),sources);
+    };
+    drain("mana",mana);drain("stamina",stamina);
+    if(!commitLife(resources.take())) throw std::logic_error("Native monster resource drain changed during HP commit");
+}
+bool System::deadMode(EntityId id,uint64_t tick) const {
+    const auto *unit=find(id);return unit && !unit->alive() && tick>=unit->busyUntil;
+}
+bool System::selectableCorpse(EntityId id,uint64_t tick) const {
+    const auto *unit=find(id);
+    if(!unit || !deadMode(id,tick) || !unit->rule.corpseSelectable || unit->corpseUnavailable || unit->corpseSearched) return false;
+    if(unit->rule.states) for(const auto state:ports_.effects.unitStates(id,tick)) {
+        const auto definition=unit->rule.states->find(state);
+        if(definition!=unit->rule.states->end() && definition->second.corpseUnselectable) return false;
+    }
+    return true;
+}
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
-    return dead && dead->area==area && dead->life<=0 && !dead->owner && dead->rule.corpseSelectable &&
-        !dead->corpseUnavailable && !dead->corpseSearched && tick>=dead->busyUntil && dead->rewardComplete &&
+    return dead && dead->area==area && !dead->owner && selectableCorpse(id,tick) &&
         (!revive || (dead->rule.revivable && dead->rule.switchAi && dead->identity.rank==MonsterRank::Normal && !dead->rule.boss && !dead->rule.primeEvil));
+}
+bool System::consumableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
+    return usableCorpse(id,area,tick,revive) && find(id)->rule.nativeVelocity!=0;
 }
 void System::consumeCorpse(EntityId id) noexcept {
     if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpseUnavailable=true;++it->second.revision;}
@@ -39,7 +164,7 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
         dead->corpseUnavailable || dead->corpseSearched || tick<dead->busyUntil || !dead->rewardComplete || dead->area!=caster->area) return false;
     if(caster->rule.ai.kind==MonsterAiKind::GreaterMummy) return mummySupportTarget(source,corpse,tick,true);
     const int radius=caster->rule.ai.params[3];
-    const bool unique=caster->identity.rank==MonsterRank::Unique || caster->identity.rank==MonsterRank::SuperUnique;
+    const bool unique=nativeUniqueMonster(caster->identity.rank);
     if(unique) {
         // Fn013's unique callback accepts both Fallen and FallenShaman families,
         // excluding unique/champion corpses, with a squared coordinate metric.
@@ -48,7 +173,7 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
         const Vec delta{std::floor(caster->position.x)-std::floor(dead->position.x),
             std::floor(caster->position.y)-std::floor(dead->position.y)};
         if(delta.x*delta.x+delta.y*delta.y>radius*radius) return false;
-    } else if(dead->identity.ownerSpawnKey!=caster->identity.spawnKey) return false;
+    } else if(minionOwner(dead->id)!=caster->id) return false;
     // Fn013 deliberately passes a squared threshold to callback 9, whose
     // actual metric is FullUnitSize. Preserve that native quirk and room scope.
     return ports_.areas.at(caster->area).definition.activation.nearby(caster->position,dead->position) &&
@@ -81,7 +206,7 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec orig
     const auto point=nestBirthPoint(id,origin,random);
     if(!point) {nest.combatRandom=random;return {DomainStatus::Unavailable,{}};}
     auto identity=child.identity;identity.spawnKey=nest.identity.spawnKey+".child."+std::to_string(nest.nestSpawned);identity.ownerSpawnKey=nest.identity.spawnKey;
-    const auto admitted=admit({identity,child.implementation,nest.area,*point,true,child.rule});
+    const auto admitted=admit({identity,child.implementation,nest.area,*point,true,child.rule,{},tick});
     if(admitted) {state_.actors.at(*admitted.value).rewardComplete=true;++nest.nestSpawned;nest.combatRandom=random;++nest.revision;}
     (void)tick;return admitted;
 }
@@ -113,50 +238,73 @@ std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &rando
     return {};
 }
 DomainResult<> System::activateWeb(EntityId id,uint64_t tick) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || !it->second.rule.web) return {DomainStatus::InvalidActor,{}};
-    auto &actor=it->second;
-    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,actor.rule.web->aura.id,true}}})) return {DomainStatus::Capacity,{}};
-    actor.webUntil=tick+uint64_t(actor.rule.web->auraFrames);actor.webOrigin=actor.position;actor.webRandom=childRandom(actor.combatRandom);++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+    const auto *live=find(id);if(!live || !live->alive() || !live->rule.web) return {DomainStatus::InvalidActor,{}};
+    if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto actor=*live;const auto &web=*actor.rule.web;
+    actor.webUntil=tick+uint64_t(web.auraFrames);actor.webOrigin=actor.position;actor.webRandom=childRandom(actor.combatRandom);++actor.revision;
+    effects::UnitDamageStates update;CombatEffectSpec spec;spec.state=web.aura;
+    spec.source={CombatEffectSource::Monster,id,actor.rule.web->missile,0};spec.stacking=EffectStacking::ReuseState;
+    spec.duration=uint64_t(web.auraFrames);spec.refreshPassivesOnRemoval=true;update.status=std::move(spec);
+    auto plan=ports_.effects.prepareDamageStates(std::move(actor),std::move(update),tick);
+    if(!ports_.effects.validateAuraUnits(plan)) return {DomainStatus::Conflict,{}};
+    const auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},live->area},std::move(plan.facts)});if(!result) return {result.status,{}};
+    ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::heal(EntityId id,int64_t amount) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || amount<0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;actor.life=std::min(actor.maximumLife,actor.life+amount);++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::redeem(EntityId id) {
-    auto it=state_.actors.find(id);
-    if(it==state_.actors.end() || it->second.life>0 || it->second.corpseUnavailable || it->second.corpseSearched || !it->second.rule.corpseSelectable)
-        return {DomainStatus::InvalidRequest,{}};
-    auto &m=it->second;
-    m.corpseUnavailable=true;++m.revision;return {DomainStatus::Applied,std::monostate{}};
-}
 void System::shortenPoison(EntityId id,uint64_t tick,int remainingPercent) {
     auto it=state_.actors.find(id);
     if(it!=state_.actors.end() && it->second.poison && it->second.poison->until>tick)
-        it->second.poison->until=tick+(it->second.poison->until-tick)*uint64_t(std::clamp(remainingPercent,0,100))/100;
+        it->second.poison->until=nativeAuraDurationTick(tick,it->second.poison->until,remainingPercent);
 }
-DomainResult<> System::convert(EntityId id,const ActorContext &actor,const WeaponSkillSpec &skill) {
+DomainResult<> System::convert(EntityId id,const ActorContext &actor,const WeaponSkillSpec &skill,LifeChange resources,
+    std::optional<ConversionResourceSave> saved,std::vector<DomainFact> facts) {
     auto it=state_.actors.find(id);const auto *p=ports_.players.find(actor.player);
     if(it==state_.actors.end() || !p || !p->rules.skills || !it->second.rule.convertible || it->second.owner || it->second.alignment()!=UnitAlignment::Evil || it->second.life<=0 ||
        it->second.identity.rank==MonsterRank::Unique || it->second.identity.rank==MonsterRank::SuperUnique || it->second.area!=actor.area)
         return {DomainStatus::InvalidRequest,{}};
+    if(resources.actor!=id || !resources.intrinsic || !resources.intrinsic->sources || !it->second.rule.stats || !canCommitLife(resources))
+        return {DomainStatus::Conflict,{}};
     auto &m=it->second;const int alignment=p->rules.skills->alignment.id,stat=p->rules.skills->nativeStats.at("alignment");
-    if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
-        {StateFact{id,1,actor.area,skill.conversionState.id,true},StateFact{id,1,actor.area,alignment,true,{{stat,2}}}}})) return {DomainStatus::Capacity,{}};
-    m.conversion=Actor::Conversion{skill.conversionState.id,alignment,stat,m.rule.level,m.maximumLife,actor.tick+uint64_t(std::max(1,skill.conversionFrames))};
-    if(p->persistent.player.level<m.rule.level) {
-        m.life=std::max<int64_t>(256,m.life*p->persistent.player.level/m.rule.level);
-        m.maximumLife=std::max<int64_t>(256,m.maximumLife*p->persistent.player.level/m.rule.level);
-        m.life=std::min(m.life,m.maximumLife);m.rule.level=p->persistent.player.level;
-    }
+    facts.insert(facts.begin(),StateFact{id,1,actor.area,alignment,true,{{stat,2}}});
+    facts.insert(facts.begin(),StateFact{id,1,actor.area,skill.conversionState.id,true});
+    if(!ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
+    if(!commitLife(std::move(resources))) throw std::logic_error("Native conversion resource commit lost its prepared revision");
+    const auto frames=uint64_t(std::max(1,skill.conversionFrames));
+    m.conversion=Actor::Conversion{skill.conversionState.id,alignment,stat,actor.tick+std::min(frames,UINT64_MAX-actor.tick),saved,skill.conversionSaveState.id};
+    m.rule.level=logicalStatValue(m.nativeStats->values,*m.rule.stats,"level");
     m.owner=actor.player;++m.allegianceRevision;++m.interruption;stop(id);++m.revision;return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,uint64_t tick) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0 || state<0 || state>=255 || percent< -100 || percent>0 || !frames) return {DomainStatus::InvalidActor,{}};
-    auto &actor=it->second;
-    if(!actor.slowed && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{id,1,actor.area,state,true}}})) return {DomainStatus::Capacity,{}};
-    actor.slowed=Actor::Slow{state,percent,tick+std::min(frames,UINT64_MAX-tick)};++actor.revision;
+DomainResult<> System::finishConversion(EntityId id,uint64_t tick,LifeChange resources,std::vector<DomainFact> facts) {
+    const auto found=state_.actors.find(id);
+    if(found==state_.actors.end() || !found->second.conversion) return {DomainStatus::InvalidActor,{}};
+    auto &m=found->second;const auto conversion=*m.conversion;
+    if(resources.actor!=id || !resources.intrinsic || !resources.intrinsic->sources || !m.rule.stats || !canCommitLife(resources))
+        return {DomainStatus::Conflict,{}};
+    facts.insert(facts.begin(),StateFact{id,1,m.area,conversion.alignment,true,{{conversion.stat,0}}});
+    facts.insert(facts.begin(),StateFact{id,1,m.area,conversion.state,false});
+    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
+    if(!commitLife(std::move(resources))) throw std::logic_error("Native conversion removal resource commit lost its prepared revision");
+    m.rule.level=logicalStatValue(m.nativeStats->values,*m.rule.stats,"level");
+    m.owner.reset();m.conversion.reset();++m.allegianceRevision;++m.interruption;stop(id);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,uint64_t tick,EntityId source) {
+    const auto *live=find(id);if(!live || !live->alive() || state<0 || !live->rule.states || !live->rule.states->contains(state) ||
+        !live->rule.stats || percent< -100 || percent>0 || !frames) return {DomainStatus::InvalidActor,{}};
+    if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto actor=*live;++actor.revision;
+    effects::UnitDamageStates update;CombatEffectSpec spec;spec.state=actor.rule.states->at(state);
+    spec.source={CombatEffectSource::Monster,source,state,0};spec.stacking=EffectStacking::ReuseState;
+    spec.duration=frames;spec.refreshPassivesOnRemoval=true;update.status=std::move(spec);
+    update.statusWrites.push_back({actor.rule.stats->names.at("velocitypercent"),percent});
+    auto plan=ports_.effects.prepareDamageStates(std::move(actor),std::move(update),tick);
+    if(!ports_.effects.validateAuraUnits(plan)) return {DomainStatus::Conflict,{}};
+    const auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},live->area},std::move(plan.facts)});if(!result) return {result.status,{}};
+    ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
@@ -165,7 +313,7 @@ DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal) {
     for(const auto &[key,other]:state_.actors) if(key!=id && other.area==m.area && other.life>0 && meleeDistance(point,m.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
     for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && meleeDistance(point,m.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     // Native monster relocation is projected by 0x6D snapshot correction.
-    (void)tick;stop(id);m.position=point;m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
+    (void)tick;stop(id);m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 

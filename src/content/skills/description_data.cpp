@@ -1,6 +1,7 @@
 #include "description_data.hpp"
 #include "content/string_table.hpp"
 #include "resources/data_table.hpp"
+#include "resources/formats.hpp"
 #include <algorithm>
 #include <cctype>
 #include <set>
@@ -18,16 +19,24 @@ std::string descriptionText(const ClassicStrings &strings,std::string_view key) 
     if (key.empty()) return {};
     return strings.index(key)<0?"?":std::string(strings.find(key));
 }
-SkillDescriptionSource source(const DataTable &table, size_t row, bool missile = false) {
+SkillDescriptionSource source(const DataTable &table, size_t row, bool missile = false,
+                              std::span<const uint8_t> missileRecord = {}) {
     SkillDescriptionSource result;
     static const std::set<std::string,std::less<>> calculations{
-        "tohitcalc","dmgsympercalc","edmgsympercalc","elensympercalc","auralencalc","aurarangecalc",
+        "tohitcalc","dmgsympercalc","edmgsympercalc","elensympercalc","auralencalc","aurarangecalc","delay","perdelay",
         "calc1","calc2","calc3","calc4","passivecalc1","passivecalc2","passivecalc3","passivecalc4","passivecalc5",
         "aurastatcalc1","aurastatcalc2","aurastatcalc3","aurastatcalc4","aurastatcalc5","aurastatcalc6",
-        "petmax","skpoints","dmgcalc"};
+        "petmax","skpoints","dmgcalc","srvcalc1","cltcalc1","shitcalc1","chitcalc1","dmgcalc1"};
     for (const auto &column:table.columns()) {
-        const auto key=lower(column);
-        if (calculations.contains(key)) {
+        auto key=lower(column);
+        // MissilesTbls names the server/hit/damage arrays differently from
+        // the formula vocabulary. Both display and authority copy this source.
+        if(missile) {
+            if(key.starts_with("shitpar")) key="hitpar"+key.substr(7);
+            else if(key.starts_with("chitpar")) key="clthitpar"+key.substr(7);
+            else if(key.starts_with("dparam")) key="dmgparam"+key.substr(6);
+        }
+        if (calculations.contains(key) || (key.starts_with("sumsk") && key.ends_with("calc"))) {
             // An absent ToHitCalc selects the native linear branch. A real
             // formula returning zero must not silently select another branch.
             if (key!="tohitcalc" || !table.value(row,column).empty())
@@ -36,7 +45,10 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
             static const std::set<std::string,std::less<>> scalars{
                 "emin","emax","elen","mindam","maxdam","mindamage","maxdamage","hitshift",
                 "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
-                "noratio","hcidx","level","level(n)","level(h)","passive","kick"};
+                "noratio","hcidx","level","level(n)","level(h)","passive","kick","immediate","periodic",
+                "intown","srvstfunc","srvdofunc","usemanaondo","decquant","aurafilter","targetpet","targetally",
+                "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",
+                "alwaysexplode","collidekill","pierce","collidefriend","lastcollide","collidetype","collision","activate","town","srctown","psrvdofunc","psrvhitfunc","psrvdmgfunc","tohit","gethit","softhit","knockback","hitclass","nexthit","nextdelay","returnfire","candestroy","size","vel","vellev","accel","maxvel","canslow","clientsend","subloop","substart","substop","hitflags","resultflags"};
             // Skills.Range is a targeting token (h2h/rng/both/none), whereas
             // Missiles.Range and LevRange are integer lifetime fields.
             const bool numeric=(missile && (key=="range" || key=="levrange")) ||
@@ -47,10 +59,16 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 key.starts_with("maxlevdam") || key.starts_with("minhp") || key.starts_with("maxhp") ||
                 key.starts_with("a1mind") || key.starts_with("a1maxd") || key.starts_with("l-hp") || key.starts_with("l-dm");
             if (numeric) {
-                if (const auto value=table.number(row,column)) result.numbers.emplace(key,*value);
+                // The original compiled WORD preserves cells such as *12.
+                // Strict TXT integers cannot represent those callback fields.
+                if (missile && (key=="psrvdofunc" || key=="psrvhitfunc" || key=="psrvdmgfunc")) {
+                    Reader reader(missileRecord);
+                    reader.seek(key=="psrvdofunc"?0x0C:key=="psrvhitfunc"?0x0E:0x10);
+                    result.numbers.emplace(key,reader.u16());
+                } else if (const auto value=table.number(row,column)) result.numbers.emplace(key,*value);
                 else if (table.value(row,column).empty()) result.numbers.emplace(key,0);
-            } else if (key=="etype" || key=="summon" || key=="submissile1" || key=="passivestate" ||
-                       key.starts_with("passivestat") || key.starts_with("aurastat"))
+            } else if ((missile && (key=="skill" || key=="progoverlay" || key.starts_with("submissile") || key.starts_with("hitsubmissile"))) || key=="etype" || key=="summon" || key=="submissile1" || key=="passivestate" || key.starts_with("srvmissile") ||
+                       key.starts_with("passivestat") || key.starts_with("aurastat") || key.starts_with("sumskill"))
                 result.references.emplace(key,lower(table.value(row,column)));
         }
     }
@@ -99,8 +117,20 @@ std::string_view SkillDescriptionCatalog::label(std::string_view key) const {
     return found==labels.end()?std::string_view{"?"}:found->second;
 }
 SkillDescriptionCatalog loadSkillDescriptions(const std::map<std::string,DataTable,std::less<>> &tables,
-                                              const ClassicStrings &strings) {
+                                              const ClassicStrings &strings, std::span<const uint8_t> missileRecords) {
     SkillDescriptionCatalog result;
+    // D2MissilesTxt is 0x1A4 bytes in the current original MPQ format.
+    constexpr size_t missileRecordSize=0x1A4;
+    Reader nativeMissiles(missileRecords);
+    const auto missileCount=nativeMissiles.u32();
+    if(missileCount!=tables.at("missiles").rows().size() ||
+       missileRecords.size()!=4+size_t(missileCount)*missileRecordSize)
+        throw std::runtime_error("Original Missiles BIN/TXT layout mismatch");
+    for(size_t row=0;row<missileCount;++row) {
+        nativeMissiles.seek(4+row*missileRecordSize);
+        if(tables.at("missiles").number(row,"Id")!=nativeMissiles.u16())
+            throw std::runtime_error("Original Missiles BIN/TXT identity mismatch");
+    }
     const auto &descriptions=tables.at("skilldesc"), &skills=tables.at("skills");
     std::map<std::string,SkillDescriptionDefinition,std::less<>> definitions;
     for (size_t row=0;row<descriptions.rows().size();++row) {
@@ -139,7 +169,8 @@ SkillDescriptionCatalog loadSkillDescriptions(const std::map<std::string,DataTab
             // description inputs; unrelated duplicate NPC names are not keys.
             if (std::string_view(tableName)=="monstats" && !summonedMonsters.contains(key) &&
                 table.number(row,"hcIdx")!=292) continue;
-            auto record=source(table,row,std::string_view(tableName)=="missiles"); record.id=int(row);
+            const bool missile=std::string_view(tableName)=="missiles";
+            auto record=source(table,row,missile,missile?missileRecords.subspan(4+row*missileRecordSize,missileRecordSize):std::span<const uint8_t>{}); record.id=int(row);
             if (!destination->emplace(key,std::move(record)).second) throw std::runtime_error("Duplicate skill description source");
         }
     }

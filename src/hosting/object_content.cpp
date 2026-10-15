@@ -34,19 +34,23 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     if(request.act==4) {ClassicStrings strings(archives);if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);}
     const auto groups = decodeTable(archives.read("data/global/excel/objgroup.txt"));
     const auto shrines = decodeTable(archives.read("data/global/excel/shrines.txt"));
+    const auto portalRule=[&](const WorldObject &object,int opening) {
+        return server::PortalRule{object.objectClass,int(object.reach),opening,object.collisionWidth,object.collisionHeight,
+            object.collisionMask,object.hasCollision};
+    };
     bool portalResources=true;
     for(const auto *path:{"data/global/objects/tp/cof/tpophth.cof","data/global/objects/tp/hd/tphdlitophth.dcc","data/global/objects/tp/tr/tptrlitophth.dcc"}) portalResources=portalResources && archives.contains(path);
     WorldObject portal; portal.appearance.category="objects"; portal.objectClass=59; configureWorldObject(portal,rows);
     if(portalResources && portal.operateFn==15 && portal.reach>0) {
         // InitFunction11_Portal schedules ENDANIM at FrameCnt1 + 1 ticks,
         // independently of the visual FrameDelta playback rate.
-        area.portalRule=server::PortalRule{59,int(portal.reach),std::max(1,portal.animationRules[1].frames+1)};
+        area.portalRule=portalRule(portal,std::max(1,portal.animationRules[1].frames+1));
     }
     WorldObject redPortal;redPortal.appearance.category="objects";redPortal.objectClass=60;configureWorldObject(redPortal,rows);
-    if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=server::PortalRule{60,int(redPortal.reach),0};
+    if(portalResources && redPortal.operateFn==15 && redPortal.reach>0) area.specialPortalRule=portalRule(redPortal,0);
     for(const int code:{565,566}) {
         WorldObject questPortal;questPortal.appearance.category="objects";questPortal.objectClass=code;configureWorldObject(questPortal,rows);
-        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,server::PortalRule{code,int(questPortal.reach),0});
+        if(portalResources && questPortal.reach>0) area.questPortalRules.emplace(code,portalRule(questPortal,0));
     }
     for(const auto &[code,source]:content.shrines) {
         server::ShrineRule shrine{source.code,source.argument0,source.argument1,source.durationFrames,source.resetFrames,{}};
@@ -72,7 +76,15 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         rule.door=object.interaction==Interaction::Door;rule.stash=object.interaction==Interaction::Stash;
         rule.initialization=objectTable.number(row,"InitFn").value_or(0);rule.damage=objectTable.number(row,"Damage").value_or(0);
         rule.monsterUsable=objectTable.number(row,"MonsterOK").value_or(0)!=0;
-        if(rule.operation==22) for(const auto &[name,state]:content.states) if(state.definition.curable || name=="poison" || name=="freeze") rule.cureStates.push_back(state.definition.id);
+        if(rule.operation==22) {
+            // Well healing removes poison/freeze first, then NPCRemoveStates
+            // walks the curable mask by original state ID, not by TXT name.
+            for(const auto name:{"poison","freeze"}) rule.cureStates.push_back({content.states.at(name).definition.id,false});
+            std::vector<int> curable;
+            for(const auto &[name,state]:content.states) if(state.definition.curable) curable.push_back(state.definition.id);
+            std::sort(curable.begin(),curable.end());
+            for(const int state:curable) rule.cureStates.push_back({state,true});
+        }
         for(size_t mode=0;mode<8;++mode) rule.selectable[mode]=objectTable.number(row,"Selectable"+std::to_string(mode)).value_or(0)!=0;
         rule.openingTicks=uint64_t(std::max(1,object.animationRules[1].frames+1));rule.closingTicks=uint64_t(std::max(1,object.animationRules[3].frames+1));
         if(rule.initialization==22 && objectTable.number(row,"Mode2").value_or(0) && !objectTable.number(row,"Mode0").value_or(0)) rule.initialMode=2;

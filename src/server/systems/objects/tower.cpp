@@ -3,8 +3,20 @@
 #include "server/area_store.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "core/random.hpp"
 namespace d2x::server::objects {
+DomainResult<> System::openOrbMist(EntityId id,uint64_t tick) {
+    const auto found=state_.objects.find(id);if(found==state_.objects.end()) return {DomainStatus::Applied,std::monostate{}};
+    auto &object=found->second;
+    if(!object.mode && object.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    ports_.world.retainControllerRoom(object.area,object.position,false);
+    if(!object.mode) {
+        object.mode=1;object.until=tick+(object.rule.openingTicks?object.rule.openingTicks-1:0);
+        ++object.revision;collision(object.area);
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 void System::towerStep(TickContext tick) {
     if(!ports_.quests.read().objectives.at(questIndex(QuestId::ForgottenTower))) return;
     for(auto &[id,object]:state_.objects) {

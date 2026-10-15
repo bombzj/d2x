@@ -3,6 +3,7 @@
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/character/record.hpp"
 #include "gameplay/combat/weapon_values.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include "world/interaction_geometry.hpp"
@@ -74,7 +75,7 @@ struct PlayerSnapshot {
     int level{};
     bool entered{};
     bool paused{};
-    float life{}, mana{}, stamina{};
+    Fixed8 life,mana,stamina;
     uint8_t potionLifePercent{}, potionManaPercent{};
     bool attacking{}, recovering{}, deadSettled{};
 };
@@ -98,7 +99,7 @@ struct MonsterSnapshot {
     bool running{};
     std::set<int> states{};
     Vec knockbackSource{};
-    std::map<int,std::vector<std::pair<int,int64_t>>> stateStats{};
+    std::map<int,std::vector<StatValue>> stateStats{};
     std::shared_ptr<const PersistentCharacter> equipment{};
     int appearOverlay{-1};
     std::optional<EntityId> storedOwner{};

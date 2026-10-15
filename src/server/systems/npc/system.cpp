@@ -5,17 +5,15 @@
 #include "server/systems/quests/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <stdexcept>
 namespace d2x::server::npc {
 Vec System::position(const ActorContext &actor, const AreaNpc &npc) const {
-    for (const auto &[id, area] : ports_.areas.all()) {
-        (void)id;
-        for (const auto &entry : area.definition.npcs) if (&entry == &npc)
-            return npc.position + area.definition.origin - ports_.areas.at(actor.area).definition.origin;
-    }
-    throw std::logic_error("NPC has no owning area");
+    const auto *unit=ports_.monsters.find(npc.id);
+    if(!unit || !unit->questNpc) throw std::logic_error("NPC has no live actor");
+    return unit->position+ports_.areas.at(unit->area).definition.origin-ports_.areas.at(actor.area).definition.origin;
 }
 const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool conversation) const {
     const auto *player = ports_.players.find(actor.player); const auto *area = ports_.areas.find(actor.area);
@@ -32,7 +30,8 @@ const AreaNpc *System::find(const ActorContext &actor, EntityId id, bool convers
         for (const auto &entry : candidate.definition.npcs) if (entry.id == id) { found = &entry; npcArea = region; break; }
         if (found) break;
     }
-    if (!found || found->hidden || !found->rule.interactable ||
+    const auto *unit=ports_.monsters.find(id);
+    if (!found || !unit || !unit->questNpc || unit->area!=npcArea || !unit->alive() || !found->rule.interactable ||
         !ports_.quests.npcVisible(player->persistent.player,found->rule.code,npcArea,found->rule.questInitFunction) ||
         nativeUnitDistance(player->position,2,position(actor,*found),found->rule.size)>8) return nullptr;
     if (conversation) { const auto current = state_.conversations.find(actor.player); if (current == state_.conversations.end() || current->second.npc != id || current->second.area != actor.area || current->second.actor != actor.actor || current->second.areaGeneration != actor.areaGeneration) return nullptr; }
@@ -123,21 +122,22 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         healing = std::move(*prepared.value); record = healing->character;
     }
     transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,std::move(record)}; edit.facts.emplace_back(std::move(fact));
-    if (healing) {edit.transient = healing->transient;edit.publicFacts=healing->publicFacts;}
+    if (healing) {edit.transient = healing->transient;edit.publicFacts=healing->publicFacts;edit.resourceBase=healing->resourceBase;}
     if (healing && (healing->character.hp!=player.persistent.player.hp || healing->character.mana!=player.persistent.player.mana ||
-        healing->character.stamina!=player.persistent.player.stamina || healing->transient.states!=player.transient.states))
+        healing->character.stamina!=player.persistent.player.stamina || healing->transient.states!=player.transient.states || (healing->units && !healing->units->life.empty())))
         edit.publicFacts.emplace_back(SoundFact{npc->id,1,actor.area,10});
-    auto plan = ports_.transactions.prepare(std::move(edit)); if (!plan) return {plan.status,{}};
+    auto plan = ports_.transactions.prepare(std::move(edit),nullptr,{},healing?healing->units:nullptr); if (!plan) return {plan.status,{}};
     auto result = ports_.transactions.commit(std::move(*plan.value)); if (result) { if (healing) ports_.effects.commit(std::move(*healing)); state_.conversations.swap(conversations); ++state_.next; } return result;
 }
 DomainResult<> System::close(PlayerId player) { approaches_.erase(player);state_.conversations.erase(player); return {DomainStatus::Applied,std::monostate{}}; }
 DomainResult<> System::escape(RegionId region,EntityId id,Vec destination) {
     if(state_.escapes.contains(id)) return {DomainStatus::Applied,std::monostate{}};
     const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
-    for(const auto &npc:area->definition.npcs) if(npc.id==id && npc.rule.code=="act5pow" && !npc.hidden && npc.rule.walkVelocity>0) {
+    const auto *unit=ports_.monsters.find(id);
+    for(const auto &npc:area->definition.npcs) if(npc.id==id && npc.rule.code=="act5pow" && unit && unit->alive() && unit->area==region && npc.rule.walkVelocity>0) {
         const auto point=area->definition.collision.nearest(destination,npc.rule.movement);
-        auto route=area->definition.collision.path(npc.position,point,false,npc.rule.movement);
-        if(route.empty() && (npc.position-point).length()>1) return {DomainStatus::Unavailable,{}};
+        auto route=area->definition.collision.path(unit->position,point,false,npc.rule.movement);
+        if(route.empty() && (unit->position-point).length()>1) return {DomainStatus::Unavailable,{}};
         state_.escapes.emplace(id,Escape{region,point,std::move(route),false});return {DomainStatus::Applied,std::monostate{}};
     }
     return {DomainStatus::Stale,{}};
@@ -160,15 +160,25 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(escape.escaped) continue;
         const auto *area=ports_.areas.find(escape.area);if(!area) continue;
         const auto npc=std::find_if(area->definition.npcs.begin(),area->definition.npcs.end(),[&](const auto &n){return n.id==id;});
-        if(npc==area->definition.npcs.end()) continue;
-        auto point=npc->position;
+        const auto *unit=ports_.monsters.find(id);
+        if(npc==area->definition.npcs.end() || !unit || !unit->alive()) continue;
+        if(!ports_.areas.loaded(unit->area,unit->position) || ports_.monsters.frozen(id,tick.tick) || unit->stunnedUntil>tick.tick || unit->knockedUntil>tick.tick || unit->reactionUntil>tick.tick) continue;
+        auto point=unit->position;bool reachedWaypoint=false;
         if(!escape.route.empty()) {
-            const auto delta=escape.route.front()-point;const auto distance=delta.length(),stride=float(npc->rule.walkVelocity)/16.f;
+            const auto delta=escape.route.front()-point;
+            const auto distance=delta.length(),stride=float(npc->rule.walkVelocity)*float(monsters::movementPercent(*unit,tick.tick))/(16.f*75.f);
             point=distance<=stride?escape.route.front():point+delta*(stride/distance);
-            if(distance<=stride) escape.route.pop_front();
+            reachedWaypoint=distance<=stride;
         }
-        const bool escaped=escape.route.empty() && (point-escape.destination).length()<=1;
-        if(ports_.world.moveQuestNpc(escape.area,id,point,escape.route.empty()?escape.destination:escape.route.front(),escaped)) escape.escaped=escaped;
+        const bool routeComplete=escape.route.empty() || (reachedWaypoint && escape.route.size()==1);
+        const bool escaped=routeComplete && (point-escape.destination).length()<=1;
+        const auto destination=routeComplete?escape.destination:escape.route[reachedWaypoint?1:0];
+        if(ports_.world.moveQuestNpc(escape.area,id,point,destination,escaped)) {
+            // The route cursor follows the actor publication. A rejected
+            // move must retry the same waypoint with the same live position.
+            if(reachedWaypoint) escape.route.pop_front();
+            escape.escaped=escaped;
+        }
     }
     std::erase_if(state_.conversations,[&](const auto &entry){return !conversation(entry.first);});
     return StepStatus::Complete;

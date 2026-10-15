@@ -63,6 +63,7 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
     auto n = [&](std::string_view field) { return number(table, row, field); };
     AuraSkillSpec spec;
     spec.skill = skill;
+    spec.serverDoFunction = n("srvdofunc");
     for (int index = 0; index < 8; ++index)
         spec.parameters[size_t(index)] = n("Param" + std::to_string(index + 1));
     spec.mana = n("mana"); spec.manaPerLevel = n("lvlmana"); spec.manaShift = n("manashift");
@@ -108,8 +109,10 @@ AuraSkillSpec prepare(const ClassicData &data, int skill, int prayerRank) {
 AuraSkillSpec prepareAura(const ClassicData &data, int skill) { return prepare(data, skill, 1); }
 void loadAuraSkills(ClassicData &data) {
     const auto &table = data.tables.at("skills");
+    auto programs=std::make_shared<std::map<int,AuraSkillSpec>>();
     for (int skill : {98, 99, 100, 102, 103, 104, 105, 108, 109, 110, 113, 114, 115, 118, 119, 120, 122, 123, 124, 125}) {
         const auto definition = resolveBaseAura(data, skill, 1);
+        programs->emplace(skill,prepareAura(data,skill));
         if (definition.periodFrames < 5 || definition.ownerState.id < 0)
             throw std::runtime_error("Original aura lacks state or periodic data");
         auto &record = data.skills.skills.at(skill);
@@ -133,6 +136,7 @@ void loadAuraSkills(ClassicData &data) {
             record.passiveContribution.suppressedByState = definition.ownerState.id;
         }
     }
+    data.nativeAuraPrograms=std::move(programs);
 }
 AuraDefinition resolveBaseAura(const ClassicData &data, int skill, int rank) {
     return evaluateBaseAura(prepare(data, skill, 0), rank);

@@ -10,9 +10,10 @@
 #include <set>
 #include <stdexcept>
 #include <utility>
+#include <variant>
 namespace d2x {
 namespace {
-using Values = std::map<std::string, double, std::less<>>;
+using Values = std::map<std::string,std::variant<int64_t,Fixed8>,std::less<>>;
 void hirelingStatus(std::vector<Bytes> &packets, const ClassicData &data, const HirelingRecord &record) {
     const bool dead=record.sourceRow>=0 && record.hp<=0;
     const auto name=data.hirelingNameIds.find(record.nameKey);
@@ -29,9 +30,9 @@ Values values(const CharacterRecord &record, const server::attributes::Totals &t
     const int permanentResistance=questResistance(record.quests);
     return {{"strength", a.strength}, {"energy", a.energy}, {"dexterity", a.dexterity}, {"vitality", a.vitality},
         {"statpts", record.unspentAttributes}, {"newskills", record.unspentSkills},
-        {"hitpoints", record.hp}, {"maxhp", a.maxLife}, {"mana", record.mana}, {"maxmana", a.maxMana},
-        {"stamina", record.stamina}, {"maxstamina", a.maxStamina}, {"level", record.level},
-        {"experience", double(record.experience)}, {"gold", record.gold}, {"goldbank", record.bankGold},
+        {"hitpoints", record.hp}, {"maxhp", a.maxLifeFixed}, {"mana", record.mana}, {"maxmana", a.maxManaFixed},
+        {"stamina", record.stamina}, {"maxstamina", a.maxStaminaFixed}, {"level", record.level},
+        {"experience", int64_t(record.experience)}, {"gold", record.gold}, {"goldbank", record.bankGold},
         {"armorclass", a.defense}, {"tohit", a.attackRating}, {"toblock", c.blockBonus},
         // ACT5Q3_UpdateResistances sends only the permanent reward list.
         // Equipment, passive states and the difficulty penalty are client inputs.
@@ -55,9 +56,18 @@ std::map<uint8_t, uint32_t> nativeValues(const ClassicData &data, const Values &
             const auto id = table.number(row, "ID");
             if (!id || *id < 0 || *id > 255) throw std::runtime_error("Character stat lacks native byte identity: " + name);
             const int shift = table.number(row, "ValShift").value_or(0);
-            const double raw = std::trunc(std::ldexp(value, shift));
+            if(shift<0 || shift>31) throw std::runtime_error("Invalid native character stat shift");
+            int64_t raw{};
+            if(const auto *resource=std::get_if<Fixed8>(&value)) {
+                if(shift!=8) throw std::runtime_error("Native resource stat requires eight fraction bits");
+                raw=resource->raw();
+            } else {
+                const auto number=std::get<int64_t>(value);
+                if(number<INT32_MIN || number>UINT32_MAX) throw std::runtime_error("Character stat outside native storage");
+                raw=number*(int64_t(1)<<shift);
+            }
             const bool signedValue = table.number(row, "Signed").value_or(0) != 0;
-            if (!std::isfinite(raw) || raw < (signedValue ? double(INT32_MIN) : 0.) || raw > (signedValue ? double(INT32_MAX) : double(UINT32_MAX)))
+            if (raw < (signedValue ? int64_t(INT32_MIN) : 0) || raw > (signedValue ? int64_t(INT32_MAX) : int64_t(UINT32_MAX)))
                 throw std::runtime_error("Character stat exceeds native protocol capacity: " + name);
             result.emplace(uint8_t(*id), signedValue ? std::bit_cast<uint32_t>(int32_t(raw)) : uint32_t(raw));
             found = true; break;

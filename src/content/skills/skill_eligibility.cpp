@@ -14,10 +14,11 @@ std::vector<int> loadInnateSkillIds(const DataTable &skills, const DataTable &ch
             [](unsigned char ch) { return char(std::tolower(ch)); });
         return result;
     };
-    std::set<std::string> names{"attack"};
+    std::vector<std::string> names{"attack"};
+    std::set<std::string> seen{"attack"};
     for (int slot = 1; slot <= 10; ++slot) {
         const auto name = characterStats.value(row, "Skill " + std::to_string(slot));
-        if (!name.empty()) names.insert(normalized(name));
+        if (!name.empty()) {auto value=normalized(name);if(seen.insert(value).second) names.push_back(std::move(value));}
     }
     std::vector<int> result;
     for (const auto &name : names) {
@@ -78,53 +79,6 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
         if (!found) throw std::runtime_error("Invalid original skill prerequisite: " + std::string(name));
     }
     return result;
-}
-std::optional<bool> skillEquipmentReady(const SkillMetadata &skill,
-    const std::array<std::optional<SkillHandEquipment>, 2> &hands) {
-    if (skill.basicAction != BasicSkillAction::None) return {};
-    if (skill.includedHandTypes[0][0].empty() && skill.excludedHandTypes[0][0].empty()) return true;
-    const auto isType = [](const SkillHandEquipment &item, std::string_view type) {
-        return item.present && std::find(item.types.begin(), item.types.end(), type) != item.types.end();
-    };
-    const auto matches = [&](size_t hand, size_t group) -> std::optional<bool> {
-        if (!hands[hand]) return {};
-        const auto &item = *hands[hand];
-        const auto &other = hands[1 - hand];
-        const auto &included = skill.includedHandTypes[group];
-        const auto &excluded = skill.excludedHandTypes[group];
-        if (!item.present) {
-            if (included[0].empty() && excluded[0].empty()) return true;
-            // D2Common permits bare hands for these original ItemTypes only
-            // when group B is empty and the other hand is not a weapon.
-            const auto &primary = skill.includedHandTypes[0][0];
-            if ((primary == "weap" || primary == "mele" || primary == "h2h") &&
-                skill.includedHandTypes[1][0].empty())
-                return other ? std::optional{!isType(*other, "weap")} : std::nullopt;
-            return false;
-        }
-        for (const auto &type : excluded) {
-            if (type.empty()) break;
-            if (isType(item, type)) return false;
-        }
-        if (included[0].empty()) return true;
-        bool found = false;
-        for (const auto &type : included) {
-            if (type.empty()) break;
-            if (isType(item, type)) { found = true; break; }
-        }
-        if (!found || item.unusable) return false;
-        if (item.ammunitionType.empty() || skill.noAmmo) return true;
-        if (!other) return {};
-        if (!isType(*other, item.ammunitionType)) return false;
-        if (!other->stackable) return true;
-        return other->quantity ? std::optional{*other->quantity > 0} : std::nullopt;
-    };
-    const auto rightA = matches(0, 0);
-    if (!rightA) return {};
-    if (*rightA) return matches(1, 1);
-    const auto rightB = matches(0, 1);
-    if (!rightB) return {};
-    return *rightB ? matches(1, 0) : std::optional{false};
 }
 SkillEligibility evaluateSkillEligibility(const SkillMetadata &skill, const SkillEligibilityInput &input) {
     SkillEligibility result;

@@ -1,12 +1,12 @@
 #include "movement_math.hpp"
+#include "gameplay/units/distance.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
 int monsterAiDistance(Vec from, int size, Vec target) {
-    const int x = std::abs(std::abs(int(std::floor(target.x)) - int(std::floor(from.x))) - size);
-    const int y = std::abs(std::abs(int(std::floor(target.y)) - int(std::floor(from.y))) - size);
-    return std::max(x, y) + std::min(x, y) / 2;
+    return unitCoordinateDistanceWithSize(int(std::floor(from.x)), int(std::floor(from.y)),
+        int(std::floor(target.x)), int(std::floor(target.y)), size);
 }
 Vec monsterWanderPoint(Vec from, int radius, uint64_t &random) {
     radius = std::max(radius, 1);

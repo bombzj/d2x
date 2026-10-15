@@ -17,6 +17,7 @@ struct WeaponSkillSpec {
     bool commonAttack = false, leftHand = false;
     std::string requiredType;
     bool thrown = false, manaOnRelease = false;
+    bool useThrowMastery = false; // Native ITypeA[0] thrown ancestry and Range==2.
     bool dualWield = false;
     int sequence = -1, attackRateBonus = 0;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
@@ -52,5 +53,7 @@ struct WeaponSkillSpec {
     CombatStateDefinition movingState;
     int attackDurationMinimum = 0, attackDurationMaximum = 0, attackDuration = 0;
     int armorOverridePercent = 0, attackPhysicalResist = 0;
+    CombatStateDefinition conversionSaveState;
+    int conversionFramesPerLevel{};
 };
 } // namespace d2x

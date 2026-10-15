@@ -9,6 +9,10 @@
 #include <array>
 #include "server/systems/objects/system.hpp"
 #include "server/systems/quests/state.hpp"
+#include "gameplay/skills/stat_callbacks.hpp"
+#include "gameplay/combat/alignment.hpp"
+#include "server/systems/monsters/curse_control.hpp"
+#include "gameplay/events/frame_queue.hpp"
 
 namespace d2x::server {
 // Scheduler-thread diagnostic values. Never used as client replication or saved.
@@ -56,6 +60,18 @@ struct DiagnosticMonster {
     int64_t woundRate{};
     uint64_t woundUntil{}, woundNext{};
     EntityId woundSource{}, woundCredit{};
+    std::vector<ChargedSkill> chargedSkills;
+    std::vector<ItemAuraTimer> itemAuras;
+    bool chargesTracked{};
+    UnitAlignment alignment{};
+    uint64_t allegianceRevision{};
+    monsters::CurseControl curseControl;
+    EntityId attractionTarget;
+    uint64_t attractionUntil{};
+    std::vector<monsters::AiResetTimer> aiResetTimers;
+    bool aiResetsTracked{};
+    uint64_t specialTargetOrder{},aiFunctionRevision{};
+    bool detachedMinion{};
 };
 struct DiagnosticEffect { int state{}; uint64_t expires{}; };
 struct DiagnosticAnimation { std::string mode; int frames{},startFrame{},speed{},duration{},action{}; };
@@ -89,6 +105,7 @@ struct DiagnosticSnapshot {
     size_t itemTriggersPending{};
     std::string itemTriggersDeferred;
     std::vector<ChargedSkill> chargedSkills;
+    std::vector<ItemAuraTimer> itemAuras;
     uint64_t tick{}, eventFirst{}, eventLast{}, commandFirst{}, commandLast{};
     size_t commandsQueued{}, eventsQueued{}, monsterCount{}, missileCount{}, itemCount{};
     PlayerSnapshot player;
@@ -98,6 +115,7 @@ struct DiagnosticSnapshot {
     std::vector<AreaView> areas;
     std::vector<DiagnosticItem> items;
     std::vector<DiagnosticMonster> monsters;
+    std::vector<MonsterSnapshot> npcs; // Borrowed actor projection, independent of the monster detail limit.
     std::vector<skills::Cast> casts;
     std::vector<missiles::Missile> missiles;
     std::vector<combat::Damage> damage;
@@ -106,6 +124,7 @@ struct DiagnosticSnapshot {
     std::vector<Vec> path;
     std::vector<DiagnosticCollision> collision;
     std::vector<DiagnosticEvent> events;
+    FrameEventQueueObservation frameEvents;
     std::vector<DiagnosticCommand> commands;
 };
 }

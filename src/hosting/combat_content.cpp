@@ -32,7 +32,7 @@ std::shared_ptr<const server::MeleeRules> prepareMeleeRules(const ClassicData &d
     return result;
 }
 namespace {
-std::vector<std::pair<int,int64_t>> auraNativeStats(const ClassicData &data,const CharacterModifiers &m) {
+std::vector<StatValue> auraNativeStats(const ClassicData &data,const CharacterModifiers &m) {
     const std::pair<std::string_view,int> values[]{
         {"damagepercent",m.combat.damagePercent},{"item_tohit_percent",m.combat.attackRatingPercent},
         {"attackrate",m.combat.attackRate},{"other_animrate",m.otherAnimationRate},{"velocitypercent",m.velocityPercent},
@@ -41,7 +41,7 @@ std::vector<std::pair<int,int64_t>> auraNativeStats(const ClassicData &data,cons
         {"firemindam",m.combat.fireMinimum},{"firemaxdam",m.combat.fireMaximum},
         {"coldmindam",m.combat.coldMinimum},{"coldmaxdam",m.combat.coldMaximum},
         {"lightmindam",m.combat.lightningMinimum},{"lightmaxdam",m.combat.lightningMaximum}};
-    const auto &table=data.tables.at("itemstatcost");std::vector<std::pair<int,int64_t>> result;
+    const auto &table=data.tables.at("itemstatcost");std::vector<StatValue> result;
     for(const auto &[name,value]:values) {
         if(!value) continue;
         bool found=false;
@@ -61,7 +61,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(record) if(auto environment=prepareEnvironmentMonster(archives,data,request,identity,position)) return environment;
     if (!record || !record->hostile() || !record->aiProfiles.at(size_t(request.difficulty))) return {};
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
-        request.difficulty, level.population.level.at(size_t(request.difficulty)));
+        request.difficulty, level.population.level.at(size_t(request.difficulty)),{},request.ladderMonsterStats);
     std::optional<MonsterEnchantment> enchantment;
     const int64_t corpseBaseLife=profile?(int64_t(profile->damage.minLife)+profile->damage.maxLife)*128:0;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
@@ -84,6 +84,10 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         return {};
     }
     server::MonsterRule rule;
+    rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.auraPrograms=data.nativeAuraPrograms;
+    rule.noManaRegenState=data.states.at("nomanaregen").definition.id;
+    rule.states=data.nativeStates;
+    rule.statGameType=request.ladderMonsterStats;
     rule.enchantment=enchantment;
     if(fixed) {rule.superUniqueIndex=fixed->index;rule.uniqueTranslation=fixed->uniqueTrans.at(size_t(request.difficulty));}
     rule.nativeClass = record->index; rule.level = profile->level;
@@ -100,8 +104,10 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.softCorpse=record->soft;
     rule.corpseSize=record->corpseSize;
     rule.corpseNoSelectState=data.states.at("corpse_noselect").definition.id;
+    rule.preventHealState=data.states.at("preventheal").definition.id;
     rule.convertible=!record->boss && record->switchAi;
     rule.curseable=record->curseable;rule.switchAi=record->switchAi;rule.revivable=record->revivable;
+    rule.stateTarget=record->stateTarget;rule.noAura=record->noAura;
     rule.primeEvil=data.tables.at("monstats").number(record->sourceRow,"primeevil").value_or(0)!=0;
     rule.opensDoors=data.tables.at("monstats").number(record->sourceRow,"opendoors").value_or(0)!=0;
     rule.threat=data.tables.at("monstats").number(record->sourceRow,"threat").value_or(0);
@@ -111,6 +117,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.openWoundsState=data.states.at("openwounds").definition.id;
     rule.blockChance=std::clamp(data.tables.at("monstats").number(record->sourceRow,std::string("ToBlock")+suffix).value_or(0),0,75);
     rule.blockWithoutShield=data.tables.at("monstats").number(record->sourceRow,"NoShldBlock").value_or(0)!=0;
+    // UNITS_GetBlockRate has these class exceptions before component checks.
+    rule.nativeBlockException=record->id=="diablo" || record->id=="doomknight1" || record->id=="diabloclone";
     // MonStats2's xx sentinel is not an animation. MONSTERSPAWN_GetResurrectMode
     // uses NU for modes outside the native 0..15 range.
     if(record->resurrectionMode!="nu" && record->resurrectionMode!="xx" && !record->resurrectionMode.empty()) {
@@ -138,7 +146,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if (!shout) return {};
         rule.attacks.emplace(9, server::MonsterAttackRule{0, 0, 0, std::max(1, int(std::ceil(shout->duration * 25))), 1, {}});
     }
-    auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty);
+    auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty,request.ladderMonsterStats);
     rule.attacks.merge(attacks);
     if(const auto current=rule.attacks.find(4);current!=rule.attacks.end()) {
         rule.minimumDamage=current->second.minimum;rule.maximumDamage=current->second.maximum;rule.attackRating=current->second.rating;
@@ -202,11 +210,16 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     // QUESTSFX_MainHandler: these values are original code, not MPQ parameters.
     if(record->ai=="BloodRaven") rule.deathSweep=server::MonsterRule::DeathSweep{35,25,125,true};
     if(record->ai=="Andariel") rule.deathSweep=server::MonsterRule::DeathSweep{35,1,51,false};
+    if(record->id=="radament") {
+        const auto definition=data.nativeFormulas->missileIds.at("radamentdeath");
+        const auto range=data.nativeFormulas->missiles.at(definition).number("range");
+        rule.deathSweep=server::MonsterRule::DeathSweep{35,40,std::max(range-100,100),false};
+    }
     rule.experience.resize(100);
     rule.experienceRatios.resize(100);
     bool complete = true;
     for (int playerLevel = 1; playerLevel < 100; ++playerLevel) {
-        auto xp = resolveMonsterExperience(data, catalog, world, {identity, RegionId(request.level), request.difficulty, playerLevel, monsterRewardModifiers(enchantment)});
+        auto xp = resolveMonsterExperience(data, catalog, world, {identity, RegionId(request.level), request.difficulty, playerLevel, monsterRewardModifiers(enchantment),request.ladderMonsterStats});
         if (!xp.deferred.empty()) { complete = false; break; }
         rule.experience[size_t(playerLevel)] = xp.amount;
         rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;
@@ -284,6 +297,19 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             area.componentPalettes.emplace(record->index,monsterComponentPalette(components.componentCounts,componentRandom));
     }
     std::set<std::string> deferred(plan.diagnostics.begin(), plan.diagnostics.end());
+    // Hit39 uses the full normal Levels list, not the region's randomly
+    // selected population roster or the difficulty's nmon list.
+    auto nativeRuleRandom=initialRandom(request.seed^uint32_t(request.level));
+    for(const auto &code:level.population.normal) {
+        const auto *record=catalog.find(code);if(!record) break;
+        area.normalSpawnRoster.push_back({record->index,record->randomSpawn});
+        if(!record->randomSpawn) continue;
+        MonsterIdentity identity;identity.monster=code;identity.origin=SpawnOrigin::Summoned;
+        identity.spawnKey="native."+code;
+        auto prototype=combatMonster(archives,data,request,identity,{},world,catalog,animations,nativeRuleRandom);
+        if(prototype) area.nativeMonsterClasses.emplace(record->index,std::move(*prototype));
+        else deferred.insert("Native spawn profile pending: "+code);
+    }
     // Rules depend on native identity/rank and this area's difficulty/level,
     // not the spawn position. Cache unsupported profiles as well.
     using RuleKey = std::tuple<std::string, MonsterRank, std::string>;

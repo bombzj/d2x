@@ -27,6 +27,7 @@ struct AuraStatFormula {
 };
 struct AuraSkillSpec {
     int skill = -1;
+    int serverDoFunction{};
     std::array<int, 8> parameters{};
     int mana = 0, manaPerLevel = 0, manaShift = 0;
     uint32_t filter = 0, resultFlags = 0;

@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "runtime.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/skills/use_source.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/movement.hpp"
@@ -15,35 +16,31 @@
 #include "gameplay/combat/attack_timing.hpp"
 #include <algorithm>
 namespace d2x::server::skills {
-System::System(Ports ports):ports_(ports),runtime_(std::make_unique<Runtime>()) {}
+System::System(Ports ports):state_(ports.actions),ports_(ports),runtime_(std::make_unique<Runtime>(state_.releases(),state_.monsterReleases())) {}
 System::~System()=default;
 bool System::uninterruptible(EntityId actor) const {
+    if(!state_.usedSkill(actor)) return false;
     const auto &releases_=runtime_->releases;
     const auto found=releases_.find(actor);
     return found!=releases_.end() && (found->second.skill.leap || (found->second.skill.weapon && !found->second.skill.weapon->interruptible));
 }
-size_t System::pendingReleases() const {return runtime_->releases.size()+runtime_->monsters.size();}
+size_t System::pendingReleases() const {return state_.pendingReleases();}
 bool System::busy(EntityId id,uint64_t tick) const {
-    if(ports_.effects.recovering(id,tick)) return true;
-    const auto &releases_=runtime_->releases;
-    const auto &monsterReleases_=runtime_->monsters;
-    const auto found=state_.casts.find(id);
-    return releases_.contains(id) || monsterReleases_.contains(id) || (found!=state_.casts.end() && found->second.until>tick);
+    return state_.recovering(id,tick) || state_.busy(id,tick);
 }
 void System::interrupt(const ActorContext &actor) {
     cancel(actor.player,actor.actor);
-    if(auto found=state_.casts.find(actor.actor);found!=state_.casts.end()) found->second.until=actor.tick;
+    state_.interrupt(actor.actor,actor.tick);
     ports_.movement.execute(actor,{MovementAction::Stop,{},{},{}});
 }
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
 }
 void System::cancel(PlayerId player, EntityId actor) {
-    auto &pending_=runtime_->pending;auto &releases_=runtime_->releases;
+    auto &pending_=runtime_->pending;
     ports_.companions.cancel(actor);
     pending_.erase(player);
-    releases_.erase(actor);
-    if (auto it = state_.casts.find(actor); it != state_.casts.end()) it->second.interrupted = true;
+    state_.cancel(actor);
     ports_.combat.cancel(actor);
 }
 DomainResult<> System::attack(const ActorContext &actor, const Request &request,int selectedOverride) {
@@ -74,7 +71,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::Stop) {
         const auto channel=releases_.find(actor.actor);
-        if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);if(auto cast=state_.casts.find(actor.actor);cast!=state_.casts.end()) {cast->second.interrupted=true;cast->second.until=actor.tick;}}
+        if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
         // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
         // not cancel an ordinary attack's approach or pending action.
         return applied();
@@ -82,19 +79,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (request.action == Action::Select || request.action == Action::Bind) {
         if (!player->rules.character) return {DomainStatus::Unavailable, {}};
         const bool clear = request.action == Action::Bind && (request.skill == 0x7FFF || request.skill == 0x0FFF);
-        const auto charged=std::find_if(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id.value==request.owner && c.skill==request.skill && c.charges>0;});
-        const bool charge=request.owner!=UINT32_MAX && charged!=player->totals.chargedSkills.end();
-        if(request.owner!=UINT32_MAX && !charge) return {DomainStatus::InvalidRequest,{}};
+        const auto learned = player->totals.skillRanks.find(request.skill);
+        const auto source = resolveSkillUseSource(request.skill, request.owner,
+            player->rules.character->innateSkills.contains(request.skill),
+            learned == player->totals.skillRanks.end() ? 0 : learned->second, player->totals.chargedSkills);
+        if(!source) return {DomainStatus::InvalidRequest,{}};
+        const bool charge=source->charged.has_value();
         const auto quantities=inventory::itemSkills(*player);
         if(quantities.contains(request.skill) && (!request.right || !quantities.at(request.skill))) return {DomainStatus::Unavailable,{}};
         const bool itemSkill=request.right && quantities.contains(request.skill) && quantities.at(request.skill)>0;
         const auto rule = player->rules.character->learning.find(request.skill);
         if (!clear && !itemSkill && (rule == player->rules.character->learning.end() || !rule->second.selectable || (!request.right && !rule->second.leftAllowed)))
             return {DomainStatus::InvalidRequest, {}};
-        if (!clear && !player->rules.character->innateSkills.contains(request.skill) && !itemSkill && !charge) {
-            const auto learned = player->totals.skillRanks.find(request.skill);
-            if (learned == player->totals.skillRanks.end() || learned->second <= 0) return {DomainStatus::InvalidRequest, {}};
-        }
+        if (!clear && !itemSkill && !charge && source->rank <= 0) return {DomainStatus::InvalidRequest, {}};
         auto record = player->persistent.player;
         if (request.action == Action::Bind) {
             if (!request.hotkey || *request.hotkey >= record.skillHotkeys.size()) return {DomainStatus::InvalidRequest, {}};
@@ -113,18 +110,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         return result;
     }
     if (request.action != Action::Cast) return {};
-    if(ports_.effects.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
+    if(state_.recovering(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     const auto result = attack(actor, request);
     if (result.status == DomainStatus::Conflict) { pending_[actor.player] = {actor, request}; return applied(); }
     if (pending_.erase(actor.player) && !result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
-    auto &pending_=runtime_->pending;auto &releases_=runtime_->releases;
+    auto &pending_=runtime_->pending;
     const auto playerStatus = release(tick);
     const auto monsterStatus = releaseMonsters(tick);
     const auto status = playerStatus == StepStatus::Blocked || monsterStatus == StepStatus::Blocked ? StepStatus::Blocked : StepStatus::Complete;
-    std::erase_if(state_.casts, [&](const auto &entry) { return !releases_.contains(entry.first) && std::max(entry.second.until, entry.second.cooldownUntil) <= tick.tick; });
+    state_.expire(tick.tick);
+    state_.pruneUsedSkills(ports_.players);
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;
         const auto result = attack(actor, it->second.request);

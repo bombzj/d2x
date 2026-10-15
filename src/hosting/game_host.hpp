@@ -1,4 +1,5 @@
 #pragma once
+#include "gameplay/environment/time.hpp"
 #include "server/game_instance.hpp"
 #include <memory>
 #include <vector>
@@ -30,6 +31,7 @@ class GameHost {
     std::vector<PlayerId> participants(GameHandle) const;
     std::vector<PlayerId> visiblePlayers(PlayerBinding) const;
     std::vector<MonsterSnapshot> visibleMonsters(PlayerBinding) const;
+    std::vector<server::MissileFact> visibleMissiles(PlayerBinding) const;
     std::vector<PetOwnershipSnapshot> pets(PlayerBinding) const;
     std::set<int> unitStates(GameHandle,EntityId) const;
     std::vector<server::companions::Preparation> pendingSummons(GameHandle) const;
@@ -62,6 +64,7 @@ class GameHost {
     server::DomainResult<> relocate(PlayerBinding,RegionId,std::optional<Vec>);
     std::optional<uint16_t> npcQuestAlert(PlayerBinding,const server::NpcRule &,RegionId) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;
+    std::optional<NativeActEnvironment> environment(GameHandle,RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;
     bool pause(GameHandle, bool);

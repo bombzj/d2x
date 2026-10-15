@@ -1,6 +1,6 @@
 # 物品技能来源与专用程序
 
-更新：2026-10-09。本页维护物品相关技能分类、执行依赖与缺口。本页唯一维护充能与装备事件的技能来源／替代程序；共同事务与装备资格分别由[物品COMMON](../items/COMMON.md)和[EQUIPMENT](../items/EQUIPMENT.md)维护，技能本体归对应职业或[GENERAL](GENERAL.md)；本页不复制数值与保存编码。
+更新：2026-10-15。本页维护物品相关技能分类、执行依赖与缺口。本页唯一维护充能与装备事件的技能来源／替代程序；共同事务与装备资格分别由[物品COMMON](../items/COMMON.md)和[EQUIPMENT](../items/EQUIPMENT.md)维护，技能本体归对应职业或[GENERAL](GENERAL.md)；本页不复制数值与保存编码。
 
 | 类别 | 当前实现／缺口 |
 | --- | --- |
@@ -18,7 +18,7 @@
 
 充能技能保留原层skill<<6|rank、原次数与源GUID；3C／51／23／7B、本人原物品位流及3E共同管理选择／热键／次数。充能释放免普通耗蓝，资源与次数同笔扣费，Inferno起始一次扣费；源失效显式取消，不回退到同ID普通技能。有效装备／套装层资格见[EQUIPMENT](../items/EQUIPMENT.md)，普通、符文之语和已激活套装层统一收集来源。保存沿原204层值，运行GUID不写D2S。客户端从原物品解析提供技能栏、热键与本人伤害显示，同样用于原D2GS。
 
-装备触发由effects的有界ItemEventPlan接Attack／Hit／Kill／GetHit／Death／LevelUp，复用已实现技能程序并发原99／9A；概率只掷一次，输出背压不再次执行效果。hosting读取ItemEffect／ItemTarget／ItemTgtDo／ItemCheckStart，空ItemEffect不施放；本人／随机落点与防御方Oculus传送按SkillItem规则区分。Skills::Handler仅在a6／a7置位且ItemEffect>1时用替代Do程序；攻击触发的替代程序与已准备SrvDo不同时明确暂缓，不能沿普通技能执行。其他职业未实现程序、攻击方ItemTgtDo作用于怪物、随机尸体及额外start-check保持明确暂缓，诊断itemTriggers.deferred记录原因。事件框架不等于全部装备触发已实现。
+装备触发由reactions::ItemTriggers持有有界ItemEventPlan，effects保留推进适配入口；计划接Attack／Hit／Kill／GetHit／Death／LevelUp，复用已实现技能程序并发原99／9A；概率只掷一次，输出背压不再次执行效果。hosting读取ItemEffect／ItemTarget／ItemTgtDo／ItemCheckStart，空ItemEffect不施放；本人／随机落点与防御方Oculus传送按SkillItem规则区分。Skills::Handler仅在a6／a7置位且ItemEffect>1时用替代Do程序；攻击触发的替代程序与已准备SrvDo不同时明确暂缓，不能沿普通技能执行。其他职业未实现程序、攻击方ItemTgtDo作用于怪物、随机尸体及额外start-check保持明确暂缓，诊断itemTriggers.deferred记录原因。事件框架不等于全部装备触发已实现。
 
 ## 依据与证据
 

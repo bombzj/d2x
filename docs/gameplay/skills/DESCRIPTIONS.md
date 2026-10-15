@@ -60,7 +60,7 @@ SkillDesc 的三组字段均导入 `line / texta / textb / calca / calcb`：等�
 
 原小数格式使用截断后的整数部分／小数部分，不用浮点四舍五入或统一的 `%.1f`。固定点范围的 `%d.%d-%d.%d` 保留原程序格式，不另作零填充或去尾零。
 
-SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1el / me3o` 等名称，不另造别名。弹体参数分别读取 Param、CltParam、HitPar、CltHitPar、DmgParam 及各自的线性／递减对。原 1.13c 的 `mps` 将完整等级法力乘 25 后除以 2；它与 D2MOO 1.10f 转录不同，以本机原二进制为准。原 raw 描述弹体回调仍按参数编号除以 3，因此 `m2eo/ey` 读取描述弹体 1、`me3o/y` 读取描述弹体 2；这是已核实的原显示映射，不在描述层擅自改成普通弹体槽号。
+SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1el / me3o` 等名称，不另造别名。弹体参数分别读取 Param、CltParam、HitPar、CltHitPar、DmgParam 及各自的线性／递减对。原1.13c D2Common RVA4DC30／ordinal10115确认dm递减参数先截断等级比值，公式与权威曲线已共用该原版算子，并纳入前序Windows Release构建；全部描述程序未逐项运行复验。原 1.13c 的 `mps` 将完整等级法力乘 25 后除以 2；它与 D2MOO 1.10f 转录不同，以本机原二进制为准。原 raw 描述弹体回调仍按参数编号除以 3，因此 `m2eo/ey` 读取描述弹体 1、`me3o/y` 读取描述弹体 2；这是已核实的原显示映射，不在描述层擅自改成普通弹体槽号。
 
 充能选择器的数量行使用当前 TBL `ModStre10d` 格式，不保留手写英文 Charges 文案；原 owner／等级／余量语义不变。
 
@@ -96,7 +96,7 @@ SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1
 
 冒烟暴露并修复表字段类型、无关 MonStats 重复名和 TBL 重复键问题。自研入局漏发原 0xAA 使空状态未知，已依据 D2MOO `SUNITMSG_FirstFn`／`D2GAME_STATES_SendUnitStates_6FCC58E0` 补入初始状态快照；空列表仍发 0xFF 终止，后续 A7／A8／A9 保留。客户端未改成缺包默认零。新准入不携带临时状态属性列表；运行中全状态重同步及所有他人属性组合未在此验收。
 
-构建日志在 `artifacts/skill-tooltip-20261007/build-release-20261011.log` 及本证据目录的增量日志；实际包哈希由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。装备耐久提示结果只在[经典 HUD](../ui/CLASSIC_HUD.md#装备耐久提示)维护。本次未认证全部 75 个程序参数、复杂装备／充能／变身／冷却、原版完整像素、多客户端、Linux或原服运行。后续三张原版截图促成的 StrSkill119／多状态标题修正尚未构建或运行，不属于此表的历史冒烟结论。
+构建日志在 `artifacts/skill-tooltip-20261007/build-release-20261011.log` 及本证据目录的增量日志；实际包哈希由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。装备耐久提示结果只在[经典 HUD](../ui/CLASSIC_HUD.md#装备耐久提示)维护。本次未认证全部 75 个程序参数、复杂装备／充能／变身／冷却、原版完整像素、多客户端、Linux或原服运行。后续三张原版截图促成的 StrSkill119／多状态标题修正已纳入前序构建，但未专项运行复验，不属于此表的历史冒烟结论。
 
 ## 原版证据
 

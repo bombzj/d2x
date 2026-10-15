@@ -20,7 +20,8 @@ enum class AdminOperation {
 };
 struct AdminAmount { int64_t value{}; };
 struct AdminStep { uint32_t frames = 1; };
-struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; std::string quality = "normal"; std::optional<unsigned> durability = {}; MonsterRank rank{MonsterRank::Normal}; std::string superUnique{}; std::optional<unsigned> sockets{}; std::optional<int> shrine{},trap{}; };
+struct AdminItemAffix { bool prefix{}; int row{}; std::optional<std::vector<int32_t>> rolls; };
+struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position; std::string quality = "normal"; std::optional<unsigned> durability = {}; MonsterRank rank{MonsterRank::Normal}; std::string superUnique{}; std::optional<unsigned> sockets{}; std::optional<int> shrine{},trap{}; std::optional<uint32_t> seed{}; std::vector<AdminItemAffix> affixes{}; };
 struct AdminMissile {uint64_t source{};uint32_t amount{};int missile{};};
 struct AdminUnit { uint64_t id{}; int64_t amount{}; };
 struct AdminTravel { int level{}; std::optional<Vec> position; };

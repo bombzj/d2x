@@ -55,6 +55,6 @@ void prepareQuestWorld(Archives &archives,const ClassicData &data,PreparedWorldA
         if(object.rule.operation==62) fixed("Ancient Barbarian 3",object.position);
     }
     if(int(area.id)==131) for(const auto &npc:area.npcs) if(npc.rule.code=="baalthrone")
-        for(int wave=1;wave<=5;++wave) fixed("Baal Subject "+std::to_string(wave),npc.position+Vec{0,13});
+        for(int wave=1;wave<=5;++wave) fixed("Baal Subject "+std::to_string(wave),npc.spawnPosition+Vec{0,13});
 }
 }

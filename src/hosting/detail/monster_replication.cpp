@@ -3,6 +3,22 @@
 #include "hosting/native_item_wire.hpp"
 #include <cstdlib>
 namespace d2x::hosting {
+void NativeRealmService::publishMissiles() {
+    if(!binding || peer.phase!=GamePhase::Entered) return;
+    std::set<EntityId> visible;std::vector<Bytes> packets;
+    const auto own=host.read(*binding);if(!own) return;
+    for(const auto &missile:host.visibleMissiles(*binding)) {
+        const bool ownerVisible=missile.ownerType==1?peer.monsters.contains(missile.owner):
+            missile.owner==own->actor.id || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==missile.owner;});
+        if(!ownerVisible) continue;
+        visible.insert(missile.missile);
+        if(!peer.missiles.contains(missile.missile)) packets.push_back(nativeMissile(missile,shared.terrain.at(binding->game).at(missile.area).origin));
+    }
+    if(!packets.empty()) sendGameBatch(std::move(packets));
+    // 73 has no missile GUID; native clients expire their local instance.
+    // Removing an interest entry must never invent a RemoveUnit(3) packet.
+    peer.missiles.swap(visible);
+}
 void NativeRealmService::publishMonsters() {
     if (!binding || peer.phase != GamePhase::Entered) return;
     std::set<EntityId> visible;
@@ -78,22 +94,25 @@ void NativeRealmService::publishMonsters() {
         }
         const auto statePacket = [&](int state, bool enabled) {
             const auto stats=monster.stateStats.find(state);
-            auto values=enabled && stats!=monster.stateStats.end()?stats->second:std::vector<std::pair<int,int64_t>>{};
+            auto values=enabled && stats!=monster.stateStats.end()?stats->second:std::vector<StatValue>{};
             // A7 only enables a state; it does not clear an earlier GOOD stat.
             // Send the explicit zero via A8 when alignment returns to EVIL.
             if(enabled && values.empty() && state==content->states.at("alignment").definition.id) {
                 const auto previous=entry->second.stateStats.find(state);
                 if(previous!=entry->second.stateStats.end()) {
                     values=previous->second;
-                    for(auto &[stat,value]:values) { (void)stat;value=0; }
+                    for(auto &stat:values) stat.value=0;
                 }
             }
             return nativeState(*content,{monster.id,1,monster.area,state,enabled,std::move(values)});
         };
         if(fresh) packets.push_back(nativeStateSnapshot(*content,monster.id,1,monster.states,monster.stateStats));
         else {
-            for (const int state : entry->second.states) if (!monster.states.contains(state)) packets.push_back(statePacket(state, false));
-            for (const int state : monster.states) if (!entry->second.states.contains(state) || (monster.stateStats.contains(state) ? entry->second.stateStats[state]!=monster.stateStats.at(state) : !entry->second.stateStats[state].empty())) packets.push_back(statePacket(state, true));
+            const auto appendState=[&](int state,bool enabled) {
+                auto packet=statePacket(state,enabled);if(!packet.empty()) packets.push_back(std::move(packet));
+            };
+            for (const int state : entry->second.states) if (!monster.states.contains(state)) appendState(state,false);
+            for (const int state : monster.states) if (!entry->second.states.contains(state) || (monster.stateStats.contains(state) ? entry->second.stateStats[state]!=monster.stateStats.at(state) : !entry->second.stateStats[state].empty())) appendState(state,true);
         }
         entry->second.states = monster.states;
         entry->second.stateStats = monster.stateStats;

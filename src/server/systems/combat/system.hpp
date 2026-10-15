@@ -1,4 +1,6 @@
 #pragma once
+#include "requests.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
 #include "participants.hpp"
 #include "server/runtime/combat_rules.hpp"
 #include "server/runtime/contracts.hpp"
@@ -15,85 +17,31 @@
 #include <vector>
 
 namespace d2x::server::combat {
-// Hit, mitigation and resource damage planning; death is a separate transition.
-struct Damage {
-    EntityId source, target; DamageType type; int64_t minimum{}, maximum{}; uint64_t action{};
-    RegionId area; uint64_t impact{}; int rating{}, level{}, range{}, sourceSize{2};
-    std::optional<WeaponDamage> weapon;
-    int criticalChance{}, deadlyChance{};
-    bool reactionsStarted{}, cancelled{};
-    std::optional<CombatModifiers> attackModifiers{};
-    uint8_t monsterMode{4};
-    uint64_t sourceInterruption{};
-    std::optional<uint64_t> actionRandom{};
-    SourceBinding binding{};
-    std::optional<SkillCastSpec> skill{};
-    std::optional<MonsterAttackRule> monsterSkill{};
-};
-// Targets are captured at missile impact, not looked up again by radius on retry.
-struct SpellImpact {
-    EntityId projectile, source;
-    RegionId area;
-    DamageType type{DamageType::Fire};
-    int64_t damage{};
-    std::vector<EntityId> targets;
-    size_t next{};
-    uint64_t occurrence{}, coldFrames{}, nextDelay{};
-    bool freeze{}, knockback{};
-    bool returnFire{}, reaction{};
-    int coldPierce{}, poisonPierce{};
-    std::array<int,3> staticFloors{};
-    int staticPercent{}, staticMinimum{};
-    int64_t minimumStaticDamage{};
-    std::vector<int64_t> targetDamage{};
-    uint8_t hitClass{};
-    std::optional<WeaponSkillDamage> weapon{};
-    uint64_t poisonFrames{};
-    uint64_t stunFrames{};
-    std::optional<bool> weaponHit{};
-    std::optional<MonsterHit> monsterHit{};
-    MonsterHitStates monsterStates{};
-    int monsterRating{}, monsterLevel{};
-    bool monsterToHit{};
-    int64_t sourceHeal{};
-    std::optional<uint64_t> contactRandom{};
-    bool unblockable{};
-    bool targetApplied{};
-    int64_t selfDamage{};
-    int64_t healing{}; bool undeadOnly{};
-    std::optional<WeaponSkillSpec> conversion{};
-    int healingOverlay{-1};
-    SourceBinding binding{};
-    bool conversionApplied{};
-    size_t plannedTarget{};
-    std::optional<uint64_t> targetRandom{};
-    bool wearApplied{};
-    bool frenzyApplied{};
-    int64_t lifeGain{}, manaGain{};
-    int contactOverlay{-1}, leechOverlay{-1};
-    // Authored environmental damage has no combat actor or player credit.
-    EntityId meleeReactionTarget{};
-    bool environment{}, directLife{};
-    uint64_t environmentGeneration{};
-};
-struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };
 struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; };
 class System {
     State state_;
     const Ports ports_;
-    StepStatus resolveSpells(TickContext);
+    StepStatus resolveSpells(TickContext,std::optional<std::pair<EntityId,uint64_t>> selected={});
     DomainStatus resolveEnvironment(SpellImpact &,TickContext);
+    DomainStatus prepareMissileContact(SpellImpact &,ParticipantView,ParticipantView,uint64_t generation,TickContext,bool preludeOnly=false);
+    DomainStatus finishMissileArmor(SpellImpact &,ParticipantView,TickContext);
+    DomainStatus advanceMissileDrain(SpellImpact &,ParticipantView,int64_t physical,int64_t life,int64_t mana,int64_t stamina,TickContext);
     DomainStatus resolvePlayerImpact(SpellImpact &,ParticipantView,const PlayerState &,const PlayerState &,uint64_t generation,TickContext);
+    DomainStatus finishPlayerContact(SpellImpact &,const PlayerState &,TickContext);
+    DomainStatus finishMonsterContact(SpellImpact &,const monsters::Actor &,TickContext);
+    DomainStatus advanceMeleeAttempts(SpellImpact &,TickContext);
     DomainStatus finishImpact(SpellImpact &, const PlayerState *, uint64_t generation, uint64_t tick);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> enqueue(const Damage &);
+    DomainResult<MissilePreludeResult> missilePrelude(SpellImpact &,TickContext);
     bool weaponContact(const WeaponSkillDamage &,EntityId,uint64_t,uint64_t &) const;
     DomainResult<> enqueue(SpellImpact);
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;
     void commitSpells(SpellPlan &&) noexcept;
+    StepStatus advanceAuraPulse(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence});}
     void cancel(EntityId);
     StepStatus step(TickContext, FrameFacts &);
 };

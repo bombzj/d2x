@@ -3,6 +3,7 @@
 #include "content/world/world_catalog.hpp"
 #include "monster_experience.hpp"
 #include "gameplay/rewards/experience.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <utility>
 
 namespace d2x {
@@ -49,10 +50,10 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
             if (levels.number(levelRow, "Level") == level) break;
         if (levelRow == levels.rows().size())
             return defer("Missing original MonLvl row");
-        auto ratio = levels.number(levelRow, std::string("L-XP") + suffix[request.difficulty]);
+        auto ratio = levels.number(levelRow, std::string(request.ladderStats?"L-XP":"XP") + suffix[request.difficulty]);
         if (!ratio || *ratio < 0)
             return defer("Invalid original MonLvl experience");
-        base = uint64_t(*ratio) * base / 100;
+        base = uint32_t(nativePercentage(*ratio,*percent,100));
     }
     int bonusLevel = 0, rankFactor = 1;
     switch (request.identity.rank) {

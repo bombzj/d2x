@@ -18,7 +18,7 @@ struct ObjectRule {
     std::array<int, 8> parameters{};
     bool door{}, stash{};
     bool monsterUsable{};
-    std::vector<int> cureStates;
+    std::vector<NativeStateCure> cureStates;
     std::optional<ChestState> chest;
     std::optional<ShrineRule> shrine;
     std::optional<TowerReward> towerReward;

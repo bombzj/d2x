@@ -56,12 +56,12 @@ TreasureRoll selectTreasure(std::span<const TreasureClass> classes, std::string_
         const int64_t bound = total + noDrop;
         if (bound > std::numeric_limits<int>::max())
             throw std::runtime_error("Treasure weight overflow: " + record.name);
-        if (!total || *record.picks == 0)
+        if (!total)
             return;
         for (size_t index = 0; index < quality.size(); ++index)
             quality[index] = std::max(quality[index], record.quality[index].value_or(0));
         path.push_back(record.name);
-        const int picks = std::abs(*record.picks);
+        const int picks = std::max(std::abs(*record.picks), 1);
         for (int pick = 0; pick < picks && !stopped; ++pick) {
             if (++work > 10000 || result.selections.size() >= 4096)
                 throw std::runtime_error("Treasure selection exceeds supported work budget");

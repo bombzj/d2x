@@ -6,6 +6,7 @@
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -22,21 +23,26 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     const auto type=types.find(record->ai);if(type==types.end()) return {};
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;const auto &stats=data.tables.at("monstats"),&levels=data.tables.at("monlvl"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
     const std::string suffix=request.difficulty==0?"":request.difficulty==1?"(N)":"(H)";
-    server::MonsterRule rule;rule.trap=type->second;rule.environmentController=!record->killable;rule.nativeClass=record->index;
+    server::MonsterRule rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;
+    rule.statGameType=request.ladderMonsterStats;
+    for(size_t difficulty=0;difficulty<rule.modeTables.size();++difficulty) rule.modeTables[difficulty]=data.nativeMonsterModes.at({record->index,int(difficulty)});
+    rule.trap=type->second;rule.environmentController=!record->killable;rule.nativeClass=record->index;
     // MonsterSpawn gives blank-level trap rows the current monster-region level.
     rule.level=request.difficulty==0?stats.number(record->sourceRow,"Level").value_or(world.level(request.level).population.level[0]):world.level(request.level).population.level[size_t(request.difficulty)];
     rule.level=std::max(1,rule.level);rule.difficulty=request.difficulty;rule.nativeVelocity=record->walkVelocity.value_or(0);
+    prepareMonsterSkillRanks(data,record->sourceRow,rule);
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();rule.size=record->collisionSize;rule.meleeRange=record->meleeRange;
     size_t levelRow=0;while(levelRow<levels.rows().size() && levels.number(levelRow,"Level")!=rule.level) ++levelRow;if(levelRow==levels.rows().size()) return {};
     const auto scale=[&](std::string_view name,std::string_view ratio) {
         const int value=stats.number(record->sourceRow,std::string(name)+suffix).value_or(0);
-        return stats.number(record->sourceRow,"noRatio").value_or(0)?value:int(int64_t(value)*levels.number(levelRow,std::string(ratio)+suffix).value_or(0)/100);
+        const auto ratioName=request.ladderMonsterStats?ratio:ratio.substr(2);
+        return stats.number(record->sourceRow,"noRatio").value_or(0)?value:nativePercentage(levels.number(levelRow,std::string(ratioName)+suffix).value_or(0),value,100);
     };
     // Non-killable controllers use an active sentinel, never combat life/loot.
     rule.minimumLife=rule.environmentController?1:scale(request.difficulty==0?"minHP":"MinHP","L-HP");rule.maximumLife=rule.environmentController?1:scale(request.difficulty==0?"maxHP":"MaxHP","L-HP");
     if(rule.minimumLife<=0 || rule.maximumLife<rule.minimumLife) return {};
     rule.defense=scale("AC","L-AC");rule.damageRegen=stats.number(record->sourceRow,"DamageRegen").value_or(0);rule.criticalChance=stats.number(record->sourceRow,"Crit").value_or(0);
-    rule.coldEffect=record->coldEffect[size_t(request.difficulty)];prepareMonsterColdRules(data,record->sourceRow,rule);rule.stunState=data.states.at("stunned").definition.id;
+    rule.coldEffect=record->coldEffect[size_t(request.difficulty)];prepareMonsterStateRules(data,record->sourceRow,rule);rule.stunState=data.states.at("stunned").definition.id;
     rule.noTreasure=rule.trap==Trap::Soul;
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     constexpr const char *resistance[]{"ResDm","ResMa","ResFi","ResLi","ResCo","ResPo"};for(size_t i=0;i<6;++i) rule.resistances[i]=stats.number(record->sourceRow,std::string(resistance[i])+suffix).value_or(0);
@@ -89,7 +95,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));rule.deathTicks=death?std::max(1,int(std::ceil(death->duration*25))):1;
     if(record->killable) {
         rule.experience.resize(100);rule.experienceRatios.resize(100);
-        for(int level=1;level<100;++level) {const auto xp=resolveMonsterExperience(data,catalog,world,{identity,RegionId(request.level),request.difficulty,level,{}});if(!xp.deferred.empty()) {if(stats.number(record->sourceRow,"Exp"+suffix).value_or(0)!=0) return {};continue;}rule.experience[size_t(level)]=xp.amount;rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;rule.experienceRatios[size_t(level)]=xp.ratio;}
+        for(int level=1;level<100;++level) {const auto xp=resolveMonsterExperience(data,catalog,world,{identity,RegionId(request.level),request.difficulty,level,{},request.ladderMonsterStats});if(!xp.deferred.empty()) {if(stats.number(record->sourceRow,"Exp"+suffix).value_or(0)!=0) return {};continue;}rule.experience[size_t(level)]=xp.amount;rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;rule.experienceRatios[size_t(level)]=xp.ratio;}
     }
     return server::PreparedMonster{std::move(identity),{},position,std::move(rule)};
 }

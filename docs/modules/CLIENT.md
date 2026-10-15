@@ -43,7 +43,7 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 技能资格的 MPQ 导入、固有技能清单和学习／主动技能判断共用 skill_eligibility；怪物目标选择、按住锁定和发送前校验共用 RemoteCombat.monsterTargetEligible，表现中的死亡判断共用 onlineMonsterCorpse。协议适配仍核对场景代次、单位分配、选中 owner、范围和地图绑定。
 
-按住施放的目标唯一由SceneController持有；RemoteScene.frame返回当帧悬停／资格，handleWorld完成松开、失焦、死亡、移除、技能与场景代次校验后，drawTargetInfo读取同一个锁定ID绘制顶部信息。已锁定单位的施放允许鼠标离开世界表面／移到底栏；资源加载长帧保留已有单位锁定并复验实际按键，仍丢弃积压的新按下／地面施法。新按下与地面施法仍需世界命中。悬停姓名独立于选中技能的施法资格，锁定优先于鼠标下的其他怪物或地面物品；不另存显示锁定或跨帧借用副本。姓名／特殊说明与边界见[怪物表现](../gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。本次修正只作源码静态核对，尚未构建或运行，已有包不包含它。
+按住施放的目标唯一由SceneController持有；RemoteScene.frame返回当帧悬停／资格，handleWorld完成松开、失焦、死亡、移除、技能与场景代次校验后，drawTargetInfo读取同一个锁定ID绘制顶部信息。已锁定单位的施放允许鼠标离开世界表面／移到底栏；资源加载长帧保留已有单位锁定并复验实际按键，仍丢弃积压的新按下／地面施法。新按下与地面施法仍需世界命中。悬停姓名独立于选中技能的施法资格，锁定优先于鼠标下的其他怪物或地面物品；不另存显示锁定或跨帧借用副本。姓名／特殊说明与边界见[怪物表现](../gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。目标锁定修正已纳入前序Windows Release构建；所列锁定／长帧组合未专项运行复验，历史有限观察不认证全部路径。
 
 人物与任务投影编入 d2x_client，使用显式只读事实和当前 ClassicData／MPQ，不依赖 RealmSession、GameSession、设备、GPU 或本地执行器。RemoteUiClients 负责解码状态适配及协议命令，不再内嵌任务文字选择规则。未收到状态或缺必要输入保留未知；不把游戏共享旗标当成本人完成记录。
 

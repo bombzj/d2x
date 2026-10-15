@@ -51,7 +51,11 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             const auto stats=deriveHirelingStats(*row,source.record.level);
             result.strength=stats.strength;result.dexterity=stats.dexterity;result.weaponType=row->weaponType1;result.weaponType2=row->weaponType2;result.act=row->act;
             result.baseExperience=stats.experience;result.nextExperience=stats.nextExperience;
-            auto &rule=result.rule;result.code=monster->id;rule.nativeClass=monster->index;rule.level=source.record.level;rule.difficulty=source.difficulty;
+            auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.auraPrograms=data.nativeAuraPrograms;
+            rule.noManaRegenState=data.states.at("nomanaregen").definition.id;
+            rule.states=data.nativeStates;
+            rule.stateTarget=monster->stateTarget;rule.noAura=monster->noAura;
+            result.code=monster->id;rule.nativeClass=monster->index;rule.level=source.record.level;rule.difficulty=source.difficulty;
             rule.minimumLife=rule.maximumLife=stats.life;rule.defense=stats.defense;rule.attackRating=stats.attackRating;rule.minimumDamage=stats.damageMin;rule.maximumDamage=stats.damageMax;
             rule.resistances={0,0,stats.resist,stats.resist,stats.resist,stats.resist};rule.nativeVelocity=*monster->walkVelocity;rule.size=monster->collisionSize;
             rule.collision=monster->movementRule();rule.spawnCollision=monster->spawnRule();rule.meleeRange=1+monster->meleeRange;
@@ -75,10 +79,14 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
             std::map<int,int> ranks;
             for(const auto &s:row->skills) if(source.record.level>=s.requiredLevel) ranks[s.id]=std::clamp(s.level+((delta*s.levelPerLevel)>>5),0,32);
+            for(const auto &skill:row->skills) if(const auto assigned=ranks.find(skill.id);assigned!=ranks.end() && assigned->second>0) {
+                rule.baseSkillRanks.insert_or_assign(skill.id,assigned->second);
+                rule.initialSkills.emplace_back(skill.id,assigned->second);
+            }
+            result.baseSkillRanks=rule.baseSkillRanks;
             for(const auto &[id,rank]:ranks) if(const auto *entry=data.skills.find(id)) result.passives.emplace_back(entry->passiveContribution,rank);
             if(!source.items || !source.equipmentRules) throw std::runtime_error("Hireling equipment rules unavailable");
             auto gear=server::companions::calculateHirelingEquipment(source.equipment,*source.items,*source.equipmentRules,result);
-            gear.modifiers.combat.allSkills+=source.temporarySkillBonus;
             const auto recovery=[](AnimationTiming timing,int bonus){timing.speed=effectiveRecoverySpeed(timing.speed,bonus);return monsterAnimationTicks(timing);};
             if(rule.hitRecoveryAnimation) rule.hitRecoveryTicks=recovery(*rule.hitRecoveryAnimation,gear.modifiers.combat.fasterHitRecovery);
             if(rule.blockAnimation) rule.blockTicks=recovery(*rule.blockAnimation,gear.modifiers.combat.fasterBlock);
@@ -182,7 +190,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             rule.skillIds[0]=uint16_t(defaultId);rule.skillActions.emplace(uint16_t(defaultId),prepareSkill(defaultId,1));
             for(const auto &s:row->skills) {
                 if(!ranks.contains(s.id) || ranks.at(s.id)<=0) continue;
-                const int rank=resolveSkillSourceRank({s.id,ranks.at(s.id),-1,0,false},{},gear.modifiers.combat);
+                const int rank=gear.skillRanks.at(s.id);
                 server::companions::HirelingAction action{s.id,rank,std::max(0,s.chance+delta*s.chancePerLevel/4),s.mode,s.aiType};
                 const auto *entry=data.skills.find(s.id);
                 if(entry && entry->auraImplemented) action.aura=resolveAura(data,s.id,rank,ranks);

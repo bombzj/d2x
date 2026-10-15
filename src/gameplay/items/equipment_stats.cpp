@@ -1,6 +1,8 @@
 #include "equipment_stats.hpp"
 #include "definitions.hpp"
 #include "state.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/combat/unit_values.hpp"
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -28,8 +30,7 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             if (auto found = combat.armorPercent.find(item->id); found != combat.armorPercent.end()) {
                 if (!definition.base.maxDefense)
                     throw std::runtime_error("Unverified enhanced armor defense: " + definition.code);
-                armor = int64_t(item->defense) *
-                        std::max<int64_t>(0, 100 + found->second) / 100;
+                armor = nativeAdd(item->defense,nativeStatPercentage(item->defense,found->second));
             }
             if (armor > std::numeric_limits<int>::max() - int64_t(result.defense))
                 throw std::runtime_error("Equipment defense exceeds supported range");
@@ -42,13 +43,10 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             auto block = definition.base.block;
             if (!block)
                 throw std::runtime_error("Unverified shield block: " + definition.code);
-            result.blockChance = std::clamp(int((int64_t(*block) + actor.blockFactor + combat.blockBonus) *
-                                               (actor.dexterity - 15) / (2 * std::max(1, actor.level))), 0, 75);
+            result.blockChance = unitBlockChance(nativeAdd(nativeAdd(*block,actor.blockFactor),combat.blockBonus),actor.dexterity,actor.level);
         }
     }
-    result.defense = int(std::clamp<int64_t>(int64_t(result.defense) *
-        std::max(0, 100 + combat.defensePercent + (result.shield ? combat.shieldDefensePercent : 0)) / 100, 0, std::numeric_limits<int>::max()));
-    result.defense=int(int64_t(result.defense)*std::max(0,100+combat.armorOverridePercent)/100);
+    result.defense = unitDefense(0,result.defense,0,combat.defensePercent,result.shield?combat.shieldDefensePercent:0,combat.armorOverridePercent);
     for (auto item : {right, left}) {
         if (!item)
             continue;
@@ -74,15 +72,15 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             baseLow = std::max<int64_t>(1, baseLow * 75 / 100);
             baseHigh = std::max<int64_t>(2, baseHigh * 75 / 100);
         }
-        baseLow += baseLow * own.enhancedMinimum / 100;
-        baseHigh += baseHigh * own.enhancedMaximum / 100;
+        baseLow = nativeAdd(nativeChecked(baseLow),nativeStatPercentage(nativeChecked(baseLow),own.enhancedMinimum));
+        baseHigh = nativeAdd(nativeChecked(baseHigh),nativeStatPercentage(nativeChecked(baseHigh),own.enhancedMaximum));
         baseLow += own.minimum + own.normalDamage;
         baseHigh += own.maximum + own.normalDamage;
         int64_t low = std::max<int64_t>(1, baseLow + combat.normalDamage + combat.minimumDamage) * 256;
         int64_t high = std::max<int64_t>(low / 256 + 1, baseHigh + combat.normalDamage + combat.maximumDamage) * 256;
         const auto rawMinimum = low, rawMaximum = high;
-        low += low * (std::max<int64_t>(bonus, -90) + combat.minimumDamagePercent) / 100;
-        high += high * (std::max<int64_t>(bonus, -90) + combat.maximumDamagePercent) / 100;
+        low = nativeAdd(nativeChecked(low),nativePercentage(nativeChecked(low),nativeAdd(nativeChecked(std::max<int64_t>(bonus,-90)),combat.minimumDamagePercent),100));
+        high = nativeAdd(nativeChecked(high),nativePercentage(nativeChecked(high),nativeAdd(nativeChecked(std::max<int64_t>(bonus,-90)),combat.maximumDamagePercent),100));
         low = std::max<int64_t>(0, low);
         high = std::max(high, low);
         if (low < 0 || high > std::numeric_limits<int>::max())
@@ -100,6 +98,7 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         mergeAttackTargetModifiers(weapon.target, own.target);
         weapon.blunt = definition.equipment.isType("blun");
         weapon.leftHand = item == left;
+        weapon.twoHanded=twoHands;
         weapon.throwable = definition.equipment.throwable;
         weapon.potion = definition.equipment.isType("tpot");
         weapon.rangeAdder = definition.base.rangeAdder;

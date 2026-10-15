@@ -60,7 +60,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
 | `set-players` | amount为1–8；设置当前本地实例虚拟人数，与游戏内/players共用类型化宿主入口。仅已入局的本机宿主角色可用，客人及账号Realm拒绝；不写D2S，人数规则见[命令分流](../modules/NETWORK.md#游戏内命令分流) |
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
-| `item-spawn` | code、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
+| `item-spawn` | code必填、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。seed可选0..UINT32_MAX；affixes可指定magic／rare原表词缀及范围内rolls，详见下文。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine` | code，level可选；在当前位置附近生成当前MPQ祭坛，效果仍须正常交互领取 |
 | `object-spawn` | code为Objects定义的十进制字符串，x／y为可选原世界坐标，shrine／trap可选；仅本地管理入口，生成原物件以准备观察条件，不直接授予祭坛效果或结算陷阱 |
@@ -70,6 +70,8 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
+
+item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix原TXT的零基行号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。源码已接，尚未构建／运行验证。
 
 后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred／populationMissing提供原人口准备缺口诊断。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
 
@@ -255,4 +257,6 @@ server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawn
 
 ### 女巫战斗诊断
 
-管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它调用effects伤害／护盾及ReturnFire反击入口，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。
+源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息。当前帧事件底座包已提供这些字段，具体版本和有限观察见运行包记录。
+
+管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它投递公共combat命中候选，单步推进后执行伤害／护盾及ReturnFire反击，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。

@@ -6,13 +6,14 @@
 
 namespace d2x {
 SpecialItemRoll rollSpecialItem(std::span<const SpecialItemRecord> records, std::string_view code,
-                                int itemLevel, uint64_t seed, const std::set<size_t> &used) {
+                                int itemLevel, uint64_t seed, const std::set<size_t> &used,
+                                bool hellBovine) {
     if (itemLevel < 1 || itemLevel > 99)
         throw std::invalid_argument("Invalid special item level");
     int64_t total = 0;
     std::vector<const SpecialItemRecord *> eligible;
     for (const auto &record : records) {
-        if (record.code != code || record.level > itemLevel || record.ladder || record.cowOnly)
+        if (record.code != code || record.level > itemLevel || record.ladder || (record.cowOnly && !hellBovine))
             continue;
         if (record.rarity < 0 || total > std::numeric_limits<int>::max() - std::max(1, record.rarity))
             throw std::runtime_error("Invalid special item rarity");

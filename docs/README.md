@@ -23,8 +23,11 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
+| 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
 
-已完成的结构改造内容并入架构／现有模块，不再维护第二份重构计划；已删除执行器的SESSION／UNITS／SKILL_RUNTIME／REWARDS说明不再作为模块入口。原版结构比较仍见[参考设计](architecture/REFERENCE_DESIGN.md)。
+已完成的结构改造内容并入架构／现有模块，不再维护第二份历史重构计划；已删除执行器的SESSION／UNITS／SKILL_RUNTIME／REWARDS说明不再作为模块入口。原版结构比较仍见[参考设计](architecture/REFERENCE_DESIGN.md)。后续服务端精确复刻的目标结构、D2MOO证据、公共函数边界及重构验收统一见[服务端战斗复刻目标架构](architecture/SERVER_COMBAT_RECONSTRUCTION.md)，该页是目标设计，不是当前实现状态；全局顺序仍由[总计划](architecture/MULTIPLAYER.md)维护。
+
+目标设计按“合理承载全部内容”组织，不以当前代码迁移步骤为中心：[战斗领域与组合设计](architecture/COMBAT_DOMAIN_DESIGN.md)负责模块职责、所有权、依赖和跨内容协作；[公共规则与原版算法设计](architecture/COMBAT_SHARED_RULES.md)负责原函数参考、共享粒度、输入输出与精确性契约。两页由总纲统一导航，不另维护完成台账。
 
 ## 当前模块
 

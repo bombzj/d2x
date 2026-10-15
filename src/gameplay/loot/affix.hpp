@@ -35,5 +35,6 @@ int itemAffixLevel(int itemLevel, int baseLevel, int magicLevel);
 MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
                               std::span<const std::string> itemTypes, std::string_view characterClass,
                               int affixLevel, int magicLevel, bool rare, bool socketable,
-                              std::span<const int> usedGroups, bool force, uint64_t seed);
+                              std::span<const int> usedGroups, bool force, uint64_t seed,
+                              int preferredAffix = 0);
 } // namespace d2x

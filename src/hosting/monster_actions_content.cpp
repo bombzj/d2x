@@ -4,6 +4,7 @@
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/resolve.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/combat/attack_timing.hpp"
@@ -29,31 +30,89 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     const auto speed=missileVelocityFixed(table.number(row,"Vel").value_or(0),table.number(row,"VelLev").value_or(0),rank);
     if(!speed) return {};
     rule.speed=float(*speed)*25.f/4096.f;
-    rule.frames=table.number(row,"Range").value_or(0)+(rank-1)*table.number(row,"LevRange").value_or(0);
-    rule.sourceDamage=table.number(row,"SrcDamage").value_or(0);
+    // MISSILES_CreateMissile uses nSkillLevel, not nSkillLevel-1, for LevRange.
+    rule.frames=table.number(row,"Range").value_or(0)+rank*table.number(row,"LevRange").value_or(0);
+    rule.sourceDamage=uint8_t(table.number(row,"SrcDamage").value_or(0));
+    rule.originSourceDamage=uint8_t(table.number(row,"SrcMissDmg").value_or(0));
+    rule.holy=uint8_t(table.number(row,"Holy").value_or(0));
+    rule.useMissileSkill=table.number(row,"MissileSkill").value_or(0)!=0;
+    rule.halfTwoHanded=table.number(row,"Half2HSrc").value_or(0)!=0;
+    rule.applyMastery=table.number(row,"ApplyMastery").value_or(0)!=0;
+    rule.damageStats=data.nativeStats;rule.damageFormulas=data.nativeFormulas;
+    for(size_t difficulty=0;difficulty<rule.aiCurseDivisor.size();++difficulty)
+        rule.aiCurseDivisor[difficulty]=data.tables.at("difficultylevels").number(difficulty,"AiCurseDiv").value_or(0);
+    rule.damageTypes=data.nativeMonsterTypes;
+    rule.lifeStealDivisor=data.lifeStealDivisor;rule.manaStealDivisor=data.manaStealDivisor;
+    const auto &overlays=data.tables.at("overlay");
+    for(size_t index=0;index<overlays.rows().size();++index) {
+        const auto name=overlays.value(index,"overlay");
+        if(name=="steallife") rule.lifeStealOverlay=int(index);
+        else if(name=="stealmana") rule.manaStealOverlay=int(index);
+    }
+    if(rule.lifeStealOverlay<0 || rule.manaStealOverlay<0) return {};
+    if(const auto linked=table.value(row,"Skill");!linked.empty()) {
+        std::string name(linked);for(auto &letter:name) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        const auto skill=data.nativeFormulas->skillIds.find(name);if(skill==data.nativeFormulas->skillIds.end()) return {};
+        rule.linkedSkill=skill->second;
+    }
     const auto minimum=damage("MinDamage","MinLevDam"),maximum=damage("MaxDamage","MaxLevDam");
     const auto low=damage("EMin","MinELev"),high=damage("Emax","MaxELev");
     if(minimum<0 || maximum<minimum || maximum>INT32_MAX || low<0 || high<low || high>INT32_MAX || rule.frames<=0 || rule.frames>1000000) return {};
     rule.minimum=int(minimum);rule.maximum=int(maximum);rule.elementalMinimum=int(low);rule.elementalMaximum=int(high);
     const auto type=table.value(row,"EType");
+    const std::array<std::string_view,13> elements{"","fire","ltng","mag","cold","pois","life","mana","stam","stun","rand","burn","frze"};
+    const auto element=std::find(elements.begin(),elements.end(),type);if(element==elements.end()) return {};
+    rule.damageElement=MissileDamageElement(element-elements.begin());
     if(type=="fire") rule.element=DamageType::Fire;
     else if(type=="ltng") rule.element=DamageType::Lightning;
     else if(type=="cold" || type=="frze") {rule.element=DamageType::Cold;rule.freeze=type=="frze";}
     else if(type=="pois") rule.element=DamageType::Poison;
     else if(type=="mag") rule.element=DamageType::Magic;
+    else if(type=="life" || type=="mana" || type=="stam" || type=="stun" || type=="rand") rule.element=DamageType::Physical;
+    else if(type=="burn") rule.element=DamageType::Fire;
     else if(!type.empty()) return {};
     int length=table.number(row,"ELen").value_or(0);
     const int lengths[]{std::min(rank-1,7),std::clamp(rank-8,0,8),std::max(rank-16,0)};
     for(size_t i=0;i<std::size(lengths);++i) length+=lengths[i]*table.number(row,"ELevLen"+std::to_string(i+1)).value_or(0);
     if(length<0 || length>1000000) return {};
+    rule.elementLength=length;
     if(rule.element==DamageType::Cold) rule.coldFrames=unsigned(length);
     if(rule.element==DamageType::Poison) rule.poisonFrames=unsigned(length);
+    rule.town=table.number(row,"Town").value_or(0)!=0;rule.sourceTown=table.number(row,"SrcTown").value_or(0)!=0;
     rule.toHit=table.number(row,"ToHit").value_or(0)!=0;
     rule.killOnHit=table.number(row,"CollideKill").value_or(0)!=0;
     rule.clientSend=table.number(row,"ClientSend").value_or(0)!=0;
     rule.returnFire=data.missileReturnFire.at(definition);
+    rule.getHit=table.number(row,"GetHit").value_or(0)!=0;rule.softHit=table.number(row,"SoftHit").value_or(0)!=0;
+    rule.knockbackChance=uint8_t(table.number(row,"KnockBack").value_or(0));
+    rule.uninterruptableState=data.states.at("uninterruptable").definition.id;
     rule.hitClass=table.number(row,"HitClass").value_or(0);
-    rule.nextDelay=table.number(row,"NextHit").value_or(0)?table.number(row,"NextDelay").value_or(0):0;
+    rule.nextHit=table.number(row,"NextHit").value_or(0)!=0;
+    rule.nextDelay=rule.nextHit?table.number(row,"NextDelay").value_or(0):0;
+    if(rule.nextHit) rule.nextHitState=data.states.at("justhit").definition;
+    const auto &program=data.nativeFormulas->missiles.at(definition);
+    rule.serverDoFunction=uint16_t(program.number("psrvdofunc"));rule.serverHitFunction=uint16_t(program.number("psrvhitfunc"));
+    rule.canDestroy=table.number(row,"CanDestroy").value_or(0)!=0;
+    rule.lastCollide=table.number(row,"LastCollide").value_or(0)!=0;
+    rule.explosion=table.number(row,"Explosion").value_or(0)!=0;
+    const auto linkMissile=[&](std::string_view field) {
+        auto name=std::string(table.value(row,field));
+        for(auto &letter:name) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        if(name.empty()) return -1;
+        const auto found=data.nativeFormulas->missileIds.find(name);
+        if(found==data.nativeFormulas->missileIds.end()) throw std::runtime_error("Missing native child missile: "+name);
+        return found->second;
+    };
+    for(size_t slot=0;slot<rule.subMissiles.size();++slot) rule.subMissiles[slot]=linkMissile("SubMissile"+std::to_string(slot+1));
+    for(size_t slot=0;slot<rule.hitSubMissiles.size();++slot) rule.hitSubMissiles[slot]=linkMissile("HitSubMissile"+std::to_string(slot+1));
+    for(size_t slot=0;slot<rule.serverParameters.size();++slot) rule.serverParameters[slot]=table.number(row,"Param"+std::to_string(slot+1)).value_or(0);
+    for(size_t slot=0;slot<rule.hitParameters.size();++slot) rule.hitParameters[slot]=table.number(row,"sHitPar"+std::to_string(slot+1)).value_or(0);
+    rule.serverDamageFunction=uint16_t(table.number(row,"pSrvDmgFunc").value_or(0));
+    for(size_t index=0;index<rule.damageParameters.size();++index) rule.damageParameters[index]=table.number(row,"dParam"+std::to_string(index+1)).value_or(0);
+    if(const auto visual=table.value(row,"ProgOverlay");!visual.empty()) {
+        for(size_t index=0;index<overlays.rows().size();++index) if(overlays.value(index,"overlay")==visual) {rule.programOverlay=int(index);break;}
+        if(rule.programOverlay<0) return {};
+    }
     // Native NextHit windows are applied to both players and monsters.
 
     rule.unspreadMultiShot=data.unspreadMultiShotMissiles.contains(definition);
@@ -63,9 +122,10 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     rule.canSlow=table.number(row,"CanSlow").value_or(0)!=0;rule.activate=table.number(row,"Activate").value_or(0);
     rule.alwaysExplode=table.number(row,"AlwaysExplode").value_or(0)!=0;
     const int collision=table.number(row,"CollideType").value_or(0);
+    rule.collisionMode=uint8_t(collision);rule.collideFriend=table.number(row,"CollideFriend").value_or(0)!=0;rule.pierce=table.number(row,"Pierce").value_or(0)!=0;
     rule.collidePlayers=collision==1 || collision==3 || collision==8;
     rule.collideMonsters=collision==2 || collision==3 || collision==5 || collision==8;
-    switch(table.number(row,"pSrvHitFunc").value_or(0)) {
+    switch(rule.serverHitFunction) {
     case 2: {
         rule.behavior=server::MonsterMissileRule::Behavior::GroundThrow;
         const auto name=table.value(row,"HitSubMissile1");size_t child=0;while(child<table.rows().size() && table.value(child,"Missile")!=name) ++child;
@@ -89,6 +149,9 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     // SrvHit24 therefore performs no additional area explosion.
     case 24:break;
     case 25:rule.behavior=server::MonsterMissileRule::Behavior::PoisonBottle;break;
+    case 19:break; // FingerMageSpider posts its native six-slot recipient state.
+    case 55:break; // BaalInferno uses the shared direct hit plus ordered mana withdrawal.
+    case 4:case 5:case 7:case 8:case 9:case 10:case 11:case 17:case 18:case 20:case 21:case 22:case 26:case 27:case 28:case 29:case 32:case 33:case 35:case 36:case 37:case 38:case 40:case 43:case 44:case 45:case 47:case 48:case 50:case 51:case 52:case 53:case 56:case 57:case 58:case 59:break;
     case 0:break;
     default:return {};
     }
@@ -144,11 +207,11 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     }
     return rule;
 }
-std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,const MonsterCombatProfile &profile,int difficulty) {
+std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,const MonsterCombatProfile &profile,int difficulty,bool ladderStats) {
     std::map<uint8_t,server::MonsterAttackRule> result;
     // MonsterMode calculates attack values at the current unit level, after
     // unique/champion/minion level bonuses; HP and AC were initialized earlier.
-    const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level);
+    const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level,ladderStats);
     if(!current) return result;
     for(int slot=1;slot<=2;++slot) {
         const auto &damage=slot==1?current->damage.attack1Damage:current->damage.attack2Damage;
@@ -234,7 +297,7 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
             action.action=server::MonsterAttackRule::Action::Web;
             const auto &web=*record.web;
             rule.web=server::MonsterWebRule{web.missileId,int(std::lround(web.lifetime*25)),int(std::lround(web.auraDuration*25)),int(std::lround(web.slowDuration*25)),web.slowPercent,web.radius,data.states.at("spiderlay").definition,data.states.at("slowed").definition};
-            size_t layRow=0;while(layRow<missiles.rows().size() && missiles.number(layRow,"pSrvHitFunc")!=15) ++layRow;
+            size_t layRow=0;while(layRow<missiles.rows().size() && data.nativeFormulas->missiles.at(int(layRow)).number("psrvhitfunc")!=15) ++layRow;
             if(layRow==missiles.rows().size() || missiles.value(layRow,"HitSubMissile1")!="spidergoo") return false;
             auto lay=prepareMonsterMissile(data,missiles.number(layRow,"Id").value_or(-1),rank);
             auto ground=prepareMonsterMissile(data,web.missileId,rank);if(!lay || !ground) return false;
@@ -299,7 +362,10 @@ bool prepareMonsterComponents(const ClassicData &data,const MonsterRecord &recor
     }
     return false;
 }
-void prepareMonsterColdRules(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+    rule.states=data.nativeStates;
+    rule.noAura=data.tables.at("monstats").number(monsterRow,"noaura").value_or(0)!=0;
+    rule.stateTarget.npc=data.tables.at("monstats").number(monsterRow,"npc").value_or(0)!=0;
     rule.alignment=data.tables.at("monstats").number(monsterRow,"Align").value_or(0);
     if(rule.alignment<0 || rule.alignment>2) throw std::runtime_error("Invalid original monster alignment");
     // MonStats: 1=good, 2=neutral; STAT_ALIGNMENT: 2=good, 1=neutral.
@@ -310,23 +376,83 @@ void prepareMonsterColdRules(const ClassicData &data,size_t monsterRow,server::M
         rule.alignmentStat=stats.number(row,"ID").value_or(-1);
     if(rule.alignmentStat<0) throw std::runtime_error("Missing original alignment stat");
     rule.coldState=data.states.at("cold").definition.id;
+    rule.hitStates.cold=data.states.at("cold").definition;
+    rule.hitStates.poison=data.states.at("poison").definition;
+    rule.stunState=data.states.at("stunned").definition.id;
+    rule.openWoundsState=data.states.at("openwounds").definition.id;
+    rule.preventHealState=data.states.at("preventheal").definition.id;
     rule.frozenState=data.states.at("freeze").definition;
     rule.shatterState=data.states.at("shatter").definition;
+    rule.burningState=data.states.at("burning").definition;
+    rule.fireShrineState=data.states.at("shrine_resist_fire").definition.id;
+    rule.healthPotionState=data.states.at("healthpot").definition.id;
+    rule.redeemedState=data.states.at("redeemed").definition.id;
+    rule.deathDelayState=data.states.at("death_delay").definition.id;
     rule.uninterruptableState=data.states.at("uninterruptable").definition.id;
     rule.difficultyResistancePenalty=data.resistancePenalty.at(size_t(rule.difficulty));
     rule.coldDivisor=data.monsterColdDivisor.at(size_t(rule.difficulty));
     rule.freezeDivisor=data.monsterFreezeDivisor.at(size_t(rule.difficulty));
     if(rule.coldDivisor<=0 || rule.freezeDivisor<=0) throw std::runtime_error("Invalid original monster cold difficulty divisor");
     const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
+    const auto id=monsters.value(monsterRow,"Id");
+    rule.sharedRandomComponents=id=="doomknight2"?uint16_t(1u<<10):id=="doomknight3"?uint16_t((1u<<10)|(1u<<11)):0;
+    rule.skipRegionComponents=id=="act2male" || id=="act2female" || id=="act3male" || id=="act3female";
     const auto name=monsters.value(monsterRow,"MonStatsEx");
     for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==name) {
+        const bool town=rule.stateTarget.npc || monsters.number(monsterRow,"inTown").value_or(0)!=0;
+        rule.collisionPattern=nativeUnitCollisionPattern(extra.number(row,"SizeX").value_or(0),
+            town && !monsters.number(monsterRow,"interact").value_or(0));
+        if(monsters.value(monsterRow,"BaseId")=="wraith1") rule.collisionPattern=NativeCollisionPattern::SmallNoPresence;
+        const auto nativeId=monsters.number(monsterRow,"hcIdx").value_or(-1);
+        rule.nativeSpawnFloor=extra.number(row,"spawnCol").value_or(0)==1 &&
+            nativeId!=153 && !(nativeId>=258 && nativeId<=263); // Native HellMeteor / tentacle exceptions.
+        const auto base=monsters.value(monsterRow,"BaseId");
+        if(base=="crownest1") rule.spawnAuxiliary=std::pair{Vec{0,3},MovementCollisionRule{0x3c01,2}};
+        else if(base=="sarcophagus") rule.spawnAuxiliary=std::pair{Vec{0,2},MovementCollisionRule{0x3c01,2}};
+        else if(base=="suckernest1") rule.spawnAuxiliary=std::pair{Vec{-2,-2},MovementCollisionRule{0x1c0,2}};
+        else if(base=="evilhut") rule.spawnAuxiliary=std::pair{Vec{2,4},MovementCollisionRule{0x3c01,2}};
+        rule.stateTarget.attackable=extra.number(row,"isAtt").value_or(0)!=0;
+        rule.curseable=extra.number(row,"mA1").value_or(0)!=0;
         rule.deadCollision=extra.number(row,"deadCol").value_or(0)!=0;
         return;
     }
-    throw std::runtime_error("Missing original monster cold/death rules");
+    throw std::runtime_error("Missing original monster state/target rules");
+}
+void prepareMonsterSkillRanks(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+    const auto &stats=data.tables.at("monstats");
+    const int bonus=data.tables.at("difficultylevels").number(size_t(rule.difficulty),"MonsterSkillBonus").value_or(0);
+    rule.baseSkillRanks.clear();
+    rule.initialSkills.clear();
+    // MONSTERS_Initialize assigns all eight positive Sk#lvl slots, including
+    // skills which have no implemented AI action. The difficulty bonus is
+    // part of the assigned base rank, not an item/effect level bonus.
+    for(int slot=1;slot<=8;++slot) {
+        const auto index=std::to_string(slot);
+        const auto name=stats.value(monsterRow,"Skill"+index);
+        const int rank=stats.number(monsterRow,"Sk"+index+"lvl").value_or(0);
+        if(name.empty() || rank<=0) continue;
+        std::string key(name);for(auto &letter:key) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        const auto skill=data.nativeFormulas->skillIds.find(key);
+        if(skill==data.nativeFormulas->skillIds.end()) throw std::runtime_error("Missing native monster skill definition");
+        rule.baseSkillRanks.insert_or_assign(skill->second,rank+bonus);
+        rule.initialSkills.emplace_back(skill->second,rank+bonus);
+    }
 }
 bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
-    prepareMonsterColdRules(data,record.sourceRow,rule);
+    rule.curseAiRunMode=record.runMode;rule.curseAiInteract=record.interact;rule.curseAiRunVelocity=record.runVelocity.value_or(0);
+    prepareMonsterSkillRanks(data,record.sourceRow,rule);
+    for(size_t difficulty=0;difficulty<rule.modeTables.size();++difficulty) {
+        rule.modeTables[difficulty]=data.nativeMonsterModes.at({record.index,int(difficulty)});
+        rule.lifeTables[difficulty]=data.nativeMonsterLives.at({record.index,int(difficulty)});
+    }
+    const auto ownerSkill=data.tables.at("monstats").value(record.sourceRow,"SkillDamage");
+    if(!ownerSkill.empty()) {
+        std::string name(ownerSkill);for(auto &letter:name) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        const auto found=data.nativeFormulas->skillIds.find(name);
+        if(found==data.nativeFormulas->skillIds.end()) throw std::runtime_error("Missing native owner-damage skill");
+        rule.ownerDamageSkill=found->second;
+    }
+    prepareMonsterStateRules(data,record.sourceRow,rule);
     const auto &monstats=data.tables.at("monstats");
     const int delay=monstats.number(record.sourceRow,rule.difficulty==0?"aidel":rule.difficulty==1?"aidel(N)":"aidel(H)").value_or(0);
     rule.neutralDelayTicks=delay>0?delay:15;

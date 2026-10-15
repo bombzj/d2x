@@ -7,7 +7,7 @@
 namespace d2x::server::combat {
 bool ParticipantView::aliveIn(RegionId area) const {
     if (player) return player->entered && player->area == area && player->persistent.player.hp > 0;
-    return monster && monster->area == area && monster->life > 0;
+    return monster && monster->area == area && monster->alive();
 }
 Vec ParticipantView::position() const {
     if (player) return player->position;
@@ -77,20 +77,21 @@ Relation Participants::relation(ParticipantView source, ParticipantView target) 
         return nullptr;
     };
     const auto *sourceOwner = controller(source), *targetOwner = controller(target);
+    CombatRelationInput input{source.id(),target.id(),source.alignment(),target.alignment()};
     if (sourceOwner && targetOwner) {
-        if (sourceOwner == targetOwner) return Relation::Allied;
-        // SUNIT's harmful relation checks the attacker's directed PlayerList flag.
-        // Party membership cannot cancel hostility; beneficial filters are separate.
-        if (social_.flags(sourceOwner->player, targetOwner->player) & 8) return Relation::Hostile;
-        if (social_.sameParty(sourceOwner->player, targetOwner->player)) return Relation::Allied;
-        return Relation::Neutral;
+        input.bothControlled=true;
+        input.sameController=sourceOwner==targetOwner;
+        if(!input.sameController) {
+            input.directedHostility=(social_.flags(sourceOwner->player,targetOwner->player)&8)!=0;
+            if(!input.directedHostility) input.sameParty=social_.sameParty(sourceOwner->player,targetOwner->player);
+        }
     }
     if (source.hostileMonster() && target.hostileMonster()) {
-        if(source.monster->curseControl.ai==CurseAi::Confuse || source.monster->attractionTarget==target.id()) return Relation::Hostile;
+        input.forcedHostility=source.monster->attractionTarget==target.id();
     }
     // Owner/party relations above are distinct from STAT_ALIGNMENT. Neutral
     // monsters are not automatically allied with other neutral monsters.
-    return sameAlignment(source.alignment(), target.alignment()) ? Relation::Allied : Relation::Hostile;
+    return harmfulRelation(input);
 }
 bool Participants::canHarm(ParticipantView source, ParticipantView target) const {
     return target.damageable() && relation(source, target) == Relation::Hostile;
@@ -105,16 +106,38 @@ bool Participants::allied(ParticipantView source, ParticipantView target, const 
         return unit.player ? unit.player : unit.monster && unit.monster->owner && !unit.monster->conversion ? players_.find(*unit.monster->owner) : nullptr;
     };
     const auto *first = controller(source), *second = controller(target);
-    if (first && second) return first == second || social.sameParty(first->player, second->player);
-    // Beneficial alignment does not inherit Confuse/Attract's attack exception.
-    return sameAlignment(source.alignment(), target.alignment());
+    CombatRelationInput input{source.id(),target.id(),source.alignment(),target.alignment()};
+    if(first && second) {
+        input.bothControlled=true;input.sameController=first==second;
+        if(!input.sameController) input.sameParty=social.sameParty(first->player,second->player);
+    }
+    return beneficialRelation(input);
 }
-bool Participants::petOrPartyAlly(ParticipantView source, ParticipantView target, const social::System &social) const {
+bool Participants::auraAligned(ParticipantView source,ParticipantView target) const {
+    const auto owner=[&](ParticipantView unit) {
+        if(unit.monster) {
+            if(unit.monster->owner && !unit.monster->conversion) {
+                if(const auto *player=players_.find(*unit.monster->owner)) return ParticipantView{player,nullptr};
+            }
+            if(const auto id=monsters_.minionOwner(unit.id())) return find(id);
+        }
+        return unit;
+    };
+    source=owner(source);target=owner(target);
+    if(!source.id() || !target.id()) return false;
+    if(source.id()==target.id()) return true;
+    if(source.player && target.player) return social_.sameParty(source.player->player,target.player->player);
+    return sameAlignment(source.alignment(),target.alignment());
+}
+bool Participants::petOrPartyAlly(ParticipantView source, ParticipantView target, const social::System &) const {
+    return skillFriendlyTarget(source,target,true,true);
+}
+bool Participants::skillFriendlyTarget(ParticipantView source,ParticipantView target,bool targetPet,bool targetAlly) const {
     if (!source.player) return false;
     // Conversion changes alignment and AI allegiance, not AIGENERAL pet ownership.
     if (target.monster && target.monster->conversion) return false;
-    if (target.monster && target.monster->owner == source.player->player) return true;
+    if (targetPet && target.monster && target.monster->owner == source.player->player) return true;
     const auto *owner = target.player ? target.player : target.monster && target.monster->owner ? players_.find(*target.monster->owner) : nullptr;
-    return owner && social.sameParty(source.player->player, owner->player);
+    return targetAlly && owner && social_.sameParty(source.player->player, owner->player);
 }
 }

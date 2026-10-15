@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/skills/rule_spec.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
@@ -19,18 +20,33 @@ struct SkillDefinition {
     int itemEffect{},itemTarget{};
     bool itemCheckStart{},itemEffectUsesPreparedProgram{};
 };
+struct HydraHeadRules {
+    HydraHeadSpec definition;
+    std::array<MonsterRule,3> rules;
+    std::array<UnitCombatStats,3> base;
+    bool noRatio{},boss{};
+};
+struct HydraRules {
+    std::array<HydraHeadRules,3> heads;
+    std::map<int,std::array<int,3>> areaLevels;
+    std::vector<std::array<int,6>> defenseRatios;
+};
 struct SkillRules {
+    std::shared_ptr<const StatRuleCatalog> stats;
+    std::shared_ptr<const SkillFormulaCatalog> formulas;
     struct Aura { AuraSkillSpec spec; bool immediate{}; };
     std::map<int,Aura> auras;
     std::map<std::string,int,std::less<>> nativeStats;
-    CombatStateDefinition redeemed,holyShield,alignment,stunned,syncWarped;
-    CombatStateDefinition chilled,poisoned,openWounds;
+    CombatStateDefinition redeemed,holyShield,alignment,stunned,syncWarped,shatter,terror;
+    CombatStateDefinition chilled,poisoned,openWounds,frozen,justHit,uninterruptable,burning,fireShrine;
+    CombatStateDefinition healthPotion,manaPotion;
+    std::shared_ptr<const MonsterTypeCatalog> monsterTypes;
     int poisonState{-1};
     std::set<int> dismissibleSummons;
     std::map<int,MonsterRule> amazonPetRules;
     std::set<int> slowableMissiles, pierceableMissiles, alwaysExplodingMissiles;
     std::map<int,std::pair<int,int>> missileVelocities;
-    std::optional<HydraSpec> hydra;
+    std::optional<HydraRules> hydra;
     std::map<int, SkillDefinition> definitions;
     std::map<std::string, CastAnimationTiming, std::less<>> animations;
     std::map<std::string, AttackAnimation, std::less<>> weaponAnimations;

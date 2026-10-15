@@ -4,7 +4,9 @@
 #include "gameplay/combat/stat_modifiers.hpp"
 #include "gameplay/combat/weapon_projectile.hpp"
 #include <array>
+#include <cstdint>
 #include <optional>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -31,6 +33,13 @@ struct WeaponDamage {
     int masteryCritical = 0, projectileMasteryCritical = 0;
     int projectileMasteryRatingAdjustment = 0;
     int itemBaseSpeed = 0, itemAttackSpeed = 0;
+    // An immutable selected-hand projection; empty only on the legacy adapter.
+    std::shared_ptr<const CombatModifiers> nativeModifiers;
+    std::array<int,3> meleeMastery{},throwMastery{};
+    int statDamagePercent{},attributeDamagePercent{},projectileAttributeDamagePercent{};
+    bool twoHanded{};
+    int strengthBonus{},dexterityBonus{};
+    std::vector<uint16_t> typeLayers;
 };
 struct EquipmentStats {
     std::string animationClass = "hth";

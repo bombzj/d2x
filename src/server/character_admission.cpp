@@ -1,9 +1,11 @@
 #include "character_admission.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include <functional>
 #include <stdexcept>
 
 namespace d2x::server {
 PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntity) {
+    state.inventory.itemOrder=inventoryItemOrder(state.inventory);
     EntityIds ids(nextEntity);
     std::map<EntityId, EntityId> mapping;
     auto allocate = [&](EntityId old) {
@@ -19,6 +21,7 @@ PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntit
     for (const auto &[id, item] : state.inventory.items) allocateItem(item);
     if (state.ironGolem) allocateItem(*state.ironGolem);
     auto remap = [&](EntityId &id) { if (id) id = mapping.at(id); };
+    for(auto &id:state.inventory.itemOrder) remap(id);
     const auto remapSource=[&](uint32_t &source) {
         if(source==UINT32_MAX) return;
         const auto found=mapping.find(EntityId{source});
@@ -33,7 +36,7 @@ PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntit
         &state.containers.hirelingEquipment, &state.containers.cursor}) remap(*id);
     std::map<EntityId, ContainerState> containers;
     for (auto &[id, c] : state.inventory.containers) {
-        remap(c.id); remap(c.spec.owner); containers.emplace(c.id, std::move(c));
+        remap(c.id); remap(c.spec.owner); remap(c.registeredWeapon); containers.emplace(c.id, std::move(c));
     }
     state.inventory.containers = std::move(containers);
     std::function<void(ItemInstance &, bool)> remapItem = [&](ItemInstance &item, bool golem) {

@@ -9,6 +9,7 @@
 #include "gameplay/skills/firewall_spec.hpp"
 #include "gameplay/loot/tower_reward.hpp"
 #include "world/navigation.hpp"
+#include "gameplay/effects/definition.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
 #include <array>
 #include <map>
@@ -56,6 +57,8 @@ struct MonsterRecord {
     std::optional<MonsterAttackTiming> hirelingCastTiming;
     int infernoLength = 0, infernoAnimation = 0;
     bool curseable = false;
+    NativeMonsterStateTarget stateTarget;
+    bool noAura = false;
     bool switchAi = false;
     bool castsShadow = false, corpseSelectable = false, revivable = false, soft = false;
     bool demon = false, undead = false, ownsParty = false, primeEvil = false;

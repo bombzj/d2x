@@ -19,7 +19,7 @@ add_library(d2x_resources src/resources/atomic_file.cpp src/resources/archive.cp
 target_link_libraries(d2x_resources PUBLIC d2x_core PRIVATE storm)
 
 add_library(d2x_navigation src/world/navigation.cpp src/world/navigation_astar.cpp src/world/navigation_wall_follow.cpp src/world/native_path_step.cpp src/world/room_activation.cpp src/world/native_room_activation.cpp)
-target_link_libraries(d2x_navigation PUBLIC d2x_core)
+target_link_libraries(d2x_navigation PUBLIC d2x_core PRIVATE d2x_rules)
 add_library(d2x_world src/world/map.cpp src/world/map_assembly.cpp src/world/maze.cpp src/world/outdoor/outdoor.cpp src/world/region.cpp src/world/region_catalog.cpp src/world/exits.cpp src/world/world_report.cpp)
 target_sources(d2x_world PRIVATE src/world/object_population.cpp)
 target_sources(d2x_world PRIVATE src/world/chest.cpp)
@@ -48,25 +48,40 @@ target_sources(d2x_world PRIVATE
 target_link_libraries(d2x_world PUBLIC d2x_content d2x_navigation)
 
 # Read-only item definitions and property calculations; no inventory authority.
+add_library(d2x_rules
+  src/gameplay/units/direction.cpp
+  src/gameplay/rules/arithmetic.cpp
+  src/gameplay/rules/formula.cpp
+  src/gameplay/stats/stat_list.cpp)
+target_sources(d2x_rules PRIVATE src/gameplay/stats/modifier_values.cpp)
+target_sources(d2x_rules PRIVATE src/gameplay/combat/unit_values.cpp)
+target_sources(d2x_rules PRIVATE src/gameplay/combat/weapon_snapshot.cpp)
+target_sources(d2x_rules PRIVATE src/gameplay/combat/drain.cpp)
+target_link_libraries(d2x_rules PUBLIC d2x_core)
 add_library(d2x_items src/gameplay/items/definitions.cpp
+  src/gameplay/items/stat_evaluation.cpp
+  src/gameplay/items/property_program.cpp
+  src/gameplay/items/skill_sources.cpp
   src/gameplay/items/inventory_error.cpp src/gameplay/items/equipment_rules.cpp src/gameplay/items/equipment_combat.cpp)
-target_link_libraries(d2x_items PUBLIC d2x_core)
+target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 add_library(d2x_content src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp src/content/monsters/monster_catalog.cpp)
 target_sources(d2x_content PRIVATE
     src/content/skills/description_formula.cpp src/content/skills/description_data.cpp
+    src/content/skills/formula_data.cpp
     src/content/skills/description_values.cpp src/content/skills/skill_description.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
 target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp
   src/content/skills/skill_eligibility.cpp src/content/skills/table_values.cpp)
-target_sources(d2x_content PRIVATE src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
+target_sources(d2x_content PRIVATE src/content/skills/defensive_buff_data.cpp src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
     src/content/skills/bone_data.cpp src/content/skills/barbarian_data.cpp src/content/skills/amazon_bow_data.cpp src/content/skills/amazon_spear_data.cpp src/content/skills/amazon_magic_data.cpp src/content/skills/amazon_summon_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)
-target_sources(d2x_content PRIVATE src/content/monsters/monster_combat.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/monster_combat.cpp src/content/monsters/monster_type_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_difficulty_combat.cpp src/content/monsters/monster_enchantment.cpp)
+target_sources(d2x_content PRIVATE src/content/monsters/mode_stat_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_ai_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_spell_data.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_animation.cpp)
@@ -96,27 +111,58 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 # Rules and state compile without raylib, StormLib, a window or an archive.
 # Pure display, geometry and resource-tool calculations. No simulation/executor.
 add_library(d2x_gameplay
+  src/gameplay/actions/timing.cpp
+  src/gameplay/actions/monster_timing.cpp
+  src/gameplay/actions/recovery.cpp
+  src/gameplay/actions/volley.cpp
+  src/gameplay/units/distance.cpp
+  src/gameplay/effects/queries.cpp
+  src/gameplay/skills/use_source.cpp
+  src/gameplay/skills/activation_program.cpp
+  src/gameplay/skills/item_trigger_policy.cpp
+  src/gameplay/missiles/damage.cpp
+  src/gameplay/missiles/motion.cpp
+    src/gameplay/missiles/damage_data.cpp
+    src/gameplay/missiles/damage_program.cpp
+  src/gameplay/combat/mitigation.cpp
+  src/gameplay/combat/shield.cpp
+  src/gameplay/combat/reception.cpp
+  src/gameplay/combat/scaling.cpp
+  src/gameplay/combat/relation.cpp
   src/gameplay/items/equipment_loadout.cpp src/gameplay/items/equipment_requirements.cpp
   src/gameplay/items/equipment_contributions.cpp src/gameplay/items/equipment_stats.cpp
+  src/gameplay/items/native_equipment_stats.cpp
+  src/gameplay/items/native_sources.cpp
   src/gameplay/character/attributes.cpp src/gameplay/character/skill_rank.cpp
   src/gameplay/combat/stat_modifiers.cpp src/gameplay/combat/geometry.cpp
   src/gameplay/combat/attack_element_ranges.cpp src/gameplay/combat/weapon_hit.cpp
-  src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/combat/attack_timing.cpp
+  src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/actions/weapon_timing.cpp
   src/gameplay/combat/poison.cpp
   src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
+  src/gameplay/skills/formula_parameters.cpp
+  src/gameplay/skills/passive_stats.cpp
+  src/gameplay/monsters/mode_stats.cpp
+  src/gameplay/monsters/life_stats.cpp
+  src/gameplay/items/equipment_activation.cpp
+  src/gameplay/items/weapon_registration.cpp
+    src/gameplay/items/inventory_order.cpp
+  src/gameplay/environment/time.cpp
   src/gameplay/skills/rank_sources.cpp src/gameplay/skills/rank_bonus.cpp src/gameplay/skills/aura_resolve.cpp
+    src/gameplay/skills/stat_callbacks.cpp
+    src/gameplay/skills/equipment.cpp
   src/gameplay/skills/passive.cpp src/gameplay/skills/targeting.cpp src/gameplay/skills/weapon_damage.cpp src/gameplay/skills/amazon_magic.cpp
   src/gameplay/monsters/melee_decision.cpp src/gameplay/monsters/skirmish_decision.cpp
   src/gameplay/monsters/act2_decision.cpp
+  src/gameplay/monsters/curse_decision.cpp
     src/gameplay/monsters/ranged_decision.cpp
     src/gameplay/monsters/special_decision.cpp
     src/gameplay/monsters/shaman_decision.cpp src/gameplay/monsters/movement_math.cpp src/gameplay/monsters/projectile_math.cpp src/gameplay/monsters/damage.cpp src/gameplay/monsters/components.cpp src/gameplay/monsters/implementation.cpp src/gameplay/monsters/rank.cpp
   src/gameplay/loot/treasure.cpp src/gameplay/loot/quality.cpp
   src/gameplay/loot/special.cpp src/gameplay/loot/affix.cpp
   src/gameplay/rewards/experience.cpp)
-target_link_libraries(d2x_gameplay PUBLIC d2x_navigation d2x_items)
+target_link_libraries(d2x_gameplay PUBLIC d2x_navigation d2x_items d2x_rules)
 target_sources(d2x_content PRIVATE src/content/skills/state_data.cpp src/content/world/shrine_data.cpp
   src/content/skills/aura_data.cpp)
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
@@ -144,8 +190,13 @@ target_sources(d2x_server PRIVATE
   src/server/runtime/game_systems.cpp
   src/server/runtime/command_dispatch.cpp
   src/server/runtime/simulation.cpp
+  src/server/systems/actions/state.cpp
   src/server/runtime/events.cpp
   src/server/systems/world/system.cpp
+    src/server/systems/world/quest_placement.cpp
+    src/server/systems/quests/orb.cpp
+    src/server/systems/effects/redemption.cpp
+    src/server/systems/effects/damage_absorption.cpp
   src/server/systems/world/rooms.cpp
   src/server/area_store.cpp
   src/server/systems/spatial/system.cpp
@@ -158,6 +209,9 @@ target_sources(d2x_server PRIVATE
   src/server/systems/inventory/eligibility.cpp
   src/server/systems/attributes/system.cpp
   src/server/systems/attributes/calculation.cpp
+    src/server/systems/attributes/skill_refresh.cpp
+  src/server/systems/attributes/stat_sources.cpp
+  src/server/systems/attributes/monster_sources.cpp
   src/server/systems/crafting/system.cpp
   src/server/systems/loot/system.cpp
   src/server/systems/population/system.cpp
@@ -178,6 +232,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/missiles/programs.cpp
     src/server/systems/missiles/weapon.cpp
   src/server/systems/effects/system.cpp
+  src/server/systems/effects/contact.cpp
   src/server/systems/effects/paladin.cpp
   src/server/systems/effects/hirelings.cpp
     src/server/systems/effects/skills.cpp
@@ -186,15 +241,17 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
     src/server/systems/effects/monster_periodic.cpp
-    src/server/systems/effects/item_triggers.cpp
-  src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp
+    src/server/systems/reactions/item_triggers.cpp
+  src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp src/server/systems/combat/missile_contact.cpp src/server/systems/combat/missile_drain.cpp src/server/systems/effects/missile_delay.cpp
   src/server/systems/combat/player_damage.cpp
   src/server/systems/combat/participants.cpp
   src/server/systems/combat/weapon_hit.cpp
   src/server/systems/combat/environment.cpp
   src/server/systems/combat/follow_up.cpp
   src/server/systems/death/system.cpp
+  src/server/systems/death/rewards.cpp
   src/server/systems/companions/system.cpp
+  src/server/systems/companions/lifecycle.cpp
   src/server/systems/companions/hireling_control.cpp
     src/server/systems/companions/hireling_equipment.cpp
   src/server/systems/companions/amazon.cpp
@@ -336,7 +393,22 @@ target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp)
 target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 
-target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/effects/native_status.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/effects/frame_events.cpp src/server/systems/effects/damage_states.cpp src/server/systems/effects/player_regeneration.cpp src/server/systems/effects/skill_state.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/monsters/frame_events.cpp src/server/systems/monsters/regeneration.cpp)
+target_sources(d2x_server PRIVATE src/server/runtime/frame_event_dispatch.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/missiles/frame_events.cpp
+    src/server/systems/missiles/rooms.cpp
+    src/server/systems/missiles/native_programs.cpp
+    src/server/systems/missiles/native_hit.cpp
+    src/server/systems/missiles/motion.cpp
+    src/server/systems/missiles/child_creation.cpp
+    src/server/systems/missiles/damage_sources.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/effects/item_auras.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/effects/storm.cpp
+    src/server/systems/effects/right_aura.cpp
+    src/server/systems/effects/unit_aura_selection.cpp)
 
 target_sources(d2x_server PRIVATE src/server/systems/inventory/consumption.cpp src/server/systems/inventory/identification.cpp src/server/systems/inventory/storage.cpp)
 

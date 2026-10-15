@@ -106,11 +106,12 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
             } else colors = monsterPalshift(data, request.paletteTransform);
         } else if (request.paletteTransform != (request.nativeMonsterTransform?2:0)) return result;
     }
-    if(request.stateColorShift>=0) {
-        // D2Win_10175_GetPL2Shift indexes the 128 native state transforms.
-        if(request.stateColorShift>=128 || palette<0 || palette>4) return result;
+    if(request.stateColorShift>0) {
+        // States.colorshift is one-based; retail D2Client RVA 6C607 /
+        // 6CDD1 subtracts one before calling the native PL2 lookup.
+        if(request.stateColorShift>128 || palette<0 || palette>4) return result;
         const auto pl2=archives_.read("data/global/palette/act"+std::to_string(palette+1)+"/pal.pl2");
-        const size_t offset=0x53500+size_t(request.stateColorShift)*256;
+        const size_t offset=0x53500+size_t(request.stateColorShift-1)*256;
         if(pl2.size()<offset+256) return result;
         std::array<uint8_t,256> shifted{};
         for(size_t index=1;index<256;++index) shifted[index]=pl2[offset+(colors?(*colors)[index]:index)];

@@ -1,4 +1,5 @@
 #include "tile_materialization.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <iterator>
 #include <stdexcept>
@@ -584,6 +585,7 @@ void RetailTileMaterializer::releaseRoom(size_t index) {
     r.grids = {};
     for (auto &warp : r.warps) { warp.visible.reset(); warp.lit.reset(); }
     r.loaded = false;
+    r.initialActiveRandom.reset();
     // Unit ownership, loaded libraries and the established near graph survive.
     // The next InitRoomGrids resets the tile stream to the original init seed.
 }
@@ -598,6 +600,12 @@ void sortRetailNearRooms(std::vector<size_t> &near, const std::deque<RetailTileR
 void RetailTileMaterializer::activateCollision(size_t room, std::span<const size_t> activeNear) {
     if (collisions_.contains(room)) throw std::runtime_error("Native room collision already active");
     auto &current = rooms_.at(room);
+    // DRLG_CreateRoomForRoomEx rolls once after tile creation, then
+    // DUNGEON_AllocRoom initializes a separate low/high=666 active seed.
+    // Keep the draw on the actual room stream: later seam tile selection may
+    // consume that same stream, independently of the active room's gameplay.
+    if(!current.floors.empty() || !current.walls.empty())
+        current.initialActiveRandom=initialRandom(current.room.seed.random.next());
     current.activeNear.assign(activeNear.begin(), activeNear.end());
     for (auto adjacent : current.activeNear) {
         if (adjacent == room) continue;

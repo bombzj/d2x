@@ -91,7 +91,7 @@ DomainResult<> System::acknowledgeActThree(const ActorContext &actor,const Reque
     return result;
 }
 StepStatus System::actThreeStep(TickContext tick) {
-    bool blocked=false;auto &world=state_.actThree;
+    bool blocked=orbStep(tick)==StepStatus::Blocked;auto &world=state_.actThree;
     constexpr std::array council{"Ismail Vilehand","Geleb Flamefinger","Toorc Icefist"};
     std::set<std::string> deadCouncil;
     const monsters::Actor *lastCouncil=nullptr;
@@ -184,7 +184,7 @@ DomainResult<> System::spawnQuestGroup(const ActorContext &actor,std::string_vie
     // Stable spawn keys make a partially admitted group retryable without
     // duplicating its boss/minions. All definitions were prepared outside here.
     for(const auto &m:group->second) {
-        const auto result=ports_.monsters.admit({m.identity,m.implementation,actor.area,m.position,true,m.rule,m.skillPositions});
+        const auto result=ports_.monsters.admit({m.identity,m.implementation,actor.area,m.position,true,m.rule,m.skillPositions,actor.tick});
         if(!result) return {result.status,{}};
     }
     return {DomainStatus::Applied,std::monostate{}};
@@ -224,7 +224,11 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
     const auto *area=ports_.areas.find(region);if(!area) return {};
     if(area->definition.act==2) {
         if(operation==31 && id==state_.actThree.gidbinnAltar) return state_.actThree.gidbinnSpawned?2:1;
-        if(operation==53 || (operation==54 && int(region)==83)) return state_.actThree.orbSmashed?2:0;
+        if(operation==53) return state_.actThree.orbSmashed?2:0;
+        if(operation==54 && int(region)==83) {
+            if(state_.actThree.orbSequenceStarted) return {};
+            return state_.actThree.orbSmashed?2:0;
+        }
         if(operation==44) return state_.actThree.sewerAt && tick>=state_.actThree.sewerAt?2:0;
         if(operation==45 && state_.actThree.sewerAt) return tick>=state_.actThree.sewerAt?2:1;
         if(definition==341 || definition==342 || operation==46) return state_.actThree.mephistoSlain?2:0;

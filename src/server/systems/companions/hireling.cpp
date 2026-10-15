@@ -1,15 +1,18 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "gameplay/effects/queries.hpp"
 #include "server/systems/npc/system.hpp"
 #include "hireling_equipment.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cmath>
 
@@ -119,7 +122,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             !sameHireling(record.hireling,prepared->second.source.record) || !prepared->second.deferred.empty()) return reject(9);
         price=unsigned(std::min<int64_t>(50000,15LL*record.hireling.level*record.hireling.level/2));
         if(!player->rules.items || !player->rules.equipment) return reject(9);
-        record.hireling.hp=float(calculateHirelingEquipment(player->persistent,*player->rules.items,*player->rules.equipment,prepared->second).life);
+        record.hireling.hp=calculateHirelingEquipment(player->persistent,*player->rules.items,*player->rules.equipment,prepared->second).life;
     } else return {DomainStatus::NotImplemented,{}};
     if (uint64_t(record.gold)+record.bankGold < price) return reject(12);
     const auto wallet=std::min(record.gold,price);record.gold-=wallet;record.bankGold-=price-wallet;
@@ -196,8 +199,22 @@ DomainResult<> System::equipHireling(const ActorContext &actor, uint32_t bodySlo
     };
     if(cursor!=candidate.inventory.items.end() && !move(cursor,destination)) return {DomainStatus::Capacity,{}};
     if(equipped!=candidate.inventory.items.end() && !move(equipped,{containers.cursor,{}})) return {DomainStatus::Capacity,{}};
+    if(player->inventoryRevision==UINT64_MAX || merc->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto states=ports_.effects.unitStates(merc->id,actor.tick);
+    auto sources=ports_.effects.unitStatSources(merc->id,actor.tick);
+    auto body=prepareHirelingBody(*merc,candidate,prepared->second,*player->rules.items,*player->rules.equipment,
+        player->inventoryRevision+1,player->characterRevision+1,states,sources,actor.tick);
+    std::map<EntityId,monsters::Actor> bodies;bodies.emplace(body.id,std::move(body));
+    auto auraUnits=std::make_shared<effects::AuraUnitPublication>();ports_.effects.stageAuraActors(*auraUnits,std::move(bodies),0);
+    ports_.effects.stageAuraSource(*auraUnits,merc->id,
+        [live=*merc,owner=candidate,prepared=prepared->second,items=player->rules.items,equipment=player->rules.equipment,
+         inventory=player->inventoryRevision+1,character=player->characterRevision+1,tick=actor.tick]
+        (monsters::Actor &body,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
+            auto sources=combatEffectStatSources(states.entries(),tick,true);
+            body=prepareHirelingBody(live,owner,prepared,*items,*equipment,inventory,character,states.stateIds(tick,true),sources,tick,false,mutation);
+        });
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(candidate.inventory),std::move(changes),candidate.player.weaponSet};
-    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);if(!plan) return {plan.status,{}};
     return ports_.transactions.commit(std::move(*plan.value));
 }
 DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt) {
@@ -216,28 +233,25 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
     if(definition==player->rules.potions->end()) return {DomainStatus::NotImplemented,{}};
     const auto &potion=definition->second;
     if(potion.kind!=PotionKind::Healing && potion.kind!=PotionKind::Rejuvenation && potion.kind!=PotionKind::Remedy) return {DomainStatus::InvalidRequest,{}};
-    auto healing=merc->healing;auto effects=merc->potionEffects;auto random=merc->combatRandom;auto life=merc->life;
-    uint64_t duration=potion.durationFrames;
+    if(merc->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto recipient=*merc;++recipient.revision;
+    effects::UnitDamageStates statuses;statuses.source=merc->id;
+    auto random=merc->combatRandom;
     if(potion.kind==PotionKind::Healing) {
-        if(potion.state.id<0 || !duration) return {DomainStatus::Unavailable,{}};
-        const auto previous=healing.find(potion.state.id);
-        const auto restored=rollPotionRestoration(potion,{},merc->hirelingVitality,random);
-        const auto combined=combineRestoration(previous==healing.end()?nullptr:&previous->second,actor.tick,duration,restored);
-        if(!combined || restored<=0) return {DomainStatus::Unavailable,{}};
-        healing.insert_or_assign(potion.state.id,*combined);duration=combined->until-actor.tick;
+        const auto stats=ports_.effects.unitStatValues(merc->id,actor.tick);
+        if(!stats || !merc->rule.stats) return {DomainStatus::Unavailable,{}};
+        const auto amount=rollPotionRestoration(potion,{},logicalStatValue(*stats,*merc->rule.stats,"vitality"),random);
+        if(amount<=0 || potion.state.id<0 || !potion.durationFrames) return {DomainStatus::Unavailable,{}};
+        statuses.potionRestoration=nativeChecked(amount);
     } else if(potion.kind==PotionKind::Rejuvenation) {
-        if(!std::isfinite(potion.amount) || potion.amount<=0 || potion.amount>1) return {DomainStatus::Unavailable,{}};
-        life=std::min(merc->maximumLife,life+merc->maximumLife*int64_t(std::lround(potion.amount*100))/100);
+        if(potion.amount<=0 || potion.amount>100) return {DomainStatus::Unavailable,{}};
+        recipient.life=std::min(merc->maximumLife,int64_t(nativeAdd(nativeChecked(merc->life),nativePercentage(nativeChecked(merc->maximumLife),potion.amount,100))));
     }
-    if(potion.state.id>=0) {
-        if(!duration || potion.state.id>254 || effects.size()>=128) return {DomainStatus::Unavailable,{}};
-        for(const auto cured:potion.cureStates) if(cured>=0) effects.removeState(cured);
-        if(potion.kind!=PotionKind::Healing) for(const auto &effect:effects.entries())
-            if(effect.spec.state.id==potion.state.id && effect.expiresAt && *effect.expiresAt>actor.tick) duration+=*effect.expiresAt-actor.tick;
-        if(duration>UINT64_MAX-actor.tick) return {DomainStatus::Capacity,{}};
-        CombatEffectSpec effect;effect.state=potion.state;effect.source={CombatEffectSource::Item,merc->id,potion.state.id,0};effect.duration=duration;effect.modifiers=potion.modifiers;
-        if(!effects.apply(std::move(effect),actor.tick).accepted) return {DomainStatus::Conflict,{}};
-    }
+    recipient.combatRandom=random;
+    if(potion.curesPoison) recipient.poison.reset();
+    if(potion.curesCold) {recipient.chilledUntil=recipient.frozenUntil=0;recipient.shatterActive=false;}
+    statuses.curePoison=potion.curesPoison;statuses.cureCold=potion.curesCold;
+    if(potion.state.id>=0) statuses.potion=potion;
     const auto location=*at;
     auto &consumed=draft.edit.inventory.items.at(item.id);--consumed.quantity;++consumed.revision;
     const bool removed=!consumed.quantity;
@@ -252,9 +266,9 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
         }
     }
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),player->persistent.player.weaponSet};
-    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
-    const auto result=ports_.transactions.commit(std::move(*plan.value));
-    if(result) ports_.monsters.installHirelingPotion(merc->id,std::move(healing),std::move(effects),life,potion.curesPoison,potion.curesCold,random);
-    return result;
+    auto units=std::make_shared<effects::AuraUnitPublication>(ports_.effects.prepareDamageStates(std::move(recipient),statuses,actor.tick));
+    for(auto &fact:units->facts) edit.publicFacts.push_back(std::move(fact));units->facts.clear();
+    auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},std::move(units));if(!plan) return {plan.status,{}};
+    return ports_.transactions.commit(std::move(*plan.value));
 }
 }

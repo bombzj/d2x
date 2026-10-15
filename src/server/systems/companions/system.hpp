@@ -2,7 +2,7 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
-#include "server/systems/monsters/system.hpp"
+#include "server/systems/monsters/admission.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "preparation.hpp"
 
@@ -29,9 +29,6 @@ class System {
     const Ports ports_;
     std::map<EntityId,Preparation> pending_;
     std::map<EntityId,Prepared> prepared_;
-    struct BoneGrowth {ActorContext actor;SummonCastSpec summon;MonsterRule rule;EntityId root;Vec position,velocity;int remaining{};uint64_t next{},until{},expires{},random{};uint16_t skill{};int rank{};};
-    std::vector<BoneGrowth> boneGrowth_;
-    StepStatus advanceBoneGrowth(TickContext);
     StepStatus synchronizeIronGolems(TickContext);
     DomainResult<> revive(const ActorContext &,const SkillCastSpec &,EntityId);
     std::map<PlayerId,PreparedHireling> hirelingRules_;
@@ -61,6 +58,7 @@ class System {
     void cancel(EntityId);
     DomainResult<> amazon(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> necro(const ActorContext &, const SkillCastSpec &, Vec,EntityId,bool restoring=false);
+    DomainResult<bool> growBoneWall(EntityId owner,EntityId root,int skill,int rank,RegionId,Vec,uint64_t tick);
     DomainResult<> hydra(const ActorContext &, const SkillCastSpec &, Vec);
     DomainResult<> execute(const ActorContext &, const Request &);
     DomainResult<> grantHireling(const ActorContext &,HirelingRecord);

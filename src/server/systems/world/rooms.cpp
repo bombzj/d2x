@@ -62,6 +62,7 @@ struct System::RoomRuntime {
         });
         auto &state = area(room.area);
         state.rooms.at(room.index).loaded = false;
+        state.rooms.at(room.index).random.reset();
         ++state.definition.collision.obstacleRevision;
     }
     void create(size_t id) {
@@ -78,7 +79,12 @@ struct System::RoomRuntime {
             grid.terrainCollision[cell] = value.terrain;
             if (!--remaining && ++run < room.terrain.size()) remaining = room.terrain[run].count;
         });
-        state.rooms.at(room.index).loaded = true;
+        auto &active=state.rooms.at(room.index);
+        active.loaded = true;
+        if(active.randomRevision!=UINT64_MAX) {
+            ++active.randomRevision;
+            active.random=room.index<state.definition.initialRoomRandom.size()?state.definition.initialRoomRandom[room.index]:std::nullopt;
+        } else active.random.reset();
         if (owner.openedTombs_.contains(room.area)) for (const auto &cell : state.definition.openedTombWall) {
             auto &grid = state.definition.collision;
             const int x = int(cell.index % grid.width), y = int(cell.index / grid.width);
@@ -156,6 +162,7 @@ struct System::RoomRuntime {
     }
     bool retain(size_t id, uint64_t tick) const {
         const auto &room = rooms.at(id);
+        if(owner.ports_.areas.at(room.area).rooms.at(room.index).portalRetained) return true;
         const auto &source = owner.ports_.areas.at(room.area).definition;
         if (source.town || int(room.area) == 120)
             for (const auto &[key, state] : activation->states())
@@ -187,6 +194,7 @@ System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime
 System::~System() = default;
 void System::invalidateRooms() { rooms_->dirty = true; }
 void System::activate(RegionId region, Vec point) {
+    activateAct(region);
     rooms_->rebuild();
     if (const auto id = rooms_->locate(region, point)) {
         for (const auto near : rooms_->rooms.at(*id).near) rooms_->activation->initialize(near);

@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/combat/missile_effects.hpp"
+#include "gameplay/skills/aura_spec.hpp"
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
@@ -22,6 +23,7 @@
 #include "content/npc/vendor_data.hpp"
 #include "resources/data_table.hpp"
 #include "world/navigation.hpp"
+#include "world/native_field.hpp"
 #include <array>
 #include <cstdint>
 #include <set>
@@ -29,6 +31,11 @@
 
 namespace d2x {
 class Archives;
+struct StatRuleCatalog;
+struct SkillFormulaCatalog;
+struct MonsterModeTable;
+struct MonsterLifeTable;
+struct MonsterTypeCatalog;
 using ClassicTreasureClass = TreasureClass;
 struct ClassicMonsterData {
     std::string name, token;
@@ -47,6 +54,14 @@ struct MonsterSpecialMissile {
     bool killOnHit = true;
 };
 struct ClassicData {
+    std::shared_ptr<const CollisionField> nativeCollisionField;
+    std::shared_ptr<const StatRuleCatalog> nativeStats;
+    std::shared_ptr<const SkillFormulaCatalog> nativeFormulas;
+    std::shared_ptr<const MonsterTypeCatalog> nativeMonsterTypes;
+    std::shared_ptr<const std::map<int,AuraSkillSpec>> nativeAuraPrograms;
+    std::shared_ptr<const CombatStateRules> nativeStates;
+    std::map<std::pair<int,int>,std::shared_ptr<const MonsterModeTable>> nativeMonsterModes;
+    std::map<std::pair<int,int>,std::shared_ptr<const MonsterLifeTable>> nativeMonsterLives;
     std::map<int, MissileCollisionRule> missileCollisions;
     std::map<int, bool> missileReturnFire;
     ClassicData(ItemCatalog itemCatalog, std::map<std::string, DataTable, std::less<>> sourceTables,

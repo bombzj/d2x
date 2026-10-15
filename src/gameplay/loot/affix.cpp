@@ -18,7 +18,8 @@ int itemAffixLevel(int itemLevel, int baseLevel, int magicLevel) {
 MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
                               std::span<const std::string> itemTypes, std::string_view characterClass,
                               int affixLevel, int magicLevel, bool rare, bool socketable,
-                              std::span<const int> usedGroups, bool force, uint64_t seed) {
+                              std::span<const int> usedGroups, bool force, uint64_t seed,
+                              int preferredAffix) {
     if (affixLevel < 0 || affixLevel > 99 || magicLevel < 0 || magicLevel > 99)
         throw std::invalid_argument("Invalid magic affix level");
     MagicAffixRoll result;
@@ -44,19 +45,20 @@ MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
             std::any_of(record.excludedTypes.begin(), record.excludedTypes.end(), matches) ||
             !std::any_of(record.includedTypes.begin(), record.includedTypes.end(), matches))
             continue;
+        if (preferredAffix > 0 && record.row == size_t(preferredAffix - 1)) {
+            result.row = record.row;
+            return result;
+        }
         int64_t weight = int64_t(record.frequency) * (magicLevel ? record.level : 1);
-        if (weight <= 0)
-            continue;
-        if (total > std::numeric_limits<int>::max() - weight)
+        if (total >= std::numeric_limits<int>::max() - weight)
             throw std::runtime_error("Magic affix weight exceeds supported range");
-        eligible.push_back(&record);
+        if (eligible.size() < 511)
+            eligible.push_back(&record);
         total += weight;
-        if (eligible.size() > 511)
-            throw std::runtime_error("Magic affix candidate count exceeds original work limit");
     }
-    if (!total)
+    if (eligible.empty())
         return result;
-    int64_t chosen = below(uint32_t(total));
+    int64_t chosen = below(uint32_t(total + 1));
     for (const auto *record : eligible) {
         chosen -= int64_t(record->frequency) * (magicLevel ? record->level : 1);
         if (chosen < 0) {
@@ -64,6 +66,7 @@ MagicAffixRoll rollMagicAffix(std::span<const MagicAffixRecord> records,
             return result;
         }
     }
-    throw std::logic_error("Magic affix weight selection failed");
+    result.row = eligible.back()->row;
+    return result;
 }
 } // namespace d2x

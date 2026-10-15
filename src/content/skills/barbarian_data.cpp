@@ -105,7 +105,7 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
     howl.missileVelocity -= float(howl.missileVelocityPerLevel);
     howl.missileAcceleration = required(missiles, missileRow, "Accel");
     howl.missileMaxVelocity = required(missiles, missileRow, "MaxVel");
-    CurseSpec fear;
+    CurseSpec fear;fear.targetProcedure=CurseSpec::TargetProcedure::TerrorUtility;
     fear.state = data.states.at(std::string(skills.value(howlRow, "auratargetstate"))).definition;
     fear.targetFilter = 2; fear.ai = CurseAi::Terror;
     fear.singleTarget = true; fear.skipActive = true; fear.ignoreDifficultyDivisor = true;
@@ -222,6 +222,7 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
     formula(skills,cryRow,"auralencalc","ln12");formula(skills,cryRow,"aurastatcalc1","ln34");formula(skills,cryRow,"aurastatcalc2","ln56");
     auto cry=base(skills,cryRow);cry.effect=SkillBehavior::BattleCry;
     CurseSpec weakened;weakened.state=data.states.at(std::string(skills.value(cryRow,"auratargetstate"))).definition;
+    weakened.targetProcedure=CurseSpec::TargetProcedure::DirectList;weakened.rejectZeroPrimary=false;
     weakened.targetFilter=42883;weakened.singleTarget=true;
     weakened.frames=required(skills,cryRow,"Param1");weakened.framesPerLevel=required(skills,cryRow,"Param2");
     weakened.modifiers.combat.defensePercent=required(skills,cryRow,"Param3");weakened.defensePerLevel=required(skills,cryRow,"Param4");
@@ -272,6 +273,7 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
         totem.forms[i]={startArt.id,required(missiles,start,"Range"),activeArt.id,stopArt.id,required(missiles,stop,"Range"),required(missiles,active,"Param1")};
     }
     CurseSpec dread;dread.state=data.states.at(std::string(skills.value(wardRow,"auratargetstate"))).definition;dread.targetFilter=2;
+    dread.targetProcedure=CurseSpec::TargetProcedure::TerrorUtility;
     dread.singleTarget=true;dread.ai=CurseAi::Terror;dread.ignoreDifficultyDivisor=true;dread.frames=required(skills,wardRow,"Param6");
     ward.curse=std::move(dread);ward.grimWard=std::make_shared<const GrimWardSpec>(std::move(totem));
     data.skills.skills.at(ward.sourceId).spell=std::make_shared<const SkillSpec>(std::move(ward));
@@ -300,7 +302,7 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
     resistance.parameters[0]=required(skills,resistanceRow,"Param1");resistance.parameters[1]=required(skills,resistanceRow,"Param2");
     data.skills.skills.at(required(skills,resistanceRow,"Id")).passiveContribution.barbarian=std::make_shared<const BarbarianPassiveSpec>(std::move(resistance));
     const auto warRow=named(skills,"War Cry");formula(skills,warRow,"DmgSymPerCalc","(skill('Howl'.blvl)+skill('Taunt'.blvl)+skill('Battle Cry'.blvl))*par8");
-    auto war=base(skills,warRow);war.effect=SkillBehavior::WarCry;war.minimumDamage=required(skills,warRow,"MinDam");war.maximumDamage=required(skills,warRow,"MaxDam");war.hitShift=required(skills,warRow,"HitShift");
+    auto war=base(skills,warRow);war.effect=SkillBehavior::WarCry;war.physicalDamageCurve=true;war.minimumDamage=required(skills,warRow,"MinDam");war.maximumDamage=required(skills,warRow,"MaxDam");war.hitShift=required(skills,warRow,"HitShift");
     for(size_t i=0;i<5;++i) {war.minimumPerLevel[i]=required(skills,warRow,"MinLevDam"+std::to_string(i+1));war.maximumPerLevel[i]=required(skills,warRow,"MaxLevDam"+std::to_string(i+1));}
     war.synergyPercent=required(skills,warRow,"Param8");for(const auto name:{"Howl","Taunt","Battle Cry"}) war.synergySkills.push_back(required(skills,named(skills,name),"Id"));
     war.stunFrames=required(skills,warRow,"Param1");war.stunFramesPerLevel=required(skills,warRow,"Param2");war.hitClass=0x60;

@@ -1,10 +1,13 @@
 #include "weapon_hit.hpp"
 #include "gameplay/skills/weapon_damage.hpp"
+#include "gameplay/combat/scaling.hpp"
 #include "server/systems/monsters/system.hpp"
 
 namespace d2x::server::combat {
 int hirelingDamagePercent(const monsters::Actor &source, const monsters::Actor &target) {
-    return source.hireling ? (target.hireling ? 25 : target.rule.boss ? source.rule.hirelingBossDamagePercent : 100) : 100;
+    return damageClassPercentage({false,source.hireling,source.revived(),source.rule.boss,source.rule.primeEvil},
+        {false,target.hireling,target.revived(),target.rule.boss,target.rule.primeEvil},
+        source.rule.hirelingBossDamagePercent,source.id==target.id);
 }
 WeaponHitEffects weaponHitEffects(const WeaponSkillDamage &attack, const monsters::Actor &target, EntityId source,
     EntityId credit, int physicalResistance, int64_t physical, LeechDivisors divisors, uint64_t tick, uint64_t &random) {

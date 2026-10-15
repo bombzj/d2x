@@ -31,7 +31,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
     if (!room.handle.generation) {
         saved.difficulty = room.settings.difficulty;
         saved.mapSeed = room.settings.mapSeed;
-        auto prepared = prepareGame(std::move(saved), false);
+        auto prepared = prepareGame(std::move(saved),room.settings);
         room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level);
         binding = prepared.binding; terrain = std::move(prepared.terrain); admission = std::move(prepared.admission);
     } else {
@@ -43,7 +43,7 @@ void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &ro
         for (auto &corpse : definition.persistent.corpses) { corpse.region = room.town; corpse.position = state->definition.spawn; }
         const auto staged = host.admit(room.handle, std::move(definition));
         try {
-            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged));
+            admission = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value());
             for (const auto &packet : admission) validateServerPacket(packet);
             terrain = area; binding = staged;
         } catch (...) { host.remove(staged); throw; }
@@ -72,13 +72,14 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
         room.flags = flags; room.capacity = players; room.levelDifference = levelDifference;
         room.creatorLevel = uint8_t(selected->player.level); room.hardcore = bool(find(selectedName).nativeStatus & 4);
         room.settings = {selected->mapSeed, int(gameDifficulty), !multiplayerEndpoint && players == 1};
+        room.settings.nativeGameType=room.tcpIp?2:1;
         eligible(find(selectedName), room);
         PreparedGame prepared;
         if (reload) {
             if (players != 1 || reload->name != selectedName || reload->difficulty != gameDifficulty || reload->expectedFile != lease->expected)
                 throw std::runtime_error("Prepared reload no longer matches this admission");
             prepared = std::move(reload->game); reload.reset();
-        } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved), room.settings.singlePlayer); }
+        } else { auto saved = *selected; saved.difficulty = int(gameDifficulty); prepared = prepareGame(std::move(saved), room.settings); }
         stagedBinding = prepared.binding;
         room.handle = prepared.binding.game; room.town = RegionId(prepared.terrain.request.level); room.index = shared.nextGameIndex;
         room.tcpIpOwner = prepared.binding.player;
@@ -114,7 +115,7 @@ void NativeRealmService::joinGame(net::protocol::Reader &in) {
             const auto staged = host.admit(room.handle, std::move(definition));
             stagedBinding = staged;
             try {
-                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged));
+                auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), area, *host.read(staged), state->definition, *host.questProjection(staged),host.environment(staged.game,room.town).value());
                 for (const auto &packet : packets) validateServerPacket(packet);
                 terrain = area; admission = std::move(packets); binding = staged;
             } catch (...) { host.remove(staged); throw; }

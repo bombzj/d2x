@@ -6,6 +6,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/world/system.hpp"
+#include "server/systems/missiles/system.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/forgotten_tower.hpp"
@@ -14,8 +15,19 @@
 #include "gameplay/quest/sisters_to_slaughter.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <stdexcept>
 
 namespace d2x::server::quests {
+DomainResult<> System::cairnFx(RegionId area,Vec position,int destination,uint64_t tick) {
+    const auto portal=ports_.travel.prepareNativePermanentPortal(area,position,destination,tick);
+    if(portal.status==DomainStatus::Capacity) return {portal.status,{}};
+    if(portal) {
+        ports_.travel.commitSpecialPortal(*portal.value);
+        if(destination==38) state_.actOne.cainPortalOpened=true;
+    }
+    ports_.world.retainControllerRoom(area,position,false);
+    return {DomainStatus::Applied,std::monostate{}};
+}
 void System::orderStones() {
     if(state_.actOne.stonesOrdered) return;
     auto random=ports_.random;
@@ -87,20 +99,17 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
         if(!detail::carried(*p,"bkd",ports_.settings.difficulty) && cain.stage<uint32_t(CainStage::ScrollTranslated)) return {DomainStatus::InvalidRequest,{}};
         if(state_.actOne.activatedStones>=5) return {DomainStatus::Applied,std::monostate{}};
         if(state_.actOne.stones[state_.actOne.activatedStones]!=definition) return {DomainStatus::Conflict,{}};
-        std::optional<travel::SpecialPortalPlan> portal;
+        std::optional<ActOneState::CairnControl> control;
         if(state_.actOne.activatedStones==4) {
             const auto *area=ports_.areas.find(actor.area);
-            const auto alpha=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[](const auto &o){return o.type==17;});
-            if(alpha==area->definition.objects.end()) return {DomainStatus::Unavailable,{}};
-            const auto result=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::Tristram,0,alpha->position+Vec{4,4});
-            if(!result) return {result.status,{}};
-            portal=*result.value;
+            const auto lambda=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[](const auto &o){return o.type==21;});
+            if(lambda!=area->definition.objects.end()) control=ActOneState::CairnControl{actor.actor,actor.area,lambda->position+Vec{6,-3}};
         }
         cain.stage=std::max(cain.stage,uint32_t(CainStage::ScrollTranslated));
         cain.flags=(cain.flags&~cainStoneCountMask)|(state_.actOne.activatedStones+1);
         if(state_.actOne.activatedStones==4) cain.stage=std::max(cain.stage,uint32_t(CainStage::PortalOpened));
         const auto result=commit(actor,std::move(record));
-        if(result) {++state_.actOne.activatedStones;if(portal) {ports_.travel.commitSpecialPortal(std::move(*portal));state_.actOne.cainPortalOpened=true;}}
+        if(result) {++state_.actOne.activatedStones;if(control) state_.actOne.cairnPending=*control;}
         return result;
     }
     if(operation==10 && int(actor.area)==38) {
@@ -117,6 +126,19 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
 }
 StepStatus System::actOneStep(TickContext tick) {
     bool blocked=false;
+    if(state_.actOne.cairnPending) {
+        const auto control=*state_.actOne.cairnPending;
+        const auto definition=ports_.missiles.nativeDefinition("cairnstones");
+        if(!definition) throw std::logic_error("Missing original Cairn Stones missile");
+        const auto *area=ports_.areas.find(control.area);
+        const auto result=area?ports_.missiles.spawnNative({control.owner,control.area,area->generation,tick.tick,
+            control.position,control.position,*definition,0,1}):DomainResult<EntityId>{DomainStatus::Unavailable,{}};
+        if(result.status==DomainStatus::Capacity) blocked=true;
+        else {
+            if(result) ports_.world.retainControllerRoom(control.area,control.position,true);
+            state_.actOne.cairnPending.reset();
+        }
+    }
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         (void)id;if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
         std::optional<QuestId> goal;

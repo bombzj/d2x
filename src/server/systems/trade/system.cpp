@@ -152,7 +152,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         const auto count=[&](auto &&self,const ItemInstance &item)->void { ++identities; for(const auto &child:item.socketedItems) self(self,child); };
         for (const auto *player : {p,peer}) for (const auto &[id,item] : player->persistent.inventory.items) { (void)id; count(count,item); }
         if (!ports_.items.identityCapacity(identities)) return {DomainStatus::Capacity,{}};
-        std::vector<transactions::Plan> plans;
+        std::vector<transactions::Change> changesToPrepare;
         for (auto *o : {&next.first,&next.second}) {
             const auto &player=*ports_.players.find(o->player);
             if (!player.rules.character || !player.rules.equipment) return {DomainStatus::Unavailable,{}};
@@ -167,10 +167,10 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
             auto change=edit(player,ports_.areas,actor.tick,std::move(inventory));
             const auto &partner=*ports_.players.find(other(next,o->player).player);
             change.facts.emplace_back(TradeFact{6,partner.actor,partner.persistent.player.name});
-            auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
-            plans.push_back(std::move(*plan.value));
+            changesToPrepare.emplace_back(std::move(change));
         }
-        const auto result=ports_.transactions.commitInventories(std::move(plans)); if(!result) return result;
+        auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
+        const auto result=ports_.transactions.commitInventories(std::move(*prepared.value)); if(!result) return result;
         next.open=true; ++next.revision; state_.exchanges.at(key)=std::move(next); return applied();
     }
     if (!next.open || next.revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
@@ -258,7 +258,7 @@ DomainResult<> System::complete(Exchange &e,uint64_t tick) {
         state_.exchanges.at(e.transaction)=std::move(e); return applied();
     }
     auto cooldown=state_.cooldown; cooldown[e.first.player]=tick+125; cooldown[e.second.player]=tick+125;
-    std::vector<transactions::Plan> plans;
+    std::vector<transactions::Change> changesToPrepare;
     for(size_t side=0;side<2;++side) {
         inventories[side].containers.erase(offers[side]->container);
         auto change=edit(*players[side],ports_.areas,tick,std::move(inventories[side]));
@@ -266,10 +266,10 @@ DomainResult<> System::complete(Exchange &e,uint64_t tick) {
         change.character->gold=players[side]->persistent.player.gold-offers[side]->gold+offers[1-side]->gold;
         change.facts.emplace_back(clearMirrors(*players[1-side],*offers[1-side]));
         change.facts.emplace_back(TradeFact{13});
-        auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
-        plans.push_back(std::move(*plan.value));
+        changesToPrepare.emplace_back(std::move(change));
     }
-    const auto result=ports_.transactions.commitInventories(std::move(plans)); if(!result) return result;
+    auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
+        const auto result=ports_.transactions.commitInventories(std::move(*prepared.value)); if(!result) return result;
     state_.cooldown.swap(cooldown); state_.exchanges.erase(e.transaction); return applied();
 }
 DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
@@ -280,7 +280,7 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
         const auto result=ports_.events.publishGroup(notifications(ports_.players,e,tick,12));
         if (!result) return {result.status,{}};
     } else {
-        std::vector<transactions::Plan> plans;
+        std::vector<transactions::Change> changesToPrepare;
         for (const auto *own : {&e.first,&e.second}) {
             const auto &p=*ports_.players.find(own->player);
             auto change=edit(p,ports_.areas,tick,own->original); change.equipment=own->equipment;
@@ -294,10 +294,10 @@ DomainResult<> System::cancelFor(PlayerId id,uint64_t tick) {
             const auto &peer=other(e,p.player);
             change.facts.emplace_back(clearMirrors(*ports_.players.find(peer.player),peer));
             change.facts.emplace_back(TradeFact{12});
-            auto plan=ports_.transactions.prepare(std::move(change)); if(!plan) return {plan.status,{}};
-            plans.push_back(std::move(*plan.value));
+            changesToPrepare.emplace_back(std::move(change));
         }
-        const auto result=ports_.transactions.commitInventories(std::move(plans)); if(!result) return result;
+        auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
+        const auto result=ports_.transactions.commitInventories(std::move(*prepared.value)); if(!result) return result;
     }
     state_.cooldown.swap(cooldown); state_.exchanges.erase(e.transaction); return applied();
 }

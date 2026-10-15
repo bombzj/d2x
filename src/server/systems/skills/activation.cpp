@@ -152,7 +152,7 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
     return result.status;
 }
 DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec center) {
-    if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
+    if(!ports_.monsters.consumableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
     const auto &owner=*ports_.players.find(actor.player);const auto &corpse=*ports_.monsters.find(pending.unit);
     if(pending.skill.effect==SkillBehavior::PoisonExplosion) {
         const auto result=ports_.missiles.spawn({actor,pending.skill,pending.collision,center,false,actor.actor,0,center});
@@ -269,15 +269,20 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
 }
 DomainStatus System::activateCurse(Release &pending,const ActorContext &actor,Vec target) {
     if(pending.skill.curse && pending.skill.curse->ai==CurseAi::Taunt) {
-        const auto eligible=[&](const monsters::Actor *m) {return m && m->enemyTarget() && m->life>0 && m->area==actor.area &&
-            skillAiControlAllowed(m->identity.rank,m->rule.switchAi,m->rule.boss) &&
-            ports_.areas.at(actor.area).definition.collision.missileSegment(ports_.players.find(actor.player)->position,m->position,{4,1});};
-        auto *victim=ports_.monsters.find(pending.unit);
+        const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+        const auto eligible=[&](const monsters::Actor *m) {return m && m->alive() && !m->owner &&
+            skillAiControlAllowed(m->identity.rank,m->rule.switchAi,m->rule.boss) && participants.canHarm(actor.actor,m->id);};
+        const auto *victim=ports_.monsters.find(pending.unit);
         if(!eligible(victim)) {
-            victim=nullptr;float best=400.f;
-            const Vec origin=ports_.players.find(actor.player)->position;
-            for(const auto &[id,m]:ports_.monsters.read().actors) { (void)id;const auto d=m.position-origin;
-                const float distance=d.x*d.x+d.y*d.y;if(eligible(&m) && distance<best) {best=distance;victim=&m;} }
+            victim=nullptr;int32_t best=INT32_MAX;
+            const Vec origin=ports_.players.find(actor.player)->position+ports_.areas.at(actor.area).definition.origin;
+            for(const auto id:ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,20,0x8783u,false})) {
+                const auto *candidate=ports_.monsters.find(id);if(!eligible(candidate)) continue;
+                const Vec point=candidate->position+ports_.areas.at(candidate->area).definition.origin;
+                const auto dx=int32_t(point.x)-int32_t(origin.x),dy=int32_t(point.y)-int32_t(origin.y);
+                const auto distance=dx*dx+dy*dy;
+                if(distance<best) {best=distance;victim=candidate;}
+            }
         }
         if(!victim) return DomainStatus::Unavailable;
         return ports_.effects.curse(actor,pending.skill,victim->position,victim->id).status;

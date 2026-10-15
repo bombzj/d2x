@@ -11,7 +11,11 @@ GameInstance::GameInstance(GameDefinition definition)
       rules_(std::move(definition.rules)),
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
     systems_.world.initialize();
-    players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_);
+    systems_.world.activateAct(definition.persistent.lastRegion);
+    players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_));
+    if(!systems_.transactions.initializeItemAuras({1},tick_))
+        throw std::runtime_error("Unable to initialize admitted item auras");
+    systems_.effects.registerPlayer(players_.find({1})->actor,tick_);
     systems_.quests.initialize(players_.find({1})->persistent.player);
 }
 PlayerId GameInstance::admit(GameDefinition definition) {
@@ -22,7 +26,14 @@ PlayerId GameInstance::admit(GameDefinition definition) {
         definition.persistent.nextEntityId <= definition.persistent.player.id.value || definition.persistent.nextEntityId > UINT32_MAX)
         throw std::runtime_error("Invalid participant game settings or identity range");
     const PlayerId id{nextPlayer_};
-    players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules);
+    systems_.world.activateAct(definition.persistent.lastRegion);
+    players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_));
+    if(!systems_.transactions.initializeItemAuras(id,tick_)) {
+        areas_.removeRoomUnit(players_.find(id)->actor);
+        players_.players_.erase(id);
+        throw std::runtime_error("Unable to initialize admitted item auras");
+    }
+    systems_.effects.registerPlayer(players_.find(id)->actor,tick_);
     entities_ = EntityIds(players_.find(id)->persistent.nextEntityId);
     ++nextPlayer_; ++revision_;
     return id;
@@ -51,7 +62,8 @@ bool GameInstance::remove(PlayerId id) {
     if (!systems_.social.disconnect(id,tick_)) return false;
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
     systems_.travel.cancel(id); systems_.skills.cancel(id, players_.find(id)->actor);
-    players_.players_.erase(id); ++revision_;
+    systems_.frameEvents.cancelOwner({FrameEventUnit::Player,players_.find(id)->actor});
+    areas_.removeRoomUnit(players_.find(id)->actor);players_.players_.erase(id); ++revision_;
     return true;
 }
 std::vector<RegionId> GameInstance::visibleAreas(PlayerId id) const {
@@ -109,7 +121,15 @@ std::optional<PersistentCharacter> GameInstance::publicEquipment(PlayerId id) co
     return projection;
 }
 std::vector<MonsterSnapshot> GameInstance::visibleMonsters(PlayerId id) const {
-    return systems_.replication.visibleMonsters(id, tick_);
+    auto result=systems_.replication.visibleMonsters(id,tick_);
+    const auto *player=players_.find(id);if(!player) return {};
+    std::erase_if(result,[&](const auto &snapshot) {
+        const auto *unit=systems_.monsters.find(snapshot.id);if(!unit || !unit->questNpc) return false;
+        const auto &npcs=areas_.at(unit->area).definition.npcs;
+        const auto npc=std::find_if(npcs.begin(),npcs.end(),[&](const auto &entry){return entry.id==unit->id;});
+        return npc==npcs.end() || !systems_.quests.npcVisible(player->persistent.player,npc->rule.code,unit->area,npc->rule.questInitFunction);
+    });
+    return result;
 }
 CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
     const auto sequence = command.sequence;
@@ -133,6 +153,7 @@ CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
     return result;
 }
 void GameInstance::step() {
+    if(!simulationPending_) {
     if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
     for (const auto &pending : commands_) {
         auto &player = players_.players_.at(pending.player);
@@ -186,7 +207,10 @@ void GameInstance::step() {
             player.movementSequence = command.sequence;
     }
     commands_.clear();
-    simulation_.step({tick_}, systems_);
+    simulationPending_=true;
+    }
+    if(!simulation_.step({tick_},systems_)) return;
+    simulationPending_=false;
     ++tick_; ++revision_;
 }
 void GameInstance::suspend() {

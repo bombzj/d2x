@@ -22,7 +22,7 @@ void loadMagicAffixData(ClassicData &data) {
             if (label.empty())
                 continue;
             auto version = table.number(row, "version").value_or(0);
-            if (version > 100 || !table.number(row, "spawnable").value_or(0))
+            if (version > 100 || (std::string_view(name) != "automagic" && !table.number(row, "spawnable").value_or(0)))
                 continue;
             auto level = table.number(row, "level");
             auto frequency = table.number(row, "frequency");

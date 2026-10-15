@@ -1,4 +1,6 @@
 #pragma once
+#include <cstdint>
+#include <array>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -24,9 +26,14 @@ struct ItemStatDefinition {
     std::string positive, negative, suffix;
     int operation = 0, operationParameter = 0;
     std::string operationBase, operationStat;
+    int valueShift = 0, operationTargetShift = 0;
+    std::array<std::string,3> operationStats;
+    bool hasMinimum = false,keepZero = false,damageRelated = false;
+    int minimumAccrual = 0;
 };
 struct ResolvedItemStat {
     std::string name, effect;
     int value = 0, layer = 0, rawValue = 0;
+    std::optional<int32_t> nativeValue;
 };
 } // namespace d2x

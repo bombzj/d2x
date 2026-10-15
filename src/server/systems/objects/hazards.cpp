@@ -37,7 +37,9 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     }
     if(state_.objects.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     const auto id=ports_.ids.allocate();Object object{id,request.definition,request.area,request.position,1,request.mode,std::move(rule)};
-    object.uses=2*object.rule.parameters[2];initialize(object,request.tick);state_.objects.emplace(id,std::move(object));collision(request.area);
+    object.uses=2*object.rule.parameters[2];initialize(object,request.tick);
+    auto room=ports_.areas.prepareRoomUnit(id,2,object.area,object.position);
+    state_.objects.emplace(id,std::move(object));ports_.areas.publishRoomUnit(*room);collision(request.area);
     return {DomainStatus::Applied,id};
 }
 DomainResult<> System::damage(Object &object,DamageType type,bool playersOnly,int radius,TickContext tick,std::optional<EntityId> only) {
@@ -54,7 +56,7 @@ DomainResult<> System::damage(Object &object,DamageType type,bool playersOnly,in
         const auto amount=(minimum+limitedRandom(random,unsigned(maximum-minimum+256)))*object.rule.damage/100;
         if(amount>0) {impact.targets.push_back(id);impact.targetDamage.push_back(amount);}
     };
-    for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==object.area) add(p.actor,p.position,int64_t(p.persistent.player.hp*256.f),p.persistent.player.level,p.totals.character.dexterity,p.totals.character.defense);}
+    for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==object.area) add(p.actor,p.position,int64_t(p.persistent.player.hp.raw()),p.persistent.player.level,p.totals.character.dexterity,p.totals.character.defense);}
     if(!playersOnly) for(const auto &[id,m]:ports_.monsters.read().actors) if(m.area==object.area && m.damageable()) add(id,m.position,m.life,m.rule.level,m.hireling?m.hirelingDexterity:0,ports_.effects.unitDefense(id,tick.tick));
     const auto result=ports_.combat.enqueue(std::move(impact));if(result) object.random=random;return result;
 }

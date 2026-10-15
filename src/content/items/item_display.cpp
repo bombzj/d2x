@@ -135,12 +135,12 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             else if (potion->kind == PotionKind::Mana)
                 line("Restores " + std::to_string(int(potion->amount)) + " Mana");
             else if (potion->kind == PotionKind::Rejuvenation)
-                line("Restores " + std::to_string(int(potion->amount * 100)) + "% Life and Mana");
+                line("Restores " + std::to_string(potion->amount) + "% Life and Mana");
             else if (potion->kind == PotionKind::Stamina)
                 line("Restores Stamina");
             if (potion->curesPoison) line("Cures Poison");
             if (potion->curesCold) line("Cures Cold");
-            if (potion->seconds > 0) line("Duration: " + std::to_string(int(potion->seconds)) + " seconds");
+            if (potion->durationFrames > 0) line("Duration: " + std::to_string(potion->durationFrames / 25) + " seconds");
         }
         auto requirement = [&](const char *label, int required, int actual) {
             if (required > 0) line(std::string(label) + std::to_string(required), actual < required ? ItemTextTone::Error : ItemTextTone::Normal);

@@ -183,8 +183,8 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("x") || request.contains("y")) position = Vec{float(unsignedValue(request.at("x"), 65535)), float(unsignedValue(request.at("y"), 65535))};
             if (entry->operation == AdminOperation::SpawnMonster && request.contains("level"))
                 throw std::invalid_argument("Monster level comes from the current MPQ area and difficulty; omit level");
-            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets")))
-                throw std::invalid_argument("quality/durability/sockets apply only to item-spawn");
+            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets") || request.contains("seed") || request.contains("affixes")))
+                throw std::invalid_argument("quality/durability/sockets/seed/affixes apply only to item-spawn");
             AdminSpawn spawn{std::move(code), int(level), position};
             if(request.contains("rank") || request.contains("superUnique")) {
                 if(entry->operation!=AdminOperation::SpawnMonster) throw std::invalid_argument("rank/superUnique apply only to monster-spawn");
@@ -202,6 +202,27 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (spawn.quality != "normal" && spawn.quality != "magic" && spawn.quality!="rare" && spawn.quality!="unique" && spawn.quality!="set" && spawn.quality!="superior" && spawn.quality!="inferior") throw std::invalid_argument("Unknown original generated quality");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
             if(request.contains("sockets")) spawn.sockets=unsigned(unsignedValue(request.at("sockets"),6));
+            if(request.contains("seed")) spawn.seed=uint32_t(unsignedValue(request.at("seed"),UINT32_MAX));
+            if(request.contains("affixes")) {
+                const auto &affixes=request.at("affixes");
+                if(!affixes.is_array() || affixes.empty() || affixes.size()>6) throw std::invalid_argument("affixes requires 1..6 original affix records");
+                for(const auto &entry:affixes) {
+                    const auto kind=entry.at("kind").get<std::string>();
+                    if(kind!="prefix" && kind!="suffix") throw std::invalid_argument("Affix kind must be prefix or suffix");
+                    AdminItemAffix affix{kind=="prefix",int(unsignedValue(entry.at("row"),INT32_MAX-1)),{}};
+                    if(entry.contains("rolls")) {
+                        const auto &rolls=entry.at("rolls");
+                        if(!rolls.is_array() || rolls.size()>3) throw std::invalid_argument("Affix rolls must be an array of at most three values");
+                        affix.rolls.emplace();
+                        for(const auto &value:rolls) {
+                            const auto number=signedValue(value);
+                            if(number<INT32_MIN || number>INT32_MAX) throw std::invalid_argument("Affix roll exceeds signed 32-bit range");
+                            affix.rolls->push_back(int32_t(number));
+                        }
+                    }
+                    spawn.affixes.push_back(std::move(affix));
+                }
+            }
             if(request.contains("shrine") || request.contains("trap")) {
                 if(entry->operation!=AdminOperation::SpawnObject) throw std::invalid_argument("shrine/trap apply only to object-spawn");
                 if(request.contains("shrine")) spawn.shrine=int(unsignedValue(request.at("shrine"),22));

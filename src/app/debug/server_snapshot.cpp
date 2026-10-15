@@ -3,11 +3,26 @@
 #include <nlohmann/json.hpp>
 #include <cmath>
 #include <stdexcept>
+#include <span>
+#include <algorithm>
+#include <set>
 
 namespace d2x {
 namespace {
 using Json = nlohmann::json;
 Json point(Vec value) { return {{"x", value.x}, {"y", value.y}}; }
+Json auraTimers(std::span<const ItemAuraTimer> timers) {
+    auto result=Json::array();
+    for(const auto &timer:timers) result.push_back({{"source",timer.source.value},{"skill",timer.skill},{"state",timer.state},
+        {"next",timer.next},{"order",timer.order},{"continuous",timer.continuous}});
+    return result;
+}
+Json skillCharges(std::span<const ChargedSkill> charges) {
+    auto result=Json::array();
+    for(const auto &charge:charges) result.push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},
+        {"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
+    return result;
+}
 Json area(const server::AreaView &value) {
     const auto &a = value.definition;
     Json result{{"id", int(a.id)}, {"generation", value.generation}, {"act", a.act}, {"town", a.town},
@@ -76,11 +91,14 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["itemTriggers"]={{"pending",s.itemTriggersPending},{"deferred",s.itemTriggersDeferred}};
     result["chargedSkills"]=Json::array();
     for(const auto &charge:s.chargedSkills) result["chargedSkills"].push_back({{"item",charge.item.id.value},{"revision",charge.item.revision},{"skill",charge.skill},{"rank",charge.rank},{"charges",charge.charges},{"maximum",charge.maximum}});
+    result["itemAuras"]=auraTimers(s.itemAuras);
     result["player"] = {{"id", p.actor.id.value}, {"name", p.name}, {"entered", p.entered},
         {"position", point(p.actor.position + origin)}, {"localPosition", point(p.actor.position)},
         {"moving", p.actor.moving}, {"attacking", p.attacking}, {"recovering",p.recovering}, {"level", r.level}, {"experience", r.experience}, {"gold", r.gold}, {"bankGold", r.bankGold}, {"states", p.states},
-        {"life", r.hp}, {"maxLife", a.maxLife}, {"mana", r.mana}, {"maxMana", a.maxMana},
-        {"stamina", r.stamina}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
+        {"life", double(r.hp.raw()) / 256}, {"maxLife", a.maxLife}, {"mana", double(r.mana.raw()) / 256}, {"maxMana", a.maxMana},
+        {"stamina", double(r.stamina.raw()) / 256}, {"maxStamina", a.maxStamina}, {"statPoints", r.unspentAttributes}, {"skillPoints", r.unspentSkills},
+        {"lifeRaw", r.hp.raw()}, {"maxLifeRaw", a.maxLifeFixed.raw()}, {"manaRaw", r.mana.raw()}, {"maxManaRaw", a.maxManaFixed.raw()},
+        {"staminaRaw", r.stamina.raw()}, {"maxStaminaRaw", a.maxStaminaFixed.raw()},
         {"strength", a.strength}, {"dexterity", a.dexterity}, {"vitality", a.vitality}, {"energy", a.energy},
         {"defense", a.defense}, {"attackRating", a.attackRating}, {"weaponSet", r.weaponSet},
         {"selectedSkills", r.selectedSkills},{"selectedSkillOwners",r.selectedSkillOwners}, {"baseSkills", r.skillRanks}, {"effectiveSkills", p.skillRanks},
@@ -111,6 +129,16 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"pursuing", monster.controller->pursuing}, {"charged", monster.controller->charged},
             {"phase",monster.controller->phase},{"loop",monster.controller->loop},{"spawnAttempts",monster.controller->act2Attempts}};
         value["burrowed"]=monster.burrowed;value["airborne"]=monster.airborne;value["holdPose"]=monster.holdPose;
+        value["chargedSkills"]=skillCharges(monster.chargedSkills);value["chargesTracked"]=monster.chargesTracked;
+        value["itemAuras"]=auraTimers(monster.itemAuras);
+        value["alignment"]=int(monster.alignment);value["allegianceRevision"]=monster.allegianceRevision;
+        value["curseControl"]={{"kind",int(monster.curseControl.ai)},{"caster",monster.curseControl.caster.value},
+            {"target",monster.curseControl.target.value},{"until",monster.curseControl.until}};
+        if(monster.curseControl.origin) value["curseControl"]["origin"]={{"x",monster.curseControl.origin->x},{"y",monster.curseControl.origin->y}};
+        value["specialTargetOrder"]=monster.specialTargetOrder;value["aiFunctionRevision"]=monster.aiFunctionRevision;value["detachedMinion"]=monster.detachedMinion;
+        value["attraction"]={{"target",monster.attractionTarget.value},{"until",monster.attractionUntil}};
+        value["aiResetTimers"]=Json::array();value["aiResetsTracked"]=monster.aiResetsTracked;
+        for(const auto &timer:monster.aiResetTimers) value["aiResetTimers"].push_back({{"due",timer.due},{"continuous",timer.continuous},{"identity",timer.identity}});
         value["aiPose"]=monster.aiPose;value["poseUntil"]=monster.poseUntil;value["aiRegenerationBonus"]=monster.aiRegenerationBonus;value["skillMotion"]=monster.skillMotion;
         value["rules"]={{"family",int(monster.rules.kind)},{"searchDistance",monster.rules.searchDistance},{"params",monster.rules.params},
             {"damageRegen",monster.damageRegen},{"threat",monster.threat},{"nativeVelocity",monster.nativeVelocity},
@@ -140,9 +168,19 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for (const auto value : s.path) result["path"].push_back(point(value));
     result["eventHistory"] = {{"first", s.eventFirst}, {"last", s.eventLast},
         {"gap", since < s.eventFirst - 1}, {"records", Json::array()}};
+    result["frameEvents"]={{"count",s.frameEvents.count},{"phase",s.frameEvents.phase},
+        {"frame",s.frameEvents.frame?Json(*s.frameEvents.frame):Json(nullptr)},
+        {"executing",s.frameEvents.executing.value},{"cursor",s.frameEvents.cursor.value},{"records",Json::array()}};
+    for(const auto &entry:s.frameEvents.events) {
+        const auto &event=entry.event;
+        result["frameEvents"]["records"].push_back({{"identity",event.handle.value},{"unit",event.owner.unit.value},
+            {"unitType",uint8_t(event.owner.type)},{"type",uint8_t(event.type)},{"due",event.due},{"continuous",event.continuous},
+            {"handler",event.handler},{"customId",event.customId},{"customParameter",event.customParameter},{"payload",event.payload},
+            {"executing",entry.executing},{"pendingRemoval",entry.pendingRemoval}});
+    }
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
@@ -150,7 +188,14 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &object:s.objects) result["objects"].push_back({{"id",object.id.value},{"definition",object.definition},{"position",point(object.position+origin)},{"mode",object.mode},{"operation",object.rule.operation},{"pending",object.pending},{"uses",object.uses},
         {"collision",{{"width",object.rule.width},{"height",object.rule.height},{"mask",object.rule.collisionMask},{"enabled",object.rule.collision.at(size_t(object.mode))}}}});
     result["npcs"]=Json::array();
-    for(const auto &npc:s.area.definition.npcs) result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},{"position",point(npc.position+origin)},{"hidden",npc.hidden},{"moving",npc.moving}});
+    for(const auto &npc:s.area.definition.npcs) {
+        const auto unit=std::find_if(s.npcs.begin(),s.npcs.end(),[&](const auto &entry){return entry.id==npc.id;});
+        result["npcs"].push_back({{"id",npc.id.value},{"code",npc.rule.code},
+            {"spawnPosition",point(npc.spawnPosition+origin)},
+            {"position",unit==s.npcs.end()?Json(nullptr):point(unit->position+origin)},
+            {"hidden",unit==s.npcs.end()},{"moving",unit!=s.npcs.end() && unit->moving},
+            {"life",unit==s.npcs.end()?0:int(unit->life)},{"states",unit==s.npcs.end()?std::set<int>{}:unit->states}});
+    }
     result["merchantDeferred"]=s.merchantDeferred;
     result["crafting"]={{"pending",s.craftingPending},{"deferred",s.craftingDeferred}};
     result["questExecution"]={{"pending",s.questPending},{"deferred",s.questDeferred},{"stones",s.cainStones},{"activatedStones",s.activatedStones},{"hirelingDeferred",s.hirelingDeferred}};
@@ -164,7 +209,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     result["quests"]=Json::array();
     for(const auto &book:s.record.quests) {Json entries=Json::array();for(size_t index=0;index<book.size();++index) entries.push_back({{"id",index},{"stage",book[index].stage},{"flags",book[index].flags}});result["quests"].push_back(std::move(entries));}
     result["completedActs"]=s.record.completedActs;
-    result["hireling"]={{"sourceRow",s.record.hireling.sourceRow},{"class",s.record.hireling.classId},{"name",s.record.hireling.nameKey},{"level",s.record.hireling.level},{"life",s.record.hireling.hp}};
+    result["hireling"]={{"sourceRow",s.record.hireling.sourceRow},{"class",s.record.hireling.classId},{"name",s.record.hireling.nameKey},{"level",s.record.hireling.level},{"life",double(s.record.hireling.hp.raw()) / 256},{"lifeRaw",s.record.hireling.hp.raw()}};
     result["waypoints"]=Json::array(); for(const auto &[region,time]:s.waypoints) { (void)time; result["waypoints"].push_back(int(region)); }
     result["portals"]=Json::array(); for(const auto &portal:s.portals) result["portals"].push_back({{"owner",portal.owner.value},{"fieldId",portal.fieldId.value},{"townId",portal.townId.value},{"field",int(portal.field)},{"town",int(portal.town)},{"opened",portal.opened},{"fieldPosition",point(portal.fieldPosition)},{"townPosition",point(portal.townPosition)}});
     for (const auto &event : s.events) result["eventHistory"]["records"].push_back({{"sequence", event.sequence}, {"batch", event.batch},

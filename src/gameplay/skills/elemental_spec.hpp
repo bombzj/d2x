@@ -38,6 +38,7 @@ struct HeavenSpec {
     int delayFrames = 0, radius = 0, limit = 0, limitPerLevel = 0;
     int boltId = -1, boltFrames = 0, boltVelocity = 0;
     int minimum = 0, maximum = 0, synergySkill = -1, synergyPercent = 0;
+    int damageShift = 0;
     std::array<int, 5> minimumPerLevel{}, maximumPerLevel{};
     int healingMinimum = 0, healingMinimumPerLevel = 0;
     int healingMaximum = 0, healingMaximumPerLevel = 0;

@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "core/random.hpp"
 #include <cmath>
 #include <algorithm>
 namespace d2x::server::items {
@@ -82,6 +83,39 @@ DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) 
 DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {
     auto next = prepare(std::move(batch), origin); if (!next) return {next.status, {}};
     commit(std::move(*next.value)); return {DomainStatus::Applied, std::monostate{}};
+}
+DomainResult<EntityId> System::createNativeGold(GroundLocation origin,unsigned level,uint64_t tick) {
+    const auto *area=ports_.areas.find(origin.region);
+    const auto *base=ports_.definitions?ports_.definitions->find("gld"):nullptr;
+    if(!area || !base || !base->equipment.isType("gold") || !level || level>99 ||
+        !std::isfinite(origin.position.x) || !std::isfinite(origin.position.y)) return {DomainStatus::InvalidRequest,{}};
+    origin.position={std::floor(origin.position.x),std::floor(origin.position.y)};
+    if(!area->definition.activation.room(origin.position)) return {DomainStatus::InvalidRequest,{}};
+    if(state_.revision==UINT64_MAX || state_.world.items.size()>=4096 || !identityCapacity(1) ||
+        !ports_.events.hasCapacity(1,1)) return {DomainStatus::Capacity,{}};
+    // SUNIT_AllocUnitData creates two independent seeds. InitItemStats rolls
+    // the amount from the unit seed, not from the item's saved start seed.
+    auto random=ports_.random;
+    auto unitRandom=initialRandom(rollRandom(random));
+    ItemInstance item;item.id=EntityId{ports_.ids.cursor()};item.definition=base->code;
+    item.nativeSeed=rollRandom(random);item.level=level;item.location=origin;
+    item.quantity=std::max(limitedRandom(unitRandom,5*level)+level,1u);
+    // The raw tower call keeps CreateItemEx's INIT/INSTORE flags; wrappers
+    // which clear INSTORE are separate native procedures.
+    item.nativeProperties=true;item.nativeFlags=0x82010;
+    if(!base->inventoryIcons.empty()) {
+        item.nativeHasGraphic=true;
+        item.nativeGraphic=limitedRandom(unitRandom,unsigned(base->inventoryIcons.size()));
+    }
+    auto next=state_;
+    next.world.items.emplace(item.id,item);
+    EquipmentValues values;values.levels.resize(100);
+    next.equipment.items.emplace(item.id,std::move(values));
+    ++next.revision;
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},origin.region},{GroundDropFact{item}}});
+    if(!sent) return {sent.status,{}};
+    ports_.ids.allocate();ports_.random=random;commit(std::move(next));
+    return {DomainStatus::Applied,item.id};
 }
 DomainResult<ItemInstance> System::resolve(const Address &address) const {
     const InventoryState *inventory = &state_.world;

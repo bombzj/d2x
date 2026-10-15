@@ -16,16 +16,8 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &, std::size_t row);
 std::vector<int> loadInnateSkillIds(const DataTable &skills, const DataTable &characterStats, std::size_t row);
 // Prepared current hand facts. An absent optional is unknown; present=false
 // means an observed empty body slot. Type lists include MPQ ItemTypes ancestors.
-struct SkillHandEquipment {
-    bool present = false, unusable = false, stackable = false;
-    std::vector<std::string> types;
-    std::string ammunitionType;
-    std::optional<unsigned> quantity;
-};
 // Read-only native paired-hand condition for ordinary skills. Special basic
 // actions require primary-weapon/stat facts beyond this snapshot and stay unknown.
-std::optional<bool> skillEquipmentReady(const SkillMetadata &,
-    const std::array<std::optional<SkillHandEquipment>, 2> &);
 struct SkillEligibilityInput {
     std::string_view classCode;
     std::optional<int> baseRank, effectiveRank, level, skillPoints;

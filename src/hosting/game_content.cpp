@@ -31,11 +31,15 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.id = RegionId(request.level); area.waypointIndex=level.waypoint;
     area.townRegion = RegionId(actTownLevels.at(size_t(request.act)));
     area.act = request.act; area.town = level.town; area.origin = result.terrain.origin;
+    area.monsterLevel=level.population.level.at(size_t(request.difficulty));
     area.staffTomb=result.terrain.staffTomb;
     area.collision = result.terrain.map->grid;
+    area.collisionField=content.nativeCollisionField;
     area.activation = result.terrain.map->activation;
     for (const auto &room : area.activation.rooms()) {
         const auto anchor = std::pair{(int(area.origin.x) + room.x) / 5, (int(area.origin.y) + room.y) / 5};
+        const auto seed=result.terrain.initialRoomRandom.find(anchor);
+        area.initialRoomRandom.push_back(seed==result.terrain.initialRoomRandom.end()?std::nullopt:std::optional<uint64_t>{seed->second});
         auto &near = area.roomNear.emplace_back();
         for (const auto &other : result.terrain.nearRooms.at(anchor))
             near.push_back({RegionId(other.level), other.x, other.y});
@@ -140,7 +144,7 @@ server::GameDefinition prepareJoiningCharacter(const ClassicData &content, Persi
     const auto character = std::find_if(content.characters.begin(), content.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
     saved.difficulty = settings.difficulty; saved.mapSeed = settings.mapSeed; saved.lastRegion = town;
-    saved.player.hp = std::max(1.f, saved.player.hp);
+    saved.player.hp = std::max(Fixed8(1), saved.player.hp);
     result.settings = settings; result.character = *character;
     result.persistent = server::admitCharacter(std::move(saved), nextEntity);
     result.rules.items = std::move(items);
@@ -148,7 +152,7 @@ server::GameDefinition prepareJoiningCharacter(const ClassicData &content, Persi
     result.rules.melee = prepareMeleeRules(content, *character);
     return result;
 }
-WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items) {
+WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items,std::optional<server::GameSettings> settings) {
     WalkingGameContent result;
     const auto character = std::find_if(content.characters.begin(), content.characters.end(),
         [&](const auto &entry) { return entry.name == saved.player.characterClass; });
@@ -158,14 +162,14 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     const auto &town = world.levels().at(actTownLevels.at(size_t(previous.act)));
     if (!town.town) throw std::runtime_error("Saved act lacks an original town");
     saved.lastRegion = RegionId(town.id);
-    saved.player.hp = std::max(1.f, saved.player.hp);
-    result.authority.settings = {saved.mapSeed, saved.difficulty};
+    saved.player.hp = std::max(Fixed8(1), saved.player.hp);
+    result.authority.settings = settings.value_or(server::GameSettings{saved.mapSeed,saved.difficulty});
     result.authority.character = *character;
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
     result.authority.rules.melee = prepareMeleeRules(content, *character);
-    auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty});
+    auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);
     const auto &area = result.authority.area;
     for (auto &corpse : result.authority.persistent.corpses) { corpse.region = area.id; corpse.position = area.spawn; }

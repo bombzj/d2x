@@ -80,7 +80,10 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), draft.edit.weaponSet};
     edit.character = effects.value->character; edit.transient = effects.value->transient;
-    auto plan = ports_.transactions.prepare(std::move(edit));
+    if(effects.value->staminaPotionSurplus) edit.resources=transactions::ResourceRefresh::StaminaPotion;
+    edit.resourceBase=effects.value->resourceBase;edit.publicFacts=effects.value->publicFacts;
+    if(effects.value->unitRandom) edit.random=transactions::UnitRandomEdit{effects.value->unitRandom->first,effects.value->unitRandom->second};
+    auto plan = ports_.transactions.prepare(std::move(edit),nullptr,{},effects.value->units);
     if (!plan) return {plan.status, {}};
     const auto result = ports_.transactions.commit(std::move(*plan.value));
     if (result) ports_.effects.commit(std::move(*effects.value));

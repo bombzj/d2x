@@ -1,66 +1,30 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::companions {
 DomainResult<EntityId> System::summon(const Summon &) {return {};}
-DomainResult<> System::ownerDied(const ActorContext &actor) {
-    const auto *player = ports_.players.find(actor.player);
-    const auto *area = ports_.areas.find(actor.area);
-    if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area ||
-        player->persistent.player.hp > 0 || !area || area->generation != actor.areaGeneration)
-        return {DomainStatus::InvalidActor, {}};
-    if ((player->persistent.player.hireling.sourceRow >= 0 && player->persistent.player.hireling.hp > 0) || player->persistent.ironGolem) {
-        auto record = player->persistent.player;
-        record.hireling.hp = 0;
-        transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};edit.ironGolem=std::optional<ItemInstance>{};
-        auto plan = ports_.transactions.prepare(std::move(edit));
-        if (!plan) return {plan.status, {}};
-        const auto committed = ports_.transactions.commit(std::move(*plan.value));
-        if (!committed) return committed;
-    }
-    for (auto &[id, pet] : state_.companions) {
-        if (pet.owner != actor.player) continue;
-        const auto *body = ports_.monsters.find(id);
-        if (!body) continue;
-        pet.release = 0;
-        if (body->life > 0) ports_.monsters.retire(id, actor.tick);
-        if (pet.kind != Kind::Hireling && !pet.removeAt)
-            pet.removeAt = actor.tick + uint64_t(body->rule.deathTicks);
-    }
-    return {DomainStatus::Applied, std::monostate{}};
-}
-bool System::canDismiss(const ActorContext &actor,EntityId id) const {
-    const auto *p=ports_.players.find(actor.player);const auto pet=state_.companions.find(id);const auto *body=ports_.monsters.find(id);
-    return p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 &&
-        p->rules.skills && ports_.areas.at(actor.area).generation==actor.areaGeneration && body && body->life>0 && body->area==actor.area &&
-        body->owner==actor.player && pet!=state_.companions.end() && pet->second.owner==actor.player && !pet->second.removeAt &&
-        pet->second.sourceSkill && p->rules.skills->dismissibleSummons.contains(*pet->second.sourceSkill);
-}
-DomainResult<> System::dismiss(const ActorContext &actor,EntityId id) {
-    if(!canDismiss(actor,id)) return {DomainStatus::InvalidRequest,{}};
-    auto &pet=state_.companions.at(id);const auto *body=ports_.monsters.find(id);
-    if(pet.kind==Kind::IronGolem) {const auto &owner=*ports_.players.find(actor.player);transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.ironGolem=std::optional<ItemInstance>{};auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result;}
-    // Ownership retirement never enters enemy experience or loot accounting.
-    pet.removeAt=actor.tick+uint64_t(body->rule.deathTicks);pet.release=0;
-    ports_.monsters.retire(id,actor.tick);return {DomainStatus::Applied,std::monostate{}};
-}
 
 DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
-    const auto *p=ports_.players.find(actor.player);if(!p || !p->rules.skills || !p->rules.skills->hydra || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
-    auto actors=ports_.monsters.prepareHydra(actor,*p->rules.skills->hydra,target);if(!actors) return {actors.status,{}};
-    auto next=state_;auto random=ports_.random;
+    const auto *p=ports_.players.find(actor.player);if(!p || !p->rules.skills || !p->rules.skills->hydra || !skill.summon || !skill.summon->native || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
+    auto random=ports_.random;
+    auto actors=ports_.monsters.prepareHydra(actor,*p->rules.skills->hydra,*skill.summon,target,random);if(!actors) return {actors.status,{}};
+    auto next=state_;
     for(const auto &[id,monster]:*actors.value) {
-        const auto &head=*std::find_if(p->rules.skills->hydra->heads.begin(),p->rules.skills->hydra->heads.end(),[&](const auto &head) {return head.nativeClass==monster.rule.nativeClass;});
+        const auto &head=*std::find_if(p->rules.skills->hydra->heads.begin(),p->rules.skills->hydra->heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
         Companion entry{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};
-        entry.rank=skill.rank;entry.attackSkill=head.attackSkill;entry.expires=actor.tick+uint64_t(skill.hydraFrames);
-        entry.nextDecision=monster.riseUntil;entry.random=childRandom(random);next.companions.emplace(id,std::move(entry));
+        entry.rank=skill.rank;entry.attackSkill=head.definition.attackSkill;entry.expires=actor.tick+uint64_t(skill.hydraFrames);
+        entry.nextDecision=actor.tick+25;next.companions.emplace(id,std::move(entry));
     }
     size_t count=0;for(const auto &[id,pet]:next.companions) {(void)id;if(pet.owner==actor.player && pet.sourceSkill==uint16_t(skill.sourceId) && !pet.removeAt) ++count;}
     std::vector<EntityId> retire;
@@ -70,16 +34,19 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
         const auto *monster=ports_.monsters.find(id);if(!monster) continue;
         pet.removeAt=actor.tick+uint64_t(monster->rule.deathTicks);pet.release=0;retire.push_back(id);--count;
     }
-    const auto debit=ports_.transactions.release(actor,p->characterRevision,skill.manaCost,{},skill.charge);if(!debit) return debit;
-    ports_.monsters.commitHydra(std::move(*actors.value));state_.companions.swap(next.companions);ports_.random=random;
-    for(const auto id:retire) ports_.monsters.retire(id,actor.tick);
+    auto units=std::make_shared<effects::AuraUnitPublication>();const auto allocated=actors.value->size();
+    ports_.effects.stageAuraActors(*units,std::move(*actors.value),allocated);
+    const auto retired=ports_.monsters.stageRetirements(*units,retire,actor.tick);if(!retired) return retired;
+    transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
+    auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},units);if(!plan) return {plan.status,{}};
+    const auto debit=ports_.transactions.commit(std::move(*plan.value));if(!debit) return debit;
+    state_.companions.swap(next.companions);ports_.random=random;
     return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     bool blocked=synchronizeHirelings(tick)==StepStatus::Blocked;
     blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
-    blocked|=advanceBoneGrowth(tick)==StepStatus::Blocked;
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
         const auto *p=ports_.players.find(source.actor.player);
@@ -96,8 +63,16 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             if(hirelingStep(pet,tick)==StepStatus::Blocked) blocked=true;
             ++it;continue;
         }
-        if(!pet.removeAt && (body->life<=0 || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || tick.tick>pet.expires)) {
-            pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;ports_.monsters.retire(pet.actor,tick.tick);
+        const bool wall=body->implementation==MonsterKind::BoneWall;
+        const bool aiDue=tick.tick>=pet.nextDecision && tick.tick>=body->busyUntil;
+        const bool expired=tick.tick>pet.expires && ((!body->hydra() && !wall) || aiDue);
+        if(wall && aiDue && !expired) pet.nextDecision=tick.tick+15;
+        if(!pet.removeAt && (!body->alive() || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || expired)) {
+            if(body->alive()) {
+                const auto retired=ports_.monsters.retire(pet.actor,tick.tick);
+                if(!retired) {if(retired.status==DomainStatus::Capacity) return StepStatus::Blocked;++it;continue;}
+            }
+            pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;
         }
         if(pet.removeAt) {
             if(!pet.deathEffect && body->necroPet && body->necroPet->kind==NecroSummonKind::Fire && p && p->entered && body->area==p->area && !ports_.areas.at(body->area).definition.town) {
@@ -115,23 +90,18 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
                 if(!plan || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},body->area},{MissileFact{pet.actor,1,body->area,body->necroPet->explosionId,pet.rank,0,body->position,body->position}}})) {blocked=true;++it;continue;}
                 ports_.combat.commitSpells(std::move(*plan.value));pet.deathEffect=true;
             }
-            if(tick.tick>=pet.removeAt) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);} else ++it;continue;
+            if(tick.tick>=pet.removeAt) {
+                // BoneWall's native death-end enters DD; it does not remove
+                // the unit. Do13 may still resolve this GUID and add a segment.
+                if(body->implementation!=MonsterKind::BoneWall) ports_.monsters.remove(pet.actor);
+                it=state_.companions.erase(it);
+            } else ++it;continue;
         }
         if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked) blocked=true;if(necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
         if(body->amazonPet) {++it;continue;}
         const auto &area=ports_.areas.at(body->area);
-        ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick.tick};
-        if(pet.release && tick.tick>=pet.release) {
-            const auto target=participants.find(pet.target);
-            if(target.aliveIn(body->area) && participants.canHarm(body->id,pet.target)) {
-                auto skill=skills::evaluate(*p,*pet.sourceSkill,pet.rank);
-                const auto result=ports_.missiles.spawn({actor,skill,{},target.position(),true,pet.actor,1,body->position});
-                if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
-            }
-            pet.release=0;
-        }
         if(tick.tick<pet.nextDecision || tick.tick<body->busyUntil) {++it;continue;}
         EntityId target;int nearest=25;
         for(const auto id:participants.enemies(body->id,body->area)) {
@@ -140,17 +110,17 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             const int distance=missileDistance(body->position,position);
             if(distance<nearest && area.definition.collision.missileSegment(body->position,position,{4,1})) {nearest=distance;target=id;}
         }
-        auto random=pet.random;
+        auto random=body->combatRandom;
         if(target && limitedRandom(random,100)<60) {
-            if(!ports_.events.hasCapacity(1)) {blocked=true;++it;continue;}
             const auto enemy=participants.find(target);
-            const auto published=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},body->area},
-                {AttackFact{pet.actor,target,1,uint8_t(enemy.player?0:1),body->area,body->position,enemy.position(),tick.tick+1,uint16_t(pet.attackSkill),uint8_t(pet.rank)}}});
-            if(!published) {blocked=true;++it;continue;}
-            pet.target=target;pet.release=tick.tick+uint64_t(body->rule.impactTick);
-            pet.nextDecision=tick.tick+uint64_t(body->rule.attackTicks);ports_.monsters.beginAttack(pet.actor,pet.nextDecision,false,target);
-        } else pet.nextDecision=tick.tick+10;
-        pet.random=random;++it;
+            // Commit the AI roll only once; action release is owned by skills,
+            // and its damage samples this head's native source context.
+            const auto previous=body->combatRandom;ports_.monsters.commitCombatRandom(body->id,random);
+            const auto result=ports_.skills.requestCast({pet.actor,uint16_t(pet.attackSkill),UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
+            if(result.status==DomainStatus::Capacity) {ports_.monsters.commitCombatRandom(body->id,previous);blocked=true;++it;continue;}
+            pet.nextDecision=result?body->busyUntil:tick.tick+10;
+        } else {ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+10;}
+        ++it;
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }

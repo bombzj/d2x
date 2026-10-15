@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/population/system.hpp"
@@ -70,7 +72,7 @@ std::optional<Dialogue> System::actOneDialogue(const ActorContext &actor,const N
 }
 DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,bool levelUp,std::optional<QuestId> primaryGoal) {
     const auto *player=ports_.players.find(actor.player); if(!player) return {DomainStatus::InvalidActor,{}};
-    auto triggers=levelUp?ports_.effects.prepareItemEvents(actor,{ItemSkillEvent::LevelUp},{},player->position):DomainResult<effects::ItemEventPlan>{DomainStatus::Applied,effects::ItemEventPlan{}};
+    auto triggers=levelUp?ports_.itemTriggers.prepare(actor,{ItemSkillEvent::LevelUp},{},player->position):DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}};
     if(!triggers) return {triggers.status,{}};
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
     if(levelUp) edit.resources=transactions::ResourceRefresh::LevelUp;
@@ -82,7 +84,7 @@ DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,b
     edit.facts.emplace_back(std::move(questFact));
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value));
-    if(result && levelUp) ports_.effects.commitItemEvents(std::move(*triggers.value));
+    if(result && levelUp) ports_.itemTriggers.commit(std::move(*triggers.value),true);
     return result;
 }
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {

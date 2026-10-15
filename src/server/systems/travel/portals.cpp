@@ -7,6 +7,7 @@
 #include "server/systems/quests/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 namespace d2x::server::travel {
 std::optional<Vec> System::portalPosition(const ActorContext &actor,EntityId id) const {
     for(const auto &[owner,portal]:state_.portals) { (void)owner;
@@ -93,6 +94,16 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
         else {const int first=int(limitedRandom(seed,3));for(int offset=0;offset<3;++offset) if(!exists(133+(first+offset)%3)) {level=133+(first+offset)%3;break;}}
     }
     if(!level || (kind!=SpecialPortalKind::Shrine && exists(level))) return {DomainStatus::Conflict,{}};
+    return prepareWorldPortal(actor.area,level,actor.tick,source.value_or(p->position),*rule,blue,false);
+}
+DomainResult<SpecialPortalPlan> System::prepareNativePermanentPortal(RegionId region,Vec position,int destination,uint64_t tick) {
+    const auto *area=ports_.areas.find(region);
+    if(!area || destination<1 || destination>255) return {DomainStatus::InvalidRequest,{}};
+    if(!area->definition.specialPortalRule || area->definition.specialPortalRule->definition!=60) return {DomainStatus::Unavailable,{}};
+    return prepareWorldPortal(region,destination,tick,position,*area->definition.specialPortalRule,false,true);
+}
+DomainResult<SpecialPortalPlan> System::prepareWorldPortal(RegionId region,int level,uint64_t tick,Vec source,const PortalRule &rule,bool blue,bool exactSource) {
+    const auto *origin=ports_.areas.find(region);if(!origin) return {DomainStatus::Unavailable,{}};
     const auto *destination=ports_.areas.find(RegionId(level));
     if(!destination) {const auto request=ports_.world.request(RegionId(level));return {request?DomainStatus::Capacity:request.status,{}};}
     if(!(blue?destination->definition.portalRule:destination->definition.specialPortalRule)) return {DomainStatus::Unavailable,{}};
@@ -111,11 +122,17 @@ DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext 
     auto arrival=destination->definition.portalArrival;
     if(!arrival && destination->definition.town) arrival=destination->definition.spawn;
     if(!arrival) return {DomainStatus::Unavailable,{}};
-    const auto from=freePoint(*origin,source.value_or(p->position)),to=freePoint(*destination,*arrival);
+    // Permanent native portals use the supplied subtile without a free-cell search.
+    if(exactSource) ports_.world.activate(RegionId(level),*arrival);
+    const auto from=exactSource?std::optional<Vec>{Vec{std::floor(source.x),std::floor(source.y)}}:freePoint(*origin,source);
+    const auto nativeTo=exactSource?ports_.world.nativeLinkPortalPosition(RegionId(level),*arrival):std::optional<world::QuestPosition>{};
+    const auto to=exactSource?(nativeTo?std::optional<Vec>{nativeTo->position}:std::nullopt):freePoint(*destination,*arrival);
+    if(exactSource && (!ports_.areas.roomAtPosition(region,*from,int(from->x+origin->definition.origin.x),int(from->y+origin->definition.origin.y)) ||
+        origin->definition.act!=destination->definition.act)) return {DomainStatus::Unavailable,{}};
     if(!from || !to) return {DomainStatus::Conflict,{}};
     if(!ports_.items.identityCapacity(2)) return {DomainStatus::Capacity,{}};
     SpecialPortalPlan plan{state_.specialPortals};
-    Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},actor.area,RegionId(level),*from,*to,*rule,actor.tick,1,true,true};
+    Portal portal{{},{},ports_.items.reserveIdentity(),ports_.items.reserveIdentity(),{},region,nativeTo?nativeTo->area:RegionId(level),*from,*to,rule,tick,1,true,true};
     plan.next.emplace(portal.fieldId,std::move(portal));return {DomainStatus::Applied,std::move(plan)};
 }
 

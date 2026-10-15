@@ -85,7 +85,7 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
         if(occupied) return false;
         auto identity=child.identity;identity.spawnKey=parent.identity.spawnKey+".skill-child."+std::to_string(parent.nestSpawned);identity.ownerSpawnKey=parent.identity.spawnKey;
         auto rule=child.rule;rule.noExperience=true;
-        const auto admitted=admit({identity,child.implementation,parent.area,point,true,std::move(rule)});
+        const auto admitted=admit({identity,child.implementation,parent.area,point,true,std::move(rule),{},tick});
         if(!admitted) {failure=admitted.status;return false;}
         auto &actor=state_.actors.at(*admitted.value);actor.riseMode=parent.rule.spawnMode;actor.riseUntil=actor.busyUntil=tick+uint64_t(parent.rule.spawnTicks);
         ++parent.nestSpawned;++parent.revision;++born;
@@ -209,7 +209,7 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
         while(!motion.route.empty() && (motion.route.front()-actor.position).length()<.01f) motion.route.pop_front();
         const Vec delta=(motion.route.empty()?motion.destination:motion.route.front())-actor.position;
         const Vec next=actor.position+delta.unit()*std::min(delta.length(),motion.speed*TickContext::seconds);
-        if(tick<motion.until && (motion.leap || ports_.areas.at(actor.area).definition.collision.nativeMovementSegment(actor.position,next,actor.rule.collision))) {actor.position=next;actor.moving=delta.length()>.01f;++actor.revision;}
+        if(tick<motion.until && (motion.leap || ports_.areas.at(actor.area).definition.collision.nativeMovementSegment(actor.position,next,actor.rule.collision))) {actor.position=next;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);actor.moving=delta.length()>.01f;++actor.revision;}
         else motion.until=tick;
         if((motion.destination-actor.position).length()>.01f && tick<motion.until) return true;
     }

@@ -35,10 +35,12 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
         if(target.player && target.aliveIn(actor.area) && (skill==SkillBehavior::Enchant || skill==SkillBehavior::HolyBolt || participants.canHarm(actor.actor,unit.id))) return target.position();
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
-        if((skill==SkillBehavior::RaiseSkeleton || skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion || skill==SkillBehavior::FindPotion || skill==SkillBehavior::FindItem || skill==SkillBehavior::GrimWard) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick) && ((skill!=SkillBehavior::FindPotion && skill!=SkillBehavior::GrimWard) || m->rule.softCorpse)) return m->position;
+        const bool consumes=skill==SkillBehavior::RaiseSkeleton || skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion;
+        if((consumes?ports_.monsters.consumableCorpse(unit.id,actor.area,actor.tick):
+            (skill==SkillBehavior::FindPotion || skill==SkillBehavior::FindItem || skill==SkillBehavior::GrimWard) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick)) &&
+            ((skill!=SkillBehavior::FindPotion && skill!=SkillBehavior::GrimWard) || m->rule.softCorpse)) return m->position;
         const bool enemy=m && combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(actor.actor,m->id);
-        if(m && m->area==actor.area && m->life>0 && (skill==SkillBehavior::HolyBolt ? enemy || bool(m->owner) : skill==SkillBehavior::Enchant ? true : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
-        if(skill==SkillBehavior::Enchant) for(const auto &npc:ports_.areas.at(actor.area).definition.npcs) if(npc.id==unit.id) return npc.position;
+        if(m && m->area==actor.area && m->alive() && (skill==SkillBehavior::HolyBolt ? enemy || bool(m->owner) : skill==SkillBehavior::Enchant ? true : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
     } else if(skill==SkillBehavior::Kick && unit.type==2) {
         const auto found=ports_.objects.read().objects.find(unit.id);
         if(found!=ports_.objects.read().objects.end() && found->second.area==actor.area && found->second.rule.operation==5) return found->second.position;
@@ -70,7 +72,11 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     }
     if(!inside(area.definition.collision,target.position) || std::abs(target.position.x-p.position.x)>50 || std::abs(target.position.y-p.position.y)>50)
         return {DomainStatus::InvalidRequest,{}};
-    if(auto channel=releases_.find(actor.actor);channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno && selected==channel->second.skill.sourceId) {
+    const auto source=selectedSource(p,selected,request.right);
+    if(!source) return {DomainStatus::Unavailable,{}};
+    const NativeSkillSlot selectedUse{selected,source->charged?source->charged->item.id:EntityId{}};
+    if(auto channel=releases_.find(actor.actor);channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno &&
+        selected==channel->second.skill.sourceId && state_.usedSkill(actor.actor)==selectedUse) {
         auto &current=channel->second;
         if((current.target.position-target.position).length()>0 || current.unit!=unit || current.unitType!=type) {
             const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
@@ -82,13 +88,9 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     }
     if(busy(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     if(definition.spec.delayFrames>0) {
-        const auto cast=state_.casts.find(actor.actor);if(cast!=state_.casts.end() && cast->second.cooldownUntil>actor.tick) return {DomainStatus::Conflict,{}};
+        if(state_.coolingDown(actor.actor,actor.tick)) return {DomainStatus::Conflict,{}};
     }
-    const auto rank=p.totals.skillRanks.find(selected);
-    const auto owner=p.persistent.player.selectedSkillOwners.at(p.persistent.player.weaponSet*2+(request.right?1:0));
-    const auto charged=std::find_if(p.totals.chargedSkills.begin(),p.totals.chargedSkills.end(),[&](const auto &c){return c.item.id.value==owner && c.skill==selected && c.charges>0;});
-    if(owner!=UINT32_MAX && charged==p.totals.chargedSkills.end()) return {DomainStatus::Unavailable,{}};
-    const int effectiveRank=owner!=UINT32_MAX?charged->rank:p.rules.character->innateSkills.contains(selected)?1:(rank==p.totals.skillRanks.end()?0:rank->second);
+    const int effectiveRank=source->rank;
     if(effectiveRank<=0 || effectiveRank>255) return {DomainStatus::InvalidRequest,{}};
     // ObjMode calls PLAYERMODE_Change directly, including barrels in town;
     // it does not apply player-selected spell town eligibility to hidden KK.
@@ -117,7 +119,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(skill.requiresShield && !p.totals.equipment.shield) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::FistOfTheHeavens && !unit) return {DomainStatus::InvalidRequest,{}};
     if (activationProgram(skill) == ActivationProgram::Unsupported) return {DomainStatus::NotImplemented,{}};
-    if(owner!=UINT32_MAX) {skill.charge=SkillCharge{charged->item,charged->layer};skill.manaCost=skill.startMana=0;}
+    if(source->charged) {skill.charge=SkillCharge{source->charged->item,source->charged->layer};skill.manaCost=skill.startMana=0;}
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::Teleport && (!area.definition.teleportAllowed || !area.definition.collision.walkable(target.position,playerMovement))) return {DomainStatus::Unavailable,{}};
@@ -158,64 +160,37 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         release.weapon=*weapon;release.weaponSpeed=effectiveAttackSpeed(256,weapon->fasterAttack,weapon->baseSpeed,p.totals.character.combat.attackRate-30);
     }
     const auto previous=state_.casts.find(actor.actor);const auto saved=previous==state_.casts.end()?std::optional<Cast>{}:previous->second;
-    releases_.emplace(actor.actor,std::move(release));
-    auto rollback=[&] {releases_.erase(actor.actor);if(saved) state_.casts.at(actor.actor)=*saved;else state_.casts.erase(actor.actor);};
-    try {
-        state_.casts[actor.actor]={actor.actor,uint16_t(selected),actor.tick,actor.sequence,actor.tick+uint64_t(timing.duration),actor.area,unit};
-        if(saved) state_.casts.at(actor.actor).cooldownUntil=saved->cooldownUntil;
-        if(inferno) {
-            const auto &castSkill=releases_.at(actor.actor).skill;
-            const auto debit=ports_.transactions.release(actor,p.characterRevision,castSkill.manaCost,{},castSkill.charge);
-            if(!debit) {rollback();return debit;}if(releases_.at(actor.actor).skill.charge) releases_.at(actor.actor).skill.charge->item=p.persistent.inventory.items.at(castSkill.charge->item.id).handle();releases_.at(actor.actor).manaPaid=true;
+    auto preparedUse=state_.prepareUsedSkill(actor.actor,selectedUse);
+    auto cast=Cast{actor.actor,uint16_t(selected),actor.tick,actor.sequence,actor.tick+uint64_t(timing.duration),actor.area,unit};
+    cast.usesSkillPointer=true;
+    if(saved) cast.cooldownUntil=saved->cooldownUntil;
+    std::map<EntityId,Release> preparedRelease;preparedRelease.emplace(actor.actor,std::move(release));
+    std::map<EntityId,Cast> preparedCast;preparedCast.emplace(actor.actor,cast);
+    auto &staged=preparedRelease.at(actor.actor);
+    const auto action=AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,
+        uint16_t(selected),uint8_t(effectiveRank),bool(staged.skill.leap)};
+    if(inferno) {
+        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action});
+        if(!debit) return debit;
+        if(staged.skill.charge) {
+            staged.skill.charge->item=p.persistent.inventory.items.at(staged.skill.charge->item.id).handle();
+            // Only the charged path recomputed attributes in this transaction.
+            // Resource-only release must not replay an older removal ledger.
+            removeSkillUse(preparedUse.mapped(),p.totals.clearedSkillUses);
         }
-        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},
-            {AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,uint16_t(selected),uint8_t(effectiveRank),bool(releases_.at(actor.actor).skill.leap)}}});
-        if(!output) {rollback();return {output.status,{}};}
-    } catch(...) {rollback();throw;}
+        staged.manaPaid=true;
+    } else {
+        const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{action}});
+        if(!output) return {output.status,{}};
+    }
+    if(releases_.contains(actor.actor)) ports_.companions.cancel(actor.actor);
+    releases_.erase(actor.actor);releases_.merge(preparedRelease);
+    state_.casts.erase(actor.actor);state_.casts.merge(preparedCast);
+    state_.commitUsedSkill(std::move(preparedUse));
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
 System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) {
-    switch (skill.effect) {
-    case SkillBehavior::ItemSkill: return ActivationProgram::Item;
-    case SkillBehavior::Unsummon: return ActivationProgram::Unsummon;
-    case SkillBehavior::Kick: return ActivationProgram::Kick;
-    default: break;
-    }
-    if (skill.summon || (skill.bone && skill.bone->barrier)) return ActivationProgram::AmazonSummon;
-    if (skill.amazonMagic) return ActivationProgram::AmazonMagic;
-    switch (skill.effect) {
-    case SkillBehavior::Teleport: return ActivationProgram::Teleport;
-    case SkillBehavior::Leap: return ActivationProgram::Leap;
-    case SkillBehavior::Hydra: return ActivationProgram::Hydra;
-    default: break;
-    }
-    if (skill.warcry) return ActivationProgram::Warcry;
-    if (skill.grimWard) return ActivationProgram::GrimWard;
-    if (skill.appliedEffect) return ActivationProgram::Effect;
-    if ((skill.effect == SkillBehavior::Howl || skill.effect == SkillBehavior::BattleCry)) return ActivationProgram::Missile;
-    if (skill.curse) return ActivationProgram::Curse;
-    if (skill.bone && skill.bone->corpse) return ActivationProgram::Corpse;
-    if (skill.corpseSearch) return ActivationProgram::CorpseSearch;
-    switch (skill.effect) {
-    case SkillBehavior::StaticField: return ActivationProgram::StaticField;
-    case SkillBehavior::Telekinesis: return ActivationProgram::Telekinesis;
-    case SkillBehavior::WeaponProjectile:
-    case SkillBehavior::HolyBolt:
-    case SkillBehavior::BlessedHammer: case SkillBehavior::FistOfTheHeavens:
-    case SkillBehavior::FireBolt: case SkillBehavior::Fireball:
-    case SkillBehavior::Teeth:
-    case SkillBehavior::BoneSpear: case SkillBehavior::BoneSpirit:
-    case SkillBehavior::IceBolt: case SkillBehavior::IceBlast:
-    case SkillBehavior::Inferno: case SkillBehavior::ChillingArmor:
-    case SkillBehavior::ChargedBolt: case SkillBehavior::FrostNova:
-    case SkillBehavior::Nova: case SkillBehavior::PoisonNova: case SkillBehavior::GlacialSpike:
-    case SkillBehavior::WarCry:
-    case SkillBehavior::FrozenOrb: case SkillBehavior::Blizzard:
-    case SkillBehavior::Lightning: case SkillBehavior::ChainLightning:
-    case SkillBehavior::FireWall: case SkillBehavior::Blaze:
-    case SkillBehavior::Meteor: return ActivationProgram::Missile;
-    default: return ActivationProgram::Unsupported;
-    }
+    return skillActivationProgram(skill);
 }
 DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec target) {
     using Handler = DomainStatus (System::*)(Release &, const ActorContext &, Vec);
@@ -267,8 +242,11 @@ StepStatus System::release(TickContext tick) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
         bool valid=p && p->entered && p->actor==actor.actor && p->area==actor.area && p->persistent.player.hp>0 && area && area->generation==actor.areaGeneration;
+        const auto used=state_.usedSkill(actor.actor);
+        if(valid) valid=used && used->skill==pending.skill.sourceId &&
+            nativeSkillSlotLevel(*used,p->totals.skillOrder,p->totals.skillRanks,p->totals.chargedSkills,
+                p->rules.character->formulas->maximumSkillRank)>0;
         if(valid && pending.skill.charge) valid=std::any_of(p->totals.chargedSkills.begin(),p->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==pending.skill.charge->item.id && c.layer==pending.skill.charge->layer && c.charges>0;});
-        if(valid && !pending.skill.charge && pending.skill.sourceId>=0 && !p->rules.character->innateSkills.contains(pending.skill.sourceId)) valid=p->totals.skillRanks.contains(pending.skill.sourceId);
         Vec target=pending.target.position;
         if(valid && pending.skill.requiresShield) valid=bool(p->totals.equipment.shield);
         if(valid && pending.unit && !pending.whirlwind && !pending.skill.leap && !(pending.skill.weapon && (pending.skill.weapon->dualWield || pending.skill.effect==SkillBehavior::Zeal || (pending.skill.weapon->bow && pending.skill.weapon->bow->strafe) || (pending.skill.weapon->spear && pending.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fend)))) {

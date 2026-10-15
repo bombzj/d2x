@@ -1,5 +1,6 @@
 #include "world/native_path_step.hpp"
 #include "world/navigation.hpp"
+#include "gameplay/units/direction.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -39,17 +40,10 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
     // D2MOO Step::PATH_GetDirectionVector and PathMisc::D2Common_10226
     // (MIT, docs/licenses/D2MOO.txt): recompute from precise coordinates on
     // each 25Hz game frame, never from a floating rendering-frame displacement.
-    // Derive the 128 tangent directions instead of importing its lookup table.
-    const auto absoluteX = std::abs(deltaX), absoluteY = std::abs(deltaY);
-    const auto major = std::max(absoluteX, absoluteY), minor = std::min(absoluteX, absoluteY);
-    const int tangent = int(127 * minor / major);
-    const double length = std::sqrt(double(127 * 127 + tangent * tangent));
-    const int majorDirection = int(4096. * 127 / length), minorDirection = int(4096. * tangent / length);
-    const int directionX = (absoluteX > absoluteY ? majorDirection : minorDirection) * (deltaX < 0 ? -1 : 1);
-    const int directionY = (absoluteX > absoluteY ? minorDirection : majorDirection) * (deltaY < 0 ? -1 : 1);
+    const auto direction=nativeDirectionVector(deltaX,deltaY);
     const int64_t magnitude = int64_t(double(distance) * precisionScale);
-    int64_t velocityX = (magnitude * directionX) >> 12;
-    int64_t velocityY = (magnitude * directionY) >> 12;
+    int64_t velocityX = (magnitude * direction.x) >> 12;
+    int64_t velocityY = (magnitude * direction.y) >> 12;
     if (!velocityX && !velocityY) return result;
     // Step::sub_6FDACEC0 clamps both axes to the precise next point together.
     const auto maximum = std::max(std::abs(velocityX), std::abs(velocityY));

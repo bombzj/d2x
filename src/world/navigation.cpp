@@ -1,4 +1,5 @@
 #include "navigation.hpp"
+#include "native_spawn.hpp"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -130,7 +131,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
             const size_t index = size_t(row) * grid.width + column;
             const auto terrain = grid.fullTerrainCollision.empty() ? grid.terrainCollision[index] : grid.fullTerrainCollision[index];
             if (terrain == 0xffff) continue; // No materialized collision room here.
-            return terrain | grid.objectMask(column, row, ignored) |
+            return terrain | grid.objectMask(column, row, ignored) | (grid.missileCollision.empty()?0:grid.missileCollision[index]) |
                 (grid.blocked[index] && !(grid.terrainCollision[index] & 0x09) ? 0x01 : 0);
         }
         return 0xffff;
@@ -139,7 +140,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
     if (x >= 0 && y >= 0 && x < width && y < height) {
         const size_t index = size_t(y) * width + x;
         const auto terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
-        if (terrain != 0xffff) return terrain | objectMask(x, y, ignored) |
+        if (terrain != 0xffff) return terrain | objectMask(x, y, ignored) | (missileCollision.empty()?0:missileCollision[index]) |
             (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
     }
     for (const auto &neighbour : neighbours) {
@@ -154,7 +155,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
             const size_t index = size_t(ny) * other.width + nx;
             const uint16_t terrain = other.fullTerrainCollision.empty()
                 ? other.terrainCollision[index] : other.fullTerrainCollision[index];
-            return terrain | other.objectMask(nx, ny, ignored) |
+            return terrain | other.objectMask(nx, ny, ignored) | (other.missileCollision.empty()?0:other.missileCollision[index]) |
                 (other.blocked[index] && !(other.terrainCollision[index] & 0x09) ? 0x01 : 0);
         }
     }
@@ -162,7 +163,7 @@ uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
     const size_t index = size_t(y) * width + x;
     // Coarse outdoor planning grids have blocked cells without DT1 flags.
     const uint16_t terrain = fullTerrainCollision.empty() ? terrainCollision[index] : fullTerrainCollision[index];
-    return terrain | objectMask(x, y, ignored) |
+    return terrain | objectMask(x, y, ignored) | (missileCollision.empty()?0:missileCollision[index]) |
         (blocked[index] && !(terrainCollision[index] & 0x09) ? 0x01 : 0);
 }
 Grid Grid::linkedNavigation(Vec &origin) const {
@@ -199,10 +200,13 @@ bool Grid::navigationContains(Vec point) const {
         view.movementMask(int(std::floor(point.x)), int(std::floor(point.y))) != 0xffff;
 }
 uint64_t Grid::navigationRevision() const {
-    if (neighbours.empty()) return obstacleRevision;
+    if (neighbours.empty()) return obstacleRevision*0x100000001b3ULL+missileCollisionRevision;
     Vec origin; const auto view = linkedNavigation(origin);
     uint64_t revision = view.navigationSources.size();
-    for (const auto &source : view.navigationSources) revision = revision * 0x100000001b3ULL + source.grid->obstacleRevision;
+    for (const auto &source : view.navigationSources) {
+        revision = revision * 0x100000001b3ULL + source.grid->obstacleRevision;
+        revision = revision * 0x100000001b3ULL + source.grid->missileCollisionRevision;
+    }
     return revision;
 }
 bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId ignored) const {
@@ -509,28 +513,8 @@ Vec Grid::nearest(Vec p, MovementCollisionRule rule) const {
 std::optional<Vec> Grid::nativeSpawn(Vec p, int maxDistance, MovementCollisionRule rule) const {
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.y < 0 ||
         p.x >= width || p.y >= height || maxDistance <= 0) return {};
-    const int px = int(p.x), py = int(p.y);
-    if (walkable(px, py, rule)) return Vec{float(px), float(py)};
-    for (int radius = 1; radius < maxDistance; ++radius) {
-        std::optional<Vec> result;
-        int distance = std::numeric_limits<int>::max();
-        const auto consider = [&](int x, int y) {
-            const int candidate = std::abs(x - px) + std::abs(y - py);
-            if (candidate < distance && walkable(x, y, rule)) {
-                distance = candidate; result = Vec{float(x), float(y)};
-            }
-        };
-        // Native ties retain the first candidate: left/right sides from top
-        // to bottom, then top/bottom interiors from left to right.
-        for (int y = py - radius; y <= py + radius; ++y) {
-            consider(px - radius, y); consider(px + radius, y);
-        }
-        for (int x = px - radius + 1; x < px + radius; ++x) {
-            consider(x, py - radius); consider(x, py + radius);
-        }
-        if (result) return result;
-    }
-    return {};
+    const auto result=nativeSpawnCoordinate(int(p.x),int(p.y),maxDistance,[&](int x,int y){return walkable(x,y,rule);});
+    return result?std::optional<Vec>{Vec{float(result->first),float(result->second)}}:std::nullopt;
 }
 Vec Grid::inspectionArrival() const {
     Bytes visited(blocked.size());

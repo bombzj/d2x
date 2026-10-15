@@ -23,7 +23,7 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
             auto unit=group->second[size_t(object.spawned)];unit.identity.spawnKey=key+(object.spawned?".minion."+std::to_string(object.spawned):"");if(object.spawned) unit.identity.ownerSpawnKey=key;
             const auto at=area.definition.collision.nativeSpawn(object.position+Vec{float(object.spawned%3-1),float(object.spawned/3)},8,unit.rule.spawnCollision);
             if(!at) {++object.spawned;continue;}
-            const auto result=ports_.monsters.admit({unit.identity,unit.implementation,object.area,*at,true,unit.rule});if(!result) return {result.status,{}};++object.spawned;
+            const auto result=ports_.monsters.admit({unit.identity,unit.implementation,object.area,*at,true,unit.rule,{},tick.tick});if(!result) return {result.status,{}};++object.spawned;
         }
         return {DomainStatus::Applied,std::monostate{}};
     }
@@ -51,7 +51,7 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
         if(object.trap==11 && prepared.rule.shrineUpgrade) {prepared.identity.rank=MonsterRank::Unique;prepared.rule=*prepared.rule.shrineUpgrade;}
         const auto position=area.definition.collision.nativeSpawn(object.position,8,prepared.rule.spawnCollision);
         if(!position) return {DomainStatus::Applied,std::monostate{}};
-        const auto result=ports_.monsters.admit({prepared.identity,prepared.implementation,object.area,*position,true,prepared.rule});
+        const auto result=ports_.monsters.admit({prepared.identity,prepared.implementation,object.area,*position,true,prepared.rule,{},tick.tick});
         if(!result) return {result.status,{}};
         ++object.spawned;
     }
@@ -84,7 +84,7 @@ StepStatus System::trapStep(TickContext tick) {
             const float candidate=meleeDistance(monster.position,rule.size,p.position,2);
             if(candidate<distance) {distance=candidate;target=&p;}
         }
-        if(!target || monster.frozenUntil>tick.tick || monster.stunnedUntil>tick.tick || monster.knockedUntil>tick.tick) continue;
+        if(!target || ports_.monsters.frozen(monster.id,tick.tick) || monster.stunnedUntil>tick.tick || monster.knockedUntil>tick.tick) continue;
         if(clock.release) {
             if(tick.tick<clock.release) continue;
             const auto &attack=rule.attacks.at(clock.mode);

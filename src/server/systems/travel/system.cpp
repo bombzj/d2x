@@ -58,6 +58,7 @@ DomainResult<> System::walked(const ActorContext &actor) {
     auto &moving = ports_.players.players_.at(actor.player);
     moving.area = destination->definition.id;
     moving.position = moving.pathStep.translate(moving.position + center, offset) - center;
+    ports_.areas.moveRoomUnit(moving.actor,moving.area,moving.position);
     for (auto &point : moving.route) point = point + offset;
     moving.routeDestination = moving.routeDestination + offset;
     if (moving.movementArrival) {
@@ -93,7 +94,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     mutablePlayer.routeDestination=found->arrival;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, float manaCost,std::optional<SkillCharge> charge) {
+DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, Fixed8 manaCost,std::optional<SkillCharge> charge) {
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
     if (target.area == actor.area) ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
@@ -241,7 +242,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         } else if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
         if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
-        player.area = transition.to; player.position = arrival; player.route = std::move(route);
+        player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
         player.pathStep.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();
@@ -263,7 +264,7 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{TravelFact{actor.player,actor.actor,p->area,target,area->generation,at,false}}});
     if(!sent) return {sent.status,{}};
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);cancel(actor.player);
-    auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;player.area=target;player.position=at;
+    auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;player.area=target;player.position=at;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
     return {DomainStatus::Applied,std::monostate{}};
 }
 }

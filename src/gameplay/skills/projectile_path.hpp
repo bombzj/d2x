@@ -24,18 +24,20 @@ template<class Number> std::optional<MissileVelocityStep<Number>> advanceMissile
 }
 bool missileChangedCell(Vec previous, Vec next);
 std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames);
+std::vector<Vec> chargedBoltPath(Vec origin,Vec target,int distance,uint64_t &random);
+std::vector<Vec> missileChargedBurstDirections(int count);
 // D2Common PathMisc::PATH_ComputePathBlessedHammer (77 distinct native cells).
 std::vector<Vec> blessedHammerPath(Vec origin);
 // Original 64-direction missile ring; shared by local authority and client effects.
 Vec missileRingDirection(int index);
 struct MissileRingEmission { Vec direction; int nextIndex{}; };
-// SrvDo15 / CltDo19 use remaining frames, with separate table parameters.
-bool missileEmissionDue(int remaining, int period);
-// SrvDo07 / retail CltDo07: periodic repath only inside (3,25).
-std::optional<Vec> missileGuidedDirection(Vec position,Vec target,int remaining,int period);
-std::optional<MissileRingEmission> missileRingEmission(int remaining, int period, int index, int step);
-// SrvDo16 / CltDo20 only rotate inside the remaining-frame window.
-std::optional<Vec> missileOrbTurn(Vec target, int remaining, int window, int period);
+// SrvDo15 / CltDo19 use native TotalFrames-CurrentFrame, including zero.
+bool missileEmissionDue(int frame, int period);
+// Periodic repath inside (3,25); SrvDo07 passes CurrentFrame, CltDo07 the difference.
+std::optional<Vec> missileGuidedDirection(Vec position,Vec target,int frame,int period);
+std::optional<MissileRingEmission> missileRingEmission(int elapsed, int period, int index, int step);
+// SrvDo16 / CltDo20 rotate inside the native elapsed-frame window.
+std::optional<Vec> missileOrbTurn(Vec target, int elapsed, int window, int period);
 std::vector<Vec> missileRingBurst(int step);
 Vec missileDiagonalTurn(Vec target);
 // Native Fire Wall places makers perpendicular to the integer caster/aim ray.
@@ -45,5 +47,5 @@ std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing
 uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible);
 // Blizzard uses independent client/server random streams but the same seeded
 // integer placement. Client offsets reverse the server's signed convention.
-Vec blizzardOffset(uint32_t globalX, int remaining, int radius, bool client);
+Vec blizzardOffset(uint32_t globalX,int elapsed,int radius,bool client,uint64_t &random);
 } // namespace d2x

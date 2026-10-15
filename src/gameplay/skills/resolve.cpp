@@ -8,8 +8,11 @@
 #include "leap_spec.hpp"
 #include "grim_ward_spec.hpp"
 #include "damage_curve.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "rank_bonus.hpp"
 #include "resolve.hpp"
+#include "formula_parameters.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "curse_resolve.hpp"
 #include "projectile_path.hpp"
 #include <algorithm>
@@ -27,6 +30,11 @@ float missileSpeed(int base, int perLevel, int rank) {
 }
 SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput &input) {
     const int rank = input.rank;
+    const auto calculation=[&](std::string_view field) {
+        const auto value=input.nativeFormulas->calculation(FormulaDomain::Skill,spec.sourceId,rank,field);
+        if(!value) throw std::runtime_error("Unsupported native skill calculation: "+std::to_string(spec.sourceId)+"."+std::string(field));
+        return *value;
+    };
     const auto &learned = input.synergyRanks;
     const int fireMasteryPercent = input.fireMasteryPercent;
     const int lightningMasteryPercent = input.lightningMasteryPercent;
@@ -60,6 +68,13 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         program->frames += (rank - 1) * program->framesPerLevel;
         program->defenseReduction += int(skillLevelBonus(rank, program->defensePerLevel));
         program->slowPercent += (rank - 1) * program->slowPerLevel;
+        if(input.nativeFormulas) {
+            program->radius=calculation("aurarangecalc");program->frames=calculation("auralencalc");
+            const auto key=input.nativeFormulas->auraStatKey(spec.sourceId,1);
+            if(!key) throw std::runtime_error("Missing native Amazon aura stat");
+            program->nativeStat=StatValue{*key,calculation("aurastatcalc1")};program->stat=key->id;
+            if(program->radius<0) throw std::runtime_error("Negative native Amazon aura radius is not prepared");
+        }
         result.amazonMagic = std::move(program);
     }
     if (spec.bone) {
@@ -68,6 +83,14 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         program->lifePercent += (rank - 1) * program->lifePerLevel;
         for (const auto &[id, percent] : program->lifeSynergies)
             if (auto found = learned.find(id); found != learned.end()) program->lifePercent += found->second * percent;
+        if(program->barrier && input.nativeFormulas) {
+            auto native=std::make_shared<NativeSummonStats>();native->skill=spec.sourceId;native->rank=rank;native->setBaseStats=false;
+            native->lifePercent=calculation("calc1");native->passiveAdds=input.nativeFormulas->passiveBuffStats(spec.sourceId,rank,false);
+            native->auraWrites=input.nativeFormulas->auraStats(spec.sourceId,rank,6,true,false);
+            native->inheritedSkills=input.nativeFormulas->summonSkills(spec.sourceId,rank);
+            program->lifePercent=native->lifePercent;program->barrierNative=std::move(native);
+            if(!program->prison) program->sideCount=calculation("calc2")/2;
+        }
         result.bone = std::move(program);
     }
     result.sourceId = spec.sourceId;result.hitClass=spec.hitClass;
@@ -75,7 +98,23 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.castMissileId = spec.castMissileId;
     result.castMissileDuration = spec.castMissileDuration;
     result.requiresShield = spec.requiresShield;
-    if (spec.curse) result.curse = evaluateCurse(*spec.curse, rank);
+    if (spec.curse) {
+        result.curse=evaluateCurse(*spec.curse,rank);
+        if(input.nativeFormulas) {
+            auto &curse=*result.curse;curse.nativeValues.emplace();
+            for(const auto binding:input.nativeFormulas->unitEvents(spec.sourceId)) if(binding.event>=0 && binding.function>0) curse.unitEvents.push_back(binding);
+            if(curse.targetProcedure==CurseSpec::TargetProcedure::Necromancer)
+                curse.primaryStat=input.nativeFormulas->auraStatKey(spec.sourceId,1);
+            curse.nativeWrites=input.nativeFormulas->auraStats(spec.sourceId,rank,6,false,true);
+            for(const auto &stat:curse.nativeWrites) curse.nativeValues->insert_or_assign(stat.key,stat.value);
+            curse.modifiers=nativeCharacterModifiers(StatSnapshot{*curse.nativeValues},input.nativeFormulas->statRules(),curse.modifiers);
+            curse.radius=calculation("aurarangecalc");curse.frames=calculation("auralencalc");
+            if(spec.curse->reflectPercent || spec.curse->reflectPerLevel) curse.modifiers.combat.ironMaidenPercent=calculation("calc1");
+            if(spec.curse->lifeTapPercent || spec.curse->lifeTapPerLevel) curse.modifiers.combat.lifeTapPercent=calculation("calc1");
+            if(curse.radius<0) throw std::runtime_error("Negative native curse range is not prepared");
+            curse.permanent=curse.permanent || !curse.frames;
+        }
+    }
     result.concentrationState = spec.concentrationState;
     result.concentrationFactor = spec.concentrationFactor;
     result.heaven = spec.heaven;
@@ -83,9 +122,9 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         auto &heaven = *result.heaven;
         heaven.limit += (rank - 1) * heaven.limitPerLevel;
         const auto synergy = learned.find(heaven.synergySkill);
-        const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * heaven.synergyPercent;
-        heaven.minimum = int((int64_t(heaven.minimum) + skillLevelBonus(rank, heaven.minimumPerLevel)) * 256 * percent / 100);
-        heaven.maximum = int((int64_t(heaven.maximum) + skillLevelBonus(rank, heaven.maximumPerLevel)) * 256 * percent / 100);
+        const auto percent=nativeAdd(100,nativeMultiply(synergy==learned.end()?0:synergy->second,heaven.synergyPercent));
+        heaven.minimum = evaluateMissileDamageFixed({heaven.minimum,heaven.minimumPerLevel},rank,heaven.damageShift,percent);
+        heaven.maximum = evaluateMissileDamageFixed({heaven.maximum,heaven.maximumPerLevel},rank,heaven.damageShift,percent);
         heaven.healingMinimum += (rank - 1) * heaven.healingMinimumPerLevel;
         heaven.healingMaximum += (rank - 1) * heaven.healingMaximumPerLevel;
     }
@@ -106,22 +145,38 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     if (spec.effect == SkillBehavior::HolyBolt) {
         const auto synergy = learned.find(spec.healingSynergySkill);
         const int percent = 100 + (synergy == learned.end() ? 0 : synergy->second) * spec.healingSynergyPercent;
-        result.healingMinimum = float((spec.healingParameters[0] + (rank - 1) * spec.healingParameters[1]) * percent / 100);
-        result.healingMaximum = float((spec.healingParameters[2] + (rank - 1) * spec.healingParameters[3]) * percent / 100);
+        result.healingMinimum = Fixed8(nativeMultiplyDivide(skillRankBonus({spec.healingParameters[0],spec.healingParameters[1]},rank),percent,100));
+        result.healingMaximum = Fixed8(nativeMultiplyDivide(skillRankBonus({spec.healingParameters[2],spec.healingParameters[3]},rank),percent,100));
+        if(input.nativeFormulas) {
+            result.healingMinimum=Fixed8(calculation("calc1"));
+            result.healingMaximum=Fixed8(calculation("calc2"));
+        }
     }
     result.delayFrames = spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
     result.telekinesisKnockbackChance = spec.telekinesisKnockbackChance;
     if (spec.hydraDuration) {
-        result.hydraFrames = skillRankBonus(*spec.hydraDuration,rank);
+        result.hydraFrames=nativeAdd(spec.hydraDuration->first,nativeMultiply(rank-1,spec.hydraDuration->second));
         result.hydraLimit = spec.hydraLimit;
+        if(input.nativeFormulas) {
+            SummonCastSpec summon;summon.corpse=false;
+            auto &native=summon.native.emplace();native.skill=spec.sourceId;native.rank=rank;native.setBaseStats=false;native.allowZeroLife=true;
+            native.lifePercent=calculation("calc1");native.passiveAdds=input.nativeFormulas->passiveBuffStats(spec.sourceId,rank,false);
+            native.auraWrites=input.nativeFormulas->auraStats(spec.sourceId,rank,6,true,false);
+            native.inheritedSkills=input.nativeFormulas->summonSkills(spec.sourceId,rank);native.prePassiveSkills.emplace_back(spec.sourceId,rank);
+            summon.limit=result.hydraLimit=calculation("petmax");result.summon=std::move(summon);
+        }
     }
     if (spec.effect == SkillBehavior::ThunderStorm) {
         const auto &parameters = spec.stormParameters;
         const int diminished = skillDiminishingBonus({parameters[2],parameters[3]},rank);
-        result.stormPeriod = std::max(5, (100 - diminished) * parameters[1] / 100 + parameters[0]);
+        result.stormPeriod = std::max(5,nativeAdd(nativeMultiplyDivide(nativeSubtract(100,diminished),parameters[1],100),parameters[0]));
         result.stormRadius = parameters[4];
+        if(input.nativeFormulas) {
+            result.stormPeriod=std::max(5,calculation("perdelay"));
+            result.stormRadius=input.nativeFormulas->skillNumber(spec.sourceId,"param7");
+        }
     }
     if (spec.linearDuration) {
         const auto [base, perLevel] = *spec.linearDuration;
@@ -136,6 +191,10 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         result.shieldPercent = std::min(spec.shieldMaximum, spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel)));
         const auto synergy = learned.find(spec.shieldSynergySkill);
         result.shieldManaFactor = std::max(1, spec.shieldManaFactor - (synergy == learned.end() ? 0 : synergy->second));
+        if(input.nativeFormulas) {
+            result.shieldPercent=calculation("calc1");
+            result.shieldManaFactor=std::max(1,calculation("calc2"));
+        }
     }
     if (spec.diminishingDuration) {
         const auto [minimum, maximum] = *spec.diminishingDuration;
@@ -203,6 +262,9 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             skillRankSum(spec.armorSynergySkills,learned)*spec.armorParameters[7];
         command.duration=uint64_t(frames);command.modifiers.combat.allSkills=1;result.appliedEffect=std::move(command);
     }
+    if(spec.effect==SkillBehavior::NativeDefensiveBuff) {
+        CombatEffectSpec effect;effect.state=spec.state;result.appliedEffect=std::move(effect);
+    }
     if (spec.effect == SkillBehavior::BoneArmor) {
         const auto synergy = skillRankSum(spec.armorSynergySkills, learned);
         CombatEffectSpec armor;
@@ -213,20 +275,35 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
              synergy * spec.armorParameters[7]) * 256;
         result.appliedEffect = std::move(armor);
     }
-    const int64_t scaledMana = std::max<int64_t>(0,skillManaCostFixed(spec.mana,spec.manaPerLevel,spec.manaShift,rank));
+    auto mana=nativeChecked(skillManaCostFixed(spec.mana,spec.manaPerLevel,spec.manaShift,rank));
+    if(input.nativeFormulas) {
+        const auto value=input.nativeFormulas->parameter(FormulaDomain::Skill,spec.sourceId,rank,"usmc");
+        if(!value) throw std::runtime_error("Unsupported native skill mana calculation");
+        mana=*value;
+    }
+    const int64_t scaledMana = std::max<int64_t>(0,mana);
     const int64_t fixedMana = std::max<int64_t>(int64_t(spec.minimumMana) * 256, scaledMana);
-    result.manaCost = float(fixedMana) / 256.f;
-    result.startMana = float(spec.startMana);
+    result.manaCost = Fixed8::fromRaw(nativeChecked(fixedMana));
+    result.startMana = Fixed8(spec.startMana);
     const auto synergy = skillRankSum(spec.synergySkills, learned);
     const auto weightedBonus = skillSynergyBonus(spec.weightedSynergies, learned);
-    const int64_t bonus = std::max<int64_t>(0, 100 + synergy * spec.synergyPercent + weightedBonus);
+    const auto preparedBonus=nativeAdd(nativeAdd(100,nativeMultiply(nativeChecked(synergy),spec.synergyPercent)),nativeChecked(weightedBonus));
     const int damageMastery = spec.fireDamage ? fireMasteryPercent :
         spec.lightningDamage ? lightningMasteryPercent : spec.coldDamage ? coldDamagePercent : spec.poisonDamage ? input.poisonDamagePercent : 0;
     // D2Common separates elemental minimum/maximum evaluation; physical curves retain their own rule.
-    const auto minimum = spec.fireDamage || spec.lightningDamage || spec.coldDamage || spec.poisonDamage
-        ? evaluateSkillMinimumDamage : evaluateSkillDamage;
-    result.minimumDamage = minimum({spec.minimumDamage, spec.minimumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
-    result.maximumDamage = evaluateSkillDamage({spec.maximumDamage, spec.maximumPerLevel}, rank, spec.hitShift, bonus, damageMastery);
+    const bool elemental = !spec.physicalDamageCurve;
+    const auto bonus=[&](bool minimum) {
+        if(!input.nativeFormulas) return preparedBonus;
+        if(elemental && minimum && !spec.minimumPerLevel[0] &&
+            evaluateSkillDamageFixed({spec.minimumDamage,spec.minimumPerLevel},rank,spec.hitShift)<=256) return int32_t{100};
+        return nativeAdd(100,calculation(elemental?"edmgsympercalc":"dmgsympercalc"));
+    };
+    result.minimumDamage = Fixed8::fromRaw(elemental
+        ? evaluateSkillMinimumDamageFixed({spec.minimumDamage,spec.minimumPerLevel},rank,spec.hitShift,bonus(true),damageMastery)
+        : evaluatePhysicalSkillDamageFixed({spec.minimumDamage,spec.minimumPerLevel},rank,spec.hitShift,bonus(true)));
+    result.maximumDamage = Fixed8::fromRaw(elemental
+        ? evaluateSkillDamageFixed({spec.maximumDamage,spec.maximumPerLevel},rank,spec.hitShift,bonus(false),damageMastery)
+        : evaluatePhysicalSkillDamageFixed({spec.maximumDamage,spec.maximumPerLevel},rank,spec.hitShift,bonus(false)));
     result.arc = spec.arc;
     if (result.arc && spec.effect == SkillBehavior::ChainLightning)
         result.arc->count = std::max(1, skillRankBonus({spec.arc->count,spec.arc->countPerLevel},rank) / 5);
@@ -253,11 +330,15 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         modifiers.attackRatingPercent = spec.enchantAttackRating + (rank - 1) * spec.enchantAttackRatingPerLevel;
     }
     const auto coldSynergy=learned.find(spec.coldSynergySkill);
-    const int64_t coldFrames=skillElementalLength(spec.coldFrames,spec.coldFramesPerLevel,rank,
-        coldSynergy==learned.end()?0:int64_t(coldSynergy->second)*spec.coldSynergyPercent);
+    const auto lengthBonus=input.nativeFormulas?calculation("elensympercalc"):
+        coldSynergy==learned.end()?0:nativeMultiply(coldSynergy->second,spec.coldSynergyPercent);
+    const int64_t coldFrames=skillElementalLength(spec.coldFrames,spec.coldFramesPerLevel,rank,lengthBonus);
     result.coldDuration = float(coldFrames) / 25.f;
-    const int64_t poisonFrames = skillElementalLength(spec.poisonFrames,spec.poisonFramesPerLevel,rank);
+    result.coldDurationFrames=nativeChecked(coldFrames);
+    const int64_t poisonFrames = skillElementalLength(spec.poisonFrames,spec.poisonFramesPerLevel,rank,
+        spec.poisonDamage?lengthBonus:0);
     result.poisonDuration = float(poisonFrames) / 25.f;
+    result.poisonDurationFrames=nativeChecked(poisonFrames);
     result.weapon = spec.weapon;
     if (result.weapon) {
         result.delayFrames=std::max(result.delayFrames,result.weapon->delayFrames);
@@ -267,8 +348,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             if (program->kind == SpearSkillSpec::Kind::Impale)
                 program->wearChance -= skillDiminishingBonus({program->wearMinimum,program->wearMaximum},rank);
             if (program->poisonTrail) {
-                program->poisonTrail->minimum = int(result.minimumDamage * 256.f);
-                program->poisonTrail->maximum = int(result.maximumDamage * 256.f);
+                program->poisonTrail->minimum = result.minimumDamage.raw();
+                program->poisonTrail->maximum = result.maximumDamage.raw();
                 program->poisonTrail->poisonFrames = int(poisonFrames);
                 program->poisonTrail->damageFromSkill = false;
             }
@@ -307,12 +388,17 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.weapon->stunFrames=int(std::min<int64_t>(250,skillElementalLength(spec.weapon->stunFrames,*spec.weapon->stunCurve,rank,synergy)));
         }
         result.weapon->conversionChance = skillDiminishingRatioBonus({result.weapon->conversionMinimum,result.weapon->conversionMaximum},rank);
+        if(spec.effect==SkillBehavior::Conversion) {
+            result.weapon->conversionChance=input.nativeFormulas?calculation("calc1"):result.weapon->conversionChance;
+            result.weapon->conversionFrames=std::max(1,input.nativeFormulas?calculation("auralencalc"):
+                skillRankBonus({spec.weapon->conversionFrames,spec.weapon->conversionFramesPerLevel},rank));
+        }
         for (size_t element = 0; element < result.weapon->elementPercent.size(); ++element) {
             auto &percent = result.weapon->elementPercent[element];
             percent += (rank - 1) * result.weapon->elementPerLevel;
             percent += int(skillSynergyBonus(result.weapon->elementSynergies[element],learned));
             const int mastery = element == 0 ? fireMasteryPercent : element == 1 ? coldDamagePercent : lightningMasteryPercent;
-            percent += percent * mastery / 100;
+            percent=nativeAdd(percent,nativePercentage(percent,mastery,100));
         }
         result.weapon->damagePercent += int(skillSynergyBonus(result.weapon->damageSynergies,learned));
         result.weapon->attackDefense += (rank-1)*result.weapon->attackDefensePerLevel;
@@ -329,8 +415,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         result.weapon->damagePercent = result.missileCount;
     }
     result.missileNextDelay = float(spec.missileNextDelay) / 25.f;
-    result.staticPercent = float(spec.staticPercent);
-    result.staticMinDamage = float(spec.staticMinDamage) / 256.f;
+    result.staticPercent = spec.staticPercent;
+    result.staticMinDamage = Fixed8::fromRaw(spec.staticMinDamage);
     result.staticRadius = float(spec.staticRange + (rank - 1) * spec.staticRangePerLevel);
     result.castOverlayId = spec.castCue.id;
     result.hitOverlayId = spec.hitCue.id;
@@ -347,8 +433,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         auto &program = *result.firewall;
         program.makerFrames += rank * spec.firewallRangePerLevel;
         program.velocity = result.missileVelocity;
-        program.minimumDamage = int(result.minimumDamage * 256.f);
-        program.maximumDamage = int(result.maximumDamage * 256.f);
+        program.minimumDamage = result.minimumDamage.raw();
+        program.maximumDamage = result.maximumDamage.raw();
         program.hitShift = 0;
     }
     if (spec.frozenOrb) {
@@ -371,19 +457,74 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.missileImpact = spec.missileImpact;
     if (result.missileImpact && result.missileImpact->areaMissile) {
         auto &area = *result.missileImpact->areaMissile;
-        area.minimum = int(result.minimumDamage * 256.f);
-        area.maximum = int(result.maximumDamage * 256.f);
+        area.minimum = result.minimumDamage.raw();
+        area.maximum = result.maximumDamage.raw();
     }
     if (result.missileImpact && result.missileImpact->cloudBurst) {
         auto &cloud = result.missileImpact->cloudBurst->cloud;
         if (cloud.damageFromSkill) {
             if (!spec.poisonDamage || poisonFrames <= 0)
                 throw std::runtime_error("Poison cloud requires resolved poison skill damage");
-            cloud.minimum = int(result.minimumDamage * 256.f);
-            cloud.maximum = int(result.maximumDamage * 256.f);
+            cloud.minimum = result.minimumDamage.raw();
+            cloud.maximum = result.maximumDamage.raw();
             cloud.poisonFrames = int(poisonFrames);
             cloud.damageFromSkill = false;
         }
+    }
+    const bool defensiveBuff=spec.holyShield || spec.effect==SkillBehavior::FrozenArmor || spec.effect==SkillBehavior::ShiverArmor ||
+        spec.effect==SkillBehavior::ChillingArmor || spec.effect==SkillBehavior::BoneArmor || spec.effect==SkillBehavior::NativeDefensiveBuff;
+    const bool nativeWarcry=spec.effect==SkillBehavior::Shout || spec.effect==SkillBehavior::BattleOrders || spec.effect==SkillBehavior::BattleCommand;
+    const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm;
+    if(input.nativeFormulas && result.appliedEffect && (defensiveBuff || spec.effect==SkillBehavior::Enchant || nativeWarcry || nativeTimedBuff)) {
+        auto &effect=*result.appliedEffect;effect.nativeValues.emplace();
+        effect.stacking=nativeWarcry?EffectStacking::ReuseState:EffectStacking::SkillLevel;
+        effect.nativeState=true;effect.refreshPassivesOnRemoval=true;
+        effect.registersUnitEvents=defensiveBuff || nativeTimedBuff;
+        for(const auto binding:input.nativeFormulas->unitEvents(spec.sourceId)) {
+            if(binding.event<0) {if(defensiveBuff) break;continue;}
+            if(binding.function>0) effect.unitEvents.push_back(binding);
+        }
+        if(nativeWarcry) {
+            effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
+        }
+        const auto &rules=input.nativeFormulas->statRules();
+        for(const auto &stat:input.nativeFormulas->auraStats(spec.sourceId,rank,6,true)) {
+            result.nativeEffectWrites.push_back(stat);
+            effect.nativeValues->insert_or_assign(stat.key,stat.value);
+            if(spec.effect!=SkillBehavior::Enchant && stat.key.id==rules.names.at("attackrate")) {
+                effect.nativeValues->insert_or_assign(StatKey{rules.names.at("other_animrate"),0},stat.value);
+                result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("other_animrate"),0},stat.value);
+            }
+        }
+        if(defensiveBuff || nativeTimedBuff) for(const auto &stat:input.nativeFormulas->passiveBuffStats(spec.sourceId,rank)) {
+            result.nativeEffectWrites.push_back(stat);
+            effect.nativeValues->insert_or_assign(stat.key,stat.value);
+            if(stat.key.id==rules.names.at("attackrate")) {
+                effect.nativeValues->insert_or_assign(StatKey{rules.names.at("other_animrate"),0},stat.value);
+                result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("other_animrate"),0},stat.value);
+            }
+        }
+        if(defensiveBuff || nativeTimedBuff) {
+            result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("modifierlist_skill"),0},spec.sourceId);
+            result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("modifierlist_level"),0},rank);
+        }
+        effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},rules,effect.modifiers);
+        if(spec.holyShield) {
+            effect.modifiers.combat.shieldDefensePercent=calculation("aurastatcalc2");
+            const auto physical=input.nativeFormulas->physicalRange(spec.sourceId,rank,false);
+            if(!physical) throw std::runtime_error("Missing native Holy Shield physical range");
+            effect.modifiers.combat.smiteMinimum=physical->first>>8;effect.modifiers.combat.smiteMaximum=physical->second>>8;
+        }
+        if(spec.effect==SkillBehavior::BoneArmor) {
+            effect.physicalShieldStat=StatKey{rules.names.at("bonearmor"),0};
+            effect.physicalShieldMaximumStat=StatKey{rules.names.at("bonearmormax"),0};
+            const StatSnapshot values{*effect.nativeValues};
+            effect.physicalShield=values.get(*effect.physicalShieldStat);effect.physicalShieldMaximum=values.get(*effect.physicalShieldMaximumStat);
+            effect.nativeValues->erase(*effect.physicalShieldStat);effect.nativeValues->erase(*effect.physicalShieldMaximumStat);
+        }
+        const auto duration=calculation("auralencalc");
+        if(!nativeWarcry && !duration) effect.duration.reset();
+        else effect.duration=EffectFrame(uint32_t(duration));
     }
     return result;
 }

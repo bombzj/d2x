@@ -93,6 +93,8 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
         result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(4);for(int stone:fact.stones) out.u16(uint16_t(stone-17));out.u16(0);}));
     if((fact.tombOffset && *fact.tombOffset<7) || book.at(questIndex(QuestId::RescueOnMountArreat)).stage || book.at(questIndex(QuestId::DenOfEvil)).stage)
         result.push_back(encodeServerPacket(ServerMessage::QuestPayload,[&](auto &out){out.u16(1);out.u16(uint16_t(fact.remaining));out.u16(fact.tombOffset.value_or(0));out.u16(uint16_t(15-std::min(fact.rescued,15u)));for(int i=0;i<3;++i)out.u16(0);}));
+    // ACT2Q3 explicitly sends these quest transitions. They are distinct from
+    // GAME_UpdateEnvironment's current-cycle notification and must coexist.
     if(fact.eclipse) result.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out){out.u32(*fact.eclipse?5:2);out.u32(0);out.u8(*fact.eclipse?1:0);}));
     if(fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestStatuses,[&](auto &out){out.append(statuses);}));
     return result;

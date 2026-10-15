@@ -27,7 +27,7 @@ std::optional<ItemInstance> System::ironGolemMaterial(const ActorContext &actor,
     }
     return material?std::optional{*material}:std::nullopt;
 }
-DomainResult<transactions::Plan> System::ironGolemCost(const ActorContext &actor,const SkillCastSpec &skill,const ItemInstance &material) const {
+DomainResult<transactions::Plan> System::ironGolemCost(const ActorContext &actor,const SkillCastSpec &skill,const ItemInstance &material,std::shared_ptr<effects::AuraUnitPublication> units) const {
     const auto *owner=ports_.players.find(actor.player);if(!owner) return {DomainStatus::InvalidActor,{}};
     const auto *at=std::get_if<GroundLocation>(&material.location);if(!at) return {DomainStatus::InvalidRequest,{}};
     const auto current=ironGolemMaterial(actor,at->position,material.id);
@@ -38,7 +38,7 @@ DomainResult<transactions::Plan> System::ironGolemCost(const ActorContext &actor
     edit.character=owner->persistent.player;edit.character->mana-=skill.manaCost;edit.charge=skill.charge;
     edit.world=transactions::WorldEdit{world.revision,std::move(world)};edit.ironGolem=std::optional<ItemInstance>{material};
     edit.publicFacts.emplace_back(GroundRemoveFact{material.id});
-    return ports_.transactions.prepare(std::move(edit));
+    return ports_.transactions.prepare(std::move(edit),nullptr,{},std::move(units));
 }
 DomainStatus canReceiveQuestItem(const PlayerState &player, const ItemDefinition &base,
     const ItemCatalog &catalog, unsigned difficulty) {
@@ -191,7 +191,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                     // Keep signed remainder: dead recipients can exhaust it.
                     int64_t remaining=source.quantity;
                     const auto share=source.quantity/living;
-                    std::vector<transactions::Plan> plans;
+                    std::vector<transactions::Change> changesToPrepare;
                     for(const auto *peer:members) {
                         if(peer->player==actor.player) continue;
                         const unsigned cap=unsigned(peer->persistent.player.level)*10000;
@@ -199,8 +199,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                         if(!amount) continue;
                         auto next=peer->persistent.player;next.gold+=amount;remaining-=amount;
                         transactions::CharacterEdit edit{{peer->player,peer->actor,actor.area,actor.areaGeneration,actor.sequence,actor.tick},peer->inventoryRevision,peer->characterRevision,std::move(next)};
-                        auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
-                        plans.push_back(std::move(*plan.value));
+                        changesToPrepare.emplace_back(std::move(edit));
                     }
                     const unsigned cap=unsigned(record.level)*10000;
                     const auto amount=std::min(remaining,int64_t(cap>record.gold?cap-record.gold:0));
@@ -216,9 +215,9 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
                         edit.publicFacts.emplace_back(GroundDropFact{left});world.world.items.emplace(left.id,std::move(left));
                     }
                     world.world.items.erase(source.id);world.equipment.items.erase(source.id);
-                    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
-                    plans.push_back(std::move(*plan.value));
-                    return ports_.transactions.commitCharacters(std::move(plans),transactions::WorldEdit{world.revision,std::move(world)});
+                    changesToPrepare.emplace_back(std::move(edit));
+                    auto prepared=ports_.transactions.prepareGroup(std::move(changesToPrepare));if(!prepared) return {prepared.status,{}};
+                    return ports_.transactions.commitCharacters(std::move(*prepared.value),transactions::WorldEdit{world.revision,std::move(world)});
                 }
             }
             const auto capacity = unsigned(record.level) * 10000;

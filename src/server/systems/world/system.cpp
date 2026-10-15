@@ -1,24 +1,70 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
+#include "server/systems/monsters/system.hpp"
 #include <algorithm>
 namespace d2x::server::world {
+void System::prepareActTime(int act) {
+    if(act<0 || act>=5) throw std::invalid_argument("Invalid prepared act time");
+    auto &time=ports_.areas.actTimes_.at(size_t(act));
+    if(!time) {time.emplace();if(act==1 && sunDark_) setActSunEclipse(time->value,true);}
+}
+void System::activateAct(RegionId region) {
+    prepareActTime(ports_.areas.at(region).definition.act);
+}
+StepStatus System::advanceEnvironment(TickContext tick) {
+    if(environmentNotice_) return StepStatus::Blocked;
+    if(!environmentFrame_ || tick.tick>*environmentFrame_) {environmentFrame_=tick.tick;environmentAct_=0;}
+    else if(tick.tick<*environmentFrame_) throw std::logic_error("Native environment frame moved backwards");
+    while(environmentAct_<ports_.areas.actTimes_.size()) {
+        const auto act=environmentAct_;
+        auto &time=ports_.areas.actTimes_[act];
+        if(!time) {++environmentAct_;continue;}
+        auto value=time->value;
+        const bool notification=advanceActEnvironment(value,int(act));
+        if(notification && time->revision==UINT64_MAX) throw std::overflow_error("Native environment revision exhausted");
+        time->value=value;++environmentAct_;
+        if(notification) {
+            ++time->revision;environmentNotice_=EnvironmentNotice{{int(act),value.cycle,value.ticks,value.eclipse},time->revision};
+            return StepStatus::Blocked;
+        }
+    }
+    return StepStatus::Complete;
+}
+void System::acknowledgeEnvironment(int act,uint64_t revision) {
+    if(!environmentNotice_ || environmentNotice_->value.act!=act || environmentNotice_->revision!=revision)
+        throw std::logic_error("Native environment acknowledgement lost its notice");
+    environmentNotice_.reset();
+}
+void System::sunEclipse(bool dark) {
+    sunDark_=dark;if(!ports_.areas.actTimes_[1]) return;
+    auto &time=*ports_.areas.actTimes_[1];
+    if(time.value.eclipse==dark) return;
+    if(time.revision==UINT64_MAX) throw std::overflow_error("Native eclipse revision exhausted");
+    setActSunEclipse(time.value,dark);++time.revision;
+}
 DomainResult<> System::moveQuestNpc(RegionId region,EntityId id,Vec position,Vec destination,bool escaped) {
     const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
-    for(auto &npc:found->second.definition.npcs) if(npc.id==id && npc.rule.code=="act5pow") {
-        npc.position=position;npc.destination=destination;npc.moving=!escaped;npc.hidden=escaped;return {DomainStatus::Applied,std::monostate{}};
-    }
+    for(const auto &npc:found->second.definition.npcs) if(npc.id==id && npc.rule.code=="act5pow")
+        return ports_.monsters.moveNpc(id,region,position,destination,escaped);
     return {DomainStatus::Stale,{}};
 }
-DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view code,Vec position) {
+DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view code,Vec position,int searchRadius) {
     const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {DomainStatus::Unavailable,{}};
     auto &area=found->second.definition;
-    for(const auto &npc:area.npcs) if(npc.rule.code==code) return {DomainStatus::Applied,npc.id};
+    for(const auto &npc:area.npcs) if(npc.rule.code==code)
+        return ports_.monsters.find(npc.id)?DomainResult<EntityId>{DomainStatus::Applied,npc.id}:DomainResult<EntityId>{DomainStatus::Stale,{}};
     const auto prepared=area.questNpcs.find(code);
     if(prepared==area.questNpcs.end()) return {DomainStatus::Unavailable,{}};
-    const auto point=area.collision.nativeSpawn(position,15,prepared->second.movement);
+    const auto point=area.collision.nativeSpawn(position,searchRadius,prepared->second.movement);
     if(!point) return {DomainStatus::Conflict,{}};
-    if(ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
-    const auto id=ports_.ids.allocate();area.npcs.push_back({id,*point,prepared->second});return {DomainStatus::Applied,id};
+    if(ports_.ids.cursor()>=UINT32_MAX || ports_.monsters.read().actors.size()>=65536) return {DomainStatus::Capacity,{}};
+    const auto id=ports_.ids.allocate();
+    area.npcs.push_back({id,*point,prepared->second});ports_.monsters.admitNpc(id,region,*point,prepared->second);return {DomainStatus::Applied,id};
+}
+void System::registerAreaUnits(RegionId region) {
+    ports_.areas.initializeUnitRooms(region);
+    for(const auto &npc:ports_.areas.at(region).definition.npcs)
+        ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
 }
 void System::assign(AreaDefinition &area) {
     for (auto &exit : area.exits) exit.id = ports_.ids.allocate();
@@ -32,11 +78,12 @@ void System::assign(AreaDefinition &area) {
 void System::initialize() {
     for (auto &[id, area] : ports_.areas.areas_) {
         assign(area.definition);
+        registerAreaUnits(id);
         state_.residency.emplace(id, AreaLease{id, area.generation, Residency::Prepared});
     }
 }
 DomainResult<uint64_t> System::request(RegionId destination) {
-    if (const auto *area = ports_.areas.find(destination)) return {DomainStatus::Applied, area->generation};
+    if (const auto *area = ports_.areas.find(destination)) {activateAct(destination);return {DomainStatus::Applied, area->generation};}
     if (failed_.contains(destination)) return {DomainStatus::Unavailable, {}};
     for (const auto &pending : state_.preparation) if (pending.destination == destination) return {DomainStatus::Applied, pending.request};
     if (state_.preparation.size() >= 16 || nextRequest_ == UINT64_MAX) return {DomainStatus::Capacity, {}};
@@ -77,6 +124,7 @@ DomainResult<> System::install(PreparedArea prepared) {
     assign(prepared.definition);
     const auto id = prepared.definition.id;
     ports_.areas.areas_.emplace(id, AreaState{std::move(prepared.definition), 1, {}});
+    registerAreaUnits(id);
     state_.residency.emplace(id, AreaLease{id, 1, Residency::Prepared});
     state_.preparation.erase(pending); link(); invalidateRooms();
     return {DomainStatus::Applied, std::monostate{}};

@@ -2,7 +2,9 @@
 #include "core/id.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/effects/spec.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include <array>
+#include <optional>
 
 namespace d2x {
 struct AmazonMagicSpec {
@@ -13,6 +15,7 @@ struct AmazonMagicSpec {
     std::array<int, 5> defensePerLevel{};
     int overlay = -1;
     int stat = -1;
+    std::optional<StatValue> nativeStat;
 };
 struct SkillCastSpec;
 std::optional<CombatEffectSpec> amazonMagicEffect(const AmazonMagicSpec &, EntityId source,

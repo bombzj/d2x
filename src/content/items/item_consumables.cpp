@@ -1,4 +1,5 @@
 #include "item_consumables.hpp"
+#include <algorithm>
 #include <stdexcept>
 #include <string>
 
@@ -30,21 +31,19 @@ void loadItemConsumables(ClassicData &data) {
         if (!spell || ((*spell != 6 && *spell != 9) && (!amount || *amount <= 0)))
             continue;
         PotionDefinition potion{};
+        potion.durationFrames=EffectFrame(std::max(0,frames.value_or(0)));
         if (*spell == 3 && stat == "hpregen") {
             potion.kind = PotionKind::Healing;
-            potion.amount = float(*amount);
-            potion.seconds = float(frames.value_or(0)) / 25.f;
+            potion.amount = *amount;
         } else if (*spell == 3 && stat == "manarecovery") {
             potion.kind = PotionKind::Mana;
-            potion.amount = float(*amount);
-            potion.seconds = float(frames.value_or(0)) / 25.f;
+            potion.amount = *amount;
         } else if (*spell == 5 && stat == "hitpoints" && table.value(row, "stat2") == "mana" &&
                    table.number(row, "calc2") == amount) {
             potion.kind = PotionKind::Rejuvenation;
-            potion.amount = float(*amount) / 100.f;
+            potion.amount = *amount;
         } else if (*spell == 6 || *spell == 9) {
             potion.kind = PotionKind::Remedy;
-            potion.seconds = float(frames.value_or(0)) / 25.f;
             // SkillItem pSpell06 delegates to pSpell09: both read all three
             // stat/calc pairs. Unknown formulas/stats must not execute partially.
             bool supported = true;
@@ -61,12 +60,16 @@ void loadItemConsumables(ClassicData &data) {
                 else if (name == "maxcoldresist") target = &potion.modifiers.combat.coldMaxResist;
                 if (!value || !target) { supported = false; break; }
                 *target = *value;
+                const auto nativeStat = std::find_if(data.itemStats.begin(),data.itemStats.end(),
+                    [&](const auto &definition) {return definition.name == name;});
+                if (nativeStat == data.itemStats.end() || !nativeStat->id) { supported = false; break; }
+                potion.nativeWrites.emplace_back(StatKey{uint16_t(*nativeStat->id),0},*value);
             }
             if (!supported) continue;
             if (potion.modifiers.staminaRecoveryBonus > 0) potion.kind = PotionKind::Stamina;
         } else
             continue;
-        if (potion.kind != PotionKind::Rejuvenation && potion.seconds <= 0)
+        if (potion.kind != PotionKind::Rejuvenation && !potion.durationFrames)
             throw std::runtime_error("Invalid original potion duration: " + std::string(code));
         if (*spell == 3 || *spell == 6 || *spell == 9) {
             const auto state = data.states.find(table.value(row, "state"));

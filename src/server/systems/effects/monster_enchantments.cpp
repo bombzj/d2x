@@ -1,5 +1,11 @@
 #include "system.hpp"
+#include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/skills/aura_resolve.hpp"
+#include "gameplay/skills/curse_resolve.hpp"
+#include "server/systems/skills/evaluation.hpp"
+#include "gameplay/effects/queries.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -13,13 +19,75 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <optional>
+#include <stdexcept>
 namespace d2x::server::effects {
-DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,EntityId target,uint64_t tick) {
-    if(!combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source,target)) return {DomainStatus::InvalidActor,{}};
-    return monsterAura(source,a,target,tick,uint64_t(std::max(1,a.periodFrames)));
+DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,EntityId target,uint64_t tick,bool unique,const SkillFormulaSnapshot *sourceInput) {
+    const auto *emitter=ports_.monsters.find(source);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const auto recipient=participants.find(target);
+    if(!emitter || !emitter->rule.stats || !emitter->rule.formulas || !participants.canHarm(source,target)) return {DomainStatus::InvalidActor,{}};
+    const auto sampled=unitStatValues(source,tick);if(!sampled) return {DomainStatus::Unavailable,{}};
+    auto context=sourceInput?sourceInput->input(*emitter->rule.stats):skills::formulaInput(*emitter,*sampled);
+    SkillFormulaValues formulas(*emitter->rule.formulas,context);
+    const auto length=formulas.calculation(FormulaDomain::Skill,a.skill,a.rank,"auralencalc");
+    if(!length) return {DomainStatus::Unavailable,{}};
+    CurseSpec program;program.state=a.state;program.rejectZeroPrimary=!unique;program.nativeValues.emplace();program.modifiers=a.modifiers;
+    program.primaryStat=formulas.auraStatKey(a.skill,1);
+    program.nativeWrites=formulas.auraStats(a.skill,a.rank,6,false,true);
+    for(auto &write:program.nativeWrites) {
+        if(!unique && recipient.monster && recipient.monster->nativeStats && recipient.monster->rule.stats) {
+            const auto &rules=*recipient.monster->rule.stats;
+            const auto &name=rules.definitions.at(write.key.id).name;
+            if(name=="damageresist" || name=="magicresist" || name=="fireresist" || name=="lightresist" || name=="coldresist" || name=="poisonresist")
+                write.value=curseResistanceAdjustment(write.value,baseStatValue(rules,*recipient.monster->nativeStats->sources,write.key),true,recipient.monster->hireling);
+        }
+        program.nativeValues->insert_or_assign(write.key,write.value);
+    }
+    program.modifiers=nativeCharacterModifiers(StatSnapshot{*program.nativeValues},*emitter->rule.stats,a.modifiers);
+    CombatEffectSpec spec;spec.state=a.state;spec.source={CombatEffectSource::Skill,source,a.skill,a.rank};
+    spec.stacking=EffectStacking::CurseLevel;spec.modifiers=program.modifiers;spec.nativeValues=program.nativeValues;
+    const auto duration=curseStateDuration(*length,recipient.player?recipient.player->totals.character.combat.curseResistance:unitCurseResistance(target,tick),a.state.curse);
+    if(!duration) return {DomainStatus::Unavailable,{}};
+    if(*duration) spec.duration=uint32_t(*duration);
+    if(recipient.player) {
+        const auto &player=*recipient.player;auto next=state_.players;auto &states=next[target].states;
+        PlayerResourceTrace resources(player,tick,{},ports_.areas.statTime(player.area));
+        const auto application=applyCurseState(states,program,spec,program.nativeWrites,*emitter->rule.stats,tick,[&]{resources.sample(states,true);});
+        if(!application.accepted) return {DomainStatus::Unavailable,{}};
+        transactions::CharacterEdit edit{{player.player,target,player.area,ports_.areas.at(player.area).generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
+        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        for(const auto &removed:application.removed) if(!states.hasState(removed.effect.spec.state.id,tick)) edit.publicFacts.emplace_back(StateFact{target,0,player.area,removed.effect.spec.state.id,false});
+        const auto *installed=states.find(application.handle);if(!installed) throw std::runtime_error("Missing native monster curse recipient");
+        edit.publicFacts.emplace_back(StateFact{target,0,player.area,a.state.id,true,nativeEffectStats(*player.rules.skills,installed->spec)});
+        auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+        const auto result=ports_.transactions.commit(std::move(*plan.value));if(result) publishPlayers(next);return result;
+    }
+    const auto *monster=recipient.monster;
+    if(!monster || !monster->alive() || (!unique && !monster->rule.curseable) || !monster->rule.stateTarget.acceptsCurseList() || !monster->nativeStats || !monster->rule.stats ||
+       (!unique && monster->rule.enchantment && monster->rule.enchantment->has(38))) return {DomainStatus::Unavailable,{}};
+    auto next=units_;auto &unit=next[target];unit.area=monster->area;
+    MonsterResourceTrace resources(*monster,tick,&unit.states);
+    const auto applied=applyCurseState(unit.states,program,spec,program.nativeWrites,*emitter->rule.stats,tick,[&]{resources.sample(unit.states,true);});
+    if(!applied.accepted) return {DomainStatus::Unavailable,{}};
+    auto publication=std::make_shared<AuraUnitPublication>();
+    for(const auto &removed:applied.removed) if(!unit.states.hasState(removed.effect.spec.state.id,tick)) {
+        unit.nativeStats.erase(removed.effect.spec.state.id);publication->facts.emplace_back(StateFact{target,1,monster->area,removed.effect.spec.state.id,false});
+    }
+    const auto *installed=unit.states.find(applied.handle);if(!installed) throw std::runtime_error("Missing native monster curse state");
+    const auto values=combatEffectNativeValues(installed->spec);std::vector<StatValue> stats;
+    if(values) for(const auto &[key,value]:*values) stats.emplace_back(key,value);
+    unit.nativeStats[a.state.id]=stats;publication->facts.emplace_back(StateFact{target,1,monster->area,a.state.id,true,std::move(stats)});
+    prepareUnitEffects(*publication,target,unit,resources.take(),tick);
+    if(!validateAuraUnits(*publication)) return {DomainStatus::Conflict,{}};
+    const auto accepted=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},monster->area},std::move(publication->facts)});
+    if(!accepted) return {accepted.status,{}};
+    publishAuraUnits(*publication);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,EntityId id,uint64_t tick,uint64_t duration,bool owner) {
     const auto *m=ports_.monsters.find(source);if(!m) return {DomainStatus::InvalidActor,{}};
+    if(a.ownerWrites || a.targetWrites)
+        return paladinAura({{},source,m->area,ports_.areas.at(m->area).generation,0,tick},a,id,duration,owner,false,source);
     const auto state=owner?a.ownerState:a.state;
     if(state.id<0) return {DomainStatus::Applied,std::monostate{}};
     CombatEffectSpec spec;spec.state=state;spec.modifiers=owner?auraOwnerModifiers(a):a.modifiers;spec.duration=duration;
@@ -44,16 +112,29 @@ DomainResult<> System::monsterAura(EntityId source,const AuraDefinition &a,Entit
         if(target->rule.resistances[4]+existing.coldResist-previous.coldResist>=100) spec.modifiers.coldResist/=5;
     }
     auto next=units_;auto &unit=next[id];unit.area=m->area;
-    if(unit.states.size()>=128 && !unit.states.hasState(state.id,tick)) return {DomainStatus::Capacity,{}};
-    if(!unit.states.apply(std::move(spec),tick).accepted) return {DomainStatus::Conflict,{}};
-    std::vector<std::pair<int,int64_t>> stats;
+    std::optional<MonsterResourceTrace> resources;
+    if(target->nativeStats && target->nativeStats->sources && target->rule.stats) resources.emplace(*target,tick,&unit.states);
+    const auto application=unit.states.apply(std::move(spec),tick,[&]{if(resources) resources->sample(unit.states,true);});
+    if(!application.accepted) return {DomainStatus::Conflict,{}};
+    if(resources) {
+        resources->sample(unit.states);
+        if(!ports_.monsters.canCommitLife(resources->read())) return {DomainStatus::Conflict,{}};
+    }
+    std::vector<StatValue> stats;
     if(const auto found=m->rule.auraStats.find(a.skill);found!=m->rule.auraStats.end()) stats=owner?found->second.owner:found->second.targets;
     const auto previous=unit.nativeStats.find(state.id);
     const bool changed=previous==unit.nativeStats.end() || previous->second!=stats || !unitStates(id,tick).contains(state.id);
     unit.nativeStats[state.id]=stats;
-    if(changed && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},{StateFact{id,1,m->area,state.id,true,std::move(stats)}}})) return {DomainStatus::Capacity,{}};
-    ports_.monsters.velocityModifier(id,unit.states.modifiers(tick).velocityPercent);
-    units_.swap(next);return {DomainStatus::Applied,std::monostate{}};
+    std::vector<DomainFact> facts;
+    for(const auto &removed:application.removed) if(!unit.states.hasState(removed.effect.spec.state.id,tick))
+        facts.emplace_back(StateFact{id,1,m->area,removed.effect.spec.state.id,false});
+    if(changed) facts.emplace_back(StateFact{id,1,m->area,state.id,true,std::move(stats)});
+    auto timers=ports_.frameEvents.prepareEdit({FrameEventUnit::Monster,id},FrameEventType::RemoveState,unit.states.expirationEvents());
+    if(!facts.empty() && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},std::move(facts)})) return {DomainStatus::Capacity,{}};
+    ports_.frameEvents.publish(std::move(timers));units_.swap(next);
+    if(resources && !ports_.monsters.commitLife(resources->take())) throw std::logic_error("Native monster aura resource commit lost its reservation");
+    ports_.monsters.velocityModifier(id,units_.at(id).states.modifiers(tick).velocityPercent);
+    return {DomainStatus::Applied,std::monostate{}};
 }
 void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
     const auto *m=ports_.monsters.find(id);
@@ -61,31 +142,46 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
     auto [it,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=it->second;
     if(fresh) cycle.random=m->combatRandom;
     // UMod7's native callback casts on three of four rolls around the owner.
-    if(!(rollRandom(cycle.random)&3)) return;
-    if(cycle.cursePending) return;
-    const auto &a=*m->rule.enchantment->curse;const auto &area=ports_.areas.at(m->area).definition;
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const float radius=std::clamp(a.radius,1.f,40.f);cycle.curseTargets.clear();cycle.curseTarget=0;
-    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m->area && p.persistent.player.hp>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(p.actor);}
-    for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(m->id,key) && p.area==m->area && p.life>0 && withinSkillArea(m->position,p.position,radius,SkillAreaCoordinates::Continuous) && area.activation.nearby(p.position,m->position)) cycle.curseTargets.push_back(key);
-    cycle.cursePending=true;(void)tick;
+    auto random=m->combatRandom;const bool cast=(rollRandom(random)&3)!=0;
+    if(!ports_.monsters.consumeRandom(id,m->combatRandom,random)) return;
+    cycle.random=random;if(!cast) return;
+    if(!m->rule.stats || !m->rule.formulas) return;
+    const auto values=unitStatValues(id,tick);if(!values) return;
+    auto aura=*m->rule.enchantment->curse;
+    aura.rank=std::max(1,logicalStatValue(*values,*m->rule.stats,"level")/5+1);
+    auto context=skills::formulaInput(*m,*values);SkillFormulaValues formulas(*m->rule.formulas,context);
+    const auto range=formulas.calculation(FormulaDomain::Skill,aura.skill,aura.rank,"aurarangecalc");
+    if(!range) return;
+    const auto &area=ports_.areas.at(m->area);Vec origin=m->position+area.definition.origin;
+    if(m->movementTarget) {
+        const auto target=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(m->movementTarget);
+        if(target.player) origin=target.position()+ports_.areas.at(target.player->area).definition.origin;
+        else if(target.monster) origin=target.position()+ports_.areas.at(target.monster->area).definition.origin;
+    } else origin=m->movementGoal+area.definition.origin;
+    PendingMonsterCurse pending{aura,captureSkillFormulaInput(context),
+        nativeAuraCandidateRecipients({id,m->area,std::clamp(*range,1,40),3,false,origin,NativeAuraTargetMode::TargetRange}),0,tick};
+    monsterCurses_.emplace_back(id,std::move(pending));
+}
+StepStatus System::advanceMonsterCurses(uint64_t tick) {
+    while(!monsterCurses_.empty()) {
+        auto &[source,curse]=monsterCurses_.front();
+        while(curse.next<curse.targets.size()) {
+            const auto result=castMonsterCurse(source,curse.aura,curse.targets[curse.next],curse.tick,true,&curse.source);
+            if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            ++curse.next;
+        }
+        monsterCurses_.pop_front();
+    }
+    return StepStatus::Complete;
 }
 StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
-    bool blocked=false;
+    bool blocked=advanceMonsterCurses(tick)==StepStatus::Blocked;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     for(const auto &[id,m]:ports_.monsters.read().actors) {
         if(m.owner || (!m.rule.enchantment && !m.rule.nativeAura && !m.rule.hitBurst && !m.rule.deathBurst)) continue;
         const MonsterEnchantment empty;
         const auto &mods=m.rule.enchantment?*m.rule.enchantment:empty;const auto &area=ports_.areas.at(m.area);
         auto [entry,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=entry->second;if(fresh) cycle.random=m.combatRandom;
-        if(cycle.cursePending && mods.curse) {
-            while(cycle.curseTarget<cycle.curseTargets.size()) {
-                const auto result=monsterAura(id,*mods.curse,cycle.curseTargets[cycle.curseTarget],tick,uint64_t(std::max(1,mods.curse->periodFrames)));
-                if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                ++cycle.curseTarget;
-            }
-            if(cycle.curseTarget==cycle.curseTargets.size()) cycle.cursePending=false;
-        }
         auto burst=[&](int definition,bool dead)->DomainResult<> {
             const auto found=m.rule.enchantmentMissiles.find(definition);if(found==m.rule.enchantmentMissiles.end()) return {DomainStatus::Unavailable,{}};
             MonsterAttackRule attack;attack.missile=found->second;
@@ -112,7 +208,7 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             const auto result=nativeBurst(m.rule.deathBurst?*m.rule.deathBurst:*m.rule.hitBurst,true);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
             cycle.nativeDeathAt=0;
         }
-        const bool unique=m.identity.rank==MonsterRank::Unique || m.identity.rank==MonsterRank::SuperUnique;
+        const bool unique=nativeUniqueMonster(m.identity.rank);
         if(unique && mods.has(17) && m.damageOccurrence!=cycle.damage) {
             cycle.damage=m.damageOccurrence;
             const bool getHit=m.reactionUntil>tick && m.reactionMode==3;
@@ -151,41 +247,7 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
             if(cycle.deathPhase==1 && unique && mods.has(18)) {const auto result=burst(194,true);if(result.status==DomainStatus::Capacity) {blocked=true;continue;}}
             cycle.death=0;cycle.deathPhase=2;
         }
-        if(m.life<=0 || (!mods.aura && !m.rule.nativeAura)) continue;
-        for(const auto *definition:{m.rule.nativeAura?&*m.rule.nativeAura:nullptr,mods.aura?&*mods.aura:nullptr}) {
-        if(!definition) continue;
-        if(m.rule.nativeAura && mods.aura && m.rule.nativeAura->skill==mods.aura->skill &&
-           (definition==&*m.rule.nativeAura?mods.aura->rank>definition->rank:m.rule.nativeAura->rank>=definition->rank)) continue;
-        const auto &a=*definition;auto &auraCycle=cycle.auras[a.skill];
-        if(!auraCycle.auraPending && tick>=auraCycle.nextAura) {
-            auraCycle.targets.clear();auraCycle.auraPending=true;
-            auraCycle.auraTarget=0;
-            if(a.hostile) {
-                for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(p.actor);}
-                for(const auto &[key,p]:ports_.monsters.read().actors) if(participants.canHarm(id,key) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(key);
-            } else for(const auto &[key,p]:ports_.monsters.read().actors) if((participants.relation({nullptr,&m},{nullptr,&p})==combat::Relation::Allied || key==id) && p.life>0 && p.area==m.area && withinSkillArea(m.position,p.position,a.radius,SkillAreaCoordinates::Continuous) && area.definition.activation.nearby(p.position,m.position)) auraCycle.targets.push_back(key);
-            if(a.hostile) auraCycle.targets.push_back(id);
-        }
-        if(!auraCycle.auraPending) continue;
-        while(auraCycle.auraTarget<auraCycle.targets.size()) {
-            const auto result=monsterAura(id,a,auraCycle.targets[auraCycle.auraTarget],tick,uint64_t(std::max(1,a.periodFrames))*2,auraCycle.targets[auraCycle.auraTarget]==id);
-            if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-            ++auraCycle.auraTarget;
-        }
-        if(auraCycle.auraTarget==auraCycle.targets.size()) {
-            if(a.element>=0 && a.maximumDamage>0) {
-                auto random=cycle.random;std::vector<EntityId> targets;
-                for(const auto target:auraCycle.targets) if(target!=id) targets.push_back(target);
-                const int64_t low=int64_t(a.minimumDamage*256),spread=int64_t((a.maximumDamage-a.minimumDamage)*256);
-                combat::SpellImpact pulse{id,id,m.area,DamageType(a.element),low+(spread>0?limitedRandom(random,uint32_t(spread)):0),std::move(targets)};
-                pulse.occurrence=(uint64_t(1)<<63)|(uint64_t(a.skill)<<40)|++auraCycle.auraOccurrence;pulse.hitClass=uint8_t(a.hitClass);pulse.reaction=true;pulse.unblockable=true;
-                auto plan=ports_.combat.prepareSpells({pulse});
-                if(!plan) {--auraCycle.auraOccurrence;if(plan.status==DomainStatus::Capacity) blocked=true;continue;}
-                ports_.combat.commitSpells(std::move(*plan.value));cycle.random=random;
-            }
-            auraCycle.targets.clear();auraCycle.auraPending=false;auraCycle.nextAura=tick+uint64_t(std::max(1,a.periodFrames));
-        }
-        }
+
     }
     std::erase_if(uniqueCycles_,[&](const auto &entry){return !ports_.monsters.find(entry.first);});
     return blocked?StepStatus::Blocked:StepStatus::Complete;

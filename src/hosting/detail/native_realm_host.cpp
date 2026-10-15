@@ -58,7 +58,7 @@ void NativeRealmHost::advance(double seconds) {
                 if (found == areaPreparations.end()) {
                     const auto catalog = sharedWorldCatalog(archives, request.settings.difficulty);
                     const auto &level = catalog->level(int(request.destination));
-                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty});
+                    const auto ticket = areaPreparation->submit({request.settings.mapSeed, level.act, level.id, request.settings.difficulty,request.settings.ladderMonsterStats()});
                     areaPreparations.emplace(key, ticket);
                     break;
                 }
@@ -88,7 +88,7 @@ void NativeRealmHost::advance(double seconds) {
     for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
         try {
             const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
+            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishMissiles(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
             peer->publishRoomRemovals();
         } catch (const std::exception &error) {
             peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();

@@ -1,8 +1,9 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/area_store.hpp"
 namespace d2x::server::population {
 DomainResult<EntityId> System::admit(const Spawn &spawn) { return ports_.monsters.admit(spawn); }
-StepStatus System::step(TickContext, FrameFacts &) {
+StepStatus System::step(TickContext tick, FrameFacts &) {
     bool blocked = false;
     for (const auto &[region, area] : ports_.areas.all()) {
         auto &population = state_.areas[region];
@@ -11,7 +12,7 @@ StepStatus System::step(TickContext, FrameFacts &) {
         for (const auto &spawn : area.definition.population) {
             if (population.admittedSpawnKeys.contains(spawn.identity.spawnKey)) continue;
             if (!ports_.areas.loaded(region, spawn.position)) { complete = false; continue; }
-            auto result = admit({spawn.identity, spawn.implementation, region, spawn.position, true, spawn.rule,spawn.skillPositions});
+            auto result = admit({spawn.identity, spawn.implementation, region, spawn.position, true, spawn.rule,spawn.skillPositions,tick.tick});
             if (!result) { complete = false; blocked = true; break; }
             population.admittedSpawnKeys.insert(spawn.identity.spawnKey);
         }

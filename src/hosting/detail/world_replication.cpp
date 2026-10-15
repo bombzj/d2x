@@ -12,13 +12,12 @@ void NativeRealmService::publishAreas(RegionId region) {
     const auto &destination = areas.at(region);
     const auto crossAct = terrain.request.act != destination.request.act;
     if (crossAct) {
-        peer.npcMotion.clear();
         sendGame(encodeServerPacket(ServerMessage::UnloadAct, [](auto &) {}));
         sendGame(encodeServerPacket(ServerMessage::LoadAct, [&](auto &out) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
             out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(0);
         }));
-        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcs.clear();peer.npcStates.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
+        peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
     std::set<RegionId> desired{region};
     const auto rooms = host.visibleRooms(*binding);
@@ -46,7 +45,14 @@ void NativeRealmService::publishAreas(RegionId region) {
     peer.areas = std::move(desired);
     peer.rooms.insert(rooms.begin(), rooms.end()); peer.warps = std::move(warps);
     if (terrain.request.level != int(region)) terrain = destination;
-    if (crossAct) sendGame(encodeServerPacket(ServerMessage::LoadComplete, [](auto &) {}));
+    if(crossAct) {
+        const auto environment=host.environment(binding->game,region);
+        if(!environment) throw net::protocol::ProtocolError("Loaded act lacks its native environment");
+        sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
+            out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
+        }));
+        sendGame(encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}));
+    }
 }
 void NativeRealmService::publishRoomRemovals() {
     const auto rooms = host.visibleRooms(*binding);
@@ -176,42 +182,13 @@ void NativeRealmService::publishObjects() {
 
 namespace d2x::hosting {
 void NativeRealmService::publishNpcs() {
-    std::set<EntityId> next; std::vector<Bytes> packets;
-    for (const auto area : host.visibleAreas(*binding)) {
-        const auto view=host.area(binding->game,area); if (!view) continue;
-        for (const auto &npc : view->definition.npcs) {
-            if(npc.hidden) continue;
-            if (!host.visiblePoint(*binding, area, npc.position)) continue;
-            if(!host.npcVisible(*binding,npc.rule.code,area,npc.rule.questInitFunction)) continue;
-            next.insert(npc.id);
-            const bool fresh=!peer.npcs.contains(npc.id);
-            auto states=host.unitStates(binding->game,npc.id);
-            const int alignmentState=content->states.at("alignment").definition.id;
-            states.insert(alignmentState);
-            if(fresh) {
-                MonsterSnapshot snapshot; snapshot.id=npc.id; snapshot.area=area; snapshot.nativeClass=npc.rule.nativeClass; snapshot.position=npc.position; snapshot.life=128;
-                packets.push_back(nativeMonsterAssignment(snapshot,shared.terrain.at(binding->game).at(area).origin));
-                const int alignment=int(npc.rule.alignment);
-                int alignmentStat=-1;
-                const auto &stats=content->tables.at("itemstatcost");
-                for(size_t row=0;row<stats.rows().size();++row) if(stats.value(row,"Stat")=="alignment")
-                    alignmentStat=stats.number(row,"ID").value_or(-1);
-                if(alignment<0 || alignment>2 || alignmentStat<0) throw std::runtime_error("Missing original NPC alignment");
-                std::map<int,std::vector<std::pair<int,int64_t>>> stateStats;
-                if(alignment) stateStats[alignmentState]={{alignmentStat,alignment}};
-                packets.push_back(nativeStateSnapshot(*content,npc.id,1,states,stateStats));
-                peer.npcStates[npc.id]=states;
-                packets.push_back(nativeMonsterMotion(snapshot,shared.terrain.at(binding->game).at(area).origin));
-            }
-            if(npc.rule.code=="act5pow") {
-                MonsterSnapshot snapshot;snapshot.id=npc.id;snapshot.area=area;snapshot.position=npc.position;snapshot.destination=npc.destination;snapshot.life=128;snapshot.moving=npc.moving;snapshot.pathType=1;snapshot.pathSteps=1;
-                auto motion=nativeMonsterMotion(snapshot,shared.terrain.at(binding->game).at(area).origin);
-                if(fresh || peer.npcMotion[npc.id]!=motion) {peer.npcMotion[npc.id]=motion;packets.push_back(std::move(motion));}
-            }
-            auto &previous=peer.npcStates[npc.id];
-            for(const int id:states) if(!previous.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::EnableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
-            for(const int id:previous) if(!states.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::DisableState,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));out.u8(uint8_t(id));}));
-            previous=states;
+    // Identity, motion, HP and state/stat-list packets use publishMonsters.
+    // This capability projection only owns per-observer quest alerts.
+    std::set<EntityId> visible;std::vector<Bytes> packets;
+    for(const auto &unit:host.visibleMonsters(*binding)) visible.insert(unit.id);
+    for(const auto area:host.visibleAreas(*binding)) {
+        const auto view=host.area(binding->game,area);if(!view) continue;
+        for(const auto &npc:view->definition.npcs) if(visible.contains(npc.id)) {
             if(const auto message=host.npcQuestAlert(*binding,npc.rule,area)) {
                 if(!peer.npcQuestAlerts.contains(npc.id) || peer.npcQuestAlerts.at(npc.id)!=*message)
                     packets.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));}));
@@ -219,12 +196,8 @@ void NativeRealmService::publishNpcs() {
             } else peer.npcQuestAlerts.erase(npc.id);
         }
     }
-    for (const auto id : peer.npcs) if (!next.contains(id)) packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(id.value));}));
-    if (!packets.empty()) sendGameBatch(std::move(packets));
-    peer.npcs.swap(next);
-    std::erase_if(peer.npcMotion,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
-    std::erase_if(peer.npcStates,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
-    std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !peer.npcs.contains(entry.first);});
+    if(!packets.empty()) sendGameBatch(std::move(packets));
+    std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !visible.contains(entry.first);});
 }
 void NativeRealmService::publishShop() {
     const auto stock=host.shop(*binding); std::set<EntityId> next; std::vector<Bytes> packets;

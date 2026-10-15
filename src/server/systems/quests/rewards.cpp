@@ -6,6 +6,7 @@
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
@@ -303,6 +304,7 @@ DomainResult<> System::install(Prepared prepared) {
         if(s.kind==RewardKind::CouncilCube) state_.actThree.cubeDropped=true;
         if(s.kind==RewardKind::SmashOrb) {
             state_.actThree.orbSmashed=true;state_.objectModes[s.source]=2;
+            state_.actThree.orbSequenceStarted=true;state_.actThree.orbFxPending=true;
             Goal goal;goal.stage=4;goal.eligible=std::move(delivery);goal.consumeKhalimItems=true;
             queueGoal(QuestId::KhalimsWill,std::move(goal));state_.objectives[questIndex(QuestId::KhalimsWill)]=true;
         }
@@ -313,7 +315,7 @@ DomainResult<> System::install(Prepared prepared) {
         ports_.loot.commitUniques(std::move(uniques));
         if(s.kind==RewardKind::SkillBook) state_.actTwo.radamentBooks.erase(s.actor.player);
         if(s.kind==RewardKind::ViperAmulet) {
-            state_.actTwo.altarDestroyed=true;state_.actTwo.dark=false;
+            state_.actTwo.altarDestroyed=true;state_.actTwo.dark=false;ports_.world.sunEclipse(false);
             if(completeSun) captureGoal(QuestId::TaintedSun,uint32_t(SunStage::AltarDestroyed),std::move(delivery));
         }
         state_.completed.swap(completed);state_.pending.erase(found);state_.deferred.clear();

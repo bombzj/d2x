@@ -33,10 +33,11 @@ std::optional<Vec> movementPoint(const AreaStore &areas, RegionId from, RegionId
     }
     return point + destination->definition.origin - source.definition.origin;
 }
-std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas, RegionId region, EntityId id) {
+std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas,const monsters::System &monsters, RegionId region, EntityId id) {
+    const auto *unit=monsters.find(id);if(!unit || !unit->questNpc || !unit->alive()) return {};
     for (const auto &[key, area] : areas.all()) for (const auto &npc : area.definition.npcs)
-        if (npc.id == id && !npc.hidden && npc.rule.interactable)
-            if (const auto point = movementPoint(areas, region, key, npc.position)) return std::pair{*point, npc.rule.size};
+        if (npc.id == id && npc.rule.interactable)
+            if (const auto point = movementPoint(areas, region, key, unit->position)) return std::pair{*point, npc.rule.size};
     return {};
 }
 bool barrierSegment(const monsters::System &monsters,RegionId area,Vec from,Vec to,int size) {
@@ -53,7 +54,7 @@ DomainResult<bool> MovementSystem::leapStep(const ActorContext &actor,Vec target
     const Vec delta=target-p.position;
     const auto next=p.position+delta.unit()*std::min(delta.length(),speed*TickContext::seconds);
     if(collision && !area.definition.collision.nativeMovementSegment(p.position,next,*collision)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
-    p.route.clear();p.position=next;
+    p.route.clear();p.position=next;ports_.areas.moveRoomUnit(p.actor,p.area,p.position);
     p.look=delta.unit();p.moving=true;p.runningNow=false;skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-p.position).length()<.001f};
 }
@@ -67,7 +68,7 @@ DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec targ
     if(distance<=float(stopDistance)) {p.moving=false;return {DomainStatus::Applied,true};}
     const Vec next=p.position+delta.unit()*std::min(distance-float(stopDistance),speed*TickContext::seconds);
     if(!area.definition.collision.nativeMovementSegment(p.position,next,playerMovement) || !barrierSegment(ports_.monsters,p.area,p.position,next,2)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
-    p.route.clear();p.position=next;p.look=delta.unit();p.moving=true;p.runningNow=true;
+    p.route.clear();p.position=next;ports_.areas.moveRoomUnit(p.actor,p.area,p.position);p.look=delta.unit();p.moving=true;p.runningNow=true;
     skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-next).length()<=float(stopDistance)+.001f};
 }
@@ -92,13 +93,13 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
             InteractionTarget{command.exit,at->position,at->position,1,1,4,false,true}});
     }
     if(command.action==MovementAction::ApproachNpc) {
-        if(const auto *target=ports.monsters.find(command.exit);target && target->life>0) {
+        if(const auto *target=ports.monsters.find(command.exit);target && target->alive()) {
             const auto point = movementPoint(ports.areas, actor.area, target->area, target->position);
             if (!point || !nativeUnitRequestRange(player.position,*point)) return CommandStatus::InvalidRequest;
             return applyMovement(player,area,{MovementAction::Move,*point,command.forceRun,{},MotionTarget{target->id,1},
                 InteractionTarget{target->id,*point,*point,target->rule.size,target->rule.size,0.f,false,true,false}});
         }
-        if (const auto npc = npcPoint(ports.areas, actor.area, command.exit)) {
+        if (const auto npc = npcPoint(ports.areas,ports.monsters, actor.area, command.exit)) {
             if (!nativeUnitRequestRange(player.position,npc->first)) return CommandStatus::InvalidRequest;
             return applyMovement(player,area,{MovementAction::Move,npc->first,command.forceRun,{},MotionTarget{command.exit,1},
                 InteractionTarget{command.exit,npc->first,npc->first,npc->second,npc->second,0.f,false,true,false}});
@@ -130,9 +131,9 @@ void MovementSystem::step(TickContext tick) {
             bool dynamic=false;
             if(target.type==1) {
                 if(const auto *unit=ports.monsters.find(target.id)) {
-                    dynamic=true;if(unit->life>0) position=movementPoint(ports.areas,player.area,unit->area,unit->position);
+                    dynamic=true;if(unit->alive()) position=movementPoint(ports.areas,player.area,unit->area,unit->position);
                 }
-                else if (const auto npc = npcPoint(ports.areas, player.area, target.id)) { dynamic = true; position = npc->first; }
+                else if (const auto npc = npcPoint(ports.areas,ports.monsters, player.area, target.id)) { dynamic = true; position = npc->first; }
             } else if(target.type==0 && target.id!=player.actor) {
                 dynamic=true;
                 if(const auto *unit=ports.players.findActor(target.id);unit && unit->entered && unit->area==player.area) position=unit->position;
@@ -161,6 +162,7 @@ void MovementSystem::step(TickContext tick) {
         if (!ports.travel.walked(actor)) {
             player.position = from; player.route = previousRoute; player.pathStep = previousStep; player.moving = false;
         }
+        ports.areas.moveRoomUnit(player.actor,player.area,player.position);
         if(player.moving) {
             const auto origin=ports.areas.at(player.area).definition.origin;
             const Vec point{std::floor(player.position.x+.5f)+origin.x,std::floor(player.position.y+.5f)+origin.y};

@@ -1,4 +1,5 @@
 #pragma once
+#include "state.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/prepared_rules.hpp"
@@ -16,7 +17,6 @@
 namespace d2x::server::items {
 // Canonical non-character items; character-owned items remain in PlayerStore.
 struct CreateItem { std::string code; unsigned level{}; ItemGeneration generation; ItemLocation location; };
-struct State { InventoryState world; EquipmentRules equipment; uint64_t revision = 1; std::map<EntityId,PlayerId> goldOwners; };
 struct PreparedBatch { std::vector<ItemInstance> items; std::shared_ptr<const EquipmentRules> equipment; std::set<size_t> limitedUniques; };
 struct Address { std::optional<PlayerId> character; ItemHandle item; };
 struct Ports { const PlayerStore &players; const AreaStore &areas; EntityIds &ids; uint64_t &random; const ItemCatalog *definitions; EventOutbox &events; };
@@ -61,6 +61,9 @@ class System {
     EntityId reserveIdentity() { if (ports_.ids.cursor() > UINT32_MAX) throw std::overflow_error("Native item identity exhausted"); return ports_.ids.allocate(); }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
+    // Raw CreateItemEx spawn type 3: placement has already been resolved by
+    // the caller. Uses the unit seed for quantity, the item seed for quality.
+    DomainResult<EntityId> createNativeGold(GroundLocation,unsigned level,uint64_t tick);
     bool reachable(GroundLocation, Vec from) const;
     std::optional<Vec> placement(GroundLocation, const InventoryState &) const;
     DomainResult<ItemInstance> resolve(const Address &) const;

@@ -7,6 +7,7 @@
 #include <map>
 #include <memory>
 namespace d2x {
+struct NativeSummonStats;
 // Mechanism-specific values stay behind the immutable program slot.
 struct BoneSkillSpec {
     bool corpse = false, barrier = false, prison = false, spirit = false;
@@ -15,6 +16,7 @@ struct BoneSkillSpec {
     int lifePerLevel = 0, lifePercent = 0, barrierFrames = 0, sideCount = 0;
     std::map<int, int> lifeSynergies;
     std::array<UnitCombatStats, 3> barrierStats;
+    std::shared_ptr<const NativeSummonStats> barrierNative;
     int radius = 0, radiusPerLevel = 0;
     int minimumPercent = 0, maximumPercent = 0, elementalPercent = 0;
     int trailId = -1, trailCount = 0;

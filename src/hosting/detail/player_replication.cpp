@@ -138,7 +138,7 @@ void NativeRealmService::publishPlayers() {
             if(!view->actor.target) return false;
             const auto target=*view->actor.target;
             if(target.type==0) return target.id==local->actor.id || peer.corpses.contains(target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;});
-            if(target.type==1) return peer.monsters.contains(target.id) || peer.npcs.contains(target.id);
+            if(target.type==1) return peer.monsters.contains(target.id);
             if(target.type==2) return peer.objects.contains(target.id) || peer.portals.contains(target.id);
             if(target.type==4) return peer.groundItems.contains(target.id);
             if(target.type==5) {const auto current=host.area(binding->game,view->actor.region);return current && std::any_of(current->definition.exits.begin(),current->definition.exits.end(),[&](const auto &exit){return exit.id==target.id;});}

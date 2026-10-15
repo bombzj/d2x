@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -9,7 +10,7 @@
 namespace d2x::server::companions {
 StepStatus System::amazonStep(Companion &pet,TickContext tick) {
     const auto *body=ports_.monsters.find(pet.actor);const auto *owner=ports_.players.find(pet.owner);
-    if(!body || !owner || !owner->entered || owner->persistent.player.hp<=0 || body->amazonPet->decoy || tick.tick<body->busyUntil || body->frozenUntil>tick.tick) return StepStatus::Complete;
+    if(!body || !owner || !owner->entered || owner->persistent.player.hp<=0 || body->amazonPet->decoy || tick.tick<body->busyUntil || ports_.monsters.frozen(body->id,tick.tick)) return StepStatus::Complete;
     const auto &area=ports_.areas.at(owner->area);const ActorContext context{owner->player,owner->actor,owner->area,area.generation,0,tick.tick};
     if(body->area!=owner->area || missileDistance(body->position,owner->position)>50) {
         for(int radius=1;radius<=4;++radius) for(int x=-radius;x<=radius;++x) for(int y=-radius;y<=radius;++y) {

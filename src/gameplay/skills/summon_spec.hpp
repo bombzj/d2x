@@ -6,12 +6,28 @@
 #include <vector>
 #include <memory>
 #include <map>
+#include <optional>
+#include <utility>
 
 namespace d2x {
 struct NecroSummonSpec;
 struct NecroPetSpec;
 struct AmazonSummonSpec;
 struct AmazonPetSpec;
+struct NativeSummonStats {
+    UnitCombatStats base;
+    int skill{-1},rank{},lifePercent{};
+    std::array<int,2> levelDefense{},levelRating{}; // ordinary / L MonLvl columns.
+    std::optional<Fixed8> lifeOverride;
+    Fixed8 initialLife;
+    std::vector<StatValue> passiveAdds,auraWrites;
+    std::vector<std::pair<int,int>> inheritedSkills;
+    std::vector<std::pair<int,int>> prePassiveSkills;
+    int resistSkill{-1},summonResistance{};
+    bool materialBeforeStats{};
+    bool setBaseStats{true}; // SkillNec::SetSummonBaseStats is a separate call.
+    bool allowZeroLife{}; // Native untargetable units can have MAXHP == 0.
+};
 struct SummonSkillSpec {
     bool corpse = true, golem = false;
     std::shared_ptr<const NecroSummonSpec> necro;
@@ -25,6 +41,7 @@ struct SummonSkillSpec {
     std::array<int, 5> damageSteps{};
     std::array<UnitCombatStats, 3> base;
     std::vector<std::array<int, 3>> levelDefense, levelAttack;
+    std::vector<std::array<int,3>> levelDefenseNonL,levelAttackNonL;
 };
 struct SummonCastSpec {
     bool corpse = true, golem = false;
@@ -34,5 +51,6 @@ struct SummonCastSpec {
     MonsterKind kind = MonsterKind::NecroSkeleton;
     UnitCombatStats stats;
     int limit = 0, shieldChance = 0, shieldVariants = 0, petType = 0;
+    std::optional<NativeSummonStats> native;
 };
 } // namespace d2x

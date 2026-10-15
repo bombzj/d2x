@@ -5,6 +5,7 @@
 #include "gameplay/skills/aura.hpp"
 #include "gameplay/skills/damage_curve.hpp"
 #include "gameplay/combat/missile_effects.hpp"
+#include "gameplay/missiles/definition.hpp"
 namespace d2x {
 struct ItemInstance;
 enum class NecroSummonKind { Clay, Mage, Blood, Iron, Fire, Revive };
@@ -22,6 +23,7 @@ struct NecroMissilePayload {
     DamageType element = DamageType::Fire;
     float duration = 0;
     MissileImpactSpec impact;
+    std::optional<MissileLevelDamage> levelDamage;
 };
 struct NecroSummonSpec {
     NecroSummonKind kind = NecroSummonKind::Clay;
@@ -35,11 +37,13 @@ struct NecroSummonSpec {
     int explosionId = -1; float explosionDuration = 0;
     int healOverlay = -1; float healOverlayDuration = 0;
     std::array<std::pair<int,float>,3> reviveVisuals{};
+    int missileSkill{-1};
 };
 struct NecroPetSpec {
     NecroSummonKind kind = NecroSummonKind::Clay;
     int slowPercent = 0, velocityPercent = 0;
     int lifeLeechPercent = 0, ownerSharePercent = 0;
+    int ownerHealingSharePercent{};
     int lifePercent = 0, damagePercent = 0, lifetimeFrames = 0, resistPercent = 0;
     CombatStateDefinition slowState, reviveState;
     std::array<NecroMissilePayload, 4> missiles;

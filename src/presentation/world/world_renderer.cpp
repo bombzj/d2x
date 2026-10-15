@@ -110,7 +110,8 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         WorldDrawItem entry; entry.missile = effect.missileId;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
-        entry.age = effect.age + effect.animationOffset; entry.remaining = effect.duration - effect.age;
+        entry.age = effect.age; entry.remaining = effect.duration - effect.age;
+        if(effect.flight) entry.missileFrame=effect.nativeSequenceFrame>>8;
         entry.pixelOffset=effect.pixelOffset;
         if (const auto program = assets_.clientMissilePrograms.find(effect.missileId);
             program != assets_.clientMissilePrograms.end() && program->second.localBlood) {
@@ -142,7 +143,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 [&](const auto &value) { return item.unit && value.unit == item.unit; });
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), true);
             if (item.shadow) spriteShadow(entry.image, entry.at);
-            if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset);
+            if (item.missile >= 0) drawMissile(item.missile, item.position, item.heading, item.age, item.remaining,item.pixelOffset,item.missileFrame);
             else if (item.overlay >= 0) drawSpellOverlay(item.overlay, item.position, item.age, item.loop, item.height);
             else if (item.ground) drawGroundItem(*item.ground, item.highlighted);
             else drawSelectableSprite(entry.image, entry.at, item.highlighted);
@@ -190,7 +191,7 @@ void SceneView::drawWorldLighting(const WorldDrawView &scene, std::span<const Wo
     lighting_.draw(level.palette == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette)), level,
         scene.observer, screen(scene.observer), view_.zoom, actorClient_.controlledActor().lightRadius, lights);
 }
-void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset) const {
+void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset,std::optional<int> nativeFrame) const {
     auto found = assets_.projectileAnimations.find(id);
     if (found == assets_.projectileAnimations.end()) return;
     const auto &animation = found->second;
@@ -198,8 +199,9 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     if (age * 25.f + .00001f < visual.initSteps) return;
     const int frames = visual.frames > 0 ? std::min(animation.count, visual.frames) : animation.count;
     if (frames <= 0) return;
-    int frame = int(age * visual.fps + .00001f);
-    if (visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= visual.loopStart) {
+    int frame = nativeFrame.value_or(int(age * visual.fps + .00001f));
+    if(nativeFrame) {if(frame<0 || frame>=frames) return;}
+    else if (visual.loopEnd > visual.loopStart && visual.loopEnd <= frames && frame >= visual.loopStart) {
         const int tail = frames - visual.loopEnd;
         const int left = std::max(0, int(std::ceil(remaining * visual.fps)));
         frame = left <= tail ? std::min(frames - 1, frames - left) :

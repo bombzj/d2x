@@ -49,7 +49,8 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                 const auto &code=pool->second[tier][limitedRandom(random,unsigned(pool->second[tier].size()))];
                 const auto *base=data.items.find(code);if(!base) throw std::runtime_error("Missing original Anya reward base");
                 auto roll=rollAffixItem(data,*base,ItemQuality::Rare,level,random,source.classCode);
-                if(!roll.deferred.empty()) throw std::runtime_error(roll.deferred);random=roll.randomState;
+                if(!roll.deferred.empty()) throw std::runtime_error(roll.deferred);
+                random=roll.randomState;
                 add(code,unsigned(level),std::move(roll.generation));break;
             }
             case RewardKind::ForgeHammer: add(data.hellforge.hammer,unsigned(source.character.player.level),questUnique(data.hellforge.hammer));break;
@@ -73,7 +74,8 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                     WorldCatalog world(archives,source.difficulty);const auto entry=resolveObjectTreasure(data,world,source.actor.area,source.difficulty);
                     if(!entry.deferred.empty()) throw std::runtime_error(entry.deferred);
                     auto loot=planItemLoot(data,data.tables.at("itemratio"),entry.treasureClass,entry.itemLevel,0,random,source.uniques,source.classCode,0,0,DropQuality::Magic);
-                    if(!loot.deferred.empty()) throw std::runtime_error(loot.deferred);random=loot.randomState;
+                    if(!loot.deferred.empty()) throw std::runtime_error(loot.deferred);
+                    random=loot.randomState;
                     for(auto &drop:loot.drops) {
                         if(drop.generation.quality==ItemQuality::Unique && drop.generation.specialRow>=0 && !data.tables.at("uniqueitems").number(size_t(drop.generation.specialRow),"nolimit").value_or(0)) result.items.limitedUniques.insert(size_t(drop.generation.specialRow));
                         add(drop.code,drop.level,std::move(drop.generation),drop.quantity);

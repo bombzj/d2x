@@ -1,8 +1,10 @@
 #pragma once
+#include "gameplay/stats/stat_list.hpp"
 #include "content/classic_data.hpp"
 #include <span>
 
 namespace d2x {
+std::shared_ptr<const StatRuleCatalog> prepareNativeStatRules(const ClassicData &);
 struct ItemInstance;
 void loadPropertyData(ClassicData &data);
 bool isDirectPropertyRoll(const ClassicData &data, std::string_view code);

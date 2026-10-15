@@ -3,6 +3,8 @@
 #include <array>
 #include <map>
 #include <optional>
+#include <span>
+#include <cstdint>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -50,5 +52,5 @@ struct SkillDescriptionCatalog {
     std::string_view label(std::string_view key) const;
 };
 SkillDescriptionCatalog loadSkillDescriptions(const std::map<std::string,DataTable,std::less<>> &,
-                                              const ClassicStrings &);
+                                              const ClassicStrings &, std::span<const uint8_t> missileRecords);
 } // namespace d2x

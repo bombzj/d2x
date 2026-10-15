@@ -12,8 +12,8 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
     const auto *p=ports_.players.find(actor.player);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !skill.weapon ||
         (weapon.item && !p->totals.activeEquipment.contains(weapon.item))) return {DomainStatus::InvalidActor,{}};
-    const float mana=payMana?skill.manaCost:0;
-    if(!std::isfinite(mana) || mana<0 || p->persistent.player.mana<mana) return {DomainStatus::Unavailable,{}};
+    const Fixed8 mana=payMana?skill.manaCost:Fixed8{};
+    if(mana<0 || p->persistent.player.mana<mana) return {DomainStatus::Unavailable,{}};
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.inventory,{},p->persistent.player.weaponSet};
     edit.character=p->persistent.player;edit.character->mana-=mana;
     edit.transient=transient;

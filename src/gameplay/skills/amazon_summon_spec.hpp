@@ -9,6 +9,7 @@
 #include <optional>
 
 namespace d2x {
+class SkillFormulaValues;
 struct AmazonPetEquipment { int rank = 0; EquipmentSlot slot{}; std::string item; ItemQuality quality{}; };
 struct AmazonSummonSpec {
     bool decoy = true, warp = false;
@@ -34,5 +35,5 @@ struct AmazonPetSpec {
     std::vector<AmazonPetEquipment> equipment;
 };
 SummonCastSpec resolveAmazonSummon(const SummonSkillSpec &, int rank, int ownerLevel,
-    int difficulty, const CharacterAttributes &owner, const std::map<int, int> &hardRanks);
+    int difficulty, const CharacterAttributes &owner, const std::map<int, int> &hardRanks,SkillFormulaValues *formulas=nullptr,int skill=-1);
 } // namespace d2x

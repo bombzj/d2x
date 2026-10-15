@@ -1,11 +1,11 @@
 #pragma once
+#include "gameplay/skills/equipment.hpp"
 #include <array>
 #include <string>
 #include <vector>
 
 namespace d2x {
-enum class BasicSkillAction { None, Attack, Throw, LeftHandSwing, LeftHandThrow };
-struct SkillMetadata {
+struct SkillMetadata : SkillEquipmentRule {
     int id = -1, page = 0, row = 0, column = 0, iconCell = -1;
     int listRow = -1, listPool = 0;
     int requiredLevel = 0, maximumRank = 0;
@@ -14,13 +14,10 @@ struct SkillMetadata {
     std::string classCode, sourceName, name, description;
     std::vector<int> prerequisites;
     bool leftAllowed = false, passive = false, allowedInTown = false;
-    bool inGame = false, aura = false, noAmmo = false;
+    bool inGame = false, aura = false;
     int startMana = 0, serverDoFunction = 0;
     // Native paired hand groups, not a per-skill weapon/shield switch.
-    std::array<std::array<std::string, 3>, 2> includedHandTypes;
-    std::array<std::array<std::string, 2>, 2> excludedHandTypes;
     bool itemSkill = false; // Scroll/Book SrvDo113; availability requires native quantity.
-    BasicSkillAction basicAction = BasicSkillAction::None;
     std::string animationMode;
 };
 } // namespace d2x

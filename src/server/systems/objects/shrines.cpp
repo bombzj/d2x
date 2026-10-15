@@ -6,6 +6,11 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/combat/system.hpp"
+#include "server/systems/effects/system.hpp"
+#include "server/systems/transactions/system.hpp"
+#include "gameplay/skills/curse_resolve.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -32,7 +37,7 @@ DomainResult<> System::shrineMissiles(const ActorContext &actor,Object &object) 
             if(life<=0 || !area.definition.activation.nearby(object.position,at) || delta.x*delta.x+delta.y*delta.y>float(shrine.argument1)*shrine.argument1) return;
             impact.targets.push_back(id);impact.targetDamage.push_back((life/256)*shrine.argument0/100*256);
         };
-        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==object.area) add(p.actor,p.position,int64_t(p.persistent.player.hp*256.f));}
+        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==object.area) add(p.actor,p.position,int64_t(p.persistent.player.hp.raw()));}
         for(const auto &[id,m]:ports_.monsters.read().actors) if(m.area==object.area && m.damageable()) add(id,m.position,m.life);
         impacts.push_back(std::move(impact));
         for(int x=1;x<=4;++x) for(int y=1;y<=4;++y) request.aims.push_back(object.position+Vec{float((x&1?1:-1)*5*x),float((y&1?1:-1)*5*y)});
@@ -85,4 +90,58 @@ DomainResult<> System::specialShrine(const ActorContext &actor,Object &object) {
     if(queued) {object.pending=true;object.operatorId=actor.player;object.random=random;}
     return queued;
 }
+DomainResult<> System::shrine(const ActorContext &actor,Object &object) {
+    const auto &rule=*object.rule.shrine;const auto *player=ports_.players.find(actor.player);
+    const auto &attributes=player->totals.character;
+    if(rule.code>=17) return specialShrine(actor,object);
+    if(rule.code<=3) return ports_.transactions.resources(actor,player->characterRevision,
+        rule.code!=3?attributes.maxLifeFixed:player->persistent.player.hp,
+        rule.code!=2?attributes.maxManaFixed:player->persistent.player.mana,player->persistent.player.stamina);
+    if(rule.code<6 || rule.code>15 || rule.state.id<0) return {};
+    const auto duration=curseStateDuration(rule.duration,attributes.combat.curseResistance,rule.state.curse);
+    if(!duration) return {DomainStatus::Conflict,{}};
+    const auto &stats=*player->rules.character->stats;
+    CombatEffectSpec effect;effect.state=rule.state;effect.source={CombatEffectSource::Shrine,object.id,0,0};
+    effect.stacking=EffectStacking::CurseLevel;effect.nativeState=true;effect.refreshPassivesOnRemoval=true;
+    if(*duration) effect.duration=uint32_t(*duration);
+    // sub_6FD10EC0 seeds the primary stat before posting. Reusing the same
+    // shrine list preserves that initial value; the caller still writes its
+    // additional stats afterwards, exactly like CombatBoost/Stamina.
+    StatList initial;initial.extended=false;
+    const auto primary=[&](std::string_view name,int32_t value) {setNativeStat(initial,stats,name,value,0,true);};
+    const auto write=[&](std::string_view name,int32_t value) {return StatValue{{stats.names.at(std::string(name)),0},value};};
+    std::vector<StatValue> writes;
+    switch(rule.code) {
+    case 6: primary("skill_armor_percent",rule.argument0);break;
+    case 7: {
+        const auto &weapon=player->totals.equipment.weapons[0];
+        const auto rate=weapon.potion?0:weapon.baseAttackRating;
+        const auto toHit=player->rules.character->formulas->skills.at(0).number("tohit");
+        const auto percent=nativeAdd(weapon.attackRatingPercent,toHit);
+        const auto bonus=nativeAdd(nativeMultiply(rate,nativeAdd(nativeDivide(percent,100),1)),player->definition.toHitFactor);
+        primary("damagepercent",rule.argument1);
+        writes.push_back(write("tohit",nativeMultiplyDivide(rule.argument0,bonus,100)));
+        break;
+    }
+    case 8: primary("fireresist",rule.argument0);effect.modifiers.combat.preventBurn=true;break;
+    case 9: primary("coldresist",rule.argument0);break;
+    case 10: primary("lightresist",rule.argument0);break;
+    case 11: primary("poisonresist",rule.argument0);effect.modifiers.combat.preventPoison=true;break;
+    case 12:
+        primary("maxstamina",0);effect.nativeRemoval=NativeStateRemoval::SkillShrine;break;
+    case 13: primary("manarecoverybonus",rule.argument0);break;
+    case 14: {
+        const auto value=nativeMultiplyDivide(rule.argument0,nativeStatValue(player->totals.nativeStats,stats,"skill_staminapercent"),100);
+        primary("skill_staminapercent",value);
+        writes.push_back(write("stamina",nativeMultiply(2,value)));
+        writes.push_back(write("staminarecoverybonus",1000));
+        effect.restoreStaminaOnRemoval=true;break;
+    }
+    case 15: primary("item_addexperience",rule.argument0);break;
+    }
+    effect.nativeValues=std::move(initial.base);
+    effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},stats,effect.modifiers);
+    return ports_.effects.apply(actor,std::move(effect),rule.code==14,writes,rule.code==12);
+}
+
 }

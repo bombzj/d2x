@@ -276,6 +276,7 @@ struct RemoteScene::Impl {
         if (!parts->equipmentEffectsKnown)
             effectLimitations.insert("Per-component equipment coloring and ethereal transparency are not implemented; original body components remain visible");
         ActorAnimationRequest request; request.category = "chars"; request.appearance = *parts; request.shadow = true;
+        if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
         if (u.key.type==0 && u.key.id==playerId) request.fasterCast=shared.characterView().fasterCast;
         if (u.key.type==0 && u.key.id==playerId) request.attackTiming=shared.characterView().attackTiming;
         if (u.key.type==0 && u.key.id==playerId) request.recoveryTiming=shared.characterView().recoveryTiming;
@@ -786,6 +787,24 @@ struct RemoteScene::Impl {
         for (const auto &event : v.world.combatEvents) {
             if (event.sequence <= combatSequence) continue;
             combatSequence = event.sequence;
+            if(event.hitClass && (event.kind==OnlineCombatEvent::Kind::Hit ||
+                (event.kind==OnlineCombatEvent::Kind::Action && event.source.type==1 && event.action==6))) {
+                const auto now=observed;
+                const float age=event.receivedMilliseconds && now>=event.receivedMilliseconds?float(now-event.receivedMilliseconds)/1000.f:0;
+                // Retail 1.13c RVA 19A1F / 2A5C7: nonzero low nibble
+                // enables the element overlay attached to the damaged unit.
+                std::string_view name;
+                if((*event.hitClass&15)!=0 && age<=.25f) switch(*event.hitClass&0xf0) {
+                    case 0x10:name="doubledamage1";break;
+                    case 0x20:name="fire_hit";break;
+                    case 0x30:name="ice_explode";break;
+                    case 0x40:name="lightning";break;
+                    case 0x70:name="bash";break;
+                    case 0x80:name="hit_thorns";break;
+                    case 0x90:name="sanctuaryknockback";break;
+                }
+                if(const auto hit=overlayNames.find(name);!name.empty() && hit!=overlayNames.end()) overlay(int(hit->second),event.source);
+            }
             if(event.source.type==1 && (event.kind==OnlineCombatEvent::Kind::Action || event.kind==OnlineCombatEvent::Kind::Hit)) {
                 const auto unit=v.world.units.find(event.source);
                 if(unit!=v.world.units.end() && unit->second.position) {
@@ -1466,6 +1485,7 @@ struct RemoteScene::Impl {
                 constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc","s2","s3","s4","sq","dd","kk","kb","rn"};
                 const auto mode=u.mode.value_or(1);if(mode>=modes.size()) return nullptr;
                 ActorAnimationRequest request;request.category="chars";request.appearance=*parts;request.shadow=true;
+                if(const auto shift=stateColorShifts.find(u.key);shift!=stateColorShifts.end()) request.stateColorShift=shift->second;
                 request.monsterUnit=true;
                 request.mode=moving && mode==1?"wl":modes[mode];request.finalFrame=mode==12;
                 if(mode==12) request.mode="dt";
@@ -1890,7 +1910,7 @@ struct RemoteScene::Impl {
                         frozen |= !dead && state.name=="freeze";
                         const int priority=states.number(row->second,"colorpri").value_or(0);
                         const auto shift=states.number(row->second,"colorshift");
-                        if(!dead && shift && *shift>=0 && *shift<128 && priority>colorPriority) {colorPriority=priority;stateColorShifts[key]=*shift;}
+                        if(!dead && shift && *shift>=0 && *shift<=128 && priority>colorPriority) {colorPriority=priority;stateColorShifts[key]=*shift;}
                         hiddenCorpse |= key.type == 1 && dead && states.number(row->second,"hide").value_or(0);
                         shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
                     }
@@ -2115,7 +2135,15 @@ struct RemoteScene::Impl {
                 const auto row = stateRows.find(id);
                 if (row == stateRows.end()) continue;
                 const auto identity = std::pair{key,id}; activeStates.insert(identity);
-                const float born = stateTimes.try_emplace(identity,time).first->second;
+                const auto [epoch,inserted]=stateTimes.try_emplace(identity,time);
+                const float born=epoch->second;
+                if(inserted) {
+                    const auto cast=overlayNames.find(states.value(row->second,"castoverlay"));
+                    if(cast!=overlayNames.end()) {
+                        if(const auto *visual=shared.overlayVisual(int(cast->second)))
+                            overlayVisuals.push_back({int(cast->second),key,time,visual->frames/visual->fps});
+                    }
+                }
                 for (const auto field : {"overlay2","overlay1"}) {
                     const auto overlay = overlayNames.find(states.value(row->second,field));
                     if (overlay != overlayNames.end()) addOverlay(int(overlay->second),key,time-born,true);

@@ -18,6 +18,8 @@ struct ActOneState {
     bool stonesOrdered{}, cainRescued{}, restoreCairnStones{}, cainPortalOpened{}, cainOffer{}, burialOffer{}, toolsOffer{};
     bool andarielPortal{};
     uint64_t andarielPortalAt{};
+    struct CairnControl {EntityId owner;RegionId area;Vec position;};
+    std::optional<CairnControl> cairnPending;
 };
 struct ActTwoState {
     bool sunScheduled{}, dark{}, altarDestroyed{}, journalRead{}, tombOpen{}, durielSlain{}, tyraelPortal{};
@@ -31,6 +33,7 @@ struct ActTwoState {
     std::map<PlayerId,EntityId> journals;
     std::map<PlayerId,ActorContext> journalReads;
     std::set<PlayerId> radamentBooks;
+    std::set<EntityId> radamentFxStarted;
 };
 struct Goal {
     uint32_t stage{};
@@ -50,6 +53,7 @@ struct ActThreeState {
     bool flailDropped{},cubeDropped{},orbSmashed{},mephistoSlain{},soulstoneDropped{};
     unsigned orbHits{};
     uint64_t sewerAt{};
+    bool orbSequenceStarted{},orbFxPending{};
 };
 struct ActFourState {
     bool izualSlain{},ghostSpawned{},hammerDropped{},forgePlaced{},forgeSmashed{},diabloSlain{},diabloSpawned{},portalOpened{};
@@ -64,5 +68,7 @@ struct ActFiveState {
     uint64_t ancientAt{},waveAt{};
     bool wavePrepared{};
     Vec baalPosition;
+    EntityId baalFxSource;
+    bool baalFxStarted{};
 };
 }

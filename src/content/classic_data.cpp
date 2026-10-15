@@ -1,7 +1,11 @@
 #include "content/skills/description_data.hpp"
+#include "content/skills/formula_data.hpp"
+#include "content/monsters/mode_stat_data.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/archive.hpp"
+#include "resources/formats.hpp"
 #include "classic_data.hpp"
+#include "monsters/monster_type_data.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/character/character_progression.hpp"
 #include "content/items/equipment_data.hpp"
@@ -17,6 +21,7 @@
 #include "content/items/item_grades.hpp"
 #include "content/items/special_items.hpp"
 #include "content/skills/sorceress_data.hpp"
+#include "content/skills/defensive_buff_data.hpp"
 #include "content/skills/weapon_skill_data.hpp"
 #include "content/skills/amazon_bow_data.hpp"
 #include "content/skills/amazon_spear_data.hpp"
@@ -67,6 +72,8 @@ ClassicData loadClassicData(Archives &archives) {
         if (archives.contains("data/global/excel/npc.txt"))
             tables.emplace("npc", DataTable(archives.read("data/global/excel/npc.txt")));
         tables.emplace("itemtypes", DataTable(archives.read("data/global/excel/itemtypes.txt")));
+        tables.emplace("elemtypes", DataTable(archives.read("data/global/excel/elemtypes.txt")));
+        tables.emplace("events", DataTable(archives.read("data/global/excel/events.txt")));
         tables.emplace("storepage", DataTable(archives.read("data/global/excel/storepage.txt")));
         tables.emplace("gamble", DataTable(archives.read("data/global/excel/gamble.txt")));
         tables.emplace("hireling", DataTable(archives.read("data/global/excel/hireling.txt")));
@@ -232,6 +239,18 @@ ClassicData loadClassicData(Archives &archives) {
     loadItemProjectiles(items, tables.at("missiles"), archives);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
                      "lod-named-txt-v1"};
+    {
+        const auto bytes=archives.read("data/global/expfield.d2");Reader reader(bytes);reader.skip(2);
+        const auto height=reader.u32(),width=reader.u32();
+        if(width!=256 || !height || height>65536 || uint64_t(width)*height!=bytes.size()-reader.pos)
+            throw std::runtime_error("Invalid original collision direction field");
+        auto field=std::make_shared<CollisionField>();field->width=int(width);field->height=int(height);
+        field->directions.assign(bytes.begin()+reader.pos,bytes.end());
+        if(std::any_of(field->directions.begin(),field->directions.end(),[](uint8_t value){return value>8;}) ||
+            field->directions[size_t(height/2)*width+width/2]!=8)
+            throw std::runtime_error("Invalid original collision field directions");
+        data.nativeCollisionField=std::move(field);
+    }
     const auto &inventory = data.tables.at("inventory");
     const auto stashName = "Big Bank Page 1";
     size_t stashRow = 0;
@@ -336,17 +355,22 @@ ClassicData loadClassicData(Archives &archives) {
             }
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings);
-        data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings));
+        data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings,
+            archives.read("data/global/excel/missiles.bin")));
         loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), data.characters, archives);
         data.playerDeath = loadPlayerDeathData(archives, data.characters, data.tables.at("difficultylevels"));
         data.shrines = loadShrines(data.tables.at("shrines"));
         data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
+        auto nativeStates=std::make_shared<CombatStateRules>();
+        for(const auto &[name,state]:data.states) nativeStates->emplace(state.definition.id,state.definition);
+        data.nativeStates=std::move(nativeStates);
         loadAuraSkills(data);
         loadMonsterEnchantmentResources(data, archives);
         const auto &overlays = data.tables.emplace("overlay", DataTable(archives.read("data/global/excel/overlay.txt"))).first->second;
         const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
         loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
                              overlays, sounds, data.states, archives);
+        loadNativeDefensiveBuffs(data.skills,data.tables.at("skills"),overlays,sounds,data.states,archives);
         loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadAmazonBowSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
         loadAmazonSpearSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
@@ -397,7 +421,6 @@ ClassicData loadClassicData(Archives &archives) {
         data.npcDialogues = loadNpcDialogues(archives, data.tables.at("monstats"),
             DataTable(archives.read("data/global/excel/monpreset.txt")), data.itemStrings);
     data.questContent = loadQuestContent(archives, data.npcDialogues, data.questStrings);
-    loadItemConsumables(data);
     {
         loadPropertyData(data);
         loadSocketData(data, strings);
@@ -423,6 +446,20 @@ ClassicData loadClassicData(Archives &archives) {
         prepareEquipmentSetData(data);
         loadMagicAffixData(data);
         loadLodTreasureData(data);
+        data.nativeStats=prepareNativeStatRules(data);
+        loadItemConsumables(data);
+        data.nativeFormulas=prepareSkillFormulaCatalog(data);
+        data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));
+        const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
+        const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));
+        const auto &monsters=data.tables.at("monstats");
+        for(size_t row=0;row<monsters.rows().size();++row) if(const auto id=monsters.number(row,"hcIdx"))
+            for(int difficulty=0;difficulty<3;++difficulty) {
+                if(!data.nativeMonsterModes.emplace(std::pair{*id,difficulty},loadMonsterModeTable(monsters,row,difficulty,ratios)).second)
+                    throw std::runtime_error("Duplicate native monster mode table identity");
+                if(!data.nativeMonsterLives.emplace(std::pair{*id,difficulty},loadMonsterLifeTable(monsters,row,difficulty,lifeRatios)).second)
+                    throw std::runtime_error("Duplicate native monster life table identity");
+            }
         return data;
     }
 }

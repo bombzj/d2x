@@ -1,4 +1,5 @@
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/units/distance.hpp"
 #include "world/navigation.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
@@ -32,9 +33,8 @@ bool playerMeleeReach(const Grid &grid, Vec from, Vec to, int targetSize, int ra
     return distance<=0 || (distance<=rangeAdder+1 && grid.interactionSegment(from,to,targetSize,{}));
 }
 int missileDistance(Vec from, Vec to) {
-    const int x = std::abs(int(std::floor(to.x)) - int(std::floor(from.x)));
-    const int y = std::abs(int(std::floor(to.y)) - int(std::floor(from.y)));
-    return std::max(x, y) + std::min(x, y) / 2;
+    return unitCoordinateDistance(int(std::floor(from.x)), int(std::floor(from.y)),
+        int(std::floor(to.x)), int(std::floor(to.y)));
 }
 std::optional<float> missileUnitIntersection(Vec from, Vec to, int missileSize, Vec unit, int unitSize) {
     if (missileSize < 0 || missileSize > 3 || unitSize <= 0 || unitSize > 3) return std::nullopt;

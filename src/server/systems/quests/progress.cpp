@@ -7,6 +7,7 @@
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/progression/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/acts/act_two_state.hpp"
@@ -124,6 +125,7 @@ void System::initialize(const CharacterRecord &creator) {
     }
     const auto sun=book[questIndex(QuestId::TaintedSun)].stage;
     state_.actTwo.dark=sun==1 || sun==2;state_.actTwo.sunScheduled=state_.actTwo.dark;
+    ports_.world.sunEclipse(state_.actTwo.dark);
 }
 std::array<uint16_t,48> System::gameFlags() const {
     auto flags=state_.initialFlags;

@@ -1,5 +1,5 @@
 #include "cast_timing.hpp"
-#include "gameplay/combat/attack_timing.hpp"
+#include "gameplay/actions/timing.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>

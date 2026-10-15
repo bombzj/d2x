@@ -15,6 +15,7 @@ struct MonsterExperienceRequest {
     RegionId region = RegionId::Encampment;
     int difficulty = 0, playerLevel = 1;
     std::optional<MonsterRewardModifiers> rewardModifiers;
+    bool ladderStats{true};
 };
 struct MonsterExperienceAward {
     uint64_t amount = 0;

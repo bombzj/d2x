@@ -85,6 +85,7 @@ struct ContainerSpec {
 struct ContainerState {
     EntityId id;
     ContainerSpec spec;
+    EntityId registeredWeapon; // Runtime native inventory GUID; absent from D2S.
 };
 struct PlayerContainers {
     EntityId backpack, belt, stash, beltEquipment, equipment, cube, hirelingEquipment, cursor;
@@ -94,5 +95,8 @@ struct InventoryState {
     uint64_t creationRandom = 0; // Initialized by the authority, not serialized in D2S.
     std::map<EntityId, ItemInstance> items;
     std::map<EntityId, ContainerState> containers;
+    // Relative order of native inventory nodes. Socket children have their
+    // host's separate inventory; owner/container filtering selects each chain.
+    std::vector<EntityId> itemOrder;
 };
 } // namespace d2x

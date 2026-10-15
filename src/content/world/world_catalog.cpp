@@ -45,6 +45,11 @@ std::shared_ptr<const WorldCatalog> sharedWorldCatalog(Archives &archives, int d
 WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
     if (difficulty < 0 || difficulty > 2)
         throw std::runtime_error("Invalid world difficulty");
+    const DataTable monsterTable(archives.read("data/global/excel/monstats.txt"));
+    std::set<std::string,std::less<>> monsterIds;
+    for(size_t row=0;row<monsterTable.rows().size();++row) {
+        const auto id=monsterTable.value(row,"Id");if(!id.empty()) monsterIds.emplace(id);
+    }
     for (const auto *name : {"levels", "lvlprest", "lvltypes", "lvlmaze", "lvlsub", "lvlwarp"}) {
         DataTable table(archives.read(std::string("data/global/excel/") + name + ".txt"));
         const std::map<std::string_view, std::vector<std::string_view>> required = {
@@ -115,13 +120,16 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                     population.uniqueMax[i] = number("MonUMax" + suffixes[i]);
                     population.level[i] = number("MonLvl" + std::to_string(i + 1) + "Ex");
                 }
-                for (int i = 1; population.supported && i <= 10; ++i) {
-                    for (auto [prefix, list] :
-                         {std::pair{"mon", &population.normal}, std::pair{"nmon", &population.nightmareHell},
-                          std::pair{"umon", &population.unique}}) {
-                        auto code = table.value(row, std::string(prefix) + std::to_string(i));
-                        if (!code.empty())
-                            list->emplace_back(code);
+                if(population.supported) for(auto [prefix,list]:
+                    {std::pair{"mon",&population.normal},std::pair{"nmon",&population.nightmareHell},
+                     std::pair{"umon",&population.unique}}) {
+                    // LevelsTbls counts each native 25-slot list only up to
+                    // its first unresolved (-1) entry; do not compact gaps.
+                    for(int i=1;i<=25;++i) {
+                        const auto column=std::string(prefix)+std::to_string(i);
+                        if(!table.has(column)) break;
+                        const auto code=table.value(row,column);if(code.empty() || !monsterIds.contains(code)) break;
+                        list->emplace_back(code);
                     }
                 }
                 for (int i = 0; population.supported && i < 4; ++i) {

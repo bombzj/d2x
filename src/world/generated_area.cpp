@@ -41,6 +41,8 @@ struct AreaGenerator::Impl {
         result.rooms = std::move(anchors);
         for (const auto id : rooms) {
             const auto &room = generator.tiles().rooms().at(id);
+            if(room.initialActiveRandom)
+                result.initialRoomRandom.emplace(std::pair{room.room.x,room.room.y},*room.initialActiveRandom);
             auto &near = result.nearRooms[{room.room.x, room.room.y}];
             for (const auto adjacent : room.near) {
                 const auto &other = generator.tiles().rooms().at(adjacent);

@@ -98,6 +98,9 @@ std::optional<server::AreaView> GameHost::area(GameHandle handle, RegionId id) c
 std::optional<server::GameSettings> GameHost::settings(GameHandle handle) const {
     const auto *slot = find(handle); return slot ? std::optional{slot->game->settings()} : std::nullopt;
 }
+std::optional<NativeActEnvironment> GameHost::environment(GameHandle handle,RegionId region) const {
+    const auto *slot=find(handle);return slot?slot->game->environment(region):std::nullopt;
+}
 uint64_t GameHost::nextEntity(GameHandle handle) const {
     const auto *slot = find(handle); if (!slot) throw std::runtime_error("Game instance expired"); return slot->game->nextEntity();
 }
@@ -210,6 +213,9 @@ server::DomainResult<> GameHost::grantHireling(PlayerBinding binding,HirelingRec
 std::vector<MonsterSnapshot> GameHost::visibleMonsters(PlayerBinding binding) const {
     const auto *slot = find(binding.game);
     return slot ? slot->game->visibleMonsters(binding.player) : std::vector<MonsterSnapshot>{};
+}
+std::vector<server::MissileFact> GameHost::visibleMissiles(PlayerBinding binding) const {
+    const auto *slot=find(binding.game);return slot?slot->game->visibleMissiles(binding.player):std::vector<server::MissileFact>{};
 }
 std::vector<PetOwnershipSnapshot> GameHost::pets(PlayerBinding binding) const {
     const auto *slot=find(binding.game);

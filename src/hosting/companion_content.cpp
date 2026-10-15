@@ -5,6 +5,8 @@
 #include "content/items/item_properties.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/equipment_contributions.hpp"
+#include "gameplay/items/native_sources.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/combat/attack_timing.hpp"
@@ -16,6 +18,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <utility>
+#include <vector>
 namespace d2x {
 namespace {
 void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &data) {
@@ -25,15 +29,21 @@ void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &da
     definition.equipment.requiredClass.clear();definition.base.requiredStrength=definition.base.requiredDexterity=definition.base.requiredLevel=0;item.requiredLevel=item.socketRequiredLevel=0;
     const auto slot=std::find(definition.equipment.slots.begin(),definition.equipment.slots.end(),true);
     if(slot==definition.equipment.slots.end()) throw std::runtime_error("Metal material has no native equipment slot");
-    EquipmentLoadout loadout;loadout.equipped[size_t(slot-definition.equipment.slots.begin())]={&item,&definition};loadout.requirementPercent=[](const ItemInstance &){return 0;};
+    EquipmentLoadout loadout;loadout.equipped[size_t(slot-definition.equipment.slots.begin())]={&item,&definition};loadout.requirementPercent=[](const ItemInstance &){return 0;};loadout.skipRequirements=true;
     // The material is consumed, rather than worn; its durability does not
     // disable the properties copied onto the golem.
     loadout.maximumDurability=[](const ItemInstance &){return 0u;};
     auto &stats=prepared.summon.stats;auto &attributes=stats.attributes;const EquipmentActor actor{"",0,0,stats.level};
-    const EquipmentContributionSource instructions{{},[&](const ItemInstance &value,int level){return resolveItemStats(data,value,level);},{},{}};
+    std::vector<EquipmentContribution> nativeContributions;
+    const EquipmentContributionSource instructions{{},[&](const ItemInstance &value,int level){return resolveItemStats(data,value,level);},{},{},{},
+        [&](EquipmentContribution contribution){nativeContributions.push_back(std::move(contribution));}};
     auto modifiers=deriveEquipmentModifiers(loadout,actor,instructions);auto gearModifiers=modifiers.combat;
     gearModifiers.defensePercent=gearModifiers.shieldDefensePercent=0;
     const auto gear=deriveEquipmentStats(loadout,actor,modifiers.defense,gearModifiers,attributes.attackRating+modifiers.attackRating);
+    if(!prepared.rule.stats) throw std::runtime_error("Missing native Iron Golem material schema");
+    prepared.equipmentSources=prepareNativeEquipmentSources(data.items,*prepared.rule.stats,nativeContributions,EntityId{1},
+        [&](EntityId id)->const ItemInstance & {if(id!=source.id) throw std::runtime_error("Invalid Iron Golem material contribution identity");return source;},
+        gear.weapons[0].item,StatOwnerKind::Monster).contributions;
     attributes.attackRating+=modifiers.attackRating;attributes.defense+=gear.defense;
     const auto summonResist=prepared.summon.necro->resistPercent;
     if(modifiers.combat.fireAbsorbPercent>0) attributes.fireResist-=summonResist;
@@ -51,7 +61,14 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     const auto *record=catalog.find(source.summon.monster);
     if(!record) throw std::runtime_error("Missing original necromancer pet monster");
     AnimDataTable animations(archives.read("data/global/animdata.d2"));
-    auto &rule=result.rule;rule.nativeClass=record->index;rule.size=record->collisionSize;
+    auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;
+    if(result.summon.native) {
+        // The supported necromancer definitions have equal native MinHP/MaxHP;
+        // the original initializer still consumes the singleton HP roll.
+        limitedRandom(result.random,1);
+        result.summon.native->initialLife=result.summon.native->base.attributes.maxLifeFixed;
+    }
+    rule.nativeClass=record->index;rule.size=record->collisionSize;
     rule.collision=record->movementRule();rule.spawnCollision=record->spawnRule();
     rule.nativeVelocity=record->walkVelocity.value_or(0);rule.meleeRange=record->meleeRange;
     rule.difficulty=source.difficulty;rule.coldEffect=record->coldEffect.at(size_t(source.difficulty));
@@ -61,6 +78,7 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     const auto &skills=data.tables.at("skills"),&pets=data.tables.at("pettype");
     for(size_t row=0;row<skills.rows().size();++row) if(skills.number(row,"Id")==source.skill)
         for(size_t pet=0;pet<pets.rows().size();++pet) if(pets.value(pet,"pet type")==skills.value(row,"pettype")) rule.petType=pets.number(pet,"Id").value_or(int(pet));
+    result.summon.petType=rule.petType;
     rule.decisionTicks=table.number(record->sourceRow,source.difficulty==0?"aidel":source.difficulty==1?"aidel(N)":"aidel(H)").value_or(1);
     rule.drain=table.number(record->sourceRow,std::string("Drain")+suffix).value_or(0);
     rule.threat=table.number(record->sourceRow,"threat").value_or(0);
@@ -70,6 +88,16 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     if((!attack && source.summon.kind!=MonsterKind::BoneWall) || !death || !prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original necromancer pet lifecycle");
     if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
     rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+    if(source.summon.kind==MonsterKind::BoneWall) {
+        auto skillName=std::string(table.value(record->sourceRow,"Skill1"));
+        for(auto &letter:skillName) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+        const auto aiSkill=data.nativeFormulas->skillIds.find(skillName);
+        if(aiSkill==data.nativeFormulas->skillIds.end()) throw std::runtime_error("Missing BoneWall AI lifetime skill");
+        rule.summonLifeFrames=data.nativeFormulas->skills.at(aiSkill->second).number("param2");
+        const auto birth=loadMonsterMotionTiming(animations,record->token,"s2",monsterModeWeapon(archives,record->token,"s2",record->baseWeapon));
+        if(!birth || rule.summonLifeFrames<=0) throw std::runtime_error("Missing original BoneWall birth/lifetime");
+        rule.summonBirthTicks=std::max(1,int(std::ceil(birth->duration*25)));
+    }
     if(attack) {
         auto &action=rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}}).first->second;
         action.animation=AnimationTiming{attack->frames,attack->speed};action.animationAction=attack->actionFrame;
@@ -78,12 +106,15 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
         rule.petVariant=source.refresh && source.rule.petVariant>=0?source.rule.petVariant:int(limitedRandom(result.random,4));const auto &payload=source.summon.necro->missiles.at(size_t(rule.petVariant));
         auto missile=prepareMonsterMissile(data,payload.id,1);if(!missile) throw std::runtime_error("Missing original skeleton mage missile program");
         missile->minimum=missile->maximum=0;missile->sourceDamage=0;
-        missile->elementalMinimum=int(payload.minimumDamage*256.f);missile->elementalMaximum=int(payload.maximumDamage*256.f);
-        missile->element=payload.element;missile->coldFrames=payload.element==DamageType::Cold?uint64_t(std::lround(payload.duration*25.f)):0;
-        missile->poisonFrames=payload.element==DamageType::Poison?uint64_t(std::lround(payload.duration*25.f)):0;
+        missile->elementalMinimum=missile->elementalMaximum=0;
+        missile->element=payload.element;missile->coldFrames=missile->poisonFrames=0;
         rule.attacks.at(4).missile=std::move(missile);
         for(size_t row=0;row<skills.rows().size();++row) if(skills.value(row,"skill")==table.value(record->sourceRow,"Skill1"))
-            if(const auto id=skills.number(row,"Id")) rule.skillActions.emplace(uint16_t(*id),rule.attacks.at(4));
+            if(const auto id=skills.number(row,"Id")) {
+                if(!payload.levelDamage || payload.levelDamage->skill!=*id) throw std::runtime_error("Missing native skeleton mage level damage binding");
+                rule.attacks.at(4).missile->levelDamage=payload.levelDamage;
+                rule.skillActions.emplace(uint16_t(*id),rule.attacks.at(4));
+            }
     }
     if(source.material) equipIronGolem(result,data);
     return result;
@@ -92,8 +123,19 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     server::companions::Prepared result;result.source=source;result.summon=source.summon;result.rule=source.rule;
     const auto &pet=*source.summon.amazon;auto random=source.seed;
     auto &stats=result.summon.stats;auto &attributes=stats.attributes;
-    const int life=pet.lifeMinimum+int(limitedRandom(random,unsigned(std::max(0,pet.lifeMaximum-pet.lifeMinimum)+1)));
-    attributes.maxLife=std::max(1,life*(100+pet.lifePercent)/100);
+    if(!result.summon.native || !result.rule.stats) throw std::runtime_error("Missing native Amazon summon preparation");
+    const int life=nativeAdd(pet.lifeMinimum,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(pet.lifeMaximum,pet.lifeMinimum),1)))));
+    result.summon.native->initialLife=Fixed8::fromRaw(nativeShiftLeft(std::min(life,(1<<23)-1),8));
+    result.rule.difficulty=source.difficulty;result.rule.damageRegen=result.summon.native->base.damageRegen;
+    const auto &monsterTable=data.tables.at("monstats");
+    for(size_t row=0;row<monsterTable.rows().size();++row) if(monsterTable.value(row,"Id")==source.summon.monster) {
+        prepareMonsterSkillRanks(data,row,result.rule);break;
+    }
+    for(int difficulty=0;difficulty<3;++difficulty) result.rule.modeTables[size_t(difficulty)]=data.nativeMonsterModes.at({result.rule.nativeClass,difficulty});
+    if(pet.decoy) {result.random=random;return result;}
+    const auto rawLife=result.summon.native->initialLife.raw();
+    attributes.maxLifeFixed=Fixed8::fromRaw(nativeAdd(rawLife,nativePercentage(rawLife,pet.lifePercent,100)));
+    attributes.maxLife=std::max(1,attributes.maxLifeFixed.raw()>>8);
     auto &equipment=result.equipment;equipment.player.id=EntityId{1};equipment.player.characterClass=data.characters.at(size_t(pet.gfxClass)).code;
     equipment.player.level=stats.level;equipment.containers.equipment=EntityId{1};
     equipment.inventory.containers.emplace(EntityId{1},ContainerState{EntityId{1},{EntityId{1},ContainerKind::Equipment,int(EquipmentSlot::Count),1}});
@@ -116,12 +158,16 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
         auto &rule=definitions.emplace(entry.slot,std::move(adjusted)).first->second;loadout.equipped[size_t(entry.slot)]={&stored,&rule};
     }
     const EquipmentActor base{"",attributes.strength,attributes.dexterity,stats.level};
-    const EquipmentContributionSource contributions{{},[&](const ItemInstance &item,int level){return resolveItemStats(data,item,level);},{},{}};
+    std::vector<EquipmentContribution> nativeContributions;
+    const EquipmentContributionSource contributions{{},[&](const ItemInstance &item,int level){return resolveItemStats(data,item,level);},{},{},{},
+        [&](EquipmentContribution contribution){nativeContributions.push_back(std::move(contribution));}};
     auto modifiers=deriveEquipmentModifiers(loadout,base,contributions);
     const EquipmentActor improved{"",attributes.strength+modifiers.strength,attributes.dexterity+modifiers.dexterity,stats.level};
     auto gearCombat=modifiers.combat;gearCombat.defensePercent+=attributes.combat.defensePercent;
     const auto gear=deriveEquipmentStats(loadout,improved,attributes.defense+modifiers.defense,gearCombat,attributes.attackRating+modifiers.attackRating);
     if(!gear.weapons[0].item) throw std::runtime_error("Valkyrie MonEquip has no weapon");
+    result.equipmentSources=prepareNativeEquipmentSources(data.items,*result.rule.stats,nativeContributions,EntityId{1},
+        [&](EntityId id)->const ItemInstance & {return equipment.inventory.items.at(id);},gear.weapons[0].item,StatOwnerKind::Monster).contributions;
     attributes.strength=improved.strength;attributes.dexterity=improved.dexterity;
     attributes.defense=gear.defense;
     attributes.attackRating+=modifiers.attackRating;attributes.maxLife=std::max(1,attributes.maxLife*(100+modifiers.combat.lifePercent)/100+modifiers.maxLife);

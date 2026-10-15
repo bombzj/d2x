@@ -36,6 +36,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         if (visual.trans) translucentProjectiles.insert(id);
         projectileVisuals.emplace(id, visual);
         ClientMissileProgram program;
+        program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
         program.function = number("pCltDoFunc");
         program.localBlood = number("LocalBlood") != 0;
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";

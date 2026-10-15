@@ -27,6 +27,8 @@
 #include "server/systems/trade/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/replication/system.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
+#include "gameplay/events/frame_queue.hpp"
 
 namespace d2x::server {
 // Lifetime owner only. Systems receive narrow Ports, never this whole registry.
@@ -36,6 +38,9 @@ struct GameSystems {
     GameSystems(const GameSystems &) = delete;
     GameSystems &operator=(const GameSystems &) = delete;
     MovementSystem movement;
+    FrameEventQueue frameEvents;
+    actions::State actionState;
+    reactions::ItemTriggers itemTriggers;
 #define D2X_SYSTEM(id, member, phase, scope) member::System member;
 #include "subsystems.inc"
 #undef D2X_SYSTEM

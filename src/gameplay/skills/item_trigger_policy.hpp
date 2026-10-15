@@ -1,0 +1,17 @@
+#pragma once
+#include "gameplay/items/skill_sources.hpp"
+
+namespace d2x {
+struct ItemTriggerRule {
+    int effect{}, target{};
+    bool targetDo{}, checkStart{}, alternativeCompatible{};
+};
+enum class ItemTriggerSupport { Ready, NoEffect, AlternativeProgram, TargetProgram };
+enum class ItemTriggerTarget { EventTarget, Self, RandomPosition };
+struct ItemTriggerPolicy {
+    ItemTriggerSupport support{ItemTriggerSupport::NoEffect};
+    ItemTriggerTarget target{ItemTriggerTarget::EventTarget};
+    bool alternativeProgram{}, death{};
+};
+ItemTriggerPolicy resolveItemTriggerPolicy(ItemSkillEvent event, ItemTriggerRule rule);
+}

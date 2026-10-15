@@ -2,13 +2,15 @@
 #include "core/id.hpp"
 #include "core/math.hpp"
 #include "gameplay/quest/id.hpp"
-#include "gameplay/combat/alignment.hpp"
 #include "world/navigation.hpp"
 #include <map>
+#include <memory>
+#include <cstdint>
 #include <set>
 #include <string>
 #include <vector>
 namespace d2x::server {
+struct MonsterRule;
 struct NpcRule {
     std::string code, introduction;
     int nativeClass{}, size{};
@@ -20,7 +22,9 @@ struct NpcRule {
     bool interactable=true;
     int walkVelocity{};
     MovementCollisionRule movement;
-    UnitAlignment alignment{UnitAlignment::Evil};
+    std::shared_ptr<const MonsterRule> combat;
 };
-struct AreaNpc { EntityId id; Vec position; NpcRule rule; bool hidden{},moving{}; Vec destination{}; };
+// Placement and quest/service capability only. The nonplayer actor identified
+// by id exclusively owns position, resources, random seed and combat state.
+struct AreaNpc { EntityId id; Vec spawnPosition; NpcRule rule; };
 }

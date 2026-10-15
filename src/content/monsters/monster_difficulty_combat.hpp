@@ -13,7 +13,9 @@ struct MonsterCombatProfile {
     int damageRegen = 0;
     std::array<int, 6> resistances{};
 };
-// Resolve the expansion MonStats percentages against the area's MonLvl row.
+enum class MonsterStatPurpose { Combatant, NativeNpc };
+// Resolve MonStats against the game's normal or L-* MonLvl columns.
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
-    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel = {});
+    const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel = {},bool ladderStats=true,
+    MonsterStatPurpose purpose=MonsterStatPurpose::Combatant);
 } // namespace d2x

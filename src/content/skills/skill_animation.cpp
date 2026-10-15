@@ -72,6 +72,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
             head.nativeClass=monsters.number(row,"hcIdx").value();
             head.attackTicks=std::max(1,int(std::ceil(attack->duration*25.f)));
             head.impactTick=std::max(1,int(std::ceil(attack->impact*25.f)));
+            head.attackAnimation={attack->frames,attack->speed};head.actionFrame=attack->actionFrame;
             head.riseTicks=std::max(1,int(std::ceil(rise->duration*25.f)));
             head.deathTicks=std::max(1,int(std::ceil(death->duration*25.f)));
             for(size_t skill=0;skill<skills.rows().size();++skill) if(skills.value(skill,"skill")==monsters.value(row,"Skill1")) head.attackSkill=skills.number(skill,"Id").value_or(-1);

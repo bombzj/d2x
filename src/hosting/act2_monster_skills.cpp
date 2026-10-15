@@ -6,6 +6,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/combat/attack_timing.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <array>
 #include <cctype>
@@ -96,10 +97,11 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         const std::string suffix=rule.difficulty==0?"":rule.difficulty==1?"(N)":"(H)";
         const auto scale=[&](std::string field,std::string ratio) {
             const int value=skillTableNumber(stats,record.sourceRow,field+suffix);
-            return stats.number(record.sourceRow,"noRatio").value_or(0)?value:int(int64_t(value)*skillTableNumber(levels,levelRow,ratio+suffix)/100);
+            if(!rule.statGameType) ratio=ratio.substr(2);
+            return stats.number(record.sourceRow,"noRatio").value_or(0)?value:nativePercentage(skillTableNumber(levels,levelRow,ratio+suffix),value,100);
         };
         server::MonsterAttackRule value;value.minimum=scale("S1MinD","L-DM");value.maximum=scale("S1MaxD","L-DM");value.rating=scale("S1TH","L-TH");
-        const auto profile=loadMonsterCombatProfile(stats,record.sourceRow,levels,rule.difficulty,rule.level,rule.level);
+        const auto profile=loadMonsterCombatProfile(stats,record.sourceRow,levels,rule.difficulty,rule.level,rule.level,rule.statGameType!=0);
         if(!profile) throw std::runtime_error("Missing original monster elemental damage");
         for(const auto &element:profile->damage.elements) if(element && element->mode=="S1") value.elements.push_back(*element);
         return value;

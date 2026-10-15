@@ -66,17 +66,16 @@ struct NativeRealmService {
         std::map<std::pair<EntityId,EntityId>,uint16_t> relations;
         struct VisiblePlayer { EntityId actor; uint64_t inventoryRevision{}, characterRevision{}; Bytes motion; std::vector<Bytes> attributes; std::map<EntityId, std::vector<Bytes>> equipment; };
         std::map<PlayerId, VisiblePlayer> visible;
-        struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<std::pair<int,int64_t>>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
+        struct VisibleMonster { Bytes motion; std::set<int> states; std::map<int,std::vector<StatValue>> stateStats; Bytes hirelingIdentity; std::map<uint8_t,uint32_t> hirelingStats; std::map<EntityId,uint64_t> equipment; std::vector<uint8_t> modifiers; uint8_t rankFlags{}; uint16_t nameSeed{}; std::optional<uint8_t> life; };
         std::map<EntityId, VisibleMonster> monsters;
+        std::set<EntityId> missiles;
         std::map<EntityId, Bytes> pets;
         std::map<EntityId, Bytes> petVitals;
         std::map<EntityId, uint64_t> groundItems, corpses, objects, portals;
         std::map<EntityId, std::set<EntityId>> corpseEquipment;
         std::map<EntityId, EntityId> corpseOwners;
         std::map<int,int> itemSkills;
-        std::set<EntityId> npcs, shopItems;
-        std::map<EntityId,std::set<int>> npcStates;
-        std::map<EntityId,Bytes> npcMotion;
+        std::set<EntityId> shopItems;
         std::map<EntityId,uint16_t> npcQuestAlerts;
         EntityId shopOwner;
         std::map<EntityId, std::set<int>> states;
@@ -102,6 +101,7 @@ struct NativeRealmService {
     void receiveEvent(const server::EventBatch &);
     void publishPlayers();
     void publishMonsters();
+    void publishMissiles();
     void publishGroundItems();
     void publishCorpses();
     void publishObjects();
@@ -120,7 +120,7 @@ struct NativeRealmService {
     const CharacterRosterEntry &find(std::string_view) const;
     void checkpoint();
     void prepareReload();
-    PreparedGame prepareGame(PersistentCharacter, bool singlePlayer = true);
+    PreparedGame prepareGame(PersistentCharacter,std::optional<server::GameSettings> settings={});
     void admitExternal(PersistentCharacter, HostedGame &, uint32_t ticketHash, uint16_t gameId);
     void discardReload();
     void close(bool save = true, bool keepReload = false);

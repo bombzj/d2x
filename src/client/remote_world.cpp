@@ -459,6 +459,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             // PlrMsg life/correction update does not select a player mode.
             position(v,u,point(r));u.hitClass=r.u8();u.lifePercent=r.u8();
             u.lifeCarriesTriggerFlag=false;u.hitRevision=w.revision;r.finish();
+            OnlineCombatEvent event; event.packet=p.id;event.kind=OnlineCombatEvent::Kind::Hit;
+            event.source=u.key;event.hitClass=u.hitClass;event.life=u.lifePercent;
+            combatEvent(w,std::move(event));
             break;
         }
         u.mode = action;

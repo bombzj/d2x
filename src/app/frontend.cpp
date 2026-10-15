@@ -190,7 +190,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
     RemoteTown town(archives);
     std::shared_ptr<hosting::AutomapStore> automapStore;
     std::optional<std::pair<uint32_t, uint32_t>> automapSeeds;
-    std::optional<uint32_t> savedAutomapLayer;
+    struct {bool present{};uint32_t value{};} savedAutomapLayer;
     uint64_t automapGeneration=~uint64_t{};
     std::string automapError;
     auto flushAutomap=[&] {
@@ -478,7 +478,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 if (automapGeneration != session.read().gameGeneration) {
                     automapGeneration = session.read().gameGeneration;
                     automapSeeds.reset();
-                    savedAutomapLayer.reset();
+                    savedAutomapLayer={};
                     automapStore = (localConnection || lanJoiningGame) ? embedded.selectedAutomapStore() :
                         std::make_shared<hosting::AutomapStore>(hosting::AutomapStore::realm(options.hostSaves,
                             session.read().selectedRealm, session.read().selectedCharacter));
@@ -490,9 +490,11 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     if (auto remembered = automapStore->load(seeds.first, seeds.second))
                         town.restoreDiscovery(*remembered, session.read());
                 }
-                if (automapStore && town.read().automapLayer != savedAutomapLayer) {
-                    if (savedAutomapLayer) flushAutomap();
-                    savedAutomapLayer = town.read().automapLayer;
+                const auto automapLayer=town.read().automapLayer;
+                if (automapStore && (automapLayer.has_value()!=savedAutomapLayer.present ||
+                    (automapLayer && *automapLayer!=savedAutomapLayer.value))) {
+                    if (savedAutomapLayer.present) flushAutomap();
+                    savedAutomapLayer = {automapLayer.has_value(),automapLayer.value_or(0)};
                 }
             } catch(const std::exception &e) {
                 notice="Automap cache not restored (character saving is independent): "+std::string(e.what());

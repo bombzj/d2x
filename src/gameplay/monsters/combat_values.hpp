@@ -13,6 +13,7 @@ struct MonsterDefense {
     int level = 1;
     int defense = 0;
     bool demon = false, undead = false, boss = false;
+    bool player = false, hireling = false;
 };
 struct MonsterElementAttack {
     std::string mode, type;

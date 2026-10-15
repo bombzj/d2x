@@ -4,13 +4,16 @@
 namespace d2x::server::inventory {
 void synchronizeEquipment(PersistentCharacter &state, const attributes::Totals &totals,
                           const EquipmentRules &rules, std::vector<ItemChange> &changes) {
+    state.inventory.containers.at(state.containers.equipment).registeredWeapon=totals.registeredWeapon;
     for (auto &[id, item] : state.inventory.items) {
         const auto *location = std::get_if<ContainerLocation>(&item.location);
         if (!location || (location->container != state.containers.beltEquipment && location->container != state.containers.equipment)) continue;
         const auto slot = location->container == state.containers.beltEquipment ? EquipmentSlot::Belt : EquipmentSlot(location->cell.x);
         if (!weaponSlotActive(slot, state.player.weaponSet)) continue;
         uint32_t flags = item.nativeFlags;
-        flags = totals.activeEquipment.contains(id) ? flags & ~0x4000u : flags | 0x4000u;
+        const auto noEquip=totals.equipmentNoEquip.find(id);
+        const bool disabled=noEquip!=totals.equipmentNoEquip.end()?noEquip->second:!totals.activeEquipment.contains(id);
+        flags=disabled?flags|0x4000u:flags&~0x4000u;
         if (rules.at(id, state.player.level).maximumDurability && !item.durability) flags |= 0x100u;
         else flags &= ~0x100u;
         if (flags == item.nativeFlags) continue;

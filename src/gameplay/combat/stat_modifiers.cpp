@@ -37,8 +37,11 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
     D2X_ADD(lightningMinimum); D2X_ADD(lightningMaximum);
     D2X_ADD(coldMinimum); D2X_ADD(coldMaximum); D2X_ADD(coldFrames);
     D2X_ADD(coldSkillDamagePercent); D2X_ADD(coldPierce);
+    D2X_ADD(fireSkillDamagePercent); D2X_ADD(lightningSkillDamagePercent); D2X_ADD(magicSkillDamagePercent);
+    D2X_ADD(firePierce); D2X_ADD(lightningPierce);
     D2X_ADD(magicMinimum); D2X_ADD(magicMaximum);
     D2X_ADD(poisonMinimum); D2X_ADD(poisonMaximum); D2X_ADD(poisonFrames); D2X_ADD(poisonSources);
+    D2X_ADD(poisonOverrideFrames);
     D2X_ADD(poisonSkillDamagePercent); D2X_ADD(poisonPierce);
     D2X_ADD(fireMaxResist); D2X_ADD(lightningMaxResist);
     D2X_ADD(coldMaxResist); D2X_ADD(poisonMaxResist); D2X_ADD(magicMaxResist);
@@ -92,6 +95,7 @@ void mergeCombatModifiers(CombatModifiers &a, const CombatModifiers &b) {
         add(target.magicMinimum, bonus.magicMinimum); add(target.magicMaximum, bonus.magicMaximum);
         add(target.poisonMinimum, bonus.poisonMinimum); add(target.poisonMaximum, bonus.poisonMaximum);
         add(target.poisonFrames, bonus.poisonFrames); add(target.poisonSources, bonus.poisonSources);
+        add(target.poisonOverrideFrames, bonus.poisonOverrideFrames);
         add(target.deadlyStrike, bonus.deadlyStrike);
         add(target.lifeLeech, bonus.lifeLeech); add(target.manaLeech, bonus.manaLeech);
         add(target.crushingBlow, bonus.crushingBlow); add(target.openWounds, bonus.openWounds);

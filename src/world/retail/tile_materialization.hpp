@@ -6,6 +6,7 @@
 #include <span>
 #include <set>
 #include <tuple>
+#include <cstdint>
 
 namespace d2x {
 // Indices remain stable when another room updates an owner's seam tile. The
@@ -43,6 +44,7 @@ struct RetailTileRoom {
     std::vector<Animation> animations{};
     MapData grids{}; // Logical layers for offline arrivals/automap/exit consumers.
     bool loaded{};
+    std::optional<uint64_t> initialActiveRandom; // DUNGEON_AllocRoom's separate seed.
 };
 struct RetailRoomCollision {
     int x{}, y{}, width{}, height{}; // subtiles

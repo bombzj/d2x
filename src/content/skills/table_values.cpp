@@ -12,7 +12,7 @@ int skillTableNumber(const DataTable &table, size_t row, std::string_view field,
     const bool rejectsMalformed = policy == SkillNumberPolicy::Required ||
         policy == SkillNumberPolicy::BlankIsZero || policy == SkillNumberPolicy::OptionalBlankIsZero;
     if ((requiresColumn && !table.has(field)) || policy == SkillNumberPolicy::Required ||
-        (rejectsMalformed && !table.value(row,field).empty()))
+        (rejectsMalformed && table.value(row,field).find_first_not_of(" \t\r\n") != std::string_view::npos))
         throw std::runtime_error("Missing or invalid original skill table number: " + std::string(field) +
             " at row " + std::to_string(row));
     return 0;

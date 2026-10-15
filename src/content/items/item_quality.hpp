@@ -12,5 +12,6 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
                       int itemLevel, int upgradeLevel, uint64_t seed,
                       const std::set<size_t> &usedUniques = {}, std::string_view characterClass = {},
                       int magicFind = 0, int goldFind = 0,
-                      std::optional<DropQuality> forcedQuality = std::nullopt, unsigned effectivePlayers = 1, bool ignoreNoDrop = false);
+                      std::optional<DropQuality> forcedQuality = std::nullopt, unsigned effectivePlayers = 1, bool ignoreNoDrop = false,
+                      bool hellBovine = false);
 } // namespace d2x

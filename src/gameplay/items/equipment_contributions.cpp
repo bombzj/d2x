@@ -3,6 +3,7 @@
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/items/equipment_combat.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -19,9 +20,9 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         else if (stat.effect == "dexterity") target = &mods.dexterity;
         else if (stat.effect == "vitality") target = &mods.vitality;
         else if (stat.effect == "energy") target = &mods.energy;
-        else if (stat.effect == "maxhp") target = &mods.maxLife;
-        else if (stat.effect == "maxmana") target = &mods.maxMana;
-        else if (stat.effect == "maxstamina") target = &mods.maxStamina;
+        else if (stat.effect == "maxhp") target = stat.name==stat.effect?&mods.maxLife:&mods.lifeAfterPercentFixed;
+        else if (stat.effect == "maxmana") target = stat.name==stat.effect?&mods.maxMana:&mods.manaAfterPercentFixed;
+        else if (stat.effect == "maxstamina") target = stat.name==stat.effect?&mods.maxStamina:&mods.staminaAfterPercentFixed;
         else if (stat.effect == "skill_staminapercent") target = &mods.staminaPercent;
         else if (stat.effect == "tohit" && !weapon) target = &mods.attackRating;
         else if (stat.effect == "armorclass") target = &mods.defense;
@@ -35,7 +36,8 @@ void addStats(std::span<const ResolvedItemStat> stats, EntityId item, bool weapo
         else if (stat.effect == "item_staminadrainpct") target = &mods.staminaDrainPercent;
         else if (stat.effect == "staminarecoverybonus") target = &mods.staminaRecoveryBonus;
         if (target) {
-            const int64_t sum = int64_t(*target) + stat.value;
+            const bool fixed=target==&mods.lifeAfterPercentFixed || target==&mods.manaAfterPercentFixed || target==&mods.staminaAfterPercentFixed;
+            const int64_t sum = int64_t(*target) + (fixed?stat.nativeValue.value_or(nativeShiftLeft(stat.value,8)):stat.value);
             if (sum < std::numeric_limits<int>::min() || sum > std::numeric_limits<int>::max())
                 throw std::runtime_error("Equipped property sum exceeds supported range");
             *target = int(sum);
@@ -54,8 +56,43 @@ void addItem(const EquipmentContributionSource &source, const ItemInstance &item
     const auto stats=source.itemStats(item,level);
     addStats(stats, item.id, weapon, mods);
     if(source.observe) source.observe(item.id,stats);
+    if(source.contribution) source.contribution({EquipmentContributionKind::Item,item.id,{},0,0,weapon,stats});
 }
 } // namespace
+std::vector<EquipmentContribution> equipmentSetContributions(EquipmentItem entry,
+    std::span<const EquipmentItem> worn,const EquipmentContributionSource &source,int level) {
+    std::vector<EquipmentContribution> result;
+    if(!entry || entry.instance->quality!=ItemQuality::Set) return result;
+    const auto &item=*entry.instance;
+    for(const auto &record:source.sets) {
+        if(record.row!=item.specialRow) continue;
+        std::vector<int32_t> members;
+        std::set<int32_t> distinct;
+        for(const auto &member:source.sets) if(member.set==record.set) {
+            members.push_back(member.row);
+            for(const auto other:worn) if(other && other.instance->quality==ItemQuality::Set && other.instance->specialRow==member.row)
+                distinct.insert(member.row);
+        }
+        const std::vector<int32_t> pieces(distinct.begin(),distinct.end());
+        const bool weapon=entry.definition->equipment.isType("weap");
+        if(item.nativeProperties && (record.addFunction==1 || record.addFunction==2)) {
+            const auto layers=activeSetItemLayers(record.addFunction,record.row,members,pieces);
+            for(size_t index=0;index<layers.size();++index) if(layers[index] && !item.savedSetStats[index].empty())
+                result.push_back({EquipmentContributionKind::NativeSetLayer,item.id,record.set,record.instruction,index,weapon,source.nativeSetStats(item.id,index,level)});
+        }
+        for(const auto &bonus:record.bonuses) {
+            // 1.13c ItemMods RVA45F90: partial tiers use min(count,full-1),
+            // while the full-bonus branch compares the original count.
+            const int count=bonus.perItem || !bonus.pieces?int(pieces.size()):std::min(int(pieces.size()),record.fullPieces-1);
+            if((item.nativeProperties && bonus.perItem) || (bonus.perItem && record.addFunction!=2) ||
+                count<(bonus.pieces?bonus.pieces:record.fullPieces)) continue;
+            if(!bonus.fixedValue) throw std::runtime_error("Unresolved variable set bonus");
+            result.push_back({EquipmentContributionKind::SetBonus,bonus.perItem?item.id:EntityId{},record.set,
+                record.instruction,bonus.instruction,bonus.perItem && weapon,source.setStats(record.instruction,bonus.instruction,level)});
+        }
+    }
+    return result;
+}
 CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
     const EquipmentActor &baseActor, const EquipmentContributionSource &source, EntityId excludedItem, std::set<EntityId> *activeItems) {
     CharacterModifiers total;
@@ -66,10 +103,10 @@ CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
         if (!entry) continue;
         const auto &item = *entry.instance;
         const auto &definition = *entry.definition;
-        if (definition.equipment.isType("char") && item.quantity &&
+        if (definition.equipment.isType("char") &&
             (!loadout.maximumDurability(item) || item.durability) &&
             !(item.nativeProperties && (item.nativeFlags & 0x00000100u)) &&
-            loadout.requirements(entry, baseActor) == InventoryError::None)
+            loadout.requirements(entry,source.requirementActor?source.requirementActor():baseActor) == InventoryError::None)
             addItem(source, item, false, baseActor.level, total);
     }
     for (int pass = 0; pass < int(EquipmentSlot::Count); ++pass) {
@@ -80,16 +117,19 @@ CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
             const auto *item = entry.instance;
             if (!entry || item->id == excludedItem || active.contains(item->id)) continue;
             const auto *definition = entry.definition;
-            if (!definition || !item->identified || !item->quantity || (loadout.maximumDurability(*item) && item->durability == 0) || (item->nativeFlags & 0x100u)) continue;
-            EquipmentActor actor = baseActor;
+            if (!definition || !item->identified || (loadout.maximumDurability(*item) && item->durability == 0) || (item->nativeFlags & 0x100u)) continue;
+            if(!loadout.quiverReady(entry,baseActor.weaponSet)) continue;
+            EquipmentActor actor=source.requirementActor?source.requirementActor():baseActor;
             auto adjusted = [](int base, int bonus) {
                 int64_t value = int64_t(base) + bonus;
                 if (value < std::numeric_limits<int>::min() || value > std::numeric_limits<int>::max())
                     throw std::runtime_error("Equipment requirement attribute overflow");
                 return int(value);
             };
-            actor.strength = adjusted(actor.strength, total.strength);
-            actor.dexterity = adjusted(actor.dexterity, total.dexterity);
+            if(!source.requirementActor) {
+                actor.strength=adjusted(actor.strength,total.strength);
+                actor.dexterity=adjusted(actor.dexterity,total.dexterity);
+            }
             if (loadout.requirements(entry, actor) != InventoryError::None) continue;
             addItem(source, *item, definition->equipment.isType("weap"), baseActor.level, total);
             if (definition->family == ItemFamily::Armor && definition->base.speed) {
@@ -105,48 +145,17 @@ CharacterModifiers deriveEquipmentModifiers(const EquipmentLoadout &loadout,
             active.insert(item->id);
             changed = true;
         }
-        std::map<std::string, std::set<int32_t>, std::less<>> pieces;
-        for (auto id : active) {
-            const auto &item = *loadout.find(id).instance;
-            if (item.quality != ItemQuality::Set) continue;
-            for (const auto &record : source.sets)
-                if (record.row == item.specialRow) pieces[record.set].insert(item.specialRow);
-        }
-        for (auto id : active) {
-            const auto &item = *loadout.find(id).instance;
-            if (item.quality != ItemQuality::Set) continue;
-            for (const auto &record : source.sets) {
-                if (record.row != item.specialRow) continue;
-                const int count = int(pieces[record.set].size());
-                const int full = record.fullPieces;
-                if (item.nativeProperties && (record.addFunction == 1 || record.addFunction == 2)) {
-                    std::vector<int32_t> members;
-                    for(const auto &member:source.sets) if(member.set==record.set) members.push_back(member.row);
-                    const std::vector<int32_t> worn(pieces[record.set].begin(),pieces[record.set].end());
-                    const auto layers=activeSetItemLayers(record.addFunction,record.row,members,worn);
-                    for (size_t index = 0; index < item.savedSetStats.size(); ++index) {
-                        const std::string key = record.set + ":native:" + std::to_string(id.value) + ":" + std::to_string(index);
-                        if (!layers[index] || item.savedSetStats[index].empty() || appliedSetBonuses.contains(key)) continue;
-                        addConditionalStats(source.nativeSetStats(item.id, index, baseActor.level), item.id,
-                            loadout.find(item.id).definition->equipment.isType("weap"), total,source);
-                        appliedSetBonuses.insert(key);
-                        changed = true;
-                    }
-                }
-                int localIndex = 0, globalIndex = 0;
-                for (const auto &bonus : record.bonuses) {
-                    if (item.nativeProperties && bonus.perItem) continue;
-                    const std::string key = record.set + (bonus.perItem ? ":item:" + std::to_string(id.value) : ":set") +
-                        ":" + std::to_string(bonus.perItem ? localIndex++ : globalIndex++);
-                    if (appliedSetBonuses.contains(key) || count < (bonus.pieces ? bonus.pieces : full) ||
-                        (bonus.perItem && record.addFunction != 2)) continue;
-                    if (!bonus.fixedValue) throw std::runtime_error("Unresolved variable set bonus");
-                    addConditionalStats(source.setStats(record.instruction, bonus.instruction, baseActor.level),
-                        bonus.perItem ? id : EntityId{},
-                        bonus.perItem && loadout.find(item.id).definition->equipment.isType("weap"), total,source);
-                    appliedSetBonuses.insert(key);
-                    changed = true;
-                }
+        std::vector<EquipmentItem> worn;
+        for(const auto id:active) worn.push_back(loadout.find(id));
+        for(const auto entry:worn) {
+            size_t globalIndex=0;
+            for(auto part:equipmentSetContributions(entry,worn,source,baseActor.level)) {
+                const auto key=part.set+(part.item?":item:"+std::to_string(part.item.value)+":"+
+                    std::to_string(int(part.kind))+":"+std::to_string(part.layer):":set:"+std::to_string(globalIndex++));
+                if(appliedSetBonuses.contains(key)) continue;
+                addConditionalStats(part.stats,part.item,part.weapon,total,source);
+                if(source.contribution) source.contribution(std::move(part));
+                appliedSetBonuses.insert(key);changed=true;
             }
         }
         if (!changed) break;

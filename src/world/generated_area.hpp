@@ -6,6 +6,7 @@ namespace d2x {
 struct AreaGenerationRequest {
     uint32_t seed{};
     int act{}, level{1}, difficulty{};
+    bool ladderMonsterStats{true}; // Native nGameType || dwGameType, prepared by hosting.
 };
 struct GeneratedArea {
     AreaGenerationRequest request;
@@ -18,6 +19,7 @@ struct GeneratedArea {
     std::map<std::pair<int, int>, std::vector<RoomLink>> nearRooms;
     std::shared_ptr<const Map> map;
     double preparationMilliseconds{};
+    std::map<std::pair<int, int>, uint64_t> initialRoomRandom;
 };
 // Incremental host preparation; every operation stays on the archive owner's
 // thread. No partial terrain is published and reveal/RNG order is unchanged.

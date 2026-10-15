@@ -16,11 +16,14 @@ enum class Residency { Prepared, Active, Sleeping };
 struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
 struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
+struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
+struct QuestPosition {RegionId area;Vec position;};
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
 struct Ports {
     AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids;
-    const travel::System &travel; const monsters::System &monsters; const missiles::System &missiles;
+    const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
     const skills::System &skills; const objects::System &objects; const loot::System &loot;
+    const spatial::System &spatial;
 };
 class System {
     friend class travel::System;
@@ -32,11 +35,17 @@ class System {
     struct RoomRuntime;
     std::unique_ptr<RoomRuntime> rooms_;
     std::set<RegionId> openedTombs_;
+    std::optional<uint64_t> environmentFrame_;
+    size_t environmentAct_{};
+    std::optional<EnvironmentNotice> environmentNotice_;
+    bool sunDark_{}; // Requested quest mode for an act that may not be loaded yet.
+    void prepareActTime(int);
     void updateRooms(TickContext);
     void invalidateRooms();
     DomainResult<uint64_t> request(RegionId);
     void link();
     void assign(AreaDefinition &);
+    void registerAreaUnits(RegionId);
   public:
     explicit System(Ports ports);
     ~System();
@@ -46,9 +55,19 @@ class System {
     DomainResult<uint64_t> requestArea(const ActorContext &, RegionId);
     DomainResult<> install(PreparedArea);
     void initialize();
+    void activateAct(RegionId);
+    void sunEclipse(bool);
+    StepStatus advanceEnvironment(TickContext);
+    const std::optional<EnvironmentNotice> &environmentNotice() const {return environmentNotice_;}
+    void acknowledgeEnvironment(int act,uint64_t revision);
     void objectCollision(RegionId, std::vector<Grid::Obstacle>);
     void openTombWall(RegionId);
-    DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec);
+    DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec,int searchRadius=15);
+    // QUESTS_GetFreePosition's object-only (0x400) search, in native room order.
+    std::optional<QuestPosition> questFreePosition(RegionId,Vec roomPosition,Vec requested,int size,int radius) const;
+    std::optional<QuestPosition> nativeFreeSpace(RegionId,Vec roomPosition,Vec requested,int size) const;
+    std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,Vec requested) const;
+    void retainControllerRoom(RegionId,Vec,bool retain);
     DomainResult<> moveQuestNpc(RegionId,EntityId,Vec,Vec,bool escaped);
     void fail(uint64_t request);
     std::vector<RegionId> visible(PlayerId) const;

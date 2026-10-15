@@ -48,6 +48,7 @@ void loadAmazonSummons(ClassicData &data, const DataTable &overlays, const DataT
     SummonSkillSpec summon; summon.corpse = false; summon.kind = MonsterKind::AmazonPet;
     summon.monster = skills.value(row, "summon");
     const auto monster = rowOf(monstats, "Id", summon.monster);
+    expect(monstats,monster,"noRatio","1");
     const auto extra = rowOf(monstats2, "Id", monstats.value(monster, "MonStatsEx"));
     auto program = std::make_shared<AmazonSummonSpec>();
     program->decoy = decoy;
@@ -113,6 +114,7 @@ void loadAmazonSummons(ClassicData &data, const DataTable &overlays, const DataT
         const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
         auto &stats = summon.base[difficulty]; auto &attributes = stats.attributes;
         attributes.maxLife = number(monstats, monster, difficulty ? "MinHP" + suffix : "minHP");
+        attributes.maxLifeFixed=Fixed8(attributes.maxLife);stats.level=number(monstats,monster,"Level"+suffix);
         program->maximumLife[difficulty] = number(monstats, monster, difficulty ? "MaxHP" + suffix : "maxHP");
         program->attackChance[difficulty] = number(monstats, monster, "aip1" + suffix);
         program->thinkFrames[difficulty] = number(monstats, monster, "aidel" + suffix);
@@ -131,13 +133,15 @@ void loadAmazonSummons(ClassicData &data, const DataTable &overlays, const DataT
         stats.monsterResistanceRules = true;
     }
     for (size_t level = 0; level < monlvl.rows().size(); ++level) {
-        std::array<int, 3> defense{}, attack{};
+        std::array<int, 3> defense{}, attack{},plainDefense{},plainAttack{};
         for (int difficulty = 0; difficulty < 3; ++difficulty) {
             const std::string suffix = difficulty == 0 ? "" : difficulty == 1 ? "(N)" : "(H)";
             defense[difficulty] = number(monlvl, level, "L-AC" + suffix);
             attack[difficulty] = number(monlvl, level, "L-TH" + suffix);
+            plainDefense[difficulty]=number(monlvl,level,"AC"+suffix);plainAttack[difficulty]=number(monlvl,level,"TH"+suffix);
         }
         summon.levelDefense.push_back(defense); summon.levelAttack.push_back(attack);
+        summon.levelDefenseNonL.push_back(plainDefense);summon.levelAttackNonL.push_back(plainAttack);
     }
     summon.amazon = std::move(program); spell.summon = std::move(summon);
     data.skills.skills.at(spell.sourceId).spell = std::make_shared<const SkillSpec>(std::move(spell));

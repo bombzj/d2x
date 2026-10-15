@@ -20,9 +20,9 @@ PersistentCharacter createCharacter(const ClassicData &content, std::string name
     result.player.characterClass = definition.name;
     result.mapSeed = seed;
     const auto attributes = deriveCharacterAttributes(definition, 1, {});
-    result.player.hp = float(attributes.maxLife);
-    result.player.mana = float(attributes.maxMana);
-    result.player.stamina = float(attributes.maxStamina);
+    result.player.hp = attributes.maxLifeFixed;
+    result.player.mana = attributes.maxManaFixed;
+    result.player.stamina = attributes.maxStaminaFixed;
     initializeD2sInventory(result, content);
     auto &inventory = result.inventory;
     inventory.creationRandom = initialRandom(seed);
@@ -108,6 +108,7 @@ PersistentCharacter createCharacter(const ClassicData &content, std::string name
             } else if (base->beltAllowed && beltColumn < inventory.containers.at(result.containers.belt).spec.columns)
                 item.location = ContainerLocation{result.containers.belt, {beltColumn++, 0}};
             else item.location = ContainerLocation{result.containers.backpack, backpackCell(*base)};
+            inventory.itemOrder.push_back(item.id);
             inventory.items.emplace(item.id, std::move(item));
         }
     }

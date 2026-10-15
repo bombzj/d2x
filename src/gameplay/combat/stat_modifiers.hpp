@@ -29,6 +29,7 @@ struct WeaponModifiers {
     int poisonMinimum = 0, poisonMaximum = 0, poisonFrames = 0, poisonSources = 0;
     int deadlyStrike = 0;
     int lifeLeech = 0, manaLeech = 0, crushingBlow = 0, openWounds = 0;
+    int poisonOverrideFrames = 0;
 };
 struct CombatModifiers {
     // Native passive mastery layers are weapon types, not global weapon ED.
@@ -43,6 +44,8 @@ struct CombatModifiers {
     int lightningMinimum = 0, lightningMaximum = 0;
     int coldMinimum = 0, coldMaximum = 0, coldFrames = 0;
     int coldSkillDamagePercent = 0, coldPierce = 0;
+    int fireSkillDamagePercent = 0, lightningSkillDamagePercent = 0, magicSkillDamagePercent = 0;
+    int firePierce = 0, lightningPierce = 0;
     int magicMinimum = 0, magicMaximum = 0;
     int poisonMinimum = 0, poisonMaximum = 0, poisonFrames = 0, poisonSources = 0;
     int poisonSkillDamagePercent = 0, poisonPierce = 0;
@@ -80,22 +83,9 @@ struct CombatModifiers {
     bool cannotBeFrozen = false, halfFreezeDuration = false;
     std::map<EntityId, WeaponModifiers> weapons;
     std::map<EntityId, int> armorPercent;
+    int poisonOverrideFrames = 0;
 };
 
-// Snapshot at attack launch so projectile damage does not change in flight.
-struct AttackElements {
-    int conversionPercent = 0;
-    int freezeFrames = 0;
-    DamageType conversionElement = DamageType::Magic;
-    float fire = 0, lightning = 0, cold = 0, magic = 0;
-    float poisonPerSecond = 0, poisonDuration = 0, coldDuration = 0;
-    bool deadly = false;
-    bool crushing = false, openWounds = false, ranged = false;
-    int lifeLeech = 0, manaLeech = 0, attackerLevel = 1;
-    int hitClass = 0;
-    int selfDamagePercent = 0;
-    bool smite = false, knockback = false;
-};
 struct AttackDamageRange {
     int minimum = 0, maximum = 0;
 };

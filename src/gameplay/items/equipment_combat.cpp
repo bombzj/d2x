@@ -1,4 +1,5 @@
 #include "equipment_combat.hpp"
+#include "skill_sources.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <string_view>
@@ -30,12 +31,18 @@ void addStat(std::string_view stat, int value, CombatModifiers &m) {
     else if (stat == "coldmaxdam") target = &m.coldMaximum;
     else if (stat == "coldlength") target = &m.coldFrames;
     else if (stat == "passive_cold_mastery") target = &m.coldSkillDamagePercent;
+    else if (stat == "passive_fire_mastery") target = &m.fireSkillDamagePercent;
+    else if (stat == "passive_ltng_mastery") target = &m.lightningSkillDamagePercent;
+    else if (stat == "passive_mag_mastery") target = &m.magicSkillDamagePercent;
+    else if (stat == "passive_fire_pierce") target = &m.firePierce;
+    else if (stat == "passive_ltng_pierce") target = &m.lightningPierce;
     else if (stat == "passive_cold_pierce") target = &m.coldPierce;
     else if (stat == "magicmindam") target = &m.magicMinimum;
     else if (stat == "magicmaxdam") target = &m.magicMaximum;
     else if (stat == "poisonmindam") target = &m.poisonMinimum;
     else if (stat == "poisonmaxdam") target = &m.poisonMaximum;
     else if (stat == "poisonlength") target = &m.poisonFrames;
+    else if (stat == "skill_poison_override_length") target = &m.poisonOverrideFrames;
     else if (stat == "passive_pois_mastery") target = &m.poisonSkillDamagePercent;
     else if (stat == "passive_pois_pierce") target = &m.poisonPierce;
     else if (stat == "maxfireresist") target = &m.fireMaxResist;
@@ -88,13 +95,7 @@ void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool we
                          CombatModifiers &mods) {
     const auto &stat = resolved.effect;
     const int value = resolved.value;
-    std::optional<ItemSkillEvent> event;
-    if(stat=="item_skillonattack") event=ItemSkillEvent::Attack;
-    else if(stat=="item_skillonhit") event=ItemSkillEvent::Hit;
-    else if(stat=="item_skillonkill") event=ItemSkillEvent::Kill;
-    else if(stat=="item_skillongethit") event=ItemSkillEvent::GetHit;
-    else if(stat=="item_skillondeath") event=ItemSkillEvent::Death;
-    else if(stat=="item_skillonlevelup") event=ItemSkillEvent::LevelUp;
+    const auto event=itemSkillEvent(stat);
     if(event) {if(resolved.layer<0 || resolved.layer>65535 || !(resolved.layer&63)) throw std::runtime_error("Invalid original item-trigger layer");add(mods.itemTriggers[{*event,resolved.layer}],value);return;}
     auto &target = weapon ? mods.weapons[item].target : mods.target;
     if (stat == "item_demondamage_percent") { add(target.demonDamage, value); return; }
@@ -134,6 +135,7 @@ void applyEquipmentStat(const ResolvedItemStat &resolved, EntityId item, bool we
         else if (stat == "poisonmindam") ownValue = &own.poisonMinimum;
         else if (stat == "poisonmaxdam") ownValue = &own.poisonMaximum;
         else if (stat == "poisonlength") ownValue = &own.poisonFrames;
+        else if (stat == "skill_poison_override_length") ownValue = &own.poisonOverrideFrames;
         else if (stat == "item_deadlystrike") ownValue = &own.deadlyStrike;
         else if (stat == "lifedrainmindam") ownValue = &own.lifeLeech;
         else if (stat == "manadrainmindam") ownValue = &own.manaLeech;

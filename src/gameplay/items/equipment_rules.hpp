@@ -53,6 +53,7 @@ struct EquipmentActor {
     int blockFactor = 0;
     unsigned weaponSet = 0;
     bool hireling = false;
+    int nativeClass{-1}; // Monster hcIdx; player class codes remain characterClass.
 };
 bool canUseWeaponOneHanded(const EquipmentDefinition &, std::string_view characterClass);
 bool requiresBothWeaponHands(const EquipmentDefinition &, std::string_view characterClass);

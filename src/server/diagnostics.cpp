@@ -28,7 +28,7 @@ DomainResult<EntityId> GameInstance::spawnObject(PlayerId id,const objects::Admi
 DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMonster &monster) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions});
+    return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions,tick_});
 }
 DomainResult<> GameInstance::relocate(PlayerId id,RegionId area,std::optional<Vec> position) {
     const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
@@ -51,9 +51,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.combatQueueDepth=systems_.combat.read().pending.size();
     result.combatTargetAttempts=systems_.combat.read().targetAttempts;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
-    if(const auto recovery=systems_.effects.read().players.find(player->actor);recovery!=systems_.effects.read().players.end()) {
-        result.recoveryUntil=recovery->second.actionUntil;result.lastBlockTick=recovery->second.lastBlockTick;
-    }
+    const auto recovery=systems_.actionState.recovery(player->actor);
+    result.recoveryUntil=recovery.until;result.lastBlockTick=recovery.lastBlockTick;
     if(player->rules.skills) {
         const auto &rules=*player->rules.skills;
         const auto &weapon=player->totals.equipment.weapons[0];
@@ -93,6 +92,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.commandsQueued = commands_.size(); result.eventsQueued = events_.pending().size();
     result.eventFirst = events_.historyFirst(); result.eventLast = events_.historyLast();
     result.events = events_.history(since, limit);
+    result.frameEvents=systems_.frameEvents.observe(limit);
     result.commandFirst = commandHistoryNext_ > commandHistory_.size() ? commandHistoryNext_ - commandHistory_.size() : 1;
     result.commandLast = commandHistoryNext_ - 1;
     if (commandSince != UINT64_MAX) for (auto sequence = std::max(result.commandFirst, commandSince + 1);
@@ -101,8 +101,9 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.lootPending = systems_.loot.read().pending.size(); result.lootDeferred = systems_.loot.read().deferred;
     result.itemTriggersPending=systems_.effects.pendingItemTriggers();result.itemTriggersDeferred=systems_.effects.read().itemDeferred;
     result.chargedSkills=player->totals.chargedSkills;
+    result.itemAuras=player->totals.itemAuraTimers;
     if (const auto found = systems_.effects.read().players.find(player->actor); found != systems_.effects.read().players.end()) {
-        result.healingQueued = found->second.healing.size(); result.manaQueued = found->second.mana.size();
+        if(player->rules.skills) {result.healingQueued=found->second.states.hasState(player->rules.skills->healthPotion.id,tick_);result.manaQueued=found->second.states.hasState(player->rules.skills->manaPotion.id,tick_);}
         for (const auto &effect : found->second.states.entries()) result.effects.push_back({effect.spec.state.id, effect.expiresAt.value_or(0)});
     }
     result.itemCount = player->persistent.inventory.items.size();
@@ -122,6 +123,10 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         if (monster.area == player->area) nearby.push_back(&monster);
     }
     result.monsterCount = nearby.size();
+    for(auto snapshot:systems_.replication.visibleMonsters(id,tick_)) {
+        const auto *unit=systems_.monsters.find(snapshot.id);
+        if(unit && unit->questNpc) result.npcs.push_back(std::move(snapshot));
+    }
     std::sort(nearby.begin(), nearby.end(), [&](const auto *first, const auto *second) {
         const auto a = (first->position - player->position).length(), b = (second->position - player->position).length();
         return a != b ? a < b : first->id.value < second->id.value;
@@ -150,6 +155,11 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.aiPose=monster.aiPose;value.poseUntil=monster.poseUntil;value.aiRegenerationBonus=monster.aiRegenerationBonus;value.skillMotion=bool(monster.skillMotion);
         value.components=monster.components;value.componentCounts=monster.rule.componentCounts;
         value.identity=monster.identity;value.enchantment=monster.rule.enchantment;value.home=monster.home;value.skillPositions=monster.skillPositions;
+        value.chargedSkills=monster.nativeCharges;value.chargesTracked=monster.nativeChargesTracked;value.itemAuras=monster.itemAuraTimers;
+        value.alignment=monster.alignment();value.allegianceRevision=monster.allegianceRevision;value.curseControl=monster.curseControl;
+        value.attractionTarget=monster.attractionTarget;value.attractionUntil=monster.attractionUntil;
+        value.aiResetTimers=monster.aiResetTimers;value.aiResetsTracked=monster.nativeAiResetTracked;
+        value.specialTargetOrder=monster.specialTargetOrder;value.aiFunctionRevision=monster.aiFunctionRevision;value.detachedMinion=monster.detachedMinion;
         if(const auto region=systems_.monsters.read().componentPalettes.find(monster.area);region!=systems_.monsters.read().componentPalettes.end())
             if(const auto palette=region->second.find(monster.rule.nativeClass);palette!=region->second.end()) value.componentVariants=palette->second.size();
         for(const auto &[mode,rule]:monster.rule.attacks) {(void)rule;value.attacks.push_back(mode);}
@@ -211,10 +221,10 @@ DomainResult<> GameInstance::missileHit(PlayerId id,EntityId source,uint32_t amo
     const auto *p=players_.find(id);const auto *m=systems_.monsters.find(source);
     if(!p || !p->entered || !m || m->owner || m->life<=0 || m->area!=p->area || !amount || type==DamageType::Poison || amount>INT32_MAX/256) return {DomainStatus::InvalidActor,{}};
     if(!systems_.effects.reactionCapacity()) return {DomainStatus::Capacity,{}};
-    const ActorContext actor{id,p->actor,p->area,areas_.at(p->area).generation,0,tick_};
-    const auto result=systems_.effects.receive(actor,int64_t(amount)*256,type);
-    if(result) systems_.effects.react(actor,source,CombatEffectEvent::HitByMissile,returnFire);
-    return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+    combat::SpellImpact impact{source,source,p->area,type,int64_t(amount)*256,{p->actor}};
+    impact.occurrence=(uint64_t{1}<<57)|revision_;impact.returnFire=returnFire;impact.unblockable=true;
+    const auto result=systems_.combat.enqueue(std::move(impact));if(result) ++revision_;
+    return result;
 }
 DomainResult<> GameInstance::damagePlayer(PlayerId id,uint32_t amount) {
     const auto *p=players_.find(id); if(!p || !amount) return {DomainStatus::InvalidActor,{}};

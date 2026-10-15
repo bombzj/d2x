@@ -3,7 +3,11 @@
 #include "gameplay/effects/definition.hpp"
 #include <span>
 #include <cstdint>
+#include <optional>
 namespace d2x {
+struct StatList;
+struct StatSnapshot;
+struct StatRuleCatalog;
 struct MonsterHit {
     std::array<int64_t,6> channels{}; // Poison is damage per native frame.
     int64_t mana{}, stamina{};
@@ -13,6 +17,12 @@ struct MonsterHit {
     uint8_t hitClass{};
     bool critical{};
     bool knockback{};
+    int64_t lifeDrain{};
+    bool softHit{};
+    int64_t burn{};
+    uint64_t burnFrames{};
+    uint64_t freezeFrames{};
+    std::optional<bool> getHit;
 };
 struct MonsterHitStates { CombatStateDefinition cold, poison, slow; };
 void monsterCritical(MonsterHit &,int chance,uint64_t &random);
@@ -21,6 +31,7 @@ uint8_t monsterDamageHitClass(const MonsterHit &,uint8_t base,uint32_t &cursor);
 // MonsterMode::sub_6FC62470 and SUNITDMG_FillDamageValues; no unit mutation.
 MonsterHit rollMonsterHit(int minimum, int maximum, int critical,
     std::span<const MonsterElementAttack> elements, int sourceDamage, uint64_t &random);
+MonsterHit rollMonsterUnitHit(const StatSnapshot &,const StatRuleCatalog &,int damagePercent,int sourceDamage,uint64_t &random);
 // SUNITDMG::sub_6FCC1870 returns whether GH should be suppressed.
 bool monsterHitRecovery(int64_t damage,int64_t maximumLife,uint8_t hitClass,
     bool frozen,bool poisonOnly,bool hasMode,uint64_t &random,bool stunned=false);

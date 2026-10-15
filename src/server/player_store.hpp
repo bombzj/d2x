@@ -1,5 +1,6 @@
 #pragma once
 #include "player_state.hpp"
+#include <cstdint>
 #include <map>
 
 namespace d2x::server {
@@ -16,7 +17,7 @@ class PlayerStore {
     friend class transactions::System;
     friend class travel::System;
     std::map<PlayerId, PlayerState> players_;
-    void admit(PlayerId, CharacterDefinition, PersistentCharacter, const AreaStore &, const PreparedRules &);
+    void admit(PlayerId, CharacterDefinition, PersistentCharacter, AreaStore &, const PreparedRules &,uint64_t tick,uint64_t unitSeed);
   public:
     const PlayerState *find(PlayerId id) const {
         const auto found = players_.find(id);

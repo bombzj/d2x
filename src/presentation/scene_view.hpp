@@ -236,7 +236,7 @@ class SceneView {
     void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
     const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
     const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
-    void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {}) const;
+    void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {},std::optional<int> nativeFrame={}) const;
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0,

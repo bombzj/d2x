@@ -1,12 +1,17 @@
 #pragma once
 #include "server/game_messages.hpp"
+#include <cstdint>
 #include <optional>
 #include <utility>
 #include <variant>
 
 namespace d2x::server {
 // Room-owned configuration. A future participant's save cannot change it.
-struct GameSettings { uint32_t mapSeed{}; int difficulty{}; bool singlePlayer = true; unsigned virtualPlayers{1}; };
+struct GameSettings {
+    uint32_t mapSeed{};int difficulty{};bool singlePlayer=true;unsigned virtualPlayers{1};
+    uint8_t nativeGameType{1};bool ladder{};
+    bool ladderMonsterStats() const {return nativeGameType!=0 || ladder;}
+};
 // Kernel results are not wire replies. A scaffold never manufactures a value.
 enum class DomainStatus { Applied, NotImplemented, InvalidActor, Stale, InvalidRequest, Unavailable, Conflict, Capacity };
 template<class T = std::monostate> struct DomainResult {

@@ -1,8 +1,15 @@
 #include "targeting.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <cmath>
 #include <cstdint>
 
 namespace d2x {
+bool withinNativeAuraArea(Vec origin,Vec target,int32_t radius) {
+    if(radius<0) return false;
+    const auto dx=nativeSubtract(int32_t(target.x),int32_t(origin.x));
+    const auto dy=nativeSubtract(int32_t(target.y),int32_t(origin.y));
+    return nativeAdd(nativeMultiply(dx,dx),nativeMultiply(dy,dy))<=nativeMultiply(radius,radius);
+}
 bool withinSkillArea(Vec origin, Vec target, float radius, SkillAreaCoordinates coordinates) {
     if (coordinates == SkillAreaCoordinates::Continuous) return (target-origin).length() <= radius;
     if (coordinates == SkillAreaCoordinates::FlooredCells) {

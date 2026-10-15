@@ -2,6 +2,7 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
+#include "server/systems/reactions/item_triggers.hpp"
 #include "gameplay/character/intents.hpp"
 #include <map>
 #include "server/runtime/prepared_rules.hpp"
@@ -17,7 +18,7 @@ struct Award { PlayerId player; uint64_t sourceOccurrence{}, experience{}, tick{
 // records the last committed identity atomically; no ever-growing replay set.
 DomainResult<CharacterRecord> addExperience(CharacterRecord, const CharacterDefinition &, const CharacterRules &, uint64_t);
 struct State {};
-struct Ports { const PlayerStore &players; transactions::System &transactions; effects::System &effects; };
+struct Ports { const PlayerStore &players; transactions::System &transactions; reactions::ItemTriggers &itemTriggers; };
 class System {
     State state_;
     const Ports ports_;

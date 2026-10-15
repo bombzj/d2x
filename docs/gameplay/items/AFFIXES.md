@@ -18,4 +18,8 @@ content/items/item_properties、equipment_data与gameplay/items/equipment_stats�
 
 ## 缺口与依据
 
+2026-10-15源码对齐资料片稀有词缀数量表`{3,4,4,5,5,5,6,6}`（珠宝仍为3–4）、某侧候选耗尽后继续另一侧、全部词缀选择后按前缀0／后缀0至槽2赋属性。新词缀抽签使用总权重加一、末候选回退；仅保存前511个候选但累计全部权重。偏好词缀通过同一等级／类型／职业／品质／组过滤，不先随机抽签再覆盖；魔法品质保留负参数抑制与无前缀补偿后缀行为。AutoMagic加载不要求spawnable，稀有／Crafted／Tempered仍检查rare和已有词缀组。StaffMods六次失败保留最后技能编号，重复属性层覆盖等级，不再拒绝整批掉落。
+
+本地1.13c D2Game.dll（MD5 `978f6f74cd031bce6ecee602cd5988cc`，ImageBase `0x6fc20000`）只读反汇编确认：RVA `0x152FB`引用RVA `0xFD058`的上述八项稀有表；`0x1541D`不计失败选择次数；`0x15450`／`0x15473`按槽先前缀后后缀赋属性；新词缀入口`0x144D0`在`0x14801`增加权重上界，`0x14853`采用最后访问候选，`0x14769`限制保存候选数为511。其余本轮规则依据本地D2MOO ItemsMagic／Items／ItemMode，未逐项二进制认证。只做源码、编辑器诊断与原版静态对照，未构建、运行或新增测试程序。
+
 完整Properties程序／组合、特殊显示函数与全部战斗消费者仍未逐项验收；玩家吸取、压碎／撕裂已接[武器命中效果](../combat/WEAPON_EFFECTS.md)，专用触发限制见所属技能专题。先参考master，再查当前MPQ、D2MOO ItemMods／Items及原D2Common；对应属性证据链接[参考设计](../../architecture/REFERENCE_DESIGN.md)。已有词缀与保存代表证据见[EVIDENCE](EVIDENCE.md)。

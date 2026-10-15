@@ -2,6 +2,7 @@
 #include <cstdint>
 
 namespace d2x {
+int32_t nativeThornsDamage(int32_t physical,int32_t percent,bool playerOrHirelingAttacker);
 struct WeaponSkillDamage;
 struct WeaponHitTarget {
     int64_t life{};

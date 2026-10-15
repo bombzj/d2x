@@ -33,7 +33,7 @@ void NativeRealmService::publishEvents() {
 void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
     std::vector<Bytes> packets;
     const auto visibleActor=[&](EntityId actor,uint8_t type) {
-        if(type==1) return peer.monsters.contains(actor) || peer.npcs.contains(actor);
+        if(type==1) return peer.monsters.contains(actor);
         if(type==2) return peer.objects.contains(actor) || peer.portals.contains(actor);
         return type==0 && (actor==host.read(*binding)->actor.id || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==actor;}));
     };
@@ -125,36 +125,35 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             }));
         }
         else if (const auto *missile = std::get_if<server::MissileFact>(&fact)) {
-            if(!visibleActor(missile->owner,missile->ownerType)) continue;
-            const auto origin = shared.terrain.at(binding->game).at(missile->area).origin;
-            delta.push_back(encodeServerPacket(ServerMessage::Missile, [&](auto &out) {
-                out.u32(0); out.u16(uint16_t(missile->definition));
-                out.u32(uint32_t(std::floor(missile->position.x + origin.x))); out.u32(uint32_t(std::floor(missile->position.y + origin.y)));
-                const bool stationary=missile->destination.x==0 && missile->destination.y==0;
-                out.u32(stationary?0:uint32_t(std::floor(missile->destination.x + origin.x))); out.u32(stationary?0:uint32_t(std::floor(missile->destination.y + origin.y)));
-                out.u16(uint16_t(missile->frame)); out.u8(missile->ownerType); out.u32(uint32_t(missile->owner.value)); out.u8(uint8_t(missile->rank)); out.u8(missile->pierce);
-            }));
+            if(!visibleActor(missile->owner,missile->ownerType) || (missile->missile && peer.missiles.contains(missile->missile))) continue;
+            delta.push_back(nativeMissile(*missile,shared.terrain.at(binding->game).at(missile->area).origin));
+            if(missile->missile) peer.missiles.insert(missile->missile);
         }
         else if (const auto *state = std::get_if<server::StateFact>(&fact)) {
             if (state->state < 0 || state->state > 255) throw std::runtime_error("State exceeds native capacity");
             if (state->type == 1) {
                 const auto entry = peer.monsters.find(state->actor);
-                if (entry == peer.monsters.end() && !peer.npcs.contains(state->actor)) continue;
-                if(peer.npcs.contains(state->actor)) {if(state->enabled) peer.npcStates[state->actor].insert(state->state);else peer.npcStates[state->actor].erase(state->state);}
-                if(entry!=peer.monsters.end()) {if (state->enabled) entry->second.states.insert(state->state);else entry->second.states.erase(state->state);}
+                if(entry==peer.monsters.end()) continue;
+                if(state->enabled) {entry->second.states.insert(state->state);entry->second.stateStats[state->state]=state->stats;}
+                else {entry->second.states.erase(state->state);entry->second.stateStats.erase(state->state);}
             }
             if(state->type==0 && state->actor!=host.read(*binding)->actor.id && std::none_of(peer.visible.begin(),peer.visible.end(),[&](const auto &entry){return entry.second.actor==state->actor;})) continue;
             if(state->type==0) {
                 if(state->enabled) peer.states[state->actor].insert(state->state);
                 else peer.states[state->actor].erase(state->state);
             }
-            delta.push_back(nativeState(*content,*state));
+            auto packet=nativeState(*content,*state);
+            if(!packet.empty()) delta.push_back(std::move(packet));
         }
         else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
         else if (const auto *removed=std::get_if<server::GroundRemoveFact>(&fact)) {
             if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(removed->item.value));}));
         }
         else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
+        else if(const auto *environment=std::get_if<server::EnvironmentFact>(&fact))
+            delta.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
+                out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
+            }));
         else if (const auto *chat = std::get_if<server::ChatFact>(&fact)) {
             if (std::find(chat->recipients.begin(), chat->recipients.end(), binding->player) == chat->recipients.end()) continue;
             delta.push_back(encodeServerPacket(ServerMessage::Chat, [&](auto &out) {

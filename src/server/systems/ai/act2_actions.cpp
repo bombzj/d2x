@@ -1,17 +1,26 @@
 #include "system.hpp"
+#include <stdexcept>
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "gameplay/monsters/act2_decision.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/life.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
 StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,TickContext tick,Controller &controller) {
     const auto &monster=*ports_.monsters.find(id);const auto &area=ports_.areas.at(monster.area);
+    if(monster.rule.ai.kind==MonsterAiKind::Duriel && monster.rule.nativeAura && !monster.rightSkill) {
+        const auto &aura=*monster.rule.nativeAura;
+        const auto assigned=ports_.effects.assignUnitAura(id,aura,tick.tick,aura.rank);
+        if(assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
+        if(!assigned) throw std::logic_error("Native Duriel right aura assignment is unavailable");
+    }
     const bool hasTarget=target.id!=id;
     const auto kind=monster.rule.ai.kind;
     const auto shootable=(kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::PantherJavelin ||
@@ -56,7 +65,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         if(distanceSquared<=121 && other.life*100/other.maximumLife<=monster.rule.ai.params[2]) input.woundedNearby=true;
         if((kind==MonsterAiKind::SandRaider?other.enemyTarget():other.rule.baseClass==monster.rule.baseClass) && distanceSquared<allyDistance) {ally=other.position;allyDistance=distanceSquared;}
     }
-    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==monster.area && p.persistent.player.hp>0 && squared(p.position)<=121 && p.persistent.player.hp*100/p.totals.character.maxLife<=monster.rule.ai.params[2]) input.woundedNearby=true;}
+    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==monster.area && p.persistent.player.hp>0 && squared(p.position)<=121 && playerLifePercentage(p.persistent.player.hp.raw(),p.totals.character.maxLifeFixed.raw())<=monster.rule.ai.params[2]) input.woundedNearby=true;}
     input.hasAlly=bool(ally);input.allyDistanceSquared=ally?allyDistance:0;
     auto result=decideAct2Monster(monster.rule.ai,input);
     auto &decision=result.action;

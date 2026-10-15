@@ -1,19 +1,32 @@
 #include "projectile_path.hpp"
 #include "core/random.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <array>
+#include <bit>
 #include <limits>
 
 namespace d2x {
 std::vector<Vec> blessedHammerPath(Vec origin) {
+    // Retail Fog ordinals 10083/10084 index the same 512-entry float table.
+    // Hammer advances by 16 entries. Preserve those exact float words and
+    // the x87 product before truncation, rather than host libm rounding.
+    constexpr std::array<uint32_t,32> sine{
+        0x00000000u,0x3e47c5c2u,0x3ec3ef16u,0x3f0e39dau,0x3f3504f3u,0x3f54db32u,0x3f6c835fu,0x3f7b14bfu,
+        0x3f800000u,0x3f7b14beu,0x3f6c835eu,0x3f54db31u,0x3f3504f2u,0x3f0e39d9u,0x3ec3ef13u,0x3e47c5bcu,
+        0xb3bbbd2eu,0xbe47c5c8u,0xbec3ef18u,0xbf0e39dbu,0xbf3504f4u,0xbf54db32u,0xbf6c835fu,0xbf7b14bfu,
+        0xbf800000u,0xbf7b14beu,0xbf6c835eu,0xbf54db30u,0xbf3504f1u,0xbf0e39d8u,0xbec3ef10u,0xbe47c5b7u};
+    const auto x=int64_t(std::llround(double(origin.x)*65536)),y=int64_t(std::llround(double(origin.y)*65536));
     std::vector<Vec> path;path.reserve(77);
     Vec previous{std::floor(origin.x),std::floor(origin.y)};
     for(int sample=1;path.size()<77;++sample) {
-        const float angle=float((sample*16)&511)*6.2831853071795864769f/512.f;
-        const float distance=float(sample*9600)/65536.f;
-        Vec next{std::floor(origin.x+std::cos(angle)*distance),std::floor(origin.y+std::sin(angle)*distance)};
+        const auto index=unsigned(sample)&31;const float distance=float(sample*9600);
+        const auto dx=int64_t(double(std::bit_cast<float>(sine[(index+8)&31]))*double(distance));
+        const auto dy=int64_t(double(std::bit_cast<float>(sine[index]))*double(distance));
+        Vec next{float((x+dx)>>16),float((y+dy)>>16)};
         if(next.x==previous.x && next.y==previous.y) continue;
         path.push_back(next+Vec{.5f,.5f});previous=next;
     }
@@ -29,7 +42,7 @@ bool missileChangedCell(Vec previous, Vec next) {
     return int(previous.x)!=int(next.x) || int(previous.y)!=int(next.y);
 }
 std::optional<int> missileVelocityFixed(int base, int perLevel, int rank,int slowPercent) {
-    if (rank < 1) return {};
+    if (rank < 0) return {};
     const auto velocity=int64_t(base)+int64_t(rank)*perLevel/8;
     // 256 * 75 / 100 is exactly 192; check before multiplying.
     if (velocity<0 || velocity>std::numeric_limits<int>::max()/192) return {};
@@ -48,12 +61,12 @@ uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible)
     }
     return next?next:first;
 }
-Vec blizzardOffset(uint32_t globalX, int remaining, int radius, bool client) {
-    if(radius<=1) return {};
-    auto random=initialRandom(globalX+uint32_t(remaining));
-    const int range=radius-1;
-    Vec offset{float(int(limitedRandom(random,uint32_t(2*range)))-range),
-               float(int(limitedRandom(random,uint32_t(2*range)))-range)};
+Vec blizzardOffset(uint32_t globalX,int elapsed,int radius,bool client,uint64_t &random) {
+    random=(random&0xffffffff00000000ULL)|uint32_t(globalX+uint32_t(elapsed));
+    const auto range=nativeSubtract(radius,1);
+    const auto span=uint32_t(nativeMultiply(2,range));
+    Vec offset{float(nativeSubtract(int32_t(limitedRandom(random,span)),range)),
+               float(nativeSubtract(int32_t(limitedRandom(random,span)),range))};
     return client?offset*-1.f:offset;
 }
 Vec missileRingDirection(int index) {
@@ -64,8 +77,8 @@ Vec missileRingDirection(int index) {
     const unsigned direction = unsigned(index) & 63;
     return {float(offsets[direction]), float(offsets[(direction + 48) & 63])};
 }
-bool missileEmissionDue(int remaining, int period) {
-    return remaining > 0 && period > 0 && remaining % period == 0;
+bool missileEmissionDue(int frame, int period) {
+    return frame>=0 && period>0 && frame%period==0;
 }
 std::optional<MissileRingEmission> missileRingEmission(int remaining, int period, int index, int step) {
     if (!missileEmissionDue(remaining, period)) return {};
@@ -102,7 +115,7 @@ std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing
     }
     return result;
 }
-std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) {
+std::vector<Vec> chargedBoltPath(Vec origin,Vec target,int distance,uint64_t &seed) {
     int deltaX = int(target.x) - int(origin.x), deltaY = int(target.y) - int(origin.y);
     const int absX = std::abs(deltaX), absY = std::abs(deltaY);
     int directionIndex = -1;
@@ -119,11 +132,9 @@ std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) 
     constexpr int directions[]{5,4,4,4,3,6,5,4,3,2,6,6,6,2,2,6,7,0,1,2,7,0,0,0,1};
     constexpr Vec offsets[]{{1,0},{1,1},{0,1},{-1,1},{-1,0},{-1,-1},{0,-1},{1,-1}};
     const int mainDirection = directions[directionIndex];
-    // SkillSor.cpp SKILLS_MissileInit_ChargedBolt deliberately seeds from bolt index + path X.
-    uint64_t seed = initialRandom(uint32_t(index + int(target.x)));
     Vec point{float(int(origin.x)) + .5f, float(int(origin.y)) + .5f};
     std::vector<Vec> path{point};
-    for (int step = 0; step < std::min(77, frames) / 2; ++step) {
+    for (int step = 0; step < distance / 2; ++step) {
         rollRandom(seed);
         const int roll = int(uint32_t(seed) & 31);
         const int offset = roll == 31 ? 1 : roll % 3 - 1;
@@ -131,5 +142,25 @@ std::vector<Vec> chargedBoltPath(Vec origin, Vec target, int index, int frames) 
         path.push_back(point);
     }
     return path;
+}
+std::vector<Vec> chargedBoltPath(Vec origin,Vec target,int index,int frames) {
+    auto random=initialRandom(uint32_t(index+int(target.x)));
+    return chargedBoltPath(origin,target,std::min(77,frames),random);
+}
+std::vector<Vec> missileChargedBurstDirections(int count) {
+    // Skills::sub_6FD14260 intentionally emits pairs even for the final odd
+    // remainder. Preserve the authored order and that possible extra missile.
+    constexpr int signX[]{-1,1,1,-1},signY[]{-1,-1,1,1};
+    constexpr int offset1[]{18,20,17,20,15,19,18},offset2[]{8,2,11,4,13,6,9};
+    constexpr int xOffsets[]{20,-20,0,0,14,-14,-14,14},yOffsets[]{0,0,20,-20,14,14,-14,-14};
+    std::vector<Vec> result{{14,-14}};int remaining=count-1;
+    for(int group=0;group<7 && remaining>0;++group) {
+        for(int direction=0;direction<4 && remaining>0;++direction) {
+            result.push_back({float(offset1[group]*signX[direction]),float(offset2[group]*signY[direction])});
+            result.push_back({float(offset2[group]*signX[direction]),float(offset1[group]*signY[direction])});remaining-=2;
+        }
+        result.push_back({float(xOffsets[group]),float(yOffsets[group])});--remaining;
+    }
+    return result;
 }
 } // namespace d2x

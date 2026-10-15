@@ -6,6 +6,7 @@
 #include "gameplay/quest/id.hpp"
 #include "preparation.hpp"
 #include "state.hpp"
+namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::quests {
 enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
@@ -26,7 +27,7 @@ struct State {
     std::map<EntityId,bool> completed;
     std::map<EntityId,int> objectModes;
 };
-struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; };
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
@@ -37,6 +38,7 @@ class System {
     StepStatus actOneStep(TickContext);
     StepStatus actTwoStep(TickContext);
     StepStatus actThreeStep(TickContext);
+    StepStatus orbStep(TickContext);
     StepStatus actFourStep(TickContext);
     StepStatus actFiveStep(TickContext);
     StepStatus ancientsStep(TickContext);
@@ -89,6 +91,8 @@ class System {
     bool allowsTravel(const CharacterRecord &,RegionId,RegionId) const;
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
     void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}
+    DomainResult<> baalFx(RegionId,Vec);
+    DomainResult<> cairnFx(RegionId,Vec,int destination,uint64_t tick);
     StepStatus step(TickContext,FrameFacts &);
 };
 }

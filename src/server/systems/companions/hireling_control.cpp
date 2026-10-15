@@ -1,15 +1,20 @@
 #include "system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "gameplay/effects/queries.hpp"
 #include "server/systems/npc/system.hpp"
 #include "hireling_equipment.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/units/distance.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -22,15 +27,12 @@ bool sameHireling(const HirelingRecord &current, const HirelingRecord &prepared)
 }
 Vec nativePosition(Vec point) {return {std::floor(point.x+.5f),std::floor(point.y+.5f)};}
 int coordinateDistance(Vec first,Vec second) {
-    const int x=std::abs(int(first.x)-int(second.x)),y=std::abs(int(first.y)-int(second.y));
-    return std::max(x,y)+std::min(x,y)/2;
+    return unitCoordinateDistance(int(first.x),int(first.y),int(second.x),int(second.y));
 }
 int ownerDistance(Vec body,Vec owner,int size) {
     // AiUtil::AIUTIL_GetDistanceToCoordinates_FullUnitSize differs from 10399:
     // subtract the hireling's full SizeX on each axis, then take absolute values.
-    const int x=std::abs(std::abs(int(body.x)-int(owner.x))-size);
-    const int y=std::abs(std::abs(int(body.y)-int(owner.y))-size);
-    return std::max(x,y)+std::min(x,y)/2;
+    return unitCoordinateDistanceWithSize(int(body.x),int(body.y),int(owner.x),int(owner.y),size);
 }
 bool walkingConnection(const AreaStore &areas,RegionId from,RegionId to) {
     if(from==to) return true;
@@ -138,15 +140,32 @@ StepStatus System::synchronizeHirelings(TickContext tick) {
             if(occupied || (p->position-at).length()<float((2+prepared.rule.size)/2)) continue;
             if(!p->rules.items || !p->rules.equipment) continue;
             auto spawnRule=prepared.rule;
-            spawnRule.minimumLife=spawnRule.maximumLife=calculateHirelingEquipment(p->persistent,*p->rules.items,*p->rules.equipment,prepared).life;
-            const auto maximum=int64_t(spawnRule.minimumLife)*256;
+            const auto equipmentStats=calculateHirelingEquipment(p->persistent,*p->rules.items,*p->rules.equipment,prepared);
+            spawnRule.minimumLife=spawnRule.maximumLife=std::max(1,equipmentStats.life.raw()>>8);
+            const auto maximum=equipmentStats.life.raw();
             // Native save records alive/dead, not the old room's current life.
-            auto bodies=ports_.monsters.prepareHireling(actor,spawnRule,prepared.code,at,maximum,initialRandom(p->persistent.player.hireling.seed));
+            auto bodies=ports_.monsters.prepareHireling(actor,spawnRule,prepared.code,at,maximum,initialRandom(p->persistent.player.hireling.seed),
+                {equipmentStats.statSources,equipmentStats.nativeStats});
             if(!bodies) {blocked|=bodies.status==DomainStatus::Capacity;continue;}
             auto next=state_.companions;const auto key=bodies.value->begin()->first;
             Companion pet{key,id,Kind::Hireling,{}};pet.expires=UINT64_MAX;pet.nextDecision=tick.tick+uint64_t(prepared.think);pet.random=initialRandom(p->persistent.player.hireling.seed);
             pet.ownerTeleport=p->teleportRevision;
-            next.emplace(key,std::move(pet));ports_.monsters.commitHydra(std::move(*bodies.value));state_.companions.swap(next);present=true;
+            auto &body=bodies.value->at(key);const auto sourceBody=body;
+            body=prepareHirelingBody(body,p->persistent,prepared,*p->rules.items,*p->rules.equipment,
+                p->inventoryRevision,p->characterRevision,{}, {},tick.tick,true);
+            auto auraUnits=std::make_shared<effects::AuraUnitPublication>();ports_.effects.stageAuraActors(*auraUnits,std::move(*bodies.value),1);
+            ports_.effects.stageAuraSource(*auraUnits,key,
+                [live=sourceBody,owner=p->persistent,prepared,items=p->rules.items,equipment=p->rules.equipment,
+                 inventory=p->inventoryRevision,character=p->characterRevision,tick=tick.tick]
+                (monsters::Actor &body,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
+                    const auto sources=combatEffectStatSources(states.entries(),tick,true);
+                    body=prepareHirelingBody(live,owner,prepared,*items,*equipment,inventory,character,states.stateIds(tick,true),sources,tick,true,mutation);
+                });
+            next.emplace(key,std::move(pet));
+            transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
+            auto publication=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);
+            if(!publication || !ports_.transactions.commit(std::move(*publication.value))) {blocked=true;continue;}
+            state_.companions.swap(next);present=true;
         }
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
@@ -162,31 +181,23 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     for(size_t i=0;i<prepared.passives.size();++i) if(activeStates.contains(prepared.passives[i].first.suppressedByState)) passiveMask|=1u<<i;
     if(body->hirelingInventoryRevision!=p->inventoryRevision || body->rule.level!=p->persistent.player.hireling.level || !body->equipment || body->hirelingPassiveMask!=passiveMask || pet.projectedSkillBonus!=prepared.source.temporarySkillBonus) {
         if(!p->rules.items || !p->rules.equipment) return StepStatus::Blocked;
-        const auto stats=calculateHirelingEquipment(p->persistent,*p->rules.items,*p->rules.equipment,prepared,{},activeStates);
-        auto updated=prepared.rule;
-        updated.minimumLife=updated.maximumLife=stats.life;updated.defense=stats.equipment.defense;
-        updated.attackRating=stats.equipment.weapons[0].attackRating;
-        updated.minimumDamage=stats.equipment.weapons[0].minimum/256;updated.maximumDamage=stats.equipment.weapons[0].maximum/256;
-        updated.blockChance=stats.equipment.blockChance;updated.blockWithoutShield=bool(stats.equipment.shield);
-        const auto &mods=stats.modifiers;const auto &combat=mods.combat;
-        updated.resistances={combat.physicalResist,combat.magicResist,
-            std::max(-100,prepared.rule.resistances[2]+mods.fireResist),
-            std::max(-100,prepared.rule.resistances[3]+mods.lightningResist),
-            std::max(-100,prepared.rule.resistances[4]+mods.coldResist),
-            std::max(-100,prepared.rule.resistances[5]+mods.poisonResist)};
-        auto equipment=std::make_shared<PersistentCharacter>(p->persistent);
-        std::erase_if(equipment->inventory.items,[&](const auto &entry){const auto *at=std::get_if<ContainerLocation>(&entry.second.location);return !at || at->container!=p->persistent.containers.hirelingEquipment;});
-        ports_.monsters.updateHireling(pet.actor,std::move(updated),stats.equipment.weapons[0],combat,stats.actor.strength,stats.actor.dexterity,
-            std::max(0,mods.vitality),std::move(equipment),p->inventoryRevision,p->characterRevision);
+        if(body->revision==UINT64_MAX) return StepStatus::Blocked;
+        auto sources=ports_.effects.unitStatSources(body->id,tick.tick);
+        auto candidate=prepareHirelingBody(*body,p->persistent,prepared,*p->rules.items,*p->rules.equipment,
+            p->inventoryRevision,p->characterRevision,activeStates,sources,tick.tick);
+        std::map<EntityId,monsters::Actor> bodies;bodies.emplace(candidate.id,std::move(candidate));
+        auto auraUnits=std::make_shared<effects::AuraUnitPublication>();ports_.effects.stageAuraActors(*auraUnits,std::move(bodies),0);
+        ports_.effects.stageAuraSource(*auraUnits,body->id,
+            [live=*body,owner=p->persistent,prepared,items=p->rules.items,equipment=p->rules.equipment,
+             inventory=p->inventoryRevision,character=p->characterRevision,tick=tick.tick]
+            (monsters::Actor &body,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
+                auto sources=combatEffectStatSources(states.entries(),tick,true);
+                body=prepareHirelingBody(live,owner,prepared,*items,*equipment,inventory,character,states.stateIds(tick,true),sources,tick,false,mutation);
+            });
+        transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
+        auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);
+        if(!plan || !ports_.transactions.commit(std::move(*plan.value))) return StepStatus::Blocked;
         pet.projectedSkillBonus=prepared.source.temporarySkillBonus;
-        const int frw=std::max(0,stats.modifiers.fasterMoveVelocity);
-        // MONSTERAI_SendMercStats sends base stats; owner item/state packets
-        // provide equipment contributions separately, as on the original server.
-        ports_.monsters.hirelingProjection(pet.actor,prepared.nextExperience,passiveMask,stats.modifiers.velocityPercent+150*frw/(150+frw),
-            {{"maxhp",int64_t(prepared.rule.minimumLife)*256},{"strength",prepared.strength},{"dexterity",prepared.dexterity},
-             {"armorclass",prepared.rule.defense},{"mindamage",prepared.rule.minimumDamage},{"maxdamage",prepared.rule.maximumDamage},
-             {"fireresist",prepared.rule.resistances[2]},{"lightresist",prepared.rule.resistances[3]},
-             {"coldresist",prepared.rule.resistances[4]},{"poisonresist",prepared.rule.resistances[5]}});
     }
     const float life=float(body->life)/256.f;
     if(p->persistent.player.hireling.hp!=life) {
@@ -206,7 +217,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         }
         return StepStatus::Complete;
     }
-    if(tick.tick<pet.nextDecision || tick.tick<body->busyUntil || body->frozenUntil>tick.tick) return StepStatus::Complete;
+    if(tick.tick<pet.nextDecision || tick.tick<body->busyUntil || ports_.monsters.frozen(body->id,tick.tick)) return StepStatus::Complete;
     // Fn061 returns while WALK/RUN is active instead of replacing a partially
     // executed detour every AI interval.
     if(walking) return StepStatus::Complete;

@@ -195,16 +195,18 @@ void NativeRealmService::prepareReload() {
     auto saved = store->load(*lease);
     saved.difficulty = int(gameDifficulty);
     // Allocate the version/name metadata before acquiring a staged host slot.
-    ReloadCandidate candidate{{}, lease->expected, selectedName, gameDifficulty};
+    ReloadCandidate candidate{};
+    candidate.expectedFile=lease->expected;
+    candidate.name=selectedName;
+    candidate.difficulty=gameDifficulty;
     candidate.game = prepareGame(std::move(saved));
     reload = std::move(candidate);
 }
-NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved, bool singlePlayer) {
-    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), shared.items);
-    prepared.authority.settings.singlePlayer = singlePlayer;
+NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentCharacter saved,std::optional<server::GameSettings> settings) {
+    auto prepared = prepareWalkingGame(archives, *content, std::move(saved), shared.items,std::move(settings));
     const auto staged = host.create(std::move(prepared.authority));
     try {
-        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged));
+        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged),host.environment(staged.game,RegionId(prepared.terrain.request.level)).value());
         for (const auto &packet : packets) validateServerPacket(packet);
         host.pause(staged.game, true);
         shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);

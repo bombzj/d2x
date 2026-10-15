@@ -1,101 +1,105 @@
 #include "system.hpp"
+#include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/skills/aura_resolve.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"
+#include "server/systems/skills/evaluation.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <optional>
+#include <stdexcept>
 
 namespace d2x::server::effects {
-DomainResult<> System::hirelingSkill(EntityId id,const SkillCastSpec &skill,uint64_t tick) {
-    const auto *m=ports_.monsters.find(id);
-    if(!m || !m->hireling || m->life<=0 || !m->owner || !skill.appliedEffect) return {DomainStatus::InvalidActor,{}};
-    const auto *p=ports_.players.find(*m->owner);
-    if(!p || !p->entered || p->area!=m->area || p->persistent.player.hp<=0 || !p->rules.skills) return {DomainStatus::InvalidActor,{}};
-    auto next=units_;auto &unit=next[id];unit.area=m->area;
-    if(unit.states.size()>=128) return {DomainStatus::Capacity,{}};
-    auto spec=*skill.appliedEffect;spec.source={CombatEffectSource::Skill,id,skill.sourceId,skill.rank};
-    if(!unit.states.apply(spec,tick).accepted) return {DomainStatus::Conflict,{}};
-    const int state=spec.state.id;
-    auto stats=nativeEffectStats(*p->rules.skills,spec.modifiers);
-    std::vector<DomainFact> facts;
-    for(const int previous:unitStates(id,tick)) if(!unit.states.hasState(previous,tick)) facts.emplace_back(StateFact{id,1,m->area,previous,false});
-    facts.emplace_back(StateFact{id,1,m->area,state,true,stats});
-    if(skill.castOverlayId>=0) facts.emplace_back(OverlayFact{id,1,m->area,skill.castOverlayId});
-    if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},std::move(facts)})) return {DomainStatus::Capacity,{}};
-    unit.nativeStats[state]=std::move(stats);units_.swap(next);return {DomainStatus::Applied,std::monostate{}};
-}
 bool System::hirelingAuraActive(EntityId id,int skill,int rank) const {
-    const auto found=hirelingCycles_.find(id);
-    return found!=hirelingCycles_.end() && found->second.skill==skill && found->second.rank==rank;
+    const auto *unit=ports_.monsters.find(id);
+    if(!unit || !unit->rightSkill || unit->rightSkill->skill!=skill) return false;
+    const auto assigned=unit->rule.baseSkillRanks.find(skill);
+    if(assigned==unit->rule.baseSkillRanks.end() || assigned->second!=rank) return false;
+    const auto timers=ports_.frameEvents.events({FrameEventUnit::Monster,id});
+    return std::any_of(timers.begin(),timers.end(),[](const auto &event){return event.type==FrameEventType::PeriodicSkills && event.customId==-1;});
 }
 DomainResult<> System::hirelingAura(EntityId id,const AuraDefinition &a,uint64_t tick) {
+    const auto *unit=ports_.monsters.find(id);
+    if(!unit || (!unit->hireling && !unit->necroSummon) || !unit->owner) return {DomainStatus::InvalidActor,{}};
+    return assignUnitAura(id,a,tick);
+}
+StepStatus System::advanceUnitAuraCycle(const ActorContext &actor,EntityId id,PaladinCycle &cycle,uint64_t tick) {
+    if(cycle.pulseCommitted) return StepStatus::Complete;
     const auto *m=ports_.monsters.find(id);
-    if(!m || (!m->hireling && !m->necroSummon) || !m->owner || m->life<=0) return {DomainStatus::InvalidActor,{}};
-    PaladinCycle cycle;cycle.skill=a.skill;cycle.rank=a.rank;cycle.area=m->area;cycle.aura=a;cycle.next=tick;cycle.random=m->combatRandom;
-    if(m->hireling && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},
-        {AttackFact{id,id,1,1,m->area,m->position,m->position,tick+1,uint16_t(a.skill),uint8_t(a.rank),false,1}}})) return {DomainStatus::Capacity,{}};
-    hirelingCycles_.insert_or_assign(id,std::move(cycle));return {DomainStatus::Applied,std::monostate{}};
-}
-void System::hirelingReact(EntityId id,EntityId attacker,CombatEffectEvent event,uint64_t tick) {
-    const auto found=units_.find(id);if(found==units_.end()) return;
-    for(auto reaction:found->second.states.reactions(event,tick))
-        if(std::holds_alternative<FreezeAttacker>(reaction.action)) unitReactions_.push_back({id,attacker,found->second.area,std::move(reaction)});
-}
-StepStatus System::advanceHirelings(uint64_t tick) {
-    bool blocked=false;const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    for(auto it=hirelingCycles_.begin();it!=hirelingCycles_.end();) {
-        auto &cycle=it->second;const auto *m=ports_.monsters.find(it->first);
-        const auto *p=m && m->owner?ports_.players.find(*m->owner):nullptr;
-        if(!m || (!m->hireling && !m->necroSummon) || m->life<=0 || !p || !p->entered || p->persistent.player.hp<=0 || m->area!=p->area) {it=hirelingCycles_.erase(it);continue;}
-        if(cycle.area!=m->area) {cycle.area=m->area;cycle.pending=false;cycle.next=tick;}
-        const auto &area=ports_.areas.at(m->area);const auto &a=cycle.aura;
-        if(!cycle.pending && tick<cycle.next) {++it;continue;}
-        if(!cycle.pending) {
-            cycle.targets={m->id};cycle.target=0;
-            const auto eligible=[&](combat::ParticipantView target) {
-                if(target.id()==m->id || !target.aliveIn(m->area) || !withinSkillArea(m->position,target.position(),a.radius,SkillAreaCoordinates::Continuous) || !area.definition.activation.nearby(m->position,target.position())) return false;
-                if((a.filter&0x200) && !area.definition.collision.missileSegment(m->position,target.position(),{0x0805,1})) return false;
-                return a.hostile?!area.definition.town && participants.canHarm({nullptr,m},target):participants.allied({nullptr,m},target,ports_.social);
-            };
-            if(a.filter&1) for(const auto &[key,player]:ports_.players.all()) {(void)key;if(eligible({&player,nullptr})) cycle.targets.push_back(player.actor);}
-            if(a.filter&2) for(const auto &[key,unit]:ports_.monsters.read().actors) if(eligible({nullptr,&unit})) cycle.targets.push_back(key);
-            cycle.pending=true;
-        }
-        const ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick};
-        const uint64_t duration=uint64_t(std::max(5,a.periodFrames))+1;
-        while(cycle.target<cycle.targets.size()) {
-            const auto target=cycle.targets[cycle.target];
-            const auto result=paladinAura(actor,a,target,duration,target==m->id,a.lifePerPulse>0,m->id);
-            if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-            ++cycle.target;
-        }
-        if(cycle.target==cycle.targets.size()) {
-            if(a.element>=0 && a.maximumDamage>0 && !area.definition.town) {
-                auto random=cycle.random;std::vector<EntityId> targets;
-                for(const auto id:cycle.targets) if(id!=m->id) targets.push_back(id);
-                const int64_t low=int64_t(a.minimumDamage*256),spread=int64_t((a.maximumDamage-a.minimumDamage)*256);
-                combat::SpellImpact pulse{m->id,m->id,m->area,DamageType(a.element),low+(spread>0?limitedRandom(random,uint32_t(spread)):0),std::move(targets)};
-                pulse.occurrence=cycle.occurrence+1;pulse.hitClass=uint8_t(a.hitClass);pulse.reaction=true;pulse.unblockable=true;
-                auto plan=ports_.combat.prepareSpells({std::move(pulse)});
-                if(!plan) {blocked|=plan.status==DomainStatus::Capacity;++it;continue;}
-                ports_.combat.commitSpells(std::move(*plan.value));cycle.random=random;++cycle.occurrence;
+    if(!m || !m->alive()) return StepStatus::Complete;
+    const auto &area=ports_.areas.at(m->area);const auto &a=cycle.aura;
+    if(!cycle.pending) {
+        cycle.aura=evaluateUnitAura(id,cycle.skill,cycle.rank,tick);
+        cycle.duration=uint32_t(skillPeriodicDuration(nativeNarrow(uint32_t(tick)),cycle.aura.periodFrames));
+        cycle.pulseCommitted=false;cycle.progress={};cycle.damage.reset();cycle.recipientsPrepared=false;
+        cycle.occurrence=++paladinOccurrence_;cycle.targets={id};cycle.target=0;cycle.pending=true;
+    }
+    while(cycle.target<cycle.targets.size()) {
+        const auto target=cycle.targets[cycle.target];
+        DomainResult<> result;
+        if(target!=id && a.serverDoFunction==82) {
+            const auto redeemed=redeemUnitCorpse(id,target,cycle.skill,cycle.rank,tick);
+            result=redeemed?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{redeemed.status,{}};
+        } else result=advanceAuraTarget(actor,id,a,target,cycle.duration,(uint64_t(1)<<60)|cycle.occurrence,
+            cycle.damage.value_or(0),cycle.progress,target==id);
+        if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        if(target==id && !cycle.recipientsPrepared) {
+            if(!cycle.damage) {
+                const auto after=evaluateUnitAura(id,cycle.skill,cycle.rank,tick);
+                cycle.aura.minimumDamage=after.minimumDamage;cycle.aura.maximumDamage=after.maximumDamage;cycle.aura.radius=after.radius;
+                if((a.serverDoFunction==66 || a.serverDoFunction==81) && area.definition.town) cycle.damage=0;
+                else {const auto rolled=rollAuraDamage(id,a,tick);if(!rolled) return StepStatus::Blocked;cycle.damage=*rolled.value;}
             }
-            cycle.pending=false;cycle.next=tick+uint64_t(std::max(5,a.periodFrames));cycle.targets.clear();
+            if(!((a.serverDoFunction==66 || a.serverDoFunction==81) && area.definition.town)) {
+                auto recipients=auraCandidateRecipients(id,a,m->area,tick);
+                cycle.targets.insert(cycle.targets.end(),recipients.begin(),recipients.end());
+            }
+            cycle.recipientsPrepared=true;
         }
-        ++it;
+        ++cycle.target;cycle.progress={};
     }
-    while(!unitReactions_.empty()) {
-        const auto &r=unitReactions_.front();const auto *m=ports_.monsters.find(r.source);const auto target=participants.find(r.attacker);
-        if(!m || !m->owner || m->life<=0 || !target.aliveIn(r.area) || !participants.canHarm(r.source,r.attacker) || m->area!=r.area) {unitReactions_.pop_front();continue;}
-        const auto *p=ports_.players.find(*m->owner);if(!p || !p->rules.skills) {unitReactions_.pop_front();continue;}
-        combat::SpellImpact impact{r.source,r.source,r.area,DamageType::Cold,0,{r.attacker}};impact.reaction=true;impact.unblockable=true;impact.freeze=true;
-        impact.coldFrames=uint64_t(std::max(0.f,std::get<FreezeAttacker>(r.effect.action).duration)*25.f);impact.coldPierce=m->petStats.attributes.combat.coldPierce;
-        auto plan=ports_.combat.prepareSpells({std::move(impact)});if(!plan) {blocked=true;break;}
-        ports_.combat.commitSpells(std::move(*plan.value));unitReactions_.pop_front();
+    cycle.pulseCommitted=true;cycle.targets.clear();
+    return StepStatus::Complete;
+}
+DomainResult<> System::unitAuraEvent(const FrameEvent &event,uint64_t tick) {
+    const auto id=event.owner.unit;const auto *unit=ports_.monsters.find(id);
+    const auto clear=[&] {ports_.frameEvents.cancel(event.handle);unitAuraCycles_.erase(id);return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    if(!unit || !unit->alive() || !unit->rule.auraPrograms) return clear();
+    auto &cycle=unitAuraCycles_[id];
+    if(cycle.eventOrder!=event.handle.value) {
+        auto stats=unitStatValues(id,tick);if(!stats) return {DomainStatus::Unavailable,{}};
+        auto input=skills::formulaInput(*unit,std::move(*stats));
+        int skill=event.customId,rank{};
+        if(skill==-1) {
+            if(!unit->rightSkill) return clear();
+            skill=unit->rightSkill->skill;
+            const auto selected=input.referenceRanks->effective.find(skill);
+            if(selected==input.referenceRanks->effective.end()) return clear();
+            rank=selected->second;
+        } else {
+            const auto effects=units_.find(id);const ActiveCombatEffect *source=nullptr;
+            if(effects!=units_.end()) for(const auto &entry:effects->second.states.entries())
+                if(entry.spec.source.entity==id && entry.spec.source.definition==skill && effects->second.states.hasState(entry.spec.state.id,tick)) {source=&entry;break;}
+            if(!source || !input.referenceRanks->effective.contains(skill)) return clear();
+            rank=source->spec.source.level;
+        }
+        if(!unit->rule.auraPrograms->contains(skill)) return clear();
+        cycle=PaladinCycle{};cycle.eventOrder=event.handle.value;cycle.skill=skill;cycle.rank=rank;
+        cycle.area=unit->area;cycle.aura=evaluateUnitAura(id,skill,rank,tick);
     }
-    return blocked?StepStatus::Blocked:StepStatus::Complete;
+    const ActorContext actor{unit->owner.value_or(PlayerId{}),id,unit->area,ports_.areas.at(unit->area).generation,0,tick};
+    if(advanceUnitAuraCycle(actor,id,cycle,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    if(!unit->alive()) return clear();
+    const auto after=evaluateUnitAura(id,cycle.skill,cycle.rank,tick);
+    FrameEvent replacement{{},event.owner,FrameEventType::PeriodicSkills,skillPeriodicTick(tick,after.periodFrames),
+        skillPeriodicFrame(nativeNarrow(uint32_t(tick)),after.periodFrames)==-1,0,event.customId,event.customId==-1?0:cycle.rank};
+    auto prepared=ports_.frameEvents.prepareInsertion(replacement);
+    ports_.frameEvents.cancel(event.owner,FrameEventType::PeriodicSkills,event.customId);ports_.frameEvents.publish(std::move(prepared));
+    unitAuraCycles_.erase(id);return {DomainStatus::Applied,std::monostate{}};
 }
 }

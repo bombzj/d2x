@@ -52,6 +52,8 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 2026-10-10源码对照master单机的session_objects／session_shrines、本地D2MOO及当前MPQ补全野外路径。hosting从Objects／Shrines／MonStats／MonLvl／Missiles／Skills、MonSeq与AnimData准备规则；server的objects、monsters、missiles、combat、effects和loot只消费准备值。客户端继续接收原物件、状态、怪物与弹体包，界面不结算伤害。
 
+限时祭坛6–15的状态程序现集中于server/systems/objects/shrines.cpp，按当前MPQ准备参数，使用公共诅咒期限和原始状态列表。主属性在投递前分配，同类型复用保留主项；战斗祭坛随后写tohit，耐力祭坛随后写stamina及staminarecoverybonus。技能祭坛以真实shrine_skill状态经公共技能等级入口增加原算法的2级，不伪造item_allskills或使用Arg0替代；申请和移除各保留原被动刷新，特殊移除保留二次刷新。耐力祭坛先恢复现有上限，再投递列表；撤销时先传播属性，再执行独立耐力恢复回调。人物当前资源与派生来源分开，列表stamina差值由资源轨迹消费。依据D2MOO ObjMode的CombatBoost／SkillBoost／Stamina和D2Common技能等级入口。此迁移已纳入前序Windows Release构建，技能／防御／耐力祭坛的列出路径有有限Single Player观察，实例帧队列包另观察了防御祭坛准确到期与带临时状态退出重载，见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；全部1.13c专用回调、完整同帧排序及组合仍未认证。
+
 | 路径 | 当前实现 |
 | --- | --- |
 | 祭坛目录 | 当前Shrines的1–22类型；旧4／5／16归一到2／3／18。生命／法力／恢复及6–15限时状态沿原参数、状态与重置时间结算；井水按原份数恢复资源并解除原Cure状态 |
@@ -91,6 +93,8 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 | 构建修正期间：代表陷阱与井 | class5陷阱2打开后生成原class326火弹控制器、676命中并正常退场；原class329释放16枚677毒云并施加state2；井恢复生命并消耗一份，持续站在毒云中会立即重新中毒。原火焰／箱子画面留有截图 |
 
 本批前一包客户端SHA256为`716405E400D05EFEC3EBCF3A0F7308F9632F9B8259BCB609AEBA0193CE70D111`，末次包身份见基线。本批复验修正了爆炸桶射线判断、雕像MonSeq事件4、新星64方向及拥挤地面掉落队列阻塞。早期毒素祭坛掉落阻塞与无路靠近样本仍保留，不能把管理换区／定位当成寻路通过。未逐项运行全部祭坛／陷阱变体、三难度及五幕自然生成，未验证随机概率、满队列／争用、长期稳定性、Linux或独立服务端后端互通；按用户要求未执行联机测试。精确原版逐帧／像素仍未认证。
+
+井水与NPC治疗的宠物状态撤销开始使用同一MonsterResourceTrace候选：恢复生命与撤出curable／poison／freeze保留各原调用的先后，列表移除回调、生命上限和事实随人物治疗一次接受后一起发布。NPC治疗覆盖当前拥有的已实现召唤及佣兵，保留实际接收区域；未受伤且无状态的宠物不制造恢复音效。依据ObjMode::OBJMODE_PetIterate_Heal、SUnitNpc::HealPlayer／PetIterate_Heal；完整PlayerPets链顺序、死亡模式和未实现职业仍由伙伴／事件阶段维护，有限运行范围见构建指南。
 
 ## 自研任务物件
 

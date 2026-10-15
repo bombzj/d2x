@@ -14,8 +14,11 @@ class Simulation {
     SystemSteps steps_{};
     SystemMetrics metrics_{};
     FrameFacts facts_;
+    enum class Phase {Environment,Events,Domains,Effects,Combat,Trade,Tail};
+    Phase phase_{Phase::Environment};
+    std::optional<uint64_t> frame_;
   public:
-    void step(TickContext, GameSystems &);
+    bool step(TickContext, GameSystems &);
     const SystemSteps &lastSteps() const { return steps_; }
     const SystemMetrics &metrics() const { return metrics_; }
 };

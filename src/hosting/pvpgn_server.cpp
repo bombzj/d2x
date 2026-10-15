@@ -121,7 +121,7 @@ struct PvpgnServer::Impl {
                 hosting::HostedGame room; room.index = nextGame++; id = room.index;
                 room.name = std::move(name); room.password = std::move(password); room.description = std::move(description);
                 room.capacity = 8; room.levelDifference = 99; room.flags = 4u | uint32_t(difficulty) << 12;
-                room.settings = {uint32_t(std::random_device{}()), int(difficulty), false};
+                room.settings = {uint32_t(std::random_device{}()), int(difficulty), false,1,0,bool(ladder)};
                 host.games.emplace(folded(room.name), std::move(room)); result = 0;
                 announcedGames.insert(id);
                 log("D2CS game reserved: " + std::to_string(id));

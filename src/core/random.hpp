@@ -10,7 +10,9 @@ inline uint32_t rollRandom(uint64_t &state) {
     return uint32_t(state);
 }
 inline uint32_t limitedRandom(uint64_t &state, uint32_t bound) {
-    return bound ? rollRandom(state) % bound : 0;
+    // SEED_RollLimitedRandomNumber's bound is a signed native int. Zero or
+    // negative bounds consume no draw, including a wrapped range > INT32_MAX.
+    return bound && bound <= uint32_t(INT32_MAX) ? rollRandom(state) % bound : 0;
 }
 // SUNIT_InitSeed: advance the parent, then initialize the child with that low word.
 inline uint64_t childRandom(uint64_t &parent) { return initialRandom(rollRandom(parent)); }

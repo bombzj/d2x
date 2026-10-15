@@ -5,6 +5,7 @@
 #include "content/items/item_magic_loot.hpp"
 #include "content/items/item_quality.hpp"
 #include "content/items/item_grades.hpp"
+#include "gameplay/loot/special.hpp"
 #include "core/random.hpp"
 #include "content/npc/hireling_data.hpp"
 #include <charconv>
@@ -61,7 +62,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if (!frames || frames > 250) return {AdminStatus::InvalidArguments, "Step requires 1-250 frames"};
             if (peer.phase != GamePhase::Entered || !host.step(binding->game, frames))
                 return {AdminStatus::Unavailable, "Pause the entered host game before stepping"};
-            publishEvents(); publishPlayers(); publishMonsters(); publishGroundItems(); publishCorpses(); publishObjects(); publishNpcs(); publishShop(); publishPortals(); publishItemSkills(); publishMotion();
+            publishEvents(); publishPlayers(); publishMonsters(); publishMissiles(); publishGroundItems(); publishCorpses(); publishObjects(); publishNpcs(); publishShop(); publishPortals(); publishItemSkills(); publishMotion();
             return {AdminStatus::Applied, "Authority advanced by " + std::to_string(frames) + " fixed frames"};
         }
         // Each privileged mutation has an explicit slot. Implement inside the
@@ -117,7 +118,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if (amount <= 0) return {AdminStatus::InvalidArguments, "Experience amount must be positive"};
             const auto result = host.grantExperience(*binding, uint64_t(amount));
             if (!result) return {AdminStatus::Unavailable, "Progression rejected the experience grant (dead player, level cap or unavailable capacity/rules)"};
-            publishEvents(); publishPlayers(); publishMonsters(); publishGroundItems(); publishCorpses(); publishObjects(); publishNpcs(); publishShop(); publishPortals(); publishItemSkills(); publishMotion();
+            publishEvents(); publishPlayers(); publishMonsters(); publishMissiles(); publishGroundItems(); publishCorpses(); publishObjects(); publishNpcs(); publishShop(); publishPortals(); publishItemSkills(); publishMotion();
             return {AdminStatus::Applied, "Experience granted by the authority"};
         }
         case AdminOperation::SpawnItem: {
@@ -125,7 +126,9 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if (peer.phase != GamePhase::Entered || spawn.level < 1 || spawn.level > 99 || !content->items.find(spawn.code)) return {AdminStatus::InvalidArguments, "Enter a game and supply an MPQ item code and level 1..99"};
             const auto saved=host.exportCharacter(*binding); if(!saved) return {AdminStatus::Unavailable,"Character settlement is pending"};
             auto character = *saved; character.inventory.items.clear();
-            auto random = initialRandom(uint32_t(host.nextEntity(binding->game)));
+            auto random = initialRandom(spawn.seed.value_or(uint32_t(host.nextEntity(binding->game))));
+            if(!spawn.affixes.empty() && spawn.quality!="magic" && spawn.quality!="rare")
+                return {AdminStatus::InvalidArguments,"Explicit affixes require magic or rare quality"};
             ItemGeneration generation;
             if (spawn.quality == "magic" || spawn.quality=="rare") {
                 const auto quality=spawn.quality=="magic"?ItemQuality::Magic:ItemQuality::Rare;
@@ -143,6 +146,45 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
                 if(!plan.deferred.empty() || plan.drops.size()!=1 || plan.drops.front().generation.quality!=(unique?ItemQuality::Unique:ItemQuality::Set)) return {AdminStatus::Unavailable,"No eligible original special item: "+plan.deferred};
                 generation=plan.drops.front().generation;random=plan.randomState;
             } else if (spawn.quality != "normal") return {AdminStatus::InvalidArguments, "Unknown generated quality"};
+            if(!spawn.affixes.empty()) {
+                if(spawn.affixes.size()>6) return {AdminStatus::InvalidArguments,"At most six affixes are supported"};
+                const auto &base=*content->items.find(spawn.code);
+                const int magicLevel=base.base.magicLevel.value_or(0);
+                const int affixLevel=itemAffixLevel(spawn.level,base.base.level.value_or(0),magicLevel);
+                std::vector<int> groups;
+                unsigned prefixes=0,suffixes=0;
+                generation.affixes.clear();generation.requiredLevel=0;
+                for(const auto &requested:spawn.affixes) {
+                    auto &count=requested.prefix?prefixes:suffixes;
+                    if(++count>(spawn.quality=="magic"?1u:3u) || requested.row<0 || requested.row>=INT32_MAX)
+                        return {AdminStatus::InvalidArguments,"Invalid affix row or too many prefixes/suffixes"};
+                    const auto &records=requested.prefix?content->magicPrefixes:content->magicSuffixes;
+                    auto choice=rollMagicAffix(records,base.equipment.types,base.equipment.requiredClass,
+                        affixLevel,magicLevel,spawn.quality=="rare",base.base.sockets.value_or(0)>0,
+                        groups,true,random,requested.row+1);
+                    if(!choice.row || *choice.row!=size_t(requested.row))
+                        return {AdminStatus::InvalidArguments,"Affix is unavailable for this base, level, quality or group"};
+                    random=choice.randomState;
+                    const auto record=std::find_if(records.begin(),records.end(),[&](const auto &entry){return entry.row==*choice.row;});
+                    auto rolled=rollDisplayProperties(record->properties,random);random=rolled.randomState;
+                    if(requested.rolls) {
+                        if(requested.rolls->size()!=record->properties.size())
+                            return {AdminStatus::InvalidArguments,"rolls must match the original affix property count"};
+                        for(size_t index=0;index<record->properties.size();++index) {
+                            const auto &property=record->properties[index];const auto value=requested.rolls->at(index);
+                            if(property.directRoll && property.minimum && property.maximum) {
+                                if(value<std::min(*property.minimum,*property.maximum) || value>std::max(*property.minimum,*property.maximum))
+                                    return {AdminStatus::InvalidArguments,"Affix value is outside its original MPQ range"};
+                            } else if(value!=property.minimum.value_or(0))
+                                return {AdminStatus::InvalidArguments,"This property uses fixed original parameters, not a direct value roll"};
+                        }
+                        rolled.values=*requested.rolls;
+                    }
+                    generation.affixes.push_back({requested.prefix,requested.row,std::move(rolled.values)});
+                    generation.requiredLevel=std::max(generation.requiredLevel,record->requiredLevel);
+                    groups.push_back(record->group);
+                }
+            }
             auto item = prepareItem(*content, {spawn.code, 1, {}, unsigned(spawn.level), std::move(generation)}, random, character.difficulty);
             if (spawn.durability) {
                 if (!item.durability || *spawn.durability > item.durability) return {AdminStatus::InvalidArguments, "Durability requires a durable item and cannot exceed its prepared MPQ maximum"};

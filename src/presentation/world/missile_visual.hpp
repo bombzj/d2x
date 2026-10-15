@@ -4,6 +4,9 @@
 #include "world/collision.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
+#include "gameplay/missiles/timing.hpp"
+#include "gameplay/missiles/sequence.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <array>
 #include <deque>
 #include <vector>
@@ -14,6 +17,7 @@ namespace d2x {
 struct ClientMissileProgram {
     int function{}, hitFunction{}, velocity{}, velocityPerLevel{}, acceleration{}, maximumVelocity{};
     int frames{}, framesPerLevel{}, explosion{-1};
+    MissileAnimationRule animation;
     MissileCollisionRule collision;
     bool collide{}, killOnContact{}, explodeOnExpiry{};
     std::array<int, 5> parameters{};
@@ -42,6 +46,11 @@ struct ClientMissileVisual {
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
     bool flight{}, deathProgram{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};
+    // frame counts processed local callbacks. Native countdown resets must not
+    // rewind callbacks, animation, or the immutable constructor TotalFrames.
+    int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
+    int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
+    void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
     Vec turnTarget;
     int emissionCountdown{};
     Vec pixelOffset, pixelVelocity, pixelAcceleration;
@@ -51,7 +60,6 @@ struct ClientMissileVisual {
     int remainingHits{};
     int slowPercent{};
     EntityId guidance{};bool guidanceSearched{};
-    float animationOffset{};
     // Pair reconstruction and 73 once without merging independent creations.
     uint8_t creationSources{};
     Vec creationPosition, creationDirection;

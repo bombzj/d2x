@@ -4,7 +4,7 @@
 #include "server/runtime/events.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
-#include "server/systems/monsters/system.hpp"
+#include "server/systems/monsters/admission.hpp"
 #include <map>
 #include <set>
 #include <string>

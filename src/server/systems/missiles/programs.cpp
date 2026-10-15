@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "runtime.hpp"
+#include "server/systems/combat/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/player_store.hpp"
@@ -11,6 +13,7 @@
 #include "gameplay/skills/grim_ward_spec.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -33,24 +36,52 @@ DamageType element(SkillBehavior s) {
     }
 }
 }
-combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, std::optional<int64_t> damage) const {
-    const auto &owner=*ports_.players.find(m.player);
+combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, std::optional<int64_t> damage,bool missileContact,std::shared_ptr<MissileDamageRollState> rolls) const {
+    const auto *owner=ports_.players.find(m.player);
+    if(owner && (!owner->entered || owner->actor!=m.playerActor)) owner=nullptr;
+    const auto &rules=*m.rules;
     combat::SpellImpact result{m.id,m.owner,m.area,element(m.skill.effect),damage.value_or(m.damage),std::move(targets)};
-    result.binding=m.binding;
+    if(!result.targets.empty()) result.area=unitArea(result.targets.front());
+    result.allocatedMissile=bool(m.nativeDamage);
+    result.collideFriend=m.nativeDamage && m.nativeDamage->rule.collideFriend;
+    result.binding=m.binding;result.suppressSourceEvents=m.suppressSourceEvents;
+    if(!m.nativeDamage && !ports_.monsters.find(m.owner) && (!owner || owner->actor!=m.owner)) {result.targets.clear();return result;}
+    result.returnFire=missileContact && rules.returnFire.at(m.definition);
     result.occurrence=uint64_t(m.ageFrames);
     result.stunFrames=uint64_t(std::max(0,m.skill.stunFrames));result.hitClass=uint8_t(m.skill.hitClass);
-    if(m.skill.missileImpact && (m.skill.missileImpact->undeadDamagePercent || m.skill.missileImpact->demonDamagePercent)) {
-        for(const auto id:result.targets) {
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const bool healingContact=!m.nativeDamage && m.skill.effect==SkillBehavior::HolyBolt && !result.targets.empty() &&
+        participants.petOrPartyAlly(participants.find(m.owner),participants.find(result.targets.front()),ports_.social);
+    if(!damage && rolls && !healingContact) {
+        result.missileDamage=std::move(rolls);
+        result.weapon=m.weapon;
+        const auto &rule=m.nativeDamage->rule;
+        result.monsterToHit=rule.toHit;result.monsterRating=m.nativeDamage->attackBonus;result.hitClass=uint8_t(rule.hitClass);
+        result.nextDelay=uint64_t(std::max(0,rule.nextDelay));
+        if(rule.nextHit) result.nativeNextHit=rule.nextHitState;
+        result.monsterStates={rules.chilled,rules.poisoned,{}};
+    }
+    if(!result.missileDamage && !damage && m.damageRange && !healingContact) {
+        result.targetDamage.reserve(result.targets.size());
+        for(size_t index=0;index<result.targets.size();++index)
+            result.targetDamage.push_back(rollMissileDamage(*m.damageRange,m.random));
+    }
+    if(!result.missileDamage && m.skill.missileImpact && (m.skill.missileImpact->undeadDamagePercent || m.skill.missileImpact->demonDamagePercent)) {
+        if(result.targetDamage.empty()) result.targetDamage.assign(result.targets.size(),result.damage);
+        for(size_t index=0;index<result.targets.size();++index) {
+            const auto id=result.targets[index];
             const auto *target=ports_.monsters.find(id);
             const int percent=target?((target->rule.undead?m.skill.missileImpact->undeadDamagePercent:0)+(target->rule.demon?m.skill.missileImpact->demonDamagePercent:0)):0;
-            result.targetDamage.push_back(result.damage*(100+percent)/100);
+            result.targetDamage[index]=result.targetDamage[index]*(100+percent)/100;
         }
     }
-    if(m.skill.effect==SkillBehavior::HolyBolt) {
+    if(!m.nativeDamage && m.skill.effect==SkillBehavior::HolyBolt) {
         result.undeadOnly=true;
-        const auto low=int64_t(m.skill.healingMinimum*256),high=int64_t(m.skill.healingMaximum*256);
-        result.healing=low+limitedRandom(m.random,uint32_t(std::max<int64_t>(0,high-low)));
-        result.healingOverlay=m.skill.hitOverlayId;
+        if(healingContact) {
+            result.healingContact=true;result.healingRolls=rolls;
+            if(!rolls) throw std::logic_error("Native Holy Bolt healing requires its missile seed");
+        }
+        result.healingOverlay=m.nativeDamage?m.nativeDamage->rule.programOverlay:m.skill.hitOverlayId;
     }
     if(m.skill.weapon && m.skill.weapon->spear && (m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Charged ||
         m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike || m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Fury)) result.type=DamageType::Lightning;
@@ -58,44 +89,40 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
         result.type=m.skill.missileImpact->areaMissile->element;
         result.freeze=result.type==DamageType::Cold;
     }
-    if(m.program==Program::PoisonCloud || m.skill.effect==SkillBehavior::PoisonNova) {result.type=DamageType::Poison;result.poisonFrames=uint64_t(std::max(0,int(std::lround(m.skill.poisonDuration*25.f))));}
-    result.coldFrames=uint64_t(std::max(0,int(std::lround(m.skill.coldDuration*25.f))));
+    if(m.program==Program::PoisonCloud || m.skill.effect==SkillBehavior::PoisonNova) {result.type=DamageType::Poison;result.poisonFrames=uint64_t(std::max(0,m.skill.poisonDurationFrames.value_or(int(std::lround(m.skill.poisonDuration*25.f)))));}
+    result.coldFrames=uint64_t(std::max(0,m.skill.coldDurationFrames.value_or(int(std::lround(m.skill.coldDuration*25.f)))));
     result.freeze=result.freeze || m.skill.effect==SkillBehavior::IceBlast || m.skill.effect==SkillBehavior::GlacialSpike;
     if (m.skill.freezingArea) result.coldFrames=uint64_t(m.skill.freezingArea->freezeFrames);
-    const auto *unit=ports_.monsters.find(m.owner);
-    result.coldPierce=unit && unit->hireling?unit->petStats.attributes.combat.coldPierce:skills::coldPierce(owner);
-    result.poisonPierce=unit?unit->petStats.attributes.combat.poisonPierce:owner.totals.character.combat.poisonPierce;
-    result.nextDelay=uint64_t(m.skill.arc ? m.skill.arc->nextDelay : std::max(0,int(std::lround(m.skill.missileNextDelay*25.f))));
+    const auto modifiers=ports_.effects.combatModifiers(m.owner,m.executionTick);
+    result.coldPierce=modifiers.coldPierce;result.poisonPierce=modifiers.poisonPierce;
+    if(!result.missileDamage) result.nextDelay=uint64_t(m.skill.arc ? m.skill.arc->nextDelay : std::max(0,int(std::lround(m.skill.missileNextDelay*25.f))));
     return result;
 }
-System::Advance System::advance(const Missile &original) const {
+combat::SpellImpact System::impact(Advance &plan,std::vector<EntityId> targets,std::optional<int64_t> damage,bool missileContact) const {
+    return impact(plan.next,std::move(targets),damage,missileContact,plan.damageRolls);
+}
+System::Advance System::advance(const Missile &sourceMissile,TickContext tick) const {
+    auto original=sourceMissile;original.executionTick=tick.tick;
+    if(auto native=advanceNative(original)) return std::move(*native);
     if(original.enemy) return advanceMonster(original);
     if(original.program==Program::GroundThrow) return advanceGroundThrow(original);
     if(original.weapon) return advanceWeapon(original);
-    Advance plan{original,{},{},false}; auto &m=plan.next;
-    const auto &owner=*ports_.players.find(m.player); const auto &area=ports_.areas.at(m.area);
-    Spawn source{{m.player,owner.actor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
+    Advance plan{original,{},{},false};plan.damageRolls=damageRolls(original); auto &m=plan.next;
+    const auto *owner=ports_.players.find(m.player);if(owner && (!owner->entered || owner->actor!=m.playerActor)) owner=nullptr;
+    const auto &area=ports_.areas.at(m.area);
+    Spawn source{{m.player,m.playerActor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto enemy = [&](const auto &target) { return target.life>0 && participants.canHarm(m.owner,target.id) && target.area==m.area; };
-    const auto child = [&](Vec at, Vec direction, int id, int frames, float speed, Program program, bool fresh=false) -> Missile & {
-        if(fresh && m.owner==owner.actor) source.skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
-        auto c=make(source,at,direction,id,frames,speed,program,m.random);
-        c.created=m.created+uint64_t(m.ageFrames)+1; c.expires=c.created+uint64_t(frames);
-        plan.children.push_back(std::move(c)); return plan.children.back();
+    const auto child = [&](Vec at, Vec direction, int id, int frames, float speed, Program program,bool fresh=false,ChildSetup setup={}) -> Missile & {
+        return planChild(plan,source,at,direction,id,frames,speed,program,fresh && owner && m.owner==owner->actor,std::move(setup));
     };
-    const auto areaHit = [&](Vec at,int range,int64_t damage) {
-        std::vector<EntityId> targets;
-        for(const auto id:participants.enemies(m.owner,m.area)) {
-            const auto target=participants.find(id);
-            if(area.definition.activation.nearby(at,target.position()) && radius(at,target.position(),range)) targets.push_back(id);
-        }
-        plan.impacts.push_back(impact(m,std::move(targets),damage));
-    };
+    const auto areaHit=[&](Vec at,int range) {areaImpact(plan,at,range);};
     if(m.program==Program::GrimWard) {
         const auto &ward=*m.skill.grimWard;const auto &form=ward.forms.at(size_t(m.directionIndex));
         if(m.remainingHits==1 && (m.lifetimeFrames-m.ageFrames)%std::max(1,form.period)==0) {
-            for(const auto &[id,target]:ports_.monsters.read().actors) if(enemy(target) && radius(m.position,target.position,ward.radius)) plan.curseTargets.push_back(id);
-            m.skill.curse->fearOrigin=m.position;
+            for(const auto &[id,target]:ports_.monsters.read().actors) if(enemy(target) && radius(m.position,target.position,ward.radius)) plan.addCurse(id);
+            m.skill.curse->fearOrigin=m.position+area.definition.origin;
+            m.skill.curse->fearSource=m.id;
         }
         ++m.ageFrames;
         if(m.ageFrames>=m.lifetimeFrames) {
@@ -123,61 +150,69 @@ System::Advance System::advance(const Missile &original) const {
     if(m.program==Program::Blizzard) {
         const auto &p=*m.skill.blizzard; const int remaining=m.lifetimeFrames-m.ageFrames;
         if(missileEmissionDue(remaining,p.emissionPeriod)) {
-            const Vec at=cell(m.position)+blizzardOffset(uint32_t(std::floor(m.position.x+area.definition.origin.x)),remaining,p.radius,false);
+            const Vec at=cell(m.position)+blizzardOffset(uint32_t(std::floor(m.position.x+area.definition.origin.x)),m.elapsedFrames(),p.radius,false,m.random);
             if(area.definition.collision.missileSegment(at,at,{5,1})) child(at,{},p.shardId,p.shardFrames,0,Program::Shard,true);
         }
         ++m.ageFrames; plan.finished=m.ageFrames>=m.lifetimeFrames; return plan;
     }
     if(m.program==Program::Spirit) {
         const auto &b=*m.skill.bone;
-        if(owner.persistent.player.hp<=0) {plan.finished=true;return plan;}
+        if(!owner || owner->persistent.player.hp<=0) {plan.finished=true;return plan;}
         if(m.ageFrames+1>=m.lifetimeFrames && !m.guidance && !m.guidanceSearched) {
             m.guidanceSearched=true;
-            for(const auto id:participants.enemies(m.owner,m.area)) {
-                const auto target=participants.find(id);
-                if(radius(m.position,target.position(),b.searchRadius) && area.definition.collision.missileSegment(m.position,target.position(),m.collision) && (!m.guidance || id<m.guidance)) m.guidance=id;
+            for(const auto id:nearbyUnits(m)) {
+                const auto target=participants.find(id);const auto point=unitPosition(m,id);
+                if(point && participants.canHarm(m.owner,id) && radius(m.position,*point,b.searchRadius) && area.definition.collision.missileSegment(m.position,*unitPosition(m,id),m.collision) && (!m.guidance || id<m.guidance)) m.guidance=id;
             }
             m.lifetimeFrames=m.ageFrames+std::max(1,int(std::lround(b.spiritLifetime*25.f)));m.expires=m.created+uint64_t(m.lifetimeFrames);
-            if(m.guidance) m.velocity=(participants.find(m.guidance).position()-m.position).unit()*m.velocity.length();
+            if(m.guidance) m.velocity=(*unitPosition(m,m.guidance)-m.position).unit()*m.velocity.length();
         }
         const auto target=participants.find(m.guidance);
-        if(target.aliveIn(m.area) && participants.canHarm(m.owner,m.guidance) && (m.lifetimeFrames-m.ageFrames)%b.retargetPeriod==0) {
-            const int distance=missileDistance(m.position,target.position());
-            if(distance>3 && distance<25) m.velocity=(target.position()-m.position).unit()*m.velocity.length();
+        if(unitPosition(m,m.guidance) && participants.canHarm(m.owner,m.guidance) && (m.lifetimeFrames-m.ageFrames)%b.retargetPeriod==0) {
+            const int distance=missileDistance(m.position,*unitPosition(m,m.guidance));
+            if(distance>3 && distance<25) m.velocity=(*unitPosition(m,m.guidance)-m.position).unit()*m.velocity.length();
         }
     }
     ++m.ageFrames;
     const bool expires=m.ageFrames>=m.lifetimeFrames;
     if(m.program==Program::AreaImpact) {
-        if(expires) {areaHit(m.position,int(m.skill.missileImpact->areaMissile->radius),m.damage);plan.finished=true;}
+        if(expires) {areaHit(m.position,int(m.skill.missileImpact->areaMissile->radius));plan.finished=true;}
         return plan;
     }
     if(m.program==Program::Heaven) {
         if(!expires) return plan;
         const auto target=participants.find(m.guidance);
         if(target.aliveIn(m.area) && participants.canHarm(m.owner,m.guidance)) {
-            plan.impacts.push_back(impact(m,{m.guidance}));
+            plan.addImpact(impact(plan,{m.guidance}));
             const auto &h=*m.skill.heaven;int count=0;
             for(const auto &[id,t]:ports_.monsters.read().actors) {
                 (void)id;if(!enemy(t) || !area.definition.activation.nearby(t.position,m.position) || !radius(m.position,t.position,h.radius) || !area.definition.collision.missileSegment(m.position,t.position,{0x0805,1})) continue;
                 if(count++>=h.limit) break;
-                auto &c=child(cell(m.position),t.position-m.position,h.boltId,h.boltFrames,float(h.boltVelocity)*75.f/16.f,Program::Projectile);
-                c.skill.effect=SkillBehavior::HolyBolt;c.skill.minimumDamage=float(h.minimum)/256.f;c.skill.maximumDamage=float(h.maximum)/256.f;
-                c.skill.healingMinimum=float(h.healingMinimum);c.skill.healingMaximum=float(h.healingMaximum);
-                if(owner.rules.skills->definitions.contains(101)) c.skill.hitOverlayId=skills::evaluate(owner,101,m.skill.rank).hitOverlayId;
-                c.damage=h.minimum+limitedRandom(m.random,uint32_t(std::max(0,h.maximum-h.minimum)));
+                child(cell(m.position),t.position-m.position,h.boltId,h.boltFrames,float(h.boltVelocity)*75.f/16.f,Program::Projectile,true,
+                    [this,player=m.player](Missile &bolt,const SkillCastSpec &current) {
+                        const auto &heaven=*current.heaven;bolt.skill.effect=SkillBehavior::HolyBolt;
+                        bolt.skill.minimumDamage=Fixed8::fromRaw(heaven.minimum);bolt.skill.maximumDamage=Fixed8::fromRaw(heaven.maximum);
+                        bolt.skill.healingMinimum=float(heaven.healingMinimum);bolt.skill.healingMaximum=float(heaven.healingMaximum);
+                        const auto *caster=ports_.players.find(player);
+                        if(caster && caster->rules.skills && caster->rules.skills->formulas) {
+                            const auto &catalog=*caster->rules.skills->formulas;
+                            const auto holy=catalog.skillIds.find("holy bolt");
+                            if(holy!=catalog.skillIds.end()) bolt.skill.hitOverlayId=catalog.skills.at(holy->second).reactionOverlay;
+                        }
+                        bolt.damageRange=MissileDamageRange{heaven.minimum,heaven.maximum};
+                    });
             }
         }
         plan.finished=true;return plan;
     }
     if(m.program==Program::Meteor) {
         if(!expires) return plan;
-        const auto &p=*m.skill.meteor; areaHit(m.position,p.radius,m.damage);
+        const auto &p=*m.skill.meteor; areaHit(m.position,p.radius);
         constexpr Vec offsets[]{{2,-2},{-2,-2},{0,2},{0,5},{-3,3},{0,3},{3,3},{-1,2},{1,1},{-1,-1},{2,-1},{-4,-2},{-3,-2},{-1,-3},{0,-4},{1,-3},{3,-3},{4,-2}};
-        source.skill=skills::evaluate(owner,m.skill.sourceId,m.skill.rank);
         for(int i=0;i<18;i+=p.fireStep) {
             const Vec at=m.position+offsets[i]; if(!area.definition.collision.missileSegment(at,at,{5,1})) continue;
-            auto &c=child(at,{},p.fire.fireId,p.fire.fireFrames,0,Program::Fire); c.skill.firewall=source.skill.meteor->fire;
+            child(at,{},p.fire.fireId,p.fire.fireFrames,0,Program::Fire,true,
+                [](Missile &fire,const SkillCastSpec &current){fire.skill.firewall=current.meteor->fire;});
         }
         plan.finished=true; return plan;
     }
@@ -187,37 +222,37 @@ System::Advance System::advance(const Missile &original) const {
         Vec next=m.position+m.velocity*TickContext::seconds;
         const auto wall=missileTerrainContact(area.definition.collision,m.position,next,m.collision);
         if(wall) next=m.position+(next-m.position)* *wall;
-        std::vector<EntityId> targets;std::vector<int64_t> amounts;
-        for(const auto id:participants.enemies(m.owner,m.area)) {
-            const auto target=participants.find(id);
-            if(((m.program==Program::Shard || m.program==Program::PoisonCloud) && id==m.lastHit) || !missileUnitIntersection(m.position,next,size,target.position(),target.size())) continue;
-            int64_t amount;
-            if(m.program==Program::Fire) {
+        if(m.nativeDamage) {
+            std::vector<std::pair<float,EntityId>> contacts;
+            for(const auto id:collisionCandidates(m,next)) {
+                const auto target=participants.find(id);const auto point=unitPosition(m,id);
+                if(point) if(const auto fraction=missileUnitIntersection(m.position,next,size,*point,target.size())) contacts.emplace_back(*fraction,id);
+            }
+            std::stable_sort(contacts.begin(),contacts.end(),[](const auto &a,const auto &b){return a.first<b.first;});
+            plan.collisionFlight=Advance::CollisionFlight{m.position,next,std::move(contacts),0,bool(wall),true,false};
+            continueMissileFlight(plan);return plan;
+        }
+        for(const auto id:nearbyUnits(m)) {
+            const auto target=participants.find(id);const auto point=unitPosition(m,id);
+            if(!point || !participants.canHarm(m.owner,id) ||
+                ((m.program==Program::Shard || m.program==Program::PoisonCloud) && id==m.lastHit) ||
+                !missileUnitIntersection(m.position,next,size,*point,target.size())) continue;
+            int64_t amount{};
+            if(!m.nativeDamage && m.program==Program::Fire) {
                 const auto &p=*m.skill.firewall;
                 amount=(int64_t(p.minimumDamage)+limitedRandom(m.random,uint32_t(p.maximumDamage-p.minimumDamage+1)))<<p.hitShift;
-            } else amount=int64_t(m.skill.minimumDamage*256.f)+limitedRandom(m.random,uint32_t((m.skill.maximumDamage-m.skill.minimumDamage)*256.f));
-            targets.push_back(id);amounts.push_back(amount);
-            if(m.program==Program::Shard || m.program==Program::PoisonCloud) { m.lastHit=id;break; }
+            } else if(!m.nativeDamage) amount=rollMissileDamage(fixedMissileDamageRange(m.skill.minimumDamage.raw(),m.skill.maximumDamage.raw()),m.random);
+            plan.addImpact(impact(plan,{id},m.nativeDamage?std::nullopt:std::optional<int64_t>{amount}));
+            if(m.program==Program::Shard || m.program==Program::PoisonCloud) {m.lastHit=id;break;}
         }
-        auto hit=impact(m,std::move(targets));hit.targetDamage=std::move(amounts);plan.impacts.push_back(std::move(hit));
         m.position=next;if(wall) plan.finished=true;return plan;
     }
     if(const auto step=advanceMissileVelocity(m.velocity.length(),m.acceleration,m.maximumVelocity,m.ageFrames)) {
         m.acceleration=step->acceleration;
         m.velocity=m.velocity.unit()*step->speed;
     }
-    Vec next=m.position+m.velocity*TickContext::seconds;
-    if(m.program==Program::Charged || m.program==Program::Hammer) {
-        float distance=m.velocity.length()*TickContext::seconds; next=m.position;
-        while(distance>0 && !m.path.empty()) {
-            const Vec delta=m.path.front()-next; const float span=delta.length();
-            if(span<=distance) {next=m.path.front();m.path.pop_front();distance-=span;}
-            else {next=next+delta.unit()*distance;distance=0;}
-        }
-        if(m.path.empty()) plan.finished=true;
-    }
-    const auto wall=missileTerrainContact(area.definition.collision,m.position,next,m.collision);
-    if(wall) next=m.position+(next-m.position)* *wall;
+    const auto moved=moveMissile(m);const Vec next=moved.position;const bool wall=moved.blocked;
+    if(wall || moved.pathFinished) --m.ageFrames;
     if(m.program==Program::FirewallMaker) {
         if(expires || wall) plan.finished=true;
         else if(missileChangedCell(m.position,next)) {
@@ -239,75 +274,128 @@ System::Advance System::advance(const Missile &original) const {
     // expiry and wall contact; keep area payload construction in one path.
     const auto terminalImpact=[&](Vec at) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
-            m.skill.freezingArea=skills::evaluate(owner,m.skill.sourceId,m.skill.rank).freezingArea;
-            areaHit(at,m.skill.freezingArea->radius,m.damage);
-        } else if(m.radius>0) areaHit(at,int(m.radius),m.damage);
+            if(owner) m.skill.freezingArea=skills::evaluate(*owner,m.skill.sourceId,m.skill.rank).freezingArea;
+            areaHit(at,m.skill.freezingArea->radius);
+        } else if(m.radius>0) areaHit(at,int(m.radius));
     };
-    if(expires) {terminalImpact(next);plan.finished=true;m.position=next;return plan;}
-    std::vector<std::pair<float,EntityId>> contacts;
+    if(expires || moved.pathFinished) {terminalImpact(next);plan.finished=true;m.position=next;return plan;}
+    auto contacts=wall || moved.pathFinished?std::vector<std::pair<float,EntityId>>{}:collisionContacts(m,next);
     if(m.skill.warcry) {
-        for(const auto id:collisionCandidates(m,next)) {
-            if(id==m.owner || m.weaponContacts.contains(id)) continue;
+        for(const auto &[step,id]:contacts) {
             const auto recipient=participants.find(id);
-            if(!recipient.aliveIn(m.area) || !participants.allied(participants.find(m.owner),recipient,ports_.social)) continue;
-            if(missileUnitIntersection(m.position,next,m.collision.size,recipient.position(),recipient.size())) {
-                plan.buffTargets.push_back(id);m.weaponContacts.insert(id);
-            }
+            m.lastHit=id;
+            if(recipient.damageable() && participants.auraAligned(participants.find(m.owner),recipient)) plan.addBuff(id);
         }
-        m.position=next;++m.revision;if(wall) plan.finished=true;return plan;
+        m.position=next;++m.revision;if(wall || moved.pathFinished) plan.finished=true;return plan;
     }
     const bool holyBolt=m.skill.effect==SkillBehavior::HolyBolt;
-    for(const auto id:collisionCandidates(m,next)) {
-        if(holyBolt && id!=m.owner) {
-            const auto patient=participants.find(id);
-            if(m.skill.healingMaximum>0 && patient.aliveIn(m.area) && participants.petOrPartyAlly(participants.find(m.owner),patient,ports_.social)) {
-                if(id!=m.lastHit) if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,patient.position(),patient.size())) contacts.emplace_back(*contact,id);
-                continue;
-            }
-        }
-        const auto target=participants.find(id);
-        if(m.program==Program::Spirit && ((!m.guidance && !m.guidanceSearched) || (m.guidance && m.guidance!=id))) continue;
-        if(m.skill.weapon && m.skill.weapon->spear && m.ageFrames<m.skill.weapon->spear->activateFrames) continue;
-        if(!target.aliveIn(m.area) || !participants.canHarm(m.owner,id) || (holyBolt && (!target.monster || !target.monster->rule.undead)) || id==m.lastHit) continue;
-        if(m.skill.missileNextDelay>0 || (m.skill.arc && m.skill.arc->nextDelay)) {
-            const auto tick=m.created+uint64_t(m.ageFrames);
-            if(target.player?!ports_.effects.missileHitAllowed(id,tick):target.monster->nextHitTick>tick) continue;
-        }
-        if(const auto contact=missileUnitIntersection(m.position,next,m.collision.size,target.position(),target.size())) contacts.emplace_back(*contact,id);
+    if(holyBolt && !contacts.empty()) {
+        const auto id=contacts.front().second;const auto target=participants.find(id);
+        const bool heal=m.skill.healingMaximum>0 && participants.petOrPartyAlly(participants.find(m.owner),target,ports_.social);
+        if(!heal && (!target.monster || !target.monster->rule.undead)) contacts.clear();
     }
-    std::sort(contacts.begin(),contacts.end());
     const bool piercing=m.program==Program::Hammer || m.program==Program::FuryBolt || m.program==Program::Arc || (m.program==Program::Ring && m.skill.effect!=SkillBehavior::PoisonNova) || m.skill.effect==SkillBehavior::Inferno || m.skill.effect==SkillBehavior::BoneSpear;
+    if(m.nativeDamage && !holyBolt && m.skill.effect!=SkillBehavior::Howl && m.skill.effect!=SkillBehavior::BattleCry) {
+        plan.collisionFlight=Advance::CollisionFlight{m.position,next,std::move(contacts),0,bool(wall),true,false,piercing};
+        continueMissileFlight(plan);return plan;
+    }
     if(!contacts.empty()) {
         if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
             terminalImpact(next);plan.finished=true;
         } else if(m.radius>0) {
-            m.position=m.position+(next-m.position)*contacts.front().first;
-            areaHit(m.position,int(m.radius),m.damage);plan.finished=true;
+            m.position=next;
+            areaHit(m.position,int(m.radius));plan.finished=true;
         } else {
             std::vector<EntityId> targets;
             for(const auto &[fraction,id]:contacts) {
                 targets.push_back(id);m.lastHit=id;
                 if(m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning || (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
-                    const Vec at=m.position+(next-m.position)*fraction;std::vector<uint64_t> eligible;
-                    if(m.remainingHits>1) for(const auto candidate:participants.enemies(m.owner,m.area)) {
-                        const auto target=participants.find(candidate);const auto tick=m.created+uint64_t(m.ageFrames);
-                        if(candidate==id || (target.player?!ports_.effects.missileHitAllowed(candidate,tick):target.monster->nextHitTick>tick) ||
-                            !radius(at,target.position(),m.skill.arc->range) || !area.definition.collision.missileSegment(at,target.position(),{4,1})) continue;
+                    const Vec at=next;std::vector<uint64_t> eligible;
+                    if(m.remainingHits>1) for(const auto candidate:nearbyUnits(m)) {
+                        const auto target=participants.find(candidate);const auto point=unitPosition(m,candidate);const auto tick=m.executionTick;
+                        if(!point || !participants.canHarm(m.owner,candidate) || candidate==id || (!ports_.effects.missileHitAllowed(candidate,tick)) ||
+                            !radius(at,*point,m.skill.arc->range) || !area.definition.collision.missileSegment(at,*point,{4,1})) continue;
                         eligible.push_back(candidate.value);
                     }
                     const EntityId successor{missileChainSuccessor(id.value,eligible)};
                     if(successor) {
-                        auto &c=child(cell(at),participants.find(successor).position()-cell(at),m.definition,m.lifetimeFrames,m.skill.missileVelocity,Program::Arc,true);
+                        auto &c=child(cell(at),*unitPosition(m,successor)-cell(at),m.definition,m.lifetimeFrames,m.skill.missileVelocity,Program::Arc,true);
                         c.remainingHits=m.remainingHits-1;c.lastHit=id;
                     }
-                    next=at;plan.finished=true;break;
+                    plan.finished=true;break;
                 }
-                if(!piercing) {next=m.position+(next-m.position)*fraction;plan.finished=true;break;}
+                if(!piercing) {plan.finished=true;break;}
             }
-            if(m.skill.effect==SkillBehavior::Howl || m.skill.effect==SkillBehavior::BattleCry) plan.curseTargets=std::move(targets);
-            else plan.impacts.push_back(impact(m,std::move(targets)));
+            if(m.skill.effect==SkillBehavior::Howl || m.skill.effect==SkillBehavior::BattleCry) {for(const auto id:targets) plan.addCurse(id);}
+            else for(const auto id:targets) plan.addImpact(impact(plan,{id}));
         }
     } else if(wall) terminalImpact(next);
     m.position=next; ++m.revision; if(wall) plan.finished=true; return plan;
 }
+void System::areaImpact(Advance &plan,Vec at,int range,bool full,std::optional<uint32_t> filter,std::optional<int32_t> length) const {
+    const auto &m=plan.next;const auto &area=ports_.areas.at(m.area);
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    if(!participants.find(m.owner).id()) return;
+    auto targets=ports_.effects.nativeAuraCandidateRecipients({m.owner,unitArea(m.owner),range,filter.value_or(m.environment?0x583u:0x8583u),false,
+        at+area.definition.origin,effects::NativeAuraTargetMode::TargetRange});
+    // Preserve room-list traversal across adjacent regions. Split only at a
+    // region transition; grouping by region would reorder synchronous hits.
+    std::vector<std::pair<RegionId,std::vector<EntityId>>> runs;
+    for(const auto id:targets) {
+        const auto unit=participants.find(id);
+        if(m.environment && unit.monster && ports_.monsters.find(m.owner) && !unit.monster->combatCompanion()) continue;
+        const auto region=unit.player?unit.player->area:unit.monster->area;
+        if(runs.empty() || runs.back().first!=region) runs.emplace_back(region,std::vector<EntityId>{});
+        runs.back().second.push_back(id);
+    }
+    if(runs.empty()) runs.emplace_back(m.area,std::vector<EntityId>{});
+    const auto &rule=m.nativeDamage->rule;
+    combat::MissileAreaDamage numeric{rule.damageElement,full || m.program==Program::Meteor ||
+        (m.enemy && m.enemy->rule.behavior==MissileRule::Behavior::Meteor),{},std::make_shared<combat::MissileAreaRoll>()};
+    const auto &program=rule.damageFormulas->missiles.at(m.definition);
+    numeric.hitFlags=uint32_t(program.number("hitflags"));numeric.resultFlags=uint16_t(program.number("resultflags"));
+    if(m.enemy && m.enemy->rule.behavior==MissileRule::Behavior::GlacialSpike) numeric.length=int32_t(m.enemy->rule.coldFrames);
+    else if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) numeric.length=m.skill.freezingArea->freezeFrames;
+    if(length) numeric.length=length;
+    // The native area callback ignores a zero result word. GetDamageValue
+    // still ran once before enumeration, including its private seed draws.
+    if(!numeric.resultFlags) {runs.clear();runs.emplace_back(m.area,std::vector<EntityId>{});}
+    for(auto &[region,recipients]:runs) {
+        auto hit=m.enemy?enemyImpact(plan,std::move(recipients)):impact(plan,std::move(recipients));
+        hit.area=region;hit.areaDamage=numeric;
+        hit.weapon.reset();
+        hit.monsterToHit=false;hit.returnFire=false;hit.nativeNextHit.reset();hit.nextDelay=0;
+        hit.occurrence=(uint64_t(m.ageFrames)<<32)|(uint64_t{1}<<31)|plan.impacts.size();
+        plan.addImpact(std::move(hit));
+    }
+}
+bool System::projectileImpact(Advance &plan,EntityId target) const {
+    auto &m=plan.next;
+    const auto *owner=ports_.players.findActor(m.owner);
+    if(m.skill.effect==SkillBehavior::GlacialSpike && m.skill.freezingArea) {
+        if(owner) m.skill.freezingArea=skills::evaluate(*owner,m.skill.sourceId,m.skill.rank).freezingArea;
+        areaImpact(plan,m.position,m.skill.freezingArea->radius);plan.collisionFlight->continueFlight=false;return false;
+    }
+    if(m.radius>0) {areaImpact(plan,m.position,int(m.radius));plan.collisionFlight->continueFlight=false;return false;}
+    if(target && m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning ||
+        (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
+        const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+        const auto &area=ports_.areas.at(m.area);std::vector<uint64_t> eligible;
+        if(m.remainingHits>1) for(const auto id:nearbyUnits(m)) {
+            const auto recipient=participants.find(id);const auto point=unitPosition(m,id);
+            if(point && participants.canHarm(m.owner,id) && id!=target && ports_.effects.missileHitAllowed(id,m.executionTick) &&
+                radius(m.position,*point,m.skill.arc->range) && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id.value);
+        }
+        const EntityId next{missileChainSuccessor(target.value,eligible)};
+        if(next) {
+            Spawn source{{m.player,m.playerActor,m.area,m.generation,0,m.created},m.skill,m.collision,{},true,m.emitter,m.emitterType,{}};
+            auto &child=planChild(plan,source,cell(m.position),*unitPosition(m,next)-cell(m.position),m.definition,
+                m.lifetimeFrames,m.skill.missileVelocity,Program::Arc,bool(owner));
+            child.remainingHits=m.remainingHits-1;child.lastHit=target;
+        }
+        plan.collisionFlight->continueFlight=false;
+    }
+    return true;
+}
+
 }

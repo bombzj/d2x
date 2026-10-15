@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include <stdexcept>
+#include "server/systems/missiles/system.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -97,7 +99,14 @@ StepStatus System::actTwoStep(TickContext tick) {
         (void)region;if(area.definition.staffTomb) state_.actTwo.tombOffset=uint16_t(*area.definition.staffTomb-66);
     }
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        if(m.life>0 || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
+        if(m.alive() || m.owner || m.identity.origin==SpawnOrigin::Debug) continue;
+        if(m.identity.monster=="radament" && !state_.actTwo.radamentFxStarted.contains(id)) {
+            const auto definition=ports_.missiles.nativeDefinition("radamentdeath");
+            if(!definition) throw std::logic_error("Missing original Radament death missile");
+            const auto result=ports_.missiles.spawnNative({id,m.area,ports_.areas.at(m.area).generation,tick.tick,m.position,m.position,*definition,0,1});
+            if(result.status==DomainStatus::Capacity) blocked=true;
+            else state_.actTwo.radamentFxStarted.insert(id);
+        }
         if(int(m.area)==49 && m.identity.monster=="radament" && !(state_.initialFlags[questDefinition(QuestId::RadamentsLair).nativeSlot]&0x8000) && !state_.objectives.at(questIndex(QuestId::RadamentsLair))) {
             captureGoal(QuestId::RadamentsLair,uint32_t(RadamentStage::Slain),m.area,m.position);
             state_.actTwo.radament=id;state_.actTwo.bookPosition=m.position;
@@ -112,7 +121,9 @@ StepStatus System::actTwoStep(TickContext tick) {
             state_.actTwo.durielSlain=true;
         }
     }
-    if(state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed && tick.tick>=state_.actTwo.sunAt) state_.actTwo.dark=true;
+    if(state_.actTwo.sunScheduled && !state_.actTwo.altarDestroyed && tick.tick>=state_.actTwo.sunAt && !state_.actTwo.dark) {
+        state_.actTwo.dark=true;ports_.world.sunEclipse(true);
+    }
     if(state_.actTwo.tombAt && !state_.actTwo.tombOpen && tick.tick>=state_.actTwo.tombAt) {
         const auto &area=ports_.areas.at(state_.actTwo.tomb);
         const auto entrance=std::find_if(area.definition.objects.begin(),area.definition.objects.end(),[](const auto &o){return o.questSpawn;});

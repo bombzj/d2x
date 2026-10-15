@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
 #include "server/movement.hpp"
 #include "server/area_store.hpp"
@@ -138,13 +139,22 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (rule.operation == 22) {
         if (object.uses <= 0 || rule.parameters[2] <= 0 || rule.parameters[1] <= 0) return {DomainStatus::Conflict, {}};
         const auto &record = player->persistent.player; const auto &totals = player->totals.character;
-        const float fraction = float(rule.parameters[1]) / 256.f;
-        const float life = rule.parameters[3] & 2 ? std::min(float(totals.maxLife), record.hp + totals.maxLife * fraction) : record.hp;
-        const float mana = rule.parameters[3] & 1 ? std::min(float(totals.maxMana), record.mana + totals.maxMana * fraction) : record.mana;
-        const float stamina = std::min(float(totals.maxStamina), record.stamina + totals.maxStamina * fraction);
-        const auto result = ports_.effects.restore(actor,life,mana,stamina,rule.cureStates); if (!result) return result;
-        --object.uses; object.mode = 2 - object.uses / rule.parameters[2]; if (!object.reset && rule.parameters[0] > 0) object.reset = actor.tick + uint64_t(rule.parameters[0]);
-        ++object.revision; collision(actor.area); return result;
+        const auto restore = [&](Fixed8 current, Fixed8 maximum) {
+            const auto cap = maximum.raw();
+            if (current.raw() >= cap) return current;
+            return Fixed8::fromRaw(std::min(cap,nativeAdd(current.raw(),nativeMultiply(cap,rule.parameters[1]) >> 8)));
+        };
+        const auto life = rule.parameters[3] & 2 ? restore(record.hp,totals.maxLifeFixed) : record.hp;
+        const auto mana = rule.parameters[3] & 1 ? restore(record.mana,totals.maxManaFixed) : record.mana;
+        const auto stamina = restore(record.stamina,totals.maxStaminaFixed);
+        const auto result = ports_.effects.restoreWell(actor,life,mana,stamina,rule.cureStates); if (!result) return {result.status,{}};
+        if(result.value->usesCharge) {
+            --object.uses;
+            if(object.uses<=2*rule.parameters[2] && object.uses%rule.parameters[2]==0) object.mode=2-object.uses/rule.parameters[2];
+            if(!object.reset && rule.parameters[0]>0) object.reset=actor.tick+uint64_t(rule.parameters[0]);
+            ++object.revision; collision(actor.area);
+        }
+        return {DomainStatus::Applied,std::monostate{}};
     }
     if (rule.operation != 1 && rule.operation != 3 && rule.operation != 4 && rule.operation != 5 && rule.operation != 14 && rule.operation!=19 && rule.operation!=20 && rule.operation!=26 && rule.operation!=48 && rule.operation!=51 && rule.operation!=68) return {};
     if(rule.operation==48) {
@@ -209,7 +219,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // including NEUTRAL. Admission is a collision change even without an
         // initialization mode transition.
         changed.insert(id);
+        auto room=ports_.areas.prepareRoomUnit(source.id,2,id,object.position);
         state_.objects.emplace(source.id, std::move(object));
+        ports_.areas.publishRoomUnit(*room);
     }
     for (auto &[id, object] : state_.objects) {
         if (!ports_.areas.loaded(object.area, object.position)) continue;
@@ -272,7 +284,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if (object.reset && tick.tick >= object.reset) {
             if (object.rule.operation == 22) {
-                object.uses = std::min(2 * object.rule.parameters[2], object.uses + 1); object.mode = 2 - object.uses / object.rule.parameters[2];
+                object.uses = std::min(2 * object.rule.parameters[2], object.uses + 1);
+                if(object.uses%object.rule.parameters[2]==0) object.mode=2-object.uses/object.rule.parameters[2];
                 object.reset = object.uses < 2 * object.rule.parameters[2] ? tick.tick + uint64_t(object.rule.parameters[0]) : 0;
             } else { object.mode = 0; object.reset = 0; }
             ++object.revision; changed.insert(object.area);
@@ -283,35 +296,5 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     const bool blocked=hazardStep(tick)==StepStatus::Blocked;
     return trapStep(tick)==StepStatus::Blocked || blocked?StepStatus::Blocked:StepStatus::Complete;
 }
-DomainResult<> System::shrine(const ActorContext &actor, Object &object) {
-    const auto &rule = *object.rule.shrine; const auto *player = ports_.players.find(actor.player); const auto &attributes = player->totals.character;
-    if(rule.code>=17) return specialShrine(actor,object);
-    if (rule.code <= 3) return ports_.transactions.resources(actor, player->characterRevision,
-        rule.code != 3 ? float(attributes.maxLife) : player->persistent.player.hp,
-        rule.code != 2 ? float(attributes.maxMana) : player->persistent.player.mana, player->persistent.player.stamina);
-    if (rule.code >= 17 || rule.duration <= 0 || rule.state.id < 0) return {};
-    CombatEffectSpec effect; effect.state = rule.state; effect.source = {CombatEffectSource::Shrine, object.id, 0, 0}; effect.stacking = EffectStacking::CurseLevel;
-    const auto duration = rule.state.curse ? int64_t(rule.duration) * (100 - std::clamp(attributes.combat.curseResistance,0,100)) / 100 : rule.duration;
-    if (!duration) return {DomainStatus::Conflict, {}};
-    effect.duration = uint64_t(duration); auto &modifiers = effect.modifiers;
-    switch (rule.code) {
-    case 6: modifiers.combat.defensePercent = rule.argument0; break;
-    case 7: {
-        const auto &weapon = player->totals.equipment.weapons[0];
-        const int64_t rate = weapon.potion ? 0 : weapon.baseAttackRating;
-        const int64_t bonus = rate * (weapon.attackRatingPercent / 100 + 1) + player->definition.toHitFactor;
-        modifiers.attackRating = int(std::clamp<int64_t>(bonus * rule.argument0 / 100, INT32_MIN, INT32_MAX)); modifiers.combat.damagePercent = rule.argument1; break;
-    }
-    case 8: modifiers.fireResist = rule.argument0; modifiers.combat.preventBurn = true; break;
-    case 9: modifiers.coldResist = rule.argument0; break;
-    case 10: modifiers.lightningResist = rule.argument0; break;
-    case 11: modifiers.poisonResist = rule.argument0; modifiers.combat.preventPoison = true; break;
-    case 12: modifiers.combat.allSkills = rule.argument0; break;
-    case 13: modifiers.combat.manaRecovery = rule.argument0; break;
-    case 14: modifiers.staminaPercent = int(int64_t(rule.argument0) * attributes.staminaPercent / 100); modifiers.staminaRecoveryBonus = 1000; effect.restoreStaminaOnRemoval = true; break;
-    case 15: modifiers.combat.experiencePercent = rule.argument0; break;
-    default: return {};
-    }
-    return ports_.effects.apply(actor, std::move(effect), rule.code == 14);
-}
+
 }

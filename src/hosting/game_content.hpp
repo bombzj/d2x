@@ -13,5 +13,5 @@ struct WalkingGameContent {
     GeneratedArea terrain;
 };
 // MPQ-facing composition, deliberately a different library from GameHost.
-WalkingGameContent prepareWalkingGame(Archives &, const ClassicData &, PersistentCharacter, std::shared_ptr<const ItemCatalog>);
+WalkingGameContent prepareWalkingGame(Archives &, const ClassicData &, PersistentCharacter, std::shared_ptr<const ItemCatalog>,std::optional<server::GameSettings> settings={});
 } // namespace d2x

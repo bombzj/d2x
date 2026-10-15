@@ -1,0 +1,6 @@
+{
+    "cmake.configureSettings": {
+        "CMAKE_BUILD_TYPE": "Release"
+    },
+    "cmake.configureOnEdit": false
+}

@@ -22,7 +22,7 @@ struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, r
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; const AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; };
+struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; };
 class System {
     State state_;
     const Ports ports_;
@@ -30,12 +30,14 @@ class System {
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
     StepStatus expireSynchronizations(TickContext);
+    DomainResult<SpecialPortalPlan> prepareWorldPortal(RegionId,int,uint64_t,Vec,const PortalRule &,bool blue,bool exactSource);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> openWaypoint(const ActorContext &,EntityId,bool menu,std::optional<int> remoteRange = {});
     DomainResult<> createPortal(const ActorContext &,std::optional<ItemHandle> = {},std::optional<int> skill = {});
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
+    DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick);
     void commitSpecialPortal(SpecialPortalPlan plan) noexcept {state_.specialPortals.swap(plan.next);}
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
     DomainResult<> useSpecial(const ActorContext &,const Request &,std::optional<int> remoteRange = {});
@@ -47,7 +49,7 @@ class System {
         const auto found=state_.synchronizations.find(id);
         return found!=state_.synchronizations.end() && found->second.until!=0;
     }
-    DomainResult<> teleport(const ActorContext &, PointTarget, float manaCost,std::optional<SkillCharge> charge = {});
+    DomainResult<> teleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {});
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
     void closePlayerPortal(PlayerId id) { state_.portals.erase(id); }

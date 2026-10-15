@@ -8,9 +8,9 @@
 namespace d2x::server::effects {
 StepStatus System::advanceMonsterSkills(uint64_t tick) {
     bool blocked=false;
-    std::erase_if(webTrails_,[&](const auto &entry){const auto *m=ports_.monsters.find(entry.first);return !m || m->life<=0 || m->webUntil<=tick || m->area!=entry.second.area || m->webUntil!=entry.second.until;});
+    std::erase_if(webTrails_,[&](const auto &entry){const auto *m=ports_.monsters.find(entry.first);return !m || m->life<=0 || (!m->rule.web || !unitStates(m->id,tick).contains(m->rule.web->aura.id)) || m->area!=entry.second.area || m->webUntil!=entry.second.until;});
     for(const auto &[id,m]:ports_.monsters.read().actors) {
-        if(m.life<=0 || m.webUntil<=tick || !m.rule.web) continue;
+        if(m.life<=0 || (!m.rule.web || !unitStates(id,tick).contains(m.rule.web->aura.id)) || !m.rule.web) continue;
         auto [it,fresh]=webTrails_.try_emplace(id);auto &trail=it->second;
         if(fresh) trail={m.webOrigin,{},{},m.area,m.webUntil,m.webRandom,false};
         if(!trail.pending && missileChangedCell(trail.previous,m.position)) {

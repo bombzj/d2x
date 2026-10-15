@@ -257,8 +257,10 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     conversion.weapon->conversionMinimum = required(skills, conversionRow, "Param3");
     conversion.weapon->conversionMaximum = required(skills, conversionRow, "Param4");
     conversion.weapon->conversionFrames = required(skills, conversionRow, "Param1");
+    conversion.weapon->conversionFramesPerLevel=required(skills,conversionRow,"Param2");
     conversion.state = states.at(std::string(skills.value(conversionRow, "auratargetstate"))).definition;
     conversion.weapon->conversionState = conversion.state;
+    conversion.weapon->conversionSaveState=states.at("conversion_save").definition;
     catalog.skills.at(conversion.sourceId).spell = std::make_shared<const SkillSpec>(std::move(conversion));
     const auto heavenRow = named(skills, "skill", "Fist of the Heavens");
     SkillSpec heaven;
@@ -296,6 +298,7 @@ void loadPaladinSkills(SkillCatalog &catalog, const DataTable &skills, const Dat
     program.boltVelocity = required(missiles, boltRow, "Vel");
     program.minimum = required(missiles, boltRow, "EMin");
     program.maximum = required(missiles, boltRow, "EMax");
+    program.damageShift = required(missiles,boltRow,"HitShift");
     for (int tier = 0; tier < 5; ++tier) {
         program.minimumPerLevel[tier] = required(missiles, boltRow, "MinELev" + std::to_string(tier + 1));
         program.maximumPerLevel[tier] = required(missiles, boltRow, "MaxELev" + std::to_string(tier + 1));

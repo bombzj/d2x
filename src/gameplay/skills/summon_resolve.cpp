@@ -3,13 +3,15 @@
 #include "damage_curve.hpp"
 #include "rank_bonus.hpp"
 #include "necro_passive_spec.hpp"
+#include "formula_parameters.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <stdexcept>
 
 namespace d2x {
 SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery, int resist,
-                            int ownerLevel, int difficulty, const std::map<int, int> &hardRanks) {
+                            int ownerLevel, int difficulty, const std::map<int, int> &hardRanks,SkillFormulaValues *formulas,int skill) {
     if (rank <= 0 || rank > 255 || difficulty < 0 || difficulty > 2 || ownerLevel < 1)
         throw std::runtime_error("Invalid summon level or difficulty");
     SummonCastSpec result;
@@ -28,12 +30,45 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
         pet->damagePercent = bonus.reviveDamage; pet->velocityPercent = p[4];
         pet->lifetimeFrames = p[2] + (rank-1)*p[3]; pet->reviveState = program.reviveState;
         pet->reviveVisuals = program.reviveVisuals;
-        result.limit = rank; result.necro = std::move(pet); return result;
+        result.limit = rank;
+        if(formulas) {
+            if(skill<0) throw std::runtime_error("Missing native revive identity");
+            const auto calculation=[&](std::string_view field) {
+                const auto value=formulas->calculation(FormulaDomain::Skill,skill,rank,field);
+                if(!value) throw std::runtime_error("Unsupported native revive calculation");
+                return *value;
+            };
+            const auto level=formulas->stat("level");if(!level) throw std::runtime_error("Missing native revive owner level");
+            result.stats.level=*level;
+            auto &native=result.native.emplace();native.skill=skill;native.rank=rank;
+            native.lifePercent=calculation("calc1");native.passiveAdds=formulas->passiveBuffStats(skill,rank,false);
+            native.auraWrites=formulas->auraStats(skill,rank,6,true,false);native.inheritedSkills=formulas->summonSkills(skill,rank);
+            pet->lifePercent=native.lifePercent;pet->lifetimeFrames=calculation("calc2");result.limit=calculation("petmax");
+        }
+        result.necro = std::move(pet); return result;
     }
     auto &stats = result.stats;
     auto &attributes = stats.attributes;
-    stats.level = std::clamp(rank + 3 * ownerLevel / 4, 1, ownerLevel);
+    stats.level = std::clamp(nativeAdd(rank,nativeMultiplyDivide(ownerLevel,3,4)),1,ownerLevel);
     const auto level = std::min(size_t(stats.level), spec.levelDefense.size() - 1);
+    if(formulas) {
+        if(skill<0) throw std::runtime_error("Missing native summon identity");
+        const auto calculation=[&](std::string_view field) {
+            const auto value=formulas->calculation(FormulaDomain::Skill,skill,rank,field);
+            if(!value) throw std::runtime_error("Unsupported native summon calculation");
+            return *value;
+        };
+        auto &native=result.native.emplace();native.base=spec.base[difficulty];native.skill=skill;native.rank=rank;
+        native.lifePercent=calculation("calc1");result.limit=calculation("petmax");
+        native.levelDefense={spec.levelDefenseNonL.at(level)[difficulty],spec.levelDefense.at(level)[difficulty]};
+        native.levelRating={spec.levelAttackNonL.at(level)[difficulty],spec.levelAttack.at(level)[difficulty]};
+        native.passiveAdds=formulas->passiveBuffStats(skill,rank,false);native.auraWrites=formulas->auraStats(skill,rank,6,true,false);
+        native.inheritedSkills=formulas->summonSkills(skill,rank);native.resistSkill=spec.resistSkill;
+        const auto resistance=formulas->stat("passive_summon_resist");
+        if(!resistance) throw std::runtime_error("Missing native owner summon resistance input");
+        native.summonResistance=*resistance;
+        native.materialBeforeStats=spec.necro && spec.necro->kind==NecroSummonKind::Iron;
+    }
     const auto skeleton = evaluateNecromancerPassive({NecromancerPassiveSpec::Kind::SkeletonMastery,
         {spec.masteryLife,spec.masteryDamage}},mastery);
     attributes.maxLife = int((int64_t(attributes.maxLife) + skeleton.skeletonLife) *
@@ -64,6 +99,8 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
                 const auto &definition = program.missiles[element]; auto &payload = pet->missiles[element];
                 payload.id = definition.id; payload.velocity = definition.velocity; payload.lifetime = definition.lifetime;
                 payload.element = definition.element; payload.impact = definition.impact;
+                payload.levelDamage=MissileLevelDamage{program.missileSkill,definition.hitShift,definition.maximum,definition.frames,
+                    definition.minimumDamage,definition.maximumDamage,definition.framesPerLevel};
                 payload.minimumDamage = evaluateSkillDamage(definition.minimumDamage, std::max(1, missileRank), definition.hitShift);
                 payload.maximumDamage = evaluateSkillDamage(definition.maximumDamage, std::max(1, missileRank), definition.hitShift);
                 if (definition.maximum) { payload.minimumDamage = std::min(payload.minimumDamage, float(definition.maximum)/256.f); payload.maximumDamage = std::min(payload.maximumDamage, float(definition.maximum)/256.f); }
@@ -98,6 +135,7 @@ SummonCastSpec resolveSummon(const SummonSkillSpec &spec, int rank, int mastery,
         if (program.kind == NecroSummonKind::Blood) {
             pet->lifeLeechPercent = skillDiminishingRatioBonus({p[0],p[1]},rank);
             pet->ownerSharePercent = p[2];
+            pet->ownerHealingSharePercent=p[5];
         }
         if (program.kind == NecroSummonKind::Fire) {
             const int absorb = skillDiminishingRatioBonus({p[0],p[1]},rank);

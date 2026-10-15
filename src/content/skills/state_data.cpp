@@ -13,7 +13,7 @@ std::string_view shrineStateName(int code) {
 }
 CombatStateCatalog loadCombatStates(const DataTable &states) {
     for (const char *field : {"state", "id", "group", "remhit", "stambarblue", "curse", "plrstaydeath",
-                              "monstaydeath", "bossstaydeath", "hide", "shatter", "udead", "curable", "overlay1", "overlay2"})
+                              "monstaydeath", "bossstaydeath", "hide", "shatter", "udead", "curable", "nosend", "life", "aura", "overlay1", "overlay2"})
         if (!states.has(field)) throw std::runtime_error("Missing States.txt field: " + std::string(field));
     CombatStateCatalog result;
     std::set<int> ids;
@@ -41,6 +41,9 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
         if (record.overlay == "null") record.overlay.clear();
         if (record.secondaryOverlay == "null") record.secondaryOverlay.clear();
         record.definition.curable = flag("curable");
+        record.definition.noSend=flag("nosend");
+        record.definition.life=flag("life");
+        record.definition.aura=flag("aura");
         if (!result.emplace(std::string(name), std::move(record)).second)
             throw std::runtime_error("Duplicate States.txt name");
     }

@@ -5,6 +5,8 @@
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "server/runtime/prepared_rules.hpp"
+#include <vector>
+#include <memory>
 namespace d2x::server::companions {
 // Content work crosses the hosting boundary as immutable values, never callbacks.
 struct Preparation {
@@ -16,6 +18,7 @@ struct Preparation {
 struct Prepared {
     Preparation source;PersistentCharacter equipment;SummonCastSpec summon;MonsterRule rule;
     WeaponDamage weapon;uint64_t random{};std::string deferred;
+    std::vector<std::shared_ptr<const StatList>> equipmentSources;
 };
 struct HirelingPreparation {
     ActorContext actor;
@@ -39,6 +42,7 @@ struct PreparedHireling {
     std::string weaponType2;
     int act{};
     std::vector<std::pair<SkillPassiveSpec,int>> passives;
+    std::map<int,int> baseSkillRanks;
     uint64_t baseExperience{}, nextExperience{};
     std::string deferred;
 };

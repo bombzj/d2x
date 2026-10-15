@@ -43,11 +43,11 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 按住近战的客户端追击以当前待执行攻击、本地连续人物／目标位置和原近战范围为准，自行启动路径／决定起手，不等本人96或服务端移动确认。localUnitPosition读取同一单位本地路径的位置；首次指派／真实位置不连续时从原指派坐标开始，不能把稀疏位置样本当作连续追击目标。旧CastHandoff只抑制先前动作的稀疏原走路目标，不能抑制敌人逃出范围后的下一次攻击靠近；合成的本地靠近意图使用LocalCast自己的revision，不借最新世界／其他战斗请求的revision。起手距离使用MonStats2原SizeX与playerMeleeReach，保持moving增量及武器rangeadder，目标换格重算按floor(position+0.5)的原生子格，客户端与权威分别执行；Shift站定和已经开始的攻击动画仍沿原语义。依据为PlrMsg::Rcv0x06／09→sub_6FC836D0与UNITS_IsInMeleeRange：范围外保存单位目标并改RUN，范围内才改技能动作。
 
-2026-10-13用户TCP/IP验收日志`artifacts/diagnostics/20261013-073805-98adbcb5`对应EA5256包：D2X本人两次06／33次09，没有07／0A；攻击GUID139期间权威96位置由(4584,4567)继续至(4606,4558)，且目标逃跑后死亡，证明服务端在追击，不能把客户端站定表现判成站定请求或服务端没有寻路。当前源码修正动作交接后重新靠近；证据与MPQ Attack.range=both、敌方SizeX=2核对在`artifacts/melee-hold-crash-20261013`。本轮未构建、运行或重打包，画面及原版Host方向仍需新程序验证。
+2026-10-13用户TCP/IP验收日志`artifacts/diagnostics/20261013-073805-98adbcb5`对应EA5256包：D2X本人两次06／33次09，没有07／0A；攻击GUID139期间权威96位置由(4584,4567)继续至(4606,4558)，且目标逃跑后死亡，证明服务端在追击，不能把客户端站定表现判成站定请求或服务端没有寻路。当前源码修正动作交接后重新靠近；证据与MPQ Attack.range=both、敌方SizeX=2核对在`artifacts/melee-hold-crash-20261013`。该动作交接修正已随前序Windows Release构建／打包；按住近战画面及原版Host方向未专项运行复验，不能沿用EA5256记录认证后续程序。
 
 ## 原版依据
 
-卷轴／书本的公共客户端资格由skill_eligibility统一计算，MPQ的scroll标记与SrvDo113识别物品技能；CharStats固有资格不代替原0x22数量。选择器、热键和施放读取同一已知数量，零数量／尚未知不授权，数量不写入有效等级，也不与装备充能混用。依据D2Common D2Skills.cpp的SKILLS_GetUseState（scroll且nQuantity<=0返回NOQUANTITY）及ItemMode.cpp的数量维护／0x22发送。原表四项range=none，SrvDo113调用物品程序时使用本人位置；公共RemoteCombat不获取悬停单位，施放前将点目标归一本人坐标，再发送原0x0C／0x0F。这样鼠标位于地图外沿时不会因无关目标边界拒绝自身物品技能，原服与自研宿主代码一致。2026-10-10此修正仅更新源码，未构建、打包或运行验证，不沿用下节历史证据。
+卷轴／书本的公共客户端资格由skill_eligibility统一计算，MPQ的scroll标记与SrvDo113识别物品技能；CharStats固有资格不代替原0x22数量。选择器、热键和施放读取同一已知数量，零数量／尚未知不授权，数量不写入有效等级，也不与装备充能混用。依据D2Common D2Skills.cpp的SKILLS_GetUseState（scroll且nQuantity<=0返回NOQUANTITY）及ItemMode.cpp的数量维护／0x22发送。原表四项range=none，SrvDo113调用物品程序时使用本人位置；公共RemoteCombat不获取悬停单位，施放前将点目标归一本人坐标，再发送原0x0C／0x0F。这样鼠标位于地图外沿时不会因无关目标边界拒绝自身物品技能，原服与自研宿主代码一致。2026-10-10修订时仅更新源码，此修正后已纳入前序构建／打包；卷轴／书本的这些资格与落点组合未专项运行复验，不沿用下节历史证据。
 
 - master：`session/session_skills.cpp`的BasicSkillAction、`units/actions.cpp::selectAttackWeapon`、`combat/attacking.cpp`、`combat/physical_projectiles.cpp`及`items/books.cpp`。
 - 本地D2MOO：D2Game `SKILLS/Skills.cpp`的SrvSt01／02／03／65、SrvDo001／002／003／004／005；`SKILLS/SkillItem.cpp`的SrvDo113及pSpell01／02；`ITEMS/ItemMode.cpp`的书本数量处理；`MISSILES/Missiles.cpp`的创建标记、`MissMode.cpp`的SrvHit02／03；`PLAYER/PlayerPets.cpp`的归属删除及退役；`OBJECTS/ObjMode.cpp::OBJECTS_OperateFunction05_Barrel`及PlrModes的KK动作／PlrMsg的本人通知省略；`GAME/SCmd.cpp`的3F编码。原表参数仍以当前MPQ为准。

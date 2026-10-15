@@ -5,6 +5,7 @@
 #include "server/systems/skills/system.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/combat/life.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/monsters/ranged_decision.hpp"
 #include "gameplay/monsters/special_decision.hpp"
@@ -46,14 +47,14 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     }
     controller.pursuing = false; ports_.monsters.stop(id);
     int targetLife = 100;
-    if (const auto *pet = ports_.monsters.find(target.id)) targetLife = int(pet->life * 100 / pet->maximumLife);
-    else for (const auto &[key, player] : ports_.players.all()) { (void)key; if (player.actor == target.id) targetLife = int(player.persistent.player.hp * 100 / player.totals.character.maxLife); }
+    if (const auto *pet = ports_.monsters.find(target.id)) targetLife = playerLifePercentage(pet->life,pet->maximumLife);
+    else for (const auto &[key, player] : ports_.players.all()) { (void)key; if (player.actor == target.id) targetLife = playerLifePercentage(player.persistent.player.hp.raw(),player.totals.character.maxLifeFixed.raw()); }
     MonsterDecisionInput input
         {distance <= monster.rule.meleeRange && clear, controller.charged,
          monsterAiDistance(position, target.type==0?0:size, monster.position), monster.rule.difficulty, controller.random,
          monster.hitOccurrence != controller.observedHit, int(monster.area) == 17,
          int(monster.life * 100 / monster.maximumLife), controller.commanded, controller.alerted,
-         monster.identity.ownerSpawnKey == monster.identity.spawnKey, controller.phase, controller.loop, targetLife, monster.webUntil>tick.tick, clear};
+         ports_.monsters.minionOwner(id) == id, controller.phase, controller.loop, targetLife, monster.webUntil>tick.tick, clear};
     input.trapAxisAligned=std::abs(int(std::floor(position.x))-int(std::floor(monster.position.x)))<6 || std::abs(int(std::floor(position.y))-int(std::floor(monster.position.y)))<6;
     if(monster.rule.ai.kind==MonsterAiKind::CorruptArcher || monster.rule.ai.kind==MonsterAiKind::Vampire) {
         const int radius=monster.rule.ai.kind==MonsterAiKind::CorruptArcher?12:8;
@@ -84,7 +85,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     if (decision->action == MonsterDecisionAction::Shout) {
         const auto result = ports_.skills.requestCast({id, 0, target, tick.tick, 9});
         if (result.status == DomainStatus::Capacity) { controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
-        if(result && monster.identity.ownerSpawnKey==monster.identity.spawnKey) {commandParty(monster);controller.commanded=true;}
+        if(result && ports_.monsters.minionOwner(id)==id) {commandParty(monster);controller.commanded=true;}
     } else if (decision->action == MonsterDecisionAction::Attack || decision->action == MonsterDecisionAction::Special) {
         const auto skill=decision->action==MonsterDecisionAction::Special?monster.rule.skillIds.at(size_t(decision->skillSlot)):uint16_t(0);
         const auto actualTarget=monster.rule.ai.kind==MonsterAiKind::FallenShaman && decision->skillSlot==0?*corpse:actionTarget;
@@ -162,7 +163,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
 void System::commandParty(const monsters::Actor &leader) {
     // Include dormant actors as well, so a command cannot disappear simply
     // because a minion has not had its first active-room AI tick yet.
-    for(const auto &[id,minion]:ports_.monsters.read().actors) if(minion.life>0 && minion.area==leader.area && minion.identity.ownerSpawnKey==leader.identity.spawnKey) {
+    for(const auto &[id,minion]:ports_.monsters.read().actors) if(minion.life>0 && minion.area==leader.area && ports_.monsters.minionOwner(id)==leader.id) {
         auto [entry,fresh]=state_.controllers.try_emplace(id);auto &controller=entry->second;
         if(fresh) {controller.random=minion.combatRandom;controller.actor=id;}
         controller.commanded=true;

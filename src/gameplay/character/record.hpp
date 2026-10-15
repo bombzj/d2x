@@ -1,5 +1,6 @@
 #pragma once
 #include "core/id.hpp"
+#include "core/fixed.hpp"
 #include "gameplay/character/allocation.hpp"
 #include "gameplay/character/skill_choices.hpp"
 #include "gameplay/quest/state.hpp"
@@ -17,7 +18,7 @@ struct HirelingRecord {
     int level = 0;
     // Native D2S only stores death status. Decode supplies the same base-life
     // marker as before; the session then derives equipped maximum life.
-    float hp = 0;
+    Fixed8 hp;
     uint64_t experience = 0;
     uint32_t seed = 0;
 };
@@ -28,7 +29,7 @@ struct CharacterRecord {
     EntityId id; // Snapshot owner binding; regenerated on import, not a D2S field.
     std::string name = "Hero", characterClass = "Barbarian";
     std::string nativeSaveSections;
-    float hp = 0, mana = 0, stamina = 0;
+    Fixed8 hp, mana, stamina;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;
     QuestPreludeBook questPreludes{};

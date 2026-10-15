@@ -18,6 +18,8 @@ loot在死亡奖励结算时捕获真实怪物身份、rank、受益角色、MF�
 
 ## 待补范围与台账
 
+2026-10-15源码按D2MOO DropTC将Picks=0作为一次选择；真实怪物身份hellbovine沿hosting/loot_content传入特殊品质选择，允许Sets原ID29的奶牛专属候选，其他来源仍排除。词缀概率修正及1.13c静态依据见[AFFIXES](AFFIXES.md)。这些改动未构建／运行，不表示全部来源或随机序列已与原版一致。
+
 每个TC／来源登记区域／难度、等级、rank／固定身份、任务资格、人数／队伍、MF／GF、随机与输出／证据。完整近队友NoDrop、组队经验／归属、全部首杀／任务／特殊奖励、特殊箱／陷阱来源及全概率组合尚未完成或认证。来源未准备明确暂缓，不自行填写概率。
 
 当前有限自然掉落／箱桶／TC代表路径见[EVIDENCE](EVIDENCE.md)；资源工具报告和管理员item-spawn不认证自然掉落。数据／原函数入口见[DATA](DATA.md)和[参考设计](../../architecture/REFERENCE_DESIGN.md)。

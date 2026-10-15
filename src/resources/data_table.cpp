@@ -68,8 +68,11 @@ std::string_view DataTable::value(size_t row, std::string_view column, size_t oc
 }
 std::optional<int> DataTable::number(size_t row, std::string_view column, size_t occurrence) const {
     auto text = value(row, column, occurrence);
-    if (text.empty())
+    const auto first = text.find_first_not_of(" \t\r\n");
+    if (first == std::string_view::npos)
         return std::nullopt;
+    // Native TXT fields may contain padding or whitespace-only blank cells.
+    text = text.substr(first, text.find_last_not_of(" \t\r\n") - first + 1);
     int result = 0;
     auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), result);
     if (error != std::errc{} || end != text.data() + text.size())

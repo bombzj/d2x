@@ -189,6 +189,7 @@ void importD2sItem(CharacterSaveData &snapshot, const D2sItem &source, const Cla
     item.location = location;
     const auto hostId = item.id;
     snapshot.inventory.items.emplace(hostId, std::move(item));
+    snapshot.inventory.itemOrder.push_back(hostId);
     for (size_t index = 0; index < source.socketedItems.size(); ++index)
         importD2sItem(snapshot, source.socketedItems[index], content, false, {}, hostId, unsigned(index));
     auto &host = snapshot.inventory.items.at(hostId);

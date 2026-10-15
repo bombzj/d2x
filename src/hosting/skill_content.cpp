@@ -9,8 +9,90 @@
 #include <cctype>
 #include <stdexcept>
 namespace d2x {
+namespace {
+std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
+    if(!data.skills.hydra) return {};
+    server::HydraRules hydra;
+    const auto &monsters=data.tables.at("monstats"),&levels=data.tables.at("levels"),&monlvl=data.tables.at("monlvl");
+    const auto number=[](const DataTable &table,size_t row,const std::string &field) {
+        if(!table.has(field)) throw std::runtime_error("Missing native Hydra stat field: "+field);
+        if(const auto value=table.number(row,field)) return *value;
+        if(table.value(row,field).empty()) return 0;
+        throw std::runtime_error("Invalid native Hydra stat field: "+field);
+    };
+    const std::array<std::string,3> suffix{"","(N)","(H)"};
+    for(size_t row=0;row<levels.rows().size();++row) if(const auto id=levels.number(row,"Id")) {
+        std::array<int,3> entry{};
+        for(size_t difficulty=0;difficulty<3;++difficulty) entry[difficulty]=number(levels,row,"MonLvl"+std::to_string(difficulty+1)+"Ex");
+        hydra.areaLevels.emplace(*id,entry);
+    }
+    for(size_t row=0;row<monlvl.rows().size();++row) {
+        if(number(monlvl,row,"Level")!=int(row)) throw std::runtime_error("Non-indexed native Hydra MonLvl row");
+        std::array<int,6> entry{};
+        for(size_t group=0;group<2;++group) for(size_t difficulty=0;difficulty<3;++difficulty)
+            entry[group*3+difficulty]=number(monlvl,row,std::string(group?"L-AC":"AC")+suffix[difficulty]);
+        hydra.defenseRatios.push_back(entry);
+    }
+    for(size_t index=0;index<hydra.heads.size();++index) {
+        auto &head=hydra.heads[index];head.definition=data.skills.hydra->heads[index];
+        size_t row=0;while(row<monsters.rows().size() && monsters.number(row,"hcIdx")!=head.definition.nativeClass) ++row;
+        if(row==monsters.rows().size()) throw std::runtime_error("Missing native Hydra base stats");
+        head.noRatio=number(monsters,row,"noRatio")!=0;head.boss=number(monsters,row,"boss")!=0;
+        const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
+        size_t skillRow=0;while(skillRow<skills.rows().size() && skills.number(skillRow,"Id")!=head.definition.attackSkill) ++skillRow;
+        if(skillRow==skills.rows().size()) throw std::runtime_error("Missing native Hydra attack skill");
+        const auto missileName=skills.value(skillRow,"srvmissile");
+        size_t missileRow=0;while(missileRow<missiles.rows().size() && missiles.value(missileRow,"Missile")!=missileName) ++missileRow;
+        if(missileRow==missiles.rows().size()) throw std::runtime_error("Missing native Hydra attack missile");
+        const auto missileId=number(missiles,missileRow,"Id");
+        const auto damageName=missiles.value(missileRow,"Skill");
+        size_t damageRow=0;while(damageRow<skills.rows().size() && skills.value(damageRow,"skill")!=damageName) ++damageRow;
+        if(damageRow==skills.rows().size()) throw std::runtime_error("Missing native Hydra damage skill");
+        const auto damageId=number(skills,damageRow,"Id");
+        const auto petName=skills.value(damageRow,"pettype");const auto &pets=data.tables.at("pettype");
+        int petType=0;
+        if(!petName.empty()) {
+            size_t pet=0;while(pet<pets.rows().size() && pets.value(pet,"pet type")!=petName) ++pet;
+            if(pet==pets.rows().size()) throw std::runtime_error("Missing native Hydra pet type");
+            petType=number(pets,pet,"idx");
+        }
+        for(size_t difficulty=0;difficulty<3;++difficulty) {
+            auto &base=head.base[difficulty];auto &rule=head.rules[difficulty];const auto &ending=suffix[difficulty];
+            base.level=number(monsters,row,"Level"+ending);base.attributes.defense=number(monsters,row,"AC"+ending);
+            base.damageRegen=number(monsters,row,"DamageRegen");base.block=number(monsters,row,"ToBlock"+ending);
+            base.attributes.combat.physicalResist=number(monsters,row,"ResDm"+ending);base.attributes.combat.magicResist=number(monsters,row,"ResMa"+ending);
+            base.attributes.fireResist=number(monsters,row,"ResFi"+ending);base.attributes.lightningResist=number(monsters,row,"ResLi"+ending);
+            base.attributes.coldResist=number(monsters,row,"ResCo"+ending);base.attributes.poisonResist=number(monsters,row,"ResPo"+ending);
+            rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.nativeClass=head.definition.nativeClass;rule.difficulty=int(difficulty);
+            prepareMonsterStateRules(data,row,rule);
+            rule.alignment=2;rule.noTreasure=rule.noExperience=true;rule.damageRegen=base.damageRegen;
+            rule.petType=petType;
+            rule.attackTicks=head.definition.attackTicks;rule.impactTick=head.definition.impactTick;rule.deathTicks=head.definition.deathTicks;
+            rule.neutralDelayTicks=number(monsters,row,"aidel"+ending);
+            for(size_t table=0;table<3;++table) {
+                rule.modeTables[table]=data.nativeMonsterModes.at({rule.nativeClass,int(table)});
+                rule.lifeTables[table]=data.nativeMonsterLives.at({rule.nativeClass,int(table)});
+            }
+            prepareMonsterSkillRanks(data,row,rule);
+            server::MonsterAttackRule attack;attack.duration=rule.attackTicks;attack.release=rule.impactTick;
+            attack.animation=head.definition.attackAnimation;attack.animationAction=head.definition.actionFrame;
+            attack.missile=prepareMonsterMissile(data,missileId,1);
+            if(!attack.missile) throw std::runtime_error("Unsupported native Hydra attack missile");
+            attack.missile->skillDamage=MissileSkillDamage{head.definition.attackSkill,damageId};
+            rule.skillActions.emplace(uint16_t(head.definition.attackSkill),std::move(attack));
+        }
+    }
+    return hydra;
+}
+}
 void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, const CharacterDefinition &character) {
     auto prepared = std::make_shared<server::SkillRules>();
+    prepared->monsterTypes=data.nativeMonsterTypes;
+    prepared->justHit=data.states.at("justhit").definition;
+    prepared->uninterruptable=data.states.at("uninterruptable").definition;
+    prepared->formulas=data.nativeFormulas;
+    prepared->stats=data.nativeStats;
+    if(!prepared->formulas) throw std::runtime_error("Missing shared native formula catalog");
     for(size_t difficulty=0;difficulty<3;++difficulty) prepared->aiCurseDivisor[difficulty]=std::max(1,data.tables.at("difficultylevels").number(difficulty,"AiCurseDiv").value_or(1));
     const auto &difficulties=data.tables.at("difficultylevels");
     for(size_t difficulty=0;difficulty<3;++difficulty) {
@@ -33,10 +115,17 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->poisonState=data.states.at("poison").definition.id;
     prepared->chilled=data.states.at("cold").definition;
     prepared->poisoned=data.states.at("poison").definition;
+    prepared->burning=data.states.at("burning").definition;
+    prepared->fireShrine=data.states.at("shrine_resist_fire").definition;
+    prepared->healthPotion=data.states.at("healthpot").definition;
+    prepared->manaPotion=data.states.at("manapot").definition;
+    prepared->frozen=data.states.at("freeze").definition;
     prepared->openWounds=data.states.at("openwounds").definition;
     prepared->redeemed=data.states.at("redeemed").definition;
     prepared->holyShield=data.states.at("holyshield").definition;
+    prepared->shatter=data.states.at("shatter").definition;
     prepared->alignment=data.states.at("alignment").definition;
+    prepared->terror=data.states.at("terror").definition;
     prepared->stunned=data.states.at("stunned").definition;
     prepared->syncWarped=data.states.at("sync_warped").definition;
     for(const auto &[key,animation]:data.skills.recoveryTimings) if(key.starts_with(character.appearance))
@@ -69,9 +158,10 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             const auto &monsters=data.tables.at("monstats"), &extras=data.tables.at("monstats2");
             for(size_t row=0;row<monsters.rows().size();++row) if(monsters.value(row,"Id")==spec.summon->monster) {
                 server::MonsterRule pet;
+                pet.stats=data.nativeStats;pet.formulas=data.nativeFormulas;
                 pet.nativeClass=monsters.number(row,"hcIdx").value();
                 pet.nativeVelocity=monsters.number(row,"Velocity").value_or(0);
-                prepareMonsterColdRules(data,row,pet);
+                prepareMonsterStateRules(data,row,pet);
                 pet.coldEffect=monsters.number(row,"ColdEffect").value_or(0);
                 pet.threat=monsters.number(row,"threat").value_or(0);
                 for(size_t extra=0;extra<extras.rows().size();++extra) if(extras.value(extra,"Id")==monsters.value(row,"MonStatsEx")) {
@@ -116,6 +206,9 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
     for(auto &[id,definition]:prepared->definitions) for(size_t row=0;row<skillTable.rows().size();++row) if(skillTable.number(row,"Id")==id) {
+        if(definition.spec.weapon) {
+            definition.spec.weapon->useThrowMastery=prepared->formulas->skills.at(id).useThrowMastery;
+        }
         definition.itemTargetDo=skillTable.number(row,"ItemTgtDo").value_or(0)!=0;
         definition.itemEffect=skillTable.number(row,"ItemEffect").value_or(0);
         definition.itemEffectUsesPreparedProgram=definition.itemEffect<=1 || definition.itemEffect==skillTable.number(row,"srvdofunc").value_or(0);
@@ -129,7 +222,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             if(petTypes.value(pet,"pet type")==type && petTypes.number(pet,"unsummon").value_or(0))
                 prepared->dismissibleSummons.insert(skillTable.number(row,"Id").value());
     }
-    prepared->hydra = data.skills.hydra;
+    prepared->hydra=prepareHydraRules(data);
     prepared->collisions = data.missileCollisions;
     prepared->returnFire = data.missileReturnFire;
     prepared->staticMinimum = data.staticFieldMinimum;

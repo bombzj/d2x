@@ -134,11 +134,12 @@ StepStatus System::actFiveStep(TickContext tick) {
         if(int(m.area)==111 && m.identity.monster=="prisondoor") {
             const auto &area=ports_.areas.at(m.area);
             for(const auto &npc:area.definition.npcs) {
-                if(npc.rule.code!="act5pow" || npc.hidden || (npc.position-m.position).length()>=15 || ports_.npc.read().escapes.contains(npc.id)) continue;
+                const auto *unit=ports_.monsters.find(npc.id);
+                if(npc.rule.code!="act5pow" || !unit || !unit->alive() || (unit->position-m.position).length()>=15 || ports_.npc.read().escapes.contains(npc.id)) continue;
                 std::optional<PlayerId> rescuer;int distance=16;
                 for(const auto &[id,p]:ports_.players.all()) {
-                    if(!p.entered || p.area!=m.area || p.persistent.player.hp<=0 || !area.definition.activation.nearby(p.position,npc.position)) continue;
-                    const int candidate=monsterAiDistance(npc.position,npc.rule.size,p.position);
+                    if(!p.entered || p.area!=m.area || p.persistent.player.hp<=0 || !area.definition.activation.nearby(p.position,unit->position)) continue;
+                    const int candidate=monsterAiDistance(unit->position,npc.rule.size,p.position);
                     if(candidate<distance) {distance=candidate;rescuer=id;}
                 }
                 if(!rescuer) continue;

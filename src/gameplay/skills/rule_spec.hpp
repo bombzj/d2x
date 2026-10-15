@@ -29,6 +29,7 @@ struct SkillRuleSpec {
     std::shared_ptr<const GrimWardSpec> grimWard;
     int mana = 0, minimumMana = 0, manaPerLevel = 0, manaShift = 8;
     int minimumDamage = 0, maximumDamage = 0, hitShift = 8;
+    bool physicalDamageCurve = false; // MinDam/MaxDam rather than EMin/EMax.
     int stunFrames = 0, stunFramesPerLevel = 0;
     bool fireDamage = false;
     bool lightningDamage = false;

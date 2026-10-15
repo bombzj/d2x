@@ -4,6 +4,7 @@
 #include "gameplay/skills/bone_spec.hpp"
 #include "missile_effects.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <stdexcept>
 
 namespace d2x {
@@ -187,6 +188,13 @@ void loadBoneSkills(SkillCatalog &catalog, const DataTable &skills, const DataTa
         stats.monsterResistanceRules = true;
         stats.collisionSize = number(monsterExtras, extra, "SizeX");
         stats.attributes.maxLife = number(monsters, monster, difficulty == 0 ? "minHP" : "MinHP" + suffix);
+        if(stats.attributes.maxLife!=number(monsters,monster,difficulty==0?"maxHP":"MaxHP"+suffix))
+            throw std::runtime_error("Unsupported unequal bone barrier HP range");
+        stats.attributes.maxLifeFixed=Fixed8::fromRaw(nativeShiftLeft(stats.attributes.maxLife,8));
+        stats.level=number(monsters,monster,"Level"+suffix);
+        stats.damageRegen=number(monsters,monster,"DamageRegen");
+        // MonStats numeric blanks compile to zero (bonewall has no block).
+        stats.block=skillTableNumber(monsters,monster,"ToBlock"+suffix,SkillNumberPolicy::BlankIsZero);
         stats.attributes.defense = number(monsters, monster, "AC" + suffix);
         stats.attributes.combat.physicalResist = monsters.number(monster, "ResDm" + suffix).value_or(0);
         stats.attributes.combat.magicResist = monsters.number(monster, "ResMa" + suffix).value_or(0);
