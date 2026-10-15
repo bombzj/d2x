@@ -7,21 +7,30 @@
 #include "server/systems/spatial/system.hpp"
 #include "gameplay/monsters/native_spawn.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/druid_summon.hpp"
+#include "gameplay/skills/druid_spec.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server::companions {
 DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
+    return nativeSummon(actor,skill,target);
+}
+DomainResult<> System::druid(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
+    return nativeSummon(actor,skill,target);
+}
+DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
     const auto *owner=ports_.players.find(actor.player);
     const auto *caster=ports_.monsters.find(actor.actor);
     const bool controlled=caster && caster->assassinPet && caster->owner==actor.player && caster->alive() && caster->area==actor.area;
-    if(!owner || !owner->entered || (owner->actor!=actor.actor && !controlled) || owner->area!=actor.area || !skill.summon || !skill.summon->assassin)
+    if(!owner || !owner->entered || (owner->actor!=actor.actor && !controlled) || owner->area!=actor.area || !skill.summon || (!skill.summon->assassin && !skill.summon->druid))
         return {DomainStatus::InvalidActor,{}};
     const auto &area=ports_.areas.at(actor.area);if(area.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
-    const auto &pet=*skill.summon->assassin;const auto ai=pet.definition->ai;
-    const bool blade=ai==AssassinPetDefinition::Ai::BladeCreeper;
-    const bool shadow=pet.definition->warp;
+    const auto *pet=skill.summon->assassin.get();const auto *druid=skill.summon->druid.get();
+    const auto ai=pet?pet->definition->ai:AssassinPetDefinition::Ai::Sentry;
+    const bool blade=pet && ai==AssassinPetDefinition::Ai::BladeCreeper;
+    const bool shadow=pet && pet->definition->warp;
     auto prior=pending_.find(actor.actor);
     if(prior!=pending_.end() && (prior->second.actor.sequence!=actor.sequence || prior->second.skill!=skill.sourceId)) {cancel(actor.actor);prior=pending_.end();}
     if(prior==pending_.end()) {
@@ -37,7 +46,7 @@ DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &s
         cancel(actor.actor);return {DomainStatus::Stale,{}};
     }
     if(prior->second.birthRandom && prior->second.birthRandom->first!=ports_.random) {
-        cancel(actor.actor);return assassin(actor,skill,target);
+        cancel(actor.actor);return nativeSummon(actor,skill,target);
     }
     const auto ready=prepared_.find(actor.actor);if(ready==prepared_.end()) return {DomainStatus::Capacity,{}};
     if(!ready->second.deferred.empty()) {cancel(actor.actor);return {DomainStatus::Unavailable,{}};}
@@ -78,7 +87,7 @@ DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &s
             skills.emplace_back(id,std::clamp(skill.rank/2+(rank==owner->persistent.player.skillRanks.end()?1:rank->second)/2,1,24));
         }
     }
-    auto bodies=ports_.monsters.prepareAmazon(ownerContext,prepared.rule,*position,summon,equipment,items,
+    auto bodies=ports_.monsters.prepareNativePet(ownerContext,prepared.rule,*position,summon,equipment,items,
         prepared.weapon.item?std::optional{prepared.weapon}:std::nullopt,prepared.equipmentSources,prepared.random,prepared.equipmentStats);
     if(!bodies) return {bodies.status,{}};
     const auto id=bodies.value->begin()->first;auto next=state_;
@@ -89,10 +98,16 @@ DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &s
         body.riseUntil=body.busyUntil=actor.tick+uint64_t(prepared.rule.spawnTicks);body.neutralAt=body.riseUntil;
     }
     Companion companion{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};
-    companion.rank=skill.rank;companion.expires=pet.lifeFrames>0?actor.tick+uint64_t(pet.lifeFrames):UINT64_MAX;
+    companion.rank=skill.rank;companion.expires=pet && pet->lifeFrames>0?actor.tick+uint64_t(pet->lifeFrames):UINT64_MAX;
     if(shadow) {companion.shadowInitialized=true;companion.assassinAi={0,0,std::max(1,skill.rank)};}
     companion.nextDecision=actor.tick+(shadow?20:blade?1:25);companion.assassinOrigin=origin;companion.assassinTarget=target;
     if(blade) companion.assassinAi={-1,1,0};
+    if(druid) {
+        const auto &program=*prepared.summon.druid;
+        if(program.definition->ai==DruidPetDefinition::Ai::Raven)
+            companion.druidAi={-1,program.definition->parameters[2][size_t(prepared.rule.difficulty)]+1,program.initialCircle.value_or(0)};
+        else companion.druidAi={0,0,0};
+    }
     next.companions.emplace(id,std::move(companion));
     // PlayerPets enforces capacity by PET TYPE, across all five trap skills
     // and Blade Sentinel, and across both shadow skills.
@@ -101,6 +116,12 @@ DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &s
         if(entry.owner==actor.player && !entry.removeAt && body && body->rule.petType==prepared.summon.petType) ++active;
     }
     std::vector<EntityId> retired;
+    if(druid && druid->definition->group) for(auto &[key,entry]:next.companions) {
+        const auto *body=ports_.monsters.find(key);
+        if(key==id || entry.owner!=actor.player || entry.removeAt || !body || !body->druidPet ||
+           body->rule.petType==prepared.summon.petType || body->druidPet->definition->group!=druid->definition->group) continue;
+        entry.removeAt=actor.tick+uint64_t(body->rule.deathTicks);entry.release=0;retired.push_back(key);
+    }
     for(auto &[key,entry]:next.companions) {
         if(active<=size_t(std::max(1,prepared.summon.limit))) break;
         const auto *body=ports_.monsters.find(key);
@@ -111,6 +132,10 @@ DomainResult<> System::assassin(const ActorContext &actor,const SkillCastSpec &s
     if(shadow && skill.assassin->state.id>0) {
         bodies.value->at(id).aiStates.insert(skill.assassin->state.id);
         publication->facts.emplace_back(StateFact{id,1,actor.area,skill.assassin->state.id,true});
+    }
+    if(druid && skill.druid && skill.druid->state.id>0) {
+        bodies.value->at(id).aiStates.insert(skill.druid->state.id);
+        publication->facts.emplace_back(StateFact{id,1,actor.area,skill.druid->state.id,true});
     }
     ports_.effects.stageAuraActors(*publication,std::move(*bodies.value),items+1);
     ports_.effects.stageSummonEvents(*publication,id,skill.sourceId,skill.rank,*owner->rules.skills->formulas,actor.tick);

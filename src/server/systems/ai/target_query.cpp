@@ -8,7 +8,24 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
-std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) {
+std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts &ports,const PlayerState &source) {
+    const auto &area=ports.areas.at(source.area);const auto *room=area.definition.activation.room(source.position);
+    if(!room) return {};const combat::Participants participants{ports.players,ports.monsters,ports.social};
+    std::optional<NativeAiTarget> primary,alternative;
+    const auto index=size_t(room-area.definition.activation.rooms().data());
+    for(const auto near:area.definition.roomNear.at(index)) for(const auto id:ports.areas.roomUnitOrder(near)) {
+        const auto target=participants.find(id);
+        if(!target.aliveIn(near.area) || !participants.canHarm(source.actor,id)) continue;
+        const auto point=target.position()+ports.areas.at(near.area).definition.origin-area.definition.origin;
+        const int distance=monsterAiDistance(point,target.monster?target.size():0,source.position);
+        if(distance>35) continue;
+        auto &selected=target.monster && target.monster->rule.threat<=1?alternative:primary;
+        if(!selected || distance<selected->distance) selected=NativeAiTarget{{id,0,uint8_t(target.monster?1:0)},point,target.size(),distance};
+    }
+    if(alternative && (!primary || (alternative->distance<=5 && area.definition.collision.path(source.position,primary->position,true,{}).empty()))) return alternative;
+    return primary;
+}
+std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight,int searchDistance) {
     const auto &area=ports_.areas.at(source.area);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto search=source;const bool confused=source.curseControl.ai==CurseAi::Confuse;
@@ -42,7 +59,7 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
     }
     std::optional<NativeAiTarget> primary,alternative;
     const bool nodeQuery=!confused && !missileRay && source.alignment()==UnitAlignment::Evil;
-    const int maximum=missileRay?48:nodeQuery?(source.rule.ai.searchDistance?source.rule.ai.searchDistance:35):35;
+    const int maximum=searchDistance>0?searchDistance:missileRay?48:nodeQuery?(source.rule.ai.searchDistance?source.rule.ai.searchDistance:35):35;
     const auto consider=[&](EntityId id,bool special=false) {
         const auto target=participants.find(id);if(!alive(target) || id==source.id || !target.damageable()) return;
         const auto region=target.player?target.player->area:target.monster->area;

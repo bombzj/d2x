@@ -76,6 +76,7 @@ void apply(AuraDefinition &result, AuraStat stat, int amount) {
     switch (stat) {
     case AuraStat::PoisonLength: result.harmfulDurationPercent = amount; break;
     case AuraStat::Life: result.lifePerPulse = Fixed8::fromRaw(amount); break;
+    case AuraStat::LifePercent: m.combat.lifePercent = amount; break;
     case AuraStat::StaminaRecovery: m.staminaRecoveryBonus = amount; break;
     case AuraStat::StaminaPercent: m.staminaPercent = amount; break;
     case AuraStat::ManaRecovery: m.combat.manaRecovery = amount; break;

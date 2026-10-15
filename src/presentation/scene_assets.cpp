@@ -21,19 +21,17 @@ const SceneAssets::ProjectileVisual *SceneAssets::ensureProjectile(int id) {
     const auto &table = *missileDefinitions_;
     if (const auto found = missileRows_.find(id); found != missileRows_.end()) {
         const size_t row = found->second;
-        for (const auto &[field, prefix] : {std::pair{"TravelSound", "missile-release:"}, std::pair{"HitSound", "missile-hit:"}}) {
+        for (const auto &[field, prefix] : {std::pair{"TravelSound", "missile-release:"}, std::pair{"HitSound", "missile-hit:"},std::pair{"ProgSound","missile-progress:"}}) {
             const auto name = table.value(row, field);
             if (!name.empty()) sceneAudio.registerSound(name, std::string(prefix) + std::to_string(id),
                 std::string_view(field) == "TravelSound");
         }
         const auto file = table.value(row, "CelFile");
         const auto path = "data/global/missiles/" + std::string(file) + ".dcc";
-        // Retail light-only missiles explicitly have CelFile=null. Their
-        // lifetime and lighting are real content, without a fabricated image.
-        const auto program=clientMissilePrograms.find(id);
-        const bool controller=program!=clientMissilePrograms.end() &&
-            (program->second.function==21 || program->second.function==22 || program->second.function==29);
-        if(file=="null" && (projectileVisuals.at(id).lightRadius>0 || controller)) {
+        // CelFile=null explicitly defines an image-less native missile,
+        // including Armageddon's authoritative controller. It still owns its
+        // real local lifetime/program; an absent filename remains unavailable.
+        if(file=="null") {
             imageLessProjectiles.insert(id);unavailableProjectiles.erase(id);
             return &projectileVisuals.at(id);
         }

@@ -260,7 +260,7 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
     }
     if(function==29 || function==33) {
         if(skill==rule.damageFormulas->skills.end()) {plan.finished=true;return result;}
-        if(owner.id() && owner.aliveIn(unitArea(owner.id())) && elapsed==rule.serverParameters[0]) {
+        if(owner.id() && owner.aliveIn(unitArea(owner.id())) && countdown==rule.serverParameters[0]) {
             const auto values=ports_.effects.unitStatValues(owner.id(),missile.executionTick);
             if(!values) throw std::logic_error("Missing recycler resource view");
             const auto current=values->get({rule.damageStats->names.at(function==29?"hitpoints":"mana"),0})>>8;

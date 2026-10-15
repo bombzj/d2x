@@ -26,6 +26,15 @@ int movementPercent(const Actor &actor,uint64_t tick) {
     return int(std::clamp<int64_t>(value,25,INT16_MAX));
 }
 namespace {
+std::optional<std::pair<Vec,int>> nativePathTarget(const PlayerStore &players,const System &monsters,EntityId id,RegionId area) {
+    for(const auto &[key,player]:players.all()) {
+        (void)key;
+        if(player.actor==id && player.entered && player.area==area) return std::pair{player.position,2};
+    }
+    const auto *unit=monsters.find(id);
+    if(unit && unit->area==area) return std::pair{unit->position,unit->rule.size};
+    return {};
+}
 int recoveryTicks(const Actor &actor,const effects::System &effects,uint64_t tick,bool block) {
     const auto &clock=block?actor.rule.blockAnimation:actor.rule.hitRecoveryAnimation;
     if(!clock) return block?actor.rule.blockTicks:actor.rule.hitRecoveryTicks;
@@ -650,7 +659,9 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto &area = ports_.areas.at(actor.area);
     if (request.destination.area != actor.area || request.destination.generation != area.generation)
         return {DomainStatus::Stale, {}};
-    if (actor.rule.nativeVelocity <= 0 || (request.target && !targetPosition(request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
+    // Native paths retain a unit target independently of combat eligibility:
+    // Fenris and resource vines must be able to approach a real corpse.
+    if (actor.rule.nativeVelocity <= 0 || (request.target && !nativePathTarget(ports_.players,*this,request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
     const auto collision=actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision;
     uint8_t pathType=request.circleTurn?1:request.pathType;
@@ -894,7 +905,7 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
         const int reactionTicks=recoveryTicks(actor,ports_.effects,tick,true);
         const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
         HitFact hit{id,1,actor.area,percent,false,actor.position,0,6};
-        if(actor.movementTarget && targetPosition(actor.movementTarget,actor.area))
+        if(actor.movementTarget && nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area))
             hit.actionTarget=MotionTarget{actor.movementTarget,uint8_t(ports_.players.findActor(actor.movementTarget)?0:1)};
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{hit}});
         if(!result) return {result.status,{}};
@@ -995,7 +1006,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if (frozen(id,tick.tick) || actor.stunnedUntil>tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
-        const auto target=actor.movementTarget ? targetPosition(actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
+        const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
         if(!target) {stop(id);continue;}
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         auto arrived=[&](Vec position) {

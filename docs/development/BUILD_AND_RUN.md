@@ -91,11 +91,28 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-### 当前刺客技能交付
+### 当前德鲁伊技能交付
+
+2026-10-16，`battle`分支、构建时HEAD `ffd08b76`之上的德鲁伊工作区：全部30项及变形、动物／藤蔓／灵体和隐藏／客户端依赖接入后，按授权执行Windows／MinGW／Ninja Release CMake配置、all目标编译排错、双包更新及Single Player有限冒烟。`cmake-configure.log`配置通过，`build-frozen.log`395步全量构建通过；灵体接线后的`build-spirit-auras.log`290步通过，最终`build-fenris-finish.log`6步编译／链接通过。最终d2x、d2x_pvpgn、d2x_assets均有对应产物，既有非致命警告保留。未新增测试脚本、用例或专用程序；收尾源码与文档统一提交，提交身份以Git历史为准。
+
+| 当前产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 32663176 | `5D37545A2BA39CD59580E8ADA53940C16113BFE0664831C9051F6F39D2478A81` |
+| `dist/server/d2x_server.exe` | 25546549 | `EBB3538BFC4B2CCEDD5AFFB1A23C8FB6A80663F8BBC6B90722C34C42BC46F456` |
+| `build/bin/d2x_assets.exe` | 10480345 | `5F67FB255701A59A0B6DB74E253F49ADB0270B141D544E248B5E8A17FC58B394` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+两包的`d2x_bncs_legacy.dll`一致。临时runtime7为客户端包相同EXE／DLL字节的隔离运行副本；MPQ只读当前`assets/mpq2`，不复制到分发目录。依据为本地固定D2MOO及原版1.13c DLL；D2MOO的Do117计数分支、灵狼攻击／追击判断采用同版本原证据裁定。完整30项台账、公共边界及数值／事件依据由[德鲁伊](../gameplay/skills/DRUID.md)维护。
+
+84级隔离德鲁伊Hero的30项均通过正常学习请求取得并保存；管理经验／资源、真实怪物和地图旅行仅准备条件，不认证自然成长／通关。中间包已观察三系施放、形态／蓄力、真实宠物／上限／互斥、主人死亡撤出。最终runtime7专门重新验证狂狼接近／消费真实尸体并获得138状态（属性25=100）、Oak与两资源藤、Fury、Hurricane／Armageddon原图表现及回城清空；`final-town7.json`的casts／pendingReleases／damage／missiles／eventsQueued均为0。新进程`final-reload8.json`保留全部30项，临时状态与宠物均为0。最终刺客副本回归157→159互斥、影子替换和野外战士124自主三次释放251。最终两职业宿主failures=0、characterIssues为空，进程退出码0；没有将早期所有施法样本冒充在最终哈希包逐项重跑。
+
+日志、原版分析、隔离存档、快照和截图均在忽略目录`artifacts/druid-implementation-20261016/`；包身份另保存于`package-identities.json`。中间runtime4一次后台进程消失未捕获退出栈，后续挂调试器及正常运行未复现，详见德鲁伊专题；不能宣称该次原因已定位。未运行Linux、双客户端、原版Join及独立服务端新技能实际入局，独立服务端仅完成构建与打包。`--hidden`建立真实OpenGL但不初始化音频，本次不认证音频。完整队列1／2、全局随机／物品事件交错及全部装备／难度／PvP／背压／同条件逐帧数值矩阵仍按[总计划](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)验收。
+
+### 历史刺客技能交付
 
 2026-10-16，`battle` 分支／构建时HEAD `ac16bd06` 之上的工作区，按授权在全部职业程序接入后统一进行 Windows／MinGW／Ninja Release 的 CMake 配置、all 目标编译排错、客户端与独立服务端打包及 Single Player 冒烟。最终源码修正的构建为 `build-release-repair18.log`，3 个编译和 3 个链接步骤成功；`d2x`、`d2x_pvpgn`、`d2x_assets` 均已有本轮构建产物，既有非致命警告保留。工作区还含此前物品、世界、NPC等改动；此包包含这些输入，但刺客冒烟不认证所有工作区功能。未新增测试脚本、用例或专用程序；本批源码与文档在收尾时统一提交，实际提交身份由Git历史维护。
 
-| 当前产物 | 字节 | SHA256 |
+| 当时产物（非当前包） | 字节 | SHA256 |
 | --- | --- | --- |
 | `dist/current/d2x.exe` | 31927836 | `5FE0CA1AD7692A2F33C368054BD6AF645162AAA19BF03CA68174AA16BDA45BF6` |
 | `dist/server/d2x_server.exe` | 24863126 | `545871680D0398AADDF999B0513661B1DE9DD79F56C772FC40AE92F5CF8A764A` |

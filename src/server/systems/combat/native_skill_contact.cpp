@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "player_contact.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -10,6 +11,7 @@
 #include "gameplay/skills/native_damage.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/druid_spec.hpp"
 #include "gameplay/combat/weapon_block.hpp"
 #include "gameplay/combat/target_bonus.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -20,6 +22,35 @@
 #include <stdexcept>
 
 namespace d2x::server::combat {
+bool System::addAllocatedPhysical(EntityId source,uint64_t occurrence,int32_t amount) {
+    for(auto &impact:state_.spells) if(impact.source==source && impact.occurrence==occurrence && impact.nativeDrainHeld && impact.nativeSkill && impact.nativeSkill->heldPrepared) {
+        if(impact.playerContact) {
+            auto &damage=impact.playerContact->defense.damage;
+            damage.channels[0].dealt=nativeAdd(nativeChecked(damage.channels[0].dealt),amount);
+            damage.dealt=nativeAdd(nativeChecked(damage.dealt),amount);
+        } else if(impact.monsterContact) {
+            auto &contact=*impact.monsterContact;contact.physical=nativeAdd(nativeChecked(contact.physical),amount);
+            contact.amount=nativeAdd(nativeChecked(contact.amount),amount);
+        } else return false;
+        impact.nativeSkill->allocatedPhysical=nativeAdd(impact.nativeSkill->allocatedPhysical,amount);return true;
+    }
+    return false;
+}
+DomainResult<bool> System::sampleNativeSkillAccuracy(const ActorContext &actor,const SkillCastSpec &skill,const WeaponDamage &weapon,EntityId victim,std::shared_ptr<NativeSkillContact> &cursor) {
+    const Participants participants{ports_.players,ports_.monsters,ports_.social};
+    const auto source=participants.find(actor.actor),target=participants.find(victim);
+    if(!source.aliveIn(actor.area) || !target.aliveIn(actor.area) || !participants.canHarm(actor.actor,victim)) return {DomainStatus::Unavailable,{}};
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
+    if(!cursor) cursor=std::make_shared<NativeSkillContact>();
+    cursor->melee=cursor->accuracyOnly=true;cursor->skill=skill.sourceId;cursor->rank=skill.rank;
+    SpellImpact impact;impact.source=actor.actor;impact.area=actor.area;impact.targets={victim};impact.nativeSkill=cursor;
+    const auto modifiers=source.player?source.player->totals.character.combat:ports_.effects.combatModifiers(source.id(),actor.tick);
+    impact.weapon=prepareWeaponSkillProcedures(weapon,modifiers,skill,caster->level(),false);
+    impact.missileDamage=std::make_shared<MissileDamageRollState>();impact.missileDamage->formulas=caster->programs()->formulas;
+    const auto prepared=prepareNativeSkillContact(impact,source,target,{actor.tick});
+    return {prepared,prepared==DomainStatus::Applied?std::optional{cursor->hit}:std::nullopt};
+}
 DomainResult<bool> System::prepareWeaponBlock(ParticipantView target,TickContext tick,WeaponBlockCursor &cursor) {
     if(cursor.target!=target.id()) cursor={target.id()};
     if(!cursor.checked) {
@@ -119,6 +150,7 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             if(result!=DomainStatus::Applied) return result;
             execution.defense=defense;execution.hit=!defense.block && defense.avoidance==WeaponAvoidance::None;execution.defensePrepared=true;
         }
+        if(execution.accuracyOnly) return DomainStatus::Applied;
         if(!execution.hit) {
             if(impact.nativeDrainHeld || execution.skipMissDrain) return DomainStatus::Applied;
             if(!nativeMeleeDrainReach(impact)) return DomainStatus::Applied;
@@ -150,11 +182,15 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             auto skill=weapon->wearSkill;
             if(!execution.kick) skill.weapon->damagePercent=nativeAdd(skill.weapon->damagePercent,typeBonus("damage_vs_montype"));
             if(execution.progressive) skill.weapon->damagePercent=nativeAdd(skill.weapon->damagePercent,ports_.effects.progressivePhysicalPercent(source.id()));
-            const auto sourceDamage=catalog.skills.at(skill.sourceId).number("srcdam");
+            const auto sourceDamage=execution.sourceDamage.value_or(catalog.skills.at(skill.sourceId).number("srcdam"));
             const auto base=execution.initialDamage?*execution.initialDamage:MissileHitDamage{};
             const auto stats=sourceStats();if(!stats) throw std::logic_error("Missing native melee source stat view");
             const auto modifiers=source.player?source.player->totals.character.combat:ports_.effects.combatModifiers(source.id(),tick.tick);
             auto equipment=base;
+            if(skill.druid && (skill.druid->program==DruidProgram::Rabies || skill.druid->program==DruidProgram::BearSmite)) {
+                rollNativeSkillElement(equipment,values,execution.skill,execution.rank,random);
+                if(skill.druid->program==DruidProgram::Rabies) equipment.poisonLength=std::max(equipment.poisonLength,10);
+            }
             if(execution.kick) {
                 const auto unmerged=ports_.effects.unitStatValues(source.id(),tick.tick,EntityId{});
                 if(!unmerged) throw std::logic_error("Missing native kick unmerged weapon view");
@@ -176,6 +212,10 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                     target.monster && target.monster->rule.demon,target.monster && target.monster->rule.undead,random,{sourceDamage,base.channels[0]});
                 equipment.channels[0]=nativeChecked(weapon->channels[0]);
                 fillNativeWeaponElements(equipment,*stats,*programs.stats,sourceDamage,random,source.monster && !source.monster->hireling);
+            }
+            if(source.monster && source.monster->rule.criticalChance>0) {
+                execution.monsterCritical=int(rollRandom(random)%100)<source.monster->rule.criticalChance;
+                if(execution.monsterCritical) for(auto &channel:equipment.channels) channel=nativeMultiply(channel,2);
             }
             for(size_t channel=0;channel<equipment.channels.size();++channel) weapon->channels[channel]=equipment.channels[channel];
             weapon->coldFrames=equipment.coldLength;weapon->poisonFrames=equipment.poisonLength;weapon->stunFrames=equipment.stunLength;
@@ -202,6 +242,17 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         }
         execution.fillEventComplete=true;
     }
+    if(execution.monsterCritical && !execution.monsterCriticalPosted) {
+        auto &damage=*impact.areaDamage->rolled->value;
+        if(!(damage.hitClass&0xf0)) {
+            damage.hitClass|=0x10;if(impact.weapon) impact.weapon->hitClass=damage.hitClass;
+        } else {
+            const auto posted=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},impact.area},
+                {OverlayFact{target.id(),uint8_t(target.player?0:1),impact.area,54}}});
+            if(!posted) return posted.status;
+        }
+        execution.monsterCriticalPosted=true;
+    }
     if(execution.melee && !execution.elementsComplete) {
         const auto expected=caster->random();auto random=expected;auto weapon=*impact.weapon;
         if(execution.progressive) ports_.effects.progressiveDamage(source.id(),weapon,random);
@@ -210,6 +261,25 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         for(size_t channel=0;channel<channels.size();++channel) damage.channels[channel]=nativeChecked(channels[channel]);
         damage.lifeLeech=weapon.lifeLeech;damage.manaLeech=weapon.manaLeech;damage.staminaLeech=weapon.staminaLeech;
         damage.coldLength=weapon.coldFrames;damage.poisonLength=weapon.poisonFrames;damage.freezeLength=weapon.freezeFrames;
+        if(weapon.wearSkill.druid) {
+            const auto program=weapon.wearSkill.druid->program;
+            if(program==DruidProgram::FireClaws || program==DruidProgram::Hunger) {
+                evaluate(random,[&](SkillFormulaValues &values) {
+                    rollNativeSkillElement(damage,values,execution.skill,execution.rank,random);
+                    if(program==DruidProgram::Hunger) {
+                        const auto calculation=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,field);
+                            if(!value) throw std::logic_error("Missing native Hunger formula");return *value;};
+                        damage.channels[0]=nativeAdd(damage.channels[0],nativePercentage(damage.channels[0],calculation("calc1"),100));
+                        damage.lifeLeech=nativeAdd(damage.lifeLeech,calculation("calc2"));
+                        damage.manaLeech=nativeAdd(damage.manaLeech,calculation("calc3"));
+                    }
+                    return 0;
+                });
+                for(size_t channel=0;channel<damage.channels.size();++channel) weapon.channels[channel]=damage.channels[channel];
+                weapon.lifeLeech=damage.lifeLeech;weapon.manaLeech=damage.manaLeech;
+                weapon.coldFrames=damage.coldLength;weapon.poisonFrames=damage.poisonLength;
+            }
+        }
         if(weapon.hitClass>=0) damage.hitClass=uint8_t(weapon.hitClass);
         const auto result=consume(expected,random);if(result!=DomainStatus::Applied) return result;
         impact.weapon=std::move(weapon);impact.areaDamage->rolled->value=std::move(damage);execution.elementsComplete=true;

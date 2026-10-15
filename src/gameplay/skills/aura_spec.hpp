@@ -18,7 +18,7 @@ enum class AuraStat {
     PoisonLength, Life, StaminaRecovery, StaminaPercent, ManaRecovery,
     DamagePercent, AttackRatingPercent, AttackRate, AnimationRate, Velocity,
     DefensePercent, FireResist, ColdResist, LightningResist, PhysicalResist,
-    FireMaximum, ColdMaximum, LightningMaximum, Thorns, Concentration
+    FireMaximum, ColdMaximum, LightningMaximum, Thorns, Concentration, LifePercent
 };
 struct AuraStatFormula {
     AuraFormula formula;

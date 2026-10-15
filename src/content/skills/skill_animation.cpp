@@ -32,7 +32,7 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
         const auto &token = character->appearance;
         for (const auto &weapon : classes)
             for (const auto &mode : modes) {
-                if (mode == "s1" && tree.classCode != "pal" && tree.classCode != "ama") continue;
+                if (mode == "s1" && tree.classCode != "pal" && tree.classCode != "ama" && tree.classCode != "dru") continue;
                 const auto key = token + mode + weapon;
                 auto upper = key;
                 for (auto &letter : upper) letter = char(std::toupper(static_cast<unsigned char>(letter)));

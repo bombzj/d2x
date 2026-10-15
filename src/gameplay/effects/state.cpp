@@ -144,24 +144,36 @@ std::set<int> CombatEffectSet::stateIds(EffectFrame frame,bool includePendingRem
     }
     return result;
 }
-void CombatEffectSet::afterRemoval(const ActiveCombatEffect &effect,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
+std::vector<RemovedCombatEffect> CombatEffectSet::afterRemoval(const ActiveCombatEffect &effect,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
+    if(effect.spec.nativeRemoval==NativeStateRemoval::Shape) {
+        std::vector<RemovedCombatEffect> removed;
+        for(const int state:effect.spec.removalGroupStates) {
+            const auto flag=storage_->states.find(state);if(flag==storage_->states.end() || !flag->second) continue;
+            setNativeState(state,false);
+            if(const auto *list=findState(state)) {
+                const auto withdrawn=remove(list->handle,observe);
+                removed.insert(removed.end(),withdrawn.begin(),withdrawn.end());
+            }
+        }
+        setNativeState(effect.spec.state.id,false);if(observe) observe();return removed;
+    }
     if(effect.spec.nativeRemoval==NativeStateRemoval::ClearTargets) {
         // sub_6FD0C2B0 restores EVIL alignment before clearing the state and
         // removing the target node. MonsterData's selector survives until
         // the separately registered AIRESET; no BasicRemove/passive refresh.
         resetTargets(observe);
         if(effect.spec.nativeState) setNativeState(effect.spec.state.id,false);
-        if(observe) observe();return;
+        if(observe) observe();return {};
     }
     // sub_6FD0B250 restores the normal AI before BasicRemove's state,
     // velocity and passive callbacks, including staydeath states.
     if(effect.spec.nativeRemoval==NativeStateRemoval::RestoreAi) resetControl(observe);
     unregisterUnitEvents(effect.spec.state.id);
-    if(!effect.spec.nativeState && effect.spec.clearStateOnRemoval<0 && !effect.spec.refreshPassivesOnRemoval) return;
+    if(!effect.spec.nativeState && effect.spec.clearStateOnRemoval<0 && !effect.spec.refreshPassivesOnRemoval) return {};
     if(effect.spec.nativeState && dead && effect.spec.state.stayOnDeath.at(size_t(*dead)) && effect.spec.nativeRemoval!=NativeStateRemoval::BasicAura) {
         if(effect.spec.nativeRemoval==NativeStateRemoval::SkillShrine) refreshPassiveSkills(observe);
         if(effect.spec.restoreStaminaOnRemoval) restoreStamina(observe);
-        return;
+        return {};
     }
     // ExpireStatList first propagates withdrawn stats; fpStatRemove runs only
     // afterwards. State bits and passive refresh are this second boundary.
@@ -173,6 +185,7 @@ void CombatEffectSet::afterRemoval(const ActiveCombatEffect &effect,const std::f
     // a second refresh even though BasicRemove already refreshed passives.
     if(effect.spec.nativeRemoval==NativeStateRemoval::SkillShrine) refreshPassiveSkills(observe);
     if(effect.spec.nativeState && effect.spec.restoreStaminaOnRemoval) restoreStamina(observe);
+    return {};
 }
 template<class Predicate>
 std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, EffectRemoval reason,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
@@ -184,7 +197,9 @@ std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, Eff
             if(!predicate(storage_->effects[index])) {++index;continue;}
             detach();
             removed.push_back({storage_->effects[index],reason});storage_->effects.erase(storage_->effects.begin()+index);observe();
-            afterRemoval(removed.back().effect,observe,dead);
+            const auto nested=afterRemoval(removed.back().effect,observe,dead);
+            removed.insert(removed.end(),nested.begin(),nested.end());
+            if(!nested.empty()) index=0;
         }
         return removed;
     }
@@ -192,7 +207,11 @@ std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, Eff
     for (const auto &effect : storage_->effects)
         if (predicate(effect)) removed.push_back({effect, reason});
     std::erase_if(storage_->effects, predicate);
-    for(const auto &effect:removed) afterRemoval(effect.effect,{},dead);
+    const auto directCount=removed.size();
+    for(size_t index=0;index<directCount;++index) {
+        const auto nested=afterRemoval(removed[index].effect,{},dead);
+        removed.insert(removed.end(),nested.begin(),nested.end());
+    }
     return removed;
 }
 EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,const std::function<void()> &observe) {
@@ -300,19 +319,28 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
         auto previous=storage_;
         try {
             detach();++storage_->nextHandle;
-            for(const auto &removed:result.removed) {
+            const auto directCount=result.removed.size();
+            for(size_t index=0;index<directCount;++index) {
+                const auto removed=result.removed[index];
                 const auto handle=removed.effect.handle;
                 detach();
                 std::erase_if(storage_->effects,[&](const auto &entry){return entry.handle==handle;});
                 observe();
-                afterRemoval(removed.effect,observe);
+                const auto nested=afterRemoval(removed.effect,observe);
+                result.removed.insert(result.removed.end(),nested.begin(),nested.end());
             }
             if(next.back().spec.nativeState) setNativeState(next.back().spec.state.id,true);
             detach();storage_->effects.push_back(next.back());observe();
         } catch(...) {storage_=std::move(previous);throw;}
     } else {
+        auto incoming=std::move(next.back());next.pop_back();
         storage_->effects.swap(next);++storage_->nextHandle;
-        for(const auto &removed:result.removed) afterRemoval(removed.effect,{});
+        const auto directCount=result.removed.size();
+        for(size_t index=0;index<directCount;++index) {
+            const auto nested=afterRemoval(result.removed[index].effect,{});
+            result.removed.insert(result.removed.end(),nested.begin(),nested.end());
+        }
+        storage_->effects.push_back(std::move(incoming));
         if(storage_->effects.back().spec.nativeState) setNativeState(storage_->effects.back().spec.state.id,true);
     }
     return result;

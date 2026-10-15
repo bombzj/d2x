@@ -42,7 +42,8 @@ std::optional<AuraStat> stat(std::string_view source, int skill, int state) {
         {"coldresist", AuraStat::ColdResist}, {"lightresist", AuraStat::LightningResist},
         {"damageresist", AuraStat::PhysicalResist}, {"maxfireresist", AuraStat::FireMaximum},
         {"maxcoldresist", AuraStat::ColdMaximum}, {"maxlightresist", AuraStat::LightningMaximum},
-        {"thorns_percent", AuraStat::Thorns}, {"skill_concentration", AuraStat::Concentration}};
+        {"thorns_percent", AuraStat::Thorns}, {"skill_concentration", AuraStat::Concentration},
+        {"item_maxhp_percent", AuraStat::LifePercent}};
     for (const auto &[text, kind] : stats)
         if (source == text) return kind;
     if (skill == 119 && state < 0) return std::nullopt;

@@ -29,7 +29,7 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     const auto &program=*body->assassinPet->definition;const auto &area=ports_.areas.at(body->area);
     if(program.warp) {
         if(!body->route.empty()) return StepStatus::Complete;
-        if(pet.shadowMoving) {pet.shadowMoving=false;pet.nextDecision=tick.tick+uint64_t(std::max(1,body->rule.neutralDelayTicks));return StepStatus::Complete;}
+        if(pet.nativePetMoving) {pet.nativePetMoving=false;pet.nextDecision=tick.tick+uint64_t(std::max(1,body->rule.neutralDelayTicks));return StepStatus::Complete;}
         return shadowStep(pet,tick);
     }
     if(program.ai==AssassinPetDefinition::Ai::BladeCreeper && !body->route.empty()) return StepStatus::Complete;

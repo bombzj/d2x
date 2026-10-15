@@ -7,7 +7,9 @@
 #include "content/monsters/monster_animation.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/units/distance.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
+#include "gameplay/monsters/types.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
 #include "gameplay/skills/projectile_path.hpp"
@@ -16,6 +18,7 @@
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/assassin_progressive.hpp"
+#include "gameplay/actions/shape_timing.hpp"
 #include "world/interaction_geometry.hpp"
 #include "world/native_path_step.hpp"
 #include "world/native_target_path.hpp"
@@ -109,7 +112,12 @@ struct RemoteScene::Impl {
     std::vector<PresentationSoundEvent> soundEvents;
     std::map<int, size_t> skillRows;
     std::map<int, size_t> missileRows, stateRows;
+    std::map<int,int> missileSkills;
     std::map<uint8_t,int> movementFireMissiles;
+    std::map<int,int> druidStateSkills;
+    int vineVisualSkill{-1};
+    struct StateParticles {uint64_t frame{UINT64_MAX},random{};uint64_t elapsed{};Vec position;};
+    std::map<std::pair<OnlineUnitKey,int>,StateParticles> druidParticles;
     int slowMissileStat{-1};
     int damageBloodStat{-1};
     std::array<int, 4> bloodMissiles{-1, -1, -1, -1};
@@ -160,7 +168,7 @@ struct RemoteScene::Impl {
     std::vector<OnlineSceneView::MonsterDisplay> monsters;
     bool channelSkill(int id) const {
         const auto row = skillRows.find(id);
-        return row != skillRows.end() && ((skills.number(row->second,"cltdofunc")==24 && skills.number(row->second,"seqnum")==6) ||
+        return row != skillRows.end() && ((skills.number(row->second,"cltdofunc")==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) ||
             (skills.number(row->second,"cltdofunc")==6 && skills.value(row->second,"charclass")=="ass"));
     }
     std::optional<int32_t> skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count=0) const {
@@ -209,6 +217,9 @@ struct RemoteScene::Impl {
         for (size_t row = 0; row < missiles.rows().size(); ++row) if (auto id = missiles.number(row, "Id")) {
             missileRows.emplace(*id, row); missileNames.emplace(missiles.value(row, "Missile"), row);
         }
+        std::map<std::string_view,int,std::less<>> skillNames;
+        for(const auto &[id,row]:skillRows) skillNames.emplace(skills.value(row,"skill"),id);
+        for(const auto &[id,row]:missileRows) if(const auto skill=skillNames.find(missiles.value(row,"Skill"));skill!=skillNames.end()) missileSkills.emplace(id,skill->second);
         constexpr std::array bloodNames{"blood1", "blood2", "bigblood1", "bigblood2"};
         for (size_t index = 0; index < bloodNames.size(); ++index)
             if (const auto found = missileNames.find(bloodNames[index]); found != missileNames.end() &&
@@ -218,6 +229,10 @@ struct RemoteScene::Impl {
             overlayNames.emplace(overlays.value(row, "overlay"), row);
         for (size_t row = 0; row < states.rows().size(); ++row)
             if (auto id = states.number(row, "ID")) stateRows.emplace(*id, row);
+        for(const auto &[skill,row]:skillRows) if(skills.number(row,"cltstfunc")==49 && !skills.value(row,"cltmissilec").empty()) vineVisualSkill=skill;
+        for(const auto &[state,stateRow]:stateRows) if(states.number(stateRow,"cltactivefunc")==90)
+            for(const auto &[skill,row]:skillRows) if(skills.value(row,"aurastate")==states.value(stateRow,"state"))
+                druidStateSkills.emplace(state,skill);
         for (const auto &[state,stateRow]:stateRows) {
             if (states.number(stateRow,"setfunc")!=3) continue;
             for (const auto &[skill,row]:skillRows) {
@@ -305,11 +320,12 @@ struct RemoteScene::Impl {
             if (row == skillRows.end()) return nullptr;
             mode = lower(std::string(skills.value(row->second, "anim")));
             request.skillUsesAttackRate=skills.number(row->second,"UseAttackRate").value_or(0)!=0;
-            if(skills.number(row->second,"cltdofunc")==4 && skills.value(row->second,"charclass")=="ass") {
+            if((skills.number(row->second,"cltdofunc")==4 && skills.value(row->second,"charclass")=="ass") ||
+               (skills.number(row->second,"cltstfunc")==53 && skills.value(row->second,"charclass")=="dru")) {
                 const auto *known=shared.characterView().skill(*u.actionSkill);
                 const int rank=u.actionSkillLevel.value_or(u.key.id==playerId && known && known->effectiveRankKnown?known->effectiveRank:1);
                 request.repeatCount=std::max(1,skillCalculation(*u.actionSkill,rank,"calc1",u.key).value_or(1));
-                request.rollbackPercent=100;
+                request.rollbackPercent=skills.value(row->second,"charclass")=="dru"?skills.number(row->second,"Param2").value_or(0):100;
             }
             if(skills.number(row->second,"cltstfunc")==9 && skills.value(row->second,"charclass")=="ass" && request.attackTiming)
                 request.attackTiming->skillRate+=skills.number(row->second,"Param4").value_or(0);
@@ -321,7 +337,7 @@ struct RemoteScene::Impl {
                 const auto sequence=skills.number(row->second,"seqnum").value_or(-1);
                 if(sequence==4 && moving) {request.mode="rn";return shared.actorAnimation(request,artPalette);}
                 if((sequence==12 && skills.value(row->second,"seqtrans")!="SC") ||
-                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=1 && sequence!=8 && sequence!=4 && sequence!=13 && sequence!=14 && sequence!=11 && sequence!=15 && sequence!=10 && sequence!=16 && sequence!=21 && sequence!=23)) return nullptr;
+                   (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=18 && sequence!=1 && sequence!=8 && sequence!=4 && sequence!=13 && sequence!=14 && sequence!=11 && sequence!=15 && sequence!=10 && sequence!=16 && sequence!=21 && sequence!=23)) return nullptr;
                 if(sequence==13 || sequence==14) request.sequenceLanding=motion[u.key].leapLanding>=0;
                 if(sequence==11 && skills.value(row->second,"cltcalc1")=="par5") request.sequenceRateBonus=skills.number(row->second,"Param5").value_or(0);
                 request.mode = "sc"; request.playerSequence = sequence;
@@ -382,6 +398,28 @@ struct RemoteScene::Impl {
         else
             return nullptr;
         request.mode = mode;
+        if(combatBinding) if(const auto snapshot=combatBinding->states().find(u.key);snapshot!=combatBinding->states().end() && snapshot->second.decoded)
+            for(const auto &[state,entry]:snapshot->second.states) {
+                (void)entry;const auto stateRow=stateRows.find(state);
+                if(stateRow==stateRows.end() || !states.number(stateRow->second,"transform").value_or(0) || states.number(stateRow->second,"gfxtype")!=1) continue;
+                const auto identity=states.number(stateRow->second,"gfxclass");if(!identity) return nullptr;
+                const auto monster=monsterRows.find(*identity);if(monster==monsterRows.end()) return nullptr;
+                const auto extra=monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));if(extra==monsterExtra.end()) return nullptr;
+                constexpr std::array<std::string_view,20> playerModes{"dt","nu","wl","rn","gh","tn","tw","a1","a2","bl","sc","th","kk","s1","s2","s3","s4","dd","sq","kb"};
+                constexpr std::array<std::string_view,16> monsterModes{"dt","nu","wl","gh","a1","a2","bl","sc","s1","s2","s3","s4","dd","kb","sq","rn"};
+                const auto index=std::find(playerModes.begin(),playerModes.end(),mode);if(index==playerModes.end()) return nullptr;
+                uint16_t enabled=0;for(size_t native=0;native<monsterModes.size();++native)
+                    if(monstats2.number(extra->second,"m"+std::string(monsterModes[native])).value_or(0)) enabled|=uint16_t{1}<<native;
+                const auto native=shapeMonsterMode(uint8_t(index-playerModes.begin()),enabled);
+                request.shapeSource=*parts;request.category="monsters";request.appearance={};
+                request.appearance.token=lower(std::string(monstats.value(monster->second,"Code")));
+                request.mode=monsterModes[native];request.appearance.weapon=monsterModeWeapon(archives,request.appearance.token,request.mode,monstats2.value(extra->second,"BaseW"));
+                for(size_t component=0;component<request.appearance.components.size();++component) {
+                    const auto choices=variants(monstats2.value(extra->second,std::string(componentCodes[component])+"v"));
+                    request.appearance.components[component]=monstats2.number(extra->second,componentCodes[component]).value_or(0) && !choices.empty()?choices.front():"nil";
+                }
+                request.playerSequence=-1;break;
+            }
         return shared.actorAnimation(request, artPalette);
     }
     const OnlineWorldView *worldView{};
@@ -455,6 +493,64 @@ struct RemoteScene::Impl {
         case 28: case 29: emitSound(Kind::Skill4,source,age); break;
         default: break;
         }
+    }
+    void emitDruidStates(const OnlineView &view,SceneView &shared,const RemoteCombat &combat,bool town) {
+        const auto frame=uint64_t(double(time)*25.0);std::set<std::pair<OnlineUnitKey,int>> active;
+        if(!town) for(const auto &[key,snapshot]:combat.states()) {
+            const auto actor=view.world.units.find(key);
+            if(!snapshot.decoded || actor==view.world.units.end() || !actor->second.position ||
+               (key.type==1?onlineMonsterCorpse(actor->second):playerDead(actor->second))) continue;
+            const auto at=*actor->second.position;const Vec center{float(at.x)+.5f,float(at.y)+.5f};
+            for(const auto &[state,record]:snapshot.states) {
+                const auto nativeState=stateRows.find(state);
+                if(nativeState!=stateRows.end() && states.number(nativeState->second,"cltactivefunc")==89 && vineVisualSkill>=0) {
+                    const auto identity=std::pair{key,state};active.insert(identity);
+                    auto &clock=druidParticles.try_emplace(identity,StateParticles{UINT64_MAX,initialRandom(key.id),0,center}).first->second;
+                    if(clock.frame==frame) continue;
+                    clock.elapsed+=clock.frame==UINT64_MAX?1:frame-clock.frame;clock.frame=frame;
+                    const auto row=skillRows.at(vineVisualSkill);const int period=skillCalculation(vineVisualSkill,1,"cltcalc2",key).value_or(0);
+                    if(period>0 && (clock.elapsed>=uint64_t(period) || unitCoordinateDistance(int(center.x),int(center.y),int(clock.position.x),int(clock.position.y))>=period)) {
+                        std::string field;if(actor->second.mode==1) field="cltmissiled";
+                        else if(actor->second.mode==2) field="cltmissilec";
+                        if(!field.empty()) {
+                            const auto child=missileNames.find(skills.value(row,field));
+                            if(child!=missileNames.end()) {
+                                const int id=missiles.number(child->second,"Id").value_or(-1)+(actor->second.mode==2?int(limitedRandom(clock.random,2)):0);
+                                shared.launchClientMissile(id,center,center,1,0,{},-1,effectOwner(key),combat.hostileSource(actor->second));
+                                clock.elapsed=0;clock.position=center;
+                            }
+                        }
+                    }
+                    continue;
+                }
+                const auto skill=druidStateSkills.find(state);if(skill==druidStateSkills.end()) continue;
+                const auto identity=std::pair{key,state};active.insert(identity);
+                auto &clock=druidParticles.try_emplace(identity,StateParticles{UINT64_MAX,initialRandom(key.id)}).first->second;
+                if(clock.frame==frame) continue;clock.frame=frame;
+                const auto row=skillRows.at(skill->second);int rank=1;
+                const auto rankStat=monsterText->nativeStats->names.find("modifierlist_level");
+                if(rankStat!=monsterText->nativeStats->names.end())
+                    for(const auto &stat:record.stats) if(stat.id==rankStat->second && !stat.parameter) rank=int(stat.value);
+                const int count=skillCalculation(skill->second,rank,"cltcalc1",key).value_or(0);
+                const int height=skillCalculation(skill->second,rank,"cltcalc2",key).value_or(0);
+                if(count<=0 || height<=0) continue;
+                std::array<int,3> children{-1,-1,-1};
+                for(int index=0;index<3;++index) if(const auto child=missileNames.find(skills.value(row,"cltmissile"+std::string(1,char('a'+index))));child!=missileNames.end())
+                    children[size_t(index)]=missiles.number(child->second,"Id").value_or(-1);
+                constexpr std::array<Vec,8> offsets{Vec{7,0},Vec{5,5},Vec{0,7},Vec{-5,5},Vec{-7,0},Vec{-5,-5},Vec{0,-7},Vec{5,-5}};
+                for(int index=0;index<count;++index) for(int particle=0;particle<3;++particle) {
+                    const auto offset=offsets[size_t(rollRandom(clock.random)&7)];int child=children[0];
+                    if(children[1]>0 && children[2]>0) {const auto pick=rollRandom(clock.random)%3;child=children[pick==0?1:pick==1?2:0];}
+                    else if(children[1]>0 && !(rollRandom(clock.random)&1)) child=children[1];
+                    ClientMissileInitialization init;init.parameters=std::array<int32_t,2>{int32_t(at.x),int32_t(at.y)};
+                    init.pixelHeight=int(limitedRandom(clock.random,uint32_t(height)));
+                    const auto start=center+offset;
+                    if(!shared.launchClientMissile(child,start,start+Vec{offset.y,-offset.x},rank,0,{},-1,effectOwner(key),combat.hostileSource(actor->second),0,ClientMissileSource::Program,0,{},0,init))
+                        effectLimitations.insert("Druid state missile unavailable: "+std::to_string(child));
+                }
+            }
+        }
+        std::erase_if(druidParticles,[&](const auto &entry){return !active.contains(entry.first);});
     }
     void emitWoundBlood(const OnlineView &view, SceneView &shared, const RemoteCombat &combat,
                        const Grid &grid, Vec origin) {
@@ -551,6 +647,11 @@ struct RemoteScene::Impl {
             int slow=0;
             if(const auto snapshot=combat.states().find(owner);snapshot!=combat.states().end() && snapshot->second.decoded)
                 for(const auto &[state,definition]:snapshot->second.states) { (void)state;for(const auto &stat:definition.stats) if(stat.id==slowMissileStat) slow=int(stat.value); }
+            const int function=missiles.number(row,"pCltDoFunc").value_or(0);
+            if(id && (function==48 || function==50)) if(const auto skill=missileSkills.find(*id);skill!=missileSkills.end()) {
+                if(!initialization.streamRange) initialization.streamRange=skillCalculation(skill->second,level,function==48?"calc1":"aurarangecalc",owner).value_or(0);
+                if(!initialization.streamPeriod) initialization.streamPeriod=skillCalculation(skill->second,level,function==48?"calc2":"calc4",owner).value_or(0);
+            }
             if (id && !shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
                     effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce, origin,slow,guidedTarget,velocityBonus,initialization))
                 effectLimitations.insert("Missile client program unavailable: " + std::string(missiles.value(row, "Missile")));
@@ -633,6 +734,32 @@ struct RemoteScene::Impl {
                 if(targetOverlay!=overlayNames.end() && castAnimation && castAnimation->releaseTime>=0)
                     if(const auto *visual=shared.overlayVisual(int(targetOverlay->second)))
                         overlayVisuals.push_back({int(targetOverlay->second),*event.target,time+castAnimation->releaseTime-age,visual->frames/visual->fps});
+            }
+            if(skills.number(row->second,"cltstfunc")==45) {
+                bool transformed=false;
+                if(const auto snapshot=combat.states().find(event.source);snapshot!=combat.states().end())
+                    for(const auto &[state,record]:snapshot->second.states) { (void)record;const auto native=stateRows.find(state);
+                        if(native!=stateRows.end() && states.value(native->second,"state")==skills.value(row->second,"aurastate")) transformed=true;
+                    }
+                const auto visual=overlayNames.find(skills.value(row->second,transformed?"cltoverlayb":"cltoverlaya"));
+                if(visual!=overlayNames.end()) overlay(int(visual->second),event.source);
+            }
+            if(skills.number(row->second,"cltstfunc")==49) {
+                const int rank=event.level.value_or(1);const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+                if(const auto facade=missileNames.find(skills.value(row->second,"cltmissilea"));facade!=missileNames.end())
+                    launch(facade->second,start,start,rank,-age,{},event.source);
+                if(const auto vines=missileNames.find(skills.value(row->second,"cltmissileb"));vines!=missileNames.end()) {
+                    const int count=skillCalculation(*event.skill,rank,"cltcalc1",event.source).value_or(0);
+                    constexpr std::array<Vec,8> offsets{Vec{0,1},Vec{0,-1},Vec{1,0},Vec{-1,0},Vec{1,1},Vec{-1,-1},Vec{-1,1},Vec{1,-1}};
+                    auto aim=event.point;if(!aim && event.target) aim=targetPosition(*event.target);
+                    const Vec origin=aim?Vec{float(aim->x)+.5f,float(aim->y)+.5f}:start;
+                    const int seedX=int(origin.x);
+                    for(int index=0;index<count;++index) {
+                        ClientMissileInitialization init;init.path=ClientMissileInitialization::Path::Charged;init.seed=uint32_t(seedX+index);
+                        launch(vines->second,origin,origin+offsets[size_t(index)&7],rank,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                    }
+                }
+                return;
             }
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
             if(function==42 && skills.number(row->second,"seqnum")==15) {
@@ -717,7 +844,7 @@ struct RemoteScene::Impl {
             auto emit = [&](Vec destination, int index = -1) {
                 launch(missile->second, start, destination, level, animation->releaseTime-age, {}, event.source, index);
             };
-            if((function==24 && skills.number(row->second,"seqnum")==6) || function==77 || (function==6 && skills.value(row->second,"charclass")=="ass")) {
+            if((function==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) || function==77 || (function==6 && skills.value(row->second,"charclass")=="ass")) {
                 channels[event.source]={row->second,missile->second,level,time+animation->releaseTime-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
                 if(function==77) channels[event.source].until=time-age+float(std::max(1,skillCalculation(*event.skill,level,"calc2",event.source).value_or(1)))/25.f;
             }
@@ -735,6 +862,17 @@ struct RemoteScene::Impl {
             }
             else if(function==7 && skills.value(row->second,"charclass")=="ass")
                 launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
+            else if(function==67 || function==68 || function==69) {
+                const int count=skillCalculation(*event.skill,level,"calc1",event.source).value_or(0);
+                for(int index=0;index<count;++index) {
+                    ClientMissileInitialization initialization;initialization.animationRate=function==68?256:512;
+                    if(function!=67 || index) {
+                        initialization.path=ClientMissileInitialization::Path::Charged;
+                        initialization.seed=uint32_t(int(end.x)+(function==67?index-1:index));
+                    }
+                    launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
+                }
+            }
             else if(function==70) {
                 ClientMissileInitialization initialization;
                 initialization.parameters=std::array<int32_t,2>{-(int(end.y)-int(start.y)),int(end.x)-int(start.x)};
@@ -802,6 +940,11 @@ struct RemoteScene::Impl {
                 const auto count=skills.number(row->second,"Param1").value_or(0)+level/std::max(1,skills.number(row->second,"Param2").value_or(0));
                 // Retail CltDo19 RVA15AB0: origin=target, aim=2*target-owner.
                 for(int index=0;index<count && index<256;++index) launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
+            }
+            else if(function==79 && skills.number(row->second,"cltstfunc")==51) {
+                // Retail CltSt51 retains the corpse coordinates; CltDo79
+                // constructs cltmissilea there at the action frame.
+                launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
             }
             else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
                 (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
@@ -989,6 +1132,31 @@ struct RemoteScene::Impl {
                         {float((*event.missileDestination)[0]) + .5f, float((*event.missileDestination)[1]) + .5f},
                         event.level.value_or(1), 0, float(event.auxiliary) / 25.f, event.source, -1, event.pierce.value_or(0),
                         ClientMissileSource::Synchronization);
+            } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && !event.target && event.point) {
+                const auto row=skillRows.find(*event.skill);if(row==skillRows.end()) continue;
+                const int function=skills.number(row->second,"cltprgfunc1").value_or(0),rank=event.level.value_or(1);
+                const Vec point{float(event.point->x)+.5f,float(event.point->y)+.5f};
+                if(function==91 || function==92) {
+                    for(int index=0;index<2;++index) {
+                        const auto child=missileNames.find(skills.value(row->second,index?"cltmissileb":"cltmissilea"));
+                        if(child==missileNames.end()) continue;ClientMissileInitialization init;
+                        if(function==91 && index) {
+                            init.parameters=std::array<int32_t,2>{event.flags,0};
+                            init.streamRange=skillCalculation(*event.skill,rank,"aurarangecalc",event.source).value_or(1);
+                            init.streamPeriod=skillCalculation(*event.skill,rank,"calc4",event.source).value_or(1);
+                        }
+                        if(function==92) {
+                            const int frames=skillCalculation(*event.skill,rank,"cltcalc1",event.source).value_or(0);
+                            const int z=skillCalculation(*event.skill,rank,"cltcalc2",event.source).value_or(0);
+                            const int x=skillCalculation(*event.skill,rank,"cltcalc3",event.source).value_or(0);
+                            if(frames<=0 || z<=0 || x<=0) continue;
+                            ClientMissileGraphics graphics;
+                            graphics.position={nativeShiftLeft(nativeMultiply(x,frames),11),0,nativeShiftLeft(nativeMultiply(z,frames),11)};
+                            graphics.velocity={nativeShiftLeft(-x,11),0,nativeShiftLeft(-z,11)};init.graphics=graphics;
+                        }
+                        launch(child->second,point,point,rank,0,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                    }
+                }
             } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && event.target) {
                 const auto row=skillRows.find(*event.skill);const auto target=v.world.units.find(*event.target);
                 if(row!=skillRows.end() && target!=v.world.units.end() && target->second.position && event.flags>0 && event.flags<=3 && skills.number(row->second,"progressive")==1) {
@@ -1036,7 +1204,7 @@ struct RemoteScene::Impl {
                         }
                     }
                 } else if(row!=skillRows.end() && target!=v.world.units.end() && target->second.position && event.flags==0) {
-                    const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+                    const auto missile=missileNames.find(skills.value(row->second,skills.number(row->second,"cltprgfunc1")==93?"cltmissileb":"cltmissilea"));
                     if(missile!=missileNames.end()) {
                         const auto at=*target->second.position;const Vec point{float(at.x)+.5f,float(at.y)+.5f};
                         launch(missile->second,point,point,event.level.value_or(1),0,{},event.source);
@@ -1838,7 +2006,7 @@ struct RemoteScene::Impl {
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
             localCast.reset();
             time = 0;
-            nextWoundBloodFrame = 0; woundBloodRandom.clear();
+            nextWoundBloodFrame = 0; woundBloodRandom.clear();druidParticles.clear();
             localObjectKickRevision = 0;
         }
         const auto now = std::chrono::steady_clock::now();
@@ -1913,6 +2081,8 @@ struct RemoteScene::Impl {
             if (!enemy && ((key.type==0 && (world().corpseOwners.contains(key.id) || playerDead(unit))) || (key.type!=0 && key.type!=1))) continue;
             missileTargets.push_back({effectOwner(key), displayPosition(unit, map, origin) + Vec{.5f, .5f},
                 movementRule(unit).size, enemy});
+            missileTargets.back().monster=key.type==1;
+            if(key.type==1 && monsterText->nativeMonsterTypes) if(const auto size=monsterText->nativeMonsterTypes->dimensions.find(unit.classId.value_or(UINT16_MAX));size!=monsterText->nativeMonsterTypes->dimensions.end()) missileTargets.back().large=size->second.second;
             if(key.type==1) if(const auto row=monsterRows.find(unit.classId.value_or(UINT16_MAX));row!=monsterRows.end())
                 missileTargets.back().undead=monstats.number(row->second,"lUndead").value_or(0)!=0 || monstats.number(row->second,"hUndead").value_or(0)!=0;
             if(const auto effects=combat.states().find(key);effects!=combat.states().end() && effects->second.decoded)
@@ -1927,6 +2097,7 @@ struct RemoteScene::Impl {
                     }
                 }
         }
+        if(elapsed>0 && !suspended) emitDruidStates(v,shared,combat,binding.town);
         if (elapsed > 0 && !suspended)
             emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
         shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
@@ -2053,7 +2224,7 @@ struct RemoteScene::Impl {
                         const int priority=states.number(row->second,"colorpri").value_or(0);
                         const auto shift=states.number(row->second,"colorshift");
                         if(!dead && shift && *shift>=0 && *shift<=128 && priority>colorPriority) {colorPriority=priority;stateColorShifts[key]=*shift;}
-                        hiddenCorpse |= key.type == 1 && dead && states.number(row->second,"hide").value_or(0);
+                        hiddenCorpse |= key.type == 1 && ((dead && states.number(row->second,"hide").value_or(0)) || states.number(row->second,"setfunc")==11);
                         shatter |= key.type == 1 && dead && states.number(row->second,"shatter").value_or(0);
                     }
                 if (frozen) {
@@ -2295,6 +2466,20 @@ struct RemoteScene::Impl {
                         if(const auto *visual=shared.overlayVisual(int(cast->second)))
                             overlayVisuals.push_back({int(cast->second),key,time,visual->frames/visual->fps});
                     }
+                }
+                if(states.number(row->second,"setfunc")==16) {
+                    const auto stat=[&](std::string_view name) {const int id=monsterText->nativeStats->names.at(std::string(name));
+                        for(const auto &value:state.stats) if(value.id==id && !value.parameter) return int(value.value);return 0;};
+                    const int count=stat("skill_frenzy"),skill=stat("modifierlist_skill"),rank=stat("modifierlist_level");
+                    const int limit=skillCalculation(skill,rank,"calc2",key).value_or(0);
+                    if(count>0 && limit>0) for(const auto fields:std::array{std::array{"overlay1","overlay2"},std::array{"overlay3","overlay4"}}) {
+                        const auto first=overlayNames.find(states.value(row->second,fields[0])),last=overlayNames.find(states.value(row->second,fields[1]));
+                        if(first==overlayNames.end() || last==overlayNames.end() || last->second<first->second) continue;
+                        const int slots=int(last->second-first->second)+1,cap=std::min(limit,slots);
+                        const int index=nativeMultiply(std::min(count,slots)-1,slots)/cap;
+                        if(index>=0 && index<slots) addOverlay(int(first->second)+index,key,time-born,true);
+                    }
+                    continue;
                 }
                 for (const auto field : {"overlay2","overlay1"}) {
                     const auto overlay = overlayNames.find(states.value(row->second,field));

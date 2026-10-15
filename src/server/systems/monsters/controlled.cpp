@@ -210,13 +210,13 @@ void System::commitHydra(std::map<EntityId,Actor> &&actors) noexcept {
     for(auto &[id,actor]:actors) {registerPet(actor);ports_.areas.publishRoomUnit(*actor.roomAdmission);}
     state_.actors.merge(actors);
 }
-DomainResult<std::map<EntityId,Actor>> System::prepareAmazon(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,std::shared_ptr<PersistentCharacter> equipment,size_t items,std::optional<WeaponDamage> weapon,std::span<const std::shared_ptr<const StatList>> sources,uint64_t random,std::optional<EquipmentStats> equipmentStats) const {
+DomainResult<std::map<EntityId,Actor>> System::prepareNativePet(const ActorContext &owner,const MonsterRule &rule,Vec position,const SummonCastSpec &summon,std::shared_ptr<PersistentCharacter> equipment,size_t items,std::optional<WeaponDamage> weapon,std::span<const std::shared_ptr<const StatList>> sources,uint64_t random,std::optional<EquipmentStats> equipmentStats) const {
     if(state_.actors.size()>=65536 || items+1>UINT32_MAX-ports_.ids.cursor()) return {DomainStatus::Capacity,{}};
     const auto *p=ports_.players.find(owner.player);if(!p) return {DomainStatus::InvalidActor,{}};
     if(!summon.native || !rule.stats || !rule.formulas) return {DomainStatus::Unavailable,{}};
     uint64_t cursor=ports_.ids.cursor();Actor actor;actor.id=EntityId{cursor++};actor.area=owner.area;actor.position=position;actor.revision=1;actor.owner=owner.player;
     actor.identity.monster=summon.monster;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
-    actor.implementation=summon.kind;actor.rule=rule;actor.rule.petType=summon.petType;actor.amazonPet=summon.amazon;actor.assassinPet=summon.assassin;actor.petStats=summon.stats;
+    actor.implementation=summon.kind;actor.rule=rule;actor.rule.petType=summon.petType;actor.amazonPet=summon.amazon;actor.assassinPet=summon.assassin;actor.druidPet=summon.druid;actor.petStats=summon.stats;
     actor.nativeMinionOwner=p->actor;
     actor.rule.alignment=2;
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
@@ -259,7 +259,7 @@ void System::commitAmazon(std::map<EntityId,Actor> &&actors,size_t items) noexce
 }
 DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec position) {
     const auto found=state_.actors.find(id);const auto *area=ports_.areas.find(owner.area);
-    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !(found->second.assassinPet && found->second.assassinPet->definition->warp) && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(found==state_.actors.end() || (!(found->second.amazonPet && found->second.amazonPet->warp) && !(found->second.assassinPet && found->second.assassinPet->definition->warp) && !found->second.druidPet && !found->second.necroSummon && !found->second.hireling) || found->second.owner!=owner.player || !area || area->generation!=owner.areaGeneration) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }

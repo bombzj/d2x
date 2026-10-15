@@ -7,6 +7,8 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
         return systems.effects.endConversion(event.owner.unit,tick.tick);
     if(event.handler==effects::nativeUnitSkillTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::PeriodicSkills)
         return systems.effects.frameEvent(event,tick.tick);
+    if(!event.handler && event.type==FrameEventType::ActiveState &&
+       (event.owner.type==FrameEventUnit::Player || event.owner.type==FrameEventUnit::Monster)) return systems.skills.activeStateEvent(event,tick.tick);
     if(event.handler) return {DomainStatus::NotImplemented,{}};
     switch(event.owner.type) {
     case FrameEventUnit::Player:

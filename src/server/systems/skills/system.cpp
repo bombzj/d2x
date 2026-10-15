@@ -1,8 +1,11 @@
 #include "system.hpp"
 #include "runtime.hpp"
+#include "shape.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/druid_spec.hpp"
 #include "assassin_kick.hpp"
+#include "druid_melee.hpp"
 #include "gameplay/skills/use_source.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -43,6 +46,7 @@ void System::cancel(PlayerId player, EntityId actor) {
     ports_.companions.cancel(actor);
     pending_.erase(player);
     runtime_->assassinStarts.erase(actor);
+    runtime_->druidStarts.erase(actor);
     state_.cancel(actor);
     ports_.combat.cancel(actor);
 }
@@ -56,6 +60,7 @@ DomainResult<> System::attack(const ActorContext &actor, const Request &request,
     // by an unset hand. Match the selected-skill wire projection on reentry.
     const auto selected = selectedOverride >= 0 ? selectedOverride :
         std::max(0, player->persistent.player.selectedSkills.at(player->persistent.player.weaponSet * 2 + (request.right ? 1 : 0)));
+    if(!player->rules.skills || !shapeAllowsSkill(*player->rules.skills,ports_.effects.unitStates(actor.actor,actor.tick),selected)) return {DomainStatus::Unavailable,{}};
     const auto itemSkills=inventory::itemSkills(*player);
     if(player->rules.skills && player->rules.skills->auras.contains(int(selected)))
         return request.right ? applied() : DomainResult<>{DomainStatus::InvalidRequest,{}};
@@ -75,7 +80,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (request.action == Action::Stop) {
         if(const auto result=ports_.effects.setNativeSkillState(actor.actor,player->rules.skills->formulas->infernoState,false,actor.tick);!result) return result;
         const auto channel=releases_.find(actor.actor);
-        if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
+        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic))) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
         // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
         // not cancel an ordinary attack's approach or pending action.
         return applied();
@@ -108,7 +113,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto result = ports_.transactions.commit(std::move(*plan.value));
         if (result && request.action == Action::Select) {
             const auto channel=releases_.find(actor.actor);
-            if(channel!=releases_.end() && channel->second.skill.effect==SkillBehavior::Inferno && channel->second.skill.sourceId!=request.skill) cancel(actor.player,actor.actor);
+            if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic)) && channel->second.skill.sourceId!=request.skill) cancel(actor.player,actor.actor);
             if(pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         }
         return result;
@@ -129,6 +134,15 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             player->entered && player->persistent.player.hp>0 && player->area==entry.second.actor.area:
             monster && monster->alive() && monster->area==entry.second.actor.area);
         if(!alive && entry.second.assassinKick && entry.second.assassinKick->contact) entry.second.assassinKick->contact->cancelled=true;
+        return !alive;
+    });
+    std::erase_if(runtime_->druidStarts,[&](const auto &entry) {
+        const auto *player=ports_.players.findActor(entry.first);const auto *monster=ports_.monsters.find(entry.first);
+        const auto *area=ports_.areas.find(entry.second.actor.area);
+        const bool alive=area && area->generation==entry.second.actor.areaGeneration && (player?
+            player->entered && player->persistent.player.hp>0 && player->area==entry.second.actor.area:
+            monster && monster->alive() && monster->area==entry.second.actor.area);
+        if(!alive && entry.second.druidMelee && entry.second.druidMelee->contact) entry.second.druidMelee->contact->cancelled=true;
         return !alive;
     });
     const auto playerStatus = release(tick);

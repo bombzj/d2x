@@ -17,6 +17,7 @@
 #include "gameplay/combat/open_wounds.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
@@ -60,6 +61,7 @@ struct Actor {
     std::optional<NativeCollisionPattern> collisionPattern;
     std::shared_ptr<const AmazonPetSpec> amazonPet;
     std::shared_ptr<const AssassinPetSpec> assassinPet;
+    std::shared_ptr<const DruidPetSpec> druidPet;
     bool necroSummon{};
     bool revived() const {return necroPet && necroPet->kind==NecroSummonKind::Revive;}
     std::shared_ptr<const NecroPetSpec> necroPet;
@@ -179,10 +181,10 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool damageable() const { return !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || amazonPet || (assassinPet && assassinPet->definition->attackable) || necroSummon || hireling || conversion)); }
-    bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || necroSummon || hireling || conversion; }
+    bool damageable() const { return !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
+    bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
-    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || necroSummon || conversion || hydra(); }
+    bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || druidPet || necroSummon || conversion || hydra(); }
 };
 int movementPercent(const Actor &, uint64_t tick);
 struct ActorPublication {
@@ -247,6 +249,7 @@ class System {
     DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
     DomainResult<> modifierEvent(const FrameEvent &,uint64_t tick);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
+    bool nativeUsableCorpse(EntityId,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     bool deadMode(EntityId,uint64_t tick) const;
     bool selectableCorpse(EntityId,uint64_t tick) const;
@@ -328,7 +331,7 @@ class System {
     void withdrawQuestGroup(RegionId,std::string_view);
     DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,Vec,uint64_t &random) const;
     DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random,NativeUnitStats) const;
-    DomainResult<std::map<EntityId,Actor>> prepareAmazon(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {},std::span<const std::shared_ptr<const StatList>> = {},uint64_t random=0,std::optional<EquipmentStats> = {}) const;
+    DomainResult<std::map<EntityId,Actor>> prepareNativePet(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {},std::span<const std::shared_ptr<const StatList>> = {},uint64_t random=0,std::optional<EquipmentStats> = {}) const;
     DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0,std::span<const std::shared_ptr<const StatList>> = {}) const;
     void commitAmazon(std::map<EntityId,Actor> &&,size_t) noexcept;
     void commitHydra(std::map<EntityId,Actor> &&) noexcept;

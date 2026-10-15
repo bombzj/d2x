@@ -26,7 +26,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
         "tohitcalc","dmgsympercalc","edmgsympercalc","elensympercalc","auralencalc","aurarangecalc","delay","perdelay",
         "calc1","calc2","calc3","calc4","passivecalc1","passivecalc2","passivecalc3","passivecalc4","passivecalc5",
         "aurastatcalc1","aurastatcalc2","aurastatcalc3","aurastatcalc4","aurastatcalc5","aurastatcalc6",
-        "petmax","skpoints","dmgcalc","srvcalc1","cltcalc1","shitcalc1","chitcalc1","dmgcalc1","prgcalc1","prgcalc2","prgcalc3"};
+        "petmax","skpoints","dmgcalc","srvcalc1","cltcalc1","cltcalc2","cltcalc3","shitcalc1","chitcalc1","dmgcalc1","prgcalc1","prgcalc2","prgcalc3"};
     for (const auto &column:table.columns()) {
         auto key=lower(column);
         // MissilesTbls names the server/hit/damage arrays differently from
@@ -47,7 +47,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
                 "noratio","hcidx","level","level(n)","level(h)","passive","kick","immediate","periodic",
                 "intown","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
-                "aitype","aibonus","reqlevel","progressive","useattackrate",
+                "aitype","aibonus","reqlevel","progressive","useattackrate","restrict","nocostinstate",
                 "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",
                 "alwaysexplode","collidekill","pierce","collidefriend","lastcollide","collidetype","collision","activate","town","srctown","psrvdofunc","psrvhitfunc","psrvdmgfunc","tohit","gethit","softhit","knockback","hitclass","nexthit","nextdelay","returnfire","candestroy","size","vel","vellev","accel","maxvel","canslow","clientsend","subloop","substart","substop","hitflags","resultflags"};
             // Skills.Range is a targeting token (h2h/rng/both/none), whereas
@@ -69,7 +69,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 } else if (const auto value=table.number(row,column)) result.numbers.emplace(key,*value);
                 else if (table.value(row,column).empty()) result.numbers.emplace(key,0);
             } else if ((missile && (key=="skill" || key=="progoverlay" || key.starts_with("submissile") || key.starts_with("hitsubmissile"))) || key=="etype" || key=="summon" || key=="submissile1" || key=="passivestate" || key.starts_with("srvmissile") ||
-                       key.starts_with("passivestat") || key.starts_with("aurastat") || key.starts_with("sumskill") || key=="monanim" || key=="range" || key=="pettype")
+                       key.starts_with("passivestat") || key.starts_with("aurastat") || key.starts_with("sumskill") || key=="monanim" || key=="anim" || key=="state1" || key=="state2" || key=="state3" || key=="range" || key=="pettype")
                 result.references.emplace(key,lower(table.value(row,column)));
         }
     }

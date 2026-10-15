@@ -16,6 +16,7 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/effects/queries.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -56,7 +57,7 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
     // The shipped BladesOfIce filter includes missiles (8) together with
     // the valid-target requirement (0x400), so none reach its callback.
     // Other noncombat-unit filters still need their own native finder.
-    if((filter&(0x10|0x20|0x20000)) || ((filter&8) && !(filter&0x400)))
+    if((filter&(0x10|0x20)) || ((filter&8) && !(filter&0x400)))
         throw std::runtime_error("Aura recipient filter requires its native unit finder");
     if((filter&0x80000) && !query.tick) throw std::invalid_argument("Missing native JUSTHIT query frame");
     const auto sourcePosition=query.sourcePosition?*query.sourcePosition-area.origin:owner.position();
@@ -95,6 +96,14 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
             if((filter&0x80000) && !missileHitAllowed(target.id(),*query.tick)) return false;
             if((filter&0x10000) && !participants.auraAligned(owner,target)) return false;
             if((filter&0x8000) && !participants.canHarm(owner,target)) return false;
+            // SKILLS_AuraCallback's 0x20000 is UNITS_IsInMeleeRange,
+            // also used by the native Zeal/Fury GUID successor finder.
+            if(filter&0x20000) {
+                const auto destination=target.position()+definition.origin-area.origin;
+                const int range=owner.player?(owner.player->totals.equipment.weaponCount?
+                    owner.player->totals.equipment.weapons[0].rangeAdder:0):owner.monster?owner.monster->rule.meleeRange:0;
+                if(!owner.id() || !unitMeleeReach(area.collision,sourcePosition,owner.size(),destination,target.size(),range)) return false;
+            }
             if((filter&0x200) && !area.collision.missileSegment(
                 {float(int(sourcePosition.x)),float(int(sourcePosition.y))},
                 {float(int(target.position().x+definition.origin.x-area.origin.x)),float(int(target.position().y+definition.origin.y-area.origin.y))},{4,1})) return false;
@@ -352,7 +361,16 @@ void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,cons
     if(!plan.actors) return;
     for(auto &[id,candidate]:plan.actors->actors) {
         const auto source=plan.sources.find(id);
-        if(source==plan.sources.end()) {prepareUnitItemAuras(plan,candidate,tick,recipient);continue;}
+        if(source==plan.sources.end()) {
+            prepareUnitItemAuras(plan,candidate,tick,recipient);
+            // SetSummonPassiveStats assigns inherited aura skills to the
+            // right slot at birth, in original sumskill order.
+            if(candidate.druidPet && !ports_.monsters.find(id) && candidate.rule.auraPrograms)
+                for(const auto skill:candidate.nativeSkillOrder)
+                    if(candidate.rule.auraPrograms->contains(skill))
+                        prepareUnitAuraSelection(plan,id,skill,tick,recipient);
+            continue;
+        }
         candidate.preparedItemAuras.clear();
         CombatEffectSet states;
         if(const auto prepared=plan.units.find(id);prepared!=plan.units.end()) states=prepared->second.states;

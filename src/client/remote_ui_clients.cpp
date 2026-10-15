@@ -952,7 +952,7 @@ struct RemoteUiClients::Impl {
             if(input.combatEquipment) {
                 const auto &equipment=*input.combatEquipment;
                 const auto &weapon=equipment.equipment.weapons[0];
-                input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate};
+                input.attackTiming=KnownAttackTiming{weapon.fasterAttack,weapon.baseSpeed,equipment.modifiers.combat.attackRate,weapon.itemBaseSpeed,weapon.itemAttackSpeed,bool(weapon.item)};
             }
         }
         if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))

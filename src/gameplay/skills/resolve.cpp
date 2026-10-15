@@ -8,6 +8,7 @@
 #include "leap_spec.hpp"
 #include "grim_ward_spec.hpp"
 #include "assassin_spec.hpp"
+#include "druid_spec.hpp"
 #include "damage_curve.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "rank_bonus.hpp"
@@ -46,6 +47,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     SkillCastSpec result;
     result.effect = spec.effect;
     result.assassin = spec.assassin;
+    result.druid = spec.druid;
     result.rank = rank;
     result.warcry = spec.warcry;
     if(spec.leap) {
@@ -154,7 +156,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             result.healingMaximum=Fixed8(calculation("calc2"));
         }
     }
-    result.delayFrames = spec.assassin && input.nativeFormulas?calculation("delay"):spec.delayFrames;
+    result.delayFrames = (spec.assassin || spec.druid) && input.nativeFormulas?calculation("delay"):spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
     result.telekinesisKnockbackChance = spec.telekinesisKnockbackChance;
@@ -475,6 +477,11 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             cloud.damageFromSkill = false;
         }
     }
+    if(input.nativeFormulas && spec.druid && result.weapon) {
+        const auto program=spec.druid->program;
+        if(program==DruidProgram::Rage || program==DruidProgram::Rabies || program==DruidProgram::FireClaws) result.weapon->damagePercent=calculation("calc1");
+        if(program==DruidProgram::Fury) {result.weapon->attacks=calculation("calc1");result.weapon->damagePercent=calculation("calc2");}
+    }
     const bool defensiveBuff=spec.holyShield || spec.effect==SkillBehavior::FrozenArmor || spec.effect==SkillBehavior::ShiverArmor ||
         spec.effect==SkillBehavior::ChillingArmor || spec.effect==SkillBehavior::BoneArmor || spec.effect==SkillBehavior::NativeDefensiveBuff;
     const bool nativeWarcry=spec.effect==SkillBehavior::Shout || spec.effect==SkillBehavior::BattleOrders || spec.effect==SkillBehavior::BattleCommand;
@@ -483,11 +490,19 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         CombatEffectSpec effect;effect.state=spec.assassin->state;effect.source={CombatEffectSource::Skill,{},spec.sourceId,rank};
         result.appliedEffect=std::move(effect);
     }
-    const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm || bladeShield;
+    const bool druidState=spec.druid && (spec.druid->program==DruidProgram::Shape || spec.druid->program==DruidProgram::Periodic);
+    if(druidState && input.nativeFormulas) {
+        CombatEffectSpec effect;effect.state=spec.druid->state;effect.source={CombatEffectSource::Skill,{},spec.sourceId,rank};
+        effect.nativeDirectAllocation=true;effect.stacking=EffectStacking::ReuseState;
+        if(spec.druid->program==DruidProgram::Shape) {effect.nativeRemoval=NativeStateRemoval::Shape;effect.removalGroupStates=spec.druid->removalGroupStates;}
+        effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
+        result.appliedEffect=std::move(effect);
+    }
+    const bool nativeTimedBuff=spec.effect==SkillBehavior::EnergyShield || spec.effect==SkillBehavior::Blaze || spec.effect==SkillBehavior::ThunderStorm || bladeShield || druidState;
     if(input.nativeFormulas && result.appliedEffect && (defensiveBuff || spec.effect==SkillBehavior::Enchant || nativeWarcry || nativeTimedBuff)) {
         auto &effect=*result.appliedEffect;effect.nativeValues.emplace();
-        effect.stacking=nativeWarcry?EffectStacking::ReuseState:EffectStacking::SkillLevel;
-        effect.nativeState=true;effect.refreshPassivesOnRemoval=true;
+        effect.stacking=(nativeWarcry || druidState)?EffectStacking::ReuseState:EffectStacking::SkillLevel;
+        effect.nativeState=true;effect.refreshPassivesOnRemoval=!druidState;
         effect.registersUnitEvents=defensiveBuff || nativeTimedBuff;
         for(const auto binding:input.nativeFormulas->unitEvents(spec.sourceId)) {
             if(binding.event<0) {if(defensiveBuff) break;continue;}
@@ -505,7 +520,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
                 result.nativeEffectWrites.emplace_back(StatKey{rules.names.at("other_animrate"),0},stat.value);
             }
         }
-        if(defensiveBuff || nativeTimedBuff) for(const auto &stat:input.nativeFormulas->passiveBuffStats(spec.sourceId,rank)) {
+        if(defensiveBuff || (nativeTimedBuff && !druidState)) for(const auto &stat:input.nativeFormulas->passiveBuffStats(spec.sourceId,rank)) {
             result.nativeEffectWrites.push_back(stat);
             effect.nativeValues->insert_or_assign(stat.key,stat.value);
             if(stat.key.id==rules.names.at("attackrate")) {
@@ -532,7 +547,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
             effect.nativeValues->erase(*effect.physicalShieldStat);effect.nativeValues->erase(*effect.physicalShieldMaximumStat);
         }
         const auto duration=calculation("auralencalc");
-        if(!nativeWarcry && !duration) effect.duration.reset();
+        if(spec.druid && spec.druid->program==DruidProgram::Periodic) effect.duration=EffectFrame(uint32_t(std::max(duration,1)));
+        else if(!nativeWarcry && !druidState && !duration) effect.duration.reset();
         else effect.duration=EffectFrame(uint32_t(duration));
     }
     return result;

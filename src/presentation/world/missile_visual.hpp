@@ -1,5 +1,6 @@
 #pragma once
 #include "core/math.hpp"
+#include "missile_graphics.hpp"
 #include "core/id.hpp"
 #include "world/collision.hpp"
 #include "gameplay/skills/elemental_spec.hpp"
@@ -16,8 +17,12 @@ namespace d2x {
 struct ClientMissileInitialization {
     enum class Path { None,Charged,Spiral } path{};
     std::optional<uint32_t> seed;
+    std::optional<int> animationRate,pixelHeight,ballisticHeight;
+    std::optional<ClientMissileGraphics> graphics;
+    bool distanceLimited{};
+    std::optional<std::array<int,3>> bounce; // count, restitution %, native initial arc frames.
     std::optional<std::array<int32_t,2>> parameters;
-    std::optional<int> streamMissile,streamRange;
+    std::optional<int> streamMissile,streamRange,streamPeriod;
 };
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
@@ -57,12 +62,14 @@ struct ClientMissileVisual {
     // frame counts processed local callbacks. Native countdown resets must not
     // rewind callbacks, animation, or the immutable constructor TotalFrames.
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
+    std::optional<int> animationRate;
     int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
     Vec turnTarget;
     int emissionCountdown{};
     std::optional<std::array<int32_t,2>> nativeParameters;
-    int streamMissile{-1},streamRange{};
+    int streamMissile{-1},streamRange{},streamPeriod{};
+    std::optional<ClientMissileGraphics> graphics;
     Vec pixelOffset, pixelVelocity, pixelAcceleration;
     EntityId owner;
     bool hostile{};
@@ -85,7 +92,7 @@ struct ClientMissileTarget {
     int size{};
     bool hostile{};
     int retaliation{-1},retaliationRank{1};
-    bool undead{};
+    bool undead{},monster{},large{};
 };
 // Prepared from imported skill data by SceneAssets; no damage or cast rules.
 struct BlizzardVisual {

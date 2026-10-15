@@ -9,6 +9,7 @@
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/summon_resolve.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include "server/systems/attributes/monster_sources.hpp"
 #include <algorithm>
@@ -107,6 +108,7 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
          player.totals.character.combat.lightningSkillDamagePercent, player.totals.character.combat.coldSkillDamagePercent,
          player.totals.character.combat.poisonSkillDamagePercent,&formulas});
     if(definition.summon && definition.summon->assassin) result.summon=resolveAssassinSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,formulas,skill);
+    else if(definition.summon && definition.summon->druid) result.summon=resolveDruidSummon(*definition.summon,rank,player.persistent.difficulty,formulas,skill);
     else if(definition.summon && definition.summon->amazon) result.summon=resolveAmazonSummon(*definition.summon,rank,player.persistent.player.level,player.persistent.difficulty,player.totals.character,player.persistent.player.skillRanks,&formulas,skill);
     else if(definition.summon) {
         const auto effective=[&](int id) {const auto found=player.totals.skillRanks.find(id);return found==player.totals.skillRanks.end()?0:found->second;};

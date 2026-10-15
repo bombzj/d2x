@@ -25,7 +25,13 @@
 #include <array>
 #include <exception>
 #include "gameplay/skills/amazon_missile.hpp"
+#include <stdexcept>
 namespace d2x::server::missiles {
+RegionId nativeBirthFactArea(const DomainFact &fact) {
+    if(const auto *missile=std::get_if<MissileFact>(&fact)) return missile->area;
+    if(const auto *pulse=std::get_if<SkillPulseFact>(&fact)) return pulse->area;
+    throw std::logic_error("Unsupported native missile birth fact");
+}
 struct NativeBirthPublication::Data {
     System *system{};
     EntityId owner;
@@ -76,7 +82,7 @@ void NativeBirthPublication::publish() noexcept {
     system.state_.missiles.merge(d.missiles);system.publishTimers(d.timers);
     ports.random=d.randomNext;d.published=true;
 }
-DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix) {
+DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix,std::span<const DomainFact> extraFacts) {
     if(requests.empty() || requests.size()>512 || !ports_.nativeRules || !ports_.nativeRules->formulas)
         return {DomainStatus::InvalidRequest,{}};
     if(prefix>UINT32_MAX-ports_.ids.cursor() || requests.size()>UINT32_MAX-ports_.ids.cursor()-prefix)
@@ -109,7 +115,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             const int x=int(spawn.target.x)-int(spawn.position.x),y=int(spawn.target.y)-int(spawn.position.y);
             if(x*x+y*y<request.minimumTargetDistanceSquared) continue;
         }
-        spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=!request.copyMonsterAttackBonus;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;
+        spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=!request.copyMonsterAttackBonus;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;spawn.totalFrames=request.totalFrames;
         if(request.nativeVelocity) {
             const auto fixed=missileVelocityFixed(*request.nativeVelocity,0,0);if(!fixed) return {DomainStatus::InvalidRequest,{}};
             spawn.speeds={float(*fixed)*25.f/4096.f};
@@ -129,12 +135,11 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                 missile.path.assign(path.begin(),path.end());
             }
             if(request.finalParameters) missile.parameters=*request.finalParameters;
-            if(request.totalFrames) {missile.nativeTotalFrames=*request.totalFrames;missile.setCurrentFrame(*request.totalFrames);}
             if(request.storedOwner) missile.owner=*request.storedOwner;
             missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));
         }
     }
-    data->facts=visuals(launched);
+    data->facts=visuals(launched);data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
     data->timers=prepareTimers(data->missiles);
     auto result=std::shared_ptr<NativeBirthPublication>{new NativeBirthPublication{std::move(data)}};
@@ -160,7 +165,7 @@ DomainResult<EntityId> System::commitNativeBirth(std::shared_ptr<NativeBirthPubl
     const auto first=publication.first();
     std::vector<EventBatch> batches;
     for(const auto &fact:publication.facts()) batches.push_back({0,prepared->data_->context.tick,{},
-        {AudienceKind::Area,{},std::get<MissileFact>(fact).area},{fact}});
+        {AudienceKind::Area,{},nativeBirthFactArea(fact)},{fact}});
     if(!batches.empty()) {
         const auto sent=ports_.events.publishGroup(std::move(batches));
         if(!sent) return {sent.status,{}};
@@ -257,7 +262,7 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
         missile.parameters=request.parameters;
         if(rule.serverHitFunction==12) missile.parameters[0]=rule.chainCount;
         missile.guidance=!request.directConstructor && source?source->movementTarget:EntityId{};
-        missile.remainingHits=rule.chainCount;missile.initializeFrames(rule.frames,rule.activate,request.startFrame);missile.definition=rule.definition;
+        missile.remainingHits=rule.chainCount;missile.initializeFrames(request.totalFrames.value_or(rule.frames),rule.activate,request.startFrame);missile.definition=rule.definition;
         const auto origin=request.origins.empty()?request.position:request.origins[index];
         missile.position={std::floor(origin.x)+.5f,std::floor(origin.y)+.5f};missile.turnTarget=aim-missile.position;
         missile.pathTarget=aim;
@@ -344,7 +349,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     if(!publication.validate()) return {DomainStatus::Stale,{}};
     std::vector<EventBatch> batches;
     for(const auto &fact:publication.facts()) batches.push_back({0,request.tick,{},
-        {AudienceKind::Area,{},std::get<MissileFact>(fact).area},{fact}});
+        {AudienceKind::Area,{},nativeBirthFactArea(fact)},{fact}});
     if(!batches.empty()) {const auto sent=ports_.events.publishGroup(std::move(batches));if(!sent) return {sent.status,{}};}
     publication.publish();
     if(!first) return {DomainStatus::Unavailable,{}};

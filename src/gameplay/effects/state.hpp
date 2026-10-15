@@ -22,7 +22,7 @@ class CombatEffectSet {
     struct Storage {uint64_t nextHandle=1,passiveRefresh=0,staminaRestore=0,controlReset=0,targetReset=0,nextUnitEvent=1;std::vector<ActiveCombatEffect> effects;std::map<int,bool> states;FrameEventQueue expirationEvents;std::vector<TriggeredSkillUnitEvent> skillEvents;};
     std::shared_ptr<Storage> storage_=std::make_shared<Storage>();
     void detach();
-    void afterRemoval(const ActiveCombatEffect &,const std::function<void()> &,std::optional<EffectUnitKind> dead={});
+    std::vector<RemovedCombatEffect> afterRemoval(const ActiveCombatEffect &,const std::function<void()> &,std::optional<EffectUnitKind> dead={});
     void scheduleExpiration(EffectFrame now,int32_t nativeFrame);
     void renewExpiration(ActiveCombatEffect &,const CombatEffectSpec &,EffectFrame);
     void restoreStamina(const std::function<void()> &);

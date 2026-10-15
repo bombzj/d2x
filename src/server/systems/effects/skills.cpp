@@ -1,4 +1,6 @@
 #include "system.hpp"
+#include "server/systems/skills/shape.hpp"
+#include "gameplay/actions/shape_timing.hpp"
 #include "damage_absorption.hpp"
 #include "core/random.hpp"
 #include "gameplay/units/direction.hpp"
@@ -27,6 +29,13 @@ namespace d2x::server::effects {
 namespace {
 std::optional<AnimationTiming> reactionTiming(const PlayerState &player,std::string_view mode) {
     if(!player.rules.skills) return {};
+    if(const auto *shape=skills::activeShape(*player.rules.skills,player.transient.states)) {
+        const auto nativeMode=shapeMonsterMode(mode=="bl"?9:mode=="kb"?19:4,shape->enabledModes);
+        const auto animation=shape->animations.find(nativeMode);if(animation==shape->animations.end()) return {};
+        return recoveryAnimationTiming({{animation->second.frames,animation->second.speed},
+            mode=="kb"?RecoveryMode::Knockback:mode=="bl"?RecoveryMode::Block:RecoveryMode::GetHit,
+            player.totals.character.combat.fasterHitRecovery,player.totals.character.combat.fasterBlock,213,false});
+    }
     const auto found=player.rules.skills->recoveryAnimations.find(std::string(mode=="kb"?"gh":mode)+player.totals.equipment.animationClass);
     if(found==player.rules.skills->recoveryAnimations.end()) return {};
     const bool block=mode=="bl";

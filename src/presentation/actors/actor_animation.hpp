@@ -18,6 +18,7 @@ struct ActorAnimationRequest {
     bool monsterUnit{}; // Includes monsters using player graphics.
     bool monsterKick{}; // Native transformed Assassin maps MONMODE_A1 to KK.
     ActorAppearance appearance;
+    std::optional<ActorAppearance> shapeSource; // Original player COF for native transformed attack speed.
     int paletteTransform = -1;
     bool randomTransform = false, finalFrame = false, shadow = false;
     bool nativeMonsterTransform = false; // Raw palshift row, including alliance rows 0/1.

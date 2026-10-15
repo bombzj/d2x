@@ -8,7 +8,7 @@ enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman,
                          SandRaider, SandMaggot, SandMaggotQueen, MaggotEgg, MaggotLarva,
                          ClawViper, SandLeaper, Swarm, Scarab, GreaterMummy, Mummy,
                          PantherWoman, PantherJavelin, Baboon, Vulture, BatDemon, PinHead,
-                         Summoner, Duriel, Sarcophagus, ArcaneTower, AssassinPet, Count };
+                         Summoner, Duriel, Sarcophagus, ArcaneTower, AssassinPet, DruidPet, Count };
 struct MonsterDefinition {
     MonsterKind id;
     const char *token;

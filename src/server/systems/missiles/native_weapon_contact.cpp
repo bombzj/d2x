@@ -7,6 +7,7 @@
 #include "server/systems/combat/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
+#include "gameplay/skills/druid_spec.hpp"
 
 namespace d2x::server::missiles {
 DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std::vector<EntityId> targets) {
@@ -29,7 +30,8 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
     hit.nativeSkill->melee=true;hit.nativeSkill->progressive=hit.nativeSkill->kick || request.skill.weapon->commonAttack ||
         (request.skill.assassin && request.skill.assassin->program==AssassinProgram::DragonClaw);
     hit.nativeSkill->initialDamage=request.nativeMeleeBase;
-    hit.nativeSkill->skipMissDrain=request.skill.assassin && request.skill.assassin->program==AssassinProgram::BladeShield;
+    hit.nativeSkill->skipMissDrain=(request.skill.assassin && request.skill.assassin->program==AssassinProgram::BladeShield) ||
+        (request.skill.druid && (request.skill.druid->program==DruidProgram::FireClaws || request.skill.druid->program==DruidProgram::Hunger));
     hit.retainDeadSource=request.deathTrigger;
     hit.missileDamage=std::make_shared<MissileDamageRollState>();hit.missileDamage->formulas=rules.formulas;hit.missileDamage->statRules=rules.stats;
     hit.missileDamage->uninterruptableState=rules.uninterruptable.id;

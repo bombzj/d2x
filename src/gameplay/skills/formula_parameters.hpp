@@ -38,7 +38,7 @@ struct SkillFormulaRecord {
 struct SkillFormulaCatalog {
     int maximumSkillRank{}; // Experience.MaxLvl for native class zero.
     int skillShrineState{-1}; // Current States identity, not an allskills stat.
-    int corpseNoDrawState{-1};
+    int corpseNoDrawState{-1},corpseNoSelectState{-1};
     int infernoState{-1};
     std::map<int,SkillFormulaRecord> skills,missiles;
     std::map<std::string,int,std::less<>> skillIds,missileIds;

@@ -78,6 +78,7 @@ target_sources(d2x_content PRIVATE src/content/skills/defensive_buff_data.cpp sr
     src/content/skills/bone_data.cpp src/content/skills/barbarian_data.cpp src/content/skills/amazon_bow_data.cpp src/content/skills/amazon_spear_data.cpp src/content/skills/amazon_magic_data.cpp src/content/skills/amazon_summon_data.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/skill_animation.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/assassin_data.cpp)
+target_sources(d2x_content PRIVATE src/content/skills/druid_data.cpp)
 target_sources(d2x_content PRIVATE src/content/items/item_projectiles.cpp src/content/skills/missile_effects.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_experience.cpp)
 target_sources(d2x_content PRIVATE src/content/monsters/monster_combat.cpp src/content/monsters/monster_type_data.cpp)
@@ -122,6 +123,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/activation_program.cpp
   src/gameplay/skills/assassin_progressive.cpp
   src/gameplay/skills/assassin_summon.cpp
+  src/gameplay/skills/druid_summon.cpp
   src/gameplay/skills/native_damage.cpp
   src/gameplay/skills/item_trigger_policy.cpp
   src/gameplay/missiles/damage.cpp
@@ -140,7 +142,7 @@ add_library(d2x_gameplay
   src/gameplay/character/attributes.cpp src/gameplay/character/skill_rank.cpp
   src/gameplay/combat/stat_modifiers.cpp src/gameplay/combat/geometry.cpp
   src/gameplay/combat/attack_element_ranges.cpp src/gameplay/combat/weapon_hit.cpp
-  src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/actions/weapon_timing.cpp
+  src/gameplay/combat/accuracy.cpp src/gameplay/combat/damage_resolution.cpp src/gameplay/actions/weapon_timing.cpp src/gameplay/actions/shape_timing.cpp
   src/gameplay/combat/poison.cpp
   src/gameplay/skills/cast_timing.cpp src/gameplay/skills/resolve.cpp src/gameplay/skills/curse_resolve.cpp
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
@@ -228,12 +230,20 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
     src/server/systems/skills/activation.cpp
+    src/server/systems/skills/shape.cpp
+    src/server/systems/skills/druid_active.cpp
+    src/server/systems/skills/druid_pet.cpp
+    src/server/systems/skills/druid_melee.cpp
+    src/server/systems/skills/druid.cpp
     src/server/systems/skills/assassin.cpp
     src/server/systems/skills/assassin_pet.cpp
     src/server/systems/skills/assassin_kick.cpp
     src/server/systems/skills/native_caster.cpp
     src/server/systems/ai/target_query.cpp
-    src/server/systems/companions/assassin.cpp
+    src/server/systems/companions/native_summon.cpp
+    src/server/systems/companions/native_pet_move.cpp
+    src/server/systems/companions/druid_corpse.cpp
+    src/server/systems/companions/druid_ai.cpp
     src/server/systems/companions/assassin_ai.cpp
     src/server/systems/companions/shadow_ai.cpp
     src/server/systems/effects/corpse_explosion.cpp
@@ -241,6 +251,8 @@ target_sources(d2x_server PRIVATE
     src/server/systems/combat/native_skill_contact.cpp
     src/server/systems/combat/progressive_contact.cpp
     src/server/systems/missiles/native_weapon_contact.cpp
+    src/server/systems/effects/druid.cpp
+    src/server/systems/effects/state_group.cpp
     src/server/systems/effects/assassin.cpp
     src/server/systems/effects/blade_shield.cpp
     src/server/systems/effects/mind_blast.cpp
@@ -413,6 +425,7 @@ target_sources(d2x_content PRIVATE src/content/npc/gamble_stock.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/inventory/ground.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/item_content.cpp src/hosting/object_content.cpp src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/assassin_summon_content.cpp)
+target_sources(d2x_game_content PRIVATE src/hosting/druid_summon_content.cpp)
 target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp)

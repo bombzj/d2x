@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/skills/rule_spec.hpp"
+#include "gameplay/actions/shape_profile.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "gameplay/skills/cast_timing.hpp"
@@ -48,6 +49,8 @@ struct SkillRules {
     std::map<int,std::pair<int,int>> missileVelocities;
     std::optional<HydraRules> hydra;
     std::map<int, SkillDefinition> definitions;
+    std::map<int,ShapeProfile> shapes;
+    std::map<int,SkillShapeRestriction> shapeRestrictions;
     std::map<std::string, CastAnimationTiming, std::less<>> animations;
     std::map<std::string, AttackAnimation, std::less<>> weaponAnimations;
     std::map<std::string, AnimationTiming, std::less<>> recoveryAnimations;

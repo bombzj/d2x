@@ -1,5 +1,6 @@
 #include "companion_content.hpp"
 #include "assassin_summon_content.hpp"
+#include "druid_summon_content.hpp"
 #include "item_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_magic_loot.hpp"
@@ -214,7 +215,7 @@ std::vector<std::string> preparePendingSummons(GameHost &host,GameHandle game,Ar
     std::vector<std::string> issues;
     for(const auto &source:host.pendingSummons(game)) {
         server::companions::Prepared result;
-        try {result=source.summon.assassin?prepareAssassinSummon(source,archives,data):source.summon.amazon?prepare(source,archives,data):prepareNecro(source,archives,data);} catch(const std::exception &error) {result.source=source;result.deferred=error.what();}
+        try {result=source.summon.druid?prepareDruidSummon(source,archives,data):source.summon.assassin?prepareAssassinSummon(source,archives,data):source.summon.amazon?prepare(source,archives,data):prepareNecro(source,archives,data);} catch(const std::exception &error) {result.source=source;result.deferred=error.what();}
         if(!result.deferred.empty()) issues.push_back("Summon " + std::to_string(source.skill) + ": " + result.deferred);
         host.installSummon(game,std::move(result));
     }

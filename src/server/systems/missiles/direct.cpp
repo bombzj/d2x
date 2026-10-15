@@ -23,7 +23,7 @@ DomainResult<> System::direct(const Spawn &request, std::vector<EntityId> target
     return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
 }
 DomainResult<DirectContact> System::directContact(const Spawn &request,std::vector<EntityId> targets,DirectNotice notice) {
-    if(const auto *source=ports_.monsters.find(request.actor.actor);source && source->assassinPet && request.free && request.weapon && request.skill.weapon) {
+    if(const auto *source=ports_.monsters.find(request.actor.actor);source && (source->assassinPet || source->druidPet) && request.free && request.weapon && request.skill.weapon) {
         const auto *area=ports_.areas.find(source->area);
         if(!area || area->generation!=request.actor.areaGeneration || area->definition.town || (source->life<=0 && !request.deathTrigger)) return {DomainStatus::InvalidActor,{}};
         return nativeWeaponContact(request,std::move(targets));
@@ -32,8 +32,8 @@ DomainResult<DirectContact> System::directContact(const Spawn &request,std::vect
     if(!p || !p->entered || p->actor!=request.actor.actor || p->area!=request.actor.area || (p->persistent.player.hp<=0 && !request.deathTrigger) ||
         !a || a->generation!=request.actor.areaGeneration || a->definition.town) return {DomainStatus::InvalidActor,{}};
     if(request.skill.minimumDamage.raw()<0 || request.skill.maximumDamage<request.skill.minimumDamage) return {DomainStatus::InvalidRequest,{}};
-    if(request.weapon && request.skill.weapon && (request.skill.assassin ||
-        (request.skill.weapon->commonAttack && (p->definition.code=="ass" || ports_.effects.hasProgressive(p->actor))))) return nativeWeaponContact(request,std::move(targets));
+    if(request.weapon && request.skill.weapon && (request.skill.assassin || request.skill.druid ||
+        (request.skill.weapon->commonAttack && (p->definition.code=="ass" || p->definition.code=="dru" || ports_.effects.hasProgressive(p->actor))))) return nativeWeaponContact(request,std::move(targets));
     if(ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto random=ports_.random;

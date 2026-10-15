@@ -96,7 +96,7 @@ std::vector<PetOwnershipSnapshot> System::pets(PlayerId id) const {
     if(!recipient || !recipient->entered) return result;
     // PlayerPets broadcasts ownership to the game independently of room interest.
     for(const auto &[key,body]:ports_.monsters.read().actors) {
-        if((!body.amazonPet && !body.assassinPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive()) continue;
+        if((!body.amazonPet && !body.assassinPet && !body.druidPet && !((body.necroSummon || body.hydra()) && body.rule.petType>0) && !body.hireling) || !body.owner || !body.alive()) continue;
         const auto *owner=ports_.players.find(*body.owner);
         if(owner && owner->entered)
             result.push_back({key,owner->actor,uint8_t(body.hireling?7:body.amazonPet?body.amazonPet->petType:body.rule.petType),uint16_t(body.rule.nativeClass),

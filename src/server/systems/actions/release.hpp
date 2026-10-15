@@ -10,7 +10,7 @@
 #include <vector>
 
 namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;}
-namespace d2x::server::skills {struct AssassinKickExecution;}
+namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;}
 namespace d2x::server::actions {
 struct SkillRelease {
     ActorContext actor;
@@ -36,6 +36,7 @@ struct SkillRelease {
     std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse;
     std::shared_ptr<effects::MindBlastPulse> mindBlastPulse;
     std::shared_ptr<skills::AssassinKickExecution> assassinKick;
+    std::shared_ptr<skills::DruidMeleeExecution> druidMelee;
 };
 struct MonsterRelease {
     MonsterCastRequest request;
@@ -54,6 +55,6 @@ struct MonsterRelease {
     uint64_t infernoUntil{};
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
     bool nativeCallbackStarted{},cancelled{};
-    std::shared_ptr<SkillRelease> shadow;
+    std::shared_ptr<SkillRelease> nativeSkill;
 };
 }

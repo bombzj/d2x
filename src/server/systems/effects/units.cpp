@@ -241,7 +241,7 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
     const auto result=ports_.transactions.commit(std::move(*plan.value));
     return result;
 }
-DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t tick) {
+DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random) {
     const auto *m=ports_.monsters.find(id);
     if(!m || !m->alive() || !skill.appliedEffect) return {DomainStatus::InvalidActor,{}};
     if(!m->rule.stats || !m->rule.states || !m->nativeStats || !m->nativeStats->sources ||
@@ -262,7 +262,8 @@ DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t
     if(spec.state.id>=0) publication.facts.emplace_back(StateFact{id,1,m->area,spec.state.id,true,stats});
     if(skill.castOverlayId>=0) publication.facts.emplace_back(OverlayFact{id,1,m->area,skill.castOverlayId});
     if(spec.state.id>=0) unit.nativeStats[spec.state.id]=std::move(stats);resources.sample(unit.states);
-    prepareUnitEffects(publication,id,unit,resources.take(),tick);
+    auto life=resources.take();if(random) {life.random=random;life.changed=true;}
+    prepareUnitEffects(publication,id,unit,std::move(life),tick);
     if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
     const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},std::move(publication.facts)});
     if(!sent) return {sent.status,{}};

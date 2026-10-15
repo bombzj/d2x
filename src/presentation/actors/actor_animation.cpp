@@ -1,4 +1,5 @@
 #include "actor_animation.hpp"
+#include "gameplay/actions/shape_timing.hpp"
 #include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/weapon_volley.hpp"
@@ -27,6 +28,8 @@ std::string keyFor(int palette, const ActorAnimationRequest &request) {
         std::to_string(request.nativeMonsterTransform) + ":" +
         std::to_string(request.finalFrame) + ":" + std::to_string(request.shadow) + ":" +
         std::to_string(request.playerSequence) + ":" + (request.fasterCast ? std::to_string(*request.fasterCast) : "unknown");
+    if(request.shapeSource) key+=":shape:"+request.shapeSource->token+":"+request.shapeSource->weapon;
+    if(request.attackTiming) key+=":"+std::to_string(request.attackTiming->weaponItemSpeed)+":"+std::to_string(request.attackTiming->weaponItemIAS)+":"+std::to_string(request.attackTiming->equipped);
     if(request.attackTiming) key+=":"+std::to_string(request.attackTiming->itemIAS)+":"+std::to_string(request.attackTiming->weaponSpeed)+":"+std::to_string(request.attackTiming->skillRate);
     if(request.recoveryTiming) key+=":recovery:"+std::to_string(request.recoveryTiming->hitRecovery)+":"+std::to_string(request.recoveryTiming->block)+":"+std::to_string(request.recoveryTiming->holyShield);
     key+=":"+std::to_string(request.repeatCount)+":"+std::to_string(request.rollbackPercent)+":"+std::to_string(request.sequenceRateBonus);
@@ -158,12 +161,20 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
             result.durationFrames=AnimationTiming{int(record->frames),speed}.durationTicks();
             result.releaseTime=-1;
         }
-        if(request.attackTiming && (mode=="a1" || mode=="a2" || (request.category=="chars" && (mode=="kk" || mode=="th" || mode=="s1" || mode=="s3" || mode=="s4" || (mode=="s2" && request.skillUsesAttackRate))))) {
+        if(request.attackTiming && (mode=="a1" || mode=="a2" || ((request.category=="chars" || request.shapeSource) && (mode=="kk" || mode=="th" || ((mode=="s1" || mode=="s2" || mode=="s3" || mode=="s4") && (!request.shapeSource || request.skillUsesAttackRate)))))) {
             const auto &known=*request.attackTiming;
             int action=0;
             for(size_t frame=0;frame<record->frameFlags.size();++frame) if(record->frameFlags[frame]==1 || record->frameFlags[frame]==2) {action=int(frame);break;}
             const auto start=attackStartingFrame(parts.token=="am"?"ama":parts.token=="so"?"sor":"",parts.weapon,mode);
-            const WeaponAttackTiming timing{mode,int(record->frames),effectiveAttackSpeed(record->speed,known.itemIAS,known.weaponSpeed,known.skillRate),action,start};
+            int speed=effectiveAttackSpeed(record->speed,known.itemIAS,known.weaponSpeed,known.skillRate);
+            if(request.shapeSource) {
+                auto key=request.shapeSource->token+"a1"+request.shapeSource->weapon;
+                for(auto &letter:key) letter=char(std::toupper(static_cast<unsigned char>(letter)));
+                const auto *human=timing_.find(key);if(known.equipped && !human) return {};
+                speed=shapeAttackSpeed(int(record->frames),record->speed,human?int(human->frames):0,human?human->speed:0,
+                    known.itemIAS,known.weaponSpeed,known.skillRate,known.weaponItemSpeed,known.weaponItemIAS,known.equipped);
+            }
+            const WeaponAttackTiming timing{mode,int(record->frames),speed,action,start};
             result.fps=float(timing.speed)*25.f/256.f;result.start=start;
             result.releaseTime=float(timing.actionTick())/25.f;result.durationFrames=timing.durationTicks();
         }
@@ -174,7 +185,7 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
         if(record) result.durationFrames=AnimationTiming{int(record->frames),*request.animationRate}.durationTicks(result.start);
     }
     result.frameCount-=result.start;
-    if((request.category=="monsters" || request.monsterUnit) && record && result.fps>0)
+    if(((request.category=="monsters" && !request.shapeSource) || request.monsterUnit) && record && result.fps>0)
         result.durationFrames=monsterAnimationTicks({int(record->frames),int(std::lround(result.fps*256.f/25.f))},result.start);
     if(request.repeatCount>1 && (mode=="a1" || mode=="a2" || mode=="kk")) {
         const int speed=int(std::lround(result.fps*256.f/25.f));
@@ -279,7 +290,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         result.releaseTime=result.releaseTimes.front();result.durationFrames=WeaponAttackTiming{"sq",int(sequence.frames.size()),speed,0,0,true}.durationTicks();return result;
     }
     if (const auto sequence=playerCastSequence(request.playerSequence); sequence && request.category == "chars") {
-        baseRequest.mode = request.playerSequence==13?"s1":"sc";
+        baseRequest.mode = request.playerSequence==13 || request.playerSequence==18?"s1":"sc";
         const auto *base = resolve(graphics, palette, baseRequest);
         if (!base || base->animation.count <= *std::max_element(sequence->frames.begin(),sequence->frames.end()) ||
             (!sequence->fixedSpeed && base->fps <= 0)) return result;

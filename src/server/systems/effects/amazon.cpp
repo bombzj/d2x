@@ -34,19 +34,28 @@ bool System::unitLifeState(EntityId id,uint64_t tick) const {
 std::optional<StatSnapshot> System::unitStatValues(EntityId id,uint64_t tick,std::optional<EntityId> weapon,std::shared_ptr<const StatList> mode) const {
     if(const auto *player=ports_.players.findActor(id)) {
         if(!player->entered || !player->rules.character || !player->rules.character->stats || !player->totals.statSources) return {};
-        if(!weapon && !mode) return player->totals.nativeStats;
         const auto &rules=*player->rules.character->stats;
-        auto source=mode?attributes::withUnitModeStats({player->totals.statSources,player->totals.nativeStats},rules,std::move(mode)).sources:player->totals.statSources;
-        if(weapon) source=statListWithWeapon(*source,*weapon,rules);
+        auto sampled=player->totals.nativeStats;
+        if(weapon || mode) {
+            auto source=mode?attributes::withUnitModeStats({player->totals.statSources,player->totals.nativeStats},rules,std::move(mode)).sources:player->totals.statSources;
+            if(weapon) source=statListWithWeapon(*source,*weapon,rules);
+            sampled=evaluateStatList(rules,*source,{source.get(),{}, {}});
+        }
         // Player totals already contain the posted effect sources. Adding
         // unitStatSources again would double their numeric contribution.
-        return evaluateStatList(rules,*source,{source.get(),{}, {}});
+        // Current resources have one writable owner, outside cached totals.
+        sampled.values.insert_or_assign(StatKey{rules.names.at("hitpoints"),0},player->persistent.player.hp.raw());
+        sampled.values.insert_or_assign(StatKey{rules.names.at("mana"),0},player->persistent.player.mana.raw());
+        sampled.values.insert_or_assign(StatKey{rules.names.at("stamina"),0},player->persistent.player.stamina.raw());
+        return sampled;
     }
     const auto *unit=ports_.monsters.find(id);
     if(!unit || !unit->nativeStats || !unit->nativeStats->sources || !unit->rule.stats) return {};
     auto source=mode?attributes::withUnitModeStats(*unit->nativeStats,*unit->rule.stats,std::move(mode)).sources:unit->nativeStats->sources;
     if(weapon) source=statListWithWeapon(*source,*weapon,*unit->rule.stats);
-    return evaluateStatListWithSources(*unit->rule.stats,*source,unitStatSources(id,tick));
+    auto sampled=evaluateStatListWithSources(*unit->rule.stats,*source,unitStatSources(id,tick));
+    sampled.values.insert_or_assign(StatKey{unit->rule.stats->names.at("hitpoints"),0},nativeChecked(unit->life));
+    return sampled;
 }
 int System::unitDefense(EntityId id,uint64_t tick) const {
     if(const auto *player=ports_.players.findActor(id)) return player->totals.character.defense;

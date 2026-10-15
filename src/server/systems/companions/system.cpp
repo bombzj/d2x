@@ -101,6 +101,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         }
         if(body->amazonPet && p && p->persistent.player.hp>0) {if(amazonStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(body->assassinPet) {if(assassinStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
+        if(body->druidPet) {if(refreshDruid(pet,tick)==StepStatus::Blocked || (!pet.removeAt && druidStep(pet,tick)==StepStatus::Blocked)) blocked=true;++it;continue;}
         if(body->necroSummon && p && p->persistent.player.hp>0) {if(refreshNecro(pet,tick)==StepStatus::Blocked) blocked=true;if(necroStep(pet,tick)==StepStatus::Blocked) blocked=true;++it;continue;}
         if(!p || p->area!=body->area || p->persistent.player.hp<=0) {++it;continue;}
         if(body->amazonPet) {++it;continue;}

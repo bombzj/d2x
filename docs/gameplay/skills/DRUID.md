@@ -1,11 +1,75 @@
-# 德鲁伊技能边界
+# 德鲁伊技能实现
 
-更新：2026-10-09。自研服务端尚未迁入德鲁伊职业技能执行。本页预留逐技能台账；已加载定义、原图技能树和通用请求不代表职业施法、变形或召唤已可用。迁入规范见[COMMON](COMMON.md)。
+更新：2026-10-16。30项职业技能及对应动物／藤蔓／灵体、隐藏技能、客户端依赖已接入新底座，完成Windows Release统一构建、双包更新及下列Single Player有限运行。定义、权威执行和客户端表现分别核对，构建／有限运行不等同于完整原版验收。公共规范见[COMMON](COMMON.md)。
 
-| 待迁入范围 | 当前缺口 |
+| ID | 原Skills身份 | 原服务端入口／依赖 |
+| --- | --- | --- |
+| 221 | Raven | Do114；真实乌鸦、原攻击次数／盘旋AI及不可受击资格 |
+| 222 | Plague Poppy | Do115；毒藤、地下状态、Vine Attack与目标毒资格 |
+| 223 | Wearwolf | Do116；狼形态状态、属性／期限、动作及技能资格 |
+| 224 | Shape Shifting | 原无状态列表的被动；由两种变形公式读取等级 |
+| 225 | Firestorm | Do117；首枚普通构造与其后逐枚Charged初始化 |
+| 226 | Oak Sage | Do119；真实灵体与Oak Sage Aura、同行／逃离AI |
+| 227 | Summon Spirit Wolf | Do119；真实灵狼、协同属性、传送／同行与近战 |
+| 228 | Wearbear | Do116；熊形态状态、属性／期限、动作及技能资格 |
+| 229 | Molten Boulder | Do0；原emerge／滚石／结束子体及复合伤害 |
+| 230 | Arctic Blast | St11／Do19；原序列18、INFERNO持续参数、费用与停止 |
+| 231 | Cycle of Life | Do115；生命藤、原可用尸体选择／消费与主人恢复 |
+| 232 | Feral Rage | St56／Do120；开始阶段预分配、成功后累积与有序属性写入 |
+| 233 | Maul | St56／Do120；开始阶段预分配、层数／眩晕与增伤列表 |
+| 234 | Eruption | Do28；原目标合法性、中心控制器与地裂子体 |
+| 235 | Cyclone Armor | Do18；公共六AuraStat／五PassiveStat、原Event25吸收 |
+| 236 | Heart of Wolverine | Do119；真实灵体与Wolverine Aura |
+| 237 | Summon Fenris | Do119；真实狂狼、协同属性、吃尸狂暴及传送／同行 |
+| 238 | Rabies | St57／Do121；开始准确率、动作阶段再分配、独立感染列表及传播弹体 |
+| 239 | Fire Claws | St58／Do2；开始阶段武器填充后追加技能元素、动作阶段排出 |
+| 240 | Twister | Do118；逐枚Charged初始化与眩晕弹体 |
+| 241 | Vines | Do115；法力藤、原可用尸体选择／消费与主人恢复 |
+| 242 | Hunger | Do122；武器／元素填充后物理比例及额外吸取 |
+| 243 | Shock Wave | Do8；原扇形飞弹与独立眩晕长度 |
+| 244 | Volcano | Do123；来源预抽种子、原落点资格及火山控制器 |
+| 245 | Tornado | Do118；Charged初始化、原移动与周期范围接收 |
+| 246 | Spirit of Barbs | Do119；真实灵体与Barbs Aura、原反伤事件 |
+| 247 | Summon Grizzly | Do119；真实熊、协同属性、原AI与BearSmite序列 |
+| 248 | Fury | St37／Do13；原连续攻击、回滚、目标与分配顺序 |
+| 249 | Armageddon | Do124／ActiveState146；原技能参数种子、五次落点探测与控制弹体 |
+| 250 | Hurricane | Do124／ActiveState145；原状态期限、一次每轮伤害掷值与逐目标接收 |
+
+`content/skills/druid_data`从当前MPQ准备程序、限制状态、原生召唤身份与参数；`gameplay/skills/druid_summon`复用公共公式、召唤被动／属性和MonLvl层。动物、藤蔓、灵体的身份／位置／资源／技能与种子由真实 `monsters::Actor` 唯一持有；伙伴只保存控制与AI阶段。狼／狂狼／熊按当前PetType.group互斥，不能套用D2R的共存规则。乌鸦攻击次数、灵体光环和藤蔓尸体选择各有原生程序，不以普通怪物AI替代。
+
+数值与时序以当前MPQ和目标1.13c为准。固定D2MOO的Do117把正数子体数量判为失败，原版D2Game `6FC6573A–6FC65769` 明确正数通过并先创建一枚、随后递减；采用同版本原分支。St56／57／58分别位于原版 `6FC64D70`／`6FC64C20`／`6FC64ED0`，Do114–124及ActiveState145／146已从原指针表定位。原表、DLL分析及临时证据只放忽略目录 `artifacts/druid-implementation-20261016/`，不进入源码或分发。
+
+## 执行与公共边界
+
+- `content/skills/druid_data`只准备当前MPQ的Skills／States／PetType／MonStats／MonLvl及AnimData；`hosting/druid_summon_content`补齐真实单位动作、序列、组件、生命周期和原伤害来源。服务器不读取MPQ。
+- `skills/druid`承接出生／持续起手，`druid_active`保存ActiveState145／146的回调续点，`druid_melee`保存St56／57／58及动作阶段的已分配接触；容量不足时复用已掷值与阶段，不重做伤害或费用。
+- 变形配置共用`gameplay/actions/shape_timing`与`skills/shape`，按原玩家→怪物模式回退、UseAttackRate、原形态帧数和武器自身速度计算，保留真实玩家身份。狼／熊状态退出按原组内状态ID顺序撤销，狂怒／撞槌单独直分配列表，不误触变形互斥。
+- `companions/native_summon`、`native_pet_move`和`monsters::prepareNativePet`供刺客／德鲁伊共用；AI阶段不拥有第二份单位位置、属性或随机流。动物、灵体、毒藤和资源藤各保留原分支。技能等级变化只重算PetType上限并从旧宠物起撤出，不重掷存活宠物的出生生命或重做被动列表。
+- 灵体隐藏光环按当前MPQ的sumskill链接准备，SetSummonPassiveStats在出生事务内按继承次序选择右技能；共用`effects/unit_aura_selection`的列表／原周期事件，不延迟到AI或用装备光环替代。
+- 藤蔓／狂狼找尸体走原圆形UnitFind范围和房间单位顺序，再检查原DEAD模式、deadCol、corpseSel、udead及敌我资格。CorpseCycler先标记不可选择、创建以主人为owner的恢复弹体，再发布A3；Fenris Rage保留独立吃尸／状态阶段。公共移动路径按真实单位查询目标位置，不以活体攻击资格拒绝尸体追踪；攻击／施法接收仍独立复验资格。
+- `presentation/remote`只消费原状态与A3／73／动作包；补齐原Clt67–69、Hurricane90、Volcano91、Armageddon92、CorpseCycler93和Vine89／St49，Fenris St51／Do79，以及飞弹Clt47–51／60、Hit52–56。熔浆巨岩保留反弹／地面火焰／飞石，火山落石使用原11位定点Gfx轨迹。客户端公式目录包含cltcalc1／2／3，原CelFile=null的控制弹体保留程序与寿命但不绘制图像。未传输的客户端粒子种子仅用于本地表现，不消费权威战斗种子。
+
+## 同版本差异与证据
+
+目标为经典LoD 1.13c，固定D2MOO仅作为1.10f重建证据。除了Do117的正数计数分支，1.13c灵狼 `6FCCAF61–6FCCAF98`明确区分近战攻击与追击；未照抄重建代码中恒真的MonStats指针判断。灵狼候选的碰撞反向条件则由 `6FCCADDC–6FCCAE10`确认保留。正常传送仍分别为灵狼4帧／狂狼2帧。原版SetSummonPassiveStats `6FC6F970`的 `6FC6FE7F–6FC6FE8E`在继承技能的aura标记成立时调用右技能选择，早于单位事件登记；灵体采用同一顺序。Fury共用原近战范围筛选0x20000及GUID后继选择；该位不是物件／物品目标类别。资源藤回收弹体按剩余帧触发，当前生命／法力从唯一资源所有者合入公共单位属性视图，再按原整数百分比加回并封顶。
+
+客户端A3入口 `6FB5EFB0`通过原cltprgfunc表派发。无目标单位的原GUID为FFFFFFFF，参数字节与全局X／Y保持原字段位置；不再因空目标丢弃火山／末日战场事件。Hurricane90／Volcano91／Armageddon92分别位于 `6FB79BE0`／`6FB794E0`／`6FB795F0`；飞弹Clt47／48／50为 `6FB6B470`／`6FB675C0`／`6FB6B2A0`，Gfx定点更新为 `6FB77FB0`。狂狼吃尸的CltSt51／Do79为 `6FB74990`／`6FB742B0`，按起手保存的尸体坐标在动作时构造cltmissilea；服务端尸体消费事务以真实接收尸体为上下文，狼的狂暴列表随后独立写入。表、反汇编、运行日志及截图放忽略目录，不进入源码或运行包。
+
+## 有限运行证据
+
+2026-10-16以当前MPQ、84级隔离角色Hero和原MCP／D2GS单机入口运行；经验、资源、实际怪物及合法地图旅行仅用于准备条件，不计为自然成长／通关。没有新增测试脚本、用例或专用程序。以下跨迭代包观察，最终runtime7包专门复验列明的共享修正，不把早期样本当作全部重新运行。
+
+| 路径 | 实际观察 |
 | --- | --- |
-| 元素技能 | 专属弹体／地面效果／持续范围、伤害与中断规则尚未迁入 |
-| 变形／变形攻击／被动 | 形态动作、装备／施法资格、时序及属性生命周期尚未迁入 |
-| 动物／藤蔓／灵体 | 各自限额、目标／尸体资格、AI、状态贡献、死亡与同行规则尚未迁入 |
+| 全部学习／保存 | 221–250的30项均经原学习请求取得；最终新进程恢复84级、全部30项，临时状态与宠物均为0。 |
+| 元素与持续 | Firestorm三枚458及457子体、Boulder、Fissure、Twister、Volcano、Tornado实际推进；Cyclone Armor状态151。Arctic Hold产生459并由Stop撤出。最终包重跑Hurricane144／Armageddon145，实际粒子、落石／地面火和原图截图可见，客户端限制为空；回城后持续状态／飞弹清空。 |
+| 变形与近战 | 狼139与熊140改变生命上限；由狼选熊第一次撤形、第二次入熊，撤形后生命上限还原。Feral Rage120、Maul117、Rabies、Fire Claws、Hunger、Shock Wave与Fury实际施放；转换清除蓄力。最终包重跑狼与Fury并清空待释放。非隔离伤害样本不作逐点伤害结论。 |
+| 真实宠物／上限 | 十种原MonStats单位均出生；毒藤自主Vine Attack294产生475。五级Raven／Spirit Wolf各连续六次召唤后保留五只；狼／狂狼／熊互斥、三灵体及三藤蔓分别互斥。跨区跟随和主人死亡后存活宠物清零有观察。上限与死亡样本来自中间runtime4，后续未改上限算法。 |
+| 灵体增益 | runtime5三种灵体的目标状态149／148／147实际刷新；Oak使最大生命raw45952→59737，Wolverine使准确率70→87，Barbs原包属性131=50。最终包重跑Oak，动物及藤蔓正常接收它的公共状态。 |
+| 资源藤 | runtime5生命藤消费真实尸体后129→136；法力藤从整数176恢复到179，并带正常逐帧回蓝。最终包在Oak增益下重新运行两藤及尸体消费，不再从零覆盖资源。 |
+| 隐藏动作 | runtime5灰熊97自主两次释放BearSmite326。最终包狂狼67按房间顺序消费针刺鼠66，尸体不可再用，狼实际获得fenris_rage138、属性25=100；吃尸客户端程序无缺口提示。 |
+| 共享接口回归 | 最终包用隔离刺客副本观察157→159互斥；影子战士／大师替换、250帧推进及野外新战士124自主三次释放251。两职业最终宿主failures=0、characterIssues为空，退出码0。 |
 
-现有[同行者](COMPANIONS.md)与弹体／effects架构可作为接入入口，不能把女巫／亚马逊召唤能力算作德鲁伊支持。后续先参考master，再按当前MPQ核对；本地D2MOO `SkillDruid.cpp`、AiThink、PlayerPets与状态程序提供职责依据，来源见[资料来源](../../resources/THIRD_PARTY.md)。本页没有当前职业专项运行证据，完整逐项Clt／Srv与共享边界仍待登记。
+最终德鲁伊回城样本的casts／pendingReleases／damage／missiles／eventsQueued均为0。证据在忽略目录`artifacts/druid-implementation-20261016/`；最终包的`final-fenris7*`、`final-*-7.json`、`final-fury7*`、`final-elements7-client.json`／`final-hurricane-armageddon7.png`、`final-town7.json`、`final-reload8.json`与`assassin-*7.json`绑定本次收尾。包哈希与构建日志统一见运行包记录。
+
+中间runtime4曾有一次后台进程消失，未捕获退出栈并留下隔离存档锁；原文件保留，后续使用独立副本。在挂调试器的混合宠物／上限／战斗／死亡与后续runtime5–8中未复现，正常退出码0；这不能作为已定位该次退出原因的证明。完整随机／事件交错、装备／难度／多人／背压矩阵不因程序入口或公共函数存在而认证。其余公共准确性门槛见[总计划](../../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)，最终包身份和实际运行范围由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。

@@ -16,18 +16,22 @@
 
 namespace d2x::server::effects {
 // SKILLS_ApplyRedemptionEffect: D2MOO 5596f5c, MIT; docs/licenses/D2MOO.txt.
-DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareRedeemedCorpse(EntityId id,uint64_t tick) {
+DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareConsumedCorpse(EntityId id,int state,uint64_t tick) {
     const auto *corpse=ports_.monsters.find(id);
     if(!corpse || !ports_.monsters.selectableCorpse(id,tick)) return {DomainStatus::Unavailable,{}};
     if(corpse->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    if(corpse->rule.redeemedState<0) throw std::logic_error("Missing original redeemed state");
-    auto candidate=*corpse;candidate.corpseUnavailable=true;
-    candidate.deathStates.insert(candidate.rule.redeemedState);++candidate.revision;
+    if(state<0 || !corpse->rule.states || !corpse->rule.states->contains(state)) throw std::logic_error("Missing original consumed-corpse state");
+    auto candidate=*corpse;candidate.corpseUnavailable=true;candidate.deathStates.insert(state);++candidate.revision;
     auto publication=std::make_shared<AuraUnitPublication>();publication->tick=tick;
     stageAuraActors(*publication,{{id,std::move(candidate)}},0);
-    publication->facts.emplace_back(StateFact{id,1,corpse->area,corpse->rule.redeemedState,true});
+    publication->facts.emplace_back(StateFact{id,1,corpse->area,state,true});
     return {DomainStatus::Applied,std::move(publication)};
 }
+DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareRedeemedCorpse(EntityId id,uint64_t tick) {
+    const auto *corpse=ports_.monsters.find(id);if(!corpse) return {DomainStatus::Unavailable,{}};
+    return prepareConsumedCorpse(id,corpse->rule.redeemedState,tick);
+}
+
 DomainResult<bool> System::redeemUnitCorpse(EntityId source,EntityId corpse,int skill,int rank,uint64_t tick,bool skipChance) {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto owner=participants.find(source);if(!owner.id()) return {DomainStatus::Unavailable,{}};

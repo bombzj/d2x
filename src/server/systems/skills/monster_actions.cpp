@@ -1,7 +1,9 @@
 #include "system.hpp"
 #include "runtime.hpp"
 #include "assassin_kick.hpp"
+#include "druid_melee.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/skills/druid_summon.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -40,7 +42,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
     if((petAttack && request.skill) || !prepared) return {DomainStatus::Unavailable,{}};
     auto slot=*prepared;
-    if(monster->assassinPet) {
+    if(monster->assassinPet || (monster->druidPet && request.skill)) {
         const auto sampled=ports_.effects.unitStatValues(monster->id,request.tick);if(!sampled) return {DomainStatus::Unavailable,{}};
         const auto ranks=nativeMonsterSkillRanks(rule.baseSkillRanks,*sampled,*rule.stats,*rule.formulas);
         const auto rank=ranks.find(request.skill);if(rank==ranks.end() || rank->second<=0) return {DomainStatus::Unavailable,{}};
@@ -58,12 +60,14 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool healing=slot.action==MonsterAttackRule::Action::Heal;
     const bool shadowSelf=monster->assassinPet && monster->assassinPet->definition->warp &&
         !target->id && rule.formulas->skills.at(request.skill).number("aitype")==1;
-    const bool selfAction=shadowSelf || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay;
+    const bool druidTeleport=monster->druidPet && request.skill && rule.formulas->skills.at(request.skill).number("srvdofunc")==98;
+    const bool selfAction=shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const bool corpseSkill=monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvdofunc")==55;
+    const bool corpseSkill=(monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvdofunc")==55) ||
+        (monster->druidPet && request.skill && (rule.formulas->skills.at(request.skill).number("srvstfunc")==63 || rule.formulas->skills.at(request.skill).number("srvdofunc")==137));
     if(!resurrection && !healing && !selfAction && !corpseSkill && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
-    if(corpseSkill && !ports_.monsters.consumableCorpse(target->id,monster->area,request.tick)) return {DomainStatus::Unavailable,{}};
+    if(corpseSkill && !(monster->druidPet?ports_.monsters.nativeUsableCorpse(target->id,request.tick):ports_.monsters.consumableCorpse(target->id,monster->area,request.tick))) return {DomainStatus::Unavailable,{}};
     if(corpseSkill && victim) destination=std::pair{victim->position,victim->rule.size};
     if(healing && !ports_.monsters.mummySupportTarget(monster->id,target->id,request.tick,false)) return {DomainStatus::InvalidActor,{}};
     if(selfAction && !destination) destination=std::pair{monster->position,0};
@@ -73,7 +77,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
     if(!destination || target->type>1 || (target->type==1 && !victim && !selfAction) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
-    if ((area.definition.town && !(monster->assassinPet && monster->assassinPet->definition->warp && rule.formulas->skills.at(request.skill).number("intown"))) || (!special && (slot.missile ? false :
+    if ((area.definition.town && !(((monster->assassinPet && monster->assassinPet->definition->warp) || monster->druidPet) && rule.formulas->skills.at(request.skill).number("intown"))) || (!special && (slot.missile ? false :
         (request.monsterMode != 9 && meleeDistance(monster->position,monster->rule.size,destination->first,destination->second)>rule.meleeRange) ||
         !area.definition.collision.segment(monster->position,destination->first)))) return {DomainStatus::Unavailable,{}};
     if(slot.action==MonsterAttackRule::Action::Charge && meleeDistance(monster->position,rule.size,destination->first,destination->second)<=rule.meleeRange)
@@ -96,7 +100,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         timingInput.otherRate=buffs.otherAnimationRate+(monster->combatCompanion()?monster->petStats.attributes.otherAnimationRate:0);
     }
     const auto timing=planMonsterActionTiming(timingInput);
-    const auto duration=timing.duration,releaseTick=timing.release;
+    const auto duration=timing.duration,releaseTick=druidTeleport?(monster->druidPet->definition->ai==DruidPetDefinition::Ai::DireWolf?2:4):timing.release;
     auto reserved=monster->combatRandom;
     std::optional<NativeUnitStats> modeState;
     if(monster->nativeStats) {
@@ -154,13 +158,13 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         shadow=*started.value;reserved=monster->combatRandom;
         shadow->weaponHits=timing.events;shadow->weaponFrames=timing.duration;
     }
-    const auto actionRandom=monster->assassinPet?reserved:childRandom(reserved);
+    const auto actionRandom=(monster->assassinPet || monster->druidPet)?reserved:childRandom(reserved);
     if(!petAttack) damage.actionRandom=actionRandom;
     if (slot.missile || special || !slot.releaseFrames.empty()) {
         if (monsterReleases_.size() >= 4096) return {DomainStatus::Capacity,{}};
         MonsterRelease release{request,slot,monster->area,area.generation,request.tick+releaseTick,actionRandom,monster->interruption,{}};
         release.started=request.tick;
-        release.shadow=std::move(shadow);
+        release.nativeSkill=std::move(shadow);
         if(monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvstfunc")==53) {
             auto sampled=ports_.effects.unitStatValues(monster->id,request.tick);
             auto input=formulaInput(*monster,*sampled);SkillFormulaValues values(*rule.formulas,input);
@@ -196,6 +200,13 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         const auto motion=ports_.monsters.startSkillMotion(monster->id,goal,request.tick+duration,slot.movementPercent,false,request.tick,target->id);
         if(!motion) {monsterReleases_.erase(monster->id);return motion;}
     }
+    if(begun && slot.action==MonsterAttackRule::Action::Druid) {
+        const auto found=monsterReleases_.find(monster->id);
+        if(found!=monsterReleases_.end()) {
+            const auto started=startDruidPet(found->second,{request.tick});
+            if(!started && started.status!=DomainStatus::Capacity) {monsterReleases_.erase(found);return started;}
+        }
+    }
     return begun;
 }
 StepStatus System::releaseMonsters(TickContext tick) {
@@ -203,24 +214,48 @@ StepStatus System::releaseMonsters(TickContext tick) {
     bool blocked=false;
     for (auto it=monsterReleases_.begin();it!=monsterReleases_.end();) {
         auto &pending=it->second;
+        if(pending.attack.action==MonsterAttackRule::Action::Druid && (!pending.nativeSkill || !pending.nativeSkill->nativeStartPrepared)) {
+            const auto *source=ports_.monsters.find(pending.request.actor);
+            if(!source || !source->alive() || pending.cancelled || source->interruption!=pending.interruption || source->area!=pending.area) {
+                if(pending.nativeSkill && pending.nativeSkill->druidMelee && pending.nativeSkill->druidMelee->occurrence)
+                    ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->druidMelee->occurrence);
+                it=monsterReleases_.erase(it);continue;
+            }
+            const auto started=startDruidPet(pending,tick);
+            if(started.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(!started) {it=monsterReleases_.erase(it);continue;}
+        }
         if (pending.due>tick.tick) {++it;continue;}
         const auto *source=ports_.monsters.find(it->first);const auto *area=ports_.areas.find(pending.area);
         const bool continuing=pending.nativeCallbackStarted;
-        if (!source || (source->owner && !source->assassinPet && !source->necroSummon && !source->hireling && !source->conversion && !source->hydra()) || (!continuing && (!source->alive() || pending.cancelled || source->interruption!=pending.interruption || ports_.monsters.frozen(source->id,tick.tick) || source->stunnedUntil>tick.tick || source->knockedUntil>tick.tick)) || source->area!=pending.area ||
+        if (!source || (source->owner && !source->assassinPet && !source->druidPet && !source->necroSummon && !source->hireling && !source->conversion && !source->hydra()) || (!continuing && (!source->alive() || pending.cancelled || source->interruption!=pending.interruption || ports_.monsters.frozen(source->id,tick.tick) || source->stunnedUntil>tick.tick || source->knockedUntil>tick.tick)) || source->area!=pending.area ||
             !area || area->generation!=pending.generation || (area->definition.town &&
-                !(source->assassinPet && source->assassinPet->definition->warp && source->rule.formulas->skills.at(pending.request.skill).number("intown")))) {
-            if(pending.shadow && pending.shadow->assassinKick && pending.shadow->assassinKick->occurrence)
-                ports_.combat.discardNativeMelee(pending.request.actor,*pending.shadow->assassinKick->occurrence);
+                !(((source->assassinPet && source->assassinPet->definition->warp) || source->druidPet) && source->rule.formulas->skills.at(pending.request.skill).number("intown")))) {
+            if(pending.nativeSkill && pending.nativeSkill->assassinKick && pending.nativeSkill->assassinKick->occurrence)
+                ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->assassinKick->occurrence);
+            if(pending.nativeSkill && pending.nativeSkill->druidMelee && pending.nativeSkill->druidMelee->occurrence)
+                ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->druidMelee->occurrence);
             ports_.companions.cancel(pending.request.actor);it=monsterReleases_.erase(it);continue;
         }
         auto &unit=std::get<UnitTarget>(pending.request.target);
+        if(pending.attack.action==MonsterAttackRule::Action::Druid) {
+            DomainResult<bool> result;
+            {auto execution=state_.executingRelease(source->id);result=releaseDruidPet(pending,tick);}
+            if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(result && !*result.value && !pending.cancelled) {++it;continue;}
+            if(pending.nativeSkill && pending.nativeSkill->druidMelee && pending.nativeSkill->druidMelee->occurrence)
+                ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->druidMelee->occurrence);
+            ports_.companions.cancel(pending.request.actor);it=monsterReleases_.erase(it);continue;
+        }
         if(pending.attack.action==MonsterAttackRule::Action::Assassin) {
             DomainResult<bool> result;
             {auto execution=state_.executingRelease(source->id);result=releaseAssassinPet(pending,tick);}
             if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
             if(result && !*result.value && !pending.cancelled) {++it;continue;}
-            if(pending.shadow && pending.shadow->assassinKick && pending.shadow->assassinKick->occurrence)
-                ports_.combat.discardNativeMelee(pending.request.actor,*pending.shadow->assassinKick->occurrence);
+            if(pending.nativeSkill && pending.nativeSkill->assassinKick && pending.nativeSkill->assassinKick->occurrence)
+                ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->assassinKick->occurrence);
+            if(pending.nativeSkill && pending.nativeSkill->druidMelee && pending.nativeSkill->druidMelee->occurrence)
+                ports_.combat.discardNativeMelee(pending.request.actor,*pending.nativeSkill->druidMelee->occurrence);
             ports_.companions.cancel(pending.request.actor);
             it=monsterReleases_.erase(it);continue;
         }

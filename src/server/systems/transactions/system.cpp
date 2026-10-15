@@ -689,7 +689,7 @@ DomainResult<> System::commit(Plan plan) {
         batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},state?state->area:hit?hit->area:player.area},{fact}});
     }
     if(plan.missileBirth) for(const auto &fact:plan.missileBirth->facts())
-        batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},std::get<MissileFact>(fact).area},{fact}});
+        batches.push_back({0,request->actor.tick,plan.id,{AudienceKind::Area,{},missiles::nativeBirthFactArea(fact)},{fact}});
     const auto published = ports_.events.publishGroup(std::move(batches));
     if (!published) return {published.status, {}};
     if (edit && edit->world) {

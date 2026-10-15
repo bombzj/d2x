@@ -278,6 +278,8 @@ class System {
         const attributes::AuraSourceObserver &,const attributes::AuraSourceReader &,PlayerPoisonCandidate &,std::vector<DomainFact> &,
         const AuraRecipientPreparation &,bool force);
     DomainResult<> assignUnitAura(EntityId,const AuraDefinition &,uint64_t tick,std::optional<int> assignedRank={});
+    void prepareUnitAuraSelection(AuraUnitPublication &,EntityId,int skill,uint64_t tick,
+        const AuraRecipientPreparation &,std::optional<int> assignedRank={});
     DomainResult<> assignUnitSkills(EntityId,std::span<const std::pair<int,int>>,uint64_t tick);
     void prepareUnitItemAura(AuraUnitPublication &,monsters::Actor &,const SkillAuraChange &,uint64_t,
         const AuraRecipientPreparation &);
@@ -307,6 +309,8 @@ class System {
     DomainResult<> apply(const ActorContext &, CombatEffectSpec, bool restoreStamina = false,
         std::span<const StatValue> writes={},bool refreshPassives=false);
     DomainResult<> removeState(const ActorContext &,int state);
+    DomainResult<> druidRage(const ActorContext &,const SkillCastSpec &);
+    DomainResult<bool> removeStateGroup(const ActorContext &,int group);
     DomainResult<> removeUnitState(EntityId,int state,uint64_t tick);
     DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {},std::span<const DomainFact> facts={});
@@ -317,7 +321,7 @@ class System {
     DomainResult<> nativeArea(const NativeAreaSpec &,uint64_t tick,std::shared_ptr<NativeAreaPulse> &);
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);
-    DomainResult<> unitSkill(EntityId,const SkillCastSpec &,uint64_t);
+    DomainResult<> unitSkill(EntityId,const SkillCastSpec &,uint64_t,std::optional<std::pair<uint64_t,uint64_t>> random={});
     DomainResult<> hirelingAura(EntityId,const AuraDefinition &,uint64_t);
     bool hirelingAuraActive(EntityId,int skill,int rank) const;
     DomainResult<> convert(const ActorContext &,EntityId,const WeaponSkillSpec &);
@@ -332,6 +336,7 @@ class System {
     DomainResult<> skillAuraState(EntityId source,EntityId target,int skill,int rank,int32_t duration,uint64_t tick,
         NativeSkillStateProcedure=NativeSkillStateProcedure::FingerMageSpider);
     DomainResult<> nativeFear(const NativeFear &,uint64_t tick);
+    DomainResult<std::shared_ptr<AuraUnitPublication>> prepareConsumedCorpse(EntityId,int state,uint64_t tick);
     DomainResult<std::shared_ptr<AuraUnitPublication>> prepareRedeemedCorpse(EntityId,uint64_t tick);
     DomainResult<bool> redeemUnitCorpse(EntityId source,EntityId corpse,int skill,int rank,uint64_t tick,bool skipChance=false);
     std::vector<ModifierStatSource> unitStatSources(EntityId,uint64_t tick) const;

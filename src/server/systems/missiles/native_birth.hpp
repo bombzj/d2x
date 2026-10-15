@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace d2x::server::missiles {
+RegionId nativeBirthFactArea(const DomainFact &fact);
 class System;
 // A constructor batch owns all allocations until its enclosing publication is
 // accepted. Actor births may reserve a contiguous prefix of the same ID range.

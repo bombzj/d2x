@@ -116,7 +116,7 @@ class System {
     DomainResult<MonsterLaunch> spawnMonster(const MonsterSpawn &);
     std::optional<int> nativeDefinition(std::string_view) const;
     DomainResult<EntityId> spawnNative(const NativeSpawn &);
-    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0);
+    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0,std::span<const DomainFact> extraFacts={});
     DomainResult<EntityId> commitNativeBirth(std::shared_ptr<NativeBirthPublication>);
     DomainResult<> direct(const Spawn &, std::vector<EntityId> targets);
     DomainResult<DirectContact> directContact(const Spawn &,std::vector<EntityId>,DirectNotice=DirectNotice::Publish);

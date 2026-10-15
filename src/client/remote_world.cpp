@@ -924,6 +924,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
         event.flags = r.u8(); event.skill = r.u16(); event.level = r.u16();
         event.source = key(r); event.target = key(r);
+        if(event.target->id==UINT32_MAX) event.target.reset();
         const auto x = r.u32(), y = r.u32(); r.finish();
         event.skillArguments=std::array{x,y};
         if (x <= UINT16_MAX && y <= UINT16_MAX) event.point = OnlinePoint{uint16_t(x), uint16_t(y)};

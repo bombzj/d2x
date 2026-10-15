@@ -14,7 +14,7 @@ Misc耐力／解毒／解冻药剂保留原stat/calc顺序，以同一状态列�
 
 诅咒AI的DimVision／Terror／Taunt决策抽到gameplay/monsters/curse_decision。恐惧保留初始目标、参数2首次逃跑与后续失败游走，不把默认30写成随目标距离增长的阈值。嘲讽的-666仅表示保留参数，成功切换AI与分配被拒绝后的目标／下一帧思考分别处理；解除与同级重施保留实际函数选择序号。已实现的沙虫／蝙蝠家庭先经过替代回调再进入特殊AI。怪物Cursed保留逐次公式快照与目标游标。
 
-以上新伤害事件接入的Windows Release CMake配置与all目标构建通过，两包已更新。普通攻击发现直接伤害伪弹体没有MPQ定义，现仅对实际飞弹读取ReturnFire。骨甲耗尽、伤害前偷取生命、铁处女及三种冰甲有历史有限Single Player观察；正常退局／新进程保留人物生命，临时状态清空。刺客30项及传递依赖现已实现、构建打包并完成代表单机观察，见[刺客](ASSASSIN.md)。其余帧事件、队列2物品事件与技能事件的完整交错、特殊目标组8、其余未实施家庭AI与德鲁伊程序仍由后续大模块完成；完整动作／随机流及所有原版程序的验收也未完成。构建、实际包身份和有限运行范围由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。
+以上新伤害事件接入的Windows Release CMake配置与all目标构建通过，两包已更新。普通攻击发现直接伤害伪弹体没有MPQ定义，现仅对实际飞弹读取ReturnFire。骨甲耗尽、伤害前偷取生命、铁处女及三种冰甲有历史有限Single Player观察；正常退局／新进程保留人物生命，临时状态清空。刺客30项及传递依赖现已实现、构建打包并完成代表单机观察，见[刺客](ASSASSIN.md)。其余帧事件、队列2物品事件与技能事件的完整交错、特殊目标组8、其余未实施家庭AI仍由后续大模块完成；德鲁伊30项与动物／藤蔓／灵体已实现并完成列出路径有限运行，验证边界见[德鲁伊](DRUID.md)；完整动作／随机流及所有原版程序的验收也未完成。构建、实际包身份和有限运行范围由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。
 
 `effects/damage_absorption`共用原Event22／24／25，已纳入当前工作区all目标构建。骨甲保留1.13c耗尽时先扣原池值的修正；飓风装甲按火→冰→电消耗同一AuraStat池，保留原版RVA64600的有符号显示更新判断和百分比参数顺序。能量盾按实际接收者资源逐通道扣法力，公式Rand借用其私有种子并随候选提交，方向覆盖图共用原D2Common 11053扇区。玩家、非玩家普通命中及环境伤害分别保留吸收阶段，容量重试不再次消耗池；逐项属性写回不重新登记事件。GetStatListFromUnitAndState共用`CombatEffectSet::findState`的反向投递序，原生复用和状态投影采用同一首列表；旧浮点／批量骨甲吸收入口已撤出，纯伤害缓解不再依赖效果列表。本轮未专项重测全部吸收组合，不能将构建通过当作这些组合的运行认证。
 
@@ -122,7 +122,7 @@ Howl／GrimWard使用独立TerrorUtility入口：投递Terror技能／等级1及
 
 毒率使用固定点每帧伤害，命中当帧计入一次伤害，后续由单一毒状态的HPREGEN期限处理。伤害抗性与毒长度抗性分别求值，Poison Pierce分别作用于两个通道；玩家／佣兵毒长度应用难度惩罚和75%上限，普通怪物保留其原抗性上限。更弱毒不改当前毒率／期限；等强或更强只更新毒率／期限，保留原状态的施毒者及击杀归属，不叠加多个毒状态。持续毒对玩家保留1生命，怪物可致死；解毒、死亡和状态移除清理持续毒。
 
-毒状态的下次扣血帧随提交推进，输出背压后结清仍欠的持续帧再到期；刷新不得覆盖尚未提交的区间。装备毒率先计算Poison Mastery，淬毒匕首将技能长度和装备长度合并后除以装备毒来源数，技能不额外增加来源数。`resolveSkill`接收显式毒伤支配，服务端及原服客户端数值投影使用同一入口。Venom等未实现职业的专用毒长度覆盖不由这些公共函数代替。
+毒状态的下次扣血帧随提交推进，输出背压后结清仍欠的持续帧再到期；刷新不得覆盖尚未提交的区间。装备毒率先计算Poison Mastery，淬毒匕首将技能长度和装备长度合并后除以装备毒来源数，技能不额外增加来源数。`resolveSkill`接收显式毒伤支配，服务端及原服客户端数值投影使用同一入口。Venom已由刺客程序提供专用毒长度覆盖，Rabies由德鲁伊程序提供感染／传播初始化；它们的独立规则不由一般持续毒公式代替。
 
 依据：本地D2MOO `SUnitDmg::{CalcDamage,ApplyResistancesAndAbsorb,ApplyColdState,ApplyFreezeState,ApplyPoisonDamage}`、`MonsterMode::D2GAME_MONSTER_ApplyStatRegen_6FC63440`、`MissMode::{HandleMissileCollision,SrvHit01,SrvHit13}`、`SkillNec::SrvSt16_PoisonDagger`与`SkillPal::AuraCallback_HolyFreeze`。本地原1.13c `D2Game.dll` MD5 `978f6f74cd031bce6ecee602cd5988cc`：RVA `DC4F7–DC519`包含毒率的命中总伤害，`DC780`冰冷、`DDAC0`冻结、`DCAB0`施毒、`DCBCE–DCC07`等强／更强毒刷新但不换owner。原`DC8F8–DC91C`为随机数小于20且MonStats2第19位deadCol为零才置shatter；此处与D2MOO快照的反向重建条件冲突，以1.13c为准。DLL及表导出只作证据，不作为运行依赖或提交内容。
 
@@ -137,7 +137,7 @@ Howl／GrimWard使用独立TerrorUtility入口：投递Terror技能／等级1及
 | 死灵66–95 | 27项主动、3项被动；诅咒、毒／白骨、召唤及铁魔材料生命周期 | 已构建打包，典型单机路径有限V2；未执行联机／原服回归，边界见NECROMANCER |
 | 野蛮人126–155 | 20项主动、10项被动；武器精通、双持、移动、呐喊及尸体技能 | 构建打包，代表单机路径及30项保存重载有限V2；跳跃高度曲线与未认证组合见BARBARIAN |
 | 刺客251–280 | 28项主动／2项被动，武学／陷阱／影子及持续程序已实现、构建打包 | 三系代表路径、宠物上限／继承／解散及30项保存重入有限通过，精确性与未验矩阵见ASSASSIN |
-| 德鲁伊 | 职业执行尚未迁入 | 共用定义／请求／树／提示；原图或文档存在不表示技能执行完成 |
+| 德鲁伊 | 30项及变形／动物／藤蔓／灵体依赖已实现并有限运行 | 公共接触、列表、原生出生、形态时钟与状态客户端；构建／有限运行见[专题](DRUID.md) |
 | 怪物／同行者／物品及其他非职业程序 | 第一幕怪物／精英、部分伙伴及物品来源已有入口，其余范围未完整迁入 | 状态与证据分别见[MONSTERS](MONSTERS.md)、[COMPANIONS](COMPANIONS.md)、[ITEM_SKILLS](ITEM_SKILLS.md)、[SPECIAL](SPECIAL.md)，不计入七职业完成数 |
 
 充能和物品授予可以调用已准备的技能程序，不能据角色职业或装备条目推断未实现程序可用。V1为构建，V2仅认证列出的有限路径；全部入口齐备不等于全参数V3，旧单机、其他职业或旧包证据不认证新增路径。
@@ -214,7 +214,7 @@ Howl／GrimWard使用独立TerrorUtility入口：投递Terror技能／等级1及
 | `units/resources::resourceOnMaximumChange`、`conversionResources`、`conversionRestoredLife` | 最大资源回调保留先除后乘、int64截断后signed32窄化再限幅；转换先按整点百分比计算、最后左移8位，资源写入及回调由服务端候选执行。原圣骑士恢复上限不左移，刺客的另一回调左移，不合并两者；具体原1.13c证据与尚未完成的事件路径见[圣骑士](PALADIN.md#生命周期与边界)。这些资源算子已纳入前序Windows Release构建，完整转换流程未认证 |
 | `skills/native_damage`、`assassin_progressive`、`combat/weapon_block` | 原物理→元素掷值／写入、蓄气／吸取／鞋子踢伤／释放步骤与最多32参数层格挡查询；显式来源、接收者和种子，不持有世界或第二套层数。调用阶段、武学及普通攻击释放和实际双爪格挡的有限证据见[刺客](ASSASSIN.md) |
 
-核对范围包含七职业和通用／怪物／佣兵／宠物／物品／其他来源。已实现职业直接接入上述公共值；佣兵和物品来源沿既有resolve／aura／武器／弹体入口复用，怪物与精英复用几何和既有弹体计算。刺客已接真实职业执行与非玩家施法，复用公共动作／属性／状态／接收；德鲁伊仍只共用定义、来源、资格与客户端投影，职业执行器尚未迁入。其他未支持程序仍明确拒绝，不为未来技能添加虚拟执行器、通用世界回调上下文或未核实的Calc解释器。
+核对范围包含七职业和通用／怪物／佣兵／宠物／物品／其他来源。已实现职业直接接入上述公共值；佣兵和物品来源沿既有resolve／aura／武器／弹体入口复用，怪物与精英复用几何和既有弹体计算。刺客已接真实职业执行与非玩家施法，复用公共动作／属性／状态／接收；德鲁伊已接真实职业及隐藏宠物程序，复用原生出生、接触、状态、资源与帧事件，并补入共享变形模式／速率及原生尸体资格。其他未支持程序仍明确拒绝，不为未来技能添加虚拟执行器、通用世界回调上下文或未核实的Calc解释器。
 
 公共抽取本身不改变规则语义或D2S v96格式；与第一幕怪物补缺合并后的历史Windows Release客户端及独立服务端已构建／打包。最终包完成第一幕逐身份、Telekinesis击退及隔离角色保存重入的有限V2，没有新增测试脚本、用例或专用程序；未专项复验抽取后的全部职业、等级、来源及多人组合，各职业此前的有限V2仍只认证对应历史构建。具体原函数证据见[公共层](../../architecture/REFERENCE_DESIGN.md#6-d2moo的公共层究竟共用什么)，该批产物身份与验证范围见[第一幕](../monsters/ACT1.md#有限运行证据)，当前包见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
 
@@ -276,7 +276,7 @@ Skills／SkillDesc／CharStats、TBL及原树／图标提供ID、前置、手位
 
 怪物ENDANIM使用`monsterAnimationTicks`的`max(2,ceil((frames-startFrame)×256/speed))`，与玩家普通动作的减一规则分开；动画结束后的NU思考等待另按MonStats三难度aidel安排，依据与边界见[怪物动作时钟](../monsters/COMMON.md#动作死亡与奖励)。怪物与佣兵恢复使用MPQ原帧／速度及当前FHR／FBR，伙伴成功格挡也发布BL；近战、技能弹体及环境弹体统一调用monsters::block，容量失败不提交接触随机或推进目标。普通怪物、死灵召唤物、女武神和佣兵动作保留原整数帧，按当前装备／状态计算事件；Kick沿当前武器IAS／WSM。第一、二幕怪物MonSeq按行次序计时，不将显示帧、倒放或A1／A2切换换算成时间；SQ初始速度256，只有原Skills.UseAttackRate允许时才按IAS更新，不套玩家SQ的-30。普通SC走FCR，其他特殊模式按原UseAttackRate选择AttackRate或OtherAnimationRate，非攻击SQ保持固定时钟。佣兵Jab保留多事件，Inferno保持引导时钟。`server-snapshot.animationTiming`只读提供当前武器类下的基础动作速度、时长、事件tick及恢复锁，不是复制／存档来源，也不代表特殊序列的最终调度。
 
-依据为当前MPQ、本地D2MOO `Units.cpp`／`SequenceTbls.cpp`速率与序列函数、`SUnitDmg.cpp`恢复／眩晕分支。本地1.13c `D2Common.dll`的`0x6FD7EFC0`确认玩家GH为mode4、怪物GH为mode3；`0x6FD80BD0`确认怪物按模式表继续查询UseAttackRate。重建代码分别误写BLOCK和遗漏monster分支break，不采用这些笔误；反汇编证据在`artifacts/animation-timing/native-*.txt`。德鲁伊／刺客执行和变身转换尚未接入，本路径不新增变身玩法或虚构速度；全部武器、装备、技能、难度及原服组合仍需分别认证。
+依据为当前MPQ、本地D2MOO `Units.cpp`／`SequenceTbls.cpp`速率与序列函数、`SUnitDmg.cpp`恢复／眩晕分支。本地1.13c `D2Common.dll`的`0x6FD7EFC0`确认玩家GH为mode4、怪物GH为mode3；`0x6FD80BD0`确认怪物按模式表继续查询UseAttackRate。重建代码分别误写BLOCK和遗漏monster分支break，不采用这些笔误；反汇编证据在`artifacts/animation-timing/native-*.txt`。刺客执行与德鲁伊变形转换现已接入，形态时钟入口为`gameplay/actions/shape_timing`与`skills/shape`；全部武器、装备、技能、难度及原服组合仍需分别认证。
 
 SceneController／RemoteCombat处理首次、Hold、锁定与停止，客户端动作来自原包或已发送请求的表现预测；服务端省略本人通知不表示没有施放。ClientSend是原弹体通知资格，不能解释成所有Clt程序都等待0x73；具体源配对与表现见攻击专题。客户端视觉碰撞不是原服命中证据。
 

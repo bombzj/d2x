@@ -70,7 +70,7 @@ DomainResult<> System::amazon(const ActorContext &actor,const SkillCastSpec &ski
     const auto count=[&](auto &&self,const ItemInstance &item)->void {++itemCount;for(const auto &child:item.socketedItems) self(self,child);};
     if(equipment) for(const auto &[id,item]:equipment->inventory.items) {(void)id;count(count,item);}
     // IDs and candidate maps are prepared before the mana transaction.
-    auto idCandidate=ports_.monsters.prepareAmazon(actor,rule,*position,summon,equipment,itemCount,program.decoy?std::optional<WeaponDamage>{}:weapon,equipmentSources,petRandom);
+    auto idCandidate=ports_.monsters.prepareNativePet(actor,rule,*position,summon,equipment,itemCount,program.decoy?std::optional<WeaponDamage>{}:weapon,equipmentSources,petRandom);
     if(!idCandidate) return {idCandidate.status,{}};
     auto actors=std::move(*idCandidate.value);const auto id=actors.begin()->first;
     auto next=state_;Companion pet{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};

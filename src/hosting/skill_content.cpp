@@ -130,6 +130,16 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->syncWarped=data.states.at("sync_warped").definition;
     for(const auto &[key,animation]:data.skills.recoveryTimings) if(key.starts_with(character.appearance))
         prepared->recoveryAnimations.emplace(key.substr(character.appearance.size()),AnimationTiming{animation.frames,animation.speed});
+    prepared->shapes=data.skills.shapes;
+    const auto &skillTable=data.tables.at("skills");
+    for(size_t row=0;row<skillTable.rows().size();++row) if(const auto id=skillTable.number(row,"Id")) {
+        SkillShapeRestriction restriction;restriction.mode=skillTable.number(row,"restrict").value_or(0);
+        for(size_t index=0;index<restriction.states.size();++index) {
+            const auto name=skillTable.value(row,"State"+std::to_string(index+1));
+            if(!name.empty()) restriction.states[index]=data.states.at(std::string(name)).definition.id;
+        }
+        prepared->shapeRestrictions.emplace(*id,restriction);
+    }
     const auto prefix = character.appearance + "sc";
     for (const auto &[key, animation] : data.skills.castTimings)
         if (key.starts_with(prefix)) prepared->animations.emplace(key.substr(prefix.size()),
@@ -140,7 +150,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
         if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
-            !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar" && skill.classCode != "ass") continue;
+            !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar" && skill.classCode != "ass" && skill.classCode != "dru") continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
         if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
         if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
@@ -179,7 +189,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     }
     // General skills are prepared for every class; availability still comes
     // from that class's CharStats, not from point-backed skill ranks.
-    const auto &skillTable=data.tables.at("skills");
+
     for(size_t row=0;row<skillTable.rows().size();++row) {
         const bool itemSkill=skillTable.number(row,"srvdofunc")==113 && skillTable.number(row,"scroll").value_or(0);
         if(!skillTable.number(row,"general").value_or(0) && !itemSkill) continue;

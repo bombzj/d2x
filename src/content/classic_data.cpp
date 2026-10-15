@@ -33,6 +33,7 @@
 #include "content/skills/bone_data.hpp"
 #include "content/skills/barbarian_data.hpp"
 #include "content/skills/assassin_data.hpp"
+#include "content/skills/druid_data.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "content/skills/aura_data.hpp"
 #include <algorithm>
@@ -364,7 +365,8 @@ ClassicData loadClassicData(Archives &archives) {
         loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), data.characters, archives);
         data.playerDeath = loadPlayerDeathData(archives, data.characters, data.tables.at("difficultylevels"));
         data.shrines = loadShrines(data.tables.at("shrines"));
-        data.states = loadCombatStates(DataTable(archives.read("data/global/excel/states.txt")));
+        const auto &stateTable=data.tables.emplace("states",DataTable(archives.read("data/global/excel/states.txt"))).first->second;
+        data.states = loadCombatStates(stateTable);
         auto nativeStates=std::make_shared<CombatStateRules>();
         for(const auto &[name,state]:data.states) nativeStates->emplace(state.definition.id,state.definition);
         data.nativeStates=std::move(nativeStates);
@@ -454,6 +456,7 @@ ClassicData loadClassicData(Archives &archives) {
         loadItemConsumables(data);
         data.nativeFormulas=prepareSkillFormulaCatalog(data);
         loadAssassinSkills(data, archives);
+        loadDruidSkills(data, archives);
         data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));
         const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
         const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));

@@ -74,8 +74,8 @@ DomainResult<std::shared_ptr<actions::SkillRelease>> System::startShadowSkill(co
     return {DomainStatus::Applied,std::make_shared<Release>(release)};
 }
 DomainResult<bool> System::releaseShadowSkill(MonsterRelease &pending,TickContext tick) {
-    if(!pending.shadow) return {DomainStatus::Unavailable,{}};
-    auto &release=*pending.shadow;const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);
+    if(!pending.nativeSkill) return {DomainStatus::Unavailable,{}};
+    auto &release=*pending.nativeSkill;const auto caster=nativeCaster(ports_.players,ports_.monsters,pending.request.actor);
     if(!caster || !caster->programs()) return {DomainStatus::InvalidActor,{}};
     auto actor=release.actor;actor.tick=tick.tick;
     const auto unit=std::get<UnitTarget>(pending.request.target);

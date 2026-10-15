@@ -3,6 +3,7 @@
 #include "content/skills/skill_metadata.hpp"
 #include <memory>
 #include "gameplay/skills/passive.hpp"
+#include "gameplay/actions/shape_profile.hpp"
 #include "gameplay/skills/hydra_spec.hpp"
 #include "resources/data_table.hpp"
 #include "content/string_table.hpp"
@@ -40,6 +41,7 @@ struct SkillRecord : SkillMetadata {
 struct SkillCatalog {
     std::shared_ptr<const SkillDescriptionCatalog> descriptions;
     std::optional<HydraSpec> hydra;
+    std::map<int,ShapeProfile> shapes;
     std::string currentLevelLabel, nextLevelLabel, firstLevelLabel;
     struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
     std::map<std::string, CastTiming> castTimings;

@@ -16,6 +16,8 @@ struct AmazonSummonSpec;
 struct AmazonPetSpec;
 struct AssassinPetDefinition;
 struct AssassinPetSpec;
+struct DruidPetDefinition;
+struct DruidPetSpec;
 struct NativeSummonStats {
     UnitCombatStats base;
     int skill{-1},rank{},lifePercent{};
@@ -30,13 +32,14 @@ struct NativeSummonStats {
     bool setBaseStats{true}; // SkillNec::SetSummonBaseStats is a separate call.
     bool allowZeroLife{}; // Native untargetable units can have MAXHP == 0.
     bool assassinShadow{}; // Do49 evaluates its posted slots against the pet.
-    std::optional<int> finalLevel;
+    std::optional<int> prePassiveLevel,finalLevel;
 };
 struct SummonSkillSpec {
     bool corpse = true, golem = false;
     std::shared_ptr<const NecroSummonSpec> necro;
     std::shared_ptr<const AmazonSummonSpec> amazon;
     std::shared_ptr<const AssassinPetDefinition> assassin;
+    std::shared_ptr<const DruidPetDefinition> druid;
     std::string monster, iconArt;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     int masterySkill = -1, resistSkill = -1, petType = 0;
@@ -53,6 +56,7 @@ struct SummonCastSpec {
     std::shared_ptr<const NecroPetSpec> necro;
     std::shared_ptr<const AmazonPetSpec> amazon;
     std::shared_ptr<const AssassinPetSpec> assassin;
+    std::shared_ptr<const DruidPetSpec> druid;
     std::string monster;
     MonsterKind kind = MonsterKind::NecroSkeleton;
     UnitCombatStats stats;

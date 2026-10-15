@@ -61,6 +61,7 @@ struct MonsterSpawn {
     bool directConstructor{}; // Raw CreateMissileFromParams, without a monster attack wrapper.
     bool distanceCountdown{}; // Native constructor flag 0x400.
     std::optional<int> startFrame; // Native constructor flag 0x200, including an explicit zero.
+    std::optional<int> totalFrames; // Native 0x8000 range override, applied before path initialization.
 };
 struct MonsterLaunch { EntityId first; uint64_t random{}; };
 struct NativeSpawn {

@@ -217,6 +217,15 @@ bool System::selectableCorpse(EntityId id,uint64_t tick) const {
     }
     return true;
 }
+bool System::nativeUsableCorpse(EntityId id,uint64_t tick) const {
+    const auto *unit=find(id);
+    if(!unit || !deadMode(id,tick) || !unit->rule.corpseSelectable || unit->rule.deadCollision) return false;
+    if(unit->rule.states) for(const auto state:ports_.effects.unitStates(id,tick)) {
+        const auto definition=unit->rule.states->find(state);
+        if(definition!=unit->rule.states->end() && definition->second.corpseUnselectable) return false;
+    }
+    return true;
+}
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
     return dead && dead->area==area && !dead->owner && selectableCorpse(id,tick) &&

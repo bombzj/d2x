@@ -52,6 +52,8 @@ struct MissileAreaDamage {
 struct NativeSkillContact {
     int skill{},rank{};
     bool psychicHammer{},rolled{},flagsComplete{};
+    bool accuracyOnly{},monsterCritical{},monsterCriticalPosted{};
+    std::optional<int> sourceDamage;
     bool melee{},progressive{},accuracyPrepared{},defensePrepared{},hit{true},reactionPrepared{},attemptComplete{},chargePosted{};
     NativeBlockOrDodge defense;
     std::shared_ptr<effects::NativeContactBatch> attempt;

@@ -64,7 +64,7 @@ Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界�
 
 `missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
 
-仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、Rabies真实传播初始化和未实现职业／怪物专属飞弹程序。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，但传播生产端仍须完成。跨区域及原生伤害状态已有源码和构建；全部创建初始化、来源与组合仍需同版本证据及获授权后的运行验收。
+仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体运行范围见职业专题。跨区域及原生伤害状态已有源码和构建；全部创建初始化、来源与组合仍需同版本证据及获授权后的运行验收。
 
 ## 组合与所有权
 
@@ -264,9 +264,17 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 
 `skills/assassin`／`assassin_kick`／`assassin_pet` 编排原开始、序列和动作事件；`combat/native_skill_contact`／`progressive_contact` 与 `missiles/native_weapon_contact` 复用实际接收、资源、耐久、触发和最后动作。蓄气由effects的原状态／属性列表唯一持有；释放游标仅保留已提交步骤，踢击预分配不替换成普通近战或临时弹体。刀盾周期、斗篷和心灵爆震由effects沿公共状态／事件撤出执行。
 
-`companions/assassin`／`assassin_ai`／`shadow_ai` 持宠物控制、弹药和AI阶段；`monsters::Actor` 唯一持有身份、位置、属性、装备、技能和随机。影子由 `skills/native_caster` 读取真实非玩家来源，不构造玩家替身。技能继承通过原子属性事务提交，纯内部变化没有公开事实时不申请空输出；容量重试保留原判定，普通规则拒绝不能成为永久背压。目标选择复用 `ai/target_query`，技能列表保持原追加顺序，宠物上限来自原PetType；归属／解散沿原0x7A及公共协议投影。
+`companions/native_summon`／`assassin_ai`／`shadow_ai` 持宠物控制、弹药和AI阶段；`monsters::Actor` 唯一持有身份、位置、属性、装备、技能和随机。影子由 `skills/native_caster` 读取真实非玩家来源，不构造玩家替身。技能继承通过原子属性事务提交，纯内部变化没有公开事实时不申请空输出；容量重试保留原判定，普通规则拒绝不能成为永久背压。目标选择复用 `ai/target_query`，技能列表保持原追加顺序，宠物上限来自原PetType；归属／解散沿原0x7A及公共协议投影。
 
 客户端两种宿主共用原包、MPQ动画／序列与Clt程序，双爪ht2、蓄气叠层、终结子体、陷阱、持续刃怒、斗篷亮度及影子变身沿现有表现层。有限单机观察不认证全局队列交错、全部物品触发／装备、多人及整套原版调色／音效。
+
+## 德鲁伊元素、变形与召唤
+
+221–250的30项职业技能及传递依赖已接源码，构建／运行状态见[德鲁伊技能](../gameplay/skills/DRUID.md)。`skills/druid`编排原Do与出生，`druid_active`保留ActiveState145／146的重调度和已消费阶段，`druid_melee`保留起手分配、准确率、排出、蓄层与感染阶段；`druid_pet`执行BearSmite、Vine Attack、CorpseCycler、Fenris Rage、Teleport2及普通攻击。公共`native_skill_contact`继续拥有真正伤害／事件接收；宠物普通攻击直接使用真实非玩家来源，不通过主人的临时玩家替身。
+
+`companions/druid_ai`分开乌鸦、灵狼／狂狼、熊、灵体、毒藤和生命／法力藤；`native_summon`、`native_pet_move`与`monsters::prepareNativePet`供刺客／德鲁伊共享。原生可用尸体资格`nativeUsableCorpse`与其他技能的选择／消费附加限制分开；Druid尸体查询保留圆形范围及房间单位次序。变形状态、限制技能与原模式／速度元数据在hosting准备，纯模式／速度计算位于`gameplay/actions/shape_timing`，身份、资源和位置仍属于原玩家。
+
+客户端Clt／状态／A3与73配对只负责原资源表现；无目标A3保留FFFFFFFF，不因空目标丢弃火山／末日战场的子体。全部同版本帧／随机、三难度／装备／多人组合仍受公共门槛限制，不以程序完整接线宣称整体精确认证。
 
 ## 扩展与诊断
 

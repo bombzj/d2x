@@ -26,7 +26,7 @@ struct EffectSource {
 // is exclusive on the recipient, independent of source or stacking policy.
 enum class EffectStacking { ReplaceState, ReplaceSource, Independent, AuraLevel, CurseLevel, SkillLevel, ReuseState };
 enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemoved, Cleared };
-enum class NativeStateRemoval { Default,BasicAura,HolyFreeze,SkillShrine,RestoreAi,ClearTargets,Cold,Freeze };
+enum class NativeStateRemoval { Default,BasicAura,HolyFreeze,SkillShrine,RestoreAi,ClearTargets,Cold,Freeze,Shape };
 enum class NativeStateExpiration { NonzeroDuration,EvenZeroDuration };
 struct EffectVisual {
     int overlayId = -1;
@@ -78,6 +78,7 @@ struct CombatEffectSpec {
     std::optional<StatKey> physicalShieldStat,physicalShieldMaximumStat;
     bool nativeDirectAllocation{}; // Direct D2Common list allocation bypasses the curse/group posting policy.
     bool nativeState{}; // Explicit unit bit, independent of this list's expiry.
+    std::vector<int> removalGroupStates; // Native shape callback walks States in index order.
     int clearStateOnRemoval=-1; // BasicAura owner callback also clears NoManaRegen.
     bool refreshPassivesOnRemoval{};
     NativeStateRemoval nativeRemoval{NativeStateRemoval::Default};

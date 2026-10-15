@@ -42,6 +42,7 @@ class System {
     DomainResult<> enqueue(const Damage &);
     DomainResult<MissilePreludeResult> missilePrelude(SpellImpact &,TickContext);
     bool weaponContact(const WeaponSkillDamage &,EntityId,uint64_t,uint64_t &) const;
+    DomainResult<bool> sampleNativeSkillAccuracy(const ActorContext &,const SkillCastSpec &,const WeaponDamage &,EntityId,std::shared_ptr<NativeSkillContact> &);
     DomainResult<> enqueue(SpellImpact);
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;
     void commitSpells(SpellPlan &&) noexcept;
@@ -52,6 +53,7 @@ class System {
     DomainStatus postNativeSkillCharge(SpellImpact &,TickContext);
     DomainStatus finishNativeMeleeDrain(SpellImpact &,int64_t physical,TickContext);
     void discardNativeMelee(EntityId source,uint64_t occurrence);
+    bool addAllocatedPhysical(EntityId source,uint64_t occurrence,int32_t amount);
     void cancel(EntityId);
     StepStatus step(TickContext, FrameFacts &);
 };

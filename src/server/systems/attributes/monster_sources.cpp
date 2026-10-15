@@ -528,6 +528,7 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
         resources.addBaseStat("armorclass",program.levelDefense[size_t(unit.rule.statGameType!=0)],{});
         resources.addBaseStat("tohit",program.levelRating[size_t(unit.rule.statGameType!=0)],{});
     }
+    if(program.prePassiveLevel) resources.writeBaseStat("level",*program.prePassiveLevel,{});
     for(const auto &[id,rank]:program.prePassiveSkills) assignSummonSkill(unit,resources,assigned,id,rank,{});
     if(program.assassinShadow) {
         resources.writeBaseStat("level",summon.stats.level,{});
