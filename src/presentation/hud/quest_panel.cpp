@@ -78,9 +78,9 @@ void SceneView::drawQuests(Vec) const {
     for (int index = 0; index < 4; ++index) {
         const auto &tile = assets_.questBackground.frames.at(index).texture;
         DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-            {panel.x + (index % 2) * tileWidth * inventoryScale,
-             panel.y + (index / 2) * tileHeight * inventoryScale,
-             tile.width * inventoryScale, tile.height * inventoryScale}, {0, 0}, 0, WHITE);
+            {panel.x + (index % 2) * tileWidth * inventoryScale(),
+             panel.y + (index / 2) * tileHeight * inventoryScale(),
+             tile.width * inventoryScale(), tile.height * inventoryScale()}, {0, 0}, 0, WHITE);
     }
     const int tabCount = questView_.tabCount;
     for (int act = 0; act < tabCount; ++act)
@@ -126,7 +126,7 @@ void SceneView::drawQuests(Vec) const {
         const auto &record = questView_.entry(id);
         const auto &heading = record.title;
         const auto titleBounds = questArtRect(10, 233, 300, 21);
-        const int textSize = int(12 * inventoryScale);
+        const int textSize = int(12 * inventoryScale());
         speechPainter_.inBox(heading, titleBounds, textSize, WHITE);
         if (record.description) {
             const auto &value = *record.description;
@@ -139,7 +139,7 @@ void SceneView::drawQuests(Vec) const {
                 if (!line.empty()) {
                     if (y <= lastLine)
                         speechPainter_.label(line, left, y, textSize, WHITE);
-                    y += int(20 * inventoryScale);
+                    y += int(20 * inventoryScale());
                     line.clear();
                 }
             };
@@ -160,7 +160,7 @@ void SceneView::drawQuests(Vec) const {
             if (record.tombSymbol) {
                 const auto &symbol = assets_.tombSymbols.at(size_t(*record.tombSymbol));
                 const auto *symbolFrame = symbol.frame(0, int(view_.animationTime * 25));
-                const float top = std::max(290.f, (float(y) - questArtRect(0, 0, 0, 0).y) / inventoryScale + 4);
+                const float top = std::max(290.f, (float(y) - questArtRect(0, 0, 0, 0).y) / inventoryScale() + 4);
                 const float size = std::min(70.f, 381.f - top);
                 if (size > 0) {
                     BeginBlendMode(BLEND_ADDITIVE);

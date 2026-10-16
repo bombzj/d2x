@@ -1,5 +1,6 @@
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
+#include "core/text.hpp"
 #include "classic_panel.hpp"
 #include "skill_tooltip.hpp"
 #include "presentation/scene_view.hpp"
@@ -17,9 +18,9 @@ void SceneView::drawHostilityWarning() const {
     // D2Client 1.13c RVA 285C0: incoming flag 8, W-58, bottom baseline
     // 45 (115 with automap), original CelDraw mode 1 / TRANS50.
     const float baseline = view_.automap ? 115.f : 45.f;
-    blend->drawHalf(image, {W - 58 * classicPanelScale + image->x * classicPanelScale,
-        (baseline + image->y - image->texture.height) * classicPanelScale,
-        image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+    blend->drawHalf(image, {W - 58 * classicPanelScale() + image->x * classicPanelScale(),
+        (baseline + image->y - image->texture.height) * classicPanelScale(),
+        image->texture.width * classicPanelScale(), image->texture.height * classicPanelScale()});
 }
 namespace {
 void imageAt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
@@ -81,9 +82,9 @@ void SceneView::drawDurabilityWarning() const {
         if (frame < 0) continue;
         const auto *image = assets_.durabilityIcons.frame(0, frame);
         if (!image) continue;
-        blend->drawHalf(image, {W - 60 * classicPanelScale + image->x * classicPanelScale,
-            (baseline + image->y - image->texture.height) * classicPanelScale,
-            image->texture.width * classicPanelScale, image->texture.height * classicPanelScale});
+        blend->drawHalf(image, {W - 60 * classicPanelScale() + image->x * classicPanelScale(),
+            (baseline + image->y - image->texture.height) * classicPanelScale(),
+            image->texture.width * classicPanelScale(), image->texture.height * classicPanelScale()});
     }
 }
 void SceneView::drawSkillIcon(std::optional<int> skill, Rectangle bounds, bool picker,uint32_t owner) const {
@@ -184,7 +185,7 @@ void SceneView::drawSkillControls(Vec mouse) const {
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
     std::optional<std::optional<int>> hovered;uint32_t hoveredOwner=UINT32_MAX;
-    Vec tooltipAnchor{W / 2.f, H - 55 * hudScale};
+    Vec tooltipAnchor{W / 2.f, H - 55 * hudScale()};
     if (view_.skillPicker) {
         bool right = *view_.skillPicker;
         for (const auto &slot : skillPickerSlots(right)) {
@@ -237,16 +238,16 @@ void SceneView::drawSkillControls(Vec mouse) const {
         // centers 65 (Life) and W-80 (Mana). Anchors follow the HUD artwork;
         // glyphs keep their original size rather than the widened HUD scale.
         const UiPainter nativeFont(assets_.font, 0);
-        const float center = mana ? W - 80 * hudScale : 65 * hudScale;
-        const float baseline = H - 95 * hudScale;
-        float x = center - nativeFont.measure(text, 16) * hudTextScale / 2;
-        for (unsigned char character : text) {
-            const auto *glyph = assets_.font.glyphs.frame(0, assets_.font.indices[character]);
+        const float center = mana ? W - 80 * hudScale() : 65 * hudScale();
+        const float baseline = H - 95 * hudScale();
+        float x = center - nativeFont.measure(text, 16) * hudTextScale() / 2;
+        for (uint32_t character : utf8Decode(text)) {
+            const auto *glyph = assets_.font.glyphOf(character);
             if (glyph && character != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
-                    {x + glyph->x * hudTextScale, baseline + (glyph->y - glyph->texture.height) * hudTextScale,
-                     glyph->texture.width * hudTextScale, glyph->texture.height * hudTextScale}, {}, 0, WHITE);
-            x += assets_.font.widths[character] * hudTextScale;
+                    {x + glyph->x * hudTextScale(), baseline + (glyph->y - glyph->texture.height) * hudTextScale(),
+                     glyph->texture.width * hudTextScale(), glyph->texture.height * hudTextScale()}, {}, 0, WHITE);
+            x += assets_.font.widthOf(character) * hudTextScale();
         }
     }
     std::string hint;

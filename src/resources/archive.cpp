@@ -49,6 +49,7 @@ void Archives::mount(const std::filesystem::path &p) {
     readCache_.clear(); cacheBytes_ = 0; prepared_.clear();
 }
 void Archives::mountDirectory(const std::filesystem::path &p) {
+    gameDirectory = std::filesystem::is_regular_file(p) ? p.parent_path() : p;
     if (std::filesystem::is_regular_file(p)) {
         mount(p);
         return;
@@ -149,6 +150,44 @@ void Archives::packUsed(const std::filesystem::path &destination) const {
         auto members = used;
         for (auto &name : members) {
             auto b = read(name);
+            HANDLE f = nullptr;
+            if (!SFileCreateFile(out, name.c_str(), 0, static_cast<DWORD>(b.size()), 0, MPQ_FILE_COMPRESS,
+                                 &f))
+                throw std::runtime_error("Cannot create MPQ member");
+            bool ok = SFileWriteFile(f, b.data(), static_cast<DWORD>(b.size()), MPQ_COMPRESSION_ZLIB);
+            bool done = SFileFinishFile(f);
+            if (!ok || !done)
+                throw std::runtime_error("Cannot write MPQ member");
+        }
+    } catch (...) {
+        SFileCloseArchive(out);
+        throw;
+    }
+    SFileCloseArchive(out);
+}
+void Archives::packDirectory(const std::filesystem::path &source, std::string_view prefix,
+                             const std::filesystem::path &destination) const {
+    if (std::filesystem::exists(destination))
+        throw std::runtime_error("Pack already exists: " + destination.string());
+    if (!std::filesystem::is_directory(source))
+        throw std::runtime_error("Pack source is not a directory: " + source.string());
+    std::vector<std::pair<std::string, std::filesystem::path>> members;
+    for (auto &entry : std::filesystem::recursive_directory_iterator(source))
+        if (entry.is_regular_file()) {
+            auto relative = std::filesystem::relative(entry.path(), source).generic_string();
+            auto member = prefix.empty() ? relative : std::string(prefix) + "/" + relative;
+            members.emplace_back(normalize(member), entry.path());
+        }
+    std::sort(members.begin(), members.end());
+    if (destination.has_parent_path())
+        std::filesystem::create_directories(destination.parent_path());
+    HANDLE out = nullptr;
+    if (!SFileCreateArchive(destination.string().c_str(), MPQ_CREATE_ARCHIVE_V1 | MPQ_CREATE_LISTFILE,
+                            static_cast<DWORD>(members.size() + 16), &out))
+        throw std::runtime_error("Cannot create MPQ");
+    try {
+        for (auto &[name, path] : members) {
+            auto b = readFile(path);
             HANDLE f = nullptr;
             if (!SFileCreateFile(out, name.c_str(), 0, static_cast<DWORD>(b.size()), 0, MPQ_FILE_COMPRESS,
                                  &f))

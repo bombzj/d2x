@@ -4,6 +4,7 @@
 namespace d2x {
 struct AppOptions {
     std::string mpq = "assets/mpq2";
+    std::string mpqSupplement; // assets/mpq packs mounted below the original archives
     std::string screenshot, pack, debugPipe, startupProfile;
     std::string gamePacketLog, hostPacketLog;
     std::string onlineConfig = "online.local.json";
@@ -14,6 +15,7 @@ struct AppOptions {
     uint16_t realmPort = 6113, gamePort = 4000;
     bool hidden = false, help = false;
     int frameLimit = 0;
+    std::string language;
 };
 AppOptions parseOptions(int argc, char **argv);
 } // namespace d2x

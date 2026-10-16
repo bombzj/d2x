@@ -3,6 +3,7 @@
 #include "options.hpp"
 #include "startup_profile.hpp"
 #include "input.hpp"
+#include "content/language.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include <algorithm>
@@ -18,6 +19,8 @@ class Platform {
         SetTraceLogLevel(LOG_WARNING);
         SetConfigFlags(FLAG_WINDOW_RESIZABLE | FLAG_VSYNC_HINT | (hidden ? FLAG_WINDOW_HIDDEN : 0));
         InitWindow(1280, 816, "D2X - Diablo II Expansion / C++");
+        W = GetScreenWidth();
+        H = GetScreenHeight();
         if (!IsWindowReady())
             throw std::runtime_error("Unable to create OpenGL window");
         SetWindowMinSize(800, 510);
@@ -77,14 +80,23 @@ int runGame(int argc, char **argv) {
                      "--online-character <name> --online-create-game <name> | --online-join-game <name>\n"
                      "--online-play <character> logs in once and creates a uniquely named normal game.\n"
                      "Quick entry uses remembered credentials and the normal server handshake once.\n"
+                     "--lang <eng|chi|deu|fra|esp|ita|jpn|kor|pol|rus or 0-9>: language override; else reads USE from MPQ\n"
                      "--hidden --frames N --screenshot <png> --pack <new.mpq>\n";
         return 0;
     }
     StartupProfile profile(options.startupProfile);
     Archives archives;
+    // assets/mpq holds supplementary packs (PD2 language tables and fonts, demo
+    // packs). They mount first: every original member still resolves to the
+    // original archive, these only fill paths the original set does not ship.
+    std::error_code equivalentError;
+    if (!options.mpqSupplement.empty() &&
+        !std::filesystem::equivalent(options.mpqSupplement, options.mpq, equivalentError))
+        archives.mountDirectory(options.mpqSupplement);
     archives.mountDirectory(options.mpq);
     if (archives.names.empty())
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
+    applyLanguage(archives, detectLanguage(options.language, archives));
     profile.mark("archives-ready");
     Platform platform(options.hidden);
     profile.mark("platform-ready");

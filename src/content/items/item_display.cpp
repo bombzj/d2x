@@ -203,7 +203,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             return result;
         };
         const auto &base = definition.base;
-        auto damage = [&](const char *label, std::optional<int> low, std::optional<int> high, bool thrown = false) {
+        auto damage = [&](std::string label, std::optional<int> low, std::optional<int> high, bool thrown = false) {
             if (!low || !high) return;
             if (item.nativeFlags & 0x400000u) { low = *low * 3 / 2; high = *high * 3 / 2; }
             if (item.quality == ItemQuality::Inferior) {

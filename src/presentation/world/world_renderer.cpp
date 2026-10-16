@@ -151,7 +151,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), false);
         }
     };
-    BeginScissorMode(int(viewport.x), int(viewport.y), int(viewport.width), int(viewport.height));
+    uiScissor(viewport.x, viewport.y, viewport.width, viewport.height);
     paint(draw);
     paint(roofs);
     drawWorldLighting(scene, items);

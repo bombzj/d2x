@@ -72,7 +72,7 @@ target_sources(d2x_content PRIVATE
 target_sources(d2x_content PRIVATE src/content/character/character_progression.cpp)
 target_sources(d2x_content PRIVATE src/content/character/character_attributes.cpp)
 target_sources(d2x_content PRIVATE src/content/character/death_data.cpp)
-target_sources(d2x_content PRIVATE src/content/string_table.cpp src/content/skills/skill_data.cpp
+target_sources(d2x_content PRIVATE src/content/language.cpp src/content/string_table.cpp src/content/skills/skill_data.cpp
   src/content/skills/skill_eligibility.cpp src/content/skills/table_values.cpp)
 target_sources(d2x_content PRIVATE src/content/skills/defensive_buff_data.cpp src/content/skills/sorceress_data.cpp src/content/skills/frozen_orb_data.cpp src/content/skills/blizzard_data.cpp src/content/skills/glacial_spike_data.cpp src/content/skills/weapon_skill_data.cpp src/content/skills/necromancer_data.cpp src/content/skills/necro_summon_data.cpp src/content/skills/curse_data.cpp
     src/content/skills/bone_data.cpp src/content/skills/barbarian_data.cpp src/content/skills/amazon_bow_data.cpp src/content/skills/amazon_spear_data.cpp src/content/skills/amazon_magic_data.cpp src/content/skills/amazon_summon_data.cpp)

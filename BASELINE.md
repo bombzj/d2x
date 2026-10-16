@@ -28,6 +28,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | NPC／任务 | 城镇服务、五幕个人任务主流程、组队任务及奖励保存 | 复杂剧情、机关和特殊多人任务；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
 | 多人／表现 | 组队、聊天、交易、敌意、共享收益及相关界面；物品提示及库存原调色、镶孔叠层、无形混色与定位已纳入Release两包，代表物品显示及重入获有限观察 | 特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
 
+
 已接能力不代表全部组合或原版客户端兼容性完成；具体支持条件和未覆盖范围由对应专题维护。
 
 自然生成重构仍未完成：源码已接怪物区域／ObjectControl／NPCControl／QuestControl子流、全关卡目录与组件池、服务端随机物件PopulateFn1–9与主题、逻辑区域内实时密度及普通族群、单位流精英词缀／随从／姓名、主要DS1／任务固定首领、吉得宾与邪恶瓮实时精英、原中立罗格游荡、余光对象延迟出生及塔楼真实控制飞弹。活动房间按幕序和创建链头插次序遍历；出生／升级统一发布Actor及初始事件。完整休眠压缩／重建、TileInfo11保护搜索的关卡随机与房间激活、原GUID分配、全部初始化／修饰器回调及全局交错仍未闭合。当前工作区已于2026-10-16按授权完成Windows／MinGW／Ninja Release全目标构建、双包更新及鲜血荒地／邪恶洞穴的自然怪物、容器交互／掉落／拾取和保存重入有限检查，并修复异步掉落帧与AI等待时旧随机提交问题；实际包与光照疑点见运行包记录。此观察不认证完整自然生成、全部初始化或原版逐随机一致性。入口和限制见[人口](docs/gameplay/monsters/POPULATION.md)和[自然物件生成](docs/gameplay/world/OBJECTS.md#自然生成源码边界)。

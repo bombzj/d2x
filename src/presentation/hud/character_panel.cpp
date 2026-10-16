@@ -1,5 +1,6 @@
 #include "presentation/scene_view.hpp"
 #include "character_panel.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <sstream>
 
@@ -12,27 +13,27 @@ void characterText(const ClassicFont &font, const std::string &value, float left
     if (value.empty()) return;
     // Original two-line labels use baselines four pixels either side of the row.
     constexpr float lineStep = 8;
-    const float scale = classicPanelScale;
+    const float scale = classicPanelScale();
     std::vector<std::string> lines;
     std::istringstream input(value);
     std::string line;
     while (std::getline(input, line)) lines.push_back(line);
     const auto box = characterArtRect(left, baseline - 20, right - left + 1, 40);
-    BeginScissorMode(int(box.x), int(box.y), int(box.width), int(box.height));
+    uiScissor(box.x, box.y, box.width, box.height);
     for (size_t row = 0; row < lines.size(); ++row) {
         float width = 0;
-        for (unsigned char character : lines[row]) width += font.widths[character];
+        for (uint32_t character : utf8Decode(lines[row])) width += font.widthOf(character);
         const auto origin = characterArtRect(left + int(std::max(0.f, (right - left + 1 - width) * .5f)),
             baseline + (float(row) - (float(lines.size()) - 1) * .5f) * lineStep, 0, 0);
         float x = origin.x;
-        for (unsigned char character : lines[row]) {
-            const auto *glyph = font.glyphs.frame(0, font.indices[character]);
+        for (uint32_t character : utf8Decode(lines[row])) {
+            const auto *glyph = font.glyphOf(character);
             if (glyph && character != ' ')
                 DrawTexturePro(glyph->texture, {0, 0, float(glyph->texture.width), float(glyph->texture.height)},
                     {x + glyph->x * scale, origin.y + (glyph->y - glyph->texture.height) * scale,
                         glyph->texture.width * scale, glyph->texture.height * scale},
                     {}, 0, WHITE);
-            x += font.widths[character] * scale;
+            x += font.widthOf(character) * scale;
         }
     }
     EndScissorMode();
@@ -51,9 +52,9 @@ void SceneView::drawCharacter(Vec mouse) const {
     for (int index = 0; index < 4; ++index) {
         const auto &tile = assets_.inventoryPanel.frames.at(size_t(index)).texture;
         DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-            {panel.x + (index % 2) * 256 * classicPanelScale,
-             panel.y + (index / 2) * 256 * classicPanelScale,
-             tile.width * classicPanelScale, tile.height * classicPanelScale}, {}, 0, WHITE);
+            {panel.x + (index % 2) * 256 * classicPanelScale(),
+             panel.y + (index / 2) * 256 * classicPanelScale(),
+             tile.width * classicPanelScale(), tile.height * classicPanelScale()}, {}, 0, WHITE);
     }
     const auto art = [](const Sprite &sprite, Rectangle box) {
         DrawTexturePro(sprite.texture, {0, 0, float(sprite.texture.width), float(sprite.texture.height)},
@@ -91,8 +92,8 @@ void SceneView::drawCharacter(Vec mouse) const {
         if (player.unspentAttributes > 0 && !player.unknownStats.contains("statpts")) {
             const auto button = characterAddButton(index);
             const auto *socket = assets_.attributeSocket.frame(0, 0);
-            art(*socket, {button.x - 3 * classicPanelScale, button.y - 2 * classicPanelScale,
-                socket->texture.width * classicPanelScale, socket->texture.height * classicPanelScale});
+            art(*socket, {button.x - 3 * classicPanelScale(), button.y - 2 * classicPanelScale(),
+                socket->texture.width * classicPanelScale(), socket->texture.height * classicPanelScale()});
             art(*assets_.attributeButtons.frame(0, 0), button);
         }
     }

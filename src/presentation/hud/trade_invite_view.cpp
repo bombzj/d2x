@@ -1,5 +1,6 @@
 #include "trade_invite_view.hpp"
 #include "content/string_table.hpp"
+#include "core/text.hpp"
 #include "hud_layout.hpp"
 #include "classic_panel.hpp"
 #include <algorithm>
@@ -102,15 +103,15 @@ void TradeInviteView::draw(Rectangle viewport) const {
 namespace {
 Rectangle tradeRect(float x, float y, float width, float height) {
     const auto p = classicPanelBounds(false);
-    return {p.x + x*classicPanelScale, p.y + y*classicPanelScale, width*classicPanelScale, height*classicPanelScale};
+    return {p.x + x*classicPanelScale(), p.y + y*classicPanelScale(), width*classicPanelScale(), height*classicPanelScale()};
 }
 Rectangle tradeGoldDialog() {
-    return {W/2.f - 105*classicPanelScale, (H-HUD)/2.f - 89*classicPanelScale,
-        210*classicPanelScale, 158*classicPanelScale};
+    return {W/2.f - 105*classicPanelScale(), (H-HUD)/2.f - 89*classicPanelScale(),
+        210*classicPanelScale(), 158*classicPanelScale()};
 }
 Rectangle tradeGoldButton(int button) {
     const auto p = tradeGoldDialog();
-    return {p.x + (button ? 140 : 35)*classicPanelScale, p.y + 116*classicPanelScale, 32*classicPanelScale, 32*classicPanelScale};
+    return {p.x + (button ? 140 : 35)*classicPanelScale(), p.y + 116*classicPanelScale(), 32*classicPanelScale(), 32*classicPanelScale()};
 }
 void drawTradeSprite(const Sprite *sprite, Rectangle bounds, Color tint = WHITE) {
     if (sprite) DrawTexturePro(sprite->texture, {0,0,float(sprite->texture.width),float(sprite->texture.height)}, bounds, {0,0},0,tint);
@@ -172,15 +173,14 @@ PlayerTradeIntent TradeInviteView::handleOpen(const FrameInput &input, uint32_t 
     return intent;
 }
 void TradeInviteView::panelLabel(std::string_view text, Rectangle box, bool right) const {
-    const float scale = classicPanelScale;
-    float width{}; for (unsigned char c : text) width += font_.widths[c]*scale;
+    const float scale = classicPanelScale();
+    float width{}; for (uint32_t c : utf8Decode(text)) width += font_.widthOf(c)*scale;
     float x = box.x + (right ? box.width-width : 4*scale);
-    const int left = std::max(0,int(box.x)), top = std::max(0,int(box.y));
-    BeginScissorMode(left,top,int(box.width),int(box.height));
-    for (unsigned char c : text) {
-        const auto *glyph = font_.glyphs.frame(0,font_.indices[c]);
+    uiScissor(std::max(0.f, box.x), std::max(0.f, box.y), box.width, box.height);
+    for (uint32_t c : utf8Decode(text)) {
+        const auto *glyph = font_.glyphOf(c);
         if (glyph && c != ' ') drawTradeSprite(glyph,{x,box.y,float(glyph->texture.width)*scale,float(glyph->texture.height)*scale});
-        x += font_.widths[c]*scale;
+        x += font_.widthOf(c)*scale;
     }
     EndScissorMode();
 }
@@ -189,8 +189,8 @@ void TradeInviteView::drawOpen(std::string_view ownName) const {
     const auto p = classicPanelBounds(false);
     for (int i = 0; i < 4; ++i) {
         const auto *tile = panel_.frame(0,i);
-        if (tile) drawTradeSprite(tile,{p.x+(i%2)*256*classicPanelScale,p.y+(i/2)*256*classicPanelScale,
-            tile->texture.width*classicPanelScale,tile->texture.height*classicPanelScale});
+        if (tile) drawTradeSprite(tile,{p.x+(i%2)*256*classicPanelScale(),p.y+(i/2)*256*classicPanelScale(),
+            tile->texture.width*classicPanelScale(),tile->texture.height*classicPanelScale()});
     }
     panelLabel(trade_.peerName,tradeRect(17,13,126,17));
     panelLabel(ownName,tradeRect(17,229,126,17));
@@ -211,14 +211,14 @@ void TradeInviteView::drawGoldDialog() const {
     std::istringstream words(goldQuestion_);
     while (words >> word) {
         const auto candidate = line.empty() ? word : line+" "+word;
-        float width{}; for (unsigned char c : candidate) width += font_.widths[c]*classicPanelScale;
-        if (!line.empty() && width > p.width-16*classicPanelScale) {
-            panelLabel(line,{p.x+8*classicPanelScale,p.y+(10+row*18)*classicPanelScale,p.width-16*classicPanelScale,18*classicPanelScale});
+        float width{}; for (uint32_t c : utf8Decode(candidate)) width += font_.widthOf(c)*classicPanelScale();
+        if (!line.empty() && width > p.width-16*classicPanelScale()) {
+            panelLabel(line,{p.x+8*classicPanelScale(),p.y+(10+row*18)*classicPanelScale(),p.width-16*classicPanelScale(),18*classicPanelScale()});
             line = word; ++row;
         } else line = candidate;
     }
-    panelLabel(line,{p.x+8*classicPanelScale,p.y+(10+row*18)*classicPanelScale,p.width-16*classicPanelScale,18*classicPanelScale});
-    panelLabel(*goldDraft_+"_",{p.x+29*classicPanelScale,p.y+70*classicPanelScale,165*classicPanelScale,20*classicPanelScale});
+    panelLabel(line,{p.x+8*classicPanelScale(),p.y+(10+row*18)*classicPanelScale(),p.width-16*classicPanelScale(),18*classicPanelScale()});
+    panelLabel(*goldDraft_+"_",{p.x+29*classicPanelScale(),p.y+70*classicPanelScale(),165*classicPanelScale(),20*classicPanelScale()});
     drawTradeSprite(buttons_.frame(0,16),tradeGoldButton(0));
     drawTradeSprite(buttons_.frame(0,10),tradeGoldButton(1));
 }

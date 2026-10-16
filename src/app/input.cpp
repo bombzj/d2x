@@ -4,73 +4,98 @@
 
 namespace d2x {
 Viewport currentViewport() {
-    float scale = std::max(.001f, std::min(float(GetScreenWidth()) / W, float(GetScreenHeight()) / H));
-    return {scale, {(GetScreenWidth() - W * scale) * .5f, (GetScreenHeight() - H * scale) * .5f}};
+    return {1.f, {0.f, 0.f}};
 }
 FrameInput pollInput(const Viewport &viewport) {
     FrameInput input;
-    auto mouse = GetMousePosition();
-    input.mouse = (Vec{mouse.x, mouse.y} - viewport.offset) * (1 / viewport.scale);
-    input.insideViewport = input.mouse.x >= 0 && input.mouse.x < W && input.mouse.y >= 0 && input.mouse.y < H;
-    input.leftPressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
-    input.leftHeld = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
-    input.leftReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
-    input.rightPressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
-    input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
-    input.inventory = IsKeyPressed(KEY_I);
-    const bool characterC = IsKeyPressed(KEY_C);
-    const bool characterA = IsKeyPressed(KEY_A);
-    const bool skillT = IsKeyPressed(KEY_T);
-    const bool skillS = IsKeyPressed(KEY_S);
-    input.character = characterA || characterC;
-    input.skillTree = skillS || skillT;
-    input.quests = IsKeyPressed(KEY_Q);
-    input.party = IsKeyPressed(KEY_P);
-    input.hireling = IsKeyPressed(KEY_O);
-    input.togglePortraits = IsKeyPressed(KEY_Z);
-    input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
-    input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
-    input.save = !input.control && IsKeyPressed(KEY_F11);
-    input.load = input.control && IsKeyPressed(KEY_F11);
-    input.enter = IsKeyPressed(KEY_ENTER) || IsKeyPressed(KEY_KP_ENTER);
-    input.backspace = IsKeyPressed(KEY_BACKSPACE) || IsKeyPressedRepeat(KEY_BACKSPACE);
-    input.messageLog = !input.control && IsKeyPressed(KEY_M);
-    input.entryHome = IsKeyPressed(KEY_HOME);
-    input.entryEnd = IsKeyPressed(KEY_END);
-    input.entryDelete = IsKeyPressed(KEY_DELETE) || IsKeyPressedRepeat(KEY_DELETE);
-    input.entryStep = int(IsKeyPressed(KEY_RIGHT) || IsKeyPressedRepeat(KEY_RIGHT)) -
-        int(IsKeyPressed(KEY_LEFT) || IsKeyPressedRepeat(KEY_LEFT));
-    input.tab = IsKeyPressed(KEY_TAB);
-    for (int character = GetCharPressed(); character; character = GetCharPressed()) {
-        if (character >= '0' && character <= '9')
-            input.text.push_back(char(character));
-        if (character >= 32 && character <= 126) input.entryText.push_back(char(character));
-        else if (character >= 127) input.entryUnsupported = true;
+    const auto mouse = GetMousePosition();
+    input.mouse = {mouse.x, mouse.y};
+    input.insideViewport = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) ||
+                           IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) ||
+                           input.mouse.x >= viewport.offset.x &&
+                           input.mouse.y >= viewport.offset.y &&
+                           input.mouse.x < viewport.offset.x + W * viewport.scale &&
+                           input.mouse.y < viewport.offset.y + H * viewport.scale;
+    if (input.insideViewport) {
+        input.mouse = (Vec{mouse.x, mouse.y} - viewport.offset) * (1 / viewport.scale);
+        input.leftPressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);
+        input.rightPressed = IsMouseButtonPressed(MOUSE_BUTTON_RIGHT);
+        input.leftHeld = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+        input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
+        input.mouseWheel = GetMouseWheelMove();
     }
-    input.wheel = GetMouseWheelMove();
-    input.quantityDelta =
-        int(input.wheel) + int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
-    input.focused = IsWindowFocused();
-    input.showLoot = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
-    input.movement = {float(IsKeyDown(KEY_RIGHT) - IsKeyDown(KEY_LEFT)),
-                      float(IsKeyDown(KEY_DOWN) - IsKeyDown(KEY_UP))};
-    input.help = input.control && IsKeyPressed(KEY_F1);
-    input.automap = input.tab;
-    input.minimapSide = IsKeyPressed(KEY_V);
-    input.automapCenter = IsKeyPressed(KEY_HOME);
-    input.automapNames = !input.control && IsKeyPressed(KEY_F12);
-    input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
-    input.menuDelta = int(IsKeyPressed(KEY_DOWN)) - int(IsKeyPressed(KEY_UP));
-    input.collision = input.control && IsKeyPressed(KEY_F3);
-    input.run = !input.control && IsKeyPressed(KEY_R);
-    input.escape = IsKeyPressed(KEY_ESCAPE);
-    input.screenshot = input.control && IsKeyPressed(KEY_F12);
-    for (int i = 0; i < int(hotbarSlots); ++i)
-        input.skills[i] = !input.control && IsKeyPressed(KEY_F1 + i);
-    for (int i = 0; i < 4; ++i)
-        input.belt[i] = IsKeyPressed(KEY_ONE + i);
-    input.expandBelt = !input.control && IsKeyPressed(KEY_B);
-    input.weaponSwap = !input.control && IsKeyPressed(KEY_W);
+    if (!input.leftHeld && !input.rightHeld) {
+        input.leftReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
+        input.rightReleased = IsMouseButtonReleased(MOUSE_BUTTON_RIGHT);
+    }
+    if (IsWindowFocused()) {
+        input.focused = true;
+        input.control = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_RIGHT_CONTROL);
+        input.alt = IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT);
+        input.shift = IsKeyDown(KEY_LEFT_SHIFT) || IsKeyDown(KEY_RIGHT_SHIFT);
+        input.escape = IsKeyPressed(KEY_ESCAPE);
+        input.enter = IsKeyPressed(KEY_ENTER);
+        input.backspace = IsKeyPressed(KEY_BACKSPACE);
+        input.tab = IsKeyPressed(KEY_TAB);
+        input.chat = IsKeyPressed(KEY_ENTER);
+        input.clear = IsKeyPressed(KEY_DELETE);
+        input.end = IsKeyPressed(KEY_END);
+        input.save = input.control && IsKeyPressed(KEY_F11);
+        input.reload = input.control && input.shift && IsKeyPressed(KEY_F11);
+        input.debugNpc = input.control && IsKeyPressed(KEY_N);
+        input.debugWaypoint = input.control && IsKeyPressed(KEY_W);
+        input.debugLoadout = input.control && IsKeyPressed(KEY_L);
+        input.debugHitpoints = input.control && IsKeyPressed(KEY_H);
+        input.debugMenu = input.control && IsKeyPressed(KEY_M);
+        input.debugSkillTree = input.control && IsKeyPressed(KEY_T);
+        input.debugExperience = input.control && IsKeyPressed(KEY_X);
+        input.debugMap = input.control && IsKeyPressed(KEY_A);
+        input.debugCombat = input.control && IsKeyPressed(KEY_C);
+        input.debugSkills = input.control && IsKeyPressed(KEY_S);
+        input.debugCharacter = input.control && IsKeyPressed(KEY_P);
+        input.debugItem = input.control && IsKeyPressed(KEY_I);
+        input.debugPet = input.control && IsKeyPressed(KEY_K);
+        input.debugOnline = input.control && IsKeyPressed(KEY_O);
+        input.debugHost = input.control && IsKeyPressed(KEY_B);
+        input.debugQuit = input.control && IsKeyPressed(KEY_Q);
+        input.capture = input.control && IsKeyPressed(KEY_R);
+        input.pause = IsKeyPressed(KEY_PAUSE);
+        input.menuUp = int(IsKeyPressed(KEY_UP));
+        input.menuDown = int(IsKeyPressed(KEY_DOWN));
+        input.menuLeft = int(IsKeyPressed(KEY_LEFT));
+        input.menuRight = int(IsKeyPressed(KEY_RIGHT));
+        input.menuSelect = int(IsKeyPressed(KEY_ENTER)) + int(IsKeyPressed(KEY_SPACE));
+        input.menuCancel = int(IsKeyPressed(KEY_ESCAPE));
+        input.menuDelta = int(IsKeyPressed(KEY_DOWN)) - int(IsKeyPressed(KEY_UP));
+        input.weaponSwap = !input.control && IsKeyPressed(KEY_W);
+        // Classic gameplay shortcuts; the in-game help panel lists this table.
+        // Ctrl/Alt keep their debug and modifier roles, so plain letters drive
+        // the panels the same way the debug ui-input keys do.
+        const auto plain = !input.control && !input.alt;
+        input.inventory = plain && IsKeyPressed(KEY_I);
+        input.character = plain && IsKeyPressed(KEY_A);
+        input.skillTree = plain && IsKeyPressed(KEY_S);
+        input.quests = plain && IsKeyPressed(KEY_Q);
+        input.hireling = plain && IsKeyPressed(KEY_O);
+        input.party = plain && IsKeyPressed(KEY_P);
+        input.run = plain && IsKeyPressed(KEY_R);
+        input.expandBelt = plain && IsKeyPressed(KEY_B);
+        input.minimapSide = plain && IsKeyPressed(KEY_V);
+        input.automap = input.tab;
+        input.automapCenter = IsKeyPressed(KEY_HOME);
+        input.automapNames = plain && IsKeyPressed(KEY_F12);
+        input.screenshot = input.control && IsKeyPressed(KEY_F12);
+        input.help = input.control && IsKeyPressed(KEY_F1);
+        input.showLoot = input.alt;
+        for (int i = 0; i < int(input.belt.size()); ++i)
+            input.belt[size_t(i)] = plain && IsKeyPressed(KEY_ONE + i);
+        for (size_t i = 0; i < input.skills.size(); ++i)
+            input.skills[i] = plain && IsKeyPressed(KEY_F1 + int(i));
+    } else {
+        input.focused = false;
+        input.insideViewport = false;
+        input.leftHeld = input.rightHeld = false;
+    }
     return input;
 }
 } // namespace d2x

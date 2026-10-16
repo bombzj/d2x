@@ -6,17 +6,18 @@
 
 namespace d2x {
 namespace {
-constexpr float scaleX = classicPanelScale, scaleY = classicPanelScale;
+float scaleX() { return classicPanelScale(); }
+float scaleY() { return classicPanelScale(); }
 constexpr int visibleWaypoints = 9;
 Vec panelOrigin() { const auto panel = classicPanelBounds(false); return {panel.x, panel.y}; }
 Rectangle waypointRow(int row) {
     auto origin = panelOrigin();
-    return {origin.x + 14 * scaleX, origin.y + (58 + row * 36) * scaleY,
-            294 * scaleX, 35 * scaleY};
+    return {origin.x + 14 * scaleX(), origin.y + (58 + row * 36) * scaleY(),
+            294 * scaleX(), 35 * scaleY()};
 }
 Rectangle waypointClose() {
     auto origin = panelOrigin();
-    return {origin.x + 272 * scaleX, origin.y + 385 * scaleY, 32 * scaleX, 32 * scaleY};
+    return {origin.x + 272 * scaleX(), origin.y + 385 * scaleY(), 32 * scaleX(), 32 * scaleY()};
 }
 void drawTile(const GpuAnimation &art, int frame, Rectangle bounds) {
     auto sprite = art.frame(0, frame);
@@ -51,7 +52,7 @@ std::optional<RegionId> SceneView::clickWaypointMenu(Vec mouse) {
 WaypointPanelHit waypointPanelHit(Vec mouse, size_t rows) {
     const auto origin = panelOrigin();
     for (int act = 0; act < 5; ++act)
-        if (CheckCollisionPointRec(rv(mouse), {origin.x + act * 61 * scaleX, origin.y, 61 * scaleX, 31 * scaleY}))
+        if (CheckCollisionPointRec(rv(mouse), {origin.x + act * 61 * scaleX(), origin.y, 61 * scaleX(), 31 * scaleY()}))
             return {act, {}, false};
     if (CheckCollisionPointRec(rv(mouse), waypointClose())) return {{}, {}, true};
     for (size_t row = 0; row < std::min(size_t(visibleWaypoints), rows); ++row)
@@ -72,22 +73,22 @@ void drawWaypointPanel(const WaypointPanelArt &art, std::span<const TravelEntryV
     for (int index = 0; index < 4; ++index)
         if (const auto *sprite = art.panel.frame(0, index))
             drawTile(art.panel, index,
-                     {origin.x + (index % 2) * 256 * scaleX,
-                      origin.y + (index / 2) * 256 * scaleY,
-                      sprite->texture.width * scaleX, sprite->texture.height * scaleY});
+                     {origin.x + (index % 2) * 256 * scaleX(),
+                      origin.y + (index / 2) * 256 * scaleY(),
+                      sprite->texture.width * scaleX(), sprite->texture.height * scaleY()});
     int acts = std::min(5, art.tabs.count / 2);
     for (int act = 0; act < acts; ++act) {
         if (!availableActs[size_t(act)]) continue;
         if (const auto *sprite = art.tabs.frame(0, act * 2 + (act == selectedAct ? 0 : 1)))
             drawTile(art.tabs, act * 2 + (act == selectedAct ? 0 : 1),
-                     {origin.x + act * 61 * scaleX, origin.y,
-                      sprite->texture.width * scaleX, sprite->texture.height * scaleY});
+                     {origin.x + act * 61 * scaleX(), origin.y,
+                      sprite->texture.width * scaleX(), sprite->texture.height * scaleY()});
     }
 
-    const int textSize = int(std::round(16 * scaleY));
+    const int textSize = int(std::round(16 * scaleY()));
     const UiPainter white(art.fonts[0]);
     white.inBox(art.title,
-                {origin.x, origin.y + 32 * scaleY, 320 * scaleX, 24 * scaleY}, textSize, WHITE);
+                {origin.x, origin.y + 32 * scaleY(), 320 * scaleX(), 24 * scaleY()}, textSize, WHITE);
 
     for (int row = 0; row < std::min(visibleWaypoints, int(entries.size())); ++row) {
         const auto &entry = entries[size_t(row)];
@@ -100,12 +101,12 @@ void drawWaypointPanel(const WaypointPanelArt &art, std::span<const TravelEntryV
             const int icon = current ? 0 : 3;
             if (const auto *sprite = art.icons.frame(0, icon))
                 drawTile(art.icons, icon,
-                         {bounds.x + 2 * scaleX, bounds.y,
-                          sprite->texture.width * scaleX, sprite->texture.height * scaleY});
+                         {bounds.x + 2 * scaleX(), bounds.y,
+                          sprite->texture.width * scaleX(), sprite->texture.height * scaleY()});
         }
         const UiPainter text(art.fonts[!entry.destination ? 2 : current || hovered ? 1 : 0]);
         text.inBox(entry.name,
-                   {origin.x + 80 * scaleX, bounds.y,
+                   {origin.x + 80 * scaleX(), bounds.y,
                     float(text.measure(entry.name, textSize)), bounds.height}, textSize, WHITE);
     }
     drawTile(art.close, 10, waypointClose());
@@ -116,7 +117,7 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
     // transforms at 0x6B600, then thirteen 256-entry font index transforms.
     constexpr size_t shifts = 0x6B600 + 13 * 3;
     const auto palette = archives.read("data/global/palette/sky/pal.pl2");
-    const auto *glyphs = graphics.animation("data/local/font/latin/font16.dc6");
+    const auto *glyphs = graphics.animation("data/local/font/" + archives.languageFontDirectory + "/font16.dc6");
     if (palette.size() < shifts + 13 * 256 || !glyphs)
         throw std::runtime_error("Original waypoint font transforms are missing");
     constexpr int colors[]{0, 3, 5};
@@ -126,12 +127,11 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
         // White uses the original glyph indices. The sky PL2 white table is
         // all zeroes, so applying it would make every glyph transparent.
         if (colors[index] == 0) continue;
-        font.glyphs.frames.clear();
-        for (auto glyph : glyphs->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[shifts + colors[index] * 256 + pixel];
-            font.glyphs.frames.push_back(graphics.upload(glyph));
-        }
+        font.sprites.clear();
+        font.uploaded.clear();
+        for (size_t i = 0; i < font.transform.size(); ++i)
+            font.transform[i] = palette[shifts + colors[index] * 256 + i];
+        font.transformed = true;
     }
 }
 } // namespace d2x

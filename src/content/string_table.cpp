@@ -1,4 +1,5 @@
 #include "resources/archive.hpp"
+#include "language.hpp"
 #include "string_table.hpp"
 #include <cstdint>
 #include <charconv>
@@ -61,10 +62,36 @@ void merge(const Bytes &bytes, std::map<std::string, std::string, std::less<>> &
     }
 }
 } // namespace
-ClassicStrings::ClassicStrings(Archives &archives) {
+std::string_view npcTblSpeech(std::string_view text) {
+    const auto newline=text.find('\n');
+    if (newline==std::string_view::npos) return text;
+    auto header=text.substr(0,newline);
+    if (header.ends_with('\r')) header.remove_suffix(1);
+    unsigned speed{};
+    const auto [end,error]=std::from_chars(header.data(),header.data()+header.size(),speed);
+    // Authored SPEED lines match the first line of the original TBL messages.
+    // Leave non-speech/unrecognized formats untouched.
+    if (error==std::errc{} && end==header.data()+header.size()) text.remove_prefix(newline+1);
+    return text;
+}
+ClassicStrings::ClassicStrings(Archives &archives)
+    : ClassicStrings(archives, languageOf(archives)) {}
+
+ClassicStrings::ClassicStrings(Archives &archives, const Language &language) {
+    const std::string dir = "data/local/lng/" + language.directory + "/";
     for (const auto &[name, base] : {std::pair{"string", 0}, {"expansionstring", 20000}, {"patchstring", 10000}}) {
-        auto path = "data/local/lng/eng/" + std::string(name) + ".tbl";
-        if (archives.contains(path)) merge(archives.read(path), entries_, indexed_, indices_, base);
+        auto path = dir + std::string(name) + ".tbl";
+        if (archives.contains(path)) {
+            merge(archives.read(path), entries_, indexed_, indices_, base);
+            continue;
+        }
+        // Fallback to English if not found
+        if (language.directory != "eng") {
+            auto fallback = "data/local/lng/eng/" + std::string(name) + ".tbl";
+            if (archives.contains(fallback)) {
+                merge(archives.read(fallback), entries_, indexed_, indices_, base);
+            }
+        }
     }
 }
 std::string_view ClassicStrings::find(std::string_view key) const {
@@ -76,17 +103,7 @@ std::string_view ClassicStrings::find(int index) const {
     return found == indexed_.end() ? std::string_view{} : found->second;
 }
 std::string_view ClassicStrings::speech(int index) const {
-    auto text=find(index);
-    const auto newline=text.find('\n');
-    if (newline==std::string_view::npos) return text;
-    auto header=text.substr(0,newline);
-    if (header.ends_with('\r')) header.remove_suffix(1);
-    unsigned speed{};
-    const auto [end,error]=std::from_chars(header.data(),header.data()+header.size(),speed);
-    // Current a1npc.txt SPEED:45/124 matches the first line of the original
-    // Warriv TBL messages. Leave non-speech/unrecognized formats untouched.
-    if (error==std::errc{} && end==header.data()+header.size()) text.remove_prefix(newline+1);
-    return text;
+    return npcTblSpeech(find(index));
 }
 int ClassicStrings::index(std::string_view key) const {
     auto found = indices_.find(key);

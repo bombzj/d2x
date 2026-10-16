@@ -66,34 +66,6 @@ const SkillOverlayVisual *SceneAssets::ensureOverlay(int id) {
     unavailableOverlays.erase(id);
     return &spellOverlays.emplace(id, SpellOverlay{std::move(animation), std::move(visual)}).first->second.visual;
 }
-namespace {
-void loadFont(Graphics &graphics, Archives &archives, ClassicFont &font, std::string_view name, int color = 0) {
-    auto path = "data/local/font/latin/" + std::string(name);
-    if (!color) font.glyphs = graphics.single(path + ".dc6");
-    else {
-        constexpr size_t fontShifts = 0x6B600 + 13 * 3;
-        const auto palette = archives.read("data/global/palette/sky/pal.pl2");
-        const auto *original = graphics.animation(path + ".dc6");
-        if (!original || color < 0 || color >= 13 || palette.size() < fontShifts + 13 * 256)
-            throw std::runtime_error("Original UI font color transform is missing: " + path);
-        font.glyphs.directions = original->directions;
-        font.glyphs.count = original->framesPerDirection;
-        for (auto glyph : original->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[fontShifts + size_t(color) * 256 + pixel];
-            font.glyphs.frames.push_back(graphics.upload(glyph));
-        }
-    }
-    auto tbl = archives.read(path + ".tbl", false);
-    if (tbl.size() < 3596 || font.glyphs.frames.empty())
-        throw std::runtime_error("Original UI font is missing: " + path);
-    for (int i = 0; i < 256; ++i) {
-        font.widths[i] = tbl[12 + i * 14 + 3];
-        font.indices[i] = tbl[12 + i * 14 + 8];
-    }
-    font.ready = true;
-}
-} // namespace
 void SceneAssets::loadNpcAlert(const DataTable &overlays) {
     for (size_t row = 0; row < overlays.rows().size(); ++row) {
         if (overlays.value(row, "overlay") != "npcalert") continue;
@@ -117,42 +89,43 @@ void SceneAssets::loadNpcAlert(const DataTable &overlays) {
 SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     : archives_(archives), soundCatalog_(archives), graphics_(archives), uiGraphics_(archives, "data/global/palette/sky/pal.dat"),
       unitsGraphics_(archives, "data/global/palette/units/pal.dat"), automapCatalog_(archives), audio(), sceneAudio(archives, soundCatalog_, audio) {
-    loadFont(uiGraphics_, archives, font, "font16");
-    loadFont(uiGraphics_, archives, skillGreenFont, "font16", 2);
-    loadFont(uiGraphics_, archives, characterLabelFont, "font6");
-    loadFont(uiGraphics_, archives, characterPointFont, "font6", 1);
-    loadFont(uiGraphics_, archives, characterCompactFont, "font8");
-    loadFont(uiGraphics_, archives, hirelingBlueFont, "font8", 3);
-    loadFont(uiGraphics_, archives, hirelingRedFont, "font8", 1);
-    loadFont(uiGraphics_, archives, automapPartyFont, "font6", 2);
-    loadFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
-    loadFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
-    loadFont(uiGraphics_, archives, characterRedFont, "font16", 1);
+    loadClassicFont(uiGraphics_, archives, font, "font16");
+    loadClassicFont(uiGraphics_, archives, skillGreenFont, "font16", 2);
+    loadClassicFont(uiGraphics_, archives, characterLabelFont, "font6");
+    loadClassicFont(uiGraphics_, archives, characterPointFont, "font6", 1);
+    loadClassicFont(uiGraphics_, archives, characterCompactFont, "font8");
+    loadClassicFont(uiGraphics_, archives, hirelingBlueFont, "font8", 3);
+    loadClassicFont(uiGraphics_, archives, hirelingRedFont, "font8", 1);
+    loadClassicFont(uiGraphics_, archives, automapPartyFont, "font6", 2);
+    loadClassicFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
+    loadClassicFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
+    loadClassicFont(uiGraphics_, archives, characterRedFont, "font16", 1);
     // Original red font RGB, blended through the active PL2 for player labels.
     const auto skyPalette = archives.read("data/global/palette/sky/pal.pl2");
     constexpr size_t redFontColor = 0x6B600 + 3;
     if (skyPalette.size() < redFontColor + 3) throw std::runtime_error("Original player name color is missing");
     playerNameBackground = {skyPalette[redFontColor], skyPalette[redFontColor + 1], skyPalette[redFontColor + 2], 255};
-    loadFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
+    loadClassicFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
     itemTextFonts[0] = font;
     itemTextFonts[1] = characterRedFont;
     itemTextFonts[2] = skillGreenFont;
     itemTextFonts[3] = skillLevelBlueFont;
     for (int color : {4, 5, 8, 9})
-        loadFont(uiGraphics_, archives, itemTextFonts[size_t(color)], "font16", color);
-    loadFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
-    loadFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
-    loadFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
+        loadClassicFont(uiGraphics_, archives, itemTextFonts[size_t(color)], "font16", color);
+    loadClassicFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
+    loadClassicFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
+    loadClassicFont(uiGraphics_, archives, skillLevelCompactRedFont, "fontformal10", 1);
     const ClassicStrings characterStrings(archives);
     for (const auto *key : {"strchrlvl", "strchrexp", "strchrnxtlvl", "strchrstr", "strchrdex",
             "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
-            "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3"}) {
+            "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3",
+            "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash"}) {
         const auto value = characterStrings.find(key);
         if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
         characterLabels.emplace(key, value);
     }
-    loadFont(uiGraphics_, archives, speechFont, "fontformal12");
+    loadClassicFont(uiGraphics_, archives, speechFont, "fontformal12");
     globeTextFormats = {content.itemStrings.at("panelhealth"), content.itemStrings.at("panelmana")};
     for (const auto &format : globeTextFormats) {
         const auto first = format.find("%d");
@@ -287,10 +260,18 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     for (const auto &[code, item] : content.items.entries())
         if (item.targetCursor >= 0 && item.targetCursor >= targetingCursors.count)
             throw std::runtime_error("Original targeting cursor is missing for " + code);
+    // The original builds these labels as data/local/ui/<language>/<name>.dc6;
+    // a locale without its own copy falls back to the English artwork.
+    auto localizedLabel = [&](const char *name) {
+        for (const std::string &dir : {archives.languageDirectory, std::string("eng")}) {
+            auto art = unitsGraphics_.single("data/local/ui/" + dir + "/" + name + ".dc6");
+            if (!art.frames.empty()) return art;
+        }
+        return GpuAnimation{};
+    };
     constexpr std::array menuLabels{"options", "exit", "returntogame"};
     for (size_t index = 0; index < menuLabels.size(); ++index) {
-        gameMenuLabels[index] = unitsGraphics_.single(
-            std::string("data/local/ui/eng/") + menuLabels[index] + ".dc6");
+        gameMenuLabels[index] = localizedLabel(menuLabels[index]);
         if (gameMenuLabels[index].frames.empty())
             throw std::runtime_error("Original Escape menu label is missing: " + std::string(menuLabels[index]));
     }
@@ -300,7 +281,7 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     constexpr std::array optionValues{"full", "mini", "smalloff", "smallon", "smallno", "smallyes", "auto",
         "no", "everything", "center"};
     auto menuArt = [&](const char *name) {
-        auto art = unitsGraphics_.single(std::string("data/local/ui/eng/") + name + ".dc6");
+        auto art = localizedLabel(name);
         if (art.frames.empty()) throw std::runtime_error("Original options label missing: " + std::string(name));
         return art;
     };

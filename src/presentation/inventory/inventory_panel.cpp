@@ -20,8 +20,8 @@ Rectangle equipmentBounds(EquipmentSlot slot) {
         return {};
     auto box = bounds[size_t(slot)];
     auto panel = inventoryBounds();
-    return {panel.x + box.x * inventoryScale, panel.y + box.y * inventoryScale, box.width * inventoryScale,
-            box.height * inventoryScale};
+    return {panel.x + box.x * inventoryScale(), panel.y + box.y * inventoryScale(), box.width * inventoryScale(),
+            box.height * inventoryScale()};
 }
 std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet) {
     for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index)
@@ -34,8 +34,8 @@ std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet) {
 }
 Rectangle weaponTabBounds(unsigned set, bool left) {
     auto panel = inventoryBounds();
-    return {panel.x + (left ? 248.f : 17.f) * inventoryScale + set * 32.f * inventoryScale,
-            panel.y + 23.f * inventoryScale, 30.f * inventoryScale, 20.f * inventoryScale};
+    return {panel.x + (left ? 248.f : 17.f) * inventoryScale() + set * 32.f * inventoryScale(),
+            panel.y + 23.f * inventoryScale(), 30.f * inventoryScale(), 20.f * inventoryScale()};
 }
 std::optional<unsigned> weaponTabAt(Vec mouse) {
     for (unsigned set = 0; set < 2; ++set)
@@ -48,12 +48,12 @@ std::optional<Cell> inventoryCell(Vec mouse) {
     auto grid = inventoryGrid();
     if (!CheckCollisionPointRec(rv(mouse), grid))
         return std::nullopt;
-    return Cell{int((mouse.x - grid.x) / inventoryCellSize), int((mouse.y - grid.y) / inventoryCellSize)};
+    return Cell{int((mouse.x - grid.x) / inventoryCellSize()), int((mouse.y - grid.y) / inventoryCellSize())};
 }
 Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition) {
     auto grid = inventoryGrid();
-    return {grid.x + cell.x * inventoryCellSize, grid.y + cell.y * inventoryCellSize,
-            definition.width * inventoryCellSize, definition.height * inventoryCellSize};
+    return {grid.x + cell.x * inventoryCellSize(), grid.y + cell.y * inventoryCellSize(),
+            definition.width * inventoryCellSize(), definition.height * inventoryCellSize()};
 }
 std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui) {
     const auto &c = inventory.containers;
@@ -61,33 +61,33 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
     if (const auto *container = inventory.container(c.belt)) {
         const int rows = ui.open || ui.beltExpanded ? container->rows : 1;
         const auto belt = beltSlot({0, 0});
-        grids.push_back({c.belt, {belt.x, belt.y}, {31 * hudScale, -32 * hudScale},
-                         container->columns, rows, 29 * hudScale});
+        grids.push_back({c.belt, {belt.x, belt.y}, {31 * hudScale(), -32 * hudScale()},
+                         container->columns, rows, 29 * hudScale()});
     }
     if (ui.playerTradeOpen) grids.clear();
     if (ui.open && inventory.container(c.backpack)) {
         auto p = inventoryGrid();
         grids.push_back(
-            {c.backpack, {p.x, p.y}, {inventoryCellSize, inventoryCellSize}, 10, 4, inventoryCellSize});
+            {c.backpack, {p.x, p.y}, {inventoryCellSize(), inventoryCellSize()}, 10, 4, inventoryCellSize()});
     }
     if (ui.storage && inventory.storage == ui.storage) {
         auto p = storageBounds();
         const auto &spec = *inventory.container(ui.storage);
         const auto &layout = inventory.stashLayout;
         grids.push_back({ui.storage,
-                         {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
-                         {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
+                         {p.x + layout.left * inventoryScale(), p.y + layout.top * inventoryScale()},
+                         {layout.cellSize * inventoryScale(), layout.cellSize * inventoryScale()},
                          spec.columns,
                          spec.rows,
-                         layout.cellSize * inventoryScale});
+                         layout.cellSize * inventoryScale()});
     }
     if (ui.cubeOpen && c.cube) {
         auto p = cubeBounds();
         const auto &layout = inventory.cubeLayout;
         grids.push_back({c.cube,
-                         {p.x + layout.left * inventoryScale, p.y + layout.top * inventoryScale},
-                         {layout.cellSize * inventoryScale, layout.cellSize * inventoryScale},
-                         layout.columns, layout.rows, layout.cellSize * inventoryScale});
+                         {p.x + layout.left * inventoryScale(), p.y + layout.top * inventoryScale()},
+                         {layout.cellSize * inventoryScale(), layout.cellSize * inventoryScale()},
+                         layout.columns, layout.rows, layout.cellSize * inventoryScale()});
     }
     if (ui.playerTradeOpen && inventory.ownTrade) grids.push_back(playerTradeGrid(inventory,true));
     return grids;
@@ -95,9 +95,9 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
 ContainerGrid playerTradeGrid(const InventoryView &inventory, bool own) {
     const auto p = classicPanelBounds(false);
     const auto &l = own ? inventory.ownTradeLayout : inventory.peerTradeLayout;
-    const float cell = l.cellSize*inventoryScale;
+    const float cell = l.cellSize*inventoryScale();
     return {own ? inventory.ownTrade : inventory.peerTrade,
-        {p.x+l.left*inventoryScale,p.y+l.top*inventoryScale},{cell,cell},l.columns,l.rows,cell};
+        {p.x+l.left*inventoryScale(),p.y+l.top*inventoryScale()},{cell,cell},l.columns,l.rows,cell};
 }
 void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
     if (!pending) pendingPlacement.reset();
@@ -112,7 +112,7 @@ void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) 
         if (!drag || !drag->onCursor || drag->item.id != item->id) {
             const auto &definition = *inventory.definition(item->definition);
             drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},
-                {definition.width * inventoryCellSize / 2, definition.height * inventoryCellSize / 2},
+                {definition.width * inventoryCellSize() / 2, definition.height * inventoryCellSize() / 2},
                 true, true, true};
         } else drag->item = item->handle();
         identify.reset();

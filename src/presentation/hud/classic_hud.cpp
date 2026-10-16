@@ -18,7 +18,7 @@ void drawClassicGlobe(const GpuAnimation &orbs, const GpuAnimation &overlap, boo
         if (filled > 0) {
             const float empty = float(texture.height - filled);
             auto bounds = hudGlobe(mana);
-            bounds.y += empty * hudScale; bounds.height = filled * hudScale;
+            bounds.y += empty * hudScale(); bounds.height = filled * hudScale();
             DrawTexturePro(texture, {0, empty, float(texture.width), float(filled)}, bounds, {0, 0}, 0, WHITE);
         }
     }
@@ -44,7 +44,7 @@ void drawClassicHud(const ClassicHudArt &art, const ClassicHudValues &value) {
     }
     if (value.experience) {
         auto bounds = hudExperience(); bounds.width *= std::clamp(*value.experience, 0.f, 1.f);
-        bounds.height = 2 * hudScale; DrawRectangleRec(bounds, WHITE);
+        bounds.height = 2 * hudScale(); DrawRectangleRec(bounds, WHITE);
     }
     imageAt(art.run.frame(0, value.running ? 2 : 0), hudRunButton());
     imageAt(art.points.frame(0, value.attributePoints ? (value.pressedPoint == false ? 1 : 0) : 2), hudCharacterButton());

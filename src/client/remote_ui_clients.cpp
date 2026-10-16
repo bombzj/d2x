@@ -8,6 +8,7 @@
 #include "client/remote_combat.hpp"
 #include "client/remote_control.hpp"
 #include "content/classic_data.hpp"
+#include "content/string_table.hpp"
 #include "content/npc/npc_dialogue.hpp"
 #include "content/skills/description_values.hpp"
 #include "content/character/character_progression.hpp"
@@ -1561,26 +1562,34 @@ struct RemoteUiClients::Impl {
                 }
             }
             auto add=[&](std::string label,NpcMenuAction action) { npcView.services.push_back({std::move(label),{action,{}}}); };
+            auto menu=[&](std::string_view key,std::string fallback) {
+                if(const auto found=data.itemStrings.find(key);found!=data.itemStrings.end()) return found->second;
+                return fallback;
+            };
             // Native servers send quest/intro text in 27; ordinary gossip is
             // local MPQ presentation and must not generate a quest ACK (31).
             if(d.type==1) for(size_t turn=0;;++turn) {
                 const auto *speech=gossipSpeech(data.npcDialogues,d.speaker,turn,mapView.act);
-                if(!speech || speech->text.empty() || std::find(npcView.gossip.begin(),npcView.gossip.end(),speech->text)!=npcView.gossip.end()) break;
-                npcView.gossip.push_back(speech->text);
+                if(!speech || speech->text.empty()) break;
+                std::string text=speech->text;
+                if(const auto localized=data.itemStrings.find(speech->stringKey);localized!=data.itemStrings.end())
+                    text=std::string(npcTblSpeech(localized->second));
+                if(std::find(npcView.gossip.begin(),npcView.gossip.end(),text)!=npcView.gossip.end()) break;
+                npcView.gossip.push_back(std::move(text));
             }
-            if(!npcView.gossip.empty()) npcView.talkEntries.push_back({"Gossip",{NpcMenuAction::Gossip,{}}});
+            if(!npcView.gossip.empty()) npcView.talkEntries.push_back({menu("NPCGossipMenu","Gossip"),{NpcMenuAction::Gossip,{}}});
             if(!npcView.textTopics.empty() || !npcView.gossip.empty()) {
-                add("Talk",NpcMenuAction::Talk);
-                npcView.talkEntries.push_back({"Back",{NpcMenuAction::Back,{}}});
+                add(menu("TalkMenu","Talk"),NpcMenuAction::Talk);
+                npcView.talkEntries.push_back({menu("Back","Back"),{NpcMenuAction::Back,{}}});
             }
             const auto identity=npcIdentity();
             if(identity=="kashya" || identity=="greiz" || identity=="asheara" || identity=="qual-kehk" || identity=="tyrael") {
-                if(identity!="tyrael") add("Hire",NpcMenuAction::Hire);
-                if(w.deadHirelingName && w.hirelingReviveCost) add("Resurrect: " + std::to_string(*w.hirelingReviveCost),NpcMenuAction::Resurrect);
+                if(identity!="tyrael") add(menu("NPCMenuHire","Hire"),NpcMenuAction::Hire);
+                if(w.deadHirelingName && w.hirelingReviveCost) add(menu("hireresurrect","Resurrect")+": " + std::to_string(*w.hirelingReviveCost),NpcMenuAction::Resurrect);
             }
-            if(data.vendors.contains(identity) && identity!="nihlathak") add("Trade",NpcMenuAction::Trade);
-            if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add("Gamble",NpcMenuAction::Gamble);
-            if(identity.starts_with("cain")) add("Identify Items",NpcMenuAction::Identify);
+            if(data.vendors.contains(identity) && identity!="nihlathak") add(menu("NPCMenuTrade","Trade"),NpcMenuAction::Trade);
+            if(identity=="gheed" || identity=="elzix" || identity=="alkor" || identity=="jamella" || identity=="drehya" || identity=="nihlathak") add(menu("gamble","Gamble"),NpcMenuAction::Gamble);
+            if(identity.starts_with("cain")) add(menu("NPCIdentify1","Identify Items"),NpcMenuAction::Identify);
             // Original S2C 0x28 personal quest records, never local reward
             // authority. SUnitNpc accepts the corresponding RewardPending bit.
             const auto rewardPending=[&](QuestId id) {
@@ -1589,7 +1598,7 @@ struct RemoteUiClients::Impl {
                 return (flags&3u)==2u;
             };
             if(identity=="charsi" && characterView.level>=8 && rewardPending(QuestId::ToolsOfTheTrade))
-                add("Imbue",NpcMenuAction::Imbue);
+                add(menu("Upgrade","Imbue"),NpcMenuAction::Imbue);
             if(identity=="larzuk" && rewardPending(QuestId::SiegeOnHarrogath)) {
                 add(data.itemStrings.at("Addsocketsui"),NpcMenuAction::Socket);
                 npcView.serviceHints.emplace(NpcMenuAction::Socket,data.itemStrings.at("Addsocketsui2"));
@@ -1600,7 +1609,7 @@ struct RemoteUiClients::Impl {
             }
             if(!d.travelLabel.empty()) add(d.travelLabel,NpcMenuAction::GoEast);
             if(!d.respecLabel.empty()) add(d.respecLabel,NpcMenuAction::Respec);
-            add("Cancel",NpcMenuAction::Cancel);
+            add(menu("strUiMenu1","Cancel"),NpcMenuAction::Cancel);
         }
         QuestProjectionInput questInput;
         questInput.revision=revision; questInput.actor=characterView.actor; questInput.currentAct=mapView.act;

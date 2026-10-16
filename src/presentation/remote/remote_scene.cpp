@@ -2519,7 +2519,10 @@ struct RemoteScene::Impl {
                     const auto unit = v.world.units.find(selectedTarget);
                     shared.drawPlayerLabel(target.name, at,
                         unit != v.world.units.end() && combat.hostileSource(unit->second));
-                } else shared.drawInteractionLabel(target.name, at);
+                } else {
+                    const auto localized = strings.find(target.name);
+                    shared.drawInteractionLabel(localized.empty() ? target.name : std::string(localized), at);
+                }
                 break;
             }
         shared.drawGroundLabels(mouse);

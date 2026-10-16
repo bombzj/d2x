@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 
 namespace d2x {
@@ -88,8 +89,8 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
                 // Both runs share a baseline measured from the complete line.
                 float top = 0, bottom = float(fontSize);
                 bool found = false;
-                for (unsigned char ch : text[i]) {
-                    const auto *glyph = assets_.font.glyphs.frame(0, assets_.font.indices[ch]);
+                for (uint32_t ch : utf8Decode(text[i])) {
+                    const auto *glyph = assets_.font.glyphOf(ch);
                     if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
                     const float start = (glyph->hitY - glyph->y) * fontSize / 16.f;
                     const float end = start + glyph->hitHeight * fontSize / 16.f;

@@ -18,12 +18,14 @@
 #include "presentation/scene_view.hpp"
 #include "presentation/controller.hpp"
 #include "content/string_table.hpp"
+#include "content/language.hpp"
 #include "input.hpp"
 #include "network/realm_session.hpp"
 #include "presentation/frontend/realm_frontend.hpp"
 #include "presentation/graphics/primitives.hpp"
 #include "presentation/remote/remote_scene.hpp"
 #include <algorithm>
+#include <rlgl.h>
 #include <array>
 #include <fstream>
 #include <mutex>
@@ -193,7 +195,7 @@ class GamePacketLog {
     }
 };
 } // namespace
-void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &options, StartupProfile &profile) {
+void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &options, StartupProfile &profile) {
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
@@ -395,13 +397,13 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
         quiet.focused = input.focused; quiet.leftHeld = input.leftHeld; quiet.rightHeld = input.rightHeld;
         input = std::move(quiet);
     };
-    ClassicStrings strings(archives);
+    const auto lang = languageOf(archives);
+    ClassicStrings strings(archives, lang);
     FrontendPage page = FrontendPage::Main;
     std::string notice, gateway = "D2X-Local";
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
     std::optional<uint64_t> worldNoticeSequence;
     uint64_t worldNoticeGeneration{};
-    constexpr float offsetX = (W - 800) / 2, offsetY = (H - 600) / 2;
     // Quick entry executes the real login/Realm/character/game protocol once.
     // No credentials in argv and no retry of non-idempotent room creation.
     bool quickCharacter = !options.onlineCharacter.empty();
@@ -430,6 +432,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             gateway = std::move(config.gateway);
             config.login.account = std::move(account);
             config.login.password = std::move(password);
+            config.login.localeId = lang.localeId;
+            config.login.languageCode = lang.languageCode;
+            config.login.gameLocale = lang.gameLocale;
             session.login(std::move(config.login));
             page = FrontendPage::Login;
         } catch (const std::exception &e) {
@@ -574,6 +579,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 [&] {
                     auto config = configuration(configPath);
                     gateway = std::move(config.gateway);
+                    config.login.localeId = lang.localeId;
+                    config.login.languageCode = lang.languageCode;
+                    config.login.gameLocale = lang.gameLocale;
                     return std::move(config.login);
                 },
                 quit,
@@ -675,12 +683,10 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             debugInputs.clear();
             // Keep the final scene/screenshot while the independent service completes
             // the bounded save/leave exchange; no further world input is accepted.
-            const auto closingViewport = currentViewport();
             BeginDrawing();
             ClearBackground(BLACK);
-            DrawTexturePro(target.texture, {0, 0, float(W), -float(H)},
-                {closingViewport.offset.x, closingViewport.offset.y,
-                 W * closingViewport.scale, H * closingViewport.scale}, {0, 0}, 0, WHITE);
+            DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
+                {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
             EndDrawing();
             if (quit) continue;
         }
@@ -827,20 +833,65 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
             }
         }
         const auto viewport = currentViewport();
+        uiScale = viewport.scale;
+        uiScaleX = uiScaleY = 1.f;
+        const int targetWidth = std::max(1, GetScreenWidth());
+        const int targetHeight = std::max(1, GetScreenHeight());
+        if (W != targetWidth || H != targetHeight) { W = targetWidth; H = targetHeight; }
+        if (target.texture.width != targetWidth || target.texture.height != targetHeight) {
+            if (target.texture.id) UnloadRenderTexture(target);
+            target = LoadRenderTexture(targetWidth, targetHeight);
+            SetTextureFilter(target.texture, TEXTURE_FILTER_POINT);
+        }
         const auto raw = GetMousePosition();
-        Vector2 mouse{(raw.x - viewport.offset.x) / viewport.scale - offsetX,
-                  (raw.y - viewport.offset.y) / viewport.scale - offsetY};
+        Vector2 mouse{float(raw.x), float(raw.y)};
         bool captureRequested = false;
         FrontendIntent action;
         if (quit) debugInputs.clear();
         RemoteSceneFrame worldFrame;
         bool leaveGame = false;
-        const Vec worldMouse{(raw.x - viewport.offset.x) / viewport.scale,
-                             (raw.y - viewport.offset.y) / viewport.scale};
+        const Vec worldMouse{raw.x, raw.y};
+        // The NPC trade screen keeps its original 800x600 art. Both its input
+        // handling and its drawing run on a fixed 800x600 canvas stretched across
+        // the window, so panel layout and hit testing share one coordinate space;
+        // the world keeps rendering at window size.
+        int tradeSavedW = W, tradeSavedH = H;
+        auto enterTradeCanvas = [&] {
+            tradeSavedW = W;
+            tradeSavedH = H;
+            W = 800;
+            H = 600;
+            uiScaleX = float(GetScreenWidth()) / 800.f;
+            uiScaleY = float(GetScreenHeight()) / 600.f;
+        };
+        auto leaveTradeCanvas = [&] {
+            W = tradeSavedW;
+            H = tradeSavedH;
+            uiScaleX = uiScaleY = 1.f;
+        };
+        auto tradeCanvasMouse = [](Vec windowMouse) {
+            return Vec{windowMouse.x * 800.f / float(GetScreenWidth()),
+                       windowMouse.y * 600.f / float(GetScreenHeight())};
+        };
+        auto drawGameUi = [&](Vec windowMouse) {
+            if (!sharedUi) return;
+            if (!sharedUi->ui().shopOpen) {
+                sharedUi->drawUi(windowMouse);
+                return;
+            }
+            enterTradeCanvas();
+            rlPushMatrix();
+            rlScalef(uiScaleX, uiScaleY, 1.f);
+            sharedUi->drawUi(tradeCanvasMouse(windowMouse));
+            rlPopMatrix();
+            leaveTradeCanvas();
+        };
         if (!presentationPaused) {
             frameTiming.mark(FrontendTimings::Client);
             BeginTextureMode(target);
             ClearBackground(BLACK);
+            rlPushMatrix();
+            rlScalef(viewport.scale, viewport.scale, 1.f);
             if (showScene) {
                 try {
                     if (!sharedClients) {
@@ -936,8 +987,18 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                         } catch (const std::exception &e) { sharedUi->notice(e.what(), true); }
                         input.save = input.load = false;
                     }
+                    const bool tradeCanvas = panels.shopOpen;
+                    const Vec windowMouse = input.mouse;
+                    if (tradeCanvas) {
+                        enterTradeCanvas();
+                        input.mouse = tradeCanvasMouse(windowMouse);
+                    }
                     chatInput(input);
                     const bool keepGame = sharedController->handle(input,GetFrameTime());
+                    if (tradeCanvas) {
+                        input.mouse = windowMouse;
+                        leaveTradeCanvas();
+                    }
                     if (!keepGame) leaveGame = true;
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
@@ -949,7 +1010,7 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                     sharedController->handleWorld(input,worldFrame.input,GetFrameTime());
                     scene->drawTargetInfo(view,worldFrame,*sharedUi,combat,sharedController->combatTarget());
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
-                    sharedUi->drawUi(input.mouse);
+                    drawGameUi(input.mouse);
                 } catch (const std::exception &e) {
                     // Resource construction can fail after creating the clients
                     // but before creating the view. Retire the whole group so
@@ -963,36 +1024,55 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 auto input = pollInput(viewport);
                 if (!debugInputs.empty()) { input = std::move(debugInputs.front()); debugInputs.pop_front(); }
                 captureRequested = input.screenshot;
-                mouse = {input.mouse.x - offsetX, input.mouse.y - offsetY};
                 ClearBackground(BLACK);
                 if (view.stage == OnlineStage::ProtocolReady && sharedClients && sharedUi && sharedController) {
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                     sharedUi->refreshUi(std::clamp(GetFrameTime(), 0.f, .1f));
+                    const bool tradeCanvas = sharedUi->ui().shopOpen;
+                    const Vec windowMouse = input.mouse;
+                    if (tradeCanvas) {
+                        enterTradeCanvas();
+                        input.mouse = tradeCanvasMouse(windowMouse);
+                    }
                     chatInput(input);
                     if (!sharedController->handle(input, GetFrameTime())) leaveGame = true;
+                    if (tradeCanvas) {
+                        input.mouse = windowMouse;
+                        leaveTradeCanvas();
+                    }
                     WorldInputView unavailable;
                     unavailable.gameGeneration = view.gameGeneration;
                     unavailable.areaGeneration = view.world.areaGeneration;
                     sharedController->handleWorld(input, unavailable, GetFrameTime());
-                    sharedUi->drawUi(worldMouse);
+                    drawGameUi(worldMouse);
                 } else {
-                    BeginScissorMode(int(offsetX), int(offsetY), 800, 600);
+                    // Fullscreen frontend pages are original 800x600 art: lay them
+                    // out in a fixed 800x600 canvas and stretch that canvas over
+                    // the window, so title, character list and difficulty screens
+                    // fill the window like the NPC trade screen does.
+                    const float Wf = float(GetScreenWidth()), Hf = float(GetScreenHeight());
+                    const float sx = Wf / 800.f, sy = Hf / 600.f;
+                    mouse = {input.mouse.x / sx, input.mouse.y / sy};
+                    uiScaleX = sx;
+                    uiScaleY = sy;
+                    uiScissor(0.f, 0.f, 800.f, 600.f);
                     rlPushMatrix();
-                    rlTranslatef(offsetX, offsetY, 0);
+                    rlScalef(sx, sy, 1.f);
                     action = ui.frame(page, session.read(), gateway, notice, mouse, input,
                                       !localConnection && !lanConnection, sceneStatus().reason);
                     rlPopMatrix();
                     EndScissorMode();
+                    uiScaleX = uiScaleY = 1.f;
                 }
             }
+            rlPopMatrix();
             EndTextureMode();
         }
         frameTiming.mark(FrontendTimings::Scene);
         BeginDrawing();
         ClearBackground(BLACK);
-        DrawTexturePro(target.texture, {0, 0, float(W), -float(H)},
-                       {viewport.offset.x, viewport.offset.y, W * viewport.scale, H * viewport.scale}, {0, 0},
-                       0, WHITE);
+        DrawTexturePro(target.texture, {0, 0, float(target.texture.width), -float(target.texture.height)},
+                       {0, 0, float(GetScreenWidth()), float(GetScreenHeight())}, {0, 0}, 0, WHITE);
         EndDrawing();
         frameTiming.mark(FrontendTimings::Present);
         profile.mark("first-presented-frame");
@@ -1121,6 +1201,9 @@ void runFrontend(Archives &archives, RenderTexture2D target, const AppOptions &o
                 ui.setLogin(action.name, action.password);
                 config.login.account = std::move(action.name);
                 config.login.password = std::move(action.password);
+                config.login.localeId = lang.localeId;
+                config.login.languageCode = lang.languageCode;
+                config.login.gameLocale = lang.gameLocale;
                 notice.clear();
                 dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
                 manualRealm = false;

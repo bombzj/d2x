@@ -8,8 +8,8 @@ namespace d2x {
 inline Rectangle characterBounds() { return classicPanelBounds(false, 64); }
 inline Rectangle characterArtRect(float x, float y, float width, float height) {
     auto panel = characterBounds();
-    return {panel.x + x * classicPanelScale, panel.y + y * classicPanelScale,
-            width * classicPanelScale, height * classicPanelScale};
+    return {panel.x + x * classicPanelScale(), panel.y + y * classicPanelScale(),
+            width * classicPanelScale(), height * classicPanelScale()};
 }
 inline Rectangle characterClose() { return characterArtRect(128, 388, 32, 32); }
 inline Rectangle characterAddButton(int index) {

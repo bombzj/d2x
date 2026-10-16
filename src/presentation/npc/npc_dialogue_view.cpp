@@ -4,14 +4,13 @@
 namespace d2x {
 namespace {
 constexpr int visibleLines = 5;
-constexpr int textSize = int(12 * classicPanelScale);
-constexpr int lineHeight = int(20 * classicPanelScale);
-constexpr float initialOffset = float(lineHeight);
-Rectangle speechBounds() { return {(W - 400 * classicPanelScale) / 2, 0,
-                                   400 * classicPanelScale, 120 * classicPanelScale}; }
+inline int lineHeight() { return int(20 * classicPanelScale()); }
+inline float initialOffset() { return float(lineHeight()); }
+Rectangle speechBounds() { return {(W - 400 * classicPanelScale()) / 2, 0,
+                                   400 * classicPanelScale(), 120 * classicPanelScale()}; }
 int textWidth() { return int(speechBounds().width) - 32; }
 float maxOffset(size_t lines) {
-    return speechBounds().height - 24 + std::max(0, int(lines) - visibleLines) * lineHeight;
+    return speechBounds().height - 24 + std::max(0, int(lines) - visibleLines) * lineHeight();
 }
 
 std::string fontText(std::string text) {
@@ -41,7 +40,7 @@ void SceneView::cancelNpcDialogue() {
     view_.dialogueTextTopic.reset();
     view_.dialogueLines.clear();
     view_.dialogueStatus.clear();
-    view_.dialogueOffset = initialOffset;
+    view_.dialogueOffset = initialOffset();
     view_.dialogueManualScroll = false;
     view_.npcMenu = false;
     view_.npcTopics = false;
@@ -59,7 +58,7 @@ void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::st
     view_.dialogue = std::move(text);
     view_.dialogueStatus.clear();
     // Show the first line immediately, then continue the bottom-to-top crawl.
-    view_.dialogueOffset = initialOffset;
+    view_.dialogueOffset = initialOffset();
     view_.dialogueManualScroll = false;
     view_.dialogueLines.clear();
     auto rendered = fontText(view_.dialogue);
@@ -84,7 +83,7 @@ void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::st
                     wordEnd = paragraph.size();
                 auto word = paragraph.substr(wordAt, wordEnd - wordAt);
                 auto candidate = line.empty() ? word : line + ' ' + word;
-                if (!line.empty() && speechPainter_.measure(candidate, textSize) > textWidth()) {
+                if (!line.empty() && speechPainter_.measure(candidate, int(12*classicPanelScale())) > textWidth()) {
                     view_.dialogueLines.push_back(std::move(line));
                     line = std::move(word);
                 } else
@@ -102,8 +101,8 @@ void SceneView::displayNpcDialogue(EntityId object, std::string speaker, std::st
 
 void SceneView::scrollNpcDialogue(int amount) {
     view_.dialogueManualScroll = true;
-    view_.dialogueOffset = std::clamp(view_.dialogueOffset + amount * lineHeight,
-                                      initialOffset, maxOffset(view_.dialogueLines.size()));
+    view_.dialogueOffset = std::clamp(view_.dialogueOffset + amount * lineHeight(),
+                                      initialOffset(), maxOffset(view_.dialogueLines.size()));
 }
 
 void SceneView::advanceNpcDialogue(float dt) {
@@ -111,7 +110,7 @@ void SceneView::advanceNpcDialogue(float dt) {
     // Keep the existing text-only cadence until speech timing is available,
     // but scroll continuously from the bottom of the original-style window.
     view_.dialogueOffset = std::min(maxOffset(view_.dialogueLines.size()),
-        view_.dialogueOffset + dt * lineHeight / 2.2f);
+        view_.dialogueOffset + dt * lineHeight() / 2.2f);
 }
 
 bool SceneView::closeNpcDialogue() {
@@ -134,14 +133,14 @@ void SceneView::drawNpcDialogue() const {
     auto bounds = speechBounds();
     DrawRectangleRec(bounds, {0, 0, 0, 200});
     DrawRectangleLinesEx(bounds, 1, gold);
-    BeginScissorMode(int(bounds.x) + 14, int(bounds.y) + 8,
-                     textWidth() + 4, int(bounds.height) - 16);
+    uiScissor(bounds.x + 14, bounds.y + 8,
+              float(textWidth() + 4), bounds.height - 16);
     const float firstY = bounds.y + bounds.height - 16 - view_.dialogueOffset;
     for (size_t index = 0; index < view_.dialogueLines.size(); ++index) {
-        const float y = firstY + float(index) * lineHeight;
-        if (y + lineHeight < bounds.y + 8) continue;
+        const float y = firstY + float(index) * lineHeight();
+        if (y + lineHeight() < bounds.y + 8) continue;
         if (y > bounds.y + bounds.height - 8) break;
-        speechPainter_.label(view_.dialogueLines[index], int(bounds.x) + 16, int(y), textSize, WHITE);
+        speechPainter_.label(view_.dialogueLines[index], int(bounds.x) + 16, int(y), int(12*classicPanelScale()), WHITE);
     }
     EndScissorMode();
 }

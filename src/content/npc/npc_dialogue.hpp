@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace d2x {
+class ClassicStrings;
 struct NpcSpeech {
     std::string text;
     std::string wave; // Original MPQ reference; playback is not implemented.
@@ -15,6 +16,9 @@ struct NpcSpeech {
     int act = 0;
     std::string speaker, introClass;
     std::string soundId;
+    // Original TBL key resolved from the English table; language-independent and
+    // used to display the selected language's string.
+    std::string stringKey;
     bool introduction = false, gossip = false, arrival = false;
 };
 struct NpcDialogues : std::map<std::string, std::vector<NpcSpeech>, std::less<>> {
@@ -22,8 +26,12 @@ struct NpcDialogues : std::map<std::string, std::vector<NpcSpeech>, std::less<>>
     std::map<unsigned, std::string> introductionKeys;
 };
 NpcDialogues loadNpcDialogues(Archives &archives, const DataTable &monsters, const DataTable &presets,
-                             const std::map<std::string, std::string, std::less<>> &strings);
+                             const std::map<std::string, std::string, std::less<>> &strings,
+                             const ClassicStrings &english);
 std::string npcIntroductionKey(std::string_view npc, int act);
+// Whitespace/punctuation-normalized MPQ speech text; shared by the content
+// loader and the hosting rule builder.
+std::string npcSpeechText(std::string_view value);
 const NpcSpeech *introSpeech(const NpcDialogues &dialogues, std::string_view npc,
                              std::string_view characterClass = {}, int act = 0);
 const NpcSpeech *gossipSpeech(const NpcDialogues &dialogues, std::string_view npc, size_t turn, int act = 0);

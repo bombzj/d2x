@@ -9,28 +9,28 @@ std::optional<unsigned> SceneView::inventoryVendorPrice(ItemHandle item) const {
 }
 
 namespace {
-constexpr float scale = inventoryScale;
+float scale() { return inventoryScale(); }
 Rectangle panelBounds() {
     return storageBounds();
 }
 Rectangle shopGrid() {
     auto panel = panelBounds();
-    return {panel.x + 14 * scale, panel.y + 62 * scale,
-            10 * inventoryCellSize, 10 * inventoryCellSize};
+    return {panel.x + 14 * scale(), panel.y + 62 * scale(),
+            10 * inventoryCellSize(), 10 * inventoryCellSize()};
 }
 Rectangle tabBounds(int index) {
     auto panel = panelBounds();
-    return {panel.x + index * 80 * scale, panel.y, 80 * scale, 28 * scale};
+    return {panel.x + index * 80 * scale(), panel.y, 80 * scale(), 28 * scale()};
 }
 Rectangle shopButton(int index) {
     auto panel = panelBounds();
-    return {panel.x + (115 + index * 52) * scale, panel.y + 384 * scale,
-            32 * scale, 32 * scale};
+    return {panel.x + (115 + index * 52) * scale(), panel.y + 384 * scale(),
+            32 * scale(), 32 * scale()};
 }
 Rectangle backButton() { return shopButton(3); }
 Rectangle pageButton(bool next) {
     auto panel = panelBounds();
-    return {panel.x + (next ? 61.f : 14.f) * scale, panel.y + 384 * scale, 38 * scale, 32 * scale};
+    return {panel.x + (next ? 61.f : 14.f) * scale(), panel.y + 384 * scale(), 38 * scale(), 32 * scale()};
 }
 Rectangle confirmBounds() {
     auto panel = panelBounds();
@@ -75,10 +75,10 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
             for (int x = (*cell)[0]; x < (*cell)[0] + item->width; ++x)
                 occupied[size_t(y * 10 + x)] = true;
         result.push_back({&offer, page,
-                          {grid.x + (*cell)[0] * inventoryCellSize,
-                           grid.y + (*cell)[1] * inventoryCellSize,
-                           item->width * inventoryCellSize,
-                           item->height * inventoryCellSize}});
+                          {grid.x + (*cell)[0] * inventoryCellSize(),
+                           grid.y + (*cell)[1] * inventoryCellSize(),
+                           item->width * inventoryCellSize(),
+                           item->height * inventoryCellSize()}});
     }
     return result;
 }
@@ -199,9 +199,9 @@ void SceneView::drawNpcShop(Vec mouse) const {
         for (int index = 0; index < 4; ++index) {
             const auto &tile = assets_.vendorPanel.frames[size_t(index)].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                           {panel.x + (index % 2) * 256 * scale,
-                            panel.y + (index / 2) * 256 * scale,
-                            tile.width * scale, tile.height * scale}, {0, 0}, 0, WHITE);
+                           {panel.x + (index % 2) * 256 * scale(),
+                            panel.y + (index / 2) * 256 * scale(),
+                            tile.width * scale(), tile.height * scale()}, {0, 0}, 0, WHITE);
         }
     const auto &shop = shopView();
     for (int index = 0; !view_.shopGamble && index < 4; ++index) {
@@ -234,9 +234,9 @@ void SceneView::drawNpcShop(Vec mouse) const {
         }
     }
     const std::string stashGold = std::to_string(shop.bankGold);
-    painter_.label("STASH", int(panel.x + 20 * scale), int(panel.y + 362 * scale), 13, WHITE);
-    painter_.label(stashGold, int(panel.x + 199 * scale) - painter_.measure(stashGold, 13),
-                   int(panel.y + 362 * scale), 13, WHITE);
+    painter_.label(assets_.characterLabels.at("stash"), int(panel.x + 20 * scale()), int(panel.y + 362 * scale()), 13, WHITE);
+    painter_.label(stashGold, int(panel.x + 199 * scale()) - painter_.measure(stashGold, 13),
+                   int(panel.y + 362 * scale()), 13, WHITE);
     const int buttonFrames[] = {2, 18, 6, 10};
     const bool repairAvailable = shop.repairAvailable;
     for (int index = 0; index < 4; ++index) {
@@ -250,20 +250,20 @@ void SceneView::drawNpcShop(Vec mouse) const {
                        WHITE);
         if (index == 2 && view_.shopRepair) DrawRectangleLinesEx(shopButton(index), 1, gold);
         if (index == 2 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
-            painter_.label("Repair", int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
+            painter_.label(assets_.characterLabels.at("NPCRepairItems"), int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
         if (index == 1 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
-            drawItemText({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale}, shop.repairAllPrice, "COST");
+            deferTooltip({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale()}, shop.repairAllPrice, assets_.characterLabels.at("Cost"));
     }
     if (maximumPage(items) > (view_.shopCategory == 1 || view_.shopCategory == 2 ? 1 : 0)) {
         painter_.label("<", int(pageButton(false).x + 14), int(pageButton(false).y + 8), 15, gold);
         painter_.label(">", int(pageButton(true).x + 14), int(pageButton(true).y + 8), 15, gold);
         painter_.label(std::to_string(view_.shopPage + 1) + "/" +
                        std::to_string(maximumPage(items) + 1),
-                       int(panel.x + 36 * scale), int(panel.y + 416 * scale), 11, gold);
+                       int(panel.x + 36 * scale()), int(panel.y + 416 * scale()), 11, gold);
     }
     if (hovered && !view_.shopConfirm && !view_.inventory.drag) {
         if (const auto *detail = npcClient_.inspectShopOffer(view_.dialogueObject, hovered->slot, view_.shopGamble))
-            drawItemText(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, "COST");
+            deferTooltip(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, assets_.characterLabels.at("Cost"));
     }
     if (view_.shopConfirm) {
         auto popup = confirmBounds();

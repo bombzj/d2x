@@ -22,9 +22,9 @@ Rectangle SceneView::gameMenuItemBounds(int index) const {
         if (int(row) == index) { width = rowWidth; height = rowHeight; }
         totalHeight += rowHeight + (row + 1 < assets_.gameMenuLabels.size() ? 10 : 0);
     }
-    return {(W - width * hudScale) * .5f,
-            (H - totalHeight * hudScale) * .5f + top * hudScale,
-            width * hudScale, height * hudScale};
+    return {(W - width * hudScale()) * .5f,
+            (H - totalHeight * hudScale()) * .5f + top * hudScale(),
+            width * hudScale(), height * hudScale()};
 }
 int SceneView::gameMenuAt(Vec mouse) const {
     for (int index = 0; index < gameMenuItemCount(); ++index)
@@ -53,7 +53,7 @@ void SceneView::drawGameMenu() const {
         };
         if (view_.gameMenuPage == 2) {
             const auto dimensions = size(assets_.automapOptionsTitle);
-            const float scale = std::min(hudScale, (W - 160.f) / dimensions.x);
+            const float scale = std::min(hudScale(), (W - 160.f) / dimensions.x);
             label(assets_.automapOptionsTitle, {(W - dimensions.x * scale) * .5f, 42}, scale);
         }
         for (int index = 0; index < gameMenuItemCount(); ++index) {
@@ -62,7 +62,7 @@ void SceneView::drawGameMenu() const {
                 : index == 5 ? assets_.optionsMenuLabels[4] : assets_.automapOptionLabels[size_t(index)];
             const auto dimensions = size(art);
             const float available = view_.gameMenuPage == 2 && index < 5 ? bounds.width * .68f : bounds.width;
-            const float scale = std::min(hudScale, std::min(available / dimensions.x, bounds.height / dimensions.y));
+            const float scale = std::min(hudScale(), std::min(available / dimensions.x, bounds.height / dimensions.y));
             const bool centered = view_.gameMenuPage == 1 || index == 5;
             label(art, {centered ? (W - dimensions.x * scale) * .5f : bounds.x,
                     bounds.y + (bounds.height - dimensions.y * scale) * .5f}, scale);
@@ -75,7 +75,7 @@ void SceneView::drawGameMenu() const {
                     : index == 3 ? (view_.automapParty ? 5 : 4) : (view_.automapNames ? 5 : 4);
                 const auto &valueArt = assets_.automapOptionValues[size_t(value)];
                 const auto valueSize = size(valueArt);
-                const float valueScale = std::min(hudScale, std::min(bounds.width * .28f / valueSize.x,
+                const float valueScale = std::min(hudScale(), std::min(bounds.width * .28f / valueSize.x,
                                                                     bounds.height / valueSize.y));
                 label(valueArt, {bounds.x + bounds.width - valueSize.x * valueScale,
                     bounds.y + (bounds.height - valueSize.y * valueScale) * .5f}, valueScale);
@@ -102,9 +102,9 @@ void SceneView::drawGameMenu() const {
         for (const auto &part : assets_.gameMenuLabels[size_t(index)].frames) {
             const auto &texture = part.texture;
             DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-                           {bounds.x, bounds.y, texture.width * hudScale, texture.height * hudScale},
+                           {bounds.x, bounds.y, texture.width * hudScale(), texture.height * hudScale()},
                            {0, 0}, 0, WHITE);
-            bounds.x += texture.width * hudScale;
+            bounds.x += texture.width * hudScale();
         }
     }
     const auto selected = gameMenuItemBounds(view_.gameMenuSelected);
@@ -112,9 +112,9 @@ void SceneView::drawGameMenu() const {
     const int frame = int(view_.gameMenuTime * marker.count) % marker.count;
     for (bool right : {false, true}) {
         const auto *image = marker.frame(0, right ? frame : marker.count - 1 - frame);
-        const float side = 54 * hudScale;
-        const float left = right ? (W + widest) * .5f + 26 * hudScale
-                                 : (W - widest) * .5f - 80 * hudScale;
+        const float side = 54 * hudScale();
+        const float left = right ? (W + widest) * .5f + 26 * hudScale()
+                                 : (W - widest) * .5f - 80 * hudScale();
         DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
                        {left, selected.y + (selected.height - side) * .5f, side, side},
                        {0, 0}, 0, WHITE);
@@ -150,7 +150,7 @@ void SceneView::drawHelp() const {
                            "F1 through F8              Select bound mouse skill",
                            "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
-                           "W / O                      Weapon swap / Hireling",
+                           "W / O / P                Weapon swap / Hireling / Party",
                            "Q / Home                   Quest log / Center map",
                            "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
@@ -181,9 +181,10 @@ void SceneView::drawDeathNotice() const {
 }
 float SceneView::partyPortraitOffset() const {
     return view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput() ?
-        float(party_.portraitCount()) * 56 * classicPanelScale : 0;
+        float(party_.portraitCount()) * 56 * classicPanelScale() : 0;
 }
 void SceneView::drawUi(Vec mouse) const {
+    deferredTooltip_.active = false;
     drawControlPanel();
     drawDurabilityWarning();
     drawHostilityWarning();
@@ -222,6 +223,9 @@ void SceneView::drawUi(Vec mouse) const {
     drawGameMenu();
     tradeInvite_.draw(worldViewport());
     tradeInvite_.drawGoldDialog();
+    if (deferredTooltip_.active)
+        drawItemText(deferredTooltip_.lines, deferredTooltip_.quality, deferredTooltip_.anchor,
+                     deferredTooltip_.price, deferredTooltip_.priceLabel);
     if (!itemCursor) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
         Vec hotspot = handCursorHotspot(pointer);

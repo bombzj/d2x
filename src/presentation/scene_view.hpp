@@ -197,6 +197,26 @@ class SceneView {
                          std::string_view priceLabel = {}) const;
     void drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                       std::optional<unsigned> price, std::string_view priceLabel) const;
+    // NPC shop tooltips are collected while the shop panel draws and emitted at
+    // the end of drawUi, so the inventory and character panels cannot cover them.
+    struct DeferredTooltip {
+        bool active = false;
+        std::vector<ItemTextLine> lines;
+        ItemQuality quality = ItemQuality::Normal;
+        std::optional<unsigned> price;
+        std::string priceLabel;
+        Vec anchor{};
+    };
+    mutable DeferredTooltip deferredTooltip_;
+    void deferTooltip(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
+                      std::optional<unsigned> price, std::string_view priceLabel) const {
+        deferredTooltip_.active = true;
+        deferredTooltip_.lines = std::move(lines);
+        deferredTooltip_.quality = quality;
+        deferredTooltip_.price = price;
+        deferredTooltip_.priceLabel = std::string(priceLabel);
+        deferredTooltip_.anchor = anchor;
+    }
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     static Color itemColor(ItemQuality quality);
     void itemButton(Rectangle bounds, const char *label, Color color) const;

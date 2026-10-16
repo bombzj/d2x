@@ -1,5 +1,6 @@
 #include "chat_view.hpp"
 #include "content/string_table.hpp"
+#include "core/text.hpp"
 #include "hud_layout.hpp"
 #include <algorithm>
 #include <chrono>
@@ -17,20 +18,21 @@ constexpr std::array fontNames{"font8", "font16"};
 ChatView::ChatView(Archives &archives)
     : graphics_(archives, "data/global/palette/sky/pal.dat") {
     try {
+        fontDirectory_ = archives.languageFontDirectory;
         palette_ = archives.read("data/global/palette/sky/pal.pl2");
         if (palette_.size() < fontShifts + 13 * 256)
             throw std::runtime_error("Original chat font color transforms are missing");
         for (size_t kind = 0; kind < fontNames.size(); ++kind) {
-            const auto path = "data/local/font/latin/" + std::string(fontNames[kind]);
+            const auto path = "data/local/font/" + archives.languageFontDirectory + "/" + std::string(fontNames[kind]);
             auto &base = fonts_[kind];
-            base.glyphs = graphics_.single(path + ".dc6");
+            const auto *original = graphics_.animation(path + ".dc6");
             const auto table = archives.read(path + ".tbl");
-            if (base.glyphs.count < 256 || table.size() < 3596)
+            if (!original || original->framesPerDirection < 256)
                 throw std::runtime_error("Original chat font is missing: " + path);
-            for (int character = 0; character < 256; ++character) {
-                base.widths[character] = table[12 + character * 14 + 3];
-                base.indices[character] = table[12 + character * 14 + 8];
-            }
+            base.graphics = &graphics_;
+            base.source = original;
+            if (!parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(table.data()), table.size()), base))
+                throw std::runtime_error("Original chat font is missing: " + path);
             base.ready = true;
         }
         border_ = graphics_.single("data/global/ui/menu/boxpieces.dc6");
@@ -48,41 +50,39 @@ ChatView::ChatView(Archives &archives)
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }
 }
-const GpuAnimation &ChatView::font(int kind, int color) const {
+const ClassicFont &ChatView::font(int kind, int color) const {
     const auto &base = fonts_.at(size_t(kind));
-    if (!color) return base.glyphs; // Sky's white transform is zero; retain original indices.
+    if (!color) return base; // Sky's white transform is zero; retain original indices.
     auto &cache = colored_.at(size_t(kind)).at(size_t(color));
-    if (!cache) {
-        const auto *source = graphics_.animation("data/local/font/latin/" + std::string(fontNames.at(size_t(kind))) + ".dc6");
-        GpuAnimation glyphs;
-        glyphs.directions = source->directions; glyphs.count = source->framesPerDirection;
-        for (auto glyph : source->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette_[fontShifts + size_t(color) * 256 + pixel];
-            glyphs.frames.push_back(graphics_.upload(glyph));
-        }
-        cache = std::move(glyphs);
+    if (!cache.ready) {
+        cache = base;
+        cache.sprites.clear();
+        cache.uploaded.clear();
+        for (size_t i = 0; i < cache.transform.size(); ++i)
+            cache.transform[i] = palette_[fontShifts + size_t(color) * 256 + i];
+        cache.transformed = true;
+        cache.ready = true;
     }
-    return *cache;
+    return cache;
 }
 ChatView::Line ChatView::plain(std::string_view value, uint8_t color) const {
     Line result;
-    for (unsigned char character : value) result.push_back({character, color});
+    for (uint32_t character : utf8Decode(value)) result.push_back({character, color});
     return result;
 }
 float ChatView::width(int kind, const Line &line) const {
     float value = 0;
-    for (auto glyph : line) value += fonts_[size_t(kind)].widths[glyph.character];
-    return value * hudTextScale;
+    for (auto glyph : line) value += fonts_[size_t(kind)].widthOf(glyph.character);
+    return value * hudTextScale();
 }
 void ChatView::text(int kind, const Line &line, Vec at) const {
     const auto &base = fonts_[size_t(kind)];
     for (auto glyph : line) {
-        const auto *image = font(kind, glyph.color).frame(0, base.indices[glyph.character]);
+        const auto *image = font(kind, glyph.color).glyphOf(glyph.character);
         if (image && glyph.character != ' ')
             DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-                {at.x, at.y, image->texture.width * hudTextScale, image->texture.height * hudTextScale}, {0, 0}, 0, WHITE);
-        at.x += base.widths[glyph.character] * hudTextScale;
+                {at.x, at.y, image->texture.width * hudTextScale(), image->texture.height * hudTextScale()}, {0, 0}, 0, WHITE);
+        at.x += base.widthOf(glyph.character) * hudTextScale();
     }
 }
 std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) const {
@@ -92,7 +92,7 @@ std::vector<ChatView::Line> ChatView::wrap(const Line &glyphs, float available) 
         size_t end = start, space = start;
         float used = 0;
         while (end < glyphs.size() && glyphs[end].character != '\n') {
-            const float advance = fonts_[0].widths[glyphs[end].character] * hudTextScale;
+            const float advance = fonts_[0].widthOf(glyphs[end].character) * hudTextScale();
             if (end > start && used + advance > available) break;
             used += advance;
             if (glyphs[end].character == ' ') space = end;
@@ -133,16 +133,33 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         if(battleNet && message.type==4) glyphs=plain("[Battle.net] ",4);
         uint8_t color = message.messageColor;
         bool decoded = true;
-        for (size_t index = 0; index < message.text.size(); ++index) {
-            auto character = message.text[index];
+        for (size_t index = 0; index < message.text.size();) {
+            const auto character = uint8_t(message.text[index]);
             // Native text color escapes, also used by local d2bs Print evidence.
             if (character == 0xFF && index + 2 < message.text.size() && message.text[index + 1] == 'c' &&
                 message.text[index + 2] >= '0' && message.text[index + 2] <= '9') {
-                color = uint8_t(message.text[index + 2] - '0'); index += 2; continue;
+                color = uint8_t(message.text[index + 2] - '0'); index += 3; continue;
             }
-            if (character == '\r') continue;
-            if (character != '\n' && (character < 32 || character >= 127)) { decoded = false; break; }
-            glyphs.push_back({character, color});
+            if (character == '\r') { ++index; continue; }
+            size_t length = 1;
+            uint32_t code = character;
+            if (character >= 0xF0) { length = 4; code = character & 0x07; }
+            else if (character >= 0xE0) { length = 3; code = character & 0x0F; }
+            else if (character >= 0xC0) { length = 2; code = character & 0x1F; }
+            if (length > 1) {
+                if (index + length > message.text.size()) { decoded = false; break; }
+                for (size_t k = 1; k < length; ++k) {
+                    const auto next = uint8_t(message.text[index + k]);
+                    if ((next & 0xC0) != 0x80) { decoded = false; break; }
+                    code = (code << 6) | (next & 0x3F);
+                }
+                if (!decoded) break;
+                index += length;
+            } else {
+                ++index;
+            }
+            if (code != '\n' && code < 32) { decoded = false; break; }
+            glyphs.push_back({code, color});
         }
         if (!decoded) { ++unavailable_; continue; }
         Message displayed{message.sequence*2+unsigned(battleNet), message.receivedMilliseconds, glyphs, wrap(glyphs, body().width)};
@@ -210,29 +227,29 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
     }
     scroll_ = std::min(scroll_, maximumScroll());
 }
-Rectangle ChatView::bounds() const { return {8 * hudScale, 30 * hudScale, W - 16 * hudScale, H - 124 * hudScale}; }
+Rectangle ChatView::bounds() const { return {8 * hudScale(), 30 * hudScale(), W - 16 * hudScale(), H - 124 * hudScale()}; }
 Rectangle ChatView::body() const {
     const auto outer = bounds();
-    return {40 * hudScale, outer.y + 48 * hudScale, W - 88 * hudScale, outer.height - 94 * hudScale};
+    return {40 * hudScale(), outer.y + 48 * hudScale(), W - 88 * hudScale(), outer.height - 94 * hudScale()};
 }
 Rectangle ChatView::closeBounds() const {
     const auto outer = bounds();
-    return {outer.x, outer.y + outer.height - 36 * hudScale, outer.width, 36 * hudScale};
+    return {outer.x, outer.y + outer.height - 36 * hudScale(), outer.width, 36 * hudScale()};
 }
 Rectangle ChatView::track() const {
     const auto content = body();
-    return {W - 26 * hudScale, content.y + 13 * hudScale, 12 * hudScale, content.height - 26 * hudScale};
+    return {W - 26 * hudScale(), content.y + 13 * hudScale(), 12 * hudScale(), content.height - 26 * hudScale()};
 }
-size_t ChatView::visibleRows() const { return size_t(std::max(1.f, std::floor(body().height / (lineHeight * hudTextScale)))); }
+size_t ChatView::visibleRows() const { return size_t(std::max(1.f, std::floor(body().height / (lineHeight * hudTextScale())))); }
 size_t ChatView::maximumScroll() const { return rows_.size() > visibleRows() ? rows_.size() - visibleRows() : 0; }
 Rectangle ChatView::thumb() const {
     const auto gutter = track();
     return {gutter.x, gutter.y + (maximumScroll() ? float(scroll_) / maximumScroll() : 0.f) *
-        (gutter.height - 13 * hudScale), gutter.width, 13 * hudScale};
+        (gutter.height - 13 * hudScale()), gutter.width, 13 * hudScale()};
 }
 void ChatView::scrollTo(Vec mouse) {
     const auto gutter = track();
-    const auto fraction = std::clamp((mouse.y - gutter.y - 6.5f * hudScale) / (gutter.height - 13 * hudScale), 0.f, 1.f);
+    const auto fraction = std::clamp((mouse.y - gutter.y - 6.5f * hudScale()) / (gutter.height - 13 * hudScale()), 0.f, 1.f);
     scroll_ = size_t(std::round(fraction * maximumScroll()));
 }
 void ChatView::setLogOpen(bool open) {
@@ -271,8 +288,8 @@ ChatIntent ChatView::handle(const FrameInput &input, bool canOpen) {
         if (input.entryEnd) scroll_ = maximumScroll();
         if (input.insideViewport && input.leftPressed) {
             const auto gutter = track();
-            if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y - 13 * hudScale, gutter.width, 13 * hudScale})) --delta;
-            else if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y + gutter.height, gutter.width, 13 * hudScale})) ++delta;
+            if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y - 13 * hudScale(), gutter.width, 13 * hudScale()})) --delta;
+            else if (CheckCollisionPointRec(rv(input.mouse), {gutter.x, gutter.y + gutter.height, gutter.width, 13 * hudScale()})) ++delta;
             else if (CheckCollisionPointRec(rv(input.mouse), gutter)) dragging_ = true;
         }
         scroll_ = size_t(std::clamp(int(scroll_) + delta, 0, int(maximumScroll())));
@@ -290,16 +307,16 @@ void ChatView::sent(bool accepted) {
 void ChatView::piece(const GpuAnimation &art, int frame, Vec point) const {
     const auto *image = art.frame(0, frame);
     if (image) DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-        {point.x, point.y, image->texture.width * hudScale, image->texture.height * hudScale}, {0, 0}, 0, WHITE);
+        {point.x, point.y, image->texture.width * hudScale(), image->texture.height * hudScale()}, {0, 0}, 0, WHITE);
 }
 void ChatView::horizontal(float x, float y, float available, bool bottom) const {
     const auto *image = border_.frame(0, bottom ? 16 : 2);
-    const float step = (image->texture.width - 2) * hudScale;
+    const float step = (image->texture.width - 2) * hudScale();
     for (int index = 0; index * step < available; ++index)
         piece(border_, (bottom ? 16 : 2) + index % 6, {x + index * step, y});
 }
 void ChatView::box(Rectangle rectangle) const {
-    originalBox(border_, rectangle, hudScale);
+    originalBox(border_, rectangle, hudScale());
 }
 void ChatView::draw(Rectangle worldViewport) const {
     if (!ready_) return;
@@ -307,29 +324,29 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto outer = bounds(), content = body(), close = closeBounds(), gutter = track();
         DrawRectangleRec(outer, {0, 0, 0, 150});
         box(outer);
-        horizontal(outer.x, outer.y + 36 * hudScale, outer.width, true);
+        horizontal(outer.x, outer.y + 36 * hudScale(), outer.width, true);
         horizontal(outer.x, close.y, outer.width, false);
         const auto title = plain(title_, 4), closeLabel = plain(close_);
-        text(1, title, {(W - width(1, title)) * .5f, outer.y + (36*hudScale-16*hudTextScale)*.5f});
-        text(1, closeLabel, {(W - width(1, closeLabel)) * .5f, close.y + (close.height-16*hudTextScale)*.5f});
-        BeginScissorMode(int(content.x), int(content.y), int(content.width), int(content.height));
+        text(1, title, {(W - width(1, title)) * .5f, outer.y + (36*hudScale()-16*hudTextScale())*.5f});
+        text(1, closeLabel, {(W - width(1, closeLabel)) * .5f, close.y + (close.height-16*hudTextScale())*.5f});
+        uiScissor(content.x, content.y, content.width, content.height);
         for (size_t row = 0; row < visibleRows() && scroll_ + row < rows_.size(); ++row)
-            text(0, rows_[scroll_ + row], {content.x, content.y + row * lineHeight * hudTextScale});
+            text(0, rows_[scroll_ + row], {content.x, content.y + row * lineHeight * hudTextScale()});
         EndScissorMode();
-        BeginScissorMode(int(gutter.x), int(gutter.y), int(gutter.width), int(gutter.height));
-        for (float y = gutter.y; y < gutter.y + gutter.height; y += 12 * hudScale) piece(slider_, 13, {gutter.x, y});
+        uiScissor(gutter.x, gutter.y, gutter.width, gutter.height);
+        for (float y = gutter.y; y < gutter.y + gutter.height; y += 12 * hudScale()) piece(slider_, 13, {gutter.x, y});
         EndScissorMode();
-        piece(slider_, scroll_ ? 11 : 9, {gutter.x, gutter.y - 13 * hudScale});
+        piece(slider_, scroll_ ? 11 : 9, {gutter.x, gutter.y - 13 * hudScale()});
         piece(slider_, scroll_ < maximumScroll() ? 10 : 8, {gutter.x, gutter.y + gutter.height});
         if (maximumScroll()) piece(slider_, 12, {thumb().x, thumb().y});
     } else if (!messages_.empty()) {
         const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()).count());
-        const float margin = 10 * hudScale;
+        const float margin = 10 * hudScale();
         const Rectangle content{worldViewport.x + margin, worldViewport.y + margin,
             worldViewport.width - 2 * margin, worldViewport.height - 2 * margin};
         if (content.width > 0 && content.height > 0) {
-            BeginScissorMode(int(content.x), int(content.y), int(content.width), int(content.height));
+            uiScissor(content.x, content.y, content.width, content.height);
             float y = content.y;
             // History is newest-first; the transient overlay places newer
             // messages below older ones and expires each by its receive time.
@@ -338,7 +355,7 @@ void ChatView::draw(Rectangle worldViewport) const {
                 if (now >= message.receivedMilliseconds && now - message.receivedMilliseconds >= messageLifetimeMilliseconds)
                     continue;
                 for (const auto &line : wrap(message.glyphs, content.width)) {
-                    text(0, line, {content.x, y}); y += lineHeight * hudTextScale;
+                    text(0, line, {content.x, y}); y += lineHeight * hudTextScale();
                 }
             }
             EndScissorMode();
@@ -348,9 +365,9 @@ void ChatView::draw(Rectangle worldViewport) const {
         const auto input = hudRect(145, 120, 540, 54);
         DrawRectangleRec(input, {0, 0, 0, 150});
         const auto value = plain(draft_), prefix = plain(std::string_view(draft_).substr(0, caret_));
-        const float overflow = std::max(0.f, width(1, prefix) + 16 * hudTextScale - input.width);
-        const Vec point{input.x + 5 * hudScale - overflow, input.y + 6 * hudScale};
-        BeginScissorMode(int(input.x + 4 * hudScale), int(input.y), int(input.width - 8 * hudScale), int(input.height));
+        const float overflow = std::max(0.f, width(1, prefix) + 16 * hudTextScale() - input.width);
+        const Vec point{input.x + 5 * hudScale() - overflow, input.y + 6 * hudScale()};
+        uiScissor(input.x + 4 * hudScale(), input.y, input.width - 8 * hudScale(), input.height);
         text(1, value, point);
         if (int(GetTime() * 2) % 2 == 0) text(1, plain("_"), {point.x + width(1, prefix), point.y});
         EndScissorMode();

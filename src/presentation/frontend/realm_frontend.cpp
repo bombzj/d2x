@@ -22,31 +22,26 @@ void wipe(std::string &s) {
 }
 ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 0) {
     ClassicFont f;
-    const auto base = "data/local/font/latin/" + name;
-    f.glyphs = g.single(base + ".dc6");
+    const auto base = "data/local/font/" + a.languageFontDirectory + "/" + name;
+    setTtfSearchDirectory(a.gameDirectory.string());
+    const auto *source = g.animation(base + ".dc6");
+    if (!source) throw std::runtime_error("Missing original frontend font");
+    f.graphics = &g;
+    f.source = source;
     if (color) {
         constexpr size_t shifts = 0x6B600 + 13 * 3;
         const auto palette = a.read("data/global/palette/sky/pal.pl2");
         if (color < 0 || color >= 13 || palette.size() < shifts + 13 * 256)
             throw std::runtime_error("Missing original frontend font color transforms");
-        const auto *source = g.animation(base + ".dc6");
-        if (!source) throw std::runtime_error("Missing original frontend font");
-        f.glyphs.frames.clear();
-        f.glyphs.directions = source->directions;
-        f.glyphs.count = source->framesPerDirection;
-        for (auto glyph : source->frames) {
-            for (auto &pixel : glyph.pixels)
-                if (pixel) pixel = palette[shifts + size_t(color) * 256 + pixel];
-            f.glyphs.frames.push_back(g.upload(glyph));
-        }
+        for (size_t i = 0; i < f.transform.size(); ++i)
+            f.transform[i] = palette[shifts + size_t(color) * 256 + i];
+        f.transformed = true;
     }
     const auto table = a.read(base + ".tbl");
-    if (table.size() < 3596 || f.glyphs.frames.empty())
+    if (source->frames.empty() ||
+        !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(table.data()), table.size()), f))
         throw std::runtime_error("Missing original frontend font");
-    for (int i = 0; i < 256; ++i) {
-        f.widths[i] = table[12 + i * 14 + 3];
-        f.indices[i] = table[12 + i * 14 + 8];
-    }
+    collectFontCodepoints(f.codes);
     f.ready = true;
     return f;
 }
@@ -84,7 +79,9 @@ struct PortraitKeyLess {
 } // namespace
 struct RealmFrontend::Impl {
     FrameInput input;
-    Graphics sky, units, lobbyControls, checkboxControls;
+    Graphics sky, units, lobbyControls, checkboxControls, loadingArt;
+    int loadingFrame{};
+    double loadingStart{};
     std::unique_ptr<Graphics> heroGraphics;
     struct Hero {
         GpuAnimation idle, hover, forward, chosen, back, forwardOverlay, chosenOverlay, backOverlay;
@@ -130,6 +127,7 @@ struct RealmFrontend::Impl {
         : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
           lobbyControls(a, "data/global/palette/act1/pal.dat"),
           checkboxControls(a, "data/global/palette/fechar/pal.dat"),
+          loadingArt(a, "data/global/palette/loading/pal.dat"),
           archives(a), portraitCatalog(a), strings(a),
           normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
           inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
@@ -177,6 +175,26 @@ struct RealmFrontend::Impl {
                                 {"chatButton", "bigmenu/chatrightbuttons"},
                                 {"leftButton", "bigmenu/chatleftbuttons"}})
             load(lobbyControls, id, path);
+        // Entering a game plays the original door animation. Locale 0 (eng) reads
+        // the global screen, every other locale the local override, matching the
+        // original Loadingscreen path choice; either member may be absent.
+        {
+            const bool english = a.languageDirectory == "eng";
+            const char *paths[] = {english ? "data/global/ui/loading/loadingscreen.dc6"
+                                           : "data/local/ui/loadingscreen.dc6",
+                                   english ? "data/local/ui/loadingscreen.dc6"
+                                           : "data/global/ui/loading/loadingscreen.dc6"};
+            for (const auto *path : paths)
+                if (archives.contains(path)) {
+                    auto screen = loadingArt.single(path);
+                    if (screen.count > 0) {
+                        art.emplace("loading", std::move(screen));
+                        break;
+                    }
+                }
+            if (!art.count("loading"))
+                throw std::runtime_error("Missing original loading screen art");
+        }
         DataTable stats(a.read("data/global/excel/charstats.txt"));
         for (size_t i = 0; i < stats.rows().size(); ++i) {
             auto name = stats.value(i, "class");
@@ -1028,10 +1046,18 @@ struct RealmFrontend::Impl {
                 wipe(gamePassword);
                 description.clear();
             }
+            if (current == FrontendPage::Loading) {
+                loadingFrame = 0;
+                loadingStart = GetTime();
+            }
             previous = current;
         }
         bool confirmation = !deleteName.empty() || confirmHardcore;
-        bool modal = !notice.empty() || busy(v.stage) || confirmation;
+        // The Loading page plays the original door animation and covers the whole
+        // connection with it; connection progress is not a modal there. Errors and
+        // confirmations still interrupt, and Escape leaves the game.
+        bool modal = !notice.empty() || confirmation ||
+                     (busy(v.stage) && current != FrontendPage::Loading);
         enabled = !modal;
         if (enabled && input.tab)
             focus = (focus + 1) %
@@ -1059,13 +1085,19 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::Lobby)
             lobby(v);
         else {
-            tiles("main", 0, 0, 4);
-            logo();
-            centered(v.stage == OnlineStage::ProtocolReady ? "Connected to game server" : s(5243), 315);
+            // Entering a game plays the original Loadingscreen door: one 256x256
+            // frame sequence centered on black that opens once and then holds the
+            // open frame for as long as the load takes.
+            const auto &screen = art.at("loading");
+            loadingFrame = std::min(std::max(screen.count, 1) - 1,
+                                    int((GetTime() - loadingStart) * 9.0));
+            if (const auto *cel = screen.frame(0, loadingFrame))
+                sprite(cel, {272.f, 172.f});
             if (v.stage == OnlineStage::ProtocolReady) {
+                centered("Connected to game server", 448);
                 wrap(worldNotice.empty() ? "Waiting for server world data." : std::string(worldNotice),
-                     220, 350, 360, true);
-                if (button("medium", 330, 405, s(5101)))
+                     220, 472, 360, true);
+                if (button("medium", 330, 520, s(5101)))
                     emit(FrontendCommand::LeaveGame);
             }
         }

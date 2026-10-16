@@ -18,9 +18,9 @@ void drawClassicPanelFrame(const GpuAnimation &border, bool right) {
         if (!image) continue;
         const auto &texture = image->texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-            {side.x + positions[index].x * classicPanelScale,
-             positions[index].y * classicPanelScale,
-             texture.width * classicPanelScale, texture.height * classicPanelScale}, {0, 0}, 0, WHITE);
+            {side.x + positions[index].x * classicPanelScale(),
+             positions[index].y * classicPanelScale(),
+             texture.width * classicPanelScale(), texture.height * classicPanelScale()}, {0, 0}, 0, WHITE);
     }
 }
 } // namespace d2x
