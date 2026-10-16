@@ -37,6 +37,7 @@ struct ClassicFont {
     const Animation *source = nullptr; // decoded DC6 frames
     std::array<uint8_t, 256> transform{}; // optional PL2 index transform
     bool transformed = false;
+    Color textColor = WHITE; // PL2 font color for the outline-font backend
     std::vector<uint32_t> codes;  // sorted code points
     std::vector<uint16_t> frames; // parallel DC6 frame
     std::vector<uint8_t> widths;  // parallel advance width

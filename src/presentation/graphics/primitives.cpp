@@ -173,6 +173,8 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
         throw std::runtime_error("Original UI font is missing: " + path);
     font.graphics = &graphics;
     font.source = original;
+    font.transformed = false;
+    font.textColor = WHITE;
     if (color) {
         constexpr size_t fontShifts = 0x6B600 + 13 * 3;
         const auto palette = archives.read("data/global/palette/sky/pal.pl2");
@@ -181,6 +183,8 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
         for (size_t i = 0; i < font.transform.size(); ++i)
             font.transform[i] = palette[fontShifts + size_t(color) * 256 + i];
         font.transformed = true;
+        const size_t rgb = 0x6B600 + size_t(color) * 3;
+        font.textColor = {palette[rgb], palette[rgb + 1], palette[rgb + 2], 255};
     }
     auto tbl = archives.read(path + ".tbl", false);
     if (original->frames.empty() ||
@@ -311,7 +315,7 @@ void spriteShadow(const Sprite *s, Vec p) {
 }
 void UiPainter::label(const std::string &text, int x, int y, int size, Color c) const {
     if (ttfTextReady()) {
-        ttfDraw(text, float(x), float(y), float(size), float(glyphGap), c);
+        ttfDraw(text, float(x), float(y), float(size), float(glyphGap), ColorTint(c, font.textColor));
         return;
     }
     if (font.ready) {

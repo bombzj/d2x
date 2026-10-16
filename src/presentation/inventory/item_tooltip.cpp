@@ -89,15 +89,16 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
                 // Both runs share a baseline measured from the complete line.
                 float top = 0, bottom = float(fontSize);
                 bool found = false;
-                for (uint32_t ch : utf8Decode(text[i])) {
-                    const auto *glyph = assets_.font.glyphOf(ch);
-                    if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
-                    const float start = (glyph->hitY - glyph->y) * fontSize / 16.f;
-                    const float end = start + glyph->hitHeight * fontSize / 16.f;
-                    top = found ? std::min(top, start) : start;
-                    bottom = found ? std::max(bottom, end) : end;
-                    found = true;
-                }
+                if (!ttfTextReady())
+                    for (uint32_t ch : utf8Decode(text[i])) {
+                        const auto *glyph = assets_.font.glyphOf(ch);
+                        if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
+                        const float start = (glyph->hitY - glyph->y) * fontSize / 16.f;
+                        const float end = start + glyph->hitHeight * fontSize / 16.f;
+                        top = found ? std::min(top, start) : start;
+                        bottom = found ? std::max(bottom, end) : end;
+                        found = true;
+                    }
                 const auto label = text[i].substr(0, rows[i].propertyOffset);
                 const int x = int(bounds.x + (bounds.width - painter.measure(text[i], fontSize)) / 2);
                 const int y = int(bounds.y + (bounds.height - (bottom - top)) / 2 - top);
