@@ -24,7 +24,7 @@ DomainResult<> System::shrineMissiles(const ActorContext &actor,Object &object) 
     const int rank=std::clamp(player->persistent.player.level/5,1,8);
     auto attack=shrine.projectiles.at(rank);
     std::vector<combat::SpellImpact> impacts;
-    missiles::MonsterSpawn request{object.id,object.area,area.generation,actor.tick,object.position,object.position,attack,{},player->persistent.player.level,0,0,object.random};
+    missiles::MonsterSpawn request{object.id,object.area,area.generation,actor.tick,object.position,object.position,attack,{},player->persistent.player.level,0,0};
     request.source=player->actor;request.playerSource=player->player;
     if(shrine.code==19) {
         const auto skill=skills::evaluate(*player,47,rank);
@@ -48,7 +48,7 @@ DomainResult<> System::shrineMissiles(const ActorContext &actor,Object &object) 
     request.states=shrine.hitStates;
     auto plan=ports_.combat.prepareSpells(std::move(impacts));if(!plan) return {plan.status,{}};
     const auto launched=ports_.missiles.spawnMonster(request);if(!launched) return {launched.status,{}};
-    ports_.combat.commitSpells(std::move(*plan.value));object.random=launched.value->random;
+    ports_.combat.commitSpells(std::move(*plan.value));
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::specialShrine(const ActorContext &actor,Object &object) {

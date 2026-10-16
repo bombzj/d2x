@@ -11,7 +11,9 @@ std::vector<std::pair<RegionId,size_t>> AreaStore::loadedRoomOrder() const {
         for(size_t index=0;index<area.rooms.size();++index)
             if(area.rooms[index].loaded) result.emplace_back(region,index);
     std::sort(result.begin(),result.end(),[&](const auto &first,const auto &second) {
-        return areas_.at(first.first).rooms.at(first.second).creationOrder<
+        const int firstAct=areas_.at(first.first).definition.act,secondAct=areas_.at(second.first).definition.act;
+        if(firstAct!=secondAct) return firstAct<secondAct;
+        return areas_.at(first.first).rooms.at(first.second).creationOrder>
             areas_.at(second.first).rooms.at(second.second).creationOrder;
     });
     return result;

@@ -52,9 +52,9 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 ### 自然生成源码边界
 
-自然生成正在由宿主蓝图计划迁入服务端，当前工作区尚未完成，不能作为完整功能交付。`hosting/object_content.cpp`准备ObjGroup／Objects纯值，服务端路径不再调用旧第一幕撒点；`server/systems/objects/population.cpp`使用活动房间随机贷款、ObjectControl候选与同步碰撞，已接PopulateFn1–9、治疗保底及原主题分派。后续簇程序、主题、排序、逻辑区域和塔楼源码已随2026-10-16刺客交付通过Windows／MinGW／Ninja Release的CMake配置、all编译链接并入两包；构建结果不认证完整自然生成，专项运行与原版逐随机对照仍待完成。旧`world/object_population.cpp`仍是世界工具的适配路径，不代表服务端原随机顺序。
+自然生成正在由宿主蓝图计划迁入服务端，当前工作区尚未完成，不能作为完整功能交付。`hosting/object_content.cpp`准备ObjGroup／Objects纯值，服务端路径不再调用旧第一幕撒点；`server/systems/objects/population.cpp`使用活动房间随机贷款、ObjectControl候选与同步碰撞，已接PopulateFn1–9、治疗保底及原主题分派。2026-10-15前一检查点通过Windows／MinGW／Ninja Release的d2x与d2x_pvpgn编译链接，但不覆盖后续簇程序、主题、排序、实时密度／精英、余光和塔楼改动。2026-10-16按用户要求阶段性收尾并暂停；局部编辑器诊断与补丁格式检查不能代替编译，本阶段未执行后续CMake、测试、游戏运行或打包。旧`world/object_population.cpp`仍是世界工具的适配路径，不代表服务端原随机顺序。
 
-实例按怪物区域、ObjectControl、NPCControl、QuestControl顺序分出子流，再创建玩家。石柱顺序及日蚀延迟使用任务控制流；NPC控制流已保存，完整商人消费尚未迁入。物件准入不再按GUID派生种子，而按SUNIT_InitSeed取游戏子流。Init1/2/3/27/34/57/58、PreOperate与特殊祭坛覆盖使用准入候选，宝箱重置后的单位种子供掉落使用。特殊箱资格／模式及574–579覆盖位于普通初始化之后，后者用单位流；宿主只提供有序Shrines目录。完整任务回调、失败分支和初始化交错仍未认证。
+实例按怪物区域、ObjectControl、NPCControl、QuestControl顺序分出子流，再创建玩家。石柱顺序及日蚀延迟使用任务控制流；NPC控制流已保存，完整商人消费尚未迁入。物件准入不再按GUID派生种子，而按SUNIT_InitSeed取游戏子流。Init1/2/3/27/34/57/58、PreOperate与特殊祭坛覆盖使用准入候选，宝箱重置后的单位种子供掉落使用；Init8火把固定OPENED，Init14／26火盆固定OPERATING，不增加随机或结束事件。特殊箱资格／模式及574–579覆盖位于普通初始化之后，后者用单位流；宿主只提供有序Shrines目录。全部非零InitFn、任务回调、失败分支和初始化交错仍未闭合，未覆盖的分支不能按无操作认证。
 
 当前源码按D2MOO Objects／ObjRgn及本地1.13c核对：传送点房间跳过随机物件；空组槽仍抽概率；组内保留Gore门控；公共物件使用SizeX/Y加六和完整16位碰撞，CreateObject全局坐标保留uint16截断。祭坛按Orientation寻位，井尺寸为两倍加一；成功坐标和数量上限独立登记。治疗保底只改类别及效果，保留原ObjectTxt规则。Fn1保留各类别簇／步长，Fn4首桶1/3、后续1/4及最多八只，Fn5保留双重瓮类别抽签与后续成员八只上限，Fn7保留四组坐标；间距读XSpace/YSpace。Fn6只按末次返回值抽class103，Fn9首个成功后停止。未知非零PopulateFn记录到服务端诊断并返回NotImplemented，不发布房间完成状态。
 
@@ -62,9 +62,13 @@ Fn5循环以1.13c D2Game VA6FC50528–6FC50576为准：停止抽签和前次成�
 
 塔楼580预设继续执行默认箱型抽签后覆盖为371，不提前返回。574–579预设祭坛按`OBJECTS_SpawnShrine`将4／5均归一为2，与普通Init1的5→3不同。宝箱Init3／57的陷阱、锁和65534范围种子初始化、Init2／27陷阱概率及ObjRgn区域陷阱家族选择本轮核对后保持既有实现；概率和尺寸仍由当前MPQ准备，没有增加自定义掉落或怪物参数。
 
-当前调度按活动房间创建序号执行。依据SUNIT_SpawnPresetUnitsInRoom，两遍预设遍历先物件、再NPC／怪物，各阶段按DS1源序号稳定排序；随后随机物件，再既有密度人口。关联NPC在源物件初始化后创建，已出生记录独立于存活实体，避免逃离／移除后重复准入。逻辑区域与格索引已从地图导出，但尚未接实时密度。诊断输出游戏、区域、物件、NPC、任务随机低／高字及房间完成／暂缓集合。原预设链的完整次序、GUID分配、密度与精英单位流、任务回调、恢复仍待闭合，不能宣称同种子逐单位等价。
+当前调度按幕号升序、活动房间创建序号降序执行，对应原链表头插。依据SUNIT_SpawnPresetUnitsInRoom，两遍预设遍历先物件、再NPC／怪物，各阶段按DS1源序号稳定排序；随后随机物件，再实时密度人口。关联NPC在源物件初始化后创建，已出生记录独立于存活实体，避免逃离／移除后重复准入。逻辑区域与格索引已接服务端密度；密度／精英／主要任务和物件出生由同一执行器持有游标，实际Actor及游戏／房间／单位随机分别提交。快照输出五类随机低／高字、房间完成／暂缓集合及物件精英出生来源。完整GUID分配、关卡流与TileInfo11激活、全部任务回调和休眠压缩／重建仍待闭合，不能宣称同种子逐单位等价。
 
-塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍未认证，本段源码已纳入2026-10-16的all构建与两包，塔楼完整流程未在本轮专项运行认证。
+邪恶瓮OperateFn68不再使用hosting预掷的精英／随从数组：开箱掉落完成后用ObjectControl流执行`%255 <= Parm7`，按区域目录顺序取首个MonStats2.mWL类型，在当前物件完成点执行房间搜索、实际领队词缀与随从出生。允许冠军变体，但不执行仅密度循环／MonPlace3才有的追加冠军循环。异步规则准备冻结同帧且按源GUID去重，不重掷开瓮机会；普通陷阱仍保留独立35帧时钟。完整掉落与开瓮回调的全局交错、碰撞释放精确时点尚未认证。
+
+Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对象进入OPERATING，分别安装FrameCnt1+1的ENDANIM和27帧MONUMOD事件。蜘蛛森林使用当前MPQ的vilechild1，沿原普通出生接口尝试一次，不执行邪恶瓮的随机寻位、精英升级或额外重试。封印OperateFn54–56先按原偏移、大小3、半径13／14／15及0x3f11放置掩码寻位，再创建真实class131；27帧回调用实际余光坐标请求对应固定首领，放置失败每10帧重试。出生背压保留当前事件和随机游标，不提前标记完成。动态对象准入先验证真实房间，在候选中分配GUID及初始化随机，成功后发布ID／随机状态，并由碰撞发布同步安装事件。封印自身仍沿现有任务模式投影直接开启，尚未接原OperateFn52的OPERATING及FrameCnt1×2结束时序；原房间HasPortal标志与当前控制器保留标志并非同一语义，未作替代写入。跨区域寻位、完整失败／休眠恢复及原事件队列交错仍未认证，本段源码未构建运行。
+
+塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍未认证，本段后续源码未构建运行。
 
 2026-10-10源码对照master单机的session_objects／session_shrines、本地D2MOO及当前MPQ补全野外路径。hosting从Objects／Shrines／MonStats／MonLvl／Missiles／Skills、MonSeq与AnimData准备规则；server的objects、monsters、missiles、combat、effects和loot只消费准备值。客户端继续接收原物件、状态、怪物与弹体包，界面不结算伤害。
 
@@ -91,7 +95,9 @@ Fn5循环以1.13c D2Game VA6FC50528–6FC50576为准：停止抽签和前次成�
 
 当前MPQ箭陷阱245／246的ServerSubMissile1为空，保留其原弹体与CltDo3视觉子弹体，不根据客户端毒烟图自造服务端毒伤尾迹。陷阱连锁闪电使用原93弹体的后继目标与次数；女巫玩家技能的范围仍由技能专题维护。
 
-## 当前包有限冒烟
+当前2026-10-16包已实机检查鲜血荒地自然class140容器及洞穴class54尸体：正常开启动画／结束、掉落／拾取、模式与MPQ碰撞；修复异步掉落使用第0帧而被再生计时器拒绝的问题。包身份、截图及有限边界统一见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
+
+## 历史有限冒烟（2026-10-10）
 
 2026-10-10在networking本批源码上完成Windows Release客户端／独立服务端构建及两包更新。用`dist/current/d2x.exe`、本地`assets/mpq2`、独立一级女巫角色执行Single Player；管理命令只准备原物件／怪物／物品条件，操作与拾取通过现有客户端原请求。暂停／单步观察25Hz状态。末次修改将新星方向数从16修正为D2MOO原64枚，并用当前包复验新星及爆炸桶连锁；其余覆盖在同批此前构建／包观察，下表区分范围。证据保留于忽略目录`artifacts/objects-complete-20261010/`，未新增测试脚本／用例／程序。
 

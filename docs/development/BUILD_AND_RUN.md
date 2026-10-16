@@ -91,7 +91,41 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-### 当前德鲁伊技能交付
+### 当前野外检查交付
+
+2026-10-16，`battle`的HEAD `912dba85`加当前工作区（含战斗及人口／物件迁移），按用户授权重新构建、双包更新并实际查看游戏截图。补齐objects的population依赖和怪物唤醒规则／准备计时器缺失字段后，`build-final.log`213步通过；实际运行又发现并修复两项问题：异步掉落的人物事务使用tick=0，导致自然容器因过期再生计时器永久等待；AI在反应／中立等待、未采样新决策时重复提交旧随机状态，受击更新种子后固定帧反复阻塞。分别由当前实例帧进入掉落安装、以及只在本次已采样时提交决策随机解决。`build-loot-fix.log`63步、`build-ai-fix.log`4步编译链接成功，最终`build-confirm-verified.log`为no work to do；既有非致命警告保留。
+
+| 当前产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 32979373 | `D94263350469B989ADA29C9AE236097982F3659FA5A3B56504E88995C88B26E9` |
+| `dist/server/d2x_server.exe` | 25859438 | `C7B701502318AA6311A3EE5E99F8131B211BBF75D28825A0CCA56314DCCDC9C2` |
+| `build/bin/d2x_assets.exe` | 10484895 | `383EB4D786644AEA3F35E454F91C7AFB56A40FED2239B4A624583BC0577E2CFF` |
+| `两包/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+最终哈希包使用35级圣骑士存档副本、当前`assets/mpq2`及现有调试管道，检查鲜血荒地与邪恶洞穴自然生成内容，没有管理生成怪物／物件或直接扣血。旅行仅准备地图位置；靠近、攻击、交互与拾取使用正常原协议请求。实际观察：自然class140容器mode0→2、pending清零，箭袋282支落地并拾入背包；群怪接近／攻击、人物扣血与普通攻击击杀，修复后连续战斗及额外250帧全部完成；洞穴class54尸体容器mode2、碰撞按MPQ撤销且掉落队列为空。截图查看了怪物、尸体、容器及地图；列出场景unavailableUnits=0。回城casts／pendingReleases／damage／spellImpacts／eventsQueued全为0，保存并新进程恢复282支箭，临时联系／动作为空。最终宿主failures=0、characterIssues为空、frontend.notice为空；主复验和重入进程退出码0。
+
+视觉疑点：一次移动后人物附近局部过暗（`screenshots/verified-den-container.png`），同区域新进程重入照明正常（`lighting-reload.png`），未确认为稳定故障。原光照距离衰减仍是未认证适配；暂未改算法。证据、失败现场、源码补丁、包哈希、隔离存档及截图统一在忽略目录`artifacts/field-inspection-20261016/`。未新增测试脚本、用例或专用程序，未认证音频（--hidden）、全部区域／生成概率、全局原版随机时序、多人或Linux；独立服务端仅构建／打包。
+
+### 历史战斗动作与近战迁移交付
+
+2026-10-16，`codex/combat-migration`基于`912dba85`，在独立工作区固定战斗迁移源码，未纳入共享目录同时发生的人口／任务等后续改动。当前可达动作／AI／移动／物件／物品时钟和旧近战消费者的迁移范围、逐程序D2MOO／1.13c差异及删除入口见[内核子系统](../modules/SERVER_SYSTEMS.md#调度与动作的职责及迁移边界)，不据此宣称整个R2／R3或完整原版战斗验收。
+
+Windows／MinGW／Ninja Release配置及依赖构建通过；剥离混入的无关人口修改后，`isolated-repair.log`263步编译／链接通过，`isolated-final-build.log`4步通过。初次冒烟发现持续队列清除显式handler后，新增暗金怪的效果事件不能分派，固定步无法推进；同时修正玩家移动的同类问题，改用customId保留域身份及去重／撤销。`isolated-smoke-repair.log`最终7步编译／链接通过，d2x、d2x_pvpgn、d2x_assets均已生成；保留既有非致命警告。双包由这份独立构建生成，未使用共享目录未完成的build产物。
+
+| 当前产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 32924153 | `E7AA4C4EA0B737F53C4456628729C0311A0FC48A6C38BB61CA3A75052F2BE5A3` |
+| `dist/server/d2x_server.exe` | 25805018 | `AE963233BA866388090EA5D8DBF5648320FB3251BA23AF759BF05DF5336CA1CB` |
+| `build/bin/d2x_assets.exe` | 10484121 | `02641471DB5B717885879BDDB1F31A1AC814FE17F266163CC86372FBE4236492` |
+| `两包/d2x_bncs_legacy.dll` | 639578 | `A2B9AAD2522071A3000BE5F960814F27F167E04D7CE222CBCDF302D3A04EFD4B` |
+
+最终哈希包通过现有调试管道完成Single Player有限冒烟：35级圣骑士牺牲起手持有原生近战联系，动作兑现后联系清空并扣目标HP；白热命中两个目标；冲锋移动、受击中断及重新施放伤害；普通移动到达请求坐标。84级德鲁伊狼人／狂怒多次命中、真实灵狼自主攻击及敌怪移动／攻击正常。两角色回城后casts／pendingReleases／damage／spellImpacts／missileCount／eventsQueued均为0，保存成功；新进程保留已学技能（德鲁伊30项、圣骑士本次学习4项），临时状态／宠物及联系未恢复。两个重入进程和德鲁伊主冒烟进程退出码均为0，最终frontend.notice为空、宿主failures=0、characterIssues为空。最初失败包及现场单独保留，未计为通过。
+
+物件补查使用当前MPQ Objects原class111／OperateFn22／Parm0=750：正常交互使井水uses由2→1、mode由0→1并恢复HP，只登记一个AiThink补充事件；越过750帧后uses回2、mode回0且该事件消失。管理旅行、真实怪物／水井生成和补资源只用于准备条件，不认证自然通关、人口概率或掉落。
+
+证据均在忽略目录`artifacts/combat-migration-20261016/`，包括构建／打包日志、包哈希、旧入口扫描及`smoke/`权威快照、原协议请求结果、日志和隔离存档。无新增测试脚本、用例或专用程序。`--hidden`创建真实OpenGL但不初始化音频；未验证画面／音频、Linux、双客户端、PvPGN后端实际入局、全技能／装备／难度／PvP／背压矩阵及完整原版逐帧／随机轨迹。独立服务端本批仅构建与打包。原MPQ、用户存档与原目录并行修改保留。
+
+### 历史德鲁伊技能交付
 
 2026-10-16，`battle`分支、构建时HEAD `ffd08b76`之上的德鲁伊工作区：全部30项及变形、动物／藤蔓／灵体和隐藏／客户端依赖接入后，按授权执行Windows／MinGW／Ninja Release CMake配置、all目标编译排错、双包更新及Single Player有限冒烟。`cmake-configure.log`配置通过，`build-frozen.log`395步全量构建通过；灵体接线后的`build-spirit-auras.log`290步通过，最终`build-fenris-finish.log`6步编译／链接通过。最终d2x、d2x_pvpgn、d2x_assets均有对应产物，既有非致命警告保留。未新增测试脚本、用例或专用程序；收尾源码与文档统一提交，提交身份以Git历史为准。
 

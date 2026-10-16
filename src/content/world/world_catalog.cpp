@@ -113,6 +113,7 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 population.types = number("NumMon");
                 population.rangedFirst = number("rangedspawn") != 0;
                 population.warpDistanceSquared = number("WarpDist");
+                population.wander = number("MonWndr");
                 const std::array<std::string, 3> suffixes{"", "(N)", "(H)"};
                 for (int i = 0; i < 3; ++i) {
                     population.density[i] = number("MonDen" + suffixes[i]);

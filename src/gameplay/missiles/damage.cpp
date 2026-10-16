@@ -2,7 +2,6 @@
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
 
@@ -13,16 +12,6 @@ int32_t checkedDamage(int64_t value) {
         throw std::invalid_argument("Missile damage exceeds native fixed-point range");
     return int32_t(value);
 }
-}
-MissileDamageRange missileDamageRange(float minimum, float maximum) {
-    const auto fixed = [](float value) {
-        const double scaled = double(value) * 256.0;
-        if (!std::isfinite(scaled) || scaled < std::numeric_limits<int32_t>::min() ||
-            scaled > std::numeric_limits<int32_t>::max())
-            throw std::invalid_argument("Missile damage exceeds native fixed-point range");
-        return int32_t(scaled);
-    };
-    return {fixed(minimum), fixed(maximum)};
 }
 MissileDamageRange scaleMissileDamage(MissileDamageRange range, int percent) {
     return {nativeMultiplyDivide(range.minimum,percent,100),nativeMultiplyDivide(range.maximum,percent,100)};

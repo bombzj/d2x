@@ -95,6 +95,7 @@ DomainResult<> System::revive(const ActorContext &actor,const SkillCastSpec &ski
     body.deathTick=body.deathOccurrence=0;body.killer={};body.corpseUnavailable=true;body.rewardComplete=true;
     body.busyUntil=actor.tick;body.neutralAt.reset();body.route.clear();body.poison.reset();body.wound.reset();body.curseControl={};body.attractionTarget={};body.attractionUntil=0;
     body.aiResetTimers.clear();body.nativeAiResetTracked=false;body.specialTargetOrder=0;body.detachedMinion=true;body.aiFunctionRevision=0;body.aiThinkRevision=0;body.aiThinkAt=0;body.tauntTarget={};body.mainOwnerCleared=false;
+    body.wanderTargetOrder=0;
     body.chilledUntil=body.frozenUntil=body.stunnedUntil=body.knockedUntil=body.reactionUntil=0;
     std::map<EntityId,monsters::Actor> actors;actors.emplace(id,std::move(body));auto next=state_;
     Companion pet{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=spec.lifetimeFrames>0?actor.tick+uint64_t(spec.lifetimeFrames):UINT64_MAX;pet.ownerTeleport=owner.teleportRevision;pet.nextDecision=actor.tick+15;pet.ownerLevel=owner.persistent.player.level;pet.effectiveRanks=owner.totals.skillRanks;pet.hardRanks=owner.persistent.player.skillRanks;next.companions.emplace(id,std::move(pet));
@@ -188,7 +189,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
     }
     const uint64_t expires=skill.bone && skill.bone->barrier?actor.tick+uint64_t(rule.summonLifeFrames):UINT64_MAX;
     auto next=state_;
-    for(const auto &[key,body]:actors) {(void)body;Companion pet{key,actor.player,iron?Kind::IronGolem:Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=expires;pet.nextDecision=actor.tick+(skill.bone && skill.bone->barrier?25:1);pet.random=random;pet.ownerTeleport=owner->teleportRevision;pet.ownerLevel=owner->persistent.player.level;pet.effectiveRanks=owner->totals.skillRanks;pet.hardRanks=owner->persistent.player.skillRanks;next.companions.emplace(key,std::move(pet));}
+    for(const auto &[key,body]:actors) {(void)body;Companion pet{key,actor.player,iron?Kind::IronGolem:Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=expires;pet.nextDecision=actor.tick+(skill.bone && skill.bone->barrier?25:1);pet.ownerTeleport=owner->teleportRevision;pet.ownerLevel=owner->persistent.player.level;pet.effectiveRanks=owner->totals.skillRanks;pet.hardRanks=owner->persistent.player.skillRanks;next.companions.emplace(key,std::move(pet));}
     const auto sameType=[&](const Companion &existing) {if(existing.sourceSkill==uint16_t(skill.sourceId)) return true;if(!summon.golem || !existing.sourceSkill) return false;const auto found=owner->rules.skills->definitions.find(*existing.sourceSkill);return found!=owner->rules.skills->definitions.end() && found->second.spec.summon && found->second.spec.summon->golem;};
     size_t count=0;for(const auto &[key,existing]:next.companions) {(void)key;if(existing.owner==actor.player && sameType(existing) && !existing.removeAt) ++count;}
     std::vector<EntityId> retire;
@@ -269,7 +270,7 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
         if((mage && missileDistance(body->position,enemy.position())<=25) || meleeDistance(body->position,body->rule.size,enemy.position(),enemy.size())<=body->rule.meleeRange) {
             ports_.monsters.stop(pet.actor);
             const uint16_t skill=body->necroPet && body->necroPet->kind==NecroSummonKind::Mage && !body->rule.skillActions.empty()?body->rule.skillActions.begin()->first:0;
-            const auto result=ports_.skills.requestCast({pet.actor,skill,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
+            const auto result=requestAction(pet,{pet.actor,skill,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
             if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
         } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
     } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});

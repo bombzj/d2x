@@ -4,7 +4,7 @@
 
 定义入口为 `src/content/skills/barbarian_data.cpp`；纯规则在 `gameplay/skills`，动作、移动、弹体、命中、状态和尸体消耗分别由 server 对应系统拥有。客户端读取原协议状态、播放当前 MPQ 原图并提交命令。MPQ 数值、公式、武器类型、状态、弹体及尸体尺寸动态准备；本地 D2MOO 的 `SkillBar.cpp`、`MissMode.cpp`、`SequenceTbls.cpp`、武器速度和路径函数仅作职责及算法证据，见[资料来源](../../resources/THIRD_PARTY.md)。
 
-十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。抽取已纳入第一幕历史包的构建及第一幕有限冒烟，未专项复验全部野蛮人技能；下节冒烟属于此前野蛮人技能批。
+十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。当前Bash／Stun／Concentrate／Berserk起手Alloc、动作Do2兑现；Bash的calc2只改已分配物理分量。DoubleSwing、Frenzy、Whirlwind及LeapAttack已接原生联系；动作、回绕和单位种子边界见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。下节冒烟属于此前野蛮人技能批，不认证这些新增源码。
 
 专心的flag-4增益现跟随动作revision，在结束／中断／替换时撤销；狂战士按原calc2准备期限，非正结果采用原10帧分支；旋风的Aura／Passive及modifierlist元数据走逐写入资源观察，移动状态跟随同一动作。Frenzy保留原skill_frenzy堆叠与逐项速度写入。完整模式切换／事件顺序仍见[公共边界](COMMON.md#当前持续效果入口)。
 

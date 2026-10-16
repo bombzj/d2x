@@ -32,7 +32,7 @@ struct WeaponDamage {
     int hitClass = 1;
     int masteryCritical = 0, projectileMasteryCritical = 0;
     int projectileMasteryRatingAdjustment = 0;
-    int itemBaseSpeed = 0, itemAttackSpeed = 0;
+    int itemBaseSpeed = 0, itemAttackSpeed = 0, itemAttackRate = 0;
     // An immutable selected-hand projection; empty only on the legacy adapter.
     std::shared_ptr<const CombatModifiers> nativeModifiers;
     std::array<int,3> meleeMastery{},throwMastery{};
@@ -50,6 +50,8 @@ struct EquipmentStats {
     int level = 1;
     EntityId shield;
     int smiteMinimum = 0, smiteMaximum = 0;
+    int shieldStrengthBonus{},shieldDexterityBonus{};
+    std::vector<std::string> shieldTypes;
     struct KickBoots {bool equipped{};int minimum{},maximum{},strengthBonus{},dexterityBonus{};} kickBoots;
 };
 } // namespace d2x

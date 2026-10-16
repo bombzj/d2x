@@ -10,7 +10,8 @@
 #include <vector>
 
 namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;}
-namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;}
+namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;}
+namespace d2x::server::combat {struct NativeSkillContact;}
 namespace d2x::server::actions {
 struct SkillRelease {
     ActorContext actor;
@@ -28,21 +29,32 @@ struct SkillRelease {
     EntityId shield{};
     bool charging{}; float chargeSpeed{};
     bool leaping{},landed{};
-    bool whirlwind{};uint64_t nextWhirlHit{};int whirlPeriod{};size_t whirlHand{};
+    bool whirlwind{};uint64_t nextWhirlHit{};size_t whirlHand{};
+    size_t whirlwindAttackHand{};
+    std::optional<uint64_t> motionFrame;
+    bool motionFinished{};
     std::optional<uint64_t> nativeMeleeOccurrence;
+    std::shared_ptr<combat::NativeSkillContact> nativeContact;
+    bool frenzyPrepared{};
     bool cancelled{};
     bool nativeCallbackStarted{};
     bool nativeStartPrepared{};
+    bool eventDriven{};
+    // SrvDo012/013 replan after a completed callback, from a game-frame anchor.
+    int rewindRemaining{};
+    int64_t animationAnchor{};
+    std::vector<uint8_t> animationEvents;
     std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse;
     std::shared_ptr<effects::MindBlastPulse> mindBlastPulse;
     std::shared_ptr<skills::AssassinKickExecution> assassinKick;
     std::shared_ptr<skills::DruidMeleeExecution> druidMelee;
+    std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee;
 };
 struct MonsterRelease {
     MonsterCastRequest request;
     MonsterAttackRule attack;
     RegionId area;
-    uint64_t generation{}, due{}, random{};
+    uint64_t generation{}, due{};
     uint64_t interruption{};
     std::optional<std::pair<Vec,Vec>> launch;
     std::vector<int> releaseFrames{};

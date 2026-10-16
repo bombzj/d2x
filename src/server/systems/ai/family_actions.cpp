@@ -80,10 +80,11 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     const auto decision = boss?std::optional{boss->action}:monster.rule.ai.kind==MonsterAiKind::FallenShaman?std::optional{decideFallenShaman(monster.rule.ai,input,bool(corpse))}:
         hasRangedDecision(monster.rule.ai.kind)?decideRangedMonster(monster.rule.ai,input):hasSpecialDecision(monster.rule.ai.kind)?decideSpecialMonster(monster.rule.ai,input):decideMeleeMonster(monster.rule.ai,input);
     if (!decision) return StepStatus::NotImplemented;
+    controller.random=decision->random;
     const auto actionTarget=decision->useShootableTarget && shootable?shootable->unit:target;
     const auto actionPosition=decision->useShootableTarget && shootable?shootable->position:position;
     if (decision->action == MonsterDecisionAction::Shout) {
-        const auto result = ports_.skills.requestCast({id, 0, target, tick.tick, 9});
+        const auto result = requestAction(controller,{id, 0, target, tick.tick, 9});
         if (result.status == DomainStatus::Capacity) { controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
         if(result && ports_.monsters.minionOwner(id)==id) {commandParty(monster);controller.commanded=true;}
     } else if (decision->action == MonsterDecisionAction::Attack || decision->action == MonsterDecisionAction::Special) {
@@ -92,7 +93,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
                 std::optional<Vec> point;
         if(boss && monster.rule.ai.kind==MonsterAiKind::Countess && decision->skillSlot==0) point=monster.skillPositions.at(size_t(firewallPhase));
         if(boss && monster.rule.ai.kind==MonsterAiKind::BloodRaven && decision->skillSlot==0) point=Vec{std::floor(position.x)+.5f,std::floor(position.y)+.5f}+boss->summonOffset;
-        const auto result = ports_.skills.requestCast({id,skill,actualTarget,tick.tick,decision->attackMode,point});
+        const auto result = requestAction(controller,{id,skill,actualTarget,tick.tick,decision->attackMode,point});
         if (result.status == DomainStatus::Capacity) {
             controller.nextDecision = tick.tick + 1;
             return StepStatus::Blocked; // Preserve the chosen roll and charge through output pressure.
@@ -121,12 +122,14 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
                 controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},{},0,fallback.velocityPercent,fallback.running}));
             }
             if(!controller.pursuing) {
-                const auto result=ports_.skills.requestCast({id,0,target,tick.tick,4});
+                controller.random=random;
+                const auto result=requestAction(controller,{id,0,target,tick.tick,4});
                 if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
             }
         }
         if (!controller.pursuing && decision->attackWhenMoveFails) {
-            const auto result = ports_.skills.requestCast({id, 0, target, tick.tick,decision->failedMoveAttackMode});
+            controller.random=random;
+            const auto result = requestAction(controller,{id, 0, target, tick.tick,decision->failedMoveAttackMode});
             if (result.status == DomainStatus::Capacity) {controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
         }
         if(!controller.pursuing && decision->failedMoveWanderRadius) controller.pursuing=bool(freeMove(monsterWanderPoint(monster.position,decision->failedMoveWanderRadius,random)));

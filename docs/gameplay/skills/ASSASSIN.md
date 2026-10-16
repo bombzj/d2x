@@ -4,6 +4,8 @@
 
 定义读取当前 MPQ，入口为 `content/skills/assassin_data.cpp`，公式继续使用公共原生目录。服务端程序按原 `srvstfunc/srvdofunc/srvprgfunc` 分类，不以显示名称决定玩法。
 
+当前SC、S2、武器序列及职业踢击由所属帧事件推进；DragonTalon按100%回绕重排，DragonFlight保留两次动作标记，Blade Fury使用持续单位事件。旧批量释放扫描已撤出，完整原全局交错与全部组合尚未认证；见[内核对照](../../modules/SERVER_SYSTEMS.md#调度与动作的职责及迁移边界)。本次构建／有限冒烟统一见运行包记录，历史运行不外推新增迁移。
+
 | ID | 技能 | 已接程序及有限观察 |
 | --- | --- | --- |
 | 251 | 火焰爆震／Fire Trauma | 原生投掷／落地链；观察到 385 出生及后续推进，影子战士也实际释放 |

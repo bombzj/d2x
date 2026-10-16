@@ -353,7 +353,7 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     if(!batches.empty()) {const auto sent=ports_.events.publishGroup(std::move(batches));if(!sent) return {sent.status,{}};}
     publication.publish();
     if(!first) return {DomainStatus::Unavailable,{}};
-    return {DomainStatus::Applied,MonsterLaunch{first,ownerDrawn?ownerRandom:request.random}};
+    return {DomainStatus::Applied,MonsterLaunch{first}};
 }
 System::Advance System::advanceMonster(const Missile &original) const {
     Advance plan{original,{},{},false};auto &missile=plan.next;const auto &enemy=*missile.enemy;
@@ -480,7 +480,7 @@ combat::SpellImpact System::enemyImpact(Advance &plan,std::vector<EntityId> unit
     hit.occurrence=(uint64_t(missile.ageFrames)<<32)|missile.weaponContacts.size();
     if(plan.damageRolls) {
         hit.missileDamage=plan.damageRolls;hit.missileCriticalChance=enemy.criticalChance;
-    } else hit.contactRandom=childRandom(missile.random);
+    }
     hit.monsterHit=enemy.hit;hit.monsterStates=enemy.states;hit.monsterLevel=enemy.level;hit.monsterRating=enemy.rating;hit.monsterToHit=enemy.rule.toHit;
     hit.freeze=enemy.rule.freeze;
     const auto modifiers=ports_.effects.combatModifiers(missile.owner,missile.executionTick);

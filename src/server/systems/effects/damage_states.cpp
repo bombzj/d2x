@@ -52,6 +52,8 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
     unit.area=actor.area;const auto previousStates=unit.states.stateIds(tick);
     MonsterResourceTrace resources(actor,tick,&unit.states);
     const auto observe=[&]{resources.sample(unit.states,true);};
+    if(const auto *previous=ports_.monsters.find(id);previous && previous->interruption!=actor.interruption)
+        unit.states.endModeEffects({},observe);
     if(damage.deathDelay) unit.states.setNativeState(actor.rule.deathDelayState,true);
     else if(!actor.alive()) unit.states.setNativeState(actor.rule.deathDelayState,false);
     if(damage.status) {

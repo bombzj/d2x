@@ -14,7 +14,7 @@ class Simulation {
     SystemSteps steps_{};
     SystemMetrics metrics_{};
     FrameFacts facts_;
-    enum class Phase {Environment,Events,Domains,Population,Actors,Effects,Combat,Trade,Tail,Objects,Modifiers,Quests,Tower,Publication};
+    enum class Phase {Environment,Events,Domains,Population,Actors,Companions,Skills,Movement,Effects,Combat,Trade,Tail,Objects,Modifiers,Quests,QuestBirths,Tower,Publication};
     Phase phase_{Phase::Environment};
     std::optional<uint64_t> frame_;
   public:

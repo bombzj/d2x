@@ -98,6 +98,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 attack.duration=monsterAnimationTicks({frames,rate});
                 attack.release=std::clamp(animationFrameTicks(motion.actionFrame,rate),1,attack.duration);attack.casting=casting;
                 attack.animation=AnimationTiming{frames,baseRate};attack.animationAction=motion.actionFrame;attack.animationSequence=bool(motion.sequenceFrames);
+                attack.animationFlags=motion.flags;
             };
             const auto prepareAttack=[&](int id,int rank)->server::MonsterAttackRule {
                 size_t skill=0;while(skill<skills.rows().size() && skills.number(skill,"Id")!=id) ++skill;
@@ -162,6 +163,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                         const int rate=effectiveAttackSpeed(baseRate,gear.equipment.weapons[0].fasterAttack,gear.equipment.weapons[0].baseSpeed,gear.modifiers.combat.attackRate);
                         const auto &sequence=monster->hirelingSequence->frames;
                         attack.animation=AnimationTiming{int(sequence.size()),baseRate};attack.animationSequence=true;attack.animationEvents.clear();
+                        attack.animationFlags.clear();for(const auto &frame:sequence) attack.animationFlags.push_back(frame.hit?1:0);
                         attack.duration=std::max(1,(int(sequence.size())*256+rate-1)/rate);
                         for(size_t i=0;i<sequence.size();++i) if(sequence[i].hit) {attack.animationEvents.push_back(int(i));attack.releaseFrames.push_back(weaponSequenceTick(int(i),rate));}
                         if(attack.releaseFrames.empty()) throw std::runtime_error("Missing original Jab releases");
@@ -174,7 +176,6 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                         if(!monster->hirelingCastTiming) throw std::runtime_error("Missing original Iron Wolf cast timing");
                         actionTiming(attack,*monster->hirelingCastTiming,true);
                         if(attack.spell->effect==SkillBehavior::Inferno) {
-                            attack.animation.reset();
                             const auto found=std::find_if(row->skills.begin(),row->skills.end(),[&](const auto &s){return s.id==id;});
                             if(found==row->skills.end() || found->channelFrames<=0) throw std::runtime_error("Missing original Inferno channel frames");
                             for(int frame=attack.release;frame<attack.release+found->channelFrames;frame+=2) attack.releaseFrames.push_back(frame);

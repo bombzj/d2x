@@ -524,11 +524,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             continue;
         }
         const bool dead = player.persistent.player.hp <= 0;
-        const auto mode=ports_.actions.casts.find(player.actor);
-        const auto modeRevision=mode!=ports_.actions.casts.end() && !mode->second.interrupted && mode->second.until>tick.tick?
-            std::optional<uint64_t>{mode->second.revision}:std::nullopt;
         std::optional<PlayerResourceTrace> resources;
-        if(dead || next.states.hasDueExpiration(tick.tick) || next.states.hasEndedModeEffects(modeRevision))
+        if(dead || next.states.hasDueExpiration(tick.tick))
             resources.emplace(player,tick.tick);
         const auto observeRemoval=[&]{resources->sample(next.states,true);};
         std::vector<RemovedCombatEffect> removed;
@@ -541,7 +538,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 auto expired=next.states.expireOrdinary(tick.tick,observeRemoval,EffectUnitKind::Player);
                 removed.insert(removed.end(),expired.begin(),expired.end());
             } else {
-                removed=next.states.endModeEffects(modeRevision,observeRemoval);
                 auto expired=next.states.expireOrdinary(tick.tick,observeRemoval);
                 removed.insert(removed.end(),expired.begin(),expired.end());
             }
@@ -589,8 +585,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     if(framePhase_==4) ++framePhase_;
     if(framePhase_==5) ++framePhase_;
     if(framePhase_==6) {if(advanceUnits(tick.tick)==StepStatus::Blocked) return StepStatus::Blocked;++framePhase_;}
-    if(framePhase_==7) {if(advanceMonsterSkills(tick.tick)==StepStatus::Blocked) return StepStatus::Blocked;++framePhase_;}
-    if(framePhase_==8) {if(advanceMonsterEnchantments(tick.tick)==StepStatus::Blocked) return StepStatus::Blocked;++framePhase_;}
+    if(framePhase_==7) ++framePhase_;
+    if(framePhase_==8) {if(advanceMonsterCurses(tick.tick)==StepStatus::Blocked) return StepStatus::Blocked;++framePhase_;}
     if(framePhase_==9) ++framePhase_;
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }

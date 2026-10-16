@@ -19,7 +19,7 @@ struct WeaponSkillSpec {
     bool thrown = false, manaOnRelease = false;
     bool useThrowMastery = false; // Native ITypeA[0] thrown ancestry and Range==2.
     bool dualWield = false;
-    int sequence = -1, attackRateBonus = 0;
+    int sequence = -1;
     int attackRating = 0, attackRatingPerLevel = 0, delayFrames = 0;
     int damagePercent = 0, damagePerLevel = 0, selfDamagePercent = 0;
     std::map<int, int> damageSynergies;
@@ -55,5 +55,13 @@ struct WeaponSkillSpec {
     int armorOverridePercent = 0, attackPhysicalResist = 0;
     CombatStateDefinition conversionSaveState;
     int conversionFramesPerLevel{};
+    int startFunction{},doFunction{};
+    bool allocatesMeleeAtStart() const {
+        return (doFunction==2 && (startFunction==2 || startFunction==6 || startFunction==7 || startFunction==32 || startFunction==35 || startFunction==39)) ||
+            (startFunction==29 && doFunction==64) || (startFunction==16 && doFunction==32) || (startFunction==32 && doFunction==79) ||
+            (startFunction==6 && doFunction==11) || (startFunction==10 && doFunction==14) || (startFunction==42 && doFunction==83);
+    }
+    bool nativeMelee() const {return commonAttack || allocatesMeleeAtStart() || doFunction==7 || doFunction==9 || doFunction==13 ||
+        doFunction==67 || doFunction==70 || doFunction==76 || doFunction==78 || doFunction==150;}
 };
 } // namespace d2x

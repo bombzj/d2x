@@ -33,21 +33,10 @@ DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,u
                 Fixed8::fromRaw(std::min<int64_t>(attributes.maxManaFixed.raw(),int64_t(record.mana.raw())+impact.manaGain)),record.stamina,std::move(visuals));
             if(result.status==DomainStatus::Capacity) return result.status;
         }
-        // This phase precedes Sacrifice recoil. Clear only after resource and
-        // overlay admission, so retrying recoil cannot credit leech twice.
+        // Clear accepted gains before a later conversion can encounter output pressure.
         impact.lifeGain=impact.manaGain=0;impact.contactOverlay=impact.leechOverlay=-1;
-        if(impact.conversion && impact.phase==ImpactPhase::FollowUp) {
-            const auto result=ports_.effects.convert(actor,impact.targets[impact.next],*impact.conversion);
-            if(result.status==DomainStatus::Capacity) return result.status;
-        }
-        impact.phase=ImpactPhase::Recoil;
-        if(owner->persistent.player.hp>0 && impact.selfDamage>0) {
-            const int64_t life=int64_t(owner->persistent.player.hp.raw());
-            const auto result=ports_.transactions.damage(actor,owner->characterRevision,life-impact.selfDamage<256?life:impact.selfDamage);
-            if(result.status==DomainStatus::Capacity) return result.status;
-        }
     }
-    impact.phase=ImpactPhase::Contact;impact.selfDamage=0;++impact.next;
+    impact.phase=ImpactPhase::Contact;++impact.next;
     return DomainStatus::Applied;
 }
 }

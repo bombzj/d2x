@@ -93,7 +93,7 @@ DomainResult<> System::queue(const Request &request,std::optional<transactions::
     ++state_.nextOrder;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std::string deferred,
+DomainResult<> System::install(EntityId source, TickContext tick, items::PreparedBatch batch, std::string deferred,
     std::optional<uint64_t> sourceRandom,std::optional<uint64_t> objectRandom) {
     const auto found = state_.pending.find(source);
     if (found == state_.pending.end()) return {DomainStatus::Stale, {}};
@@ -157,7 +157,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         }
         auto completions=state_.completed;
         if(request.object->reportCompletion) completions.insert_or_assign(source,true);
-        const auto installed=ports_.items.installNativeGroundBatch(placed,request.occurrence);
+        const auto installed=ports_.items.installNativeGroundBatch(placed,tick.tick);
         if(!installed) return installed;
         state_.completed.swap(completions);state_.pending.erase(found);state_.deferred.clear();
         return {DomainStatus::Applied,std::monostate{}};
@@ -203,7 +203,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
             if(!definition || definition->betterGem!=request.object->dropCode) return fail();
             draft.edit.changes.push_back({item->id,item->revision+1,ItemChangeKind::Removed,item->location,{},0});draft.edit.inventory.items.erase(item->id);
         }
-        const ActorContext actor{player->player, player->actor, player->area, 0, 0, 0};
+        const ActorContext actor{player->player, player->actor, player->area, ports_.areas.at(player->area).generation, 0, tick.tick};
         transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(draft.edit.inventory), std::move(draft.edit.changes), player->persistent.player.weaponSet};
         edit.world = transactions::WorldEdit{ports_.items.read().revision, std::move(*next.value)};
         edit.publicFacts=std::move(drops);
@@ -212,7 +212,7 @@ DomainResult<> System::install(EntityId source, items::PreparedBatch batch, std:
         state_.completed.swap(completions);
     } else {
         if(!drops.empty()) {
-            auto sent=ports_.events.publish({0,0,{}, {AudienceKind::Area,{},request.source.region},std::move(drops)});
+            auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},request.source.region},std::move(drops)});
             if(!sent) return {sent.status,{}};
         }
         // The prepared state already contains final identities and placement.

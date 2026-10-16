@@ -158,12 +158,28 @@ DomainResult<ItemInstance> System::resolve(const Address &address) const {
     if (found == inventory->items.end() || found->second.revision != address.item.revision) return {DomainStatus::Stale, {}};
     return {DomainStatus::Applied, found->second};
 }
+DomainResult<> System::restoreGround(EntityId id,uint64_t tick) {
+    const auto found=state_.world.items.find(id);
+    if(found==state_.world.items.end()) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
+    auto &item=found->second;const auto *ground=std::get_if<GroundLocation>(&item.location);
+    const auto *base=ports_.definitions?ports_.definitions->find(item.definition):nullptr;
+    if(!ground || !base || !state_.equipment.items.contains(id)) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
+    const auto &values=state_.equipment.at(id,1);
+    const auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability);
+    if(!rule || (rule->quantity?item.quantity:item.durability)>=rule->maximum) {clearRestoration(id);return {DomainStatus::Applied,std::monostate{}};}
+    if(item.revision==UINT64_MAX || state_.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},ground->region},{GroundRestoredFact{id,item.revision+1}}});
+    if(!sent) return {sent.status,{}};
+    ++(rule->quantity?item.quantity:item.durability);++item.revision;++state_.revision;
+    rearmRestoration(id,*rule,tick);return {DomainStatus::Applied,std::monostate{}};
+}
 StepStatus System::step(TickContext tick,FrameFacts &) {
     bool blocked=false;
     std::set<EntityId> present;
     for(const auto &[id,item]:state_.world.items) present.insert(id);
     for(const auto &[id,player]:ports_.players.all()) for(const auto &[itemId,item]:player.persistent.inventory.items) present.insert(itemId);
-    std::erase_if(restoration_,[&](const auto &entry){return !present.contains(entry.first);});
+    std::vector<EntityId> stale;for(const auto &[id,clock]:restoration_) if(!present.contains(id)) stale.push_back(id);
+    for(const auto id:stale) clearRestoration(id);
     for(auto it=state_.world.items.begin();it!=state_.world.items.end();) {
         auto &item=it->second;const auto *base=ports_.definitions?ports_.definitions->find(item.definition):nullptr;
         const auto *ground=std::get_if<GroundLocation>(&item.location);
@@ -184,12 +200,8 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             if(const auto rule=itemRestoration(item,*base,values.stats,values.maximumDurability)) {
                 auto &value=rule->quantity?item.quantity:item.durability;
                 if(value<rule->maximum) {
-                    auto &clock=restorationClock(item.id,*rule,tick.tick);
-                    if(clock.due<=tick.tick && item.revision!=UINT64_MAX && state_.revision!=UINT64_MAX) {
-                        if(ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},ground->region},{GroundRestoredFact{item.id,item.revision+1}}})) {
-                            ++value;++item.revision;++state_.revision;clock.due=itemRestorationDue(tick.tick,rule->rate,false);
-                        } else blocked=true;
-                    }
+                    restorationClock(item.id,*rule,tick.tick);
+
                 } else clearRestoration(item.id);
             } else clearRestoration(item.id);
         }

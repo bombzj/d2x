@@ -116,6 +116,7 @@ class FrameEventQueue {
     bool hasDue(FrameEventOwner,uint64_t frame) const;
     bool hasEvent(FrameEventOwner,FrameEventType) const;
     size_t size() const {return nodes_.size();}
+    uint64_t currentFrame() const {return frame_.value_or(0);}
     bool idle() const {return !frame_ || phase_==10;}
     uint64_t reserveIdentity();
     FrameEventQueueObservation observe(size_t limit) const;

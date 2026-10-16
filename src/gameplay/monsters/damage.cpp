@@ -94,35 +94,4 @@ bool monsterHitRecovery(int64_t damage,int64_t maximumLife,uint8_t hitClass,
     if(damage<maximumLife/(divisor/4) && !(rollRandom(random)&3)) return false;
     return hasMode;
 }
-MonsterHit rollMonsterHit(int minimum, int maximum, int critical,
-    std::span<const MonsterElementAttack> elements, int sourceDamage, uint64_t &random) {
-    MonsterHit hit;
-    auto roll = [&](int low, int high, int shift) {
-        const auto base = nativeShiftLeft(low,unsigned(shift)), spread = nativeShiftLeft(std::max(0,nativeSubtract(high,low)),unsigned(shift));
-        return nativeAdd(base,spread>0?int32_t(limitedRandom(random,uint32_t(spread))):0);
-    };
-    hit.channels[0] = nativeMultiplyDivide(roll(minimum,maximum,8),sourceDamage,128);
-    for (const auto &element : elements) {
-        if (element.chance < 100 && limitedRandom(random,100) >= unsigned(element.chance)) continue;
-        // MonStats poison is converted to fixed rate before the damage roll.
-        const auto value = element.type=="pois"?roll(nativeMultiply(10,element.minimum),nativeMultiply(10,element.maximum),0):roll(element.minimum,element.maximum,8);
-        const auto add=[&](size_t channel){hit.channels[channel]=nativeAdd(nativeChecked(hit.channels[channel]),nativeMultiplyDivide(value,sourceDamage,128));};
-        if (element.type == "fire") add(2);
-        else if (element.type == "ltng") add(3);
-        else if (element.type == "mag") add(1);
-        else if (element.type == "cold") {
-            add(4);
-            hit.coldFrames += uint64_t(element.durationFrames) * unsigned(sourceDamage) / 128;
-        } else if (element.type == "pois") {
-            add(5);
-            hit.poisonFrames += uint64_t(element.durationFrames) * 2;
-        } else if (element.type == "life") hit.lifeDrain = nativeAdd(nativeChecked(hit.lifeDrain),value);
-        else if (element.type == "mana") hit.mana += value;
-        else if (element.type == "stam") hit.stamina += value;
-        else if (element.type == "stun") hit.stunFrames += unsigned(element.durationFrames);
-    }
-    // MONSTER_ApplyCriticalDamage doubles all six damage channels.
-    monsterCritical(hit,critical,random);
-    return hit;
-}
 }

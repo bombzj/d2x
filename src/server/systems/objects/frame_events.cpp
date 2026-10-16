@@ -1,0 +1,106 @@
+#include "system.hpp"
+#include "server/area_store.hpp"
+#include "server/player_store.hpp"
+#include "server/systems/monsters/system.hpp"
+#include "server/systems/loot/system.hpp"
+#include "server/systems/quests/system.hpp"
+#include "server/systems/population/system.hpp"
+#include <algorithm>
+
+namespace d2x::server::objects {
+namespace {
+FrameEventType hazardEvent(const Object &object) {
+    switch(object.rule.initialization) {
+    case 24:return FrameEventType::StatRegeneration;
+    case 51:return FrameEventType::PeriodicStats;
+    case 58:return FrameEventType::PeriodicSkills;
+    case 59:return FrameEventType::MonsterModifier;
+    default:return FrameEventType::ModeChange;
+    }
+}
+}
+void System::schedule(Object &object) {
+    const FrameEventOwner owner{FrameEventUnit::Object,object.id};
+    const auto synchronize=[&](FrameEventType type,uint64_t due) {
+        const auto events=ports_.frameEvents.events(owner);
+        if(std::any_of(events.begin(),events.end(),[&](const auto &event){return event.type==type && event.payload==due && due;})) return;
+        std::optional<FrameEventQueue::PreparedInsertion> timer;
+        if(due) timer=ports_.frameEvents.prepareInsertion({{},owner,type,
+            std::max(due,ports_.frameEvents.currentFrame()+1),false,0,0,0,due});
+        ports_.frameEvents.cancelHandler(owner,type,0);
+        if(timer) ports_.frameEvents.publish(std::move(*timer));
+    };
+    synchronize(FrameEventType::EndAnimation,!object.rule.door && object.rule.initialization!=22 &&
+        object.rule.initialization!=24 && object.mode==1?object.until:0);
+    synchronize(FrameEventType::ActiveState,object.reset);
+    synchronize(hazardEvent(object),object.hazardAt);
+    synchronize(FrameEventType::Trap,object.trapAt);
+    synchronize(FrameEventType::AiReset,object.lootAt);
+}
+DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
+    const auto found=state_.objects.find(event.owner.unit);
+    if(found==state_.objects.end()) return {DomainStatus::Applied,std::monostate{}};
+    auto &object=found->second;
+    if(!ports_.areas.loaded(object.area,object.position)) {
+        auto next=event;next.handle={};next.due=tick+1;
+        ports_.frameEvents.insertPrepared(next);return {DomainStatus::Applied,std::monostate{}};
+    }
+    bool changed=false;
+    if(event.type==FrameEventType::EndAnimation && object.until==event.payload) {
+        if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?5:2;changed=true;}
+        object.until=0;
+    } else if(event.type==FrameEventType::ActiveState && object.reset==event.payload) {
+        object.mode=0;object.reset=0;changed=true;
+    } else if(event.type==FrameEventType::AiThink && object.rule.operation==22) {
+        // ObjMode::74B40 restores one use per event installed by OperateWell.
+        // Multiple uses retain distinct callbacks; there is no refill loop.
+        object.uses=std::min(2*object.rule.parameters[2],object.uses+1);
+        if(object.rule.parameters[2]>0 && object.uses%object.rule.parameters[2]==0)
+            object.mode=2-object.uses/object.rule.parameters[2];
+        changed=true;
+    } else if(event.type==FrameEventType::Trap && object.trapAt==event.payload) {
+        if(objectTrap({tick},object.id)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    } else if(event.type==FrameEventType::AiReset && object.lootAt==event.payload && !object.pending) {
+        if(const auto *player=ports_.players.find(object.operatorId)) {
+            LootRequest source;source.source=object.id;source.region=object.area;source.difficulty=ports_.settings.difficulty;
+            const auto queued=ports_.loot.queue({object.revision,source,player->player,object.position,
+                loot::ObjectSource{object.definition,object.rule.operation,{},{}}});
+            if(!queued) return {queued.status,{}};
+            object.pending=true;object.lootAt=0;
+        }
+    } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization==59 && object.hazardAt==event.payload) {
+        if(object.mode==1) {object.mode=2;++object.revision;collision(object.area);}
+        DomainResult<> result{DomainStatus::Applied,std::monostate{}};
+        if(int(object.area)==76) {
+            const int definition=ports_.areas.at(object.area).definition.populationRules.afterglowClass;
+            if(definition<0) return {DomainStatus::NotImplemented,{}};
+            result=ports_.population.requestObjectBirth(object.area,object.id,object.position,{tick},definition);
+        } else if(int(object.area)==108) result=ports_.quests.sealAfterglow(object.area,object.id,object.position,tick);
+        if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale)
+            return {DomainStatus::Capacity,{}};
+        if(result.status==DomainStatus::NotImplemented) return result;
+        object.hazardAt=!result && int(object.area)==108?tick+10:0;
+    } else if(event.type==hazardEvent(object) && object.hazardAt==event.payload) {
+        if(hazardStep({tick},object.id)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    }
+    if(changed) {++object.revision;collision(object.area);}
+    // The executing node is still linked until dispatch accepts this callback.
+    ports_.frameEvents.cancel(event.handle);schedule(object);
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::trapEvent(EntityId id,uint64_t tick) {
+    if(monsterTrap({tick},id)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    const auto *unit=ports_.monsters.find(id);
+    if(unit && unit->alive()) {
+        const auto found=traps_.find(id);
+        auto due=tick+uint64_t(std::max(1,unit->rule.decisionTicks));
+        if(found!=traps_.end()) {
+            const auto &clock=found->second;
+            if(clock.release) due=clock.release;
+            else if(clock.next>tick) due=clock.next;
+        }
+        ports_.monsters.scheduleAi(id,std::max({due,unit->frozenUntil,unit->stunnedUntil,unit->knockedUntil}));
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
+}

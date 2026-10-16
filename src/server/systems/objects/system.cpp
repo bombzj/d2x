@@ -13,6 +13,7 @@
 #include "server/systems/travel/system.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/quests/system.hpp"
+#include "server/systems/population/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -29,8 +30,9 @@ void System::onWaypointArrival(RegionId area,TickContext tick) {
 }
 void System::collision(RegionId area) {
     std::vector<Grid::Obstacle> values;
-    for (const auto &[id, object] : state_.objects) {
+    for (auto &[id, object] : state_.objects) {
         if (object.area != area) continue;
+        schedule(object);
         const auto &rule = object.rule; const auto mode = size_t(object.mode);
         if (rule.width <= 0 || rule.height <= 0 || (!rule.collision[mode] && !rule.light[mode])) continue;
         values.push_back({id, int(object.position.x) - rule.width / 2, int(object.position.y) - rule.height / 2,
@@ -105,7 +107,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(rule.operation==43 && object.mode!=2) return {DomainStatus::Conflict,{}};
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
         if(result && !reusable) object.pending=true;
-        if(result && rule.operation==42 && !object.mode) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;}
+        if(result && rule.operation==42 && !object.mode) {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;schedule(object);}
         return result;
     }
     if(rule.operation==6 || rule.operation==9 || rule.operation==10 || rule.operation==12 || (rule.operation==21 && object.definition==108)) {
@@ -134,7 +136,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (object.mode && rule.operation != 22) return {DomainStatus::Conflict, {}};
     if (rule.shrine) {
         const auto result = shrine(actor, object); if (!result || object.pending) return result;
-        object.mode = 1; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); object.reset = rule.shrine->reset > 0 ? actor.tick + uint64_t(rule.shrine->reset) : 0;
+        object.mode = 1; object.until = actor.tick + std::max(uint64_t{1},rule.openingTicks); object.reset = rule.shrine->reset > 0 ? actor.tick + uint64_t(rule.shrine->reset)+1 : 0;
         ++object.revision; collision(actor.area); return result;
     }
     if (rule.operation == 22) {
@@ -152,7 +154,8 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if(result.value->usesCharge) {
             --object.uses;
             if(object.uses<=2*rule.parameters[2] && object.uses%rule.parameters[2]==0) object.mode=2-object.uses/rule.parameters[2];
-            if(!object.reset && rule.parameters[0]>0) object.reset=actor.tick+uint64_t(rule.parameters[0]);
+            if(rule.parameters[0]>0) ports_.frameEvents.insertPrepared({{},{FrameEventUnit::Object,object.id},
+                FrameEventType::AiThink,actor.tick+uint64_t(rule.parameters[0])+1});
             ++object.revision; collision(actor.area);
         }
         return {DomainStatus::Applied,std::monostate{}};
@@ -270,6 +273,15 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     std::set<RegionId> changed;
     for (auto &[id, object] : state_.objects) {
         if (!ports_.areas.loaded(object.area, object.position)) continue;
+        const auto advanceUrn=[&] {
+            if(!object.urnPending) return StepStatus::Complete;
+            collision(object.area);
+            const auto result=ports_.population.requestObjectBirth(object.area,id,object.position,tick);
+            if(!result) return result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
+                StepStatus::Blocked:StepStatus::NotImplemented;
+            object.urnPending=false;return StepStatus::Complete;
+        };
+        if(const auto status=advanceUrn();status!=StepStatus::Complete) return status;
         if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
             object.mode=*mode;object.until=0;++object.revision;changed.insert(object.area);
         }
@@ -288,13 +300,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(object.rule.operation==9 && int(object.area)==4 && ports_.quests.read().actOne.restoreCairnStones && object.mode!=2) {
             object.mode=2;object.until=0;++object.revision;changed.insert(object.area);
         }
-        if(object.lootAt && tick.tick>=object.lootAt && !object.pending) {
-            if(const auto *player=ports_.players.find(object.operatorId)) {
-                LootRequest source;source.source=id;source.region=object.area;source.difficulty=ports_.settings.difficulty;
-                const auto result=ports_.loot.queue({object.revision,source,player->player,object.position,loot::ObjectSource{object.definition,object.rule.operation,{},{}}});
-                if(result) {object.pending=true;object.lootAt=0;}
-            }
-        }
         if(object.pending) if(const auto result=ports_.quests.takeCompletion(id)) {
             object.pending=false;
             if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
@@ -309,12 +314,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                     object.trap=object.rule.trap;
                     if(object.rule.chest) {object.rule.chest->locked=false;object.trap=object.rule.chest->trap;}
                     if(object.rule.operation==1 && limitedRandom(object.random,10000)>=8192) object.trap=8;
-                    if(object.rule.operation==68 && limitedRandom(object.random,255)<=unsigned(object.rule.parameters[7])) {object.secondaryTrap=object.trap;object.trap=11;}
+                    if(object.rule.operation==68 && limitedRandom(*state_.controlRandom,255)<=unsigned(object.rule.parameters[7])) object.urnPending=true;
                     if((object.trap==8 || object.trap==9) && ports_.areas.at(object.area).definition.act==0) {
                         const auto &monsters=ports_.areas.at(object.area).definition.environmentMonsters;const auto found=monsters.find("chest");if(found!=monsters.end() && found->second.identity.monster=="flyingscimitar") object.trap=0;
                     }
                     if(object.trap) object.trapAt=tick.tick+35;
                     ++object.revision;changed.insert(object.area);
+                    if(const auto status=advanceUrn();status!=StepStatus::Complete) return status;
                 }
             }
         }
@@ -322,23 +328,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             const auto *player=ports_.players.find(object.operatorId);const auto &area=ports_.areas.at(object.area);
             DomainResult<> result{DomainStatus::Applied,std::monostate{}};
             if(object.rule.shrine->code!=18 && player) result=shrineMissiles({player->player,player->actor,object.area,area.generation,0,tick.tick},object);
-            if(result) {object.specialPending=false;object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);object.reset=object.rule.shrine->reset>0?tick.tick+uint64_t(object.rule.shrine->reset):0;++object.revision;changed.insert(object.area);}
+            if(result) {object.specialPending=false;object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);object.reset=object.rule.shrine->reset>0?tick.tick+uint64_t(object.rule.shrine->reset)+1:0;++object.revision;changed.insert(object.area);}
         }
-        if (!object.rule.door && object.rule.initialization!=22 && object.rule.initialization!=24 && object.mode == 1 && object.until && tick.tick >= object.until) {
-            object.mode = object.rule.operation==10 && int(object.area)==38?5:2; object.until = 0; ++object.revision; changed.insert(object.area);
-        }
-        if (object.reset && tick.tick >= object.reset) {
-            if (object.rule.operation == 22) {
-                object.uses = std::min(2 * object.rule.parameters[2], object.uses + 1);
-                if(object.uses%object.rule.parameters[2]==0) object.mode=2-object.uses/object.rule.parameters[2];
-                object.reset = object.uses < 2 * object.rule.parameters[2] ? tick.tick + uint64_t(object.rule.parameters[0]) : 0;
-            } else { object.mode = 0; object.reset = 0; }
-            ++object.revision; changed.insert(object.area);
-        }
+
     }
     for (const auto area : changed) collision(area);
-    const bool blocked=hazardStep(tick)==StepStatus::Blocked;
-    return trapStep(tick)==StepStatus::Blocked || blocked?StepStatus::Blocked:StepStatus::Complete;
+    return StepStatus::Complete;
 }
 
 }

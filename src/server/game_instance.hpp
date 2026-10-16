@@ -103,7 +103,7 @@ class GameInstance {
     const auto &usedUniques() const {return systems_.loot.read().uniques;}
     auto reserveLootSeeds(EntityId source,uint64_t occurrence,size_t index) {return systems_.loot.reserveSeeds(source,occurrence,index);}
     auto beginLootPreparation(EntityId source) {return systems_.loot.beginPreparation(source);}
-    DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={}) { return systems_.loot.install(source, std::move(batch), std::move(deferred),random,objectRandom); }
+    DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={}) { return systems_.loot.install(source, {tick_}, std::move(batch), std::move(deferred),random,objectRandom); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }

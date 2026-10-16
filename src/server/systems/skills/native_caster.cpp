@@ -13,7 +13,7 @@ RegionId NativeCaster::area() const {return player?player->area:monster->area;}
 Vec NativeCaster::position() const {return player?player->position:monster->position;}
 int NativeCaster::level() const {return player?player->persistent.player.level:monster->rule.level;}
 uint64_t NativeCaster::random() const {return player?player->combatRandom:monster->combatRandom;}
-const SkillRules *NativeCaster::programs() const {return controller?controller->rules.skills.get():nullptr;}
+const SkillRules *NativeCaster::programs() const {return controller?controller->rules.skills.get():unitPrograms;}
 ActorContext NativeCaster::context(const AreaStore &areas,uint64_t tick) const {return {controller?controller->player:PlayerId{},id(),area(),areas.at(area()).generation,0,tick};}
 SkillFormulaInput NativeCaster::formulaInput(const effects::System &effects,uint64_t tick,RuleRandom random) const {
     if(player) return skills::formulaInput(*player,std::move(random));
@@ -23,7 +23,7 @@ SkillFormulaInput NativeCaster::formulaInput(const effects::System &effects,uint
 std::optional<NativeCaster> nativeCaster(const PlayerStore &players,const monsters::System &monsters,EntityId id) {
     if(const auto *player=players.findActor(id)) return NativeCaster{player,player,nullptr};
     const auto *monster=monsters.find(id);if(!monster) return {};
-    return NativeCaster{nullptr,monster->owner?players.find(*monster->owner):nullptr,monster};
+    return NativeCaster{nullptr,monster->owner?players.find(*monster->owner):nullptr,monster,monsters.skillPrograms()};
 }
 SkillCastSpec evaluateNativeSkill(const NativeCaster &caster,const effects::System &effects,int skill,int rank,uint64_t tick) {
     if(caster.player) return evaluate(*caster.player,skill,rank);

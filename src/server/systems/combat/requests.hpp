@@ -23,23 +23,9 @@ struct MonsterContactExecution;
 struct MissileContactExecution;
 struct ProgressiveContactExecution;
 struct WeaponBlockCursor {EntityId target;bool checked{},blocked{},reactionComplete{};};
-struct Damage {
-    EntityId source, target; DamageType type; int64_t minimum{}, maximum{}; uint64_t action{};
-    RegionId area; uint64_t impact{}; int rating{}, level{}, range{}, sourceSize{2};
-    std::optional<WeaponDamage> weapon;
-    int criticalChance{}, deadlyChance{};
-    bool reactionsStarted{}, cancelled{};
-    std::optional<CombatModifiers> attackModifiers{};
-    uint8_t monsterMode{4};
-    uint64_t sourceInterruption{};
-    std::optional<uint64_t> actionRandom{};
-    CombatSourceBinding binding{};
-    std::optional<SkillCastSpec> skill{};
-    std::optional<MonsterAttackRule> monsterSkill{};
-    WeaponBlockCursor weaponBlock;
-};
+struct DirectDefenseCursor {EntityId target;bool accuracyPrepared{},hit{true},prepared{},reactionComplete{};NativeBlockOrDodge result;};
 enum class MissilePreludeResult { Ignore,Miss,Hit };
-enum class ImpactPhase { Contact, FollowUp, Recoil };
+enum class ImpactPhase { Contact, FollowUp };
 struct MissileAreaRoll {std::optional<MissileHitDamage> value;};
 struct MissileAreaDamage {
     MissileDamageElement element{};bool full{};std::optional<int32_t> length;
@@ -51,20 +37,30 @@ struct MissileAreaDamage {
 // damage events before choosing result flags (SkillAss::SrvDo033).
 struct NativeSkillContact {
     int skill{},rank{};
+    std::optional<MonsterAttackRule> monsterProgram;
+    int vengeanceCycle{};
+    bool vengeanceCyclePosted{},vengeanceEquipmentFilled{};
     bool psychicHammer{},rolled{},flagsComplete{};
     bool accuracyOnly{},monsterCritical{},monsterCriticalPosted{};
     std::optional<int> sourceDamage;
-    bool melee{},progressive{},accuracyPrepared{},defensePrepared{},hit{true},reactionPrepared{},attemptComplete{},chargePosted{};
+    bool melee{},progressive{},accuracyPrepared{},accuracyHit{},defensePrepared{},hit{true},reactionPrepared{},attemptComplete{},chargePosted{};
     NativeBlockOrDodge defense;
     std::shared_ptr<effects::NativeContactBatch> attempt;
     std::shared_ptr<effects::NativeContactBatch> drainEvents,thornsEvents;
     bool drainEventsComplete{},thornsComplete{};
     std::shared_ptr<reactions::ItemEventPlan> attackItems;
     bool attackItemsComplete{};
+    bool proceduresTransferred{};
+    bool physicalCapped{};
     bool actionComplete{};
     bool drainRangeChecked{},skipMissDrain{};
     std::shared_ptr<ProgressiveContactExecution> release;
-    bool overlayPrepared{};
+    bool progressiveReleaseChecked{},progressiveReleaseSuppressed{};
+    bool overlayPrepared{},targetArmorPrepared{},programPrefilled{},postAllocationComplete{};
+    bool modeRatePrepared{};
+    bool terminalOverlayComplete{};
+    bool monsterProfilePrepared{};
+    uint64_t modeRevision{};
     std::shared_ptr<const MissileHitDamage> initialDamage;
     bool kick{},kickKnockback{},heldPrepared{},cancelled{},fillEventComplete{},elementsComplete{};
     int32_t allocatedPhysical{};
@@ -88,7 +84,6 @@ struct SpellImpact {
     std::optional<WeaponSkillDamage> weapon{};
     uint64_t poisonFrames{};
     uint64_t stunFrames{};
-    std::optional<bool> weaponHit{};
     std::optional<MonsterHit> monsterHit{};
     std::shared_ptr<MissileDamageRollState> missileDamage;
     bool nativeDamageFlagsOnly{}; // Direct FillDamageParams -> SetDamageFlags, without collision callbacks/SrvDmg.
@@ -105,21 +100,13 @@ struct SpellImpact {
     int monsterRating{}, monsterLevel{};
     bool monsterToHit{};
     int64_t sourceHeal{};
-    std::optional<uint64_t> contactRandom{};
     bool unblockable{};
     ImpactPhase phase = ImpactPhase::Contact;
-    int64_t selfDamage{};
     int64_t healing{}; bool undeadOnly{};
     bool allocatedMissile{},collideFriend{},healingContact{},healingComputed{},healingCommitted{};
     std::shared_ptr<MissileDamageRollState> healingRolls;
-    std::optional<WeaponSkillSpec> conversion{};
     int healingOverlay{-1};
     CombatSourceBinding binding{};
-    size_t plannedTarget{};
-    std::optional<uint64_t> targetRandom{};
-    bool wearApplied{};
-    bool frenzyApplied{};
-    std::optional<size_t> progressiveChargeTarget;
     int64_t lifeGain{}, manaGain{};
     int contactOverlay{-1}, leechOverlay{-1};
     EntityId meleeReactionTarget{};
@@ -133,11 +120,9 @@ struct SpellImpact {
     bool softHit{};
     std::shared_ptr<PlayerContactExecution> playerContact;
     std::shared_ptr<MonsterContactExecution> monsterContact;
-    std::shared_ptr<effects::NativeContactBatch> attempt;
     bool melee{},damageScaled{},suppressSourceEvents{};
-    unsigned pendingAttempts{};
-    bool attemptOnly{};
     WeaponBlockCursor weaponBlock;
+    DirectDefenseCursor directDefense;
     std::optional<size_t> missileEventTarget;
     std::shared_ptr<effects::NativeContactBatch> missileEvents;
     int64_t currentDamage() const { return targetDamage.empty() ? damage : targetDamage.at(next); }

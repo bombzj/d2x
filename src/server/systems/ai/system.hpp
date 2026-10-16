@@ -4,6 +4,9 @@
 #include "server/runtime/events.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "target_query.hpp"
+#include "server/systems/actions/requests.hpp"
+#include <deque>
+#include <functional>
 
 #include <map>
 #include <array>
@@ -34,12 +37,17 @@ struct Controller {
     int upgradeCooldown{};
     int act2Attempts{};
     std::optional<Vec> flightGoal;
+    uint64_t randomExpected{};
+    bool randomPublished{};
+    std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; uint64_t &random; const social::System &social; effects::System &effects; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; };
 class System {
     State state_;
     const Ports ports_;
+    DomainResult<> perform(Controller &,std::function<DomainResult<>()>);
+    DomainResult<> requestAction(Controller &,const actions::MonsterCastRequest &);
     StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
     StepStatus act2Action(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);

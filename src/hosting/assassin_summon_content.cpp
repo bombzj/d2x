@@ -154,6 +154,7 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
         action.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
         action.animationAction=timing->actionFrame;action.animationSequence=timing->sequenceFrames>0;
         action.animationEvents=timing->eventFrames;action.casting=lower=="sc";
+        action.animationFlags=timing->flags;
         action.useAttackRate=lower=="a1" || lower=="a2" || displayMode=="kk" || data.nativeFormulas->skills.at(skill).number("useattackrate");
         rule.skillActions.emplace(uint16_t(skill),action);
         if(skill==0) rule.attacks.emplace(action.nativeMode,action);

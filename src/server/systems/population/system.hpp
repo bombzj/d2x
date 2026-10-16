@@ -24,6 +24,7 @@ struct DensityRoom {
   bool initialized{},elite{},champion{},groupCounted{};
   bool championParty{};
   bool retried{};
+  bool finalRetried{};
   bool spawned{},counted{};
   std::string deferred;
   int partyOffset{};
@@ -36,17 +37,33 @@ struct DensityRoom {
   std::vector<EntityId> minions;
 };
 struct AreaPopulation { uint64_t generation{}; std::set<std::string> admittedSpawnKeys; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::set<EntityId> admittedNpcs; std::set<std::string> rejectedDensityKeys; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
-struct State { std::map<RegionId, AreaPopulation> areas; std::optional<uint64_t> regionRandom; std::map<int,MonsterRegionSelection> regions; std::map<int,std::vector<std::string>> rosters; std::set<int> superUniques; };
-struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; const quests::System &quests; };
+struct QuestBirth {RegionId area;uint64_t generation{};std::string name;DensityRoom cursor;std::optional<Vec> position;};
+struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};};
+struct WanderRoom {
+  enum class Phase {Check,Search,Birth,Done};
+  uint64_t epoch{};
+  Phase phase{Phase::Check};
+  int search{};
+  Vec position;
+  std::string deferred;
+};
+struct State { std::map<RegionId, AreaPopulation> areas; std::optional<uint64_t> regionRandom; std::map<int,MonsterRegionSelection> regions; std::map<int,std::vector<std::string>> rosters; std::set<int> superUniques; std::vector<QuestBirth> questBirths; std::vector<ObjectBirth> objectBirths; std::map<std::pair<RegionId,size_t>,WanderRoom> wanderRooms; std::map<RegionId,int> wanderCounts; std::array<uint64_t,5> roomEpochs{}; };
+struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; quests::System &quests; const PlayerStore &players; };
 class System {
     State state_;
     const Ports ports_;
-    StepStatus populateDensity(RegionId,size_t,TickContext,std::optional<size_t> preset={});
+    StepStatus populateDensity(RegionId,size_t,TickContext,std::optional<size_t> preset={},QuestBirth *quest=nullptr,ObjectBirth *object=nullptr);
+    StepStatus populateWanderer(RegionId,size_t,uint64_t,TickContext);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     void initializeRegions(const MonsterRegionRules &);
     const State &read() const { return state_; }
     DomainResult<EntityId> admit(const Spawn &);
+    DomainResult<> requestQuestBirth(RegionId,std::string_view,TickContext,std::optional<Vec> position={});
+    DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={});
+    StepStatus advanceQuestBirths(TickContext);
+    bool questBirthComplete(RegionId,std::string_view) const;
+    void resetQuestBirth(RegionId,std::string_view);
     StepStatus step(TickContext, FrameFacts &);
 };
 }

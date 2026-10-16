@@ -117,8 +117,26 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
     return applyMovement(player, area, command);
 }
 void MovementSystem::step(TickContext tick) {
+    for(const auto &[id,player]:ports_.players.all()) {
+        if(!player.entered) continue;
+        if(admitted_.contains(player.actor)) {
+            const auto timers=ports_.frameEvents.events({FrameEventUnit::Player,player.actor});
+            if(std::any_of(timers.begin(),timers.end(),[](const auto &timer){return timer.type==FrameEventType::ModeChange && timer.continuous && timer.customId==int32_t(movementTimerHandler);})) continue;
+        }
+        auto timer=ports_.frameEvents.prepareInsertion({{},{FrameEventUnit::Player,player.actor},FrameEventType::ModeChange,
+            tick.tick+1,true,0,int32_t(movementTimerHandler)});
+        admitted_.insert(player.actor);ports_.frameEvents.publish(std::move(timer));
+    }
+    std::erase_if(admitted_,[&](EntityId id){const auto *p=ports_.players.findActor(id);return !p || !p->entered;});
+}
+DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext tick) {
+    if(tick.tick<event.due) return {DomainStatus::Applied,std::monostate{}};
+    const auto *source=ports_.players.findActor(event.owner.unit);
+    if(!source || !source->entered) {ports_.frameEvents.cancel(event.handle);return {DomainStatus::Applied,std::monostate{}};}
+    const auto only=source->player;
     const auto &ports = ports_;
-    for (auto &[id, player] : ports.players.players_) {
+    for (auto entry=ports.players.players_.find(only);entry!=ports.players.players_.end() && entry->first==only;++entry) {
+        auto &[id,player]=*entry;
         (void)id;
         if(const auto step=skillSteps_.find(id);step!=skillSteps_.end() && step->second==tick.tick) {skillSteps_.erase(step);continue;}
         skillSteps_.erase(id);
@@ -173,6 +191,7 @@ void MovementSystem::step(TickContext tick) {
             }
         }
     }
+    return {DomainStatus::Applied,std::monostate{}};
 }
 void MovementSystem::suspend() {
     skillSteps_.clear();

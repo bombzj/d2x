@@ -34,6 +34,9 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         if(steps_[size_t(SystemId::Spatial)]==StepStatus::Blocked) return false;
         if(!systems.frameEvents.advance(tick.tick,[&](const FrameEvent &event) {
             const auto owner=event.owner.type==FrameEventUnit::Missile?SystemId::Missiles:
+                event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::AiThink?SystemId::Ai:
+                event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::ModeChange && !event.payload?SystemId::Monsters:
+                (event.owner.type==FrameEventUnit::Player || event.owner.type==FrameEventUnit::Monster) && (event.type==FrameEventType::ModeChange || event.type==FrameEventType::EndAnimation)?SystemId::Skills:
                 event.owner.type==FrameEventUnit::Monster && (event.type==FrameEventType::AiReset || event.type==FrameEventType::StatRegeneration)?SystemId::Monsters:SystemId::Effects;
             DomainResult<> result;
             run(owner,[&] {
@@ -60,15 +63,26 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Actors) {
     steps_[size_t(SystemId::Attributes)] = systems.attributes.step(tick, facts_);
+    if(steps_[size_t(SystemId::Attributes)]==StepStatus::Blocked) return false;
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
+    phase_=Phase::Companions;
+    }
+    if(phase_==Phase::Companions) {
     run(SystemId::Companions,[&]{return systems.companions.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Companions)]==StepStatus::Blocked) return false;
     run(SystemId::Ai,[&]{return systems.ai.step(tick,facts_);});
+    phase_=Phase::Skills;
+    }
+    if(phase_==Phase::Skills) {
     run(SystemId::Skills,[&]{return systems.skills.step(tick,facts_);});
+    if(steps_[size_t(SystemId::Skills)]==StepStatus::Blocked) return false;
+    phase_=Phase::Movement;
+    }
+    if(phase_==Phase::Movement) {
     systems.movement.step(tick);
     steps_[size_t(SystemId::Movement)] = StepStatus::Complete;
     steps_[size_t(SystemId::Inventory)] = systems.inventory.step(tick, facts_);
     steps_[size_t(SystemId::Items)] = systems.items.step(tick, facts_);
-    run(SystemId::Monsters,[&]{return systems.monsters.step(tick,facts_);});
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
     phase_=Phase::Effects;
     }

@@ -76,6 +76,7 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
             prepareMonsterSkillRanks(data,row,rule);
             server::MonsterAttackRule attack;attack.duration=rule.attackTicks;attack.release=rule.impactTick;
             attack.animation=head.definition.attackAnimation;attack.animationAction=head.definition.actionFrame;
+            attack.animationFlags=head.definition.animationFlags;
             attack.missile=prepareMonsterMissile(data,missileId,1);
             if(!attack.missile) throw std::runtime_error("Unsupported native Hydra attack missile");
             attack.missile->skillDamage=MissileSkillDamage{head.definition.attackSkill,damageId};
@@ -143,10 +144,10 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     const auto prefix = character.appearance + "sc";
     for (const auto &[key, animation] : data.skills.castTimings)
         if (key.starts_with(prefix)) prepared->animations.emplace(key.substr(prefix.size()),
-            CastAnimationTiming{animation.frames, animation.speed, animation.actionFrame});
+            CastAnimationTiming{animation.frames, animation.speed, animation.actionFrame,animation.events});
     for(const auto &[key,animation]:data.skills.attackTimings) if(key.starts_with(character.appearance))
         prepared->weaponAnimations.emplace(key.substr(character.appearance.size()),server::AttackAnimation{
-            animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2))});
+            animation.frames,animation.speed,animation.actionFrame,attackStartingFrame(character.code,key.substr(character.appearance.size()+2),key.substr(character.appearance.size(),2)),animation.events});
     for (const auto &[id, skill] : data.skills.skills) {
         // Item grants/charges use the skill's program on any owning class.
         if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
@@ -218,6 +219,8 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     for(auto &[id,definition]:prepared->definitions) for(size_t row=0;row<skillTable.rows().size();++row) if(skillTable.number(row,"Id")==id) {
         if(definition.spec.weapon) {
             definition.spec.weapon->useThrowMastery=prepared->formulas->skills.at(id).useThrowMastery;
+            definition.spec.weapon->startFunction=skillTable.number(row,"srvstfunc").value_or(0);
+            definition.spec.weapon->doFunction=skillTable.number(row,"srvdofunc").value_or(0);
         }
         definition.itemTargetDo=skillTable.number(row,"ItemTgtDo").value_or(0)!=0;
         definition.itemEffect=skillTable.number(row,"ItemEffect").value_or(0);

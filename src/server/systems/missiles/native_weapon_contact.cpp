@@ -20,17 +20,22 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
     auto weapon=request.weapon->weapon;
     auto modifiers=caster->player?caster->player->totals.character.combat:ports_.effects.combatModifiers(caster->id(),request.actor.tick);
     if(caster->monster) {
-        const auto stats=ports_.effects.unitStatValues(caster->id(),request.actor.tick,weapon.item?std::optional{weapon.item}:std::nullopt);
+        const auto stats=ports_.effects.unitStatValues(caster->id(),request.actor.tick,weapon.item?std::optional{weapon.item}:std::nullopt,
+            request.nativeMeleeContact && request.nativeMeleeContact->monsterProgram?request.nativeMeleeContact->monsterProgram->modeStats:nullptr);
         if(!stats) return {DomainStatus::Unavailable,{}};
         weapon=sampleNativeWeapon(weapon,*stats,*rules.stats,modifiers,true);
     }
     hit.weapon=prepareWeaponSkillProcedures(weapon,modifiers,request.skill,request.weapon->level,false);
     hit.nativeSkill=request.nativeMeleeContact?request.nativeMeleeContact:std::make_shared<combat::NativeSkillContact>();hit.nativeSkill->skill=request.skill.sourceId;hit.nativeSkill->rank=request.skill.rank;
+    hit.nativeSkill->modeRevision=caster->player?request.actor.sequence:
+        caster->monster->nativeActionRevision+(request.nativeMeleeHeld?1:0);
     hit.nativeDrainHeld=request.nativeMeleeHeld;
     hit.nativeSkill->melee=true;hit.nativeSkill->progressive=hit.nativeSkill->kick || request.skill.weapon->commonAttack ||
         (request.skill.assassin && request.skill.assassin->program==AssassinProgram::DragonClaw);
     hit.nativeSkill->initialDamage=request.nativeMeleeBase;
-    hit.nativeSkill->skipMissDrain=(request.skill.assassin && request.skill.assassin->program==AssassinProgram::BladeShield) ||
+    // SrvDo001 fills ordinary Attack with 128, independently of Skills.srcdam.
+    if(request.skill.weapon->commonAttack) hit.nativeSkill->sourceDamage=128;
+    hit.nativeSkill->skipMissDrain=request.skill.weapon->doFunction==78 || (request.skill.assassin && request.skill.assassin->program==AssassinProgram::BladeShield) ||
         (request.skill.druid && (request.skill.druid->program==DruidProgram::FireClaws || request.skill.druid->program==DruidProgram::Hunger));
     hit.retainDeadSource=request.deathTrigger;
     hit.missileDamage=std::make_shared<MissileDamageRollState>();hit.missileDamage->formulas=rules.formulas;hit.missileDamage->statRules=rules.stats;

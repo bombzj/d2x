@@ -28,6 +28,23 @@ struct ProgressiveContactExecution {
 };
 DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext tick,bool drained) {
     if(!impact.nativeSkill || !impact.nativeSkill->progressive) return {DomainStatus::Applied,true};
+    if(!impact.nativeSkill->progressiveReleaseChecked) {
+        // SrvDo001's mask 38 suppresses releasing charges, not the earlier
+        // progressive accuracy/physical/element contributions.
+        if(impact.weapon && impact.weapon->wearSkill.weapon->commonAttack) {
+            const Participants participants{ports_.players,ports_.monsters,ports_.social};
+            const auto source=participants.find(impact.source);
+            if(!source.id()) return {DomainStatus::Stale,{}};
+            const auto &states=source.player?source.player->rules.character->states:source.monster->rule.states;
+            if(!states) throw std::logic_error("Missing native melee-only state mask");
+            for(const auto id:ports_.effects.unitStates(source.id(),tick.tick))
+                if(const auto found=states->find(id);found!=states->end() && found->second.meleeOnly) {
+                    impact.nativeSkill->progressiveReleaseSuppressed=true;break;
+                }
+        }
+        impact.nativeSkill->progressiveReleaseChecked=true;
+    }
+    if(impact.nativeSkill->progressiveReleaseSuppressed) return {DomainStatus::Applied,true};
     if(!impact.nativeSkill->release) impact.nativeSkill->release=std::make_shared<ProgressiveContactExecution>();
     auto &execution=*impact.nativeSkill->release;execution.mainDrained|=drained;
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,impact.source);

@@ -1,10 +1,140 @@
 #include "system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/area_store.hpp"
+#include "server/systems/attributes/monster_resources.hpp"
+#include "core/random.hpp"
 #include <algorithm>
+#include <cmath>
 #include <utility>
 
 namespace d2x::server::monsters {
-DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick) {
+void System::prepareInitialTimers(Actor &unit,uint64_t tick) const {
+    const FrameEventOwner owner{FrameEventUnit::Monster,unit.id};
+    if(unit.questNpc) return;
+    if(!unit.initialAiTimer && (unit.alive() || unit.owner)) unit.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,tick+1}));
+    if(!unit.initialModeTimer) unit.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::ModeChange,tick+1,true}));
+    if(!unit.initialEffectTimer && (unit.rule.web || unit.rule.enchantment || unit.rule.hitBurst || unit.rule.deathBurst))
+        unit.initialEffectTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::MonsterModifier,tick+1,true,0,int32_t(effects::monsterModeTimerHandler)}));
+}
+void System::publishInitialAi(Actor &unit) noexcept {
+    if(unit.initialWakeTimer) {
+        ports_.frameEvents.publish(std::move(*unit.initialWakeTimer));unit.initialWakeTimer.reset();
+    }
+    if(unit.initialEffectTimer && unit.initialEffectTimer->handle()) {
+        ports_.frameEvents.cancel({FrameEventUnit::Monster,unit.id},FrameEventType::MonsterModifier,int32_t(effects::monsterModeTimerHandler));
+        ports_.frameEvents.publish(std::move(*unit.initialEffectTimer));unit.initialEffectTimer.reset();
+    }
+    if(unit.initialModeTimer && unit.initialModeTimer->handle()) {
+        ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,unit.id},FrameEventType::ModeChange,0);
+        ports_.frameEvents.publish(std::move(*unit.initialModeTimer));unit.initialModeTimer.reset();
+    }
+    if(unit.initialAiTimer && unit.initialAiTimer->handle()) {
+        ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,unit.id},FrameEventType::AiThink,0);
+        ports_.frameEvents.publish(std::move(*unit.initialAiTimer));
+    }
+    unit.initialAiTimer.reset();
+}
+void System::resumeMode(EntityId id,uint64_t tick) {
+    const auto *unit=find(id);if(!unit || unit->questNpc) return;
+    const FrameEventOwner owner{FrameEventUnit::Monster,id};
+    if(ports_.frameEvents.hasEvent(owner,FrameEventType::ModeChange)) return;
+    ports_.frameEvents.insertPrepared({{},owner,FrameEventType::ModeChange,tick+1,true});
+}
+DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
+    if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
+    if(advanceMode(event.owner.unit,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    const auto *unit=find(event.owner.unit);
+    if(!unit || (!unit->alive() && !unit->delayedDeathSource && tick>=unit->busyUntil)) ports_.frameEvents.cancel(event.handle);
+    return {DomainStatus::Applied,std::monostate{}};
+}
+void System::scheduleAi(EntityId id,uint64_t due) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
+    const auto &unit=found->second;
+    const FrameEventOwner owner{FrameEventUnit::Monster,id};
+    if((!unit.alive() && (!unit.owner || unit.conversion)) || unit.questNpc) {
+        ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);return;
+    }
+    due=std::max(due,ports_.frameEvents.currentFrame()+1);
+    auto timer=ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,due});
+    ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);
+    ports_.frameEvents.publish(std::move(timer));
+}
+DomainResult<> System::schedulePresetReanimation(EntityId id,uint64_t tick) {
+    const auto *unit=find(id);if(!unit || !unit->rule.selfResurrection) return {DomainStatus::NotImplemented,{}};
+    if(unit->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto candidate=*unit;
+    const auto due=tick+250+limitedRandom(candidate.combatRandom,50);
+    ++candidate.revision;
+    auto timer=ports_.frameEvents.prepareInsertion({{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,due,false,0,34});
+    auto publication=prepareActorPublication({{id,std::move(candidate)}},0);
+    if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+    publishActors(publication);ports_.frameEvents.publish(std::move(timer));
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    if(event.customId==41) {
+        const auto *unit=find(event.owner.unit);
+        if(!unit || !unit->alive()) return {DomainStatus::Applied,std::monostate{}};
+        if(unit->revision==UINT64_MAX || unit->aiThinkRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto candidate=*unit;
+        const bool neutral=!candidate.moving && candidate.route.empty() && candidate.busyUntil<=tick &&
+            candidate.riseUntil<=tick && candidate.reactionUntil<=tick && candidate.aiPose==1;
+        if(neutral || candidate.rule.wakeAiOutsideNeutral) {
+            candidate.aiThinkAt=tick+2;++candidate.aiThinkRevision;
+            candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,unit->id},FrameEventType::AiThink,tick+2}));
+        }
+        candidate.initialWakeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+            {{},{FrameEventUnit::Monster,unit->id},FrameEventType::MonsterModifier,tick+75,false,0,41}));
+        ++candidate.revision;
+        auto publication=prepareActorPublication({{unit->id,std::move(candidate)}},0);
+        if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+        ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,unit->id},FrameEventType::AiThink,0);
+        publishActors(publication);return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(event.customId==34) {
+        const auto *unit=find(event.owner.unit);
+        if(!unit || unit->alive()) return {DomainStatus::Applied,std::monostate{}};
+        if(!unit->rule.selfResurrection || !collision) return {DomainStatus::NotImplemented,{}};
+        if(!ports_.areas.loaded(unit->area,unit->position)) {
+            auto next=event;next.handle={};next.due=tick+1;
+            auto timer=ports_.frameEvents.prepareInsertion(next);ports_.frameEvents.publish(std::move(timer));
+            return {DomainStatus::Applied,std::monostate{}};
+        }
+        if(unit->identity.rank==MonsterRank::Unique || unit->identity.rank==MonsterRank::SuperUnique || unit->identity.rank==MonsterRank::Champion ||
+            unit->alignment()==UnitAlignment::Good) return {DomainStatus::Applied,std::monostate{}};
+        for(const auto state:ports_.effects.unitStates(unit->id,tick))
+            if(unit->rule.states->at(state).corpseUnselectable) return {DomainStatus::Applied,std::monostate{}};
+        const auto &area=ports_.areas.at(unit->area).definition;
+        const auto global=unit->position+area.origin;
+        const auto room=ports_.areas.roomAtPosition(unit->area,unit->position,int(std::floor(global.x)),int(std::floor(global.y)));
+        if(!room) return {DomainStatus::Unavailable,{}};
+        if(ports_.areas.nativeCollisionMask(*room,int(std::floor(global.x)),int(std::floor(global.y)),1,0x3c01,collision)) {
+            auto next=event;next.handle={};next.due=tick+uint64_t(unit->rule.selfResurrection->delay);
+            auto timer=ports_.frameEvents.prepareInsertion(next);ports_.frameEvents.publish(std::move(timer));
+            return {DomainStatus::Applied,std::monostate{}};
+        }
+        if(unit->selfResurrections>=2 || !consumableCorpse(unit->id,unit->area,tick) || unit->alignment()!=UnitAlignment::Evil)
+            return {DomainStatus::Applied,std::monostate{}};
+        if(unit->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto candidate=*unit;attributes::MonsterResourceTrace resources(candidate,tick);
+        resources.sampleSources(ports_.effects.unitStatSources(unit->id,tick));resources.seedLife(resources.read().maximum);
+        auto life=resources.take();candidate.nativeStats=std::move(life.intrinsic);
+        candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=false;
+        candidate.rule.noTreasure=candidate.rule.noExperience=true;candidate.rewardComplete=true;
+        candidate.riseUntil=candidate.busyUntil=tick+uint64_t(candidate.rule.selfResurrection->ticks);candidate.riseMode=8;
+        candidate.neutralAt=candidate.riseUntil;candidate.deathStates.clear();candidate.killer={};
+        candidate.ownershipDeathHandled=false;++candidate.selfResurrections;++candidate.revision;
+        candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+            {{},{FrameEventUnit::Monster,unit->id},FrameEventType::AiThink,tick+51}));
+        auto publication=prepareActorPublication({{unit->id,std::move(candidate)}},0);
+        if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},unit->area},
+            {HitFact{unit->id,1,unit->area,128,false,unit->position,0,8}}});
+        if(!sent) return {sent.status,{}};
+        publishActors(publication);return {DomainStatus::Applied,std::monostate{}};
+    }
     if(event.customId!=21) return {DomainStatus::NotImplemented,{}};
     const auto *unit=find(event.owner.unit);if(!unit || !unit->alive()) return {DomainStatus::Applied,std::monostate{}};
     // MONUMOD_TEMPSUMMON retries three frames later while the mode cannot

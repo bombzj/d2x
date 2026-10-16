@@ -9,7 +9,7 @@ inline constexpr std::array<int, 5> actTownLevels{1, 40, 75, 103, 109};
 enum class GenerationKind { None, Maze, Preset, Outdoor };
 struct LevelPopulation {
     bool supported = false, rangedFirst = false;
-    int types = 0, warpDistanceSquared = 0;
+    int types = 0, warpDistanceSquared = 0, wander = 0;
     std::array<int, 3> density{}, uniqueMin{}, uniqueMax{}, level{};
     std::vector<std::string> normal, nightmareHell, unique;
     std::array<std::string, 4> critters;

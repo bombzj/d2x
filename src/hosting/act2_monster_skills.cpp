@@ -26,6 +26,7 @@ uint8_t nativeMode(std::string_view mode) {
 // Duriel Jab mixes A1/A2; maggot down and lay reverse/repeat S1 frames.
 bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTable &sequences,
                  const MonsterRecord &record,std::string_view source,int event,server::MonsterAttackRule &action) {
+    action.animationEvent=uint8_t(event);
     if(source.starts_with("seq_")) {
         int frames=0;
         for(size_t row=0;row<sequences.rows().size();++row) if(sequences.value(row,"sequence")==source) {
@@ -35,6 +36,7 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
             const auto motion=loadMonsterMotionTiming(animations,record.token,mode,weapon);
             const auto frame=sequences.number(row,"frame");
             if(!motion || !frame || *frame<0 || *frame>255 || frames>=10000) return false;
+            action.animationFlags.push_back(uint8_t(sequences.number(row,"event").value_or(0)));
             if(sequences.number(row,"event").value_or(0)==event) {
                 action.animationEvents.push_back(frames);
                 action.releaseFrames.push_back(std::max(1,frames));
@@ -55,6 +57,7 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
         action.release=std::clamp(int(std::ceil(timing->impact*25.f)),1,action.duration);
         action.nativeMode=nativeMode(source);action.casting=source=="SC";
         action.animation=AnimationTiming{timing->frames,timing->speed};action.animationAction=timing->actionFrame;
+        action.animationFlags=timing->flags;
     }
     return true;
 }
@@ -210,6 +213,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         server::MonsterAttackRule pose;
         pose.action=Action::Animation;pose.nativeMode=8;pose.release=1;
         pose.animation=AnimationTiming{clock->frames,clock->speed};
+        pose.animationFlags=clock->flags;
         pose.animationAction=0;pose.useAttackRate=false;
         pose.duration=monsterAnimationTicks(*pose.animation);
         rule.attacks.emplace(8,std::move(pose));

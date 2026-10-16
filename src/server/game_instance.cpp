@@ -159,6 +159,7 @@ CommandStatus GameInstance::enqueue(PlayerId id, GameCommand command) {
 }
 void GameInstance::step() {
     if(systems_.monsters.finishModifiers({tick_})!=StepStatus::Complete) return;
+    if(systems_.population.advanceQuestBirths({tick_})!=StepStatus::Complete) return;
     if(!simulationPending_) {
     if (systems_.trade.step({tick_})==StepStatus::Blocked) return;
     size_t processedCommands=0;

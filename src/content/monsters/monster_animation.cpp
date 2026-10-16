@@ -28,7 +28,7 @@ std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &
         return std::nullopt;
     const float duration = float(record->frames * 256) / record->speed / 25.f;
     if (duration <= 0 || duration > 20) return std::nullopt;
-    return MonsterMotionTiming{duration,int(record->frames),record->speed};
+    return MonsterMotionTiming{duration,int(record->frames),record->speed,{record->frameFlags.begin(),record->frameFlags.begin()+record->frames}};
 }
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
                                                            std::string_view token, int mode,
@@ -59,7 +59,9 @@ std::optional<MonsterAttackTiming> loadMonsterActionTiming(const AnimDataTable &
     const float impactTime = float(impact * 256) / record->speed / 25.f;
     if (duration <= 0 || duration > 20 || impactTime >= duration)
         return std::nullopt;
-    return MonsterAttackTiming{duration,impactTime,frames,0,{},record->speed,impact};
+    MonsterAttackTiming result{duration,impactTime,frames,0,{},record->speed,impact};
+    result.flags.assign(record->frameFlags.begin(),record->frameFlags.begin()+frames);
+    return result;
 }
 std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     const AnimDataTable &animations, const DataTable &sequences,
@@ -69,6 +71,7 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     if (!motion) return std::nullopt;
     int sequenceFrames = 0, impactFrame = -1;
     std::vector<int> events;
+    std::vector<uint8_t> flags;
     for (size_t row = 0; row < sequences.rows().size(); ++row) {
         if (sequences.value(row, "sequence") != sequence) continue;
         const auto frame = sequences.number(row, "frame");
@@ -76,7 +79,8 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
         for(char &value:rowMode) value=char(std::tolower(static_cast<unsigned char>(value)));
         const auto rowMotion=loadMonsterMotionTiming(animations,token,rowMode,weapon);
         if (!frame || !rowMotion || *frame<0 || *frame>255) return std::nullopt;
-        if (sequences.number(row, "event").value_or(0) == event) {
+        const auto flag=sequences.number(row,"event").value_or(0);flags.push_back(uint8_t(flag));
+        if (flag == event) {
             if(impactFrame<0) impactFrame=sequenceFrames;
             events.push_back(sequenceFrames);
         }
@@ -90,6 +94,7 @@ std::optional<MonsterAttackTiming> loadMonsterSequenceTiming(
     MonsterAttackTiming result{frameTime * sequenceFrames,
                                frameTime * impactFrame, motion->frames, sequenceFrames};
     result.speed=256;result.actionFrame=impactFrame;result.eventFrames=std::move(events);
+    result.flags=std::move(flags);
     for(const int frame:result.eventFrames) result.eventTimes.push_back(frameTime*frame);
     return result;
 }

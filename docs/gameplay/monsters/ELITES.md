@@ -1,18 +1,18 @@
 # 阶级、精英词缀与超级暗金
 
-更新：2026-10-12。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-16。本页负责rank、冠军／暗金／仆从、SuperUnique身份与词缀执行。专用AI归[BOSSES](BOSSES.md)，人口／刷新点归[POPULATION](POPULATION.md)，原包／视觉归[PRESENTATION](PRESENTATION.md)。
 
 ## 当前固定身份与准备
 
 SuperUniques读取十三条第一幕记录：Bishibosh、Bonebreak、Coldcrow、Rakanishu、Treehead WoodFist、Griswold、The Countess、Pitspawn Fouldog、Flamespike the Crawler、Boneash、The Smith、The Cow King、Corpsefire。固定词缀、额外词缀、组数、名称、变换和TC由当前表准备；Flamespike的表存在不等于当前地图存在刷新点，不自造位置。普通池之外的中立NPC、牲畜和不可击杀墙面发射器不进入敌对人口，后者属于物件机关范围。
 
-hosting按每个出生身份滚独立词缀，仆从继承已准备领队数值；不把已滚暗金规则按类型缓存。MonUMod的权重、排斥、类型限制、难度常数与MonLvl、DifficultyLevels、Skills共同准备生命／等级／经验、物理增伤、命中、抗性、速度、元素、法力燃烧、冠军变体及光环／诅咒。runtime只接纯值，不读MPQ。实际经验／掉落携带真实rank及rewardModifiers；首领任务资格、首杀TC、组队／人数规则另属任务／奖励领域，尚未完整接入。
+hosting准备MonUMod权重、排斥、类型限制、难度常数及不可变数值程序；已迁入的密度／预设／任务／物件精英由server从实际领队单位流选择词缀、决定随从并生成姓名，再异步准备选定规则，不在hosting另掷一份。仆从按原minion头插链、已有槽数及Xfer标志继承，原类型和出生身份保留。runtime只接纯值，不读MPQ。实际经验／掉落携带真实rank及rewardModifiers；首领任务资格、首杀TC、组队／人数规则另属任务／奖励领域，尚未完整接入。
 
 普通A1／A2与原元素附伤按MonMode实际攻击时的单位等级重新准备，包含冠军／暗金／仆从等级加成，不沿用出生前基础等级伤害／命中。生命、防御、经验不一并重算。S1与技能借用A1／A2也使用当前等级攻击快照，之后应用词缀／人数／技能加成。依据为D2MOO MonsterMode的DATATBLS_CalculateMonsterStatsByLevel与当前MPQ三难度MonLvl。
 
 ## 当前运行效果
 
-2026-10-15后续源码将生命加成移到实际Actor出生：基础范围投掷与人数加成之后，在定点生命上执行UMod2，再应用Possessed／Berserk修正，复用原整数比例函数；不再先放大最小／最大生命再抽样。怪物祭坛升级共用此计算。MonUMod有序加权选择已提取为纯规则，并补普通暗金的RollLimitedRandom(1)消耗；目前调用者仍是hosting，词缀／姓名／随从的完整出生顺序尚未迁到单位流。本段源码已纳入2026-10-16的all构建与两包；本轮未专项对照完整精英出生随机顺序，不能据构建成功认证精确一致。
+当前源码已将生命加成移到实际Actor出生：基础范围投掷与人数加成之后，在定点生命上执行UMod2，再应用Possessed／Berserk修正，复用原整数比例函数。怪物祭坛升级共用实际单位流和当前属性；普通暗金保留RollLimitedRandom(1)，已有八槽时不再掷冠军机会和该限定随机。追加冠军循环仅适用于密度生成及MonPlace3，在领队修饰器完成后决定数量；邪恶瓮、吉得宾及MonPlace2不执行该循环。追加冠军自身的普通party先于其冠军修饰器执行，且不随领队自动晋升为仆从。固定超级暗金保留全局Stacks限制、固定词缀、难度追加、特殊子体和最终任务修饰器。UMod41按原75帧修饰器事件更新AI回调，不伪造速度加成。本段源码未构建或运行；逐修饰器跨整条minion链的原回调次序、完整属性副作用、原类型位及首领专用初始化仍未全部闭合，不能认证精确一致。
 
 | 程序 | 权威行为及数据 |
 | --- | --- |

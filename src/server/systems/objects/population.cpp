@@ -270,8 +270,10 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                     int remaining=count;
                     while(remaining>0 && attempts-- >0 && !capacity) {
                         const int selectedType=variants[limitedRandom(controlRandom,uint32_t(variants.size()))];
-                        int column=bounds.x+int(limitedRandom(controlRandom,unsigned(bounds.width-rule.width-1)));
-                        int row=bounds.y+int(limitedRandom(controlRandom,unsigned(bounds.height-rule.height-1)));
+                        int column=int(uint16_t(int(definition.origin.x)+bounds.x+
+                            int(limitedRandom(controlRandom,unsigned(bounds.width-rule.width-1)))))-int(definition.origin.x);
+                        int row=int(uint16_t(int(definition.origin.y)+bounds.y+
+                            int(limitedRandom(controlRandom,unsigned(bounds.height-rule.height-1)))))-int(definition.origin.y);
                         if(!eligible(column,row,false)) continue;
                         if(!add(selectedType,column,row)) break;
                         int clusterSize=1;
@@ -307,15 +309,19 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                     for(int attempt=0;attempt<8 && !capacity;++attempt) {
                         const int baseColumn=bounds.x+int(limitedRandom(controlRandom,unsigned(bounds.width-rule.width-1)));
                         const int baseRow=bounds.y+int(limitedRandom(controlRandom,unsigned(bounds.height-rule.height-1)));
-                        if(bounds.width<7 || bounds.height<7 || baseColumn<=bounds.x+1 || baseRow<=bounds.y+1 ||
-                            baseColumn>=bounds.x+bounds.width-7 || baseRow>=bounds.y+bounds.height-7 ||
+                        const int checkedBaseColumn=int(uint16_t(baseColumn+int(definition.origin.x)))-int(definition.origin.x);
+                        const int checkedBaseRow=int(uint16_t(baseRow+int(definition.origin.y)))-int(definition.origin.y);
+                        if(bounds.width<7 || bounds.height<7 || checkedBaseColumn<=bounds.x+1 || checkedBaseRow<=bounds.y+1 ||
+                            checkedBaseColumn>=bounds.x+bounds.width-7 || checkedBaseRow>=bounds.y+bounds.height-7 ||
                             !clear(baseColumn,baseRow,12,12,0x0c01) || !clear(baseColumn,baseRow,5,5,0x3f11)) continue;
                         for(int index=0;index<lengths[shape] && !capacity;++index) {
                             const auto [offsetX,offsetY]=shapes[shape][index];
                             const int column=baseColumn+offsetX,row=baseRow+offsetY;
+                            const int checkedColumn=int(uint16_t(column+int(definition.origin.x)))-int(definition.origin.x);
+                            const int checkedRow=int(uint16_t(row+int(definition.origin.y)))-int(definition.origin.y);
                             if(bounds.width<rule.width+2 || bounds.height<rule.height+2 ||
-                                column<=bounds.x+1 || row<=bounds.y+1 ||
-                                column>=bounds.x+bounds.width-rule.width-2 || row>=bounds.y+bounds.height-rule.height-2 ||
+                                checkedColumn<=bounds.x+1 || checkedRow<=bounds.y+1 ||
+                                checkedColumn>=bounds.x+bounds.width-rule.width-2 || checkedRow>=bounds.y+bounds.height-rule.height-2 ||
                                 !clear(column,row,rule.width+7,rule.height+7,0x0c01) ||
                                 !clear(column,row,rule.width,rule.height,0x3f11)) continue;
                             const int selectedType=57+int(limitedRandom(controlRandom,2));
@@ -329,9 +335,11 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                     constexpr int horizontal[]{-1,0,1,-1,1,-1,0,1};
                     constexpr int vertical[]{-1,-1,-1,0,0,1,1,1};
                     const auto eligible=[&](int column,int row) {
+                        const int checkedColumn=int(uint16_t(column+int(definition.origin.x)))-int(definition.origin.x);
+                        const int checkedRow=int(uint16_t(row+int(definition.origin.y)))-int(definition.origin.y);
                         return bounds.width>=2 && bounds.height>=2 &&
-                            column>bounds.x+2 && row>bounds.y+2 &&
-                            column<bounds.x+bounds.width-rule.width && row<bounds.y+bounds.height-rule.height &&
+                            checkedColumn>bounds.x+2 && checkedRow>bounds.y+2 &&
+                            checkedColumn<bounds.x+bounds.width-rule.width && checkedRow<bounds.y+bounds.height-rule.height &&
                             clear(column,row,rule.width+2,rule.height+2,0x3f11);
                     };
                     int remaining=count,attempts=4*count,members=0;
@@ -367,9 +375,11 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                     constexpr int horizontal[]{-1,0,1,-1,1,-1,0,1};
                     constexpr int vertical[]{-1,-1,-1,0,0,1,1,1};
                     const auto eligible=[&](int column,int row) {
+                        const int checkedColumn=int(uint16_t(column+int(definition.origin.x)))-int(definition.origin.x);
+                        const int checkedRow=int(uint16_t(row+int(definition.origin.y)))-int(definition.origin.y);
                         return bounds.width>=2 && bounds.height>=2 &&
-                            column>bounds.x+2 && row>bounds.y+2 &&
-                            column<bounds.x+bounds.width-barrel.width && row<bounds.y+bounds.height-barrel.height &&
+                            checkedColumn>bounds.x+2 && checkedRow>bounds.y+2 &&
+                            checkedColumn<bounds.x+bounds.width-barrel.width && checkedRow<bounds.y+bounds.height-barrel.height &&
                             clear(column,row,barrel.width+2,barrel.height+2,0x3f11);
                     };
                     int remaining=count,total=0;

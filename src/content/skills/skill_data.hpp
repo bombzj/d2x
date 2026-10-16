@@ -8,6 +8,7 @@
 #include "resources/data_table.hpp"
 #include "content/string_table.hpp"
 #include <array>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <string>
@@ -43,7 +44,7 @@ struct SkillCatalog {
     std::optional<HydraSpec> hydra;
     std::map<int,ShapeProfile> shapes;
     std::string currentLevelLabel, nextLevelLabel, firstLevelLabel;
-    struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; };
+    struct CastTiming { int frames = 0, speed = 0, actionFrame = 0; std::vector<uint8_t> events; };
     std::map<std::string, CastTiming> castTimings;
     std::map<std::string, CastTiming> attackTimings;
     std::map<std::string, CastTiming> recoveryTimings;

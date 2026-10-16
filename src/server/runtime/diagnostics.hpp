@@ -70,7 +70,7 @@ struct DiagnosticMonster {
     uint64_t attractionUntil{};
     std::vector<monsters::AiResetTimer> aiResetTimers;
     bool aiResetsTracked{};
-    uint64_t specialTargetOrder{},aiFunctionRevision{};
+    uint64_t specialTargetOrder{},wanderTargetOrder{},aiFunctionRevision{};
     bool detachedMinion{};
     struct Assassin {
         std::array<int64_t,3> parameters{};
@@ -90,6 +90,11 @@ struct DiagnosticDensity {
     int processedRooms{},successfulRooms{},uniqueCount{};
     EntityId leader;
     std::optional<size_t> preset;
+    std::string quest;
+    EntityId object;
+};
+struct DiagnosticWander {
+    RegionId area;size_t room{};uint64_t epoch{};std::string phase,deferred;int search{},count{};
 };
 struct DiagnosticSnapshot {
     uint64_t gameRandom{};
@@ -97,6 +102,7 @@ struct DiagnosticSnapshot {
     std::map<RegionId,objects::ObjectRegionPopulation> objectPopulation;
     std::map<RegionId,std::set<std::string>> rejectedDensity;
     std::vector<DiagnosticDensity> densityPopulation;
+    std::vector<DiagnosticWander> wanderPopulation;
     bool modifiersPending{};
     std::string modifierFailure;
     unsigned virtualPlayers{1};
@@ -140,7 +146,8 @@ struct DiagnosticSnapshot {
     std::vector<MonsterSnapshot> npcs; // Borrowed actor projection, independent of the monster detail limit.
     std::vector<skills::Cast> casts;
     std::vector<missiles::Missile> missiles;
-    std::vector<combat::Damage> damage;
+    struct MeleeContact {EntityId source,target;uint64_t impact{};};
+    std::vector<MeleeContact> damage;
     size_t spellImpacts{}, spellTargets{}, pendingReleases{};
     std::optional<travel::Transition> travel;
     std::vector<Vec> path;

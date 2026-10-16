@@ -85,7 +85,6 @@ struct TransientAttributes {
 struct PreparedRules {
     std::shared_ptr<const MonsterRegionRules> monsterRegions;
     std::shared_ptr<const PotionRules> potions;
-    std::shared_ptr<const MeleeRules> melee;
     std::shared_ptr<const ItemCatalog> items;
     std::shared_ptr<const EquipmentRules> equipment;
     std::shared_ptr<const CharacterRules> character;

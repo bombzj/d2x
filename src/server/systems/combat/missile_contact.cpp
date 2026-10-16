@@ -101,7 +101,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         if(!result) return result.status;
         contact.delayPrepared=true;
     }
-    if(impact.missileEventTarget!=impact.next) {
+    if(!(impact.nativeSkill && impact.nativeSkill->melee) && impact.missileEventTarget!=impact.next) {
         if(!impact.missileEvents) impact.missileEvents=std::make_shared<effects::NativeContactBatch>(
             ports_.effects.prepareMissileEvents(impact.source,target.id(),tick.tick,impact.returnFire));
         const auto result=ports_.effects.advanceDamageEvents(*impact.missileEvents,tick.tick);
@@ -289,8 +289,15 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         if(result==DomainStatus::Capacity) return result;
         contact.reactionPrepared=true;
     }
+    // AllocCombat only retains damage/reception. ExecuteEvents and item
+    // procedures belong to DrainItemDurability, at the later action flag.
+    if(impact.nativeSkill && impact.nativeSkill->melee) return DomainStatus::Applied;
+    return prepareContactProcedures(impact,source,target,tick);
+}
+DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantView source,ParticipantView target,TickContext tick) {
+    auto &contact=*impact.missileContact;
     if(!contact.proceduresPrepared && contact.resultSuccessful && !contact.blocked && contact.avoidance==WeaponAvoidance::None) {
-        const auto expected=seed(source);auto random=expected;
+        const auto expected=source.player?source.player->combatRandom:source.monster->combatRandom;auto random=expected;
         WeaponHitEffects extras;WeaponHitResult playerExtras;
         if(impact.weapon) {
             auto attack=*impact.weapon;
@@ -310,11 +317,34 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 std::initializer_list{ItemSkillEvent::Kill},target.id(),target.position());
             if(!prepared) return prepared.status;events=std::move(*prepared.value);
         }
-        const auto result=publishSeed(source,expected,random);if(result!=DomainStatus::Applied) return result;
+        const auto result=source.monster?ports_.monsters.consumeRandom(source.id(),expected,random).status:
+            ports_.transactions.consumeRandom({source.player->player,source.id(),source.player->area,
+                ports_.areas.at(source.player->area).generation,0,tick.tick},expected,random).status;
+        if(result!=DomainStatus::Applied) return result;
         contact.extras=std::move(extras);contact.playerExtras=playerExtras;contact.itemEvents=std::move(events);
         contact.proceduresPrepared=true;
     }
     return DomainStatus::Applied;
+}
+DomainStatus System::prepareMeleeDrainProcedures(SpellImpact &impact,ParticipantView target,TickContext tick) {
+    if(!impact.nativeSkill || !impact.nativeSkill->melee || impact.nativeSkill->proceduresTransferred) return DomainStatus::Applied;
+    impact.areaDamage->hitFlags=0x20; // DrainItemDurability's local damage copy.
+    const auto source=Participants{ports_.players,ports_.monsters,ports_.social}.find(impact.source);
+    if(!source.id()) return DomainStatus::Stale;
+    const auto result=prepareContactProcedures(impact,source,target,tick);if(result!=DomainStatus::Applied) return result;
+    auto &contact=*impact.missileContact;
+    if(impact.playerContact) {
+        auto &execution=*impact.playerContact;
+        execution.extras=contact.playerExtras;execution.itemEvents=std::move(contact.itemEvents);
+        execution.adjustment.crushing=contact.playerExtras.crushing;
+        if(contact.playerExtras.woundRate>0) execution.adjustment.wound=OpenWoundsApplication{
+            contact.playerExtras.woundRate,source.id(),impact.binding.credit,tick.tick+200,tick.tick+1};
+        execution.remainingLife=std::max<int64_t>(0,int64_t(target.player->persistent.player.hp.raw())-contact.playerExtras.crushing);
+        execution.victim.tick=execution.attacker.tick=tick.tick;
+    } else if(impact.monsterContact) {
+        impact.monsterContact->extras=contact.extras;impact.monsterContact->itemEvents=std::move(contact.itemEvents);
+    }
+    impact.nativeSkill->proceduresTransferred=true;return DomainStatus::Applied;
 }
 DomainStatus System::finishMissileArmor(SpellImpact &impact,ParticipantView target,TickContext tick) {
     auto &contact=*impact.missileContact;

@@ -37,6 +37,8 @@ namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
 namespace d2x::server::combat {struct SpellImpact;}
 namespace d2x::server::attributes {class MonsterResourceTrace;}
 namespace d2x::server::effects {
+inline constexpr uint32_t monsterModeTimerHandler=0x4d4f4446;
+inline constexpr uint32_t modeEndTimerHandler=0x4d454e44;
 struct BladeShieldPulse;
 struct MindBlastPulse;
 struct CorpseExplosionPulse;
@@ -236,20 +238,20 @@ class System {
     DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false,EntityId emitter={},bool *committedAffected=nullptr);
     DomainResult<> consumeAuraMana(const ActorContext &,const AuraDefinition &,bool affected);
     DomainResult<> removeAura(const ActorContext &,int skill);
-    struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{},random{};bool pending{};};
+    struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{};bool pending{};};
     std::map<EntityId,WebTrail> webTrails_;
 
     struct PendingMonsterCurse {AuraDefinition aura;SkillFormulaSnapshot source;std::vector<EntityId> targets;size_t next{};uint64_t tick{};};
     std::deque<std::pair<EntityId,PendingMonsterCurse>> monsterCurses_;
     StepStatus advanceMonsterCurses(uint64_t);
-    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{},random{};uint64_t nativeHit{},nativeHitAt{},nativeDeath{},nativeDeathAt{};int deathPhase{};};
+    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{};uint64_t nativeHit{},nativeHitAt{},nativeDeath{},nativeDeathAt{};int deathPhase{};};
     std::map<EntityId,UniqueCycle> uniqueCycles_;
-    StepStatus advanceMonsterEnchantments(uint64_t);
+    StepStatus advanceMonsterEnchantments(EntityId,uint64_t);
     DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
 
     StepStatus advanceSkills(const ActorContext &, Recovery &);
     StepStatus advanceUnits(uint64_t);
-    StepStatus advanceMonsterSkills(uint64_t);
+    StepStatus advanceMonsterSkills(EntityId,uint64_t);
   public:
     explicit System(Ports ports) : ports_(ports), itemTriggers_(ports.itemTriggers) {}
     void registerPlayer(EntityId,uint64_t tick);
@@ -269,6 +271,7 @@ class System {
     void publishPeriodicEvents(FrameEventPublication &) noexcept;
     void cancelPeriodicSkills(FrameEventOwner) noexcept;
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> monsterModeEvent(const FrameEvent &,uint64_t tick);
     std::vector<EntityId> auraCandidateRecipients(EntityId,const AuraDefinition &,RegionId,uint64_t tick,const monsters::Actor *source=nullptr) const;
     std::vector<EntityId> nativeAuraCandidateRecipients(NativeAuraTargetQuery,const monsters::Actor *source=nullptr) const;
     void prepareImmediateAuraUnit(AuraUnitPublication &,const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId,
@@ -313,6 +316,10 @@ class System {
     DomainResult<bool> removeStateGroup(const ActorContext &,int group);
     DomainResult<> removeUnitState(EntityId,int state,uint64_t tick);
     DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
+    DomainResult<> postModeRate(EntityId,int skill,int rank,int32_t rate,uint64_t revision,uint64_t tick,std::pair<uint64_t,uint64_t> random);
+    DomainResult<> endMode(EntityId,uint64_t tick,std::optional<uint64_t> activeRevision={});
+    void scheduleModeEnd(EntityId,uint64_t tick);
+    DomainResult<> modeEndEvent(EntityId,uint64_t tick);
     DomainResult<> skill(const ActorContext &, const SkillCastSpec &, std::optional<PlayerId> recipient = {},std::span<const DomainFact> facts={});
     DomainResult<> bladeShield(const ActorContext &,const SkillCastSpec &,std::shared_ptr<BladeShieldPulse> &);
     bool bladeShieldStarted(const std::shared_ptr<BladeShieldPulse> &) const;
@@ -360,7 +367,7 @@ class System {
     DomainResult<UnitReceptionPlan> prepareUnitReception(EntityId target,EntityId source,const MonsterHit &,uint64_t,
         const std::array<int,6> &pierce={},bool bypass=false,bool sanctuary=false,bool directDrain=true) const;
     DomainResult<> commitUnitReception(UnitReceptionPlan &);
-    DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, std::optional<std::reference_wrapper<uint64_t>> contactRandom = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool nativeUnitRandom=false,bool deferAction=false);
+    DomainResult<ReceivedDamage> receiveMonster(const ActorContext &, EntityId source, const MonsterHit &, const MonsterHitStates &,std::optional<ItemHandle> wear = {}, const PlayerHitAdjustment & = {},const DamageReception *preparedReception=nullptr,bool deferAction=false,bool successfulHit=true);
     PlayerMessageFact deathMessage(EntityId actor) const {
         const auto it=state_.players.find(actor);
         return it==state_.players.end()?PlayerMessageFact{}:PlayerMessageFact{6,{},it->second.killerName,0,0,it->second.killerClass};

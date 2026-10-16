@@ -138,7 +138,7 @@ MonsterEnchantment resolveMonsterEnchantment(const ClassicData &data,const Monst
     for (int id : result.ids) {
         switch (id) {
         case 1: break; // Original random-name modifier; fixed uniques keep their MPQ name.
-        case 10: case 13: case 14: case 15: case 20: case 33: case 34: case 35: break;
+        case 10: case 13: case 14: case 15: case 20: case 22: case 33: case 34: case 35: case 41: break;
         case 5:
             result.damagePercent += constant(15) * championDamage / 100;
             result.attackRatingPercent += constant(13) * championDamage / 100;

@@ -2,6 +2,8 @@
 #include "core/id.hpp"
 #include "world/identity.hpp"
 #include "gameplay/skills/use_source.hpp"
+#include "gameplay/actions/timeline.hpp"
+#include "gameplay/events/frame_queue.hpp"
 #include <cstddef>
 #include <cstdint>
 #include <map>
@@ -26,6 +28,7 @@ struct SkillAction {
     bool interrupted{};
     uint64_t cooldownUntil{};
     bool usesSkillPointer{};
+    uint64_t timeline{};
 };
 struct RecoveryAction {
     uint64_t until{}, lastBlockTick{};
@@ -35,6 +38,7 @@ struct State {
         friend class skills::System;
         struct Releases;
         std::unique_ptr<Releases> releases_;
+        FrameEventQueue &frameEvents_;
         std::map<EntityId, RecoveryAction> recoveries_;
         // Player used-skill identity survives action expiry; deleting a source
         // clears the pointer without cancelling already released effects.
@@ -53,11 +57,20 @@ struct State {
             ReleaseGuard &operator=(const ReleaseGuard &)=delete;
         };
         ReleaseGuard executingRelease(EntityId actor) {return {*this,actor};}
-        State();
+        explicit State(FrameEventQueue &);
         ~State();
         State(const State &) = delete;
         State &operator=(const State &) = delete;
     std::map<EntityId, SkillAction> casts;
+    struct PreparedTimeline {
+        FrameEventOwner owner;
+        uint64_t generation{};
+        std::vector<FrameEventQueue::PreparedInsertion> events;
+    };
+    PreparedTimeline prepareTimeline(EntityId,uint64_t started,const ActionTimeline &);
+    PreparedTimeline prepareProgramTimeline(EntityId,uint64_t started);
+    void commitTimeline(PreparedTimeline &&) noexcept;
+    void cancelTimeline(EntityId);
     using PreparedRecovery = std::map<EntityId, RecoveryAction>::node_type;
     PreparedRecovery prepareRecovery(EntityId actor) const;
     void commitRecovery(PreparedRecovery next) noexcept;

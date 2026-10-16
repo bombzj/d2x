@@ -140,11 +140,10 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
     const auto *m=ports_.monsters.find(id);
     if(!m || !m->rule.enchantment || !m->rule.enchantment->curse) return;
     auto [it,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=it->second;
-    if(fresh) cycle.random=m->combatRandom;
     // UMod7's native callback casts on three of four rolls around the owner.
     auto random=m->combatRandom;const bool cast=(rollRandom(random)&3)!=0;
     if(!ports_.monsters.consumeRandom(id,m->combatRandom,random)) return;
-    cycle.random=random;if(!cast) return;
+    if(!cast) return;
     if(!m->rule.stats || !m->rule.formulas) return;
     const auto values=unitStatValues(id,tick);if(!values) return;
     auto aura=*m->rule.enchantment->curse;
@@ -174,28 +173,29 @@ StepStatus System::advanceMonsterCurses(uint64_t tick) {
     }
     return StepStatus::Complete;
 }
-StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
-    bool blocked=advanceMonsterCurses(tick)==StepStatus::Blocked;
+StepStatus System::advanceMonsterEnchantments(EntityId only,uint64_t tick) {
+    bool blocked=false;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    for(const auto &[id,m]:ports_.monsters.read().actors) {
+    for(auto current=ports_.monsters.read().actors.find(only);current!=ports_.monsters.read().actors.end() && current->first==only;++current) {
+        const auto &[id,m]=*current;
         if(m.owner || (!m.rule.enchantment && !m.rule.nativeAura && !m.rule.hitBurst && !m.rule.deathBurst)) continue;
         const MonsterEnchantment empty;
         const auto &mods=m.rule.enchantment?*m.rule.enchantment:empty;const auto &area=ports_.areas.at(m.area);
-        auto [entry,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=entry->second;if(fresh) cycle.random=m.combatRandom;
+        auto [entry,fresh]=uniqueCycles_.try_emplace(id);auto &cycle=entry->second;
         auto burst=[&](int definition,bool dead)->DomainResult<> {
             const auto found=m.rule.enchantmentMissiles.find(definition);if(found==m.rule.enchantmentMissiles.end()) return {DomainStatus::Unavailable,{}};
             MonsterAttackRule attack;attack.missile=found->second;
-            missiles::MonsterSpawn spawn{id,m.area,area.generation,tick,m.position,m.position,attack,m.rule.hitStates,m.rule.level,0,0,cycle.random};spawn.postMortem=dead;
+            missiles::MonsterSpawn spawn{id,m.area,area.generation,tick,m.position,m.position,attack,m.rule.hitStates,m.rule.level,0,0};spawn.postMortem=dead;
             if(definition==195) for(const auto &ray:monsterLightningRays()) spawn.aims.push_back(m.position+ray.offset);
             else for(const auto heading:missileRingBurst(2)) spawn.aims.push_back(m.position+heading);
-            const auto result=ports_.missiles.spawnMonster(spawn);if(result) cycle.random=result.value->random;
+            const auto result=ports_.missiles.spawnMonster(spawn);
             return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
         };
         auto nativeBurst=[&](const MonsterMissileRule &rule,bool dead)->DomainResult<> {
             MonsterAttackRule attack;attack.missile=rule;
-            missiles::MonsterSpawn spawn{id,m.area,area.generation,tick,m.position,m.position,attack,m.rule.hitStates,m.rule.level,0,0,cycle.random};spawn.postMortem=dead;
+            missiles::MonsterSpawn spawn{id,m.area,area.generation,tick,m.position,m.position,attack,m.rule.hitStates,m.rule.level,0,0};spawn.postMortem=dead;
             for(const Vec offset:std::array<Vec,4>{Vec{0,-1},Vec{1,0},Vec{0,1},Vec{-1,0}}) for(int branch=0;branch<2;++branch) spawn.aims.push_back(m.position+offset);
-            const auto result=ports_.missiles.spawnMonster(spawn);if(result) cycle.random=result.value->random;
+            const auto result=ports_.missiles.spawnMonster(spawn);
             return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
         };
         if(m.rule.hitBurst && m.hitOccurrence!=cycle.nativeHit) {cycle.nativeHit=m.hitOccurrence;if(m.reactionMode==3 && m.reactionUntil>tick && m.knockedUntil<=tick) cycle.nativeHitAt=tick+2;}
@@ -228,7 +228,7 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
         if(cycle.death && tick>=cycle.death) {
             if(cycle.deathPhase==0) {
                 if(mods.has(9)) {
-                    auto random=cycle.random;
+                    auto random=m.combatRandom;
                     const int low=int(mods.corpseExplosionMinimum*4),high=int(mods.corpseExplosionMaximum*4);
                     const int64_t damage=int64_t(low+(high>low?limitedRandom(random,unsigned(high-low)):0))*64;
                     std::vector<EntityId> targets;
@@ -240,7 +240,9 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
                     auto plan=ports_.combat.prepareSpells({impact});if(!plan || !ports_.events.hasCapacity(1)) {blocked=true;continue;}
                     // Original fire-enchanted death uses the original visual missile.
                     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m.area},{MissileFact{id,1,m.area,117,1,0,m.position,m.position}}})) {blocked=true;continue;}
-                    ports_.combat.commitSpells(std::move(*plan.value));cycle.random=random;
+                    const auto consumed=ports_.monsters.consumeRandom(id,m.combatRandom,random);
+                    if(!consumed) throw std::logic_error("Monster death burst lost its reserved seed");
+                    ports_.combat.commitSpells(std::move(*plan.value));
                 }
                 cycle.deathPhase=1;
             }
@@ -249,7 +251,6 @@ StepStatus System::advanceMonsterEnchantments(uint64_t tick) {
         }
 
     }
-    std::erase_if(uniqueCycles_,[&](const auto &entry){return !ports_.monsters.find(entry.first);});
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 }

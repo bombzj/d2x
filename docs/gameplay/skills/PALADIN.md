@@ -4,11 +4,13 @@
 
 ## 逐项执行入口
 
+Zeal、Vengeance、Smite、Sacrifice、Charge及Conversion均接原生联系。Sacrifice反噬在目标Drain之前；Conversion成功直接转换／撤出联系，失败才Drain；Charge移除固定超时及手写命中延迟。Smite保留盾伤预填、HitFlags2及仅补成功位。逐程序依据、版本差异和限制见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。历史冒烟不认证新增迁移。
+
 表中数字为当前MPQ的SrvSt／SrvDo编号。定义、等级曲线、协同、状态、范围、筛选和费用由content/skills准备；D2MOO的D2Game/src/SKILLS/SkillPal.cpp、Skills.cpp、SUnitDmg.cpp及D2Common的PathMisc／SequenceTbls／Units提供执行依据，旧master单机实现用作对应接口证据。参考代码不纳入源码，许可见docs/licenses/D2MOO.txt。
 
 | ID | 技能 | 原程序 | 当前执行 |
 | --- | --- | --- | --- |
-| 96 | Sacrifice | 29／64 | 武器物理增伤、协同、成功命中后的生命反噬；背压保留后置阶段 |
+| 96 | Sacrifice | 29／64 | 武器物理增伤、协同、成功命中后的生命反噬；反噬先于目标Drain，背压保留阶段 |
 | 97 | Smite | 150 | 必须有盾；盾牌基础伤害、Holy Shield、力量／增伤，自动命中、不可格挡、眩晕／击退，S1动作 |
 | 98 | Might | 65 | 自身及所属伙伴的武器增伤 |
 | 99 | Prayer | 65 | 周期恢复生命；有治疗对象才扣法力并抑制自然回蓝 |

@@ -262,11 +262,69 @@ DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t
     if(spec.state.id>=0) publication.facts.emplace_back(StateFact{id,1,m->area,spec.state.id,true,stats});
     if(skill.castOverlayId>=0) publication.facts.emplace_back(OverlayFact{id,1,m->area,skill.castOverlayId});
     if(spec.state.id>=0) unit.nativeStats[spec.state.id]=std::move(stats);resources.sample(unit.states);
-    auto life=resources.take();if(random) {life.random=random;life.changed=true;}
+    auto life=resources.take();
+    if(random) {life.random=*random;life.changed=true;}
     prepareUnitEffects(publication,id,unit,std::move(life),tick);
     if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
     const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},m->area},std::move(publication.facts)});
     if(!sent) return {sent.status,{}};
+    publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::postModeRate(EntityId id,int skill,int rank,int32_t rate,uint64_t revision,uint64_t tick,std::pair<uint64_t,uint64_t> random) {
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};const auto source=participants.find(id);
+    if(!source.id()) return {DomainStatus::InvalidActor,{}};
+    const auto &rules=source.player?*source.player->rules.skills->stats:*source.monster->rule.stats;
+    CombatEffectSpec spec;spec.source={CombatEffectSource::Skill,id,skill,rank};spec.stacking=EffectStacking::Independent;
+    spec.nativeDirectAllocation=true;spec.nativeValues.emplace();spec.modeActionRevision=revision;
+    const std::array<StatValue,1> writes{{{rules.names.at("attackrate"),rate}}};
+    if(source.player) {
+        const auto &player=*source.player;const auto &area=ports_.areas.at(player.area);
+        auto next=state_;auto &states=next.players[id].states;
+        PlayerResourceTrace resources(player,tick,{},ports_.areas.statTime(player.area));
+        const auto observe=[&]{resources.sample(states,true);};
+        const auto posted=states.apply(spec,tick,observe);
+        if(!states.writeNativeStats(posted.handle,writes,rules,spec,observe)) throw std::logic_error("Missing anonymous mode rate list");
+        transactions::CharacterEdit edit{{player.player,id,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,resources.record()};
+        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        edit.random=transactions::UnitRandomEdit{random.first,random.second};
+        auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+        const auto committed=ports_.transactions.commit(std::move(*plan.value));if(committed) publishPlayers(next.players);
+        return committed;
+    }
+    const auto &body=*source.monster;UnitEffect unit;if(const auto current=units_.find(id);current!=units_.end()) unit=current->second;
+    unit.area=body.area;MonsterResourceTrace resources(body,tick,&unit.states);const auto observe=[&]{resources.sample(unit.states,true);};
+    const auto posted=unit.states.apply(spec,tick,observe);
+    if(!unit.states.writeNativeStats(posted.handle,writes,rules,spec,observe)) throw std::logic_error("Missing anonymous monster mode rate list");
+    resources.sample(unit.states);auto life=resources.take();life.random=random;life.changed=true;
+    AuraUnitPublication publication;prepareUnitEffects(publication,id,unit,std::move(life),tick);
+    if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
+    publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::endMode(EntityId id,uint64_t tick,std::optional<uint64_t> activeRevision) {
+    const auto *effects=unitEffects(id);
+    if(!effects || !effects->hasEndedModeEffects(activeRevision)) return {DomainStatus::Applied,std::monostate{}};
+    if(const auto *player=ports_.players.findActor(id)) {
+        auto next=state_;auto &states=next.players[id].states;
+        PlayerResourceTrace resources(*player,tick,{},ports_.areas.statTime(player->area));
+        const auto removed=states.endModeEffects(activeRevision,[&]{resources.sample(states,true);});
+        transactions::CharacterEdit edit{{player->player,id,player->area,ports_.areas.at(player->area).generation,0,tick},
+            player->inventoryRevision,player->characterRevision,resources.record()};
+        edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
+        for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,tick))
+            edit.publicFacts.emplace_back(StateFact{id,0,player->area,entry.effect.spec.state.id,false});
+        auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+        const auto committed=ports_.transactions.commit(std::move(*plan.value));if(committed) publishPlayers(next.players);
+        return committed;
+    }
+    const auto *body=ports_.monsters.find(id);if(!body) return {DomainStatus::Applied,std::monostate{}};
+    auto unit=units_.at(id);MonsterResourceTrace resources(*body,tick,&unit.states);
+    const auto removed=unit.states.endModeEffects(activeRevision,[&]{resources.sample(unit.states,true);});
+    AuraUnitPublication publication;
+    for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !unit.states.hasState(entry.effect.spec.state.id,tick))
+        publication.facts.emplace_back(StateFact{id,1,body->area,entry.effect.spec.state.id,false});
+    resources.sample(unit.states);prepareUnitEffects(publication,id,unit,resources.take(),tick);
+    if(!validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
+    if(!publication.facts.empty()) {const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},body->area},std::move(publication.facts)});if(!sent) return {sent.status,{}};}
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::removeUnitState(EntityId id,int state,uint64_t tick) {
@@ -295,13 +353,11 @@ StepStatus System::advanceUnits(uint64_t tick) {
         const auto *m=ports_.monsters.find(it->first);
         if(!m) {const auto id=it->first;++it;ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});forgetUnit(id);continue;}
         if(m && m->area!=it->second.area) it->second.area=m->area;
-        const auto modeRevision=m->alive() && tick<m->nativeActionUntil && m->nativeActionInterruption==m->interruption?
-            std::optional<uint64_t>{m->nativeActionRevision}:std::nullopt;
         // Native state writes and RemoveState callbacks already publish their
         // FullStats/control/velocity changes synchronously. An unchanged live
         // list has no expiry work and must not be reposted on every frame.
         if(m->alive() && m->nativeStats && m->nativeStats->sources && m->nativeStats->sources->fullValues && m->rule.stats &&
-           !it->second.states.hasDueExpiration(tick) && !it->second.states.hasEndedModeEffects(modeRevision)) {
+           !it->second.states.hasDueExpiration(tick)) {
             if(!m->conversion) it->second.converted=false;
             if(!it->second.states.size() && !it->second.states.hasUnitEvents()) it=units_.erase(it);
             else ++it;
@@ -320,7 +376,6 @@ StepStatus System::advanceUnits(uint64_t tick) {
             clearedStates=next.clearNonDeathStates(kind,*m->rule.states,tick,observe);
             auto expired=next.expireOrdinary(tick,observe,kind);removed.insert(removed.end(),expired.begin(),expired.end());
         } else {
-            removed=next.endModeEffects(modeRevision,observe);
             auto expired=next.expireOrdinary(tick,observe);removed.insert(removed.end(),expired.begin(),expired.end());
         }
         if(resources) {

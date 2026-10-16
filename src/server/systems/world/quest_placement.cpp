@@ -35,7 +35,7 @@ void System::retainControllerRoom(RegionId region,Vec position,bool retain) {
     const auto index=size_t(room-layout.rooms().data());
     if(index<area.rooms.size()) area.rooms[index].portalRetained=retain;
 }
-std::optional<QuestPosition> System::questFreePosition(RegionId region,Vec roomPosition,Vec requested,int size,int radius) const {
+std::optional<QuestPosition> System::questFreePosition(RegionId region,Vec roomPosition,Vec requested,int size,int radius,uint16_t mask) const {
     if(size<0 || radius<=1) return {};
     const auto &initial=ports_.areas.at(region).definition;
     const auto *initialBounds=initial.activation.room(roomPosition);if(!initialBounds) return {};
@@ -53,12 +53,15 @@ std::optional<QuestPosition> System::questFreePosition(RegionId region,Vec roomP
         const auto &area=ports_.areas.at(from.area).definition;
         return ports_.areas.roomAtPosition(from.area,Vec{float(from.x*5),float(from.y*5)}-area.origin,x,y);
     };
+    const auto sample=mask==0x400?std::function<uint16_t(RoomView,int32_t,int32_t)>{}:ports_.spatial.nativeCollisionSample(mask);
     const auto clear=[&](RoomView room,int x,int y) {
         for(int dy=-size;dy<=size;++dy) for(int dx=-size;dx<=size;++dx) {
             const auto cell=find(room,nativeAdd(x,dx),nativeAdd(y,dy));if(!cell) return false;
             const auto &area=ports_.areas.at(cell->area).definition;
-            if(area.collision.movementMask(nativeSubtract(nativeAdd(x,dx),int(area.origin.x)),
-                nativeSubtract(nativeAdd(y,dy),int(area.origin.y)))&0x400) return false;
+            const auto collision=sample?sample(*cell,nativeAdd(x,dx),nativeAdd(y,dy)):
+                area.collision.movementMask(nativeSubtract(nativeAdd(x,dx),int(area.origin.x)),
+                    nativeSubtract(nativeAdd(y,dy),int(area.origin.y)));
+            if(collision&mask) return false;
         }
         return true;
     };

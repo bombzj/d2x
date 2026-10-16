@@ -51,6 +51,9 @@ StepStatus System::baalStep(TickContext tick) {
         if(!p.entered || p.persistent.player.hp<=0) continue;
         const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
         if(int(p.area)==131 && !world.throneDeparted) for(const auto &throne:area.definition.npcs) if(const auto *unit=ports_.monsters.find(throne.id);throne.rule.code=="baalthrone" && unit && unit->alive() && (p.position-unit->position).length()<64) {
+            if(world.wavePrepared && world.wave<5 && ports_.population.questBirthComplete(p.area,"Baal Subject "+std::to_string(world.wave+1))) {
+                ++world.wave;world.wavePrepared=false;world.waveAt=tick.tick+100;
+            }
             // Missing population outside the throne must not block its waves.
             // A missing nearby placement remains a real uncleared objective.
             bool occupied=area.definition.populationMissing!=area.definition.populationMissingPositions.size();

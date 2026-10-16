@@ -124,13 +124,13 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
         if(victim==target->unit.id) {skill=program.skills[1];mode=14;}
     }
     if(victim==target->unit.id && target->distance>=param(3)) {pet.nextDecision=tick.tick+uint64_t(std::max(1,param(1)));return StepStatus::Complete;}
-    auto random=body->combatRandom;const auto expected=random;
+    auto random=body->combatRandom;
     if(victim==target->unit.id && int(limitedRandom(random,100))>=param(program.ai==AssassinPetDefinition::Ai::DeathSentry?2:0)) {
         ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+uint64_t(std::max(1,param(1)));return StepStatus::Complete;
     }
     ports_.monsters.commitCombatRandom(body->id,random);
-    const auto started=ports_.skills.requestCast({body->id,uint16_t(skill),UnitTarget{victim,0,uint8_t(victim==target->unit.id?target->unit.type:1)},tick.tick,mode});
-    if(started.status==DomainStatus::Capacity) {ports_.monsters.commitCombatRandom(body->id,expected);return StepStatus::Blocked;}
+    const auto started=requestAction(pet,{body->id,uint16_t(skill),UnitTarget{victim,0,uint8_t(victim==target->unit.id?target->unit.type:1)},tick.tick,mode});
+    if(started.status==DomainStatus::Capacity) return StepStatus::Blocked;
     --pet.assassinAi[1];if(victim!=target->unit.id) pet.lastCorpse=victim;
     if(started) {pet.nextDecision=body->busyUntil;}
     else pet.nextDecision=tick.tick+uint64_t(std::max(1,param(1)));

@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -16,7 +17,6 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/effects/queries.hpp"
-#include "gameplay/combat/geometry.hpp"
 #include <algorithm>
 #include <string>
 #include <string_view>
@@ -53,10 +53,7 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto owner=source?combat::ParticipantView{nullptr,source}:participants.find(actor);const auto &area=ports_.areas.at(region).definition;
     const uint32_t filter=query.filter || query.mode==NativeAuraTargetMode::TargetRange?query.filter:0x583;
-    // MISSILES_Initialize/CreateMissileFromParams clear ISVALIDTARGET.
-    // The shipped BladesOfIce filter includes missiles (8) together with
-    // the valid-target requirement (0x400), so none reach its callback.
-    // Other noncombat-unit filters still need their own native finder.
+    // Missiles currently have no ISVALIDTARGET flag; filter 0x400 excludes them.
     if((filter&(0x10|0x20)) || ((filter&8) && !(filter&0x400)))
         throw std::runtime_error("Aura recipient filter requires its native unit finder");
     if((filter&0x80000) && !query.tick) throw std::invalid_argument("Missing native JUSTHIT query frame");
@@ -93,17 +90,16 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
             } else if(!target.monster || target.monster->area!=link.area || (corpses?!ports_.monsters.deadMode(target.id(),*query.tick):!target.monster->alive())) return false;
             if((filter&0x80) && !target.damageable()) return false;
             if((filter&0x400) && !target.damageable()) return false;
+            if(filter&0x20000) {
+                int range=owner.monster?owner.monster->rule.meleeRange:0;
+                if(owner.player && owner.player->totals.equipment.weaponCount)
+                    range=owner.player->totals.equipment.weapons[0].rangeAdder;
+                if(!unitMeleeReach(area.collision,sourcePosition,owner.size(),
+                    target.position()+definition.origin-area.origin,target.size(),range)) return false;
+            }
             if((filter&0x80000) && !missileHitAllowed(target.id(),*query.tick)) return false;
             if((filter&0x10000) && !participants.auraAligned(owner,target)) return false;
             if((filter&0x8000) && !participants.canHarm(owner,target)) return false;
-            // SKILLS_AuraCallback's 0x20000 is UNITS_IsInMeleeRange,
-            // also used by the native Zeal/Fury GUID successor finder.
-            if(filter&0x20000) {
-                const auto destination=target.position()+definition.origin-area.origin;
-                const int range=owner.player?(owner.player->totals.equipment.weaponCount?
-                    owner.player->totals.equipment.weapons[0].rangeAdder:0):owner.monster?owner.monster->rule.meleeRange:0;
-                if(!owner.id() || !unitMeleeReach(area.collision,sourcePosition,owner.size(),destination,target.size(),range)) return false;
-            }
             if((filter&0x200) && !area.collision.missileSegment(
                 {float(int(sourcePosition.x)),float(int(sourcePosition.y))},
                 {float(int(target.position().x+definition.origin.x-area.origin.x)),float(int(target.position().y+definition.origin.y-area.origin.y))},{4,1})) return false;
@@ -363,8 +359,7 @@ void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,cons
         const auto source=plan.sources.find(id);
         if(source==plan.sources.end()) {
             prepareUnitItemAuras(plan,candidate,tick,recipient);
-            // SetSummonPassiveStats assigns inherited aura skills to the
-            // right slot at birth, in original sumskill order.
+            // Inherited summon aura slots are selected at birth, before AI.
             if(candidate.druidPet && !ports_.monsters.find(id) && candidate.rule.auraPrograms)
                 for(const auto skill:candidate.nativeSkillOrder)
                     if(candidate.rule.auraPrograms->contains(skill))

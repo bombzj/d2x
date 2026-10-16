@@ -28,6 +28,7 @@ struct CombatStateDefinition {
     bool noSend = false;
     bool life = false;
     bool aura = false;
+    bool meleeOnly = false;
 };
 using CombatStateRules=std::map<int,CombatStateDefinition>;
 } // namespace d2x

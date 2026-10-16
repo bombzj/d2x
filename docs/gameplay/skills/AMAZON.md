@@ -18,7 +18,7 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 | 11 冰箭 Cold Arrow | 4／— | 原冷伤／转换／长度；命中及冷时长／难度减免归combat |
 | 12 多重箭 Multiple Shot | 4／8 | 整数扇形、原数量和SrcDamage；一次扣费、各箭独立命中及穿透 |
 | 13 闪避 Dodge | 被动 | 原递减曲线及weaponAvoidance；站立／近战分支与躲避动作分开 |
-| 14 威力一击 Power Strike | 6／2 | 原武器六通道与附加雷伤；skills拥有A1释放帧，combat处理近战命中 |
+| 14 威力一击 Power Strike | 6／2 | St6起手Alloc持有原生联系，Do2兑现；六通道／雷伤与源、目标单位种子按原阶段消费 |
 | 15 毒枪 Poison Javelin | 4／— | 原毒伤／长度、poisonCloudDirections和cloudVelocity；missiles生成尾迹毒云，combat处理持续毒 |
 | 16 爆裂箭 Exploding Arrow | 4／— | 箭本体与原火范围分开；命中回调与AlwaysExplode按原MissMode条件执行 |
 | 17 慢速箭 Slow Missiles | —／6 | amazon_magic的原减速百分比／期限；单位状态和弹体速度分别消费原值 |
@@ -28,24 +28,24 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 | 21 急冻箭 Ice Arrow | 4／— | 原冷伤与冻结时长；普通冷却／冻结资格分开，保留目标难度系数 |
 | 22 导引箭 Guided Arrow | 4／10 | missileGuidedDirection按remaining转向；服务端寻找真实敌人，客户端执行CltDo18／MissileCltDo7 |
 | 23 刺入 Penetrate | 被动 | 原线性命中率加成；有效等级进入派生属性，女武神继承基础等级规则另算 |
-| 24 充能一击 Charged Strike | 6／11 | 原近战雷伤、充能弹数量与轨迹；子弹从2×受击点−攻击者点生成，客户端CltDo19 |
+| 24 充能一击 Charged Strike | 6／11 | St6起手分配，Do11先Drain再创建原充能子弹；数量读取calc1，目标方向为2×受击点−攻击者点，CltDo19 |
 | 25 瘟疫标枪 Plague Javelin | 4／— | 原毒曲线／期限、16方向云团和整数速度；弹体爆散与每目标持续毒由独立领域执行 |
-| 26 炮轰 Strafe | 8／12 | strafeShotCount及weaponVolley原回滚时钟；CltDo20和服务端共享事件计算，各自筛选目标 |
+| 26 炮轰 Strafe | 8／12 | 服务端每次发射后按当前帧、动画锚点及Param6回卷重排；GUID后继选择。strafeShotCount／weaponVolley仅供客户端CltDo20预测 |
 | 27 牺牲之箭 Immolation Arrow | 4／— | 原箭伤、独立范围伤／地面火及missileDiskOffsets；Srv期限与CltHit12期限／概率分别取原参数 |
 | 28 诱饵 Dopplezon | —／15 | resolveAmazonSummon采样原Calc及Aura属性；主人生命保留raw 8.8，基础／召唤来源逐步安装；原人物伪装／主人信息，不复制物品；固定位置、单体替换及死亡清理 |
 | 29 回避 Evade | 被动 | weaponAvoidance的移动分支；移动时仅执行Evade，服务端提交原躲避动作 |
-| 30 击退 Fend | 9／13 | weaponVolley原目标数／回滚；每次释放重新取近战敌人，CltDo21使用已知单位表现 |
+| 30 击退 Fend | 9／13 | 服务端保留当前目标，失效／出范围时找GUID后继；原生Alloc／Drain后按Param2回卷。1.13c查找助手在回绕时也写候选数，与固定D2MOO提前返回不同；CltDo21仍用已知单位预测 |
 | 31 冻结之箭 Freezing Arrow | 4／— | 箭本体与冷范围分开；服务端范围冻结，CltHit14按原3组／8方向生成碎片 |
 | 32 女武神 Valkyrie | —／16 | 原Calc／SumSkill赋值、原层被动及MonEquip来源；宿主准备装备贡献，属性模块构建原始快照，companions持有归属／AI，monsters持有生命／动作 |
 | 33 穿透 Pierce | 被动 | amazonPassiveValue及missilePierceCount；原owner pierce_idx独立种子，最多4次穿透，不污染战斗随机流 |
-| 34 闪电攻击 Lightning Strike | 10／14 | skillRankBonus完整弹跳数、missileChainSuccessor；主近战与独立连锁分开，CltDo22不套女巫的／5规则 |
+| 34 闪电攻击 Lightning Strike | 10／14 | St10分配、Do14先Drain再按GUID后继创建连锁，次数读取calc2；采用原1.13c的X／Y目标，保留与固定D2MOO的Y／Y差异；CltDo22不套女巫的／5规则 |
 | 35 闪电之怒 Lightning Fury | 4／— | MissileTargetBurst／missileBurstTargets：半径、数量及顺序；SrvHit20／CltHit25在单位、墙及期限回调分裂，子雷弹无武器伤害 |
 
 ## 专项计算与领域入口
 
 | 范围 | 当前入口与边界 |
 | --- | --- |
-| 序列／回滚 | `amazon_sequence`、`weapon_volley`求Jab／Impale原序列及Strafe／Fend事件；skills持有IAS时钟和每次目标复验，客户端将相同事件映射至原动作 |
+| 序列／回滚 | `amazon_sequence`准备Jab／Impale原序列，服务端timeline驱动标记与回绕；weaponVolley仅供客户端表现。Impale的专用耐久／数量机会与普通Drain磨损分别执行 |
 | 箭矢／标枪 | `amazon_missile`、`projectile_path`求扇形／圆盘／毒云、引导／GUID继任及分裂候选；missiles持有接触、期限、毒云／地面火和Pierce游标 |
 | 武器伤害 | `weapon_damage`纯计算六通道／转换／Critical／Deadly／SrcDamage；近战先按目标修正范围再掷值，投射先掷值再加目标ED。随机与真实抗性／冷毒／NextDelay归combat，不由客户端重掷 |
 | 效果／回避 | `effects/amazon`安装Inner Sight／Slow Missiles及属性；poison处理强毒替换／同强续期，avoidance区分近远程／移动。弹体减速和单位状态分别消费原参数 |

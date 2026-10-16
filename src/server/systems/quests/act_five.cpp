@@ -101,7 +101,7 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
     if(operation==65 && int(actor.area)==120) {
         auto &world=state_.actFive;
         if(world.ancientsActive || world.ancientsDefeated) return {DomainStatus::Conflict,{}};
-        const auto &groups=ports_.areas.at(actor.area).definition.questGroups;
+        const auto &groups=ports_.areas.at(actor.area).definition.nativeQuestMonsters;
         for(const auto name:ancientIdentities) if(!groups.contains(name)) return {DomainStatus::Unavailable,{}};
         if(!unavailable(actor.player,record,QuestId::RiteOfPassage)) book[questIndex(QuestId::RiteOfPassage)].stage=std::max(book[questIndex(QuestId::RiteOfPassage)].stage,3u);
         const auto result=commit(actor,std::move(record));

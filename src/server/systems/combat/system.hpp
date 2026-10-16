@@ -16,9 +16,10 @@
 #include <string>
 #include <vector>
 
+namespace d2x::server::actions {struct State;}
 namespace d2x::server::combat {
-struct State { std::list<Damage> pending; std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{},progressiveOccurrence{}; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; uint64_t &random; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; };
+struct State { std::list<SpellImpact> spells; size_t spellTargets{}; uint32_t hitClassCursor{}; uint64_t targetAttempts{}, reflectionOccurrence{},progressiveOccurrence{}; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; const AreaStore &areas; transactions::System &transactions; EventOutbox &events; effects::System &effects; inventory::System &inventory; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; actions::State &actions; };
 class System {
     State state_;
     const Ports ports_;
@@ -26,6 +27,12 @@ class System {
     DomainStatus resolveEnvironment(SpellImpact &,TickContext);
     DomainStatus prepareMissileContact(SpellImpact &,ParticipantView,ParticipantView,uint64_t generation,TickContext,bool preludeOnly=false);
     DomainStatus prepareNativeSkillContact(SpellImpact &,ParticipantView,ParticipantView,TickContext);
+    DomainStatus postNativeMeleeAllocation(SpellImpact &,TickContext);
+    DomainStatus prepareNativeSmite(SpellImpact &,const PlayerState &,TickContext);
+    DomainStatus prepareContactProcedures(SpellImpact &,ParticipantView,ParticipantView,TickContext);
+    DomainStatus prepareMeleeDrainProcedures(SpellImpact &,ParticipantView,TickContext);
+    bool nativeMeleeReach(const SpellImpact &,int range=-1) const;
+    DomainStatus finishNativeMeleeMiss(SpellImpact &,ParticipantView,TickContext);
     DomainResult<bool> prepareWeaponBlock(ParticipantView,TickContext,WeaponBlockCursor &);
     DomainStatus finishNativeSkillFlags(SpellImpact &,TickContext);
     DomainResult<bool> advanceProgressive(SpellImpact &,TickContext,bool mainDrained=false);
@@ -34,14 +41,14 @@ class System {
     DomainStatus resolvePlayerImpact(SpellImpact &,ParticipantView,const PlayerState &,const PlayerState &,uint64_t generation,TickContext);
     DomainStatus finishPlayerContact(SpellImpact &,const PlayerState &,TickContext);
     DomainStatus finishMonsterContact(SpellImpact &,const monsters::Actor &,TickContext);
-    DomainStatus advanceMeleeAttempts(SpellImpact &,TickContext);
     DomainStatus finishImpact(SpellImpact &, const PlayerState *, uint64_t generation, uint64_t tick);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
-    DomainResult<> enqueue(const Damage &);
+    DomainResult<> monsterMelee(EntityId source,EntityId target,const MonsterAttackRule &,uint64_t occurrence,TickContext);
     DomainResult<MissilePreludeResult> missilePrelude(SpellImpact &,TickContext);
     bool weaponContact(const WeaponSkillDamage &,EntityId,uint64_t,uint64_t &) const;
+    DomainResult<bool> directDefense(SpellImpact &,ParticipantView,ParticipantView,TickContext);
     DomainResult<bool> sampleNativeSkillAccuracy(const ActorContext &,const SkillCastSpec &,const WeaponDamage &,EntityId,std::shared_ptr<NativeSkillContact> &);
     DomainResult<> enqueue(SpellImpact);
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;

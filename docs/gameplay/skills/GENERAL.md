@@ -1,6 +1,6 @@
 # 通用攻击与卷轴／书本技能
 
-更新：2026-10-12。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。有限运行证据按各批EXE身份记录，不认证全部场景或原服一致性。
+更新：2026-10-16。当前MPQ十项为0–5、217–220，均有自研执行入口；弓／弩是Attack的武器分支，不新增技能。本页负责这些原程序与专项规则，公共规范见[COMMON](COMMON.md)，完整分类见[技能目录](README.md)。其他物品授予／充能／触发与专用程序见[ITEM_SKILLS](ITEM_SKILLS.md)，不扩大本页十项范围。有限运行证据按各批EXE身份记录，不认证全部场景或原服一致性。
 
 ## 逐项入口
 
@@ -45,7 +45,7 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 2026-10-13用户TCP/IP验收日志`artifacts/diagnostics/20261013-073805-98adbcb5`对应EA5256包：D2X本人两次06／33次09，没有07／0A；攻击GUID139期间权威96位置由(4584,4567)继续至(4606,4558)，且目标逃跑后死亡，证明服务端在追击，不能把客户端站定表现判成站定请求或服务端没有寻路。当前源码修正动作交接后重新靠近；证据与MPQ Attack.range=both、敌方SizeX=2核对在`artifacts/melee-hold-crash-20261013`。该动作交接修正已随前序Windows Release构建／打包；按住近战画面及原版Host方向未专项运行复验，不能沿用EA5256记录认证后续程序。
 
-客户端起手与自动靠近共用`castMeleeRange`，只对单位目标的`h2h`或持近战武器的`both`检查近战距离；`rng`和`none`直接在当前位置起手，点目标与Shift站定不创建追击路径。当前MPQ的Throw／Left Hand Throw／Double Throw／Poison Javelin均为`rng`，不因手持标枪或飞刀而走近目标。依据为D2MOO `D2Common_11016`对`both`的弓弩分支及PlrMsg `sub_6FC836D0`的范围分类；服务端`skills::System::weaponCast`已排除投掷靠近并在起手后停止移动。本次修正公共客户端误把所有非`none`技能当作近战的问题，尚未构建、运行或打包。
+客户端起手与自动靠近共用`castMeleeRange`，只对单位目标的`h2h`或持近战武器的`both`检查近战距离；`rng`和`none`直接在当前位置起手，点目标与Shift站定不创建追击路径。当前MPQ的Throw／Left Hand Throw／Double Throw／Poison Javelin均为`rng`，不因手持标枪或飞刀而走近目标。依据为D2MOO `D2Common_11016`对`both`的弓弩分支及PlrMsg `sub_6FC836D0`的范围分类；服务端`skills::System::weaponCast`已排除投掷靠近并在起手后停止移动。本次修正公共客户端误把所有非`none`技能当作近战的问题；构建及运行范围见运行包记录。
 
 ## 原版依据
 
@@ -56,6 +56,7 @@ Weapons／ItemTypes／Missiles的原映射分别提供标枪、飞斧／飞刀�
 
 ## 当前边界
 
+- 人形／狼熊普通武器动作和普通Kick使用当前MPQ完整AnimData标记，经实例帧队列释放／结束；玩家普通近战使用原生联系与单位种子。ExecuteEvents负责吸取、扣血及状态，随后是耐久、近战事件、反伤和末尾模式；普通攻击未命中仍填写伤害。可达专用武器、连击、怪物／佣兵／伙伴近战均已迁入，旧武器伤害队列和随机副本已删除，详见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。本次构建及有限冒烟见运行包记录，下列历史包证据不认证全部新增组合。
 - 普通武器管线已接lifeLeech／manaLeech／crushingBlow／openWounds；来源、难度／目标系数、特殊技能资格及提交顺序见[武器命中效果](../combat/WEAPON_EFFECTS.md)。完整双持组合、PvP、未实现职业及专用触发仍有缺口。
 - 普通近战武器／防具耐久、Impale磨损、投掷补充／自修复及充能扣费／维修已经接入；具体规则和装备六类事件框架由[库存](../../modules/INVENTORY.md)维护，不能笼统写成未实现。专用触发程序及ItemCltEffect仍有明确暂缓项。
 - Unsummon只对当前已实现且PetType允许的本人召唤物有效，不补齐其他职业召唤或完整佣兵；同行者与雇佣范围见[佣兵](../characters/HIRELINGS.md)。普通门户资格由travel负责，任务／队友门户范围由[物件](../world/OBJECTS.md)和[任务系统](../quests/SYSTEM.md)维护。

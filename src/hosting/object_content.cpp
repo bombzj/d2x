@@ -161,7 +161,7 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     std::map<EntityId,size_t> presetOrders;
     for (size_t sourceIndex=0;sourceIndex<region.map.terrain.data.objects.size();++sourceIndex) {
         const auto &source=region.map.terrain.data.objects[sourceIndex];
-        if (source.type != 2 || !source.nativeIdentity) continue;
+        if (source.type != 2 || !source.nativeIdentity || (source.flags&1u)) continue;
         WorldObject object; object.id = ids.allocate(); object.act = area.act;
         presetOrders.emplace(object.id,sourceIndex);
         object.objectClass = preset(source.id, area.act, request.level);

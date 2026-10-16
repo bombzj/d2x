@@ -4,6 +4,15 @@
 #include <cstdint>
 
 namespace d2x {
+EntityId nativeSkillSuccessor(std::span<const EntityId> candidates,uint32_t previous) {
+    uint32_t larger=UINT32_MAX,wrapped=previous;bool hasLarger=false,hasWrapped=false;
+    for(const auto id:candidates) {
+        const auto guid=uint32_t(id.value);
+        if(guid>previous && guid<larger) {larger=guid;hasLarger=true;}
+        if(guid<=wrapped) {wrapped=guid;hasWrapped=true;}
+    }
+    return hasLarger?EntityId{larger}:hasWrapped?EntityId{wrapped}:EntityId{};
+}
 bool withinNativeAuraArea(Vec origin,Vec target,int32_t radius) {
     if(radius<0) return false;
     const auto dx=nativeSubtract(int32_t(target.x),int32_t(origin.x));

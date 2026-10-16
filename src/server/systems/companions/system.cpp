@@ -9,10 +9,52 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "server/systems/skills/system.hpp"
+#include "server/systems/ai/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::companions {
+DomainResult<> System::requestAction(Companion &pet,const actions::MonsterCastRequest &request) {
+    const auto result=ports_.skills.requestCast(request);
+    if(result.status!=DomainStatus::Capacity) return result;
+    pet.pendingAction=request;
+    // Retain the decision and let its owner finish recording the selected
+    // parameters. The event itself remains blocked until this start accepts.
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::think(EntityId id,TickContext tick) {
+    auto found=state_.companions.find(id);
+    if(found==state_.companions.end()) return {DomainStatus::InvalidActor,{}};
+    auto &pet=found->second;
+    if(pet.pendingAura) {
+        const auto accepted=ports_.effects.hirelingAura(id,*pet.pendingAura,tick.tick);
+        if(accepted.status==DomainStatus::Capacity) return accepted;
+        pet.pendingAura.reset();
+    } else if(pet.pendingAction) {
+        const auto accepted=ports_.skills.requestCast(*pet.pendingAction);
+        if(accepted.status==DomainStatus::Capacity) return accepted;
+        pet.pendingAction.reset();
+    } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision && tick.tick<=pet.expires && !pet.removeAt) {
+        ports_.monsters.scheduleAi(id,pet.nextDecision);return {DomainStatus::Applied,std::monostate{}};
+    } else if(advancePet(id,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+    found=state_.companions.find(id);
+    if(found==state_.companions.end()) return {DomainStatus::Applied,std::monostate{}};
+    if(found->second.pendingAction || found->second.pendingAura) return {DomainStatus::Capacity,{}};
+    const auto *body=ports_.monsters.find(id);
+    if(body) {
+        auto due=std::max(tick.tick+1,found->second.nextDecision);
+        if(body->revived() && body->alive()) {
+            if(ports_.ai.think(id,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+            if(const auto controller=ports_.ai.read().controllers.find(id);controller!=ports_.ai.read().controllers.end())
+                due=std::min(due,std::max(tick.tick+1,controller->second.nextDecision));
+        }
+        if(body->alive()) due=std::max(due,std::max({body->busyUntil,body->stunnedUntil,body->knockedUntil}));
+        if(found->second.removeAt) due=std::min(due,std::max(tick.tick+1,found->second.removeAt));
+        else if(found->second.expires!=UINT64_MAX) due=std::min(due,std::max(tick.tick+1,found->second.expires+1));
+        ports_.monsters.scheduleAi(id,due);
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<EntityId> System::summon(const Summon &) {return {};}
 
 DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
@@ -44,7 +86,6 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
     return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     bool blocked=synchronizeHirelings(tick)==StepStatus::Blocked;
     blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
     std::vector<EntityId> stale;
@@ -55,11 +96,16 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(!p || !p->entered || p->persistent.player.hp<=0 || p->area!=source.actor.area || (p->actor!=source.actor.actor && !controlled) || p->persistent.player.level!=source.ownerLevel || p->persistent.player.skillRanks!=source.hardRanks || p->inventoryRevision!=source.inventoryRevision) stale.push_back(id);
     }
     for(auto id:stale) cancel(id);
-    for(auto it=state_.companions.begin();it!=state_.companions.end();) {
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+StepStatus System::advancePet(EntityId only,TickContext tick) {
+    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
+    bool blocked=false;
+    for(auto it=state_.companions.find(only);it!=state_.companions.end() && it->first==only;) {
         auto &pet=it->second;const auto *p=ports_.players.find(pet.owner);const auto *body=ports_.monsters.find(pet.actor);
         if(!body) {it=state_.companions.erase(it);continue;}
         // Revived monsters retain their family AI clock in ai::System.
-        if(!body->revived()) pet.nextDecision=ports_.monsters.resumeAi(pet.actor,tick.tick,pet.nextDecision);
+        pet.nextDecision=ports_.monsters.resumeAi(pet.actor,tick.tick,pet.nextDecision);
         if(pet.kind==Kind::Hireling) {
             if(!p || !p->entered) {ports_.monsters.remove(pet.actor);it=state_.companions.erase(it);continue;}
             if(hirelingStep(pet,tick)==StepStatus::Blocked) blocked=true;
@@ -119,10 +165,10 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
             const auto enemy=participants.find(target);
             // Commit the AI roll only once; action release is owned by skills,
             // and its damage samples this head's native source context.
-            const auto previous=body->combatRandom;ports_.monsters.commitCombatRandom(body->id,random);
-            const auto result=ports_.skills.requestCast({pet.actor,uint16_t(pet.attackSkill),UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
-            if(result.status==DomainStatus::Capacity) {ports_.monsters.commitCombatRandom(body->id,previous);blocked=true;++it;continue;}
-            pet.nextDecision=result?body->busyUntil:tick.tick+10;
+            ports_.monsters.commitCombatRandom(body->id,random);
+            const auto result=requestAction(pet,{pet.actor,uint16_t(pet.attackSkill),UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
+            if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            pet.nextDecision=result?std::max(body->busyUntil,tick.tick+1):tick.tick+10;
         } else {ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+10;}
         ++it;
     }

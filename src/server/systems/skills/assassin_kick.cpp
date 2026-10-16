@@ -141,7 +141,8 @@ DomainStatus System::activateAssassinKick(Release &pending,const ActorContext &a
                 ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,free->position},Fixed8{});
             if(!moved) return moved.status;
             kick.phase=Phase::FlightAllocation;
-            kick.nextEvent=actor.tick+uint64_t(std::max(1,pending.weaponHits.size()>1?pending.weaponHits[1]-pending.weaponHits[0]:5));
+            if(pending.weaponHits.size()<2) return DomainStatus::Unavailable;
+            kick.nextEvent=state_.casts.contains(actor.actor)?state_.casts.at(actor.actor).started+uint64_t(pending.weaponHits[1]):actor.tick+uint64_t(pending.weaponHits[1]-pending.weaponHits[0]);
             pending.tick=kick.nextEvent;return DomainStatus::Applied;
         }
         if(kick.phase==Phase::FlightAllocation) {
@@ -183,8 +184,14 @@ DomainStatus System::activateAssassinKick(Release &pending,const ActorContext &a
             if(kick.parameter<=0) {kick.phase=Phase::Complete;continue;}
             // Do42 restarts its animation counter, not a new skill cast.
             // CltSt6/CltDo4 owns the matching client kick counter.
-            kick.nextEvent=actor.tick+uint64_t(std::max(1,pending.weaponHits.empty()?1:pending.weaponHits.front()));
-            pending.tick=kick.nextEvent;kick.phase=Phase::NextSelect;return DomainStatus::Applied;
+            if(caster->player) {
+                const auto timeline=rewoundPlayerActionTimeline(pending.weaponFrames,pending.weaponSpeed,0,pending.animationEvents);
+                auto prepared=state_.prepareTimeline(actor.actor,actor.tick,timeline);
+                auto &cast=state_.casts.at(actor.actor);cast.timeline=prepared.generation;cast.until=actor.tick+uint64_t(timeline.end);
+                state_.commitTimeline(std::move(prepared));
+                pending.animationAnchor=int64_t(actor.tick);pending.tick=actor.tick+1;
+            } else pending.tick=actor.tick+uint64_t(std::max(1,pending.weaponHits.empty()?1:pending.weaponHits.front()));
+            kick.nextEvent=pending.tick;kick.phase=Phase::NextSelect;return DomainStatus::Applied;
         }
         if(kick.phase==Phase::TailArea) {
             if((caster->player?caster->player->persistent.player.hp<=0:!caster->monster->alive())) {kick.phase=Phase::Complete;continue;}

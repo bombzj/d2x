@@ -216,7 +216,8 @@ std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, Eff
 }
 EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,const std::function<void()> &observe) {
     detach();
-    if (spec.state.id < -1 || (spec.state.id == -1 && (spec.duration || spec.state.group != 0 || spec.stacking != EffectStacking::ReplaceSource)) || spec.state.group < 0 || spec.source.definition < 0 ||
+    if (spec.state.id < -1 || (spec.state.id == -1 && (spec.duration || spec.state.group != 0 ||
+        (spec.stacking != EffectStacking::ReplaceSource && spec.stacking != EffectStacking::Independent))) || spec.state.group < 0 || spec.source.definition < 0 ||
         (spec.source.level < 0 && !spec.nativeState) || (spec.duration && *spec.duration == 0 && !spec.nativeState))
         throw std::invalid_argument("Invalid combat state, source or duration");
     if (spec.duration && *spec.duration > std::numeric_limits<EffectFrame>::max() - now)

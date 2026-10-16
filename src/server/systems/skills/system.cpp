@@ -6,6 +6,7 @@
 #include "gameplay/skills/druid_spec.hpp"
 #include "assassin_kick.hpp"
 #include "druid_melee.hpp"
+#include "weapon_melee.hpp"
 #include "gameplay/skills/use_source.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
@@ -31,7 +32,7 @@ bool System::uninterruptible(EntityId actor) const {
 }
 size_t System::pendingReleases() const {return state_.pendingReleases();}
 bool System::busy(EntityId id,uint64_t tick) const {
-    return state_.recovering(id,tick) || state_.busy(id,tick);
+    return state_.recovering(id,tick) || state_.busy(id,tick) || runtime_->monsterModes.contains(id);
 }
 void System::interrupt(const ActorContext &actor) {
     cancel(actor.player,actor.actor);
@@ -47,7 +48,18 @@ void System::cancel(PlayerId player, EntityId actor) {
     pending_.erase(player);
     runtime_->assassinStarts.erase(actor);
     runtime_->druidStarts.erase(actor);
+    runtime_->weaponStarts.erase(actor);
+    runtime_->monsterWeaponStarts.erase(actor);
     state_.cancel(actor);
+    ports_.effects.scheduleModeEnd(actor,ports_.frameEvents.currentFrame());
+    if(const auto mode=runtime_->monsterModes.find(actor);mode!=runtime_->monsterModes.end()) {
+        const auto release=runtime_->monsters.find(actor);
+        if(release==runtime_->monsters.end() || !release->second.nativeCallbackStarted) {
+            ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,actor},FrameEventType::ModeChange,0);
+            runtime_->monsterModes.erase(mode);
+            ports_.monsters.resumeMode(actor,ports_.frameEvents.currentFrame());
+        }
+    }
     ports_.combat.cancel(actor);
 }
 DomainResult<> System::attack(const ActorContext &actor, const Request &request,int selectedOverride) {
@@ -127,6 +139,16 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     auto &pending_=runtime_->pending;
+    std::erase_if(runtime_->weaponStarts,[&](const auto &entry) {
+        const auto *player=ports_.players.findActor(entry.first);
+        const auto *monster=ports_.monsters.find(entry.first);
+        const auto *area=ports_.areas.find(entry.second.actor.area);
+        const bool alive=area && area->generation==entry.second.actor.areaGeneration && (player?
+            player->entered && player->persistent.player.hp>0 && player->area==entry.second.actor.area:
+            monster && monster->alive() && monster->area==entry.second.actor.area);
+        if(!alive && entry.second.weaponMelee && entry.second.weaponMelee->contact) entry.second.weaponMelee->contact->cancelled=true;
+        return !alive;
+    });
     std::erase_if(runtime_->assassinStarts,[&](const auto &entry) {
         const auto *player=ports_.players.findActor(entry.first);const auto *monster=ports_.monsters.find(entry.first);
         const auto *area=ports_.areas.find(entry.second.actor.area);
@@ -145,21 +167,21 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(!alive && entry.second.druidMelee && entry.second.druidMelee->contact) entry.second.druidMelee->contact->cancelled=true;
         return !alive;
     });
-    const auto playerStatus = release(tick);
-    const auto monsterStatus = releaseMonsters(tick);
-    const auto status = playerStatus == StepStatus::Blocked || monsterStatus == StepStatus::Blocked ? StepStatus::Blocked : StepStatus::Complete;
+    bool blocked=false;
     state_.expire(tick.tick);
     state_.pruneUsedSkills(ports_.players);
     state_.pruneSkillParameters([&](EntityId id){return ports_.players.findActor(id) || ports_.monsters.find(id);});
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;
         const auto result = attack(actor, it->second.request);
-        if (result.status == DomainStatus::Conflict || result.status == DomainStatus::Capacity) ++it;
+        if (result.status == DomainStatus::Conflict || result.status == DomainStatus::Capacity) {
+            blocked|=result.status==DomainStatus::Capacity;++it;
+        }
         else {
             if (!result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
             it = pending_.erase(it);
         }
     }
-    return status;
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
 }

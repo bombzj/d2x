@@ -5,6 +5,7 @@
 #include "server/systems/monsters/admission.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "preparation.hpp"
+#include "server/systems/actions/requests.hpp"
 
 #include <map>
 #include <set>
@@ -19,7 +20,7 @@ struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std
 struct Summon { PlayerId owner; Kind kind; monsters::Admission actor; std::optional<uint16_t> sourceSkill; };
 struct ShadowDecision;struct DruidDecision;
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
-    int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{}; uint64_t random{};
+    int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{};
     uint64_t ownerTeleport{}; int attackBias{},projectedSkillBonus{}; bool deathEffect{};
     int ownerLevel{};std::map<int,int> effectiveRanks{},hardRanks{};
     std::array<int64_t,3> assassinAi{-1,-1,0};
@@ -29,9 +30,11 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     bool shadowInitialized{},nativePetMoving{};
     std::shared_ptr<ShadowDecision> shadowDecision;
     std::shared_ptr<DruidDecision> druidDecision;
+    std::optional<actions::MonsterCastRequest> pendingAction;
+    std::optional<AuraDefinition> pendingAura;
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; };
 class System {
     State state_;
     const Ports ports_;
@@ -52,6 +55,8 @@ class System {
     StepStatus necroStep(Companion &,TickContext);
     StepStatus refreshNecro(Companion &,TickContext);
     StepStatus hirelingStep(Companion &,TickContext);
+    StepStatus advancePet(EntityId,TickContext);
+    DomainResult<> requestAction(Companion &,const actions::MonsterCastRequest &);
     StepStatus synchronizeHirelings(TickContext);
     DomainResult<> equipHireling(const ActorContext &, uint32_t body);
     DomainResult<> drink(const ActorContext &,ItemHandle,bool belt);
@@ -83,5 +88,6 @@ class System {
     std::optional<HirelingExperienceAward> experience(PlayerId,const monsters::Actor &) const;
     DomainResult<> awardExperience(const ActorContext &,const HirelingExperienceAward &);
     StepStatus step(TickContext, FrameFacts &);
+    DomainResult<> think(EntityId,TickContext);
 };
 }

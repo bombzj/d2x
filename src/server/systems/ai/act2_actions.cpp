@@ -17,7 +17,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     const auto &monster=*ports_.monsters.find(id);const auto &area=ports_.areas.at(monster.area);
     if(monster.rule.ai.kind==MonsterAiKind::Duriel && monster.rule.nativeAura && !monster.rightSkill) {
         const auto &aura=*monster.rule.nativeAura;
-        const auto assigned=ports_.effects.assignUnitAura(id,aura,tick.tick,aura.rank);
+        const auto assigned=perform(controller,[this,id,aura,tick]{return ports_.effects.assignUnitAura(id,aura,tick.tick,aura.rank);});
         if(assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
         if(!assigned) throw std::logic_error("Native Duriel right aura assignment is unavailable");
     }
@@ -69,13 +69,15 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     input.hasAlly=bool(ally);input.allyDistanceSquared=ally?allyDistance:0;
     auto result=decideAct2Monster(monster.rule.ai,input);
     auto &decision=result.action;
+    controller.random=decision.random;
     DomainResult<> accepted{DomainStatus::Applied,std::monostate{}};
     if(result.color>=0 || result.overlay>=0) {
-        accepted=ports_.monsters.aiColor(id,std::max(0,result.color),result.overlay,tick.tick);
+        accepted=perform(controller,[this,id,color=std::max(0,result.color),overlay=result.overlay,tick]{return ports_.monsters.aiColor(id,color,overlay,tick.tick);});
         if(accepted.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
     }
     auto random=decision.random;
-    if(result.pose>=0) accepted=ports_.monsters.aiPose(id,uint8_t(result.pose),result.holdPose,result.flyMove,tick.tick);
+    bool actionAttempted=false;
+    if(result.pose>=0) accepted=perform(controller,[this,id,pose=uint8_t(result.pose),hold=result.holdPose,fly=result.flyMove,tick]{return ports_.monsters.aiPose(id,pose,hold,fly,tick.tick);});
     if(result.flyMove && accepted) {
         Vec goal;
         if(controller.flightGoal && monsterAiDistance(*controller.flightGoal,0,monster.position)>1) goal=*controller.flightGoal;
@@ -88,9 +90,9 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         }
         controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},{},0,75,false,8}));
     }
-    else if(result.exhaust) accepted=ports_.monsters.damage(id,id,monster.life,tick.tick);
+    else if(result.exhaust) accepted=perform(controller,[this,id,life=monster.life,tick]{return ports_.monsters.damage(id,id,life,tick.tick);});
     else if(result.spawnQueen) {
-        accepted=ports_.monsters.spawnSkillChildren(id,point,1,false,tick.tick);
+        accepted=perform(controller,[this,id,point,tick]{return ports_.monsters.spawnSkillChildren(id,point,1,false,tick.tick);});
         // Fn066 enters its delay stage even when the spawn location is blocked.
         if(accepted.status==DomainStatus::Unavailable) accepted={DomainStatus::Applied,std::monostate{}};
     }
@@ -101,7 +103,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         if(monster.rule.ai.kind==MonsterAiKind::GreaterMummy && decision.skillSlot==1 && heal) victim=*heal;
         const auto prepared=monster.rule.skillActions.find(uint16_t(skill));
         const uint8_t mode=skill && prepared!=monster.rule.skillActions.end()?prepared->second.nativeMode:decision.attackMode;
-        accepted=ports_.skills.requestCast({id,uint16_t(skill),victim,tick.tick,mode});
+        accepted=requestAction(controller,{id,uint16_t(skill),victim,tick.tick,mode});
     } else if(decision.action==MonsterDecisionAction::Approach) {
         const Vec goal=result.seekAlly?*ally:decision.approachRadius>0?monsterRadiusApproachPoint(monster.position,monster.rule.size,point,decision.approachRadius):point;
         controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,goal},result.seekAlly || decision.approachRadius>0?EntityId{}:target.id,result.seekAlly?0:decision.stopDistance,decision.velocityPercent,decision.running,decision.pathSteps}));
@@ -116,11 +118,19 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         }
         if(!controller.pursuing && decision.attackWhenMoveFails) {
             const uint8_t mode=kind==MonsterAiKind::Baboon?(int(limitedRandom(random,100))<monster.rule.ai.params[3]?4:5):decision.failedMoveAttackMode;
-            accepted=ports_.skills.requestCast({id,0,target,tick.tick,mode});
+            if(controller.randomPublished && random!=decision.random) {
+                const auto consumed=ports_.monsters.consumeRandom(id,monster.combatRandom,random);if(!consumed) return StepStatus::Blocked;
+            }
+            controller.random=random;accepted=requestAction(controller,{id,0,target,tick.tick,mode});actionAttempted=true;
         }
         if(!controller.pursuing && decision.failedMoveWanderRadius) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monsterWanderPoint(monster.position,decision.failedMoveWanderRadius,random)},{},0,decision.velocityPercent,decision.running}));
     }
     if(accepted.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
+    if(random!=decision.random && !controller.randomPublished) controller.random=random;
+    else if(random!=decision.random && !actionAttempted) {
+        const auto consumed=ports_.monsters.consumeRandom(id,monster.combatRandom,random);
+        if(!consumed) return StepStatus::Blocked;
+    }
     controller.random=random;
     if(accepted) {
         controller.phase=decision.phase;controller.loop=decision.loop;controller.charged=decision.charged;controller.skillDeadline=result.deadline;controller.novaAt=result.novaAt;controller.firewallAt=result.firewallAt;controller.act2Attempts=result.attempts;

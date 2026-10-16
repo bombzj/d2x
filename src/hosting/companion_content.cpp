@@ -103,6 +103,7 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
     if(attack) {
         auto &action=rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}}).first->second;
         action.animation=AnimationTiming{attack->frames,attack->speed};action.animationAction=attack->actionFrame;
+        action.animationFlags=attack->flags;
     }
     if(source.summon.necro && source.summon.necro->kind==NecroSummonKind::Mage) {
         rule.petVariant=source.refresh && source.rule.petVariant>=0?source.rule.petVariant:int(limitedRandom(result.random,4));const auto &payload=source.summon.necro->missiles.at(size_t(rule.petVariant));
@@ -192,6 +193,7 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     action.minimum=result.rule.minimumDamage;action.maximum=result.rule.maximumDamage;action.rating=result.rule.attackRating;
     action.duration=result.rule.attackTicks;action.release=result.rule.impactTick;
     action.animation=AnimationTiming{a.frames,a.speed};action.animationAction=a.actionFrame;action.animationStartFrame=timing.startFrame;
+    action.animationFlags=a.events;
     result.rule.stunState=data.states.at("stunned").definition.id;
     for(const std::string_view mode:{"gh","bl"}) {
         const auto recovery=data.skills.recoveryTimings.find(token+std::string(mode)+gear.animationClass);

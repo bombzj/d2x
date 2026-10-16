@@ -17,6 +17,22 @@
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
+DomainResult<> System::perform(Controller &controller,std::function<DomainResult<>()> operation) {
+    if(!controller.randomPublished) {
+        const auto consumed=ports_.monsters.consumeRandom(controller.actor,controller.randomExpected,controller.random);
+        if(!consumed) return consumed;
+        controller.randomPublished=true;
+    }
+    if(controller.pending.empty()) {
+        const auto result=operation();
+        if(result.status!=DomainStatus::Capacity) return result;
+    }
+    controller.pending.push_back(std::move(operation));
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::requestAction(Controller &controller,const actions::MonsterCastRequest &request) {
+    return perform(controller,[this,request]{return ports_.skills.requestCast(request);});
+}
 std::optional<System::ShootableTarget> System::acquireTarget(const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) const {
     return acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},source,tick,missileRay,requireSight);
 }
@@ -27,19 +43,24 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     std::erase_if(state_.controllers, [&](const auto &entry) {
         const auto *actor=ports_.monsters.find(entry.first);return !actor || actor->life<=0;
     });
-    bool blocked=false;
-    for(const auto &[id,monster]:ports_.monsters.read().actors) {
-        (void)monster;if(think(id,tick)==StepStatus::Blocked) blocked=true;
-    }
-    return blocked?StepStatus::Blocked:StepStatus::Complete;
+    return StepStatus::Complete;
 }
 StepStatus System::think(EntityId id,TickContext tick) {
     const auto *actor=ports_.monsters.find(id);if(!actor) return StepStatus::Complete;
     const auto &monster=*actor;
-    bool blocked=false;
+    if(const auto found=state_.controllers.find(id);found!=state_.controllers.end() && !found->second.pending.empty()) {
+        auto &controller=found->second;
+        while(!controller.pending.empty()) {
+            const auto result=controller.pending.front()();
+            if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            controller.pending.pop_front();
+            if(!result) {controller.pending.clear();break;}
+        }
+        ports_.monsters.scheduleAi(id,controller.nextDecision);return StepStatus::Complete;
+    }
+    bool blocked=false, sampled=false;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    // One owner invocation. Early exits finish this native AI callback; the
-    // bulk compatibility driver remains until all timer producers are moved.
+    // One owner invocation. Early exits finish this native AI callback.
     do {
         if(monster.questNpc || monster.rule.trap!=MonsterRule::Trap::None) continue;
         // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
@@ -73,9 +94,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
         controller.nextDecision=ports_.monsters.resumeAi(id,tick.tick,controller.nextDecision);
         if (monster.busyUntil > tick.tick || ports_.monsters.frozen(id,tick.tick) || monster.stunnedUntil>tick.tick || ports_.skills.busy(id,tick.tick) || controller.nextDecision > tick.tick) continue;
         controller.actor = id; controller.nextDecision = tick.tick + uint64_t(monster.rule.decisionTicks);
+        controller.random=controller.randomExpected=monster.combatRandom;controller.randomPublished=false;sampled=true;
         const auto &area=ports_.areas.at(monster.area);
         const bool active = ports_.areas.active(monster.area, monster.position);
-        if(!active || area.definition.town) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
+        if(!active || (area.definition.town && monster.rule.ai.kind!=MonsterAiKind::GoodNpcRanged)) {controller.pursuing=false;ports_.monsters.stop(id);continue;}
         // AiUtil::sub_6FCF2110 and DRLGROOM_CheckLOSDraw: initial acquisition
         // in rooms without LOSDraw requires a clear missile-barrier ray.
         // Native flag 8 keeps pursuit enabled once a target was acquired.
@@ -85,7 +107,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             if(monster.rule.ai.kind==MonsterAiKind::SandMaggot && monster.burrowed && monster.rule.skillIds[0]>=0) {
                 const auto skill=uint16_t(monster.rule.skillIds[0]);const auto definition=monster.rule.skillActions.find(skill);
                 if(definition!=monster.rule.skillActions.end()) {
-                    const auto cast=ports_.skills.requestCast({id,skill,PointTarget{monster.area,area.generation,monster.position},tick.tick,definition->second.nativeMode});
+                    const auto cast=requestAction(controller,{id,skill,PointTarget{monster.area,area.generation,monster.position},tick.tick,definition->second.nativeMode});
                     if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
                     if(cast) {controller.nextDecision=tick.tick+30;continue;}
                 }
@@ -93,7 +115,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             if(monster.rule.ai.kind==MonsterAiKind::BatDemon) {
                 if(monster.aiPose==11) {controller.phase=1;controller.nextDecision=tick.tick+1;continue;}
                 if(controller.phase==4) {
-                    controller.phase=1;const auto landed=ports_.monsters.aiPose(id,10,false,false,tick.tick);
+                    controller.phase=1;const auto landed=perform(controller,[this,id,tick]{return ports_.monsters.aiPose(id,10,false,false,tick.tick);});
                     if(landed.status==DomainStatus::Capacity) {blocked=true;controller.phase=4;}
                     controller.nextDecision=tick.tick+1;continue;
                 }
@@ -114,7 +136,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             }
             const auto point=caster.position()+ports_.areas.at(casterRegion).definition.origin-area.definition.origin;
             const auto attack=[&](UnitTarget victim) {
-                const auto cast=ports_.skills.requestCast({id,0,victim,tick.tick,4});
+                const auto cast=requestAction(controller,{id,0,victim,tick.tick,4});
                 if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
             };
             const bool directCombat=meleeDistance(monster.position,monster.rule.size,point,caster.size())<=monster.rule.meleeRange;
@@ -131,6 +153,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 if(rollRandom(random)%100>=70) {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
                 else {const auto destination=monsterWanderPoint(monster.position,4,random);ports_.monsters.requestMove({id,{monster.area,area.generation,destination},{},0,75,false});}
                 const auto committed=ports_.monsters.consumeRandom(id,monster.combatRandom,random);
+                if(committed) {controller.random=random;controller.randomPublished=true;}
                 if(!committed) {blocked=true;controller.nextDecision=tick.tick+1;}
             }
             continue;
@@ -148,7 +171,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             }
             if(decision.action==CurseDecisionAction::Idle) {ports_.monsters.stop(id);controller.nextDecision=tick.tick+uint64_t(decision.idleFrames);continue;}
             if(decision.action==CurseDecisionAction::Attack) {
-                const auto cast=ports_.skills.requestCast({id,0,victim->unit,tick.tick,4});
+                const auto cast=requestAction(controller,{id,0,victim->unit,tick.tick,4});
                 if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}continue;
             }
             controller.curseParameters=decision.parameters;
@@ -157,9 +180,40 @@ StepStatus System::think(EntityId id,TickContext tick) {
             const auto moved=ports_.monsters.requestMove({id,{monster.area,area.generation,destination},{},0,75+decision.velocityBonus,decision.run});
             if(!moved && decision.fallback) {
                 auto random=monster.combatRandom;const auto fallback=monsterWanderPoint(monster.position,6,random);
-                if(ports_.monsters.consumeRandom(id,monster.combatRandom,random)) ports_.monsters.requestMove({id,{monster.area,area.generation,fallback},{},0,75,false});
+                if(ports_.monsters.consumeRandom(id,monster.combatRandom,random)) {
+                    controller.random=random;controller.randomPublished=true;
+                    ports_.monsters.requestMove({id,{monster.area,area.generation,fallback},{},0,75,false});
+                }
             }
             controller.target.reset();controller.pursuing=bool(moved);controller.nextDecision=tick.tick+1;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::GoodNpcRanged) {
+            if(monster.moving || !monster.route.empty() || monster.aiPose>1) {
+                ports_.monsters.stop(id);controller.nextDecision=tick.tick+5;continue;
+            }
+            const auto target=area.definition.town?std::optional<ShootableTarget>{}:shootableTarget(monster,tick);
+            controller.random=controller.randomExpected=ports_.monsters.find(id)->combatRandom;
+            if(target && target->distance<20) {
+                if(rollRandom(controller.random)%100<30) {
+                    const auto cast=requestAction(controller,{id,0,target->unit,tick.tick,4});
+                    if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
+                } else if(rollRandom(controller.random)%100<30) {
+                    const int turn=(rollRandom(controller.random)&255)<128?1:-1;
+                    const auto moved=perform(controller,[this,id,target,tick,turn] {
+                        const auto *unit=ports_.monsters.find(id);if(!unit) return DomainResult<>{DomainStatus::InvalidActor,{}};
+                        return ports_.monsters.requestMove({id,{unit->area,ports_.areas.at(unit->area).generation,target->position},target->unit.id,0,75,false,0,turn,4});
+                    });
+                    controller.pursuing=bool(moved);controller.nextDecision=tick.tick+1;
+                } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
+            } else if(rollRandom(controller.random)%100<20) {
+                const auto point=monsterWanderPoint(monster.position,5,controller.random);
+                const auto moved=perform(controller,[this,id,point] {
+                    const auto *unit=ports_.monsters.find(id);if(!unit) return DomainResult<>{DomainStatus::InvalidActor,{}};
+                    return ports_.monsters.requestMove({id,{unit->area,ports_.areas.at(unit->area).generation,point},{},0,75,false});
+                });
+                controller.pursuing=bool(moved);controller.nextDecision=tick.tick+1;
+            } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
+            continue;
         }
         const auto acquired=acquireTarget(monster,tick,false,requireSight);
         std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2,distance=INT32_MAX;
@@ -176,7 +230,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             const auto percentage=combat && !monster.rule.curseAiInteract && monster.rule.attacks.contains(4)?0:rollRandom(random)%100;
             const auto decision=decideDimVision(combat,monster.rule.curseAiInteract,monster.rule.attacks.contains(4),percentage);
             if(decision==CurseDecisionAction::Attack) {
-                const auto result=ports_.skills.requestCast({id,0,*target,tick.tick,4});
+                const auto result=requestAction(controller,{id,0,*target,tick.tick,4});
                 if(result.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
             } else {
                 if(decision==CurseDecisionAction::Wander) {
@@ -184,7 +238,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
                     ports_.monsters.requestMove({id,{monster.area,area.generation,destination},{},0,75,false});
                 } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
                 if(!ports_.monsters.consumeRandom(id,monster.combatRandom,random)) {blocked=true;continue;}
-                controller.random=random;
+                controller.random=random;controller.randomPublished=true;
             }
             continue;
         }
@@ -214,6 +268,22 @@ StepStatus System::think(EntityId id,TickContext tick) {
             continue;
         }
     } while(false);
-    return blocked?StepStatus::Blocked:StepStatus::Complete;
+    if(blocked) return StepStatus::Blocked;
+    if(const auto current=state_.controllers.find(id);current!=state_.controllers.end()) {
+        auto &controller=current->second;
+        const auto *live=ports_.monsters.find(id);
+        if(!live || !live->alive()) {controller.pending.clear();ports_.monsters.scheduleAi(id,0);return StepStatus::Complete;}
+        // A reaction/neutral wait can return before a new decision is sampled.
+        // Damage may have advanced the unit seed since the previous decision;
+        // that old loan must not be recommitted by this wake-up event.
+        if(sampled && !controller.randomPublished && controller.actor) {
+            const auto consumed=ports_.monsters.consumeRandom(id,controller.randomExpected,controller.random);
+            if(!consumed) return StepStatus::Blocked;
+            controller.randomPublished=true;
+        }
+        if(!controller.pending.empty()) return StepStatus::Blocked;
+        ports_.monsters.scheduleAi(id,std::max({controller.nextDecision,live->busyUntil,live->frozenUntil,live->stunnedUntil,live->knockedUntil}));
+    }
+    return StepStatus::Complete;
 }
 }

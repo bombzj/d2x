@@ -118,6 +118,12 @@ void System::initialize(const CharacterRecord &creator) {
     state_.actOne.toolsOffer=(state_.initialFlags[4]&0x8000)!=0;
     state_.actThree.orbSmashed=book[questIndex(QuestId::KhalimsWill)].stage>=4;
     state_.actThree.mephistoSlain=book[questIndex(QuestId::Guardian)].stage>=4;
+    state_.actThree.figurineEnabled=(state_.initialFlags[questDefinition(QuestId::GoldenBird).nativeSlot]&0x8000)==0;
+    if(const auto *player=ports_.players.find({1})) {
+        const auto &items=player->rules.character->laterQuests;
+        if(detail::actTwoCarried(*player,items.figurine,ports_.settings.difficulty) ||
+            detail::actTwoCarried(*player,items.bird,ports_.settings.difficulty)) state_.actThree.figurineEnabled=false;
+    }
     state_.actFive.anyaThawed=book[questIndex(QuestId::PrisonOfIce)].stage>=5;
     state_.actFive.ancientsDefeated=book[questIndex(QuestId::RiteOfPassage)].stage>=4;
     if(book[questIndex(QuestId::SearchForCain)].stage>=8) {

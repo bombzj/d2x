@@ -47,6 +47,7 @@ struct ActThreeState {
     RegionId figurineArea{};
     Vec figurinePosition;
     bool figurineDropped{};
+    bool figurineEnabled{true};
     EntityId gidbinnAltar{};
     uint64_t gidbinnAt{};
     bool gidbinnSpawned{},gidbinnDropped{};
@@ -61,6 +62,7 @@ struct ActFourState {
     Vec ghostPosition;
     unsigned forgeHits{};
     std::set<int> seals;
+    std::map<EntityId,std::string> sealAfterglows;
     uint64_t diabloAt{};
 };
 struct ActFiveState {

@@ -21,4 +21,10 @@ struct MonsterActionTiming {
     std::vector<int> events;
 };
 MonsterActionTiming planMonsterActionTiming(const MonsterActionTimingInput &input);
+struct MonsterAnimationCursor {int32_t frame{},remaining{};};
+struct MonsterAnimationStep {uint8_t event{};bool ended{};};
+// UNITS_StopSequence + IsAtEndOfFrameCycle. Unlike player timer expansion,
+// a monster retains only the last nonzero flag crossed during this frame.
+MonsterAnimationStep advanceMonsterAnimation(MonsterAnimationCursor &,int frames,int speed,int frameBonus,
+    bool sequence,std::span<const uint8_t> flags);
 }

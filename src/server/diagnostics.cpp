@@ -48,7 +48,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     const auto &spatial=systems_.spatial.read();
     result.spatialTick=spatial.indexedTick;result.spatialGeneration=spatial.generation;result.spatialUnits=spatial.indexedUnits;
     result.spatialQueries=spatial.queries;result.spatialCandidates=spatial.candidates;result.spatialReturned=spatial.returned;
-    result.combatQueueDepth=systems_.combat.read().pending.size();
+    result.combatQueueDepth=std::count_if(systems_.combat.read().spells.begin(),systems_.combat.read().spells.end(),
+        [](const auto &contact){return contact.nativeSkill && contact.nativeSkill->melee;});
     result.combatTargetAttempts=systems_.combat.read().targetAttempts;
     result.tick = tick_; result.player = *snapshot(id); result.record = player->persistent.player;
     const auto recovery=systems_.actionState.recovery(player->actor);
@@ -205,8 +206,10 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         ++result.missileCount;
         if (result.missiles.size() < limit) result.missiles.push_back(missile);
     }
-    for (const auto &damage : systems_.combat.read().pending)
-        if (damage.area == player->area && result.damage.size() < limit) result.damage.push_back(damage);
+    for (const auto &damage : systems_.combat.read().spells)
+        if (damage.area == player->area && damage.nativeSkill && damage.nativeSkill->melee &&
+            damage.next<damage.targets.size() && result.damage.size()<limit)
+            result.damage.push_back({damage.source,damage.targets[damage.next],damage.occurrence});
     result.spellImpacts = systems_.combat.read().spells.size(); result.spellTargets = systems_.combat.read().spellTargets;
     if (const auto found = systems_.travel.read().transitions.find(id); found != systems_.travel.read().transitions.end()) result.travel = found->second;
     if (!destination) for(const auto point:player->route) result.path.push_back(point+area.definition.origin);

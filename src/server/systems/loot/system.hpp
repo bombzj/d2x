@@ -33,7 +33,7 @@ class System {
     std::optional<ItemSeeds> reserveSeeds(EntityId, uint64_t occurrence, size_t index);
     std::optional<Preparation> beginPreparation(EntityId);
     std::optional<bool> takeCompletion(EntityId);
-    DomainResult<> install(EntityId source, items::PreparedBatch, std::string deferred,
+    DomainResult<> install(EntityId source, TickContext, items::PreparedBatch, std::string deferred,
       std::optional<uint64_t> sourceRandom = {},std::optional<uint64_t> objectRandom = {});
     StepStatus step(TickContext, FrameFacts &);
 };

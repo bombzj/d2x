@@ -135,9 +135,9 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
         if(!area.questArrival && !fixedPosition) area.questArrival=area.portalArrival;
         if(!area.questArrival) throw std::runtime_error("Missing original quest warp spawn marker");
     }
+    prepareQuestWorld(archives,content,result);
     prepareCombatPopulation(archives, content, result);
     prepareEnvironmentPopulation(archives,content,result);
-    prepareQuestWorld(archives,content,result);
     const auto completed = std::chrono::steady_clock::now();
     std::clog << "[area-load] host level=" << request.level << " difficulty=" << request.difficulty
         << " terrain_ms=" << result.terrain.preparationMilliseconds
@@ -155,7 +155,6 @@ server::GameDefinition prepareJoiningCharacter(const ClassicData &content, Persi
     result.persistent = server::admitCharacter(std::move(saved), nextEntity);
     result.rules.items = std::move(items);
     prepareCharacterRules(result.rules, content, result.persistent);
-    result.rules.melee = prepareMeleeRules(content, *character);
     return result;
 }
 WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items,std::optional<server::GameSettings> settings) {
@@ -174,7 +173,6 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
-    result.authority.rules.melee = prepareMeleeRules(content, *character);
     result.authority.rules.monsterRegions=prepareMonsterRegionRules(archives,content);
     auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);

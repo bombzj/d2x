@@ -45,6 +45,8 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         if(definition.equipment.isType("shld")) {
             result.shield=item->id;
             result.smiteMinimum=definition.base.minDamage.value_or(0);result.smiteMaximum=definition.base.maxDamage.value_or(0);
+            result.shieldStrengthBonus=definition.base.strengthBonus.value_or(0);result.shieldDexterityBonus=definition.base.dexterityBonus.value_or(0);
+            result.shieldTypes=definition.equipment.types;
         }
     }
     if(actor.hireling) {
@@ -72,6 +74,7 @@ EquipmentStats deriveNativeEquipmentStats(const EquipmentLoadout &loadout,const 
         for(const auto &[id,type]:input.formulas.itemTypes) if(definition.equipment.isType(type)) weapon.typeLayers.push_back(id);
         weapon.weaponClass=definition.base.weaponClass;weapon.itemBaseSpeed=weapon.baseSpeed=definition.base.speed.value_or(0);
         weapon.fasterAttack=stat("item_fasterattackrate");weapon.itemAttackSpeed=own("item_fasterattackrate");
+        weapon.itemAttackRate=own("attackrate");
         weapon.nativeModifiers=std::make_shared<const CombatModifiers>(nativeCombatModifiers(stats,input.rules,input.procedures));
         weapon.meleeMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"melee");
         weapon.throwMastery=mastery(stats,input.rules,input.formulas,definition.equipment,"throw");

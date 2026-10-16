@@ -3,11 +3,19 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/population/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+void System::nativeEliteBorn(EntityId id,bool eligible) {
+    auto &world=state_.actThree;
+    if(!eligible || !world.figurineEnabled || world.figurineSource || world.figurineDropped) return;
+    const auto *unit=ports_.monsters.find(id);if(!unit || unit->identity.spawnKey=="quest.gidbinn") return;
+    const auto *area=ports_.areas.find(unit->area);if(!area || area->definition.act!=2) return;
+    world.figurineSource=id;world.figurineArea=unit->area;world.figurinePosition=unit->position;
+}
 std::optional<Dialogue> System::speech(const NpcRule &npc,QuestId quest,std::string_view state,uint8_t menu) const {
     const auto found=npc.questSpeeches.find({quest,std::string(state)});
     if(found==npc.questSpeeches.end()) return {};
@@ -107,19 +115,6 @@ StepStatus System::actThreeStep(TickContext tick) {
         }
     }
     if(deadCouncil.size()==council.size() && lastCouncil) captureGoal(QuestId::BlackenedTemple,world.orbSmashed?4u:3u,lastCouncil->area,lastCouncil->position);
-    // A3Q4_SetGoldenBirdBoss selects an eligible original elite, never a
-    // summoned or administrator unit. One physical figurine exists per game.
-    if(!world.figurineSource && !world.figurineDropped) for(const auto &[id,m]:ports_.monsters.read().actors) {
-        const auto *area=ports_.areas.find(m.area);
-        if(!area || area->definition.act!=2 || m.life<=0 || m.owner || m.identity.spawnKey=="quest.gidbinn" || m.identity.origin==SpawnOrigin::Debug || m.identity.origin==SpawnOrigin::Summoned || m.identity.rank==MonsterRank::Normal || m.identity.rank==MonsterRank::Minion) continue;
-        for(const auto &[player,p]:ports_.players.all()) {
-            (void)player;
-            if(p.entered && p.area==m.area && !unavailable(player,p.persistent.player,QuestId::GoldenBird) && p.persistent.player.quests.at(size_t(ports_.settings.difficulty)).at(questIndex(QuestId::GoldenBird)).stage<5 && area->definition.activation.nearby(p.position,m.position)) {
-                world.figurineSource=id;world.figurineArea=m.area;world.figurinePosition=m.position;break;
-            }
-        }
-        if(world.figurineSource) break;
-    }
     const auto *source=ports_.monsters.find(world.figurineSource);
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || ports_.areas.at(p.area).definition.act!=2) continue;
@@ -177,17 +172,9 @@ StepStatus System::actThreeStep(TickContext tick) {
 }
 DomainResult<> System::spawnQuestGroup(const ActorContext &actor,std::string_view key) {
     const auto &area=ports_.areas.at(actor.area);
-    const auto group=area.definition.questGroups.find(key);
-    if(group==area.definition.questGroups.end() || group->second.empty()) {
-        state_.deferred="Original quest group is not prepared: "+std::string(key);return {DomainStatus::Unavailable,{}};
-    }
-    // Stable spawn keys make a partially admitted group retryable without
-    // duplicating its boss/minions. All definitions were prepared outside here.
-    for(const auto &m:group->second) {
-        const auto result=ports_.monsters.admit({m.identity,m.implementation,actor.area,m.position,true,m.rule,m.skillPositions,actor.tick});
-        if(!result) return {result.status,{}};
-    }
-    return {DomainStatus::Applied,std::monostate{}};
+    if(area.definition.nativeQuestMonsters.contains(key)) return ports_.population.requestQuestBirth(actor.area,key,{actor.tick});
+    state_.deferred="Original quest birth is not prepared: "+std::string(key);
+    return {DomainStatus::NotImplemented,{}};
 }
 DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source,int,int operation,Vec position) {
     const auto *p=ports_.players.find(actor.player);if(!p) return {DomainStatus::InvalidActor,{}};

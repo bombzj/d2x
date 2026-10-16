@@ -44,6 +44,7 @@ CombatStateCatalog loadCombatStates(const DataTable &states) {
         record.definition.noSend=flag("nosend");
         record.definition.life=flag("life");
         record.definition.aura=flag("aura");
+        record.definition.meleeOnly=flag("meleeonly");
         if (!result.emplace(std::string(name), std::move(record)).second)
             throw std::runtime_error("Duplicate States.txt name");
     }

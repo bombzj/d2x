@@ -65,11 +65,12 @@ void followOwnerTrail(const Ports &ports,Companion &pet,const PlayerState &owner
     // extra search/teleport policy invented for failed bridge paths.
     const auto ownerWorld=nativePosition(owner.position)+ports.areas.at(owner.area).definition.origin;
     const unsigned radius=unsigned(std::max(distance/4,4));
-    int x=0,y=0;
-    if(rollRandom(pet.random)&1) {x=int(radius);y=int(limitedRandom(pet.random,radius));}
-    else {x=int(limitedRandom(pet.random,radius));y=int(radius);}
-    if(rollRandom(pet.random)&1) x=-x;
-    if(rollRandom(pet.random)&1) y=-y;
+    int x=0,y=0;auto random=body.combatRandom;
+    if(rollRandom(random)&1) {x=int(radius);y=int(limitedRandom(random,radius));}
+    else {x=int(limitedRandom(random,radius));y=int(radius);}
+    if(rollRandom(random)&1) x=-x;
+    if(rollRandom(random)&1) y=-y;
+    ports.monsters.commitCombatRandom(body.id,random);
     move(ownerWorld+Vec{float(x),float(y)},13,100,90,false);
 }
 }
@@ -148,7 +149,7 @@ StepStatus System::synchronizeHirelings(TickContext tick) {
                 {equipmentStats.statSources,equipmentStats.nativeStats});
             if(!bodies) {blocked|=bodies.status==DomainStatus::Capacity;continue;}
             auto next=state_.companions;const auto key=bodies.value->begin()->first;
-            Companion pet{key,id,Kind::Hireling,{}};pet.expires=UINT64_MAX;pet.nextDecision=tick.tick+uint64_t(prepared.think);pet.random=initialRandom(p->persistent.player.hireling.seed);
+            Companion pet{key,id,Kind::Hireling,{}};pet.expires=UINT64_MAX;pet.nextDecision=tick.tick+uint64_t(prepared.think);
             pet.ownerTeleport=p->teleportRevision;
             auto &body=bodies.value->at(key);const auto sourceBody=body;
             body=prepareHirelingBody(body,p->persistent,prepared,*p->rules.items,*p->rules.equipment,
@@ -239,7 +240,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         const int distance=missileDistance(body->position,enemy.position());
         if(distance<nearest && area.definition.collision.missileSegment(body->position,enemy.position(),{4,1})) {nearest=distance;target=id;}
     }
-    auto random=pet.random;
+    auto random=body->combatRandom;
     if(target) {
         const bool melee=prepared.act==2 || prepared.act==5;
         const int chance=melee?98:std::min(pet.attackBias+40+2*body->rule.level,95);
@@ -256,9 +257,9 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
                 }
                 return best && bool(ports_.monsters.requestMove({pet.actor,{body->area,area.generation,*best},{},0,75,false}));
             };
-            if((distanceToOwner>4 && retreat(p->position)) || retreat(body->position)) {pet.random=random;pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;}
+            if((distanceToOwner>4 && retreat(p->position)) || retreat(body->position)) {ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+uint64_t(prepared.think);return StepStatus::Complete;}
         }
-        if(!attackNow) {pet.attackBias+=10;pet.random=random;pet.nextDecision=tick.tick+10;return StepStatus::Complete;}
+        if(!attackNow) {pet.attackBias+=10;ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+10;return StepStatus::Complete;}
         std::vector<const HirelingAction *> eligible;
         const auto states=ports_.effects.unitStates(pet.actor,tick.tick);
         for(const auto &action:prepared.actions) {
@@ -271,9 +272,13 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         const unsigned roll=limitedRandom(random,total+1);unsigned end=unsigned(prepared.defaultChance);
         const HirelingAction *chosen=nullptr;
         if(roll>=end) for(const auto *action:eligible) {end+=unsigned(action->chance);if(roll<=end) {chosen=action;break;}}
+        ports_.monsters.commitCombatRandom(body->id,random);
         DomainResult<> result;
-        if(chosen && chosen->aura) result=ports_.effects.hirelingAura(pet.actor,*chosen->aura,tick.tick);
-        else result=ports_.skills.requestCast({pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)});
+        if(chosen && chosen->aura) {
+            result=ports_.effects.hirelingAura(pet.actor,*chosen->aura,tick.tick);
+            if(result.status==DomainStatus::Capacity) {pet.pendingAura=*chosen->aura;result={DomainStatus::Applied,std::monostate{}};}
+        }
+        else result=requestAction(pet,{pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)});
         if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
         pet.attackBias=0;
         if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});
@@ -285,6 +290,6 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         }
         pet.nextDecision=tick.tick+uint64_t(prepared.think);
     }
-    pet.random=random;return StepStatus::Complete;
+    return StepStatus::Complete;
 }
 }

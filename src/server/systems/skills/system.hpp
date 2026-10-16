@@ -32,7 +32,7 @@ class System {
     using MonsterRelease = actions::MonsterRelease;
     struct Runtime;
     std::unique_ptr<Runtime> runtime_;
-    StepStatus releaseMonsters(TickContext);
+    StepStatus releaseMonsters(TickContext,EntityId);
     DomainResult<bool> releaseAssassinPet(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);
     DomainResult<> startDruidPet(MonsterRelease &,TickContext);
@@ -41,7 +41,7 @@ class System {
     DomainResult<> cast(const ActorContext &, const Request &, int skill);
     DomainResult<> weaponCast(const ActorContext &, const Request &, int);
     DomainStatus weaponRelease(Release &, const ActorContext &, Vec);
-    StepStatus release(TickContext);
+    StepStatus release(TickContext,EntityId);
     DomainStatus activate(Release &, const ActorContext &, Vec);
     using ActivationProgram = SkillActivationProgram;
     static ActivationProgram activationProgram(const SkillCastSpec &);
@@ -68,6 +68,8 @@ class System {
     DomainStatus startDruidPeriodic(Release &,const ActorContext &);
     DomainResult<bool> startArctic(Release &,const ActorContext &,std::span<const DomainFact> facts={});
     DomainResult<> startDruidMelee(Release &,const ActorContext &);
+    DomainResult<> startWeaponMelee(Release &,const ActorContext &,const MonsterAttackRule *program=nullptr);
+    DomainStatus drainWeaponMelee(Release &,const ActorContext &);
     DomainStatus activateDruidMelee(Release &,const ActorContext &,Vec);
     DomainStatus allocateDruidMelee(Release &,const ActorContext &,const SkillCastSpec &,bool held);
     DomainResult<bool> startBladeFury(Release &,const ActorContext &,std::span<const DomainFact> facts={});
@@ -97,5 +99,7 @@ class System {
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);
     DomainResult<> activeStateEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> actionEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> monsterActionEvent(const FrameEvent &,uint64_t tick);
 };
 }

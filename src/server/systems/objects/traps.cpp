@@ -16,17 +16,6 @@
 namespace d2x::server::objects {
 DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
     const auto &area=ports_.areas.at(object.area);if(area.definition.town) return {DomainStatus::Applied,std::monostate{}};
-    if(object.trap==11) {
-        const auto group=area.definition.environmentGroups.find("urn");if(group==area.definition.environmentGroups.end()) return {DomainStatus::Applied,std::monostate{}};
-        const std::string key="object.urn."+std::to_string(object.id.value);
-        while(object.spawned<int(group->second.size())) {
-            auto unit=group->second[size_t(object.spawned)];unit.identity.spawnKey=key+(object.spawned?".minion."+std::to_string(object.spawned):"");if(object.spawned) unit.identity.ownerSpawnKey=key;
-            const auto at=area.definition.collision.nativeSpawn(object.position+Vec{float(object.spawned%3-1),float(object.spawned/3)},8,unit.rule.spawnCollision);
-            if(!at) {++object.spawned;continue;}
-            const auto result=ports_.monsters.admit({unit.identity,unit.implementation,object.area,*at,true,unit.rule,{},tick.tick});if(!result) return {result.status,{}};++object.spawned;
-        }
-        return {DomainStatus::Applied,std::monostate{}};
-    }
     if(object.trap==5 || object.trap==7) {
         constexpr int fire[]{162,160};
         while(object.spawned<2) {
@@ -41,7 +30,10 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
     if((trap==8 && level>=75) || (trap==3 && level<40 && level!=25) || ((trap==1 || trap==4) && level<40)) trap=2;
     const bool monster=trap>=8;
     std::string code=trap==1?"trap-lightning":trap==3?"trap-poisoncloud":trap==4?"trap-nova":"trap-firebolt";
-    if(monster) code=object.trap==10?(limitedRandom(object.random,2)?"trappedsoul2":"trappedsoul1"):"chest";
+    if(monster) {
+        if(!object.trapKind) object.trapKind=object.trap==10?(limitedRandom(object.random,2)?"trappedsoul2":"trappedsoul1"):"chest";
+        code=*object.trapKind;
+    }
     const auto entry=area.definition.environmentMonsters.find(code);if(entry==area.definition.environmentMonsters.end()) return {DomainStatus::Unavailable,{}};
     if(code=="chest" && area.definition.act==0 && entry->second.identity.monster=="flyingscimitar") return {DomainStatus::Applied,std::monostate{}};
     if(!object.spawnCount) object.spawnCount=object.trap==8 || object.trap==9?1+int(limitedRandom(object.random,2)):1;
@@ -56,9 +48,10 @@ DomainResult<> System::spawnTrap(Object &object,TickContext tick) {
     }
     return {DomainStatus::Applied,std::monostate{}};
 }
-StepStatus System::trapStep(TickContext tick) {
+StepStatus System::objectTrap(TickContext tick,EntityId only) {
     bool blocked=false;
-    for(auto &[id,object]:state_.objects) {
+    for(auto entry=state_.objects.find(only);entry!=state_.objects.end() && entry->first==only;++entry) {
+        auto &[id,object]=*entry;
         if (!ports_.areas.loaded(object.area, object.position)) continue;
         (void)id;if(!object.trapAt) continue;
         bool active=false;const auto &area=ports_.areas.at(object.area);
@@ -69,11 +62,17 @@ StepStatus System::trapStep(TickContext tick) {
             const auto sent=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},{SoundFact{object.id,2,object.area,13}}});if(!sent) {blocked=true;continue;}object.trapWarned=true;
         }
         if(tick.tick<object.trapAt) continue;
-        const auto result=spawnTrap(object,tick);if(result) {object.trapAt=object.secondaryTrap?tick.tick:0;object.trap=object.secondaryTrap;object.secondaryTrap=0;object.spawned=object.spawnCount=0;}
+        const auto result=spawnTrap(object,tick);if(result) {object.trapAt=object.secondaryTrap?tick.tick:0;object.trap=object.secondaryTrap;object.secondaryTrap=0;object.spawned=object.spawnCount=0;object.trapKind.reset();}
         else blocked|=result.status==DomainStatus::Capacity;
     }
+    return blocked?StepStatus::Blocked:StepStatus::Complete;
+}
+StepStatus System::monsterTrap(TickContext tick,EntityId only) {
+    bool blocked=false;
     using Trap=MonsterRule::Trap;
-    for(const auto &[id,monster]:ports_.monsters.read().actors) {
+    for(auto entry=ports_.monsters.read().actors.find(only);entry!=ports_.monsters.read().actors.end() && entry->first==only;++entry) {
+        const auto &[id,monster]=*entry;
+        if(!ports_.events.hasCapacity(4,2)) return StepStatus::Blocked;
         if (!ports_.areas.loaded(monster.area, monster.position)) continue;
         const auto &rule=monster.rule;if(rule.trap==Trap::None || monster.life<=0) continue;
         auto &clock=traps_[id];if(clock.release && clock.interruption!=monster.interruption) {clock.release=0;clock.next=monster.busyUntil;}const auto &area=ports_.areas.at(monster.area);if(area.definition.town) continue;
@@ -89,7 +88,7 @@ StepStatus System::trapStep(TickContext tick) {
             const auto &attack=rule.attacks.at(clock.mode);
             DomainResult<> result{DomainStatus::Applied,std::monostate{}};
             if(attack.missile) {
-                missiles::MonsterSpawn request{id,monster.area,area.generation,tick.tick,monster.position,clock.aim,attack,rule.hitStates,rule.level,rule.criticalChance,0,monster.combatRandom};
+                missiles::MonsterSpawn request{id,monster.area,area.generation,tick.tick,monster.position,clock.aim,attack,rule.hitStates,rule.level,rule.criticalChance,0};
                 request.environment=rule.environmentController;
                 if(rule.trap==Trap::Nova) for(const auto direction:missileRingBurst(1)) request.aims.push_back(monster.position+direction);
                 if(rule.trap==Trap::Poison) for(const auto &heading:poisonCloudDirections(2,2)) {request.aims.push_back(monster.position+heading.direction);request.speeds.push_back(heading.secondary?attack.missile->maximumVelocity:attack.missile->speed);}
@@ -100,10 +99,8 @@ StepStatus System::trapStep(TickContext tick) {
                     for(int i=0;i<rule.trapParameters[5];++i) {const auto origin=monster.position+Vec{float(int(offset.x)/6),float(int(offset.x)/6)};request.origins.push_back(origin);request.aims.push_back(origin+offset);offset=offset+side;}
                 }
                 const auto launched=ports_.missiles.spawnMonster(request);result={launched.status,launched?std::optional{std::monostate{}}:std::nullopt};
-                if(launched) ports_.monsters.commitCombatRandom(id,launched.value->random);
             } else if(attack.maximum>0) {
-                combat::Damage damage{id,clock.target,DamageType::Physical,attack.minimum,attack.maximum,monster.revision,monster.area,tick.tick,attack.rating,rule.level,rule.meleeRange,rule.size};
-                damage.monsterMode=clock.mode;damage.sourceInterruption=monster.interruption;damage.actionRandom=monster.combatRandom;result=ports_.combat.enqueue(damage);
+                result=ports_.combat.monsterMelee(id,clock.target,attack,tick.tick,{tick.tick});
             }
             if(!result && result.status==DomainStatus::Capacity) {blocked=true;continue;}
             clock.release=0;continue;

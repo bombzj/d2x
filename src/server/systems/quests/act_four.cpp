@@ -5,6 +5,8 @@
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/world/system.hpp"
 #include "server/systems/travel/system.hpp"
+#include "server/systems/objects/system.hpp"
+#include "server/systems/population/system.hpp"
 #include "gameplay/quest/acts/act_four_state.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
@@ -78,12 +80,28 @@ DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,
         if(world.seals.contains(definition)) return {DomainStatus::Conflict,{}};
         if(operation>=54 && operation<=56) {
             constexpr std::array names{"Infector of Souls","Lord De Seis","Grand Vizier of Chaos"};
-            const auto spawned=spawnQuestGroup(actor,names[size_t(operation-54)]);if(!spawned) return spawned;
+            constexpr std::array offsets{Vec{-12,-52},Vec{-39,33},Vec{32,16}};
+            const auto index=size_t(operation-54);
+            const auto requested=position+offsets[index];
+            const auto &area=ports_.areas.at(actor.area).definition;
+            const auto global=requested+area.origin;
+            const auto room=ports_.areas.roomAtPosition(actor.area,position,int(global.x),int(global.y));
+            if(!room || room->area!=actor.area) return {DomainStatus::Unavailable,{}};
+            const auto found=ports_.world.questFreePosition(actor.area,requested,requested,3,13+int(index),0x3f11);
+            if(!found || found->area!=actor.area) return {DomainStatus::Unavailable,{}};
+            const auto spawned=ports_.objects.admit({131,found->area,found->position,{},{},0,actor.tick});
+            if(!spawned) return {spawned.status,{}};
+            world.sealAfterglows.emplace(*spawned.value,names[index]);
         }
         world.seals.insert(definition);state_.objectModes[source]=2;
         return {DomainStatus::Applied,std::monostate{}};
     }
     return {DomainStatus::NotImplemented,{}};
+}
+DomainResult<> System::sealAfterglow(RegionId region,EntityId source,Vec position,uint64_t tick) {
+    const auto found=state_.actFour.sealAfterglows.find(source);
+    if(found==state_.actFour.sealAfterglows.end()) return {DomainStatus::Applied,std::monostate{}};
+    return ports_.population.requestQuestBirth(region,found->second,{tick},position);
 }
 StepStatus System::actFourStep(TickContext tick) {
     bool blocked=false;auto &world=state_.actFour;

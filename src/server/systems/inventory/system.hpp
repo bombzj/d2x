@@ -47,12 +47,14 @@ class System {
     State state_;
     const Ports ports_;
     StepStatus replenish(TickContext);
+    std::map<PlayerId,uint64_t> restorationRevisions_;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
     std::optional<InputState> input(PlayerId) const;
     StepStatus step(TickContext, FrameFacts &);
+    DomainResult<> replenishItem(EntityId,uint64_t tick);
     DomainResult<> close(PlayerId);
     DomainResult<> openStash(const ActorContext &, EntityId, std::optional<int> remoteRange = {});
     bool storageAccess(PlayerId) const;

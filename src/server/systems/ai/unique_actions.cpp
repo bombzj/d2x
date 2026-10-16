@@ -9,7 +9,7 @@ namespace d2x::server::ai {
 std::optional<StepStatus> System::uniqueAction(EntityId id,UnitTarget target,Vec position,TickContext tick,Controller &controller) {
     const auto &m=*ports_.monsters.find(id);const auto &area=ports_.areas.at(m.area);
     if(m.rule.introduction && !controller.introduced && target.type==0 && monsterAiDistance(position,0,m.position)<20) {
-        const auto result=ports_.monsters.introduction(id,tick.tick);
+        const auto result=perform(controller,[this,id,tick]{return ports_.monsters.introduction(id,tick.tick);});
         if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
         if(result) {controller.introduced=true;controller.nextDecision=tick.tick+20;return StepStatus::Complete;}
     }
@@ -28,7 +28,8 @@ std::optional<StepStatus> System::uniqueAction(EntityId id,UnitTarget target,Vec
         if(occupied) continue;
         int heal=0;
         if(m.life*100<m.maximumLife*30 && limitedRandom(random,100)<25) heal=mods.level;
-        const auto result=ports_.skills.requestCast({id,184,target,tick.tick,4,point,heal});
+        controller.random=random;
+        const auto result=requestAction(controller,{id,184,target,tick.tick,4,point,heal});
         if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
         if(result) {controller.random=random;controller.pursuing=false;return StepStatus::Complete;}
     }

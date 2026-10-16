@@ -2,6 +2,8 @@
 #include "runtime.hpp"
 #include "assassin_kick.hpp"
 #include "druid_melee.hpp"
+#include "weapon_melee.hpp"
+#include "native_caster.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
 #include "gameplay/skills/druid_summon.hpp"
 #include "server/area_store.hpp"
@@ -30,7 +32,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     auto &monsterReleases_=runtime_->monsters;
     const auto *monster = ports_.monsters.find(request.actor);
     const auto *target = std::get_if<UnitTarget>(&request.target);
-    if (!monster || !monster->alive() || !target || (request.tick < monster->busyUntil || monsterReleases_.contains(request.actor)) || ports_.monsters.frozen(monster->id,request.tick) || monster->stunnedUntil>request.tick || monster->knockedUntil>request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
+    if (!monster || !monster->alive() || !target || (request.tick < monster->busyUntil || busy(request.actor,request.tick)) || ports_.monsters.frozen(monster->id,request.tick) || monster->stunnedUntil>request.tick || monster->knockedUntil>request.tick || !monster->standardAttackSource()) return {DomainStatus::InvalidActor, {}};
     auto destination=ports_.monsters.targetPosition(target->id,monster->area);
     const auto *victim=ports_.monsters.find(target->id);
     const bool petAttack=monster->amazonAttacker();
@@ -42,6 +44,20 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
     if((petAttack && request.skill) || !prepared) return {DomainStatus::Unavailable,{}};
     auto slot=*prepared;
+    if(request.skill && !slot.weaponSkill && !slot.missile &&
+       (slot.action==MonsterAttackRule::Action::Damage || slot.action==MonsterAttackRule::Action::Charge || slot.action==MonsterAttackRule::Action::Leap)) {
+        const auto &row=monster->rule.formulas->skills.at(request.skill);
+        SkillCastSpec skill;skill.sourceId=request.skill;skill.rank=slot.rank;skill.weapon=WeaponSkillSpec{};
+        skill.weapon->startFunction=row.number("srvstfunc");skill.weapon->doFunction=row.number("srvdofunc");
+        if(skill.weapon->nativeMelee()) slot.weaponSkill=std::move(skill);
+    }
+    auto cachedStart=runtime_->monsterWeaponStarts.find(monster->id);
+    const auto heldStart=runtime_->weaponStarts.find(monster->id);
+    if(cachedStart!=runtime_->monsterWeaponStarts.end() &&
+       (cachedStart->second.tick!=request.tick || cachedStart->second.skill!=request.skill || cachedStart->second.mode!=request.monsterMode ||
+        (heldStart!=runtime_->weaponStarts.end() && heldStart->second.unit!=target->id))) {
+        cancel({},monster->id);cachedStart=runtime_->monsterWeaponStarts.end();
+    }
     if(monster->assassinPet || (monster->druidPet && request.skill)) {
         const auto sampled=ports_.effects.unitStatValues(monster->id,request.tick);if(!sampled) return {DomainStatus::Unavailable,{}};
         const auto ranks=nativeMonsterSkillRanks(rule.baseSkillRanks,*sampled,*rule.stats,*rule.formulas);
@@ -100,6 +116,11 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         timingInput.otherRate=buffs.otherAnimationRate+(monster->combatCompanion()?monster->petStats.attributes.otherAnimationRate:0);
     }
     const auto timing=planMonsterActionTiming(timingInput);
+    if(!slot.animation || slot.animationFlags.size()<size_t(slot.animation->frames)) return {DomainStatus::Unavailable,{}};
+    if(slot.animationAction>=0 && size_t(slot.animationAction)<slot.animationFlags.size()) slot.animationEvent=slot.animationFlags[size_t(slot.animationAction)];
+    const auto modeIdentity=ports_.frameEvents.reserveIdentity();
+    auto modeTimer=ports_.frameEvents.prepareInsertion({{}, {FrameEventUnit::Monster,monster->id},FrameEventType::ModeChange,
+        request.tick+1,true,0,0,0,modeIdentity});
     const auto duration=timing.duration,releaseTick=druidTeleport?(monster->druidPet->definition->ai==DruidPetDefinition::Ai::DireWolf?2:4):timing.release;
     auto reserved=monster->combatRandom;
     std::optional<NativeUnitStats> modeState;
@@ -129,7 +150,8 @@ DomainResult<> System::requestCast(const CastRequest &request) {
                 sampleOwner(*owner->rule.formulas,formulaInput(*owner,std::move(*stats)));
             }
         }
-        slot.modeStats=prepareMonsterModeStats(*table,*rule.stats,
+        if(cachedStart!=runtime_->monsterWeaponStarts.end()) slot.modeStats=cachedStart->second.program.modeStats;
+        else slot.modeStats=prepareMonsterModeStats(*table,*rule.stats,
             {request.monsterMode,rule.level,rule.difficulty,rule.statGameType,monster->admittedPlayerCount,
              monster->alignment()==UnitAlignment::Evil,ownerSkill,monster->id,request.tick+1},reserved);
         const auto value=[&](std::string_view name) {
@@ -137,32 +159,36 @@ DomainResult<> System::requestCast(const CastRequest &request) {
             const auto stat=slot.modeStats->base.find({id,0});return stat==slot.modeStats->base.end()?0:stat->second;
         };
         slot.minimum=value("mindamage");slot.maximum=value("maxdamage");slot.rating=value("tohit");
+        slot.ownerPhysical=ownerSkill;
         modeState=attributes::withUnitModeStats(*monster->nativeStats,*rule.stats,slot.modeStats);
     }
-    DamageType type = DamageType::Physical;
-    combat::Damage damage{monster->id, target->id, type, int64_t(slot.minimum) * 256,
-        int64_t(slot.maximum) * 256, request.tick + 1, monster->area, request.tick + releaseTick, slot.rating, rule.level, rule.meleeRange, rule.size, (petAttack || monster->necroSummon || monster->hireling)?monster->petWeapon:std::optional<WeaponDamage>{}, 0, 0};
-    damage.skill=slot.weaponSkill;
-    damage.monsterSkill=slot;damage.rating=int(int64_t(slot.rating)*std::max(0,100+slot.ratingPercent)/100);
-    if((petAttack || monster->necroSummon || monster->hireling) && damage.weapon) {
-        const auto buffs=ports_.effects.unitModifiers(monster->id,request.tick).combat;
-        damage.attackModifiers=monster->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
-        damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;
-        damage.weapon->projectileDamagePercent+=buffs.damagePercent;
-    }
-    damage.monsterMode = request.monsterMode;
-    damage.sourceInterruption=monster->interruption;
     std::shared_ptr<Release> shadow;
+    if(slot.weaponSkill && slot.weaponSkill->weapon->allocatesMeleeAtStart()) {
+        if(cachedStart==runtime_->monsterWeaponStarts.end()) {
+            runtime_->monsterWeaponStarts.emplace(monster->id,Runtime::MonsterWeaponStart{request.tick,request.skill,request.monsterMode,slot});
+            const auto consumed=ports_.monsters.consumeRandom(monster->id,monster->combatRandom,reserved);
+            if(!consumed) {runtime_->monsterWeaponStarts.erase(monster->id);return consumed;}
+        }
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,monster->id);
+        if(!caster) return {DomainStatus::InvalidActor,{}};
+        const auto actor=caster->context(ports_.areas,request.tick);
+        shadow=std::make_shared<Release>(Release{actor,*slot.weaponSkill,{},
+            {monster->area,area.generation,destination->first},target->id,request.tick,target->type});
+        shadow->weapon=monster->petWeapon.value_or(WeaponDamage{});
+        const auto started=startWeaponMelee(*shadow,actor,&slot);if(!started) return started;
+        if(shadow->weaponMelee->contact->monsterProgram) {
+            slot.modeStats=shadow->weaponMelee->contact->monsterProgram->modeStats;
+            modeState=attributes::withUnitModeStats(*monster->nativeStats,*rule.stats,slot.modeStats);
+        }
+        reserved=monster->combatRandom;
+    }
     if(monster->assassinPet && monster->assassinPet->definition->warp) {
         const auto started=startShadowSkill(request,slot);if(!started) return {started.status,{}};
         shadow=*started.value;reserved=monster->combatRandom;
         shadow->weaponHits=timing.events;shadow->weaponFrames=timing.duration;
     }
-    const auto actionRandom=(monster->assassinPet || monster->druidPet)?reserved:childRandom(reserved);
-    if(!petAttack) damage.actionRandom=actionRandom;
-    if (slot.missile || special || !slot.releaseFrames.empty()) {
-        if (monsterReleases_.size() >= 4096) return {DomainStatus::Capacity,{}};
-        MonsterRelease release{request,slot,monster->area,area.generation,request.tick+releaseTick,actionRandom,monster->interruption,{}};
+    {
+        MonsterRelease release{request,slot,monster->area,area.generation,request.tick+releaseTick,monster->interruption,{}};
         release.started=request.tick;
         release.nativeSkill=std::move(shadow);
         if(monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvstfunc")==53) {
@@ -175,9 +201,6 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         release.releaseFrames=timing.events;
         if(slot.action==MonsterAttackRule::Action::Spray || request.position || slot.action==MonsterAttackRule::Action::Leap) release.launch=std::pair{monster->position,destination->first};
         monsterReleases_.emplace(request.actor,std::move(release));
-    } else if (request.monsterMode != 9) {
-        auto queued=ports_.combat.enqueue(damage);
-        if (!queued) return queued;
     }
     if(slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown) {
         const auto changed=ports_.monsters.burrow(monster->id,slot.action==MonsterAttackRule::Action::BurrowDown,0,request.tick);
@@ -185,7 +208,11 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     }
     auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
         {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
-    if (!event) { ports_.combat.cancel(monster->id); monsterReleases_.erase(monster->id); return {event.status, {}}; }
+    if (!event) {
+        // Output backpressure retains the already allocated start contact.
+        if(event.status!=DomainStatus::Capacity) ports_.combat.cancel(monster->id);
+        monsterReleases_.erase(monster->id);return {event.status,{}};
+    }
     if(!petAttack) ports_.monsters.commitCombatRandom(monster->id,reserved);
     if(monster->assassinPet && monster->assassinPet->definition->warp) runtime_->assassinStarts.erase(monster->id);
     if(monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvstfunc")==53)
@@ -207,12 +234,25 @@ DomainResult<> System::requestCast(const CastRequest &request) {
             if(!started && started.status!=DomainStatus::Capacity) {monsterReleases_.erase(found);return started;}
         }
     }
+    if(begun) {
+        runtime_->monsterWeaponStarts.erase(monster->id);runtime_->weaponStarts.erase(monster->id);
+        Runtime::MonsterMode mode;mode.program=slot;mode.identity=modeIdentity;mode.interruption=monster->interruption;
+        mode.animation.frame=slot.animationStartFrame*256;mode.animation.remaining=slot.animation->frames*256;
+        if(slot.action==MonsterAttackRule::Action::Damage && !slot.missile &&
+           (!slot.weaponSkill || !slot.weaponSkill->weapon->allocatesMeleeAtStart())) {
+            mode.repeated=monsterReleases_.at(monster->id);
+            mode.repeated->releaseFrames.clear();
+        }
+        runtime_->monsterModes.insert_or_assign(monster->id,std::move(mode));
+        ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,monster->id},FrameEventType::ModeChange,0);
+        ports_.frameEvents.publish(std::move(modeTimer));
+    }
     return begun;
 }
-StepStatus System::releaseMonsters(TickContext tick) {
+StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
     auto &monsterReleases_=runtime_->monsters;
     bool blocked=false;
-    for (auto it=monsterReleases_.begin();it!=monsterReleases_.end();) {
+    for (auto it=monsterReleases_.find(only);it!=monsterReleases_.end() && it->first==only;) {
         auto &pending=it->second;
         if(pending.attack.action==MonsterAttackRule::Action::Druid && (!pending.nativeSkill || !pending.nativeSkill->nativeStartPrepared)) {
             const auto *source=ports_.monsters.find(pending.request.actor);
@@ -304,10 +344,12 @@ StepStatus System::releaseMonsters(TickContext tick) {
         case MonsterAttackRule::Action::Resurrect: specialResult=ports_.monsters.resurrect(source->id,unit.id,tick.tick);break;
         case MonsterAttackRule::Action::Heal: {
             if(!ports_.monsters.mummySupportTarget(source->id,unit.id,tick.tick,false)) {specialResult={DomainStatus::InvalidActor,{}};break;}
-            const auto *victim=ports_.monsters.find(unit.id);auto random=pending.random;
+            const auto *victim=ports_.monsters.find(unit.id);const auto expected=source->combatRandom;auto random=expected;
             const int maximum=std::clamp(pending.attack.healMaximum,0,100),minimum=std::clamp(pending.attack.healMinimum,0,maximum);
             const int percent=minimum+int(limitedRandom(random,unsigned(maximum-minimum)));
-            specialResult=ports_.monsters.heal(unit.id,victim->maximumLife*percent/100);if(specialResult) pending.random=random;break;
+            specialResult=ports_.monsters.heal(unit.id,victim->maximumLife*percent/100);
+            if(specialResult) specialResult=ports_.monsters.consumeRandom(source->id,expected,random);
+            break;
         }
         case MonsterAttackRule::Action::BurrowUp: specialResult={DomainStatus::Applied,std::monostate{}};break;
         case MonsterAttackRule::Action::BurrowDown: specialResult=ports_.monsters.heal(source->id,source->life*pending.attack.healMinimum/100);break;
@@ -350,27 +392,26 @@ StepStatus System::releaseMonsters(TickContext tick) {
         }
         if(special) {
             if(specialResult.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
-            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {childRandom(pending.random);pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
+            if(specialResult && ++pending.nextRelease<pending.releaseFrames.size()) {pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
             it=monsterReleases_.erase(it);continue;
         }
         const auto target=ports_.monsters.targetPosition(unit.id,pending.area);
         if(!pending.launch && !combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(source->id,unit.id)) {it=monsterReleases_.erase(it);continue;}
         if (!target && !pending.launch) {it=monsterReleases_.erase(it);continue;}
         if(!pending.attack.missile) {
-            combat::Damage damage{source->id,unit.id,DamageType::Physical,int64_t(pending.attack.minimum)*256,int64_t(pending.attack.maximum)*256,
-                pending.started+1,source->area,tick.tick,pending.attack.rating,source->rule.level,source->rule.meleeRange,source->rule.size,source->petWeapon};
-            damage.skill=pending.attack.weaponSkill;damage.sourceInterruption=pending.interruption;damage.actionRandom=pending.random;
-            damage.monsterSkill=pending.attack;damage.rating=int(int64_t(pending.attack.rating)*std::max(0,100+pending.attack.ratingPercent)/100);
-            if(pending.attack.action==MonsterAttackRule::Action::Charge) damage.range+=3;
-            const auto buffs=ports_.effects.unitModifiers(source->id,tick.tick).combat;
-            damage.attackModifiers=source->petStats.attributes.combat;mergeCombatModifiers(*damage.attackModifiers,buffs);
-            if(damage.weapon) {damage.weapon->attackRatingPercent+=buffs.attackRatingPercent;damage.weapon->damagePercent+=buffs.damagePercent;}
-            const auto result=ports_.combat.enqueue(damage);
+            pending.nativeCallbackStarted=true;
+            DomainResult<> result;
+            if(pending.nativeSkill && pending.nativeSkill->weaponMelee) {
+                auto actor=pending.nativeSkill->actor;actor.tick=tick.tick;
+                const auto status=drainWeaponMelee(*pending.nativeSkill,actor);
+                result={status,status==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+            } else result=ports_.combat.monsterMelee(source->id,unit.id,pending.attack,pending.started+1,tick);
             if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict) {blocked=true;++it;continue;}
+            pending.nativeCallbackStarted=false;
             if(result && pending.attack.action==MonsterAttackRule::Action::Leap) {
                 pending.hitReleased=true;pending.due=std::max(tick.tick+1,pending.started+uint64_t(pending.attack.movementStart));++it;continue;
             }
-            if(result && ++pending.nextRelease<pending.releaseFrames.size()) {childRandom(pending.random);pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
+            if(result && ++pending.nextRelease<pending.releaseFrames.size()) {pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;}
             it=monsterReleases_.erase(it);continue;
         }
         if(!pending.launch) pending.launch=std::pair{source->position,target->first};
@@ -379,14 +420,14 @@ StepStatus System::releaseMonsters(TickContext tick) {
         if(pending.attack.action==MonsterAttackRule::Action::Spray) launch=andarielSprayRay(source->position,pending.launch->second,4+int(pending.nextRelease));
         if(pending.attack.action==MonsterAttackRule::Action::Trap) launch=gargoyleTrapRay(source->position,pending.launch->second,GargoyleRaySide::Server);
         if(pending.attack.action==MonsterAttackRule::Action::Firewall) launch={pending.launch->second,source->position};
-        missiles::MonsterSpawn spawn{source->id,source->area,pending.generation,tick.tick,launch.first,launch.second,pending.attack,source->rule.hitStates,source->rule.level,source->rule.criticalChance,quills,pending.random};
+        missiles::MonsterSpawn spawn{source->id,source->area,pending.generation,tick.tick,launch.first,launch.second,pending.attack,source->rule.hitStates,source->rule.level,source->rule.criticalChance,quills};
         spawn.nativeSkill=pending.request.skill;
         if(pending.attack.action==MonsterAttackRule::Action::Nova) for(const Vec heading:missileRingBurst(1)) spawn.aims.push_back(source->position+heading);
         if(pending.attack.missile->behavior==MonsterMissileRule::Behavior::Meteor) spawn.position=launch.second;
         const auto result=ports_.missiles.spawnMonster(spawn);
         if (result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
         if(result && pending.attack.action==MonsterAttackRule::Action::Spray && ++pending.nextRelease<pending.releaseFrames.size()) {
-            pending.random=result.value->random;pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;
+            pending.due=pending.started+uint64_t(pending.releaseFrames[pending.nextRelease]);++it;continue;
         }
         it=monsterReleases_.erase(it);
     }

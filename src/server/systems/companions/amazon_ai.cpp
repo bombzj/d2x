@@ -33,17 +33,19 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
         const int distance=missileDistance(body->position,candidate.position());
         if(distance<nearest && area.definition.collision.segment(body->position,candidate.position())) {nearest=distance;target=id;}
     }
-    auto random=pet.random;
+    auto random=body->combatRandom;
     if(target) {
         const auto enemy=participants.find(target);
         if(meleeDistance(body->position,body->rule.size,enemy.position(),enemy.size())<=body->rule.meleeRange && area.definition.collision.segment(body->position,enemy.position())) {
             ports_.monsters.stop(pet.actor);
-            if(int(limitedRandom(random,100))<body->amazonPet->attackChance) {
-                const auto result=ports_.skills.requestCast({pet.actor,0,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
+            const bool attack=int(limitedRandom(random,100))<body->amazonPet->attackChance;
+            ports_.monsters.commitCombatRandom(body->id,random);
+            if(attack) {
+                const auto result=requestAction(pet,{pet.actor,0,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
                 if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
             }
         } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
     } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});
-    pet.random=random;pet.nextDecision=tick.tick+uint64_t(std::max(1,body->amazonPet->thinkFrames));return StepStatus::Complete;
+    pet.nextDecision=tick.tick+uint64_t(std::max(1,body->amazonPet->thinkFrames));return StepStatus::Complete;
 }
 }

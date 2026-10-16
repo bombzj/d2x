@@ -9,8 +9,34 @@ struct State::Releases {
     std::map<EntityId, SkillRelease> pending;
     std::map<EntityId, MonsterRelease> monsters;
 };
-State::State() : releases_(std::make_unique<Releases>()) {}
+State::State(FrameEventQueue &events) : releases_(std::make_unique<Releases>()),frameEvents_(events) {}
 State::~State() = default;
+State::PreparedTimeline State::prepareProgramTimeline(EntityId actor,uint64_t started) {
+    PreparedTimeline result{{FrameEventUnit::Player,actor},frameEvents_.reserveIdentity(),{}};
+    result.events.push_back(frameEvents_.prepareInsertion({{},result.owner,FrameEventType::ModeChange,
+        started+1,true,0,-1,0,result.generation}));
+    return result;
+}
+State::PreparedTimeline State::prepareTimeline(EntityId actor,uint64_t started,const ActionTimeline &timeline) {
+    PreparedTimeline result{{FrameEventUnit::Player,actor},frameEvents_.reserveIdentity(),{}};
+    result.events.reserve(timeline.events.size()+1);
+    for(const auto &action:timeline.events)
+        result.events.push_back(frameEvents_.prepareInsertion({{},result.owner,FrameEventType::ModeChange,
+            started+uint64_t(action.tick),false,0,action.event,action.parameter,result.generation}));
+    result.events.push_back(frameEvents_.prepareInsertion({{},result.owner,FrameEventType::EndAnimation,
+        started+uint64_t(timeline.end),false,0,0,0,result.generation}));
+    return result;
+}
+void State::cancelTimeline(EntityId actor) {
+    const FrameEventOwner owner{FrameEventUnit::Player,actor};
+    frameEvents_.cancelHandler(owner,FrameEventType::ModeChange,0);
+    frameEvents_.cancelHandler(owner,FrameEventType::EndAnimation,0);
+}
+void State::commitTimeline(PreparedTimeline &&prepared) noexcept {
+    cancelTimeline(prepared.owner.unit);
+    // Preserve scheduling order, including multiple flags crossed in one tick.
+    for(auto &event:prepared.events) frameEvents_.publish(std::move(event));
+}
 std::map<EntityId, SkillRelease> &State::releases() { return releases_->pending; }
 std::map<EntityId, MonsterRelease> &State::monsterReleases() { return releases_->monsters; }
 size_t State::pendingReleases() const { return releases_->pending.size() + releases_->monsters.size(); }
@@ -84,6 +110,7 @@ bool State::coolingDown(EntityId actor, uint64_t tick) const {
     return found != casts.end() && found->second.cooldownUntil > tick;
 }
 void State::cancel(EntityId actor) {
+    cancelTimeline(actor);
     const auto current=releases_->pending.find(actor);
     if(current!=releases_->pending.end() && (current->second.nativeCallbackStarted ||
         std::find(executingReleases_.begin(),executingReleases_.end(),actor)!=executingReleases_.end())) current->second.cancelled=true;

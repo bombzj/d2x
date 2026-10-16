@@ -186,7 +186,7 @@ struct System::RoomRuntime {
         for (const auto &[key, value] : ports.missiles.read().missiles) { (void)key; if (contains(value.area, value.position)) return true; }
         for (const auto &[key, value] : ports.objects.read().objects) {
             (void)key;
-            if (contains(value.area, value.position) && (value.pending || value.specialPending || value.lootAt || value.trapAt || value.hazardAt)) return true;
+            if (contains(value.area, value.position) && (value.pending || value.specialPending || value.urnPending || value.lootAt || value.trapAt || value.hazardAt)) return true;
         }
         for (const auto &[key, value] : ports.loot.read().pending) { (void)key; if (contains(value.request.source.region, value.request.position)) return true; }
         return false;

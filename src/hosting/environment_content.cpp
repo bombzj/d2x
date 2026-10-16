@@ -132,13 +132,6 @@ void prepareEnvironmentPopulation(Archives &archives,const ClassicData &data,Pre
         if(!unit) {auto substitute=identity;substitute.monster="fallen1";unit=prepareCombatMonster(archives,data,prepared.terrain.request,substitute,{});if(unit) unit->identity=identity;}
         if(unit) area.environmentMonsters.emplace(code,std::move(*unit));
     }
-    const auto &extra=data.tables.at("monstats2"),&stats=data.tables.at("monstats");
-    for(const auto &code:area.populationRoster) {
-        const auto *record=catalog.find(code);if(!record) continue;
-        const auto name=stats.value(record->sourceRow,"MonStatsEx");size_t row=0;while(row<extra.rows().size() && extra.value(row,"Id")!=name) ++row;
-        if(row==extra.rows().size() || !extra.number(row,"mWL").value_or(0)) continue;
-        auto group=prepareObjectParty(archives,data,prepared.terrain.request,code);if(!group.empty()) area.environmentGroups.emplace("urn",std::move(group));break;
-    }
     if(const auto unit=area.environmentMonsters.find(selected);unit!=area.environmentMonsters.end()) area.environmentMonsters.emplace("chest",unit->second);
 }
 }

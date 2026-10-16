@@ -20,28 +20,11 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
         const auto target=participants.find(impact.targets[impact.next]);
         if(!target.aliveIn(impact.area) || (target.monster && !target.monster->damageable())) {++impact.next;continue;}
         if(impact.nextDelay && (target.player?!ports_.effects.missileHitAllowed(target.id(),tick.tick):target.monster->nextHitTick>tick.tick)) {++impact.next;continue;}
-        auto random=impact.contactRandom.value_or(initialRandom(uint32_t(impact.projectile.value)));const auto commitRandom=[&] {impact.contactRandom=random;};
         const bool retained=impact.environmentDefense && impact.environmentDefense->target==target.id();
-        if(impact.monsterToHit && !retained) {
-            const bool running=target.player && target.player->moving && target.player->runningNow;
-            if(!running && int(limitedRandom(random,100))>=physicalHitChance(impact.monsterLevel,impact.monsterRating,target.player?target.player->persistent.player.level:target.monster->rule.level,target.player?target.player->totals.character.defense:ports_.effects.unitDefense(target.id(),tick.tick))) {commitRandom();++impact.next;continue;}
-        }
-        if(!impact.directLife && impact.monsterHit && !impact.unblockable && !retained) {
-            if(!ports_.effects.reactionCapacity() || !ports_.events.hasCapacity(4,2)) return DomainStatus::Capacity;
-            const auto *player=target.player;const auto *monster=target.monster;
-            const int block=player && player->totals.equipment.shield?player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1):monster?monster->petStats.block:0;
-            if(block>0 && int(limitedRandom(random,100))<block) {
-                const auto result = player
-                    ? ports_.effects.block({player->player,player->actor,player->area,area->generation,0,tick.tick})
-                    : ports_.monsters.block(monster->id,tick.tick);
-                if(result.status==DomainStatus::Capacity) return result.status;
-                commitRandom();++impact.next;continue;
-            }
-            const auto avoided=rollWeaponAvoidance(player?player->totals.character.combat:monster->petStats.attributes.combat,player?player->moving:monster->moving,true,random);
-            if(avoided!=WeaponAvoidance::None) {
-                if(player) {const auto result=ports_.effects.avoidance({player->player,player->actor,player->area,area->generation,0,tick.tick},avoided,impact.source);if(result.status==DomainStatus::Capacity) return result.status;}
-                commitRandom();++impact.next;continue;
-            }
+        if(!impact.directLife && impact.monsterHit && !retained) {
+            const auto defended=directDefense(impact,participants.find(impact.source),target,tick);
+            if(!defended) return defended.status;
+            if(!*defended.value) {++impact.next;continue;}
         }
         MonsterHit hit=impact.monsterHit.value_or(MonsterHit{});
         auto cursor=state_.hitClassCursor;
@@ -54,7 +37,7 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
             if(impact.directLife) result=ports_.transactions.resources(actor,player.characterRevision,
                 Fixed8::fromRaw(std::max<int64_t>(256,int64_t(player.persistent.player.hp.raw())-hit.channels[size_t(impact.type)])),player.persistent.player.mana,player.persistent.player.stamina);
             else {
-                const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates,{},std::ref(random));
+                const auto received=ports_.effects.receiveMonster(actor,impact.source,hit,impact.monsterStates);
                 result={received.status,received?std::optional{std::monostate{}}:std::nullopt};
             }
         } else {
@@ -64,7 +47,7 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
                     auto defense=ports_.effects.prepareUnitReception(unit.id,impact.source,hit,tick.tick);
                     if(!defense) return defense.status;
                     impact.environmentDefense=std::make_shared<effects::UnitReceptionPlan>(std::move(*defense.value));
-                    impact.environmentDefenseCommitted=false;commitRandom();
+                    impact.environmentDefenseCommitted=false;
                 }
                 if(!impact.environmentDefenseCommitted) {
                     const auto committed=ports_.effects.commitUnitReception(*impact.environmentDefense);if(!committed) return committed.status;
@@ -87,7 +70,7 @@ DomainStatus System::resolveEnvironment(SpellImpact &impact,TickContext tick) {
         }
         if(result.status==DomainStatus::Capacity) return result.status;
         if(result && impact.nextDelay) {if(target.player) ports_.effects.missileHitDelay(target.id(),tick.tick+impact.nextDelay);else ports_.monsters.hitDelay(target.id(),tick.tick+impact.nextDelay);}
-        state_.hitClassCursor=cursor;commitRandom();impact.environmentDefense.reset();impact.environmentDefenseCommitted=false;++impact.next;
+        state_.hitClassCursor=cursor;impact.environmentDefense.reset();impact.environmentDefenseCommitted=false;++impact.next;
     }
     return DomainStatus::Applied;
 }

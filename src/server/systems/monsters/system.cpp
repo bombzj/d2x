@@ -93,6 +93,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     const auto id=actor.id;auto room=actor.roomAdmission;
     std::map<EntityId,Actor> candidate;candidate.emplace(id,std::move(actor));
     ports_.ids.allocate();ports_.random=random;publishComponents(palettes);
+    for(auto &[key,unit]:candidate) {(void)key;publishInitialAi(unit);}
     state_.actors.merge(candidate);ports_.areas.publishRoomUnit(*room);
     return finish(id);
 }
@@ -107,6 +108,12 @@ Actor System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.combatRandom=childRandom(random);
+    if(request.hostile && !request.deadMode)
+        actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+            {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,request.tick+1}));
+    if(request.hostile) actor.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+        {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,request.tick+1,true}));
+    prepareInitialTimers(actor,request.tick);
     palettes=prepareComponents(actor);
     const auto rolledLife=nativeAdd(rule.minimumLife,int32_t(limitedRandom(actor.combatRandom,uint32_t(nativeAdd(nativeSubtract(rule.maximumLife,rule.minimumLife),1)))));
     // D2MOO MONSTER_GetHpBonus/GetExperienceBonus: +50% per additional
@@ -221,6 +228,7 @@ std::vector<EntityId> System::specialTargets() const {
     return result;
 }
 void System::registerPet(Actor &unit) noexcept {
+    publishInitialAi(unit);
     if(!unit.owner || unit.conversion || unit.rule.petType<=0 || unit.petRegistrationOrder) return;
     if(state_.nextPetRegistrationOrder==UINT64_MAX) std::terminate();
     unit.petRegistrationOrder=state_.nextPetRegistrationOrder++;
@@ -309,6 +317,7 @@ bool System::commitLife(LifeChange &&change) noexcept {
         if(change.tauntPostActions) unit.mainOwnerCleared=true;
         if(change.restoreNeutral || change.tauntPostActions || change.aiThinkAt) {
             ++unit.aiThinkRevision;unit.aiThinkAt=change.aiThinkAt.value_or(0);
+            scheduleAi(unit.id,unit.aiThinkAt);
         }
         if(change.tauntTarget) unit.movementTarget=unit.tauntTarget=*change.tauntTarget;
         if(change.detachedMinion) {
@@ -744,6 +753,14 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
     }
     return scheduled;
 }
+void System::finishAction(EntityId id,uint64_t tick) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
+    auto &actor=found->second;actor.nativeActionUntil=actor.busyUntil=tick;
+    if(actor.neutralAt) actor.neutralAt=tick;
+    ++actor.revision;
+    const auto next=ports_.frameEvents.nextDue({FrameEventUnit::Monster,id},FrameEventType::AiThink).value_or(tick);
+    scheduleAi(id,resumeAi(id,tick,next));
+}
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce,bool softHit,std::optional<uint64_t> freezeLength,std::optional<bool> getHit,DamageStatus status) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
@@ -902,6 +919,7 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;
     if(actor.rule.blockTicks>0) {
+        const auto ended=ports_.effects.endMode(id,tick);if(!ended) return ended;
         const int reactionTicks=recoveryTicks(actor,ports_.effects,tick,true);
         const uint8_t percent=monsterLifeRatio(actor.life,actor.maximumLife);
         HitFact hit{id,1,actor.area,percent,false,actor.position,0,6};
@@ -970,13 +988,16 @@ DomainResult<> System::remove(EntityId id) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.owner) return {DomainStatus::InvalidActor,{}};
     ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
 }
-StepStatus System::step(TickContext tick, FrameFacts &) {
+StepStatus System::advanceMode(EntityId only,TickContext tick) {
     bool blocked = false;
-    for (auto &[id, actor] : state_.actors) {
+    for (auto entry=state_.actors.find(only);entry!=state_.actors.end() && entry->first==only;++entry) {
+        auto &[id,actor]=*entry;
+        if(actor.modeFrame==tick.tick) continue;
         if(actor.delayedDeathSource && !ports_.effects.unitStates(id,tick.tick).contains(actor.rule.uninterruptableState)) {
             const auto result=damage(id,actor.killer,0,tick.tick,0,false,0,{},true,0,{},0,false,0,0,true,{},false,{*actor.delayedDeathSource});
             if(!result) {blocked=true;continue;}
         }
+        actor.modeFrame=tick.tick;
         if (!ports_.areas.loaded(actor.area, actor.position+Vec{.5f,.5f})) {
             actor.moving = false; actor.route.clear(); actor.movementTarget = {};
             continue;

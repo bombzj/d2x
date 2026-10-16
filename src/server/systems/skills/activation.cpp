@@ -33,36 +33,55 @@ namespace d2x::server::skills {
 DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &actor,Vec destination) {
     const auto &owner=*ports_.players.find(actor.player);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,MovementCollisionRule{0x804,2});
-    if(!moved || *moved.value) {
+    if(pending.motionFrame!=actor.tick) {
+        const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,MovementCollisionRule{0x804,2});
+        if(!moved && moved.status==DomainStatus::Capacity) return moved.status;
+        pending.motionFrame=actor.tick;pending.motionFinished=!moved || *moved.value;
+    }
+    if(pending.motionFinished) {
         auto result=ports_.effects.removeState(actor,pending.skill.weapon->attackState.id);if(!result) return result.status;
         result=ports_.effects.removeState(actor,pending.skill.weapon->movingState.id);if(!result) return result.status;
-        pending.whirlwind=false;state_.casts.at(actor.actor).until=actor.tick;
+        pending.whirlwind=false;state_.casts.at(actor.actor).until=actor.tick+1;
         ports_.movement.execute(actor,{MovementAction::Stop,{},false});return DomainStatus::Applied;
     }
     if(actor.tick>=pending.nextWhirlHit) {
         const size_t count=pending.offhand && pending.nextWhirlHit>state_.casts.at(actor.actor).started+4?2:1;
         while(pending.whirlHand<count) {
-            const auto &hand=pending.offhand && pending.whirlHand%2?*pending.offhand:*pending.weapon;
+            if(pending.nativeMeleeOccurrence) {
+                if(ports_.combat.advanceAuraPulse(actor.actor,*pending.nativeMeleeOccurrence,{actor.tick})==StepStatus::Blocked) return DomainStatus::Capacity;
+                pending.nativeMeleeOccurrence.reset();pending.nativeCallbackStarted=false;
+                ++pending.whirlHand;++pending.whirlwindAttackHand;continue;
+            }
+            const auto &hand=pending.offhand && pending.whirlwindAttackHand%2?*pending.offhand:*pending.weapon;
             const auto last=owner.totals.equipment.weapons.begin()+owner.totals.equipment.weaponCount;
             const auto current=std::find_if(owner.totals.equipment.weapons.begin(),last,[&](const auto &w){return w.item==hand.item;});
             if(current==last) {pending.whirlHand=count;break;}
-            std::vector<uint64_t> targets;
-            for(const auto id:participants.enemies(actor.actor,actor.area)) {
-                const auto target=participants.find(id);
-                if(meleeDistance(owner.position,2,target.position(),target.size())<=current->rangeAdder+1 && ports_.areas.at(actor.area).definition.collision.segment(owner.position,target.position())) targets.push_back(id.value);
-            }
-            auto successor=missileChainSuccessor(pending.unit.value,targets);if(!successor && targets.size()==1) successor=targets.front();
+            const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,5,0xa783,false,{},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
+            const auto successor=nativeSkillSuccessor(targets,pending.unit?uint32_t(pending.unit.value):UINT32_MAX);
             if(successor) {
                 WeaponSkillDamage weapon;weapon.weapon=*current;weapon.level=owner.persistent.player.level;
-                missiles::Spawn request{actor,pending.skill,{},participants.find(EntityId{successor}).position(),true};request.weapon=weapon;
-                const auto hit=ports_.missiles.direct(request,{EntityId{successor}});if(hit.status==DomainStatus::Capacity) return hit.status;
-                pending.unit=EntityId{successor};
+                missiles::Spawn request{actor,pending.skill,{},participants.find(successor).position(),true};request.weapon=weapon;
+                const auto hit=ports_.missiles.directContact(request,{successor});if(!hit) return hit.status;
+                if(!hit.value->occurrence) return DomainStatus::Unavailable;
+                pending.unit=successor;pending.nativeMeleeOccurrence=hit.value->occurrence;pending.nativeCallbackStarted=true;
+                continue;
             }
-            ++pending.whirlHand;
+            pending.unit={};++pending.whirlHand;++pending.whirlwindAttackHand;
         }
         const auto start=state_.casts.at(actor.actor).started;
-        pending.nextWhirlHit+=uint64_t(pending.nextWhirlHit==start+4?4:pending.whirlPeriod);pending.whirlHand=0;
+        int period=10;
+        const auto &hand=pending.offhand && pending.whirlwindAttackHand%2?*pending.offhand:*pending.weapon;
+        if(hand.item) {
+            const auto animation=owner.rules.skills->weaponAnimations.find("a1"+owner.totals.equipment.animationClass);
+            int frames=45;
+            if(animation!=owner.rules.skills->weaponAnimations.end()) {
+                const auto &clock=animation->second;
+                const int speed=clock.speed*(hand.itemAttackRate+hand.itemAttackSpeed+100)/100;
+                if(speed>0) frames=(clock.frames<<8)/speed;
+            }
+            period=frames<12?4:frames<15?6:frames<18?8:frames<20?10:frames<23?12:frames<26?14:16;
+        }
+        pending.nextWhirlHit+=uint64_t(pending.nextWhirlHit==start+4?4:period);pending.whirlHand=0;
     }
     pending.tick=actor.tick+1;return DomainStatus::Applied;
 }
@@ -79,27 +98,37 @@ DomainStatus System::activateLeap(Release &pending,const ActorContext &actor,Vec
         const auto result=ports_.effects.skill(actor,skill);if(!result) return result.status;
         pending.leaping=true;pending.manaPaid=true;return DomainStatus::Applied;
     }
-    const auto moved=ports_.movement.leapStep(actor,landing,pending.chargeSpeed);if(!moved) return moved.status;
-    if(!*moved.value) return DomainStatus::Applied;
+    if(pending.motionFrame!=actor.tick) {
+        const auto moved=ports_.movement.leapStep(actor,landing,pending.chargeSpeed);if(!moved) return moved.status;
+        pending.motionFrame=actor.tick;pending.motionFinished=*moved.value;
+    }
+    if(!pending.motionFinished) return DomainStatus::Applied;
     const auto cleared=ports_.effects.removeState(actor,pending.skill.leap->moving.id);if(!cleared) return cleared.status;
     if(pending.skill.leap->attack) {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-        const auto reachable=[&](combat::ParticipantView m) {return m.aliveIn(actor.area) && participants.canHarm(actor.actor,m.id()) && meleeDistance(landing,2,m.position(),m.size())<=pending.weapon->rangeAdder+1 && ports_.areas.at(actor.area).definition.collision.segment(landing,m.position());};
+        const auto &grid=ports_.areas.at(actor.area).definition.collision;
         auto victim=participants.find(pending.unit);
-        if(!reachable(victim)) {victim={};for(const auto id:participants.enemies(actor.actor,actor.area)) {const auto m=participants.find(id);if(reachable(m)) {victim=m;break;}}}
+        if(!victim.aliveIn(actor.area) || !playerMeleeReach(grid,owner.position,victim.position(),victim.size(),pending.weapon->rangeAdder)) {
+            const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,pending.weapon->rangeAdder+4,0x20003,false,{},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
+            victim=participants.find(nativeSkillSuccessor(targets,UINT32_MAX));
+        }
         if(!victim.id()) {pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+4;return DomainStatus::Unavailable;}
         pending.unit=victim.id();pending.unitType=victim.player?0:1;pending.landed=true;
         const auto sequence=barbarianSequence(14,owner.totals.equipment.animationClass);
-        int hit=16;for(size_t i=15;i<sequence.size();++i) if(sequence[i].hit) {hit=int(i);break;}
-        pending.weaponHits={weaponSequenceTick(hit-15,pending.weaponSpeed)};
-        pending.tick=actor.tick+uint64_t(pending.weaponHits.front());
-        state_.casts.at(actor.actor).until=actor.tick+uint64_t(weaponSequenceTick(int(sequence.size())-15,pending.weaponSpeed));
+        pending.animationEvents.clear();for(const auto &frame:sequence) pending.animationEvents.push_back(frame.hit?1:0);
+        pending.weaponFrames=int(sequence.size());
+        const auto timeline=rewoundPlayerActionTimeline(pending.weaponFrames,pending.weaponSpeed,16,pending.animationEvents);
+        auto prepared=state_.prepareTimeline(actor.actor,actor.tick,timeline);
+        pending.weaponHits.clear();for(const auto &event:timeline.events) if(event.event==1 || event.event==2) pending.weaponHits.push_back(event.tick);
+        pending.tick=actor.tick+1;
+        auto &cast=state_.casts.at(actor.actor);cast.timeline=prepared.generation;cast.until=actor.tick+uint64_t(timeline.end);
+        state_.commitTimeline(std::move(prepared));
         return DomainStatus::Applied;
     }
     const int radius=pending.skill.leap->knockbackRadius;
     for(const auto &[id,m]:ports_.monsters.read().actors) if(m.enemyTarget() && m.life>0 && m.area==actor.area && missileDistance(landing,m.position)<=radius)
         ports_.monsters.knockback(id,landing,actor.tick);
-    pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+4;
+    pending.landed=true;state_.casts.at(actor.actor).until=actor.tick+1;
     return DomainStatus::Applied;
 }
 DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &actor,Vec center) {
@@ -197,6 +226,7 @@ DomainStatus System::activateUnsummon(Release &pending, const ActorContext &acto
 }
 DomainStatus System::activateKick(Release &pending, const ActorContext &actor, Vec target) {
     if (pending.unitType == 2) return DomainStatus::Applied;
+    if(pending.weaponMelee) return drainWeaponMelee(pending,actor);
     const auto &player = *ports_.players.find(actor.player);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto victim=participants.find(pending.unit);

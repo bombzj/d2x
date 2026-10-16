@@ -16,6 +16,7 @@
 #include "gameplay/skills/aura_spec.hpp"
 #include "world/navigation.hpp"
 #include <array>
+#include <cstdint>
 #include <map>
 #include <memory>
 #include <string>
@@ -25,8 +26,7 @@ namespace d2x {struct StatRuleCatalog;struct SkillFormulaCatalog;}
 namespace d2x::server {
 struct PreparedMonster;
 // Value-only admission contracts; archive/table lookups belong to hosting.
-struct AttackAnimation { int frames{}, speed{}, actionFrame{}, startFrame{}; };
-struct MeleeRules { std::map<std::string, AttackAnimation, std::less<>> animations; };
+struct AttackAnimation { int frames{}, speed{}, actionFrame{}, startFrame{}; std::vector<uint8_t> events; };
 using MonsterMissileRule = MissileRule;
 // Native monster modes are distinct from Skills.txt identities. A1/A2 keep
 // their own release frame, accuracy and damage even when no skill is assigned.
@@ -51,10 +51,13 @@ struct MonsterAttackRule {
     std::optional<AnimationTiming> animation{};
     int animationAction{-1};
     bool animationSequence{};
+    uint8_t animationEvent{1};
     std::vector<int> animationEvents{};
+    std::vector<uint8_t> animationFlags;
     bool useAttackRate{true};
     int animationStartFrame{};
     std::shared_ptr<const StatList> modeStats;
+    MonsterModePhysical ownerPhysical;
 };
 struct MonsterWebRule {
     int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};
@@ -63,6 +66,8 @@ struct MonsterWebRule {
     MonsterMissileRule lay{}, ground{};
 };
 struct MonsterRule {
+    struct SelfResurrection {int chance{},delay{},ticks{};};
+    std::optional<SelfResurrection> selfResurrection;
     std::shared_ptr<const CombatStateRules> states;
     std::shared_ptr<const StatRuleCatalog> stats;
     std::shared_ptr<const SkillFormulaCatalog> formulas;
@@ -90,6 +95,7 @@ struct MonsterRule {
     bool convertible{};
     bool curseable{},switchAi{},revivable{};
     bool curseAiRunMode{},curseAiInteract{};
+    bool wakeAiOutsideNeutral{};
     int curseAiRunVelocity{};
     NativeMonsterStateTarget stateTarget;
     bool noAura{};

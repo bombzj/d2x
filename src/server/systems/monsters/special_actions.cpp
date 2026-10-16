@@ -157,6 +157,10 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
     }
     data->randomExpected=data->randomNext=ports_.random;data->actor=EntityId{ports_.ids.cursor()};
     auto actor=prepareAdmissionActor(admission,data->actor,data->randomNext,data->palettes);
+    if(request.wanderTarget) {
+        if(state_.nextWanderTargetOrder==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        actor.wanderTargetOrder=state_.nextWanderTargetOrder;
+    }
     if(request.ownsMinions) {
         actor.nativeMinionOwner=actor.id;actor.ownsNativeMinions=true;
         actor.transferMinionsOnDeath=request.transferMinions;
@@ -226,6 +230,7 @@ bool System::nativeUsableCorpse(EntityId id,uint64_t tick) const {
     }
     return true;
 }
+
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
     return dead && dead->area==area && !dead->owner && selectableCorpse(id,tick) &&
@@ -286,6 +291,7 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     actor.neutralAt=actor.riseUntil;
     actor.killer={};actor.route.clear();actor.moving=actor.running=false;actor.movementTarget={};
     actor.hitOccurrence=0;actor.knockedUntil=0;actor.knockbackGoal.reset();++actor.revision;
+    scheduleAi(corpse,actor.riseUntil);
     // rewardComplete remains set: SKILLS_ResurrectUnit gives NOXP | NOTC.
     return {DomainStatus::Applied,std::monostate{}};
 }
@@ -336,7 +342,7 @@ DomainResult<> System::activateWeb(EntityId id,uint64_t tick) {
     const auto *live=find(id);if(!live || !live->alive() || !live->rule.web) return {DomainStatus::InvalidActor,{}};
     if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     auto actor=*live;const auto &web=*actor.rule.web;
-    actor.webUntil=tick+uint64_t(web.auraFrames);actor.webOrigin=actor.position;actor.webRandom=childRandom(actor.combatRandom);++actor.revision;
+    actor.webUntil=tick+uint64_t(web.auraFrames);actor.webOrigin=actor.position;++actor.revision;
     effects::UnitDamageStates update;CombatEffectSpec spec;spec.state=web.aura;
     spec.source={CombatEffectSource::Monster,id,actor.rule.web->missile,0};spec.stacking=EffectStacking::ReuseState;
     spec.duration=uint64_t(web.auraFrames);spec.refreshPassivesOnRemoval=true;update.status=std::move(spec);

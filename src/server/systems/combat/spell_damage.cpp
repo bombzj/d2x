@@ -13,6 +13,7 @@
 #include "gameplay/combat/scaling.hpp"
 #include "gameplay/combat/weapon_hit.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "core/random.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/inventory/system.hpp"
@@ -26,22 +27,32 @@ namespace d2x::server::combat {
 bool System::weaponContact(const WeaponSkillDamage &attack,EntityId id,uint64_t tick,uint64_t &random) const {
     if(const auto *player=ports_.players.findActor(id)) {
         if(!player->entered || player->persistent.player.hp<=0) return false;
-        if(attack.automatic || (player->moving && player->runningNow)) return true;
+        if(attack.automatic || (!attack.projectile && player->moving && player->runningNow)) return true;
         const auto &weapon=attack.weapon;
+        const auto &stats=*player->rules.character->stats;
+        const auto defense=nativeAdd(player->totals.character.defense,player->totals.nativeStats.get(
+            {stats.names.at(attack.projectile?"armorclass_vs_missile":"armorclass_vs_hth"),0}));
         return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
-            weapon.attackRatingPercent,weapon.target,{player->persistent.player.level,player->totals.character.defense,false,false,false,true,false},MonsterRank::Normal));
+            weapon.attackRatingPercent,weapon.target,{player->persistent.player.level,defense,false,false,false,true,false},MonsterRank::Normal));
     }
     const auto *target=ports_.monsters.find(id);
     if(!target || target->life<=0 || !target->damageable()) return false;
     if(attack.automatic) return true;
     const auto &weapon=attack.weapon;
+    const auto stats=ports_.effects.unitStatValues(id,tick);
+    if(!stats || !target->rule.stats) throw std::logic_error("Missing native weapon target defense stats");
+    const auto defense=nativeAdd(ports_.effects.unitDefense(id,tick),stats->get(
+        {target->rule.stats->names.at(attack.projectile?"armorclass_vs_missile":"armorclass_vs_hth"),0}));
     return limitedRandom(random,100)<unsigned(weaponHitChance(attack.level,weapon.baseAttackRating,
-        weapon.attackRatingPercent,weapon.target,{target->rule.level,ports_.effects.unitDefense(id,tick),target->rule.demon,target->rule.undead,target->rule.boss,false,target->hireling},target->identity.rank));
+        weapon.attackRatingPercent,weapon.target,{target->rule.level,defense,target->rule.demon,target->rule.undead,target->rule.boss,false,target->hireling},target->identity.rank));
 }
 DomainResult<SpellPlan> System::prepareSpells(std::vector<SpellImpact> impacts) const {
     SpellPlan plan;
     const Participants participants{ports_.players,ports_.monsters,ports_.social};
     for (auto &impact : impacts) {
+        // Weapon contacts must carry the native calculation/allocation cursor.
+        // There is no pre-rolled weapon fallback behind this boundary.
+        if(impact.weapon && !impact.missileDamage) return {DomainStatus::InvalidRequest,{}};
         if (!impact.projectile || !impact.source || impact.next || impact.phase != ImpactPhase::Contact ||
             impact.damage < INT32_MIN || impact.damage > INT32_MAX ||
             impact.targets.size() > 65536)
@@ -102,17 +113,17 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
         const auto source = participants.find(impact.source);
         if((impact.missileDamage || impact.allocatedMissile) && !source.id() && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact)
             impact.next=impact.targets.size();
-        if(!impact.missileDamage && !impact.allocatedMissile && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && !impact.attemptOnly && participants.bind(source)!=impact.binding) {state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;}
+        if(!impact.missileDamage && !impact.allocatedMissile && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && participants.bind(source)!=impact.binding) {state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;}
         const PlayerState *owner = source.player;
         const auto *area = ports_.areas.find(impact.area);
         const auto *monsterSource=source.monster;
         const bool hirelingSource=monsterSource && monsterSource->owner;
         if(hirelingSource) owner=ports_.players.find(*monsterSource->owner);
-        if (!impact.missileDamage && !impact.allocatedMissile && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && !impact.attemptOnly && ((!owner || !owner->entered || (!impact.nativeAura && owner->area!=impact.area)) &&
+        if (!impact.missileDamage && !impact.allocatedMissile && impact.phase==ImpactPhase::Contact && !impact.playerContact && !impact.monsterContact && ((!owner || !owner->entered || (!impact.nativeAura && owner->area!=impact.area)) &&
             (!monsterSource || monsterSource->owner || (!impact.nativeAura && monsterSource->area!=impact.area)))) impact.next=impact.targets.size();
         if(!area || area->definition.town) impact.next=impact.targets.size();
         while (impact.next < impact.targets.size()) {
-            // Resource credit and Sacrifice recoil follow a committed hit.
+            // Resource credit and conversion follow a committed hit.
             // Backpressure retains this phase without repeating target damage.
             if(impact.phase!=ImpactPhase::Contact) {
                 if(finishImpact(impact,owner,area->generation,tick.tick)==DomainStatus::Capacity) {blocked=true;break;}
@@ -128,10 +139,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(impact.phase==ImpactPhase::Contact) ++impact.next;
                 continue;
             }
-            if(impact.attemptOnly) {
-                const auto attempted=advanceMeleeAttempts(impact,tick);if(attempted==DomainStatus::Capacity) return StepStatus::Blocked;
-                impact.attemptOnly=false;++impact.next;continue;
-            }
+
             if(!impact.missileDamage && (impact.returnFire || impact.allocatedMissile) && !impact.melee && (!impact.weapon || impact.weapon->projectile) && impact.missileEventTarget!=impact.next) {
                 if(!impact.missileEvents) impact.missileEvents=std::make_shared<effects::NativeContactBatch>(
                     ports_.effects.prepareMissileEvents(impact.source,impact.targets[impact.next],tick.tick,impact.returnFire));
@@ -208,8 +216,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->freeze=rolled.freezeFrames;execution->getHit=rolled.getHit;
                     execution->nativeMissile=execution->hostile=true;
                     execution->extras=contact.extras;execution->itemEvents=std::move(contact.itemEvents);
-                    execution->clearStun=impact.weapon && impact.weapon->clearTargetStun;
-                    if(rolled.channels[5]>0) execution->poison=PoisonApplication{rolled.channels[5],rolled.poisonFrames,impact.monsterStates.poison.id};
+                            if(rolled.channels[5]>0) execution->poison=PoisonApplication{rolled.channels[5],rolled.poisonFrames,impact.monsterStates.poison.id};
                     const auto modifiers=ports_.effects.combatModifiers(source.id(),tick.tick);
                     execution->pierce={0,0,modifiers.firePierce,modifiers.lightningPierce,modifiers.coldPierce,modifiers.poisonPierce};
                     const auto &flags=impact.missileRolled->second;
@@ -232,43 +239,12 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(impact.nextDelay && ((player && !ports_.effects.missileHitAllowed(player->actor,tick.tick)) || (pet && pet->nextHitTick>tick.tick))) {++impact.next;continue;}
                 if(!ports_.effects.reactionCapacity()) {blocked=true;break;}
                 if(!ports_.events.hasCapacity(4,2)) {blocked=true;break;}
-                auto random=impact.contactRandom.value_or(ports_.random);
-                const auto commitRandom=[&]{if(impact.contactRandom) impact.contactRandom=random;else ports_.random=random;};
                 const bool stateOnly=impact.monsterHit && impact.monsterHit->slowFrames &&
                     std::all_of(impact.monsterHit->channels.begin(),impact.monsterHit->channels.end(),[](auto n){return n==0;});
-                bool hit=true;
-                if(impact.monsterToHit) {
-                    const bool running=player && player->moving && player->runningNow;
-                    hit=running || int(limitedRandom(random,100))<physicalHitChance(impact.monsterLevel,impact.monsterRating,
-                        player?player->persistent.player.level:pet->rule.level,player?player->totals.character.defense:ports_.effects.unitDefense(pet->id,tick.tick));
-                }
-                if(hit && !stateOnly && !impact.unblockable && player && player->totals.equipment.shield) {
-                    hit=int(limitedRandom(random,100))>=player->totals.equipment.blockChance/(player->moving && player->runningNow?3:1);
-                    if(!hit) {
-                        const auto result=ports_.effects.block({player->player,player->actor,player->area,area->generation,0,tick.tick});
-                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                    }
-                }
-                if(hit && !stateOnly && !impact.unblockable && pet && pet->petStats.block>0) {
-                    hit=int(limitedRandom(random,100))>=pet->petStats.block;
-                    if(!hit) {
-                        const auto result=ports_.monsters.block(pet->id,tick.tick);
-                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                    }
-                }
-                if(hit && !stateOnly && !impact.unblockable) {
-                    const auto result=prepareWeaponBlock(participant,tick,impact.weaponBlock);
-                    if(!result) {blocked=true;break;}
-                    hit=!*result.value;
-                }
-                if(!hit) {commitRandom();if(impact.melee) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;}
-                const auto avoided=(stateOnly || impact.unblockable)?WeaponAvoidance::None:rollWeaponAvoidance(player?player->totals.character.combat:pet->petStats.attributes.combat,player?player->moving:pet->moving,true,random);
-                if(avoided!=WeaponAvoidance::None) {
-                    if(player) {
-                        const auto result=ports_.effects.avoidance({player->player,player->actor,player->area,area->generation,0,tick.tick},avoided,impact.source);
-                        if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                    }
-                    commitRandom();if(impact.melee) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;
+                if(!stateOnly) {
+                    const auto defended=directDefense(impact,source,participant,tick);
+                    if(!defended) {if(defended.status==DomainStatus::Capacity) return StepStatus::Blocked;++impact.next;continue;}
+                    if(!*defended.value) {++impact.next;continue;}
                 }
                 MonsterHit rolled=impact.monsterHit.value_or(MonsterHit{});
                 rolled.coldFrames=std::max(rolled.coldFrames,impact.coldFrames);rolled.poisonFrames=std::max(rolled.poisonFrames,impact.poisonFrames);
@@ -281,7 +257,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(stateOnly && pet) {
                     const auto applied=ports_.monsters.slow(pet->id,impact.monsterStates.slow.id,rolled.slowPercent,rolled.slowFrames,tick.tick,impact.source);
                     if(applied.status==DomainStatus::Capacity) return StepStatus::Blocked;
-                    if(applied) commitRandom();++impact.next;continue;
+                    ++impact.next;continue;
                 }
                 if(player) {
                     const ActorContext actor{player->player,player->actor,player->area,area->generation,0,tick.tick};
@@ -289,7 +265,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     auto execution=std::make_shared<PlayerContactExecution>();execution->targetIndex=impact.next;
                     execution->victim=actor;execution->target=player->actor;execution->hit=rolled;execution->states=impact.monsterStates;
                     execution->adjustment=adjustment;
-                    execution->random=random;execution->hitClass=hitClassCursor;execution->missile=!impact.melee;execution->hostile=true;
+                    execution->hitClass=hitClassCursor;execution->missile=!impact.melee;execution->hostile=true;
                     impact.playerContact=std::move(execution);
                 } else {
                     const auto received=ports_.effects.unitDamageChannels(pet->id,rolled.channels,tick.tick);
@@ -300,7 +276,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     execution->statuses={impact.source,rolled.burn,rolled.burnFrames};
                     if(rolled.channels[5]>0) execution->poison=PoisonApplication{received.channels[5].dealt,rolled.poisonFrames,impact.monsterStates.poison.id};
                     execution->callbacks=ports_.effects.prepareDamageEvents(impact.source,pet->id,execution->physical,execution->amount,!impact.melee,impact.returnFire,tick.tick,impact.reaction);
-                    execution->random=random;execution->hostile=true;impact.monsterContact=std::move(execution);
+                    execution->hostile=true;impact.monsterContact=std::move(execution);
                 }
                 continue;
             }
@@ -340,7 +316,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             if(participant.player && owner) {
                 const auto result=resolvePlayerImpact(impact,source,*owner,*participant.player,area->generation,tick);
                 if(result==DomainStatus::Capacity) {blocked=true;break;}
-                if(impact.phase==ImpactPhase::Contact && !impact.attemptOnly) ++impact.next;
+                if(impact.phase==ImpactPhase::Contact) ++impact.next;
                 continue;
             }
             if (!target || !participants.canHarm(source,participant) || target->life <= 0 || target->area != impact.area ||
@@ -349,53 +325,13 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             const int raw = ports_.effects.unitRawResistance(target->id,impact.type,tick.tick);
             int64_t amount = impact.currentDamage();
             int64_t absorbed=0;
-            int64_t weaponPoison=0;
             const int sourcePercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
             const auto scale=[&](int64_t value){return sourcePercent==100 || value<=0?nativeChecked(value):nativePercentage(nativeChecked(value),sourcePercent,100);};
             auto sourceModifiers=hirelingSource?monsterSource->petStats.attributes.combat:owner->totals.character.combat;
             if(monsterSource) mergeCombatModifiers(sourceModifiers,ports_.effects.unitModifiers(monsterSource->id,tick.tick).combat);
             const std::array<int,6> pierce{0,0,sourceModifiers.firePierce,sourceModifiers.lightningPierce,
                 impact.coldPierce?impact.coldPierce:sourceModifiers.coldPierce,impact.poisonPierce?impact.poisonPierce:sourceModifiers.poisonPierce};
-            auto random=ports_.random;
-            int64_t physical=0;std::array<int64_t,6> contactChannels{};bool sanctuary=false;
-            if(impact.weapon) {
-                const auto &attack=*impact.weapon;
-                if(!ports_.events.hasCapacity(8,4)) {blocked=true;break;}
-                if(!impact.targetRandom || impact.plannedTarget!=impact.next) {
-                    impact.plannedTarget=impact.next;
-                    if(impact.contactRandom) impact.targetRandom=childRandom(*impact.contactRandom);
-                    else impact.targetRandom=childRandom(ports_.random);
-                    impact.wearApplied=false;
-                    impact.frenzyApplied=false;
-                }
-                random=*impact.targetRandom;
-                if(!(impact.weaponHit.has_value()?*impact.weaponHit:weaponContact(attack,target->id,tick.tick,random))) {
-                    if(!attack.projectile) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;
-                }
-                if(!attack.smite && (target->shield || target->rule.blockWithoutShield) && int(limitedRandom(random,100))<target->rule.blockChance) {
-                    const auto result=ports_.monsters.block(target->id,tick.tick);
-                    if(result.status==DomainStatus::Capacity) {blocked=true;break;}
-                    if(!attack.projectile) {impact.pendingAttempts=1;impact.attemptOnly=true;}else ++impact.next;continue;
-                }
-                if(attack.wearSkill.assassin && attack.wearSkill.assassin->chargeStat>=0 && impact.progressiveChargeTarget!=impact.next) {
-                    const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-                    const auto result=ports_.effects.progressiveCharge(actor,attack.wearSkill);
-                    if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
-                    impact.progressiveChargeTarget=impact.next;
-                }
-                auto channels=targetWeaponChannels(attack,target->rule.demon,target->rule.undead);
-                for(auto &channel:channels) channel=scale(channel);
-                if(attack.wearSkill.weapon && attack.wearSkill.weapon->frenzy && !impact.frenzyApplied) {
-                    const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-                    const auto result=ports_.effects.frenzy(actor,attack.wearSkill);
-                    if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
-                    impact.frenzyApplied=true;
-                }
-                sanctuary=!hirelingSource && target->rule.undead && owner->rules.skills && owner->rules.skills->auras.contains(119) && owner->transient.states.contains(owner->rules.skills->auras.at(119).spec.ownerState.id);
-                contactChannels=channels;
-                const auto result=ports_.effects.unitDamageChannels(target->id,channels,tick.tick,pierce,false,sanctuary);
-                amount=result.direct;absorbed=result.absorbed;physical=result.channels[0].dealt;weaponPoison=result.channels[5].dealt;
-            }
+            int64_t physical=0;std::array<int64_t,6> contactChannels{};
             if (impact.staticPercent) {
                 const auto callback=staticFieldDamageFixed(nativeChecked(target->life),nativeChecked(target->maximumLife),
                     impact.staticPercent,impact.staticFloors.at(size_t(target->rule.difficulty)),nativeChecked(impact.minimumStaticDamage),raw);
@@ -403,53 +339,32 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 contactChannels[size_t(impact.type)]=scale(*callback);
                 const auto result=ports_.effects.unitDamageFixed(target->id,scale(*callback),impact.type,tick.tick,pierce[size_t(impact.type)]);
                 amount=result.dealt;absorbed=result.absorbed;
-            } else if(!impact.weapon) {
+            } else {
                 const auto result=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)]);
                 amount=result.dealt;absorbed=result.absorbed;
             }
-            if(!impact.weapon && !impact.staticPercent) contactChannels[size_t(impact.type)]=scale(impact.currentDamage());
+            if(!impact.staticPercent) contactChannels[size_t(impact.type)]=scale(impact.currentDamage());
             const auto cold=impact.coldFrames;
             std::optional<PoisonApplication> poison;
-            const auto rate=impact.weapon?impact.weapon->channels[5]:impact.type==DamageType::Poison?impact.currentDamage():0;
-            const auto frames=impact.weapon?uint64_t(std::max(0,impact.weapon->poisonFrames)):impact.poisonFrames;
-            if(rate>0) poison=PoisonApplication{impact.weapon?weaponPoison:ports_.effects.unitDamageFixed(target->id,scale(rate),DamageType::Poison,tick.tick,pierce[5]).dealt,frames,owner->rules.skills->poisonState,{},pierce[5]};
+            const auto rate=impact.type==DamageType::Poison?impact.currentDamage():0;
+            const auto frames=impact.poisonFrames;
+            if(rate>0) poison=PoisonApplication{ports_.effects.unitDamageFixed(target->id,scale(rate),DamageType::Poison,tick.tick,pierce[5]).dealt,frames,owner->rules.skills->poisonState,{},pierce[5]};
             if(impact.type==DamageType::Poison) amount=0;
             const ActorContext itemActor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-            const bool whirlwind=impact.weapon && impact.weapon->wearSkill.weapon && impact.weapon->wearSkill.weapon->whirlwind;
-            auto itemEvents=(hirelingSource || whirlwind)?DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}}:impact.weapon?ports_.itemTriggers.prepare(itemActor,{ItemSkillEvent::Hit,ItemSkillEvent::Kill},target->id,target->position):ports_.itemTriggers.prepare(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
+            auto itemEvents=hirelingSource?DomainResult<reactions::ItemEventPlan>{DomainStatus::Applied,reactions::ItemEventPlan{}}:
+                ports_.itemTriggers.prepare(itemActor,{ItemSkillEvent::Kill},target->id,target->position);
             if(!itemEvents) {blocked=true;break;}
-            const bool wearRequired=!hirelingSource && impact.weapon && impact.weapon->wearChance>0 && limitedRandom(random,100)<unsigned(impact.weapon->wearChance);
-            if(wearRequired && !impact.wearApplied) {
-                const auto &attack=*impact.weapon;
-                const ActorContext actor{owner->player,owner->actor,owner->area,area->generation,0,tick.tick};
-                auto wear=ports_.inventory.weaponCost(actor,attack.weapon,attack.wearSkill,false,false,unsigned(std::max(0,attack.wearAmount)));
-                if(!wear) {if(wear.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
-                const auto result=ports_.transactions.commit(std::move(*wear.value));
-                if(!result) {if(result.status==DomainStatus::Capacity) {blocked=true;break;} ++impact.next;continue;}
-                impact.wearApplied=true;
-            }
-            WeaponHitEffects extras;std::optional<WeaponSkillDamage> leech;LeechDivisors divisors;
-            if(impact.weapon && (source.player || (monsterSource && (monsterSource->hireling || monsterSource->necroMaterial)))) {
-                const int resistance=ports_.effects.unitResistance(target->id,DamageType::Physical,tick.tick);
-                const auto difficulty=size_t(target->rule.difficulty);const auto &rules=*owner->rules.skills;
-                divisors=source.player?LeechDivisors{rules.lifeStealDivisor.at(difficulty),rules.manaStealDivisor.at(difficulty)}:LeechDivisors{};
-                leech=*impact.weapon;leech->lifeLeech=nativePercentage(leech->lifeLeech,sourcePercent,100);leech->manaLeech=nativePercentage(leech->manaLeech,sourcePercent,100);
-                extras=weaponHitEffects(*leech,*target,impact.source,impact.binding.credit,resistance,0,divisors,tick.tick,random);
-            }
-            const bool convert=impact.conversion && target->rule.convertible && target->life>amount+extras.crushing+(poison?poison->rate:0) && int(limitedRandom(random,100))<impact.conversion->conversionChance;
             if(poison && monsterSource && monsterSource->hireling) poison->actualSource=monsterSource->id;
             auto execution=std::make_shared<MonsterContactExecution>();execution->targetIndex=impact.next;execution->target=target->id;
-            execution->channels=contactChannels;execution->pierce=pierce;execution->sanctuary=sanctuary;execution->amount=amount;execution->absorbed=absorbed;execution->physical=physical;
-            execution->cold=cold;execution->stun=impact.weapon?uint64_t(std::max(0,impact.weapon->stunFrames)):impact.stunFrames;
+            execution->channels=contactChannels;execution->pierce=pierce;execution->amount=amount;execution->absorbed=absorbed;execution->physical=physical;
+            execution->cold=cold;execution->stun=impact.stunFrames;
             execution->statuses.source=impact.source;
             if(impact.monsterHit) {execution->statuses.burn=impact.monsterHit->burn;execution->statuses.burnFrames=impact.monsterHit->burnFrames;}
             MonsterHit classification;classification.channels=contactChannels;
             auto hitClassCursor=state_.hitClassCursor;
-            execution->hitClass=monsterDamageHitClass(classification,uint8_t(impact.weapon?impact.weapon->weapon.hitClass:impact.hitClass),hitClassCursor);
+            execution->hitClass=monsterDamageHitClass(classification,impact.hitClass,hitClassCursor);
             state_.hitClassCursor=hitClassCursor;
-            execution->poison=std::move(poison);execution->extras=extras;execution->itemEvents=std::move(*itemEvents.value);
-            execution->random=random;execution->leech=std::move(leech);execution->divisors=divisors;execution->convert=convert;
-            execution->clearStun=impact.weapon && impact.weapon->clearTargetStun;
+            execution->poison=std::move(poison);execution->itemEvents=std::move(*itemEvents.value);
             execution->callbacks=ports_.effects.prepareDamageEvents(impact.source,target->id,physical,amount,
                 !impact.melee && (!impact.weapon || impact.weapon->projectile),impact.returnFire,tick.tick,impact.reaction);
             impact.monsterContact=std::move(execution);

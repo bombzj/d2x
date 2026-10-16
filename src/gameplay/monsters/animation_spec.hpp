@@ -1,5 +1,6 @@
 #pragma once
 #include <vector>
+#include <cstdint>
 
 namespace d2x {
 struct MonsterAttackTiming {
@@ -10,5 +11,6 @@ struct MonsterAttackTiming {
     std::vector<float> eventTimes = {};
     int speed{}, actionFrame{-1};
     std::vector<int> eventFrames{};
+    std::vector<uint8_t> flags;
 };
 } // namespace d2x

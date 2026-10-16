@@ -28,7 +28,7 @@ struct State {
     std::map<EntityId,bool> completed;
     std::map<EntityId,int> objectModes;
 };
-struct Ports { const PlayerStore &players; const AreaStore &areas; const population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; population::System &population; monsters::System &monsters; npc::System &npc; transactions::System &transactions; EventOutbox &events; const GameSettings &settings; items::System &items; travel::System &travel; world::System &world; uint64_t &random; loot::System &loot; effects::System &effects; const social::System &social; reactions::ItemTriggers &itemTriggers; missiles::System &missiles; objects::System &objects; };
 struct Dialogue {QuestId quest; NpcMessage message;};
 class System {
     State state_; const Ports ports_;
@@ -80,6 +80,7 @@ class System {
     void initializeControl();
     const State &read() const { return state_; }
     void initialize(const CharacterRecord &);
+    void nativeEliteBorn(EntityId,bool eligible);
     std::array<uint16_t,48> gameFlags() const;
     bool pendingGoals(PlayerId) const;
     QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }
@@ -94,6 +95,7 @@ class System {
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
     void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}
     DomainResult<> baalFx(RegionId,Vec);
+    DomainResult<> sealAfterglow(RegionId,EntityId,Vec,uint64_t tick);
     DomainResult<> cairnFx(RegionId,Vec,int destination,uint64_t tick);
     StepStatus step(TickContext,FrameFacts &);
 };

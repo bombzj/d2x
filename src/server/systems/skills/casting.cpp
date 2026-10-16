@@ -1,9 +1,11 @@
 #include "system.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "runtime.hpp"
 #include "shape.hpp"
 #include "gameplay/skills/druid_spec.hpp"
 #include "assassin_kick.hpp"
 #include "druid_melee.hpp"
+#include "weapon_melee.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
@@ -173,6 +175,7 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         !area.definition.collision.missileSegment(target.position,target.position,{5,1})) return {DomainStatus::Unavailable,{}};
     const bool inferno=skill.effect==SkillBehavior::Inferno;
     CastTiming timing;
+    std::optional<ActionTimeline> timeline;
     if(skill.druid && skill.druid->program==DruidProgram::Arctic) {
         timing=playerCastSequenceTiming(*playerCastSequence(18),256);
     } else if(skill.assassin && skill.assassin->sequence==23) {
@@ -187,15 +190,35 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
             effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate):a.speed;
         const WeaponAttackTiming clock{"s2",a.frames,speed,a.actionFrame,0};
         timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+        timeline=playerActionTimeline(a.frames,speed,a.startFrame,a.events);
+        const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
+        timing.duration=timeline->end;timing.impact=action==timeline->events.end()?timeline->end:action->tick;
     } else if(skill.effect!=SkillBehavior::Kick) {
         const auto animation=rules.animations.find(p.totals.equipment.animationClass);
         if(animation==rules.animations.end()) return {DomainStatus::Unavailable,{}};
         timing=sorceressCastTiming(animation->second,p.totals.character.combat.fasterCast,bool(skill.arc),inferno);
+        const bool ordinary=(!skill.assassin || skill.assassin->mode=="sc") &&
+            (!skill.druid || (skill.druid->mode=="sc" && skill.druid->program!=DruidProgram::Shape));
+        if(ordinary && !inferno && !skill.leap) {
+            if(skill.arc) {
+                const auto sequence=*playerCastSequence(12);
+                std::vector<uint8_t> flags(sequence.frames.size());flags[size_t(sequence.releaseFrame)]=1;
+                timeline=playerActionTimeline(int(sequence.frames.size()),timing.speed,0,flags);
+            } else timeline=playerActionTimeline(animation->second.frames,timing.speed,0,animation->second.events);
+            const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
+            timing.duration=timeline->end;timing.impact=action==timeline->events.end()?timeline->end:action->tick;
+        }
     }
     if(const auto *shape=activeShape(rules,ports_.effects.unitStates(actor.actor,actor.tick))) {
+        const bool scheduled=timeline.has_value();timeline.reset();
         const auto mode=skill.druid?skill.druid->mode:std::string{"sc"};
         const auto clock=shapeActionTiming(p,*shape,mode,rules.formulas->skills.at(skill.sourceId).number("useattackrate")!=0);if(!clock) return {DomainStatus::Unavailable,{}};
         timing={clock->durationTicks(),clock->actionTick(),clock->speed};
+        if(scheduled) {
+            timeline=playerActionTimeline(clock->frames,clock->speed,clock->startFrame,clock->events);
+            const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
+            timing.duration=timeline->end;timing.impact=action==timeline->events.end()?timeline->end:action->tick;
+        }
     }
     if(skill.effect==SkillBehavior::Kick) {
         const auto victim=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(unit);
@@ -212,11 +235,21 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto &weapon=p.totals.equipment.weapons[0];
         WeaponAttackTiming clock{"kk",a.frames,effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate),a.actionFrame,0};
         timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+        timeline=playerActionTimeline(a.frames,clock.speed,a.startFrame,a.events);
+        const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
+        timing.duration=timeline->end;timing.impact=action==timeline->events.end()?timeline->end:action->tick;
     }
     if(skill.effect==SkillBehavior::Unsummon && (!unit || !ports_.companions.canDismiss(actor,unit))) return {DomainStatus::InvalidRequest,{}};
     if(skill.leap) timing=playerCastSequenceTiming(*playerCastSequence(13),256);
     if(!ports_.events.hasCapacity(inferno?2:1,inferno?2:1)) return {DomainStatus::Capacity,{}};
     Release release{actor,std::move(skill),definition.collision,target,unit,actor.tick+uint64_t(timing.impact),type};
+    if(release.skill.effect==SkillBehavior::Kick && type!=2) {
+        auto start=release;
+        start.skill.weapon=WeaponSkillSpec{};start.skill.weapon->startFunction=2;start.skill.weapon->doFunction=2;
+        start.weapon=p.totals.equipment.weapons[0];
+        const auto prepared=startWeaponMelee(start,actor);if(!prepared) return prepared;
+        release.weaponMelee=std::move(start.weaponMelee);
+    }
     if(release.skill.assassin && (release.skill.assassin->program==AssassinProgram::DragonTalon ||
        release.skill.assassin->program==AssassinProgram::DragonTail || release.skill.assassin->program==AssassinProgram::DragonFlight)) {
         const auto start=startAssassinKick(release,actor);if(!start) return start;
@@ -226,13 +259,21 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto speed=effectiveAttackSpeed(a.speed,weapon.fasterAttack,weapon.baseSpeed,p.totals.character.combat.attackRate);
         WeaponAttackTiming clock{"kk",a.frames,speed,a.actionFrame,0};
         timing={clock.durationTicks(),clock.actionTick(),clock.speed};
+        release.weaponSpeed=clock.speed;release.weaponFrames=a.frames;release.animationEvents=a.events;
+        timeline=playerActionTimeline(a.frames,clock.speed,a.startFrame,a.events);
+        timing.duration=timeline->end;
+        const auto action=std::find_if(timeline->events.begin(),timeline->events.end(),[](const auto &event){return event.event==1 || event.event==2;});
+        timing.impact=action==timeline->events.end()?timeline->end:action->tick;
         release.weaponHits={timing.impact};
         if(release.skill.assassin->program==AssassinProgram::DragonFlight) {
             const auto sequence=assassinSequence(21,p.totals.equipment.animationClass);
             release.weaponHits=weaponSequenceHitTicks(sequence,256);
-            timing={weaponSequenceTick(int(sequence.size()),256),release.weaponHits.front(),256};
+            release.weaponSpeed=256;release.weaponFrames=int(sequence.size());release.animationEvents.clear();
+            for(const auto &frame:sequence) release.animationEvents.push_back(frame.hit?1:0);
+            timeline=playerActionTimeline(release.weaponFrames,256,0,release.animationEvents);
+            timing={timeline->end,release.weaponHits.front(),256};
         }
-        release.weaponFrames=timing.duration;release.tick=actor.tick+uint64_t(timing.impact);
+        release.tick=actor.tick+uint64_t(timing.impact);
     }
     if(release.skill.leap && release.skill.leap->attack) {
         const auto end=p.totals.equipment.weapons.begin()+p.totals.equipment.weaponCount;
@@ -244,6 +285,14 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     auto preparedUse=state_.prepareUsedSkill(actor.actor,selectedUse);
     auto cast=Cast{actor.actor,uint16_t(selected),actor.tick,actor.sequence,actor.tick+uint64_t(timing.duration),actor.area,unit};
     cast.usesSkillPointer=true;
+    std::optional<State::PreparedTimeline> preparedTimeline;
+    if(timeline) {
+        preparedTimeline=state_.prepareTimeline(actor.actor,actor.tick,*timeline);
+        cast.timeline=preparedTimeline->generation;release.eventDriven=true;
+    } else {
+        preparedTimeline=state_.prepareProgramTimeline(actor.actor,actor.tick);
+        cast.timeline=preparedTimeline->generation;release.eventDriven=true;
+    }
     if(saved) cast.cooldownUntil=saved->cooldownUntil;
     std::map<EntityId,Release> preparedRelease;preparedRelease.emplace(actor.actor,std::move(release));
     std::map<EntityId,Cast> preparedCast;preparedCast.emplace(actor.actor,cast);
@@ -278,10 +327,17 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto output=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Area,{},actor.area},{action}});
         if(!output) return {output.status,{}};
     }
+    if(const auto start=runtime_->weaponStarts.find(actor.actor);start!=runtime_->weaponStarts.end()) {
+        if(start->second.weaponMelee!=staged.weaponMelee && start->second.weaponMelee && start->second.weaponMelee->occurrence)
+            ports_.combat.discardNativeMelee(actor.actor,*start->second.weaponMelee->occurrence);
+        runtime_->weaponStarts.erase(start);
+    }
     if(releases_.contains(actor.actor)) ports_.companions.cancel(actor.actor);
     releases_.erase(actor.actor);releases_.merge(preparedRelease);
     state_.casts.erase(actor.actor);state_.casts.merge(preparedCast);
     state_.commitUsedSkill(std::move(preparedUse));
+    if(preparedTimeline) state_.commitTimeline(std::move(*preparedTimeline));
+    else state_.cancelTimeline(actor.actor);
     ports_.movement.execute(actor,{MovementAction::Stop,{},false});return {DomainStatus::Applied,std::monostate{}};
 }
 System::ActivationProgram System::activationProgram(const SkillCastSpec &skill) {
@@ -332,10 +388,10 @@ DomainStatus System::activate(Release &pending,const ActorContext &actor,Vec tar
     const auto program = pending.skill.leap ? ActivationProgram::Leap : pending.weapon ? ActivationProgram::Weapon : activationProgram(pending.skill);
     return (this->*handlers[size_t(program)])(pending, actor, target);
 }
-StepStatus System::release(TickContext tick) {
+StepStatus System::release(TickContext tick,EntityId only) {
     auto &releases_=runtime_->releases;
     bool blocked=false;
-    for(auto it=releases_.begin();it!=releases_.end();) {
+    for(auto it=releases_.find(only);it!=releases_.end() && it->first==only;) {
         auto &pending=it->second;if(tick.tick<pending.tick) {++it;continue;}
         auto actor=pending.actor;actor.tick=tick.tick;const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
         const bool continuing=pending.nativeCallbackStarted;
@@ -354,26 +410,33 @@ StepStatus System::release(TickContext tick) {
         if(!valid) {
             if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
             if(pending.druidMelee && pending.druidMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.druidMelee->occurrence);
+            if(pending.weaponMelee && pending.weaponMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.weaponMelee->occurrence);
             ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
         }
         if(pending.charging) {
             if(!ports_.events.hasCapacity(1)) {blocked=true;++it;continue;}
             const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
             const auto victim=participants.find(pending.unit);
-            const int stop=victim.id()?pending.weapon->rangeAdder+1+(victim.size()+2)/2:0;
-            const auto step=ports_.movement.chargeStep(actor,target,pending.chargeSpeed,stop);
-            if(!step || tick.tick>state_.casts.at(actor.actor).started+250) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
-            if(!*step.value) {pending.tick=tick.tick+1;++it;continue;}
+            const bool inMelee=victim.id() && playerMeleeReach(area->definition.collision,p->position,victim.position(),victim.size(),pending.weapon->rangeAdder);
+            const auto step=inMelee?DomainResult<bool>{DomainStatus::Applied,true}:
+                ports_.movement.chargeStep(actor,target,pending.chargeSpeed,0);
+            if(!step && step.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(!step) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
+            if(!*step.value) {pending.tick=tick.tick+1;state_.casts.at(actor.actor).until=tick.tick+1;++it;continue;}
             if(!pending.unit) {
-                for(const auto id:participants.enemies(actor.actor,actor.area)) {const auto m=participants.find(id);if(meleeDistance(p->position,2,m.position(),m.size())<=pending.weapon->rangeAdder+1) {pending.unit=id;pending.unitType=m.player?0:1;target=m.position();break;}}
-                if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
+                const auto targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,3,0xa783,false,{},effects::NativeAuraTargetMode::OwnerRange,tick.tick});
+                pending.unit=nativeSkillSuccessor(targets,UINT32_MAX);
+                if(pending.unit) {const auto found=participants.find(pending.unit);pending.unitType=found.player?0:1;target=found.position();}
+                if(!pending.unit) {state_.casts.at(actor.actor).until=tick.tick+1;it=releases_.erase(it);continue;}
             }
-            pending.charging=false;pending.tick=tick.tick+uint64_t(std::max(1,(3*256+pending.weaponSpeed-1)/pending.weaponSpeed));
+            pending.charging=false;pending.animationAnchor=int64_t(tick.tick)-8;
+            const auto timeline=rewoundPlayerActionTimeline(pending.weaponFrames,pending.weaponSpeed,8,pending.animationEvents);
+            auto prepared=state_.prepareTimeline(actor.actor,tick.tick,timeline);
+            auto &cast=state_.casts.at(actor.actor);cast.timeline=prepared.generation;cast.until=tick.tick+uint64_t(timeline.end);
+            pending.tick=tick.tick+1;
+            pending.weaponHits.clear();for(const auto &event:timeline.events) if(event.event==1 || event.event==2) {pending.weaponHits.push_back(event.tick);break;}
+            state_.commitTimeline(std::move(prepared));
             ports_.movement.execute(actor,{MovementAction::Stop,{},false});
-            ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
-                {AttackFact{actor.actor,pending.unit,0,pending.unitType,actor.area,p->position,target,tick.tick,uint16_t(pending.skill.sourceId),uint8_t(pending.skill.rank),true}}});
-            pending.weaponHits={int(pending.tick-tick.tick)};
-            state_.casts.at(actor.actor).until=tick.tick+uint64_t(std::max(1,(7*256+pending.weaponSpeed-1)/pending.weaponSpeed));
             ++it;continue;
         }
         DomainStatus status;
@@ -388,6 +451,7 @@ StepStatus System::release(TickContext tick) {
         } else status=activate(pending,actor,target);
         }
         if(pending.cancelled && (status!=DomainStatus::Capacity || !pending.nativeCallbackStarted)) {
+            if(pending.weaponMelee && pending.weaponMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.weaponMelee->occurrence);
             if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
             if(pending.druidMelee && pending.druidMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.druidMelee->occurrence);
             ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
@@ -420,13 +484,26 @@ StepStatus System::release(TickContext tick) {
             if(channel) {if(pending.skill.charge) pending.skill.charge->item=p->persistent.inventory.items.at(pending.skill.charge->item.id).handle();++pending.pulses;pending.tick=tick.tick+1;cast.until=tick.tick+1;++it;continue;}
             if(pending.weapon) {
                 pending.manaPaid=true;
+                if(pending.rewindRemaining>0 && --pending.rewindRemaining>0) {
+                    const auto elapsed=int((int64_t(tick.tick)-pending.animationAnchor)*(100-pending.weaponRollback)/100);
+                    const auto timeline=rewoundPlayerActionTimeline(pending.weaponFrames,pending.weaponSpeed,elapsed,pending.animationEvents);
+                    auto prepared=state_.prepareTimeline(actor.actor,tick.tick,timeline);
+                    pending.animationAnchor=int64_t(tick.tick)-elapsed;
+                    cast.timeline=prepared.generation;cast.until=tick.tick+uint64_t(timeline.end);
+                    pending.tick=tick.tick+1;
+                    ++pending.nextWeaponHit;
+                    state_.commitTimeline(std::move(prepared));
+                    ++it;continue;
+                }
                 if(++pending.nextWeaponHit<pending.weaponHits.size()) {
-                    pending.tick=tick.tick+uint64_t(std::max(1,pending.weaponHits[pending.nextWeaponHit]-pending.weaponHits[pending.nextWeaponHit-1]));
+                    pending.tick=pending.eventDriven?cast.started+uint64_t(pending.weaponHits[pending.nextWeaponHit]):
+                        tick.tick+uint64_t(std::max(1,pending.weaponHits[pending.nextWeaponHit]-pending.weaponHits[pending.nextWeaponHit-1]));
                     ++it;continue;
                 }
             }
         }
         ports_.companions.cancel(actor.actor);
+        if(pending.weaponMelee && pending.weaponMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.weaponMelee->occurrence);
         if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
         it=releases_.erase(it);
     }

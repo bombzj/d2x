@@ -9,7 +9,7 @@ StepStatus System::nestFamily(EntityId id,UnitTarget target,int distance,TickCon
     // walking or melee clock. Birth uses the prepared MonSeq event 4 clock.
     if(distance>20) {controller.nextDecision=tick.tick+25;return StepStatus::Complete;}
     if(controller.act2Attempts>=p[2]) {
-        const auto result=ports_.monsters.damage(id,id,nest.life,tick.tick);
+        const auto result=perform(controller,[this,id,life=nest.life,tick]{return ports_.monsters.damage(id,id,life,tick.tick);});
         if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
         return StepStatus::Complete;
     }
@@ -22,7 +22,7 @@ StepStatus System::nestFamily(EntityId id,UnitTarget target,int distance,TickCon
         controller.lastSpawn=tick.tick;controller.nextDecision=tick.tick+20+limitedRandom(controller.random,10);
         return StepStatus::Complete;
     }
-    const auto result=ports_.skills.requestCast({id,nest.rule.skillIds[0],target,tick.tick});
+    const auto result=requestAction(controller,{id,nest.rule.skillIds[0],target,tick.tick});
     if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
     if(result) {controller.lastSpawn=tick.tick;++controller.act2Attempts;}
     else controller.nextDecision=tick.tick+20+limitedRandom(controller.random,10);

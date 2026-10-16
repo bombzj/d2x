@@ -10,10 +10,12 @@ namespace monsters {class System;struct Actor;}
 namespace effects {class System;}
 namespace skills {
 // A borrowed capability view. The actor stores identity, resources, equipment
-// and seed; its controller supplies class program metadata, never its totals.
+// and seed. Uncontrolled units use the instance's prepared program catalog;
+// controlled units may use their actual owner's class animation metadata.
 struct NativeCaster {
     const PlayerState *player{},*controller{};
     const monsters::Actor *monster{};
+    const SkillRules *unitPrograms{};
     EntityId id() const;
     RegionId area() const;
     Vec position() const;

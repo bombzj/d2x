@@ -69,25 +69,33 @@ struct AreaDefinition : AreaMetadata {
         int definition{-1},collisionObject{};
         Vec position;
         bool retry{};
+        int retryAttempts{4},finalRetryAttempts{};
+        MonsterRank rank{MonsterRank::Normal};
         std::string superUnique;
         int uniqueIndex{-1},minimum{},maximum{};
         std::array<int,3> modifiers{};
         bool automatic{},stacks{};
+        bool randomElite{};
         int place{-1};
         bool group{},dead{};
         std::string deferred;
         std::vector<Vec> skillPositions;
         struct Extra {int definition{-1},minimum{},maximum{},attempts{};bool owned{},party{};};
         std::vector<Extra> extras;
+        int questVariant{-1};
+        bool prisonDoor{};
+        std::optional<Vec> sourcePosition;
     };
     std::vector<NativePresetMonster> nativePresetMonsters;
+    std::map<std::string,NativePresetMonster,std::less<>> nativeQuestMonsters;
     struct PopulationClass {
         int minimum{},maximum{},sparse{},partyMinimum{},partyMaximum{};
         std::array<int,2> minions{-1,-1};
-        bool ownsParty{},singleGroup{},waterParty{},objectHut{},hostile{};
+        bool ownsParty{},singleGroup{},waterParty{},objectHut{},hostile{},figurineEligible{};
     };
     struct PopulationRules {
         int density{},uniqueMinimum{},uniqueMaximum{},warpDistance{};
+        int wander{},wanderClass{-1},urnClass{-1},afterglowClass{-1};
         std::vector<MonsterPopulationChoice> roster;
         std::vector<int> uniques;
         std::map<int,PopulationClass> classes;
@@ -95,7 +103,6 @@ struct AreaDefinition : AreaMetadata {
     } populationRules;
     std::shared_ptr<const CollisionField> collisionField;
     std::map<std::string,PreparedMonster,std::less<>> environmentMonsters;
-    std::map<std::string,std::vector<PreparedMonster>,std::less<>> environmentGroups;
     std::vector<std::string> populationRoster;
     std::map<int,ShrineRule> shrineRules;
     std::vector<ShrineGenerationEntry> shrineGeneration;
@@ -105,7 +112,6 @@ struct AreaDefinition : AreaMetadata {
     RoomLayout activation;
     std::vector<std::vector<RoomView>> roomNear; // Authored DRLG order, including cross-level links.
     std::vector<PreparedMonster> population;
-    std::map<std::string,std::vector<PreparedMonster>,std::less<>> questGroups;
     std::map<std::string,NpcRule,std::less<>> questNpcs;
     std::map<int, MonsterComponentPalette> componentPalettes;
     std::vector<std::string> populationDeferred;

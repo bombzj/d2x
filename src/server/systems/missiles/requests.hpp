@@ -48,7 +48,6 @@ struct MonsterSpawn {
     MonsterAttackRule attack;
     MonsterHitStates states;
     int level{}, critical{}, extraQuills{};
-    uint64_t random{};
     std::optional<MonsterWebRule> web{};
     std::vector<Vec> aims{};
     bool postMortem{};
@@ -63,7 +62,7 @@ struct MonsterSpawn {
     std::optional<int> startFrame; // Native constructor flag 0x200, including an explicit zero.
     std::optional<int> totalFrames; // Native 0x8000 range override, applied before path initialization.
 };
-struct MonsterLaunch { EntityId first; uint64_t random{}; };
+struct MonsterLaunch { EntityId first; };
 struct NativeSpawn {
     EntityId owner;
     RegionId area;

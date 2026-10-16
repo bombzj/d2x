@@ -83,7 +83,12 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"logical",room.logical},{"definition",room.definition},{"trial",room.trial},{"search",room.search},
             {"remaining",room.remaining},{"partyRemaining",room.partyRemaining},{"champions",room.champions},
             {"processedRooms",room.processedRooms},{"successfulRooms",room.successfulRooms},{"uniqueCount",room.uniqueCount},
-            {"leader",room.leader.value},{"preset",room.preset?Json(*room.preset):Json(nullptr)},{"deferred",room.deferred}});
+            {"leader",room.leader.value},{"preset",room.preset?Json(*room.preset):Json(nullptr)},
+            {"quest",room.quest},{"object",room.object.value},{"deferred",room.deferred}});
+    result["wanderPopulation"]=Json::array();
+    for(const auto &room:s.wanderPopulation)
+        result["wanderPopulation"].push_back({{"area",int(room.area)},{"room",room.room},{"epoch",room.epoch},
+            {"phase",room.phase},{"search",room.search},{"count",room.count},{"deferred",room.deferred}});
     for(const auto &[region,keys]:s.rejectedDensity)
         result["rejectedDensity"].push_back({{"area",int(region)},{"spawnKeys",keys}});
     for(const auto &[region,population]:s.objectPopulation)
@@ -159,9 +164,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         value["curseControl"]={{"kind",int(monster.curseControl.ai)},{"caster",monster.curseControl.caster.value},
             {"target",monster.curseControl.target.value},{"until",monster.curseControl.until}};
         if(monster.curseControl.origin) value["curseControl"]["origin"]={{"x",monster.curseControl.origin->x},{"y",monster.curseControl.origin->y}};
-        value["specialTargetOrder"]=monster.specialTargetOrder;value["aiFunctionRevision"]=monster.aiFunctionRevision;value["detachedMinion"]=monster.detachedMinion;
-        if(monster.assassin) value["assassin"]={{"parameters",monster.assassin->parameters},{"nextDecision",monster.assassin->nextDecision},
-            {"expires",monster.assassin->expires},{"removeAt",monster.assassin->removeAt},{"lastCorpse",monster.assassin->lastCorpse.value},{"missile",monster.assassin->missile.value}};
+        value["specialTargetOrder"]=monster.specialTargetOrder;value["wanderTargetOrder"]=monster.wanderTargetOrder;
+        value["aiFunctionRevision"]=monster.aiFunctionRevision;value["detachedMinion"]=monster.detachedMinion;
         value["attraction"]={{"target",monster.attractionTarget.value},{"until",monster.attractionUntil}};
         value["aiResetTimers"]=Json::array();value["aiResetsTracked"]=monster.aiResetsTracked;
         for(const auto &timer:monster.aiResetTimers) value["aiResetTimers"].push_back({{"due",timer.due},{"continuous",timer.continuous},{"identity",timer.identity}});

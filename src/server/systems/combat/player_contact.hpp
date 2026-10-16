@@ -41,11 +41,9 @@ struct PlayerContactExecution {
     effects::PlayerReceptionPlan defense;
     effects::NativeContactBatch callbacks;
     std::optional<ItemHandle> wear;
-    std::optional<WeaponSkillDamage> leech;
     WeaponHitResult extras;
     bool nativeMissile{};
     reactions::ItemEventPlan itemEvents;
-    uint64_t random{};
     uint32_t hitClass{};
     int64_t remainingLife{};
     bool damageCommitted{};int64_t receivedPhysical{};
@@ -63,16 +61,13 @@ struct MonsterContactExecution {
     std::optional<bool> getHit;
     effects::NativeContactBatch callbacks;
     std::optional<effects::UnitReceptionPlan> defense;
-    int64_t amount{},absorbed{},physical{},recoil{};
+    int64_t amount{},absorbed{},physical{};
     uint64_t cold{},stun{},freeze{};
     std::optional<PoisonApplication> poison;
     WeaponHitEffects extras;
-    std::optional<WeaponSkillDamage> leech;
-    LeechDivisors divisors;
     reactions::ItemEventPlan itemEvents;
-    uint64_t random{};
     int leechOverlay{-1};
     uint8_t hitClass{};
-    bool receptionPrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},convert{},hostile{},clearStun{},gainsPrepared{},sanctuary{},fillEventComplete{},meleeEventComplete{},damageCommitted{};
+    bool receptionPrepared{},defenseCommitted{},callbacksPrepared{},callbacksComplete{},hostile{},clearStun{},stunPrepared{},sanctuary{},fillEventComplete{},meleeEventComplete{},damageCommitted{};
 };
 }

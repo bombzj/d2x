@@ -55,11 +55,16 @@ void System::initialize(Object &object,uint64_t tick,uint64_t &random,uint64_t &
     } else if(rule.initialization==27) {
         rule.trap=limitedRandom(controlRandom,1000)<333?3:0;
     }
+    if(rule.initialization==8) object.mode=2;
+    if(rule.initialization==14 || rule.initialization==26) object.mode=1;
     if(object.rule.initialization==22 || object.rule.initialization==24) object.hazardAt=tick+25;
     if(object.rule.initialization==22 && !object.mode) object.mode=object.rule.initialMode;
     if(object.rule.initialization==34 && limitedRandom(controlRandom,2)) object.mode=1;
     if(object.rule.initialization==51 && (object.mode==1 || object.mode==2)) object.hazardAt=tick+35;
     if(object.rule.initialization==58) object.hazardAt=tick+25+limitedRandom(controlRandom,250);
+    if(rule.initialization==59 && !object.mode) {
+        object.mode=1;object.hazardAt=tick+27;object.until=tick+rule.openingTicks;
+    }
     if(rule.preOperate && limitedRandom(controlRandom,14)==0) object.mode=2;
     if(rule.shrinePreset>=574 && rule.shrinePreset<=579) {
         constexpr int minimum[]{2,7,8,12,1,14},maximum[]{6,7,11,12,5,14};
@@ -80,6 +85,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     if(!area || !std::isfinite(request.position.x) || !std::isfinite(request.position.y) || request.mode<0 || request.mode>7) return {DomainStatus::InvalidRequest,{}};
     const auto source=area->definition.objectRules.find(request.definition);
     if(source==area->definition.objectRules.end() || (request.position.x<0 || request.position.y<0 || request.position.x>=area->definition.collision.width || request.position.y>=area->definition.collision.height)) return {DomainStatus::InvalidRequest,{}};
+    if(!area->definition.activation.room(request.position)) return {DomainStatus::Unavailable,{}};
     auto rule=source->second;
     if(request.shrine) {
         const int code=*request.shrine==4?2:*request.shrine==5?3:*request.shrine==16?18:*request.shrine;
@@ -92,7 +98,8 @@ DomainResult<EntityId> System::admit(const Admission &request) {
         rule.chest.emplace();rule.chest->trap=*request.trap;
     }
     if(state_.objects.size()>=65536 || ports_.ids.cursor()>=UINT32_MAX) return {DomainStatus::Capacity,{}};
-    const auto id=ports_.ids.allocate();Object object{id,request.definition,request.area,request.position,1,request.mode,std::move(rule)};
+    auto ids=ports_.ids;
+    const auto id=ids.allocate();Object object{id,request.definition,request.area,request.position,1,request.mode,std::move(rule)};
     auto random=ports_.random;
     auto controlRandom=state_.controlRandom.value();
     object.uses=2*object.rule.parameters[2];initialize(object,request.tick,random,controlRandom);
@@ -102,9 +109,11 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     }
     if(request.trap && object.rule.chest) object.rule.chest->trap=uint8_t(*request.trap);
     auto room=ports_.areas.prepareRoomUnit(id,2,object.area,object.position);
-    state_.objects.emplace(id,std::move(object));ports_.areas.publishRoomUnit(*room);collision(request.area);
+    state_.objects.emplace(id,std::move(object));ports_.areas.publishRoomUnit(*room);
+    ports_.ids=ids;
     ports_.random=random;
     state_.controlRandom=controlRandom;
+    collision(request.area);
     return {DomainStatus::Applied,id};
 }
 DomainResult<> System::damage(Object &object,DamageType type,bool playersOnly,int radius,TickContext tick,std::optional<EntityId> only) {
@@ -147,9 +156,10 @@ DomainResult<> System::explode(Object &object,const ActorContext &actor) {
     }
     collision(object.area);return {DomainStatus::Applied,std::monostate{}};
 }
-StepStatus System::hazardStep(TickContext tick) {
+StepStatus System::hazardStep(TickContext tick,EntityId only) {
     bool blocked=false;std::set<RegionId> changed;
-    for(auto &[id,object]:state_.objects) {
+    for(auto entry=state_.objects.find(only);entry!=state_.objects.end() && entry->first==only;++entry) {
+        auto &[id,object]=*entry;
         if (!ports_.areas.loaded(object.area, object.position)) continue;
         (void)id;if(!object.hazardAt || tick.tick<object.hazardAt) continue;
         const auto &area=ports_.areas.at(object.area);
@@ -176,11 +186,11 @@ StepStatus System::hazardStep(TickContext tick) {
             } else if(object.mode==3) {object.mode=4;++object.revision;changed.insert(object.area);object.hazardAt=0;}
             else object.hazardAt=0;
         } else if(object.rule.initialization==58) {
-            object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);++object.revision;changed.insert(object.area);object.hazardAt=tick.tick+25+limitedRandom(object.random,250);
+            object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks);++object.revision;changed.insert(object.area);object.hazardAt=tick.tick+25+limitedRandom(*state_.controlRandom,250);
         } else if(object.rule.initialization==22) {
             if(occupied) {const auto result=damage(object,DamageType::Fire,true,radius,tick);if(!result) {blocked|=result.status==DomainStatus::Capacity;continue;}}
             if(object.mode==1) {object.mode=2;++object.revision;changed.insert(object.area);}
-            object.hazardAt=tick.tick+15+limitedRandom(object.random,35);
+            object.hazardAt=tick.tick+15+limitedRandom(*state_.controlRandom,35);
         } else if(object.rule.initialization==24) {
             if(object.phase==0) {
                 if(occupied) {if(!ports_.events.hasCapacity(1)) {blocked=true;continue;}const auto result=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object.area},{SoundFact{object.id,2,object.area,13}}});if(!result) {blocked=true;continue;}}

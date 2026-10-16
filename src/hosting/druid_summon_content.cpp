@@ -75,6 +75,7 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
         value.duration=std::max(1,int(std::ceil(timing->duration*25)));value.release=std::clamp(int(std::ceil(timing->impact*25)),1,value.duration);
         value.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
         value.animationAction=timing->actionFrame;value.animationSequence=timing->sequenceFrames>0;value.animationEvents=timing->eventFrames;
+        value.animationFlags=timing->flags;
         value.useAttackRate=ordinary || data.nativeFormulas->skills.at(skill).number("useattackrate");
         if(ordinary) {rule.attacks.emplace(value.nativeMode,value);rule.attackTicks=value.duration;rule.impactTick=value.release;}
         else rule.skillActions.emplace(uint16_t(skill),value);

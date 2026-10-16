@@ -74,7 +74,7 @@ DomainResult<> System::amazon(const ActorContext &actor,const SkillCastSpec &ski
     if(!idCandidate) return {idCandidate.status,{}};
     auto actors=std::move(*idCandidate.value);const auto id=actors.begin()->first;
     auto next=state_;Companion pet{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};
-    pet.rank=skill.rank;pet.expires=program.decoy?actor.tick+uint64_t(std::max(1,program.lifetimeFrames)):UINT64_MAX;pet.nextDecision=actor.tick+(program.decoy?0:20);pet.random=petRandom;
+    pet.rank=skill.rank;pet.expires=program.decoy?actor.tick+uint64_t(std::max(1,program.lifetimeFrames)):UINT64_MAX;pet.nextDecision=actor.tick+(program.decoy?0:20);
     next.companions.emplace(id,std::move(pet));
     std::vector<EntityId> retire;
     for(auto &[key,existing]:next.companions) if(key!=id && existing.owner==actor.player && existing.sourceSkill==uint16_t(skill.sourceId) && !existing.removeAt) {

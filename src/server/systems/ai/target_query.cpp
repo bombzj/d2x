@@ -60,16 +60,16 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
     std::optional<NativeAiTarget> primary,alternative;
     const bool nodeQuery=!confused && !missileRay && source.alignment()==UnitAlignment::Evil;
     const int maximum=searchDistance>0?searchDistance:missileRay?48:nodeQuery?(source.rule.ai.searchDistance?source.rule.ai.searchDistance:35):35;
-    const auto consider=[&](EntityId id,bool special=false) {
+    const auto consider=[&](EntityId id,bool special=false,bool wander=false) {
         const auto target=participants.find(id);if(!alive(target) || id==source.id || !target.damageable()) return;
         const auto region=target.player?target.player->area:target.monster->area;
         if(ports_.areas.at(region).definition.act!=area.definition.act) return;
-        if(!special && !participants.canHarm({nullptr,&search},target)) return;
+        if(!special && !wander && !participants.canHarm({nullptr,&search},target)) return;
         const auto point=position(target);
         const int distance=monsterAiDistance(point,nodeQuery?0:target.monster?target.size():0,source.position);
         if((!special && (nodeQuery?distance>=maximum:distance>maximum)) || !clearRay(point)) return;
         const int threat=target.player?14:target.monster->rule.threat;
-        auto &selected=special || (!nodeQuery && threat<=1)?alternative:primary;
+        auto &selected=special || (!nodeQuery && !wander && threat<=1)?alternative:primary;
         if(!selected || distance<selected->distance) selected=NativeAiTarget{{id,0,uint8_t(target.monster?1:0)},point,target.size(),distance};
     };
     if(nodeQuery) {
@@ -87,6 +87,12 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
             });
             for(const auto id:pets) consider(id);
         }
+        std::vector<EntityId> wanderers;
+        for(const auto &[id,unit]:ports_.monsters.read().actors) if(unit.wanderTargetOrder) wanderers.push_back(id);
+        std::sort(wanderers.begin(),wanderers.end(),[&](EntityId left,EntityId right) {
+            return ports_.monsters.find(left)->wanderTargetOrder>ports_.monsters.find(right)->wanderTargetOrder;
+        });
+        for(const auto id:wanderers) consider(id,false,true);
         for(const auto id:ports_.monsters.specialTargets()) consider(id,true);
     } else if(const auto *room=area.definition.activation.room(source.position)) {
         const auto current=RoomView{source.area,int(area.definition.origin.x)+room->x,int(area.definition.origin.y)+room->y};

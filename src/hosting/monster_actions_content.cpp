@@ -211,7 +211,8 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
     std::map<uint8_t,server::MonsterAttackRule> result;
     // MonsterMode calculates attack values at the current unit level, after
     // unique/champion/minion level bonuses; HP and AC were initialized earlier.
-    const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level,ladderStats);
+    const auto current=loadMonsterCombatProfile(data.tables.at("monstats"),record.sourceRow,data.tables.at("monlvl"),difficulty,profile.level,profile.level,ladderStats,
+        record.hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
     if(!current) return result;
     for(int slot=1;slot<=2;++slot) {
         const auto &damage=slot==1?current->damage.attack1Damage:current->damage.attack2Damage;
@@ -226,6 +227,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         attack.rating=rating.value_or(0);attack.duration=std::max(1,int(std::ceil(clock->duration*25)));
         attack.release=std::clamp(int(std::ceil(clock->impact*25)),1,attack.duration);
         attack.animation=AnimationTiming{clock->frames,clock->speed};attack.animationAction=clock->actionFrame;
+        attack.animationFlags=clock->flags;
         for(const auto &element:current->damage.elements) if(element && element->mode==(slot==1?"A1":"A2")) attack.elements.push_back(*element);
         if(projectile) {
             attack.missile=prepareMonsterMissile(data,projectile->id,1+data.tables.at("difficultylevels").number(size_t(difficulty),"MonsterSkillBonus").value_or(0));
@@ -281,6 +283,8 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         action.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
         action.animationAction=timing->actionFrame;action.animationSequence=timing->sequenceFrames>0;
         action.animationEvents=timing->eventFrames;
+        action.animationFlags=timing->flags;
+        action.animationEvent=uint8_t(event);
         if(record.ai=="FallenShaman" && slot==0) action.action=server::MonsterAttackRule::Action::Resurrect;
         else if(record.ai=="FoulCrowNest" || (record.ai=="BloodRaven" && slot==0)) action.action=server::MonsterAttackRule::Action::Nest;
         else if(rule.ai.kind==MonsterAiKind::Countess) {
@@ -397,6 +401,7 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
     rule.bossTransfer=monsters.number(monsterRow,"bossxfer").value_or(0)!=0;
     const auto id=monsters.value(monsterRow,"Id");
     const auto baseId=monsters.value(monsterRow,"BaseId");
+    rule.wakeAiOutsideNeutral=baseId=="vulture1" || baseId=="willowisp1" || baseId=="batdemon1" || baseId=="frogdemon1";
     rule.nativeModifiers.clear();
     if(baseId=="brute2") rule.nativeModifiers.push_back(13);
     else if(baseId=="scarab1") rule.nativeModifiers.push_back(20);

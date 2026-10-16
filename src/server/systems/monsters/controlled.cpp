@@ -14,6 +14,14 @@
 #include <vector>
 #include <span>
 namespace d2x::server::monsters {
+DomainResult<> System::attackProfile(EntityId id,std::shared_ptr<const StatList> mode,uint64_t expected,uint64_t next) {
+    auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.nativeStats) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;if(unit.combatRandom!=expected) return {DomainStatus::Stale,{}};
+    if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    auto stats=attributes::withUnitModeStats(*unit.nativeStats,*unit.rule.stats,std::move(mode));
+    unit.nativeStats=std::move(stats);unit.combatRandom=next;++unit.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::toggleAiState(EntityId id,int state,bool active,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || state<0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;if(actor.aiStates.contains(state)==active) return {DomainStatus::Applied,std::monostate{}};
@@ -22,12 +30,14 @@ DomainResult<> System::toggleAiState(EntityId id,int state,bool active,uint64_t 
     if(active) actor.aiStates.insert(state);else actor.aiStates.erase(state);
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
-void System::curseControl(EntityId id,Actor::CurseControl control) noexcept {
+void System::curseControl(EntityId id,Actor::CurseControl control) {
     if(auto found=state_.actors.find(id);found!=state_.actors.end()) {
         auto &actor=found->second;
         const auto function=[](CurseAi ai) {return ai==CurseAi::DimVision || ai==CurseAi::Terror || ai==CurseAi::Taunt?ai:CurseAi::None;};
-        if(function(actor.curseControl.ai)!=function(control.ai)) {++actor.aiFunctionRevision;actor.aiThinkAt=0;}
+        const bool changed=function(actor.curseControl.ai)!=function(control.ai);
+        if(changed) {++actor.aiFunctionRevision;actor.aiThinkAt=0;}
         actor.curseControl=std::move(control);++actor.revision;
+        if(changed) scheduleAi(id,0);
     }
 }
 void System::refreshNecro(EntityId id,MonsterRule rule,UnitCombatStats stats,std::shared_ptr<const NecroPetSpec> pet,std::optional<WeaponDamage> weapon,
@@ -100,7 +110,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNecro(const ActorContext &
         actor.aiPose=9;actor.busyUntil=actor.riseUntil=actor.poseUntil=owner.tick+uint64_t(rule.summonBirthTicks);
     }
     actor.combatRandom=random;
-    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
 DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContext &owner,const MonsterRule &rule,std::string_view code,Vec position,int64_t life,uint64_t random,NativeUnitStats intrinsic) const {
     const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
@@ -116,7 +126,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContex
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.petStats.damageRegen=rule.damageRegen;
     actor.combatRandom=random;actor.rewardComplete=true;actor.components=chooseMonsterComponents(rule.componentCounts,{},random);
-    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
 DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SummonCastSpec &summon,Vec center,uint64_t &random) const {
     const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
@@ -155,7 +165,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
         actor.modeAlive=true;actor.rewardComplete=true;
         actor.riseUntil=actor.busyUntil=owner.tick+uint64_t(definition.riseTicks);
         actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);
-        prepared.emplace(actor.id,std::move(actor));
+        prepareInitialTimers(actor,owner.tick);prepared.emplace(actor.id,std::move(actor));
     }
     if(prepared.empty()) return {DomainStatus::Unavailable,{}};
     return {DomainStatus::Applied,std::move(prepared)};
@@ -172,16 +182,33 @@ void System::commitRevive(std::map<EntityId,Actor> &&actors) noexcept {
 ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors,size_t allocatedIds) const {
     ActorPublication result;result.cursor=ports_.ids.cursor();result.allocatedIds=allocatedIds;
     result.actors=std::move(actors);
-    for(const auto &[id,candidate]:result.actors) {
+    for(auto &[id,candidate]:result.actors) {
         const auto *live=find(id);
         if(live) result.expected.emplace(id,live->revision);
+        if(!candidate.initialWakeTimer && std::find(candidate.rule.nativeModifiers.begin(),candidate.rule.nativeModifiers.end(),41)!=candidate.rule.nativeModifiers.end() &&
+            (!live || std::find(live->rule.nativeModifiers.begin(),live->rule.nativeModifiers.end(),41)==live->rule.nativeModifiers.end()))
+            candidate.initialWakeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,ports_.frameEvents.currentFrame()+75,false,0,41}));
+        if(!live || (!live->alive() && candidate.alive())) prepareInitialTimers(candidate,ports_.frameEvents.currentFrame());
+        if(live && !candidate.questNpc && !candidate.initialEffectTimer &&
+            !(live->rule.web || live->rule.enchantment || live->rule.hitBurst || live->rule.deathBurst) &&
+            (candidate.rule.web || candidate.rule.enchantment || candidate.rule.hitBurst || candidate.rule.deathBurst))
+            candidate.initialEffectTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,ports_.frameEvents.currentFrame()+1,true,0,int32_t(effects::monsterModeTimerHandler)}));
+        if(!candidate.questNpc &&
+           (!live || candidate.alive()!=live->alive()) && (candidate.alive() || candidate.owner) && !candidate.initialAiTimer)
+            candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,ports_.frameEvents.currentFrame()+1}));
+        if(!candidate.questNpc && (!live || (!live->alive() && candidate.alive())) && !candidate.initialModeTimer)
+            candidate.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,ports_.frameEvents.currentFrame()+1,true}));
     }
     if(!validateActors(result)) throw std::invalid_argument("Invalid staged actor publication");
     return result;
 }
 bool System::validateActors(const ActorPublication &plan) const {
     if(plan.allocatedIds && (ports_.ids.cursor()!=plan.cursor || plan.allocatedIds>UINT32_MAX-plan.cursor)) return false;
-    size_t additions=0,registrations=0;
+    size_t additions=0,registrations=0,wanderRegistrations=0;
     for(const auto &[id,candidate]:plan.actors) {
         if(candidate.id!=id || !ports_.areas.find(candidate.area)) return false;
         if(candidate.owner && !candidate.conversion && candidate.rule.petType>0 && !candidate.petRegistrationOrder) ++registrations;
@@ -191,16 +218,22 @@ bool System::validateActors(const ActorPublication &plan) const {
                expected->second==UINT64_MAX || candidate.revision<=expected->second) return false;
         } else {
             if(live || id.value<plan.cursor || id.value-plan.cursor>=plan.allocatedIds || !candidate.roomAdmission) return false;
+            if(candidate.wanderTargetOrder) ++wanderRegistrations;
             ++additions;
         }
     }
-    return additions<=plan.allocatedIds && state_.actors.size()<=65536-additions && registrations<UINT64_MAX-state_.nextPetRegistrationOrder;
+    return additions<=plan.allocatedIds && state_.actors.size()<=65536-additions && registrations<UINT64_MAX-state_.nextPetRegistrationOrder &&
+        wanderRegistrations<=UINT64_MAX-state_.nextWanderTargetOrder;
 }
 void System::publishActors(ActorPublication &plan) noexcept {
     if(!validateActors(plan)) std::terminate();
     for(size_t index=0;index<plan.allocatedIds;++index) ports_.ids.allocate();
     while(!plan.actors.empty()) {
         auto node=plan.actors.extract(plan.actors.begin());registerPet(node.mapped());const auto live=state_.actors.find(node.key());
+        if(live==state_.actors.end() && node.mapped().wanderTargetOrder) node.mapped().wanderTargetOrder=state_.nextWanderTargetOrder++;
+        publishInitialAi(node.mapped());
+        if(!node.mapped().alive() && (!node.mapped().owner || node.mapped().conversion))
+            ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
         if(live!=state_.actors.end()) live->second=std::move(node.mapped());
         else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);state_.actors.insert(std::move(node));}
     }
@@ -250,7 +283,7 @@ DomainResult<std::map<EntityId,Actor>> System::prepareNativePet(const ActorConte
     actor.petStats.attributes.combat=nativeCombatModifiers(actor.nativeStats->values,*actor.rule.stats,actor.petStats.attributes.combat);
     actor.rule.resistances={summon.native->base.attributes.combat.physicalResist,summon.native->base.attributes.combat.magicResist,
         summon.native->base.attributes.fireResist,summon.native->base.attributes.lightningResist,summon.native->base.attributes.coldResist,summon.native->base.attributes.poisonResist};
-    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
+    std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
 void System::commitAmazon(std::map<EntityId,Actor> &&actors,size_t items) noexcept {
     for(size_t i=0;i<actors.size()+items;++i) ports_.ids.allocate();

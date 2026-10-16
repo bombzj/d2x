@@ -137,7 +137,6 @@ void loadBarbarianSkills(ClassicData &data, Archives &archives) {
     auto swing=base(skills,swingRow);swing.effect=SkillBehavior::WeaponProjectile;swing.weapon=WeaponSkillSpec{};
     auto &doubleWeapon=*swing.weapon;doubleWeapon.requiredType=skills.value(swingRow,"itypea1");
     doubleWeapon.dualWield=true;doubleWeapon.sequence=required(skills,swingRow,"seqnum");
-    doubleWeapon.attackRateBonus=required(skills,swingRow,"Param5");
     doubleWeapon.attackRating=required(skills,swingRow,"ToHit");doubleWeapon.attackRatingPerLevel=required(skills,swingRow,"LevToHit");
     doubleWeapon.damageSynergies.emplace(required(skills,named(skills,"Bash"),"Id"),required(skills,swingRow,"Param8"));
     data.skills.skills.at(swing.sourceId).spell=std::make_shared<const SkillSpec>(std::move(swing));

@@ -119,7 +119,9 @@ void loadDruidSkills(ClassicData &data,Archives &archives) {
             const auto *animation=animations.find(key);if(!animation || !animation->frames || animation->speed<=0) continue;
             int event=0;for(size_t frame=0;frame<std::min<size_t>(animation->frames,animation->frameFlags.size());++frame)
                 if(animation->frameFlags[frame]==1 || animation->frameFlags[frame]==2) {event=int(frame);break;}
-            shape.animations.emplace(uint8_t(mode),ShapeAnimation{int(animation->frames),animation->speed,event});
+            if(animation->frames>animation->frameFlags.size()) throw std::runtime_error("Invalid native transformation frame count");
+            shape.animations.emplace(uint8_t(mode),ShapeAnimation{int(animation->frames),animation->speed,event,
+                {animation->frameFlags.begin(),animation->frameFlags.begin()+animation->frames}});
         }
         if(!shape.animations.contains(1) || !shape.animations.contains(4)) throw std::runtime_error("Missing native transformation animation");
         data.skills.shapes.emplace(shape.state,std::move(shape));

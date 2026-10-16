@@ -33,13 +33,15 @@
 #include "world/native_path_step.hpp"
 #include <deque>
 #include <map>
+#include <functional>
 #include <set>
 #include <string>
 #include <vector>
 #include <functional>
 namespace d2x::server::effects {struct AuraUnitPublication;}
 
-namespace d2x::server {struct HydraRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
+namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
+namespace d2x::server {struct RoomView;}
 namespace d2x::server::monsters {
 class NativeBirthPublication;
 // Sole owner of monster/NPC/companion actor runtime; content identity is preserved.
@@ -52,6 +54,9 @@ struct MoveRequest {
 };
 struct Actor {
     std::shared_ptr<RoomUnitRegistration> roomAdmission;
+    std::shared_ptr<FrameEventQueue::PreparedInsertion> initialAiTimer,initialEffectTimer;
+    std::shared_ptr<FrameEventQueue::PreparedInsertion> initialModeTimer,initialWakeTimer;
+    std::optional<uint64_t> modeFrame;
     EntityId id; MonsterIdentity identity; std::optional<MonsterKind> implementation;
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     bool hostile{};
@@ -130,6 +135,8 @@ struct Actor {
     std::optional<OpenWoundsApplication> wound;
     Vec movementGoal;
     uint64_t hitOccurrence{};
+    uint64_t wanderTargetOrder{};
+    unsigned selfResurrections{};
     uint64_t combatRandom{};
     MonsterEnchantmentDamageState enchantmentDamage;
     uint64_t interruption{};
@@ -162,7 +169,6 @@ struct Actor {
     std::optional<SkillMotion> skillMotion;
     int nestSpawned{};
     Vec webOrigin;
-    uint64_t webRandom{};
     Vec home;
     std::vector<Vec> skillPositions;
     uint64_t damageOccurrence{};
@@ -197,11 +203,12 @@ using ComponentPaletteState=std::map<RegionId,std::map<int,MonsterComponentPalet
 struct State {
     std::map<EntityId, Actor> actors;
     uint64_t nextSpecialTargetOrder{1};
+    uint64_t nextWanderTargetOrder{1};
     uint64_t nextPetRegistrationOrder{1};
     // Scoped to the actual instance/area/class, including dynamically born units.
     ComponentPaletteState componentPalettes;
 };
-struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; };
 class System {
     friend class NativeBirthPublication;
     State state_;
@@ -216,6 +223,8 @@ class System {
     void publishComponents(ComponentPaletteState &) noexcept;
     Actor prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &) const;
     void registerPet(Actor &) noexcept;
+    void publishInitialAi(Actor &) noexcept;
+    void prepareInitialTimers(Actor &,uint64_t) const;
     std::vector<FrameEventQueue::PreparedInsertion> prepareDeathSweep(Actor &,uint64_t tick) const;
     DomainResult<Actor> prepareDeathActor(EntityId,uint64_t tick) const;
     DomainResult<Actor> prepareDeathActor(const Actor &,uint64_t tick) const;
@@ -224,6 +233,7 @@ class System {
         if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.hirelingNextExperience=next;it->second.hirelingPassiveMask=passives;it->second.hirelingMovementPercent=movement;it->second.hirelingBaseAttributes=std::move(base);}
     }
     explicit System(Ports ports) : ports_(ports) {}
+    const SkillRules *skillPrograms() const {return ports_.skillPrograms.get();}
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
@@ -246,8 +256,15 @@ class System {
     DomainResult<> extendAttack(EntityId,uint64_t until);
     DomainResult<> finishDamageAction(EntityId,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit);
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
+    void finishAction(EntityId,uint64_t tick);
+    void scheduleAi(EntityId,uint64_t due);
+    void resumeMode(EntityId,uint64_t tick);
+    DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
+    StepStatus advanceMode(EntityId,TickContext);
+    DomainResult<> attackProfile(EntityId,std::shared_ptr<const StatList>,uint64_t expected,uint64_t next);
     DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
-    DomainResult<> modifierEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> schedulePresetReanimation(EntityId,uint64_t tick);
+    DomainResult<> modifierEvent(const FrameEvent &,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
     bool nativeUsableCorpse(EntityId,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
@@ -258,7 +275,7 @@ class System {
     void searchCorpse(EntityId id) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpseSearched=true;++it->second.revision;}}
     void commitRevive(std::map<EntityId,Actor> &&actors) noexcept;
     void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>,std::optional<NativeUnitStats> = {},uint64_t tick=0);
-    void curseControl(EntityId id,Actor::CurseControl control) noexcept;
+    void curseControl(EntityId id,Actor::CurseControl control);
     void attract(EntityId id,EntityId target,uint64_t until) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.attractionTarget=target;it->second.attractionUntil=until;}}
     DomainResult<> resurrect(EntityId source,EntityId corpse,uint64_t tick);
     bool mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy=false) const;
@@ -341,6 +358,5 @@ class System {
         std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision,NativeUnitStats,Fixed8 maximum);
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
-    StepStatus step(TickContext, FrameFacts &);
 };
 }

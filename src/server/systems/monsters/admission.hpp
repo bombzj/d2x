@@ -30,5 +30,6 @@ struct Admission {
     EntityId minionOwner;
     bool ownsMinions{};
     bool transferMinions{};
+    bool wanderTarget{};
 };
 }

@@ -32,6 +32,6 @@ std::optional<WeaponAttackTiming> shapeActionTiming(const PlayerState &player,co
     } else if(mode==7) speed=effectiveCastSpeed(clock.speed,attributes.fasterCast);
     else if(mode==3 || mode==6) speed=effectiveRecoverySpeed(clock.speed,mode==6?attributes.fasterBlock:attributes.fasterHitRecovery);
     else speed=effectiveOtherAnimationSpeed(clock.speed,player.totals.character.otherAnimationRate);
-    return WeaponAttackTiming{std::string(playerMode),clock.frames,speed,clock.actionFrame,0};
+    return WeaponAttackTiming{std::string(playerMode),clock.frames,speed,clock.actionFrame,0,false,clock.events};
 }
 }

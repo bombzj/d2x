@@ -320,9 +320,9 @@ src/
 | 单位动作／序列定点相位 | 独立动作领域的实例 | 起手、动作事件、回滚、连续段、结束和模式转换 |
 | 渲染／插值时间 | client／presentation | 绘制与声音追随，不反向触发权威释放 |
 
-`ActionTimeline` 的输入为原单位类型／形态、模式、技能、武器类／手位、动画与序列数据、相应速率属性。输出包含下一相位、显示模式／帧、原动作事件、循环／回滚／结束信息。服务端消费执行事件，客户端仅消费已知动作的显示投影。
+完整动作模型的目标输入为原单位类型／形态、模式、技能、武器类／手位、动画与序列数据、相应速率属性；输出包含下一相位、显示模式／帧、原动作事件、循环／回滚／结束信息。当前`gameplay/actions/timeline::ActionTimeline`负责玩家起手及动态回卷的事件表／结束帧，已接普通／变形武器动作和已支持序列；它仍不包含完整模式转换、怪物StopSequence及特殊玩家程序，消费者与剩余差距见[内核动作边界](../modules/SERVER_SYSTEMS.md#调度与动作的职责及迁移边界)。服务端消费执行事件，客户端仅消费已知动作的显示投影。
 
-动作事件可能不止一个，且不同值不都表示伤害释放。跨多个原帧时既不能只看最终帧，也不能未经核实就把每个经过的标记都当独立攻击；按原 `UNITS_StopSequence`、序列计算和具体模式的事件覆盖／消费规则执行。Jab／Impale、Strafe／Fend、Zeal／Fury、Whirlwind、Inferno、变身攻击、双持及怪物 MonSeq 应分别指定策略。
+动作事件可能不止一个，且不同值不都表示伤害释放。玩家`SUnit::sub_6FCBCE70`起手时为跨过的标记预排事件，普通模式只在首个1／2执行Do；怪物`UNITS_StopSequence`逐帧更新动作标记，再由模式回调决定消费，不能混用这两个算法。Jab／Impale、Strafe／Fend、Zeal／Fury、Whirlwind、Inferno、变身攻击、双持及怪物MonSeq应分别指定回卷／重排和事件策略。
 
 ### 7.2 调度契约
 
@@ -493,11 +493,11 @@ AI 分为感知输入、家族局部状态、决策、动作提交与失败反�
 | 当前证据 | 判断 | 最小重构方向 |
 | --- | --- | --- |
 | [Simulation](../../src/server/runtime/simulation.cpp)固定阶段；trade Blocked 时提前返回 | 领域拓扑不等于原事件序；部分阶段跨步推进需审计 | 明确兼容事件与容量契约，再选择帧游标／预留等实现 |
-| [actions/state.hpp](../../src/server/systems/actions/state.hpp)持玩家／怪物释放队列，skills分别推进 | 所有权已合并，但两类来源时序／中断仍有分支 | 共享执行机制，保留来源模式策略；不把队列迁移当调度完成 |
+| [actions/state.hpp](../../src/server/systems/actions/state.hpp)持玩家／怪物释放，所属帧事件推进；combat旧近战队列已撤出 | 当前可达动作／近战消费者已迁移，来源模式策略仍分别保留 | 后续复核完整世界恢复、队列2与全部组合，不再保留旧固定步伤害回退 |
 | [SkillRuleSpec](../../src/gameplay/skills/rule_spec.hpp)聚合多种技能专用字段 | 继续补职业会扩大耦合和无效组合 | 原定义＋角色化程序引用＋族参数；只迁移真实重复部分 |
 | [missiles/system.hpp](../../src/server/systems/missiles/system.hpp)含 SkillCastSpec、EnemyProjectile、Program 分支 | 玩家／怪物／独立弹体规则尚需统一定义契约 | 独立 MissileDefinition 与发射上下文；保留 Do／Hit／Damage 区别 |
 | [combat/system.hpp](../../src/server/systems/combat/system.hpp)含大量专项结果与重试标志 | 已有恰好一次思路，但新增组合易扩大状态组合 | 具名阶段与中间结果，减少互斥布尔状态；逐路径保留原顺序 |
-| [资源事务](../../src/server/systems/transactions/resources.cpp)已用Fixed8，伤害主要用整数；仍有[float区间适配](../../src/gameplay/missiles/damage.hpp) | 主要类型迁移已发生，剩余是完整消费者和算术边界对齐 | 逐入口确认采样／取整／上限回调及原包／保存转换，不再重复迁移已定点资源 |
+| [资源事务](../../src/server/systems/transactions/resources.cpp)已用Fixed8，伤害与飞弹范围已用原生整数；旧float区间适配已删除 | 主要类型迁移已发生，剩余是完整消费者和算术边界对齐 | 逐入口确认采样／取整／上限回调及原包／保存转换，不再重复迁移已定点资源 |
 | [attributes](../../src/server/systems/attributes/system.cpp)查询玩家Totals，非玩家已有MonsterResourceTrace／StatList，NPC接唯一Actor | 基础跨单位载体已建立，不能由此推断所有来源／回调齐全 | 完成直接属性、来源撤出及非玩家消费者；复用同一图和算子，不建立第二份Totals |
 | [property_program.hpp](../../src/gameplay/items/property_program.hpp)已有逐操作随机输入，StatList已有原delta传播与FullStats | 公共机制已有实现，完整函数／组合及调用顺序仍未认证 | 沿当前入口补剩余程序和跨来源组合，保留原始stats及具体操作顺序 |
 | [item_triggers.cpp](../../src/server/systems/reactions/item_triggers.cpp)独立队列、玩家路径及显式暂缓 | 职业主动技能可用不代表物品来源完整 | 逐 ItemEffect／目标策略接通；再扩充佣兵和其他装备单位 |

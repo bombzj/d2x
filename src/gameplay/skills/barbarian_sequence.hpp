@@ -6,7 +6,14 @@ struct BarbarianSequenceFrame { std::string_view mode;int frame{};bool hit{},lef
 inline std::vector<BarbarianSequenceFrame> barbarianSequence(int sequence,std::string_view weapon) {
     (void)weapon;
     std::vector<BarbarianSequenceFrame> result;
-    if(sequence==11) {
+    if(sequence==4) {
+        for(int i=0;i<8;++i) result.push_back({"rn",i,true,false});
+        constexpr int attack[]{1,4,5,6,8,10,12};
+        for(int i=0;i<7;++i) result.push_back({"a1",attack[i],i==3,false});
+    } else if(sequence==10) {
+        constexpr int frames[]{0,1,2,3,3,4,5,6};
+        for(int i=0;i<8;++i) result.push_back({"a1",frames[i],i==3 || i==7,false});
+    } else if(sequence==11) {
         constexpr int first[]{1,2,4,6,7,9,11,13,14};
         constexpr int second[]{2,4,5,6,8,9,10,11};
         for(int i=0;i<9;++i) result.push_back({"a1",first[i],i==4,false});

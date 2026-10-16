@@ -9,7 +9,7 @@ enum class MonsterAiKind { Skeleton, Brute, Zombie, Fallen, CorruptRogue, Goatma
                            SandRaider, SandMaggot, SandMaggotQueen, MaggotEgg, MaggotLarva,
                            ClawViper, SandLeaper, Swarm, Scarab, GreaterMummy, Mummy,
                            PantherWoman, PantherJavelin, Baboon, Vulture, BatDemon, PinHead,
-                           Summoner, Duriel, Sarcophagus, ArcaneTower };
+                           Summoner, Duriel, Sarcophagus, ArcaneTower, GoodNpcRanged };
 struct MonsterAiProfile {
     MonsterAiKind kind;
     std::array<int, 8> params{};

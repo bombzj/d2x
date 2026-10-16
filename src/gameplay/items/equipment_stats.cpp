@@ -43,6 +43,8 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             result.shield = item->id;
             result.smiteMinimum = definition.base.minDamage.value_or(0);
             result.smiteMaximum = definition.base.maxDamage.value_or(0);
+            result.shieldStrengthBonus=definition.base.strengthBonus.value_or(0);result.shieldDexterityBonus=definition.base.dexterityBonus.value_or(0);
+            result.shieldTypes=definition.equipment.types;
             auto block = definition.base.block;
             if (!block)
                 throw std::runtime_error("Unverified shield block: " + definition.code);

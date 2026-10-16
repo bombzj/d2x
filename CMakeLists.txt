@@ -114,6 +114,7 @@ target_link_libraries(d2x_content PUBLIC d2x_resources d2x_items)
 # Pure display, geometry and resource-tool calculations. No simulation/executor.
 add_library(d2x_gameplay
   src/gameplay/actions/timing.cpp
+  src/gameplay/actions/timeline.cpp
   src/gameplay/actions/monster_timing.cpp
   src/gameplay/actions/recovery.cpp
   src/gameplay/actions/volley.cpp
@@ -229,11 +230,14 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/act2_actions.cpp
     src/server/systems/ai/nest_family.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
+  src/server/systems/skills/action_events.cpp
+  src/server/systems/skills/monster_action_events.cpp
     src/server/systems/skills/activation.cpp
     src/server/systems/skills/shape.cpp
     src/server/systems/skills/druid_active.cpp
     src/server/systems/skills/druid_pet.cpp
     src/server/systems/skills/druid_melee.cpp
+    src/server/systems/skills/weapon_melee.cpp
     src/server/systems/skills/druid.cpp
     src/server/systems/skills/assassin.cpp
     src/server/systems/skills/assassin_pet.cpp
@@ -249,6 +253,8 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/corpse_explosion.cpp
     src/server/systems/effects/native_area.cpp
     src/server/systems/combat/native_skill_contact.cpp
+    src/server/systems/combat/native_smite.cpp
+    src/server/systems/combat/monster_melee.cpp
     src/server/systems/combat/progressive_contact.cpp
     src/server/systems/missiles/native_weapon_contact.cpp
     src/server/systems/effects/druid.cpp
@@ -290,6 +296,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/companions/necro.cpp
   src/server/systems/companions/amazon_ai.cpp
   src/server/systems/objects/system.cpp
+  src/server/systems/objects/frame_events.cpp
   src/server/systems/objects/population.cpp
   src/server/systems/objects/shrines.cpp
   src/server/systems/objects/hazards.cpp
