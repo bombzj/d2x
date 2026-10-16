@@ -93,20 +93,24 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-### 当前野外检查交付
+### 当前 master 合并交付
 
-2026-10-16，`battle`的HEAD `912dba85`加当前工作区（含战斗及人口／物件迁移），按用户授权重新构建、双包更新并实际查看游戏截图。补齐objects的population依赖和怪物唤醒规则／准备计时器缺失字段后，`build-final.log`213步通过；实际运行又发现并修复两项问题：异步掉落的人物事务使用tick=0，导致自然容器因过期再生计时器永久等待；AI在反应／中立等待、未采样新决策时重复提交旧随机状态，受击更新种子后固定帧反复阻塞。分别由当前实例帧进入掉落安装、以及只在本次已采样时提交决策随机解决。`build-loot-fix.log`63步、`build-ai-fix.log`4步编译链接成功，最终`build-confirm-verified.log`为no work to do；既有非致命警告保留。
+2026-10-16，`master`合并提交`23628ee2`同时包含`battle`的`5ef7d867`及最新`origin2/master`的`18c7b495`，运行源码为`9afc1ed0`。物品提示冲突保留当前MPQ格式／数值逻辑，库存保留原图定位／镶孔／无形绘制，同时接入Unicode字体与动态布局；修正旧字体消费者、商店／传送点缩放缓存，并保留玩家敌意姓名和轮廓字体后端的MPQ文字颜色。Windows／MinGW／Ninja Release的all目标581步构建通过，最终`build-confirm.log`为`no work to do`，两包EXE与构建产物SHA256一致；既有非致命警告保留。当前CMake无已注册测试，未新增测试脚本、用例或专用程序。
 
 | 当前产物 | 字节 | SHA256 |
 | --- | --- | --- |
-| `dist/current/d2x.exe` | 32979373 | `D94263350469B989ADA29C9AE236097982F3659FA5A3B56504E88995C88B26E9` |
-| `dist/server/d2x_server.exe` | 25859438 | `C7B701502318AA6311A3EE5E99F8131B211BBF75D28825A0CCA56314DCCDC9C2` |
-| `build/bin/d2x_assets.exe` | 10484895 | `383EB4D786644AEA3F35E454F91C7AFB56A40FED2239B4A624583BC0577E2CFF` |
+| `dist/current/d2x.exe` | 33142811 | `AD13F909CD517A407E1A347AF544A933DE87C76143D72865BA843AD19078B7F5` |
+| `dist/server/d2x_server.exe` | 25911211 | `BE699D0B9E2587786E0BC92EA7AC82D979CCE7DB1104F9B6700B071AB3BC6797` |
+| `build/bin/d2x_assets.exe` | 10537972 | `95664BFE4CF703FC4419D36D2FC1426945225DC03E3BEB7D5BF024045C076E63` |
 | `两包/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
 
-最终哈希包使用35级圣骑士存档副本、当前`assets/mpq2`及现有调试管道，检查鲜血荒地与邪恶洞穴自然生成内容，没有管理生成怪物／物件或直接扣血。旅行仅准备地图位置；靠近、攻击、交互与拾取使用正常原协议请求。实际观察：自然class140容器mode0→2、pending清零，箭袋282支落地并拾入背包；群怪接近／攻击、人物扣血与普通攻击击杀，修复后连续战斗及额外250帧全部完成；洞穴class54尸体容器mode2、碰撞按MPQ撤销且掉落队列为空。截图查看了怪物、尸体、容器及地图；列出场景unavailableUnits=0。回城casts／pendingReleases／damage／spellImpacts／eventsQueued全为0，保存并新进程恢复282支箭，临时联系／动作为空。最终宿主failures=0、characterIssues为空、frontend.notice为空；主复验和重入进程退出码0。
+包内客户端使用35级圣骑士隔离副本、当前`assets/mpq2`及低优先级`assets/mpq`补充资源，英语、1280×816、Single Player和既有调试管道完成有限冒烟。截图实际查看了主菜单、选角、库存原图／短剑提示、Charsi商店及跨面板商品提示、自然怪物／容器和魔法护身符蓝色名称／属性。自然沉沦魔被普通攻击击杀，白热对僵尸产生伤害及耗蓝；自然class140容器mode0→2、pending及掉落等待清零，落地护身符经原请求拾取并用鉴定卷轴鉴定为+2敏捷。管理旅行只准备合法近处位置，没有生成怪物／物件或直接扣血；屋外到屋内容器的请求曾按碰撞返回no-route，移到合法近处才交互成功，不据此认证跨障碍寻路。
 
-视觉疑点：一次移动后人物附近局部过暗（`screenshots/verified-den-container.png`），同区域新进程重入照明正常（`lighting-reload.png`），未确认为稳定故障。原光照距离衰减仍是未认证适配；暂未改算法。证据、失败现场、源码补丁、包哈希、隔离存档及截图统一在忽略目录`artifacts/field-inspection-20261016/`。未新增测试脚本、用例或专用程序，未认证音频（--hidden）、全部区域／生成概率、全局原版随机时序、多人或Linux；独立服务端仅构建／打包。
+原282支箭经Take／Place从背包(2,0)移至(3,0)，护身符占(2,0)。回城casts／pendingReleases／damage／spellImpacts／missileCount／eventsQueued均为0，正常保存／退局后新进程保留35级、10项基础技能、箭数量／新位置、已鉴定护身符及+2敏捷，卷轴已消费，临时动作为空。最终宿主failures=0、characterIssues为空、frontend.notice为空；正常离局返回CharacterSelection，主冒烟、重入及独立主菜单进程退出码均为0，原输入存档SHA256未变。
+
+包内独立服务端用隔离恢复目录和空闲监听`127.0.0.1:46216`，现有D2CS／D2DBS接受注册并达到Game listener ready；包内停止脚本完成优雅关闭并取得退出码0，原后端进程保留。本轮未进行PvPGN角色实际入局或多人检查。
+
+证据、源码／包身份、构建／打包日志、原游戏消息、快照、截图和隔离存档在忽略目录`artifacts/merge-master-20261016/`。两套本地MPQ均缺`data/local/font/chi/font16.tbl`，中文画面暂缓，未补造／下载替代资源；本轮不认证音频（`--hidden`）、窗口尺寸矩阵、Linux、全部技能／装备／区域／难度、掉落概率或原版全局时序。前次野外照明疑点仍未定性，旧现场保留于`artifacts/field-inspection-20261016/`，本轮有限截图不认证完整照明算法。
 
 ### 历史战斗动作与近战迁移交付
 

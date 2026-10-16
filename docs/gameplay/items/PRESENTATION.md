@@ -52,7 +52,7 @@ RemoteInventory消费9C／9D、0A、3E、2A、58、77、97；UI预览位置、Cu
 
 ## 物品属性提示
 
-客户端共同入口为`content/items/item_display.cpp`、`item_descriptions.cpp`和`presentation/inventory/item_tooltip.cpp`，只消费原包物品、人物与已观察装备。字体大小及既有溢出处理保持原实现；文字使用当前MPQ sky/pal.pl2的原字体索引变换，覆盖白／红／绿／蓝／金／灰／橙／黄；符文名称按1.13c使用橙色。增强伤害、防御、格挡和物品IAS的速度说明支持白色标签与蓝色数值分段，黑底对应D2Win的TRANS75（当前RGBA alpha近似，不声称逐像素PL2混色一致）。
+客户端共同入口为`content/items/item_display.cpp`、`item_descriptions.cpp`和`presentation/inventory/item_tooltip.cpp`，只消费原包物品、人物与已观察装备。字体大小及既有溢出处理保持原实现；文字使用当前MPQ sky/pal.pl2的原字体索引变换，覆盖白／红／绿／蓝／金／灰／橙／黄；符文名称按1.13c使用橙色。Unicode字体共用语言加载入口；现有轮廓字体后端启用时，从同一PL2读取字体RGB并与绘制颜色相乘，分段提示基线与该后端的整行布局一致。增强伤害、防御、格挡和物品IAS的速度说明支持白色标签与蓝色数值分段，黑底对应D2Win的TRANS75（当前RGBA alpha近似，不声称逐像素PL2混色一致）。
 
 基础标签、品质组合名、需求、药剂spelldesc、宝石四种宿主效果、护身符与使用提示读取当前MPQ。药剂Points复用职业恢复纯计算；CharStats的Expansion分隔行不占原职业编号，职业／技能树词缀通过真实sourceRow取文案。属性按ItemStatCost.descpriority及原stat ID排序；完整且等值的dgrp按原组描述合并，全抗／全属性不重复拆列。物理／元素范围、相等元素伤害、毒率四舍五入、增强伤害、修复耐久、技能树、触发、灵气、充能、单技能／本职业oskill上限、复活与怪物类型描述使用对应原程序。未核实的descfunc17／18／25／26不自造文本。
 
