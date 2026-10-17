@@ -2,6 +2,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/monsters/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <cmath>
@@ -55,16 +56,39 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
             auto ids=ports_.ids;
             std::map<EntityId,Object> created;
             std::vector<std::shared_ptr<RoomUnitRegistration>> registrations;
+            std::vector<std::shared_ptr<RoomUnitRegistration>> initializationOrder;
             std::vector<std::pair<items::PreparedBatch,GroundLocation>> groundItems;
+            std::vector<EntityId> goldIds;
+            monsters::NativeBirthBatch births;
             auto uniques=ports_.loot.read().uniques;
             bool capacity=false;
             const auto sample=ports_.spatial.nativeCollisionSample();
+            const auto candidateSample=[&](RoomView view,int32_t column,int32_t row) {
+                auto mask=sample(view,column,row);
+                const auto &origin=ports_.areas.at(view.area).definition.origin;
+                for(const auto &[id,object]:created) {
+                    (void)id;const auto &entry=object.rule;
+                    if(object.area!=view.area || !entry.collision[size_t(object.mode)]) continue;
+                    const int left=int(object.position.x+origin.x)-entry.width/2,top=int(object.position.y+origin.y)-entry.height/2;
+                    if(column>=left && column<left+entry.width && row>=top && row<top+entry.height) mask|=entry.collisionMask;
+                }
+                for(const auto &[id,actor]:births.actors) {
+                    (void)id;if(actor.area!=view.area) continue;
+                    mask|=nativeCollisionFootprint(actor.collisionPattern.value_or(actor.rule.collisionPattern),
+                        column-int(actor.position.x+origin.x),row-int(actor.position.y+origin.y),0x100);
+                }
+                for(const auto &[prepared,location]:groundItems) {
+                    (void)prepared;
+                    if(location.region==view.area && int(location.position.x+origin.x)==column && int(location.position.y+origin.y)==row) mask|=0x200;
+                }
+                return mask;
+            };
             const auto clear=[&](int x,int y,int width,int height,uint16_t mask) {
                 const int left=x-width/2,top=y-height/2;
                 for(int row=top;row<top+height;++row) for(int column=left;column<left+width;++column) {
                     const auto owner=ports_.areas.roomAtPosition(region,{float(bounds.x),float(bounds.y)},
                         column+int(definition.origin.x),row+int(definition.origin.y));
-                    if(!owner || (sample(*owner,column+int(definition.origin.x),row+int(definition.origin.y))&mask)) return false;
+                    if(!owner || (candidateSample(*owner,column+int(definition.origin.x),row+int(definition.origin.y))&mask)) return false;
                 }
                 for(const auto &[id,object]:created) {
                     (void)id;const auto &rule=object.rule;
@@ -86,7 +110,22 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                 const auto id=ids.allocate();
                 Object object{id,type,region,{float(x),float(y)},1,0,rule->second};
                 object.uses=2*object.rule.parameters[2];initialize(object,tick.tick,gameRandom,controlRandom);
+                const auto initialized=prepareGoldPlaceholder(object,gameRandom,controlRandom,ids,groundItems,goldIds,candidateSample);
+                if(!initialized) {
+                    if(!isDeferred(initialized.status)) throw std::logic_error("Native gold placeholder initialization unavailable");
+                    capacity=true;return nullptr;
+                }
+                const auto firstChild=ids.cursor();
+                const auto souls=prepareSoulPlaceholder(object,tick.tick,gameRandom,controlRandom,ids,births,loan.value,candidateSample);
+                if(!souls) {
+                    if(!isDeferred(souls.status)) throw std::logic_error("Native soul placeholder initialization unavailable");
+                    capacity=true;return nullptr;
+                }
+                finishInitialization(object,controlRandom);
+                for(auto child=births.actors.lower_bound(EntityId{firstChild});child!=births.actors.end();++child)
+                    initializationOrder.push_back(child->second.roomAdmission);
                 registrations.push_back(ports_.areas.prepareRoomUnit(id,2,region,object.position));
+                initializationOrder.push_back(registrations.back());
                 return &created.emplace(id,std::move(object)).first->second;
             };
             const auto inside=[&](int x,int y) {
@@ -456,18 +495,37 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                 }
             }
             if(capacity) return StepStatus::Blocked;
+            for(const auto &[id,object]:created) {
+                (void)id;
+                if(object.rule.initialization==79) {published.deferred.insert(object.definition);return StepStatus::NotImplemented;}
+            }
             next.rooms.insert(roomIndex);
             if(!ports_.areas.validateRoomRandom(*loan.value)) return StepStatus::Blocked;
-            if(!groundItems.empty()) {
-                if(!created.empty()) throw std::logic_error("Native item theme unexpectedly created objects");
-                const auto installed=ports_.items.installNativeGroundBatch(groundItems,tick.tick);
-                if(!installed) return installed.status==DomainStatus::Capacity || installed.status==DomainStatus::Conflict
-                    ?StepStatus::Blocked:StepStatus::NotImplemented;
-                ids=ports_.ids;ports_.loot.commitUniques(std::move(uniques));
+            const auto identities=groundItems.empty() || !goldIds.empty()?
+                ports_.ids.preparePublication(size_t(ids.cursor()-ports_.ids.cursor())):nullptr;
+            std::optional<monsters::ActorPublication> actors;
+            if(!births.actors.empty()) actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()),{},identities);
+            if(actors && actors->uniquesNext) {
+                for(const auto row:*actors->uniquesNext) if(!actors->uniquesExpected->contains(row) && !uniques.insert(row).second)
+                    return StepStatus::NotImplemented;
+                actors->uniquesNext=uniques;
             }
+            if(!groundItems.empty()) {
+                if(goldIds.empty() && !created.empty()) throw std::logic_error("Native item theme unexpectedly created objects");
+                const auto installed=ports_.items.installNativeGroundBatch(groundItems,tick.tick,goldIds,identities);
+                if(!installed) return isDeferred(installed.status) || installed.status==DomainStatus::Conflict
+                    ?StepStatus::Blocked:StepStatus::NotImplemented;
+                if(goldIds.empty()) ids=ports_.ids;
+            }
+            for(const auto &[id,object]:created) {(void)id;publishInitialization(object);}
             state_.objects.merge(created);
-            for(auto &registration:registrations) ports_.areas.publishRoomUnit(*registration);
-            ports_.ids=ids;ports_.random=gameRandom;state_.controlRandom=controlRandom;
+            for(auto &registration:initializationOrder) ports_.areas.publishRoomUnit(*registration);
+            if(identities) ports_.ids.publish(*identities);
+            ports_.random=gameRandom;state_.controlRandom=controlRandom;
+            if(actors) {
+                ports_.monsters.publishBirthComponents(births);ports_.monsters.publishActors(*actors);
+            }
+            if(!groundItems.empty() && (!actors || !actors->uniquesNext)) ports_.loot.commitUniques(std::move(uniques));
             ports_.areas.publishRoomRandom(*loan.value);published=std::move(next);
             groundGeneration_.clear();
             groundGenerationOwner_.reset();

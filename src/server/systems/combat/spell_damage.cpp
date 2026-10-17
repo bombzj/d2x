@@ -107,7 +107,10 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             if(!allocateOnly || (impact.nativeSkill && impact.nativeSkill->heldPrepared)) {++it;continue;}
         }
         if(impact.environment && !impact.missileDamage) {
-            if(resolveEnvironment(impact,tick)==DomainStatus::Capacity) return StepStatus::Blocked;
+            const auto result=resolveEnvironment(impact,tick);
+            if(result==DomainStatus::Capacity || result==DomainStatus::Conflict) return StepStatus::Blocked;
+            if(result==DomainStatus::NotImplemented || result==DomainStatus::InvalidRequest)
+                throw std::logic_error("Native environment damage has no implemented rule");
             state_.spellTargets-=impact.targets.size();it=state_.spells.erase(it);continue;
         }
         const auto source = participants.find(impact.source);
@@ -144,7 +147,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(!impact.missileEvents) impact.missileEvents=std::make_shared<effects::NativeContactBatch>(
                     ports_.effects.prepareMissileEvents(impact.source,impact.targets[impact.next],tick.tick,impact.returnFire));
                 const auto advanced=ports_.effects.advanceDamageEvents(*impact.missileEvents,tick.tick);
-                if(advanced.status==DomainStatus::Capacity) return StepStatus::Blocked;
+                if(isDeferred(advanced.status)) return StepStatus::Blocked;
                 impact.missileEventTarget=impact.next;impact.missileEvents.reset();
                 continue;
             }
@@ -179,7 +182,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(!contact.resultSuccessful) {
                     const auto result=ports_.effects.missileReaction(participant.id(),source.id(),contact.damage.getHit.value_or(false),
                         contact.damage.knockback,contact.damage.hitClass,tick.tick);
-                    if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+                    if(isDeferred(result.status)) return StepStatus::Blocked;
                     ++impact.next;continue;
                 }
                 auto rolled=contact.damage;
@@ -243,7 +246,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                     std::all_of(impact.monsterHit->channels.begin(),impact.monsterHit->channels.end(),[](auto n){return n==0;});
                 if(!stateOnly) {
                     const auto defended=directDefense(impact,source,participant,tick);
-                    if(!defended) {if(defended.status==DomainStatus::Capacity) return StepStatus::Blocked;++impact.next;continue;}
+                    if(!defended) {if(isDeferred(defended.status)) return StepStatus::Blocked;++impact.next;continue;}
                     if(!*defended.value) {++impact.next;continue;}
                 }
                 MonsterHit rolled=impact.monsterHit.value_or(MonsterHit{});
@@ -256,7 +259,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 if(!stateOnly) rolled.hitClass=monsterDamageHitClass(rolled,impact.hitClass,hitClassCursor);
                 if(stateOnly && pet) {
                     const auto applied=ports_.monsters.slow(pet->id,impact.monsterStates.slow.id,rolled.slowPercent,rolled.slowFrames,tick.tick,impact.source);
-                    if(applied.status==DomainStatus::Capacity) return StepStatus::Blocked;
+                    if(isDeferred(applied.status)) return StepStatus::Blocked;
                     ++impact.next;continue;
                 }
                 if(player) {
@@ -305,7 +308,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                         const ActorContext actor{patient.player,patient.actor,patient.area,area->generation,0,tick.tick};
                         healed=ports_.transactions.resources(actor,patient.characterRevision,Fixed8::fromRaw(std::min<int64_t>(patient.totals.character.maxLifeFixed.raw(),int64_t(patient.persistent.player.hp.raw())+impact.healing)),patient.persistent.player.mana,patient.persistent.player.stamina);
                     } else healed=ports_.monsters.heal(participant.id(),impact.healing);
-                    if(healed.status==DomainStatus::Capacity) {blocked=true;break;}
+                    if(isDeferred(healed.status)) {blocked=true;break;}
                     if(!healed) {++impact.next;continue;}
                     impact.healingCommitted=true;
                 }
@@ -322,7 +325,6 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             if (!target || !participants.canHarm(source,participant) || target->life <= 0 || target->area != impact.area ||
                 (impact.undeadOnly && !target->rule.undead) ||
                 (impact.nextDelay && target->nextHitTick > tick.tick)) { ++impact.next; continue; }
-            const int raw = ports_.effects.unitRawResistance(target->id,impact.type,tick.tick);
             int64_t amount = impact.currentDamage();
             int64_t absorbed=0;
             const int sourcePercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
@@ -332,18 +334,9 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
             const std::array<int,6> pierce{0,0,sourceModifiers.firePierce,sourceModifiers.lightningPierce,
                 impact.coldPierce?impact.coldPierce:sourceModifiers.coldPierce,impact.poisonPierce?impact.poisonPierce:sourceModifiers.poisonPierce};
             int64_t physical=0;std::array<int64_t,6> contactChannels{};
-            if (impact.staticPercent) {
-                const auto callback=staticFieldDamageFixed(nativeChecked(target->life),nativeChecked(target->maximumLife),
-                    impact.staticPercent,impact.staticFloors.at(size_t(target->rule.difficulty)),nativeChecked(impact.minimumStaticDamage),raw);
-                if(!callback) {++impact.next;continue;}
-                contactChannels[size_t(impact.type)]=scale(*callback);
-                const auto result=ports_.effects.unitDamageFixed(target->id,scale(*callback),impact.type,tick.tick,pierce[size_t(impact.type)]);
-                amount=result.dealt;absorbed=result.absorbed;
-            } else {
-                const auto result=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)]);
-                amount=result.dealt;absorbed=result.absorbed;
-            }
-            if(!impact.staticPercent) contactChannels[size_t(impact.type)]=scale(impact.currentDamage());
+            const auto received=ports_.effects.unitDamageFixed(target->id,scale(amount),impact.type,tick.tick,pierce[size_t(impact.type)]);
+            amount=received.dealt;absorbed=received.absorbed;
+            contactChannels[size_t(impact.type)]=scale(impact.currentDamage());
             const auto cold=impact.coldFrames;
             std::optional<PoisonApplication> poison;
             const auto rate=impact.type==DamageType::Poison?impact.currentDamage():0;

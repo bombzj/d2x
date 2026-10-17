@@ -698,6 +698,8 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
                 seen|=1u<<value;stones[index]=17+value;
             }
             w.quests.cainStones=stones;w.quests.revision=w.revision;
+        } else if(id==36) {
+            w.quests.zooMonster=payload[0];w.quests.revision=w.revision;
         }
         break;
     }

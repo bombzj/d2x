@@ -19,6 +19,7 @@ namespace d2x::server::ai {
 // Decision state only; actions go through skill/movement requests, not direct damage.
 struct Controller {
     EntityId actor;
+  uint64_t admissionRevision{};
     uint64_t observedAiFunctionRevision{};
     uint64_t observedAiThinkRevision{};
     CurseAi function{CurseAi::None};

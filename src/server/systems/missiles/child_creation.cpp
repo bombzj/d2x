@@ -47,12 +47,12 @@ Missile &System::planChild(Advance &plan,Spawn source,Vec origin,Vec direction,i
     });
     return plan.children.back();
 }
-Missile &System::planMonsterChild(Advance &plan,Missile prototype,MonsterChildDamage damage) const {
+Missile &System::planMonsterChild(Advance &plan,Missile prototype) const {
     // Every native child constructor calculates its own ranges. The parent is
     // an explicit origin stat/seed source only when SrcMissDmg requests it.
     const auto origin=plan.next;const auto originRolls=plan.damageRolls;
     prototype.nativeResources={};
-    plan.addChild(std::move(prototype),[this,damage,origin,originRolls](const Missile &parameters,Advance::ChildBuildContext &context)->std::optional<Missile> {
+    plan.addChild(std::move(prototype),[this,origin,originRolls](const Missile &parameters,Advance::ChildBuildContext &context)->std::optional<Missile> {
         const auto tick=context.tick;auto &gameRandom=context.gameRandom;
         auto child=parameters;
         auto sampled=sampleMonsterRule(child.enemy->rule,child.owner,tick,{},child.skill.rank);
@@ -81,8 +81,7 @@ Missile &System::planMonsterChild(Advance &plan,Missile prototype,MonsterChildDa
             if(!originRolls) throw std::runtime_error("Native origin missile requires retained damage seed");
             context.originSeed=Advance::OriginSeedLoan{originRolls,originExpected,originRandom};
         }
-        if(damage!=MonsterChildDamage::Inherited) child.enemy->hit={};
-        else child.enemy->hit.channels={};
+        child.enemy->hit={};
         child.enemy->weapon.reset();
         return child;
     });

@@ -10,6 +10,10 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/effects/corpse_explosion.hpp"
+#include "server/systems/effects/native_area.hpp"
+#include "evaluation.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "server/systems/companions/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/inventory/system.hpp"
@@ -28,6 +32,7 @@
 #include "server/systems/loot/system.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <stdexcept>
 
 namespace d2x::server::skills {
 DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &actor,Vec destination) {
@@ -35,7 +40,7 @@ DomainStatus System::activateWhirlwind(Release &pending,const ActorContext &acto
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(pending.motionFrame!=actor.tick) {
         const auto moved=ports_.movement.leapStep(actor,destination,pending.chargeSpeed,MovementCollisionRule{0x804,2});
-        if(!moved && moved.status==DomainStatus::Capacity) return moved.status;
+        if(!moved && isDeferred(moved.status)) return moved.status;
         pending.motionFrame=actor.tick;pending.motionFinished=!moved || *moved.value;
     }
     if(pending.motionFinished) {
@@ -183,40 +188,16 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
     return result.status;
 }
 DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec center) {
-    if(!ports_.monsters.consumableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
-    const auto &owner=*ports_.players.find(actor.player);const auto &corpse=*ports_.monsters.find(pending.unit);
     if(pending.skill.effect==SkillBehavior::PoisonExplosion) {
+        if(!ports_.monsters.consumableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
         const auto result=ports_.missiles.spawn({actor,pending.skill,pending.collision,center,false,actor.actor,0,center});
         if(result) ports_.monsters.consumeCorpse(pending.unit);
         return result.status;
     }
-    const auto &program=*pending.skill.bone;auto random=corpse.combatRandom;
-    const int64_t life=corpse.rule.corpseBaseLife;
-    if(life<=0) return DomainStatus::Unavailable;
-    const int64_t minimum=life*program.minimumPercent/100,maximum=life*program.maximumPercent/100;
-    int64_t damage=minimum+limitedRandom(random,uint32_t(std::max<int64_t>(0,maximum-minimum)));
-    if(corpse.rule.level>owner.persistent.player.level) damage=damage*owner.persistent.player.level/corpse.rule.level;
-    const auto fire=damage*program.elementalPercent/100;
-    std::vector<EntityId> physicalTargets,fireTargets;
-    const auto &area=ports_.areas.at(actor.area).definition;
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    for(const auto id:participants.enemies(actor.actor,actor.area)) {
-        const auto position=participants.find(id).position();
-        if(!area.activation.nearby(center,position)) continue;
-        const int radius=(program.radius+1)/2,physical=program.radius/2;
-        if(withinSkillArea(center,position,float(radius),SkillAreaCoordinates::TruncatedCells)) fireTargets.push_back(id);
-        if(withinSkillArea(center,position,float(physical),SkillAreaCoordinates::TruncatedCells)) physicalTargets.push_back(id);
-    }
-    combat::SpellImpact physical{pending.unit,actor.actor,actor.area,DamageType::Physical,damage-fire,std::move(physicalTargets)};
-    combat::SpellImpact elemental{pending.unit,actor.actor,actor.area,DamageType::Fire,fire,std::move(fireTargets)};
-    physical.occurrence=actor.sequence*2;elemental.occurrence=physical.occurrence+1;physical.unblockable=elemental.unblockable=true;
-    auto hits=ports_.combat.prepareSpells({std::move(physical),std::move(elemental)});if(!hits) return hits.status;
-    transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.player.mana-=pending.skill.manaCost;edit.charge=pending.skill.charge;
-    edit.publicFacts.emplace_back(MissileFact{actor.actor,0,actor.area,program.corpseVisual,pending.skill.rank,0,center,center});
-    auto debit=ports_.transactions.prepare(std::move(edit));if(!debit) return debit.status;
-    const auto committed=ports_.transactions.commit(std::move(*debit.value));if(!committed) return committed.status;
-    ports_.combat.commitSpells(std::move(*hits.value));ports_.monsters.consumeCorpse(pending.unit);ports_.monsters.commitCombatRandom(pending.unit,random);
-    return DomainStatus::Applied;
+    const auto result=ports_.effects.corpseExplosion(actor.actor,pending.unit,pending.skill.sourceId,pending.skill.rank,
+        actor.tick,pending.corpseExplosion,&pending.skill);
+    pending.nativeCallbackStarted=pending.corpseExplosion && pending.corpseExplosion->prepared && !pending.corpseExplosion->complete;
+    return result.status;
 }
 DomainStatus System::activateItem(Release &pending, const ActorContext &actor, Vec) {
     return ports_.inventory.useSkill(actor, pending.skill.sourceId).status;
@@ -224,17 +205,9 @@ DomainStatus System::activateItem(Release &pending, const ActorContext &actor, V
 DomainStatus System::activateUnsummon(Release &pending, const ActorContext &actor, Vec) {
     return ports_.companions.dismiss(actor, pending.unit).status;
 }
-DomainStatus System::activateKick(Release &pending, const ActorContext &actor, Vec target) {
+DomainStatus System::activateKick(Release &pending, const ActorContext &actor, Vec) {
     if (pending.unitType == 2) return DomainStatus::Applied;
-    if(pending.weaponMelee) return drainWeaponMelee(pending,actor);
-    const auto &player = *ports_.players.find(actor.player);
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const auto victim=participants.find(pending.unit);
-    const auto &area = ports_.areas.at(actor.area);
-    if (!victim.aliveIn(actor.area) || !participants.canHarm(actor.actor,pending.unit) ||
-        meleeDistance(player.position, 2, victim.position(), victim.size()) > 1 ||
-        !area.definition.collision.segment(player.position, victim.position())) return DomainStatus::Unavailable;
-    return ports_.missiles.direct({actor, pending.skill, {}, target}, {pending.unit}).status;
+    return pending.weaponMelee?drainWeaponMelee(pending,actor):DomainStatus::Unavailable;
 }
 DomainStatus System::activateAmazonSummon(Release &pending, const ActorContext &actor, Vec target) {
     return pending.skill.summon && pending.skill.summon->amazon?ports_.companions.amazon(actor,pending.skill,target).status:ports_.companions.necro(actor,pending.skill,target,pending.unit).status;
@@ -265,27 +238,65 @@ DomainStatus System::activateEffect(Release &pending, const ActorContext &actor,
             if (other.actor == pending.unit) { recipient = id; break; }
     return ports_.effects.skill(actor, skill, recipient).status;
 }
-std::vector<EntityId> System::staticFieldTargets(const ActorContext &actor, const SkillCastSpec &skill) const {
-    const auto &player = *ports_.players.find(actor.player);
-    std::vector<EntityId> targets;
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    for (const auto id:participants.enemies(actor.actor,actor.area)) {
-        const auto target=participants.find(id);
-        if (withinSkillArea(player.position,target.position(),float(int(skill.staticRadius)),SkillAreaCoordinates::TruncatedCells)) targets.push_back(id);
-    }
-    return targets;
-}
 DomainStatus System::activateStaticField(Release &pending, const ActorContext &actor, Vec) {
     const auto &player = *ports_.players.find(actor.player);
-    return ports_.missiles.direct({actor, pending.skill, {}, player.position}, staticFieldTargets(actor, pending.skill)).status;
+    if(!pending.directSkill) {
+        if(ports_.areas.at(actor.area).definition.town) return DomainStatus::Unavailable;
+        auto random=player.combatRandom;
+        const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+            return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+        };
+        auto input=formulaInput(player,draw);SkillFormulaValues values(*player.rules.skills->formulas,input);
+        const auto formula=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
+            if(!value) throw std::logic_error("Missing native Static Field formula");return *value;};
+        NativeStaticField program;program.minimumDamage=formula("calc2");program.percent=formula("calc1");
+        program.minimumPercent=player.rules.skills->staticMinimum.at(size_t(player.persistent.difficulty));
+        const auto length=values.parameter(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"edln");
+        if(!length) return DomainStatus::Unavailable;
+        program.length=*length;const auto &row=player.rules.skills->formulas->skills.at(pending.skill.sourceId);
+        program.element=MissileDamageElement(row.elementType);
+        const auto radius=formula("aurarangecalc");
+        auto pulse=std::make_shared<effects::NativeAreaPulse>();auto &spec=pulse->spec;
+        spec.source=actor.actor;spec.area=actor.area;spec.center=player.position;spec.skill=pending.skill.sourceId;spec.rank=pending.skill.rank;
+        spec.directFunction=20;spec.staticField=program;
+        spec.targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,radius,uint32_t(row.number("aurafilter")),false,
+            {},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
+        transactions::CharacterEdit payment{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
+        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.charge=pending.skill.charge;}
+        payment.random=transactions::UnitRandomEdit{player.combatRandom,random};
+        auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
+        const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
+        pending.manaPaid=true;pending.directSkill=std::move(pulse);
+    }
+    pending.nativeCallbackStarted=true;
+    const auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
+    if(result) pending.nativeCallbackStarted=false;
+    return result.status;
 }
 DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &actor, Vec target) {
     const auto &player = *ports_.players.find(actor.player);
     const auto &skill = pending.skill;
-    if (!withinSkillArea(player.position,target,float(skill.telekinesisRange),SkillAreaCoordinates::TruncatedCells)) return DomainStatus::InvalidRequest;
+    if (!pending.directSkill && !withinSkillArea(player.position,target,float(skill.telekinesisRange),SkillAreaCoordinates::TruncatedCells)) return DomainStatus::InvalidRequest;
     switch (pending.unitType) {
     case 0:
-    case 1: return ports_.missiles.direct({actor, skill, {}, target}, {pending.unit}).status;
+    case 1: {
+        if(!pending.directSkill) {
+            const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};const auto recipient=participants.find(pending.unit);
+            const auto targetArea=recipient.player?recipient.player->area:recipient.monster?recipient.monster->area:RegionId{};
+            if(!recipient.aliveIn(targetArea) || !participants.canHarm(actor.actor,pending.unit) ||
+               ports_.areas.at(actor.area).definition.town || ports_.areas.at(targetArea).definition.town) return DomainStatus::Unavailable;
+            auto pulse=std::make_shared<effects::NativeAreaPulse>();auto &spec=pulse->spec;
+            spec.source=actor.actor;spec.area=actor.area;spec.center=player.position;spec.skill=skill.sourceId;spec.rank=skill.rank;
+            spec.directFunction=21;spec.targets=std::vector<EntityId>{pending.unit};
+            const auto paid=ports_.transactions.release(actor,player.characterRevision,pending.manaPaid?Fixed8{}:skill.manaCost,{},pending.manaPaid?std::optional<SkillCharge>{}:skill.charge);
+            if(!paid) return paid.status;
+            pending.manaPaid=true;pending.directSkill=std::move(pulse);
+        }
+        pending.nativeCallbackStarted=true;
+        const auto result=ports_.effects.nativeArea(pending.directSkill->spec,actor.tick,pending.directSkill);
+        if(result) pending.nativeCallbackStarted=false;
+        return result.status;
+    }
     case 4: return ports_.inventory.telekinesis(actor, pending.unit, skill).status;
     case 2:
         if (!pending.manaPaid) {

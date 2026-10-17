@@ -1,4 +1,5 @@
 #pragma once
+#include <span>
 #include "server/runtime/contracts.hpp"
 #include "skill_state.hpp"
 #include "server/runtime/ports.hpp"
@@ -37,16 +38,20 @@ namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
 namespace d2x::server::combat {struct SpellImpact;}
 namespace d2x::server::attributes {class MonsterResourceTrace;}
 namespace d2x::server::effects {
-inline constexpr uint32_t monsterModeTimerHandler=0x4d4f4446;
+inline constexpr uint32_t monsterModifierTimerHandler=0x4d4f4454;
 inline constexpr uint32_t modeEndTimerHandler=0x4d454e44;
 struct BladeShieldPulse;
 struct MindBlastPulse;
 struct CorpseExplosionPulse;
 struct NativeAreaSpec;struct NativeAreaPulse;
+struct MonsterCursePulse {
+    AuraDefinition aura;CurseSpec program;int32_t length{};uint64_t tick{};
+    std::vector<EntityId> targets;size_t next{};bool prepared{},complete{};
+};
 std::vector<StatValue> nativeEffectStats(const SkillRules &, const CharacterModifiers &);
 std::vector<StatValue> nativeEffectStats(const SkillRules &,const CombatEffectSpec &);
 std::vector<StatValue> nativeEffectStats(const StatRuleCatalog &,const CombatEffectSpec &);
-struct Recovery { CombatEffectSet states; std::optional<Vec> previous; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{},poisonRevision{}; std::optional<OpenWoundsApplication> wound; EntityId killer; std::string killerName,killerClass; };
+struct Recovery { CombatEffectSet states; std::optional<PoisonStatus> poison; uint64_t nextMissileHit{},poisonRevision{}; std::optional<OpenWoundsApplication> wound; EntityId killer; std::string killerName,killerClass; };
 struct PlayerPoisonCandidate {std::optional<PoisonStatus> poison;uint64_t revision{};bool changed{};};
 struct RightAuraTimerChange {bool replace{};std::optional<FrameEvent> event;};
 struct PlayerEffectsPublication {EntityId actor;CombatEffectSet states;std::map<EntityId,Recovery> insertion;std::optional<std::optional<PoisonStatus>> poison;std::optional<uint64_t> expectedPoisonRevision;FrameEventQueue::PreparedEdit timers,skillTimers;};
@@ -114,6 +119,7 @@ struct UnitDamageStates {
     std::optional<CombatEffectSpec> status;
     std::vector<StatValue> statusWrites;
     bool clearStun{},poisonApplied{},woundApplied{},resetRegeneration{},contact{},deathDelay{};
+    std::vector<int> clearStateFlags;
 };
 struct AuraTargetProgress {bool state{},accepted{},pulse{},post{};};
 enum class NativeAuraTargetMode { OwnerRange,TargetRange };
@@ -175,7 +181,7 @@ class System {
     std::optional<uint64_t> frame_;
     unsigned framePhase_{};
     uint64_t nextAuraEventOrder_{1};
-    struct PlayerFrame {bool maintenance{},complete{};};
+    struct PlayerFrame {bool complete{};};
     std::map<EntityId,PlayerFrame> framePlayers_;
     void publishPlayers(std::map<EntityId,Recovery> &) noexcept;
     DomainResult<> nativeTerror(const ActorContext &,const SkillCastSpec &,EntityId);
@@ -195,8 +201,8 @@ class System {
         SkillCastSpec skill;
         EntityId target,projectile;
         RegionId area{};Vec position;
-        uint64_t occurrence{};
         std::vector<DomainFact> notices;
+        std::shared_ptr<NativeAreaPulse> damage;
         FrameEventQueue::PreparedInsertion next;
         bool prepared{},launched{},damaged{},notified{},rescheduled{};
     };
@@ -238,21 +244,29 @@ class System {
     DomainResult<> paladinAura(const ActorContext &,const AuraDefinition &,EntityId,uint64_t,bool owner=false,bool healing=false,EntityId emitter={},bool *committedAffected=nullptr);
     DomainResult<> consumeAuraMana(const ActorContext &,const AuraDefinition &,bool affected);
     DomainResult<> removeAura(const ActorContext &,int skill);
-    struct WebTrail {Vec previous,origin,target;RegionId area;uint64_t until{};bool pending{};};
-    std::map<EntityId,WebTrail> webTrails_;
+    std::map<EntityId,uint8_t> movementSkillPhases_;
 
     struct PendingMonsterCurse {AuraDefinition aura;SkillFormulaSnapshot source;std::vector<EntityId> targets;size_t next{};uint64_t tick{};};
     std::deque<std::pair<EntityId,PendingMonsterCurse>> monsterCurses_;
     StepStatus advanceMonsterCurses(uint64_t);
-    struct UniqueCycle {uint64_t damage{},lightning{},nextLightning{},death{},deathOccurrence{};uint64_t nativeHit{},nativeHitAt{},nativeDeath{},nativeDeathAt{};int deathPhase{};};
+    struct UniqueCycle {uint64_t nextLightning{};bool emissionPending{};std::optional<uint64_t> queenDeath;};
     std::map<EntityId,UniqueCycle> uniqueCycles_;
-    StepStatus advanceMonsterEnchantments(EntityId,uint64_t);
+    struct ModifierExecution {
+        EntityId owner,missile;std::vector<int> callbacks;size_t next{};
+        bool captured{},damagePrepared{};
+        std::shared_ptr<NativeAreaPulse> area;
+    };
+    std::map<FrameEventHandle,ModifierExecution> modifierExecutions_;
+    DomainResult<> executeMonsterModifier(EntityId,int,uint64_t,ModifierExecution &);
     DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
 
-    StepStatus advanceSkills(const ActorContext &, Recovery &);
     StepStatus advanceUnits(uint64_t);
-    StepStatus advanceMonsterSkills(EntityId,uint64_t);
   public:
+    void prepareMonsterModifierEvents(monsters::Actor &,const monsters::Actor *) const;
+    DomainResult<> monsterModifierEvent(const FrameEvent &,uint64_t);
+    DomainResult<> monsterDamageEffect(EntityId,uint64_t);
+    DomainResult<> monsterDeathEffect(EntityId,uint64_t);
+    DomainResult<> movementSkills(EntityId,uint64_t,uint8_t direction,Vec nativePosition);
     explicit System(Ports ports) : ports_(ports), itemTriggers_(ports.itemTriggers) {}
     void registerPlayer(EntityId,uint64_t tick);
     DomainResult<> regeneratePlayer(EntityId,uint64_t tick);
@@ -271,7 +285,6 @@ class System {
     void publishPeriodicEvents(FrameEventPublication &) noexcept;
     void cancelPeriodicSkills(FrameEventOwner) noexcept;
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
-    DomainResult<> monsterModeEvent(const FrameEvent &,uint64_t tick);
     std::vector<EntityId> auraCandidateRecipients(EntityId,const AuraDefinition &,RegionId,uint64_t tick,const monsters::Actor *source=nullptr) const;
     std::vector<EntityId> nativeAuraCandidateRecipients(NativeAuraTargetQuery,const monsters::Actor *source=nullptr) const;
     void prepareImmediateAuraUnit(AuraUnitPublication &,const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId,
@@ -287,7 +300,7 @@ class System {
     void prepareUnitItemAura(AuraUnitPublication &,monsters::Actor &,const SkillAuraChange &,uint64_t,
         const AuraRecipientPreparation &);
     void prepareUnitItemAuras(AuraUnitPublication &,monsters::Actor &,uint64_t tick,const AuraRecipientPreparation &);
-    void stageAuraActors(AuraUnitPublication &,std::map<EntityId,monsters::Actor>,size_t allocatedIds);
+    void stageAuraActors(AuraUnitPublication &,std::map<EntityId,monsters::Actor>,size_t allocatedIds,std::span<const EntityId> retired={});
     void stageSummonEvents(AuraUnitPublication &,EntityId,int skill,int rank,const SkillFormulaCatalog &,uint64_t tick) const;
     void prepareStagedSkillEvents(AuraUnitPublication &,uint64_t tick) const;
     void stageAuraSource(AuraUnitPublication &,EntityId,AuraUnitPublication::SourcePreparation);
@@ -315,6 +328,7 @@ class System {
     DomainResult<> druidRage(const ActorContext &,const SkillCastSpec &);
     DomainResult<bool> removeStateGroup(const ActorContext &,int group);
     DomainResult<> removeUnitState(EntityId,int state,uint64_t tick);
+    DomainResult<> prepareUnitCurseRemoval(AuraUnitPublication &,EntityId,uint64_t tick) const;
     DomainResult<> setNativeSkillState(EntityId,int state,bool active,uint64_t tick);
     DomainResult<> postModeRate(EntityId,int skill,int rank,int32_t rate,uint64_t revision,uint64_t tick,std::pair<uint64_t,uint64_t> random);
     DomainResult<> endMode(EntityId,uint64_t tick,std::optional<uint64_t> activeRevision={});
@@ -324,7 +338,7 @@ class System {
     DomainResult<> bladeShield(const ActorContext &,const SkillCastSpec &,std::shared_ptr<BladeShieldPulse> &);
     bool bladeShieldStarted(const std::shared_ptr<BladeShieldPulse> &) const;
     DomainResult<> mindBlast(const ActorContext &,const SkillCastSpec &,Vec,std::shared_ptr<MindBlastPulse> &);
-    DomainResult<> corpseExplosion(EntityId source,EntityId corpse,int skill,int rank,uint64_t tick,std::shared_ptr<CorpseExplosionPulse> &);
+    DomainResult<> corpseExplosion(EntityId source,EntityId corpse,int skill,int rank,uint64_t tick,std::shared_ptr<CorpseExplosionPulse> &,const SkillCastSpec *payment=nullptr);
     DomainResult<> nativeArea(const NativeAreaSpec &,uint64_t tick,std::shared_ptr<NativeAreaPulse> &);
     DomainResult<> skillUnit(const ActorContext &, const SkillCastSpec &, EntityId);
     DomainResult<> curse(const ActorContext &,const SkillCastSpec &,Vec,EntityId);
@@ -380,7 +394,8 @@ class System {
     DomainResult<> nativeMissileHitDelay(EntityId,const CombatStateDefinition &,uint64_t duration,uint64_t tick);
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);
-    DomainResult<> castMonsterCurse(EntityId,const AuraDefinition &,EntityId,uint64_t tick,bool unique=false,const SkillFormulaSnapshot *source=nullptr);
+    DomainResult<> castMonsterCurse(EntityId,const AuraDefinition &,EntityId,uint64_t tick,bool unique=false,const SkillFormulaSnapshot *source=nullptr,const MonsterCursePulse *prepared=nullptr);
+    DomainResult<> monsterCurse(EntityId,int skill,int rank,Vec,uint64_t,std::shared_ptr<MonsterCursePulse> &);
     StepStatus finishContacts(uint64_t tick);
     NativeContactBatch prepareDamageEvents(EntityId source,EntityId target,int64_t physical,int64_t total,bool missile,bool returnFire,uint64_t tick,bool suppress=false) const;
     NativeContactBatch prepareAttackEvents(EntityId source,EntityId target,uint64_t tick) const;

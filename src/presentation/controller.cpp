@@ -57,12 +57,17 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 switch (activated) {
                 case 0:
                     ui.automapLarge = !ui.automapLarge;
+                    ui.automapOffset = {};
                     if (!ui.automapLarge && ui.automapFade == AutomapFade::Center)
-                        ui.automapFade = AutomapFade::Everything;
+                        ui.automapFade = AutomapFade::No;
                     break;
                 case 1:
-                    ui.automapFade = static_cast<AutomapFade>((int(ui.automapFade) + 1) %
-                        (ui.automapLarge ? 4 : 3));
+                    switch (ui.automapFade) {
+                    case AutomapFade::No: ui.automapFade = ui.automapLarge ? AutomapFade::Center : AutomapFade::Everything; break;
+                    case AutomapFade::Center: ui.automapFade = AutomapFade::Everything; break;
+                    case AutomapFade::Everything: ui.automapFade = AutomapFade::Auto; break;
+                    case AutomapFade::Auto: ui.automapFade = AutomapFade::No; break;
+                    }
                     break;
                 case 2: ui.automapCenterWhenCleared = !ui.automapCenterWhenCleared; break;
                 case 3: ui.automapParty = !ui.automapParty; break;
@@ -92,9 +97,11 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         ui.automap = !ui.automap;
         if (ui.automap && ui.automapCenterWhenCleared) ui.automapOffset = {};
     }
-    if (input.minimapSide)
+    if (input.minimapSide && ui.automap && !ui.automapLarge) {
         ui.minimapRight = !ui.minimapRight;
-    if (input.automapCenter)
+        ui.automapOffset = {};
+    }
+    if (input.automapCenter && ui.automap)
         ui.automapOffset = {};
     if (input.automapNames)
         ui.automapNames = !ui.automapNames;
@@ -226,6 +233,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         ui.inventory.cancelGesture();
         return true;
     }
+    if (ui.automap) ui.automapOffset = ui.automapOffset - input.movement * 16.f;
     // Skill hotkeys and belt keys remain live while a non-modal side panel is open.
     if (handleSkills(input)) return true;
     if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
@@ -366,7 +374,6 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         inventoryRight_ = inventoryRight_ || input.rightPressed;
         return true;
     }
-    if (ui.automap) ui.automapOffset = ui.automapOffset - input.movement * (120.f * elapsed);
     worldBlocked_ = false;
     return true;
 }

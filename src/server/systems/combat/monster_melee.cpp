@@ -5,6 +5,7 @@
 #include "server/systems/skills/native_caster.hpp"
 #include "server/runtime/skill_rules.hpp"
 #include "gameplay/combat/weapon_snapshot.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 
@@ -35,11 +36,8 @@ DomainResult<> System::monsterMelee(EntityId source,EntityId target,const Monste
         if(!skill.weapon) skill.weapon=WeaponSkillSpec{};
         if(!program.weaponSkill) {
             skill.sourceId=0;skill.rank=1;
-            skill.weapon->damagePercent=program.damagePercent;
-            skill.weapon->attackRating=program.ratingPercent;
-            skill.weapon->knockback=program.knockback || unit->rule.knockbackOnHit;
-            skill.weapon->stunFrames=program.stunFrames;
         }
+        skill.weapon->knockback=skill.weapon->knockback || program.knockback || logicalStatValue(*stats,*rules.stats,"item_knockback")!=0;
         SpellImpact impact;impact.projectile=impact.source=source;impact.area=unit->area;impact.targets={target};
         impact.occurrence=occurrence;impact.melee=impact.nativeDamageFlagsOnly=impact.synchronous=true;
         impact.binding=participants.bind(participants.find(source));

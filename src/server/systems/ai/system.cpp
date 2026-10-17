@@ -25,7 +25,7 @@ DomainResult<> System::perform(Controller &controller,std::function<DomainResult
     }
     if(controller.pending.empty()) {
         const auto result=operation();
-        if(result.status!=DomainStatus::Capacity) return result;
+        if(!isDeferred(result.status)) return result;
     }
     controller.pending.push_back(std::move(operation));
     return {DomainStatus::Applied,std::monostate{}};
@@ -48,11 +48,13 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
 StepStatus System::think(EntityId id,TickContext tick) {
     const auto *actor=ports_.monsters.find(id);if(!actor) return StepStatus::Complete;
     const auto &monster=*actor;
+    if(const auto previous=state_.controllers.find(id);previous!=state_.controllers.end() && previous->second.admissionRevision!=monster.admissionRevision)
+        state_.controllers.erase(previous);
     if(const auto found=state_.controllers.find(id);found!=state_.controllers.end() && !found->second.pending.empty()) {
         auto &controller=found->second;
         while(!controller.pending.empty()) {
             const auto result=controller.pending.front()();
-            if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            if(isDeferred(result.status)) return StepStatus::Blocked;
             controller.pending.pop_front();
             if(!result) {controller.pending.clear();break;}
         }
@@ -70,9 +72,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) {
+            controller.admissionRevision=monster.admissionRevision;
             controller.random = monster.combatRandom;
-            if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=tick.tick+uint64_t(monster.rule.ai.params[0]);
-            if(monster.rule.ai.kind==MonsterAiKind::FoulCrowNest) controller.lastSpawn=tick.tick;
+            if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=monster.admissionTick+uint64_t(monster.rule.ai.params[0]);
+            if(monster.rule.ai.kind==MonsterAiKind::FoulCrowNest) controller.lastSpawn=monster.admissionTick;
         }
         if(controller.observedAiFunctionRevision!=monster.aiFunctionRevision) {
             // AITHINK_ExecuteAiFn clears the three family parameters and AI
@@ -108,7 +111,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 const auto skill=uint16_t(monster.rule.skillIds[0]);const auto definition=monster.rule.skillActions.find(skill);
                 if(definition!=monster.rule.skillActions.end()) {
                     const auto cast=requestAction(controller,{id,skill,PointTarget{monster.area,area.generation,monster.position},tick.tick,definition->second.nativeMode});
-                    if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
+                    if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
                     if(cast) {controller.nextDecision=tick.tick+30;continue;}
                 }
             }
@@ -116,7 +119,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 if(monster.aiPose==11) {controller.phase=1;controller.nextDecision=tick.tick+1;continue;}
                 if(controller.phase==4) {
                     controller.phase=1;const auto landed=perform(controller,[this,id,tick]{return ports_.monsters.aiPose(id,10,false,false,tick.tick);});
-                    if(landed.status==DomainStatus::Capacity) {blocked=true;controller.phase=4;}
+                    if(isDeferred(landed.status)) {blocked=true;controller.phase=4;}
                     controller.nextDecision=tick.tick+1;continue;
                 }
             }
@@ -137,7 +140,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             const auto point=caster.position()+ports_.areas.at(casterRegion).definition.origin-area.definition.origin;
             const auto attack=[&](UnitTarget victim) {
                 const auto cast=requestAction(controller,{id,0,victim,tick.tick,4});
-                if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
+                if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;}
             };
             const bool directCombat=meleeDistance(monster.position,monster.rule.size,point,caster.size())<=monster.rule.meleeRange;
             const auto alternative=controller.curseParameters[0] && !directCombat?acquireTarget(monster,tick,false,requireSight):std::optional<ShootableTarget>{};
@@ -164,7 +167,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             const int distance=monster.curseControl.origin?monsterAiDistance(origin,0,monster.position):victim?victim->distance:INT32_MAX;
             const bool activeState=monster.curseControl.state<0 || ports_.effects.unitStates(id,tick.tick).contains(monster.curseControl.state);
             const bool combat=!monster.curseControl.origin && victim && meleeDistance(monster.position,monster.rule.size,victim->position,victim->size)<=monster.rule.meleeRange;
-            const auto decision=decideFear({controller.curseParameters,distance,monster.rule.nativeVelocity,monster.rule.curseAiRunVelocity,
+            const auto decision=decideFear({controller.curseParameters,distance,monster.rule.nativeVelocity,monster.rule.nativeRunVelocity,
                 activeState,combat,monster.rule.curseAiInteract,monster.rule.attacks.contains(4),monster.rule.curseAiRunMode});
             if(decision.action==CurseDecisionAction::Restore) {
                 ports_.monsters.curseControl(id,{});ports_.monsters.stop(id);controller.nextDecision=tick.tick+1;continue;
@@ -172,7 +175,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             if(decision.action==CurseDecisionAction::Idle) {ports_.monsters.stop(id);controller.nextDecision=tick.tick+uint64_t(decision.idleFrames);continue;}
             if(decision.action==CurseDecisionAction::Attack) {
                 const auto cast=requestAction(controller,{id,0,victim->unit,tick.tick,4});
-                if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}continue;
+                if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;}continue;
             }
             controller.curseParameters=decision.parameters;
             if(decision.firstEscape) {auto control=monster.curseControl;control.target={};ports_.monsters.curseControl(id,std::move(control));}
@@ -196,7 +199,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             if(target && target->distance<20) {
                 if(rollRandom(controller.random)%100<30) {
                     const auto cast=requestAction(controller,{id,0,target->unit,tick.tick,4});
-                    if(cast.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
+                    if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;}
                 } else if(rollRandom(controller.random)%100<30) {
                     const int turn=(rollRandom(controller.random)&255)<128?1:-1;
                     const auto moved=perform(controller,[this,id,target,tick,turn] {
@@ -231,7 +234,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             const auto decision=decideDimVision(combat,monster.rule.curseAiInteract,monster.rule.attacks.contains(4),percentage);
             if(decision==CurseDecisionAction::Attack) {
                 const auto result=requestAction(controller,{id,0,*target,tick.tick,4});
-                if(result.status==DomainStatus::Capacity) {blocked=true;controller.nextDecision=tick.tick+1;}
+                if(isDeferred(result.status)) {blocked=true;controller.nextDecision=tick.tick+1;}
             } else {
                 if(decision==CurseDecisionAction::Wander) {
                     const auto destination=monsterWanderPoint(monster.position,3,random);

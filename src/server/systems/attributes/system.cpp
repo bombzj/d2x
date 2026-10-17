@@ -33,12 +33,12 @@ StepStatus System::refreshEnvironment(TickContext tick) {
         if(player->entered && area.definition.act==pending->value.act) edit.facts.emplace_back(pending->value);
         auto prepared=ports_.transactions.prepare(std::move(edit));
         if(!prepared) {
-            if(prepared.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            if(isDeferred(prepared.status)) return StepStatus::Blocked;
             throw std::runtime_error("Native environment player source refresh unavailable");
         }
         const auto committed=ports_.transactions.commit(std::move(*prepared.value));
         if(!committed) {
-            if(committed.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            if(isDeferred(committed.status)) return StepStatus::Blocked;
             throw std::logic_error("Native environment player refresh lost its candidate");
         }
         ++state_.next;

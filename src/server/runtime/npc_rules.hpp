@@ -25,6 +25,7 @@ struct NpcRule {
     int walkVelocity{};
     MovementCollisionRule movement;
     std::shared_ptr<const MonsterRule> combat;
+    std::vector<uint16_t> hirelingNames;
 };
 // Placement and quest/service capability only. The nonplayer actor identified
 // by id exclusively owns position, resources, random seed and combat state.

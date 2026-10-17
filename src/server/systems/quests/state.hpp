@@ -10,11 +10,18 @@ namespace d2x::server::quests {
 // World state is per act and per game; personal progression stays in PlayerStore.
 struct ActOneState {
     bool denCleared{};
+    bool denHasKills{};
     unsigned denRemaining{};
     std::map<PlayerId,EntityId> contributors;
     std::map<PlayerId,unsigned> observed;
     std::array<int,5> stones{};
     unsigned activatedStones{};
+    EntityId cainInvisibleObject;
+    EntityId cainStartObject;
+    EntityId cainTownActor;
+    struct CainStart {RegionId area;Vec position;};
+    std::optional<CainStart> cainStart;
+    std::array<EntityId,5> monoliths{};
     bool stonesOrdered{}, cainRescued{}, restoreCairnStones{}, cainPortalOpened{}, cainOffer{}, burialOffer{}, toolsOffer{};
     bool andarielPortal{};
     uint64_t andarielPortalAt{};
@@ -73,5 +80,6 @@ struct ActFiveState {
     Vec baalPosition;
     EntityId baalFxSource;
     bool baalFxStarted{};
+    std::optional<uint16_t> zooMonster;
 };
 }

@@ -89,8 +89,18 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.monsterRegionRandom=systems_.population.read().regionRandom;
     result.npcControlRandom=systems_.npc.read().controlRandom;
     result.questControlRandom=systems_.quests.read().controlRandom;
+    for(const auto &[seller,roster]:systems_.npc.read().hirelings)
+        for(const auto &slot:roster.slots) result.hirelingRosters.push_back({seller,roster.revision,slot.name,slot.seed,slot.available,slot.hired});
+    for(const auto &[region,area]:areas_.all()) {
+        result.levelRandom.emplace(region,area.levelRandom.value_or(area.definition.initialLevelRandom));
+        for(size_t index=0;index<area.rooms.size();++index) {
+            const auto &room=area.rooms[index];
+            result.roomRandom.push_back({region,index,room.loaded,room.randomRevision,room.creationOrder,room.random});
+        }
+    }
     result.objectPopulation=systems_.objects.population();
     result.modifiersPending=systems_.monsters.modifiersPending();result.modifierFailure=systems_.monsters.modifierFailure();
+    result.monsterEquipmentPending=systems_.monsters.equipmentPending();result.monsterEquipmentFailure=systems_.monsters.equipmentFailure();
     for(const auto &[region,population]:systems_.population.read().areas)
         if(!population.rejectedDensityKeys.empty()) result.rejectedDensity.emplace(region,population.rejectedDensityKeys);
     constexpr std::array densityPhases{"trial","search","leader","leaderSetup","partySetup","party","hut","group",
@@ -110,6 +120,33 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
                 densityPhases.at(size_t(cursor.phase)),cursor.deferred,cursor.definition,cursor.trial,cursor.search,cursor.remaining,
                 cursor.partyRemaining,cursor.champions,population.processedRooms,population.successfulRooms,population.uniqueCount,cursor.leader,order});
         }
+    }
+    const auto appendBirth=[&](RegionId region,Vec point,const population::DensityRoom &cursor,std::string quest,EntityId object,
+        unsigned occurrence=0,int retryAttempts=0,int finalRetryAttempts=0,int birthTicks=0) {
+        const auto &area=areas_.at(region);const auto *room=area.definition.activation.room(point);
+        if(!room) return;
+        const auto population=systems_.population.read().areas.find(region);
+        if(population==systems_.population.read().areas.end()) return;
+        const auto &counts=population->second;
+        result.densityPopulation.push_back({region,size_t(room-area.definition.activation.rooms().data()),cursor.logical,
+            densityPhases.at(size_t(cursor.phase)),cursor.deferred,cursor.definition,cursor.trial,cursor.search,cursor.remaining,
+            cursor.partyRemaining,cursor.champions,counts.processedRooms,counts.successfulRooms,counts.uniqueCount,cursor.leader,{},std::move(quest),object,
+            occurrence,retryAttempts,finalRetryAttempts,birthTicks});
+    };
+    for(const auto &birth:systems_.population.read().questBirths) {
+        const auto *area=areas_.find(birth.area);if(!area || area->generation!=birth.generation) continue;
+        const auto &source=area->definition.nativeQuestMonsters.at(birth.name);
+        appendBirth(birth.area,birth.position.value_or(source.position),birth.cursor,birth.name,{});
+    }
+    for(const auto &birth:systems_.population.read().objectBirths) {
+        const auto *area=areas_.find(birth.area);if(!area || area->generation!=birth.generation) continue;
+        appendBirth(birth.area,birth.position,birth.cursor,{},birth.source,birth.occurrence,birth.retryAttempts,birth.finalRetryAttempts,birth.birthTicks);
+    }
+    constexpr std::array wanderPhases{"check","search","birth","done"};
+    for(const auto &[key,cursor]:systems_.population.read().wanderRooms) {
+        const auto count=systems_.population.read().wanderCounts.find(key.first);
+        result.wanderPopulation.push_back({key.first,key.second,cursor.epoch,wanderPhases.at(size_t(cursor.phase)),cursor.deferred,
+            cursor.search,count==systems_.population.read().wanderCounts.end()?0:count->second});
     }
     for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
@@ -178,7 +215,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         }
         value.nativeVelocity=monster.rule.nativeVelocity;value.movementMask=monster.rule.collision.mask;value.spawnMask=monster.rule.spawnCollision.mask;
         value.blockChance=monster.rule.blockChance;value.shield=monster.shield;value.nestSpawned=monster.nestSpawned;value.webUntil=monster.webUntil;
-        value.interruption=monster.interruption;value.corpseUnavailable=monster.corpseUnavailable;
+        value.interruption=monster.interruption;value.corpseUnavailable=monster.corpse.unavailable;
         value.burrowed=monster.burrowed;value.airborne=monster.airborne;value.holdPose=monster.holdPose;
         value.aiPose=monster.aiPose;value.poseUntil=monster.poseUntil;value.aiRegenerationBonus=monster.aiRegenerationBonus;value.skillMotion=bool(monster.skillMotion);
         value.components=monster.components;value.componentCounts=monster.rule.componentCounts;

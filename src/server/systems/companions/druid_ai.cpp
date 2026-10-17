@@ -46,7 +46,7 @@ StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
     for(auto &[id,entry]:state_.companions) {
         if(active<=size_t(maximum)) break;const auto *candidate=ports_.monsters.find(id);
         if(entry.owner!=pet.owner || entry.removeAt || !candidate || !candidate->alive() || candidate->rule.petType!=body->rule.petType) continue;
-        const auto retired=ports_.monsters.retire(id,tick.tick);if(retired.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        const auto retired=ports_.monsters.retire(id,tick.tick);if(isDeferred(retired.status)) return StepStatus::Blocked;
         if(!retired) continue;entry.removeAt=tick.tick+uint64_t(candidate->rule.deathTicks);entry.release=0;--active;
     }
     pet.effectiveRanks=owner->totals.skillRanks;return StepStatus::Complete;
@@ -58,7 +58,7 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
     const auto resume=[&] {
         auto &decision=*pet.druidDecision;decision.request.tick=tick.tick;
         const auto applied=ports_.skills.requestCast(decision.request);
-        if(applied.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        if(isDeferred(applied.status)) return StepStatus::Blocked;
         if(applied) {pet.druidAi=decision.after;pet.nextDecision=tick.tick+uint64_t(std::max(decision.delay,1));}
         else pet.nextDecision=tick.tick+1;
         pet.druidDecision.reset();return StepStatus::Complete;
@@ -121,7 +121,7 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
                 pet.druidAi[0]=rank==owner->totals.skillRanks.end()?0:nativeAdd(row.number("param5"),nativeMultiply(rank->second-1,row.number("param6")));
             }
         } else if(!pet.druidAi[0]) {
-            const auto retired=ports_.monsters.retire(body->id,tick.tick);if(retired.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            const auto retired=ports_.monsters.retire(body->id,tick.tick);if(isDeferred(retired.status)) return StepStatus::Blocked;
             if(retired) pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);return StepStatus::Complete;
         }
         if(ownerDistance>50) {if(!follow({},false,3)) idle(1);return StepStatus::Complete;}

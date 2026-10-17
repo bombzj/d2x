@@ -17,12 +17,12 @@ struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
 struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
-struct QuestPosition {RegionId area;Vec position;};
+struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room;};
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
 struct Ports {
     AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids;
     const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
-    const skills::System &skills; const objects::System &objects; const loot::System &loot;
+    const skills::System &skills; objects::System &objects; const loot::System &loot;
     const spatial::System &spatial;
 };
 class System {
@@ -65,8 +65,13 @@ class System {
     DomainResult<EntityId> admitQuestNpc(RegionId,std::string_view,Vec,int searchRadius=15);
     std::optional<QuestPosition> questFreePosition(RegionId,Vec roomPosition,Vec requested,int size,int radius,uint16_t mask=0x400) const;
     std::optional<QuestPosition> nativeFreeSpace(RegionId,Vec roomPosition,Vec requested,int size) const;
-    std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,Vec requested) const;
+    std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,bool durielOpening=false);
+    std::optional<Vec> nativeActSpawnLocation(RegionId,int tile);
+    std::optional<QuestPosition> nativeActSpawnLocationEx(RegionId,int tile,int size);
+    std::optional<QuestPosition> nativeWaypointPosition(RegionId,bool changeAct);
+    std::optional<QuestPosition> nativeDurielPortalPosition(RegionId);
     void retainControllerRoom(RegionId,Vec,bool retain);
+    void rebindObject(RegionId,EntityId previous,EntityId current);
     DomainResult<> moveQuestNpc(RegionId,EntityId,Vec,Vec,bool escaped);
     void fail(uint64_t request);
     std::vector<RegionId> visible(PlayerId) const;

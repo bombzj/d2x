@@ -5,12 +5,12 @@ namespace d2x::server {
 DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,TickContext tick) {
     // Native continuous timers discard explicit callbacks; retain the domain
     // routing identity in customId, which survives the continuous queue.
-    if(event.continuous && event.customId==int32_t(effects::monsterModeTimerHandler) && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::MonsterModifier)
-        return systems.effects.monsterModeEvent(event,tick.tick);
     if(event.continuous && event.customId==int32_t(movementTimerHandler) && event.owner.type==FrameEventUnit::Player && event.type==FrameEventType::ModeChange)
         return systems.movement.frameEvent(event,tick);
     if(event.handler==effects::modeEndTimerHandler && event.type==FrameEventType::EndAnimation)
         return systems.effects.modeEndEvent(event.owner.unit,tick.tick);
+    if(event.handler==effects::monsterModifierTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::MonsterModifier)
+        return systems.effects.monsterModifierEvent(event,tick.tick);
     if(event.handler==effects::conversionTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::RemoveState)
         return systems.effects.endConversion(event.owner.unit,tick.tick);
     if(event.handler==effects::nativeUnitSkillTimerHandler && event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::PeriodicSkills)

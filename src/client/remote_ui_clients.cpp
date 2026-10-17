@@ -1642,7 +1642,8 @@ struct RemoteUiClients::Impl {
             offer.name=projection.name; offer.artKey=projection.artKey; offer.quality=projection.quality;
             const auto price = itemQuote(id, OnlineItemAction::Buy);
             offer.priceKnown = price.has_value(); offer.price = price.value_or(0);
-            offer.storePage=def->family==ItemFamily::Weapon?0:def->family==ItemFamily::Armor?1:3;
+            if(native.page<1 || native.page>4) continue;
+            offer.storePage=int(native.page)-1;offer.cell=std::array{int(native.x),int(native.y)};
             offer.tooltip=projection.tooltip;
             if (item.gamble) offer.tooltip={{projection.name,ItemTextTone::Name}};
             shopView.offers.push_back(std::move(offer));

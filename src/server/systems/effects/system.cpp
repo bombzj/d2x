@@ -7,6 +7,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/missiles/system.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -464,7 +465,7 @@ DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, b
     std::span<const StatValue> writes,bool refreshPassives) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || player->actor != actor.actor || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    if (spec.state.id < 0 || spec.state.id > 255 || !spec.reactions.empty() || spec.physicalShield || spec.curseAi != CurseAi::None)
+    if (spec.state.id < 0 || spec.state.id > 255 || spec.physicalShield || spec.curseAi != CurseAi::None)
         return {DomainStatus::Unavailable, {}}; // Those execution hooks are not yet installed.
     auto next = state_; auto &states = next.players[actor.actor].states;
     PlayerResourceTrace resources(*player,actor.tick,{},ports_.areas.statTime(player->area));
@@ -505,7 +506,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         return true;
     });
     std::erase_if(stormLast_,[&](const auto &entry){return !ports_.players.findActor(entry.first.first);});
-    std::erase_if(stormPulses_,[&](const auto &entry){return !ports_.frameEvents.find(entry.first);});
+    std::erase_if(stormPulses_,[&](const auto &entry){
+        if(ports_.frameEvents.find(entry.first)) return false;
+        if(entry.second.projectile) ports_.missiles.removeTransient(entry.second.projectile);return true;
+    });
     std::erase_if(paladinCycles_,[&](const auto &entry){return !ports_.players.findActor(entry.first);});
     std::erase_if(unitAuraCycles_,[&](const auto &entry){return !ports_.monsters.find(entry.first);});
     std::erase_if(itemAuraCycles_,[&](const auto &entry){return !ports_.players.findActor(entry.first.first) && !ports_.monsters.find(entry.first.first);});
@@ -518,11 +522,6 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(playerFrame.complete) continue;
         auto [entry, inserted] = state_.players.try_emplace(player.actor); (void)inserted;
         auto next = entry->second;
-        if(playerFrame.maintenance) {
-            const auto status=advanceSkills(actor,next);std::swap(entry->second,next);
-            if(status==StepStatus::Blocked) blocked=true;else playerFrame.complete=true;
-            continue;
-        }
         const bool dead = player.persistent.player.hp <= 0;
         std::optional<PlayerResourceTrace> resources;
         if(dead || next.states.hasDueExpiration(tick.tick))
@@ -574,8 +573,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {blocked=true;continue;}
         }
         if(player.transient.effects) next.states=*player.transient.effects;
-        playerFrame.maintenance=true;
-        if(advanceSkills(actor,next)==StepStatus::Blocked) blocked=true;else playerFrame.complete=true;
+        playerFrame.complete=true;
         std::swap(entry->second,next);
     }
     if(blocked) return StepStatus::Blocked;

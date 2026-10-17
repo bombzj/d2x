@@ -14,6 +14,7 @@
 #include "gameplay/combat/damage_type.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/aura_spec.hpp"
+#include "gameplay/items/property_program.hpp"
 #include "world/navigation.hpp"
 #include <array>
 #include <cstdint>
@@ -41,13 +42,10 @@ struct MonsterAttackRule {
     std::vector<int> releaseFrames{};
     std::optional<MonsterMissileRule> groundFire{};
     std::optional<SkillCastSpec> weaponSkill{};
-    std::optional<SkillCastSpec> spell{};
     bool casting{};
-    int damagePercent{}, ratingPercent{}, stunFrames{}, healMinimum{}, healMaximum{}, hatchCount{};
-    int movementPercent{100}, movementStart{};
+    int movementStart{};
     bool knockback{}, alwaysHit{};
     int hitClass{-1};
-    std::optional<AuraDefinition> curse{};
     std::optional<AnimationTiming> animation{};
     int animationAction{-1};
     bool animationSequence{};
@@ -59,12 +57,7 @@ struct MonsterAttackRule {
     std::shared_ptr<const StatList> modeStats;
     MonsterModePhysical ownerPhysical;
 };
-struct MonsterWebRule {
-    int missile{-1}, frames{}, auraFrames{}, slowFrames{}, slowPercent{};
-    float radius{};
-    CombatStateDefinition aura, slow;
-    MonsterMissileRule lay{}, ground{};
-};
+struct MonsterWebRule {CombatStateDefinition aura;};
 struct MonsterRule {
     struct SelfResurrection {int chance{},delay{},ticks{};};
     std::optional<SelfResurrection> selfResurrection;
@@ -76,8 +69,16 @@ struct MonsterRule {
     int ownerDamageSkill{-1};
     std::map<int,int> baseSkillRanks;
     std::vector<std::pair<int,int>> initialSkills;
+    struct BirthProperty {uint8_t chance{};int parameter{},minimum{},maximum{};std::vector<PropertyInstruction> program;};
+    std::vector<BirthProperty> birthProperties;
+    struct BirthEquipment {
+        struct Choice {std::string code;uint8_t body{},quality{};};
+        uint16_t level{};std::vector<Choice> choices;
+    };
+    std::vector<BirthEquipment> birthEquipment;
     int statGameType{1}; // Native nGameType || dwGameType, not the expansion flag.
     int nativeClass{}, level{}, minimumLife{}, maximumLife{}, defense{}, attackRating{};
+    int corpseExplosionPercent{};
     int minimumDamage{}, maximumDamage{}, criticalChance{};
     std::array<int, 6> resistances{};
     int size{}, meleeRange{}, attackTicks{}, impactTick{}, deathTicks{}, decisionTicks{};
@@ -96,13 +97,14 @@ struct MonsterRule {
     bool curseable{},switchAi{},revivable{};
     bool curseAiRunMode{},curseAiInteract{};
     bool wakeAiOutsideNeutral{};
-    int curseAiRunVelocity{};
+    int nativeRunVelocity{};
     NativeMonsterStateTarget stateTarget;
     bool noAura{};
     int petType{},petVariant{-1};
-    int64_t corpseBaseLife{};
     bool primeEvil{};
     bool environmentController{};
+    bool neverCount{};
+    bool flying{};
     enum class Trap { None, Missile, Poison, Nova, RightArrow, LeftArrow, Melee, Turret, Soul } trap{};
     std::array<int,8> trapParameters{};
     struct ModifierChoices {int championChance{};std::array<std::vector<MonsterModifierChoice>,2> candidates;};
@@ -115,6 +117,7 @@ struct MonsterRule {
     int fireShrineState{-1};
     int healthPotionState{-1},deathDelayState{-1};
     bool deadCollision{};
+    int restore{};
     int difficultyResistancePenalty{};
     int knockbackTicks{};
     std::vector<uint64_t> experience;
@@ -139,7 +142,7 @@ struct MonsterRule {
     std::optional<AuraDefinition> nativeAura{};
     std::shared_ptr<const std::map<int,AuraSkillSpec>> auraPrograms;
     int noManaRegenState=-1;
-    std::optional<MonsterMissileRule> hitBurst{}, deathBurst{};
+    std::optional<int> hitBurst,deathBurst;
     std::optional<MonsterWebRule> web;
     bool corpseSelectable{}, softCorpse{}, opensDoors{};
     int corpseSize = 1;
@@ -162,12 +165,10 @@ struct MonsterRule {
     bool bossTransfer{};
     int superUniqueIndex{-1}, uniqueTranslation{-1};
     std::optional<MonsterFirewall> firewall;
-    std::map<int,MonsterMissileRule> enchantmentMissiles;
     struct AuraStats { std::vector<StatValue> targets,owner; };
     std::map<int,AuraStats> auraStats;
     bool introduction{};
     int preventHealState{-1};
-    bool knockbackOnHit{};
     struct DeathSweep {int radius{},minimumDelay{},maximumDelay{};bool undeadOnly{};};
     std::optional<DeathSweep> deathSweep;
 };

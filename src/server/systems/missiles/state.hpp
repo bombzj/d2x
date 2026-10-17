@@ -20,7 +20,7 @@
 
 namespace d2x::server {struct SkillRules;}
 namespace d2x::server::missiles {
-struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<MonsterWebRule> web{};std::optional<MonsterMissileRule> groundFire{};std::optional<WeaponSkillDamage> weapon{};int criticalChance{}; };
+struct EnemyProjectile { MonsterMissileRule rule; MonsterHit hit; MonsterHitStates states; int level{}, rating{};std::optional<WeaponSkillDamage> weapon{};int criticalChance{}; };
 // Numeric missile sources are independent of trajectory/skill programs.
 struct NativeDamage {
     MissileRule rule;

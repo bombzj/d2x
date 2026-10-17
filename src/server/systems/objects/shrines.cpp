@@ -27,9 +27,6 @@ DomainResult<> System::shrineMissiles(const ActorContext &actor,Object &object) 
     missiles::MonsterSpawn request{object.id,object.area,area.generation,actor.tick,object.position,object.position,attack,{},player->persistent.player.level,0,0};
     request.source=player->actor;request.playerSource=player->player;
     if(shrine.code==19) {
-        const auto skill=skills::evaluate(*player,47,rank);
-        if(skill.missileId!=62) return {DomainStatus::Unavailable,{}};
-        request.attack.missile->elementalMinimum=int(skill.minimumDamage*256.f);request.attack.missile->elementalMaximum=int(skill.maximumDamage*256.f);
         combat::SpellImpact impact{object.id,object.id,object.area,DamageType::Physical,0,{}};
         impact.environment=true;impact.directLife=true;impact.environmentGeneration=area.generation;impact.occurrence=object.revision;
         auto add=[&](EntityId id,Vec at,int64_t life) {

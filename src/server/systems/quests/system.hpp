@@ -78,9 +78,15 @@ class System {
   public:
     explicit System(Ports ports) : ports_(ports) {}
     void initializeControl();
+    DomainResult<> initializeZoo(RegionId,uint64_t tick);
     const State &read() const { return state_; }
     void initialize(const CharacterRecord &);
     void nativeEliteBorn(EntityId,bool eligible);
+    void rebindObject(EntityId previous,EntityId current);
+    void registerCainObject(EntityId,int definition,int initialization,RegionId,Vec);
+    void registerTownCain(EntityId);
+    bool cainTownRequested() const;
+    std::optional<int> initialObjectMode(RegionId,EntityId,int definition,int operation,int initialization,uint64_t tick) const;
     std::array<uint16_t,48> gameFlags() const;
     bool pendingGoals(PlayerId) const;
     QuestFact projection(PlayerId player,const CharacterRecord &record,RegionId area,bool fullStatus=true) const { auto result=fact(player,record,area);result.fullStatus=fullStatus;return result; }

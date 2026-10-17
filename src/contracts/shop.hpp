@@ -17,6 +17,7 @@ struct ShopOfferView {
     unsigned price = 0;
     bool priceKnown = false;
     std::vector<ItemTextLine> tooltip; // Populated by inspection, not for every shelf item.
+    std::optional<std::array<int,2>> cell;
 };
 // Visible stock and current display prices only; no rolls, seed or hidden gamble outcome.
 struct ShopView {

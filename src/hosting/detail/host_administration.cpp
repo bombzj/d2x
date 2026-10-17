@@ -336,7 +336,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             const auto stats=deriveHirelingStats(*row,grant.level);auto random=initialRandom(uint32_t(host.nextEntity(binding->game)));
             HirelingRecord record{row->sourceRow,row->classId,row->nameFirst,grant.level,float(stats.life),stats.experience,rollRandom(random)};
             const auto result=host.grantHireling(*binding,std::move(record));if(!result) return {AdminStatus::Unavailable,"Hireling replacement transaction rejected"};
-            return {AdminStatus::Applied,"Original hireling granted; previous hireling equipment removed atomically"};
+            return {AdminStatus::Applied,"Hireling replacement queued; the previous hireling remains until the new birth commits"};
         }
         case AdminOperation::ResetAttributes: return {AdminStatus::NotImplemented, "Attribute reset administration is not implemented"};
         case AdminOperation::ResetSkills: return {AdminStatus::NotImplemented, "Skill reset administration is not implemented"};

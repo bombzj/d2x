@@ -28,6 +28,18 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 用户手动运行原版1.13c Host／D2X Join：首次选择aaa收到B4，旧目录缺少该包，显示Undefined packet ID 180；补齐5字节长度与拒绝码提示，不修改原版准入规则、版本字段或D2S编码。用户随后换角色确认Join成功。该现象符合原版禁止同一房间中角色重名的检查（忽略大小写）；首次响应的u32错误码未采集，不将推断写成已捕获码6。只确认本次加入成功，原版方向的游玩／保存往返和D2X Host／原版 Join仍未验证。
 
+2026-10-16用户运行D2X Host／原版1.13c Join，ShotSorceress在场景显示前崩溃。原版当日日志三次均为D2Common RVA `0x4E1DD`读取技能表空指针；22:47两次现场对应宿主诊断连接3／5。最后一次栈中保留的`9D0620006A000000006000000010008000652402301606078280F0000605FF01`与宿主sequence855的装备包一致，其前sequence816发送`210001600000000000000100`，即Attack的基础等级0、偏移2移除标志1。原1.13c D2Client RVA `0xAC910`把偏移2传给D2Common ordinal10302／RVA `0x52BC0`的AssignSkill；基础等级0且标志非零会删除节点。左右手仍引用被释放的默认Attack，装备回调经D2Client RVA `0x81B90`读取当前技能时崩溃。装备包是触发后续读取的位置，本次证据没有证明其物品位流损坏。
+
+回归来源由Git及旧成功消息共同确认：移除标志1自`873ac340`（2026-10-08）已存在；`88c6c091`（2026-10-15）的`attributes/calculation.cpp`开始把`rules.innateSkills`并入有效技能输出，`rank_sources.cpp`为这些未学通用技能提供原生1级，发包器仍只取持久已学等级，因此输出基础0、bonus1并删除Attack。10月12日`artifacts/item-protocol-20261012-090747-corrected/host-packets.jsonl`中同一ShotSorceress的连接3只有30条职业21，没有Attack；本次两次原版连接均有38条，新增Attack等通用动作。自有客户端21消费者此前忽略移除标志并直接合成base+bonus，单机冒烟未覆盖这个原版分支。
+
+`native_character_wire.cpp`源码已将普通21更新的移除标志改为0（与本地D2MOO的Skills／ItemMode／SUnitMsg调用一致），并复用由当前MPQ的`loadInnateSkillIds`准备的`commonSkills`，在94快照、21初始及增量投影中补齐Attack／CharStats通用技能的原生基础1级；持久角色的已学技能表不变。原1.13c D2Common ordinal10506／RVA `0x529E0`先添加Attack再遍历CharStats的十个基础技能，AddSkill在RVA `0x52812`写基础等级1；94消费者按绝对基础等级调用AssignSkill，不会重复累加这些初始化节点。已学职业等级维持原值，物品授予的未学技能仍可保持基础0，等级变化继续来自装备／状态。诊断日志、原版崩溃文本、DLL摘要及只读反汇编留于忽略目录`artifacts/original-join-crash-20261016/`。原版重入及装备／技能回归尚待验证，构建／包身份由[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)维护。
+
+用户随后用客户端`033EB7AC`修复包确认原版Join已进入场景，但房主关闭后原版在23:48:41崩溃。宿主消息sequence1129–1133为客人1194字节存档的五个B3分片，1134及1138为两次06，中间没有B0／05；故障为重定位D2Net的RVA `0x7443`，接收线程访问已为空的全局收包缓冲区。两次06分别来自`NativeRealmService::close`结束房主客人和随后`LanRealm::close`，这两条遗漏原结束序列的路径均自`329e1331`（2026-10-10）存在，与本次Attack修复无关。
+
+退出顺序依据直接取原版成功消息：`artifacts/item-protocol-20261012-093315-original-host/client-packets.jsonl`的sequence1042–1049及其新进程重入日志均为`B3… → B0 → 05 → 06`。原1.13c D2Game RVA `0x2DD00`把05加入游戏缓冲，调用`0x2D790`发送存档，再在`0x2DD18`缓冲06、`0x2DD2C`直接发送系统B0；实际线上顺序不能按这几次函数调用顺序直译。D2Net在RVA `0x6F26`清空接收缓冲指针，再在`0x6F30`置退出标志，接收线程的故障访问与结束后再次到达数据的清理竞态吻合；仅据现场不能宣称原版所有断线竞态均已排除。
+
+源码将TCP/IP结束投影统一到`NativeRealmService::endGame`：保存／退役成功后按B0、05、06发送，只有原阶段为Entered的连接发送一次；房主结束客人、主动69和LAN关闭复用此入口。后续LAN关闭见连接已Closed，不再追加06；应用shutdown的TCP客人由LAN统一保存，避免先全局checkpoint、再LAN checkpoint重复回传。本地内存连接保持原05、06、B0顺序，异常断线恢复副本与原存档编码不变。现场日志、原版退出消息对照及只读反汇编在忽略目录`artifacts/original-host-exit-crash-20261016/`；实际原版关闭回归仍待验证，包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+
 未覆盖高难度弹窗、损坏／大存档、磁盘故障恢复、异常断线、八人、跨机器或Linux；也未重新认证PvPGN后端。没有新增测试脚本或专用程序。
 
 ## 流程与入口

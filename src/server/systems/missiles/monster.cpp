@@ -1,5 +1,6 @@
 #include "system.hpp"
 #include "gameplay/combat/weapon_snapshot.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "runtime.hpp"
 #include "native_birth.hpp"
 #include "server/systems/combat/system.hpp"
@@ -82,9 +83,10 @@ void NativeBirthPublication::publish() noexcept {
     system.state_.missiles.merge(d.missiles);system.publishTimers(d.timers);
     ports.random=d.randomNext;d.published=true;
 }
-DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix,std::span<const DomainFact> extraFacts) {
+DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth(std::span<const NativeSpawn> requests,size_t prefix,std::span<const DomainFact> extraFacts,std::optional<std::pair<uint64_t,uint64_t>> gameRandom) {
     if(requests.empty() || requests.size()>512 || !ports_.nativeRules || !ports_.nativeRules->formulas)
         return {DomainStatus::InvalidRequest,{}};
+    if(gameRandom && gameRandom->first!=ports_.random) return {DomainStatus::Stale,{}};
     if(prefix>UINT32_MAX-ports_.ids.cursor() || requests.size()>UINT32_MAX-ports_.ids.cursor()-prefix)
         return {DomainStatus::Capacity,{}};
     const auto &lead=requests.front();const auto *monster=ports_.monsters.find(lead.owner);const auto *player=ports_.players.findActor(lead.owner);
@@ -96,9 +98,10 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
     data->ownerRevision=monster?monster->revision:player->characterRevision;
     data->ownerExpected=data->ownerNext=monster?monster->combatRandom:player->combatRandom;
     data->randomExpected=data->randomNext=ports_.random;
+    if(gameRandom) data->randomNext=gameRandom->second;
     std::vector<Missile> launched;
     for(const auto &request:requests) {
-        if(request.owner!=lead.owner || request.tick!=lead.tick || request.rank<0 ||
+        if(request.owner!=lead.owner || request.tick!=lead.tick || request.transient!=lead.transient || request.rank<0 ||
             !ports_.nativeRules->formulas->missiles.contains(request.definition)) return {DomainStatus::InvalidRequest,{}};
         MonsterSpawn spawn;spawn.source=request.owner;spawn.area=request.area;spawn.generation=request.generation;spawn.tick=request.tick;
         spawn.position=request.position;spawn.target=request.target;spawn.attack.missile=nativeDamageRule(*ports_.nativeRules,request.definition,request.rank);
@@ -139,9 +142,9 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));
         }
     }
-    data->facts=visuals(launched);data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
+    if(!lead.transient) data->facts=visuals(launched);data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
-    data->timers=prepareTimers(data->missiles);
+    data->timers=prepareTimers(data->missiles,lead.transient);
     auto result=std::shared_ptr<NativeBirthPublication>{new NativeBirthPublication{std::move(data)}};
     return {DomainStatus::Applied,std::move(result)};
 }
@@ -175,6 +178,7 @@ DomainResult<EntityId> System::commitNativeBirth(std::shared_ptr<NativeBirthPubl
 }
 DomainResult<MonsterMissileRule> System::sampleMonsterRule(MonsterMissileRule rule,EntityId owner,uint64_t tick,std::shared_ptr<const StatList> mode,std::optional<int> assignedRank) const {
     const auto *source=ports_.monsters.find(owner);
+    if(assignedRank) rule.rank=*assignedRank;
     if(rule.levelDamage) {
         if(!source || !source->rule.stats || !source->rule.formulas) return {DomainStatus::Unavailable,{}};
         const auto values=ports_.effects.unitStatValues(source->id,tick,{},mode);
@@ -215,6 +219,12 @@ DomainResult<MonsterMissileRule> System::sampleMonsterRule(MonsterMissileRule ru
         else if(type.empty()) rule.element=DamageType::Physical;
         else return {DomainStatus::Unavailable,{}};
     }
+    if(rule.damageFormulas) {
+        const auto &row=rule.damageFormulas->missiles.at(rule.definition);
+        rule.frames=nativeAdd(row.number("range"),nativeMultiply(rule.rank,row.number("levrange")));
+        const auto speed=missileVelocityFixed(rule.baseVelocity,rule.levelVelocity,rule.rank);if(!speed) return {DomainStatus::Unavailable,{}};
+        rule.speed=float(*speed)*25.f/4096.f;
+    }
     return {DomainStatus::Applied,std::move(rule)};
 }
 DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &request,uint64_t &random,uint64_t &ownerRandom,bool &ownerDrawn) const {
@@ -249,12 +259,13 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
     for(size_t index=0;index<aims.size();++index) {
         const Vec aim=aims[index];
         auto rule=firewall && !index?*request.attack.groundFire:index>=quillStart && request.attack.extraQuill?*request.attack.extraQuill:*request.attack.missile;
-        const auto assignedRank=request.directConstructor?std::optional<int>{rule.rank}:std::nullopt;
+        const auto assignedRank=request.directConstructor?std::optional<int>{rule.rank}:
+            request.nativeSkill>0?std::optional<int>{request.attack.rank}:std::nullopt;
         auto sampled=sampleMonsterRule(std::move(rule),request.source,request.tick,request.attack.modeStats,assignedRank);
         if(!sampled) return {sampled.status,{}};
         rule=std::move(*sampled.value);
         Missile missile;missile.owner=request.source;missile.emitter=request.source;missile.emitterType=playerEmitter?0:source?1:2;missile.environment=request.environment;
-        missile.nativeProgram=request.directConstructor;missile.rules=ports_.nativeRules;
+        missile.nativeProgram=true;missile.rules=ports_.nativeRules;
         missile.binding=combat::Participants{ports_.players,ports_.monsters,ports_.social}.bind({playerEmitter?player:nullptr,source});
         if(playerEmitter) {missile.player=player->player;missile.playerActor=player->actor;}
         if(source && (source->hireling || source->necroSummon || source->conversion || source->hydra()) && source->owner) missile.player=*source->owner;
@@ -287,7 +298,7 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
         const auto buffs=ports_.effects.unitModifiers(request.source,request.tick);
         MonsterHit hit;
         std::optional<WeaponSkillDamage> hirelingWeapon;
-        missile.enemy=EnemyProjectile{rule,{},request.states,request.level,0,request.web,request.attack.groundFire,{}};
+        missile.enemy=EnemyProjectile{rule,{},request.states,request.level,0,{}};
         if(!request.directConstructor && source && request.nativeSkill>=0) {
             // SKILLS_CreateMissile copies the monster's current TOHIT as
             // nAttBonus; source dexterity/TOHIT/% are read again at contact.
@@ -321,8 +332,12 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
             hirelingWeapon=snapshot;
 
         }
-        hit.knockback=!request.directConstructor && source && source->rule.knockbackOnHit && !request.postMortem;
-        if(request.web) {hit.slowFrames=unsigned(request.web->slowFrames);hit.slowPercent=request.web->slowPercent;}
+        hit.knockback=false;
+        if(!request.directConstructor && source && !request.postMortem) {
+            const auto values=ports_.effects.unitStatValues(source->id,request.tick,{},request.attack.modeStats);
+            if(!values || !source->rule.stats) return {DomainStatus::Unavailable,{}};
+            hit.knockback=logicalStatValue(*values,*source->rule.stats,"item_knockback")!=0;
+        }
         missile.enemy->hit=hit;missile.enemy->weapon=std::move(hirelingWeapon);
         if(creationRoom(missile) && townAllowed(missile)) launched.push_back(std::move(missile));
     }
@@ -355,122 +370,6 @@ DomainResult<MonsterLaunch> System::spawnMonster(const MonsterSpawn &request) {
     if(!first) return {DomainStatus::Unavailable,{}};
     return {DomainStatus::Applied,MonsterLaunch{first}};
 }
-System::Advance System::advanceMonster(const Missile &original) const {
-    Advance plan{original,{},{},false};auto &missile=plan.next;const auto &enemy=*missile.enemy;
-    plan.damageRolls=damageRolls(original);
-    const auto &area=ports_.areas.at(missile.area);++missile.ageFrames;
-    using Behavior=MonsterMissileRule::Behavior;
-    const bool fire=enemy.rule.behavior==Behavior::Fire,maker=enemy.rule.behavior==Behavior::FirewallMaker;
-    const bool goo=enemy.rule.behavior==Behavior::SpiderGoo || enemy.rule.behavior==Behavior::PoisonCloud || fire,lay=enemy.rule.behavior==Behavior::SpiderLay;
-    if(const auto changed=advanceMissileVelocity(missile.velocity.length(),missile.acceleration,missile.maximumVelocity,missile.ageFrames)) {
-        missile.velocity=missile.velocity.unit()*changed->speed;missile.acceleration=changed->acceleration;
-    }
-    const auto moved=moveMissile(missile);auto next=moved.position;
-    const bool meteor=enemy.rule.behavior==Behavior::Meteor;
-    const bool wall=moved.blocked;
-    if(wall || moved.pathFinished) --missile.ageFrames;
-    const bool expired=missile.ageFrames>=missile.lifetimeFrames || moved.pathFinished;
-    if(maker) {
-        if(!expired && !wall && missileChangedCell(missile.position,next) && enemy.groundFire) {
-            const auto &ground=*enemy.groundFire;Missile child=missile;child.id={};child.position={std::floor(next.x)+.5f,std::floor(next.y)+.5f};child.velocity={};child.ageFrames=0;child.weaponContacts.clear();
-            child.definition=ground.definition;child.lifetimeFrames=ground.frames;child.collision=ground.collision;child.enemy->rule=ground;
-            planMonsterChild(plan,std::move(child),MonsterChildDamage::Elemental);
-        }
-        missile.position=next;plan.finished=expired || bool(wall);++missile.revision;return plan;
-    }
-    struct Target {EntityId id;Vec position;int size;};std::vector<Target> targets;
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    const auto source=participants.find(missile.owner);
-    const auto *controller=ports_.monsters.find(missile.owner);
-    for(const auto id:collisionCandidates(missile,next)) {
-        const auto unit=participants.find(id);const auto point=unitPosition(missile,id);if(!point) continue;
-        if(unit.player && !enemy.rule.collidePlayers) continue;
-        if(unit.monster && !enemy.rule.collideMonsters) continue;
-        const bool eligible=missile.environment ? (unit.player || (controller?unit.monster->combatCompanion():unit.damageable())) : canCollide(missile,id);
-        if(eligible) targets.push_back({id,*point,unit.size()});
-    }
-    auto contacts=!meteor && enemy.rule.behavior!=Behavior::GroundThrow && !expired && !wall?collisionContacts(missile,next):std::vector<std::pair<float,EntityId>>{};
-    const Vec start=missile.position;
-    auto impact=[&](std::vector<EntityId> units) {for(const auto id:units) plan.addImpact(enemyImpact(plan,{id}));};
-    auto areaHit=[&] {areaImpact(plan,next,int(enemy.rule.blastRadius));};
-    auto childMissile=[&](const MonsterMissileRule &rule,Vec point,Vec velocity) {
-        auto child=missile;child.id={};child.position=point;child.velocity=velocity;child.ageFrames=0;child.created=missile.created+missile.ageFrames;child.weaponContacts.clear();child.path.clear();
-        child.turnTarget=velocity;child.pathTarget=point+(velocity.length()?velocity:Vec{1,1});
-        child.motion.reset();child.movedCell=false;child.pathRevision=0;
-        child.definition=rule.definition;child.lifetimeFrames=rule.frames;child.expires=child.created+uint64_t(rule.frames);child.collision=rule.collision;child.enemy->rule=rule;
-        planMonsterChild(plan,std::move(child),MonsterChildDamage::PhysicalAndElemental);
-    };
-    if(!contacts.empty() && !expired && !meteor && enemy.rule.behavior!=Behavior::GroundThrow) {
-        plan.collisionFlight=Advance::CollisionFlight{start,next,std::move(contacts),0,bool(wall),true,false,!enemy.rule.killOnHit};
-        continueMissileFlight(plan);return plan;
-    }
-    if(meteor && expired) {
-        areaHit();
-        if(enemy.rule.impactMissile) {
-            constexpr std::array<Vec,18> offsets{Vec{2,-2},Vec{-2,-2},Vec{0,2},Vec{0,5},Vec{-3,3},Vec{0,3},Vec{3,3},Vec{-1,2},Vec{1,1},Vec{-1,-1},Vec{2,-1},Vec{-4,-2},Vec{-3,-2},Vec{-1,-3},Vec{0,-4},Vec{1,-3},Vec{3,-3},Vec{4,-2}};
-            for(size_t i=0;i<offsets.size();i+=size_t(enemy.rule.childStep)) childMissile(*enemy.rule.impactMissile,next+offsets[i],{});
-        }
-        plan.finished=true;
-    } else if(enemy.rule.behavior==Behavior::PoisonBottle && (wall || expired || !contacts.empty())) {
-        if(!contacts.empty()) {next=moved.position;impact({contacts.front().second});}
-        if(enemy.rule.impactMissile) {
-            constexpr std::array<Vec,8> offsets{Vec{0,2},Vec{2,2},Vec{2,0},Vec{2,-2},Vec{0,-2},Vec{-2,-2},Vec{-2,0},Vec{-2,2}};
-            for(Vec offset:offsets) childMissile(*enemy.rule.impactMissile,next,offset.unit()*enemy.rule.cloudMainSpeed);
-        }
-        plan.finished=true;
-    } else if(enemy.rule.behavior==Behavior::GroundThrow && (expired || wall)) {
-        if(enemy.rule.cloud) {
-            const auto &cloud=*enemy.rule.cloud;
-            for(const auto &heading:poisonCloudDirections(enemy.rule.cloudMainStep,enemy.rule.cloudSubStep)) {
-                Missile child=missile;child.id={};child.position=next;child.ageFrames=0;child.weaponContacts.clear();
-                child.definition=cloud.definition;child.lifetimeFrames=cloud.frames;child.expires=child.created+uint64_t(cloud.frames);
-                child.velocity=heading.direction.unit()*(heading.secondary?enemy.rule.cloudSubSpeed:enemy.rule.cloudMainSpeed);
-                child.turnTarget=heading.direction;child.pathTarget=next+heading.direction;
-                child.collision=cloud.collision;child.enemy->rule=cloud;child.enemy->hit={};
-                planMonsterChild(plan,std::move(child),MonsterChildDamage::Elemental);
-            }
-        } else {
-            areaImpact(plan,next,int(enemy.rule.blastRadius));
-        }
-        plan.finished=true;
-    } else if(lay) {
-        if(!contacts.empty()) next=moved.position;
-        if(expired || wall || !contacts.empty()) {
-            if(enemy.web) {
-                const auto &ground=enemy.web->ground;Missile child=missile;child.id={};child.position=next;child.velocity={};child.ageFrames=0;
-                child.definition=ground.definition;child.lifetimeFrames=ground.frames;child.collision=ground.collision;
-                child.weaponContacts.clear();child.enemy->rule=ground;planMonsterChild(plan,std::move(child),MonsterChildDamage::Inherited);
-            }
-            plan.finished=true;
-        }
-    } else if(!goo && (enemy.rule.behavior==Behavior::Fireball || enemy.rule.behavior==Behavior::GlacialSpike) && (wall || expired || !contacts.empty())) {
-        if(!contacts.empty()) next=moved.position;
-        areaHit();
-        plan.finished=true;
-    } else if(goo && !expired) {
-        std::vector<EntityId> units;for(const auto &[fraction,id]:contacts) { (void)fraction;units.push_back(id); }
-        if(!units.empty()) impact(std::move(units));
-    } else if(!expired) {
-        // Persistent goo renews its target state while occupied. A traveling
-        // projectile records contacts independently of each reliable hit batch.
-        for(const auto &[fraction,id]:contacts) {
-            impact({id});if(!goo) missile.weaponContacts.insert(id);
-            if(enemy.rule.chainCount>0) {
-                next=moved.position;
-                std::vector<uint64_t> eligible;
-                if(missile.remainingHits>1) for(const auto &target:targets) if(target.id!=id && !missile.weaponContacts.contains(target.id) && (target.position-next).length()<=enemy.rule.chainRadius && area.definition.collision.missileSegment(next,target.position,{4,1})) eligible.push_back(target.id.value);
-                const EntityId successor{missileChainSuccessor(id.value,eligible)};
-                if(successor) for(const auto &target:targets) if(target.id==successor) {
-                    auto child=missile;child.id={};child.position=next;child.velocity=(target.position-next).unit()*enemy.rule.speed;child.pathTarget=target.position;child.turnTarget=target.position-next;child.ageFrames=0;--child.remainingHits;planMonsterChild(plan,std::move(child),MonsterChildDamage::Inherited);break;
-                }
-                plan.finished=true;break;
-            }
-            if(enemy.rule.killOnHit) {next=moved.position;plan.finished=true;break;}
-        }
-    }
-    missile.position=next;if(expired || wall) plan.finished=true;
-    ++missile.revision;return plan;
-}
 combat::SpellImpact System::enemyImpact(Advance &plan,std::vector<EntityId> units) const {
     auto &missile=plan.next;const auto &enemy=*missile.enemy;
     combat::SpellImpact hit{missile.id,missile.owner,missile.area,DamageType::Physical,0,std::move(units)};
@@ -494,65 +393,6 @@ combat::SpellImpact System::enemyImpact(Advance &plan,std::vector<EntityId> unit
     hit.returnFire=enemy.rule.returnFire;hit.hitClass=uint8_t(enemy.rule.hitClass);hit.nextDelay=unsigned(enemy.rule.nextDelay);
     if(plan.damageRolls && enemy.rule.nextHit) hit.nativeNextHit=enemy.rule.nextHitState;
     return hit;
-}
-
-bool System::monsterCollision(Advance &plan,EntityId target) const {
-    auto &m=plan.next;const auto &enemy=*m.enemy;const auto &rule=enemy.rule;
-    const auto &area=ports_.areas.at(m.area);
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    using Behavior=MissileRule::Behavior;
-    const auto child=[&](const MissileRule &childRule,Vec direction) {
-        auto next=m;next.id={};next.position=m.position;next.velocity=direction;next.ageFrames=0;
-        next.turnTarget=direction;next.pathTarget=next.position+(direction.length()?direction:Vec{1,1});
-        next.motion.reset();next.movedCell=false;next.pathRevision=0;
-        next.lastHit={};next.weaponContacts.clear();next.path.clear();
-        next.definition=childRule.definition;next.lifetimeFrames=childRule.frames;next.collision=childRule.collision;next.enemy->rule=childRule;
-        planMonsterChild(plan,std::move(next),MonsterChildDamage::PhysicalAndElemental);
-    };
-    if(rule.serverHitFunction==19 && target) {
-        const auto catalog=rule.damageFormulas;plan.collisionFlight->continueFlight=false;
-        if(!catalog) return false;
-        const auto skill=catalog->skills.find(m.skill.sourceId);
-        if(skill==catalog->skills.end() || skill->second.auraTargetState<0) return false;
-        plan.addSkillState(m.owner,target,m.skill.sourceId,m.skill.rank,5);return true;
-    }
-    if(rule.serverHitFunction==55 && target) {
-        const auto *player=ports_.players.findActor(target);
-        plan.collisionFlight->continueFlight=true;
-        if(!player) return true;
-        if(rule.hitParameters[0]<=0 || player->persistent.player.mana<=0) {plan.collisionFlight->continueFlight=false;return false;}
-        plan.addManaDrain(target,std::clamp(rule.hitParameters[0],1,100));return true;
-    }
-    if(rule.behavior==Behavior::Fireball || rule.behavior==Behavior::GlacialSpike) {
-        areaImpact(plan,m.position,int(rule.blastRadius));plan.collisionFlight->continueFlight=false;return false;
-    }
-    if(rule.behavior==Behavior::SpiderLay) {
-        if(enemy.web) child(enemy.web->ground,{});
-        plan.collisionFlight->continueFlight=false;return false;
-    }
-    if(target && rule.behavior==Behavior::FireHead) plan.addSourceHeal(m.owner);
-    if(rule.behavior==Behavior::PoisonBottle && rule.impactMissile) {
-        constexpr std::array<Vec,8> offsets{Vec{0,2},Vec{2,2},Vec{2,0},Vec{2,-2},Vec{0,-2},Vec{-2,-2},Vec{-2,0},Vec{-2,2}};
-        for(const auto direction:offsets) child(*rule.impactMissile,direction.unit()*rule.cloudMainSpeed);
-        plan.collisionFlight->continueFlight=false;
-    }
-    if(target && rule.chainCount>0) {
-        std::vector<uint64_t> eligible;
-        if(m.remainingHits>1) for(const auto id:nearbyUnits(m)) {
-            const auto recipient=participants.find(id);const auto point=unitPosition(m,id);
-            if(point && participants.canHarm(m.owner,id) && id!=target && ports_.effects.missileHitAllowed(id,m.executionTick) &&
-                (*point-m.position).length()<=rule.chainRadius && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id.value);
-        }
-        const EntityId next{missileChainSuccessor(target.value,eligible)};
-        if(next) {
-            auto chained=m;chained.id={};chained.velocity=(*unitPosition(m,next)-m.position).unit()*rule.speed;
-            chained.pathTarget=*unitPosition(m,next);chained.turnTarget=chained.pathTarget-m.position;
-            chained.ageFrames=0;chained.lastHit=target;chained.weaponContacts.clear();--chained.remainingHits;
-            planMonsterChild(plan,std::move(chained),MonsterChildDamage::Inherited);
-        }
-        plan.collisionFlight->continueFlight=false;
-    }
-    return true;
 }
 
 }

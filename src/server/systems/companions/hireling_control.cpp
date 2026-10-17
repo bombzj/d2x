@@ -8,7 +8,9 @@
 #include "server/systems/effects/system.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "server/systems/npc/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "hireling_equipment.hpp"
+#include "hireling_birth.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -21,10 +23,7 @@
 
 namespace d2x::server::companions {
 namespace {
-bool sameHireling(const HirelingRecord &current, const HirelingRecord &prepared) {
-    return current.sourceRow == prepared.sourceRow && current.level == prepared.level &&
-        current.classId == prepared.classId && current.seed == prepared.seed && current.nameKey == prepared.nameKey;
-}
+
 Vec nativePosition(Vec point) {return {std::floor(point.x+.5f),std::floor(point.y+.5f)};}
 int coordinateDistance(Vec first,Vec second) {
     return unitCoordinateDistance(int(first.x),int(first.y),int(second.x),int(second.y));
@@ -78,7 +77,7 @@ std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const m
     const auto *player=ports_.players.find(owner);const auto prepared=hirelingRules_.find(owner);
     if(!player || prepared==hirelingRules_.end() || !prepared->second.deferred.empty()) return {};
     const auto &record=player->persistent.player.hireling;
-    if(!sameHireling(record,prepared->second.source.record) || record.level<1 || size_t(record.level)>=victim.rule.experience.size() ||
+    if(!sameHirelingIdentity(record,prepared->second.source.record) || record.level<1 || size_t(record.level)>=victim.rule.experience.size() ||
         !hirelingCanGainExperience(record.hp>0,record.level,player->persistent.player.level)) return {};
     const monsters::Actor *body=nullptr;
     for(const auto &[id,pet]:state_.companions) if(pet.owner==owner && pet.kind==Kind::Hireling) {body=ports_.monsters.find(id);break;}
@@ -91,7 +90,7 @@ std::optional<HirelingExperienceAward> System::experience(PlayerId owner,const m
 }
 DomainResult<> System::awardExperience(const ActorContext &actor,const HirelingExperienceAward &award) {
     const auto *player=ports_.players.find(actor.player);const auto *body=ports_.monsters.find(award.actor);
-    if(!player || !body || body->life<=0 || body->owner!=actor.player || !sameHireling(player->persistent.player.hireling,award.before) ||
+    if(!player || !body || body->life<=0 || body->owner!=actor.player || !sameHirelingIdentity(player->persistent.player.hireling,award.before) ||
         player->persistent.player.hireling.experience!=award.before.experience) return {DomainStatus::Stale,{}};
     auto record=player->persistent.player;record.hireling.level=award.after.level;record.hireling.experience=award.after.experience;
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
@@ -108,15 +107,88 @@ std::vector<HirelingPreparation> System::pendingHirelings(uint64_t tick) const {
             skillBonus=ports_.effects.unitModifiers(key,tick).combat.allSkills;break;
         }
         const auto prior=hirelingRules_.find(id);
-        if(prior!=hirelingRules_.end() && sameHireling(record,prior->second.source.record) && prior->second.source.actor.actor==p.actor && prior->second.source.difficulty==p.persistent.difficulty && prior->second.source.inventoryRevision==p.inventoryRevision && prior->second.source.temporarySkillBonus==skillBonus) continue;
+        if(prior!=hirelingRules_.end() && sameHirelingIdentity(record,prior->second.source.record) && prior->second.source.actor.actor==p.actor && prior->second.source.difficulty==p.persistent.difficulty && prior->second.source.inventoryRevision==p.inventoryRevision && prior->second.source.temporarySkillBonus==skillBonus) continue;
         result.push_back({{id,p.actor,p.area,ports_.areas.at(p.area).generation,0,0},record,p.persistent.difficulty,p.inventoryRevision,p.persistent,p.rules.items,p.rules.equipment,skillBonus});
+    }
+    for(const auto &[id,pending]:hirelingReplacements_) {
+        (void)id;if(!pending.prepared) result.push_back(pending.source);
     }
     return result;
 }
 DomainResult<> System::install(PreparedHireling prepared) {
+    const auto pending=hirelingReplacements_.find(prepared.source.actor.player);
+    if(pending!=hirelingReplacements_.end() && pending->second.source.token==prepared.source.token && sameHirelingIdentity(pending->second.source.record,prepared.source.record)) {
+        const auto *owner=ports_.players.find(prepared.source.actor.player);
+        if(!owner || owner->actor!=pending->second.source.actor.actor || owner->inventoryRevision!=pending->second.source.inventoryRevision ||
+            owner->characterRevision!=pending->second.characterRevision || prepared.source.inventoryRevision!=owner->inventoryRevision)
+            return {DomainStatus::Stale,{}};
+        prepared.source=pending->second.source;pending->second.prepared=std::move(prepared);
+        return {DomainStatus::Applied,std::monostate{}};
+    }
+    if(prepared.source.token) return {DomainStatus::Stale,{}};
     const auto *p=ports_.players.find(prepared.source.actor.player);
-    if(!p || !p->entered || p->actor!=prepared.source.actor.actor || !sameHireling(p->persistent.player.hireling,prepared.source.record) || p->persistent.difficulty!=prepared.source.difficulty || p->inventoryRevision!=prepared.source.inventoryRevision) return {DomainStatus::Stale,{}};
+    if(!p || !p->entered || p->actor!=prepared.source.actor.actor || !sameHirelingIdentity(p->persistent.player.hireling,prepared.source.record) || p->persistent.difficulty!=prepared.source.difficulty || p->inventoryRevision!=prepared.source.inventoryRevision) return {DomainStatus::Stale,{}};
     hirelingRules_.insert_or_assign(p->player,std::move(prepared));return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<std::shared_ptr<System::HirelingBirthPublication>> System::prepareHirelingBirth(const ActorContext &actor,
+    const PersistentCharacter &owner,const PreparedHireling &prepared,std::optional<Vec> seller,bool replacement) {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || !player->rules.items || !player->rules.equipment || !prepared.deferred.empty()) return {DomainStatus::Unavailable,{}};
+    const auto &area=ports_.areas.at(actor.area);
+    auto result=std::make_shared<HirelingBirthPublication>();
+    result->companions=state_.companions;
+    std::vector<EntityId> retired;
+    if(replacement) for(auto it=result->companions.begin();it!=result->companions.end();) {
+        if(it->second.owner!=actor.player || it->second.kind!=Kind::Hireling) {++it;continue;}
+        if(!ports_.monsters.canRemove(it->first)) return {DomainStatus::Unavailable,{}};
+        retired.push_back(it->first);it=result->companions.erase(it);
+    }
+    std::map<RoomView,RoomRandomLoan> loans;
+    std::optional<Vec> position;
+    std::vector<std::pair<Vec,int>> attempts;
+    if(seller) {attempts.emplace_back(*seller,4);attempts.emplace_back(player->position,4);}
+    else for(const int radius:{4,6,12}) attempts.emplace_back(player->position,radius);
+    const auto collision=ports_.spatial.nativeCollisionSample();
+    for(const auto &[center,radius]:attempts) {
+        const auto global=center+area.definition.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,center,int(std::floor(global.x)),int(std::floor(global.y)));
+        if(!room) continue;
+        if(room->area!=actor.area) return {DomainStatus::NotImplemented,{}};
+        auto loan=loans.find(*room);
+        if(loan==loans.end()) {
+            const auto borrowed=ports_.areas.roomRandom(*room);if(!borrowed) return {borrowed.status,{}};
+            loan=loans.emplace(*room,*borrowed.value).first;
+        }
+        monsters::Admission request;request.identity.monster=prepared.code;request.identity.spawnKey="hireling.search";
+        request.area=actor.area;request.position=center;request.rule=prepared.rule;request.tick=actor.tick;
+        const auto searched=ports_.monsters.searchRoomSpawn(request,loan->second,radius,collision);
+        if(!searched) return {searched.status,{}};
+        if(*searched.value) {position=**searched.value;break;}
+    }
+    for(const auto &[room,loan]:loans) {(void)room;result->rooms.push_back(std::make_shared<const RoomRandomLoan>(loan));}
+    if(!position) return {DomainStatus::Applied,std::move(result)};
+    const auto equipment=calculateHirelingEquipment(owner,*player->rules.items,*player->rules.equipment,prepared);
+    auto rule=prepared.rule;rule.minimumLife=rule.maximumLife=std::max(1,equipment.life.raw()>>8);
+    result->expectedRandom=result->nextRandom=ports_.random;
+    const auto unitRandom=childRandom(result->nextRandom);
+    auto bodies=ports_.monsters.prepareHireling(actor,rule,prepared.code,*position,equipment.life.raw(),unitRandom,
+        {equipment.statSources,equipment.nativeStats},prepared.birthLevel,result->components,retired);
+    if(!bodies) return {bodies.status,{}};
+    const auto key=bodies.value->begin()->first;
+    const auto inventory=player->inventoryRevision+(replacement?1:0),character=player->characterRevision+1;
+    auto &body=bodies.value->at(key);const auto source=body;
+    body=prepareHirelingBody(body,owner,prepared,*player->rules.items,*player->rules.equipment,inventory,character,{}, {},actor.tick,true);
+    result->units=std::make_shared<effects::AuraUnitPublication>();
+    ports_.effects.stageAuraActors(*result->units,std::move(*bodies.value),1,retired);
+    ports_.effects.stageAuraSource(*result->units,key,
+        [live=source,owner,prepared,items=player->rules.items,equipment=player->rules.equipment,inventory,character,tick=actor.tick]
+        (monsters::Actor &body,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
+            const auto sources=combatEffectStatSources(states.entries(),tick,true);
+            body=prepareHirelingBody(live,owner,prepared,*items,*equipment,inventory,character,states.stateIds(tick,true),sources,tick,true,mutation);
+        });
+    Companion pet{key,actor.player,Kind::Hireling,{}};pet.expires=UINT64_MAX;pet.nextDecision=source.aiThinkAt;pet.ownerTeleport=player->teleportRevision;
+    result->companions.emplace(key,std::move(pet));
+    return {DomainStatus::Applied,std::move(result)};
 }
 StepStatus System::synchronizeHirelings(TickContext tick) {
     const auto expiredList=[&](const HirelingListPreparation &source) {
@@ -127,47 +199,44 @@ StepStatus System::synchronizeHirelings(TickContext tick) {
     std::erase_if(hirelingLists_,[&](const auto &entry){return expiredList(entry.second.source);});
     std::erase_if(hirelingRules_,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered;});
     bool blocked=false;
+    std::vector<PlayerId> replacements;
+    for(const auto &[id,pending]:hirelingReplacements_) {(void)pending;replacements.push_back(id);}
+    for(const auto id:replacements) {
+        const auto pending=hirelingReplacements_.at(id);
+        const auto *player=ports_.players.find(id);
+        if(!player || !player->entered || player->persistent.player.hp<=0 || player->actor!=pending.source.actor.actor ||
+            player->area!=pending.source.actor.area || ports_.areas.at(player->area).generation!=pending.source.actor.areaGeneration ||
+            player->inventoryRevision!=pending.source.inventoryRevision || player->characterRevision!=pending.characterRevision) {
+            hirelingReplacements_.erase(id);continue;
+        }
+        if(!pending.prepared) {blocked=true;continue;}
+        auto actor=pending.source.actor;actor.tick=tick.tick;
+        const auto result=pending.request?execute(actor,*pending.request):grantHireling(actor,pending.source.record);
+        if(isDeferred(result.status)) blocked=true;
+        else hirelingReplacements_.erase(id);
+    }
     for(const auto &[id,prepared]:hirelingRules_) {
         const auto *p=ports_.players.find(id);if(!p || !p->entered || p->persistent.player.hp<=0 || p->persistent.player.hireling.hp<=0 || !prepared.deferred.empty()) continue;
+        if(prepared.source.actor.actor!=p->actor || prepared.source.difficulty!=p->persistent.difficulty ||
+            prepared.source.inventoryRevision!=p->inventoryRevision || !sameHirelingIdentity(p->persistent.player.hireling,prepared.source.record)) continue;
         bool present=false;for(const auto &[key,pet]:state_.companions) {(void)key;if(pet.owner==id && pet.kind==Kind::Hireling) {present=true;break;}}
         if(present) continue;
         const auto &area=ports_.areas.at(p->area);ActorContext actor{id,p->actor,p->area,area.generation,0,tick.tick};
-        for(int radius=1;radius<=4 && !present;++radius) for(int x=-radius;x<=radius && !present;++x) for(int y=-radius;y<=radius && !present;++y) {
-            if(std::max(std::abs(x),std::abs(y))!=radius) continue;
-            const Vec at{std::floor(p->position.x)+x+.5f,std::floor(p->position.y)+y+.5f};
-            if(!area.definition.collision.walkable(at,prepared.rule.collision)) continue;
-            bool occupied=false;
-            for(const auto &[key,m]:ports_.monsters.read().actors) {(void)key;if(m.life>0 && m.area==p->area && (m.position-at).length()<float((m.rule.size+prepared.rule.size)/2)) {occupied=true;break;}}
-            if(occupied || (p->position-at).length()<float((2+prepared.rule.size)/2)) continue;
-            if(!p->rules.items || !p->rules.equipment) continue;
-            auto spawnRule=prepared.rule;
-            const auto equipmentStats=calculateHirelingEquipment(p->persistent,*p->rules.items,*p->rules.equipment,prepared);
-            spawnRule.minimumLife=spawnRule.maximumLife=std::max(1,equipmentStats.life.raw()>>8);
-            const auto maximum=equipmentStats.life.raw();
-            // Native save records alive/dead, not the old room's current life.
-            auto bodies=ports_.monsters.prepareHireling(actor,spawnRule,prepared.code,at,maximum,initialRandom(p->persistent.player.hireling.seed),
-                {equipmentStats.statSources,equipmentStats.nativeStats});
-            if(!bodies) {blocked|=bodies.status==DomainStatus::Capacity;continue;}
-            auto next=state_.companions;const auto key=bodies.value->begin()->first;
-            Companion pet{key,id,Kind::Hireling,{}};pet.expires=UINT64_MAX;pet.nextDecision=tick.tick+uint64_t(prepared.think);
-            pet.ownerTeleport=p->teleportRevision;
-            auto &body=bodies.value->at(key);const auto sourceBody=body;
-            body=prepareHirelingBody(body,p->persistent,prepared,*p->rules.items,*p->rules.equipment,
-                p->inventoryRevision,p->characterRevision,{}, {},tick.tick,true);
-            auto auraUnits=std::make_shared<effects::AuraUnitPublication>();ports_.effects.stageAuraActors(*auraUnits,std::move(*bodies.value),1);
-            ports_.effects.stageAuraSource(*auraUnits,key,
-                [live=sourceBody,owner=p->persistent,prepared,items=p->rules.items,equipment=p->rules.equipment,
-                 inventory=p->inventoryRevision,character=p->characterRevision,tick=tick.tick]
-                (monsters::Actor &body,const CombatEffectSet &states,const effects::AuraUnitPublication::SourceMutation &mutation) {
-                    const auto sources=combatEffectStatSources(states.entries(),tick,true);
-                    body=prepareHirelingBody(live,owner,prepared,*items,*equipment,inventory,character,states.stateIds(tick,true),sources,tick,true,mutation);
-                });
-            next.emplace(key,std::move(pet));
-            transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
-            auto publication=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);
-            if(!publication || !ports_.transactions.commit(std::move(*publication.value))) {blocked=true;continue;}
-            state_.companions.swap(next);present=true;
+        const auto birth=prepareHirelingBirth(actor,p->persistent,prepared,{},false);
+        if(!birth) {blocked|=isDeferred(birth.status);continue;}
+        if(!(*birth.value)->units) {
+            const auto consumed=ports_.transactions.consumeRoomRandom((*birth.value)->rooms);
+            blocked|=!consumed;continue;
         }
+        transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
+        auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},(*birth.value)->units);
+        if(!plan) {blocked=true;continue;}
+        auto &publication=**birth.value;
+        plan.value->gameRandom=transactions::UnitRandomEdit{publication.expectedRandom,publication.nextRandom};
+        plan.value->roomRandomLoans=publication.rooms;
+        if(!ports_.transactions.commit(std::move(*plan.value))) {blocked=true;continue;}
+        ports_.monsters.publishBirthComponents(publication.components);
+        state_.companions.swap(publication.companions);
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;
 }
@@ -177,7 +246,7 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
     const auto rule=hirelingRules_.find(pet.owner);if(rule==hirelingRules_.end() || !rule->second.deferred.empty()) return StepStatus::Complete;
     const auto &prepared=rule->second;const auto &area=ports_.areas.at(p->area);
     ActorContext actor{p->player,p->actor,p->area,area.generation,0,tick.tick};
-    if(!sameHireling(p->persistent.player.hireling,prepared.source.record)) return StepStatus::Complete;
+    if(!sameHirelingIdentity(p->persistent.player.hireling,prepared.source.record)) return StepStatus::Complete;
     const auto activeStates=ports_.effects.unitStates(body->id,tick.tick);unsigned passiveMask=0;
     for(size_t i=0;i<prepared.passives.size();++i) if(activeStates.contains(prepared.passives[i].first.suppressedByState)) passiveMask|=1u<<i;
     if(body->hirelingInventoryRevision!=p->inventoryRevision || body->rule.level!=p->persistent.player.hireling.level || !body->equipment || body->hirelingPassiveMask!=passiveMask || pet.projectedSkillBonus!=prepared.source.temporarySkillBonus) {
@@ -276,10 +345,10 @@ StepStatus System::hirelingStep(Companion &pet,TickContext tick) {
         DomainResult<> result;
         if(chosen && chosen->aura) {
             result=ports_.effects.hirelingAura(pet.actor,*chosen->aura,tick.tick);
-            if(result.status==DomainStatus::Capacity) {pet.pendingAura=*chosen->aura;result={DomainStatus::Applied,std::monostate{}};}
+            if(isDeferred(result.status)) {pet.pendingAura=*chosen->aura;result={DomainStatus::Applied,std::monostate{}};}
         }
         else result=requestAction(pet,{pet.actor,uint16_t(chosen?chosen->skill:prepared.rule.skillIds[0]),UnitTarget{target,0,uint8_t(participants.find(target).player?0:1)},tick.tick,uint8_t(chosen?chosen->mode:4)});
-        if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        if(isDeferred(result.status)) return StepStatus::Blocked;
         pet.attackBias=0;
         if(result.status==DomainStatus::Unavailable && (!chosen || !chosen->aura)) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,participants.find(target).position()},target,body->rule.meleeRange,75,false});
         pet.nextDecision=tick.tick+uint64_t(chosen && chosen->aura?10:prepared.think);

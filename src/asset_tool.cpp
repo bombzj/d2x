@@ -20,6 +20,7 @@
 #include "world/retail/tile_materialization.hpp"
 #include "world/retail/preset_scan.hpp"
 #include "world/native_map.hpp"
+#include "world/generated_area.hpp"
 #include <nlohmann/json.hpp>
 #include "core/random.hpp"
 #include "core/random_seed.hpp"
@@ -41,7 +42,7 @@ int main(int argc, char **argv) {
                    "  ... native-layout <act:1-5> <map-seed> [difficulty:0-2]\n"
                    "  ... native-outdoor <level> <map-seed> [difficulty:0-2]\n"
                    "  ... native-room <level> <map-seed> <tile-x> <tile-y> [difficulty:0-2]\n"
-                   "  ... native-map <level> <map-seed> <difficulty:0-2> [original-export.json|complete]\n"
+                   "  ... native-map <level> <map-seed> <difficulty:0-2> [original-export.json|complete|prepared]\n"
                    "  ... substitutions <LvlSub-type>\n"
                    "  ... save-info <file.d2s>\n"
                    "  ... treasure <TC-name> [seed] [monster-level]\n"
@@ -377,6 +378,21 @@ int main(int argc, char **argv) {
                     {"initialSeed", r.seed.initial}, {"outdoorFlags", r.outdoorFlags},
                     {"auxiliary", r.auxiliary}, {"themeMask", r.themeMask}});
             }
+            if (argc == 7 && std::string_view(argv[6]) == "prepared") {
+                // Export the actual host preparation path, without substituting
+                // completeLevel's different activation order.
+                const auto prepared = d2x::generateArea(a, {seed, catalog.level(level).act, level, difficulty});
+                const auto &grid = prepared.map->grid;
+                report["offset"] = {{"x", int(prepared.origin.x)}, {"y", int(prepared.origin.y)}};
+                report["size"] = {{"width", grid.width}, {"height", grid.height}};
+                report["collision"] = grid.fullTerrainCollision;
+                report["initialRoomRandom"] = Json::array();
+                for (const auto &[anchor, random] : prepared.initialRoomRandom)
+                    report["initialRoomRandom"].push_back({{"x", anchor.first}, {"y", anchor.second},
+                        {"low", uint32_t(random)}, {"high", uint32_t(random >> 32)}});
+                std::cout << report.dump() << '\n';
+                return 0;
+            }
             if (argc == 7 && std::string_view(argv[6]) == "complete") {
                 const auto recipe = generator.recipe(level);
                 const auto snapshot = generator.completeLevel(level);
@@ -422,22 +438,34 @@ int main(int argc, char **argv) {
                 report["events"].push_back(event);
                 if (op == "reveal") generator.reveal(area, x, y);
                 else if (op == "hide") generator.hide(area, x, y);
-                else if (op == "sample") {
+                else if (op == "sample" || op == "observe") {
                     // Native sight propagation can activate a room without a
                     // direct AddRoomData call. Sample that existing room only;
                     // do not synthesize an extra reveal and change the order.
                     const d2x::RetailRoomCollision *grid = nullptr;
+                    const d2x::RetailTileRoom *observed = nullptr;
                     for (size_t index = 0; index < generator.tiles().rooms().size(); ++index) {
                         const auto &room = generator.tiles().rooms()[index];
                         if (room.level == area && room.room.x == x && room.room.y == y) {
+                            observed = &room;
                             grid = generator.tiles().collision(index);
                             break;
                         }
+                    }
+                    if (!observed) throw std::runtime_error("Original activation sequence has no matching room");
+                    if (!grid && op == "observe") {
+                        report["samples"].push_back({{"level", area}, {"x", x * 5}, {"y", y * 5},
+                            {"loaded", observed->loaded}, {"collisionActive", false}});
+                        continue;
                     }
                     if (!grid) throw std::runtime_error("Original activation sequence has no matching active collision");
                     report["samples"].push_back({{"level", area}, {"x", grid->x}, {"y", grid->y},
                         {"width", grid->width}, {"height", grid->height}, {"flags", grid->flags}});
                     auto &sample = report["samples"].back();
+                    if (event.value("state", false) || op == "observe") {
+                        sample["loaded"] = observed->loaded;
+                        sample["collisionActive"] = true;
+                    }
                     sample["near"] = Json::array();
                     for (size_t index = 0; index < generator.tiles().rooms().size(); ++index) {
                         const auto &room = generator.tiles().rooms()[index];
@@ -447,6 +475,27 @@ int main(int argc, char **argv) {
                             const auto &active = generator.tiles().rooms()[other];
                             Json data{{"level", active.level}, {"x", active.room.x}, {"y", active.room.y},
                                 {"tiles", Json::array()}, {"units", Json::array()}, {"pops", Json::array()}};
+                            if (event.value("state", false) || op == "observe") {
+                                const auto random = active.room.seed.random.state();
+                                data["tileRandom"] = {uint32_t(random), uint32_t(random >> 32)};
+                                if (active.initialActiveRandom) {
+                                    const auto initial = *active.initialActiveRandom;
+                                    data["activeRandom"] = {uint32_t(initial), uint32_t(initial >> 32)};
+                                } else data["activeRandom"] = nullptr;
+                                data["logicalNear"] = Json::array();
+                                for (const auto adjacent : active.near) {
+                                    const auto &other = generator.tiles().rooms().at(adjacent);
+                                    data["logicalNear"].push_back({{"level", other.level},
+                                        {"x", other.room.x}, {"y", other.room.y}});
+                                }
+                            }
+                            if (event.value("ownedOnly", false)) {
+                                data["details"] = other == index;
+                                if (other != index) {
+                                    sample["near"].push_back(std::move(data));
+                                    continue;
+                                }
+                            }
                             for (const auto &popup : active.roofPopups)
                                 data["pops"].push_back({{"x", popup.x}, {"y", popup.y},
                                     {"width", popup.width}, {"height", popup.height}, {"group", popup.group},

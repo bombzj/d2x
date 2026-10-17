@@ -167,6 +167,10 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
                 applyMovement(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,arrival});
             }
         }
+        if(!player.route.empty() && player.pathStep.changedCell()) {
+            const auto result=ports.effects.movementSkills(player.actor,tick.tick,player.pathStep.direction(),player.pathStep.nativePosition());
+            if(!result) return result;
+        }
         const auto from=player.position;
         const auto &area=ports.areas.at(player.area);
         // D2Common_10226 keeps its remaining points while rooms are recached.

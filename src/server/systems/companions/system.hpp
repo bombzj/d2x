@@ -2,7 +2,6 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
-#include "server/systems/monsters/admission.hpp"
 #include "gameplay/skills/cast_spec.hpp"
 #include "preparation.hpp"
 #include "server/systems/actions/requests.hpp"
@@ -12,16 +11,18 @@
 #include <string>
 #include <vector>
 
+namespace d2x::server::monsters { struct Actor; }
+namespace d2x::server { struct RoomRandomLoan; }
+
 namespace d2x::server::companions {
 // Ownership and control for hirelings/summons; live actors belong to Monsters.
 enum class Kind { Hireling, Summon, IronGolem };
 enum class Action { Hire, Resurrect, Dismiss, List, Equipment, Potion };
 struct Request { Action action; EntityId npc; std::optional<uint32_t> offer; std::optional<ItemHandle> item{}; bool belt{}; };
-struct Summon { PlayerId owner; Kind kind; monsters::Admission actor; std::optional<uint16_t> sourceSkill; };
 struct ShadowDecision;struct DruidDecision;
 struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint16_t> sourceSkill;
     int rank{}, attackSkill{}; uint64_t expires{}, nextDecision{}, release{}, removeAt{}; EntityId target{};
-    uint64_t ownerTeleport{}; int attackBias{},projectedSkillBonus{}; bool deathEffect{};
+    uint64_t ownerTeleport{}; int attackBias{},projectedSkillBonus{};
     int ownerLevel{};std::map<int,int> effectiveRanks{},hardRanks{};
     std::array<int64_t,3> assassinAi{-1,-1,0};
     std::array<int64_t,3> druidAi{-1,0,0};
@@ -32,17 +33,31 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     std::shared_ptr<DruidDecision> druidDecision;
     std::optional<actions::MonsterCastRequest> pendingAction;
     std::optional<AuraDefinition> pendingAura;
+    uint64_t observedAiThinkRevision{};
 };
 struct State { std::map<EntityId, Companion> companions; };
-struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; const npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; };
+struct Ports { const PlayerStore &players; monsters::System &monsters; skills::System &skills; transactions::System &transactions; missiles::System &missiles; const AreaStore &areas; EventOutbox &events; uint64_t &random; effects::System &effects; npc::System &npc; inventory::System &inventory; combat::System &combat; const social::System &social; const spatial::System &spatial; ai::System &ai; };
 class System {
     State state_;
     const Ports ports_;
     std::map<EntityId,Preparation> pending_;
     std::map<EntityId,Prepared> prepared_;
+    uint64_t nextPreparation_{1};
     StepStatus synchronizeIronGolems(TickContext);
     DomainResult<> revive(const ActorContext &,const SkillCastSpec &,EntityId);
     std::map<PlayerId,PreparedHireling> hirelingRules_;
+    struct HirelingReplacement {
+        HirelingPreparation source;
+        uint64_t characterRevision{};
+        std::optional<Request> request;
+        std::optional<PreparedHireling> prepared;
+    };
+    std::map<PlayerId,HirelingReplacement> hirelingReplacements_;
+    uint64_t nextHirelingReplacement_{1};
+    struct HirelingBirthPublication;
+    DomainResult<std::shared_ptr<HirelingBirthPublication>> prepareHirelingBirth(const ActorContext &,
+        const PersistentCharacter &,const PreparedHireling &,std::optional<Vec> seller,bool replacement);
+    DomainResult<bool> replaceHireling(const ActorContext &,HirelingRecord,unsigned price,std::optional<Request> request={},std::optional<Vec> seller={});
     std::map<PlayerId,HirelingListPreparation> pendingLists_;
     std::map<PlayerId,PreparedHirelingList> hirelingLists_;
     uint64_t nextList_ = 1;
@@ -66,7 +81,6 @@ class System {
     std::string hirelingDeferred(PlayerId player) const {
         const auto found=hirelingRules_.find(player);return found==hirelingRules_.end()?std::string{}:found->second.deferred;
     }
-    DomainResult<EntityId> summon(const Summon &);
     std::vector<Preparation> pending() const;
     DomainResult<> install(Prepared);
     std::vector<HirelingPreparation> pendingHirelings(uint64_t tick) const;

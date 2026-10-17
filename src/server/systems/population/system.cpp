@@ -4,6 +4,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/monsters/native_birth.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "core/random.hpp"
@@ -75,19 +76,25 @@ void System::resetQuestBirth(RegionId region,std::string_view name) {
         found->second.uniqueCount=int(found->second.countedUniques.size());
     }
 }
-DomainResult<> System::requestObjectBirth(RegionId region,EntityId source,Vec position,TickContext tick,std::optional<int> definition) {
+DomainResult<> System::requestObjectBirth(RegionId region,EntityId source,Vec position,TickContext tick,std::optional<int> definition,
+    unsigned occurrence,int retryAttempts,int finalRetryAttempts,int birthTicks) {
     const auto *area=ports_.areas.find(region);
     if(!area || !source || !area->definition.activation.room(position) || !ports_.areas.loaded(region,position))
         return {DomainStatus::Unavailable,{}};
+    if(retryAttempts<0 || finalRetryAttempts<0 || birthTicks<0) return {DomainStatus::InvalidRequest,{}};
     const int monster=definition.value_or(area->definition.populationRules.urnClass);
     if(monster<0) return {DomainStatus::Applied,std::monostate{}};
     auto found=std::find_if(state_.objectBirths.begin(),state_.objectBirths.end(),[&](const auto &request) {
-        return request.area==region && request.generation==area->generation && request.source==source;
+        return request.area==region && request.generation==area->generation && request.source==source && request.occurrence==occurrence;
     });
     if(found==state_.objectBirths.end()) {
-        state_.objectBirths.push_back({region,area->generation,source,position,monster,{},!definition.has_value()});
+        state_.objectBirths.push_back({region,area->generation,source,position,monster,{},!definition.has_value(),occurrence,retryAttempts,finalRetryAttempts,birthTicks});
         found=std::prev(state_.objectBirths.end());
     }
+    if(found->definition!=monster || found->position.x!=position.x || found->position.y!=position.y ||
+        found->elite!=!definition.has_value() || found->retryAttempts!=retryAttempts ||
+        found->finalRetryAttempts!=finalRetryAttempts || found->birthTicks!=birthTicks)
+        return {DomainStatus::InvalidRequest,{}};
     if(!found->cursor.deferred.empty()) return {DomainStatus::NotImplemented,{}};
     if(found->cursor.phase==DensityRoom::Phase::Done) return {DomainStatus::Applied,std::monostate{}};
     if(ports_.monsters.modifiersPending()) return {DomainStatus::Conflict,{}};
@@ -108,6 +115,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     if(object) {
         objectSource.definition=object->definition;objectSource.position=object->position;
         if(object->elite) {objectSource.place=2;objectSource.retry=true;objectSource.automatic=true;}
+        else {objectSource.retry=object->retryAttempts!=0;objectSource.retryAttempts=object->retryAttempts;objectSource.finalRetryAttempts=object->finalRetryAttempts;}
     }
     const auto *preset=object || (quest && quest->position)?&objectSource:quest?&definition.nativeQuestMonsters.at(quest->name):presetIndex?&definition.nativePresetMonsters.at(*presetIndex):nullptr;
     auto &population=state_.areas.at(region);
@@ -187,6 +195,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         if(owner) identity.ownerSpawnKey=ports_.monsters.find(owner)->identity.spawnKey;
         const auto &family=rules.classes.at(type);
         Spawn admission{identity,prototype->second.implementation,region,point,family.hostile,prototype->second.rule,{},tick.tick};
+        if(object && object->birthTicks && cursor.phase==DensityRoom::Phase::Leader) admission.birthTicks=object->birthTicks;
+        admission.resurrected=presetIndex.has_value() && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && cursor.phase==DensityRoom::Phase::Leader) admission.skillPositions=preset->skillPositions;
         admission.deadMode=preset && preset->dead && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && preset->prisonDoor && cursor.phase==DensityRoom::Phase::Leader &&
@@ -207,7 +217,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         birth->publish();return true;
     };
     const auto key=[&](std::string_view suffix) {
-        if(object) return std::string(object->elite?"object.urn.":"object.afterglow.")+std::to_string(object->source.value)+"."+std::string(suffix);
+        if(object) return std::string(object->elite?"object.urn.":object->birthTicks?"object.trap.":"object.afterglow.")+std::to_string(object->source.value)+"."+std::to_string(object->occurrence)+"."+std::string(suffix);
         if(quest) return "quest."+quest->name+(suffix=="leader"?std::string{}:"."+std::string(suffix));
         if(preset) return "ds1."+std::to_string(preset->order)+"."+std::string(suffix);
         return "density."+std::to_string(roomIndex)+"."+std::to_string(cursor.occurrence)+"."+std::string(suffix);
@@ -283,27 +293,38 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         } else if(cursor.phase==DensityRoom::Phase::Search) {
             if(cursor.search>=20) {cursor.phase=DensityRoom::Phase::Trial;continue;}
             auto loan=ports_.areas.roomRandom(room);if(!loan) return status(loan.status);
-            const int left=(preset?layout.x:layout.regions[cursor.logical].left)*5+1;
-            const int top=(preset?layout.y:layout.regions[cursor.logical].top)*5+1;
-            const int right=(preset?layout.x+layout.width:layout.regions[cursor.logical].right)*5;
-            const int bottom=(preset?layout.y+layout.height:layout.regions[cursor.logical].bottom)*5;
-            const int column=left+int(limitedRandom(loan.value->next,uint32_t(right-left)));
-            const int row=top+int(limitedRandom(loan.value->next,uint32_t(bottom-top)));
-            const Vec point=Vec{float(column),float(row)}-definition.origin;
-            bool protectedArrival=false;
-            if(!preset || preset->place==2 || preset->randomElite) for(const auto arrival:rules.warpArrivals) {
-                const auto delta=point-arrival;
-                if(delta.x*delta.x+delta.y*delta.y<rules.warpDistance) {protectedArrival=true;break;}
+            if(!cursor.searchPending) {
+                const int left=(preset?layout.x:layout.regions[cursor.logical].left)*5+1;
+                const int top=(preset?layout.y:layout.regions[cursor.logical].top)*5+1;
+                const int right=(preset?layout.x+layout.width:layout.regions[cursor.logical].right)*5;
+                const int bottom=(preset?layout.y+layout.height:layout.regions[cursor.logical].bottom)*5;
+                const int column=left+int(limitedRandom(loan.value->next,uint32_t(right-left)));
+                const int row=top+int(limitedRandom(loan.value->next,uint32_t(bottom-top)));
+                const Vec point=Vec{float(column),float(row)}-definition.origin;
+                ports_.areas.publishRoomRandom(*loan.value);
+                bool protectedArrival=false;
+                if(!preset || preset->place==2 || preset->randomElite) for(const auto arrival:rules.warpArrivals) {
+                    const auto delta=point-arrival;
+                    if(delta.x*delta.x+delta.y*delta.y<rules.warpDistance) {protectedArrival=true;break;}
+                }
+                if(!protectedArrival && (!preset || preset->place==2 || preset->randomElite)) {
+                    const auto arrival=ports_.world.nativeActSpawnLocation(region,11);
+                    if(arrival && arrival->x+definition.origin.x>0 && arrival->y+definition.origin.y>0) {
+                        const auto delta=point-*arrival;
+                        protectedArrival=delta.x*delta.x+delta.y*delta.y<rules.warpDistance;
+                    }
+                }
+                bool matchingLogical=true;
+                if(!preset) {
+                    const int tileColumn=column/5-layout.x,tileRow=row/5-layout.y;
+                    const auto cell=layout.single?0:layout.cells.at(size_t(tileRow)*(layout.width+1)+tileColumn);
+                    matchingLogical=layout.regions.at(cell).index==layout.regions[cursor.logical].index;
+                }
+                if(protectedArrival || !matchingLogical) {++cursor.search;continue;}
+                cursor.position=point;cursor.searchPending=true;
+                loan=ports_.areas.roomRandom(room);if(!loan) return status(loan.status);
             }
-            bool matchingLogical=true;
-            if(!preset) {
-                const int tileColumn=column/5-layout.x,tileRow=row/5-layout.y;
-                const auto cell=layout.single?0:layout.cells.at(size_t(tileRow)*(layout.width+1)+tileColumn);
-                matchingLogical=layout.regions.at(cell).index==layout.regions[cursor.logical].index;
-            }
-            if(protectedArrival || !matchingLogical) {
-                ports_.areas.publishRoomRandom(*loan.value);++cursor.search;continue;
-            }
+            const auto point=cursor.position;
             const auto prototype=definition.nativeMonsterClasses.find(cursor.definition);
             if(prototype==definition.nativeMonsterClasses.end()) return status(DomainStatus::NotImplemented);
             auto identity=prototype->second.identity;identity.spawnKey=key("probe");
@@ -311,7 +332,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
                 *loan.value,-1,preset?std::nullopt:std::optional<size_t>{cursor.logical},true,ports_.spatial.nativeCollisionSample());
             if(!probe) return status(probe.status);
             const auto found=(*probe.value)->position();if(!publish(*probe.value)) return StepStatus::Blocked;
-            ++cursor.search;if(found) {cursor.position=point;cursor.phase=DensityRoom::Phase::Leader;}
+            ++cursor.search;cursor.searchPending=false;
+            if(found) {cursor.position=point;cursor.phase=DensityRoom::Phase::Leader;}
         } else if(cursor.phase==DensityRoom::Phase::Leader) {
             const int attempts=cursor.finalRetried?preset->finalRetryAttempts:cursor.retried?(cursor.elite?5:preset->retryAttempts):-1;
             const auto birth=spawn(cursor.definition,cursor.position,attempts,!preset || preset->group,false,{},key("leader"));
@@ -555,7 +577,7 @@ StepStatus System::populateWanderer(RegionId region,size_t roomIndex,uint64_t ep
         Spawn admission{identity,prototype->second.implementation,region,point,false,prototype->second.rule,{},tick.tick};
         admission.wanderTarget=true;
         const auto prepared=ports_.monsters.prepareRoomSpawn(admission,*loan.value,-1,{},probe,ports_.spatial.nativeCollisionSample());
-        if(!prepared) return prepared.status==DomainStatus::Capacity || prepared.status==DomainStatus::Conflict || prepared.status==DomainStatus::Stale?
+        if(!prepared) return isDeferred(prepared.status) || prepared.status==DomainStatus::Conflict || prepared.status==DomainStatus::Stale?
             StepStatus::Blocked:StepStatus::NotImplemented;
         const auto found=(*prepared.value)->position();const auto id=(*prepared.value)->actor();
         if(!publish(*prepared.value)) return StepStatus::Blocked;
@@ -579,6 +601,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (const auto &[region,roomIndex] : loaded) {
         const auto &area=ports_.areas.at(region);
+        const auto monsters=ports_.monsters.restoreRoom(region,roomIndex,tick.tick,ports_.spatial.nativeCollisionSample(),ports_.quests.read().actFour.sanctumCleared);
+        if(monsters!=StepStatus::Complete) return monsters;
+        const auto restored=ports_.objects.restoreRoom(region,roomIndex,tick.tick);
+        if(restored!=StepStatus::Complete) return restored;
         const auto act=size_t(area.definition.act);
         if(epochs[act]!=state_.roomEpochs[act]) {
             const auto wandered=populateWanderer(region,roomIndex,epochs[act],tick);
@@ -642,7 +668,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                     } else {
                         const auto &spawn=*entry.monster;
                         const auto result=admit({spawn.identity,spawn.implementation,region,spawn.position,true,spawn.rule,spawn.skillPositions,tick.tick});
-                        if(!result) return result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict
+                        if(!result) return isDeferred(result.status) || result.status==DomainStatus::Conflict
                             ?StepStatus::Blocked:StepStatus::NotImplemented;
                         population.admittedSpawnKeys.insert(spawn.identity.spawnKey);
                     }

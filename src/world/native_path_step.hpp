@@ -18,9 +18,14 @@ class NativePathStep {
     int64_t precisionX_{}, precisionY_{};
     Vec published_;
     bool initialized_{};
+    bool changedCell_{};
+    uint8_t direction_{};
   public:
     static constexpr float seconds = 1.f / 25.f;
     void reset();
+    bool changedCell() const {return changedCell_;}
+    uint8_t direction() const {return direction_;}
+    Vec nativePosition() const {return published_;}
     Vec translate(Vec position, Vec offset);
     NativePathStepResult advance(const Grid &grid, Vec position, Vec point,
         float distance, MovementCollisionRule rule = playerMovement, Vec gridOrigin = {});

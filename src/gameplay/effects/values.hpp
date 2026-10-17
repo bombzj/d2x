@@ -17,12 +17,6 @@ struct RemovedCombatEffect {
     ActiveCombatEffect effect;
     EffectRemoval reason;
 };
-struct TriggeredCombatEffect {
-    EffectHandle handle;
-    int stateId;
-    EffectSource source;
-    EffectAction action;
-};
 struct TriggeredSkillUnitEvent {
     EffectHandle handle;
     int state{-1};

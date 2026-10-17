@@ -12,6 +12,7 @@ struct RetailOutdoorLayout {
     uint32_t flags{};
     std::vector<RetailRoom> rooms;
     std::map<RetailPresetKey, std::vector<RetailPresetUnit>> presetUnits;
+    std::vector<NativeTileInfo> tileInfo;
 };
 // Reconstructs Act I macro placement and room allocation from current MPQ.
 // This value cannot be passed to Map::load: logical grids, room themes and tile

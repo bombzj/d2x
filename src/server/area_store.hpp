@@ -64,6 +64,12 @@ struct AreaMetadata {
     int monsterLevel{}; // Current MPQ area level for this difficulty/expansion.
 };
 struct AreaDefinition : AreaMetadata {
+    uint64_t initialLevelRandom{};
+    bool fixedPosition{};
+    bool saveMonsters{};
+    int tileX{},tileY{},tileWidth{},tileHeight{};
+    std::vector<NativeTileInfo> tileInfo;
+    std::vector<uint8_t> zooCandidates;
     struct NativePresetMonster {
         size_t order{};
         int definition{-1},collisionObject{};
@@ -96,6 +102,7 @@ struct AreaDefinition : AreaMetadata {
     struct PopulationRules {
         int density{},uniqueMinimum{},uniqueMaximum{},warpDistance{};
         int wander{},wanderClass{-1},urnClass{-1},afterglowClass{-1};
+        int chestBaseClass{-1},chestClass{-1},chestBirthTicks{};
         std::vector<MonsterPopulationChoice> roster;
         std::vector<int> uniques;
         std::map<int,PopulationClass> classes;
@@ -126,6 +133,7 @@ struct AreaView { AreaMetadata definition; uint64_t generation{}; std::vector<st
 struct AreaState {
     AreaDefinition definition;
     uint64_t generation = 1;
+    std::optional<uint64_t> levelRandom;
     struct RoomState {
         std::array<uint16_t, 4> references{};
         uint8_t status{4};
@@ -143,7 +151,16 @@ struct RoomUnitEntry {
     std::optional<std::pair<RegionId,size_t>> room;
     EntityId previous,next;
 };
-struct RoomUnitRegistration {std::map<EntityId,RoomUnitEntry>::node_type node;};
+class AreaStore;
+struct RoomUnitRegistration {
+  private:
+    friend class AreaStore;
+    std::map<EntityId,RoomUnitEntry>::node_type node;
+    const AreaStore *publishedBy_{};
+    EntityId publishedId_;
+  public:
+    RoomUnitRegistration()=default;
+};
 class AreaStore {
     friend class world::System;
     std::map<RegionId, AreaState> areas_;
@@ -194,8 +211,9 @@ class AreaStore {
     const AreaState &at(RegionId id) const { return areas_.at(id); }
     std::vector<std::pair<RegionId,size_t>> loadedRoomOrder() const;
     void initializeUnitRooms(RegionId);
-    std::shared_ptr<RoomUnitRegistration> prepareRoomUnit(EntityId,uint8_t kind,RegionId,Vec) const;
+    std::shared_ptr<RoomUnitRegistration> prepareRoomUnit(EntityId,uint8_t kind,RegionId,Vec,std::optional<RoomView> room={}) const;
     void publishRoomUnit(RoomUnitRegistration &) noexcept;
+    bool validateRoomUnit(const RoomUnitRegistration &,EntityId) const;
     bool hasRoomUnit(EntityId id) const noexcept {return roomUnits_.contains(id);}
     void moveRoomUnit(EntityId,RegionId,Vec) noexcept;
     void removeRoomUnit(EntityId) noexcept;
@@ -210,6 +228,8 @@ class AreaStore {
     std::optional<RoomPoint> nativeFreeCoordinates(RoomView,int32_t worldX,int32_t worldY,int size,uint16_t mask,
         const CollisionSample &,std::optional<std::pair<int32_t,int32_t>> field={},uint16_t fieldMask=0,bool fallback=false,int maxDistance=50,int increment=1) const;
     std::optional<RoomPoint> nativeFreeSpace(RoomView,int32_t worldX,int32_t worldY,int size,const CollisionSample &) const;
+    std::optional<RoomPoint> nativeRestoreCoordinates(RoomView,int32_t worldX,int32_t worldY,int size,uint16_t mask,const CollisionSample &) const;
+    std::optional<RoomPoint> nativeQuestFreePosition(RoomView,int32_t worldX,int32_t worldY,int size,uint16_t mask,int radius,const CollisionSample &) const;
     bool loaded(RegionId, Vec) const;
     bool active(RegionId, Vec) const;
     bool nearby(RegionId observerArea, Vec observer, RegionId targetArea, Vec target) const;

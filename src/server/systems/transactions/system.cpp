@@ -581,6 +581,8 @@ DomainResult<> System::commit(Plan plan) {
     if (found == ports_.players.players_.end()) return {DomainStatus::InvalidActor, {}};
     auto &player = found->second;
     if(plan.random && plan.random->expected!=player.combatRandom) return {DomainStatus::Stale,{}};
+    if(plan.gameRandom && plan.gameRandom->expected!=ports_.random) return {DomainStatus::Stale,{}};
+    if(plan.gameRandom && plan.missileBirth) return {DomainStatus::InvalidRequest,{}};
     if (player.actor != request->actor.actor || player.area != request->actor.area) return {DomainStatus::InvalidActor, {}};
     if (player.inventoryRevision != request->inventory || player.characterRevision != request->character || plan.expected.size() != 2 ||
         plan.expected[0].entity != player.actor || plan.expected[0].expected != request->inventory ||
@@ -590,7 +592,7 @@ DomainResult<> System::commit(Plan plan) {
     std::set<PlayerId> auraOwners{player.player};
     for(const auto &peer:plan.auraPlayers) {
         const auto *change=std::get_if<CharacterEdit>(&peer.change);
-        if(!change || !peer.player || !peer.auraPlayers.empty() || peer.auraUnits || peer.missileBirth || peer.roomRandom || !auraOwners.insert(change->actor.player).second ||
+        if(!change || !peer.player || !peer.auraPlayers.empty() || peer.auraUnits || peer.missileBirth || peer.roomRandom || !peer.roomRandomLoans.empty() || peer.gameRandom || !auraOwners.insert(change->actor.player).second ||
            change->revival || change->knockback || change->waypoints || change->experienceAward || change->charge ||
            change->actor.tick!=request->actor.tick ||
            peer.id.value<=state_.lastCommitted || peer.id.value>=plan.id.value) return {DomainStatus::InvalidRequest,{}};
@@ -607,6 +609,12 @@ DomainResult<> System::commit(Plan plan) {
     }
     if(plan.auraUnits && !ports_.effects.validateAuraUnits(*plan.auraUnits)) return {DomainStatus::Stale,{}};
     if(plan.roomRandom && !ports_.areas.validateRoomRandom(*plan.roomRandom)) return {DomainStatus::Stale,{}};
+    std::set<RoomView> randomRooms;
+    if(plan.roomRandom) randomRooms.insert(plan.roomRandom->room);
+    for(const auto &loan:plan.roomRandomLoans) {
+        if(!loan || !randomRooms.insert(loan->room).second) return {DomainStatus::InvalidRequest,{}};
+        if(!ports_.areas.validateRoomRandom(*loan)) return {DomainStatus::Stale,{}};
+    }
     if(plan.missileBirth) {
         const size_t prefix=plan.auraUnits && plan.auraUnits->actors?plan.auraUnits->actors->allocatedIds:0;
         if(plan.missileBirth->owner()!=player.actor) return {DomainStatus::InvalidRequest,{}};
@@ -721,7 +729,9 @@ DomainResult<> System::commit(Plan plan) {
     }
     if(plan.auraUnits) ports_.effects.publishAuraUnits(*plan.auraUnits);
     if(plan.missileBirth) plan.missileBirth->publish();
+    if(plan.gameRandom) ports_.random=plan.gameRandom->next;
     if(plan.roomRandom) ports_.areas.publishRoomRandom(*plan.roomRandom);
+    for(const auto &loan:plan.roomRandomLoans) ports_.areas.publishRoomRandom(*loan);
     ports_.actions.removeUsedSkills(player.actor,player.totals.clearedSkillUses);
     if (characterChange && characterChange->revival) {
         player.area = characterChange->revival->area; player.position = characterChange->revival->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false;

@@ -97,7 +97,7 @@ DomainResult<> System::install(Prepared prepared) {
     if (!ports_.definitions || !prepared.equipment || !p->rules.character || !p->rules.equipment ||
         (prepared.outputs.empty() && !prepared.portal) || prepared.outputs.size() > 16) return fail(DomainStatus::InvalidRequest);
     std::optional<travel::SpecialPortalPlan> portal;
-    if(prepared.portal) {auto ready=ports_.travel.prepareSpecialPortal(actor,*prepared.portal,source.pending.seed);if(!ready) return ready.status==DomainStatus::Capacity?DomainResult<>{ready.status,{}}:fail(ready.status);portal=std::move(*ready.value);}
+    if(prepared.portal) {auto ready=ports_.travel.prepareSpecialPortal(actor,*prepared.portal,source.pending.seed);if(!ready) return isDeferred(ready.status)?DomainResult<>{ready.status,{}}:fail(ready.status);portal=std::move(*ready.value);}
     size_t identities=0;
     for(const auto &out:prepared.outputs) if(!out.replacement) identities+=1+out.item.socketedItems.size();
     if(!ports_.items.identityCapacity(identities)) return fail(DomainStatus::Capacity);

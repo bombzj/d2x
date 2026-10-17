@@ -19,6 +19,8 @@ struct RetailPresetLevel {
     int preset{}, file{};
     std::vector<RetailRoom> rooms; // Creation order, not activation order.
     std::vector<RetailPresetUnit> units; // Already consumed during Scan/Pops, if enabled.
+    std::vector<NativeTileInfo> tileInfo;
+    uint64_t random{};
 };
 // InitLevelData selects a direction before InitLevel resets the level stream.
 // Generation draws AllocDrlgMap's file even when overridden, then Scan/Pops

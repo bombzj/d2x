@@ -16,10 +16,14 @@ struct RoomPopulationRegion {
     int index{},left{},top{},right{},bottom{};
     bool node{};
 };
+struct NativeTileInfo {int index{},x{},y{};};
 struct RoomPopulationLayout {
     struct Floor {int x{},y{};uint16_t material{};};
     int x{},y{},width{},height{};
     bool single{};
+    bool waypoint{},warp{};
+    size_t allocationOrder{};
+    std::optional<Vec> waypointTile;
     std::vector<RoomPopulationRegion> regions;
     std::vector<size_t> cells;
     std::vector<Floor> floors;

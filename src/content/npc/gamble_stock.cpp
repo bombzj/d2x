@@ -1,17 +1,49 @@
 #include "vendor_stock.hpp"
-#include "content/items/item_magic_loot.hpp"
-#include "content/items/item_properties.hpp"
-#include "content/items/item_pricing.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
+#include <cstddef>
 #include <stdexcept>
 namespace d2x {
-namespace { unsigned below(uint64_t &seed,unsigned bound) { return limitedRandom(seed,bound); } }
+namespace {
+unsigned below(uint64_t &seed,unsigned bound) { return limitedRandom(seed,bound); }
+void sortGambleSelection(std::vector<const ItemDefinition *> &items) {
+    const auto level=[&](ptrdiff_t index) {return *items[size_t(index)]->base.level;};
+    const auto sort=[&](auto &&self,ptrdiff_t low,ptrdiff_t high)->void {
+        if(low>=high) return;
+        if(high-low+1<=8) {
+            for(auto end=high;end>low;--end) {
+                auto maximum=low;
+                for(auto index=low+1;index<=end;++index) if(level(index)>level(maximum)) maximum=index;
+                std::swap(items[size_t(maximum)],items[size_t(end)]);
+            }
+            return;
+        }
+        auto middle=low+(high-low+1)/2;
+        if(level(low)>level(middle)) std::swap(items[size_t(low)],items[size_t(middle)]);
+        if(level(low)>level(high)) std::swap(items[size_t(low)],items[size_t(high)]);
+        if(level(middle)>level(high)) std::swap(items[size_t(middle)],items[size_t(high)]);
+        auto left=low,right=high;
+        for(;;) {
+            if(middle>left) do {++left;} while(left<middle && level(left)<=level(middle));
+            if(middle<=left) do {++left;} while(left<=high && level(left)<=level(middle));
+            do {--right;} while(right>middle && level(right)>level(middle));
+            if(left>right) break;
+            std::swap(items[size_t(left)],items[size_t(right)]);
+            if(middle==right) middle=left;
+        }
+        ++right;
+        if(middle<right) do {--right;} while(right>middle && level(right)==level(middle));
+        if(middle>=right) do {--right;} while(right>low && level(right)==level(middle));
+        self(self,low,right);self(self,left,high);
+    };
+    if(!items.empty()) sort(sort,0,ptrdiff_t(items.size())-1);
+}
+}
 bool npcCanGamble(std::string_view npc) { return npc=="gheed" || npc=="elzix" || npc=="alkor" || npc=="jamella" || npc=="nihlathak" || npc=="drehya"; }
-std::vector<VendorOffer> planGambleStock(const ClassicData &data, unsigned playerLevel,
-    int difficulty, uint64_t &seed, const std::set<size_t> &usedUniques,
-    std::string_view characterClass) {
-    if (difficulty < 0 || difficulty > 2 || !playerLevel || playerLevel > 99)
+void generateGambleStock(const ClassicData &data,unsigned playerLevel,
+    int difficulty,uint64_t &seed,const GambleItemSource &create) {
+    if (difficulty < 0 || difficulty > 2 || !playerLevel || playerLevel > 99 || !create)
         throw std::runtime_error("Invalid gamble parameters");
     const auto &pool = data.tables.at("gamble");
     const auto &chances = data.tables.at("difficultylevels");
@@ -22,88 +54,40 @@ std::vector<VendorOffer> planGambleStock(const ClassicData &data, unsigned playe
     };
     const unsigned uniqueChance = chance("GambleUnique"), setChance = chance("GambleSet"),
                    rareChance = chance("GambleRare");
-    std::set<size_t> uniques(usedUniques.begin(), usedUniques.end());
-    std::vector<VendorOffer> offers;
+    std::vector<const ItemDefinition *> selection;
+    for(size_t row=0;row<pool.rows().size();++row) {
+        const auto *item=data.items.find(pool.value(row,"code"));
+        if(!item || !item->base.level) throw std::runtime_error("Missing original gamble item record");
+        selection.push_back(item);
+    }
+    sortGambleSelection(selection);
     for (unsigned index = 0; index < 14; ++index) {
         const int level = std::clamp(int(playerLevel) + int(below(seed, 10)) - 5, 5, 99);
-        std::vector<const ItemDefinition *> eligible;
-        for (size_t row = 0; row < pool.rows().size(); ++row)
-            if (const auto *item = data.items.find(pool.value(row, "code"));
-                item && item->base.level.value_or(100) <= level)
-                eligible.push_back(item);
-        std::stable_sort(eligible.begin(), eligible.end(), [](auto a, auto b) {
-            return a->base.level < b->base.level;
-        });
-        if (eligible.empty()) throw std::runtime_error("Empty original gamble pool");
-        const auto *base = eligible[below(seed, unsigned(eligible.size()))];
-        // The first two stock slots are always the ring and amulet from Gamble.txt.
-        if (index < 2)
-            for (const auto *candidate : eligible)
-                if (candidate->equipment.isType(index == 0 ? "ring" : "amul")) {
-                    base = candidate;
-                    break;
-                }
+        const auto limit=std::find_if(selection.begin(),selection.end(),[&](const auto *item){return *item->base.level>level;});
+        const auto count=unsigned(limit-selection.begin());
+        if(!count) throw std::runtime_error("Empty original gamble pool");
+        const auto *base = selection[below(seed,count)];
+        if(index<2) base=data.items.find(index==0?"rin":"amu");
+        if(!base) throw std::runtime_error("Missing original fixed gamble item");
         const auto *item = base;
         const auto &source = data.tables.at(base->base.sourceTable);
-        auto upgrade = [&](const char *column, unsigned multiplier) {
-            const auto *next = data.items.find(source.value(base->base.sourceRow, column));
-            if (!next) return false;
-            const int64_t odds = int64_t(multiplier) * (level - next->base.level.value_or(100)) + 1;
-            if (odds > 0 && below(seed, 10000) < uint64_t(odds)) { item = next; return true; }
-            return false;
-        };
-        if (!upgrade("ubercode", chance("GambleUber")))
-            upgrade("ultracode", chance("GambleUltra"));
-        const unsigned roll = below(seed, 100000);
-        ItemQuality quality = roll < uniqueChance ? ItemQuality::Unique :
-            roll < uniqueChance + setChance ? ItemQuality::Set :
-            roll < uniqueChance + setChance + rareChance ? ItemQuality::Rare : ItemQuality::Magic;
-        ItemGeneration generated;
-        unsigned failedDurability=1;
-        if (quality == ItemQuality::Unique || quality == ItemQuality::Set) {
-            bool unique = quality == ItemQuality::Unique;
-            const auto &records = unique ? data.uniqueItems : data.setItems;
-            auto selected = rollSpecialItem(records, item->code, level, seed, unique ? uniques : std::set<size_t>{});
-            seed = selected.randomState;
-            if (selected.row && !selected.alreadyDropped) {
-                const auto found = std::find_if(records.begin(), records.end(), [&](const auto &r) { return r.row == *selected.row; });
-                if (!found->artAvailable) throw std::runtime_error("Missing original gambling item art: " + found->name);
-                auto properties = rollItemProperties(data,found->properties, seed,level);
-                seed = properties.randomState;
-                generated.quality = quality;
-                generated.specialRow = int32_t(found->row);
-                generated.requiredLevel = found->requiredLevel;
-                generated.propertyRolls = std::move(properties.values);
-                generated.operationRolls=std::move(properties.operations);
-                if (unique && !found->noLimit) uniques.insert(found->row);
-            } else {quality = unique ? ItemQuality::Rare : ItemQuality::Magic;failedDurability=unique?3u:2u;}
+        if(const auto *exceptional=data.items.find(source.value(base->base.sourceRow,"ubercode"))) {
+            const auto odds=nativeAdd(nativeMultiply(nativeNarrow(chance("GambleUber")),level-exceptional->base.level.value_or(100)),1);
+            if(odds>0) {
+                if(int(below(seed,10000))<odds) item=exceptional;
+                else if(const auto *elite=data.items.find(source.value(base->base.sourceRow,"ultracode"))) {
+                    const auto eliteOdds=nativeAdd(nativeMultiply(nativeNarrow(chance("GambleUltra")),level-elite->base.level.value_or(100)),1);
+                    if(eliteOdds>0 && int(below(seed,10000))<eliteOdds) item=elite;
+                }
+            }
         }
-        if (quality == ItemQuality::Magic || quality == ItemQuality::Rare) {
-            auto result = rollAffixItem(data, *item, quality, level, seed, characterClass);
-            seed = result.randomState;
-            if (!result.deferred.empty()) throw std::runtime_error(result.deferred);
-            generated = std::move(result.generation);
+        ItemQuality quality=ItemQuality::Magic;
+        const auto total=nativeNarrow(uniqueChance+setChance+rareChance);
+        if(total>0) {
+            const auto roll=int(below(seed,100000));
+            if(roll<total) quality=roll<nativeNarrow(uniqueChance)?ItemQuality::Unique:roll<nativeNarrow(uniqueChance+setChance)?ItemQuality::Set:ItemQuality::Rare;
         }
-        generated.durabilityMultiplier=failedDurability;
-        if (!item->artAvailable || !base->artAvailable)
-            throw std::runtime_error("Missing original gambling item art: " + item->code);
-        int defense = 0;
-        if (item->family == ItemFamily::Armor)
-            defense = item->base.minDefense.value() +
-                int(below(seed, unsigned(item->base.maxDefense.value() - item->base.minDefense.value() + 1)));
-        unsigned quantity = item->equipment.throwable && item->equipment.repairable ? item->maxStack : 1;
-        VendorOffer offer{index + 1, item->code, quantity, unsigned(level), itemGamblePrice(data,base->code,int(playerLevel),101,0).value(),
-                          defense, 0, false, {}, {}};
-        offer.generation = std::move(generated);
-        offer.displayCode = base->code;
-        for (const auto &stat : resolveItemStats(data, vendorItem(offer, data), 1)) {
-            if (stat.effect == "item_armor_percent" && stat.value && item->base.maxDefense)
-                offer.defense = *item->base.maxDefense + 1;
-            if (stat.effect == "item_extra_stack")
-                offer.quantity = unsigned(std::clamp(int(item->maxStack) + stat.value, 1, 511));
-        }
-        offers.push_back(std::move(offer));
+        if(!create(item->code,base->code,quality,unsigned(level))) return;
     }
-    return offers;
 }
 } // namespace d2x

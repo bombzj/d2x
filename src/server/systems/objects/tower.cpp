@@ -78,8 +78,10 @@ StepStatus System::towerStep(TickContext tick) {
                 const auto &rule=prototype->second.rule;
                 auto identity=prototype->second.identity;identity.spawnKey="quest.tower.controller";
                 const auto local=global-ports_.areas.at(room->area).definition.origin;
+                monsters::Admission admission{identity,prototype->second.implementation,room->area,local,true,rule,{},tick.tick,true};
+                admission.uncounted=true;
                 const auto prepared=ports_.monsters.prepareRoomSpawn(
-                    {identity,prototype->second.implementation,room->area,local,true,rule,{},tick.tick,true},
+                    admission,
                     *loan.value,-1,{},false,ports_.spatial.nativeCollisionSample());
                 if(!prepared) return {prepared.status,{}};
                 auto &publication=**prepared.value;
@@ -88,7 +90,7 @@ StepStatus System::towerStep(TickContext tick) {
                 return actor?DomainResult<EntityId>{DomainStatus::Applied,actor}:DomainResult<EntityId>{DomainStatus::Unavailable,{}};
             };
             auto result=attempt(towerFallback_?object.position+Vec{5,5}:*towerDeathPosition_);
-            if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return StepStatus::Blocked;
+            if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return StepStatus::Blocked;
             if(!result && !towerFallback_) {towerFallback_=true;continue;}
             if(!result) {++towerProbe_;towerFallback_=false;continue;}
             towerController_=*result.value;towerStarted_=true;
@@ -113,7 +115,7 @@ StepStatus System::towerStep(TickContext tick) {
     if(requests.empty()) {towerFinished_=true;return StepStatus::Complete;}
     const auto prepared=ports_.missiles.prepareNativeBirth(requests);
     if(!prepared) {
-        if(prepared.status==DomainStatus::Capacity || prepared.status==DomainStatus::Conflict || prepared.status==DomainStatus::Stale) return StepStatus::Blocked;
+        if(isDeferred(prepared.status) || prepared.status==DomainStatus::Conflict || prepared.status==DomainStatus::Stale) return StepStatus::Blocked;
         throw std::logic_error("Unable to prepare native tower missiles");
     }
     auto &publication=**prepared.value;

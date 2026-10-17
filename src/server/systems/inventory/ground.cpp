@@ -316,7 +316,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             pending.actor.tick = tick.tick;
             pending.request.item=item->second.handle();
             const auto result = ground(pending.actor, pending.request);
-            if (result.status == DomainStatus::Capacity) { ++it; continue; }
+            if (isDeferred(result.status)) { ++it; continue; }
             if (result) ports_.movement.execute(pending.actor, {MovementAction::Stop, {}, false});
         }
         it = state_.pickups.erase(it);

@@ -196,6 +196,12 @@ bool FrameEventQueue::hasEvent(FrameEventOwner owner,FrameEventType type) const 
         if(nodes_.at(handle).event.type==type) return true;
     return false;
 }
+bool FrameEventQueue::hasHandler(FrameEventOwner owner,uint32_t handler) const {
+    const auto found=owners_.find(owner);if(found==owners_.end()) return false;
+    for(auto handle=found->second;handle;handle=nodes_.at(handle).unitNext)
+        if(nodes_.at(handle).event.handler==handler) return true;
+    return false;
+}
 bool FrameEventQueue::advance(uint64_t frame,const std::function<bool(const FrameEvent &)> &dispatch) {
     if(!frame_ || frame>*frame_) {
         if(frame_ && phase_!=10) throw std::logic_error("Native event frame advanced before completion");

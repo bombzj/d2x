@@ -94,15 +94,16 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         request.difficulty, level.population.level.at(size_t(request.difficulty)),currentLevel,request.ladderMonsterStats,
         record->hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
     std::optional<MonsterEnchantment> enchantment;
-    const int64_t corpseBaseLife=profile?(int64_t(profile->damage.minLife)+profile->damage.maxLife)*128:0;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
     if (!identity.superUnique.empty() && (!fixed || (!selected && fixed->monster!=identity.monster))) return {};
     if (profile && (identity.rank == MonsterRank::Unique || identity.rank == MonsterRank::Champion || identity.rank == MonsterRank::SuperUnique)) {
         enchantment = selected?resolveMonsterEnchantment(data,*record,*profile,request.difficulty,identity.rank,
             selected->ids,selected->nameSeed,true,fixed):rollMonsterEnchantment(data,*record,*profile,request.difficulty,random,identity.rank,preserveRank,true,identity.championVariantAllowed,fixed);
     } else if (profile && identity.rank == MonsterRank::Minion) {
-        if (!owner) return {};
-        enchantment = inheritedMonsterEnchantment(data,*record,*profile,request.difficulty,*owner);
+        const auto *source=owner?owner:selected;
+        if(!source) return {};
+        enchantment = inheritedMonsterEnchantment(data,*record,*profile,request.difficulty,*source);
+        if(!owner && selected) {enchantment->ids=selected->ids;enchantment->nameSeed=selected->nameSeed;}
     }
     if (profile && enchantment) profile = enchantedMonsterCombat(*profile,*enchantment);
     const auto weapon = monsterModeWeapon(archives, record->token, "a1", record->baseWeapon);
@@ -124,7 +125,6 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(fixed) {rule.superUniqueIndex=fixed->index;rule.uniqueTranslation=fixed->uniqueTrans.at(size_t(request.difficulty));}
     rule.nativeClass = record->index; rule.level = profile->level;
     rule.minimumLife = profile->damage.minLife; rule.maximumLife = profile->damage.maxLife;
-    rule.corpseBaseLife=corpseBaseLife;
     if(profile->damage.attack1Damage) {rule.minimumDamage=profile->damage.attack1Damage->first;rule.maximumDamage=profile->damage.attack1Damage->second;}
     rule.defense = *profile->defense; rule.attackRating = profile->attack1Rating.value_or(0);
     rule.resistances = profile->resistances; rule.criticalChance = profile->criticalChance;
@@ -132,6 +132,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
     rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
+    rule.corpseExplosionPercent=data.tables.at("difficultylevels").number(size_t(request.difficulty),"MonsterCEDamagePercent").value_or(0);
     rule.spawnCollision=record->spawnRule();rule.corpseSelectable=record->corpseSelectable;
     rule.softCorpse=record->soft;
     rule.corpseSize=record->corpseSize;
@@ -208,7 +209,6 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(rule.nativeAura) {
         const auto &a=*rule.nativeAura;rule.auraStats.emplace(a.skill,server::MonsterRule::AuraStats{auraNativeStats(data,a.modifiers),auraNativeStats(data,auraOwnerModifiers(a))});
     }
-    for(const auto &[id,action]:rule.skillActions) if(action.curse) rule.auraStats.emplace(id,server::MonsterRule::AuraStats{auraNativeStats(data,action.curse->modifiers),{}});
     if(enchantment) {
         for(const auto *a:{enchantment->aura?&*enchantment->aura:nullptr,enchantment->curse?&*enchantment->curse:nullptr}) if(a)
             rule.auraStats.emplace(a->skill,server::MonsterRule::AuraStats{auraNativeStats(data,a->modifiers),auraNativeStats(data,auraOwnerModifiers(*a))});
@@ -218,30 +218,9 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
             rule.skillActions.emplace(184,std::move(teleport));
             rule.preventHealState=data.states.at("preventheal").definition.id;
         }
-        for(int id: {194,195}) if((id==194 && enchantment->has(18)) || (id==195 && enchantment->has(17))) {
-            auto missile=prepareMonsterMissile(data,id,std::max(1,enchantment->level/2));if(!missile) return {};
-            rule.enchantmentMissiles.emplace(id,*missile);
-        }
+
     }
 
-    const auto property=data.tables.at("monstats").value(record->sourceRow,"MonProp");
-    if(!property.empty()) {
-        const DataTable properties(archives.read("data/global/excel/monprop.txt"));
-        const std::string suffix=request.difficulty==0?"":request.difficulty==1?" (N)":" (H)";
-        bool found=false;
-        for(size_t row=0;row<properties.rows().size();++row) if(properties.value(row,"Id")==property) {
-            found=true;
-            for(int slot=1;slot<=6;++slot) {
-                const auto field=std::to_string(slot)+suffix;const auto code=properties.value(row,"prop"+field);
-                if(code.empty()) continue;
-                const int chance=properties.number(row,"chance"+field).value_or(0);
-                // MONSTER_Initialize: blank/zero chance means unconditional.
-                if(code!="knock" || (chance!=0 && chance!=100) || !properties.value(row,"par"+field).empty() || properties.number(row,"min"+field)!=1 || properties.number(row,"max"+field)!=1) return {};
-                rule.knockbackOnHit=true;
-            }
-        }
-        if(!found) return {};
-    }
     // QUESTSFX_MainHandler: these values are original code, not MPQ parameters.
     if(record->ai=="BloodRaven") rule.deathSweep=server::MonsterRule::DeathSweep{35,25,125,true};
     if(record->ai=="Andariel") rule.deathSweep=server::MonsterRule::DeathSweep{35,1,51,false};
@@ -455,6 +434,33 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    std::string chestFamily="flyingscimitar";
+    const std::array chestFamilies{request.act==1?"mummy1":"zombie1","skeleton1","sk_archer1",
+        "skmage_pois1","skmage_cold1","skmage_fire1","skmage_ltng1"};
+    bool chestSelected=false;
+    for(const auto &code:area.populationRoster) {
+        const auto *record=catalog.find(code);if(!record) continue;
+        for(size_t index=0;index<chestFamilies.size();++index) {
+            const auto *base=catalog.find(chestFamilies[index]);
+            if(base && record->index>=base->index && record->index<base->index+(index==0?5:4)) {
+                chestFamily=chestFamilies[index];chestSelected=true;break;
+            }
+        }
+        if(chestSelected) break;
+    }
+    populationRules.chestBaseClass=classId(chestFamily);
+    populationRules.chestClass=familyClass(chestFamily);
+    required.push_back(populationRules.chestClass);
+    if(const auto *record=catalog.find(chestFamily);record) {
+        for(const auto &[code,candidate]:catalog.monsters()) {
+            (void)code;
+            if(candidate.index!=populationRules.chestClass) continue;
+            const auto birth=loadMonsterMotionTiming(animations,candidate.token,"s1",
+                monsterModeWeapon(archives,candidate.token,"s1",candidate.baseWeapon));
+            if(birth) populationRules.chestBirthTicks=std::max(1,int(std::ceil(birth->duration*25)));
+            break;
+        }
+    }
     for(const int definition:selection.classes) {
         const auto &record=*catalog.find(regionRules->classes.at(definition).code);
         const auto &extra=data.tables.at("monstats2");
@@ -507,7 +513,24 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         }
         for(const auto child:entry.minions) if(child>=0) required.push_back(child);
         if(record.placeSpawn && !record.spawn.empty()) required.push_back(classId(record.spawn));
-        if(area.nativeMonsterClasses.contains(definition)) continue;
+        const auto restore=[&](server::MonsterRule &rule) {
+            prepareMonsterBirthProperties(data,record.sourceRow,rule);
+            rule.neverCount=data.tables.at("monstats").number(record.sourceRow,"neverCount").value_or(0)!=0;
+            rule.flying=record.flying;
+            const auto &extra=data.tables.at("monstats2");
+            const auto name=data.tables.at("monstats").value(record.sourceRow,"MonStatsEx");
+            for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==name) {
+                rule.restore=extra.number(row,"Restore").value_or(0);
+                if(rule.restore<0 || rule.restore>2) throw std::runtime_error("Invalid original monster Restore rule");
+                return;
+            }
+            throw std::runtime_error("Missing real monster Restore rule");
+        };
+        if(const auto cached=area.nativeMonsterClasses.find(definition);cached!=area.nativeMonsterClasses.end()) {
+            restore(cached->second.rule);
+            prepareSelfResurrection(archives,data,animations,record,request.difficulty,cached->second.rule);
+            continue;
+        }
         MonsterIdentity identity;identity.monster=record.id;identity.origin=SpawnOrigin::Density;identity.spawnKey="native."+record.id;
         auto prototype=combatMonster(archives,data,request,identity,{},world,catalog,animations,nativeRuleRandom);
         if(!prototype && !record.hostile() && record.ai!="GoodNpcRanged")
@@ -522,6 +545,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             }
         }
         if(prototype) {
+            restore(prototype->rule);
             prepareSelfResurrection(archives,data,animations,record,request.difficulty,prototype->rule);
             area.nativeMonsterClasses.emplace(definition,std::move(*prototype));
         }

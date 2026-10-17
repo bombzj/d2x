@@ -28,6 +28,7 @@ QuestFact System::fact(PlayerId player,const CharacterRecord &record,RegionId re
     }
     const auto *area=ports_.areas.find(region);
     result.rescued=state_.actFive.rescued;
+    if(area && int(region)==109) result.zooMonster=state_.actFive.zooMonster.value_or(0);
     if(const auto *p=ports_.players.find(player);p && record.completedActs.at(size_t(ports_.settings.difficulty)).at(1)) {
         const auto &q=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::KhalimsWill)];
         const auto &items=p->rules.character->laterQuests;
@@ -92,7 +93,7 @@ StepStatus System::actTwoStep(TickContext tick) {
         if(!p || !p->entered || p->actor!=pending->second.actor || p->area!=pending->second.area || !area || area->generation!=pending->second.areaGeneration || p->persistent.player.hp<=0 || lease==state_.actTwo.journals.end()) {pending=state_.actTwo.journalReads.erase(pending);continue;}
         auto actor=pending->second;actor.tick=tick.tick;
         const auto result=operateActTwo(actor,lease->second,0,42,p->position);
-        if(result.status==DomainStatus::Capacity) {blocked=true;++pending;continue;}
+        if(isDeferred(result.status)) {blocked=true;++pending;continue;}
         state_.actTwo.journals.erase(lease);pending=state_.actTwo.journalReads.erase(pending);
     }
     for(const auto &[region,area]:ports_.areas.all()) {
@@ -104,7 +105,7 @@ StepStatus System::actTwoStep(TickContext tick) {
             const auto definition=ports_.missiles.nativeDefinition("radamentdeath");
             if(!definition) throw std::logic_error("Missing original Radament death missile");
             const auto result=ports_.missiles.spawnNative({id,m.area,ports_.areas.at(m.area).generation,tick.tick,m.position,m.position,*definition,0,1});
-            if(result.status==DomainStatus::Capacity) blocked=true;
+            if(isDeferred(result.status)) blocked=true;
             else state_.actTwo.radamentFxStarted.insert(id);
         }
         if(int(m.area)==49 && m.identity.monster=="radament" && !(state_.initialFlags[questDefinition(QuestId::RadamentsLair).nativeSlot]&0x8000) && !state_.objectives.at(questIndex(QuestId::RadamentsLair))) {

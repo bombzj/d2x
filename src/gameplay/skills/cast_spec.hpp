@@ -31,7 +31,6 @@ struct SkillCastSpec {
     int rank = 0;
     int stunFrames = 0;
     Fixed8 healingMinimum, healingMaximum;
-    float castDuration = 0, castImpact = 0, castRate = 0;
     Fixed8 manaCost, minimumDamage, maximumDamage;
     float coldDuration = 0, missileVelocity = 0, missileLifetime = 0;
     float poisonDuration = 0;
@@ -46,10 +45,9 @@ struct SkillCastSpec {
     std::optional<FreezingAreaCastSpec> freezingArea;
     std::optional<FirewallSpec> firewall;
     int delayFrames = 0;
-    int shieldPercent = 0, shieldManaFactor = 0;
     bool requiresShield = false;
-    int stormPeriod = 0, stormRadius = 0;
-    int telekinesisRange = 0, telekinesisKnockbackChance = 0;
+    int stormRadius = 0;
+    int telekinesisRange = 0;
     int concentrationState = -1, concentrationFactor = 0;
     int hydraFrames = 0, hydraLimit = 0;
     std::optional<MissileImpactSpec> missileImpact;
@@ -58,15 +56,9 @@ struct SkillCastSpec {
     int missileCount = 1;
     Fixed8 startMana;
     float missileAcceleration = 0, missileMaxVelocity = 0;
-    int staticPercent = 0;
-    float staticRadius = 0;
-    Fixed8 staticMinDamage;
     int castOverlayId = -1, hitOverlayId = -1;
-    float visualDuration = 0, hitOverlayDuration = 0;
     int hitClass = 0;
     int sourceId = -1;
-    int castMissileId = -1;
-    float castMissileDuration = 0;
     std::optional<CombatEffectSpec> appliedEffect;
     bool warcry = false;
     std::optional<SkillCharge> charge;

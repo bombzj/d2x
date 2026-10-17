@@ -101,7 +101,7 @@ void LanRealm::close() {
     for (auto &[id, peer] : peers_) {
         (void)id;
         if (!peer->closed) {
-            peer->service->sendGame({0x06}); peer->service->close(false);
+            peer->service->endGame(false);
         }
     }
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);

@@ -141,7 +141,7 @@ void System::continueMissileFlight(Advance &plan) const {
         const auto [fraction,id]=flight.contacts[flight.next++];const auto target=participants.find(id);
         if(!id) {
             m.position=flight.end;
-            if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) monsterCollision(plan,{});else projectileImpact(plan,{});}
+            if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
             plan.finished=true;return;
         }
         if(!unitPosition(m,id) || !canCollide(m,id)) continue;
@@ -174,7 +174,7 @@ void System::continueMissileFlight(Advance &plan) const {
     }
     m.position=flight.end;
     if(flight.wall) {
-        if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) monsterCollision(plan,{});else projectileImpact(plan,{});}
+        if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
         plan.finished=true;
     }
     ++m.revision;

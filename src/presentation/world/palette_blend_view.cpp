@@ -38,11 +38,16 @@ int paletteIndex(vec3 background) {
 )";
 constexpr const char *fragment = R"(
 uniform sampler2D screenTable;
+uniform int nativeOpaque;
 void main() {
     vec4 source = texture(texture0, fragTexCoord);
     if (source.a < 0.5) discard;
-    int backgroundIndex = paletteIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
     int sourceIndex = int(round(source.r * 255.0));
+    if (nativeOpaque != 0) {
+        finalColor = texelFetch(palette, ivec2(sourceIndex, 0), 0);
+        return;
+    }
+    int backgroundIndex = paletteIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
     finalColor = texelFetch(screenTable, ivec2(backgroundIndex, sourceIndex), 0);
 }
 )";
@@ -121,6 +126,11 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         for (size_t destination = 0; destination < 256; ++destination)
             blend[source * 256 + destination] = colors[bytes[0x23500 + destination * 256 + source]];
     socketTable_ = upload(blend.data(), 256, 256);
+    // CelDraw mode 2 uses trans[0]; automap Everything uses this on full size.
+    for (size_t source = 0; source < 256; ++source)
+        for (size_t destination = 0; destination < 256; ++destination)
+            blend[source * 256 + destination] = colors[bytes[0x3500 + destination * 256 + source]];
+    quarterTable_ = upload(blend.data(), 256, 256);
     // D2WinPalette builds the HIGHLIGHT shift by brightening current PL2 RGB
     // to 170% and finding the nearest original palette index. D2DDraw RVA
     // 6DA7 selects that shift (PaletteTable + 118) for CelDraw mode 7.
@@ -160,8 +170,9 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     paletteLocation_ = GetShaderLocation(shader_, "palette");
     tableLocation_ = GetShaderLocation(shader_, "screenTable");
     indicesLocation_ = GetShaderLocation(shader_, "paletteIndices");
-    if (!palette_.id || !screenTable_.id || !halfTable_.id || !socketTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
-        destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 ||
+    opaqueLocation_ = GetShaderLocation(shader_, "nativeOpaque");
+    if (!palette_.id || !screenTable_.id || !halfTable_.id || !socketTable_.id || !quarterTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
+        destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 || opaqueLocation_ < 0 ||
         GetShaderLocation(lightingShader_, "lightTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleColor") < 0) {
@@ -173,6 +184,7 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
         UnloadTexture(screenTable_);
         UnloadTexture(halfTable_);
         UnloadTexture(socketTable_);
+        UnloadTexture(quarterTable_);
         UnloadTexture(highlightTable_);
         UnloadTexture(rectangleTable_);
         UnloadTexture(lightTable_);
@@ -188,6 +200,7 @@ PaletteBlendView::~PaletteBlendView() {
     UnloadTexture(screenTable_);
     UnloadTexture(halfTable_);
     UnloadTexture(socketTable_);
+    UnloadTexture(quarterTable_);
     UnloadTexture(highlightTable_);
     UnloadTexture(rectangleTable_);
     UnloadTexture(lightTable_);
@@ -266,6 +279,21 @@ void PaletteBlendView::draw(const Sprite *image, Vec position) const {
 void PaletteBlendView::drawHalf(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, halfTable_);
 }
+void PaletteBlendView::drawAutomap(const Sprite *image, Vec position, int mode) const {
+    if (!image || !image->indexedTexture.id) return;
+    const Rectangle bounds{float(int(position.x) + image->x), float(int(position.y) + image->y),
+        float(image->texture.width), float(image->texture.height)};
+    if (mode == 5) {
+        const int opaque = 1;
+        BeginShaderMode(shader_);
+        SetShaderValue(shader_, opaqueLocation_, &opaque, SHADER_UNIFORM_INT);
+        SetShaderValueTexture(shader_, paletteLocation_, palette_);
+        DrawTexturePro(image->indexedTexture, {0, 0, bounds.width, bounds.height}, bounds, {}, 0, WHITE);
+        EndShaderMode();
+        return;
+    }
+    drawSprite(image, bounds, mode == 0 ? socketTable_ : mode == 1 ? halfTable_ : quarterTable_);
+}
 void PaletteBlendView::drawSocket(const Sprite *image, Rectangle bounds) const {
     drawSprite(image, bounds, socketTable_);
 }
@@ -288,6 +316,8 @@ void PaletteBlendView::drawSprite(const Sprite *image, Rectangle bounds, Texture
                       left, H - bottom, right, H - top, 0x00004000); // GL_COLOR_BUFFER_BIT
     rlEnableFramebuffer(target);
     BeginShaderMode(shader_);
+    const int opaque = 0;
+    SetShaderValue(shader_, opaqueLocation_, &opaque, SHADER_UNIFORM_INT);
     SetShaderValueTexture(shader_, destinationLocation_, destination_.texture);
     SetShaderValueTexture(shader_, paletteLocation_, palette_);
     SetShaderValueTexture(shader_, tableLocation_, table);

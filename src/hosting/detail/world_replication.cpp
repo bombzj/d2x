@@ -168,7 +168,7 @@ void NativeRealmService::publishObjects() {
         const auto position = object.position + shared.terrain.at(binding->game).at(object.area).origin;
         packets.push_back(encodeServerPacket(ServerMessage::AssignObject, [&](auto &out) {
             out.u8(2); out.u32(uint32_t(object.id.value)); out.u16(uint16_t(object.definition)); out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y)));
-            out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : 0);
+            out.u8(uint8_t(object.mode)); out.u8(object.rule.shrine ? uint8_t(object.rule.shrine->code) : object.rule.chest ? uint8_t((object.rule.chest->locked ? 128 : 0) | object.rule.chest->trap) : object.rule.initialization==11 || object.rule.initialization==12 ? object.portalDestination : object.rule.operation==22 ? uint8_t(object.uses) : uint8_t(object.rule.trap));
         }));
     }
     for (const auto &[id, revision] : peer.objects) if (!next.contains(id)) {
@@ -215,6 +215,7 @@ void NativeRealmService::publishShop() {
 namespace d2x::hosting {
 void NativeRealmService::publishPortals() {
     std::map<EntityId,uint64_t> next; std::vector<Bytes> packets;
+    const auto objects=host.visibleObjects(*binding);
     for(const auto &portal:host.visiblePortals(*binding)) {
         bool changed=false;
         // 0x82 introduces both GUIDs, including the endpoint outside visibility.
@@ -227,7 +228,8 @@ void NativeRealmService::publishPortals() {
             const auto id=town?portal.townId:portal.fieldId; next.insert_or_assign(id,portal.revision);
             if(peer.portals.contains(id) && peer.portals.at(id)==portal.revision) continue;
             changed=true; const auto position=(town?portal.townPosition:portal.fieldPosition)+shared.terrain.at(binding->game).at(area).origin;
-            packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.opened?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
+            if(std::none_of(objects.begin(),objects.end(),[&](const auto &object){return object.id==id;}))
+                packets.push_back(encodeServerPacket(ServerMessage::AssignObject,[&](auto &out){out.u8(2);out.u32(uint32_t(id.value));out.u16(uint16_t(portal.rule.definition));out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(portal.opened?2:1);out.u8(uint8_t(town?portal.field:portal.town));}));
             packets.push_back(encodeServerPacket(ServerMessage::PortalState,[&](auto &out){out.u8(0);out.u8(uint8_t(town?portal.field:portal.town));out.u32(uint32_t(id.value));}));
         }
         if(changed && !portal.shared) packets.push_back(encodeServerPacket(ServerMessage::PortalOwner,[&](auto &out){out.u32(uint32_t(portal.owner.value));for(size_t i=0;i<16;++i) out.u8(i<portal.name.size()?uint8_t(portal.name[i]):0);out.u32(uint32_t(portal.fieldId.value));out.u32(uint32_t(portal.townId.value));}));

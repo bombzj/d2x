@@ -25,7 +25,8 @@ NativeMazeLevel buildNativeMazeLevel(Archives &archives, const WorldCatalog &cat
     NativeMazeLevel result;
     RetailPresetScan scanner(archives);
     std::map<std::string, MapData> patterns;
-    result.recipe = maze::RoomMaze(catalog, level, seed).build(level, seed, difficulty,
+    maze::RoomMaze maze(catalog,level,seed);
+    result.recipe = maze.build(level, seed, difficulty,
         entranceDirection, &layout, [&](const MapRecipe &recipe, const MapPiece &piece, Seed &random) {
             const int x = recipe.worldX + piece.x, y = recipe.worldY + piece.y;
             uint32_t flags = 0;
@@ -47,10 +48,11 @@ NativeMazeLevel buildNativeMazeLevel(Archives &archives, const WorldCatalog &cat
                     auto [entry, fresh] = patterns.try_emplace(path);
                     if (fresh) entry->second = decodeDs1(archives.read(path), path);
                     return scanner.scan(p, entry->second, record.act, width, height, bits, stream,
-                        &result.presetUnits[{level, p.id, file, px, py}], px, py);
+                        &result.presetUnits[{level, p.id, file, px, py}], px, py,&result.tileInfo);
                 }, piece.width <= 12 && piece.height <= 12);
             for (auto &room : children) result.rooms.push_back(std::move(room));
         });
+    result.random=maze.randomState();
     return result;
 }
 MapRecipe generateMaze(Archives &archives, const WorldCatalog &catalog, int level, uint32_t seed, int difficulty,

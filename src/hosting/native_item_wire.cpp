@@ -142,6 +142,12 @@ void emitItem(std::vector<Bytes> &result, const ClassicData &data, const Persist
               std::optional<ItemLocation> previous = {}) {
     if (item.id.value > UINT32_MAX) throw std::runtime_error("Item ID exceeds native protocol capacity");
     auto wireItem=item;
+    if(action==ItemAction::Shop) {
+        const auto &at=std::get<ContainerLocation>(item.location);
+        if(at.container.value<1 || at.container.value>4) throw std::logic_error("Invalid native shop page");
+        wireItem.location=ContainerLocation{state.containers.backpack,at.cell};
+        page=unsigned(at.container.value);
+    }
     if (const auto *at=std::get_if<ContainerLocation>(&item.location); at &&
         state.inventory.containers.at(at->container).spec.kind==ContainerKind::Trade) {
         wireItem.location=ContainerLocation{state.containers.backpack,at->cell};

@@ -42,7 +42,7 @@ DomainResult<> System::mindBlast(const ActorContext &actor,const SkillCastSpec &
         auto base=std::make_shared<const MissileHitDamage>(rollNativeSkillDamage(values,pulse.skill.sourceId,pulse.skill.rank,random));
         const auto &native=rules.formulas->skills.at(pulse.skill.sourceId);
         auto targets=nativeAuraCandidateRecipients({caster->id(),actor.area,*radius,uint32_t(native.number("aurafilter")),false,
-            pulse.center+area.definition.origin,NativeAuraTargetMode::TargetRange});
+            pulse.center+area.definition.origin,NativeAuraTargetMode::TargetRange,actor.tick});
         if(caster->player) {
             const auto *player=caster->player;
             transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};

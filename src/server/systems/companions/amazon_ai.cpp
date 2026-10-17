@@ -42,7 +42,7 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
             ports_.monsters.commitCombatRandom(body->id,random);
             if(attack) {
                 const auto result=requestAction(pet,{pet.actor,0,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
-                if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+                if(isDeferred(result.status)) return StepStatus::Blocked;
             }
         } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
     } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});

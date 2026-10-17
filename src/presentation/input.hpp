@@ -8,7 +8,7 @@ namespace d2x {
 inline constexpr size_t hotbarSlots = 8;
 // Device-independent snapshot. Only app/input.cpp knows physical key codes.
 struct FrameInput {
-    Vec mouse, movement;
+    Vec mouse, movement; // movement: automap directional key events, including repeat
     bool insideViewport = false;
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false, rightReleased = false;
     bool inventory = false, character = false, skillTree = false, quests = false, shift = false, control = false, enter = false, focused = true;

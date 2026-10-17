@@ -7,6 +7,7 @@ class Seed {
 
   public:
     explicit Seed(uint32_t low) : state_(initialRandom(low)) {}
+    uint64_t state() const { return state_; }
     uint32_t next() {
         return rollRandom(state_);
     }

@@ -1,5 +1,6 @@
 #include "area_store.hpp"
 #include "world/native_spawn.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 #include <exception>
 #include <cmath>
@@ -87,6 +88,92 @@ std::optional<RoomPoint> AreaStore::nativeFreeSpace(RoomView room,int32_t x,int3
     const auto adjacent=roomAtPosition(room.area,Vec{float(room.x*5),float(room.y*5)}-area.origin,x+2,y+3);
     return nativeFreeCoordinates(room,adjacent?x+2:x,adjacent?y+3:y,size,0x3e01,sample,std::pair{x,y},0x801,true);
 }
+std::optional<RoomPoint> AreaStore::nativeRestoreCoordinates(RoomView initial,int32_t x,int32_t y,int size,uint16_t mask,
+    const CollisionSample &sample) const {
+    if(size<0 || size>3 || !sample) return {};
+    const auto bounds=[&](RoomView view) {
+        const auto &area=at(view.area).definition;
+        const auto *room=area.activation.room(Vec{float(view.x*5),float(view.y*5)}-area.origin);
+        if(!room) throw std::logic_error("Missing native restoration room");
+        return RoomBounds{int(area.origin.x)+room->x,int(area.origin.y)+room->y,room->width,room->height};
+    };
+    const auto find=[&](RoomView view,int column,int row) {
+        const auto &area=at(view.area).definition;
+        return roomAtPosition(view.area,Vec{float(view.x*5),float(view.y*5)}-area.origin,column,row);
+    };
+    auto currentBounds=bounds(initial);
+    int column=x;
+    const int width=size+2,half=width/2;
+    for(int low=-1,high=1;low>-50;--low,++high) {
+        int row=nativeAdd(y,low);
+        for(int offsetY=low;offsetY<high;offsetY+=2,row=nativeAdd(row,2)) {
+            std::optional<RoomView> rowRoom=initial;
+            if(row<currentBounds.y || row>=nativeAdd(currentBounds.y,currentBounds.height)) rowRoom=find(initial,column,row);
+            if(!rowRoom) continue;
+            column=nativeAdd(x,low);
+            for(int offsetX=low;offsetX<high;offsetX+=2,column=nativeAdd(column,2)) {
+                currentBounds=bounds(*rowRoom);
+                std::optional<RoomView> candidate=*rowRoom;
+                if(column<currentBounds.x || column>=nativeAdd(currentBounds.x,currentBounds.width)) candidate=find(*rowRoom,column,row);
+                if(!candidate) continue;
+                bool clear=true;
+                for(int deltaY=0;deltaY<width && clear;++deltaY) for(int deltaX=0;deltaX<width;++deltaX) {
+                    const int cellX=nativeAdd(column,deltaX-half),cellY=nativeAdd(row,deltaY-half);
+                    const auto cell=find(*candidate,cellX,cellY);
+                    if(!cell || (sample(*cell,cellX,cellY)&mask)) {clear=false;break;}
+                }
+                if(clear) return RoomPoint{*candidate,Vec{float(column),float(row)}-at(candidate->area).definition.origin};
+            }
+        }
+    }
+    return {};
+}
+std::optional<RoomPoint> AreaStore::nativeQuestFreePosition(RoomView initial,int32_t x,int32_t y,int size,uint16_t mask,
+    int radius,const CollisionSample &sample) const {
+    if(size<0 || size>3 || radius<=1 || radius>100 || !sample) return {};
+    const auto bounds=[&](RoomView view) {
+        const auto &area=at(view.area).definition;
+        const auto *room=area.activation.room(Vec{float(view.x*5),float(view.y*5)}-area.origin);
+        if(!room) throw std::logic_error("Missing native quest placement room");
+        return RoomBounds{int(area.origin.x)+room->x,int(area.origin.y)+room->y,room->width,room->height};
+    };
+    const auto find=[&](RoomView view,int column,int row) {
+        const auto &area=at(view.area).definition;
+        return roomAtPosition(view.area,Vec{float(view.x*5),float(view.y*5)}-area.origin,column,row);
+    };
+    auto currentBounds=bounds(initial);
+    const int centerX=nativeSubtract(x,size>>1),centerY=nativeSubtract(y,size>>1),width=2*size+1;
+    int column=centerX;
+    for(int low=-1,high=1;high<radius;--low,++high) {
+        for(int offsetY=high;offsetY>low;offsetY-=2) {
+            const int row=nativeAdd(centerY,offsetY);
+            std::optional<RoomView> rowRoom=initial;
+            if(row<currentBounds.y || row>=nativeAdd(currentBounds.y,currentBounds.height)) rowRoom=find(initial,column,row);
+            if(!rowRoom) continue;
+            column=nativeAdd(centerX,low);
+            for(int offsetX=low;offsetX<high;offsetX+=2,column=nativeAdd(column,2)) {
+                currentBounds=bounds(*rowRoom);
+                std::optional<RoomView> candidate=*rowRoom;
+                if(column<currentBounds.x || row>=nativeAdd(currentBounds.x,currentBounds.width)) candidate=find(*rowRoom,column,row);
+                if(!candidate) continue;
+                bool clear=true;
+                for(int deltaY=0;deltaY<width && clear;++deltaY) for(int deltaX=0;deltaX<width;++deltaX) {
+                    const int cellX=nativeAdd(column,deltaX-size),cellY=nativeAdd(row,deltaY-size);
+                    const auto cell=find(*candidate,cellX,cellY);
+                    if(!cell || (sample(*cell,cellX,cellY)&mask)) {clear=false;break;}
+                }
+                if(!clear || uint32_t(column)<uint32_t(currentBounds.x) ||
+                    uint32_t(column)>=uint32_t(nativeAdd(currentBounds.x,currentBounds.width)) ||
+                    uint32_t(row)<uint32_t(currentBounds.y) ||
+                    uint32_t(row)>=uint32_t(nativeAdd(currentBounds.y,currentBounds.height))) continue;
+                const int resultX=nativeAdd(column,size>>1),resultY=nativeAdd(row,size>>1);
+                const auto room=find(initial,resultX,resultY);if(!room) return {};
+                return RoomPoint{*room,Vec{float(resultX),float(resultY)}-at(room->area).definition.origin};
+            }
+        }
+    }
+    return {};
+}
 void AreaStore::initializeUnitRooms(RegionId region) {
     auto &area=areas_.at(region);
     if(area.unitHeads.empty()) area.unitHeads.resize(area.definition.activation.rooms().size());
@@ -117,9 +204,21 @@ std::optional<std::pair<RegionId,size_t>> AreaStore::unitRoom(RegionId region,Ve
     const auto *room=area->definition.activation.room(point);if(!room) return {};
     return std::pair{region,size_t(room-area->definition.activation.rooms().data())};
 }
-std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uint8_t kind,RegionId region,Vec point) const {
+std::shared_ptr<RoomUnitRegistration> AreaStore::prepareRoomUnit(EntityId id,uint8_t kind,RegionId region,Vec point,std::optional<RoomView> nativeRoom) const {
     if(!id || kind>5 || roomUnits_.contains(id)) throw std::invalid_argument("Invalid room unit registration");
-    const auto room=unitRoom(region,point);
+    auto room=unitRoom(region,point);
+    if(nativeRoom) {
+        if(nativeRoom->area!=region) throw std::invalid_argument("Native room belongs to another area");
+        const auto *area=find(region);if(!area) throw std::invalid_argument("Missing native room area");
+        const auto &rooms=area->definition.activation.rooms();
+        const auto found=std::find_if(rooms.begin(),rooms.end(),[&](const auto &bounds) {
+            return (int(area->definition.origin.x)+bounds.x)/5==nativeRoom->x && (int(area->definition.origin.y)+bounds.y)/5==nativeRoom->y;
+        });
+        if(found==rooms.end()) throw std::invalid_argument("Unknown native admission room");
+        const auto index=size_t(found-rooms.begin());
+        if(index>=area->rooms.size() || !area->rooms[index].loaded) throw std::invalid_argument("Native admission room is not loaded");
+        room=std::pair{region,index};
+    }
     if(!room) throw std::runtime_error("Unit admission has no native room");
     std::map<EntityId,RoomUnitEntry> prepared;prepared.emplace(id,RoomUnitEntry{kind,room,{},{}});
     auto result=std::make_shared<RoomUnitRegistration>();result->node=prepared.extract(id);return result;
@@ -139,9 +238,18 @@ void AreaStore::unlinkRoomUnit(EntityId id,RoomUnitEntry &entry) noexcept {
     entry.previous={};entry.next={};
 }
 void AreaStore::publishRoomUnit(RoomUnitRegistration &prepared) noexcept {
+    if(prepared.publishedBy_) {
+        if(!validateRoomUnit(prepared,prepared.publishedId_)) std::terminate();
+        return;
+    }
     if(prepared.node.empty() || roomUnits_.contains(prepared.node.key())) std::terminate();
     const auto inserted=roomUnits_.insert(std::move(prepared.node));
     linkRoomUnit(inserted.position->first,inserted.position->second);
+    prepared.publishedBy_=this;prepared.publishedId_=inserted.position->first;
+}
+bool AreaStore::validateRoomUnit(const RoomUnitRegistration &prepared,EntityId id) const {
+    if(prepared.publishedBy_) return prepared.publishedBy_==this && prepared.publishedId_==id && roomUnits_.contains(id);
+    return !prepared.node.empty() && prepared.node.key()==id && !roomUnits_.contains(id);
 }
 void AreaStore::moveRoomUnit(EntityId id,RegionId region,Vec point) noexcept {
     const auto found=roomUnits_.find(id);if(found==roomUnits_.end()) std::terminate();

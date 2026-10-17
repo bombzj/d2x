@@ -170,7 +170,8 @@ void EmbeddedRealm::close() {
 void EmbeddedRealm::shutdown() {
     auto &o = *impl_;
     o.saveReturn();
-    for (auto *peer : o.host.peers) peer->checkpoint();
+    // LAN shutdown checkpoints its TCP/IP peers once before ending them.
+    for (auto *peer : o.host.peers) if (!peer->directTcpIp) peer->checkpoint();
     if (o.lan) o.lan->close();
     for (auto &peer : o.peers) { peer->connection->service.close(false); peer->disconnect(); }
 }

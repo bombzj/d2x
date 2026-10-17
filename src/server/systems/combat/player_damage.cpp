@@ -30,16 +30,10 @@ DomainStatus System::resolvePlayerImpact(SpellImpact &impact,ParticipantView sou
     const bool missile=!impact.melee;
     const auto targetDamage=impact.currentDamage();
     MonsterHit hit=impact.monsterHit.value_or(MonsterHit{});
-    hit.softHit=hit.softHit || impact.softHit || impact.staticPercent!=0;
+    hit.softHit=hit.softHit || impact.softHit;
     hit.coldFrames=std::max(hit.coldFrames,impact.coldFrames);hit.poisonFrames=std::max(hit.poisonFrames,impact.poisonFrames);hit.stunFrames=std::max(hit.stunFrames,impact.stunFrames);
     hit.knockback=hit.knockback || impact.knockback;hit.hitClass=impact.hitClass;
     if(!impact.monsterHit) hit.channels[size_t(impact.type)]=targetDamage;
-    if(impact.staticPercent) {
-        const auto amount=staticFieldDamageFixed(target.persistent.player.hp.raw(),target.totals.character.maxLifeFixed.raw(),
-            impact.staticPercent,impact.staticFloors.at(size_t(target.persistent.difficulty)),nativeChecked(impact.minimumStaticDamage),rawResistance(target.totals.character,DamageType::Lightning));
-        if(!amount) return DomainStatus::Applied;
-        hit.channels[size_t(DamageType::Lightning)]=*amount;
-    }
     // SUNITDMG_CalculateTotalDamage: 17%, before absorb/reduction/resistance;
     // duration channels do not receive this penalty. Other pets retain 100%.
     const int percent=damageClassPercentage({bool(source.player),source.monster && source.monster->hireling,
@@ -249,7 +243,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
         const auto result=ports_.monsters.damage(live->id,impact.binding.credit,direct,tick.tick,
             execution.cold,impact.freeze,execution.hitClass,execution.poison,
             impact.type==DamageType::Poison && !impact.weapon,execution.stun,execution.extras.wound,execution.absorbed,
-            execution.clearStun,execution.extras.crushing,execution.pierce[4],impact.softHit || impact.staticPercent!=0,
+            execution.clearStun,execution.extras.crushing,execution.pierce[4],impact.softHit,
             execution.nativeMissile?std::optional{execution.freeze}:std::nullopt,execution.getHit,
             execution.statuses);
         if(!result) return result.status;
@@ -270,8 +264,14 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
         const auto action=impact.nativeSkill->defense.block && live->life>0 && !impact.knockback?
             ports_.monsters.block(execution.target,tick.tick):
             ports_.monsters.finishDamageAction(execution.target,impact.binding.credit,execution.callbacks.total,tick.tick,execution.hitClass,
-                impact.softHit || impact.staticPercent!=0,execution.getHit);
+                impact.softHit,execution.getHit);
         if(!action) return action.status;impact.nativeSkill->actionComplete=true;
+    }
+    if(!execution.monsterModifierComplete) {
+        if(direct>0 && !(impact.type==DamageType::Poison && !impact.weapon)) {
+            const auto result=ports_.effects.monsterDamageEffect(execution.target,tick.tick);if(!result) return result.status;
+        }
+        execution.monsterModifierComplete=true;
     }
     if(impact.nativeSkill && impact.nativeSkill->progressive) {
         const auto result=advanceProgressive(impact,tick,true);if(!result) return result.status;

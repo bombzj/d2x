@@ -121,6 +121,15 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
     const auto npcRule=[&](const MonsterRecord &record) {
         const auto name=strings.find(record.name);
         auto result=prepareNpcRule(data,speechIndexes,callbacks,record,name.empty()?std::string_view(record.name):name,area.act);
+        const auto hireling=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry) {
+            return entry.seller==record.index && entry.difficulty==1;
+        });
+        if(hireling!=data.hirelings.end()) {
+            const int first=strings.index(hireling->nameFirst),last=strings.index(hireling->nameLast);
+            if(first<0 || last<first || last>UINT16_MAX || last-first>=69)
+                throw std::runtime_error("Invalid original hireling name range");
+            for(int index=first;index<=last;++index) result.hirelingNames.push_back(uint16_t(index));
+        }
         auto [entry,fresh]=combatRules.try_emplace(record.index);
         if(fresh) entry->second=prepareNeutralMonsterRule(archives,data,prepared.terrain.request,record);
         result.combat=entry->second;return result;
@@ -158,13 +167,11 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
             const auto preset = catalog.preset(area.act, source.id, prepared.terrain.map->terrain.data.version, source.nativeIdentity);
             record = catalog.find(preset.id);
         } else if (source.type == 2 && source.nativeIdentity) {
-            // OBJECTS_InitFunction54_CainStartPosition places Cain5 at the
-            // actual DS1 marker. Quest visibility controls his availability.
             const auto &objects = data.tables.at("objects");
             for (size_t row = 0; row < objects.rows().size(); ++row)
                 if (objects.number(row,"Id") == source.id) {
                     const auto init=objects.number(row,"InitFn").value_or(0);
-                    if(int(area.id)==1 && init==54) record=catalog.find("cain5");
+                    if(int(area.id)==1 && init==54) {record=catalog.find("cain5");questInit=init;}
                     if(int(area.id)==75 && (init==49 || init==50)) {record=catalog.find("hratli");questInit=init;}
                     if(int(area.id)==40 && (init==18 || init==19)) {record=catalog.find("jerhyn");questInit=init;}
                     if(int(area.id)==109 && init==68) {record=catalog.find("nihlathak");questInit=init;}
@@ -176,8 +183,8 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         auto rule=npcRule(*record);
         rule.questInitFunction=questInit;
         const Vec marker{float(source.x)+.5f,float(source.y)+.5f};
-        const auto position = area.collision.nearest(marker,record->movementRule());
-        if (!area.collision.walkable(position,record->movementRule()) || (position-marker).length()>15)
+        const auto position = questInit==54?marker:area.collision.nearest(marker,record->movementRule());
+        if (questInit!=54 && (!area.collision.walkable(position,record->movementRule()) || (position-marker).length()>15))
             throw std::runtime_error("Original NPC spawn is obstructed: "+record->id);
         area.npcs.push_back({{}, position, std::move(rule),sourceIndex,
             source.type==2?std::optional<Vec>{Vec{float(source.x),float(source.y)}}:std::nullopt,

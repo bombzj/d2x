@@ -1,5 +1,6 @@
 #pragma once
 #include <functional>
+#include <span>
 #include "plan.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
@@ -15,7 +16,7 @@ namespace d2x::server {struct PlayerState;}
 namespace d2x::server::transactions {
 // Local plan identities, never client retry tokens. No unbounded replay set.
 struct State { uint64_t next = 1, lastCommitted{}; };
-struct Ports { PlayerStore &players; AreaStore &areas; EventOutbox &events; items::System &items; actions::State &actions; effects::System &effects; };
+struct Ports { PlayerStore &players; AreaStore &areas; EventOutbox &events; items::System &items; actions::State &actions; effects::System &effects; uint64_t &random; };
 class System {
     struct AuraPreparation;
     void prepareAuraRecipient(AuraPreparation &,const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId,int passiveState);
@@ -38,6 +39,7 @@ class System {
     // Native draws publish without manufacturing a client attribute change.
     DomainResult<> consumeRandom(const ActorContext &,uint64_t expected,uint64_t next);
     DomainResult<> consumeRoomRandom(const RoomRandomLoan &);
+    DomainResult<> consumeRoomRandom(std::span<const std::shared_ptr<const RoomRandomLoan>>,std::optional<EventBatch> facts={});
     DomainResult<> commit(Plan);
     // Character-only skill groups, or up to eight same-area wallets coupled to
     // one ground-item edit. Reserve every projection before committing any owner.

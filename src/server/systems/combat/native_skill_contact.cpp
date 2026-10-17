@@ -22,6 +22,7 @@
 #include "gameplay/combat/accuracy.hpp"
 #include "gameplay/combat/weapon_snapshot.hpp"
 #include "gameplay/combat/alignment.hpp"
+#include "gameplay/combat/damage_resolution.hpp"
 #include "gameplay/skills/assassin_progressive.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
@@ -185,6 +186,29 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         auto input=source.player?skills::formulaInput(*source.player,draw):skills::formulaInput(*source.monster,*stats,draw);
         SkillFormulaValues values(catalog,input);return operation(values);
     };
+    if(execution.staticField && !execution.rolled) {
+        const auto &program=*execution.staticField;
+        const auto type=[&] {
+            switch(program.element) {
+            case MissileDamageElement::Fire:return DamageType::Fire;
+            case MissileDamageElement::Lightning:return DamageType::Lightning;
+            case MissileDamageElement::Magic:return DamageType::Magic;
+            case MissileDamageElement::Cold:case MissileDamageElement::Freeze:return DamageType::Cold;
+            case MissileDamageElement::Poison:return DamageType::Poison;
+            default:return DamageType::Physical;
+            }
+        };
+        const auto life=target.player?target.player->persistent.player.hp.raw():nativeChecked(target.monster->life);
+        const auto maximum=target.player?target.player->totals.character.maxLifeFixed.raw():nativeChecked(target.monster->maximumLife);
+        const auto amount=staticFieldDamageFixed(life,maximum,program.percent,program.minimumPercent,program.minimumDamage,
+            target.player?rawResistance(target.player->totals.character,type()):ports_.effects.unitRawResistance(target.id(),type(),tick.tick));
+        if(!amount) {execution.hit=false;execution.rolled=true;return DomainStatus::Applied;}
+        const auto expected=caster->random();auto random=expected;MissileHitDamage damage;
+        addNativeSkillElement(damage,program.element,*amount,program.length,random);damage.hitClass|=0xd;
+        const auto accepted=consume(expected,random);if(accepted!=DomainStatus::Applied) return accepted;
+        impact.areaDamage->rolled->value=damage;impact.areaDamage->resultFlags=0x4001;impact.hitClass=damage.hitClass&0xf;
+        execution.rolled=true;return DomainStatus::Applied;
+    }
     const bool smite=execution.melee && impact.weapon && impact.weapon->wearSkill.weapon->doFunction==150 && source.player;
     const bool basicKick=execution.melee && impact.weapon && impact.weapon->wearSkill.weapon->startFunction==2;
     const bool monsterSmite=execution.melee && impact.weapon && impact.weapon->wearSkill.weapon->doFunction==150 && source.monster;
@@ -449,7 +473,18 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         auto enchantment=source.monster?source.monster->enchantmentDamage:MonsterEnchantmentDamageState{};
         auto weapon=impact.weapon;
         const auto damage=evaluate(random,[&](SkillFormulaValues &values) {
-            if(!execution.melee) return rollNativeSkillDamage(values,execution.skill,execution.rank,random);
+            if(!execution.melee) {
+                auto damage=rollNativeSkillDamage(values,execution.skill,execution.rank,random);
+                if(execution.directFunction==21) {
+                    const auto &row=catalog.skills.at(execution.skill);
+                    impact.areaDamage->resultFlags=uint16_t(row.number("resultflags"));
+                    impact.areaDamage->hitFlags=uint32_t(row.number("hitflags"));
+                    if(const auto hitClass=row.number("hitclass")) damage.hitClass=uint8_t(hitClass);
+                    impact.hitClass=damage.hitClass&0xf;
+                    if(int(rollRandom(random)%100)<row.number("param2")) impact.areaDamage->resultFlags|=9;
+                }
+                return damage;
+            }
             auto skill=weapon->wearSkill;
             const auto &row=catalog.skills.at(skill.sourceId);
             if(!execution.kick) skill.weapon->damagePercent=nativeAdd(skill.weapon->damagePercent,typeBonus("damage_vs_montype"));
@@ -638,7 +673,7 @@ DomainStatus System::finishNativeMeleeMiss(SpellImpact &impact,ParticipantView t
             ports_.effects.block({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick}).status;
         else if(target.player && execution.defense.avoidance!=WeaponAvoidance::None)
             status=ports_.effects.avoidance({target.player->player,target.id(),target.player->area,ports_.areas.at(target.player->area).generation,0,tick.tick},execution.defense.avoidance,impact.source).status;
-        if(status==DomainStatus::Capacity) return status;
+        if(isDeferred(status)) return status;
         execution.reactionPrepared=true;
     }
     return DomainStatus::Applied;

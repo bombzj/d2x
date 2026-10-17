@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/effects/system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
@@ -54,7 +55,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
          monsterAiDistance(position, target.type==0?0:size, monster.position), monster.rule.difficulty, controller.random,
          monster.hitOccurrence != controller.observedHit, int(monster.area) == 17,
          int(monster.life * 100 / monster.maximumLife), controller.commanded, controller.alerted,
-         ports_.monsters.minionOwner(id) == id, controller.phase, controller.loop, targetLife, monster.webUntil>tick.tick, clear};
+         ports_.monsters.minionOwner(id) == id, controller.phase, controller.loop, targetLife, monster.rule.web && ports_.effects.unitStates(id,tick.tick).contains(monster.rule.web->aura.id), clear};
     input.trapAxisAligned=std::abs(int(std::floor(position.x))-int(std::floor(monster.position.x)))<6 || std::abs(int(std::floor(position.y))-int(std::floor(monster.position.y)))<6;
     if(monster.rule.ai.kind==MonsterAiKind::CorruptArcher || monster.rule.ai.kind==MonsterAiKind::Vampire) {
         const int radius=monster.rule.ai.kind==MonsterAiKind::CorruptArcher?12:8;
@@ -85,7 +86,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     const auto actionPosition=decision->useShootableTarget && shootable?shootable->position:position;
     if (decision->action == MonsterDecisionAction::Shout) {
         const auto result = requestAction(controller,{id, 0, target, tick.tick, 9});
-        if (result.status == DomainStatus::Capacity) { controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
+        if (isDeferred(result.status)) { controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
         if(result && ports_.monsters.minionOwner(id)==id) {commandParty(monster);controller.commanded=true;}
     } else if (decision->action == MonsterDecisionAction::Attack || decision->action == MonsterDecisionAction::Special) {
         const auto skill=decision->action==MonsterDecisionAction::Special?monster.rule.skillIds.at(size_t(decision->skillSlot)):uint16_t(0);
@@ -94,7 +95,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
         if(boss && monster.rule.ai.kind==MonsterAiKind::Countess && decision->skillSlot==0) point=monster.skillPositions.at(size_t(firewallPhase));
         if(boss && monster.rule.ai.kind==MonsterAiKind::BloodRaven && decision->skillSlot==0) point=Vec{std::floor(position.x)+.5f,std::floor(position.y)+.5f}+boss->summonOffset;
         const auto result = requestAction(controller,{id,skill,actualTarget,tick.tick,decision->attackMode,point});
-        if (result.status == DomainStatus::Capacity) {
+        if (isDeferred(result.status)) {
             controller.nextDecision = tick.tick + 1;
             return StepStatus::Blocked; // Preserve the chosen roll and charge through output pressure.
         }
@@ -124,13 +125,13 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
             if(!controller.pursuing) {
                 controller.random=random;
                 const auto result=requestAction(controller,{id,0,target,tick.tick,4});
-                if(result.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
+                if(isDeferred(result.status)) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
             }
         }
         if (!controller.pursuing && decision->attackWhenMoveFails) {
             controller.random=random;
             const auto result = requestAction(controller,{id, 0, target, tick.tick,decision->failedMoveAttackMode});
-            if (result.status == DomainStatus::Capacity) {controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
+            if (isDeferred(result.status)) {controller.nextDecision = tick.tick + 1; return StepStatus::Blocked; }
         }
         if(!controller.pursuing && decision->failedMoveWanderRadius) controller.pursuing=bool(freeMove(monsterWanderPoint(monster.position,decision->failedMoveWanderRadius,random)));
         controller.random=random;controller.observedHit=monster.hitOccurrence;

@@ -3,6 +3,15 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 namespace d2x {
+int32_t fireEnchantedDeathMaximum(int32_t maximumLife,int32_t percentage,int difficulty) {
+    const auto scaled=nativePercentage(maximumLife,percentage,100);
+    switch(difficulty) {
+    case 0:return nativeSubtract(scaled,nativeDivide(scaled,4));
+    case 1:return nativeSubtract(scaled,nativeDivide(scaled,3));
+    case 2:return nativeDivide(scaled,8);
+    default:return scaled;
+    }
+}
 void addMonsterEnchantmentDamage(MonsterHit &hit,const MonsterEnchantment &mods,int sourceDamage,uint64_t &random,MonsterEnchantmentDamageState &state) {
     auto elements=mods.elements;
     auto cold=mods.coldFrames,poison=mods.poisonFrames;

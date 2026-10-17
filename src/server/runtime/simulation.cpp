@@ -41,10 +41,10 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
             DomainResult<> result;
             run(owner,[&] {
                 result=dispatchFrameEvent(systems,event,tick);
-                return result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
+                return isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
                     StepStatus::Blocked:StepStatus::Complete;
             });
-            if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return false;
+            if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return false;
             if(!result && result.status!=DomainStatus::InvalidActor) throw std::logic_error("Native frame event has no implemented handler");
             return true;
         })) return false;
@@ -110,6 +110,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     }
     if(phase_==Phase::Objects) {
     steps_[size_t(SystemId::Objects)] = systems.objects.step(tick, facts_);
+    if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
     if(systems.monsters.pendingModifiers()) return false;
     phase_=Phase::Modifiers;
     }

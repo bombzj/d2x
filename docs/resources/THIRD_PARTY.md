@@ -81,11 +81,15 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 开发对照使用既有 [d2mapapi_mod](https://github.com/soarqin/d2mapapi_mod) `f61d05244f323409aa48b326033639326d7c285c` 的32位1.13c导出入口；补充实际房间顺序、近邻、单位、Pops、DT1文件／记录和完整16位碰撞，记录进入／采样／离开事件。DT1身份由D2CMP RVA0x15D90的活动记录关联真实父文件，不把主次编号相同的不同记录当同一瓦片。第一幕此前122组、第二至第五幕364组原版新进程结果与共同C++核心一致，具体覆盖及屏蔽标志见[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。另曾查阅 [d2bs](https://github.com/noah-/d2bs) `f4b99bbe8de6916384991dfdd198ecf234cef1c0`；客户端运行不接入原DLL地图辅助器，reference、导出文件和原DLL均不提交或分发。
 
-原DLL仅只读核对或由忽略目录的既有导出工具作开发对照，不随运行包分发。样本、原点／DT1／16位碰撞、屏蔽标志及限制统一维护在[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
+房间恢复另核对同一1.13c D2Common：RVA `0x7c101`／`0x7c104`重置瓦片流low=initialSeed／high=666；`0x3c788`／`0x3c78b`初始化活动Room1的low／high（结构偏移0x6c／0x70）。RVA `0x8184b`／`0x8185b`及只读数据`0x8a758`／`0x8a7a8`确认逻辑转移表负索引读取，`0x81c1c`确认节点楼层掩码；`0x45550`按槽调用`0x453d0`配对Vis，不跨槽保留1.10f参考实现的bSkip。当前动态对照及适用范围见[地图验证](../gameplay/world/MAPS.md#当前源码逐事件复核)。
 
 持物占格高亮另核对同快照D2Client RVA 0x8C600逐格调用DrawBox mode=0、0x8C6B0初始化绿色RGB(0,128,0)／禁止红色(128,0,0)。D2gfx 1.13c ordinal10014才是DrawBox入口（RVA 0xBA30），不能套用D2MOO 1.10f的ordinal10055；D2DDraw RVA 0x6A25选择trans[2]，0x6850按背景索引×256＋颜色索引读取。D2Win ordinal10190经D2CMP ordinal10049（RVA 0x9D30）以RGB平方距离取首个最近项。当前MPQ Act PL2偏移0x23500提供实际混色结果；Diablerie InventoryGrid／InventorySlot只补充底色在物品下方、无描边的布局证据，其简化RGBA不作为原混色值。本批仅只读静态核对，未构建或运行。
 
+自动地图显示另只读核对同一1.13c D2Client的5F9F0／608D0／60C40布局与居中、5FB10–5FB40方向键回调、60346–604EA原Fade及裁剪、62760城镇拼图；D2gfx ordinal10079与D2DDraw接口+0x98核对原DC6基线和三档PL2选择。当前MPQ原图／PL2的读取及完整参数、扩展分辨率与未运行边界见[自动地图](../gameplay/world/AUTOMAP.md#输入与选项)，反汇编／提取留忽略目录，不改动或分发原DLL和资源。
+
 第一幕精英另只读核对同一D2Client：RVA20340／20BF0／20BC0为电强化路径及GH／生命回调，20C40／A1020／A0DB0为冰强化死亡新星，4E095／4E14D／1FCA0为GH和生命高位发射资格。原版两端时钟、共享范围见[参考设计](../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，DLL与反汇编输出只留忽略目录。
+
+技能路径迁移另只读核对同一1.13c D2Game.dll：UMod表RVA10F448，第31项死亡回调265E0／模式回调21A90确认火魔爆炸；火强化266B0在267BF–26804于MPQ难度倍率之后，Normal扣1/4、Nightmare扣1/3、Hell除8，此步在本地1.10f D2MOO转录中缺失。冰强化262D0调用A2800，A28B0–A28D8循环构造64个方向；蛛网B4880–B49CE确认原方向表、正常X/Y坐标、技能173、飞弹143及速度3。当前MPQ Skills／Missiles／DifficultyLevels只读摘录位于忽略目录`artifacts/skill-paths-20261016/`；不修改、提交或分发原DLL与摘录。本轮未构建或运行，入口与待验证边界见[技能公共规范](../gameplay/skills/COMMON.md#技能执行路径源码核对)。
 
 ## 补充资料的边界
 

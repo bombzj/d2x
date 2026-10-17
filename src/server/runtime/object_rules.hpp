@@ -24,6 +24,7 @@ struct ObjectPopulationRules {
 };
 struct ObjectRule {
     int operation{}, width{}, height{}, range{};
+    int subClass{};
     int initialization{},damage{},initialMode{};
     int initializationLevel{};
     bool lockable{};
@@ -42,5 +43,6 @@ struct ObjectRule {
     std::optional<ShrineRule> shrine;
     std::optional<TowerReward> towerReward;
     bool openingMode{};
+    bool restore{},restoreVirgins{},cycleOperating{},openedMode{};
 };
 }

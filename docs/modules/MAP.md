@@ -1,6 +1,8 @@
 # 地图、区域与地图界面
 
-五幕普通区域1–136共用NativeMapGenerator和当前MPQ。自研宿主generateArea与客户端RemoteTown使用同一reveal函数及房间顺序；宿主通过原LOADACT／0x07传种子、幕及锚点，客户端自行重建，不共享C++地形快照。权威内核只持有独立碰撞值。当前自研进入保存幕的城镇，使用原DS1出生标记，不以inspectionArrival替代。新协议链的Act1营地入局和走跑已有限冒烟，其他幕／区域未在本轮复验，见[基线](../../BASELINE.md)。
+五幕普通区域1–136共用NativeMapGenerator和当前MPQ。自研宿主generateArea与客户端RemoteTown共用同一生成／reveal算法；宿主蓝图按固定逆序准备，客户端按实际原包顺序重放。宿主通过原LOADACT／0x07传种子、幕及锚点，客户端自行重建，不共享C++地形快照。权威内核只持有独立碰撞值。当前自研进入保存幕的城镇，使用原DS1出生标记，不以inspectionArrival替代。新协议链的Act1营地入局和走跑已有限冒烟，其他幕／区域未在本轮复验，见[基线](../../BASELINE.md)。
+
+原版地形对照及剩余验证范围见[五幕地图](../gameplay/world/MAPS.md#地形准确性与恢复边界)，DLL重放和实机排查步骤见[地图对照排查](../development/MAP_PARITY.md)。
 
 ## 所有权与入口
 
@@ -30,11 +32,13 @@ world另以本人实际房间和共同RoomLayout.nearRooms提前请求已准备�
 
 RemoteTown按约4毫秒软预算消费原顺序地图事件，未处理完时即使网络revision不变也继续推进；房间锚点与事件缺口校验保留，只用已物化房间选当前显示区域。地形修改的dirty状态跨帧保留；只在实际物化／释放地形或当前级别变化时重建快照，纯视野引用计数变化、同级房间内移动不再单独重建。SceneAssets以调色板／DT1瓦片身份复用Sprite，并持有对应库，避免房间集合变化时重复对已有瓦片逐像素哈希；GPU内容缓存仍负责真正的新图上传。
 
-服务端活动房间由[world::RoomRuntime](../../src/server/systems/world/rooms.cpp)持有，使用生成器导出的原始有序near-room列表，包含跨级邻接，不用距离环补猜。NativeRoomActivation在d2x_navigation中为双方共用纯状态机；服务端ChangeClientRoom先增加新房间引用，再释放旧引用，传播0／1／2／3级状态。碰撞按真实房间恢复，未物化格保持0xffff，快照外沿没有房间归属的补边不参与跨区碰撞。Population／Objects只准入已加载房间；休眠怪物不参与AI／移动和空间索引，GUID、生命和物件状态保留在各领域唯一状态中，回访不重新抽取或复制实体。原07／08按玩家实际近房间增减，物件／NPC／怪物／玩家和地面单位随房间可见性投影。
+服务端活动房间由[world::RoomRuntime](../../src/server/systems/world/rooms.cpp)持有，使用生成器导出的原始有序near-room列表，包含跨级邻接，不用距离环补猜。NativeRoomActivation在d2x_navigation中为双方共用纯状态机；服务端ChangeClientRoom先增加新房间引用，再释放旧引用，传播0／1／2／3级状态。碰撞按真实房间恢复，未物化格保持0xffff，快照外沿没有房间归属的补边不参与跨区碰撞。Population／Objects只准入已加载房间。普通怪物压缩后保留恢复记录，回访以同GUID重新执行出生及部分状态恢复，会重新分配单位种子／组件；物件按自身规则重新初始化并重绑身份。特殊怪物仍可能保留房间，地面物品完整休眠尚未实现，细节归[人口](../gameplay/monsters/POPULATION.md)。原07／08按玩家实际近房间增减，表示单客户端视野，不证明服务端活动房间已卸载。
 
-时序依据为本地D2MOO `DrlgActivate.cpp::DRLGACTIVATE_Update`（服务端7 tick、客户端5 tick初始化间隔，单次物化一个视野外房间）、`Game.cpp::GAME_Update`（每12帧检查、无客户端计数超过10才考虑卸载）、`D2Dungeon.cpp::D2Common_10081_GetTileCountFromRoom`及`DRLGACTIVATE_TestRoomCanUnTile`的城镇／Rocky Summit／portal保留条件。D2X另外保留正在提交动作、伤害、弹体或掉落的房间，避免事务背压时释放其碰撞。传送、WP、复活和新入场先激活真实目的房间，再查落点。
+时序依据为本地D2MOO `DrlgActivate.cpp::DRLGACTIVATE_Update`（服务端7 tick、客户端5 tick初始化间隔，单次物化一个视野外房间）、`Game.cpp::GAME_Update`（每12帧检查、无客户端计数超过10才考虑卸载）、`D2Dungeon.cpp::D2Common_10081_GetTileCountFromRoom`及`DRLGACTIVATE_TestRoomCanUnTile`的城镇／Rocky Summit／portal保留条件。D2X另外保留正在提交动作、伤害、弹体或掉落的房间，避免事务背压时释放其碰撞。保留谓词只读资格；NativeRoomActivation另调用tryRetire，完成可暂缓的怪物压缩／效果发布，再压缩物件，成功后才释放碰撞和房间随机。普通休眠节点同时保存CorpseState（不可用、已搜尸、死亡状态集合）及自复活次数，回访不会重新开放已消费的尸体。传送、WP、复活和新入场先激活真实目的房间，再查落点。
 
 宿主[AreaPreparation](../../src/hosting/area_preparation.cpp)以独立MPQ句柄／缓存准备不可变区域蓝图，不共享可变Archives、地图生成器或UI回调；主循环只接收完成结果并按每局原请求顺序提交，离局取消票据，过期结果不进入新局。第一次蓝图准备仍按区域读取／生成，已生成地形压缩为逐房间恢复数据；当前并非D2MOO的逐房间MPQ分配和SUNITINACTIVE结构逐字复刻，蓝图及休眠实体内存也尚未逐房间回收。客户端原图上传仍在渲染线程，不能仅据工作线程宣称所有卡顿消除。
+
+客户端NativeMapGenerator释放活动瓦片／碰撞，重入通过原图层和DT1重新物化。服务端RoomRuntime释放活动碰撞，重入回放Run保存的完整16位碰撞、阻挡、光遮挡及字节地形，另重放已开启墓墙；物件碰撞由objects按当前模式重建，房间流使用initialRoomRandom。原版InitRoomGrids重置瓦片流，选砖后再分出活动房间种子；两条流的核对范围见[地图验证](../gameplay/world/MAPS.md#当前源码逐事件复核)。
 
 旧包有限运行证据仍见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)；其中内容同步准备约3.7秒属于旧实现。21:55用户诊断同局level2／3内容阶段约205／226毫秒，仍不是当前房间生命周期版的运行验收。Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供人工定位剩余开销；新包构建身份和未运行范围统一见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
 

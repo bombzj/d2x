@@ -33,14 +33,4 @@ std::vector<ModifierStatSource> combatEffectStatSources(std::span<const ActiveCo
             effect.spec.modifiers,combatEffectNativeValues(effect.spec)});
     return result;
 }
-std::vector<TriggeredCombatEffect> combatEffectReactions(std::span<const ActiveCombatEffect> effects,
-                                                      CombatEffectEvent event, EffectFrame frame) {
-    std::vector<TriggeredCombatEffect> result;
-    for (const auto &effect : effects)
-        if (effect.activeAt(frame))
-            for (const auto &reaction : effect.spec.reactions)
-                if (reaction.event == event)
-                    result.push_back({effect.handle, effect.spec.state.id, effect.spec.source, reaction.action});
-    return result;
-}
 }

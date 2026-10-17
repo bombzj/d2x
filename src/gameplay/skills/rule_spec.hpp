@@ -54,13 +54,12 @@ struct SkillRuleSpec {
     int firewallRangePerLevel = 0;
     std::optional<std::pair<int, int>> diminishingDuration;
     std::optional<std::pair<int, int>> linearDuration;
-    int shieldMaximum = 0, shieldManaFactor = 0, shieldSynergySkill = -1;
     bool requiresShield = false, holyShield = false;
     int enchantAttackRating = 0, enchantAttackRatingPerLevel = 0;
     std::array<int, 4> healingParameters{};
     int healingSynergySkill = -1, healingSynergyPercent = 0;
-    std::array<int, 5> stormParameters{};
-    int telekinesisRange = 0, telekinesisKnockbackChance = 0;
+    int stormRadius = 0;
+    int telekinesisRange = 0;
     int concentrationState = -1, concentrationFactor = 0;
     std::optional<std::pair<int, int>> hydraDuration;
     int hydraLimit = 0;
@@ -72,7 +71,6 @@ struct SkillRuleSpec {
     int coldFrames = 0;
     std::array<int, 3> coldFramesPerLevel{};
     int coldSynergySkill = -1, coldSynergyPercent = 0;
-    int staticPercent = 0, staticRange = 0, staticRangePerLevel = 0, staticMinDamage = 0;
     int missileId = -1;
     int missileNextDelay = 0;
     int missileCount = 1, missileCountPerLevel = 0, missileCountLimit = 1;
@@ -83,8 +81,6 @@ struct SkillRuleSpec {
     SkillOverlayCue castCue, hitCue, stateCue;
     int hitClass = 0;
     int sourceId = -1;
-    int castMissileId = -1;
-    float castMissileDuration = 0;
     CombatStateDefinition state;
     bool warcry = false;
     std::array<int, 8> armorParameters{};

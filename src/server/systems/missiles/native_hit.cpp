@@ -33,7 +33,7 @@ std::unique_ptr<System::Advance> System::immediateHit(const Missile &source,Enti
         plan.addMissileContact(missile.enemy?enemyImpact(plan,{target}):impact(plan,{target}));
     } else {
         const auto native=nativeHit(plan,{});
-        if(!native) {if(missile.enemy) monsterCollision(plan,{});else projectileImpact(plan,{});}
+        if(!native) {if(missile.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
         plan.finished=!native || !(*native&4);
     }
     return result;
@@ -260,7 +260,7 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         const auto filter=skill->second.number("aurafilter")?0xA783u:0u;
         const auto &area=ports_.areas.at(missile.area);
         const auto eligible=ports_.effects.nativeAuraCandidateRecipients({missile.owner,unitArea(missile.owner),0,filter,false,
-            *point+area.definition.origin,effects::NativeAuraTargetMode::TargetRange});
+            *point+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,missile.executionTick});
         if(std::find(eligible.begin(),eligible.end(),target)==eligible.end()) return 1;
         plan.addSkillState(missile.owner,target,missile.skill.sourceId,missile.skill.rank,0);
         plan.skillStates.back().procedure=effects::NativeSkillStateProcedure::BattleCry;
@@ -350,7 +350,7 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         if(!participants.find(missile.owner).id()) return 1;
         const auto &area=ports_.areas.at(missile.area);
         const auto targets=ports_.effects.nativeAuraCandidateRecipients({missile.owner,unitArea(missile.owner),rule.serverParameters[1],0xA783u|3u,false,
-            missile.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange});
+            missile.position+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,missile.executionTick});
         EntityId selected;
         for(const auto id:targets) if(unitPosition(missile,id) && (!selected || id<selected)) selected=id;
         const auto &row=rule.damageFormulas->missiles.at(missile.definition);

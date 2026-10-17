@@ -15,6 +15,63 @@ void System::initializeControl(uint64_t &gameRandom) {
     if(state_.controlRandom) throw std::logic_error("NPC control is already initialized");
     state_.controlRandom=childRandom(gameRandom);
 }
+DomainResult<VendorControlPublication> System::prepareVendorControl(uint64_t expected,uint64_t next,const NpcRule &rule) const {
+    if(state_.controlRandom!=expected) return {DomainStatus::Stale,{}};
+    VendorControlPublication publication{expected,next,state_.hirelings};
+    if(!rule.hirelingNames.empty() && !publication.hirelings.contains(rule.nativeClass)) {
+        if(rule.hirelingNames.size()>69) return {DomainStatus::NotImplemented,{}};
+        auto roster=prepareHirelings(rule.hirelingNames,1,publication.next);
+        publication.hirelings.emplace(rule.nativeClass,std::move(roster));
+    }
+    return {DomainStatus::Applied,std::move(publication)};
+}
+void System::publishVendorControl(VendorControlPublication publication) {
+    if(state_.controlRandom!=publication.expected) throw std::logic_error("Stale native vendor control publication");
+    state_.hirelings.swap(publication.hirelings);state_.controlRandom=publication.next;
+}
+HirelingRoster System::prepareHirelings(std::span<const uint16_t> names,uint64_t revision,uint64_t &random) const {
+    HirelingRoster result;result.revision=revision;
+    for(const auto name:names) result.slots.push_back({name,rollRandom(random)});
+    for(int count=0;count<10;++count) {
+        const auto start=limitedRandom(random,uint32_t(result.slots.size()));
+        auto index=start;
+        while(result.slots[index].available) {
+            index=(index+1)%uint32_t(result.slots.size());
+            if(index==start) break;
+        }
+        if(result.slots[index].available) break;
+        result.slots[index].available=true;
+    }
+    return result;
+}
+DomainResult<HirelingRoster> System::hirelingRoster(const NpcRule &rule) {
+    if(rule.hirelingNames.empty() || rule.hirelingNames.size()>69 || !state_.controlRandom)
+        return {DomainStatus::NotImplemented,{}};
+    if(const auto found=state_.hirelings.find(rule.nativeClass);found!=state_.hirelings.end())
+        return {DomainStatus::Applied,found->second};
+    auto random=*state_.controlRandom;
+    auto roster=prepareHirelings(rule.hirelingNames,1,random);
+    state_.hirelings.emplace(rule.nativeClass,roster);state_.controlRandom=random;
+    return {DomainStatus::Applied,std::move(roster)};
+}
+bool System::hirelingAvailable(int seller,uint64_t revision,uint16_t name,uint32_t seed) const {
+    const auto found=state_.hirelings.find(seller);
+    if(found==state_.hirelings.end() || found->second.revision!=revision || revision==UINT64_MAX) return false;
+    return std::any_of(found->second.slots.begin(),found->second.slots.end(),[&](const auto &slot) {
+        return slot.name==name && slot.seed==seed && slot.available && !slot.hired;
+    });
+}
+DomainResult<VendorControlPublication> System::prepareHirelingHired(int seller,uint64_t revision,uint16_t name,uint32_t seed) const {
+    if(!state_.controlRandom || !hirelingAvailable(seller,revision,name,seed)) return {DomainStatus::Stale,{}};
+    VendorControlPublication publication{*state_.controlRandom,*state_.controlRandom,state_.hirelings};
+    auto &roster=publication.hirelings.at(seller);
+    for(auto &slot:roster.slots) if(slot.name==name) {slot.hired=true;break;}
+    if(std::none_of(roster.slots.begin(),roster.slots.end(),[](const auto &slot){return slot.available && !slot.hired;})) {
+        std::vector<uint16_t> names;for(const auto &slot:roster.slots) names.push_back(slot.name);
+        roster=prepareHirelings(names,roster.revision+1,publication.next);
+    }
+    return {DomainStatus::Applied,std::move(publication)};
+}
 Vec System::position(const ActorContext &actor, const AreaNpc &npc) const {
     const auto *unit=ports_.monsters.find(npc.id);
     if(!unit || !unit->questNpc) throw std::logic_error("NPC has no live actor");
@@ -159,7 +216,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             continue;
         }
         const auto result=execute(pending.actor,pending.request);
-        if(result.status==DomainStatus::Capacity) ++it;else it=approaches_.erase(it);
+        if(isDeferred(result.status)) ++it;else it=approaches_.erase(it);
     }
     for(auto &[id,escape]:state_.escapes) {
         if(escape.escaped) continue;

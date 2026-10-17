@@ -118,20 +118,5 @@ void prepareEnvironmentPopulation(Archives &archives,const ClassicData &data,Pre
         monster.identity.presetOrder=index-1;
         monster.position={source.x+.5f,source.y+.5f};area.population.push_back(std::move(monster));
     }
-    // OBJRGN_GetTrapMonsterId uses native class families in population order.
-    std::string selected="flyingscimitar";
-    const std::string families[]{area.act==1?"mummy1":"zombie1","skeleton1","sk_archer1","skmage_pois1","skmage_cold1","skmage_fire1","skmage_ltng1"};
-    bool found=false;
-    for(const auto &code:area.populationRoster) {const auto *record=catalog.find(code);if(!record) continue;
-        for(size_t i=0;i<std::size(families);++i) {const auto *base=catalog.find(families[i]);if(base && record->index>=base->index && record->index<base->index+(i==0?5:4)) {selected=families[i];found=true;break;}}if(found) break;
-    }
-    for(const auto &code:{selected,std::string("trappedsoul1"),std::string("trappedsoul2")}) {
-        if(area.environmentMonsters.contains(code)) continue;
-        MonsterIdentity identity;identity.monster=code;identity.origin=SpawnOrigin::Summoned;identity.spawnKey="object.monster."+code;
-        auto unit=prepareCombatMonster(archives,data,prepared.terrain.request,identity,{});
-        if(!unit) {auto substitute=identity;substitute.monster="fallen1";unit=prepareCombatMonster(archives,data,prepared.terrain.request,substitute,{});if(unit) unit->identity=identity;}
-        if(unit) area.environmentMonsters.emplace(code,std::move(*unit));
-    }
-    if(const auto unit=area.environmentMonsters.find(selected);unit!=area.environmentMonsters.end()) area.environmentMonsters.emplace("chest",unit->second);
 }
 }

@@ -9,7 +9,33 @@
 #include "gameplay/quest/catalog.hpp"
 #include <stdexcept>
 #include "gameplay/quest/acts/act_five_state.hpp"
+#include "core/random.hpp"
 namespace d2x::server::quests {
+DomainResult<> System::initializeZoo(RegionId region,uint64_t tick) {
+    if(state_.actFive.zooMonster) return {DomainStatus::Applied,std::monostate{}};
+    const auto &candidates=ports_.areas.at(region).definition.zooCandidates;
+    if(candidates.size()<2 || candidates.size()>UINT16_MAX || !state_.controlRandom)
+        return {DomainStatus::NotImplemented,{}};
+    auto random=*state_.controlRandom;
+    uint16_t selected=0;
+    for(int attempt=0;attempt<10;++attempt) {
+        const auto candidate=1+limitedRandom(random,uint32_t(candidates.size()-1));
+        if(candidates[candidate]) {selected=uint16_t(candidate);break;}
+    }
+    std::vector<EventBatch> notifications;
+    for(const auto &[id,player]:ports_.players.all()) {
+        if(!player.entered) continue;
+        auto notice=fact(id,player.persistent.player,player.area);
+        notice.zooMonster=selected;notice.zooOnly=true;
+        notifications.push_back({0,tick,{}, {AudienceKind::Player,id,player.area},{std::move(notice)}});
+    }
+    if(!notifications.empty()) {
+        const auto sent=ports_.events.publishGroup(std::move(notifications));
+        if(!sent) return {sent.status,{}};
+    }
+    state_.controlRandom=random;state_.actFive.zooMonster=selected;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::baalFx(RegionId region,Vec position) {
     auto &state=state_.actFive;
     const bool active=(state_.initialFlags[questDefinition(QuestId::EveOfDestruction).nativeSlot]&0x8000)==0;
@@ -17,7 +43,7 @@ DomainResult<> System::baalFx(RegionId region,Vec position) {
         // 1.13c ACT5Q6_SpawnTyrael RVA 5c1f0 passes radius 100, not 1.10f's 19.
         if(const auto free=ports_.world.questFreePosition(region,position,position-Vec{5,5},5,100)) {
             const auto result=ports_.world.admitQuestNpc(free->area,"tyrael3",free->position,4);
-            if(result.status==DomainStatus::Capacity) return {result.status,{}};
+            if(isDeferred(result.status)) return {result.status,{}};
             state.tyraelSpawned=bool(result);
         }
     }
@@ -40,7 +66,7 @@ StepStatus System::baalStep(TickContext tick) {
             const auto &area=ports_.areas.at(source->area);
             const auto result=ports_.missiles.spawnNative({source->id,source->area,area.generation,tick.tick,
                 world.baalPosition,world.baalPosition,*definition,0,1});
-            if(result.status==DomainStatus::Capacity) blocked=true;
+            if(isDeferred(result.status)) blocked=true;
             else {
                 world.baalFxStarted=true;
                 if(result) ports_.world.retainControllerRoom(source->area,world.baalPosition,true);
@@ -59,6 +85,12 @@ StepStatus System::baalStep(TickContext tick) {
             bool occupied=area.definition.populationMissing!=area.definition.populationMissingPositions.size();
             for(const auto at:area.definition.populationMissingPositions) if((at-unit->position).length()<64) occupied=true;
             for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && !m.questNpc && !m.owner && m.life>0 && (m.position-unit->position).length()<64) occupied=true;}
+            for(const auto &[room,units]:ports_.monsters.read().inactive) {
+                if(room.first!=p.area) continue;
+                for(const auto &inactive:units)
+                    if(!ports_.monsters.find(inactive.id) && !inactive.dead && inactive.hostile && (inactive.position-unit->position).length()<64)
+                        occupied=true;
+            }
             const auto admitted=ports_.population.read().areas.find(p.area);
             if(admitted==ports_.population.read().areas.end()) occupied=true;
             else for(const auto &pending:area.definition.population) if(!admitted->second.admittedSpawnKeys.contains(pending.identity.spawnKey) &&

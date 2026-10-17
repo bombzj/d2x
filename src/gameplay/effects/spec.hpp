@@ -6,7 +6,6 @@
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include <optional>
-#include <variant>
 #include <vector>
 
 namespace d2x {
@@ -31,33 +30,6 @@ enum class NativeStateExpiration { NonzeroDuration,EvenZeroDuration };
 struct EffectVisual {
     int overlayId = -1;
 };
-enum class CombatEffectEvent { DamagedInMelee, AttackedInMelee, HitByMissile, DealtMeleeDamage };
-struct FreezeAttacker {
-    float duration = 0;
-    int overlayId = -1;
-    float overlayDuration = 0;
-};
-// Add typed actions here as their original event functions are implemented.
-// Reactions belong to the effect; removal cannot leave registered callbacks.
-struct ColdMeleeRetaliation {};
-struct ColdMissileRetaliation {};
-struct SlowOther {
-    int percent = 0;
-    CombatStateDefinition state;
-};
-struct IronMaidenRetaliation {
-    int percent = 0, reducedPercent = 0, hitClass = -1;
-};
-struct LifeTapHealing {
-    int percent = 0, overlayId = -1;
-    float overlayDuration = 0;
-};
-using EffectAction = std::variant<FreezeAttacker, ColdMeleeRetaliation, ColdMissileRetaliation,
-                                 IronMaidenRetaliation, LifeTapHealing, SlowOther>;
-struct EffectReaction {
-    CombatEffectEvent event;
-    EffectAction action;
-};
 struct CombatEffectSpec {
     CombatStateDefinition state;
     EffectSource source;
@@ -67,7 +39,6 @@ struct CombatEffectSpec {
     EffectVisual visual;
     bool restoreStaminaOnRemoval = false;
     CurseAi curseAi = CurseAi::None;
-    std::vector<EffectReaction> reactions;
     // Native fixed-point physical shield pool, separate from elemental healing absorption.
     int64_t physicalShield = 0, physicalShieldMaximum = 0;
     // Native SetStat values, already in ItemStatCost units. When present this

@@ -29,6 +29,7 @@ CommandStatus status(DomainStatus result) {
     case DomainStatus::Unavailable: return CommandStatus::Unavailable;
     case DomainStatus::Conflict: return CommandStatus::Conflict;
     case DomainStatus::Capacity: return CommandStatus::QueueFull;
+    case DomainStatus::PendingContent: return CommandStatus::QueueFull;
     }
     throw std::logic_error("Unknown domain result");
 }

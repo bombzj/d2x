@@ -36,6 +36,10 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.collision = result.terrain.map->grid;
     area.collisionField=content.nativeCollisionField;
     area.activation = result.terrain.map->activation;
+    area.initialLevelRandom=result.terrain.levelRandom;
+    area.tileInfo=result.terrain.tileInfo;
+    area.tileX=result.terrain.placement.x;area.tileY=result.terrain.placement.y;
+    area.tileWidth=result.terrain.placement.width;area.tileHeight=result.terrain.placement.height;
     for (const auto &room : area.activation.rooms()) {
         const auto anchor = std::pair{(int(area.origin.x) + room.x) / 5, (int(area.origin.y) + room.y) / 5};
         const auto seed=result.terrain.initialRoomRandom.find(anchor);
@@ -78,8 +82,11 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     const auto &levelTable=content.tables.at("levels");
     for(size_t row=0;row<levelTable.rows().size();++row) if(levelTable.number(row,"Id")==request.level) {
         const auto value=levelTable.number(row,"Position");if(!value) throw std::runtime_error("Missing original Levels.Position");
-        fixedPosition=*value!=0;break;
+        fixedPosition=*value!=0;
+        area.saveMonsters=levelTable.number(row,"SaveMonsters").value_or(0)!=0;
+        break;
     }
+    area.fixedPosition=fixedPosition;
     if(nativeWaypointIndex(area.waypointIndex) && (!fixedPosition || level.town || request.level==46 || request.level==74)) {
         // Position=0 resolves the waypoint room. Towns, Canyon and Arcane
         // instead request tile index13, which resolves the same preset.

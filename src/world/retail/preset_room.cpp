@@ -48,8 +48,9 @@ RetailPresetLevel buildRetailPresetLevel(Archives &archives, const WorldCatalog 
                 return std::vector<uint32_t>(size_t(width / 8 + 1) * size_t(height / 8 + 1), bits);
             const auto path = p.variants.at(size_t(chosen));
             const auto source = decodeDs1(archives.read(path), path);
-            return scanner.scan(p, source, record.act, width, height, bits, seed, &result.units, x, y);
+            return scanner.scan(p, source, record.act, width, height, bits, seed, &result.units, x, y,&result.tileInfo);
         });
+    result.random=random.state();
     return result;
 }
 RetailPresetRoomData buildRetailPresetRoomData(const PresetRecord &preset, const RetailRoom &room,

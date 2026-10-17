@@ -10,13 +10,16 @@
 #include "server/systems/skills/evaluation.hpp"
 #include "server/systems/skills/system.hpp"
 #include "server/systems/ai/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <array>
+#include <cmath>
 namespace d2x::server::companions {
 DomainResult<> System::requestAction(Companion &pet,const actions::MonsterCastRequest &request) {
     const auto result=ports_.skills.requestCast(request);
-    if(result.status!=DomainStatus::Capacity) return result;
+    if(!isDeferred(result.status)) return result;
     pet.pendingAction=request;
     // Retain the decision and let its owner finish recording the selected
     // parameters. The event itself remains blocked until this start accepts.
@@ -26,13 +29,16 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     auto found=state_.companions.find(id);
     if(found==state_.companions.end()) return {DomainStatus::InvalidActor,{}};
     auto &pet=found->second;
+    if(const auto *body=ports_.monsters.find(id);body && pet.observedAiThinkRevision!=body->aiThinkRevision) {
+        pet.observedAiThinkRevision=body->aiThinkRevision;pet.nextDecision=body->aiThinkAt;
+    }
     if(pet.pendingAura) {
         const auto accepted=ports_.effects.hirelingAura(id,*pet.pendingAura,tick.tick);
-        if(accepted.status==DomainStatus::Capacity) return accepted;
+        if(isDeferred(accepted.status)) return accepted;
         pet.pendingAura.reset();
     } else if(pet.pendingAction) {
         const auto accepted=ports_.skills.requestCast(*pet.pendingAction);
-        if(accepted.status==DomainStatus::Capacity) return accepted;
+        if(isDeferred(accepted.status)) return accepted;
         pet.pendingAction.reset();
     } else if(const auto *body=ports_.monsters.find(id);body && body->alive() && tick.tick<pet.nextDecision && tick.tick<=pet.expires && !pet.removeAt) {
         ports_.monsters.scheduleAi(id,pet.nextDecision);return {DomainStatus::Applied,std::monostate{}};
@@ -55,12 +61,49 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     }
     return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<EntityId> System::summon(const Summon &) {return {};}
-
 DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skill,Vec target) {
     const auto *p=ports_.players.find(actor.player);if(!p || !p->rules.skills || !p->rules.skills->hydra || !skill.summon || !skill.summon->native || skill.hydraLimit<=0 || skill.hydraFrames<=0) return {DomainStatus::Unavailable,{}};
-    auto random=ports_.random;
-    auto actors=ports_.monsters.prepareHydra(actor,*p->rules.skills->hydra,*skill.summon,target,random);if(!actors) return {actors.status,{}};
+    const auto *area=ports_.areas.find(actor.area);
+    if(!p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area ||
+        area->generation!=actor.areaGeneration || area->definition.town) return {DomainStatus::InvalidActor,{}};
+    const auto expectedRandom=ports_.random;
+    auto random=expectedRandom;
+    const auto &rules=*p->rules.skills->hydra;
+    constexpr std::array<Vec,3> offsets{{{-1,-1},{0,0},{1,-1}}};
+    std::array<std::optional<Vec>,3> positions;
+    std::map<RoomView,RoomRandomLoan> loans;
+    const auto collision=ports_.spatial.nativeCollisionSample();
+    const auto sample=[&](RoomView room,int32_t column,int32_t row) {
+        auto mask=collision(room,column,row);
+        for(size_t index=0;index<positions.size();++index) if(positions[index]) {
+            const auto point=*positions[index]+area->definition.origin;
+            mask|=nativeCollisionFootprint(rules.heads[index].rules.at(size_t(p->persistent.difficulty)).collisionPattern,
+                column-int(std::floor(point.x)),row-int(std::floor(point.y)),0x100);
+        }
+        return mask;
+    };
+    for(size_t index=0;index<positions.size();++index) {
+        const auto center=target+offsets[index],global=center+area->definition.origin;
+        const auto room=ports_.areas.roomAtPosition(actor.area,p->position,int(std::floor(global.x)),int(std::floor(global.y)));
+        if(!room) continue;
+        if(room->area!=actor.area) return {DomainStatus::NotImplemented,{}};
+        auto loan=loans.find(*room);
+        if(loan==loans.end()) {
+            const auto borrowed=ports_.areas.roomRandom(*room);if(!borrowed) return {borrowed.status,{}};
+            loan=loans.emplace(*room,*borrowed.value).first;
+        }
+        monsters::Admission request;request.identity.monster=rules.heads[index].definition.code;request.identity.spawnKey="hydra.search";
+        request.area=actor.area;request.position=center;request.rule=rules.heads[index].rules.at(size_t(p->persistent.difficulty));request.tick=actor.tick;
+        auto point=ports_.monsters.searchRoomSpawn(request,loan->second,-1,sample);if(!point) return {point.status,{}};
+        if(!*point.value) point=ports_.monsters.searchRoomSpawn(request,loan->second,4,sample);
+        if(!point) return {point.status,{}};
+        positions[index]=*point.value;
+    }
+    if(std::none_of(positions.begin(),positions.end(),[](const auto &position){return position.has_value();})) {
+        for(const auto &[room,loan]:loans) {(void)room;const auto consumed=ports_.transactions.consumeRoomRandom(loan);if(!consumed) return consumed;}
+        return {DomainStatus::Unavailable,{}};
+    }
+    auto actors=ports_.monsters.prepareHydra(actor,rules,*skill.summon,positions,random);if(!actors) return {actors.status,{}};
     auto next=state_;
     for(const auto &[id,monster]:*actors.value) {
         const auto &head=*std::find_if(p->rules.skills->hydra->heads.begin(),p->rules.skills->hydra->heads.end(),[&](const auto &head) {return head.definition.nativeClass==monster.rule.nativeClass;});
@@ -81,12 +124,16 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
     const auto retired=ports_.monsters.stageRetirements(*units,retire,actor.tick);if(!retired) return retired;
     transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},units);if(!plan) return {plan.status,{}};
+    plan.value->gameRandom=transactions::UnitRandomEdit{expectedRandom,random};
+    for(const auto &[room,loan]:loans) {(void)room;plan.value->roomRandomLoans.push_back(std::make_shared<const RoomRandomLoan>(loan));}
     const auto debit=ports_.transactions.commit(std::move(*plan.value));if(!debit) return debit;
-    state_.companions.swap(next.companions);ports_.random=random;
+    state_.companions.swap(next.companions);
     return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::step(TickContext tick,FrameFacts &) {
-    bool blocked=synchronizeHirelings(tick)==StepStatus::Blocked;
+    const auto hirelings=synchronizeHirelings(tick);
+    if(hirelings!=StepStatus::Complete && hirelings!=StepStatus::Blocked) return hirelings;
+    bool blocked=hirelings==StepStatus::Blocked;
     blocked|=synchronizeIronGolems(tick)==StepStatus::Blocked;
     std::vector<EntityId> stale;
     for(const auto &[id,source]:pending_) {
@@ -118,30 +165,18 @@ StepStatus System::advancePet(EntityId only,TickContext tick) {
         if(!pet.removeAt && (!body->alive() || (body->amazonPet && body->amazonPet->decoy && p && p->area!=body->area) || !p || !p->entered || expired)) {
             if(body->alive()) {
                 const auto retired=ports_.monsters.retire(pet.actor,tick.tick);
-                if(!retired) {if(retired.status==DomainStatus::Capacity) return StepStatus::Blocked;++it;continue;}
+                if(!retired) {if(isDeferred(retired.status)) return StepStatus::Blocked;++it;continue;}
             }
             pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);pet.release=0;
         }
         if(pet.removeAt) {
-            if(!pet.deathEffect && body->necroPet && body->necroPet->kind==NecroSummonKind::Fire && p && p->entered && body->area==p->area && !ports_.areas.at(body->area).definition.town) {
-                if(tick.tick<body->deathTick+4) {++it;continue;} // Native ColdEnchantedModeChange delay.
-                std::vector<EntityId> targets;
-                for(const auto id:participants.enemies(body->id,body->area)) {
-                    const auto position=participants.find(id).position();
-                    const int x=int(position.x)-int(body->position.x),y=int(position.y)-int(body->position.y);if(x*x+y*y<=36) targets.push_back(id);
-                }
-                // Native golem death callback: fixed 100 physical + 100 fire in six subtiles.
-                combat::SpellImpact physical{pet.actor,pet.actor,body->area,DamageType::Physical,100*256,targets};
-                combat::SpellImpact fire{pet.actor,pet.actor,body->area,DamageType::Fire,100*256,std::move(targets)};
-                physical.occurrence=uint64_t(1)<<58;fire.occurrence=physical.occurrence+1;physical.reaction=fire.reaction=true;physical.unblockable=fire.unblockable=true;
-                auto plan=ports_.combat.prepareSpells({std::move(physical),std::move(fire)});
-                if(!plan || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},body->area},{MissileFact{pet.actor,1,body->area,body->necroPet->explosionId,pet.rank,0,body->position,body->position}}})) {blocked=true;++it;continue;}
-                ports_.combat.commitSpells(std::move(*plan.value));pet.deathEffect=true;
-            }
             if(tick.tick>=pet.removeAt) {
                 // BoneWall's native death-end enters DD; it does not remove
                 // the unit. Do13 may still resolve this GUID and add a segment.
-                if(body->implementation!=MonsterKind::BoneWall) ports_.monsters.remove(pet.actor);
+                if(body->implementation!=MonsterKind::BoneWall) {
+                    const auto removed=ports_.monsters.remove(pet.actor);
+                    if(!removed) {blocked|=isDeferred(removed.status);pet.nextDecision=tick.tick+1;++it;continue;}
+                }
                 it=state_.companions.erase(it);
             } else ++it;continue;
         }
@@ -167,7 +202,7 @@ StepStatus System::advancePet(EntityId only,TickContext tick) {
             // and its damage samples this head's native source context.
             ports_.monsters.commitCombatRandom(body->id,random);
             const auto result=requestAction(pet,{pet.actor,uint16_t(pet.attackSkill),UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
-            if(result.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(isDeferred(result.status)) {blocked=true;++it;continue;}
             pet.nextDecision=result?std::max(body->busyUntil,tick.tick+1):tick.tick+10;
         } else {ports_.monsters.commitCombatRandom(body->id,random);pet.nextDecision=tick.tick+10;}
         ++it;

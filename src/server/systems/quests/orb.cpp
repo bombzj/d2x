@@ -33,7 +33,7 @@ StepStatus System::orbStep(TickContext tick) {
     const auto target=stairs->position+ports_.areas.at(stairs->area).definition.origin-area.definition.origin;
     const auto missile=ports_.missiles.spawnNative({orb->id,orb->area,area.generation,tick.tick,orb->position,target,*definition,0,1,
         {int32_t(uint32_t(stairs->id.value)),0},true});
-    if(missile.status==DomainStatus::Capacity) return StepStatus::Blocked;
+    if(isDeferred(missile.status)) return StepStatus::Blocked;
     if(missile) ports_.world.retainControllerRoom(stairs->area,stairs->position,true);
     else if(!ports_.objects.openOrbMist(stairs->id,tick.tick)) return StepStatus::Blocked;
     state.orbFxPending=false;return StepStatus::Complete;

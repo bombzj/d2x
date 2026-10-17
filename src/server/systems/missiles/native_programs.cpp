@@ -121,8 +121,8 @@ Missile &System::planNativeChild(Advance &plan,int definition,Vec position,Vec d
     child.pathTarget=position+(direction.length()?direction:Vec{1,1});
     child.collision=rule.collision;child.acceleration=rule.acceleration;child.maximumVelocity=rule.maximumVelocity;
     child.remainingHits=0;child.pierces=0;child.damage=0;child.skill.missileId=definition;
-    child.enemy=EnemyProjectile{rule,{},plan.next.enemy?plan.next.enemy->states:MonsterHitStates{},0,0,{},{},{}};
-    return planMonsterChild(plan,std::move(child),MonsterChildDamage::PhysicalAndElemental);
+    child.enemy=EnemyProjectile{rule,{},plan.next.enemy?plan.next.enemy->states:MonsterHitStates{},0,0,{}};
+    return planMonsterChild(plan,std::move(child));
 }
 
 void System::planCollisionChild(Advance &plan,int radius,int period,int definition,uint16_t mask) const {

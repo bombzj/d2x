@@ -61,6 +61,8 @@ class GameHost {
     std::map<EntityId, server::loot::Preparation> pendingLoot(GameHandle) const;
     std::optional<server::objects::GroundGenerationRequest> pendingGroundGeneration(GameHandle) const;
     std::optional<server::monsters::ModifierPreparation> pendingModifiers(GameHandle) const;
+    std::optional<server::monsters::EquipmentPreparation> pendingMonsterEquipment(GameHandle);
+    server::DomainResult<> prepareMonsterEquipment(GameHandle,server::monsters::PreparedEquipment);
     server::DomainResult<> prepareModifiers(GameHandle,server::monsters::PreparedModifiers);
     server::DomainResult<> prepareGroundGeneration(GameHandle,uint64_t,server::items::PreparedBatch,std::string);
     std::optional<ItemSeeds> reserveLootSeeds(GameHandle,EntityId,uint64_t occurrence,size_t index);

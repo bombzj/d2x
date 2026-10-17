@@ -14,19 +14,80 @@
 #include "server/systems/skills/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/population/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::objects {
-void System::onWaypointArrival(RegionId area,TickContext tick) {
-    // ObjRgn::InitFunction17 starts the destination waypoint when the room
-    // is reached through waypoint travel; this is shared object state.
-    for(auto &[id,object]:state_.objects) {
-        (void)id;
-        if(object.area!=area || object.rule.operation!=23 || object.mode || object.revision==UINT64_MAX) continue;
-        object.mode=1;object.until=tick.tick+std::max(uint64_t{1},object.rule.openingTicks?object.rule.openingTicks-1:0);++object.revision;
+void System::onWaypointArrival(RegionId area,Vec position) {
+    waypointArrivals_.insert(waypointArrivals_.begin(),{area,position});
+}
+bool System::waypointArrival(const Object &object) const {
+    if(object.rule.initialization!=17) return false;
+    const auto &definition=ports_.areas.at(object.area).definition;
+    const auto *room=definition.activation.room(object.position);
+    return room && std::any_of(waypointArrivals_.begin(),waypointArrivals_.end(),[&](const auto &entry) {
+        return entry.first==object.area && definition.activation.room(entry.second)==room;
+    });
+}
+void System::publishInitialization(const Object &object) {
+    ports_.quests.registerCainObject(object.id,object.definition,object.rule.initialization,object.area,object.position);
+    if(waypointArrival(object)) waypointArrivals_.clear();
+    if(object.portalAt) ports_.world.retainControllerRoom(object.area,object.position,true);
+}
+DomainResult<bool> System::spawnTownCain(const AreaNpc &npc,RegionId region,Vec marker,uint64_t tick) {
+    if(ports_.monsters.find(npc.id)) {ports_.quests.registerTownCain(npc.id);return {DomainStatus::Applied,true};}
+    if(!npc.rule.combat) return {DomainStatus::NotImplemented,{}};
+    if(ports_.monsters.read().actors.size()>=65536) return {DomainStatus::Capacity,{}};
+    const auto &quest=ports_.quests.read().actOne;
+    const auto control=state_.objects.find(quest.cainStartObject);
+    if(control==state_.objects.end() || control->second.rule.initialization!=54 || control->second.area!=region)
+        return {DomainStatus::Stale,{}};
+    marker=control->second.position;
+    const auto &area=ports_.areas.at(region).definition;
+    const auto *bounds=area.activation.room(marker);if(!bounds) return {DomainStatus::Unavailable,{}};
+    const RoomView initial{region,(int(area.origin.x)+bounds->x)/5,(int(area.origin.y)+bounds->y)/5};
+    const auto original=marker+area.origin;
+    int column=int(original.x),row=int(original.y),counter=0;
+    while(column<int(area.origin.x)+bounds->x || row<int(area.origin.y)+bounds->y ||
+        column>=int(area.origin.x)+bounds->x+bounds->width-1 || row>=int(area.origin.y)+bounds->y+bounds->height-1) {
+        ++column;++row;
+        if(++counter>20) {column=int(original.y);break;}
     }
-    collision(area);
+    const auto collision=ports_.spatial.nativeCollisionSample();
+    auto free=ports_.areas.nativeQuestFreePosition(initial,column,row,2,0x100,100,collision);
+    auto room=free?free->room:initial;
+    Vec point=free?free->position:marker;
+    std::map<RoomView,RoomRandomLoan> loans;
+    const auto attempt=[&](int count)->DomainResult<std::optional<Vec>> {
+        if(room.area!=region) return {DomainStatus::NotImplemented,{}};
+        auto loan=loans.find(room);
+        if(loan==loans.end()) {
+            const auto borrowed=ports_.areas.roomRandom(room);if(!borrowed) return {borrowed.status,{}};
+            loan=loans.emplace(room,*borrowed.value).first;
+        }
+        monsters::Admission admission;admission.identity.monster=npc.rule.code;admission.identity.spawnKey="cain.start";
+        admission.area=region;admission.position=point;admission.rule=*npc.rule.combat;admission.tick=tick;
+        return ports_.monsters.searchRoomSpawn(admission,loan->second,count,collision);
+    };
+    auto placed=attempt(5);if(!placed) return {placed.status,{}};
+    for(int retry=0;retry<20 && !*placed.value;++retry) {
+        auto global=point+area.origin;global.x+=1;global.y+=1;
+        const auto current=ports_.areas.roomAtPosition(region,Vec{float(room.x*5),float(room.y*5)}-area.origin,int(global.x),int(global.y));
+        if(current) room=*current;
+        else {room=initial;global=original;}
+        free=ports_.areas.nativeQuestFreePosition(room,int(global.x),int(global.y),2,0x100,100,collision);
+        room=free?free->room:initial;point=free?free->position:marker;
+        placed=attempt(10);if(!placed) return {placed.status,{}};
+    }
+    if(!*placed.value) {room=initial;point=marker;placed=attempt(15);if(!placed) return {placed.status,{}};}
+    for(const auto &[view,loan]:loans) {(void)view;if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};}
+    if(*placed.value) {
+        ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule);
+        ports_.quests.registerTownCain(npc.id);
+    }
+    for(const auto &[view,loan]:loans) {(void)view;ports_.areas.publishRoomRandom(loan);}
+    return {DomainStatus::Applied,placed.value->has_value()};
 }
 void System::collision(RegionId area) {
     std::vector<Grid::Obstacle> values;
@@ -72,6 +133,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (remoteRange) {const int dx=int(object.position.x)-int(player->position.x),dy=int(object.position.y)-int(player->position.y);if(dx*dx+dy*dy>*remoteRange * *remoteRange) return {DomainStatus::InvalidRequest,{}};}
     if (object.pending || object.specialPending || object.revision == UINT64_MAX) return {DomainStatus::Conflict, {}};
     if(!remoteRange) ports_.movement.execute(actor,{MovementAction::Stop,{},false});
+    if(rule.operation==15) return ports_.travel.useSpecial(actor,{travel::Kind::Portal,{object.id,object.revision,2},{}},remoteRange);
     if(rule.operation==23) {
         if(object.mode!=0 && object.mode!=1 && object.mode!=2) return {DomainStatus::Conflict,{}};
         // Native operation23 first activates and animates; only an operating
@@ -91,6 +153,9 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if(area->definition.act==3 && (rule.operation==49 || (object.definition>=392 && object.definition<=396))) {
         if(rule.operation==49?object.mode!=0 && object.mode!=2:object.mode!=0) return {DomainStatus::Conflict,{}};
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
+        if(result && object.definition>=392 && object.definition<=396) {
+            object.mode=1;object.until=actor.tick+2*(rule.openingTicks-1);++object.revision;collision(actor.area);
+        }
         if(result) for(const auto &[player,pending]:ports_.quests.read().pending) {(void)player;if(pending.source==object.id && !pending.conversation) object.pending=true;}
         return result;
     }
@@ -112,8 +177,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }
     if(rule.operation==6 || rule.operation==9 || rule.operation==10 || rule.operation==12 || (rule.operation==21 && object.definition==108)) {
         if(object.mode || object.pending) return {DomainStatus::Conflict,{}};
+        Object *cainControl=nullptr;
+        if(rule.operation==9) {
+            const auto control=state_.objects.find(ports_.quests.read().actOne.cainInvisibleObject);
+            if(control!=state_.objects.end() && control->second.definition==61) {
+                if(control->second.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+                cainControl=&control->second;
+            }
+        }
         const auto result=ports_.quests.operate(actor,object.id,object.definition,rule.operation,object.position);
         if(result) {
+            if(cainControl) {
+                cainControl->mode=int(std::min(ports_.quests.read().actOne.activatedStones,5u))+1;
+                cainControl->until=0;++cainControl->revision;
+                if(cainControl->area!=actor.area) collision(cainControl->area);
+            }
             if(rule.operation==12 || rule.operation==21) object.pending=true;
             else {object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);++object.revision;collision(actor.area);}
         }
@@ -167,7 +245,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         object.random=random;
     }
     if(rule.operation==51) {
-        object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);object.lootAt=actor.tick+uint64_t(std::max(0,rule.parameters[1]))+1;object.operatorId=actor.player;object.trap=rule.trap;if(object.trap) object.trapAt=actor.tick+35;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
+        auto candidate=object;candidate.trap=rule.trap;
+        const auto scheduled=scheduleTrap(candidate,actor.tick);if(!scheduled) return scheduled;
+        object=std::move(candidate);
+        object.mode=1;object.until=actor.tick+std::max(uint64_t{1},rule.openingTicks);object.lootAt=actor.tick+uint64_t(std::max(0,rule.parameters[1]))+1;object.operatorId=actor.player;++object.revision;collision(actor.area);return {DomainStatus::Applied,std::monostate{}};
     }
     ItemHandle key;
     if (rule.chest && rule.chest->locked && player->definition.code != "ass") {
@@ -202,19 +283,37 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
                 if(!npc.sourceObjectPosition || npc.sourceObjectClass!=source.type ||
                     npc.sourceObjectPosition->x!=source.position.x || npc.sourceObjectPosition->y!=source.position.y ||
                     admittedPresetNpcs_.contains(npc.id)) continue;
+                if(npc.rule.questInitFunction==54) {
+                    std::set<EntityId> townPlayers;
+                    for(const auto &[id,player]:ports_.players.all()) {
+                        (void)id;if(player.entered && player.area==region) townPlayers.insert(player.actor);
+                    }
+                    const bool requested=ports_.quests.cainTownRequested();
+                    const bool entered=std::any_of(townPlayers.begin(),townPlayers.end(),[&](EntityId id){return !cainAttempt_.townPlayers.contains(id);});
+                    if(cainAttempt_.marker!=source.id || requested!=cainAttempt_.requested || entered) cainAttempt_.attempted=false;
+                    cainAttempt_.marker=source.id;cainAttempt_.requested=requested;cainAttempt_.townPlayers=std::move(townPlayers);
+                    if(!requested || cainAttempt_.attempted) continue;
+                }
                 if(ports_.monsters.read().actors.size()>=65536) return StepStatus::Blocked;
-                if(!ports_.monsters.find(npc.id)) ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+                if(npc.rule.questInitFunction==54) {
+                    const auto spawned=spawnTownCain(npc,region,source.position,tick.tick);
+                    if(!spawned) return isDeferred(spawned.status) || spawned.status==DomainStatus::Stale
+                        ?StepStatus::Blocked:StepStatus::NotImplemented;
+                    cainAttempt_.attempted=true;
+                    if(!*spawned.value) continue;
+                } else if(!ports_.monsters.find(npc.id)) ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
                 admittedPresetNpcs_.insert(npc.id);
             }
             return StepStatus::Complete;
         };
-        if(state_.objects.contains(source.id)) {
+        if(admittedPresets_.contains(source.id)) {
             const auto children=admitChildren();if(children!=StepStatus::Complete) return children;
             continue;
         }
         if(source.questSpawn && (ports_.quests.read().actTwo.tomb!=region || !ports_.quests.read().actTwo.tombAt || tick.tick<ports_.quests.read().actTwo.tombAt)) continue;
         if(state_.objects.size()>=65536) return StepStatus::Blocked;
         Object object{source.id,source.type,region,source.position,1,0,source.rule,0,0,false,2*source.rule.parameters[2]};
+        object.resurrected=true;
         auto random=ports_.random,controlRandom=state_.controlRandom.value();
         if(source.preset==580 || source.preset==581) {
             int selected=0;
@@ -240,10 +339,32 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         if(source.rule.operation==10 && int(region)==38 && ports_.quests.read().actOne.cainRescued) object.mode=5;
         if(source.rule.operation==9 && int(region)==4 && ports_.quests.read().actOne.restoreCairnStones) object.mode=2;
         initialize(object,tick.tick,random,controlRandom);
+        auto ids=ports_.ids;
+        std::vector<std::pair<items::PreparedBatch,GroundLocation>> gold;
+        std::vector<EntityId> goldIds;
+        const auto initialized=prepareGoldPlaceholder(object,random,controlRandom,ids,gold,goldIds,ports_.spatial.nativeCollisionSample());
+        if(!initialized) return isDeferred(initialized.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        monsters::NativeBirthBatch births;
+        std::optional<RoomRandomLoan> soulRandom;
+        const auto souls=prepareSoulPlaceholder(object,tick.tick,random,controlRandom,ids,births,soulRandom,ports_.spatial.nativeCollisionSample());
+        if(!souls) return isDeferred(souls.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        auto actors=ports_.monsters.prepareActorPublication(std::move(births.actors),size_t(ids.cursor()-ports_.ids.cursor()));
         auto room=ports_.areas.prepareRoomUnit(source.id,2,region,object.position);
-        state_.objects.emplace(source.id,std::move(object));ports_.areas.publishRoomUnit(*room);
+        const auto installed=ports_.items.installNativeGroundBatch(gold,tick.tick,goldIds,actors.identities);
+        if(!installed) return isDeferred(installed.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        if(object.rule.initialization==79) {
+            const auto zoo=ports_.quests.initializeZoo(region,tick.tick);
+            if(!zoo) return isDeferred(zoo.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+        }
+        finishInitialization(object,controlRandom);
+        state_.objects.emplace(source.id,std::move(object));
+        publishInitialization(state_.objects.at(source.id));
+        admittedPresets_.insert(source.id);presetObjects_.emplace(source.id,source.id);
         if(state_.objects.at(source.id).rule.initialization==47 && towerChests_.size()<8)
             towerChests_.push_back(source.id);
+        ports_.monsters.publishBirthComponents(births);ports_.monsters.publishActors(actors);
+        ports_.areas.publishRoomUnit(*room);
+        if(soulRandom) ports_.areas.publishRoomRandom(*soulRandom);
         ports_.random=random;state_.controlRandom=controlRandom;changed.insert(region);
         collision(region);
         const auto children=admitChildren();if(children!=StepStatus::Complete) return children;
@@ -267,7 +388,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             continue;
         }
         const auto result=execute(pending.actor,pending.request);
-        if(result.status==DomainStatus::Capacity) ++it;else it=approaches_.erase(it);
+        if(isDeferred(result.status)) ++it;else it=approaches_.erase(it);
         if(ports_.monsters.pendingModifiers()) return StepStatus::Blocked;
     }
     std::set<RegionId> changed;
@@ -277,7 +398,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!object.urnPending) return StepStatus::Complete;
             collision(object.area);
             const auto result=ports_.population.requestObjectBirth(object.area,id,object.position,tick);
-            if(!result) return result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
+            if(!result) return isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
                 StepStatus::Blocked:StepStatus::NotImplemented;
             object.urnPending=false;return StepStatus::Complete;
         };
@@ -304,6 +425,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             object.pending=false;
             if(*result) {object.mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick).value_or(1);object.until=object.mode==1?tick.tick+std::max(uint64_t{1},object.rule.openingTicks):0;++object.revision;changed.insert(object.area);}
         }
+        if(object.pending && !towerOpening_.contains(id) && !ports_.events.hasCapacity(1)) {
+            for(const auto area:changed) collision(area);
+            return StepStatus::Blocked;
+        }
         if (object.pending && !towerOpening_.contains(id)) if (const auto result = ports_.loot.takeCompletion(id)) {
             object.pending = false;
             if (*result) {
@@ -316,9 +441,10 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                     if(object.rule.operation==1 && limitedRandom(object.random,10000)>=8192) object.trap=8;
                     if(object.rule.operation==68 && limitedRandom(*state_.controlRandom,255)<=unsigned(object.rule.parameters[7])) object.urnPending=true;
                     if((object.trap==8 || object.trap==9) && ports_.areas.at(object.area).definition.act==0) {
-                        const auto &monsters=ports_.areas.at(object.area).definition.environmentMonsters;const auto found=monsters.find("chest");if(found!=monsters.end() && found->second.identity.monster=="flyingscimitar") object.trap=0;
+                        if(ports_.areas.at(object.area).definition.populationRules.chestBaseClass==234) object.trap=0;
                     }
-                    if(object.trap) object.trapAt=tick.tick+35;
+                    const auto scheduled=scheduleTrap(object,tick.tick);
+                    if(!scheduled) throw std::logic_error("Preflighted native trap notification rejected");
                     ++object.revision;changed.insert(object.area);
                     if(const auto status=advanceUrn();status!=StepStatus::Complete) return status;
                 }

@@ -106,8 +106,8 @@ std::set<int> System::unitStates(EntityId id,uint64_t tick) const {
     const auto *m=ports_.monsters.find(id);if(!m) return states;
     const auto add=[&](int state){if(state>=0) states.insert(state);};
     states.insert(m->aiStates.begin(),m->aiStates.end());
-    states.insert(m->deathStates.begin(),m->deathStates.end());
-    if(m->corpseSearched) add(m->rule.corpseNoSelectState);
+    states.insert(m->corpse.states.begin(),m->corpse.states.end());
+    if(m->corpse.searched) add(m->rule.corpseNoSelectState);
     if(m->amazonPet) add(m->amazonPet->state.id);
     if(m->revived()) add(m->necroPet->reviveState.id);
     if(m->alive() && m->shatterActive) add(m->rule.shatterState.id);
@@ -343,8 +343,30 @@ DomainResult<> System::removeUnitState(EntityId id,int state,uint64_t tick) {
     }
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::prepareUnitCurseRemoval(AuraUnitPublication &publication,EntityId id,uint64_t tick) const {
+    const auto *body=ports_.monsters.find(id);
+    if(!body || !body->rule.states) return {DomainStatus::InvalidActor,{}};
+    const auto found=units_.find(id);
+    if(found==units_.end()) return {DomainStatus::Applied,std::monostate{}};
+    auto unit=found->second;
+    MonsterResourceTrace resources(*body,tick,&unit.states);
+    bool changed=false;
+    for(const auto &[state,definition]:*body->rule.states) {
+        if(!definition.curse) continue;
+        const auto removed=unit.states.removeState(state,[&]{resources.sample(unit.states,true);});
+        changed|=!removed.empty();
+        for(const auto &entry:removed) if(!unit.states.hasState(entry.effect.spec.state.id,tick))
+            publication.facts.emplace_back(StateFact{id,1,body->area,entry.effect.spec.state.id,false});
+    }
+    if(changed) {
+        resources.sample(unit.states);
+        prepareUnitEffects(publication,id,unit,resources.take(),tick);
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
 void System::forgetUnit(EntityId id) noexcept {
-    units_.erase(id);unitAuraCycles_.erase(id);uniqueCycles_.erase(id);webTrails_.erase(id);
+    units_.erase(id);unitAuraCycles_.erase(id);uniqueCycles_.erase(id);movementSkillPhases_.erase(id);
+    std::erase_if(modifierExecutions_,[&](const auto &entry){return entry.second.owner==id;});
     std::erase_if(itemAuraCycles_,[&](const auto &entry){return entry.first.first==id;});
 }
 StepStatus System::advanceUnits(uint64_t tick) {

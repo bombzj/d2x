@@ -160,6 +160,7 @@ void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t
             if (state.status <= 1) { state.inactiveChecks = 0; continue; }
             if (state.inactiveChecks < 11) ++state.inactiveChecks;
             if (state.inactiveChecks <= 10 || (retain && retain(room))) continue;
+            if (operations_.tryRetire && !operations_.tryRetire(room)) continue;
             operations_.release(room);
             state.active = false;
         }

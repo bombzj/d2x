@@ -101,10 +101,28 @@ combat::SpellImpact System::impact(Missile &m, std::vector<EntityId> targets, st
 combat::SpellImpact System::impact(Advance &plan,std::vector<EntityId> targets,std::optional<int64_t> damage,bool missileContact) const {
     return impact(plan.next,std::move(targets),damage,missileContact,plan.damageRolls);
 }
+std::optional<combat::SpellImpact> System::nativeAreaContact(EntityId id,bool collisionCallback) const {
+    const auto found=state_.missiles.find(id);if(found==state_.missiles.end() || !found->second.nativeDamage) return {};
+    auto missile=found->second;
+    auto result=impact(missile,{},std::nullopt,collisionCallback,damageRolls(missile));
+    result.nativeMissileFlags=true;result.nextDelay=0;result.nativeNextHit.reset();
+    return result;
+}
+void System::finishNativeAreaContact(const combat::SpellImpact &contact) {
+    const auto found=state_.missiles.find(contact.projectile);
+    if(found!=state_.missiles.end() && contact.missileDamage) {found->second.random=contact.missileDamage->random;++found->second.revision;}
+}
+void System::removeTransient(EntityId id) {
+    const auto found=state_.missiles.find(id);
+    if(found!=state_.missiles.end() && found->second.nativeDamage &&
+       found->second.nativeDamage->rule.damageFormulas->missiles.at(found->second.definition).number("collision"))
+        ports_.areas.setMissileMask(found->second.area,found->second.position,found->second.collision.size,false);
+    ports_.areas.removeRoomUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Missile,id});state_.missiles.erase(id);
+}
 System::Advance System::advance(const Missile &sourceMissile,TickContext tick) const {
     auto original=sourceMissile;original.executionTick=tick.tick;
     if(auto native=advanceNative(original)) return std::move(*native);
-    if(original.enemy) return advanceMonster(original);
+    if(original.enemy) throw std::logic_error("Monster missile lacks its native Do program");
     if(original.program==Program::GroundThrow) return advanceGroundThrow(original);
     if(original.weapon) return advanceWeapon(original);
     Advance plan{original,{},{},false};plan.damageRolls=damageRolls(original); auto &m=plan.next;
@@ -337,7 +355,7 @@ void System::areaImpact(Advance &plan,Vec at,int range,bool full,std::optional<u
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(!participants.find(m.owner).id()) return;
     auto targets=ports_.effects.nativeAuraCandidateRecipients({m.owner,unitArea(m.owner),range,filter.value_or(m.environment?0x583u:0x8583u),false,
-        at+area.definition.origin,effects::NativeAuraTargetMode::TargetRange});
+        at+area.definition.origin,effects::NativeAuraTargetMode::TargetRange,m.executionTick});
     // Preserve room-list traversal across adjacent regions. Split only at a
     // region transition; grouping by region would reorder synchronous hits.
     std::vector<std::pair<RegionId,std::vector<EntityId>>> runs;

@@ -35,11 +35,9 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
     if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original druid pet lifecycle");
     result.components=chooseMonsterComponents(rule.componentCounts,{},result.random);
     const auto [low,high]=pet.lifeRanges.at(size_t(source.difficulty));
-    const auto life=nativeAdd(low,int32_t(limitedRandom(result.random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+    const auto life=rollMonsterLife(low,high,result.random);
     result.summon.native->initialLife=Fixed8::fromRaw(nativeShiftLeft(std::min(life,(1<<23)-1),8));
     if(pet.ai==DruidPetDefinition::Ai::Raven) {
-        auto prepared=std::make_shared<DruidPetSpec>(*result.summon.druid);
-        prepared->initialCircle=uint8_t(rollRandom(result.random)&1);result.summon.druid=std::move(prepared);
         result.summon.native->base.damageRegen=rule.damageRegen=0;
     }
     const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));

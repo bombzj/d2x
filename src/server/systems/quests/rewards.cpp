@@ -49,8 +49,25 @@ DomainResult<> System::prepareReward(const ActorContext &actor,EntityId source,R
     if(state_.pending.size()>=8 || state_.next==UINT64_MAX) return {DomainStatus::Capacity,{}};
     const auto *lease=ports_.npc.conversation(actor.player);
     if(conversation && (!lease || lease->npc!=source)) return {DomainStatus::Stale,{}};
+    std::optional<Preparation::HirelingSelection> hireling;
+    if((kind==RewardKind::Rogue || kind==RewardKind::IronWolf || kind==RewardKind::RescueRunes) && p->persistent.player.hireling.sourceRow<0) {
+        const auto access=ports_.npc.service(actor,source);
+        if(!access) return {DomainStatus::Stale,{}};
+        const auto roster=ports_.npc.hirelingRoster(access->npc->rule);
+        if(!roster) return {roster.status,{}};
+        for(size_t index=0;index<roster.value->slots.size();++index) {
+            const auto &slot=roster.value->slots[index];
+            if(slot.available && !slot.hired) {
+                hireling=Preparation::HirelingSelection{access->npc->rule.nativeClass,roster.value->revision,uint32_t(index+1),slot.name,slot.seed};
+                break;
+            }
+        }
+        if(!hireling) return {DomainStatus::Unavailable,{}};
+    }
     auto random=ports_.random;
-    Preparation request{actor,state_.next,initialRandom(rollRandom(random)),p->inventoryRevision,p->characterRevision,conversation?lease->revision:0,source,kind,p->persistent,p->definition.code,ports_.settings.difficulty};
+    const auto seed=kind==RewardKind::Rogue || kind==RewardKind::IronWolf?uint64_t{}:childRandom(random);
+    Preparation request{actor,state_.next,seed,p->inventoryRevision,p->characterRevision,conversation?lease->revision:0,source,kind,p->persistent,p->definition.code,ports_.settings.difficulty};
+    request.hireling=hireling;
     request.dropPosition=dropPosition;
     if(kind==RewardKind::SmashSoulstone) {
         for(const auto id:eligibleDelivery(QuestId::HellsForge,4,actor.player)) request.participants[id]=ports_.players.find(id)->actor;
@@ -77,8 +94,9 @@ std::optional<bool> System::takeCompletion(EntityId source) {
     const bool result=found->second;state_.completed.erase(found);return result;
 }
 DomainResult<> System::install(Prepared prepared) {
-    const auto &s=prepared.source;const auto found=state_.pending.find(s.actor.player);
-    if(found==state_.pending.end() || found->second.token!=s.token) return {DomainStatus::Stale,{}};
+    const auto found=state_.pending.find(prepared.source.actor.player);
+    if(found==state_.pending.end() || found->second.token!=prepared.source.token) return {DomainStatus::Stale,{}};
+    const auto &s=found->second;
     const auto *sourceArea=ports_.areas.find(s.actor.area);
     const bool objectSource=!s.conversation && sourceArea && std::any_of(sourceArea->definition.objects.begin(),sourceArea->definition.objects.end(),[&](const auto &object){return object.id==s.source;});
     const auto fail=[&](DomainStatus status)->DomainResult<> {
@@ -91,6 +109,12 @@ DomainResult<> System::install(Prepared prepared) {
     const auto *lease=ports_.npc.conversation(s.actor.player);
     if(s.conversation && (!lease || lease->revision!=s.conversation || lease->npc!=s.source)) return fail(DomainStatus::Stale);
     if(!prepared.deferred.empty() || !prepared.items.equipment) return fail(DomainStatus::Unavailable);
+    if(s.hireling) {
+        const auto &selection=*s.hireling;
+        if(p->persistent.player.hireling.sourceRow>=0) return fail(DomainStatus::Stale);
+        if(!ports_.npc.hirelingAvailable(selection.seller,selection.revision,selection.name,selection.seed)) return fail(DomainStatus::Stale);
+        if(!prepared.hireling || prepared.hireling->seed!=selection.seed) return fail(DomainStatus::InvalidRequest);
+    }
     for(const auto unique:prepared.items.limitedUniques) if(ports_.loot.read().uniques.contains(unique)) return fail(DomainStatus::Stale);
     auto uniques=ports_.loot.prepareUniques(prepared.items.limitedUniques);
     if(!ports_.transactions.hasOutputCapacity(3)) return {DomainStatus::Capacity,{}};
@@ -275,9 +299,17 @@ DomainResult<> System::install(Prepared prepared) {
     if((s.kind==RewardKind::GidbinnRing || s.kind==RewardKind::IronWolf) && book[questIndex(QuestId::BladeOfTheOldReligion)].stage==5)
         questFact.credited[questIndex(QuestId::BladeOfTheOldReligion)]=true;
     edit.facts.emplace_back(std::move(questFact));
+    std::optional<npc::VendorControlPublication> rosterPublication;
+    if(s.hireling) {
+        const auto &selection=*s.hireling;
+        auto roster=ports_.npc.prepareHirelingHired(selection.seller,selection.revision,selection.name,selection.seed);
+        if(!roster) return {roster.status,{}};
+        rosterPublication=std::move(*roster.value);
+    }
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
     auto result=ports_.transactions.commit(std::move(*plan.value));
     if(result) {
+        if(rosterPublication) ports_.npc.publishVendorControl(std::move(*rosterPublication));
         if(s.kind==RewardKind::Rogue && credited(s.actor.player,QuestId::SistersBurialGrounds)) state_.actOne.cainOffer=true;
         if(s.kind==RewardKind::CainRing && credited(s.actor.player,QuestId::SearchForCain)) state_.actOne.toolsOffer=true;
         if(s.kind==RewardKind::ReturnTome) captureGoal(QuestId::LamEsensTome,4,std::move(delivery),true);

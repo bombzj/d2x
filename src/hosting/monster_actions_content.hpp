@@ -5,6 +5,7 @@
 namespace d2x {
 struct ClassicData;
 void prepareMonsterStateRules(const ClassicData &, size_t monsterRow, server::MonsterRule &);
+void prepareMonsterBirthProperties(const ClassicData &,size_t monsterRow,server::MonsterRule &);
 void prepareMonsterSkillRanks(const ClassicData &,size_t monsterRow,server::MonsterRule &);
 std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicData &, int definition, int rank);
 std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &,const ClassicData &,const AnimDataTable &,const MonsterRecord &,const MonsterCombatProfile &,int difficulty,bool ladderStats=true);

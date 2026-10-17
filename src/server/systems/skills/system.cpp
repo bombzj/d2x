@@ -41,6 +41,11 @@ void System::interrupt(const ActorContext &actor) {
 }
 namespace {
 DomainResult<> applied() { return {DomainStatus::Applied, std::monostate{}}; }
+bool channelled(const SkillCastSpec &skill) {
+    return skill.effect==SkillBehavior::Inferno ||
+        (skill.druid && skill.druid->program==DruidProgram::Arctic) ||
+        (skill.assassin && skill.assassin->program==AssassinProgram::BladeFury);
+}
 }
 void System::cancel(PlayerId player, EntityId actor) {
     auto &pending_=runtime_->pending;
@@ -90,9 +95,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0)
         return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::Stop) {
+        if(!player->rules.skills || !player->rules.skills->formulas) return {DomainStatus::Unavailable,{}};
         if(const auto result=ports_.effects.setNativeSkillState(actor.actor,player->rules.skills->formulas->infernoState,false,actor.tick);!result) return result;
         const auto channel=releases_.find(actor.actor);
-        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic))) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
+        if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno ||
+           (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic))) {releases_.erase(channel);state_.interrupt(actor.actor,actor.tick);}
         // Original Rcv0x12 clears STATE_INFERNO only. A released mouse must
         // not cancel an ordinary attack's approach or pending action.
         return applied();
@@ -101,7 +108,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if (!player->rules.character) return {DomainStatus::Unavailable, {}};
         const bool clear = request.action == Action::Bind && (request.skill == 0x7FFF || request.skill == 0x0FFF);
         const auto learned = player->totals.skillRanks.find(request.skill);
-        const auto source = resolveSkillUseSource(request.skill, request.owner,
+        const auto source = clear ? std::optional<SkillUseSource>{SkillUseSource{}} : resolveSkillUseSource(request.skill, request.owner,
             player->rules.character->innateSkills.contains(request.skill),
             learned == player->totals.skillRanks.end() ? 0 : learned->second, player->totals.chargedSkills);
         if(!source) return {DomainStatus::InvalidRequest,{}};
@@ -125,7 +132,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         auto result = ports_.transactions.commit(std::move(*plan.value));
         if (result && request.action == Action::Select) {
             const auto channel=releases_.find(actor.actor);
-            if(channel!=releases_.end() && (channel->second.skill.effect==SkillBehavior::Inferno || (channel->second.skill.druid && channel->second.skill.druid->program==DruidProgram::Arctic)) && channel->second.skill.sourceId!=request.skill) cancel(actor.player,actor.actor);
+            if(channel!=releases_.end() && channelled(channel->second.skill) &&
+               (channel->second.skill.sourceId!=request.skill ||
+                channel->second.skill.charge.has_value()!=charge ||
+                (charge && channel->second.skill.charge->item.id!=source->charged->item.id))) cancel(actor.player,actor.actor);
             if(pending_.erase(actor.player)) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         }
         return result;
@@ -174,8 +184,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     for (auto it = pending_.begin(); it != pending_.end();) {
         auto actor = it->second.actor; actor.tick = tick.tick;
         const auto result = attack(actor, it->second.request);
-        if (result.status == DomainStatus::Conflict || result.status == DomainStatus::Capacity) {
-            blocked|=result.status==DomainStatus::Capacity;++it;
+        if (result.status == DomainStatus::Conflict || isDeferred(result.status)) {
+            blocked|=isDeferred(result.status);++it;
         }
         else {
             if (!result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});

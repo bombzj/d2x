@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "native_area.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/skills/evaluation.hpp"
@@ -74,7 +75,7 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
         }
         pulse.skill=skills::evaluate(*player,event.customId,effect->spec.source.level);pulse.area=player->area;
         const auto last=stormLast_[{event.owner.unit,event.customId}];EntityId next,fallback;
-        for(const auto candidate:nativeAuraCandidateRecipients({player->actor,player->area,pulse.skill.stormRadius,0xA783,false})) {
+        for(const auto candidate:nativeAuraCandidateRecipients({player->actor,player->area,pulse.skill.stormRadius,0xA783,false,{},NativeAuraTargetMode::OwnerRange,tick})) {
             if(candidate.value>uint32_t(last.value) && (!next || candidate<next)) next=candidate;
             if(candidate.value<=uint32_t(last.value) && (!fallback || candidate<fallback)) fallback=candidate;
         }
@@ -83,8 +84,6 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
             const auto target=participants.find(pulse.target);pulse.position=target.position();
             pulse.area=target.player?target.player->area:target.monster->area;
         }
-        if(event.handle.value>=(uint64_t{1}<<56)) throw std::overflow_error("Periodic skill occurrence exhausted");
-        pulse.occurrence=(uint64_t{1}<<56)|event.handle.value;
         pulse.prepared=true;
     }
     if(pulse.target && !pulse.launched) {
@@ -92,17 +91,25 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
         const auto target=participants.find(pulse.target);
         const auto *destination=ports_.areas.find(pulse.area);
         if(player && area && destination && !area->definition.town && !destination->definition.town && (target.player || target.monster)) {
-            missiles::Spawn request{{player->player,player->actor,player->area,area->generation,0,tick},pulse.skill,{},pulse.position,true};
-            request.directOccurrence=pulse.occurrence;request.directArea=pulse.area;
-            const auto result=ports_.missiles.directContact(request,{pulse.target},missiles::DirectNotice::DeferPulse);
-            if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Stale || result.status==DomainStatus::Conflict) return {result.status,{}};
-            if(result.status==DomainStatus::NotImplemented || result.status==DomainStatus::InvalidRequest) return {result.status,{}};
-            if(result) {pulse.projectile=result.value->projectile;pulse.notices=std::move(result.value->deferredFacts);}
+            missiles::NativeSpawn request{player->actor,pulse.area,destination->generation,tick,pulse.position,pulse.position,
+                pulse.skill.missileId,pulse.skill.sourceId,pulse.skill.rank};request.transient=true;
+            const auto result=ports_.missiles.spawnNative(request);
+            if(isDeferred(result.status) || result.status==DomainStatus::Stale || result.status==DomainStatus::Conflict) return {result.status,{}};
+            if(!result) return {result.status,{}};
+            pulse.projectile=*result.value;
+            const auto contact=ports_.missiles.nativeAreaContact(pulse.projectile,true);if(!contact) return {DomainStatus::Unavailable,{}};
+            pulse.damage=std::make_shared<NativeAreaPulse>();auto &spec=pulse.damage->spec;
+            spec.source=player->actor;spec.area=pulse.area;spec.center=pulse.position;spec.skill=pulse.skill.sourceId;spec.rank=pulse.skill.rank;
+            spec.targets=std::vector<EntityId>{pulse.target};spec.missileContact=std::make_shared<combat::SpellImpact>(*contact);
+            spec.rollMissileDamage=true;spec.resultFlags=1;
+            pulse.notices.emplace_back(SkillPulseFact{player->actor,pulse.target,0,uint8_t(target.player?0:1),pulse.area,pulse.skill.sourceId,pulse.skill.rank,pulse.position});
         }
         pulse.launched=true;
     }
     if(pulse.projectile && !pulse.damaged) {
-        if(ports_.combat.advanceAuraPulse(pulse.projectile,pulse.occurrence,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        const auto result=nativeArea(pulse.damage->spec,tick,pulse.damage);
+        if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return {DomainStatus::Capacity,{}};
+        ports_.missiles.removeTransient(pulse.projectile);
         pulse.damaged=true;
     }
     if(!pulse.notified) {

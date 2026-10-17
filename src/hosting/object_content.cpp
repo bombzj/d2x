@@ -1,6 +1,5 @@
 #include "object_content.hpp"
 #include "monster_actions_content.hpp"
-#include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "content/classic_data.hpp"
 #include "content/skills/state_data.hpp"
@@ -33,6 +32,14 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
     if(request.act==4) {ClassicStrings strings(archives);if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);}
     const DataTable groups(archives.read("data/global/excel/objgroup.txt"));
+    const auto &monsters=content.tables.at("monstats");
+    for(size_t row=0;row<monsters.rows().size();++row) {
+        const auto index=monsters.number(row,"hcIdx");
+        if(!index) continue;
+        if(*index<0 || *index>=UINT16_MAX) throw std::runtime_error("Invalid native Zoo monster index");
+        if(area.zooCandidates.size()<=size_t(*index)) area.zooCandidates.resize(size_t(*index)+1);
+        area.zooCandidates[size_t(*index)]=uint8_t(monsters.number(row,"zoo").value_or(0)!=0);
+    }
     area.objectPopulation.groups=catalog.level(request.level).objectGroups;
     area.objectPopulation.probabilities=catalog.level(request.level).objectProbabilities;
     const auto &levels=content.tables.at("levels");
@@ -92,11 +99,6 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
         if(code==19 || code==21 || code==22) for(int rank=1;rank<=8;++rank) {
             auto missile=prepareMonsterMissile(content,code==19?62:code==21?45:48,rank);
             if(!missile) throw std::runtime_error("Missing native shrine missile rule");
-            if(code==19) {
-                const auto *entry=content.skills.find(47);if(!entry || !entry->spell) throw std::runtime_error("Missing Fire Ball shrine damage");
-                const auto skill=resolveSkill(entry->spell->rules(),{rank,{},{},{}});
-                missile->elementalMinimum=int(skill.minimumDamage*256.f);missile->elementalMaximum=int(skill.maximumDamage*256.f);
-            }
             server::MonsterAttackRule attack;attack.missile=*missile;attack.rank=uint8_t(rank);shrine.projectiles.emplace(rank,std::move(attack));
         }
         shrine.hitStates={content.states.at("cold").definition,content.states.at("poison").definition,{}};
@@ -110,12 +112,17 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
             objectTable.number(row,"Orientation").value_or(0),objectTable.number(row,"XSpace").value_or(0),
             objectTable.number(row,"YSpace").value_or(0),objectTable.number(row,"SubClass").value_or(0)});
         server::ObjectRule rule;rule.operation=object.operateFn;rule.width=object.collisionWidth;rule.height=object.collisionHeight;rule.range=int(object.reach);
+        rule.subClass=objectTable.number(row,"SubClass").value_or(0);
         rule.collisionMask=object.collisionMask;rule.collision=object.hasCollision;rule.light=object.blocksLight;rule.parameters=object.parameters;
         rule.door=object.interaction==Interaction::Door;rule.stash=object.interaction==Interaction::Stash;
         rule.initialization=objectTable.number(row,"InitFn").value_or(0);rule.damage=objectTable.number(row,"Damage").value_or(0);
         rule.lockable=objectTable.number(row,"Lockable").value_or(0)!=0;
         rule.preOperate=objectTable.number(row,"PreOperate").value_or(0)!=0;
         rule.openingMode=objectTable.number(row,"Mode1").value_or(0)!=0;
+        rule.restore=objectTable.number(row,"Restore").value_or(0)!=0;
+        rule.restoreVirgins=objectTable.number(row,"RestoreVirgins").value_or(0)!=0;
+        rule.cycleOperating=objectTable.number(row,"CycleAnim1").value_or(0)!=0;
+        rule.openedMode=objectTable.number(row,"Mode2").value_or(0)!=0;
         if(rule.initialization==2 || rule.initialization==3 || rule.initialization==57) {
             const auto level=catalog.level(request.level).objectLevel;
             if(!level || *level<0) throw std::runtime_error("Missing native object initialization level");

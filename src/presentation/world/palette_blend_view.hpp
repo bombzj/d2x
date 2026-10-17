@@ -10,10 +10,10 @@ class PaletteBlendView {
     Shader lightingShader_{};
     Shader rectangleShader_{};
     Texture2D palette_{}, screenTable_{}, lightTable_{}, paletteIndices_{};
-    Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{};
+    Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{}, quarterTable_{};
     std::array<Color, 256> colors_{};
     RenderTexture2D destination_{};
-    int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1;
+    int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
 
@@ -24,6 +24,8 @@ class PaletteBlendView {
     PaletteBlendView &operator=(const PaletteBlendView &) = delete;
     void draw(const Sprite *image, Vec position) const;
     void drawHalf(const Sprite *image, Rectangle bounds) const;
+    // CelDraw modes 0/1/2/5, selected per automap cell by D2Client.
+    void drawAutomap(const Sprite *image, Vec position, int mode) const;
     void drawSocket(const Sprite *image, Rectangle bounds) const;
     void drawHighlight(const Sprite *image, Rectangle bounds) const;
     Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }

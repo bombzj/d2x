@@ -83,7 +83,6 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     if (spec.bone) {
         auto program = std::make_shared<BoneSkillSpec>(*spec.bone);
-        program->radius += (rank - 1) * program->radiusPerLevel;
         program->lifePercent += (rank - 1) * program->lifePerLevel;
         for (const auto &[id, percent] : program->lifeSynergies)
             if (auto found = learned.find(id); found != learned.end()) program->lifePercent += found->second * percent;
@@ -99,8 +98,6 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     }
     result.sourceId = spec.sourceId;result.hitClass=spec.hitClass;
     result.stunFrames=spec.stunFrames+(rank-1)*spec.stunFramesPerLevel;
-    result.castMissileId = spec.castMissileId;
-    result.castMissileDuration = spec.castMissileDuration;
     result.requiresShield = spec.requiresShield;
     if (spec.curse) {
         result.curse=evaluateCurse(*spec.curse,rank);
@@ -159,7 +156,6 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
     result.delayFrames = (spec.assassin || spec.druid) && input.nativeFormulas?calculation("delay"):spec.delayFrames;
     result.blizzard = spec.blizzard;
     result.telekinesisRange = spec.telekinesisRange;
-    result.telekinesisKnockbackChance = spec.telekinesisKnockbackChance;
     if (spec.hydraDuration) {
         result.hydraFrames=nativeAdd(spec.hydraDuration->first,nativeMultiply(rank-1,spec.hydraDuration->second));
         result.hydraLimit = spec.hydraLimit;
@@ -173,14 +169,7 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         }
     }
     if (spec.effect == SkillBehavior::ThunderStorm) {
-        const auto &parameters = spec.stormParameters;
-        const int diminished = skillDiminishingBonus({parameters[2],parameters[3]},rank);
-        result.stormPeriod = std::max(5,nativeAdd(nativeMultiplyDivide(nativeSubtract(100,diminished),parameters[1],100),parameters[0]));
-        result.stormRadius = parameters[4];
-        if(input.nativeFormulas) {
-            result.stormPeriod=std::max(5,calculation("perdelay"));
-            result.stormRadius=input.nativeFormulas->skillNumber(spec.sourceId,"param7");
-        }
+        result.stormRadius = input.nativeFormulas?input.nativeFormulas->skillNumber(spec.sourceId,"param7"):spec.stormRadius;
     }
     if (spec.linearDuration) {
         const auto [base, perLevel] = *spec.linearDuration;
@@ -190,15 +179,6 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         effect.duration = EffectFrame(base + int64_t(rank - 1) * perLevel);
         effect.visual.overlayId = spec.stateCue.id;
         result.appliedEffect = std::move(effect);
-    }
-    if (spec.shieldMaximum > 0) {
-        result.shieldPercent = std::min(spec.shieldMaximum, spec.minimumDamage + int(skillLevelBonus(rank, spec.minimumPerLevel)));
-        const auto synergy = learned.find(spec.shieldSynergySkill);
-        result.shieldManaFactor = std::max(1, spec.shieldManaFactor - (synergy == learned.end() ? 0 : synergy->second));
-        if(input.nativeFormulas) {
-            result.shieldPercent=calculation("calc1");
-            result.shieldManaFactor=std::max(1,calculation("calc2"));
-        }
     }
     if (spec.diminishingDuration) {
         const auto [minimum, maximum] = *spec.diminishingDuration;
@@ -235,14 +215,6 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         armor.duration = EffectFrame(frames);
         armor.modifiers.combat.defensePercent = parameters[0] + (rank - 1) * parameters[1];
         armor.visual.overlayId = spec.stateCue.id;
-        if (spec.effect == SkillBehavior::FrozenArmor) {
-            const float freeze = float((parameters[4] + (rank - 1) * parameters[5]) *
-                (100 + synergyRanks * parameters[7]) / 100) / 25.f;
-            armor.reactions.push_back({CombatEffectEvent::DamagedInMelee,
-                FreezeAttacker{freeze, spec.hitCue.id, float(spec.hitCue.frames) / spec.hitCue.fps}});
-        } else if (spec.effect == SkillBehavior::ShiverArmor)
-            armor.reactions.push_back({CombatEffectEvent::AttackedInMelee, ColdMeleeRetaliation{}});
-        else armor.reactions.push_back({CombatEffectEvent::HitByMissile, ColdMissileRetaliation{}});
         result.appliedEffect = std::move(armor);
     }
     if(spec.effect==SkillBehavior::Shout) {
@@ -421,15 +393,8 @@ SkillCastSpec resolveSkill(const SkillRuleSpec &spec, const SkillEvaluationInput
         result.weapon->damagePercent = result.missileCount;
     }
     result.missileNextDelay = float(spec.missileNextDelay) / 25.f;
-    result.staticPercent = spec.staticPercent;
-    result.staticMinDamage = Fixed8::fromRaw(spec.staticMinDamage);
-    result.staticRadius = float(spec.staticRange + (rank - 1) * spec.staticRangePerLevel);
     result.castOverlayId = spec.castCue.id;
     result.hitOverlayId = spec.hitCue.id;
-    if (spec.castCue.fps > 0)
-        result.visualDuration = float(spec.castCue.frames) / spec.castCue.fps;
-    if (spec.hitCue.fps > 0)
-        result.hitOverlayDuration = float(spec.hitCue.frames) / spec.hitCue.fps;
     result.missileVelocity = missileSpeed(int(spec.missileVelocity),spec.missileVelocityPerLevel,rank);
     result.missileAcceleration = float(spec.missileAcceleration) * 25.f / 4096.f;
     result.missileMaxVelocity = float(spec.missileMaxVelocity * 256) * 25.f / 4096.f;

@@ -76,7 +76,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
-item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。已纳入当前Release构建，显式Magic词缀实际生成及原位流／保存重入获有限观察，范围见[运行包记录](BUILD_AND_RUN.md#当前物品显示与生成收尾)。
+item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。已纳入当前Release构建，显式Magic词缀实际生成及原位流／保存重入获有限观察，范围见[运行包记录](BUILD_AND_RUN.md#历史物品显示与生成收尾)。
 
 ### 按目标属性生成
 
@@ -105,7 +105,7 @@ $spec.preview=$false
 .\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments $spec
 ```
 
-复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数。当前已纳入Release构建；propertyQuery、显式词缀生成及properties预览的有限观察见[运行包记录](BUILD_AND_RUN.md#当前物品显示与生成收尾)，不扩大为全目标属性或自然掉落认证。
+复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数。当前已纳入Release构建；propertyQuery、显式词缀生成及properties预览的有限观察见[运行包记录](BUILD_AND_RUN.md#历史物品显示与生成收尾)，不扩大为全目标属性或自然掉落认证。
 
 后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred／populationMissing提供原人口准备缺口诊断。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
 
@@ -251,17 +251,19 @@ accepted仅表示请求已排队。request.sequence区分连续操作；Pending�
 
 ## 资源工具
 
+原版DLL重放、实机房间恢复步骤及诊断限制见[地图排查](MAP_PARITY.md)。
+
 既有d2x_assets只读地图诊断，不是游戏旅行／导航接口：
 
 ```text
 d2x_assets <MPQ目录> native-layout <幕:1-5> <地图种子> [难度:0-2]
 d2x_assets <MPQ目录> native-outdoor <区域> <地图种子> [难度]
 d2x_assets <MPQ目录> native-room <区域> <地图种子> <tileX> <tileY> [难度]
-d2x_assets <MPQ目录> native-map <区域> <地图种子> <难度> [原版导出.json|complete]
+d2x_assets <MPQ目录> native-map <区域> <地图种子> <难度> [原版导出.json|complete|prepared]
 d2x_assets <MPQ目录> save-info <file.d2s>
 ```
 
-原版JSON只重放调用事件，不读取参照地形作输入；complete生成连续组件报告，孤立房间不认证激活顺序／共享边界。save-info不修改角色文件，不恢复联机角色。全部现有资源命令见src/asset_tool.cpp的usage，样本见[地图对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。
+原版JSON只重放调用事件，不读取参照地形作输入；complete生成连续组件报告，prepared走实际AreaGenerator准备路径，输出冻结碰撞及房间初值。save-info只读角色文件。完整用法见src/asset_tool.cpp的usage，导出及比较方法见[地图排查](MAP_PARITY.md#已恢复的dll导出与独立重放)。
 
 ## 协议和安全
 

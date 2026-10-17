@@ -1,9 +1,5 @@
 #include "core/random.hpp"
 #include "vendor_stock.hpp"
-#include "content/items/item_grades.hpp"
-#include "content/items/item_magic_loot.hpp"
-#include "content/items/item_pricing.hpp"
-#include "content/items/item_properties.hpp"
 #include <algorithm>
 #include <array>
 #include <stdexcept>
@@ -23,15 +19,14 @@ bool npcCanIdentify(std::string_view npc) {
 bool npcCanHeal(std::string_view npc) {
     return npc == "akara" || npc == "atma" || npc == "fara" || npc == "ormus" || npc == "jamella" || npc == "malah";
 }
-std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDefinition &vendor,
-                                         unsigned playerLevel, int difficulty, uint64_t seed) {
+void generateVendorStock(const ClassicData &data,const VendorDefinition &vendor,
+    unsigned playerLevel,int difficulty,uint64_t &seed,const VendorItemSource &create) {
     if (!playerLevel || playerLevel > 99 || difficulty < 0 || difficulty > 2 ||
-        vendor.sellMultiplier <= 0 || vendor.act >= 5)
+        vendor.sellMultiplier <= 0 || vendor.act >= 5 || !create)
         throw std::runtime_error("Unsupported vendor stock parameters");
     constexpr std::array<unsigned, 5> caps{12, 20, 28, 36, 45};
     const unsigned level = difficulty == 0 ? std::min(playerLevel + 5, caps[vendor.act])
-                                           : std::min(playerLevel + 5, 99u);
-    std::vector<VendorOffer> offers;
+                                           : playerLevel + 5;
     unsigned failures = 0;
     auto generate = [&](const VendorItemRule &rule, ItemQuality quality) {
         const auto *item = data.items.find(rule.code);
@@ -56,48 +51,7 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
                 upgrade("HellUpgrade");
             }
         }
-        if (!item->artAvailable) { ++failures; return; }
-        ItemGeneration generation;
-        if (quality == ItemQuality::Magic) {
-            auto rolled = rollAffixItem(data, *item, quality, int(level), seed, {});
-            seed = rolled.randomState;
-            if (!rolled.deferred.empty()) { ++failures; return; }
-            generation = std::move(rolled.generation);
-        } else if (quality != ItemQuality::Normal && item->family != ItemFamily::Misc) {
-            auto rolled = rollItemGrade(data, *item, quality, seed);
-            seed = rolled.randomState;
-            if (!rolled.deferred.empty()) { ++failures; return; }
-            generation = std::move(rolled.generation);
-        }
-        unsigned quantity = (item->equipment.throwable && item->equipment.repairable) ||
-                            (rule.permanent && !item->equipment.quiver.empty()) ? item->maxStack : 1;
-        if(item->bookCapacity) {
-            const unsigned minimum=unsigned(std::max(1,source.number(sourceRow,"minstack").value_or(0)));
-            const unsigned maximum=unsigned(std::max(int(minimum),source.number(sourceRow,"spawnstack").value_or(0)));
-            quantity=minimum+below(seed,maximum-minimum);
-        }
-        int defense = 0;
-        if (item->family == ItemFamily::Armor) {
-            auto minimum = item->base.minDefense, maximum = item->base.maxDefense;
-            if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum) { ++failures; return; }
-            defense = *minimum + int(below(seed, unsigned(*maximum - *minimum + 1)));
-            if (generation.quality == ItemQuality::Inferior) defense = std::max(1, defense * 75 / 100);
-        }
-        VendorOffer offer{uint32_t(offers.size() + 1), item->code, quantity, level, 0,
-                          defense, rule.storePage, rule.permanent, {}, {}};
-        offer.generation = std::move(generation);
-        auto instance = vendorItem(offer, data);
-        // Enhanced defense uses maxac+1 as the underlying armor roll.
-        for (const auto &stat : resolveItemStats(data, instance, 1)) {
-            if (stat.effect == "item_armor_percent" && stat.value && item->base.maxDefense)
-                instance.defense = offer.defense = *item->base.maxDefense + 1;
-            if (stat.effect == "item_extra_stack")
-                instance.quantity = offer.quantity = unsigned(std::clamp(int(item->maxStack) + stat.value, 1, 511));
-        }
-        auto quote = itemTradePrice(data, instance, vendor);
-        if (!quote) { ++failures; return; }
-        offer.price = *quote;
-        offers.push_back(std::move(offer));
+        if(!create(item->code,quality,level,rule.permanent)) ++failures;
     };
     // MPQ NPC columns decide each vendor's distinct pool. Normal and magic
     // counts are independent; 32 is a failure limit, not a stock-size limit.
@@ -111,7 +65,7 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
                 level >= 5 && level < 10 && roll > 85 ? ItemQuality::Superior :
                 level < 5 && roll > 90 ? ItemQuality::Inferior : ItemQuality::Normal;
             generate(rule, quality);
-            if (failures > 32) return offers;
+            if (failures > 32) return;
         }
         if (rule.magicEligible && rule.magicLevel <= int(level)) {
             const unsigned extra = level < 25 ? 1 : 2 + below(seed, 2);
@@ -125,38 +79,5 @@ std::vector<VendorOffer> planVendorStock(const ClassicData &data, const VendorDe
             generate(rule, ItemQuality::Normal);
             if (failures > 32) break;
         }
-    return offers;
-}
-ItemInstance vendorItem(const VendorOffer &offer, const ClassicData &data, bool hidden) {
-    ItemInstance item;
-    item.definition = hidden && !offer.displayCode.empty() ? offer.displayCode : offer.code;
-    const auto &definition = *data.items.find(item.definition);
-    item.quantity = definition.bookCapacity?1:offer.quantity;
-    item.level = offer.level;
-    item.defense = offer.defense;
-    item.durability = definition.maxDurability;
-    item.charges = definition.bookCapacity?offer.quantity:0;
-    if (!hidden) {
-        const auto &g = offer.generation;
-        item.quality = g.quality;
-        item.specialRow = g.specialRow;
-        item.requiredLevel = g.requiredLevel;
-        item.gradeRow = g.gradeRow;
-        item.rarePrefixRow = g.rarePrefixRow;
-        item.rareSuffixRow = g.rareSuffixRow;
-        item.propertyRolls = g.propertyRolls;
-        item.operationRolls=g.operationRolls;
-        item.affixes = g.affixes;
-        int durabilityPercent = 0, durabilityAdd = 0;
-        for (const auto &stat : resolveItemStats(data, item, 1)) {
-            if (stat.effect == "item_maxdurability_percent") durabilityPercent += stat.value;
-            if (stat.effect == "maxdurability") durabilityAdd += stat.value;
-        }
-        if (item.durability) {
-            if (item.quality == ItemQuality::Inferior) item.durability = std::max(1u, item.durability / 3);
-            item.durability = unsigned(std::clamp(int(item.durability) * (100 + durabilityPercent) / 100 + durabilityAdd, 1, 255));
-        }
-    }
-    return item;
 }
 } // namespace d2x

@@ -6,10 +6,16 @@
 #include "content/monsters/monster_loot.hpp"
 #include "content/world/world_catalog.hpp"
 #include "content/items/item_quality.hpp"
+#include "content/items/item_properties.hpp"
 #include "content/items/object_loot.hpp"
+#include "gameplay/items/equipment_contributions.hpp"
+#include "gameplay/items/native_sources.hpp"
 #include "core/random.hpp"
 #include "persistence/d2s_quests.hpp"
 #include "persistence/d2s_fixed_sections.hpp"
+#include <algorithm>
+#include <array>
+#include <set>
 #include <stdexcept>
 namespace d2x {
 static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
@@ -119,6 +125,73 @@ static void prepareOneLoot(GameHost &host, GameHandle game, Archives &archives, 
 
 namespace d2x {
 void preparePendingLoot(GameHost &host, GameHandle game, Archives &archives, const ClassicData &data, LootContent &cache) {
+    if(const auto request=host.pendingMonsterEquipment(game)) {
+        server::monsters::PreparedEquipment prepared;prepared.token=request->token;
+        prepared.gameRandom=request->gameRandom;prepared.unitRandom=request->unitRandom;
+        try {
+            auto equipment=std::make_shared<PersistentCharacter>();equipment->player.id=request->actor;
+            equipment->player.level=request->rule.level;equipment->containers.equipment=request->actor;
+            equipment->inventory.containers.emplace(request->actor,ContainerState{request->actor,
+                {request->actor,ContainerKind::Equipment,int(EquipmentSlot::Count),1}});
+            EquipmentLoadout loadout;loadout.skipRequirements=true;
+            loadout.requirementPercent=[](const ItemInstance &){return 0;};
+            loadout.maximumDurability=[&](const ItemInstance &item){return itemMaximumDurability(data,item,resolveItemStats(data,item,request->rule.level));};
+            std::map<EquipmentSlot,ItemDefinition> definitions;
+            std::set<EntityId> unidentified;
+            auto uniques=request->uniques;
+            const auto selection=server::monsters::selectBirthEquipment(request->rule,prepared.unitRandom);
+            if(!selection) throw std::runtime_error("Invalid native MonEquip choices");
+            constexpr std::array qualities{DropQuality::Inferior,DropQuality::Inferior,DropQuality::Normal,
+                DropQuality::Superior,DropQuality::Magic,DropQuality::Set,DropQuality::Rare,DropQuality::Unique};
+            for(const auto &choice:*selection.value) {
+                const auto slot=EquipmentSlot(choice.body-1);if(definitions.contains(slot)) continue;
+                const auto *definition=data.items.find(choice.code);if(!definition) continue;
+                if(prepared.allocatedItems>=UINT32_MAX-request->itemCursor) throw std::runtime_error("Native MonEquip identity capacity exceeded");
+                const EntityId id{request->itemCursor+prepared.allocatedItems++};
+                auto item=prepareNativeItem(data,choice.code,request->rule.level,request->rule.difficulty,prepared.gameRandom,
+                    choice.quality?std::optional{qualities.at(choice.quality)}:std::nullopt,uniques,NativeItemUse::Equipment);
+                if(item.quality==ItemQuality::Unique && item.specialRow>=0 &&
+                    !data.tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0)) {
+                    uniques.insert(size_t(item.specialRow));prepared.limitedUniques.insert(size_t(item.specialRow));
+                }
+                item.id=id;item.location=ContainerLocation{request->actor,{int(slot),0}};
+                if(!item.identified) {unidentified.insert(id);item.identified=true;}
+                auto &stored=equipment->inventory.items.emplace(id,std::move(item)).first->second;
+                auto &bound=definitions.emplace(slot,*definition).first->second;
+                loadout.equipped.at(size_t(slot))={&stored,&bound};
+                equipment->inventory.itemOrder.push_back(id);
+                loadout.inventory.push_back({&stored,&bound});
+            }
+            const EquipmentActor actor{"",request->strength,request->dexterity,request->rule.level,0,0,false,request->rule.nativeClass};
+            std::vector<EquipmentContribution> contributions;
+            const EquipmentContributionSource instructions{{},[&](const ItemInstance &item,int level) {
+                auto identified=item;identified.identified=true;return resolveItemStats(data,identified,level);
+            },{},{},{},[&](EquipmentContribution contribution){contributions.push_back(std::move(contribution));}};
+            const auto modifiers=deriveEquipmentModifiers(loadout,actor,instructions);
+            const EquipmentActor improved{"",actor.strength+modifiers.strength,actor.dexterity+modifiers.dexterity,actor.level,0,0,false,actor.nativeClass};
+            auto gear=deriveEquipmentStats(loadout,improved,request->defense+modifiers.defense,modifiers.combat,request->rating+modifiers.attackRating);
+            const auto &types=data.tables.at("itemtypes");
+            for(auto &weapon:gear.weapons) if(weapon.item) {
+                const auto &definition=*data.items.find(equipment->inventory.items.at(weapon.item).definition);
+                weapon.strengthBonus=definition.base.strengthBonus.value_or(0);weapon.dexterityBonus=definition.base.dexterityBonus.value_or(0);
+                for(size_t row=0;row<types.rows().size();++row)
+                    if(!types.value(row,"Code").empty() && definition.equipment.isType(types.value(row,"Code"))) weapon.typeLayers.push_back(uint16_t(row));
+            }
+            equipment->inventory.containers.at(request->actor).registeredWeapon=gear.weapons[0].item;
+            std::stable_sort(contributions.begin(),contributions.end(),[](const auto &first,const auto &second){return first.item<second.item;});
+            prepared.sources=prepareNativeEquipmentSources(data.items,*request->rule.stats,contributions,request->actor,
+                [&](EntityId id)->const ItemInstance &{return equipment->inventory.items.at(id);},gear.weapons[0].item,StatOwnerKind::Monster).contributions;
+            if(gear.weapons[0].item) prepared.weapon=gear.weapons[0];
+            for(const auto id:unidentified) equipment->inventory.items.at(id).identified=false;
+            prepared.stats=gear;prepared.equipment=std::move(equipment);
+        } catch(const std::exception &error) {prepared.deferred=error.what();}
+        const auto installed=host.prepareMonsterEquipment(game,std::move(prepared));
+        if(installed.status==server::DomainStatus::InvalidRequest) {
+            server::monsters::PreparedEquipment failure;failure.token=request->token;failure.deferred="Native MonEquip failed authority validation";
+            host.prepareMonsterEquipment(game,std::move(failure));
+        }
+        return;
+    }
     if(const auto request=host.pendingModifiers(game)) {
         server::monsters::PreparedModifiers prepared;prepared.token=request->token;
         try {

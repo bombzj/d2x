@@ -15,7 +15,7 @@ DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,u
             if(impact.leechOverlay>=0 && impact.lifeGain) visuals.emplace_back(OverlayFact{impact.source,1,impact.area,impact.leechOverlay});
             if(!ports_.events.hasCapacity(visuals.size()+2,2)) return DomainStatus::Capacity;
             const auto result=ports_.monsters.heal(pet->id,impact.lifeGain);
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             if(result && !visuals.empty()) ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},impact.area},std::move(visuals)});
         }
         impact.lifeGain=impact.manaGain=0;impact.contactOverlay=impact.leechOverlay=-1;
@@ -31,7 +31,7 @@ DomainStatus System::finishImpact(SpellImpact &impact,const PlayerState *owner,u
             const auto result=ports_.transactions.resources(actor,owner->characterRevision,
                 Fixed8::fromRaw(std::min<int64_t>(attributes.maxLifeFixed.raw(),int64_t(record.hp.raw())+impact.lifeGain)),
                 Fixed8::fromRaw(std::min<int64_t>(attributes.maxManaFixed.raw(),int64_t(record.mana.raw())+impact.manaGain)),record.stamina,std::move(visuals));
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
         }
         // Clear accepted gains before a later conversion can encounter output pressure.
         impact.lifeGain=impact.manaGain=0;impact.contactOverlay=impact.leechOverlay=-1;

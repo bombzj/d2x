@@ -1,9 +1,9 @@
 #include "assassin_summon_content.hpp"
+#include "companion_content.hpp"
 #include "monster_actions_content.hpp"
 #include "item_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_catalog.hpp"
-#include "content/items/item_magic_loot.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/skills/table_values.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <set>
 #include <stdexcept>
 
 namespace d2x {
@@ -25,11 +26,15 @@ void shadowEquipment(server::companions::Prepared &result,Archives &archives,con
     auto &equipment=result.equipment;equipment.player.id=EntityId{1};equipment.player.characterClass="ass";
     equipment.player.level=source.ownerLevel;equipment.containers.equipment=EntityId{1};
     equipment.inventory.containers.emplace(EntityId{1},ContainerState{EntityId{1},{EntityId{1},ContainerKind::Equipment,int(EquipmentSlot::Count),1}});
-    std::map<EquipmentSlot,ItemDefinition> definitions;EquipmentLoadout loadout;loadout.skipRequirements=true;
+    std::map<EquipmentSlot,ItemDefinition> definitions;std::set<EntityId> unidentified;
+    EquipmentLoadout loadout;loadout.skipRequirements=true;
     loadout.requirementPercent=[](const ItemInstance &){return 0;};
     loadout.maximumDurability=[&](const ItemInstance &item){return itemMaximumDurability(data,item,resolveItemStats(data,item,source.ownerLevel));};
-    for(size_t row=0;row<table.rows().size();++row) {
-        if(table.value(row,"monster")!=source.summon.monster || table.number(row,"level").value_or(0)>source.rank) continue;
+    size_t first=0;
+    while(first<table.rows().size() && table.value(first,"monster")!=source.summon.monster) ++first;
+    while(first<table.rows().size() && table.value(first,"monster")==source.summon.monster &&
+        table.number(first,"level").value_or(0)>source.rank) ++first;
+    for(size_t row=first;row<table.rows().size() && table.value(row,"monster")==source.summon.monster;++row) {
         size_t alternatives{};
         while(alternatives<3 && equipmentSlotFromCode(table.value(row,"loc"+std::to_string(alternatives+1)))) ++alternatives;
         const auto choice=std::to_string(limitedRandom(random,uint32_t(alternatives))+1);
@@ -47,14 +52,14 @@ void shadowEquipment(server::companions::Prepared &result,Archives &archives,con
         const auto *definition=data.items.find(code);if(!definition) throw std::runtime_error("Missing native shadow equipment base");
         const auto quality=table.number(row,"mod"+choice).value_or(0);
         const auto itemQuality=quality==4?ItemQuality::Magic:quality==6?ItemQuality::Rare:quality==3?ItemQuality::Superior:ItemQuality::Normal;
-        const auto generated=rollAffixItem(data,*definition,itemQuality,pet.itemLevel,random,"");
-        if(!generated.deferred.empty()) throw std::runtime_error(generated.deferred);
-        random=generated.randomState;auto item=prepareItem(data,{code,1,{},unsigned(pet.itemLevel),generated.generation},random,source.difficulty);
-        item.id=EntityId{equipment.inventory.items.size()+2};item.identified=true;item.requiredLevel=item.socketRequiredLevel=0;
+        auto item=prepareSummonEquipment(data,result,code,itemQuality,pet.itemLevel);
+        item.id=EntityId{equipment.inventory.items.size()+2};
+        if(!item.identified) {unidentified.insert(item.id);item.identified=true;}
         item.location=ContainerLocation{equipment.containers.equipment,{int(*slot),0}};
         auto &stored=equipment.inventory.items.emplace(item.id,std::move(item)).first->second;
-        auto adjusted=*definition;adjusted.equipment.requiredClass.clear();adjusted.base.requiredStrength=adjusted.base.requiredDexterity=adjusted.base.requiredLevel=0;
-        auto &bound=definitions.emplace(*slot,std::move(adjusted)).first->second;loadout.equipped[size_t(*slot)]={&stored,&bound};
+        auto &bound=definitions.emplace(*slot,*definition).first->second;loadout.equipped[size_t(*slot)]={&stored,&bound};
+        equipment.inventory.itemOrder.push_back(stored.id);
+        loadout.inventory.push_back({&stored,&bound});
     }
     auto &stats=result.summon.stats;auto &attributes=stats.attributes;
     const EquipmentActor actor{"ass",attributes.strength,attributes.dexterity,stats.level};
@@ -63,9 +68,19 @@ void shadowEquipment(server::companions::Prepared &result,Archives &archives,con
         [&](EquipmentContribution value){contributions.push_back(std::move(value));}};
     const auto modifiers=deriveEquipmentModifiers(loadout,actor,instructions);
     const EquipmentActor improved{"ass",actor.strength+modifiers.strength,actor.dexterity+modifiers.dexterity,stats.level};
-    const auto gear=deriveEquipmentStats(loadout,improved,attributes.defense+modifiers.defense,modifiers.combat,attributes.attackRating+modifiers.attackRating);
+    auto gear=deriveEquipmentStats(loadout,improved,attributes.defense+modifiers.defense,modifiers.combat,attributes.attackRating+modifiers.attackRating);
+    for(auto &weapon:gear.weapons) if(weapon.item) {
+        const auto &definition=*data.items.find(equipment.inventory.items.at(weapon.item).definition);
+        weapon.strengthBonus=definition.base.strengthBonus.value_or(0);weapon.dexterityBonus=definition.base.dexterityBonus.value_or(0);
+        const auto &types=data.tables.at("itemtypes");
+        for(size_t row=0;row<types.rows().size();++row)
+            if(!types.value(row,"Code").empty() && definition.equipment.isType(types.value(row,"Code"))) weapon.typeLayers.push_back(uint16_t(row));
+    }
+    equipment.inventory.containers.at(equipment.containers.equipment).registeredWeapon=gear.weapons[0].item;
+    std::stable_sort(contributions.begin(),contributions.end(),[](const auto &first,const auto &second){return first.item<second.item;});
     result.equipmentSources=prepareNativeEquipmentSources(data.items,*result.rule.stats,contributions,EntityId{1},
         [&](EntityId id)->const ItemInstance & {return equipment.inventory.items.at(id);},gear.weapons[0].item,StatOwnerKind::Monster).contributions;
+    for(const auto id:unidentified) equipment.inventory.items.at(id).identified=false;
     result.weapon=gear.weapons[0];result.equipmentStats=gear;attributes.strength=improved.strength;attributes.dexterity=improved.dexterity;
 }
 }

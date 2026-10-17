@@ -1,9 +1,13 @@
 #pragma once
 #include "server/runtime/contracts.hpp"
+#include "core/random.hpp"
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
+#include "gameplay/character/persistent_character.hpp"
+#include "gameplay/items/equipment_stats.hpp"
 #include <optional>
+#include <set>
 #include <vector>
 
 namespace d2x::server::monsters {
@@ -17,6 +21,22 @@ struct ModifierPreparation {
 struct PreparedModifiers {
     uint64_t token{};MonsterRule leader;std::map<EntityId,MonsterRule> minions;std::string deferred;
 };
+struct EquipmentPreparation {
+    uint64_t token{},tick{},generation{},gameRandom{},unitRandom{};
+    EntityId actor;uint64_t itemCursor{};RegionId area;MonsterRule rule;
+    int strength{},dexterity{},defense{},rating{};
+    std::set<size_t> uniques,uniquesExpected;
+};
+struct PreparedEquipment {
+    uint64_t token{},gameRandom{},unitRandom{};size_t allocatedItems{};
+    std::shared_ptr<const PersistentCharacter> equipment;
+    std::vector<std::shared_ptr<const StatList>> sources;
+    std::optional<WeaponDamage> weapon;std::optional<EquipmentStats> stats;
+    std::set<size_t> limitedUniques;
+    std::string deferred;
+};
+// Shared native MonEquip row selection; item construction remains in hosting.
+DomainResult<std::vector<MonsterRule::BirthEquipment::Choice>> selectBirthEquipment(const MonsterRule &rule,uint64_t &random);
 struct Admission {
     MonsterIdentity identity;
     std::optional<MonsterKind> implementation;
@@ -31,5 +51,9 @@ struct Admission {
     bool ownsMinions{};
     bool transferMinions{};
     bool wanderTarget{};
+    bool resurrected{};
+    int birthTicks{};
+    bool ignoreSpawnCollision{};
+    bool uncounted{};
 };
 }

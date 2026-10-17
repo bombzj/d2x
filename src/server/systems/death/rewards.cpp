@@ -21,7 +21,7 @@ StepStatus System::advanceRewards(TickContext tick) {
             if(!monster.rule.noTreasure && monster.enemyTarget() && beneficiary) {
                 LootRequest source;source.source=id;source.identity=monster.identity;source.region=monster.area;source.difficulty=monster.rule.difficulty;source.sourceSeed=true;source.rewardModifiers=monsterRewardModifiers(monster.rule.enchantment);source.monsterPlayerCount=monster.admittedPlayerCount;
                 loot::Request request{monster.deathOccurrence,source,beneficiary->player,monster.position};request.environment=true;
-                const auto queued=ports_.loot.queue(request);if(!queued && queued.status==DomainStatus::Capacity) {blocked=true;continue;}
+                const auto queued=ports_.loot.queue(request);if(!queued && isDeferred(queued.status)) {blocked=true;continue;}
             }
             ports_.monsters.rewardComplete(id);continue;
         }
@@ -69,7 +69,7 @@ StepStatus System::advanceRewards(TickContext tick) {
             const auto result=ports_.transactions.resources(actor,killer->characterRevision,
                 std::clamp(killer->persistent.player.hp+Fixed8(reward->second.life),Fixed8{},killer->totals.character.maxLifeFixed),
                 std::clamp(killer->persistent.player.mana+Fixed8(reward->second.mana),Fixed8{},killer->totals.character.maxManaFixed),killer->persistent.player.stamina);
-            if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+            if(isDeferred(result.status)) {blocked=true;continue;}
             if(!result) {ports_.monsters.rewardComplete(id);state_.rewards.erase(reward);continue;}
             reward->second.phase=RewardPhase::HirelingExperience;
         }
@@ -77,7 +77,7 @@ StepStatus System::advanceRewards(TickContext tick) {
             if(reward->second.hireling) {
                 const ActorContext actor{killer->player,killer->actor,killer->area,ports_.areas.at(killer->area).generation,0,tick.tick};
                 const auto result=ports_.companions.awardExperience(actor,*reward->second.hireling);
-                if(result.status==DomainStatus::Capacity) {blocked=true;continue;}
+                if(isDeferred(result.status)) {blocked=true;continue;}
             }
             reward->second.phase=RewardPhase::Loot;
         }

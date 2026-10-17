@@ -18,11 +18,8 @@ SkillFormulaInput formulaInput(const PlayerState &,RuleRandom random = {},std::o
 SkillFormulaInput formulaInput(const PlayerState &,const CharacterRecord &,const attributes::Totals &,
     RuleRandom random={},std::optional<EntityId> weapon={});
 SkillFormulaInput formulaInput(const monsters::Actor &,StatSnapshot sampled,RuleRandom random = {});
-int mastery(const PlayerState &, const std::map<int, std::pair<int, int>> &);
 uint64_t periodicTick(const PlayerState &, int skill, int rank, uint64_t tick);
 uint64_t periodicDuration(const PlayerState &, int skill, int rank, uint64_t tick);
 SkillCastSpec evaluate(const PlayerState &, int skill, int rank);
-std::optional<ChargedSkill> chargedSource(const PlayerState &, int skill, bool right);
 std::optional<SkillUseSource> selectedSource(const PlayerState &, int skill, bool right);
-int coldPierce(const PlayerState &);
 }

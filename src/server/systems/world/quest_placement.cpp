@@ -1,11 +1,62 @@
 #include "system.hpp"
 #include "gameplay/rules/arithmetic.hpp"
+#include "core/random.hpp"
 #include "server/systems/spatial/system.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
 namespace d2x::server::world {
+std::optional<Vec> System::nativeActSpawnLocation(RegionId region,int tile) {
+    const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return {};
+    auto &state=found->second;const auto &area=state.definition;
+    if(tile<0 || tile>13) throw std::invalid_argument("Invalid native spawn tile index");
+    if(!state.levelRandom) state.levelRandom=area.initialLevelRandom;
+    const auto &rooms=area.activation.rooms();
+    std::vector<size_t> order;
+    for(size_t index=0;index<rooms.size();++index) order.push_back(index);
+    std::sort(order.begin(),order.end(),[&](size_t first,size_t second) {
+        return area.populationRooms.at(first).allocationOrder>area.populationRooms.at(second).allocationOrder;
+    });
+    const RoomBounds *selected=nullptr;
+    std::optional<Vec> point;
+    if(area.fixedPosition && tile!=13) {
+        const auto matches=[&](const NativeTileInfo &entry) {
+            return entry.index==tile || (tile==0 && entry.index>=0 && entry.index<=4) || (tile==5 && entry.index>=5 && entry.index<=9);
+        };
+        const auto count=std::count_if(area.tileInfo.begin(),area.tileInfo.end(),matches);
+        int remaining=count?1+int(limitedRandom(*state.levelRandom,uint32_t(count))):0;
+        for(const auto &entry:area.tileInfo) {
+            if(matches(entry)) --remaining;
+            if(remaining<=0) {point=Vec{float(entry.x*5),float(entry.y*5)}-area.origin;break;}
+        }
+        if(!point) return {};
+        selected=area.activation.room(*point);
+    } else {
+        for(const auto index:order) {
+            const auto &layout=area.populationRooms.at(index);
+            if(!layout.waypoint) continue;
+            selected=&rooms[index];
+            if(layout.waypointTile) point=*layout.waypointTile*5.f-area.origin;
+            break;
+        }
+        if(!selected && area.fixedPosition) return {};
+        if(!selected) for(const auto index:order) {
+            if(area.populationRooms.at(index).warp) {selected=&rooms[index];break;}
+        }
+        if(!selected) {
+            const Vec center{float((area.tileX+area.tileWidth/2-2)*5)-area.origin.x,
+                float((area.tileY+area.tileHeight/2-2)*5)-area.origin.y};
+            selected=area.activation.room(center);
+        }
+        if(!selected && !order.empty()) selected=&rooms[order[limitedRandom(*state.levelRandom,uint32_t(order.size()))]];
+        if(selected && !point) point=Vec{float(((int(area.origin.x)+selected->x)/5+selected->width/10)*5)-area.origin.x,
+            float(((int(area.origin.y)+selected->y)/5+selected->height/10)*5)-area.origin.y};
+    }
+    if(!selected || !point) return {};
+    activate(region,{float(selected->x)+.5f,float(selected->y)+.5f});
+    return point;
+}
 std::optional<QuestPosition> System::nativeFreeSpace(RegionId region,Vec observer,Vec requested,int size) const {
     const auto *area=ports_.areas.find(region);if(!area) return {};
     const auto global=requested+area->definition.origin;
@@ -15,19 +66,82 @@ std::optional<QuestPosition> System::nativeFreeSpace(RegionId region,Vec observe
     const auto found=ports_.areas.nativeFreeSpace(*room,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)),size,ports_.spatial.nativeCollisionSample());
     return found?std::optional<QuestPosition>{{found->room.area,found->position}}:std::nullopt;
 }
-std::optional<QuestPosition> System::nativeLinkPortalPosition(RegionId region,Vec requested) const {
-    const auto *area=ports_.areas.find(region);if(!area) return {};
-    const auto global=requested+area->definition.origin;
-    const auto room=ports_.areas.roomAtPosition(region,requested,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+std::optional<QuestPosition> System::nativeActSpawnLocationEx(RegionId region,int tile,int size) {
+    if(size<0 || size>3) return {};
+    const auto point=nativeActSpawnLocation(region,tile);
+    if(!point) return {};
+    const auto &area=ports_.areas.at(region).definition;
+    const auto global=*point+area.origin;
+    const auto room=ports_.areas.roomAtPosition(region,*point,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
     if(!room) return {};
+    const auto free=ports_.areas.nativeFreeCoordinates(*room,nativeAdd(int32_t(std::floor(global.x)),3),
+        nativeAdd(int32_t(std::floor(global.y)),3),size,0x1c09,ports_.spatial.nativeCollisionSample());
+    return free?std::optional<QuestPosition>{{free->room.area,free->position,free->room}}:std::nullopt;
+}
+std::optional<QuestPosition> System::nativeDurielPortalPosition(RegionId region) {
+    const auto point=nativeActSpawnLocationEx(region,0,2);
+    if(!point) return {};
+    const auto &area=ports_.areas.at(point->area).definition;
+    const auto global=point->position+area.origin;
+    const auto room=ports_.areas.roomAtPosition(point->area,point->position,int(global.x),int(global.y));
+    if(!room) return {};
+    const auto free=ports_.areas.nativeFreeCoordinates(*room,int(global.x),int(global.y),2,0x1c09,ports_.spatial.nativeCollisionSample());
+    return free?std::optional<QuestPosition>{{free->room.area,free->position}}:std::nullopt;
+}
+std::optional<QuestPosition> System::nativeWaypointPosition(RegionId region,bool changeAct) {
+    const auto &area=ports_.areas.at(region).definition;
+    const int tile=area.town || int(region)==46 || int(region)==74?13:0;
+    auto point=nativeActSpawnLocationEx(region,tile,2);
+    if(!point) return {};
+    if(changeAct) {
+        const auto &destination=ports_.areas.at(point->area).definition;
+        const auto global=point->position+destination.origin;
+        const auto room=ports_.areas.roomAtPosition(point->area,point->position,int(global.x),int(global.y));
+        if(!room) return {};
+        const auto free=ports_.areas.nativeFreeCoordinates(*room,int(global.x),int(global.y),2,0x1c89,
+            ports_.spatial.nativeCollisionSample(),{},0,false,50,5);
+        if(!free) return {};
+        point=QuestPosition{free->room.area,free->position};
+    }
+    nativeActSpawnLocation(region,tile);
+    return point;
+}
+std::optional<QuestPosition> System::nativeLinkPortalPosition(RegionId region,bool durielOpening) {
+    const auto start=nativeActSpawnLocationEx(region,11,3);
+    if(!start) return {};
+    const auto &initial=ports_.areas.at(start->area).definition;
+    auto global=start->position+initial.origin;
+    auto room=start->room?start->room:ports_.areas.roomAtPosition(start->area,start->position,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
+    if(!room) return {};
+    const auto originalRoom=*room;
+    if(durielOpening) {
+        const auto tomb=nativeActSpawnLocationEx(RegionId{40},12,3);
+        if(tomb && tomb->room) {
+            const auto checked=ports_.areas.nativeFreeCoordinates(*tomb->room,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)),3,0xbe11,
+                ports_.spatial.nativeCollisionSample(),{},0,false,50,7);
+            if(checked) {
+                const auto replacement=tomb->position+ports_.areas.at(tomb->area).definition.origin;
+                const auto &origin=ports_.areas.at(checked->room.area).definition.origin;
+                room=ports_.areas.roomAtPosition(checked->room.area,Vec{float(checked->room.x*5),float(checked->room.y*5)}-origin,
+                    int32_t(std::floor(replacement.x)),int32_t(std::floor(replacement.y)));
+                if(room) global=replacement;
+                else {room=originalRoom;global=start->position+initial.origin;}
+            }
+        }
+    }
     const auto found=ports_.areas.nativeFreeCoordinates(*room,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)),3,0xbe11,
         ports_.spatial.nativeCollisionSample(),{},0,false,50,5);
-    // CreateLinkPortal repeats FindActSpawnLocationEx after search failure,
-    // but retains the original coords for the actual object constructor.
-    return found?std::optional<QuestPosition>{{found->room.area,found->position}}:std::optional<QuestPosition>{{region,requested}};
+    if(found) return QuestPosition{found->room.area,found->position,found->room};
+    const auto fallback=nativeActSpawnLocationEx(region,11,3);
+    const auto destination=fallback && fallback->room?*fallback->room:originalRoom;
+    return QuestPosition{destination.area,global-ports_.areas.at(destination.area).definition.origin,destination};
 }
 // QUESTS_GetFreePosition: D2MOO 5596f5c (MIT, docs/licenses/D2MOO.txt),
 // with the two differing branches checked against retail 1.13c RVA 34130.
+void System::rebindObject(RegionId region,EntityId previous,EntityId current) {
+    auto &area=ports_.areas.areas_.at(region).definition;
+    for(auto &object:area.objects) if(object.id==previous) {object.id=current;break;}
+}
 void System::retainControllerRoom(RegionId region,Vec position,bool retain) {
     const auto found=ports_.areas.areas_.find(region);if(found==ports_.areas.areas_.end()) return;
     auto &area=found->second;const auto &layout=area.definition.activation;

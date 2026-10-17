@@ -49,8 +49,7 @@ class System {
     using ChildSetup=std::function<void(Missile &,const SkillCastSpec &)>;
     Missile &planChild(Advance &,Spawn,Vec origin,Vec direction,int definition,int frames,float speed,Program,
         bool refreshSkill=false,ChildSetup setup={}) const;
-    enum class MonsterChildDamage { Inherited,Elemental,PhysicalAndElemental };
-    Missile &planMonsterChild(Advance &,Missile,MonsterChildDamage) const;
+    Missile &planMonsterChild(Advance &,Missile) const;
     DomainResult<MonsterMissileRule> sampleMonsterRule(MonsterMissileRule,EntityId,uint64_t,std::shared_ptr<const StatList> mode={},std::optional<int> assignedRank={}) const;
     DomainResult<std::vector<Missile>> buildMonster(const MonsterSpawn &,uint64_t &gameRandom,uint64_t &ownerRandom,bool &ownerDrawn) const;
     MissileRule nativeDamageRule(const SkillRules &,int definition,int rank) const;
@@ -78,7 +77,7 @@ class System {
         std::shared_ptr<RoomUnitRegistration> room;
         RegionId area;Vec position;int footprint{};
     };
-    std::vector<Admission> prepareTimers(const std::map<EntityId,Missile> &);
+    std::vector<Admission> prepareTimers(const std::map<EntityId,Missile> &,bool transient=false);
     void publishTimers(std::vector<Admission> &) noexcept;
     std::vector<EntityId> nearbyUnits(const Missile &,std::optional<Vec> at={}) const;
     std::vector<EntityId> nearbyRoomUnits(const Missile &,std::optional<Vec> at={}) const;
@@ -89,9 +88,7 @@ class System {
     bool moveToRoom(Missile &,Vec roomAnchor) const;
     bool creationRoom(Missile &) const;
     bool townAllowed(const Missile &) const;
-    Advance advanceMonster(const Missile &) const;
     combat::SpellImpact enemyImpact(Advance &,std::vector<EntityId>) const;
-    bool monsterCollision(Advance &,EntityId) const;
     Advance advanceWeapon(const Missile &) const;
     Advance advanceGroundThrow(const Missile &) const;
     void weaponImpact(Advance &, Vec) const;
@@ -116,10 +113,12 @@ class System {
     DomainResult<MonsterLaunch> spawnMonster(const MonsterSpawn &);
     std::optional<int> nativeDefinition(std::string_view) const;
     DomainResult<EntityId> spawnNative(const NativeSpawn &);
-    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0,std::span<const DomainFact> extraFacts={});
+    DomainResult<std::shared_ptr<NativeBirthPublication>> prepareNativeBirth(std::span<const NativeSpawn>,size_t actorPrefix=0,std::span<const DomainFact> extraFacts={},std::optional<std::pair<uint64_t,uint64_t>> gameRandom={});
     DomainResult<EntityId> commitNativeBirth(std::shared_ptr<NativeBirthPublication>);
-    DomainResult<> direct(const Spawn &, std::vector<EntityId> targets);
-    DomainResult<DirectContact> directContact(const Spawn &,std::vector<EntityId>,DirectNotice=DirectNotice::Publish);
+    std::optional<combat::SpellImpact> nativeAreaContact(EntityId,bool collisionCallback=false) const;
+    void finishNativeAreaContact(const combat::SpellImpact &);
+    void removeTransient(EntityId);
+    DomainResult<DirectContact> directContact(const Spawn &,std::vector<EntityId>);
     DomainResult<> frameEvent(EntityId,TickContext);
 };
 }

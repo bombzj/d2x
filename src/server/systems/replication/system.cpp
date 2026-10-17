@@ -32,7 +32,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
     if (!player || !player->entered) return result;
     for (const auto &[key, monster] : ports_.monsters.read().actors) {
         if (!ports_.areas.nearby(player->area, player->position + Vec{.5f,.5f}, monster.area, monster.position)) continue;
-        if(!monster.alive() && monster.corpseUnavailable && tick>=monster.busyUntil) continue;
+        if(!monster.alive() && monster.corpse.unavailable && tick>=monster.busyUntil) continue;
         const bool dead = !monster.alive();
         const uint8_t mode = dead ? (tick >= monster.busyUntil ? 12 : 0) : monster.knockedUntil>tick ? 13 : monster.riseUntil > tick ? monster.riseMode : monster.reactionUntil>tick?monster.reactionMode:monster.burrowed?8:(monster.holdPose || monster.poseUntil>tick)?monster.aiPose:1;
         result.push_back({key, monster.area, monster.rule.nativeClass, monster.position,

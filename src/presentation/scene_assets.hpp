@@ -19,6 +19,10 @@ struct LevelRecord;
 struct Map;
 struct ClassicData;
 struct InventoryView;
+struct TownAutomapCell {
+    Sprite image;
+    Vec offset; // full-size native automap coordinates, before the /2 mini division
+};
 // GPU and audio handles belong to the view, never to saveable game state.
 class SceneAssets {
     Archives &archives_;
@@ -119,7 +123,7 @@ class SceneAssets {
     // 0: original maximaps.dc6, 1: original maximap.dc6.
     mutable std::array<std::map<int, Sprite>, 2> automapCels;
     mutable std::optional<Palette> automapColors;
-    mutable std::map<std::tuple<int, int, bool>, std::vector<Sprite>> townAutomapArt;
+    mutable std::map<std::tuple<int, int, bool>, std::vector<TownAutomapCell>> townAutomapArt;
     struct MonsterLight { int radius = 0; Color color{0, 0, 0, 255}; };
     std::map<int, MonsterLight> monsterLights;
     std::map<std::string, GpuAnimation> petPortraits;
@@ -169,7 +173,7 @@ class SceneAssets {
     int automapObjectCel(int objectClass) const { return automapCatalog_.objectCel(objectClass); }
     const Sprite *automapSprite(int cel, bool large) const;
     Color automapColor(Color) const;
-    const std::vector<Sprite> &townAutomapSprites(int level, int variant, bool large) const;
+    const std::vector<TownAutomapCell> &townAutomapSprites(int level, int variant, bool large) const;
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     const LevelRecord &worldLevel(int id) const;
     const std::vector<Sprite> &worldTileSprites(const Map &, int palette) const;

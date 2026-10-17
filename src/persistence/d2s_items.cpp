@@ -50,7 +50,7 @@ void validate(const D2sItem &item, const ItemDefinition &definition, const Class
     require(item.mode == 0 || item.mode == 1 || item.mode == 2 || item.mode == 4 || item.mode == 6, "location");
     require(bool(item.flags & compact) == flag(content, definition, "compactsave"), "compact flag");
     require(item.quality >= 1 && item.quality <= 9, "quality");
-    require(item.level >= 1 && item.level <= 99, "item level");
+    require(item.level >= 1 && item.level <= 127, "item level");
     require(bool(item.flags & earFlag) == bool(item.ear) &&
         bool(item.ear) == definition.equipment.isType("play"), "ear flag/base/identity");
     if (item.ear) {

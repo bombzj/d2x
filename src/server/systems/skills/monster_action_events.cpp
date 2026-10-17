@@ -8,6 +8,8 @@
 #include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/druid_spec.hpp"
 #include "gameplay/skills/behavior.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 
 namespace d2x::server::skills {
@@ -28,11 +30,16 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
     if(!continuing && !ports_.areas.loaded(unit->area,unit->position)) {ports_.monsters.extendAttack(unit->id,tick+1);return done();}
     auto &mode=clock->second;const auto &program=mode.program;
     if(!mode.advanced || mode.lastFrame!=tick) {
-        const auto modifiers=ports_.effects.combatModifiers(unit->id,tick);
         const auto *weapon=unit->petWeapon?&*unit->petWeapon:nullptr;
-        const int speed=program.casting?effectiveCastSpeed(program.animation->speed,modifiers.fasterCast):
-            program.useAttackRate?effectiveAttackSpeed(program.animation->speed,weapon?weapon->fasterAttack:0,weapon?weapon->baseSpeed:0,modifiers.attackRate):
-            program.animationSequence?program.animation->speed:effectiveOtherAnimationSpeed(program.animation->speed,ports_.effects.unitModifiers(unit->id,tick).otherAnimationRate);
+        const auto sampled=ports_.effects.unitStatValues(unit->id,tick,weapon?std::optional{weapon->item}:std::nullopt);
+        if(!sampled || !unit->rule.stats) return {DomainStatus::Unavailable,{}};
+        const auto stat=[&](std::string_view name){return logicalStatValue(*sampled,*unit->rule.stats,name);};
+        auto rate=nativeSubtract(stat("attackrate"),100);
+        if(unit->assassinPet && unit->assassinPet->definition->warp && unit->rule.formulas->skills.at(mode.skill).number("cltstfunc")==9)
+            rate=nativeAdd(rate,unit->rule.formulas->skills.at(mode.skill).number("param4"));
+        const int speed=program.casting?effectiveCastSpeed(program.animation->speed,stat("item_fastercastrate")):
+            program.useAttackRate?effectiveAttackSpeed(program.animation->speed,stat("item_fasterattackrate"),weapon?weapon->baseSpeed:0,rate):
+            program.animationSequence?program.animation->speed:effectiveOtherAnimationSpeed(program.animation->speed,nativeSubtract(stat("other_animrate"),100));
         mode.step=advanceMonsterAnimation(mode.animation,program.animation->frames,speed,program.animationStartFrame,
             program.animationSequence,program.animationFlags);
         mode.lastFrame=tick;mode.advanced=true;
@@ -46,7 +53,8 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
         const auto &release=current->second;
         scripted=release.attack.action==MonsterAttackRule::Action::Charge || release.attack.action==MonsterAttackRule::Action::Leap ||
             release.attack.action==MonsterAttackRule::Action::SwarmMove || release.attack.action==MonsterAttackRule::Action::Animation;
-        scripted|=release.attack.spell && release.attack.spell->effect==SkillBehavior::Inferno;
+        scripted|=release.attack.action==MonsterAttackRule::Action::Skill &&
+            unit->rule.formulas->skills.at(release.request.skill).number("srvdofunc")==19;
         if(release.nativeSkill) {
             const auto &skill=release.nativeSkill->skill;
             scripted|=bool(release.nativeSkill->assassinKick) ||

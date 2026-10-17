@@ -123,6 +123,7 @@ std::vector<EntityId> System::nativeAuraCandidateRecipients(NativeAuraTargetQuer
 }
 void System::prepareImmediateAuraUnit(AuraUnitPublication &plan,const ActorContext &caster,const AuraDefinition &a,
     const SkillAuraChange &change,EntityId id,bool owner,const monsters::Actor *candidate) {
+    if(plan.actors && plan.actors->removals.contains(id)) return;
     const auto active=plan.activeSources.find(id);
     auto *borrowed=active==plan.activeSources.end()?nullptr:active->second;
     if(borrowed) candidate=&borrowed->actor();
@@ -319,9 +320,9 @@ void System::prepareUnitItemAura(AuraUnitPublication &plan,monsters::Actor &cand
     }
     auto &life=plan.life.at(candidate.id);life.itemAuraTimers=timers;life.changed=true;
 }
-void System::stageAuraActors(AuraUnitPublication &plan,std::map<EntityId,monsters::Actor> actors,size_t allocatedIds) {
+void System::stageAuraActors(AuraUnitPublication &plan,std::map<EntityId,monsters::Actor> actors,size_t allocatedIds,std::span<const EntityId> retired) {
     if(plan.actors) throw std::invalid_argument("Duplicate staged aura actors");
-    plan.actors=std::make_shared<monsters::ActorPublication>(ports_.monsters.prepareActorPublication(std::move(actors),allocatedIds));
+    plan.actors=std::make_shared<monsters::ActorPublication>(ports_.monsters.prepareActorPublication(std::move(actors),allocatedIds,{}, {},retired));
 }
 void System::stageSummonEvents(AuraUnitPublication &plan,EntityId id,int skill,int rank,const SkillFormulaCatalog &catalog,uint64_t) const {
     const auto definition=catalog.skills.find(skill);
@@ -410,6 +411,10 @@ void System::prepareStagedItemAuras(AuraUnitPublication &plan,uint64_t tick,cons
     prepareStagedSkillEvents(plan,tick);
 }
 bool System::validateAuraUnits(const AuraUnitPublication &plan) const {
+    if(plan.actors) for(const auto &[id,revision]:plan.actors->removals) {
+        (void)revision;
+        if(plan.units.contains(id) || plan.life.contains(id) || plan.velocity.contains(id)) return false;
+    }
     if(plan.timers.size()!=plan.units.size()) return false;
     for(const auto &[id,timers]:plan.timers) if(!plan.units.contains(id) || !ports_.frameEvents.validate(timers)) return false;
     for(const auto &[id,timers]:plan.resetTimers) if(!plan.life.contains(id) || !plan.life.at(id).aiResetTimers || !ports_.frameEvents.validate(timers)) return false;
@@ -611,7 +616,7 @@ DomainResult<> System::advanceAuraTarget(const ActorContext &actor,EntityId sour
     uint64_t occurrence,int32_t damage,AuraTargetProgress &progress,bool owner,bool *affected) {
     if(!progress.state) {
         const auto result=paladinAura(actor,a,id,duration,owner,false,ports_.players.findActor(source)?EntityId{}:source,affected);
-        if(result.status==DomainStatus::Capacity) return result;
+        if(isDeferred(result.status)) return result;
         progress.accepted=bool(result);progress.state=true;
     }
     if(!owner && progress.accepted) {
@@ -624,7 +629,7 @@ DomainResult<> System::advanceAuraTarget(const ActorContext &actor,EntityId sour
         }
         if(a.serverDoFunction==81 && !progress.post) {
             const auto result=holyFreezeShatter(id,duration,actor.tick);
-            if(result.status==DomainStatus::Capacity) return result;
+            if(isDeferred(result.status)) return result;
             progress.post=true;
         }
     }
@@ -1127,7 +1132,7 @@ StepStatus System::advanceAuraCycle(const ActorContext &actor,const PlayerState 
             affected=redeemed && *redeemed.value;
         } else result=advanceAuraTarget(actor,p.actor,cycle.aura,id,duration,(uint64_t(1)<<61)|cycle.occurrence,
             cycle.damage.value_or(0),cycle.progress,false,&affected);
-        if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        if(isDeferred(result.status)) return StepStatus::Blocked;
         if(result) cycle.callbackAffected|=affected;
         if(id==p.actor && !cycle.recipientsPrepared) {
             if((spec.serverDoFunction==66 || spec.serverDoFunction==81) && area.town) {

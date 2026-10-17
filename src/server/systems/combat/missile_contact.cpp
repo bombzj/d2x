@@ -233,10 +233,10 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
             if(target.player && target.player->transient.effects) uninterruptable=target.player->transient.effects->hasState(missile.uninterruptableState,tick.tick);
             else if(target.monster) uninterruptable=ports_.effects.unitStates(target.id(),tick.tick).contains(missile.uninterruptableState) ||
                 target.monster->aiStates.contains(missile.uninterruptableState);
-            contact.damage.getHit=(impact.areaDamage?(impact.areaDamage->resultFlags&4)!=0:missile.getHit) && !uninterruptable;
+            contact.damage.getHit=(impact.areaDamage && !impact.nativeMissileFlags?(impact.areaDamage->resultFlags&4)!=0:missile.getHit) && !uninterruptable;
             if(!uninterruptable) {
-                contact.damage.softHit|=!impact.areaDamage && !missile.getHit && missile.softHit;
-                if(!impact.areaDamage && missile.knockbackChance && rollRandom(missile.random)%100<missile.knockbackChance) contact.damage.knockback=true;
+                contact.damage.softHit|=(!impact.areaDamage || impact.nativeMissileFlags) && !missile.getHit && missile.softHit;
+                if((!impact.areaDamage || impact.nativeMissileFlags) && missile.knockbackChance && rollRandom(missile.random)%100<missile.knockbackChance) contact.damage.knockback=true;
             }
             contact.flagsPrepared=true;
         }
@@ -261,12 +261,12 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 const auto &equipment=*target.monster->equipmentStats;dualClaws=equipment.animationClass=="ht2";
                 weaponBlock=nativeWeaponBlockChance(equipment,*values,rules);
             }
-            const auto defense=rollNativeBlockOrDodge(block,!impact.areaDamage && contact.damage.channels[0]!=0,target.moving(),weaponBlock,dualClaws,modifiers,true,random);
+            const auto defense=rollNativeBlockOrDodge(block,(!impact.areaDamage || impact.nativeMissileFlags) && contact.damage.channels[0]!=0,target.moving(),weaponBlock,dualClaws,modifiers,true,random);
             contact.blocked=defense.block;contact.avoidance=defense.avoidance;
         }
         const auto result=publishSeed(target,expected,random);if(result!=DomainStatus::Applied) return result;
         contact.defensePrepared=true;
-        if((contact.blocked || contact.avoidance!=WeaponAvoidance::None) && !impact.areaDamage && !impact.missileDamage->getHit && !impact.missileDamage->knockbackChance) {
+        if((contact.blocked || contact.avoidance!=WeaponAvoidance::None) && (!impact.areaDamage || impact.nativeMissileFlags) && !impact.missileDamage->getHit && !impact.missileDamage->knockbackChance) {
             contact.damage.softHit=true;contact.reactionPrepared=true;
         }
     }

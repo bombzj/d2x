@@ -5,14 +5,15 @@
 #include <utility>
 
 namespace d2x::server::missiles {
-std::vector<System::Admission> System::prepareTimers(const std::map<EntityId,Missile> &missiles) {
+std::vector<System::Admission> System::prepareTimers(const std::map<EntityId,Missile> &missiles,bool transient) {
     std::vector<Admission> prepared;prepared.reserve(missiles.size());
     // MISSILES_Initialize deletes previous timers and registers native mode
     // event 0 in the continuous head. Entity IDs do not repeat in this game.
     for(const auto &[id,missile]:missiles) {
         const auto deadline=nativeEventDeadline(missile.created,-1);
-        prepared.push_back({ports_.frameEvents.prepareInsertion({{},
-            {FrameEventUnit::Missile,id},FrameEventType::ModeChange,deadline.due,true}),
+        auto timer=transient?FrameEventQueue::PreparedInsertion{}:ports_.frameEvents.prepareInsertion({{},
+            {FrameEventUnit::Missile,id},FrameEventType::ModeChange,deadline.due,true});
+        prepared.push_back({std::move(timer),
             ports_.areas.prepareRoomUnit(id,3,missile.area,missile.position),missile.area,missile.position,
             missile.nativeDamage && missile.nativeDamage->rule.damageFormulas->missiles.at(missile.definition).number("collision")?
                 missile.collision.size:0});
@@ -22,7 +23,7 @@ std::vector<System::Admission> System::prepareTimers(const std::map<EntityId,Mis
 void System::publishTimers(std::vector<Admission> &prepared) noexcept {
     for(auto &entry:prepared) {
         ports_.areas.publishRoomUnit(*entry.room);ports_.areas.setMissileMask(entry.area,entry.position,entry.footprint,true);
-        ports_.frameEvents.publish(std::move(entry.timer));
+        if(entry.timer.handle()) ports_.frameEvents.publish(std::move(entry.timer));
     }
 }
 }

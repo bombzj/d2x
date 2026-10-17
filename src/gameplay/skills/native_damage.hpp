@@ -4,6 +4,10 @@
 
 namespace d2x {
 class SkillFormulaValues;
+struct NativeStaticField {
+    int32_t percent{},minimumPercent{},minimumDamage{},length{};
+    MissileDamageElement element{};
+};
 // Skills::RollPhysicalDamage, RollElementalDamage and sub_6FD11E40.
 // These functions use the actual casting unit's seed, without a missile seed.
 void addNativeSkillElement(MissileHitDamage &,MissileDamageElement,int32_t damage,int32_t length,uint64_t &random);

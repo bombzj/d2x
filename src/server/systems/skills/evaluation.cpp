@@ -5,7 +5,6 @@
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/skills/resolve.hpp"
-#include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
 #include "gameplay/skills/summon_resolve.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
@@ -87,13 +86,6 @@ SkillFormulaInput formulaInput(const monsters::Actor &unit,StatSnapshot sampled,
     }
     return input;
 }
-int mastery(const PlayerState &player, const std::map<int, std::pair<int, int>> &curves) {
-    int value = 0;
-    for (const auto &[id, curve] : curves)
-        if (const auto rank = player.totals.skillRanks.find(id); rank != player.totals.skillRanks.end())
-            value += skillRankBonus(curve, rank->second);
-    return value;
-}
 SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
     const auto &rules = *player.rules.skills;
     if(!rules.formulas) throw std::runtime_error("Missing native skill formula catalog");
@@ -116,18 +108,10 @@ SkillCastSpec evaluate(const PlayerState &player, int skill, int rank) {
     }
     return result;
 }
-std::optional<ChargedSkill> chargedSource(const PlayerState &player,int skill,bool right) {
-    const auto owner=player.persistent.player.selectedSkillOwners.at(player.persistent.player.weaponSet*2+(right?1:0));
-    const auto source=resolveSkillUseSource(skill,owner,false,0,player.totals.chargedSkills);
-    return source ? source->charged : std::nullopt;
-}
 std::optional<SkillUseSource> selectedSource(const PlayerState &player, int skill, bool right) {
     const auto owner = player.persistent.player.selectedSkillOwners.at(player.persistent.player.weaponSet * 2 + (right ? 1 : 0));
     const auto rank = player.totals.skillRanks.find(skill);
     return resolveSkillUseSource(skill, owner, player.rules.character->innateSkills.contains(skill),
         rank == player.totals.skillRanks.end() ? 0 : rank->second, player.totals.chargedSkills);
-}
-int coldPierce(const PlayerState &player) {
-    return player.totals.character.combat.coldPierce;
 }
 }

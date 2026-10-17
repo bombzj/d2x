@@ -14,6 +14,7 @@ AuraUnitPublication System::prepareDamageStates(monsters::Actor candidate,UnitDa
     stageDamageStates(plan,std::move(candidate),std::move(damage),tick);return plan;
 }
 void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candidate,UnitDamageStates damage,uint64_t tick) const {
+    prepareMonsterModifierEvents(candidate,ports_.monsters.find(candidate.id));
     const auto id=candidate.id;
     if(!candidate.alive() && ((candidate.killMinionsOnDeath && !candidate.minionDeathHandled) ||
         (candidate.ownsNativeMinions && !candidate.ownershipDeathHandled))) {
@@ -52,6 +53,9 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
     unit.area=actor.area;const auto previousStates=unit.states.stateIds(tick);
     MonsterResourceTrace resources(actor,tick,&unit.states);
     const auto observe=[&]{resources.sample(unit.states,true);};
+    for(const auto state:damage.clearStateFlags) {
+        unit.states.setNativeState(state,false);observe();
+    }
     if(const auto *previous=ports_.monsters.find(id);previous && previous->interruption!=actor.interruption)
         unit.states.endModeEffects({},observe);
     if(damage.deathDelay) unit.states.setNativeState(actor.rule.deathDelayState,true);
@@ -117,11 +121,11 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
     if(actor.alive() && damage.contact && life.intrinsic && nativeStatValue(life.intrinsic->values,rules,"hpregen")) plan.resetRegeneration.insert(id);
     if(!actor.alive() && !actor.itemAuraTimers.empty()) {life.itemAuraTimers=std::vector<ItemAuraTimer>{};life.changed=true;}
     const auto before=unitStates(id,tick);auto after=unit.states.stateIds(tick);
-    after.insert(actor.deathStates.begin(),actor.deathStates.end());
-    for(const int state:previousStates) if(!after.contains(state) && !actor.deathStates.contains(state)) {
+    after.insert(actor.corpse.states.begin(),actor.corpse.states.end());
+    for(const int state:previousStates) if(!after.contains(state) && !actor.corpse.states.contains(state)) {
         plan.facts.emplace_back(StateFact{id,1,actor.area,state,false});unit.nativeStats.erase(state);
     }
-    for(const auto &entry:unit.states.entries()) if(entry.spec.nativeState) {
+    for(const auto &entry:unit.states.entries()) if(entry.spec.nativeState && after.contains(entry.spec.state.id)) {
         const auto values=nativeEffectStats(rules,entry.spec);
         if(!before.contains(entry.spec.state.id) || !unit.nativeStats.contains(entry.spec.state.id) || unit.nativeStats.at(entry.spec.state.id)!=values)
             plan.facts.emplace_back(StateFact{id,1,actor.area,entry.spec.state.id,true,values});

@@ -38,6 +38,9 @@ struct AreaGenerator::Impl {
         result.palette = level.palette;
         result.staffTomb = generator.layout().staffTomb;
         result.recipe = generator.recipe(request.level);
+        result.levelRandom=generator.levelRandom(request.level);
+        result.tileInfo=generator.levelTileInfo(request.level);
+        result.placement=generator.layout().levels.at(request.level);
         result.rooms = std::move(anchors);
         for (const auto id : rooms) {
             const auto &room = generator.tiles().rooms().at(id);
@@ -50,6 +53,15 @@ struct AreaGenerator::Impl {
             RoomPopulationLayout logical;
             logical.x=room.room.x;logical.y=room.room.y;
             logical.width=room.room.width;logical.height=room.room.height;
+            logical.waypoint=(room.room.flags&0x30000u)!=0;
+            logical.allocationOrder=id;
+            for(size_t slot=0;slot<room.warpSlots.size();++slot)
+                logical.warp|=(room.room.flags&(0x10u<<slot))!=0 && room.warpSlots[slot]!=-1;
+            if(logical.waypoint) for(const auto &unit:room.authoredUnits) {
+                if(unit.unit.type==2 && unit.unit.id>=0 && unit.unit.id<573 && generator.waypointObject(unit.unit.id)) {
+                    logical.waypointTile=Vec{float(unit.unit.x/5),float(unit.unit.y/5)};break;
+                }
+            }
             logical.single=room.singleLogicalRegion;logical.cells=room.logicalCells;
             for(const auto floor:room.floors) {
                 const auto &tile=generator.tiles().tiles().at(floor);

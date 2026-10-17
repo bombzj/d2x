@@ -27,7 +27,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         ports_.skills.cancel(actor.player, actor.actor);
         if (meleeDistance(player->position, 2, found->position, 2) <= 8) {
             const auto result = recover(actor, found->id);
-            if (result.status != DomainStatus::Capacity || ports_.transactions.hasOutputCapacity()) return result;
+            if (!isDeferred(result.status) || ports_.transactions.hasOutputCapacity()) return result;
             state_.recoveries.insert_or_assign(actor.player, Recovery{actor, found->id, player->locomotionSequence});
             return {DomainStatus::Applied, std::monostate{}};
         }
@@ -47,7 +47,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     const auto *town = ports_.areas.find(townId);
     if (!town) {
         const auto prepared = ports_.world.requestTown(actor);
-        if (!prepared) { if (prepared.status != DomainStatus::Capacity) death->second.reviving = false; return {prepared.status, {}}; }
+        if (!prepared) { if (!isDeferred(prepared.status)) death->second.reviving = false; return {prepared.status, {}}; }
         return {DomainStatus::Applied, std::monostate{}};
     }
     ports_.world.activate(townId, town->definition.spawn);
@@ -55,10 +55,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     transactions::CharacterEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(record), transactions::ResourceRefresh::LevelUp};
     edit.revival = PointTarget{townId, town->generation, town->definition.spawn};
     auto plan = ports_.transactions.prepare(std::move(edit));
-    if (!plan) { if (plan.status == DomainStatus::Capacity) return {DomainStatus::Applied, std::monostate{}}; death->second.reviving = false; return {plan.status, {}}; }
+    if (!plan) { if (isDeferred(plan.status)) return {DomainStatus::Applied, std::monostate{}}; death->second.reviving = false; return {plan.status, {}}; }
     const auto result = ports_.transactions.commit(std::move(*plan.value));
     if (result) { state_.transitions.erase(death); state_.recoveries.erase(actor.player); }
-    else if (result.status == DomainStatus::Capacity) return {DomainStatus::Applied, std::monostate{}};
+    else if (isDeferred(result.status)) return {DomainStatus::Applied, std::monostate{}};
     else death->second.reviving = false;
     return result;
 }
@@ -75,7 +75,7 @@ void System::advanceRecovery(TickContext tick) {
         if (reached) {
             auto actor = request.actor; actor.tick = tick.tick;
             const auto result = recover(actor, request.corpse);
-            if (result.status == DomainStatus::Capacity && !ports_.transactions.hasOutputCapacity()) { ++pending; continue; }
+            if (isDeferred(result.status) && !ports_.transactions.hasOutputCapacity()) { ++pending; continue; }
             if (result) ports_.movement.execute(actor, {MovementAction::Stop, {}, false});
         }
         pending = state_.recoveries.erase(pending);

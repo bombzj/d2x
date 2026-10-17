@@ -132,7 +132,7 @@ DomainResult<> System::useSpecial(const ActorContext &actor,const Request &reque
         const auto at=returning?portal.townPosition:portal.fieldPosition;
         if((at-p->position).length()>portal.rule.range || !area->definition.collision.segment(p->position,at,{},playerMovement)) return {DomainStatus::InvalidRequest,{}};
         Transition next{actor.area,returning?portal.field:portal.town,0,actor.areaGeneration,actor.sequence,request.source.id,p->position,returning?portal.fieldPosition:portal.townPosition};next.kind=Kind::SpecialPortal;
-        state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
+        state_.transitions[actor.player]=next;auto &player=ports_.players.players_.at(actor.player);player.locomotionSequence=actor.sequence;player.route.clear();player.moving=false;return {DomainStatus::Applied,std::monostate{}};
     }
     for(const auto &[owner,portal]:state_.portals) {
         const bool returning=portal.town==actor.area && portal.townId==request.source.id;

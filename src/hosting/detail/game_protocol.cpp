@@ -111,12 +111,7 @@ void NativeRealmService::finishPendingLeave() {
             for(auto *guest:shared.peers) if(guest!=this && guest->binding && guest->binding->game==binding->game)
                 if(!host.prepareSave(*guest->binding) || !host.exportCharacter(*guest->binding)) return;
     }
-    close(!preparedReload, preparedReload);
-    // TCP/IP B0 is a system-channel acknowledgment. The original game loop
-    // needs 05/06 to unload and finish leaving, after the save was returned.
-    sendGame({0x05});
-    sendGame({0x06});
-    sendGame({0xB0});
+    endGame(!preparedReload, preparedReload);
 }
 void NativeRealmService::ping(net::protocol::Reader &in) {
     in.u32(); in.u32(); in.u32(); in.finish();

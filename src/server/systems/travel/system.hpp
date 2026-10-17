@@ -16,8 +16,8 @@ namespace d2x::server::travel {
 enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject };
 enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit, Shrine };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
-struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; };
-struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{}; };
+struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration; };
+struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom,townRoom; };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };
@@ -27,10 +27,12 @@ class System {
     State state_;
     const Ports ports_;
     uint64_t nextWaypointRevision_=1;
+    struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
+    std::map<EntityId,NativeLinkPosition> nativeLinks_;
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
     bool waypointBusy(PlayerId) const;
     StepStatus expireSynchronizations(TickContext);
-    DomainResult<SpecialPortalPlan> prepareWorldPortal(RegionId,int,uint64_t,Vec,const PortalRule &,bool blue,bool exactSource);
+    DomainResult<SpecialPortalPlan> prepareWorldPortal(RegionId,int,uint64_t,Vec,const PortalRule &,bool blue,bool exactSource,bool durielOpening=false);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
@@ -38,6 +40,7 @@ class System {
     DomainResult<> createPortal(const ActorContext &,std::optional<ItemHandle> = {},std::optional<int> skill = {});
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
     DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick);
+    DomainResult<> linkNativePortal(EntityId source,uint64_t tick);
     void commitSpecialPortal(SpecialPortalPlan plan) noexcept {state_.specialPortals.swap(plan.next);}
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
     DomainResult<> useSpecial(const ActorContext &,const Request &,std::optional<int> remoteRange = {});

@@ -15,11 +15,24 @@
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
+#include "server/systems/loot/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server::monsters {
+DomainResult<std::vector<MonsterRule::BirthEquipment::Choice>> selectBirthEquipment(const MonsterRule &rule,uint64_t &random) {
+    size_t first=0;
+    while(first<rule.birthEquipment.size() && rule.birthEquipment[first].level>rule.level) ++first;
+    std::vector<MonsterRule::BirthEquipment::Choice> result;
+    for(size_t index=first;index<rule.birthEquipment.size();++index) {
+        const auto &choices=rule.birthEquipment[index].choices;
+        if(choices.empty()) return {DomainStatus::InvalidRequest,{}};
+        result.push_back(choices.at(limitedRandom(random,uint32_t(choices.size()))));
+    }
+    return {DomainStatus::Applied,std::move(result)};
+}
+
 int movementPercent(const Actor &actor,uint64_t tick) {
     const int64_t value=int64_t(actor.velocityPercent)+actor.effectVelocity+actor.hirelingMovementPercent+
         (actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0);
@@ -89,41 +102,63 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     if(!area->definition.collision.walkable(request.position,rule.spawnCollision)) return {DomainStatus::Unavailable,{}};
     if (state_.actors.size() >= 65536 || ports_.ids.cursor() >= UINT32_MAX) return {DomainStatus::Capacity, {}};
     auto random=ports_.random;ComponentPaletteState palettes;
-    auto actor=prepareAdmissionActor(request,EntityId{ports_.ids.cursor()},random,palettes);
-    const auto id=actor.id;auto room=actor.roomAdmission;
+    auto prepared=prepareAdmissionActor(request,EntityId{ports_.ids.cursor()},random,palettes);
+    if(!prepared) return {prepared.status,{}};
+    auto actor=std::move(*prepared.value);
+    const auto id=actor.id;
+    const auto allocated=1+actor.birthEquipmentItems;
     std::map<EntityId,Actor> candidate;candidate.emplace(id,std::move(actor));
-    ports_.ids.allocate();ports_.random=random;publishComponents(palettes);
-    for(auto &[key,unit]:candidate) {(void)key;publishInitialAi(unit);}
-    state_.actors.merge(candidate);ports_.areas.publishRoomUnit(*room);
+    auto publication=prepareActorPublication(std::move(candidate),allocated);
+    if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+    publishComponents(palettes);publishActors(publication);ports_.random=random;
     return finish(id);
 }
-Actor System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes) const {
+DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes,uint64_t itemCursor,const std::set<size_t> *stagedUniques) {
     const auto &rule=*request.rule;
     Actor actor;
+    actor.admissionTick=request.tick;
     actor.hostile=request.hostile;
-    actor.questNpc=!request.hostile;actor.rewardComplete=!request.hostile;
+    actor.restoredFromInactive=request.resurrected;
+    actor.uncounted=request.uncounted || rule.neverCount;
+    actor.questNpc=!request.hostile && rule.ai.kind!=MonsterAiKind::GoodNpcRanged;actor.rewardComplete=!request.hostile;
     const auto entered=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &v){return v.second.entered;}));
     actor.admittedPlayerCount=rule.alignment?1u:std::clamp(std::max(entered,ports_.settings.virtualPlayers),1u,8u);
     actor.id = id; actor.identity = request.identity; actor.implementation = request.implementation;
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
+    actor.admissionRule=std::make_shared<const MonsterRule>(rule);
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.combatRandom=childRandom(random);
-    if(request.hostile && !request.deadMode)
+    if(request.hostile && !request.deadMode) {
+        uint64_t delay=1;
+        if(request.birthTicks<=0) {
+            const bool clients=std::any_of(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry) {
+                const auto &player=entry.second;
+                return player.entered && ports_.areas.nearby(player.area,player.position+Vec{.5f,.5f},actor.area,actor.position);
+            });
+            delay=clients?2:uint64_t(rule.neutralDelayTicks>0?rule.neutralDelayTicks:15);
+        }
         actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
-            {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,request.tick+1}));
+            {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,request.tick+delay}));
+    }
     if(request.hostile) actor.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
         {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,request.tick+1,true}));
     prepareInitialTimers(actor,request.tick);
-    palettes=prepareComponents(actor);
-    const auto rolledLife=nativeAdd(rule.minimumLife,int32_t(limitedRandom(actor.combatRandom,uint32_t(nativeAdd(nativeSubtract(rule.maximumLife,rule.minimumLife),1)))));
+    palettes=prepareComponents(actor,&palettes);
+    const auto rolledLife=rollMonsterLife(rule.minimumLife,rule.maximumLife,actor.combatRandom);
     // D2MOO MONSTER_GetHpBonus/GetExperienceBonus: +50% per additional
     // entered/virtual player, captured at admission. Non-evil alignment uses one.
     const auto lifeBonus=int32_t(50*(actor.admittedPlayerCount-1));
     const auto admittedLife=std::min(nativeAdd(rolledLife,nativePercentage(rolledLife,lifeBonus,100)),(1<<23)-1);
     actor.life=actor.maximumLife=nativeShiftLeft(admittedLife,8);actor.modeAlive=admittedLife==0;
     if(request.deadMode) {actor.life=0;actor.modeAlive=false;actor.deathTick=request.tick;actor.rewardComplete=true;}
+    else if(request.birthTicks>0) {
+        actor.riseMode=8;actor.riseUntil=actor.busyUntil=request.tick+uint64_t(request.birthTicks);
+        actor.neutralAt=actor.riseUntil;
+    }
     playerCountBonus(actor.rule,actor.admittedPlayerCount);
     actor.nativeStats=attributes::prepareMonsterStatSources(actor,ports_.areas.statTime(actor.area));
+    const auto equipped=prepareAdmissionEquipment(actor,random,itemCursor?itemCursor:uint64_t(id.value)+1,stagedUniques);
+    if(!equipped) return {equipped.status,{}};
     if(rule.enchantment) {
         attributes::MonsterResourceTrace resources(actor,request.tick);
         auto maximum=resources.read().maximum.raw();
@@ -141,25 +176,122 @@ Actor System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_
         actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
     }
     actor.roomAdmission=ports_.areas.prepareRoomUnit(id,1,actor.area,actor.position);
-    return actor;
+    return {DomainStatus::Applied,std::move(actor)};
 }
-ComponentPaletteState System::prepareComponents(Actor &actor) const {
+std::optional<EquipmentPreparation> System::pendingEquipment() {
+    std::erase_if(birthEquipment_,[&](const auto &entry) {
+        const auto &request=entry.second.first;const auto *area=ports_.areas.find(request.area);
+        return !area || area->generation!=request.generation || state_.actors.contains(request.actor) ||
+            request.tick<ports_.frameEvents.currentFrame();
+    });
+    for(const auto &[token,entry]:birthEquipment_) if(!entry.second) return entry.first;
+    return {};
+}
+DomainResult<> System::prepareEquipment(PreparedEquipment prepared) {
+    const auto found=birthEquipment_.find(prepared.token);
+    if(found==birthEquipment_.end()) return {DomainStatus::Stale,{}};
+    if(found->second.second) return {DomainStatus::Conflict,{}};
+    const auto &request=found->second.first;
+    if(prepared.deferred.empty()) {
+        if(!prepared.equipment || !prepared.stats || request.itemCursor>UINT32_MAX || prepared.allocatedItems>UINT32_MAX-request.itemCursor)
+            return {DomainStatus::InvalidRequest,{}};
+        auto unitRandom=request.unitRandom;
+        const auto selection=selectBirthEquipment(request.rule,unitRandom);
+        if(!selection || unitRandom!=prepared.unitRandom || prepared.allocatedItems>selection.value->size())
+            return {DomainStatus::InvalidRequest,{}};
+        const auto &selected=*selection.value;
+        auto random=request.gameRandom;
+        for(size_t index=0;index<prepared.allocatedItems;++index) {rollNativeItemSeeds(random);}
+        if(random!=prepared.gameRandom || prepared.equipment->inventory.items.size()>prepared.allocatedItems)
+            return {DomainStatus::InvalidRequest,{}};
+        std::set<int> slots;size_t selectedIndex=0;
+        for(const auto &[id,item]:prepared.equipment->inventory.items) {
+            const auto *location=std::get_if<ContainerLocation>(&item.location);
+            if(id!=item.id || id.value<request.itemCursor || id.value-request.itemCursor>=prepared.allocatedItems ||
+                !item.socketedItems.empty() || !(item.nativeFlags&0x1000) || !location || location->container!=request.actor ||
+                location->cell.x<0 || location->cell.x>=10 || location->cell.y || !slots.insert(location->cell.x).second ||
+                item.level!=unsigned(request.rule.level))
+                return {DomainStatus::InvalidRequest,{}};
+            while(selectedIndex<selected.size() && (selected[selectedIndex].body!=location->cell.x+1 ||
+                selected[selectedIndex].code!=item.definition)) ++selectedIndex;
+            if(selectedIndex==selected.size()) return {DomainStatus::InvalidRequest,{}};
+            ++selectedIndex;
+        }
+        if(prepared.sources.size()!=prepared.equipment->inventory.items.size() ||
+            (prepared.weapon && !prepared.equipment->inventory.items.contains(prepared.weapon->item))) return {DomainStatus::InvalidRequest,{}};
+        for(const auto &source:prepared.sources)
+            if(!source || source->ownerKind!=StatOwnerKind::Item || !source->unitRoot ||
+                !prepared.equipment->inventory.items.contains(source->source.owner)) return {DomainStatus::InvalidRequest,{}};
+        for(const auto row:prepared.limitedUniques) {
+            if(request.uniques.contains(row) || std::none_of(prepared.equipment->inventory.items.begin(),prepared.equipment->inventory.items.end(),
+                [&](const auto &entry){return entry.second.quality==ItemQuality::Unique && entry.second.specialRow>=0 && size_t(entry.second.specialRow)==row;}))
+                return {DomainStatus::InvalidRequest,{}};
+        }
+    }
+    found->second.second=std::move(prepared);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::prepareAdmissionEquipment(Actor &actor,uint64_t &random,uint64_t itemCursor,const std::set<size_t> *stagedUniques) {
+    if(actor.rule.birthEquipment.empty()) return {DomainStatus::Applied,std::monostate{}};
+    const auto &area=ports_.areas.at(actor.area);
+    auto uniques=ports_.loot.read().uniques;
+    if(stagedUniques) uniques.insert(stagedUniques->begin(),stagedUniques->end());
+    std::erase_if(birthEquipment_,[&](const auto &entry) {
+        return entry.second.first.actor==actor.id && (entry.second.first.uniques!=uniques ||
+            entry.second.first.uniquesExpected!=ports_.loot.read().uniques);
+    });
+    auto found=std::find_if(birthEquipment_.begin(),birthEquipment_.end(),[&](const auto &entry) {
+        const auto &request=entry.second.first;
+        return request.actor==actor.id && request.area==actor.area && request.generation==area.generation &&
+            request.tick==actor.admissionTick && request.itemCursor==itemCursor && request.rule.nativeClass==actor.rule.nativeClass &&
+            request.rule.level==actor.rule.level && request.unitRandom==actor.combatRandom && request.gameRandom==random;
+    });
+    if(found==birthEquipment_.end()) {
+        if(nextEquipmentToken_==UINT64_MAX || birthEquipment_.size()>=65536 || itemCursor>UINT32_MAX) return {DomainStatus::Capacity,{}};
+        std::erase_if(birthEquipment_,[&](const auto &entry) {return entry.second.first.actor==actor.id;});
+        const auto stat=[&](std::string_view name){return nativeStatValue(actor.nativeStats->values,*actor.rule.stats,name);};
+        EquipmentPreparation request;request.token=nextEquipmentToken_++;request.tick=actor.admissionTick;request.generation=area.generation;
+        request.actor=actor.id;request.itemCursor=itemCursor;request.area=actor.area;request.rule=actor.rule;
+        request.unitRandom=actor.combatRandom;request.gameRandom=random;
+        request.uniques=std::move(uniques);request.uniquesExpected=ports_.loot.read().uniques;
+        request.strength=stat("strength");request.dexterity=stat("dexterity");request.defense=stat("armorclass");request.rating=stat("tohit");
+        const auto token=request.token;
+        birthEquipment_.emplace(token,std::pair{std::move(request),std::optional<PreparedEquipment>{}});
+        return {DomainStatus::PendingContent,{}};
+    }
+    if(!found->second.second) return {DomainStatus::PendingContent,{}};
+    const auto &prepared=*found->second.second;
+    if(!prepared.deferred.empty()) return {DomainStatus::NotImplemented,{}};
+    actor.equipment=std::make_shared<PersistentCharacter>(*prepared.equipment);actor.equipmentStats=prepared.stats;
+    actor.petWeapon=prepared.weapon;actor.birthEquipmentItems=prepared.allocatedItems;
+    actor.birthUniquesExpected=found->second.first.uniquesExpected;actor.birthLimitedUniques=prepared.limitedUniques;
+    actor.nativeCharges.clear();actor.nativeChargesTracked=true;
+    attributes::MonsterResourceTrace resources(actor,actor.admissionTick);
+    resources.observeSourceWrites([&](StatValue write,EntityId source,const StatSnapshot &stats,std::shared_ptr<const StatList> root) {
+        attributes::dispatchMonsterItemAura(actor,resources,write,source,stats,std::move(root),{});
+    });
+    for(const auto &source:prepared.sources) resources.postIntrinsicSource(source,{});
+    if(!actor.preparedItemAuras.empty()) {
+        found->second.second->deferred="Native MonEquip item aura publication is not implemented";
+        return {DomainStatus::NotImplemented,{}};
+    }
+    auto change=resources.take();actor.nativeStats=std::move(change.intrinsic);actor.life=change.life.raw();actor.maximumLife=change.maximum.raw();
+    actor.combatRandom=prepared.unitRandom;random=prepared.gameRandom;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+ComponentPaletteState System::prepareComponents(Actor &actor,const ComponentPaletteState *staged) const {
     // MONSTERREGION::sub_6FC67FA0 applies to NPCs as well as hostile units.
     // Lazy classes use the actual area's palette and thirteen-class bound.
     const auto &rule=actor.rule;
-    ComponentPaletteState candidate;
+    ComponentPaletteState candidate=staged?*staged:ComponentPaletteState{};
     if(rule.skipRegionComponents) {
         actor.components=chooseMonsterComponents(rule.componentCounts,{},actor.combatRandom);
         actor.shield=actor.components[7]<rule.shieldChoices.size() && rule.shieldChoices[actor.components[7]];
         return candidate;
     }
     const auto current=state_.componentPalettes.find(actor.area);
-    auto &palettes=candidate.emplace(actor.area,current==state_.componentPalettes.end()?
+    auto &palettes=candidate.try_emplace(actor.area,current==state_.componentPalettes.end()?
         ports_.areas.at(actor.area).definition.componentPalettes:current->second).first->second;
-    auto palette=palettes.find(rule.nativeClass);
-    if(palette==palettes.end() && rule.totalPieces>2 && palettes.size()<13)
-        palette=palettes.emplace(rule.nativeClass,monsterComponentPalette(rule.componentCounts,actor.combatRandom)).first;
-    actor.components=chooseMonsterComponents(rule.componentCounts,palette==palettes.end()?MonsterComponentPalette{}:palette->second,actor.combatRandom);
+    actor.components=chooseRegionMonsterComponents(rule.componentCounts,rule.nativeClass,rule.totalPieces,palettes,actor.combatRandom);
     if(rule.sharedRandomComponents) {
         const auto value=uint8_t(rollRandom(actor.combatRandom)&3);
         for(size_t slot=0;slot<actor.components.size();++slot)
@@ -186,7 +318,7 @@ void System::admitNpc(EntityId id,RegionId region,Vec position,const NpcRule &np
     const auto &rule=actor.rule;
     if(rule.minimumLife<0 || rule.maximumLife<rule.minimumLife || !rule.stats || !rule.formulas)
         throw std::invalid_argument("Invalid prepared NPC resources");
-    const auto base=nativeAdd(rule.minimumLife,int32_t(limitedRandom(actor.combatRandom,uint32_t(nativeAdd(nativeSubtract(rule.maximumLife,rule.minimumLife),1)))));
+    const auto base=rollMonsterLife(rule.minimumLife,rule.maximumLife,actor.combatRandom);
     const auto hp=std::min(nativeAdd(base,nativePercentage(base,int32_t(50*(actor.admittedPlayerCount-1)),100)),(1<<23)-1);
     actor.life=actor.maximumLife=nativeShiftLeft(hp,8);actor.modeAlive=hp==0;
     actor.rewardComplete=true; // Service/quest actors have no hostile loot transaction.
@@ -367,12 +499,12 @@ DomainResult<Actor> System::prepareDeathActor(const Actor &current,uint64_t tick
     unit.movementTarget={};unit.aiPose=0;unit.holdPose=false;unit.poseUntil=unit.riseUntil=unit.reactionUntil=0;
     unit.chilledUntil=unit.frozenUntil=unit.stunnedUntil=0;unit.shatterActive=false;unit.delayedDeathSource.reset();
     const auto kind=unit.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
-    unit.deathStates.clear();
+    unit.corpse.states.clear();
     if(unit.rule.states) for(const auto state:ports_.effects.unitStates(id,tick)) {
         const auto definition=unit.rule.states->find(state);
         if(definition!=unit.rule.states->end() && definition->second.stayOnDeath[size_t(kind)]) {
-            unit.deathStates.insert(state);
-            unit.corpseUnavailable|=definition->second.hideOnDeath || definition->second.shatterOnDeath || definition->second.corpseUnselectable;
+            unit.corpse.states.insert(state);
+            unit.corpse.unavailable|=definition->second.hideOnDeath || definition->second.shatterOnDeath || definition->second.corpseUnselectable;
         }
     }
     unit.aiStates.clear();++unit.interruption;++unit.revision;
@@ -441,7 +573,7 @@ std::vector<Actor> System::prepareMinionDeaths(Actor candidate,uint64_t tick,con
 }
 DomainResult<> System::scriptDeath(EntityId id,uint64_t tick) {
     const auto *live=find(id);if(!live) return {DomainStatus::InvalidActor,{}};
-    if(!live->alive()) return {DomainStatus::Applied,std::monostate{}};
+    if(!live->alive()) return ports_.effects.monsterDeathEffect(id,tick);
     const auto &current=*live;
     auto prepared=prepareDeathActor(id,tick);if(!prepared) return {prepared.status,{}};
     auto unit=std::move(*prepared.value);
@@ -456,7 +588,7 @@ DomainResult<> System::scriptDeath(EntityId id,uint64_t tick) {
     ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicSkills);
     ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicStats);
     for(auto &cascade:cascades) ports_.frameEvents.publish(std::move(cascade));
-    return {DomainStatus::Applied,std::monostate{}};
+    return ports_.effects.monsterDeathEffect(id,tick);
 }
 DomainResult<> System::finishTrap(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.rule.environmentController) return {DomainStatus::InvalidActor,{}};
@@ -491,10 +623,10 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
         std::pair{request.expectedRandom,request.nextRandom});
 }
 DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::vector<int> modifiers,
-    std::span<const EntityId> minions,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random,bool promoteMinions) {
+    std::span<const EntityId> minions,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random,bool promoteMinions,std::optional<uint16_t> nameSeed) {
     const auto *actor=find(id);
     if(!actor || !actor->alive() || modifiers.size()>9 ||
-        (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique))
+        (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique && !(nameSeed && rank==MonsterRank::Minion)))
         return {DomainStatus::InvalidRequest,{}};
     if(modifierPending_) return {DomainStatus::Conflict,{}};
     if(nextModifierToken_==UINT64_MAX || actor->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
@@ -508,7 +640,9 @@ DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::v
         return resources.values(ports_.effects.unitStatSources(unit.id,tick)).get({unit.rule.stats->names.at("level"),0});
     };
     request.leader={id,actor->revision,actor->identity,currentLevel(*actor),actor->rule.nativeClass};request.leader.identity.rank=rank;
-    request.selection.ids=std::move(modifiers);request.selection.nameSeed=uint16_t(rollRandom(request.nextRandom));
+    request.selection.ids=std::move(modifiers);
+    const auto rolledName=rank==MonsterRank::Minion?uint16_t{}:uint16_t(rollRandom(request.nextRandom));
+    request.selection.nameSeed=nameSeed.value_or(rolledName);
     for(const auto child:minions) {
         const auto *minion=find(child);
         if(!minion || minion->area!=actor->area || !minion->alive() || child==id) return {DomainStatus::Stale,{}};
@@ -557,6 +691,9 @@ StepStatus System::finishModifiers(TickContext context) {
         auto candidate=current;candidate.rule=std::move(next);candidate.identity.rank=rank;
         candidate.rule.baseSkillRanks=current.rule.baseSkillRanks;
         candidate.rule.noTreasure=current.rule.noTreasure;candidate.rule.noExperience=current.rule.noExperience;
+        candidate.rule.selfResurrection=current.rule.selfResurrection;candidate.rule.restore=current.rule.restore;
+        candidate.rule.neverCount=current.rule.neverCount;
+        candidate.rule.flying=current.rule.flying;
         const auto &mods=*candidate.rule.enchantment;
         attributes::MonsterResourceTrace resources(candidate,tick);
         const auto sources=ports_.effects.unitStatSources(current.id,tick);
@@ -604,8 +741,9 @@ StepStatus System::finishModifiers(TickContext context) {
         return candidate;
     };
     std::map<EntityId,Actor> candidates;
-    auto leader=upgrade(actor,std::move(rule),request.leader.identity.rank,true);
-    leader.identity.ownerSpawnKey.clear();leader.combatRandom=request.nextRandom;
+    auto leader=upgrade(actor,std::move(rule),request.leader.identity.rank,request.leader.identity.rank!=MonsterRank::Minion);
+    if(request.leader.identity.rank!=MonsterRank::Minion) leader.identity.ownerSpawnKey.clear();
+    leader.combatRandom=request.nextRandom;
     leader.rule.nativeModifiers=request.selection.ids;
     candidates.emplace(id,std::move(leader));
     for(const auto &unit:request.minions) {
@@ -614,13 +752,15 @@ StepStatus System::finishModifiers(TickContext context) {
         next.nativeModifiers=next.enchantment->ids;
         candidates.emplace(unit.id,upgrade(minion,std::move(next),request.promoteMinions?MonsterRank::Minion:minion.identity.rank,false));
     }
-    for(auto &[otherId,candidate]:candidates) state_.actors.at(otherId)=std::move(candidate);
+    auto publication=prepareActorPublication(std::move(candidates),0);
+    if(!validateActors(publication)) return StepStatus::Blocked;
+    publishActors(publication);
     modifierCommitted_=true;
     }
     if(actor.rule.enchantment->aura) {
         const auto &aura=*actor.rule.enchantment->aura;
         const auto assigned=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
-        if(!assigned) return assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Conflict
+        if(!assigned) return isDeferred(assigned.status) || assigned.status==DomainStatus::Conflict
             ?StepStatus::Blocked:StepStatus::NotImplemented;
     }
     modifierPending_.reset();modifierPrepared_.reset();modifierCommitted_=false;
@@ -763,6 +903,7 @@ void System::finishAction(EntityId id,uint64_t tick) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce,bool softHit,std::optional<uint64_t> freezeLength,std::optional<bool> getHit,DamageStatus status) {
     auto it = state_.actors.find(id);
+    if(it!=state_.actors.end() && !it->second.alive() && it->second.rule.deathBurst) return ports_.effects.monsterDeathEffect(id,tick);
     if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
     if(it->second.revision>UINT64_MAX-4) return {DomainStatus::Capacity,{}};
     auto actor = it->second;
@@ -812,8 +953,8 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     }
     const auto receivedCold=coldApplied && chilled>actor.chilledUntil?chilled:0;
     const auto receivedFreeze=appliedFreeze?frozen:0;
-    auto deathStates=actor.deathStates;
-    bool corpseUnavailable=actor.corpseUnavailable;
+    auto deathStates=actor.corpse.states;
+    bool corpseUnavailable=actor.corpse.unavailable;
     if(dead) {
         const auto retain=[&](const CombatStateDefinition &state,bool enabled) {
             const auto kind=actor.rule.boss?EffectUnitKind::Boss:EffectUnitKind::Monster;
@@ -867,7 +1008,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
-    actor.shatterActive=shatterActive;actor.deathStates=std::move(deathStates);
+    actor.shatterActive=shatterActive;actor.corpse.states=std::move(deathStates);
     actor.stunnedUntil=stunned;
     actor.poison=poisoned;
     const bool appliedWound=life && bool(wound);
@@ -887,7 +1028,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         actor.itemAuraTimers.clear();
         // Fn043 marks an exhausted nest NOTC before its own death action.
         if(source==id && (actor.rule.ai.kind==MonsterAiKind::FoulCrowNest || actor.rule.ai.kind==MonsterAiKind::Sarcophagus)) actor.rule.noTreasure=true;
-        actor.corpseUnavailable=corpseUnavailable;
+        actor.corpse.unavailable=corpseUnavailable;
         actor.deathTick = tick; actor.deathOccurrence = 0; actor.killer = source;
         actor.route.clear(); actor.moving = false; actor.running = false; actor.movementTarget = {}; actor.busyUntil = tick + uint64_t(actor.rule.deathTicks);
         cascades=prepareDeathSweep(actor,tick);
@@ -908,7 +1049,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicStats);
     }
     for(auto &cascade:cascades) ports_.frameEvents.publish(std::move(cascade));
-    return {DomainStatus::Applied, std::monostate{}};
+    return dead?ports_.effects.monsterDeathEffect(id,tick):DomainResult<>{DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::finishDamageAction(EntityId id,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit) {
     const auto *unit=find(id);if(!unit || !unit->alive() || unit->delayedDeathSource) return {DomainStatus::Applied,std::monostate{}};
@@ -938,14 +1079,14 @@ DomainResult<> System::holyFreeze(EntityId id,uint64_t until,uint64_t tick) {
     std::vector<DomainFact> facts;
     if(active!=actor.shatterActive && !actor.rule.shatterState.noSend)
         facts.emplace_back(StateFact{id,1,actor.area,actor.rule.shatterState.id,active});
-    auto deathStates=actor.deathStates;
+    auto deathStates=actor.corpse.states;
     if(!actor.alive()) {
         if(active) deathStates.insert(actor.rule.shatterState.id);
         else deathStates.erase(actor.rule.shatterState.id);
     }
     if(!facts.empty() && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},std::move(facts)})) return {DomainStatus::Capacity,{}};
-    actor.holyFreezeUntil=until;actor.shatterActive=active;actor.combatRandom=random;actor.deathStates.swap(deathStates);
-    if(!actor.alive() && active) actor.corpseUnavailable|=actor.rule.shatterState.shatterOnDeath || actor.rule.shatterState.corpseUnselectable || actor.rule.shatterState.hideOnDeath;
+    actor.holyFreezeUntil=until;actor.shatterActive=active;actor.combatRandom=random;actor.corpse.states.swap(deathStates);
+    if(!actor.alive() && active) actor.corpse.unavailable|=actor.rule.shatterState.shatterOnDeath || actor.rule.shatterState.corpseUnselectable || actor.rule.shatterState.hideOnDeath;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 void System::hitDelay(EntityId id, uint64_t until) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.nextHitTick = std::max(it->second.nextHitTick, until); }
@@ -984,8 +1125,14 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
     publishActors(publication);return {DomainStatus::Applied,std::monostate{}};
 }
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
+bool System::canRemove(EntityId id) const {
+    const auto *unit=find(id);if(!unit || !unit->owner) return false;
+    return !ports_.frameEvents.hasHandler({FrameEventUnit::Monster,id},effects::monsterModifierTimerHandler);
+}
 DomainResult<> System::remove(EntityId id) {
-    auto it=state_.actors.find(id);if(it==state_.actors.end() || !it->second.owner) return {DomainStatus::InvalidActor,{}};
+    const auto *unit=find(id);if(!unit || !unit->owner) return {DomainStatus::InvalidActor,{}};
+    if(!canRemove(id)) return {DomainStatus::Unavailable,{}};
+    const auto it=state_.actors.find(id);
     ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::advanceMode(EntityId only,TickContext tick) {
@@ -995,6 +1142,12 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         if(actor.modeFrame==tick.tick) continue;
         if(actor.delayedDeathSource && !ports_.effects.unitStates(id,tick.tick).contains(actor.rule.uninterruptableState)) {
             const auto result=damage(id,actor.killer,0,tick.tick,0,false,0,{},true,0,{},0,false,0,0,true,{},false,{*actor.delayedDeathSource});
+            if(!result) {blocked=true;continue;}
+        }
+        if(actor.alive() && !actor.questNpc && !actor.skillMotion && actor.knockedUntil<=tick.tick && actor.stunnedUntil<=tick.tick &&
+           tick.tick>=actor.busyUntil && !frozen(id,tick.tick) && !actor.route.empty() && actor.pathStep.changedCell() &&
+           ports_.areas.loaded(actor.area,actor.position+Vec{.5f,.5f})) {
+            const auto result=ports_.effects.movementSkills(id,tick.tick,actor.pathStep.direction(),actor.pathStep.nativePosition());
             if(!result) {blocked=true;continue;}
         }
         actor.modeFrame=tick.tick;

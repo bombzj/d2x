@@ -92,8 +92,9 @@ DomainResult<> System::operateActFour(const ActorContext &actor,EntityId source,
             const auto spawned=ports_.objects.admit({131,found->area,found->position,{},{},0,actor.tick});
             if(!spawned) return {spawned.status,{}};
             world.sealAfterglows.emplace(*spawned.value,names[index]);
+            ports_.world.retainControllerRoom(found->area,found->position,true);
         }
-        world.seals.insert(definition);state_.objectModes[source]=2;
+        world.seals.insert(definition);
         return {DomainStatus::Applied,std::monostate{}};
     }
     return {DomainStatus::NotImplemented,{}};

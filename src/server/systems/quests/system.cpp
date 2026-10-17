@@ -24,6 +24,18 @@ void System::initializeControl() {
     if(state_.controlRandom) throw std::logic_error("Quest control is already initialized");
     state_.controlRandom=childRandom(ports_.random);
 }
+void System::rebindObject(EntityId previous,EntityId current) {
+    if(previous==current) return;
+    if(auto mode=state_.objectModes.extract(previous);!mode.empty()) {mode.key()=current;state_.objectModes.insert(std::move(mode));}
+    if(state_.actThree.gidbinnAltar==previous) state_.actThree.gidbinnAltar=current;
+    if(state_.actOne.cairnPending && state_.actOne.cairnPending->owner==previous) state_.actOne.cairnPending->owner=current;
+    if(state_.actOne.cainInvisibleObject==previous) state_.actOne.cainInvisibleObject=current;
+    if(state_.actOne.cainStartObject==previous) state_.actOne.cainStartObject=current;
+    for(auto &id:state_.actOne.monoliths) if(id==previous) id=current;
+    for(auto &[player,id]:state_.actTwo.orifices) {(void)player;if(id==previous) id=current;}
+    for(auto &[player,id]:state_.actTwo.journals) {(void)player;if(id==previous) id=current;}
+    if(auto entry=state_.actFour.sealAfterglows.extract(previous);!entry.empty()) {entry.key()=current;state_.actFour.sealAfterglows.insert(std::move(entry));}
+}
 std::optional<Dialogue> System::dialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *area=ports_.areas.find(actor.area);
     if(!area) return {};
@@ -118,7 +130,7 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
         const auto source=state_.actTwo.journals.find(actor.player);
         if(source==state_.actTwo.journals.end() || source->second!=*request.npc) return {DomainStatus::Stale,{}};
         const auto result=operateActTwo(actor,*request.npc,0,42,p->position);
-        if(result.status==DomainStatus::Capacity) {
+        if(isDeferred(result.status)) {
             state_.actTwo.journalReads.insert_or_assign(actor.player,actor);
             return {DomainStatus::Applied,std::monostate{}};
         }
@@ -178,11 +190,20 @@ StepStatus System::denStep(TickContext tick) {
     if(area) {
         size_t alive=area->definition.populationMissing, killed=0;
         for(const auto &[id,m]:ports_.monsters.read().actors) {
-            (void)id;if(m.area!=RegionId(8) || m.owner || m.questNpc || m.rule.environmentController || m.identity.origin==SpawnOrigin::Debug) continue;
-            if(m.life>0) {++alive;continue;}++killed;
+            (void)id;if(m.area!=RegionId(8) || m.owner || m.questNpc || m.uncounted || m.rule.environmentController || m.identity.origin==SpawnOrigin::Debug) continue;
+            if(m.alive()) {++alive;continue;}++killed;
             if(const auto *killer=ports_.players.findActor(m.killer)) state_.actOne.contributors[killer->player]=killer->actor;
             else if(const auto pet=ports_.monsters.read().actors.find(m.killer);pet!=ports_.monsters.read().actors.end() && pet->second.owner)
                 if(const auto *owner=ports_.players.find(*pet->second.owner)) state_.actOne.contributors[owner->player]=owner->actor;
+        }
+        for(const auto &[room,units]:ports_.monsters.read().inactive) {
+            if(room.first!=RegionId(8)) continue;
+            for(const auto &unit:units) {
+                if(ports_.monsters.find(unit.id) || unit.identity.origin==SpawnOrigin::Debug || !unit.hostile || unit.uncounted ||
+                    unit.admissionRule->environmentController) continue;
+                if(!unit.dead) ++alive;
+                else ++killed;
+            }
         }
         const auto population=ports_.population.read().areas.find(RegionId(8));
         const bool current=population!=ports_.population.read().areas.end() && population->second.generation==area->generation;
@@ -194,7 +215,8 @@ StepStatus System::denStep(TickContext tick) {
         for(const auto &spawn:area->definition.population)
             if(!current || !population->second.admittedSpawnKeys.contains(spawn.identity.spawnKey)) ++alive;
         state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
-        if(!state_.actOne.denCleared && killed && !alive && generated) {
+        state_.actOne.denHasKills|=killed!=0;
+        if(!state_.actOne.denCleared && state_.actOne.denHasKills && !alive && generated) {
             captureGoal(QuestId::DenOfEvil,uint32_t(DenStage::Cleared),RegionId(8));
             state_.actOne.denCleared=true;
         }

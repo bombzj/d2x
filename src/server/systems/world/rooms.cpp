@@ -34,8 +34,11 @@ struct System::RoomRuntime {
     std::vector<Room> rooms;
     std::map<std::pair<RegionId, size_t>, size_t> identities;
     std::map<PlayerId, size_t> clients;
+    std::map<PlayerId,std::vector<RoomView>> clientRooms;
+    std::map<RoomView,size_t> roomClients;
     std::unique_ptr<NativeRoomActivation> activation;
     bool dirty{true};
+    uint64_t currentTick{};
     explicit RoomRuntime(System &system) : owner(system) {}
     AreaState &area(RegionId id) { return owner.ports_.areas.areas_.at(id); }
     std::optional<size_t> locate(RegionId id, Vec point) const {
@@ -148,7 +151,8 @@ struct System::RoomRuntime {
             [this](size_t id) { return rooms.at(id).near; },
             [](size_t) {},
             [this](size_t id) { create(id); },
-            [this](size_t id) { release(id); }}, NativeRoomActivation::Side::Server);
+            [this](size_t id) { release(id); },
+            [this](size_t id) { return tryRetire(id); }}, NativeRoomActivation::Side::Server);
         for (size_t id = 0; id < rooms.size(); ++id)
             if (area(rooms[id].area).rooms.at(rooms[id].index).loaded) activation->initialize(id);
         clients.clear(); dirty = false;
@@ -162,6 +166,22 @@ struct System::RoomRuntime {
             state.references = status.references; state.status = status.status;
         }
     }
+    void changeClientRooms(PlayerId player,const std::vector<RoomView> &next,uint64_t tick) {
+        auto &previous=clientRooms[player];
+        for(const auto room:next) if(std::find(previous.begin(),previous.end(),room)==previous.end()) {
+            auto &count=roomClients[room];
+            if(!count) owner.ports_.monsters.roomClientsChanged(room,true,tick);
+            ++count;
+        }
+        for(const auto room:previous) if(std::find(next.begin(),next.end(),room)==next.end()) {
+            const auto found=roomClients.find(room);
+            if(found==roomClients.end() || !found->second) throw std::logic_error("Unbalanced native room client registration");
+            if(found->second==1) {
+                owner.ports_.monsters.roomClientsChanged(room,false,tick);roomClients.erase(found);
+            } else --found->second;
+        }
+        previous=next;
+    }
     bool retain(size_t id, uint64_t tick) const {
         const auto &room = rooms.at(id);
         if(owner.ports_.areas.at(room.area).rooms.at(room.index).portalRetained) return true;
@@ -172,7 +192,12 @@ struct System::RoomRuntime {
         const auto contains = [&](RegionId region, Vec point) { return locate(region, point) == id; };
         const auto &ports = owner.ports_;
         const auto portal = [&](const auto &value) {
-            return contains(value.field, value.fieldPosition) || contains(value.town, value.townPosition);
+            const auto matches=[&](const std::optional<RoomView> &view,RegionId region,Vec point) {
+                if(!view) return contains(region,point);
+                return view->area==room.area && view->x==(int(source.origin.x)+room.bounds.x)/5 &&
+                    view->y==(int(source.origin.y)+room.bounds.y)/5;
+            };
+            return matches(value.fieldRoom,value.field,value.fieldPosition) || matches(value.townRoom,value.town,value.townPosition);
         };
         for (const auto &[key, value] : ports.travel.read().portals) { (void)key; if (portal(value)) return true; }
         for (const auto &[key, value] : ports.travel.read().specialPortals) { (void)key; if (portal(value)) return true; }
@@ -186,10 +211,17 @@ struct System::RoomRuntime {
         for (const auto &[key, value] : ports.missiles.read().missiles) { (void)key; if (contains(value.area, value.position)) return true; }
         for (const auto &[key, value] : ports.objects.read().objects) {
             (void)key;
-            if (contains(value.area, value.position) && (value.pending || value.specialPending || value.urnPending || value.lootAt || value.trapAt || value.hazardAt)) return true;
+            if (contains(value.area, value.position) && (value.pending || value.specialPending || value.urnPending || value.lootAt || value.trapAt ||
+                (value.rule.initialization==59 && value.hazardAt))) return true;
         }
         for (const auto &[key, value] : ports.loot.read().pending) { (void)key; if (contains(value.request.source.region, value.request.position)) return true; }
         return false;
+    }
+    bool tryRetire(size_t id) {
+        const auto &room=rooms.at(id);
+        if(!owner.ports_.monsters.compressRoom(room.area,room.index,currentTick)) return false;
+        owner.ports_.objects.compressRoom(room.area,room.index,currentTick);
+        return true;
     }
 };
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
@@ -206,7 +238,10 @@ void System::activate(RegionId region, Vec point) {
 }
 void System::updateRooms(TickContext tick) {
     rooms_->rebuild();
+    rooms_->currentTick=tick.tick;
     auto previous = rooms_->clients;
+    std::set<PlayerId> departed;
+    for(const auto &[player,registered]:rooms_->clientRooms) {(void)registered;departed.insert(player);}
     for (const auto &[id, player] : ports_.players.all()) {
         if (!player.entered) continue;
         const auto next = rooms_->locate(player.area, player.position + Vec{.5f, .5f});
@@ -214,12 +249,20 @@ void System::updateRooms(TickContext tick) {
         const auto old = rooms_->clients.find(id);
         rooms_->activation->changeClientRoom(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next);
         rooms_->clients.insert_or_assign(id, *next);
+        std::vector<RoomView> registered;
+        for(const auto adjacent:rooms_->rooms.at(*next).near) {
+            const auto &room=rooms_->rooms.at(adjacent);const auto &area=ports_.areas.at(room.area);
+            if(area.rooms.at(room.index).loaded) registered.push_back({room.area,
+                (int(area.definition.origin.x)+room.bounds.x)/5,(int(area.definition.origin.y)+room.bounds.y)/5});
+        }
+        rooms_->changeClientRooms(id,registered,tick.tick);departed.erase(id);
         previous.erase(id);
     }
     for (const auto &[id, room] : previous) {
         rooms_->activation->changeClientRoom(room, {});
         rooms_->clients.erase(id);
     }
+    for(const auto id:departed) {rooms_->changeClientRooms(id,{},tick.tick);rooms_->clientRooms.erase(id);}
     rooms_->activation->update(tick.tick, [&](size_t room) { return rooms_->retain(room, tick.tick); });
     rooms_->publish();
     for (const auto &[id, state] : rooms_->activation->states()) {

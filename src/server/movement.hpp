@@ -15,7 +15,7 @@ namespace items { class System; }
 struct ActorContext;
 struct TickContext;
 inline constexpr uint32_t movementTimerHandler=0x4d4f5645;
-struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; const effects::System &effects; const items::System &items; FrameEventQueue &frameEvents; };
+struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; effects::System &effects; const items::System &items; FrameEventQueue &frameEvents; };
 class MovementSystem {
     const MovementPorts ports_;
     std::map<PlayerId,uint64_t> skillSteps_;

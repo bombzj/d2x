@@ -7,6 +7,7 @@
 #include <array>
 #include <bit>
 #include <cmath>
+#include <map>
 #include <set>
 #include <stdexcept>
 #include <utility>
@@ -76,11 +77,28 @@ std::map<uint8_t, uint32_t> nativeValues(const ClassicData &data, const Values &
     }
     return result;
 }
+std::map<int, int> nativeBaseSkillRanks(const ClassicData &data, const CharacterRecord &record) {
+    const auto definition = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &entry) {
+        return entry.name == record.characterClass;
+    });
+    if (definition == data.characters.end()) throw std::runtime_error("Missing native character skill definition");
+    const auto *tree = data.skills.tree(definition->code);
+    if (!tree) throw std::runtime_error("Missing native common skill definitions");
+    auto ranks = record.skillRanks;
+    // Native initialization adds Attack and CharStats common actions at rank 1;
+    // these nodes are not learned ranks in the persistent character record.
+    for (const int id : tree->commonSkills)
+        ranks[id] = std::max(1, ranks[id]);
+    return ranks;
+}
 void skillPacket(std::vector<Bytes> &packets, EntityId owner, int skill, int base, int rank) {
     if (owner.value > UINT32_MAX || skill < 0 || skill > UINT16_MAX || base < 0 || base > 255 || rank < base || rank - base > 255)
         throw std::runtime_error("Skill exceeds native protocol capacity");
     packets.push_back(hosting::encodeServerPacket(hosting::ServerMessage::SkillRank, [&](auto &out) {
-        out.u8(0); out.u8(1); out.u32(uint32_t(owner.value)); out.u16(uint16_t(skill));
+        // Offset 2 is SKILLS_AssignSkill's remove flag. Ordinary updates keep
+        // zero-base nodes for item grants; removing Attack leaves active hands
+        // pointing at freed memory before the next equipment packet arrives.
+        out.u8(0); out.u8(0); out.u32(uint32_t(owner.value)); out.u16(uint16_t(skill));
         out.u8(uint8_t(base)); out.u8(uint8_t(rank - base)); out.u8(0);
     }));
 }
@@ -123,15 +141,16 @@ std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const Charact
     std::vector<Bytes> result;
     emitAttributes(result, data,nativeValues(data, values(record, totals)));
     hirelingStatus(result,data,record.hireling);
-    if (record.id.value > UINT32_MAX || record.skillRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
+    const auto baseRanks = nativeBaseSkillRanks(data, record);
+    if (record.id.value > UINT32_MAX || baseRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
     result.push_back(hosting::encodeServerPacket(hosting::ServerMessage::BaseSkills, [&](auto &out) {
-        out.u8(uint8_t(record.skillRanks.size())); out.u32(uint32_t(record.id.value));
-        for (const auto &[id, base] : record.skillRanks) {
+        out.u8(uint8_t(baseRanks.size())); out.u32(uint32_t(record.id.value));
+        for (const auto &[id, base] : baseRanks) {
             if (id < 0 || id > UINT16_MAX || base < 0 || base > 255) throw std::runtime_error("Invalid base skill");
             out.u16(uint16_t(id)); out.u8(uint8_t(base));
         }
     }));
-    for (const auto &[id, effective] : totals.skillRanks) skillPacket(result, record.id, id, rank(record.skillRanks, id), effective);
+    for (const auto &[id, effective] : totals.skillRanks) skillPacket(result, record.id, id, rank(baseRanks, id), effective);
     return result;
 }
 std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data, const CharacterRecord &record) {
@@ -164,13 +183,15 @@ std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::C
     if((fact.before.hireling.hp>0)!=(fact.after.hireling.hp>0) || fact.before.hireling.seed!=fact.after.hireling.seed ||
         fact.before.hireling.sourceRow!=fact.after.hireling.sourceRow) hirelingStatus(result,data,fact.after.hireling);
     std::set<int> ids;
+    const auto previousBaseRanks = nativeBaseSkillRanks(data, fact.before);
+    const auto currentBaseRanks = nativeBaseSkillRanks(data, fact.after);
     for (const auto &[id, value] : fact.previous.skillRanks) { (void)value; ids.insert(id); }
     for (const auto &[id, value] : fact.current.skillRanks) { (void)value; ids.insert(id); }
-    for (const auto &[id, value] : fact.before.skillRanks) { (void)value; ids.insert(id); }
-    for (const auto &[id, value] : fact.after.skillRanks) { (void)value; ids.insert(id); }
+    for (const auto &[id, value] : previousBaseRanks) { (void)value; ids.insert(id); }
+    for (const auto &[id, value] : currentBaseRanks) { (void)value; ids.insert(id); }
     for (auto id : ids) {
-        const int base = rank(fact.after.skillRanks, id), effective = rank(fact.current.skillRanks, id);
-        if (base != rank(fact.before.skillRanks, id) || effective != rank(fact.previous.skillRanks, id))
+        const int base = rank(currentBaseRanks, id), effective = rank(fact.current.skillRanks, id);
+        if (base != rank(previousBaseRanks, id) || effective != rank(fact.previous.skillRanks, id))
             skillPacket(result, fact.after.id, id, base, effective);
     }
     for (size_t slot = 0; slot < fact.after.skillHotkeys.size(); ++slot) {

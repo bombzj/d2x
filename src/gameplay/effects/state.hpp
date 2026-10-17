@@ -84,7 +84,6 @@ class CombatEffectSet {
     uint64_t targetResetEpoch() const noexcept {return storage_->targetReset;}
     void refreshPassiveSkills(const std::function<void()> &observe={});
     CharacterModifiers modifiers(EffectFrame now) const;
-    std::vector<TriggeredCombatEffect> reactions(CombatEffectEvent event, EffectFrame now) const;
     std::vector<TriggeredSkillUnitEvent> unitEvents(NativeUnitEvent,EffectFrame) const;
     bool registered(const TriggeredSkillUnitEvent &) const;
     void registerUnitEvents(int state,EffectSource,std::span<const SkillUnitEventBinding>,EffectHandle handle={});

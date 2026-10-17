@@ -13,16 +13,12 @@ void System::prepareInitialTimers(Actor &unit,uint64_t tick) const {
     if(unit.questNpc) return;
     if(!unit.initialAiTimer && (unit.alive() || unit.owner)) unit.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,tick+1}));
     if(!unit.initialModeTimer) unit.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::ModeChange,tick+1,true}));
-    if(!unit.initialEffectTimer && (unit.rule.web || unit.rule.enchantment || unit.rule.hitBurst || unit.rule.deathBurst))
-        unit.initialEffectTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::MonsterModifier,tick+1,true,0,int32_t(effects::monsterModeTimerHandler)}));
 }
 void System::publishInitialAi(Actor &unit) noexcept {
+    for(auto &timer:unit.initialModifierTimers) ports_.frameEvents.publish(std::move(*timer));
+    unit.initialModifierTimers.clear();
     if(unit.initialWakeTimer) {
         ports_.frameEvents.publish(std::move(*unit.initialWakeTimer));unit.initialWakeTimer.reset();
-    }
-    if(unit.initialEffectTimer && unit.initialEffectTimer->handle()) {
-        ports_.frameEvents.cancel({FrameEventUnit::Monster,unit.id},FrameEventType::MonsterModifier,int32_t(effects::monsterModeTimerHandler));
-        ports_.frameEvents.publish(std::move(*unit.initialEffectTimer));unit.initialEffectTimer.reset();
     }
     if(unit.initialModeTimer && unit.initialModeTimer->handle()) {
         ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,unit.id},FrameEventType::ModeChange,0);
@@ -39,6 +35,30 @@ void System::resumeMode(EntityId id,uint64_t tick) {
     const FrameEventOwner owner{FrameEventUnit::Monster,id};
     if(ports_.frameEvents.hasEvent(owner,FrameEventType::ModeChange)) return;
     ports_.frameEvents.insertPrepared({{},owner,FrameEventType::ModeChange,tick+1,true});
+}
+void System::roomClientsChanged(RoomView room,bool present,uint64_t tick) {
+    std::vector<ActorPublication> publications;
+    for(const auto id:ports_.areas.roomUnitOrder(room)) {
+        const auto *unit=find(id);if(!unit || unit->questNpc) continue;
+        if(unit->revision==UINT64_MAX || unit->aiThinkRevision==UINT64_MAX)
+            throw std::overflow_error("Monster room client revision exhausted");
+        auto candidate=*unit;candidate.initialAiTimer.reset();
+        const bool neutral=!candidate.moving && candidate.route.empty() && candidate.busyUntil<=tick &&
+            candidate.riseUntil<=tick && candidate.reactionUntil<=tick && candidate.aiPose==1;
+        if(present && candidate.alive() && (neutral || candidate.rule.wakeAiOutsideNeutral)) {
+            candidate.aiThinkAt=tick+2;++candidate.aiThinkRevision;
+            candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,tick+2}));
+        }
+        ++candidate.revision;
+        publications.push_back(prepareActorPublication({{id,std::move(candidate)}},0));
+    }
+    for(auto &publication:publications) {
+        const auto id=publication.actors.begin()->first;
+        ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,id},FrameEventType::AiThink,0);
+        if(!present) ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,id},FrameEventType::StatRegeneration,0);
+        publishActors(publication);
+    }
 }
 DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
     if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
@@ -124,7 +144,7 @@ DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick,
         candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=false;
         candidate.rule.noTreasure=candidate.rule.noExperience=true;candidate.rewardComplete=true;
         candidate.riseUntil=candidate.busyUntil=tick+uint64_t(candidate.rule.selfResurrection->ticks);candidate.riseMode=8;
-        candidate.neutralAt=candidate.riseUntil;candidate.deathStates.clear();candidate.killer={};
+        candidate.neutralAt=candidate.riseUntil;candidate.corpse={};candidate.killer={};
         candidate.ownershipDeathHandled=false;++candidate.selfResurrections;++candidate.revision;
         candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
             {{},{FrameEventUnit::Monster,unit->id},FrameEventType::AiThink,tick+51}));

@@ -1,5 +1,6 @@
 #pragma once
 #include "gameplay/items/quality.hpp"
+#include "core/random.hpp"
 #include <cstdint>
 #include <functional>
 #include <optional>
@@ -12,6 +13,7 @@ struct ItemPropertyTarget {
     std::optional<int> value, minimum, maximum;
 };
 struct ItemSeeds { uint32_t unit{}, properties{}; };
+inline ItemSeeds rollNativeItemSeeds(uint64_t &gameRandom) {return {rollRandom(gameRandom),rollRandom(gameRandom)};}
 using ItemSeedSource = std::function<ItemSeeds()>;
 struct ItemAffixInstance {
     bool prefix = false;
@@ -28,6 +30,7 @@ struct ItemGeneration {
     std::vector<int32_t> propertyRolls;
     std::vector<ItemAffixInstance> affixes;
     bool rollNaturalSockets = false;
+    bool suppressNaturalSockets = false;
     bool rollNaturalEthereal = false;
     unsigned durabilityMultiplier = 1;
     int socketDifficulty = 0;

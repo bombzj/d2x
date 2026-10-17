@@ -25,7 +25,6 @@ struct MonsterEnchantment {
     AttackDamageRange spectralDamage;
     std::optional<MonsterAura> aura;
     std::optional<MonsterAura> curse;
-    float corpseExplosionMinimum = 0, corpseExplosionMaximum = 0;
     bool melee = false, stopRegeneration = true;
     bool skillEffectsEnabled = true;
     bool has(int id) const {

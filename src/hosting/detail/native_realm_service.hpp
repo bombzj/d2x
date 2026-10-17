@@ -124,6 +124,7 @@ struct NativeRealmService {
     void admitExternal(PersistentCharacter, HostedGame &, uint32_t ticketHash, uint16_t gameId);
     void discardReload();
     void close(bool save = true, bool keepReload = false);
+    void endGame(bool save = true, bool keepReload = false);
     void resetRealm();
     void connectGame(bool announce = true);
     void connectTcpIp();

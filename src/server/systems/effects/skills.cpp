@@ -124,7 +124,6 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
     if(!application.accepted) return {DomainStatus::Conflict,{}};
     const auto *installed=recovery.states.find(application.handle);
     if(!installed) throw std::runtime_error("Missing installed native player skill state");
-    recovery.previous=target->position;
     const auto &area=ports_.areas.at(target->area);
     const ActorContext targetActor{target->player,target->actor,target->area,area.generation,0,actor.tick};
     transactions::CharacterEdit edit{targetActor,target->inventoryRevision,target->characterRevision,resources.record()};

@@ -53,7 +53,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (const auto *identification = std::get_if<IdentifyItem>(&request.intent)) return identify(actor, *identification);
     if (const auto *transfer = std::get_if<GroundTransfer>(&request.intent)) {
         const auto result = ground(actor, *transfer);
-        if (!transfer->drop && result.status == DomainStatus::Capacity && !ports_.transactions.hasOutputCapacity()) {
+        if (!transfer->drop && isDeferred(result.status) && !ports_.transactions.hasOutputCapacity()) {
             state_.pickups.insert_or_assign(actor.player, Pickup{actor, *transfer, player->locomotionSequence,ports_.items.groundGeneration(transfer->item.id)});
             return {DomainStatus::Applied, std::monostate{}};
         }

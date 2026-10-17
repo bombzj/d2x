@@ -19,9 +19,43 @@
 #include <stdexcept>
 
 namespace d2x::server::quests {
+void System::registerCainObject(EntityId id,int definition,int initialization,RegionId area,Vec position) {
+    if(initialization==13 && definition==61) state_.actOne.cainInvisibleObject=id;
+    if(initialization==54) {state_.actOne.cainStartObject=id;state_.actOne.cainStart=ActOneState::CainStart{area,position};}
+}
+bool System::cainTownRequested() const {
+    if(state_.actOne.cainTownActor) return false;
+    if(state_.actOne.cainRescued) return true;
+    for(const auto &[id,player]:ports_.players.all()) {
+        (void)id;
+        if(player.entered && player.persistent.player.quests.at(size_t(ports_.settings.difficulty))
+            .at(questIndex(QuestId::SearchForCain)).stage>=uint32_t(CainStage::Rescued)) return true;
+    }
+    return false;
+}
+void System::registerTownCain(EntityId id) {
+    const auto *actor=ports_.monsters.find(id);
+    if(!actor || !actor->questNpc || actor->identity.monster!="cain5")
+        throw std::invalid_argument("Invalid town Cain registration");
+    if(state_.actOne.cainTownActor && state_.actOne.cainTownActor!=id)
+        throw std::invalid_argument("Town Cain already registered");
+    state_.actOne.cainTownActor=id;
+}
+std::optional<int> System::initialObjectMode(RegionId region,EntityId id,int definition,int operation,int initialization,uint64_t tick) const {
+    const auto completed=[&](QuestId quest) {return (state_.initialFlags[questDefinition(quest).nativeSlot]&0x8000)!=0;};
+    switch(initialization) {
+    case 4:if(completed(QuestId::ForgottenTower)) return 5;break;
+    case 6:if(completed(QuestId::SearchForCain) || state_.actOne.restoreCairnStones) return 2;break;
+    case 7:return state_.actOne.cainRescued?5:0;
+    case 9:return completed(QuestId::SearchForCain) || state_.actOne.cainRescued?1:0;
+    case 15:return completed(QuestId::ToolsOfTheTrade)?2:0;
+    default:break;
+    }
+    return objectMode(region,id,definition,operation,tick);
+}
 DomainResult<> System::cairnFx(RegionId area,Vec position,int destination,uint64_t tick) {
     const auto portal=ports_.travel.prepareNativePermanentPortal(area,position,destination,tick);
-    if(portal.status==DomainStatus::Capacity) return {portal.status,{}};
+    if(isDeferred(portal.status)) return {portal.status,{}};
     if(portal) {
         ports_.travel.commitSpecialPortal(*portal.value);
         if(destination==38) state_.actOne.cainPortalOpened=true;
@@ -103,14 +137,33 @@ DomainResult<> System::operate(const ActorContext &actor,EntityId source,int def
         std::optional<ActOneState::CairnControl> control;
         if(state_.actOne.activatedStones==4) {
             const auto *area=ports_.areas.find(actor.area);
-            const auto lambda=std::find_if(area->definition.objects.begin(),area->definition.objects.end(),[](const auto &o){return o.type==21;});
-            if(lambda!=area->definition.objects.end()) control=ActOneState::CairnControl{actor.actor,actor.area,lambda->position+Vec{6,-3}};
+            const auto &activeObjects=ports_.objects.read().objects;
+            const objects::Object *lambda=nullptr;
+            for(size_t index=0;index<state_.actOne.stones.size();++index) if(state_.actOne.stones[index]==21) {
+                const auto found=activeObjects.find(index==state_.actOne.activatedStones?source:state_.actOne.monoliths[index]);
+                if(found!=activeObjects.end() && found->second.definition==21) lambda=&found->second;
+            }
+            if(!lambda) if(const auto *room=area->definition.activation.room(position)) {
+                const auto index=size_t(room-area->definition.activation.rooms().data());
+                for(const auto &near:area->definition.roomNear.at(index)) {
+                    for(const auto id:ports_.areas.roomUnitOrder(near)) {
+                        const auto found=activeObjects.find(id);
+                        if(found!=activeObjects.end() && found->second.definition==21) {lambda=&found->second;break;}
+                    }
+                    if(lambda) break;
+                }
+            }
+            if(lambda && int(lambda->position.x+ports_.areas.at(lambda->area).definition.origin.x))
+                control=ActOneState::CairnControl{actor.actor,lambda->area,lambda->position+Vec{6,-3}};
         }
         cain.stage=std::max(cain.stage,uint32_t(CainStage::ScrollTranslated));
         cain.flags=(cain.flags&~cainStoneCountMask)|(state_.actOne.activatedStones+1);
         if(state_.actOne.activatedStones==4) cain.stage=std::max(cain.stage,uint32_t(CainStage::PortalOpened));
         const auto result=commit(actor,std::move(record));
-        if(result) {++state_.actOne.activatedStones;if(control) state_.actOne.cairnPending=*control;}
+        if(result) {
+            state_.actOne.monoliths.at(state_.actOne.activatedStones)=source;
+            ++state_.actOne.activatedStones;if(control) state_.actOne.cairnPending=*control;
+        }
         return result;
     }
     if(operation==10 && int(actor.area)==38) {
@@ -134,7 +187,7 @@ StepStatus System::actOneStep(TickContext tick) {
         const auto *area=ports_.areas.find(control.area);
         const auto result=area?ports_.missiles.spawnNative({control.owner,control.area,area->generation,tick.tick,
             control.position,control.position,*definition,0,1}):DomainResult<EntityId>{DomainStatus::Unavailable,{}};
-        if(result.status==DomainStatus::Capacity) blocked=true;
+        if(isDeferred(result.status)) blocked=true;
         else {
             if(result) ports_.world.retainControllerRoom(control.area,control.position,true);
             state_.actOne.cairnPending.reset();

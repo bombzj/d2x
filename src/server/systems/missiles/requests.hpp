@@ -27,7 +27,6 @@ struct Spawn {
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
     bool deathTrigger{};
-    uint64_t directOccurrence{};
     std::optional<RegionId> directArea;
     EntityId sourceOwner; // Explicit native owner for children; emitter is presentation identity.
     std::shared_ptr<const SkillRules> preparedRules;
@@ -38,8 +37,7 @@ struct Spawn {
     std::shared_ptr<combat::NativeSkillContact> nativeMeleeContact;
     bool nativeMeleeHeld{};
 };
-enum class DirectNotice { Publish,DeferPulse };
-struct DirectContact {EntityId projectile;std::vector<DomainFact> deferredFacts;std::optional<uint64_t> occurrence;};
+struct DirectContact {EntityId projectile;std::optional<uint64_t> occurrence;};
 struct MonsterSpawn {
     EntityId source;
     RegionId area;
@@ -48,7 +46,6 @@ struct MonsterSpawn {
     MonsterAttackRule attack;
     MonsterHitStates states;
     int level{}, critical{}, extraQuills{};
-    std::optional<MonsterWebRule> web{};
     std::vector<Vec> aims{};
     bool postMortem{};
     bool environment{};
@@ -86,5 +83,6 @@ struct NativeSpawn {
     std::optional<int> totalFrames;
     std::optional<EntityId> storedOwner;
     bool copyMonsterAttackBonus{}; // SKILLS_CreateMissile, as distinct from raw params.
+    bool transient{}; // SrvDo029 owns a real temporary missile until its direct callback finishes.
 };
 }

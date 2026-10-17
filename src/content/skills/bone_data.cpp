@@ -91,8 +91,6 @@ void loadBoneSkills(SkillCatalog &catalog, const DataTable &skills, const DataTa
     projectile(spec, missiles, missile, sounds, archives);
     const auto cast = loadProjectileResource(missiles, named(missiles, "Missile", skills.value(row, "cltmissilec")), archives);
     spec.submissileResources.push_back(cast);
-    spec.castMissileId = cast.id;
-    spec.castMissileDuration = cast.lifetime;
     catalog.skills.at(spec.sourceId).spell = std::make_shared<const SkillSpec>(std::move(spec));
     const auto armorRow = named(skills, "skill", "Bone Armor");
     expect(skills, armorRow, "srvdofunc", "18");
@@ -150,14 +148,8 @@ void loadBoneSkills(SkillCatalog &catalog, const DataTable &skills, const DataTa
     corpse.effect = SkillBehavior::CorpseExplosion;
     auto program = std::make_shared<BoneSkillSpec>();
     program->corpse = true;
-    program->radius = number(skills, corpseRow, "Param3");
-    program->radiusPerLevel = number(skills, corpseRow, "Param4");
-    program->minimumPercent = number(skills, corpseRow, "Param1");
-    program->maximumPercent = number(skills, corpseRow, "Param2");
-    program->elementalPercent = number(skills, corpseRow, "Param5");
     const auto corpseVisual = loadProjectileResource(missiles, named(missiles, "Missile", skills.value(corpseRow, "cltmissilea")), archives);
     corpse.missileId = corpseVisual.id;
-    program->corpseVisual = corpseVisual.id; program->corpseVisualDuration = corpseVisual.lifetime;
     corpse.submissileResources.push_back(corpseVisual);
     corpse.impactSoundArt = sound(sounds, skills.value(corpseRow, "tgtsound"), archives);
     corpse.bone = std::move(program);

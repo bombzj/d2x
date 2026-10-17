@@ -143,18 +143,16 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         // Warp/waypoint arrival must acquire the destination's real room before
         // free-coordinate and collision queries, including a previously retired room.
         const auto &targetDefinition = destination->definition;
-        if (transition.kind == Kind::Waypoint && targetDefinition.waypointAnchor)
-            ports_.world.activate(transition.to, *targetDefinition.waypointAnchor);
+        if(transition.arrivalGeneration && *transition.arrivalGeneration!=destination->generation) {pending=state_.transitions.erase(pending);continue;}
+        if (transition.kind == Kind::Waypoint) {
+            if(transition.arrivalGeneration) ports_.world.activate(transition.to,transition.arrival);
+        }
         else if (transition.kind == Kind::Npc) ports_.world.activate(transition.to, targetDefinition.spawn);
         else if (transition.kind == Kind::Exit) {
             for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
                 ports_.world.activate(transition.to, exit.arrival);
         } else if (transition.kind == Kind::QuestObject) {
-            if (targetDefinition.questArrival) ports_.world.activate(transition.to, *targetDefinition.questArrival);
-            if (targetDefinition.portalArrival) ports_.world.activate(transition.to, *targetDefinition.portalArrival);
-            for (const auto &exit : targetDefinition.exits) if (exit.destination == transition.from)
-                ports_.world.activate(transition.to, exit.arrival);
-            if (targetDefinition.town) ports_.world.activate(transition.to, targetDefinition.spawn);
+            if(transition.arrivalGeneration) ports_.world.activate(transition.to,transition.arrival);
         } else ports_.world.activate(transition.to, arrival);
         if(transition.kind==Kind::Npc) {
             const ActorContext actor{player.player,player.actor,player.area,source->generation,transition.sequence,tick.tick};
@@ -181,26 +179,44 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         if(transition.kind==Kind::Waypoint) {
             const auto &definition=destination->definition;
-            if(!definition.waypointAnchor || !nativeWaypointIndex(definition.waypointIndex) ||
+            if(!nativeWaypointIndex(definition.waypointIndex) ||
                 player.rules.character->waypointIndices.at(transition.to)!=definition.waypointIndex) {pending=state_.transitions.erase(pending);continue;}
-            const auto spawn=definition.collision.nativeSpawn(*definition.waypointAnchor,50,playerMovement);
-            if(!spawn) {pending=state_.transitions.erase(pending);continue;}
-            arrival=*spawn;
+            if(!transition.arrivalGeneration) {
+                const auto spawn=ports_.world.nativeWaypointPosition(transition.to,source->definition.act!=definition.act);
+                if(!spawn || spawn->area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+                transition.arrival=spawn->position;transition.arrivalGeneration=destination->generation;
+            }
+            arrival=transition.arrival;
         }
         if(transition.kind==Kind::QuestObject) {
             const auto object=std::find_if(source->definition.objects.begin(),source->definition.objects.end(),[&](const auto &o){return o.id==transition.source;});
             if(object==source->definition.objects.end() || !ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to)) {pending=state_.transitions.erase(pending);continue;}
-            const auto counterpart=std::find_if(destination->definition.objects.begin(),destination->definition.objects.end(),[&](const auto &o){return o.rule.operation==object->rule.operation;});
-            auto marker=destination->definition.questArrival;
-            if(!marker && counterpart!=destination->definition.objects.end() && source->definition.act==4) marker=counterpart->position;
-            if(!marker && source->definition.act>=2) marker=destination->definition.portalArrival;
-            if(!marker && (int(transition.to)==103 || int(transition.to)==109)) marker=destination->definition.spawn;
-            if(!marker && int(transition.from)==73 && counterpart!=destination->definition.objects.end()) marker=counterpart->position;
-            if(!marker) for(const auto &warp:destination->definition.exits) if(warp.destination==transition.from) {marker=warp.arrival;break;}
-            if(!marker) {pending=state_.transitions.erase(pending);continue;}
-            ports_.world.activate(transition.to, *marker);
-            const auto point=destination->definition.collision.nativeSpawn(*marker,50,playerMovement);
-            if(!point) {pending=state_.transitions.erase(pending);continue;}arrival=*point;
+            if(object->rule.operation==34 || object->rule.operation==43) {
+                if(!transition.arrivalGeneration) {
+                    const auto point=object->rule.operation==43?ports_.world.nativeDurielPortalPosition(transition.to):
+                        ports_.world.nativeActSpawnLocationEx(transition.to,int(transition.to)==74?11:0,2);
+                    if(!point || point->area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+                    transition.arrival=point->position;transition.arrivalGeneration=destination->generation;
+                }
+                arrival=transition.arrival;
+            } else {
+                if(targetDefinition.questArrival) ports_.world.activate(transition.to,*targetDefinition.questArrival);
+                if(targetDefinition.portalArrival) ports_.world.activate(transition.to,*targetDefinition.portalArrival);
+                for(const auto &exit:targetDefinition.exits) if(exit.destination==transition.from)
+                    ports_.world.activate(transition.to,exit.arrival);
+                if(targetDefinition.town) ports_.world.activate(transition.to,targetDefinition.spawn);
+                const auto counterpart=std::find_if(destination->definition.objects.begin(),destination->definition.objects.end(),[&](const auto &o){return o.rule.operation==object->rule.operation;});
+                auto marker=destination->definition.questArrival;
+                if(!marker && counterpart!=destination->definition.objects.end() && source->definition.act==4) marker=counterpart->position;
+                if(!marker && source->definition.act>=2) marker=destination->definition.portalArrival;
+                if(!marker && (int(transition.to)==103 || int(transition.to)==109)) marker=destination->definition.spawn;
+                if(!marker && int(transition.from)==73 && counterpart!=destination->definition.objects.end()) marker=counterpart->position;
+                if(!marker) for(const auto &warp:destination->definition.exits) if(warp.destination==transition.from) {marker=warp.arrival;break;}
+                if(!marker) {pending=state_.transitions.erase(pending);continue;}
+                ports_.world.activate(transition.to,*marker);
+                const auto point=destination->definition.collision.nativeSpawn(*marker,50,playerMovement);
+                if(!point) {pending=state_.transitions.erase(pending);continue;}arrival=*point;
+            }
         }
         if (transition.kind==Kind::Exit) {
             const AreaExit *back = nullptr;
@@ -247,7 +263,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         player.routeRunning = player.running; player.moving = !player.route.empty();
         player.movementTarget.reset();player.movementArrival.reset();
         player.routeDestination=exitWalk.value_or(arrival);player.routeObstacles=destination->definition.collision.obstacleRevision;
-        if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,tick);
+        if(transition.kind==Kind::Waypoint) ports_.objects.onWaypointArrival(transition.to,arrival);
         pending = state_.transitions.erase(pending);
     }
     return state_.transitions.empty() && synchronizationStatus==StepStatus::Complete ? StepStatus::Complete : StepStatus::Blocked;

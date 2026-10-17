@@ -49,10 +49,18 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
     auto grid = shopGrid();
     for (const auto &offer : shop.offers) {
         const auto *item = &offer;
-        if (!shop.gamble && offer.storePage != (category == 2 ? 1 : category))
+        if (!shop.gamble && (category==1 || category==2 ? offer.storePage!=1 && offer.storePage!=2 : offer.storePage!=category))
             continue;
         if (item->width < 1 || item->height < 1 || item->width > 10 || item->height > 10)
             continue;
+        if(offer.cell) {
+            const auto [x,y]=*offer.cell;
+            if(x<0 || y<0 || x+item->width>10 || y+item->height>10) continue;
+            result.push_back({&offer,!shop.gamble && offer.storePage==2?1:0,
+                {grid.x+x*inventoryCellSize(),grid.y+y*inventoryCellSize(),
+                 item->width*inventoryCellSize(),item->height*inventoryCellSize()}});
+            continue;
+        }
         auto locate = [&]() -> std::optional<std::array<int, 2>> {
             for (int y = 0; y <= 10 - item->height; ++y)
                 for (int x = 0; x <= 10 - item->width; ++x) {
@@ -83,7 +91,7 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
     return result;
 }
 int maximumPage(const std::vector<Placement> &items) {
-    return items.empty() ? 0 : items.back().page;
+    int maximum=0;for(const auto &item:items) maximum=std::max(maximum,item.page);return maximum;
 }
 bool tabAvailable(const ShopView &shop, int tab) {
     auto items = placements(shop, tab);

@@ -56,6 +56,6 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
         cost=std::move(*transaction.value);
     }
     if(cost) {const auto result=ports_.transactions.commit(std::move(*cost));if(!result) return {result.status,{}};}
-    ports_.combat.commitSpells(std::move(*prepared.value));return {DomainStatus::Applied,DirectContact{caster->id(),{},request.nativeMeleeOccurrence.value_or(request.actor.tick)}};
+    ports_.combat.commitSpells(std::move(*prepared.value));return {DomainStatus::Applied,DirectContact{caster->id(),request.nativeMeleeOccurrence.value_or(request.actor.tick)}};
 }
 }

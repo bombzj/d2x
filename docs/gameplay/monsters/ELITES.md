@@ -26,6 +26,8 @@ hosting准备MonUMod权重、排斥、类型限制、难度常数及不可变数
 
 monsters持Spectral Hit累计stat、谱系与死亡连锁，effects/monster_enchantments持每单位光环／诅咒／受击与死亡事件时钟。死亡触发与光环使用不同发生编号，可靠队列重试保留首次计划，具体公共事务要求见[COMMON](COMMON.md)。
 
+特殊休眠恢复的准备入口已保留UMod1语义：unique重新消费一次实际单位流后覆盖回已保存nameSeed，minion不消费该姓名随机；准备仆从规则时保留原所属链和保存的词缀身份。完整TYPE_OTHER／MINION寻位、光环二次初始化、特殊AI／命令与逐修饰器链顺序尚未闭合，目前特殊单位仍保留房间，不因准备入口存在就认证其压缩恢复。
+
 Amplify Damage、攻击光环及火强化爆炸使用统一战斗关系筛选怪物目标，涵盖佣兵、死灵召唤／重生及转换单位；友方属性光环只授予实际盟友，不能按owner空值误授敌对转换单位。暗金／超级暗金萨满可复活范围内普通／仆从沉沦魔及萨满尸体；普通／冠军萨满只检索本人族群，复活模式取目标MonStats2。
 
 词缀行为接线不表示所有排斥／权重／难度／目标组合已运行验证。Holy Fire／Freeze／Shock与Amplify Damage在此只登记精英来源，不能认证玩家圣骑士／死灵完整技能；技能来源边界见[怪物技能](../skills/MONSTERS.md)。原MonProp血乌地狱knock从表准备，chance空白／0按原规则无条件应用，但没有地狱运行认证。

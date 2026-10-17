@@ -80,7 +80,7 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
             const auto expected=player->combatRandom;auto random=expected;
             const bool accepted=int(limitedRandom(random,100))<job.chance;
             const auto consumed=ports_.transactions.consumeRandom(actor,expected,random);
-            if(consumed.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            if(isDeferred(consumed.status)) return StepStatus::Blocked;
             if(!consumed) {it=jobs.erase(it);continue;}
             job.rolled=accepted;
         }
@@ -105,7 +105,7 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
                     if(area->definition.collision.walkable(point,playerMovement)) {chosen=point;found=true;break;}
                 }
                 const auto consumed=ports_.transactions.consumeRandom(actor,expected,random);
-                if(consumed.status==DomainStatus::Capacity) return StepStatus::Blocked;
+                if(isDeferred(consumed.status)) return StepStatus::Blocked;
                 if(!consumed) {it=jobs.erase(it);continue;}
                 if(found) {job.position=chosen;job.target={};}
                 if(!found) {it=jobs.erase(it);continue;}
@@ -114,7 +114,7 @@ StepStatus ItemTriggers::advanceJobs(std::list<ItemTrigger> &jobs,uint64_t tick)
         }
         if(job.phase==ItemTriggerPhase::Execute) {
             const auto result=ports_.skills.itemTrigger(actor,job.skill,job.collision,job.target,job.position,job.policy.death,false,&job.continuation);
-            if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+            if(isDeferred(result.status)) return StepStatus::Blocked;
             if(!result) {
                 if(result.status==DomainStatus::NotImplemented) deferred_="Original item trigger behavior requires its skill program: "+std::to_string(job.skill.sourceId);
                 it=jobs.erase(it);continue;

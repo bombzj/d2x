@@ -1,6 +1,7 @@
 #include "skill_content.hpp"
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "gameplay/skills/behavior.hpp"
@@ -37,6 +38,11 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
         auto &head=hydra.heads[index];head.definition=data.skills.hydra->heads[index];
         size_t row=0;while(row<monsters.rows().size() && monsters.number(row,"hcIdx")!=head.definition.nativeClass) ++row;
         if(row==monsters.rows().size()) throw std::runtime_error("Missing native Hydra base stats");
+        MonsterRecord record;record.sourceRow=row;
+        const auto &extra=data.tables.at("monstats2");
+        size_t extraRow=0;while(extraRow<extra.rows().size() && extra.value(extraRow,"Id")!=monsters.value(row,"MonStatsEx")) ++extraRow;
+        if(extraRow==extra.rows().size()) throw std::runtime_error("Missing native Hydra collision record");
+        record.collisionSize=number(extra,extraRow,"SizeX");record.spawnCollision=number(extra,extraRow,"spawnCol");
         head.noRatio=number(monsters,row,"noRatio")!=0;head.boss=number(monsters,row,"boss")!=0;
         const auto &skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
         size_t skillRow=0;while(skillRow<skills.rows().size() && skills.number(skillRow,"Id")!=head.definition.attackSkill) ++skillRow;
@@ -65,6 +71,9 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
             base.attributes.coldResist=number(monsters,row,"ResCo"+ending);base.attributes.poisonResist=number(monsters,row,"ResPo"+ending);
             rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.nativeClass=head.definition.nativeClass;rule.difficulty=int(difficulty);
             prepareMonsterStateRules(data,row,rule);
+            if(!prepareMonsterComponents(data,record,rule) || rule.totalPieces>2)
+                throw std::runtime_error("Unsupported native Hydra component pool");
+            rule.size=record.collisionSize;rule.spawnCollision=record.spawnRule();
             rule.alignment=2;rule.noTreasure=rule.noExperience=true;rule.damageRegen=base.damageRegen;
             rule.petType=petType;
             rule.attackTicks=head.definition.attackTicks;rule.impactTick=head.definition.impactTick;rule.deathTicks=head.definition.deathTicks;
@@ -120,6 +129,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
     prepared->fireShrine=data.states.at("shrine_resist_fire").definition;
     prepared->healthPotion=data.states.at("healthpot").definition;
     prepared->manaPotion=data.states.at("manapot").definition;
+    prepared->itemFullSet=data.states.at("skel_mastery").definition;
     prepared->frozen=data.states.at("freeze").definition;
     prepared->openWounds=data.states.at("openwounds").definition;
     prepared->redeemed=data.states.at("redeemed").definition;
@@ -153,9 +163,6 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
         if (skill.classCode != "sor" && skill.classCode != "ama" && skill.classCode != "pal" &&
             !(skill.classCode=="nec" && id>=66 && id<=95) && skill.classCode != "bar" && skill.classCode != "ass" && skill.classCode != "dru") continue;
         if(skill.auraImplemented) prepared->auras.emplace(id,server::SkillRules::Aura{prepareAura(data,id),skill.auraImmediate});
-        if (skill.fireMasteryPerRank) prepared->fireMasteries.emplace(id, *skill.fireMasteryPerRank);
-        if (skill.lightningMasteryPerRank) prepared->lightningMasteries.emplace(id, *skill.lightningMasteryPerRank);
-        if (skill.coldPiercePerRank) prepared->coldMasteries.emplace(id, *skill.coldPiercePerRank);
         if (!skill.spell || skill.spell->effect==SkillBehavior::None) continue;
         const auto &spec = *skill.spell;
         server::SkillDefinition definition{spec.rules(), skill.allowedInTown, {}};

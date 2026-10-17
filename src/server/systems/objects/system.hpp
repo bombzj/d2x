@@ -4,18 +4,22 @@
 #include "server/runtime/events.hpp"
 #include "server/runtime/object_rules.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/area_store.hpp"
 
 #include <map>
+#include <functional>
 #include <set>
 #include <string>
 #include <tuple>
 #include <vector>
 
+namespace d2x::server {struct RoomView;struct RoomRandomLoan;}
+namespace d2x::server::monsters {struct NativeBirthBatch;}
 namespace d2x::server::objects {
 // Runtime doors/chests/shrines/wells/quest objects; resource-only map decorations are separate.
 struct Request { UnitTarget target; };
-struct Admission { int definition{}; RegionId area; Vec position; std::optional<int> shrine,trap; int mode{}; uint64_t tick{}; };
-struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId; bool specialPending{}; int spawnCount{},spawned{},secondaryTrap{}; bool trapWarned{};uint64_t lootAt{};std::optional<std::string> trapKind;bool urnPending{}; };
+struct Admission { int definition{}; RegionId area; Vec position; std::optional<int> shrine,trap; int mode{}; uint64_t tick{};std::optional<RoomView> room; };
+struct Object { EntityId id; int definition{}; RegionId area; Vec position; uint64_t revision{}; int mode{}; ObjectRule rule; uint64_t until{}, reset{}; bool pending{}; int uses{}; uint64_t random{},hazardAt{},trapAt{}; int phase{},trap{}; PlayerId operatorId; bool specialPending{}; int spawnCount{},spawned{}; bool trapWarned{};uint64_t lootAt{};bool urnPending{},resurrected{};uint8_t sparkChest{},portalDestination{};uint64_t portalAt{}; };
 struct State { std::map<EntityId, Object> objects; std::optional<uint64_t> controlRandom; };
 struct ObjectRegionPopulation {
   uint64_t generation{};
@@ -46,6 +50,23 @@ class System {
     std::set<EntityId> towerFailed_;
     std::map<RegionId,ObjectRegionPopulation> population_;
     std::set<EntityId> admittedPresetNpcs_;
+    std::set<EntityId> admittedPresets_;
+    std::map<EntityId,EntityId> presetObjects_;
+    std::vector<std::pair<RegionId,Vec>> waypointArrivals_;
+    struct CainAttempt {EntityId marker;bool requested{},attempted{};std::set<EntityId> townPlayers;};
+    CainAttempt cainAttempt_;
+    bool waypointArrival(const Object &) const;
+    void publishInitialization(const Object &);
+    DomainResult<bool> spawnTownCain(const AreaNpc &,RegionId,Vec,uint64_t tick);
+    struct InactiveObject {
+      EntityId previous,preset;
+      RegionId area;Vec position;
+      int definition{},mode{},uses{},trap{},shrine{};
+      uint64_t frame{},reset{};
+      bool locked{};
+      uint8_t sparkChest{},portalDestination{};
+    };
+    std::map<std::pair<RegionId,size_t>,std::vector<InactiveObject>> inactive_;
     struct GroundGeneration {
       GroundGenerationRequest request;
       std::optional<items::PreparedBatch> prepared;
@@ -54,6 +75,9 @@ class System {
     std::vector<GroundGeneration> groundGeneration_;
     std::optional<std::tuple<RegionId,uint64_t,size_t,uint64_t>> groundGenerationOwner_;
     uint64_t nextGroundRequest_{1};
+    struct DamageExecution {std::vector<EntityId> targets;size_t next{};uint64_t occurrence{};bool queued{};};
+    std::map<EntityId,DamageExecution> damageExecutions_;
+    uint64_t nextDamageOccurrence_{1};
     StepStatus populateRandomRoom(RegionId,size_t,TickContext);
     void collision(RegionId);
     void schedule(Object &);
@@ -63,11 +87,18 @@ class System {
     DomainResult<> damage(Object &,DamageType,bool playersOnly,int radius,TickContext,std::optional<EntityId> target={});
     DomainResult<> explode(Object &,const ActorContext &);
     void initialize(Object &,uint64_t tick,uint64_t &random,uint64_t &controlRandom);
+    void finishInitialization(Object &,uint64_t &controlRandom);
+    DomainResult<> prepareGoldPlaceholder(Object &,uint64_t &random,uint64_t &controlRandom,EntityIds &,
+      std::vector<std::pair<items::PreparedBatch,GroundLocation>> &,std::vector<EntityId> &,
+      const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> prepareSoulPlaceholder(Object &,uint64_t tick,uint64_t &random,uint64_t &controlRandom,EntityIds &,
+      monsters::NativeBirthBatch &,std::optional<RoomRandomLoan> &,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     StepStatus hazardStep(TickContext,EntityId);
-    struct TrapClock {uint64_t next{},release{},interruption{};int shots{};uint8_t mode{4};Vec aim;EntityId target;bool waiting{};int direction{};uint64_t delayUntil{};};
+    struct TrapClock {uint64_t next{},release{},interruption{};int shots{};uint8_t mode{4};Vec aim;EntityId target;bool waiting{};int direction{};uint64_t delayUntil{},admissionRevision{};};
     std::map<EntityId,TrapClock> traps_;
     std::map<RegionId,int> arrowVariants_;
     DomainResult<> spawnTrap(Object &,TickContext);
+    DomainResult<> scheduleTrap(Object &,uint64_t tick);
     StepStatus objectTrap(TickContext,EntityId);
     StepStatus monsterTrap(TickContext,EntityId);
   public:
@@ -84,6 +115,8 @@ class System {
       if(found!=state_.objects.end() && found->second.random==expected) found->second.random=next;
     }
     DomainResult<EntityId> admit(const Admission &);
+    void compressRoom(RegionId,size_t,uint64_t tick);
+    StepStatus restoreRoom(RegionId,size_t,uint64_t tick);
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);
     DomainResult<> openOrbMist(EntityId,uint64_t tick);
@@ -91,7 +124,7 @@ class System {
     DomainResult<> towerGold(GroundLocation,uint64_t tick);
     void countessKilled(Vec,uint64_t tick);
     StepStatus towerStep(TickContext);
-    void onWaypointArrival(RegionId,TickContext);
+    void onWaypointArrival(RegionId,Vec);
     StepStatus step(TickContext, FrameFacts &);
     DomainResult<> frameEvent(const FrameEvent &,uint64_t tick);
     DomainResult<> trapEvent(EntityId,uint64_t tick);

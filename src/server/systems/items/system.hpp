@@ -1,4 +1,5 @@
 #pragma once
+#include "core/id.hpp"
 #include "state.hpp"
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
@@ -69,10 +70,16 @@ class System {
     void clearRestoration(EntityId id) {restoration_.erase(id);ports_.frameEvents.cancelHandler({FrameEventUnit::Item,id},FrameEventType::StatRegeneration,0);}
     DomainResult<> restoreGround(EntityId,uint64_t tick);
     bool identityCapacity(size_t count) const { return ports_.ids.cursor()<=UINT32_MAX && count<=uint64_t(UINT32_MAX)-ports_.ids.cursor()+1; }
+    uint64_t identityCursor() const {return ports_.ids.cursor();}
+    void publishIdentities(uint64_t expected,size_t count) {
+        if(ports_.ids.cursor()!=expected || !identityCapacity(count)) throw std::logic_error("Stale native item identity allocation");
+        ports_.ids=EntityIds(expected+count);
+    }
     EntityId reserveIdentity() { if (ports_.ids.cursor() > UINT32_MAX) throw std::overflow_error("Native item identity exhausted"); return ports_.ids.allocate(); }
     DomainResult<State> prepare(PreparedBatch, GroundLocation);
     DomainResult<> install(PreparedBatch, GroundLocation);
-    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick);
+    DomainResult<> installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &,uint64_t tick,std::span<const EntityId> identities={},std::shared_ptr<EntityIds::Publication> allocation={});
+    DomainResult<PreparedBatch> prepareNativeGold(unsigned level,uint64_t &random,bool inStore) const;
     // Raw CreateItemEx spawn type 3: placement has already been resolved by
     // the caller. Uses the unit seed for quantity, the item seed for quality.
     DomainResult<EntityId> createNativeGold(GroundLocation,unsigned level,uint64_t tick);

@@ -140,6 +140,7 @@ class RoomMaze {
                                                         : cryptRules(level)),
           base_(family_.base) {}
     using ConvertRoom = std::function<void(const MapRecipe &, const MapPiece &, Seed &)>;
+    uint64_t randomState() const {return seed_.state();}
     MapRecipe build(int level, uint32_t seed, int difficulty, int entranceDirection = 0,
         const NativeActLayout *layout = nullptr, const ConvertRoom &convert = {});
 };

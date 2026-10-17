@@ -67,6 +67,11 @@ FrameInput pollInput(const Viewport &viewport) {
         input.menuSelect = int(IsKeyPressed(KEY_ENTER)) + int(IsKeyPressed(KEY_SPACE));
         input.menuCancel = int(IsKeyPressed(KEY_ESCAPE));
         input.menuDelta = int(IsKeyPressed(KEY_DOWN)) - int(IsKeyPressed(KEY_UP));
+        // Native automap callbacks consume key-down events, including the OS
+        // repeat, and move 16 map pixels per event (not per rendered frame).
+        const auto mapKey = [](int key) { return IsKeyPressed(key) || IsKeyPressedRepeat(key); };
+        input.movement = {float(int(mapKey(KEY_RIGHT)) - int(mapKey(KEY_LEFT))),
+                          float(int(mapKey(KEY_DOWN)) - int(mapKey(KEY_UP)))};
         input.weaponSwap = !input.control && IsKeyPressed(KEY_W);
         // Classic gameplay shortcuts; the in-game help panel lists this table.
         // Ctrl/Alt keep their debug and modifier roles, so plain letters drive

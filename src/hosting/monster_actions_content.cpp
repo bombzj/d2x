@@ -3,7 +3,6 @@
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "gameplay/skills/projectile_path.hpp"
-#include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
@@ -18,14 +17,6 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     const auto &table=data.tables.at("missiles");
     size_t row=0;while(row<table.rows().size() && table.number(row,"Id")!=definition) ++row;
     if(row==table.rows().size() || rank<1 || rank>255 || !data.missileCollisions.contains(definition)) return {};
-    const int shift=table.number(row,"HitShift").value_or(0);
-    if(shift<0 || shift>8) return {};
-    const int brackets[]{std::min(rank-1,7),std::clamp(rank-8,0,8),std::clamp(rank-16,0,6),std::clamp(rank-22,0,6),std::max(rank-28,0)};
-    auto damage=[&](std::string_view field,std::string_view perLevel) {
-        int64_t value=table.number(row,field).value_or(0);
-        for(size_t i=0;i<std::size(brackets);++i) value+=int64_t(brackets[i])*table.number(row,std::string(perLevel)+std::to_string(i+1)).value_or(0);
-        return value<0?int64_t(-1):value*(int64_t(1)<<shift);
-    };
     server::MonsterMissileRule rule;rule.definition=definition;rule.collision=data.missileCollisions.at(definition);
     const auto speed=missileVelocityFixed(table.number(row,"Vel").value_or(0),table.number(row,"VelLev").value_or(0),rank);
     if(!speed) return {};
@@ -55,10 +46,7 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
         const auto skill=data.nativeFormulas->skillIds.find(name);if(skill==data.nativeFormulas->skillIds.end()) return {};
         rule.linkedSkill=skill->second;
     }
-    const auto minimum=damage("MinDamage","MinLevDam"),maximum=damage("MaxDamage","MaxLevDam");
-    const auto low=damage("EMin","MinELev"),high=damage("Emax","MaxELev");
-    if(minimum<0 || maximum<minimum || maximum>INT32_MAX || low<0 || high<low || high>INT32_MAX || rule.frames<=0 || rule.frames>1000000) return {};
-    rule.minimum=int(minimum);rule.maximum=int(maximum);rule.elementalMinimum=int(low);rule.elementalMaximum=int(high);
+    if(rule.frames<=0 || rule.frames>1000000) return {};
     const auto type=table.value(row,"EType");
     const std::array<std::string_view,13> elements{"","fire","ltng","mag","cold","pois","life","mana","stam","stun","rand","burn","frze"};
     const auto element=std::find(elements.begin(),elements.end(),type);if(element==elements.end()) return {};
@@ -71,13 +59,6 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     else if(type=="life" || type=="mana" || type=="stam" || type=="stun" || type=="rand") rule.element=DamageType::Physical;
     else if(type=="burn") rule.element=DamageType::Fire;
     else if(!type.empty()) return {};
-    int length=table.number(row,"ELen").value_or(0);
-    const int lengths[]{std::min(rank-1,7),std::clamp(rank-8,0,8),std::max(rank-16,0)};
-    for(size_t i=0;i<std::size(lengths);++i) length+=lengths[i]*table.number(row,"ELevLen"+std::to_string(i+1)).value_or(0);
-    if(length<0 || length>1000000) return {};
-    rule.elementLength=length;
-    if(rule.element==DamageType::Cold) rule.coldFrames=unsigned(length);
-    if(rule.element==DamageType::Poison) rule.poisonFrames=unsigned(length);
     rule.town=table.number(row,"Town").value_or(0)!=0;rule.sourceTown=table.number(row,"SrcTown").value_or(0)!=0;
     rule.toHit=table.number(row,"ToHit").value_or(0)!=0;
     rule.killOnHit=table.number(row,"CollideKill").value_or(0)!=0;
@@ -164,36 +145,6 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
         for(size_t r=0;r<table.rows().size();++r) if(table.value(r,"Missile")=="frostnova") {
             rule.baseVelocity=table.number(r,"Vel").value_or(0);rule.speed=float(*missileVelocityFixed(rule.baseVelocity,0,rank))*25.f/4096.f;break;
         }
-    }
-    const auto skillName=table.value(row,"Skill");
-    if(!skillName.empty() && (definition==62 || definition==93 || definition==98 || rule.behavior==server::MonsterMissileRule::Behavior::GlacialSpike)) {
-        const auto &skills=data.tables.at("skills");
-        for(size_t s=0;s<skills.rows().size();++s) if(skills.value(s,"skill")==skillName) {
-            const auto *entry=data.skills.find(skills.number(s,"Id").value_or(-1));
-            if(!entry || !entry->spell) return {};
-            const auto cast=resolveSkill(entry->spell->rules(),{rank,{}});
-            rule.elementalMinimum=int(cast.minimumDamage*256.f);rule.elementalMaximum=int(cast.maximumDamage*256.f);
-            if(cast.arc) {rule.chainCount=cast.arc->count;rule.chainRadius=cast.arc->range;}
-            if(cast.freezingArea) {rule.blastRadius=float(cast.freezingArea->radius);rule.coldFrames=unsigned(cast.freezingArea->freezeFrames);rule.freeze=true;}
-            break;
-        }
-    }
-    if(rule.behavior==server::MonsterMissileRule::Behavior::Meteor) {
-        const auto &skills=data.tables.at("skills");size_t s=0;
-        while(s<skills.rows().size() && skills.value(s,"skill")!=skillName) ++s;
-        if(s==skills.rows().size() || skills.value(s,"aurarangecalc")!="ln12" || !skills.value(s,"EDmgSymPerCalc").empty()) return {};
-        rule.blastRadius=float(skills.number(s,"Param1").value_or(0)+(rank-1)*skills.number(s,"Param2").value_or(0));
-        const int hitShift=skills.number(s,"HitShift").value_or(8);
-        if(hitShift<0 || hitShift>8 || rule.blastRadius<=0) return {};
-        auto skillDamage=[&](bool high) {int64_t value=skills.number(s,high?"EMax":"EMin").value_or(0);for(size_t i=0;i<std::size(brackets);++i) value+=int64_t(brackets[i])*skills.number(s,std::string(high?"EMaxLev":"EMinLev")+std::to_string(i+1)).value_or(0);return value*(int64_t(1)<<hitShift);};
-        const auto lo=skillDamage(false),hi=skillDamage(true);if(lo<0 || hi<lo || hi>INT32_MAX) return {};
-        rule.elementalMinimum=int(lo);rule.elementalMaximum=int(hi);
-        const auto childName=table.value(row,"HitSubMissile1");size_t child=0;
-        while(child<table.rows().size() && table.value(child,"Missile")!=childName) ++child;
-        if(child==table.rows().size()) return {};
-        auto fire=prepareMonsterMissile(data,table.number(child,"Id").value_or(-1),rank);if(!fire) return {};
-        fire->frames=skills.number(s,"Param3").value_or(0)+(rank-1)*skills.number(s,"Param4").value_or(0);if(fire->frames<1) return {};
-        rule.impactMissile=std::make_shared<const server::MonsterMissileRule>(*fire);rule.childStep=std::max(1,table.number(row,"sHitPar2").value_or(1));
     }
     if(rule.behavior==server::MonsterMissileRule::Behavior::PoisonBottle) {
         const auto childName=table.value(row,"HitSubMissile1");size_t child=0;
@@ -299,15 +250,8 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
         else if(record.ai=="Arach") {
             if(!record.web) return false;
             action.action=server::MonsterAttackRule::Action::Web;
-            const auto &web=*record.web;
-            rule.web=server::MonsterWebRule{web.missileId,int(std::lround(web.lifetime*25)),int(std::lround(web.auraDuration*25)),int(std::lround(web.slowDuration*25)),web.slowPercent,web.radius,data.states.at("spiderlay").definition,data.states.at("slowed").definition};
-            size_t layRow=0;while(layRow<missiles.rows().size() && data.nativeFormulas->missiles.at(int(layRow)).number("psrvhitfunc")!=15) ++layRow;
-            if(layRow==missiles.rows().size() || missiles.value(layRow,"HitSubMissile1")!="spidergoo") return false;
-            auto lay=prepareMonsterMissile(data,missiles.number(layRow,"Id").value_or(-1),rank);
-            auto ground=prepareMonsterMissile(data,web.missileId,rank);if(!lay || !ground) return false;
-            // SKILLS_CreateSpiderLayMissile overrides table velocity to 3.
-            lay->baseVelocity=3;lay->speed=float(*missileVelocityFixed(3,0,rank))*25.f/4096.f;
-            rule.web->lay=*lay;rule.web->ground=*ground;
+            rule.web=server::MonsterWebRule{data.states.at("spiderlay").definition};
+            if(!data.nativeFormulas->missileIds.contains("spidergoolay") || !data.nativeFormulas->missileIds.contains("spidergoo")) return false;
         } else {
             auto name=skills.value(row,"srvmissile");if(name.empty()) name=skills.value(row,"srvmissilea");
             size_t missileRow=0;while(missileRow<missiles.rows().size() && missiles.value(missileRow,"Missile")!=name) ++missileRow;
@@ -350,6 +294,7 @@ bool prepareMonsterComponents(const ClassicData &data,const MonsterRecord &recor
         const auto hitClass=extra.number(row,"HitClass").value_or(0);
         if(hitClass<0 || hitClass>15) return false;
         rule.hitClass=uint8_t(hitClass);
+        rule.componentCounts={};rule.shieldChoices.clear();
         constexpr std::array componentCodes{"HD","TR","LG","RA","LA","RH","LH","SH","S1","S2","S3","S4","S5","S6","S7","S8"};
         for(size_t c=0;c<componentCodes.size();++c) {
             auto text=std::string(extra.value(row,std::string(componentCodes[c])+"v"));std::erase(text,'"');
@@ -399,8 +344,11 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
     if(rule.coldDivisor<=0 || rule.freezeDivisor<=0) throw std::runtime_error("Invalid original monster cold difficulty divisor");
     const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
     rule.bossTransfer=monsters.number(monsterRow,"bossxfer").value_or(0)!=0;
+    rule.neverCount=monsters.number(monsterRow,"neverCount").value_or(0)!=0;
+    rule.flying=monsters.number(monsterRow,"flying").value_or(0)!=0;
     const auto id=monsters.value(monsterRow,"Id");
     const auto baseId=monsters.value(monsterRow,"BaseId");
+    prepareMonsterBirthProperties(data,monsterRow,rule);
     rule.wakeAiOutsideNeutral=baseId=="vulture1" || baseId=="willowisp1" || baseId=="batdemon1" || baseId=="frogdemon1";
     rule.nativeModifiers.clear();
     if(baseId=="brute2") rule.nativeModifiers.push_back(13);
@@ -431,9 +379,66 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
         rule.stateTarget.attackable=extra.number(row,"isAtt").value_or(0)!=0;
         rule.curseable=extra.number(row,"mA1").value_or(0)!=0;
         rule.deadCollision=extra.number(row,"deadCol").value_or(0)!=0;
+        rule.restore=extra.number(row,"Restore").value_or(0);
+        if(rule.restore<0 || rule.restore>2) throw std::runtime_error("Invalid original monster Restore rule");
         return;
     }
     throw std::runtime_error("Missing original monster state/target rules");
+}
+void prepareMonsterBirthProperties(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+    rule.birthProperties.clear();
+    rule.birthEquipment.clear();
+    const auto monster=data.tables.at("monstats").value(monsterRow,"Id");
+    const auto &equipment=data.tables.at("monequip"),&locations=data.tables.at("bodylocs");
+    size_t first=0;
+    while(first<equipment.rows().size() && equipment.value(first,"monster")!=monster) ++first;
+    if(data.tables.at("monstats").number(monsterRow,"inventory").value_or(0) &&
+        first<equipment.rows().size() && equipment.number(first,"oninit").value_or(0)) {
+        for(size_t row=first;row<equipment.rows().size() && equipment.value(row,"monster")==monster;++row) {
+            server::MonsterRule::BirthEquipment entry;entry.level=uint16_t(equipment.number(row,"level").value_or(0));
+            for(int index=1;index<=3;++index) {
+                const auto suffix=std::to_string(index);const auto location=equipment.value(row,"loc"+suffix);
+                size_t body=0;while(body<locations.rows().size() && locations.value(body,"Code")!=location) ++body;
+                if(body==0 || body>=11) break;
+                const auto quality=equipment.number(row,"mod"+suffix).value_or(0);
+                entry.choices.push_back({std::string(equipment.value(row,"item"+suffix)),uint8_t(body),uint8_t(quality>=0 && quality<8?quality:0)});
+            }
+            if(entry.choices.empty()) throw std::runtime_error("Unsupported empty native MonEquip alternatives");
+            rule.birthEquipment.push_back(std::move(entry));
+        }
+    }
+    const auto propertyId=data.tables.at("monstats").value(monsterRow,"MonProp");
+    if(!propertyId.empty()) {
+        const auto &properties=data.tables.at("monprop"),&programs=data.tables.at("properties");
+        size_t propertyRow=0;
+        while(propertyRow<properties.rows().size() && properties.value(propertyRow,"Id")!=propertyId) ++propertyRow;
+        if(propertyRow==properties.rows().size()) throw std::runtime_error("Missing original monster property record");
+        const std::string difficulty=rule.difficulty==1?" (N)":rule.difficulty==2?" (H)":"";
+        for(int slot=1;slot<=6;++slot) {
+            const auto suffix=std::to_string(slot)+difficulty;
+            const auto code=properties.value(propertyRow,"prop"+suffix);if(code.empty()) break;
+            server::MonsterRule::BirthProperty property;
+            property.chance=uint8_t(properties.number(propertyRow,"chance"+suffix).value_or(0));
+            property.parameter=properties.number(propertyRow,"par"+suffix).value_or(0);
+            property.minimum=properties.number(propertyRow,"min"+suffix).value_or(0);
+            property.maximum=properties.number(propertyRow,"max"+suffix).value_or(0);
+            size_t programRow=0;
+            while(programRow<programs.rows().size() && programs.value(programRow,"code")!=code) ++programRow;
+            if(programRow==programs.rows().size()) throw std::runtime_error("Missing original monster property program");
+            for(int operation=1;operation<=7;++operation) {
+                const auto number=std::to_string(operation);
+                const int function=programs.number(programRow,"func"+number).value_or(0);if(!function) break;
+                if(function!=1 && function!=8 && function!=17) throw std::runtime_error("Unsupported monster birth property function");
+                const auto stat=programs.value(programRow,"stat"+number);
+                if(stat.empty() || !data.nativeStats || !data.nativeStats->names.contains(stat))
+                    throw std::runtime_error("Missing original monster property stat");
+                property.program.push_back({function,std::string(stat),programs.number(programRow,"val"+number).value_or(0),
+                    programs.number(programRow,"set"+number).value_or(0)!=0});
+            }
+            if(property.program.empty()) throw std::runtime_error("Empty original monster property program");
+            rule.birthProperties.push_back(std::move(property));
+        }
+    }
 }
 void prepareMonsterSkillRanks(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
     const auto &stats=data.tables.at("monstats");
@@ -456,7 +461,7 @@ void prepareMonsterSkillRanks(const ClassicData &data,size_t monsterRow,server::
     }
 }
 bool prepareMonsterLifecycle(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
-    rule.curseAiRunMode=record.runMode;rule.curseAiInteract=record.interact;rule.curseAiRunVelocity=record.runVelocity.value_or(0);
+    rule.curseAiRunMode=record.runMode;rule.curseAiInteract=record.interact;rule.nativeRunVelocity=record.runVelocity.value_or(0);
     prepareMonsterSkillRanks(data,record.sourceRow,rule);
     for(size_t difficulty=0;difficulty<rule.modeTables.size();++difficulty) {
         rule.modeTables[difficulty]=data.nativeMonsterModes.at({record.index,int(difficulty)});

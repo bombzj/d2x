@@ -32,7 +32,7 @@ ClientPreferences loadClientPreferences() {
             } else std::cerr << "Invalid client setting: automapFade must be a string\n";
         }
         const bool large = setting("automapLarge");
-        if (!large && fade == AutomapFade::Center) fade = AutomapFade::Everything;
+        if (!large && fade == AutomapFade::Center) fade = AutomapFade::No;
         return {setting("running"), setting("miniPanelOpen"), large,
             setting("automapCenterWhenCleared", true),
             setting("automapParty", true), setting("automapNames", true), fade};

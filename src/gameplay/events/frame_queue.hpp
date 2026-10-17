@@ -115,6 +115,7 @@ class FrameEventQueue {
     std::optional<uint64_t> nextDue(FrameEventOwner,FrameEventType) const;
     bool hasDue(FrameEventOwner,uint64_t frame) const;
     bool hasEvent(FrameEventOwner,FrameEventType) const;
+    bool hasHandler(FrameEventOwner,uint32_t handler) const;
     size_t size() const {return nodes_.size();}
     uint64_t currentFrame() const {return frame_.value_or(0);}
     bool idle() const {return !frame_ || phase_==10;}

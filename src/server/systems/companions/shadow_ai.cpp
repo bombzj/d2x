@@ -59,7 +59,7 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
             const auto found=owner->persistent.player.skillRanks.find(id);const int base=found==owner->persistent.player.skillRanks.end()?1:found->second;
             assignments.emplace_back(id,std::clamp(int(pet.assassinAi[2])/2+base/2,1,24));
         }
-        const auto assigned=ports_.effects.assignUnitSkills(body->id,assignments,tick.tick);if(!assigned) return assigned.status==DomainStatus::Capacity?StepStatus::Blocked:StepStatus::Complete;
+        const auto assigned=ports_.effects.assignUnitSkills(body->id,assignments,tick.tick);if(!assigned) return isDeferred(assigned.status)?StepStatus::Blocked:StepStatus::Complete;
         pet.shadowInitialized=true;body=ports_.monsters.find(pet.actor);
     }
     if(!pet.shadowDecision) {
@@ -115,7 +115,7 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                 const std::array<std::pair<int,int>,2> assignments{{{right,rank(right)},{left,rank(left)}}};
                 const auto assigned=ports_.effects.assignUnitSkills(body->id,assignments,tick.tick);
                 if(!assigned) {
-                    if(assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
+                    if(isDeferred(assigned.status) || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
                     return idle(25);
                 }
                 body=ports_.monsters.find(pet.actor);

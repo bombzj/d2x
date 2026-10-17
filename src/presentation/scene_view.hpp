@@ -18,6 +18,7 @@
 #include <map>
 #include <algorithm>
 #include <span>
+#include <tuple>
 
 namespace d2x {
 class IActorClient;
@@ -120,6 +121,7 @@ class SceneView {
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
+    std::optional<std::tuple<int, int, bool, bool>> automapLayout_;
     ChatView chat_;
     OriginalMenu originalMenu_;
     TradeInviteView tradeInvite_;
@@ -284,7 +286,7 @@ class SceneView {
     void drawCorpseLabel(const std::string &label, Vec screenPosition) const;
     void drawHighlightedActor(const Sprite *image, Vec position) const { drawSelectableSprite(image, position, true); }
     void drawNpcQuestAlert(EntityId npc, Vec position, bool back) const { drawNpcAlert(npc, position, back); }
-    void drawAutomap(const AutomapDrawView &) const;
+    void drawAutomap(const AutomapDrawView &);
     std::vector<size_t> drawWorld(const WorldDrawView &);
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &request, int palette) const {
         return assets_.actorAnimation(request, palette);

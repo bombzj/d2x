@@ -86,6 +86,16 @@ void NativeMapGenerator::ensureLevel(int level) {
             activation_.initialize(*room);
     }
 }
+uint64_t NativeMapGenerator::levelRandom(int id) const {
+    const auto &level=levels_.at(id);
+    if(level.outdoor) return level.outdoor->grid.random().state();
+    return level.preset?level.preset->random:level.maze->random;
+}
+const std::vector<NativeTileInfo> &NativeMapGenerator::levelTileInfo(int id) const {
+    const auto &level=levels_.at(id);
+    if(level.outdoor) return level.outdoor->tileInfo;
+    return level.preset?level.preset->tileInfo:level.maze->tileInfo;
+}
 std::vector<size_t> NativeMapGenerator::near(size_t index) {
     const auto &room = tiles_.rooms().at(index);
     if (!room.near.empty()) return room.near;

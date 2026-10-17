@@ -77,7 +77,6 @@ class System {
     DomainStatus activateAssassinKick(Release &,const ActorContext &,Vec);
     DomainStatus allocateAssassinKick(Release &,const ActorContext &,bool held,bool knockback);
     DomainStatus activateUnsupported(Release &, const ActorContext &, Vec);
-    std::vector<EntityId> staticFieldTargets(const ActorContext &, const SkillCastSpec &) const;
     std::optional<Vec> unitPosition(const ActorContext &, UnitTarget, SkillBehavior) const;
     DomainResult<> attack(const ActorContext &, const Request &, int selectedOverride = -1);
   public:

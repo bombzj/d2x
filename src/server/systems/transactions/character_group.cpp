@@ -31,7 +31,7 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
     const auto &lead=unitContext?*unitContext:leadInventory?leadInventory->actor:leadCharacter->actor;
     const auto region=lead.area;const auto generation=lead.areaGeneration,tick=lead.tick;
     for(const auto &plan:plans) {
-        if(!plan.auraPlayers.empty() || !plan.player || plan.missileBirth || plan.roomRandom) return {DomainStatus::InvalidRequest,{}};
+        if(!plan.auraPlayers.empty() || !plan.player || plan.missileBirth || plan.roomRandom || !plan.roomRandomLoans.empty() || plan.gameRandom) return {DomainStatus::InvalidRequest,{}};
         const auto *inventory=std::get_if<InventoryEdit>(&plan.change);
         const auto *character=std::get_if<CharacterEdit>(&plan.change);
         if(!inventory && !character) return {DomainStatus::InvalidRequest,{}};

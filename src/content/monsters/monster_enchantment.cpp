@@ -192,14 +192,6 @@ MonsterEnchantment resolveMonsterEnchantment(const ClassicData &data,const Monst
         default: throw std::runtime_error("Unsupported randomly selected monster modifier");
         }
     }
-    if (result.has(9)) {
-        const int rawHp = number(stats, monster.sourceRow, std::string("maxHP") + levelSuffix[difficulty]);
-        const int maximum = number(stats, monster.sourceRow, "noRatio") ? rawHp :
-            int(int64_t(rawHp) * number(levels, levelRow, std::string("L-HP") + levelSuffix[difficulty]) / 100);
-        const int scaled = maximum * number(data.tables.at("difficultylevels"), size_t(difficulty), "MonsterCEDamagePercent") / 100;
-        result.corpseExplosionMinimum = float(scaled * 60 / 100) / 4.f;
-        result.corpseExplosionMaximum = float(scaled) / 4.f;
-    }
     return result;
 }
 MonsterEnchantment inheritedMonsterEnchantment(const ClassicData &data, const MonsterRecord &monster,

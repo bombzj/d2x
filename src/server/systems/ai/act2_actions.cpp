@@ -12,13 +12,14 @@
 #include "gameplay/combat/life.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <memory>
 namespace d2x::server::ai {
 StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,TickContext tick,Controller &controller) {
     const auto &monster=*ports_.monsters.find(id);const auto &area=ports_.areas.at(monster.area);
     if(monster.rule.ai.kind==MonsterAiKind::Duriel && monster.rule.nativeAura && !monster.rightSkill) {
         const auto &aura=*monster.rule.nativeAura;
         const auto assigned=perform(controller,[this,id,aura,tick]{return ports_.effects.assignUnitAura(id,aura,tick.tick,aura.rank);});
-        if(assigned.status==DomainStatus::Capacity || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
+        if(isDeferred(assigned.status) || assigned.status==DomainStatus::Stale || assigned.status==DomainStatus::Conflict) return StepStatus::Blocked;
         if(!assigned) throw std::logic_error("Native Duriel right aura assignment is unavailable");
     }
     const bool hasTarget=target.id!=id;
@@ -73,7 +74,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     DomainResult<> accepted{DomainStatus::Applied,std::monostate{}};
     if(result.color>=0 || result.overlay>=0) {
         accepted=perform(controller,[this,id,color=std::max(0,result.color),overlay=result.overlay,tick]{return ports_.monsters.aiColor(id,color,overlay,tick.tick);});
-        if(accepted.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
+        if(isDeferred(accepted.status)) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
     }
     auto random=decision.random;
     bool actionAttempted=false;
@@ -92,7 +93,9 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
     }
     else if(result.exhaust) accepted=perform(controller,[this,id,life=monster.life,tick]{return ports_.monsters.damage(id,id,life,tick.tick);});
     else if(result.spawnQueen) {
-        accepted=perform(controller,[this,id,point,tick]{return ports_.monsters.spawnSkillChildren(id,point,1,false,tick.tick);});
+        accepted=perform(controller,[this,id,point,tick,children=std::make_shared<monsters::SkillChildrenExecution>()]() mutable {
+            return ports_.monsters.spawnSkillChildren(id,point,1,false,tick.tick,children);
+        });
         // Fn066 enters its delay stage even when the spawn location is blocked.
         if(accepted.status==DomainStatus::Unavailable) accepted={DomainStatus::Applied,std::monostate{}};
     }
@@ -125,7 +128,7 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         }
         if(!controller.pursuing && decision.failedMoveWanderRadius) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monsterWanderPoint(monster.position,decision.failedMoveWanderRadius,random)},{},0,decision.velocityPercent,decision.running}));
     }
-    if(accepted.status==DomainStatus::Capacity) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
+    if(isDeferred(accepted.status)) {controller.nextDecision=tick.tick+1;return StepStatus::Blocked;}
     if(random!=decision.random && !controller.randomPublished) controller.random=random;
     else if(random!=decision.random && !actionAttempted) {
         const auto consumed=ports_.monsters.consumeRandom(id,monster.combatRandom,random);

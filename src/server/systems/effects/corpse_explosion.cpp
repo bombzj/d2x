@@ -6,14 +6,19 @@
 #include "server/systems/combat/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/transactions/system.hpp"
 #include "gameplay/monsters/life_stats.hpp"
 #include "gameplay/skills/native_damage.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "core/random.hpp"
+#include <algorithm>
+#include <map>
+#include <memory>
 #include <stdexcept>
+#include <utility>
 
 namespace d2x::server::effects {
-DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int skill,int rank,uint64_t tick,std::shared_ptr<CorpseExplosionPulse> &retained) {
+DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int skill,int rank,uint64_t tick,std::shared_ptr<CorpseExplosionPulse> &retained,const SkillCastSpec *payment) {
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};const auto source=participants.find(sourceId);
     if(!source.id()) return {DomainStatus::InvalidActor,{}};
@@ -24,10 +29,15 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
     if(!pulse.prepared) {
         pulse.base={};
         const auto *corpse=ports_.monsters.find(corpseId);
-        if(!corpse || !ports_.monsters.consumableCorpse(corpseId,corpse->area,tick)) return {DomainStatus::Unavailable,{}};
+        if(!corpse || corpseId==sourceId || !ports_.monsters.consumableCorpse(corpseId,corpse->area,tick)) return {DomainStatus::Unavailable,{}};
         const auto expected=corpse->combatRandom;auto random=expected;
+        const auto ownerExpected=source.player?source.player->combatRandom:source.monster->combatRandom;auto ownerRandom=ownerExpected;
+        const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+            if(low>=high) return low;
+            return nativeAdd(low,int32_t(limitedRandom(ownerRandom,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+        };
         const auto sampled=unitStatValues(sourceId,tick);if(!sampled) return {DomainStatus::Unavailable,{}};
-        auto input=source.player?skills::formulaInput(*source.player):skills::formulaInput(*source.monster,*sampled);
+        auto input=source.player?skills::formulaInput(*source.player,draw):skills::formulaInput(*source.monster,*sampled,draw);
         SkillFormulaValues values(*catalog,input);
         const auto calc=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,skill,rank,field);if(!value) throw std::logic_error("Missing native corpse explosion calculation");return *value;};
         const auto &table=corpse->rule.lifeTables.at(size_t(corpse->rule.difficulty));if(!table) throw std::logic_error("Missing original corpse life table");
@@ -41,7 +51,6 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
         const auto &row=catalog->skills.at(skill);
         if(percent>0 && row.elementType) {
             const auto length=values.parameter(FormulaDomain::Skill,skill,rank,"edln");if(!length) throw std::logic_error("Missing corpse explosion elemental length");
-            auto ownerRandom=source.player?source.player->combatRandom:source.monster->combatRandom;
             addNativeSkillElement(pulse.base,MissileDamageElement(row.elementType),nativePercentage(damage,percent,100),*length,ownerRandom);
             damage=nativePercentage(damage,100-percent,100);
         }
@@ -51,9 +60,38 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
             corpse->position+ports_.areas.at(corpse->area).definition.origin,NativeAuraTargetMode::TargetRange,tick});
         const auto noDraw=catalog->corpseNoDrawState;
         if(noDraw<0) throw std::logic_error("Missing native corpse_nodraw state");
-        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},corpse->area},
-            {StateFact{corpseId,1,corpse->area,noDraw,true}}});if(!sent) return {sent.status,{}};
-        ports_.monsters.consumeCorpse(corpseId);ports_.monsters.commitCombatRandom(corpseId,random);pulse.prepared=true;
+        // Consume the corpse, its seed and the player's cost in one publication.
+        // Target callbacks may block after this point; the retained pulse owns
+        // their cursor and never repeats the debit or damage roll.
+        auto candidate=*corpse;candidate.corpse.unavailable=true;candidate.corpse.states.insert(noDraw);
+        candidate.combatRandom=random;
+        if(candidate.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        ++candidate.revision;
+        std::map<EntityId,monsters::Actor> actors;actors.emplace(corpseId,std::move(candidate));
+        if(source.monster && ownerRandom!=ownerExpected) {
+            auto owner=*source.monster;if(owner.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+            owner.combatRandom=ownerRandom;++owner.revision;actors.emplace(sourceId,std::move(owner));
+        }
+        auto publication=std::make_shared<AuraUnitPublication>();publication->tick=tick;
+        stageAuraActors(*publication,std::move(actors),0);
+        publication->facts.emplace_back(StateFact{corpseId,1,corpse->area,noDraw,true});
+        if(source.player) {
+            const auto &player=*source.player;
+            const ActorContext actor{player.player,sourceId,player.area,ports_.areas.at(player.area).generation,0,tick};
+            transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
+            if(payment) {
+                edit.player.mana-=payment->manaCost;edit.charge=payment->charge;
+                if(payment->missileId>=0) edit.publicFacts.emplace_back(MissileFact{sourceId,0,corpse->area,payment->missileId,rank,0,pulse.center,pulse.center});
+            }
+            edit.random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
+            auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication);if(!plan) return {plan.status,{}};
+            const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
+        } else {
+            const ActorContext actor{source.monster->owner.value_or(PlayerId{}),corpseId,pulse.area,
+                ports_.areas.at(pulse.area).generation,0,tick};
+            const auto committed=ports_.transactions.commitUnitAuras({},publication,actor);if(!committed) return committed;
+        }
+        pulse.prepared=true;
     }
     while(pulse.next<pulse.targets.size()) {
         const auto target=participants.find(pulse.targets[pulse.next]);if(!target.id()) {++pulse.next;continue;}
@@ -70,6 +108,7 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
             impact.areaDamage=combat::MissileAreaDamage{};impact.areaDamage->rolled=std::make_shared<combat::MissileAreaRoll>();impact.areaDamage->rolled->value=hit;
             impact.missileDamage=std::make_shared<MissileDamageRollState>();impact.missileDamage->formulas=catalog;impact.missileDamage->statRules=rules;
             impact.missileDamage->skill=skill;impact.missileDamage->level=rank;
+            impact.missileDamage->uninterruptableState=source.player?source.player->rules.skills->uninterruptable.id:source.monster->rule.uninterruptableState;
             impact.monsterStates=source.player?MonsterHitStates{source.player->rules.skills->chilled,source.player->rules.skills->poisoned,{}}:source.monster->rule.hitStates;
             auto queue=ports_.combat.prepareSpells({std::move(impact)});if(!queue) return {queue.status,{}};
             ports_.combat.commitSpells(std::move(*queue.value));pulse.occurrence=occurrence;++corpseExplosionOccurrence_;

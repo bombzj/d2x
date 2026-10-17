@@ -96,6 +96,8 @@ class GameInstance {
     auto pendingLoot() const { auto pending=systems_.loot.read().pending; for(auto &[id,value]:pending) { (void)id; value.uniques=systems_.loot.read().uniques; } return pending; }
     auto pendingGroundGeneration() const {return systems_.objects.pendingGroundGeneration();}
     auto pendingModifiers() const {return systems_.monsters.pendingModifiers();}
+    auto pendingMonsterEquipment() {return systems_.monsters.pendingEquipment();}
+    DomainResult<> prepareMonsterEquipment(monsters::PreparedEquipment prepared) {return systems_.monsters.prepareEquipment(std::move(prepared));}
     DomainResult<> prepareModifiers(monsters::PreparedModifiers prepared) {return systems_.monsters.prepareModifiers(std::move(prepared));}
     DomainResult<> prepareGroundGeneration(uint64_t request,items::PreparedBatch batch,std::string deferred) {
         return systems_.objects.prepareGroundGeneration(request,std::move(batch),std::move(deferred));

@@ -53,7 +53,7 @@ RetailOutdoorLayout buildRetailOutdoorLayout(Archives &archives, const WorldCata
                 return std::vector<uint32_t>(size_t(width / 8 + 1) * size_t(height / 8 + 1), flags);
             return scanner.scan(preset, reader(preset.variants.at(size_t(file))),
                 record.act, width, height, flags, seed,
-                &result.presetUnits[{level, preset.id, file, x, y}], x, y);
+                &result.presetUnits[{level, preset.id, file, x, y}], x, y,&result.tileInfo);
         });
     return result;
 }

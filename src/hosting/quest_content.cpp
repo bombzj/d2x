@@ -157,14 +157,11 @@ void prepareQuests(GameHost &host,GameHandle game,Archives &archives,const Class
                     for(unsigned i=0;i<rewards;++i) add(data.hellforge.runes[0][6+i],1);
                 }
                 if(source.character.player.hireling.sourceRow>=0) break;
-                const auto &monsters=data.tables.at("monstats");std::optional<int> seller;
-                const auto npc=source.kind==RewardKind::Rogue?"kashya":source.kind==RewardKind::IronWolf?"asheara":"qual-kehk";
-                for(size_t row=0;row<monsters.rows().size();++row) if(monsters.value(row,"Id")==npc) seller=monsters.number(row,"hcIdx");
-                if(!seller) throw std::runtime_error("Missing original Kashya identity");
-                const auto offers=planHirelingOffers(data.hirelings,*seller,source.difficulty,source.character.player.level,random);
-                if(offers.empty()) throw std::runtime_error("Missing original Rogue reward definitions");
-                // SUnitNpc::AssignMercenary selects the first available offer.
-                const auto &offer=offers.front();
+                if(!source.hireling) throw std::runtime_error("Missing native reward hireling selection");
+                const auto &selection=*source.hireling;
+                const auto resolved=resolveHirelingOffer(data.hirelings,selection.seller,source.difficulty,source.character.player.level,selection.seed,selection.slot);
+                if(!resolved) throw std::runtime_error("Missing original reward hireling definitions");
+                const auto &offer=*resolved;
                 const auto rule=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &d){return d.sourceRow==offer.sourceRow;});
                 if(rule==data.hirelings.end()) throw std::runtime_error("Expired original Rogue reward row");
                 result.hireling=HirelingRecord{offer.sourceRow,rule->classId,offer.nameKey,offer.level,float(offer.stats.life),offer.stats.experience,offer.seed};

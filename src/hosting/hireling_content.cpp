@@ -3,7 +3,6 @@
 #include "monster_actions_content.hpp"
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_animation.hpp"
-#include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/archive.hpp"
@@ -25,11 +24,13 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
         for(const auto &source:lists) {
             server::companions::PreparedHirelingList prepared;prepared.source=source;
             try {
-                auto random=source.seed;
-                for(const auto &offer:planHirelingOffers(data.hirelings,source.seller,source.difficulty,source.level,random)) {
+                for(const auto &entry:source.entries) {
+                    const auto resolved=resolveHirelingOffer(data.hirelings,source.seller,source.difficulty,source.level,entry.seed,entry.slot);
+                    if(!resolved) throw std::runtime_error("Missing original hireling candidate rule");
+                    const auto &offer=*resolved;
                     const auto definition=std::find_if(data.hirelings.begin(),data.hirelings.end(),[&](const auto &entry){return entry.sourceRow==offer.sourceRow;});
                     const int name=strings.index(offer.nameKey);
-                    if(definition==data.hirelings.end() || name<0 || name>UINT16_MAX) throw std::runtime_error("Missing original hireling candidate");
+                    if(definition==data.hirelings.end() || name<0 || name>UINT16_MAX || name!=entry.name) throw std::runtime_error("Missing original hireling candidate");
                     prepared.offers.push_back({uint16_t(name),{offer.sourceRow,definition->classId,offer.nameKey,offer.level,float(offer.stats.life),offer.stats.experience,offer.seed},offer.stats.price});
                 }
             } catch(const std::exception &error) {prepared.deferred=error.what();prepared.offers.clear();}
@@ -56,6 +57,10 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             rule.states=data.nativeStates;
             rule.stateTarget=monster->stateTarget;rule.noAura=monster->noAura;
             result.code=monster->id;rule.nativeClass=monster->index;rule.level=source.record.level;rule.difficulty=source.difficulty;
+            const auto birthLevel=data.tables.at("monstats").number(monster->sourceRow,"Level");
+            if(!birthLevel || *birthLevel<0) throw std::runtime_error("Missing native hireling birth level");
+            result.birthLevel=*birthLevel;
+            result.recycledState=data.states.at("recycled").definition.id;
             rule.minimumLife=rule.maximumLife=stats.life;rule.defense=stats.defense;rule.attackRating=stats.attackRating;rule.minimumDamage=stats.damageMin;rule.maximumDamage=stats.damageMax;
             rule.resistances={0,0,stats.resist,stats.resist,stats.resist,stats.resist};rule.nativeVelocity=*monster->walkVelocity;rule.size=monster->collisionSize;
             rule.collision=monster->movementRule();rule.spawnCollision=monster->spawnRule();rule.meleeRange=1+monster->meleeRange;
@@ -110,11 +115,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 if(!projectile) throw std::runtime_error("Unsupported Rogue projectile");
                 std::optional<SkillCastSpec> weaponSkill;
                 if(const auto *s=data.skills.find(id);s && s->spell) {
-                    const auto cast=resolveSkill(s->spell->rules(),{rank,ranks,0,0,gear.modifiers.combat.coldSkillDamagePercent});
-                    if(cast.weapon) weaponSkill=cast;
-                    else if(cast.minimumDamage>0 || cast.maximumDamage>0) {
-                        projectile->elementalMinimum=int(cast.minimumDamage*256.f);projectile->elementalMaximum=int(cast.maximumDamage*256.f);
-                        projectile->coldFrames=uint64_t(std::max(0.f,cast.coldDuration)*25.f);
+                    if(s->spell->weapon) {
+                        SkillCastSpec cast;cast.sourceId=id;cast.rank=rank;cast.weapon=s->spell->weapon;weaponSkill=std::move(cast);
                     }
                 }
                 server::MonsterAttackRule attack{stats.damageMin,stats.damageMax,stats.attackRating,rule.attackTicks,rule.impactTick,{}};
@@ -131,22 +133,10 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 if(row->act==5) {
                     size_t skill=0;while(skill<skills.rows().size() && skills.number(skill,"Id")!=id) ++skill;
                     if(skill==skills.rows().size()) throw std::runtime_error("Missing original Barbarian hireling skill");
-                    const bool bash=skills.value(skill,"skill")=="Bash",stun=skills.value(skill,"skill")=="Stun";
-                    if((!bash && !stun) || skills.number(skill,"srvstfunc")!=32 || skills.number(skill,"srvdofunc")!=2 ||
-                        skills.value(skill,"calc1")!=(bash?"ln12+skill('Stun'.blvl)*par8":"skill('Bash'.blvl)*par8") ||
-                        skills.value(skill,"ToHitCalc")!=(bash?"15+lvl*5+skill('Concentrate'.blvl)*par7":"10+lvl*5+skill('Concentrate'.blvl)*par7")) throw std::runtime_error("Unsupported original Barbarian hireling formula");
-                    const auto parameter=[&](int n){return skills.number(skill,"Param"+std::to_string(n)).value_or(0);};
-                    const auto hard=[&](std::string_view name){for(const auto &[skillId,r]:ranks) if(const auto *entry=data.skills.find(skillId);entry && entry->sourceName==name) return r;return 0;};
                     SkillCastSpec cast;cast.sourceId=id;cast.rank=rank;cast.weapon=WeaponSkillSpec{};
-                    cast.weapon->damagePercent=(bash?parameter(1)+(rank-1)*parameter(2):0)+hard(bash?"Stun":"Bash")*parameter(8);
-                    cast.weapon->attackRating=(bash?15:10)+rank*5+hard("Concentrate")*parameter(7);
-                    if(bash) {
-                        if(skills.value(skill,"calc2")!="ln34" || skills.number(skill,"ResultFlags")!=8) throw std::runtime_error("Unsupported Bash damage/knockback");
-                        cast.weapon->physicalFlat=parameter(3)+(rank-1)*parameter(4);cast.weapon->knockback=true;
-                    } else {
-                        if(skills.value(skill,"EType")!="stun" || skills.value(skill,"ELenSymPerCalc")!="skill('War Cry'.blvl)*par6") throw std::runtime_error("Unsupported Stun duration");
-                        cast.weapon->stunFrames=int(skillElementalLength(skills.number(skill,"ELen").value(),{skills.number(skill,"ELevLen1").value(),skills.number(skill,"ELevLen2").value(),skills.number(skill,"ELevLen3").value()},rank,hard("War Cry")*parameter(6)));
-                    }
+                    cast.weapon->startFunction=skills.number(skill,"srvstfunc").value_or(0);
+                    cast.weapon->doFunction=skills.number(skill,"srvdofunc").value_or(0);
+                    if(!cast.weapon->nativeMelee()) throw std::runtime_error("Unsupported original Barbarian hireling program");
                     const auto weapon=monsterModeWeapon(archives,monster->token,"a2",monster->baseWeapon);
                     const auto clock=loadMonsterAttackTiming(animations,monster->token,2,weapon,1);
                     if(!clock) throw std::runtime_error("Missing original Barbarian A2 release");
@@ -154,7 +144,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 }
                 const auto *entry=data.skills.find(id);
                 if(!entry || !entry->spell) throw std::runtime_error("Unprepared original hireling skill");
-                auto cast=resolveSkill(entry->spell->rules(),{rank,ranks,0,0,gear.modifiers.combat.coldSkillDamagePercent});cast.manaCost=0;cast.charge.reset();
+                SkillCastSpec cast;cast.sourceId=id;cast.rank=rank;cast.weapon=entry->spell->weapon;
                 if(cast.weapon) {
                     attack.weaponSkill=cast;
                     if(cast.weapon->spear && monster->hirelingSequence) {
@@ -171,11 +161,11 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                         attack.animationAction=attack.animationEvents.front();
                     }
                 } else {
-                    attack.action=server::MonsterAttackRule::Action::Skill;attack.spell=std::move(cast);
+                    attack.action=server::MonsterAttackRule::Action::Skill;
                     if(row->act==3) {
                         if(!monster->hirelingCastTiming) throw std::runtime_error("Missing original Iron Wolf cast timing");
                         actionTiming(attack,*monster->hirelingCastTiming,true);
-                        if(attack.spell->effect==SkillBehavior::Inferno) {
+                        if(entry->spell->effect==SkillBehavior::Inferno) {
                             const auto found=std::find_if(row->skills.begin(),row->skills.end(),[&](const auto &s){return s.id==id;});
                             if(found==row->skills.end() || found->channelFrames<=0) throw std::runtime_error("Missing original Inferno channel frames");
                             for(int frame=attack.release;frame<attack.release+found->channelFrames;frame+=2) attack.releaseFrames.push_back(frame);
@@ -197,8 +187,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
                 if(entry && entry->auraImplemented) action.aura=resolveAura(data,s.id,rank,ranks);
                 else {
                     auto attack=prepareSkill(s.id,rank);
-                    if(attack.spell && attack.spell->appliedEffect) action.state=attack.spell->appliedEffect->state.id;
-                    if(attack.spell && attack.spell->effect==SkillBehavior::Inferno) action.maximumRange=rank/2+6;
+                    if(entry && entry->spell && entry->spell->state.id>=0) action.state=entry->spell->state.id;
+                    if(entry && entry->spell && entry->spell->effect==SkillBehavior::Inferno) action.maximumRange=rank/2+6;
                     rule.skillActions.emplace(uint16_t(s.id),std::move(attack));
                 }
                 result.actions.push_back(std::move(action));

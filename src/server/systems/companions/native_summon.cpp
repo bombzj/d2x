@@ -34,13 +34,16 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     auto prior=pending_.find(actor.actor);
     if(prior!=pending_.end() && (prior->second.actor.sequence!=actor.sequence || prior->second.skill!=skill.sourceId)) {cancel(actor.actor);prior=pending_.end();}
     if(prior==pending_.end()) {
+        if(nextPreparation_==UINT64_MAX) return {DomainStatus::Capacity,{}};
         auto random=ports_.random;
         Preparation source{actor,owner->inventoryRevision,childRandom(random),skill.sourceId,skill.rank,
             owner->persistent.difficulty,owner->persistent.player.level,owner->persistent.player.skillRanks,*skill.summon,{}};
         source.birthRandom=std::pair{ports_.random,random};
+        source.effectiveRanks=owner->totals.skillRanks;source.token=nextPreparation_++;
         if(shadow) source.ownerEquipment=owner->persistent;
         pending_.emplace(actor.actor,std::move(source));return {DomainStatus::Capacity,{}};
     }
+    if(prior->second.rank!=skill.rank || prior->second.effectiveRanks!=owner->totals.skillRanks) {cancel(actor.actor);return nativeSummon(actor,skill,target);}
     if(prior->second.inventoryRevision!=owner->inventoryRevision || prior->second.ownerLevel!=owner->persistent.player.level ||
        prior->second.hardRanks!=owner->persistent.player.skillRanks || prior->second.actor.areaGeneration!=actor.areaGeneration) {
         cancel(actor.actor);return {DomainStatus::Stale,{}};
@@ -56,14 +59,14 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     const auto room=ports_.areas.roomAtPosition(actor.area,origin,int(global.x),int(global.y));if(!room) return {DomainStatus::Unavailable,{}};
     auto roomSeed=ports_.areas.roomRandom(*room);if(!roomSeed) return {roomSeed.status,{}};
     const auto collision=ports_.spatial.nativeCollisionSample();
-    const auto clear=[&](int x,int y) {
-        const auto current=ports_.areas.roomAtPosition(room->area,center,x,y);
-        return current && *current==*room && !ports_.areas.nativeCollisionMask(*current,x,y,prepared.rule.spawnCollision.size,prepared.rule.spawnCollision.mask,collision);
-    };
-    auto cell=nativeMonsterRingPosition(int(global.x),int(global.y),-1,roomSeed.value->next,clear);
-    if(!cell) cell=nativeMonsterRingPosition(int(global.x),int(global.y),4,roomSeed.value->next,clear);
-    if(!cell) {const auto consumed=ports_.transactions.consumeRoomRandom(*roomSeed.value);return {consumed?DomainStatus::Unavailable:consumed.status,{}};}
-    std::optional<Vec> position=Vec{float(cell->first)+.5f,float(cell->second)+.5f}-area.definition.origin;
+    monsters::Admission admission;admission.identity.monster=prepared.summon.monster;admission.identity.spawnKey="pet.search";
+    admission.area=actor.area;admission.position=center;admission.rule=prepared.rule;admission.tick=actor.tick;
+    auto point=ports_.monsters.searchRoomSpawn(admission,*roomSeed.value,-1,collision);
+    if(!point) return {point.status,{}};
+    if(!*point.value) point=ports_.monsters.searchRoomSpawn(admission,*roomSeed.value,4,collision);
+    if(!point) return {point.status,{}};
+    if(!*point.value) {const auto consumed=ports_.transactions.consumeRoomRandom(*roomSeed.value);return {consumed?DomainStatus::Unavailable:consumed.status,{}};}
+    std::optional<Vec> position=**point.value;
     if(blade) {
         const auto point=origin+area.definition.origin;
         const auto originRoom=ports_.areas.roomAtPosition(actor.area,origin,int(point.x),int(point.y));
@@ -105,7 +108,8 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     if(druid) {
         const auto &program=*prepared.summon.druid;
         if(program.definition->ai==DruidPetDefinition::Ai::Raven)
-            companion.druidAi={-1,program.definition->parameters[2][size_t(prepared.rule.difficulty)]+1,program.initialCircle.value_or(0)};
+            companion.druidAi={-1,program.definition->parameters[2][size_t(prepared.rule.difficulty)]+1,
+                bodies.value->at(id).ravenInitialCircle.value()};
         else companion.druidAi={0,0,0};
     }
     next.companions.emplace(id,std::move(companion));
@@ -144,9 +148,10 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     if(!controlled) {edit.player.mana-=skill.manaCost;edit.charge=skill.charge;}
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication);if(!plan) return {plan.status,{}};
     plan.value->roomRandom=std::make_shared<const RoomRandomLoan>(*roomSeed.value);
-    const auto nextRandom=prior->second.birthRandom;
+    const auto nextRandom=prepared.equipmentRandom?prepared.equipmentRandom:
+        prior->second.birthRandom?std::optional{prior->second.birthRandom->second}:std::nullopt;
+    if(nextRandom) plan.value->gameRandom=transactions::UnitRandomEdit{prior->second.birthRandom->first,*nextRandom};
     const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result;
-    if(nextRandom) ports_.random=nextRandom->second;
     state_.companions.swap(next.companions);cancel(actor.actor);return {DomainStatus::Applied,std::monostate{}};
 }
 }

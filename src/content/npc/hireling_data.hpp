@@ -46,6 +46,4 @@ HirelingLayout loadHirelingLayout(const DataTable &table);
 HirelingStats deriveHirelingStats(const HirelingDefinition &definition, int level);
 std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefinition> &definitions,
     int seller, int difficulty, int playerLevel, uint32_t seed, uint32_t slot);
-std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefinition> &definitions,
-                                            int seller, int difficulty, int playerLevel, uint64_t &seed);
 } // namespace d2x

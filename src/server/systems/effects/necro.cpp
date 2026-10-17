@@ -136,7 +136,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     publication->facts.emplace_back(StateFact{selected,1,monster->area,player->rules.skills->alignment.id,true,
         {{player->rules.skills->nativeStats.at("alignment"),1}}});
     const Vec center=monster->position+ports_.areas.at(monster->area).definition.origin;
-    NativeAuraTargetQuery query{actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),false,center,NativeAuraTargetMode::TargetRange};
+    NativeAuraTargetQuery query{actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),false,center,NativeAuraTargetMode::TargetRange,actor.tick};
     for(const auto id:nativeAuraCandidateRecipients(query)) {
         // The selected unit is already NEUTRAL in this synchronous candidate.
         if(id==selected) continue;
@@ -240,12 +240,12 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     std::vector<EntityId> targets;
     if(program.singleTarget) {
         if(selected && program.targetProcedure==CurseSpec::TargetProcedure::DirectList) {
-            const auto eligible=nativeAuraCandidateRecipients({actor.actor,actor.area,0,uint32_t(program.targetFilter),false,origin,NativeAuraTargetMode::TargetRange});
+            const auto eligible=nativeAuraCandidateRecipients({actor.actor,actor.area,0,uint32_t(program.targetFilter),false,origin,NativeAuraTargetMode::TargetRange,actor.tick});
             if(std::find(eligible.begin(),eligible.end(),selected)!=eligible.end()) targets.push_back(selected);
         } else if(selected) targets.push_back(selected);
     }
     else targets=nativeAuraCandidateRecipients({actor.actor,actor.area,program.radius,uint32_t(program.targetFilter),cloak,
-        cloak?std::optional<Vec>{}:origin,cloak?NativeAuraTargetMode::OwnerRange:NativeAuraTargetMode::TargetRange});
+        cloak?std::optional<Vec>{}:origin,cloak?NativeAuraTargetMode::OwnerRange:NativeAuraTargetMode::TargetRange,actor.tick});
     for(const auto id:targets) {
         if(const auto *peer=ports_.players.findActor(id)) {
             const auto &recipient=*peer;

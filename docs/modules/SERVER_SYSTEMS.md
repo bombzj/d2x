@@ -31,7 +31,7 @@
 | Event：五类单位、持续链／64桶及原插入顺序 | FrameEventQueue持执行游标，Events阶段背压续执行同一逻辑帧；已进入的同步联系不会因自我中断重做。持续节点按原规则忽略显式handler，移动／怪物效果用保留的customId分派、去重及撤销 |
 | SUnit：玩家起手及百分比回绕 | gameplay/actions/timeline按AnimData完整标记、起始帧及速率排MODECHANGE／ENDANIM；同帧跨多个标记分别执行，未跨过标记不补造命中。普通／形态武器、SC、Kick及支持序列共用此入口 |
 | 专用序列 | Strafe／Fend／Zeal／Fury按MPQ次数及回绕重排，GUID后继／最小GUID回绕；Charge移除250帧超时及手写3／7帧延迟，使用序列4的Rewind8进入近战、Rewind7分配命中；LeapAttack落地Rewind16，普通Leap结束延迟1；DragonTalon按100%回绕重排，DragonFlight等待实际第二标记 |
-| Units／MonsterMode：逐帧动画与MonSeq | skills/monster_action_events保留FP8时钟、本次跨越的最后非零标记和内容准备的原事件号（包括4）；monsters::modeEvent推进普通／技能移动和延迟死亡。旧怪物批量step已删除；蛛网轨迹与精英效果使用所属单位Modifier回调，批量效果遍历已撤出 |
+| Units／MonsterMode：逐帧动画与MonSeq | skills/monster_action_events保留FP8时钟、本次跨越的最后非零标记和内容准备的原事件号（包括4）；monsters::modeEvent推进普通／技能移动和延迟死亡。烈焰之径／蛛网在移动模式读取上次PATH跨格标志；死亡／GH效果按原修饰符到期事件执行，非GH电强化接同步伤害回调。旧怪物批量step、轨迹轮询及精英期限轮询已删除；本轮源码尚未构建／运行 |
 | AiThink：野生AI、复活怪、佣兵、召唤物、陷阱 | 出生／复活、模式结束及AI切换登记单位事件；所选决定与待提交操作保留到同帧接受，输出背压不另抽决定。伙伴step只同步关系／准备结果 |
 | ObjMode／ItemMode | objects/frame_events执行结束、陷阱、祭坛重置、井、周期机关及延迟掉落；井每次使用登记独立单次补充。修复／补量由Item STATREGEN逐件执行；库存／地面step只同步时钟和垃圾生命周期，不伪造物品ENDANIM删除程序 |
 | flag4模式列表 | 速率列表逐次独立投递；结束、格挡／受击、中断及死亡撤出。旧effects批量模式到期扫描已删除，取消后清理按revision保留新动作列表 |

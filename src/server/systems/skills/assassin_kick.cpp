@@ -67,7 +67,7 @@ DomainResult<> System::startAssassinKick(Release &pending,const ActorContext &ac
         return done();
     }
     const auto fail=[&](DomainStatus status) {
-        if(status!=DomainStatus::Capacity) {
+        if(!isDeferred(status)) {
             if(kick.occurrence) ports_.combat.discardNativeMelee(actor.actor,*kick.occurrence);
             runtime_->assassinStarts.erase(actor.actor);
         }

@@ -35,6 +35,7 @@ class RetailOutdoorGrid {
     RetailOutdoorCell &cell(int x, int y);
     const RetailOutdoorCell &cell(int x, int y) const;
     Seed &random() { return random_; }
+    const Seed &random() const { return random_; }
     std::vector<std::pair<int, int>> shuffledCells(bool interior = false);
     std::vector<std::pair<int, int>> shuffledInterior() { return shuffledCells(true); }
     void clear(int x, int y);

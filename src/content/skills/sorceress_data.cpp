@@ -291,14 +291,9 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
             spec.state = state->second.definition;
             spec.stateOverlay = loadOverlay(state->second.overlay);
             spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
-            spec.shieldMaximum = 95;
-            spec.shieldManaFactor = required(skills, row, "Param5");
             spec.minimumDamage = required(skills, row, "EMin");
             for (int tier = 0; tier < 5; ++tier)
                 spec.minimumPerLevel[tier] = required(skills, row, "EMinLev" + std::to_string(tier + 1));
-            for (const auto &[id, entry] : catalog.skills)
-                if (entry.classCode == "sor" && entry.sourceName == "Telekinesis") spec.shieldSynergySkill = id;
-            if (spec.shieldSynergySkill < 0) throw std::runtime_error("Missing Energy Shield synergy");
             for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
                 if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
                     spec.activationSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
@@ -306,15 +301,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 }
             if (spec.activationSoundArt.empty() || !archives.contains(spec.activationSoundArt))
                 throw std::runtime_error("Missing Energy Shield activation sound");
-        } else if (effect == SkillBehavior::StaticField) {
-            if (skills.value(row, "calc1") != "par4" || skills.value(row, "calc2") != "par3" ||
-                skills.value(row, "aurarangecalc") != "ln12")
-                throw std::runtime_error("Unsupported original Static Field formula");
-            spec.staticPercent = required(skills, row, "Param4");
-            spec.staticMinDamage = required(skills, row, "Param3");
-            spec.staticRange = required(skills, row, "Param1");
-            spec.staticRangePerLevel = required(skills, row, "Param2");
-        } else if (effect != SkillBehavior::Teleport) {
+        } else if (effect != SkillBehavior::Teleport && effect != SkillBehavior::StaticField) {
             spec.minimumDamage = required(skills, row, "EMin");
             spec.maximumDamage = required(skills, row, "EMax");
             for (int index = 0; index < 5; ++index) {
@@ -387,8 +374,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                     skills.value(row, "aurarangecalc") != "par1" || !spec.lightningDamage)
                     throw std::runtime_error("Unsupported Telekinesis rules");
                 spec.telekinesisRange = required(skills, row, "Param1");
-                spec.telekinesisKnockbackChance = required(skills, row, "Param2");
-                for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
+                    for (size_t sound = 0; sound < sounds.rows().size(); ++sound)
                     if (sounds.value(sound, "Sound") == skills.value(row, "dosound")) {
                         spec.activationSoundArt = "data/global/sfx/" + std::string(sounds.value(sound, "FileName"));
                         break;
@@ -450,8 +436,7 @@ void loadSorceressEffects(SkillCatalog &catalog, const DataTable &skills,
                 if (state == states.end()) throw std::runtime_error("Missing Thunder Storm state");
                 spec.state = state->second.definition;
                 spec.linearDuration = {required(skills, row, "Param1"), required(skills, row, "Param2")};
-                for (int parameter = 0; parameter < 5; ++parameter)
-                    spec.stormParameters[size_t(parameter)] = required(skills, row, "Param" + std::to_string(parameter + 3));
+                spec.stormRadius = required(skills, row, "Param7");
             }
             if (effect == SkillBehavior::ChargedBolt) {
                 const auto countFormula = skills.value(row, "calc1");

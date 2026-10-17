@@ -420,7 +420,7 @@ StepStatus System::release(TickContext tick,EntityId only) {
             const bool inMelee=victim.id() && playerMeleeReach(area->definition.collision,p->position,victim.position(),victim.size(),pending.weapon->rangeAdder);
             const auto step=inMelee?DomainResult<bool>{DomainStatus::Applied,true}:
                 ports_.movement.chargeStep(actor,target,pending.chargeSpeed,0);
-            if(!step && step.status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+            if(!step && isDeferred(step.status)) {blocked=true;++it;continue;}
             if(!step) {state_.casts.at(actor.actor).until=tick.tick;it=releases_.erase(it);continue;}
             if(!*step.value) {pending.tick=tick.tick+1;state_.casts.at(actor.actor).until=tick.tick+1;++it;continue;}
             if(!pending.unit) {
@@ -450,13 +450,13 @@ StepStatus System::release(TickContext tick,EntityId only) {
             status=ports_.missiles.spawn({actor,skill,pending.collision,target,!consume}).status;
         } else status=activate(pending,actor,target);
         }
-        if(pending.cancelled && (status!=DomainStatus::Capacity || !pending.nativeCallbackStarted)) {
+        if(pending.cancelled && (!isDeferred(status) || !pending.nativeCallbackStarted)) {
             if(pending.weaponMelee && pending.weaponMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.weaponMelee->occurrence);
             if(pending.assassinKick && pending.assassinKick->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.assassinKick->occurrence);
             if(pending.druidMelee && pending.druidMelee->occurrence) ports_.combat.discardNativeMelee(actor.actor,*pending.druidMelee->occurrence);
             ports_.companions.cancel(actor.actor);it=releases_.erase(it);continue;
         }
-        if(status==DomainStatus::Capacity) {blocked=true;++it;continue;}
+        if(isDeferred(status)) {blocked=true;++it;continue;}
         if(status==DomainStatus::Applied) {
             auto &cast=state_.casts.at(actor.actor);
             if(pending.assassinKick && pending.assassinKick->phase!=AssassinKickExecution::Phase::Complete) {
@@ -528,7 +528,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration || (p->persistent.player.hp<=0 && !dead && !continuing)) return {DomainStatus::InvalidActor,{}};
     if(itemTargetDo || skill.weapon || skill.effect==SkillBehavior::ItemSkill || skill.effect==SkillBehavior::Kick || skill.effect==SkillBehavior::Unsummon) return {DomainStatus::NotImplemented,{}};
     skill.manaCost=skill.startMana=0;skill.delayFrames=0;skill.charge.reset();
-    if(!dead && !skill.druid && skill.appliedEffect && !(skill.assassin && skill.assassin->program==AssassinProgram::BladeShield)) {
+    if(!dead && !skill.druid && !skill.warcry && skill.appliedEffect && !(skill.assassin && skill.assassin->program==AssassinProgram::BladeShield)) {
         if(skill.effect==SkillBehavior::Enchant && target) {
             for(const auto &[id,recipient]:ports_.players.all()) if(recipient.actor==target && recipient.entered && recipient.area==actor.area) return ports_.effects.skill(actor,skill,id);
             return ports_.effects.skillUnit(actor,skill,target);
@@ -539,28 +539,24 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     const auto program = activationProgram(skill);
     switch (program) {
     case ActivationProgram::Druid:
-    case ActivationProgram::Assassin: {
+    case ActivationProgram::Assassin:
+    case ActivationProgram::Warcry:
+    case ActivationProgram::StaticField:
+    case ActivationProgram::Telekinesis:
+    case ActivationProgram::Corpse: {
         std::shared_ptr<Release> local;auto &pending=continuation?*continuation:local;
         if(!pending) pending=std::make_shared<Release>(Release{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,uint8_t(ports_.players.findActor(target)?0:1)});
-        const auto result=program==ActivationProgram::Druid?activateDruid(*pending,actor,position):activateAssassin(*pending,actor,position);
+        const auto result=activate(*pending,actor,position);
         if(result!=DomainStatus::Capacity) pending.reset();
         return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
     }
     case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
     case ActivationProgram::Curse: return ports_.effects.curse(actor,skill,position,target);
-    case ActivationProgram::Corpse: {
-        Release pending{actor,skill,collision,{actor.area,actor.areaGeneration,position},target,actor.tick,1};
-        const auto result=activateCorpse(pending,actor,position);return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
-    }
     case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
     case ActivationProgram::Teleport: return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
     case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);
-    case ActivationProgram::StaticField:
-    case ActivationProgram::Telekinesis:
     case ActivationProgram::Missile: {
         missiles::Spawn spawn{actor,std::move(skill),collision,position,true};spawn.deathTrigger=dead;
-        if(program==ActivationProgram::StaticField) return ports_.missiles.direct(spawn,staticFieldTargets(actor,spawn.skill));
-        if(program==ActivationProgram::Telekinesis) return target?ports_.missiles.direct(spawn,{target}):DomainResult<>{DomainStatus::Unavailable,{}};
         const auto result=ports_.missiles.spawn(spawn);return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
     }
     default: return {DomainStatus::NotImplemented,{}};

@@ -13,7 +13,8 @@ struct GameSettings {
     bool ladderMonsterStats() const {return nativeGameType!=0 || ladder;}
 };
 // Kernel results are not wire replies. A scaffold never manufactures a value.
-enum class DomainStatus { Applied, NotImplemented, InvalidActor, Stale, InvalidRequest, Unavailable, Conflict, Capacity };
+enum class DomainStatus { Applied, NotImplemented, InvalidActor, Stale, InvalidRequest, Unavailable, Conflict, Capacity, PendingContent };
+constexpr bool isDeferred(DomainStatus status) {return status==DomainStatus::Capacity || status==DomainStatus::PendingContent;}
 template<class T = std::monostate> struct DomainResult {
     DomainStatus status = DomainStatus::NotImplemented;
     std::optional<T> value;

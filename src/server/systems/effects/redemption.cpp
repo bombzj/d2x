@@ -21,7 +21,7 @@ DomainResult<std::shared_ptr<AuraUnitPublication>> System::prepareConsumedCorpse
     if(!corpse || !ports_.monsters.selectableCorpse(id,tick)) return {DomainStatus::Unavailable,{}};
     if(corpse->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     if(state<0 || !corpse->rule.states || !corpse->rule.states->contains(state)) throw std::logic_error("Missing original consumed-corpse state");
-    auto candidate=*corpse;candidate.corpseUnavailable=true;candidate.deathStates.insert(state);++candidate.revision;
+    auto candidate=*corpse;candidate.corpse.unavailable=true;candidate.corpse.states.insert(state);++candidate.revision;
     auto publication=std::make_shared<AuraUnitPublication>();publication->tick=tick;
     stageAuraActors(*publication,{{id,std::move(candidate)}},0);
     publication->facts.emplace_back(StateFact{id,1,corpse->area,state,true});

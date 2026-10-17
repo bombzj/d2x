@@ -64,7 +64,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             if(flight.nativeExpired) {
                 plan.next.position=flight.end;
                 const auto native=nativeHit(plan,{});
-                if(!native) {if(plan.next.enemy) monsterCollision(plan,{});else projectileImpact(plan,{});}
+                if(!native) {if(plan.next.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
                 plan.finished=!native || !(*native&4);
             } else {
                 if(!flight.wall) flight.contacts=collisionContacts(plan.next,flight.end);
@@ -88,7 +88,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             }
             plan.started=true;
             const auto result=ports_.combat.missilePrelude(contact,tick);
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             const bool ignored=result && *result.value==combat::MissilePreludeResult::Ignore;
             const bool hit=result && *result.value==combat::MissilePreludeResult::Hit;
             if(ignored) {plan.operations.push_back({Advance::OperationKind::ContactContinue,0});++plan.nextOperation;continue;}
@@ -100,7 +100,8 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                     direct=(*native&4)==0 && (*native&2)!=0;
                     flight.continueFlight=(*native&4) || (!(*native&1) && !flight.forceRemove) || flight.piercing;
                 } else if(flight.weapon) weaponImpact(plan,plan.next.position);
-                else direct=missile.enemy?monsterCollision(plan,damage.targets.front()):projectileImpact(plan,damage.targets.front());
+                else if(missile.enemy) throw std::logic_error("Unsupported native monster missile hit program");
+                else direct=projectileImpact(plan,damage.targets.front());
             }
             // Native SrvHit executes before FullDamageParams / SrvDmg.
             if(hit && direct) plan.addImpact(std::move(damage));
@@ -112,7 +113,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             const auto &segment=plan.boneSegments.at(operation.index);
             const auto born=ports_.companions.growBoneWall(plan.next.owner,segment.root,plan.next.skill.sourceId,
                 plan.next.skill.rank,segment.area,segment.position,tick.tick);
-            if(born.status==DomainStatus::Capacity) return born.status;
+            if(isDeferred(born.status)) return born.status;
             if(born.status==DomainStatus::Stale || born.status==DomainStatus::Conflict) return born.status;
             if(born && *born.value) {plan.next.parameters[1]=nativeSubtract(plan.next.parameters[1],1);plan.started=true;}
         } else if(operation.kind==Advance::OperationKind::OwnerSeed) {
@@ -124,7 +125,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 if(!area) return DomainStatus::Stale;
                 consumed=ports_.transactions.consumeRandom({owner.player,owner.actor,owner.area,area->generation,0,tick.tick},loan.expected,loan.next);
             } else {++plan.nextOperation;continue;}
-            if(consumed.status==DomainStatus::Capacity) return consumed.status;
+            if(isDeferred(consumed.status)) return consumed.status;
             if(!consumed) throw std::logic_error("Native missile formula owner seed changed");
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::SkillState) {
@@ -155,12 +156,12 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                     const auto &owner=*source.player;const auto &area=ports_.areas.at(owner.area);
                     consumed=ports_.transactions.consumeRandom({owner.player,owner.actor,owner.area,area.generation,0,tick.tick},state.random->first,state.random->second);
                 }
-                if(consumed.status==DomainStatus::Capacity) return consumed.status;
+                if(isDeferred(consumed.status)) return consumed.status;
                 if(!consumed) throw std::logic_error("Native missile skill duration seed changed");
                 state.seedCommitted=true;plan.started=true;
             }
             const auto applied=ports_.effects.skillAuraState(state.source,state.target,state.skill,state.rank,*state.duration,tick.tick,state.procedure);
-            if(applied.status==DomainStatus::Capacity) return applied.status;
+            if(isDeferred(applied.status)) return applied.status;
             if(applied.status==DomainStatus::Conflict || applied.status==DomainStatus::Stale) return applied.status;
             if(state.posted) *state.posted=bool(applied);
         } else if(operation.kind==Advance::OperationKind::TowerOpen) {
@@ -193,7 +194,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             auto &entry=plan.redemptions.at(operation.index);
             if(!entry.affected) {
                 auto prepared=ports_.effects.prepareRedeemedCorpse(entry.corpse,tick.tick);
-                if(prepared.status==DomainStatus::Capacity) return prepared.status;
+                if(isDeferred(prepared.status)) return prepared.status;
                 if(!prepared) {entry.affected=false;++plan.nextOperation;continue;}
                 const auto chance=entry.skipChance?0:rollRandom(plan.damageRolls->random)%100;
                 const auto calculate=[&](std::string_view field) {
@@ -221,19 +222,19 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
         } else if(operation.kind==Advance::OperationKind::CairnPortal) {
             const auto result=ports_.quests.cairnFx(plan.next.area,plan.next.position,
                 plan.next.nativeDamage->rule.serverParameters[3],tick.tick);
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             if(!result) throw std::logic_error("Invalid Cairn missile world publication");
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::ReleaseRoom) {
             ports_.world.retainControllerRoom(plan.next.area,plan.next.position,false);plan.started=true;
         } else if(operation.kind==Advance::OperationKind::BaalFx) {
             const auto result=ports_.quests.baalFx(plan.next.area,plan.next.position);
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             if(!result) throw std::logic_error("Invalid Baal missile world publication");
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::Fear) {
             const auto result=ports_.effects.nativeFear(plan.fears.at(operation.index),tick.tick);
-            if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return result.status;
+            if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return result.status;
         } else if(operation.kind==Advance::OperationKind::TargetBurst) {
             const auto burst=plan.targetBursts.at(operation.index);
             if(participants.find(plan.next.owner).id()) {
@@ -272,7 +273,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 if(!ports_.monsters.commitLife(std::move(change))) throw std::logic_error("Native missile resource reservation changed");
                 written={DomainStatus::Applied,std::monostate{}};
             }
-            if(written.status==DomainStatus::Capacity) return written.status;
+            if(isDeferred(written.status)) return written.status;
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::TargetManaDrain) {
             const auto &drain=plan.manaDrains.at(operation.index);const auto *target=ports_.players.findActor(drain.target);
@@ -284,7 +285,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 const ActorContext actor{target->player,target->actor,target->area,area.generation,0,tick.tick};
                 const auto result=ports_.transactions.resources(actor,target->characterRevision,target->persistent.player.hp,
                     Fixed8::fromRaw(nativeSubtract(current,loss)),target->persistent.player.stamina);
-                if(result.status==DomainStatus::Capacity) return result.status;
+                if(isDeferred(result.status)) return result.status;
             }
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::SourceHeal) {
@@ -314,10 +315,10 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                     owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
                 edit.player.hp=Fixed8::fromRaw(std::min(owner.totals.character.maxLifeFixed.raw(),nativeAdd(edit.player.hp.raw(),*healing.amount)));
                 auto transaction=ports_.transactions.prepare(std::move(edit));
-                if(!transaction) {if(transaction.status==DomainStatus::Capacity) return transaction.status;++plan.nextOperation;continue;}
+                if(!transaction) {if(isDeferred(transaction.status)) return transaction.status;++plan.nextOperation;continue;}
                 result=ports_.transactions.commit(std::move(*transaction.value));
             }
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::Curse || operation.kind==Advance::OperationKind::Buff) {
             auto skill=plan.next.skill;skill.manaCost=0;skill.charge.reset();
@@ -332,7 +333,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 const auto target=plan.buffTargets.at(operation.index);const auto *recipient=ports_.players.findActor(target);
                 result=recipient?ports_.effects.skill(actor,skill,recipient->player):ports_.effects.skillUnit(actor,skill,target);
             }
-            if(result.status==DomainStatus::Capacity) return result.status;
+            if(isDeferred(result.status)) return result.status;
             if(result.status==DomainStatus::NotImplemented) throw std::logic_error("Unimplemented missile callback program");
             plan.started=true;
         } else if(operation.kind==Advance::OperationKind::Child) {
@@ -371,7 +372,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                         if(!area) throw std::logic_error("Missing missile damage owner area");
                         consumed=ports_.transactions.consumeRandom({owner.player,owner.actor,owner.area,area->generation,0,tick.tick},loan.expected,loan.next);
                     } else throw std::logic_error("Missing missile damage owner during publication");
-                    if(consumed.status==DomainStatus::Capacity) return consumed.status;
+                    if(isDeferred(consumed.status)) return consumed.status;
                     if(!consumed) throw std::logic_error("Stale missile damage owner seed");
                 }
                 if(publication.originSeed) {
@@ -413,7 +414,7 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 auto contact=impact;contact.synchronous=true;
                 auto prepared=ports_.combat.prepareSpells({std::move(contact)});
                 if(!prepared) {
-                    if(prepared.status!=DomainStatus::Capacity) throw std::logic_error("Invalid staged missile contact");
+                    if(!isDeferred(prepared.status)) throw std::logic_error("Invalid staged missile contact");
                     return prepared.status;
                 }
                 ports_.combat.commitSpells(std::move(*prepared.value));plan.contactAccepted=true;plan.started=true;

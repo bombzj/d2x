@@ -24,6 +24,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
+| 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |
 
 已完成的结构改造内容并入架构／现有模块，不再维护第二份历史重构计划；已删除执行器的SESSION／UNITS／SKILL_RUNTIME／REWARDS说明不再作为模块入口。原版结构比较仍见[参考设计](architecture/REFERENCE_DESIGN.md)。后续服务端精确复刻的目标结构、D2MOO证据、公共函数边界及重构验收统一见[服务端战斗复刻目标架构](architecture/SERVER_COMBAT_RECONSTRUCTION.md)，该页是目标设计，不是当前实现状态；全局顺序仍由[总计划](architecture/MULTIPLAYER.md)维护。
 
@@ -51,7 +52,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及历史证据 |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
 | 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕执行与证据](gameplay/quests/ACT2.md)、[第三至第五幕执行与缺口](gameplay/quests/ACT3_5.md) |
-| 怪物 | [全分类目录](gameplay/monsters/README.md)、[公共规范](gameplay/monsters/COMMON.md)；五幕台账、精英／固定身份、首领、人口、原包表现及特殊／未归档单位 |
+| 怪物 | [全分类目录](gameplay/monsters/README.md)、[公共规范](gameplay/monsters/COMMON.md)、[自然生成工作总览](gameplay/monsters/POPULATION.md#自然生成工作总览)；五幕台账、精英／固定身份、首领、人口、原包表现及特殊／未归档单位 |
 | 世界 | [五幕地图](gameplay/world/MAPS.md)、[物件](gameplay/world/OBJECTS.md)、[自动地图](gameplay/world/AUTOMAP.md)、[照明](gameplay/world/LIGHTING.md) |
 | UI | [HUD／技能菜单／传送点](gameplay/ui/CLASSIC_HUD.md)；库存／NPC操作归对应专题 |
 

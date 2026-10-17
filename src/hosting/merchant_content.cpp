@@ -5,7 +5,13 @@
 #include "content/npc/vendor_stock.hpp"
 #include "content/items/item_pricing.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/item_quality.hpp"
 #include "content/items/cube_data.hpp"
+#include "core/random.hpp"
+#include <algorithm>
+#include <array>
+#include <cctype>
+#include <stdexcept>
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
@@ -52,18 +58,75 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
     if (request.action==Action::Open || request.action==Action::Gamble) {
         if (result.source.stock.generated) return result;
         auto projection=character; projection.inventory.items.clear();
-        auto seed=result.source.seed; std::string classCode;
-        for(const auto &definition:data.characters) if(definition.name==character.player.characterClass) classCode=definition.code;
-        const auto planned=request.gamble?planGambleStock(data,unsigned(character.player.level),result.source.difficulty,seed,result.source.uniques,classCode)
-            :planVendorStock(data,data.vendors.at(result.source.npc.code),unsigned(character.player.level),result.source.difficulty,result.source.seed);
-        for (const auto &offer : planned) {
-            const auto *base=data.items.find(offer.code);
-            auto item=prepareItem(data,{offer.code,std::min(offer.quantity,base->maxStack),{},offer.level,offer.generation},seed,result.source.difficulty);
-            item.quantity=base->bookCapacity?1:offer.quantity; item.defense=(item.nativeFlags&0x400000u)?offer.defense*3/2:offer.defense;
-            item.id=EntityId{uint64_t(result.offers.size()+1)}; item.identified=true;
-            if(item.quality==ItemQuality::Unique && item.specialRow>=0 && !data.tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0)) result.limitedUniques.insert(size_t(item.specialRow));
-            projection.inventory.items.emplace(item.id,item); result.offers.push_back({std::move(item),{},offer.permanent,offer.displayCode});
+        const auto &inventory=data.tables.at("inventory");
+        int columns=0,rows=0;
+        for(size_t row=0;row<inventory.rows().size();++row) if(inventory.value(row,"class")=="Monster") {
+            columns=inventory.number(row,"gridX").value_or(0);rows=inventory.number(row,"gridY").value_or(0);break;
         }
+        if(columns<=0 || columns>255 || rows<=0 || rows>255) throw std::runtime_error("Missing native vendor inventory dimensions");
+        Stock shelf;shelf.columns=columns;shelf.rows=rows;
+        {
+            if(!result.source.controlRandom || !result.source.gameRandom) throw std::runtime_error("Missing native vendor random streams");
+            auto control=*result.source.controlRandom,gameRandom=*result.source.gameRandom;
+            auto uniques=result.source.uniques;
+            const auto create=[&](std::string_view code,std::string_view displayCode,ItemQuality quality,unsigned level,bool permanent) {
+                    auto requestedQuality=quality;
+                    for(int baseAttempt=0;baseAttempt<(request.gamble?1:2);++baseAttempt) {
+                    for(int attempt=0;attempt<(request.gamble?1:5);++attempt) {
+                        const auto identity=EntityId{++result.allocatedItems};
+                        auto item=prepareNativeItem(data,code,int(level),result.source.difficulty,gameRandom,
+                            nativeDropQuality(requestedQuality),uniques,NativeItemUse::Vendor);
+                        if(item.quality==ItemQuality::Unique && item.specialRow>=0 && !data.tables.at("uniqueitems").number(size_t(item.specialRow),"nolimit").value_or(0)) {
+                            result.limitedUniques.insert(size_t(item.specialRow));uniques.insert(size_t(item.specialRow));
+                        }
+                        if(!request.gamble && item.quality==ItemQuality::Inferior && item.gradeRow>=0) {
+                            auto name=std::string(data.tables.at("lowqualityitems").value(size_t(item.gradeRow),"Name"));
+                            for(auto &letter:name) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+                            if(name=="cracked") {if(attempt==4) return false;continue;}
+                        }
+                        if(!request.gamble && item.definition!=code) {requestedQuality=ItemQuality::Normal;break;}
+                        const auto *base=data.items.find(item.definition);
+                        if(!base) throw std::runtime_error("Missing native vendor base");
+                        int storePage=0;
+                        if(!request.gamble) {
+                            const auto &types=data.tables.at("itemtypes"),&pages=data.tables.at("storepage");
+                            std::string_view page;
+                            for(size_t row=0;row<types.rows().size();++row)
+                                if(types.value(row,"Code")==base->base.type) {page=types.value(row,"StorePage");break;}
+                            bool valid=false;
+                            for(size_t row=0;row<pages.rows().size();++row)
+                                if(!page.empty() && pages.value(row,"Code")==page) {valid=true;storePage=int(row);break;}
+                            if(!valid) return false;
+                        }
+                        item.identified=true;
+                        const auto stats=resolveItemStats(data,item,int(level));
+                        item.durability=itemMaximumDurability(data,item,stats);rechargeItemSkills(item);
+                        if((base->equipment.throwable && base->equipment.repairable) || (permanent && !base->equipment.quiver.empty())) {
+                            int extra=0;for(const auto &stat:stats) if(stat.effect=="item_extra_stack") extra+=stat.value;
+                            item.quantity=unsigned(std::clamp(int(base->maxStack)+extra,1,511));
+                        }
+                         item.id=identity;item.nativeFlags|=0x82010;
+                        auto cell=shelfPosition(shelf,*base,data.items,storePage);
+                        if(!cell && !request.gamble && storePage==1) {storePage=2;cell=shelfPosition(shelf,*base,data.items,storePage);}
+                        if(!cell) return false;
+                        projection.inventory.items.emplace(item.id,item);result.offers.push_back({std::move(item),{},permanent,std::string(displayCode),storePage,*cell});
+                        shelf.offers.emplace(identity,result.offers.back());
+                        return true;
+                    }
+                    }
+                    return false;
+                };
+            if(request.gamble) generateGambleStock(data,unsigned(character.player.level),result.source.difficulty,control,
+                [&](std::string_view code,std::string_view displayCode,ItemQuality quality,unsigned level) {
+                    return create(code,displayCode,quality,level,false);
+                });
+            else generateVendorStock(data,data.vendors.at(result.source.npc.code),unsigned(character.player.level),result.source.difficulty,control,
+                [&](std::string_view code,ItemQuality quality,unsigned level,bool permanent) {
+                    return create(code,{},quality,level,permanent);
+                });
+            result.controlRandom=control;result.gameRandom=gameRandom;
+        }
+        result.columns=columns;result.rows=rows;
         const auto rules=prepareEquipmentRules(data,projection);
         result.equipment=rules;
         for (auto &offer : result.offers) offer.equipment=rules->items.at(offer.item.id);
@@ -99,6 +162,30 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
             repaired.identified=identified; result.repairs.emplace(id,std::move(repaired));
         }
         quote(item);
+        if(sale) {
+            bool duplicate=!result.source.stock.conversation && !item.ear && item.personalizedName.empty() &&
+                !(item.nativeFlags&(0x100u|0x1000000u|0x400000u)) && item.socketedItems.empty() &&
+                !definition->equipment.isType("play");
+            if(item.quality==ItemQuality::Inferior && item.gradeRow>=0) {
+                auto name=std::string(data.tables.at("lowqualityitems").value(size_t(item.gradeRow),"Name"));
+                for(auto &letter:name) letter=char(std::tolower(static_cast<unsigned char>(letter)));
+                if(name=="cracked") duplicate=false;
+            }
+            if(item.quality==ItemQuality::Unique && item.specialRow>=0 &&
+                data.tables.at("uniqueitems").number(size_t(item.specialRow),"carry1").value_or(0)) duplicate=false;
+            for(const auto &rule:vendor.items) if(rule.permanent && rule.code==item.definition) duplicate=false;
+            if(result.source.difficulty && (item.definition=="hp4" || item.definition=="hp5" ||
+                item.definition=="mp4" || item.definition=="mp5")) duplicate=false;
+            result.resaleDuplicate=duplicate;
+            if(duplicate) {
+                const auto &types=data.tables.at("itemtypes"),&pages=data.tables.at("storepage");
+                std::string_view page;
+                for(size_t row=0;row<types.rows().size();++row)
+                    if(types.value(row,"Code")==definition->base.type) {page=types.value(row,"StorePage");break;}
+                for(size_t row=0;row<pages.rows().size();++row)
+                    if(!page.empty() && pages.value(row,"Code")==page) {result.resalePage=int(row);break;}
+            }
+        }
     }
     if (request.item && !repair && !result.prices.contains(request.item->id)) result.deferred="Item is not eligible for this vendor service";
     if(!result.repairs.empty()) {auto projection=character;projection.inventory.items=result.repairs;result.equipment=prepareEquipmentRules(data,projection);}

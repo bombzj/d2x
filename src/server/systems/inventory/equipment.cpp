@@ -101,7 +101,7 @@ DomainResult<bool> Draft::autoEquip(EntityId id) {
         Draft trial=*this;
         const auto status=trial.equipment({item.handle(),slot,{}},EquipmentMode::Insert);
         if (status==DomainStatus::Applied) { edit=std::move(trial.edit); return {status,true}; }
-        if (status==DomainStatus::Capacity || status==DomainStatus::Unavailable) return {status,{}};
+        if (isDeferred(status) || status==DomainStatus::Unavailable) return {status,{}};
     }
     return {DomainStatus::Applied,false};
 }

@@ -92,19 +92,32 @@ struct DiagnosticDensity {
     std::optional<size_t> preset;
     std::string quest;
     EntityId object;
+    unsigned occurrence{};
+    int retryAttempts{},finalRetryAttempts{},birthTicks{};
 };
 struct DiagnosticWander {
     RegionId area;size_t room{};uint64_t epoch{};std::string phase,deferred;int search{},count{};
 };
+struct DiagnosticRoomRandom {
+    RegionId area;size_t room{};bool loaded{};uint64_t revision{},creationOrder{};std::optional<uint64_t> random;
+};
+struct DiagnosticHirelingSlot {
+    int seller{};uint64_t revision{};uint16_t name{};uint32_t seed{};bool available{},hired{};
+};
 struct DiagnosticSnapshot {
     uint64_t gameRandom{};
+    std::map<RegionId,uint64_t> levelRandom;
+    std::vector<DiagnosticRoomRandom> roomRandom;
     std::optional<uint64_t> objectControlRandom,monsterRegionRandom,npcControlRandom,questControlRandom;
+    std::vector<DiagnosticHirelingSlot> hirelingRosters;
     std::map<RegionId,objects::ObjectRegionPopulation> objectPopulation;
     std::map<RegionId,std::set<std::string>> rejectedDensity;
     std::vector<DiagnosticDensity> densityPopulation;
     std::vector<DiagnosticWander> wanderPopulation;
     bool modifiersPending{};
     std::string modifierFailure;
+    size_t monsterEquipmentPending{};
+    std::string monsterEquipmentFailure;
     unsigned virtualPlayers{1};
     SystemMetrics stageMetrics{};
     uint64_t spatialTick{},spatialGeneration{},spatialQueries{},spatialCandidates{},spatialReturned{};

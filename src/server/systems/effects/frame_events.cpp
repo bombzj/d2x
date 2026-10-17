@@ -17,18 +17,6 @@
 #include <vector>
 
 namespace d2x::server::effects {
-DomainResult<> System::monsterModeEvent(const FrameEvent &event,uint64_t tick) {
-    if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
-    const auto *unit=ports_.monsters.find(event.owner.unit);
-    if(!unit) {forgetUnit(event.owner.unit);ports_.frameEvents.cancel(event.handle);return {DomainStatus::Applied,std::monostate{}};}
-    if(!ports_.areas.loaded(unit->area,unit->position)) return {DomainStatus::Applied,std::monostate{}};
-    if(advanceMonsterSkills(unit->id,tick)==StepStatus::Blocked || advanceMonsterEnchantments(unit->id,tick)==StepStatus::Blocked)
-        return {DomainStatus::Capacity,{}};
-    const auto cycle=uniqueCycles_.find(unit->id);
-    if(!unit->alive() && (cycle==uniqueCycles_.end() || (!cycle->second.nativeHitAt && !cycle->second.nativeDeathAt && !cycle->second.lightning && !cycle->second.death)))
-        ports_.frameEvents.cancel(event.handle);
-    return {DomainStatus::Applied,std::monostate{}};
-}
 void System::scheduleModeEnd(EntityId id,uint64_t tick) {
     const auto *states=unitEffects(id);if(!states || !states->hasEndedModeEffects({})) return;
     const FrameEventOwner owner{ports_.players.findActor(id)?FrameEventUnit::Player:FrameEventUnit::Monster,id};

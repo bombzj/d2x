@@ -25,6 +25,7 @@ struct DensityRoom {
   bool championParty{};
   bool retried{};
   bool finalRetried{};
+  bool searchPending{};
   bool spawned{},counted{};
   std::string deferred;
   int partyOffset{};
@@ -38,7 +39,7 @@ struct DensityRoom {
 };
 struct AreaPopulation { uint64_t generation{}; std::set<std::string> admittedSpawnKeys; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::set<EntityId> admittedNpcs; std::set<std::string> rejectedDensityKeys; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
 struct QuestBirth {RegionId area;uint64_t generation{};std::string name;DensityRoom cursor;std::optional<Vec> position;};
-struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};};
+struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};unsigned occurrence{};int retryAttempts{},finalRetryAttempts{},birthTicks{};};
 struct WanderRoom {
   enum class Phase {Check,Search,Birth,Done};
   uint64_t epoch{};
@@ -48,7 +49,7 @@ struct WanderRoom {
   std::string deferred;
 };
 struct State { std::map<RegionId, AreaPopulation> areas; std::optional<uint64_t> regionRandom; std::map<int,MonsterRegionSelection> regions; std::map<int,std::vector<std::string>> rosters; std::set<int> superUniques; std::vector<QuestBirth> questBirths; std::vector<ObjectBirth> objectBirths; std::map<std::pair<RegionId,size_t>,WanderRoom> wanderRooms; std::map<RegionId,int> wanderCounts; std::array<uint64_t,5> roomEpochs{}; };
-struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; quests::System &quests; const PlayerStore &players; };
+struct Ports { AreaStore &areas; monsters::System &monsters; uint64_t &random; const GameSettings &settings; objects::System &objects; const spatial::System &spatial; quests::System &quests; const PlayerStore &players; world::System &world; };
 class System {
     State state_;
     const Ports ports_;
@@ -60,7 +61,8 @@ class System {
     const State &read() const { return state_; }
     DomainResult<EntityId> admit(const Spawn &);
     DomainResult<> requestQuestBirth(RegionId,std::string_view,TickContext,std::optional<Vec> position={});
-    DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={});
+    DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={},unsigned occurrence=0,
+      int retryAttempts=0,int finalRetryAttempts=0,int birthTicks=0);
     StepStatus advanceQuestBirths(TickContext);
     bool questBirthComplete(RegionId,std::string_view) const;
     void resetQuestBirth(RegionId,std::string_view);

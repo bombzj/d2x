@@ -24,6 +24,8 @@ struct Preparation {
     unsigned quantity=1;
     std::set<size_t> uniques{};
     std::map<PlayerId,EntityId> participants{};
+    struct HirelingSelection {int seller{};uint64_t revision{};uint32_t slot{};uint16_t name{};uint32_t seed{};};
+    std::optional<HirelingSelection> hireling;
 };
 struct Prepared {
     Preparation source;

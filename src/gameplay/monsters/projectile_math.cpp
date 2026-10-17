@@ -1,5 +1,6 @@
 #include "projectile_math.hpp"
 #include "core/random.hpp"
+#include "gameplay/units/direction.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -34,9 +35,9 @@ Vec monsterDirectionOffset(int index) {
     constexpr std::array y{-1,-1,0,1,1,1,0,-1,-2,-2,-2,-1,0,1,2,2,2,2,2,1,0,-1,-2,-2,-3,-3,0,3,3,3,0,-3};
     return {float(x.at(size_t(index))),float(y.at(size_t(index)))};
 }
-std::pair<Vec,Vec> monsterWebTrailPoints(Vec position,Vec movement) {
+std::pair<Vec,Vec> monsterWebTrailPoints(Vec position,uint8_t nativeDirection) {
     constexpr std::array directions{10,8,22,20,18,16,14,12};
-    const auto offset=monsterDirectionOffset(directions[size_t(monsterFacing8(position-movement,position))]);
+    const auto offset=monsterDirectionOffset(directions[nativeOverlayDirection(nativeDirection)]);
     const Vec origin{std::floor(position.x)+offset.x,std::floor(position.y)+offset.y};
     return {origin,origin+offset*2.f};
 }

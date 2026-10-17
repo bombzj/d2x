@@ -76,7 +76,7 @@ std::string mercName(const HirelingDefinition &definition, unsigned offset) {
     return name.str();
 }
 void importMerc(CharacterRecord &player, const D2sHeader &header, const ClassicData &content) {
-    if (!header.mercSeed) return;
+    if (!header.mercExperience && !header.mercSeed && !header.mercName) return;
     const HirelingDefinition *definition = nullptr;
     int level = 1;
     for (const auto &entry : content.hirelings) {
@@ -97,11 +97,10 @@ void importMerc(CharacterRecord &player, const D2sHeader &header, const ClassicD
 }
 void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicData &content) {
     const auto &merc = player.hireling;
-    if (merc.sourceRow < 0) { header.mercSeed = 0; return; }
+    if (merc.sourceRow < 0) { header.mercSeed = 0;header.mercExperience=0;header.mercName=0;return; }
     auto definition = std::find_if(content.hirelings.begin(), content.hirelings.end(),
         [&](const auto &entry) { return entry.sourceRow == merc.sourceRow; });
     require(definition != content.hirelings.end() && merc.experience <= UINT32_MAX, "hireling metadata");
-    require(merc.seed != 0, "missing hireling seed");
     header.mercSeed = merc.seed;
     header.mercType = uint16_t(definition->id);
     bool found = false;
@@ -110,6 +109,7 @@ void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicD
         catch (const std::runtime_error &) { break; }
     }
     require(found, "hireling name");
+    require(merc.seed || merc.experience || header.mercName,"ambiguous empty hireling identity");
     header.mercFlags = merc.hp <= 0 ? 0x10000 : 0;
     header.mercExperience = uint32_t(merc.experience);
 }
@@ -261,7 +261,7 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
         items(false, corpse.items);
     }
     require(word(bytes, cursor) == 0x666A, "missing hireling section"); cursor += 2;
-    if (header.mercSeed) items(true);
+    if (header.mercExperience || header.mercSeed || header.mercName) items(true);
     require(word(bytes, cursor) == 0x666B && cursor + 3 <= bytes.size(), "missing Iron Golem kf section");
     const unsigned hasIron = bytes[cursor+2]; require(hasIron <= 1, "invalid Iron Golem flag"); cursor += 3;
     if (hasIron) {
@@ -405,7 +405,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         appendDword(bytes, uint32_t(corpse.position.x)); appendDword(bytes, uint32_t(corpse.position.y));
         items(false, corpse.items);
     }
-    appendWord(bytes, 0x666A); if (header.mercSeed) items(true);
+    appendWord(bytes, 0x666A); if (header.mercExperience || header.mercSeed || header.mercName) items(true);
     appendWord(bytes, 0x666B); bytes.push_back(snapshot.ironGolem ? 1 : 0);
     if (snapshot.ironGolem) {
         auto item = *snapshot.ironGolem;

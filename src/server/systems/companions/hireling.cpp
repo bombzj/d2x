@@ -8,6 +8,7 @@
 #include "gameplay/effects/queries.hpp"
 #include "server/systems/npc/system.hpp"
 #include "hireling_equipment.hpp"
+#include "hireling_birth.hpp"
 #include "server/systems/inventory/planning.hpp"
 #include "gameplay/rewards/experience.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -17,29 +18,79 @@
 #include <cmath>
 
 namespace d2x::server::companions {
-namespace {
-bool sameHireling(const HirelingRecord &current, const HirelingRecord &prepared) {
-    return current.sourceRow == prepared.sourceRow && current.level == prepared.level &&
-        current.classId == prepared.classId && current.seed == prepared.seed && current.nameKey == prepared.nameKey;
-}
-}
 DomainResult<> System::grantHireling(const ActorContext &actor,HirelingRecord record) {
-    const auto *p=ports_.players.find(actor.player);
-    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || record.sourceRow<0 || record.level<1 || record.level>p->persistent.player.level)
-        return {DomainStatus::InvalidActor,{}};
-    auto character=p->persistent.player;character.hireling=std::move(record);
-    auto inventory=p->persistent.inventory;std::vector<ItemChange> changes;
-    for(auto it=inventory.items.begin();it!=inventory.items.end();) {
+    const auto result=replaceHireling(actor,std::move(record),0);
+    if(result.status==DomainStatus::PendingContent) return {DomainStatus::Applied,std::monostate{}};
+    if(!result) return {result.status,{}};
+    return *result.value?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Unavailable,{}};
+}
+DomainResult<bool> System::replaceHireling(const ActorContext &actor,HirelingRecord record,unsigned price,
+    std::optional<Request> request,std::optional<Vec> seller) {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area ||
+        ports_.areas.at(actor.area).generation!=actor.areaGeneration || player->persistent.player.hp<=0 ||
+        record.sourceRow<0 || record.level<1 || record.level>player->persistent.player.level) return {DomainStatus::InvalidActor,{}};
+    if(player->inventoryRevision==UINT64_MAX || player->characterRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    if(uint64_t(player->persistent.player.gold)+player->persistent.player.bankGold<price) return {DomainStatus::Unavailable,{}};
+    auto candidate=player->persistent;candidate.player.hireling=record;
+    std::vector<ItemChange> changes;
+    std::set<EntityId> removed;
+    for(auto it=candidate.inventory.items.begin();it!=candidate.inventory.items.end();) {
         const auto *at=std::get_if<ContainerLocation>(&it->second.location);
-        if(!at || at->container!=p->persistent.containers.hirelingEquipment) {++it;continue;}
+        if(!at || at->container!=candidate.containers.hirelingEquipment) {++it;continue;}
         if(it->second.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        changes.push_back({it->first,it->second.revision+1,ItemChangeKind::Removed,it->second.location,{},0});it=inventory.items.erase(it);
+        removed.insert(it->first);changes.push_back({it->first,it->second.revision+1,ItemChangeKind::Removed,it->second.location,{},0});
+        it=candidate.inventory.items.erase(it);
     }
-    transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(inventory),std::move(changes),character.weaponSet};edit.character=std::move(character);
-    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
-    const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return result;
-    for(auto it=state_.companions.begin();it!=state_.companions.end();) if(it->second.owner==actor.player && it->second.kind==Kind::Hireling) {ports_.monsters.remove(it->first);it=state_.companions.erase(it);} else ++it;
-    hirelingRules_.erase(actor.player);hirelingLists_.erase(actor.player);pendingLists_.erase(actor.player);return result;
+    std::erase_if(candidate.inventory.itemOrder,[&](EntityId id){return removed.contains(id);});
+    if(auto container=candidate.inventory.containers.find(candidate.containers.hirelingEquipment);container!=candidate.inventory.containers.end())
+        container->second.registeredWeapon={};
+    auto pending=hirelingReplacements_.find(actor.player);
+    if(pending==hirelingReplacements_.end() || !sameHirelingIdentity(record,pending->second.source.record) ||
+        pending->second.source.inventoryRevision!=player->inventoryRevision || pending->second.characterRevision!=player->characterRevision) {
+        if(nextHirelingReplacement_==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        HirelingPreparation source{actor,record,candidate.difficulty,player->inventoryRevision,candidate,player->rules.items,player->rules.equipment,0,nextHirelingReplacement_++};
+        hirelingReplacements_.insert_or_assign(actor.player,HirelingReplacement{std::move(source),player->characterRevision,std::move(request),{}});
+        return {DomainStatus::PendingContent,{}};
+    }
+    if(!pending->second.prepared) return {DomainStatus::PendingContent,{}};
+    const auto &prepared=*pending->second.prepared;
+    if(!prepared.deferred.empty()) return {DomainStatus::NotImplemented,{}};
+    const auto birth=prepareHirelingBirth(actor,candidate,prepared,seller,true);
+    if(!birth) return {birth.status,{}};
+    auto &publication=**birth.value;
+    if(!publication.units) {
+        std::optional<EventBatch> failure;
+        if(request) failure=EventBatch{0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},
+            {MerchantFact{request->npc,EntityId{UINT32_MAX},0,15,player->persistent.player.gold}}};
+        const auto consumed=ports_.transactions.consumeRoomRandom(publication.rooms,std::move(failure));
+        return consumed?DomainResult<bool>{DomainStatus::Applied,false}:DomainResult<bool>{consumed.status,{}};
+    }
+    candidate.player.hireling.hp=Fixed8::fromRaw(nativeChecked(publication.units->actors->actors.begin()->second.life));
+    const auto wallet=std::min(candidate.player.gold,price);candidate.player.gold-=wallet;candidate.player.bankGold-=price-wallet;
+    transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(candidate.inventory),std::move(changes),candidate.player.weaponSet};
+    edit.character=candidate.player;
+    if(request) {
+        HirelingListFact remaining{request->npc,{}};
+        const auto &list=hirelingLists_.at(actor.player);
+        for(const auto &offer:list.offers)
+            if(offer.name!=*request->offer && ports_.npc.hirelingAvailable(list.source.seller,list.source.rosterRevision,offer.name,offer.record.seed))
+                remaining.offers.emplace_back(offer.name,offer.record.seed);
+        edit.facts.emplace_back(std::move(remaining));
+        edit.facts.emplace_back(MerchantFact{request->npc,{},0,5,candidate.player.gold});
+    }
+    auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication.units);
+    if(!plan) return {plan.status,{}};
+    plan.value->gameRandom=transactions::UnitRandomEdit{publication.expectedRandom,publication.nextRandom};
+    plan.value->roomRandomLoans=publication.rooms;
+    auto nextRules=hirelingRules_;auto installed=prepared;
+    installed.source.inventoryRevision=player->inventoryRevision+1;
+    installed.source.record=candidate.player.hireling;installed.source.token=0;
+    nextRules.insert_or_assign(actor.player,std::move(installed));
+    const auto result=ports_.transactions.commit(std::move(*plan.value));if(!result) return {result.status,{}};
+    ports_.monsters.publishBirthComponents(publication.components);state_.companions.swap(publication.companions);
+    hirelingRules_.swap(nextRules);
+    return {DomainStatus::Applied,true};
 }
 std::vector<HirelingListPreparation> System::pendingHirelingLists() const {
     std::vector<HirelingListPreparation> result;
@@ -47,15 +98,26 @@ std::vector<HirelingListPreparation> System::pendingHirelingLists() const {
     return result;
 }
 DomainResult<> System::install(PreparedHirelingList prepared) {
-    const auto source = prepared.source;
-    const auto pending = pendingLists_.find(source.actor.player);
-    if (pending == pendingLists_.end() || pending->second.token != source.token) return {DomainStatus::Stale,{}};
+    const auto pending = pendingLists_.find(prepared.source.actor.player);
+    if (pending == pendingLists_.end() || pending->second.token != prepared.source.token) return {DomainStatus::Stale,{}};
+    const auto source=pending->second;
+    prepared.source=source;
     const auto *player = ports_.players.find(source.actor.player);
     const auto access = ports_.npc.service(source.actor, source.npc);
     if (!player || !access || access->conversation->revision != source.conversation ||
         player->persistent.player.level != source.level || player->persistent.difficulty != source.difficulty) {
         pendingLists_.erase(pending); return {DomainStatus::Stale,{}};
     }
+    for(const auto &entry:source.entries) if(!ports_.npc.hirelingAvailable(source.seller,source.rosterRevision,entry.name,entry.seed)) {
+        pendingLists_.erase(pending);return {DomainStatus::Stale,{}};
+    }
+    if(prepared.deferred.empty()) {
+        if(prepared.offers.size()!=source.entries.size()) return {DomainStatus::InvalidRequest,{}};
+        for(size_t index=0;index<source.entries.size();++index) {
+            const auto &entry=source.entries[index];const auto &offer=prepared.offers[index];
+            if(offer.name!=entry.name || offer.record.seed!=entry.seed) return {DomainStatus::InvalidRequest,{}};
+        }
+    } else prepared.offers.clear();
     HirelingListFact fact{source.npc,{}};
     if (prepared.deferred.empty()) for (const auto &offer : prepared.offers) fact.offers.emplace_back(offer.name,offer.record.seed);
     auto next = hirelingLists_;
@@ -80,23 +142,32 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (request.action == Action::List) {
         if (pendingLists_.contains(actor.player)) return {DomainStatus::Conflict,{}};
         if (pendingLists_.size() >= 8 || nextList_ == UINT64_MAX) return {DomainStatus::Capacity,{}};
+        const auto roster=ports_.npc.hirelingRoster(access->npc->rule);
+        if(!roster) return {roster.status,{}};
         const auto existing = hirelingLists_.find(actor.player);
         if (existing != hirelingLists_.end() && existing->second.source.conversation == access->conversation->revision &&
-            existing->second.source.level == player->persistent.player.level) {
+            existing->second.source.level == player->persistent.player.level && existing->second.source.rosterRevision==roster.value->revision &&
+            std::all_of(existing->second.offers.begin(),existing->second.offers.end(),[&](const auto &offer) {
+                return ports_.npc.hirelingAvailable(existing->second.source.seller,existing->second.source.rosterRevision,offer.name,offer.record.seed);
+            })) {
             HirelingListFact fact{request.npc,{}};
             for (const auto &offer : existing->second.offers) fact.offers.emplace_back(offer.name,offer.record.seed);
             const auto sent = ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{std::move(fact)}});
             return sent ? DomainResult<>{DomainStatus::Applied,std::monostate{}} : DomainResult<>{sent.status,{}};
         }
-        auto random = ports_.random;
-        pendingLists_.emplace(actor.player,HirelingListPreparation{actor,request.npc,access->conversation->revision,nextList_,childRandom(random),
-            access->npc->rule.nativeClass,player->persistent.difficulty,player->persistent.player.level});
-        ++nextList_; ports_.random=random;
+        HirelingListPreparation source{actor,request.npc,access->conversation->revision,nextList_,roster.value->revision,
+            access->npc->rule.nativeClass,player->persistent.difficulty,player->persistent.player.level};
+        for(size_t index=0;index<roster.value->slots.size();++index) {
+            const auto &slot=roster.value->slots[index];
+            if(slot.available && !slot.hired) source.entries.push_back({uint32_t(index+1),slot.name,slot.seed});
+        }
+        pendingLists_.emplace(actor.player,std::move(source));
+        ++nextList_;
         return {DomainStatus::Applied,std::monostate{}};
     }
     auto record = player->persistent.player;
-    std::optional<InventoryState> replacement;
-    std::vector<ItemChange> removedEquipment;
+    std::shared_ptr<effects::AuraUnitPublication> revivedUnits;
+    std::optional<EntityId> revivedActor;
     unsigned price = 0;
     if (request.action == Action::Hire) {
         const auto &quest = record.quests.at(size_t(player->persistent.difficulty)).at(questIndex(QuestId::SistersBurialGrounds));
@@ -107,45 +178,78 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
             list->second.source.level != record.level) return reject(9);
         const auto candidate = std::find_if(list->second.offers.begin(),list->second.offers.end(),[&](const auto &entry){return entry.name == *request.offer;});
         if (candidate == list->second.offers.end()) return reject(9);
-        replacement=player->persistent.inventory;
-        for(auto item=replacement->items.begin();item!=replacement->items.end();) {
-            const auto *location=std::get_if<ContainerLocation>(&item->second.location);
-            if(!location || location->container!=player->persistent.containers.hirelingEquipment) {++item;continue;}
-            if(item->second.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-            removedEquipment.push_back({item->first,item->second.revision+1,ItemChangeKind::Removed,item->second.location,{},0});
-            item=replacement->items.erase(item);
+        if(!ports_.npc.hirelingAvailable(list->second.source.seller,list->second.source.rosterRevision,candidate->name,candidate->record.seed)) return reject(9);
+        if(uint64_t(record.gold)+record.bankGold<candidate->price) return reject(12);
+        auto roster=ports_.npc.prepareHirelingHired(list->second.source.seller,list->second.source.rosterRevision,candidate->name,candidate->record.seed);
+        if(!roster) return {roster.status,{}};
+        const auto *seller=ports_.monsters.find(request.npc);
+        if(!seller || seller->area!=actor.area) return {DomainStatus::Unavailable,{}};
+        const auto result=replaceHireling(actor,candidate->record,candidate->price,request,seller->position);
+        if(result.status==DomainStatus::PendingContent) return {DomainStatus::Applied,std::monostate{}};
+        if(!result) {
+            if(!isDeferred(result.status)) hirelingReplacements_.erase(actor.player);
+            return result.status==DomainStatus::Unavailable?reject(15):DomainResult<>{result.status,{}};
         }
-        record.hireling=candidate->record; price=candidate->price;
+        if(!*result.value) {
+            hirelingReplacements_.erase(actor.player);return {DomainStatus::Applied,std::monostate{}};
+        }
+        ports_.npc.publishVendorControl(std::move(*roster.value));
+        hirelingReplacements_.erase(actor.player);
+        auto &offers=list->second;
+        std::erase_if(offers.offers,[&](const auto &offer){return !ports_.npc.hirelingAvailable(offers.source.seller,offers.source.rosterRevision,offer.name,offer.record.seed);});
+        std::erase_if(offers.source.entries,[&](const auto &entry){return !ports_.npc.hirelingAvailable(offers.source.seller,offers.source.rosterRevision,entry.name,entry.seed);});
+        if(offers.offers.empty()) hirelingLists_.erase(actor.player);
+        return {DomainStatus::Applied,std::monostate{}};
     } else if (request.action == Action::Resurrect) {
         const auto prepared=hirelingRules_.find(actor.player);
         if (record.hireling.sourceRow < 0 || record.hireling.hp > 0 || prepared==hirelingRules_.end() ||
-            !sameHireling(record.hireling,prepared->second.source.record) || !prepared->second.deferred.empty()) return reject(9);
+            !sameHirelingIdentity(record.hireling,prepared->second.source.record) || !prepared->second.deferred.empty()) return reject(9);
         price=unsigned(std::min<int64_t>(50000,15LL*record.hireling.level*record.hireling.level/2));
         if(!player->rules.items || !player->rules.equipment) return reject(9);
         record.hireling.hp=calculateHirelingEquipment(player->persistent,*player->rules.items,*player->rules.equipment,prepared->second).life;
+        for(const auto &[id,pet]:state_.companions) {
+            if(pet.owner!=actor.player || pet.kind!=Kind::Hireling) continue;
+            const auto *live=ports_.monsters.find(id);
+            if(!live || live->alive() || live->revision==UINT64_MAX) return {DomainStatus::Conflict,{}};
+            auto candidate=*live;
+            candidate.life=candidate.maximumLife;candidate.inactivePet=false;
+            candidate.aiPose=1;candidate.holdPose=false;candidate.modeAlive=false;
+            candidate.busyUntil=candidate.poseUntil=candidate.riseUntil=candidate.reactionUntil=0;
+            candidate.neutralAt.reset();candidate.delayedDeathSource.reset();candidate.corpse={};
+            candidate.frozenUntil=0;candidate.shatterActive=false;
+            candidate.route.clear();candidate.moving=candidate.running=false;candidate.movementTarget={};
+            candidate.skillMotion.reset();candidate.nativeActionUntil=0;candidate.modeFrame.reset();
+            candidate.killer={};candidate.knockedUntil=0;candidate.knockbackGoal.reset();++candidate.revision;
+            effects::UnitDamageStates states;states.source=id;
+            states.clearStateFlags={candidate.rule.frozenState.id,candidate.rule.shatterState.id,prepared->second.recycledState};
+            revivedUnits=std::make_shared<effects::AuraUnitPublication>(ports_.effects.prepareDamageStates(std::move(candidate),states,actor.tick));
+            auto &life=revivedUnits->life.at(id);life.life=life.maximum;life.changed=true;
+            record.hireling.hp=life.life;
+            revivedActor=id;break;
+        }
+        if(!revivedActor) return {DomainStatus::NotImplemented,{}};
     } else return {DomainStatus::NotImplemented,{}};
     if (uint64_t(record.gold)+record.bankGold < price) return reject(12);
     const auto wallet=std::min(record.gold,price);record.gold-=wallet;record.bankGold-=price-wallet;
     DomainResult<transactions::Plan> plan;
-    if(replacement) {
-        transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(*replacement),std::move(removedEquipment),record.weaponSet};
-        edit.character=record;edit.facts.emplace_back(MerchantFact{request.npc,{},0,5,record.gold});
-        plan=ports_.transactions.prepare(std::move(edit));
-    } else {
+    {
         transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(record)};
         edit.facts.emplace_back(MerchantFact{request.npc,{},0,5,edit.player.gold});
-        plan=ports_.transactions.prepare(std::move(edit));
+        if(revivedUnits) {
+            for(auto &fact:revivedUnits->facts) edit.publicFacts.push_back(std::move(fact));
+            revivedUnits->facts.clear();
+            const auto &body=revivedUnits->actors->actors.at(*revivedActor);
+            edit.publicFacts.emplace_back(HitFact{body.id,1,body.area,128,false,body.position});
+        }
+        plan=ports_.transactions.prepare(std::move(edit),nullptr,{},revivedUnits);
     }
     if(!plan) return {plan.status,{}};
     const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed;
-    for(auto pet=state_.companions.begin();pet!=state_.companions.end();) {
-        if(pet->second.owner!=actor.player || pet->second.kind!=Kind::Hireling) {++pet;continue;}
-        ports_.monsters.remove(pet->first);pet=state_.companions.erase(pet);
-    }
-    if(request.action==Action::Hire) {
-        hirelingRules_.erase(actor.player);
-        auto &offers=hirelingLists_.at(actor.player).offers;
-        std::erase_if(offers,[&](const auto &offer){return offer.name==*request.offer;});
+    if(revivedActor) {
+        auto &pet=state_.companions.at(*revivedActor);
+        pet.pendingAction.reset();pet.pendingAura.reset();pet.target={};pet.release=pet.removeAt=0;
+        pet.nextDecision=actor.tick+1;
+        return committed;
     }
     return committed;
 }

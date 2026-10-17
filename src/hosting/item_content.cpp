@@ -1,5 +1,7 @@
 #include "item_content.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/item_quality.hpp"
+#include <array>
 #include "content/items/cube_data.hpp"
 #include "gameplay/items/staffmods.hpp"
 #include "gameplay/loot/special.hpp"
@@ -7,6 +9,29 @@
 #include <algorithm>
 #include <stdexcept>
 namespace d2x {
+DropQuality nativeDropQuality(ItemQuality quality) {
+    constexpr std::array qualities{DropQuality::Normal,DropQuality::Magic,DropQuality::Rare,DropQuality::Set,
+        DropQuality::Unique,DropQuality::Superior,DropQuality::Inferior};
+    if(size_t(quality)>=qualities.size()) throw std::runtime_error("Unsupported native item quality");
+    return qualities.at(size_t(quality));
+}
+ItemInstance prepareNativeItem(const ClassicData &data,std::string_view code,int level,int difficulty,
+    uint64_t &gameRandom,std::optional<DropQuality> quality,const std::set<size_t> &uniques,NativeItemUse use) {
+    const auto seeds=rollNativeItemSeeds(gameRandom);
+    auto plan=quality?planSelectedItem(data,code,level,0,uniques,{},*quality,false,[&]{return seeds;}):
+        planCreatedItem(data,code,level,uniques,seeds);
+    if(!plan.deferred.empty() || plan.drops.size()!=1)
+        throw std::runtime_error(plan.deferred.empty()?"Native item construction failed":plan.deferred);
+    auto &drop=plan.drops.front();drop.generation.rollNaturalEthereal=false;
+    drop.generation.suppressNaturalSockets=use==NativeItemUse::Equipment;
+    uint64_t unused{};auto item=prepareItem(data,drop,unused,difficulty);
+    if(use==NativeItemUse::Equipment) {
+        item.nativeFlags|=0x1000;
+        auto identified=item;identified.identified=true;
+        item.durability=itemMaximumDurability(data,identified,resolveItemStats(data,identified,level));
+    }
+    return item;
+}
 namespace {
 void appendStats(const ClassicData &data, ItemInstance &item, const std::vector<ResolvedItemStat> &stats) {
     for(const auto &stat:stats) {
@@ -68,7 +93,7 @@ void autoProperties(const ClassicData &data,const ItemDefinition &base,ItemInsta
 }
 ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t &random, int difficulty,int staffmodBias) {
     const auto *definition = data.items.find(drop.code);
-    if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 || drop.level > 99)
+    if (!definition || !drop.quantity || drop.quantity > definition->maxStack || drop.level < 1 || drop.level > 127)
         throw std::runtime_error("Invalid prepared item generation");
     if (definition->equipment.isType("body"))
         throw std::runtime_error("A body part requires its original player/monster identity; generic generation cannot create one");
@@ -157,7 +182,8 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         definition->base.socketsByLevel[item.level <= 25 ? 0 : item.level <= 40 ? 1 : 2], definition->width * definition->height, 6})));
     if (definition->maxStack == 1 && limit) {
         if (const auto sockets = property("item_numsockets"); sockets > 0) item.sockets = std::min(limit, unsigned(sockets));
-        else if (generation.rollNaturalSockets && (item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior) && limitedRandom(local, 100) < 33) {
+        else if (generation.rollNaturalSockets && (item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior) &&
+            limitedRandom(local, 100) < 33 && !generation.suppressNaturalSockets) {
             constexpr unsigned caps[]{3, 4, 6};
             item.sockets = item.nativeSeed % std::min(limit, caps[std::clamp(difficulty, 0, 2)]) + 1;
         }

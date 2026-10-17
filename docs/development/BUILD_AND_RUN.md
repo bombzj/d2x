@@ -93,7 +93,40 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-### 当前 master 合并交付
+### 当前地形资源工具复核
+
+2026-10-17，基于68237e72及当前工作区，d2x_assets的Windows／MinGW／Ninja Release构建通过；原版d2mapapi_piped以VS2022 Win32 Release／静态CRT重建。保留既有非致命初始化警告。
+
+| 资源工具产物 | SHA256 | 本轮用途 |
+| --- | --- | --- |
+| build/bin/d2x_assets-parity.exe | 5255786A1B0F1BCE9B9730636922E2C404F82E8CBE7F21B4E2679FD0A46D9500 | 同一既有资源目标的临时输出名，固定修正后的地图机制；486历史组合和130区完整邻房明细重放 |
+| build/bin/d2x_assets.exe | 2D0303FF8F9D695C87B9074F2B0D0E19AFD8B7982CAE7A9FF8D98228FC3A4400 | 同一修正后的地图机制，额外增加ownedOnly诊断明细选项；6个大区域重放 |
+
+对照结果见[地图验证](../gameplay/world/MAPS.md#当前源码逐事件复核)，报告及工具／MPQ／源码摘要位于`artifacts/map-parity-20261017-01`。该专项当时仅构建资源工具；随后客户端工作区改动已纳入下方ED442FC0包，资源工具对照不替代客户端画面验收。
+
+### 当前自动地图显示客户端包
+
+2026-10-17，基于`68237e72`及当前工作区，Windows／MinGW／Ninja Release的`d2x`目标构建成功，最终增量确认返回`ninja: no work to do`。本包纳入自动地图大小／定位、侧栏／裁剪、DC6基线／城镇拼图、原PL2 Fade和方向键事件操作，以及当前工作区的地图、人口、物品、玩法和原版互通修复。显示依据和待验证边界见[自动地图](../gameplay/world/AUTOMAP.md#输入与选项)；保留非致命编译警告。
+
+| 当前客户端产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 33586891 | `ED442FC077BBC43149AD8B2C93165AFBB79DE741E0F5ADD16F873B659025905C` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+使用现有`package.ps1`更新客户端目录，保留原存档、截图和资源；独立服务端本轮不更新。首次链接遇到构建期间共享源码更新造成的旧符号引用，按当前定义完成322步增量重编译后链接通过，未为打包修改玩法实现。构建／打包日志、源码状态、产物摘要及前一9086包备份保留在`artifacts/automap-package-20261017-085427/`。本次未启动游戏、运行测试或新增测试程序；自动地图画面、按键、混色性能及工作区其他改动等待用户测试，不将构建成功视为原版视觉一致性验收。
+
+### 此前原版互通崩溃修复客户端包
+
+2026-10-17，基于`68237e72`的当前工作区，Windows／MinGW／Ninja Release的`d2x`目标184步构建及随后49步增量构建成功。本包包含原版Join的技能节点删除修复、房主关闭时的退出顺序／重复结束包修复，以及工作区的地图、人口、物品和玩法改动；回归提交、原版DLL／收包依据及源码修复边界见[联网记录](../modules/NETWORK.md#tcpip有限冒烟)。保留此前补齐的companions Actor前置声明，以及AI／物件实现文件的effects／world头文件依赖。构建保留非致命警告，不将编译通过视为这些玩法改动的运行认证。
+
+| 当前客户端产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 33201431 | `9086A86BF884CEEB7776539D0465DC1B35B6BC72C5A98A33FA341F3EBE5629D4` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+客户端包由现有`package.ps1`更新，程序摘要与`build/bin`一致；根目录`Play-Diagnostic.cmd`使用同一构建产物，可继续原目录角色与双向消息记录。前一包`033EB7AC`的程序及DLL备份在忽略目录`artifacts/original-host-exit-crash-20261016/previous-package/`，本次构建日志、最终摘要及退出崩溃分析也在该事件目录；更早的入场修复证据保留于`artifacts/original-join-crash-20261016/`。用户已确认033包原版Join能进入场景，随后房主关闭出现D2Net崩溃；当前9086包的退出修复尚待用户重测。本次只构建与打包客户端，未启动游戏、运行测试或新增测试程序；完整装备／技能及工作区其他玩法回归未验证。独立服务端沿用下方此前包身份。
+
+### master 合并交付（此前包）
 
 2026-10-16，`master`合并提交`23628ee2`同时包含`battle`的`5ef7d867`及最新`origin2/master`的`18c7b495`，运行源码为`9afc1ed0`。物品提示冲突保留当前MPQ格式／数值逻辑，库存保留原图定位／镶孔／无形绘制，同时接入Unicode字体与动态布局；修正旧字体消费者、商店／传送点缩放缓存，并保留玩家敌意姓名和轮廓字体后端的MPQ文字颜色。Windows／MinGW／Ninja Release的all目标581步构建通过，最终`build-confirm.log`为`no work to do`，两包EXE与构建产物SHA256一致；既有非致命警告保留。当前CMake无已注册测试，未新增测试脚本、用例或专用程序。
 

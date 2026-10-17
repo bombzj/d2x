@@ -2,11 +2,15 @@
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/combat/participants.hpp"
+#include "server/systems/effects/system.hpp"
 #include "gameplay/monsters/projectile_math.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
+#include "gameplay/stats/modifier_values.hpp"
+#include "gameplay/skills/formula_parameters.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -66,67 +70,93 @@ bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bo
     if(delta.x*delta.x+delta.y*delta.y>radius*radius || !ports_.areas.at(caster->area).definition.activation.nearby(caster->position,other->position)) return false;
     return dead?usableCorpse(target,caster->area,tick):other->life>0 && (healthy || other->life<other->maximumLife);
 }
-DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,bool hatch,uint64_t tick) {
+DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,bool hatch,uint64_t tick,std::shared_ptr<SkillChildrenExecution> &retained) {
+    if(!retained) retained=std::make_shared<SkillChildrenExecution>();auto &execution=*retained;
+    if(execution.complete) return {DomainStatus::Applied,std::monostate{}};
     auto found=state_.actors.find(source);
-    if(found==state_.actors.end() || found->second.life<=0 || !found->second.rule.nestChild || count<1 || count>12) return {DomainStatus::InvalidActor,{}};
-    auto &parent=found->second;const auto &child=*parent.rule.nestChild;
-    if(size_t(count)>65536-state_.actors.size() || uint64_t(count)>UINT32_MAX-ports_.ids.cursor() || !ports_.events.hasCapacity(4)) return {DomainStatus::Capacity,{}};
-    const auto &grid=ports_.areas.at(parent.area).definition.collision;
-    constexpr std::array directionIndices{10,8,22,20,18,16,14,12};
-    const Vec origin=hatch?parent.position:parent.rule.ai.kind==MonsterAiKind::SandMaggotQueen?
-        parent.position+parent.rule.spawnOffset:parent.position+monsterDirectionOffset(directionIndices[size_t(monsterFacing8(parent.position,target))]);
-    int born=0;
-    DomainStatus failure=DomainStatus::Applied;
-    const auto place=[&](Vec point) {
-        if(!grid.walkable(point,child.rule.spawnCollision)) return false;
-        bool occupied=false;
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.life>0 && !other.burrowed && !other.airborne && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
-        for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==parent.area && p.persistent.player.hp>0 && meleeDistance(point,child.rule.size,p.position,2)<=0) occupied=true;}
-        if(occupied) return false;
-        auto identity=child.identity;identity.spawnKey=parent.identity.spawnKey+".skill-child."+std::to_string(parent.nestSpawned);identity.ownerSpawnKey=parent.identity.spawnKey;
-        auto rule=child.rule;rule.noExperience=true;
-        const auto admitted=admit({identity,child.implementation,parent.area,point,true,std::move(rule),{},tick});
-        if(!admitted) {failure=admitted.status;return false;}
-        auto &actor=state_.actors.at(*admitted.value);actor.riseMode=parent.rule.spawnMode;actor.riseUntil=actor.busyUntil=tick+uint64_t(parent.rule.spawnTicks);
-        ++parent.nestSpawned;++parent.revision;++born;
-        return true;
-    };
-    place(origin);
-    if(failure!=DomainStatus::Applied) return {failure,{}};
-    if(hatch) {
-        // SrvDo084 first probes the origin. Subsequent SpawnNormalMonster
-        // calls use search limits 1..4, translated to radii 3,6,9,12.
-        // Only a failed complete search raises the limit; at most 2*count
-        // calls follow the initial probe. Keep the parent's random advances.
-        auto random=parent.combatRandom;
-        int searchLimit=1;
-        for(int attempt=0;attempt<2*count && born<count && searchLimit<5;++attempt) {
-            bool placed=false;
-            for(int radius=3;radius<=3*searchLimit && !placed;radius+=3) {
-                const auto start=monsterWanderPoint(origin,radius,random)-origin;
-                int x=int(start.x),y=int(start.y);
-                for(int probe=0;probe<8*radius && !placed;++probe) {
-                    if(y==-radius && x<radius) ++x;
-                    else if(x==radius && y<radius) ++y;
-                    else if(y==radius && x>-radius) --x;
-                    else --y;
-                    placed=place(origin+Vec{float(x),float(y)});
-                    if(failure!=DomainStatus::Applied) return {failure,{}};
+    if(found==state_.actors.end() || (!execution.published && !found->second.alive()) || !found->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    if(!execution.published) {
+        auto parent=found->second;const auto &child=*parent.rule.nestChild;
+        const auto capacity=std::max(count,0);
+        if(size_t(capacity)>65536-state_.actors.size() || uint64_t(capacity)>UINT32_MAX-ports_.ids.cursor() || parent.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        auto gameRandom=ports_.random;ComponentPaletteState palettes;std::map<EntityId,Actor> candidates;
+        std::set<size_t> limitedUniques;
+        const auto &grid=ports_.areas.at(parent.area).definition.collision;
+        constexpr std::array directionIndices{10,8,22,20,18,16,14,12};
+        const Vec origin=hatch?parent.position:parent.rule.ai.kind==MonsterAiKind::SandMaggotQueen?
+            parent.position+parent.rule.spawnOffset:parent.position+monsterDirectionOffset(directionIndices[size_t(monsterFacing8(parent.position,target))]);
+        int born=0;DomainStatus birthStatus=DomainStatus::Applied;size_t allocated=0;
+        const auto place=[&](Vec point) {
+            if(birthStatus!=DomainStatus::Applied) return false;
+            if(!grid.walkable(point,child.rule.spawnCollision)) return false;
+            bool occupied=false;
+            for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.life>0 && !other.burrowed && !other.airborne && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
+            for(const auto &[id,other]:candidates) if(meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
+            for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==parent.area && p.persistent.player.hp>0 && meleeDistance(point,child.rule.size,p.position,2)<=0) occupied=true;}
+            if(occupied) return false;
+            auto identity=child.identity;identity.spawnKey=parent.identity.spawnKey+".skill-child."+std::to_string(parent.nestSpawned);identity.ownerSpawnKey=parent.identity.spawnKey;
+            auto rule=child.rule;rule.noExperience=true;
+            if(allocated>=UINT32_MAX-ports_.ids.cursor()) {birthStatus=DomainStatus::Capacity;return false;}
+            const EntityId id{ports_.ids.cursor()+allocated};
+            auto prepared=prepareAdmissionActor({identity,child.implementation,parent.area,point,true,std::move(rule),{},tick},id,gameRandom,palettes,0,&limitedUniques);
+            if(!prepared) {birthStatus=prepared.status;return false;}
+            auto actor=std::move(*prepared.value);allocated+=1+actor.birthEquipmentItems;
+            limitedUniques.insert(actor.birthLimitedUniques.begin(),actor.birthLimitedUniques.end());
+            actor.riseMode=parent.rule.spawnMode;actor.riseUntil=actor.busyUntil=tick+uint64_t(parent.rule.spawnTicks);
+            candidates.emplace(id,std::move(actor));++parent.nestSpawned;++born;
+            return true;
+        };
+        if(count>0) place(origin);
+        if(hatch) {
+            // SrvDo084 first probes the origin. Subsequent SpawnNormalMonster
+            // calls use search limits 1..4, translated to radii 3,6,9,12.
+            // Only a failed complete search raises the limit; at most 2*count
+            // calls follow the initial probe. Keep the parent's random advances.
+            auto random=parent.combatRandom;
+            int searchLimit=1;
+            for(int64_t attempt=0;attempt<int64_t{2}*count && born<count && searchLimit<5;++attempt) {
+                bool placed=false;
+                for(int radius=3;radius<=3*searchLimit && !placed;radius+=3) {
+                    const auto start=monsterWanderPoint(origin,radius,random)-origin;
+                    int x=int(start.x),y=int(start.y);
+                    for(int probe=0;probe<8*radius && !placed;++probe) {
+                        if(y==-radius && x<radius) ++x;
+                        else if(x==radius && y<radius) ++y;
+                        else if(y==radius && x>-radius) --x;
+                        else --y;
+                        placed=place(origin+Vec{float(x),float(y)});
+                    }
                 }
+                if(!placed) ++searchLimit;
             }
-            if(!placed) ++searchLimit;
+            parent.combatRandom=random;
         }
-        parent.combatRandom=random;
+        if(birthStatus!=DomainStatus::Applied) return {birthStatus,{}};
+        for(const auto &[id,actor]:candidates) execution.children.push_back(id);
+        ++parent.revision;candidates.emplace(source,std::move(parent));
+        auto publication=prepareActorPublication(std::move(candidates),allocated);
+        if(!validateActors(publication)) {execution.children.clear();return {DomainStatus::Conflict,{}};}
+        publishComponents(palettes);publishActors(publication);ports_.random=gameRandom;execution.published=true;
+    }
+    while(execution.nextAura<execution.children.size()) {
+        const auto id=execution.children[execution.nextAura];const auto *child=find(id);
+        if(child && child->rule.enchantment && child->rule.enchantment->aura && !child->rightSkill) {
+            const auto aura=*child->rule.enchantment->aura;const auto result=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
+            if(!result) return result;
+        }
+        ++execution.nextAura;
     }
     if(hatch) {
         // The hatch is terminal even if some larvae cannot be placed.
-        const auto result=damage(source,source,parent.life,tick);if(!result) return result;
-        parent.rewardComplete=true;parent.corpseUnavailable=true;
-        return {DomainStatus::Applied,std::monostate{}};
+        const auto *parent=find(source);
+        const auto result=parent->alive()?damage(source,source,parent->life,tick):ports_.effects.monsterDeathEffect(source,tick);
+        if(!result) return result;
+        auto &dead=state_.actors.at(source);dead.rewardComplete=true;dead.corpse.unavailable=true;
     }
-    return born?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Unavailable,{}};
+    execution.complete=true;
+    return hatch || !execution.children.empty()?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{DomainStatus::Unavailable,{}};
 }
-DomainResult<> System::burrow(EntityId source,bool below,int healPercent,uint64_t tick) {
+DomainResult<> System::burrow(EntityId source,bool below,uint64_t tick) {
     auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;
     if(!below) {
@@ -136,11 +166,10 @@ DomainResult<> System::burrow(EntityId source,bool below,int healPercent,uint64_
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(actor.position,actor.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     }
     (void)tick;stop(source);actor.burrowed=below;
-    if(below && healPercent>0) actor.life=std::min(actor.maximumLife,actor.life+actor.life*healPercent/100);
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
-DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t until,int velocity,bool leap,uint64_t tick,EntityId victim) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0 || until<=tick || velocity<1) return {DomainStatus::InvalidActor,{}};
+DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim) {
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0 || until<=tick) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto &grid=ports_.areas.at(actor.area).definition.collision;
     const auto occupied=[&](Vec point) {
         for(const auto &[id,other]:state_.actors) if(id!=source && other.area==actor.area && other.life>0 && !other.burrowed && !other.airborne && meleeDistance(point,actor.rule.size,other.position,other.rule.size)<=0) return true;
@@ -166,8 +195,14 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
         if(!found) return {DomainStatus::Unavailable,{}};
     } else if(!free(target)) return {DomainStatus::Unavailable,{}};
     if(!leap && !grid.nativeMovementSegment(actor.position,target,actor.rule.collision)) return {DomainStatus::Unavailable,{}};
-    const int modifier=leap?0:actor.velocityPercent-100+(actor.chilledUntil>tick?actor.rule.coldEffect:0);
-    const float speed=monsterMovementSpeed(actor.rule.nativeVelocity,velocity+modifier);
+    if(!actor.rule.formulas || !actor.rule.stats || actor.rule.nativeRunVelocity<=0) return {DomainStatus::Unavailable,{}};
+    auto velocity=nativeShiftLeft(actor.rule.nativeRunVelocity,8);
+    if(!leap) {
+        const auto sampled=ports_.effects.unitStatValues(source,tick);if(!sampled) return {DomainStatus::Unavailable,{}};
+        const auto percent=std::max(50,logicalStatValue(*sampled,*actor.rule.stats,"velocitypercent"));
+        velocity=nativePercentage(velocity,nativeAdd(actor.rule.formulas->skills.at(skill).number("param1"),percent),100);
+    }
+    const float speed=float(velocity)*25.f/4096.f;
     if(speed<=0) return {DomainStatus::Unavailable,{}};
     if(actor.rule.skillMoveState>=0 && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{source,1,actor.area,actor.rule.skillMoveState,true}}})) return {DomainStatus::Capacity,{}};
     until=std::max(until,tick+uint64_t(std::ceil((target-actor.position).length()/speed/TickContext::seconds))+1);

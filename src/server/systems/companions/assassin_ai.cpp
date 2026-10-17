@@ -36,7 +36,7 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     const auto die=[&] {
         const auto result=ports_.monsters.retire(body->id,tick.tick);
         if(result) pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);
-        return result.status==DomainStatus::Capacity?StepStatus::Blocked:StepStatus::Complete;
+        return isDeferred(result.status)?StepStatus::Blocked:StepStatus::Complete;
     };
     auto sample=ports_.effects.unitStatValues(body->id,tick.tick);
     if(!sample || !body->rule.formulas) throw std::logic_error("Missing native assassin pet stats");
@@ -58,7 +58,7 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
             const auto &ownerArea=ports_.areas.at(owner->area);
             missiles::NativeSpawn spawn{owner->actor,body->area,area.generation,tick.tick,body->position,body->position,*missile,primary,rankOf(primary)};
             spawn.storedOwner=body->id;
-            auto birth=ports_.missiles.prepareNativeBirth(std::span{&spawn,size_t{1}});if(!birth) return birth.status==DomainStatus::Capacity?StepStatus::Blocked:StepStatus::Complete;
+            auto birth=ports_.missiles.prepareNativeBirth(std::span{&spawn,size_t{1}});if(!birth) return isDeferred(birth.status)?StepStatus::Blocked:StepStatus::Complete;
             const auto id=(*birth.value)->first();
             auto ownerInput=skills::formulaInput(*owner);SkillFormulaValues ownerValues(*owner->rules.skills->formulas,ownerInput);
             const auto rating=ownerValues.stat("tohit");
@@ -103,7 +103,7 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     if(pet.assassinAi[1]<=0) return die();
     if(program.ai==AssassinPetDefinition::Ai::Sentry && body->aiStates.contains(body->rule.formulas->infernoState)) {
         const auto cleared=ports_.monsters.toggleAiState(body->id,body->rule.formulas->infernoState,false,tick.tick);
-        if(!cleared) return cleared.status==DomainStatus::Capacity?StepStatus::Blocked:StepStatus::Complete;
+        if(!cleared) return isDeferred(cleared.status)?StepStatus::Blocked:StepStatus::Complete;
     }
     const auto target=ai::acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},*body,tick,false,true);
     if(!target || (program.ai!=AssassinPetDefinition::Ai::DeathSentry && target->distance>=param(3))) {
@@ -130,7 +130,7 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     }
     ports_.monsters.commitCombatRandom(body->id,random);
     const auto started=requestAction(pet,{body->id,uint16_t(skill),UnitTarget{victim,0,uint8_t(victim==target->unit.id?target->unit.type:1)},tick.tick,mode});
-    if(started.status==DomainStatus::Capacity) return StepStatus::Blocked;
+    if(isDeferred(started.status)) return StepStatus::Blocked;
     --pet.assassinAi[1];if(victim!=target->unit.id) pet.lastCorpse=victim;
     if(started) {pet.nextDecision=body->busyUntil;}
     else pet.nextDecision=tick.tick+uint64_t(std::max(1,param(1)));

@@ -148,7 +148,7 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
         const auto committed=ports_.monsters.heal(recipient,gain);
         return {committed.status,committed?std::optional{gain}:std::nullopt};
     };
-    if(!unit.id() || !other.id()) return done();
+    if(!unit.id() || (!other.id() && function!=26)) return done();
     const auto calculate=[&](EntityId caster,std::string_view field)->RuleNumber {
         if(const auto *player=ports_.players.findActor(caster);player && player->rules.skills && player->rules.skills->formulas) {
             auto input=skills::formulaInput(*player);SkillFormulaValues values(*player->rules.skills->formulas,input);

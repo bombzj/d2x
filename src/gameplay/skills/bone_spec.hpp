@@ -17,12 +17,8 @@ struct BoneSkillSpec {
     std::map<int, int> lifeSynergies;
     std::array<UnitCombatStats, 3> barrierStats;
     std::shared_ptr<const NativeSummonStats> barrierNative;
-    int radius = 0, radiusPerLevel = 0;
-    int minimumPercent = 0, maximumPercent = 0, elementalPercent = 0;
     int trailId = -1, trailCount = 0;
     float trailDuration = 0;
-    int corpseVisual = -1;
-    float corpseVisualDuration = 0;
 };
 struct BoneMissileState {
     std::shared_ptr<const BoneSkillSpec> program;

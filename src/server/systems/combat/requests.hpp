@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <list>
 #include "gameplay/missiles/damage_data.hpp"
+#include "gameplay/skills/native_damage.hpp"
 #include <memory>
 #include <optional>
 #include <vector>
@@ -41,6 +42,8 @@ struct NativeSkillContact {
     int vengeanceCycle{};
     bool vengeanceCyclePosted{},vengeanceEquipmentFilled{};
     bool psychicHammer{},rolled{},flagsComplete{};
+    int directFunction{};
+    std::optional<NativeStaticField> staticField;
     bool accuracyOnly{},monsterCritical{},monsterCriticalPosted{};
     std::optional<int> sourceDamage;
     bool melee{},progressive{},accuracyPrepared{},accuracyHit{},defensePrepared{},hit{true},reactionPrepared{},attemptComplete{},chargePosted{};
@@ -76,9 +79,6 @@ struct SpellImpact {
     bool freeze{}, knockback{};
     bool returnFire{}, reaction{};
     int coldPierce{}, poisonPierce{};
-    std::array<int,3> staticFloors{};
-    int staticPercent{}, staticMinimum{};
-    int64_t minimumStaticDamage{};
     std::vector<int64_t> targetDamage{};
     uint8_t hitClass{};
     std::optional<WeaponSkillDamage> weapon{};
@@ -87,6 +87,7 @@ struct SpellImpact {
     std::optional<MonsterHit> monsterHit{};
     std::shared_ptr<MissileDamageRollState> missileDamage;
     bool nativeDamageFlagsOnly{}; // Direct FillDamageParams -> SetDamageFlags, without collision callbacks/SrvDmg.
+    bool nativeMissileFlags{}; // SetDamageFlags uses the real missile's flags and private seed.
     bool nativeDrainHeld{}; // AllocCombat has run; DrainItemDurability is a later action event.
     std::optional<std::pair<size_t,MissileHitDamage>> missileRolled;
     // SrvHit area programs copy one GetDamageValue result to every target.
@@ -111,6 +112,7 @@ struct SpellImpact {
     int contactOverlay{-1}, leechOverlay{-1};
     EntityId meleeReactionTarget{};
     bool environment{}, directLife{};
+    bool nativeObjectDamage{};
     std::shared_ptr<effects::UnitReceptionPlan> environmentDefense;
     bool environmentDefenseCommitted{};
     bool synchronous{}; // A callback owns this contact until HP/follow-ups finish.

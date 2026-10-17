@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include <set>
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include <cmath>
@@ -8,6 +9,18 @@ namespace d2x::server::transactions {
 DomainResult<> System::consumeRoomRandom(const RoomRandomLoan &loan) {
     if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};
     ports_.areas.publishRoomRandom(loan);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::consumeRoomRandom(std::span<const std::shared_ptr<const RoomRandomLoan>> loans,std::optional<EventBatch> facts) {
+    std::set<RoomView> rooms;
+    for(const auto &loan:loans) {
+        if(!loan || !ports_.areas.validateRoomRandom(*loan)) return {DomainStatus::Stale,{}};
+        if(!rooms.insert(loan->room).second) return {DomainStatus::InvalidRequest,{}};
+    }
+    if(facts) {
+        const auto sent=ports_.events.publish(std::move(*facts));if(!sent) return {sent.status,{}};
+    }
+    for(const auto &loan:loans) ports_.areas.publishRoomRandom(*loan);
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::consumeRandom(const ActorContext &actor,uint64_t expected,uint64_t next) {
     const auto found=ports_.players.players_.find(actor.player);

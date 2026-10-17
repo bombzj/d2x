@@ -312,6 +312,13 @@ std::optional<server::objects::GroundGenerationRequest> GameHost::pendingGroundG
 std::optional<server::monsters::ModifierPreparation> GameHost::pendingModifiers(GameHandle game) const {
     const auto *slot=find(game);return slot?slot->game->pendingModifiers():std::nullopt;
 }
+std::optional<server::monsters::EquipmentPreparation> GameHost::pendingMonsterEquipment(GameHandle game) {
+    const auto *slot=find(game);return slot?slot->game->pendingMonsterEquipment():std::nullopt;
+}
+server::DomainResult<> GameHost::prepareMonsterEquipment(GameHandle game,server::monsters::PreparedEquipment prepared) {
+    auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};
+    return slot->game->prepareMonsterEquipment(std::move(prepared));
+}
 server::DomainResult<> GameHost::prepareModifiers(GameHandle game,server::monsters::PreparedModifiers prepared) {
     auto *slot=find(game);if(!slot) return {server::DomainStatus::Stale,{}};
     return slot->game->prepareModifiers(std::move(prepared));

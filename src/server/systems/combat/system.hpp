@@ -54,6 +54,7 @@ class System {
     DomainResult<SpellPlan> prepareSpells(std::vector<SpellImpact>) const;
     void commitSpells(SpellPlan &&) noexcept;
     StepStatus advanceAuraPulse(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence});}
+    StepStatus advanceEnvironmentImpact(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence});}
     StepStatus allocateNativeMelee(EntityId source,uint64_t occurrence,TickContext tick) {return resolveSpells(tick,std::pair{source,occurrence},true);}
     StepStatus drainNativeMelee(EntityId source,uint64_t occurrence,TickContext tick);
     bool nativeMeleeDrainReach(SpellImpact &);

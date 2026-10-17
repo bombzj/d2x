@@ -25,6 +25,8 @@ class NativeRoomActivation {
         std::function<void(size_t)> prepare; // DT1 libraries / lazy preset units.
         std::function<void(size_t)> create;  // Reset tile seed, grids, DT1, collision.
         std::function<void(size_t)> release; // Client tile/collision removal.
+        // Server retirement may defer before releasing collision and room state.
+        std::function<bool(size_t)> tryRetire;
     };
   private:
     Operations operations_;

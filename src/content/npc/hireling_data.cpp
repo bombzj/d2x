@@ -126,7 +126,7 @@ std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefi
         if (firstLevel < 0) firstLevel = entry.level;
         if (entry.level == firstLevel) pool.push_back(&entry);
     }
-    if (pool.empty() || !slot || !seed || playerLevel < 1) return {};
+    if (pool.empty() || !slot || playerLevel < 1) return {};
     const auto &firstKey = pool.front()->nameFirst;
     const auto &lastKey = pool.front()->nameLast;
     const auto prefix = firstKey.find_last_not_of("0123456789") + 1;
@@ -145,46 +145,5 @@ std::optional<HirelingOffer> resolveHirelingOffer(const std::vector<HirelingDefi
     key << firstKey.substr(0, prefix) << std::setw(int(firstKey.size() - prefix))
         << std::setfill('0') << first + int(slot - 1);
     return HirelingOffer{slot, definition.sourceRow, level, key.str(), deriveHirelingStats(definition, level), seed};
-}
-std::vector<HirelingOffer> planHirelingOffers(const std::vector<HirelingDefinition> &definitions,
-    int seller, int difficulty, int playerLevel, uint64_t &seed) {
-    std::vector<const HirelingDefinition *> pool;
-    int firstLevel = -1;
-    for (const auto &entry : definitions) {
-        if (entry.seller != seller || entry.difficulty != difficulty + 1) continue;
-        if (firstLevel < 0) firstLevel = entry.level;
-        if (entry.level == firstLevel) pool.push_back(&entry);
-    }
-    if (pool.empty()) return {};
-    const auto &firstKey = pool.front()->nameFirst;
-    const auto &lastKey = pool.front()->nameLast;
-    if (firstKey.size() < 2 || firstKey.size() != lastKey.size()) return {};
-    const size_t prefix = firstKey.find_last_not_of("0123456789") + 1;
-    int first = 0, last = 0;
-    auto a = std::from_chars(firstKey.data() + prefix, firstKey.data() + firstKey.size(), first);
-    auto b = std::from_chars(lastKey.data() + prefix, lastKey.data() + lastKey.size(), last);
-    if (a.ec != std::errc{} || b.ec != std::errc{} || first > last) return {};
-    auto random = [](uint64_t &value, unsigned bound) {
-        rollRandom(value);
-        return bound ? uint32_t(value) % bound : uint32_t(value);
-    };
-    std::vector<uint32_t> seeds(size_t(last - first + 1));
-    for (auto &value : seeds)
-        do { value = random(seed, 0); } while (!value); // D2S uses zero for no mercenary.
-    std::vector<bool> available(seeds.size());
-    // SUnitNpc: ten distinct candidates selected from the full original name range.
-    for (size_t count = 0; count < std::min<size_t>(10, seeds.size()); ++count) {
-        size_t index = random(seed, unsigned(seeds.size()));
-        while (available[index]) index = (index + 1) % seeds.size();
-        available[index] = true;
-    }
-    std::vector<HirelingOffer> result;
-    for (size_t index = 0; index < seeds.size(); ++index) {
-        if (!available[index]) continue;
-        const auto offer = resolveHirelingOffer(definitions, seller, difficulty, playerLevel, seeds[index], uint32_t(index + 1));
-        if (!offer) throw std::runtime_error("Invalid original hireling candidate");
-        result.push_back(*offer);
-    }
-    return result;
 }
 } // namespace d2x

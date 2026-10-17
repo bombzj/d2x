@@ -73,7 +73,7 @@ void NativeRealmService::close(bool save, bool keepReload) {
                 guest->checkpoint();
             }
             for (auto *guest : shared.peers) if (guest != this && guest->binding && guest->binding->game == binding->game) {
-                guest->sendGame({0x06}); guest->close(false);
+                guest->endGame(false);
             }
         }
     }
@@ -84,6 +84,18 @@ void NativeRealmService::close(bool save, bool keepReload) {
     admission.clear(); terrain = {};
     gameName.clear(); gamePassword.clear();
     if (!keepReload) discardReload();
+}
+void NativeRealmService::endGame(bool save, bool keepReload) {
+    const bool entered = peer.phase == GamePhase::Entered;
+    close(save, keepReload);
+    if (!entered) return;
+    // Native TCP/IP B3 and B0 bypass the buffered game channel, so its wire
+    // order is the returned save, B0, then the buffered 05/06. Keep 06 last:
+    // the original client can release its receive buffer as the game ends.
+    if (directTcpIp) sendGame({0xB0});
+    sendGame({0x05});
+    sendGame({0x06});
+    if (!directTcpIp) sendGame({0xB0});
 }
 void NativeRealmService::connectTcpIp() {
     if (binding || peer.phase != GamePhase::Closed) throw ProtocolError("TCP/IP peer is already connected");

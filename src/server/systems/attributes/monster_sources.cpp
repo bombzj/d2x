@@ -17,6 +17,42 @@
 #include <memory>
 #include <utility>
 namespace d2x::server::attributes {
+namespace {
+std::shared_ptr<const StatList> prepareBirthProperties(monsters::Actor &unit) {
+    if(unit.birthPropertiesPrepared) return unit.birthProperties;
+    std::shared_ptr<StatList> properties;
+    const auto &rules=*unit.rule.stats;
+    for(const auto &property:unit.rule.birthProperties) {
+        if(property.chance && limitedRandom(unit.combatRandom,100)>=property.chance) continue;
+        std::vector<int32_t> rolls;
+        int first=0;
+        for(const auto &operation:property.program) {
+            int value=0;
+            if(operation.function==17 && property.parameter) value=property.parameter;
+            else if(operation.function==8 && first) value=first;
+            else {
+                const auto minimum=std::min(property.minimum,property.maximum),maximum=std::max(property.minimum,property.maximum);
+                value=minimum;
+                if(minimum!=maximum) value=nativeAdd(minimum,int32_t(limitedRandom(unit.combatRandom,
+                    uint32_t(nativeAdd(nativeSubtract(maximum,minimum),1)))));
+            }
+            if(rolls.empty()) first=value;
+            rolls.push_back(value);
+        }
+        const PropertyProgramInput input{first,property.parameter,property.minimum,property.maximum,unit.rule.level,unit.rule.level,{},rolls};
+        for(const auto &stat:evaluatePropertyProgram(property.program,input)) {
+            if(!properties) {
+                properties=std::make_shared<StatList>();properties->extended=false;properties->ownerKind=StatOwnerKind::Item;
+                properties->source={StatSourceKind::Base,unit.id,unit.rule.nativeClass,1};
+            }
+            if(stat.set) setNativeStat(*properties,rules,stat.name,stat.value,uint16_t(stat.layer));
+            else addNativeStat(*properties,rules,stat.name,stat.value,uint16_t(stat.layer));
+        }
+    }
+    unit.birthProperties=properties;unit.birthPropertiesPrepared=true;
+    return properties;
+}
+}
 std::vector<ChargedSkill> monsterChargedSkills(const monsters::Actor &unit,const StatList &root) {
     if(unit.nativeChargesTracked) return unit.nativeCharges;
     return statListChargedSkills(root,*unit.rule.stats,[&](EntityId id)->std::optional<ItemHandle> {
@@ -510,6 +546,11 @@ NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastS
     });
     std::map<int,int> assigned;
     for(const auto &[id,rank]:unit.rule.initialSkills) assignSummonSkill(unit,resources,assigned,id,rank,{});
+    if(const auto properties=prepareBirthProperties(unit)) resources.postIntrinsicSource(properties,{});
+    if(unit.druidPet && unit.druidPet->definition->ai==DruidPetDefinition::Ai::Raven && !unit.ravenInitialCircle) {
+        rollRandom(unit.combatRandom);
+        unit.ravenInitialCircle=uint8_t(rollRandom(unit.combatRandom)&1);
+    }
     const auto postEquipment=[&] {
         for(const auto &source:equipment) resources.postIntrinsicSource(source,{});
         assigned=unit.rule.baseSkillRanks;
@@ -624,6 +665,7 @@ NativeUnitStats prepareMonsterStatSources(monsters::Actor &unit,std::optional<St
     context.currentResources.emplace(StatKey{rules.names.at("hitpoints"),0},nativeChecked(unit.life));
     std::map<int,std::shared_ptr<StatList>> passives;
     for(const auto &[id,rank]:unit.rule.initialSkills) {
+        if(std::find(unit.nativeSkillOrder.begin(),unit.nativeSkillOrder.end(),id)==unit.nativeSkillOrder.end()) unit.nativeSkillOrder.push_back(id);
         assigned.insert_or_assign(id,rank);
         effective=nativeMonsterSkillRanks(assigned,sampled,rules,*unit.rule.formulas);
         context.referenceRanks=prepareSkillFormulaRanks(assigned,effective,{}, {},unit.rule.formulas->maximumSkillRank);
@@ -650,6 +692,13 @@ NativeUnitStats prepareMonsterStatSources(monsters::Actor &unit,std::optional<St
         refreshNativePassiveStats(*unit.rule.formulas,rules,id,effective.at(id),{},context,*found->second,refresh);
     }
     unit.rule.baseSkillRanks=std::move(assigned);
+    if(const auto properties=prepareBirthProperties(unit)) {
+        root->contributions.push_back(properties);
+        const auto before=Fixed8::fromRaw(nativeStatValue(sampled,rules,"maxhp"));
+        sampled=evaluateStatList(rules,*root,{root.get(),{}, {}});
+        const auto after=Fixed8::fromRaw(nativeStatValue(sampled,rules,"maxhp"));
+        unit.life=resourceOnMaximumChange(Fixed8::fromRaw(nativeChecked(unit.life)),before,after).raw();unit.maximumLife=after.raw();
+    }
     NativeUnitStats result;result.values=std::move(sampled);
     result.sources=std::move(root);return result;
 }

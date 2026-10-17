@@ -58,6 +58,9 @@ class NativeMapGenerator {
     // Offline consumers use the same room lifecycle and DT1 selection.
     NativeMapSnapshot completeLevel(int level);
     MapRecipe recipe(int level);
+    uint64_t levelRandom(int level) const;
+    const std::vector<NativeTileInfo> &levelTileInfo(int level) const;
+    bool waypointObject(int id) const {return identities_.waypointObject(id);}
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }
     const auto &activation() const { return activation_; }

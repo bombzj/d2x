@@ -9,9 +9,10 @@
 #include <utility>
 #include <vector>
 
-namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;}
+namespace d2x::server::effects {struct BladeShieldPulse;struct MindBlastPulse;struct CorpseExplosionPulse;struct NativeAreaPulse;struct MonsterCursePulse;}
 namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExecution;struct WeaponMeleeExecution;}
 namespace d2x::server::combat {struct NativeSkillContact;}
+namespace d2x::server::monsters {struct SkillChildrenExecution;}
 namespace d2x::server::actions {
 struct SkillRelease {
     ActorContext actor;
@@ -46,6 +47,8 @@ struct SkillRelease {
     std::vector<uint8_t> animationEvents;
     std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse;
     std::shared_ptr<effects::MindBlastPulse> mindBlastPulse;
+    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
+    std::shared_ptr<effects::NativeAreaPulse> directSkill;
     std::shared_ptr<skills::AssassinKickExecution> assassinKick;
     std::shared_ptr<skills::DruidMeleeExecution> druidMelee;
     std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee;
@@ -60,9 +63,12 @@ struct MonsterRelease {
     std::vector<int> releaseFrames{};
     size_t nextRelease{};
     uint64_t started{};
-    std::vector<EntityId> effectTargets{};
-    size_t effectTarget{};
-    bool targetsCaptured{};
+    std::shared_ptr<effects::MonsterCursePulse> curse;
+    std::shared_ptr<monsters::SkillChildrenExecution> children;
+    bool formulaPrepared{};
+    bool releaseRankPrepared{};
+    int32_t formulaValue{};
+    std::pair<uint64_t,uint64_t> formulaRandom;
     bool hitReleased{};
     uint64_t infernoUntil{};
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;

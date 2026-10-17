@@ -1,6 +1,7 @@
 #pragma once
 #include "rooms.hpp"
 #include "resources/formats.hpp"
+#include "world/navigation.hpp"
 #include <tuple>
 
 namespace d2x {
@@ -19,6 +20,7 @@ class RetailPresetScan {
     int navi_{-1};
   public:
     explicit RetailPresetScan(Archives &);
+    bool waypointObject(int id) const;
     std::optional<RetailPresetUnit> resolveUnit(const MapObject &, int version, int act,
         int mapX, int mapY) const;
     std::vector<RetailPresetUnit> buildUnits(const MapData &, int act, int mapX, int mapY, Seed &) const;
@@ -29,6 +31,7 @@ class RetailPresetScan {
     void consumeUnitRandom(const MapData &, int act, Seed &) const;
     std::vector<uint32_t> scan(const PresetRecord &, const MapData &, int act,
         int width, int height, uint32_t flags, Seed &,
-        std::vector<RetailPresetUnit> *units = nullptr, int mapX = 0, int mapY = 0) const;
+        std::vector<RetailPresetUnit> *units = nullptr, int mapX = 0, int mapY = 0,
+        std::vector<NativeTileInfo> *tileInfo = nullptr) const;
 };
 } // namespace d2x

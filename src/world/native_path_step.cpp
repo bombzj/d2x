@@ -16,7 +16,7 @@ Vec projected(int64_t x, int64_t y) {
 }
 bool same(Vec a, Vec b) { return a.x == b.x && a.y == b.y; }
 }
-void NativePathStep::reset() { initialized_ = false; }
+void NativePathStep::reset() { initialized_ = changedCell_ = false;direction_={}; }
 Vec NativePathStep::translate(Vec position, Vec offset) {
     if (!initialized_ || !same(position, published_)) { reset(); return position + offset; }
     precisionX_ += precise(offset.x); precisionY_ += precise(offset.y);
@@ -26,6 +26,7 @@ Vec NativePathStep::translate(Vec position, Vec offset) {
 NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec point,
                                             float distance, MovementCollisionRule rule, Vec gridOrigin) {
     NativePathStepResult result{position};
+    changedCell_=false;
     if (!std::isfinite(position.x) || !std::isfinite(position.y) ||
         !std::isfinite(point.x) || !std::isfinite(point.y) ||
         !std::isfinite(distance) || distance <= 0) return result;
@@ -76,6 +77,8 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
     if (!result.blocked) { precisionX_ = nextX; precisionY_ = nextY; }
     published_ = projected(precisionX_, precisionY_);
     result.position = published_;
+    changedCell_=(startX>>16)!=(precisionX_>>16) || (startY>>16)!=(precisionY_>>16);
+    direction_=direction.index;
     const double travelledX = double(precisionX_ - startX) / precisionScale;
     const double travelledY = double(precisionY_ - startY) / precisionScale;
     result.travelled = float(std::sqrt(travelledX * travelledX + travelledY * travelledY));

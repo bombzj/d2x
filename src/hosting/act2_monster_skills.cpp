@@ -2,7 +2,6 @@
 #include "content/classic_data.hpp"
 #include "content/skills/aura_data.hpp"
 #include "content/skills/table_values.hpp"
-#include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/rank_bonus.hpp"
 #include "gameplay/combat/attack_timing.hpp"
@@ -126,33 +125,23 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         server::MonsterAttackRule action;int event=2;
         if(name=="Fire Hit" || name=="Jab") {action=baseAttack("S1");event=1;}
-        else if(name=="Smite") {action=baseAttack("A2");action.hitClass=0x65;action.stunFrames=std::min(250,skillRankBonus({skillTableNumber(skills,row,"Param1"),skillTableNumber(skills,row,"Param2")},rank));action.knockback=(skills.number(row,"ResultFlags").value_or(0)&8)!=0;event=1;}
+        else if(name=="Smite") {action=baseAttack("A2");action.hitClass=0x65;action.knockback=(skills.number(row,"ResultFlags").value_or(0)&8)!=0;event=1;}
         else if(name=="Charge" || name=="SerpentCharge") {
             action=baseAttack(record.ai=="Duriel"?"A2":"A1");action.action=Action::Charge;action.knockback=true;action.alwaysHit=true;
             action.hitClass=0x70;
-            action.damagePercent=skillRankBonus({skillTableNumber(skills,row,"Param3",SkillNumberPolicy::BlankIsZero),skillTableNumber(skills,row,"Param4",SkillNumberPolicy::BlankIsZero)},rank);
-            const int walk=skillTableNumber(stats,record.sourceRow,"Velocity"),run=skillTableNumber(stats,record.sourceRow,"Run");
-            if(walk<=0 || run<=0) return false;
-            action.movementPercent=(50+skillTableNumber(skills,row,"Param1"))*run/walk;event=1;
+            event=1;
         } else if(name=="Leap") {action=baseAttack("A1");action.action=Action::Leap;event=1;}
         else if(name=="Swarm Move") {action.action=Action::SwarmMove;event=4;}
         else if(name=="MagottUp") {action.action=Action::BurrowUp;event=4;}
-        else if(name=="MagottDown") {action.action=Action::BurrowDown;action.healMinimum=skillTableNumber(skills,row,"calc1");event=1;}
+        else if(name=="MagottDown") {action.action=Action::BurrowDown;event=1;}
         else if(name=="MagottLay") {action.action=Action::Lay;event=1;}
         else if(name=="MaggotEgg") {
-            requireSkillTableText(skills,row,"calc1","(lvl < 5) ? lvl : min(12,5+(lvl-5)/3)",SkillTextPolicy::Formula);
-            action.action=Action::Hatch;action.hatchCount=rank<5?rank:std::min(12,5+(rank-5)/3);event=4;
+            action.action=Action::Hatch;event=4;
         } else if(name=="Nest") {action.action=Action::Nest;event=4;}
         else if(name=="Resurrect2") action.action=Action::Resurrect;
-        else if(name=="Bestow") {
-            action.action=Action::Heal;action.healMinimum=skills.number(row,"calc1").value_or(0);action.healMaximum=skills.number(row,"calc2").value_or(0);
-            // Both shipped formulas are blank: Bestow currently heals zero.
-            if((!skills.value(row,"calc1").empty() && !skills.number(row,"calc1")) || (!skills.value(row,"calc2").empty() && !skills.number(row,"calc2"))) return false;
-        } else if(name=="Weaken") {
-            const auto *entry=data.skills.find(id);if(!entry || !entry->spell) return false;
-            const auto cast=resolveSkill(entry->spell->rules(),{rank,{}});if(!cast.curse) return false;
-            AuraDefinition curse;curse.skill=id;curse.rank=rank;curse.state=cast.curse->state;curse.radius=float(cast.curse->radius);curse.periodFrames=cast.curse->frames;curse.modifiers=cast.curse->modifiers;curse.hostile=true;action.curse=curse;action.action=Action::Curse;
-        } else if(name=="VampireFirewall") {
+        else if(name=="Bestow") action.action=Action::Heal;
+        else if(name=="Weaken") action.action=Action::Curse;
+        else if(name=="VampireFirewall") {
             action.action=Action::Firewall;action.missile=missile(skills.value(row,"srvmissilea"),rank);action.groundFire=missile(skills.value(row,"srvmissileb"),rank);
             if(!action.missile || !action.groundFire) return false;
         } else {
@@ -168,20 +157,11 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
                 prepared=prepareMonsterMissile(data,prepared->definition+offset,rank);if(!prepared) return false;
             }
             if(const auto *entry=data.skills.find(id);entry && entry->spell && (name=="Glacial Spike" || name=="Fire Ball" || name=="Frost Nova")) {
-                const auto cast=resolveSkill(entry->spell->rules(),{rank,{}});
-                prepared->elementalMinimum=int(cast.minimumDamage*256);prepared->elementalMaximum=int(cast.maximumDamage*256);prepared->coldFrames=unsigned(std::max(0,int(cast.coldDuration*25)));
-                if(cast.freezingArea) {prepared->blastRadius=float(cast.freezingArea->radius);prepared->coldFrames=unsigned(cast.freezingArea->freezeFrames);prepared->freeze=true;}
                 if(name=="Frost Nova") action.action=Action::Nova;
             }
             if(name=="ArcaneTower") {action.action=Action::Nova;event=4;}
             action.missile=*prepared;
         }
-        if(name=="Fire Hit" || name=="Jab") {
-            const auto formula=skills.value(row,"calc1");
-            if(name=="Jab") {requireSkillTableText(skills,row,"calc1","ln34");action.damagePercent=skillRankBonus({skillTableNumber(skills,row,"Param3"),skillTableNumber(skills,row,"Param4")},rank);}
-            else if(!formula.empty()) return false;
-        }
-        action.ratingPercent=skills.number(row,"ToHit").value_or(0)+(rank-1)*skills.number(row,"LevToHit").value_or(0);
         action.rank=uint8_t(rank);
         if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),event,action)) return false;
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
@@ -191,9 +171,6 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             server::MonsterAttackRule takeoff;
             if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),2,takeoff)) return false;
             action.movementStart=takeoff.release;
-            const int walk=stats.number(record.sourceRow,"Velocity").value_or(0),run=stats.number(record.sourceRow,"Run").value_or(0);
-            if(walk<=0 || run<=0) return false;
-            action.movementPercent=100*run/walk;
         }
         // Movement events drive a sequence, not repeated melee strikes.
         if(action.action==Action::Charge || action.action==Action::Leap || action.action==Action::SwarmMove) {action.releaseFrames.clear();action.animationEvents.clear();}
@@ -206,9 +183,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             ordinary->second.rank=uint8_t(rank);
         }
     }
-    if(record.ai=="Scarab") {rule.hitBurst=missile("buglightning",rule.level);if(!rule.hitBurst) return false;rule.hitBurst->behavior=server::MonsterMissileRule::Behavior::Charged;}
+    if(record.ai=="Scarab") rule.hitBurst=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile","buglightning"),"Id");
     if(record.ai=="SandMaggotQueen") {
-        rule.deathBurst=missile("queenpoisoncloud",rule.level);if(!rule.deathBurst) return false;rule.deathBurst->behavior=server::MonsterMissileRule::Behavior::Charged;
+        rule.deathBurst=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile","queenpoisoncloud"),"Id");
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));if(!clock) return false;
         server::MonsterAttackRule pose;
         pose.action=Action::Animation;pose.nativeMode=8;pose.release=1;

@@ -74,9 +74,21 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
         {"monsterRegions",s.monsterRegionRandom?seed(*s.monsterRegionRandom):Json(nullptr)},
         {"npcControl",s.npcControlRandom?seed(*s.npcControlRandom):Json(nullptr)},
         {"questControl",s.questControlRandom?seed(*s.questControlRandom):Json(nullptr)}};
+    result["generationRandom"]["levels"]=Json::array();
+    for(const auto &[region,random]:s.levelRandom)
+        result["generationRandom"]["levels"].push_back({{"area",int(region)},{"seed",seed(random)}});
+    result["generationRandom"]["rooms"]=Json::array();
+    for(const auto &room:s.roomRandom)
+        result["generationRandom"]["rooms"].push_back({{"area",int(room.area)},{"room",room.room},{"loaded",room.loaded},
+            {"revision",room.revision},{"creationOrder",room.creationOrder},{"seed",room.random?seed(*room.random):Json(nullptr)}});
     result["objectPopulation"]=Json::array();
+    result["hirelingRosters"]=Json::array();
+    for(const auto &slot:s.hirelingRosters)
+        result["hirelingRosters"].push_back({{"seller",slot.seller},{"revision",slot.revision},{"name",slot.name},
+            {"seed",slot.seed},{"available",slot.available},{"hired",slot.hired}});
     result["rejectedDensity"]=Json::array();
     result["modifierPreparation"]={{"pending",s.modifiersPending},{"failure",s.modifierFailure}};
+    result["monsterEquipmentPreparation"]={{"pending",s.monsterEquipmentPending},{"failure",s.monsterEquipmentFailure}};
     result["densityPopulation"]=Json::array();
     for(const auto &room:s.densityPopulation)
         result["densityPopulation"].push_back({{"area",int(room.area)},{"room",room.room},{"phase",room.phase},
@@ -84,7 +96,8 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
             {"remaining",room.remaining},{"partyRemaining",room.partyRemaining},{"champions",room.champions},
             {"processedRooms",room.processedRooms},{"successfulRooms",room.successfulRooms},{"uniqueCount",room.uniqueCount},
             {"leader",room.leader.value},{"preset",room.preset?Json(*room.preset):Json(nullptr)},
-            {"quest",room.quest},{"object",room.object.value},{"deferred",room.deferred}});
+            {"quest",room.quest},{"object",room.object.value},{"occurrence",room.occurrence},
+            {"retryAttempts",room.retryAttempts},{"finalRetryAttempts",room.finalRetryAttempts},{"birthTicks",room.birthTicks},{"deferred",room.deferred}});
     result["wanderPopulation"]=Json::array();
     for(const auto &room:s.wanderPopulation)
         result["wanderPopulation"].push_back({{"area",int(room.area)},{"room",room.room},{"epoch",room.epoch},

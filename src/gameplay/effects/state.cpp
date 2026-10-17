@@ -3,10 +3,8 @@
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
-#include <cmath>
 #include <limits>
 #include <stdexcept>
-#include <type_traits>
 #include <utility>
 
 namespace d2x {
@@ -227,14 +225,6 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
         for (const auto &effect : storage_->effects)
             if (effect.activeAt(now) && effect.spec.curseAi == CurseAi::Attract)
                 return {effect.handle, {}, false};
-    for (const auto &reaction : spec.reactions)
-        std::visit([](const auto &action) {
-            if constexpr (std::is_same_v<std::decay_t<decltype(action)>, FreezeAttacker>) {
-                if (!std::isfinite(action.duration) || action.duration <= 0 ||
-                    !std::isfinite(action.overlayDuration) || action.overlayDuration < 0)
-                    throw std::invalid_argument("Invalid combat effect reaction");
-            }
-        }, reaction.action);
     // D2Game::sub_6FD10EC0 compares state/skill/level, irrespective of caster.
     // Equal-level curses only renew the deadline; ownership and stats survive.
     if (spec.stacking == EffectStacking::CurseLevel || spec.stacking==EffectStacking::SkillLevel)
@@ -280,10 +270,6 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
             }
     if(storage_->nextHandle==std::numeric_limits<uint64_t>::max()) throw std::overflow_error("Combat effect handle exhausted");
     ActiveCombatEffect effect{{storage_->nextHandle}, std::move(spec), now, {}};
-    if(!effect.spec.nativeValues && !effect.spec.reactions.empty()) {
-        if(storage_->nextUnitEvent==UINT64_MAX) throw std::overflow_error("Native unit event registration exhausted");
-        effect.unitEventOrder=storage_->nextUnitEvent++;
-    }
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     renewExpiration(effect,effect.spec,now);
     auto replaces = [&](const ActiveCombatEffect &existing) {
@@ -384,9 +370,9 @@ bool CombatEffectSet::writeNativeStats(EffectHandle handle,std::span<const StatV
     }
     if(!refreshEvents) return true;
     detach();const auto installed=locate();if(installed==storage_->effects.end()) return false;
-    installed->spec.reactions=incoming.reactions;installed->spec.visual=incoming.visual;
+    installed->spec.visual=incoming.visual;
     installed->spec.unitEvents=incoming.unitEvents;
-    if(incoming.registersUnitEvents || !incoming.reactions.empty() || !incoming.unitEvents.empty()) {
+    if(incoming.registersUnitEvents || !incoming.unitEvents.empty()) {
         if(storage_->nextUnitEvent==UINT64_MAX) throw std::overflow_error("Native unit event registration exhausted");
         installed->unitEventOrder=storage_->nextUnitEvent++;
         unregisterUnitEvents(installed->spec.state.id);
@@ -518,11 +504,6 @@ bool CombatEffectSet::hasState(int stateId, EffectFrame now) const {
 }
 CharacterModifiers CombatEffectSet::modifiers(EffectFrame now) const {
     return combatEffectModifiers(storage_->effects, now);
-}
-std::vector<TriggeredCombatEffect> CombatEffectSet::reactions(CombatEffectEvent event, EffectFrame now) const {
-    auto ordered=storage_->effects;
-    std::stable_sort(ordered.begin(),ordered.end(),[](const auto &a,const auto &b) {return a.unitEventOrder>b.unitEventOrder;});
-    return combatEffectReactions(ordered,event,now);
 }
 std::vector<TriggeredSkillUnitEvent> CombatEffectSet::unitEvents(NativeUnitEvent event,EffectFrame) const {
     std::vector<TriggeredSkillUnitEvent> result;

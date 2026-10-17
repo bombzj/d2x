@@ -92,9 +92,11 @@ std::vector<size_t> RetailTileMaterializer::establishNear(size_t current, const 
         const auto from = slots(source.level);
         if (source.warpSlots != from.warps)
             throw std::runtime_error("Native room warp slots disagree with act placement");
-        bool paired = false; // Preserves the native function's cumulative flag.
         for (size_t slot = 0; slot < 8; ++slot) {
             if (!(source.room.flags & (1u << (slot + 4)))) continue;
+            // 1.13c RVA 45550 dispatches each slot through 453D0. A warp
+            // matched in an earlier slot cannot suppress this slot's fallback.
+            bool paired = false;
             const int destination = from.visible[slot];
             if (!destination) throw std::runtime_error("Native flagged room has no Vis destination");
             failed_ = false;
@@ -485,7 +487,9 @@ void RetailTileMaterializer::loadOutdoor(size_t index, const RetailOutdoorRoomDa
     const auto linkedFlags = r.room.flags & 0x800000;
     r.room = data.room; // Includes the stream consumed by themes/immediate shadows.
     r.room.flags |= linkedFlags;
-    r.authoredUnits = data.units;
+    // FreeRoom keeps Room2's preset chain. Outdoor reconstruction prepends
+    // newly generated entries instead of replacing the retained chain.
+    r.authoredUnits.insert(r.authoredUnits.begin(), data.units.begin(), data.units.end());
     r.grids.width = data.grids.width; r.grids.height = data.grids.height;
     r.grids.act = catalog_.level(r.level).act;
     r.grids.floors = {data.grids.floors}; r.grids.walls = {data.grids.walls};
@@ -583,17 +587,21 @@ void RetailTileMaterializer::releaseRoom(size_t index) {
     collisions_.erase(index);
     r.floors.clear(); r.walls.clear(); r.shadows.clear();
     r.mapLinks = {};
-    r.animations.clear(); r.roofPopups.clear(); r.units.clear();
+    r.animations.clear(); r.roofPopups.clear();
     r.grids = {};
     r.logicalRegions.clear();r.logicalCells.clear();
     for (auto &warp : r.warps) { warp.visible.reset(); warp.lit.reset(); }
     r.loaded = false;
     r.initialActiveRandom.reset();
-    // Unit ownership, loaded libraries and the established near graph survive.
+    // Both tile-generated and authored preset units belong to Room2 and
+    // survive FreeRoom; only FreeRoomEx destroys that chain.
+    // Loaded libraries and the established near graph survive as well.
     // The next InitRoomGrids resets the tile stream to the original init seed.
 }
 
 void sortRetailNearRooms(std::vector<size_t> &near, const std::deque<RetailTileRoom> &rooms) {
+    // This spatial relation is not a total order. Native code repeats the
+    // entire adjacent pass n-1 times; even one extra pass can swap diagonals.
     for (size_t pass = near.size(); pass > 1; --pass) for (size_t i = 0; i + 1 < near.size(); ++i) {
         const auto &a = rooms.at(near[i]).room, &b = rooms.at(near[i + 1]).room;
         if (a.x >= b.x + b.width || a.y >= b.y + b.height) std::swap(near[i], near[i + 1]);

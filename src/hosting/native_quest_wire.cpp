@@ -11,6 +11,7 @@
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include <algorithm>
 #include <array>
+#include <iterator>
 namespace d2x {
 Bytes nativeQuestInitialization(const server::QuestFact &fact) {
     return hosting::encodeServerPacket(hosting::ServerMessage::QuestAvailability,[&](auto &out) {
@@ -18,6 +19,11 @@ Bytes nativeQuestInitialization(const server::QuestFact &fact) {
     });
 }
 std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::QuestFact &fact,std::optional<EntityId> npc) {
+    std::vector<Bytes> zoo;
+    if(fact.zooMonster) zoo.push_back(hosting::encodeServerPacket(hosting::ServerMessage::QuestPayload,[&](auto &out) {
+        out.u16(36);out.u16(*fact.zooMonster);for(int index=0;index<5;++index) out.u16(0);
+    }));
+    if(fact.zooOnly) return zoo;
     using namespace hosting; D2sFixedSections sections;
     const auto &record=fact.record;
     if(!record.nativeSaveSections.empty()) sections=readD2sFixedSections(std::span(reinterpret_cast<const uint8_t *>(record.nativeSaveSections.data()),record.nativeSaveSections.size()));
@@ -97,6 +103,7 @@ std::vector<Bytes> nativeQuestUpdate(const ClassicData &data,const server::Quest
     // GAME_UpdateEnvironment's current-cycle notification and must coexist.
     if(fact.eclipse) result.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out){out.u32(*fact.eclipse?5:2);out.u32(0);out.u8(*fact.eclipse?1:0);}));
     if(fact.fullStatus) result.push_back(encodeServerPacket(ServerMessage::QuestStatuses,[&](auto &out){out.append(statuses);}));
+    result.insert(result.end(),std::make_move_iterator(zoo.begin()),std::make_move_iterator(zoo.end()));
     return result;
 }
 }

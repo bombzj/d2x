@@ -68,8 +68,6 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
                 if (!item || item->base.sourceTable != family || item->base.sourceRow != itemRow)
                     continue;
                 auto page = pageByType.find(item->base.type);
-                if (page == pageByType.end())
-                    continue;
                 auto minColumn = prefix + "Min", maxColumn = prefix + "Max";
                 if (!source.has(minColumn) || !source.has(maxColumn))
                     continue;
@@ -88,7 +86,7 @@ std::map<std::string, VendorDefinition, std::less<>> loadVendorData(
                     throw std::runtime_error("Invalid original vendor quantity: " + code);
                 vendor.items.push_back({code, item->base.level.value_or(0), minimum, maximum,
                                         magicMinimum, magicMaximum, magicLevel,
-                                        page->second,
+                                        page==pageByType.end()?-1:page->second,
                                         permanent,
                                         (source.number(itemRow, "bitfield1").value_or(0) & 1) != 0});
             }

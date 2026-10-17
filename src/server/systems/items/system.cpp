@@ -84,12 +84,24 @@ DomainResult<> System::install(PreparedBatch batch, GroundLocation origin) {
     auto next = prepare(std::move(batch), origin); if (!next) return {next.status, {}};
     commit(std::move(*next.value)); return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &batch,uint64_t tick) {
+DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<PreparedBatch,GroundLocation>> &batch,uint64_t tick,std::span<const EntityId> identities,std::shared_ptr<EntityIds::Publication> allocation) {
+    if(allocation && !ports_.ids.validate(*allocation)) return {DomainStatus::Stale,{}};
     if(batch.empty()) return {DomainStatus::Applied,std::monostate{}};
-    if(batch.size()>32 || state_.revision==UINT64_MAX || state_.world.items.size()+batch.size()>4096 ||
+    if(allocation && identities.empty()) return {DomainStatus::InvalidRequest,{}};
+    if(state_.revision==UINT64_MAX || state_.world.items.size()+batch.size()>4096 ||
         !identityCapacity(batch.size())) return {DomainStatus::Capacity,{}};
+    if(!identities.empty()) {
+        if(identities.size()!=batch.size()) return {DomainStatus::InvalidRequest,{}};
+        uint64_t cursor=ports_.ids.cursor();
+        for(const auto id:identities) {
+            if((allocation && !allocation->covers(id)) || id.value<cursor || id.value>UINT32_MAX || state_.world.items.contains(id) || state_.equipment.items.contains(id))
+                return {DomainStatus::InvalidRequest,{}};
+            cursor=id.value+1;
+        }
+    }
     auto next=state_;auto ids=ports_.ids;
     std::vector<EventBatch> events;
+    size_t index=0;
     for(const auto &[prepared,location]:batch) {
         if(!prepared.equipment || prepared.items.size()!=1 || !prepared.items.front().socketedItems.empty() ||
             !std::isfinite(location.position.x) || !std::isfinite(location.position.y))
@@ -100,7 +112,7 @@ DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<Prep
         auto item=prepared.items.front();
         const auto values=prepared.equipment->items.find(item.id);
         if(values==prepared.equipment->items.end()) return {DomainStatus::InvalidRequest,{}};
-        item.id=ids.allocate();item.location=location;item.revision=1;
+        item.id=identities.empty()?ids.allocate():identities[index++];item.location=location;item.revision=1;
         next.equipment.items.emplace(item.id,values->second);
         next.equipment.includeSets(*prepared.equipment);
         next.world.items.emplace(item.id,item);
@@ -111,8 +123,29 @@ DomainResult<> System::installNativeGroundBatch(const std::vector<std::pair<Prep
     ++next.revision;
     const auto sent=ports_.events.publishGroup(std::move(events));
     if(!sent) return {sent.status,{}};
-    ports_.ids=ids;commit(std::move(next));
+    if(allocation) ports_.ids.publish(*allocation);
+    else ports_.ids=identities.empty()?ids:EntityIds(identities.back().value+1);
+    commit(std::move(next));
     return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<PreparedBatch> System::prepareNativeGold(unsigned level,uint64_t &random,bool inStore) const {
+    const auto *base=ports_.definitions?ports_.definitions->find("gld"):nullptr;
+    if(!base || !base->equipment.isType("gold") || !level || level>99) return {DomainStatus::InvalidRequest,{}};
+    auto nextRandom=random;
+    auto unitRandom=initialRandom(rollRandom(nextRandom));
+    ItemInstance item;item.id=EntityId{1};item.definition=base->code;
+    item.nativeSeed=rollRandom(nextRandom);item.level=level;
+    item.quantity=std::max(limitedRandom(unitRandom,5*level)+level,1u);
+    item.nativeProperties=true;item.nativeFlags=inStore?0x82010:0x80010;
+    if(!base->inventoryIcons.empty()) {
+        item.nativeHasGraphic=true;
+        item.nativeGraphic=limitedRandom(unitRandom,unsigned(base->inventoryIcons.size()));
+    }
+    auto equipment=std::make_shared<EquipmentRules>();
+    EquipmentValues values;values.levels.resize(100);
+    equipment->items.emplace(item.id,std::move(values));
+    random=nextRandom;
+    return {DomainStatus::Applied,PreparedBatch{{std::move(item)},std::move(equipment),{}}};
 }
 DomainResult<EntityId> System::createNativeGold(GroundLocation origin,unsigned level,uint64_t tick) {
     const auto *area=ports_.areas.find(origin.region);
@@ -123,20 +156,10 @@ DomainResult<EntityId> System::createNativeGold(GroundLocation origin,unsigned l
     if(!area->definition.activation.room(origin.position)) return {DomainStatus::InvalidRequest,{}};
     if(state_.revision==UINT64_MAX || state_.world.items.size()>=4096 || !identityCapacity(1) ||
         !ports_.events.hasCapacity(1,1)) return {DomainStatus::Capacity,{}};
-    // SUNIT_AllocUnitData creates two independent seeds. InitItemStats rolls
-    // the amount from the unit seed, not from the item's saved start seed.
     auto random=ports_.random;
-    auto unitRandom=initialRandom(rollRandom(random));
-    ItemInstance item;item.id=EntityId{ports_.ids.cursor()};item.definition=base->code;
-    item.nativeSeed=rollRandom(random);item.level=level;item.location=origin;
-    item.quantity=std::max(limitedRandom(unitRandom,5*level)+level,1u);
-    // The raw tower call keeps CreateItemEx's INIT/INSTORE flags; wrappers
-    // which clear INSTORE are separate native procedures.
-    item.nativeProperties=true;item.nativeFlags=0x82010;
-    if(!base->inventoryIcons.empty()) {
-        item.nativeHasGraphic=true;
-        item.nativeGraphic=limitedRandom(unitRandom,unsigned(base->inventoryIcons.size()));
-    }
+    auto prepared=prepareNativeGold(level,random,true);
+    if(!prepared) return {prepared.status,{}};
+    auto item=std::move(prepared.value->items.front());item.id=EntityId{ports_.ids.cursor()};item.location=origin;
     auto next=state_;
     next.world.items.emplace(item.id,item);
     EquipmentValues values;values.levels.resize(100);

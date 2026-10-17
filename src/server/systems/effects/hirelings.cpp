@@ -47,7 +47,7 @@ StepStatus System::advanceUnitAuraCycle(const ActorContext &actor,EntityId id,Pa
             result=redeemed?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{redeemed.status,{}};
         } else result=advanceAuraTarget(actor,id,a,target,cycle.duration,(uint64_t(1)<<60)|cycle.occurrence,
             cycle.damage.value_or(0),cycle.progress,target==id);
-        if(result.status==DomainStatus::Capacity) return StepStatus::Blocked;
+        if(isDeferred(result.status)) return StepStatus::Blocked;
         if(target==id && !cycle.recipientsPrepared) {
             if(!cycle.damage) {
                 const auto after=evaluateUnitAura(id,cycle.skill,cycle.rank,tick);

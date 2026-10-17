@@ -6,7 +6,7 @@
 
 namespace d2x {
 int itemAffixLevel(int itemLevel, int baseLevel, int magicLevel) {
-    if (itemLevel < 1 || itemLevel > 99 || baseLevel < 0 || baseLevel > 99 ||
+    if (itemLevel < 1 || itemLevel > 127 || baseLevel < 0 || baseLevel > 99 ||
         magicLevel < 0 || magicLevel > 99)
         throw std::invalid_argument("Invalid item affix level inputs");
     const int level = std::max(itemLevel, baseLevel);

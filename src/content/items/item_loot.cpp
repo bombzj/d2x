@@ -248,14 +248,14 @@ LootPlan planItemLoot(const ClassicData &data, const DataTable &ratios, std::str
 }
 LootPlan planSelectedItem(const ClassicData &data,std::string_view code,int level,uint64_t seed,
     const std::set<size_t> &used,std::string_view characterClass,std::optional<DropQuality> forcedQuality,bool superiorFloor,const ItemSeedSource &seeds) {
-    if(level<1 || level>99) throw std::runtime_error("Selected item level is outside native bounds");
+    if(level<1 || level>127) throw std::runtime_error("Selected item level is outside native bounds");
     LootPlan plan;auto random=seed;auto uniques=used;
     appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,characterClass,0,0,forcedQuality,superiorFloor,random,plan,uniques,false,seeds);
     plan.randomState=random;return plan;
 }
 LootPlan planCreatedItem(const ClassicData &data,std::string_view code,int level,
     const std::set<size_t> &used,const ItemSeeds &seeds) {
-    if(level<1 || level>99) throw std::runtime_error("Created item level is outside native bounds");
+    if(level<1 || level>127) throw std::runtime_error("Created item level is outside native bounds");
     LootPlan plan;uint64_t sourceRandom{};auto uniques=used;
     appendSelectedItem(data,data.tables.at("itemratio"),TreasureSelection{std::string(code),{},{}},level,{},0,0,{},false,
         sourceRandom,plan,uniques,false,[&] {return seeds;},true);

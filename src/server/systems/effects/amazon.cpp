@@ -171,7 +171,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
         effect.nativeValues.emplace();writeNativeBaseStat(*effect.nativeValues,rules,primary.key,primary.value);
         effect.modifiers=nativeCharacterModifiers(StatSnapshot{*effect.nativeValues},rules,effect.modifiers);
     };
-    for(const auto id:nativeAuraCandidateRecipients({source,actor.area,program.radius,uint32_t(program.filter),true},pet)) {
+    for(const auto id:nativeAuraCandidateRecipients({source,actor.area,program.radius,uint32_t(program.filter),true,{},NativeAuraTargetMode::OwnerRange,actor.tick},pet)) {
         if(const auto *recipient=ports_.players.findActor(id)) {
             auto effect=amazonMagicEffect(program,source,skill.sourceId,skill.rank,recipient->totals.character.combat.curseResistance);
             if(!effect) continue;

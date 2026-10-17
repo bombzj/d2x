@@ -74,6 +74,10 @@ RetailPresetScan::RetailPresetScan(Archives &archives) {
         objectSubclasses_.emplace(*id, uint32_t(objects.number(row, "SubClass").value_or(0)));
     }
 }
+bool RetailPresetScan::waypointObject(int id) const {
+    const auto found=objectSubclasses_.find(id);
+    return found!=objectSubclasses_.end() && (found->second&64)!=0;
+}
 void RetailPresetScan::consumeUnitRandom(const MapData &data, int act, Seed &random) const {
     (void)buildUnits(data, act, 0, 0, random);
 }
@@ -195,7 +199,7 @@ std::vector<RetailPresetUnit> RetailPresetScan::buildUnits(const MapData &data, 
 }
 std::vector<uint32_t> RetailPresetScan::scan(const PresetRecord &preset, const MapData &data,
     int act, int width, int height, uint32_t flags, Seed &random,
-    std::vector<RetailPresetUnit> *units, int mapX, int mapY) const {
+    std::vector<RetailPresetUnit> *units, int mapX, int mapY,std::vector<NativeTileInfo> *tileInfo) const {
     const int gw = width / 8 + 1, gh = height / 8 + 1;
     std::vector<uint32_t> result(size_t(gw) * size_t(gh), flags);
     if (!preset.scan && !preset.pops) return result;
@@ -215,6 +219,10 @@ std::vector<uint32_t> RetailPresetScan::scan(const PresetRecord &preset, const M
                     const auto &cell = layer[size_t(y) * size_t(data.width) + size_t(x)];
                     const auto style = (cell.value >> 20) & 63;
                     const auto sequence = (cell.value >> 8) & 255;
+                    if(tileInfo && (cell.orientation==10 || cell.orientation==11) && style>=30 && style<=33) {
+                        const int index=style==30?int(sequence):style==31?int(sequence)+5:style==32?10:11;
+                        tileInfo->push_back({index,mapX+x,mapY+y});
+                    }
                     if ((cell.orientation == 10 || cell.orientation == 11) && style <= 7 &&
                         (sequence == 0 || sequence == 4 || (cell.value & 0x80000000u)))
                         mark(x, y, 1u << (style + 4));

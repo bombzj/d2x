@@ -48,13 +48,28 @@ LvlTypes／Automap／Objects、maximap(s).dc6及当前DT1／DS1方向、style、
 
 ## 输入与选项
 
-默认关闭；Tab开关、V小图左右、方向键平移、Home居中、F12名称、Ctrl+F12项目截图。ESC→Options→Automap Options选Full Screen／Mini Map；Center When Cleared控制重开是否居中，Show Party控制原队友标记和姓名。
+默认关闭；Tab开关、V在已打开的小图中切换左右、方向键平移、Home居中、F12名称、Ctrl+F12项目截图。方向键由真实键盘按下／系统重复事件驱动，每事件16地图像素；不按渲染帧率积分，地图关闭或模态界面消费输入时不平移。非模态侧栏中仍可平移。ESC→Options→Automap Options选Full Screen／Mini Map；切换大小或主动切边清平移，Center When Cleared控制Tab重开是否清平移，Home强制清平移，Show Party控制原队友标记和姓名。
 
-Fade是用户授权的既有显示适配：小图No／Everything／Auto，大图另有Center；No alpha255，Everything／Auto地形／物件alpha128，单位／名称不淡化，Auto目前等同Everything。Center中央半宽／半高矩形alpha128、外部255，跨边图块按像素裁分，平移不移动淡化区域；Center切小图回退Everything，非法／缺省配置回退Auto。强度、范围与循环不认证原D2Client算法。
+`automap_view.cpp`按1.13c的投影原点、整数截断和两套资源绘制：大图除10，小图除20；相机投影先扣屏幕半宽／半高并加原16像素Y偏移，再分别除数，保留原40／15地图偏移。大图单侧面板按屏幕四分之一宽移位；小图侧栏临时选未遮挡的一边，无单侧栏时恢复用户选边。小图布局原点为左侧X=0、右侧X=2W/3，右侧Y=78；左侧640模式Y=96、800模式Y=0，扩展分辨率沿800分支。原单位锚点接纳范围按W/3、H/3；DC6裁剪另外沿原固定矩形，左侧X=0..279，右侧X=W−281..W−2，右侧Y=57..282，左侧Y为布局原点−21到+204。DC6使用原X偏移和底边基线，不再按宽度居中；鲁高因／群魔堡垒／哈洛加斯拼图按原中心偏移(53,−81)／(−3,−50)／(−20,−155)及MPQ帧尺寸生成完整地图坐标，再作小图除法。
+
+Fade逐图元选择原CelDraw模式，使用当前幕MPQ `pal.pl2`的实际混色表，不再使用RGBA alpha128。人物／NPC／门户线标和姓名保持实色；图标仍走图元Fade。
+
+| Fade | 图元显示 |
+| --- | --- |
+| No | mode5，原索引按当前幕调色板实色绘制 |
+| Everything | 大图mode2／trans[0]，小图mode1／trans[1] |
+| Auto | 原Unit.nAct为0或2（第一／三幕）时同Everything，其他幕mode5 |
+| Center | 仅大图maximap图元；以图元锚点+(8,16)相对屏幕中心及侧栏偏移求距，中心Y=(H−40)/2−10；X／Y绝对差≤140且距离`(2*max+min)/2`小于50／100／150时依次mode0／1／2，其余mode5。整个图元选一档；城镇专用拼图不走中心淡化 |
+
+大图选项循环为No→Center→Everything→Auto；小图跳过Center。大图Center切小图回到No，缺省／非法字符串配置仍回退Auto。PL2 trans[2]／[1]／[0]分别位于0x23500／0x13500／0x3500，按背景索引×256＋源索引取实际颜色。原版只支持640×480／800×600；扩展分辨率是同公式延伸，不宣称存在原版对应截图。
+
+混色继续使用既有`PaletteBlendView`的RGBA背景逆调色；原色像素可还原，已作彩色照明／混色的背景需量化，重复RGB索引取首项。因此读取原PL2不代表整个RGBA场景已等价于原索引帧缓冲，边界见[照明](LIGHTING.md)。
 
 ## 证据与限制
 
-原城镇全图依据D2MOO DrlgPreset整房AutoMap及pfTownAutomap；邻房／视野事件、原图布局与选项参考固定本地仓库和当前MPQ。四个参考没有完整D2Client揭示节拍／Fade程序，不能用D2Gfx TRANS枚举推导这些规则。
+原城镇全图依据D2MOO DrlgPreset整房AutoMap及pfTownAutomap；邻房／视野事件、原图布局与选项参考固定本地仓库和当前MPQ。四个参考没有完整D2Client揭示节拍／Fade程序，显示参数另按本机1.13c静态程序核对，不能仅用D2Gfx TRANS枚举推导。
+
+显示静态依据：D2Client RVA 0x5F9F0小图原点／范围，0x608D0居中、0x60950大小、0x60C40地图原点／侧栏，0x3F860相机投影、0x10E54设置H−40；0x5FB10–0x5FB40方向键每事件16像素；0x5F970／0x5F9C0与0x60346–0x604EA核对Fade、按幕Auto、距离分档及图元裁剪；0x62760城镇拼图。D2gfx ordinal10079／RVA0xAFF0通向D2DDraw接口+0x98（RVA0x6F60），其0x6E20使用DC6原偏移／底边裁剪；0x6A10确认三档实际trans表选择。当前MPQ的maximaps与act2map原帧、第一幕PL2只读提取留`artifacts/automap-display-20261017/`；原DLL版本身份见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。这些显示改动已纳入Windows Release客户端包，身份见[运行包记录](../../development/BUILD_AND_RUN.md#当前自动地图显示客户端包)；未启动游戏、运行测试、截图对照或作性能认证，等待用户测试。侧栏强制改变小图有效边、分辨率／模式变化时，显示布局缓存强制清平移；原系统键重复节拍由窗口平台提供，仍需实际平台操作对照。
 
 营地原大地图／NPC及五幕旅行返回探索有此前有限截图观察；最新包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。2026-10-10动态标记依原版截图、D2MOO公开队伍包及本地原客户端静态程序补齐，该批TCP路径与未覆盖范围见[组队有限证据](../../modules/NETWORK.md#组队有限证据)。
 

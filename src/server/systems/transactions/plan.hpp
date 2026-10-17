@@ -90,5 +90,7 @@ struct Plan { TransactionId id; std::vector<RevisionGuard> expected; Change chan
     std::shared_ptr<effects::AuraUnitPublication> auraUnits;bool auraRecipient{};std::optional<UnitRandomEdit> random;
     std::shared_ptr<FrameEventPublication> periodicEvents;
     std::shared_ptr<missiles::NativeBirthPublication> missileBirth;
-    std::shared_ptr<const RoomRandomLoan> roomRandom; };
+    std::shared_ptr<const RoomRandomLoan> roomRandom;
+    std::vector<std::shared_ptr<const RoomRandomLoan>> roomRandomLoans;
+    std::optional<UnitRandomEdit> gameRandom; };
 }

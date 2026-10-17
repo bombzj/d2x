@@ -209,6 +209,8 @@ DomainResult<> System::operateActThree(const ActorContext &actor,EntityId source
 }
 std::optional<int> System::objectMode(RegionId region,EntityId id,int definition,int operation,uint64_t tick) const {
     const auto *area=ports_.areas.find(region);if(!area) return {};
+    if(id==state_.actOne.cainInvisibleObject && definition==61 && state_.actOne.activatedStones)
+        return int(std::min(state_.actOne.activatedStones,5u))+1;
     if(area->definition.act==2) {
         if(operation==31 && id==state_.actThree.gidbinnAltar) return state_.actThree.gidbinnSpawned?2:1;
         if(operation==53) return state_.actThree.orbSmashed?2:0;

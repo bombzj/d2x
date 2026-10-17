@@ -278,7 +278,6 @@ target_sources(d2x_server PRIVATE
     src/server/systems/effects/necro.cpp
     src/server/systems/effects/units.cpp
     src/server/systems/effects/periodic.cpp
-    src/server/systems/effects/monster_periodic.cpp
     src/server/systems/reactions/item_triggers.cpp
   src/server/systems/combat/system.cpp src/server/systems/combat/spell_damage.cpp src/server/systems/combat/missile_contact.cpp src/server/systems/combat/missile_drain.cpp src/server/systems/effects/missile_delay.cpp
   src/server/systems/combat/player_damage.cpp

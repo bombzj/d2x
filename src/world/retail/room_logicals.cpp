@@ -18,7 +18,7 @@ void RetailTileMaterializer::initializeLogicals(size_t current) {
     const int width=room.room.width+1,height=room.room.height+1;
     const size_t cells=size_t(width)*height;
     if(room.grids.width!=width || room.grids.height!=height || room.grids.floors.empty() ||
-        room.grids.floors.front().size()!=cells || room.grids.walls.empty() || room.grids.walls.front().size()!=cells)
+        room.grids.floors.front().size()!=cells || (!room.grids.walls.empty() && room.grids.walls.front().size()!=cells))
         throw std::runtime_error("Missing native logical room grids");
     std::vector<uint8_t> blocked(cells);
     const auto wall=[](const RetailMaterializedTile &tile) {
@@ -40,7 +40,7 @@ void RetailTileMaterializer::initializeLogicals(size_t current) {
         }
     }
     constexpr int directionsX[]{1,0,-1,0},directionsY[]{0,1,0,-1};
-    constexpr int transitions[]{23,0,5,21,17,15,3,0,9,7,39,0,0,5,3,31,31,31,31,31,31,31,31,31,31,0};
+    constexpr int transitions[]{23,0,5,21,17,15,3,0,9,7,39,0,0,5,3,31,31,31,31,31,31,31,31,31,31,1};
     constexpr int types[]{-1,0,1,2,2,0,1,3,0,1,0,1,4,-1,4,0,0,0,0,0};
     struct Visit {int column,row,from;};
     std::vector<Visit> pending;
@@ -54,7 +54,8 @@ void RetailTileMaterializer::initializeLogicals(size_t current) {
         if(next>=0x0ffffffe) throw std::overflow_error("Native logical region index exhausted");
         uint32_t flags=uint32_t(++next)|0x10000000;
         const auto floor=room.grids.floors.front()[cell].value;
-        if((((floor>>20)&63)==30 && ((floor>>18)&3)==0) || (floor&0x80000000)) flags|=0x20000000;
+        // 1.13c RVA 81C1C checks this packed mask, including sequence zero.
+        if((floor&0x01e0ff00)==0x01e00000 || (floor&0x80000000)) flags|=0x20000000;
         pending.push_back({column,row,-1});
         while(!pending.empty()) {
             const auto visit=pending.back();pending.pop_back();
@@ -67,11 +68,13 @@ void RetailTileMaterializer::initializeLogicals(size_t current) {
                     pending.push_back({visit.column+directionsX[direction],visit.row+directionsY[direction],direction});
                 continue;
             }
-            const int type=room.grids.walls.front()[at].orientation;
+            const int type=room.grids.walls.empty()?0:room.grids.walls.front()[at].orientation;
             if(type<0 || type>=int(std::size(types))) throw std::runtime_error("Unsupported native logical tile orientation");
             const int entry=visit.from+5*types[type]+1;
-            if(entry<0 || entry>=int(std::size(transitions))) throw std::runtime_error("Invalid native logical tile transition");
-            const int transition=transitions[entry];
+            // 1.13c indexes across the preceding type table for orientations
+            // 0/13. Its final five words are zero (RVA 8A794..8A7A4).
+            if(entry<-5 || entry>=int(std::size(transitions))) throw std::runtime_error("Invalid native logical tile transition");
+            const int transition=entry<0?0:transitions[entry];
             if(transition&1) indices[at]|=flags;
             if(transition&32) pending.push_back({visit.column+1,visit.row+1,-1});
             for(int direction=3;direction>=0;--direction)

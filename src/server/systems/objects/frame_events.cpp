@@ -5,6 +5,8 @@
 #include "server/systems/loot/system.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/population/system.hpp"
+#include "server/systems/travel/system.hpp"
+#include "server/systems/world/system.hpp"
 #include <algorithm>
 
 namespace d2x::server::objects {
@@ -36,6 +38,7 @@ void System::schedule(Object &object) {
     synchronize(hazardEvent(object),object.hazardAt);
     synchronize(FrameEventType::Trap,object.trapAt);
     synchronize(FrameEventType::AiReset,object.lootAt);
+    synchronize(FrameEventType::DelayedPortal,object.portalAt);
 }
 DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
     const auto found=state_.objects.find(event.owner.unit);
@@ -58,8 +61,22 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
         if(object.rule.parameters[2]>0 && object.uses%object.rule.parameters[2]==0)
             object.mode=2-object.uses/object.rule.parameters[2];
         changed=true;
+    } else if(event.type==FrameEventType::DelayedPortal && object.portalAt==event.payload) {
+        const auto result=ports_.travel.linkNativePortal(object.id,tick);
+        if(result.status==DomainStatus::Unavailable) {
+            const auto region=object.area;
+            ports_.world.retainControllerRoom(region,object.position,false);
+            ports_.frameEvents.cancelOwner({FrameEventUnit::Object,object.id});
+            ports_.areas.removeRoomUnit(object.id);
+            state_.objects.erase(found);collision(region);
+            return {DomainStatus::Applied,std::monostate{}};
+        }
+        if(!result) return result;
+        object.portalAt=0;
     } else if(event.type==FrameEventType::Trap && object.trapAt==event.payload) {
-        if(objectTrap({tick},object.id)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        const auto result=objectTrap({tick},object.id);
+        if(result==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+        if(result!=StepStatus::Complete) return {DomainStatus::NotImplemented,{}};
     } else if(event.type==FrameEventType::AiReset && object.lootAt==event.payload && !object.pending) {
         if(const auto *player=ports_.players.find(object.operatorId)) {
             LootRequest source;source.source=object.id;source.region=object.area;source.difficulty=ports_.settings.difficulty;
@@ -76,7 +93,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             if(definition<0) return {DomainStatus::NotImplemented,{}};
             result=ports_.population.requestObjectBirth(object.area,object.id,object.position,{tick},definition);
         } else if(int(object.area)==108) result=ports_.quests.sealAfterglow(object.area,object.id,object.position,tick);
-        if(result.status==DomainStatus::Capacity || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale)
+        if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale)
             return {DomainStatus::Capacity,{}};
         if(result.status==DomainStatus::NotImplemented) return result;
         object.hazardAt=!result && int(object.area)==108?tick+10:0;

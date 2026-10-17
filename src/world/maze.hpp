@@ -15,6 +15,8 @@ struct NativeMazeLevel {
     MapRecipe recipe;
     std::vector<RetailRoom> rooms;
     std::map<RetailPresetKey, std::vector<RetailPresetUnit>> presetUnits;
+    std::vector<NativeTileInfo> tileInfo;
+    uint64_t random{};
 };
 // Uses the existing room graph and converts each coarse room before selecting
 // the next file. Both local recipes and remote activation consume this result.
