@@ -17,6 +17,7 @@ GameInstance::GameInstance(GameDefinition definition)
         systems_.quests.initializeControl();
     systems_.world.initialize();
     systems_.world.activateAct(definition.persistent.lastRegion);
+    systems_.world.activate(definition.persistent.lastRegion,areas_.at(definition.persistent.lastRegion).definition.spawn);
     players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_));
     if(!systems_.transactions.initializeItemAuras({1},tick_))
         throw std::runtime_error("Unable to initialize admitted item auras");
@@ -32,6 +33,7 @@ PlayerId GameInstance::admit(GameDefinition definition) {
         throw std::runtime_error("Invalid participant game settings or identity range");
     const PlayerId id{nextPlayer_};
     systems_.world.activateAct(definition.persistent.lastRegion);
+    systems_.world.activate(definition.persistent.lastRegion,areas_.at(definition.persistent.lastRegion).definition.spawn);
     players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_));
     if(!systems_.transactions.initializeItemAuras(id,tick_)) {
         areas_.removeRoomUnit(players_.find(id)->actor);
@@ -53,6 +55,7 @@ bool GameInstance::enter(PlayerId id, bool active) {
     if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
     if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});
+    systems_.world.changeClientRoom(id);
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
         found->second.route.clear(); found->second.moving = false; systems_.travel.cancel(id);

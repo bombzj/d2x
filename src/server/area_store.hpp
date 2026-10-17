@@ -21,6 +21,7 @@
 #include <vector>
 #include <functional>
 
+namespace d2x {class PreparedRoomTerrain;}
 namespace d2x::server {
 namespace world { class System; }
 struct RoomView {
@@ -64,6 +65,7 @@ struct AreaMetadata {
     int monsterLevel{}; // Current MPQ area level for this difficulty/expansion.
 };
 struct AreaDefinition : AreaMetadata {
+    std::shared_ptr<const PreparedRoomTerrain> roomTerrain;
     uint64_t initialLevelRandom{};
     bool fixedPosition{};
     bool saveMonsters{};
@@ -118,18 +120,14 @@ struct AreaDefinition : AreaMetadata {
     Grid collision;
     RoomLayout activation;
     std::vector<std::vector<RoomView>> roomNear; // Authored DRLG order, including cross-level links.
-    std::vector<PreparedMonster> population;
     std::map<std::string,NpcRule,std::less<>> questNpcs;
     std::map<int, MonsterComponentPalette> componentPalettes;
     std::vector<std::string> populationDeferred;
-    size_t populationMissing{};
-    std::vector<Vec> populationMissingPositions;
-    std::vector<std::optional<uint64_t>> initialRoomRandom;
     std::vector<RoomPopulationLayout> populationRooms;
     std::vector<NativeLevelSpawnEntry> normalSpawnRoster;
     std::map<int,PreparedMonster> nativeMonsterClasses;
 };
-struct AreaView { AreaMetadata definition; uint64_t generation{}; std::vector<std::string> populationDeferred; size_t populationMissing{}; };
+struct AreaView { AreaMetadata definition; uint64_t generation{}; std::vector<std::string> populationDeferred; size_t populationMissing{},populationPendingRooms{}; };
 struct AreaState {
     AreaDefinition definition;
     uint64_t generation = 1;
@@ -175,29 +173,7 @@ class AreaStore {
     std::optional<StatTimeContext> statTime(RegionId) const;
     std::optional<NativeActEnvironment> environment(RegionId) const;
     uint64_t environmentRevision(int act) const;
-    static void validate(const AreaDefinition &initial) {
-        const auto &grid = initial.collision;
-        if (grid.width <= 0 || grid.height <= 0)
-            throw std::runtime_error("Empty prepared authority area");
-        const auto count = size_t(grid.width) * size_t(grid.height);
-        if (grid.blocked.size() != count || grid.lightBlocked.size() != count ||
-            grid.terrainCollision.size() != count || grid.objectCollision.size() != count ||
-            grid.objectLightBlocked.size() != count ||
-            grid.fullTerrainCollision.size() != count)
-            throw std::runtime_error("Incomplete prepared collision grid");
-        if (initial.activation.rooms().empty() || initial.roomNear.size() != initial.activation.rooms().size())
-            throw std::runtime_error("Missing original room topology");
-        for (const auto &near : initial.roomNear)
-            if (near.empty()) throw std::runtime_error("Missing original near-room list");
-        // Cross-area borrows must be installed by this store, never imported.
-        if (!initial.collision.neighbours.empty() || !initial.collision.navigationSources.empty() ||
-            (initial.town && !initial.collision.walkable(initial.spawn, playerMovement)))
-            throw std::runtime_error("Invalid prepared authority area");
-        if (int(initial.id) < 1 || int(initial.id) > 255 || initial.act < 0 || initial.act > 4)
-            throw std::runtime_error("Invalid native area identity");
-        for(const auto &cell:initial.openedTombWall) if(cell.index>=count)
-            throw std::runtime_error("Invalid prepared tomb collision patch");
-    }
+    static void validate(const AreaDefinition &initial);
     explicit AreaStore(AreaDefinition initial) {
         validate(initial);
         const auto id = initial.id;

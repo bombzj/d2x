@@ -12,12 +12,40 @@ RetailTileSelector::RetailTileSelector(TileLibraryCache &cache, const WorldCatal
         auto library = cache.load(path);
         libraries_.push_back(library);
         paths_.push_back(normalize(path));
+    }
+    index();
+}
+void RetailTileSelector::index() {
+    lookup_.clear();
+    for (const auto &library : libraries_) {
         // Slot order is forward; same-identity records within one DT1 are reverse.
         for (auto tile = library->rbegin(); tile != library->rend(); ++tile) {
             auto &matches = lookup_[tile->key()];
             if (matches.size() < 40) matches.push_back(&*tile);
         }
     }
+}
+std::shared_ptr<RetailTileSelector> RetailTileSelector::collisionOnly() const {
+    auto result = std::shared_ptr<RetailTileSelector>(new RetailTileSelector);
+    result->paths_ = paths_;
+    for (const auto &library : libraries_) {
+        auto values = std::make_shared<std::vector<Tile>>();
+        values->reserve(library->size());
+        for (const auto &tile : *library) {
+            Tile value;
+            value.orientation=tile.orientation;value.main=tile.main;value.sub=tile.sub;
+            value.rarity=tile.rarity;value.roofHeight=tile.roofHeight;
+            value.materialFlags=tile.materialFlags;value.flags=tile.flags;
+            values->push_back(std::move(value));
+        }
+        result->libraries_.push_back(std::move(values));
+    }
+    result->index();
+    return result;
+}
+const Tile &RetailTileSelector::record(std::string_view path, size_t index) const {
+    for (size_t i=0;i<paths_.size();++i) if (paths_[i]==path) return libraries_[i]->at(index);
+    throw std::runtime_error("Prepared collision tile has no decoded library");
 }
 std::pair<std::string_view, size_t> RetailTileSelector::identity(const Tile &tile) const {
     const auto address = reinterpret_cast<uintptr_t>(&tile);

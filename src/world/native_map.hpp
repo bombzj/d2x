@@ -2,6 +2,7 @@
 #include "native_room_activation.hpp"
 #include "retail/tile_materialization.hpp"
 #include "maze.hpp"
+#include "room_terrain.hpp"
 
 namespace d2x {
 struct NativeMapSnapshot {
@@ -19,6 +20,7 @@ class NativeMapGenerator {
     int act_;
     uint32_t mapSeed_;
     int difficulty_;
+    NativeRoomActivation::Side side_;
     NativeActLayout layout_;
     RetailPresetScan identities_;
     RetailTileMaterializer tiles_;
@@ -45,7 +47,12 @@ class NativeMapGenerator {
     size_t roomAt(int level, int tileX, int tileY);
   public:
     NativeMapGenerator(Archives &, const WorldCatalog &, TileLibraryCache &, int act, uint32_t mapSeed,
-        int difficulty = 0);
+        int difficulty = 0, NativeRoomActivation::Side = NativeRoomActivation::Side::Client);
+    // Decode all inputs needed by this level's three DRLG reference rings.
+    // Does not prepare lazy preset units or materialize linked room tiles /
+    // collision. Outdoor substitution inputs retain their isolated seed draws.
+    std::shared_ptr<const PreparedRoomTerrain> prepareRoomTerrain(int level,
+        std::shared_ptr<const WorldCatalog>);
     size_t reveal(int level, int tileX, int tileY);
     // Allocation order; MPQ AutoMap presets also initialize their native rooms.
     std::vector<size_t> levelRooms(int level);

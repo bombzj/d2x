@@ -10,9 +10,9 @@ constexpr int roomBucketTiles = 32;
 int roomBucket(int tile) { return int(std::floor(double(tile) / roomBucketTiles)); }
 }
 NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &catalog,
-    TileLibraryCache &cache, int act, uint32_t mapSeed, int difficulty)
+    TileLibraryCache &cache, int act, uint32_t mapSeed, int difficulty, NativeRoomActivation::Side side)
     : archives_(archives), catalog_(catalog), cache_(cache), act_(act), mapSeed_(mapSeed), difficulty_(difficulty),
-      layout_(placeNativeAct(catalog, act, mapSeed)),
+      side_(side), layout_(placeNativeAct(catalog, act, mapSeed)),
       identities_(archives), tiles_(catalog), activation_({
           [this](size_t room) { return near(room); },
           [this](size_t room) { prepare(room); },
@@ -20,7 +20,7 @@ NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &c
           [this](size_t room) {
               if (tiles_.rooms().at(room).loaded) ++terrainRevision_;
               tiles_.releaseRoom(room);
-          }}) {
+          }}, side) {
     if (act < 0 || act > 4) throw std::runtime_error("Invalid native map act");
     if (difficulty < 0 || difficulty > 2) throw std::invalid_argument("Invalid native map difficulty");
 }
@@ -77,7 +77,7 @@ void NativeMapGenerator::ensureLevel(int level) {
     levels_.emplace(level, std::move(result));
     allocating_.erase(level);
     const auto &allocated = levels_.at(level);
-    if (allocated.preset && level != 40 && level != 103 && level != 109 &&
+    if (side_ == NativeRoomActivation::Side::Client && allocated.preset && level != 40 && level != 103 && level != 109 &&
         catalog_.presets().at(allocated.preset->preset).automap) {
         // The native client automap callback first allocates visible levels,
         // then initializes the complete prepend room list without sight refs.

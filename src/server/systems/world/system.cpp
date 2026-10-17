@@ -58,8 +58,13 @@ DomainResult<EntityId> System::admitQuestNpc(RegionId region,std::string_view co
     const auto point=area.collision.nativeSpawn(position,searchRadius,prepared->second.movement);
     if(!point) return {DomainStatus::Conflict,{}};
     if(ports_.ids.cursor()>=UINT32_MAX || ports_.monsters.read().actors.size()>=65536) return {DomainStatus::Capacity,{}};
-    const auto id=ports_.ids.allocate();
-    area.npcs.push_back({id,*point,prepared->second});ports_.monsters.admitNpc(id,region,*point,prepared->second);return {DomainStatus::Applied,id};
+    const EntityId id{ports_.ids.cursor()};
+    AreaNpc candidate{id,*point,prepared->second};
+    area.npcs.reserve(area.npcs.size()+1);
+    const auto admitted=ports_.monsters.admitNpc(id,region,*point,prepared->second);
+    if(!admitted) return {admitted.status,{}};
+    area.npcs.push_back(std::move(candidate));
+    return {DomainStatus::Applied,id};
 }
 void System::registerAreaUnits(RegionId region) {
     ports_.areas.initializeUnitRooms(region);
@@ -135,14 +140,9 @@ void System::fail(uint64_t requestId) {
 }
 void System::openTombWall(RegionId id) {
     openedTombs_.insert(id);
-    auto &grid=ports_.areas.areas_.at(id).definition.collision;
-    for(const auto &cell:ports_.areas.areas_.at(id).definition.openedTombWall) {
-        if (!ports_.areas.loaded(id, {float(cell.index % grid.width), float(cell.index / grid.width)})) continue;
-        grid.blocked[cell.index]=cell.blocked;grid.lightBlocked[cell.index]=cell.light;
-        grid.terrainCollision[cell.index]=cell.terrain;
-        if(!grid.fullTerrainCollision.empty()) grid.fullTerrainCollision[cell.index]=cell.full;
-    }
-    ++grid.obstacleRevision;
+    // Reproject actual selected records; an offline patch could otherwise
+    // replace a different runtime floor beneath the opened wall.
+    refreshRoomTerrain();
 }
 std::vector<RegionId> System::visible(PlayerId id) const {
     const auto *player = ports_.players.find(id); if (!player || !player->entered) return {};

@@ -30,6 +30,7 @@
 #include "gameplay/combat/stats.hpp"
 #include "life_change.hpp"
 #include "damage_status.hpp"
+#include <array>
 #include <span>
 #include <stdexcept>
 #include "world/native_path_step.hpp"
@@ -39,11 +40,9 @@
 #include <set>
 #include <string>
 #include <vector>
-#include <functional>
 namespace d2x::server::effects {struct AuraUnitPublication;}
 
 namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}
-namespace d2x::server {struct RoomView;}
 namespace d2x::server::monsters {
 class NativeBirthPublication;
 // Sole owner of monster/NPC/companion actor runtime; content identity is preserved.
@@ -64,6 +63,7 @@ struct Actor {
     RegionId area; Vec position; uint64_t revision{}; std::optional<PlayerId> owner;
     bool hostile{};
     bool restoredFromInactive{};
+    bool restorationPending{};
     bool uncounted{};
     uint64_t admissionRevision{1};
     uint64_t admissionTick{};
@@ -196,7 +196,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool damageable() const { return !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
+    bool damageable() const { return !restorationPending && !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || druidPet || necroSummon || conversion || hydra(); }
@@ -209,7 +209,7 @@ struct ActorPublication {
     size_t allocatedIds{};
     std::shared_ptr<EntityIds::Publication> identities;
     std::map<EntityId,uint64_t> removals;
-    std::set<EntityId> restoredIdentities;
+    std::set<EntityId> restoredIdentities,presetIdentities;
     std::optional<std::set<size_t>> uniquesExpected,uniquesNext;
 };
 using ComponentPaletteState=std::map<RegionId,std::map<int,MonsterComponentPalette>>;
@@ -225,14 +225,14 @@ struct SkillChildrenExecution {
 };
 struct InactiveMonster {
     EntityId id;MonsterIdentity identity;std::optional<MonsterKind> implementation;
-    RegionId area;Vec position;std::shared_ptr<const MonsterRule> admissionRule;
+    RegionId area;Vec position,home;std::shared_ptr<const MonsterRule> admissionRule;
     uint64_t frame{},revision{};
     int64_t life{},maximumLife{};
     CorpseState corpse;
     unsigned selfResurrections{};
     int32_t experience{};
-    int alignment{};
-    bool hostile{},dead{},resurrected{},noTreasure{},noExperience{},uncounted{};
+    int level{},alignment{};
+    bool hostile{},dead{},noTreasure{},noExperience{},uncounted{},questNpc{};
     bool ownsMinions{},transferMinions{},wander{},special{};
     std::optional<EntityId> minionOwner;
     std::vector<EntityId> minions;
@@ -262,7 +262,9 @@ class System {
     bool modifierCommitted_{};
     std::map<uint64_t,std::pair<EquipmentPreparation,std::optional<PreparedEquipment>>> birthEquipment_;
     uint64_t nextEquipmentToken_{1};
-    std::optional<InactiveMonster> restoring_;
+    struct Restoration {RegionId area;size_t room;EntityId actor;};
+    std::optional<Restoration> restoring_;
+    StepStatus advanceRestoration(uint64_t tick);
     DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick);
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
     bool recacheHirelingRoom(Actor &);
@@ -293,7 +295,7 @@ class System {
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
         std::optional<size_t> logicalRegion,bool probe,
-        const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
+        const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool stagedAdmission=false);
     DomainResult<std::optional<Vec>> searchRoomSpawn(const Admission &,RoomRandomLoan &,int attempts,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareTrapController(const Admission &,
@@ -305,11 +307,11 @@ class System {
     StepStatus restoreRoom(RegionId,size_t,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,bool sanctumCleared);
     const State &read() const { return state_; }
     ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds,std::span<const EntityId> restored={},
-        std::shared_ptr<EntityIds::Publication> identities={},std::span<const EntityId> retired={}) const;
+        std::shared_ptr<EntityIds::Publication> identities={},std::span<const EntityId> retired={},std::span<const EntityId> presets={}) const;
     bool validateActors(const ActorPublication &) const;
     void publishActors(ActorPublication &) noexcept;
     const Actor *find(EntityId id) const { auto it = state_.actors.find(id); return it == state_.actors.end() ? nullptr : &it->second; }
-    void admitNpc(EntityId,RegionId,Vec,const NpcRule &);
+    DomainResult<> admitNpc(EntityId,RegionId,Vec,const NpcRule &,bool resurrected=false);
     DomainResult<> moveNpc(EntityId,RegionId,Vec,Vec,bool escaped);
     DomainResult<> regenerate(EntityId,uint64_t tick);
     bool frozen(EntityId,uint64_t tick) const;
@@ -419,8 +421,6 @@ class System {
     DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0,std::span<const std::shared_ptr<const StatList>> = {},std::optional<MonsterComponents> components={},std::optional<bool> shield={}) const;
     DomainResult<> retire(EntityId, uint64_t tick);
     DomainResult<> stageRetirements(effects::AuraUnitPublication &,std::span<const EntityId>,uint64_t tick) const;
-    DomainResult<> updateHireling(EntityId,MonsterRule,WeaponDamage,CombatModifiers,int strength,int dexterity,int vitality,
-        std::shared_ptr<const PersistentCharacter>,uint64_t inventoryRevision,uint64_t characterRevision,NativeUnitStats,Fixed8 maximum);
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
 };

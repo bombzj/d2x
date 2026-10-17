@@ -55,6 +55,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | NPC空组件／城镇地图 | MonStats2CompositLinker、D2Common_11069／11070与SCmd0xAC：启用但变体空、索引0按空组件省略，非零非法索引拒绝。DrlgPreset AutoMap及pfTownAutomap核对城镇全揭示，共用AutomapExploration规则 |
 | 客户端组队与动态地图标记 | D2MOO D2Roster／PartyScreen／PlayerList及SCmd的75／7F／8B／8D／90核对身份、邀请、离队、生命与公开位置；D2MOO不含D2Client界面实现。本地同快照原D2Client RVA 754A0／76790核对区域截断、38像素行距和分组，5BA90／5B5A0核对职业头像、TRANS50、56像素列距与生命阈值，5F1C0／D2DE8／61490／5F090核对12段单位标记、颜色及门户分支。图形、字体、区域与文案仍读当前MPQ；导出原图和静态记录不纳入源码或分发 |
 | 传送点／尸体最新修正 | ObjMode::OBJECTS_OperateFunction23_Waypoint接受mode1／2；ENDANIM::sub_6FC74AC0与ObjectsTbls固定点帧数核对ON衔接。MonsterMsg::sub_6FC65C70的DEAD动作9无目标分支发当前位置。这些2026-10-07修正未构建／入包，不能当运行认证 |
+| 怪物休眠／特殊恢复 | D2MOO SUnitInactive的SUNITINACTIVE_CompressInactiveUnit、RestoreInactiveUnits及Save／RestoreSpecialMonsterParameters；MonsterUnique的D2GAME_SpawnMonster_6FC6F220、sub_6FC6FBA0、sub_6FC6FDC0用于区分普通／TYPE_OTHER／MINION与姓名／主从恢复。当前MPQ提供Restore、碰撞及实际身份；共用生命周期与未认证边界见[人口](../gameplay/monsters/POPULATION.md#公共出生压缩与特殊恢复)，参考源码不进入运行依赖 |
 | 怪物／原弹体 | MonsterMsg／MonsterMode、SkillMonst SrvDo088／091／092／097、Missiles::SyncToClient与SCmd；真实身份／动作／ClientSend消费，不导入AI或伤害。固定Utrans依据下方原1.13cRVA |
 | 人物／技能提示 | D2MOO D2Skills／SkillsTbls／Missile／MonsterTbls 核对描述公式与参数；本地原1.13c D2Client RVA316C0／32ABC核对75项描述程序，33340／33C80–33EA0核对选择器及树调用。固定DLL摘要、helper、输入限制与截图见[技能描述](../gameplay/skills/DESCRIPTIONS.md)；缺装备／支配／基础等级保留未知。女巫SkillSor／MissMode、亚马逊SkillAma／SequenceTbls／MissMode／PlayerPets／SCmd、死灵SkillNec／SUnitEvent、圣骑士SkillPal只作规则线索，不复制执行器 |
 | 玩家／佣兵属性 | D2MOO UNITS_GetDefense／UNITS_GetBlockRate、SKILLS_GetConcentrationDamageBonus、ACT5Q3_UpdateResistances、MonsterAI_SendMercStats及SUnitMsg状态编码；本地原1.13c D2Client RVA F5210／F52A0动作伤害／命中调度表。共享装备纯计算、原基础列表与最终显示的区别见[人物属性](../gameplay/characters/ATTRIBUTES.md)，佣兵有限边界见[佣兵](../gameplay/characters/HIRELINGS.md)；参考二进制不作为运行依赖 |
@@ -83,13 +84,21 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 房间恢复另核对同一1.13c D2Common：RVA `0x7c101`／`0x7c104`重置瓦片流low=initialSeed／high=666；`0x3c788`／`0x3c78b`初始化活动Room1的low／high（结构偏移0x6c／0x70）。RVA `0x8184b`／`0x8185b`及只读数据`0x8a758`／`0x8a7a8`确认逻辑转移表负索引读取，`0x81c1c`确认节点楼层掩码；`0x45550`按槽调用`0x453d0`配对Vis，不跨槽保留1.10f参考实现的bSkip。当前动态对照及适用范围见[地图验证](../gameplay/world/MAPS.md#当前源码逐事件复核)。
 
+实机调用链另由同一1.13c Game.exe单机进程取证：D2Common ordinal10951／10053／10622／10715分别为LoadAct、StreamRoomAtCoords、ChangeClientRoom、DRLG_Update；D2Game调用ChangeClientRoom的返回点RVA为0x4b205。原生GetTileCache在D2Common RVA0x68b90，共享砖查找返回点0x69925；InitRoom返回点0x7c247来自Update预建，0x7c39a来自立即物化入口。原生DT1父文件／记录、房间及碰撞快照与选砖／随机日志留在`artifacts/map-call-chain-20261017-01`。首差原因及实际释放／重建范围见[实机首差](../gameplay/world/MAPS.md#实机首差与合成调用边界)，不以合成AddRoomData或bClient=0冒充完整服务端链。
+
+宿主逐房间修正另核实1.13c D2Game不导入10715，旧实机40,753次DRLG_Update均为客户端调用；服务端7 tick分支不能作为GAME_Update预取依据。ordinal10150／RVA3CA20确认RemoveRoomFromAct；RVA7C0E0／3CC5C／3CC92记录初始化与ChangeClientRoom作用域，3C7B8记录活动房间出生时的两条随机。新实机轨迹、导入表及DLL重放证据在`artifacts/map-room-runtime-20261017-01`，不认证完整单位随机或多人交错。
+
 持物占格高亮另核对同快照D2Client RVA 0x8C600逐格调用DrawBox mode=0、0x8C6B0初始化绿色RGB(0,128,0)／禁止红色(128,0,0)。D2gfx 1.13c ordinal10014才是DrawBox入口（RVA 0xBA30），不能套用D2MOO 1.10f的ordinal10055；D2DDraw RVA 0x6A25选择trans[2]，0x6850按背景索引×256＋颜色索引读取。D2Win ordinal10190经D2CMP ordinal10049（RVA 0x9D30）以RGB平方距离取首个最近项。当前MPQ Act PL2偏移0x23500提供实际混色结果；Diablerie InventoryGrid／InventorySlot只补充底色在物品下方、无描边的布局证据，其简化RGBA不作为原混色值。本批仅只读静态核对，未构建或运行。
 
 自动地图显示另只读核对同一1.13c D2Client的5F9F0／608D0／60C40布局与居中、5FB10–5FB40方向键回调、60346–604EA原Fade及裁剪、62760城镇拼图；D2gfx ordinal10079与D2DDraw接口+0x98核对原DC6基线和三档PL2选择。当前MPQ原图／PL2的读取及完整参数、扩展分辨率与未运行边界见[自动地图](../gameplay/world/AUTOMAP.md#输入与选项)，反汇编／提取留忽略目录，不改动或分发原DLL和资源。
 
 第一幕精英另只读核对同一D2Client：RVA20340／20BF0／20BC0为电强化路径及GH／生命回调，20C40／A1020／A0DB0为冰强化死亡新星，4E095／4E14D／1FCA0为GH和生命高位发射资格。原版两端时钟、共享范围见[参考设计](../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，DLL与反汇编输出只留忽略目录。
 
-技能路径迁移另只读核对同一1.13c D2Game.dll：UMod表RVA10F448，第31项死亡回调265E0／模式回调21A90确认火魔爆炸；火强化266B0在267BF–26804于MPQ难度倍率之后，Normal扣1/4、Nightmare扣1/3、Hell除8，此步在本地1.10f D2MOO转录中缺失。冰强化262D0调用A2800，A28B0–A28D8循环构造64个方向；蛛网B4880–B49CE确认原方向表、正常X/Y坐标、技能173、飞弹143及速度3。当前MPQ Skills／Missiles／DifficultyLevels只读摘录位于忽略目录`artifacts/skill-paths-20261016/`；不修改、提交或分发原DLL与摘录。本轮未构建或运行，入口与待验证边界见[技能公共规范](../gameplay/skills/COMMON.md#技能执行路径源码核对)。
+技能路径迁移另只读核对同一1.13c D2Game.dll：UMod表RVA10F448，第31项死亡回调265E0／模式回调21A90确认火魔爆炸；火强化266B0在267BF–26804于MPQ难度倍率之后，Normal扣1/4、Nightmare扣1/3、Hell除8，此步在本地1.10f D2MOO转录中缺失。冰强化262D0调用A2800，A28B0–A28D8循环构造64个方向；蛛网B4880–B49CE确认原方向表、正常X/Y坐标、技能173、飞弹143及速度3。当前MPQ Skills／Missiles／DifficultyLevels只读摘录位于忽略目录`artifacts/skill-paths-20261016/`；不修改、提交或分发原DLL与摘录。相关源码已纳入当前构建，专用回调入口与待验证边界见[技能公共规范](../gameplay/skills/COMMON.md#技能执行路径源码核对)。
+
+
+
+自然生成规则另只读核对同一1.13c D2Game：VA6FC51079–6FC5113D确认PopulateFn1接受的类别，6FC50528–6FC50576确认Fn5为AND循环，6FC4EC22确认主题ID与候选数量的原资格判断，6FC527D0–6FC52A02确认祭坛治疗替换／次数及间距。RVAE1430确认133–136的零售预设排除与Forgotten Sands计数分支，不使用后续D2MOO版本额外插入的事件服首领。Init表VA6FD2E050第62项为6FC7C850，调用6FC7C2A0：三组坐标去重、25次参数5的真实act5pow出生、成功至多5人及0x03000000原标志。当前MPQ Objects／ObjGroup／Levels／MonStats／MonStats2／MonPlace／MonPreset／SuperUniques／Shrines的只读提取及反汇编保留于忽略目录`artifacts/population-rules-20261017/`；原DLL与表不修改、提交或分发。源码入口及认证限制见[人口](../gameplay/monsters/POPULATION.md)与[物件](../gameplay/world/OBJECTS.md#自然生成源码边界)。
 
 ## 补充资料的边界
 

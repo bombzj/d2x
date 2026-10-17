@@ -33,6 +33,7 @@ class NativeRoomActivation {
     Side side_;
     std::map<size_t, State> states_;
     std::array<std::list<size_t>, 4> statusRooms_;
+    std::list<size_t> activeRooms_; // Native Act::pRoom prepend chain.
     std::optional<size_t> prefetchCursor_;
     unsigned initialized_{}, initializationTimeout_{};
     bool failed_{};
@@ -54,7 +55,11 @@ class NativeRoomActivation {
     void reveal(size_t);
     void hide(size_t);
     void changeClientRoom(std::optional<size_t> previous, std::optional<size_t> next);
-    // Server GAME_Update / DRLGACTIVATE_Update. Retention covers portals,
+    // Explicit D2Common DRLG_Update, used by the client. A server-side call
+    // is available for DLL diagnostics, but GAME_Update does not call it.
+    void updateDrlg();
+    bool retire(size_t);
+    // Server GAME_Update retirement / client DRLGACTIVATE_Update. Retention covers portals,
     // town-wide client references and pending authoritative unit operations.
     void update(uint64_t tick, const std::function<bool(size_t)> &retain = {});
     const auto &states() const { return states_; }

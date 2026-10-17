@@ -108,15 +108,8 @@ void prepareEnvironmentPopulation(Archives &archives,const ClassicData &data,Pre
         MonsterIdentity identity;identity.monster=code;identity.origin=SpawnOrigin::Summoned;identity.spawnKey="environment."+code;
         if(auto unit=prepareEnvironmentMonster(archives,data,prepared.terrain.request,identity,{})) area.environmentMonsters.emplace(code,std::move(*unit));
     }
-    size_t index=0;
-    for(const auto &source:prepared.terrain.map->terrain.data.objects) {
-        const auto key="ds1."+std::to_string(index++);if(source.type!=1) continue;
-        const auto preset=catalog.preset(area.act,source.id,prepared.terrain.map->terrain.data.version,source.nativeIdentity);
-        const auto unit=area.environmentMonsters.find(preset.id);if(unit==area.environmentMonsters.end()) continue;
-        if(std::any_of(area.population.begin(),area.population.end(),[&](const auto &m){return m.identity.spawnKey==key;})) continue;
-        auto monster=unit->second;monster.identity.spawnKey=key;monster.identity.origin=SpawnOrigin::Preset;
-        monster.identity.presetOrder=index-1;
-        monster.position={source.x+.5f,source.y+.5f};area.population.push_back(std::move(monster));
-    }
+    // prepareCombatPopulation already describes native DS1 environment
+    // controllers in nativePresetMonsters. Their births use the authoritative
+    // room admission path; do not recreate the removed precomputed population.
 }
 }

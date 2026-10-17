@@ -188,7 +188,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
 StepStatus System::denStep(TickContext tick) {
     const auto *area=ports_.areas.find(RegionId(8));
     if(area) {
-        size_t alive=area->definition.populationMissing, killed=0;
+        size_t alive=0,killed=0;
         for(const auto &[id,m]:ports_.monsters.read().actors) {
             (void)id;if(m.area!=RegionId(8) || m.owner || m.questNpc || m.uncounted || m.rule.environmentController || m.identity.origin==SpawnOrigin::Debug) continue;
             if(m.alive()) {++alive;continue;}++killed;
@@ -205,15 +205,7 @@ StepStatus System::denStep(TickContext tick) {
                 else ++killed;
             }
         }
-        const auto population=ports_.population.read().areas.find(RegionId(8));
-        const bool current=population!=ports_.population.read().areas.end() && population->second.generation==area->generation;
-        bool generated=current;
-        for(size_t room=0;room<area->definition.activation.rooms().size();++room) {
-            if(!area->definition.activation.rooms()[room].populate) continue;
-            if(!current || !population->second.roomStages.contains(room) || population->second.roomStages.at(room)<3) generated=false;
-        }
-        for(const auto &spawn:area->definition.population)
-            if(!current || !population->second.admittedSpawnKeys.contains(spawn.identity.spawnKey)) ++alive;
+        const bool generated=ports_.population.coverage(RegionId(8)).complete();
         state_.actOne.denRemaining=unsigned(std::min<size_t>(alive,UINT16_MAX));
         state_.actOne.denHasKills|=killed!=0;
         if(!state_.actOne.denCleared && state_.actOne.denHasKills && !alive && generated) {

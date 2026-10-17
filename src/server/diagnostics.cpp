@@ -28,7 +28,7 @@ DomainResult<EntityId> GameInstance::spawnObject(PlayerId id,const objects::Admi
 DomainResult<EntityId> GameInstance::spawnMonster(PlayerId id, const PreparedMonster &monster) {
     const auto *player = players_.find(id);
     if (!player || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    return systems_.population.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions,tick_});
+    return systems_.monsters.admit({monster.identity, monster.implementation, player->area, monster.position, true, monster.rule,monster.skillPositions,tick_});
 }
 DomainResult<> GameInstance::relocate(PlayerId id,RegionId area,std::optional<Vec> position) {
     const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
@@ -101,8 +101,6 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     result.objectPopulation=systems_.objects.population();
     result.modifiersPending=systems_.monsters.modifiersPending();result.modifierFailure=systems_.monsters.modifierFailure();
     result.monsterEquipmentPending=systems_.monsters.equipmentPending();result.monsterEquipmentFailure=systems_.monsters.equipmentFailure();
-    for(const auto &[region,population]:systems_.population.read().areas)
-        if(!population.rejectedDensityKeys.empty()) result.rejectedDensity.emplace(region,population.rejectedDensityKeys);
     constexpr std::array densityPhases{"trial","search","leader","leaderSetup","partySetup","party","hut","group",
         "modifiers","champions","championModifiers","extras","done"};
     for(const auto &[region,population]:systems_.population.read().areas) {
@@ -150,9 +148,11 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
     }
     for(const auto &[key,object]:systems_.objects.read().objects) { (void)key; if(object.area==player->area && result.objects.size()<limit) result.objects.push_back(object); }
     const auto &area = areas_.at(player->area);
-    result.area = {area.definition, area.generation, area.definition.populationDeferred, area.definition.populationMissing};
+    const auto coverage=systems_.population.coverage(player->area);
+    result.area = {area.definition,area.generation,area.definition.populationDeferred,coverage.deferred,coverage.pendingRooms};
     for (const auto &[key, value] : areas_.all()) {
-        (void)key; result.areas.push_back({value.definition, value.generation, value.definition.populationDeferred, value.definition.populationMissing});
+        const auto coverage=systems_.population.coverage(key);
+        result.areas.push_back({value.definition,value.generation,value.definition.populationDeferred,coverage.deferred,coverage.pendingRooms});
     }
     result.commandsQueued = commands_.size(); result.eventsQueued = events_.pending().size();
     result.eventFirst = events_.historyFirst(); result.eventLast = events_.historyLast();

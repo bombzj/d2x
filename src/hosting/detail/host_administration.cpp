@@ -289,7 +289,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             const auto result = host.spawnMonster(*binding, *monster);
             if (!result) return {AdminStatus::Unavailable, "Monster spawn rejected by area collision, lifecycle or capacity"};
             publishMonsters();
-            return {AdminStatus::Applied, "Monster admitted through population", *result.value};
+            return {AdminStatus::Applied, "Monster admitted through shared actor lifecycle", *result.value};
         }
         case AdminOperation::DamageMonster:
         case AdminOperation::KillMonster: {

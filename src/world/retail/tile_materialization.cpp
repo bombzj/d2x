@@ -143,6 +143,25 @@ std::vector<size_t> RetailTileMaterializer::establishNear(size_t current, const 
     } catch (...) { failed_ = true; throw; }
 }
 
+void RetailTileMaterializer::preparedLinks(size_t current, std::span<const size_t> near,
+    std::span<const std::pair<int,size_t>> warps) {
+    validateNear(current,near,rooms_);
+    auto &room=rooms_.at(current);
+    if (!room.near.empty()) {
+        if (!std::equal(room.near.begin(),room.near.end(),near.begin(),near.end()))
+            throw std::runtime_error("Prepared native near-room graph changed");
+        return;
+    }
+    if (room.loaded || !room.warps.empty()) throw std::runtime_error("Late native room links");
+    room.near.assign(near.begin(),near.end());
+    if (!catalog_.level(room.level).town) for (const auto id : near)
+        if (catalog_.level(rooms_.at(id).level).town) {room.room.flags|=0x800000;break;}
+    for (const auto &[id,destination] : warps) {
+        const auto *definition=lookupWarp(catalog_,id,'b');
+        if (!definition || destination>=rooms_.size()) throw std::runtime_error("Invalid prepared native warp link");
+        room.warps.push_back({id,definition,{},{},destination});
+    }
+}
 void RetailTileMaterializer::door(size_t current, std::optional<size_t> tile, int type,
     uint32_t packed, int x, int y) {
     auto &state = rooms_.at(current);
@@ -635,7 +654,8 @@ const RetailRoomCollision *RetailTileMaterializer::collision(size_t room) const 
 }
 
 RetailRoomCollision projectRetailRoomCollision(const RetailTileMaterializer &session, size_t index,
-    std::span<const size_t> activeNear) {
+    std::span<const size_t> activeNear,
+    const std::function<bool(const RetailMaterializedTile &)> &include) {
     if (!session.valid()) throw std::runtime_error("Cannot project collision from a failed native tile session");
     validateNear(index, activeNear, session.rooms());
     const auto &room = session.rooms().at(index).room;
@@ -647,6 +667,7 @@ RetailRoomCollision projectRetailRoomCollision(const RetailTileMaterializer &ses
         const auto apply = [&](const auto &indices) {
             for (auto tileIndex : indices) {
                 const auto &t = session.tiles().at(tileIndex);
+                if (include && !include(t)) continue;
                 const int x = t.x * 5 - result.x, y = t.y * 5 - result.y;
                 // Original initial-grid routine tests tile origin against this
                 // room before copying the flipped five-by-five DT1 flag block.

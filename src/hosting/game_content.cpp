@@ -34,6 +34,8 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.monsterLevel=level.population.level.at(size_t(request.difficulty));
     area.staffTomb=result.terrain.staffTomb;
     area.collision = result.terrain.map->grid;
+    area.roomTerrain=result.terrain.roomTerrain;
+    if (!area.roomTerrain) throw std::runtime_error("Missing prepared authoritative room inputs");
     area.collisionField=content.nativeCollisionField;
     area.activation = result.terrain.map->activation;
     area.initialLevelRandom=result.terrain.levelRandom;
@@ -42,12 +44,10 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     area.tileWidth=result.terrain.placement.width;area.tileHeight=result.terrain.placement.height;
     for (const auto &room : area.activation.rooms()) {
         const auto anchor = std::pair{(int(area.origin.x) + room.x) / 5, (int(area.origin.y) + room.y) / 5};
-        const auto seed=result.terrain.initialRoomRandom.find(anchor);
         const auto logical=result.terrain.populationRooms.find(anchor);
         if(logical==result.terrain.populationRooms.end() || logical->second.regions.empty())
             throw std::runtime_error("Missing native population room layout");
         area.populationRooms.push_back(logical->second);
-        area.initialRoomRandom.push_back(seed==result.terrain.initialRoomRandom.end()?std::nullopt:std::optional<uint64_t>{seed->second});
         auto &near = area.roomNear.emplace_back();
         for (const auto &other : result.terrain.nearRooms.at(anchor))
             near.push_back({RegionId(other.level), other.x, other.y});
@@ -145,6 +145,19 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     prepareQuestWorld(archives,content,result);
     prepareCombatPopulation(archives, content, result);
     prepareEnvironmentPopulation(archives,content,result);
+    // The offline Map above is used only to resolve authored content/markers.
+    // Never hand its activation-dependent tile choices, collision or logical
+    // floor selections to the authority. Actual create operations supply them.
+    Grid dormant(area.collision.width,area.collision.height);
+    const auto cells=size_t(dormant.width)*dormant.height;
+    dormant.fullTerrainCollision.assign(cells,0xffff);
+    std::fill(dormant.terrainCollision.begin(),dormant.terrainCollision.end(),0xff);
+    std::fill(dormant.blocked.begin(),dormant.blocked.end(),1);
+    std::fill(dormant.lightBlocked.begin(),dormant.lightBlocked.end(),1);
+    area.collision=std::move(dormant);
+    for (auto &room : area.populationRooms) {
+        room.regions.clear();room.cells.clear();room.floors.clear();
+    }
     const auto completed = std::chrono::steady_clock::now();
     std::clog << "[area-load] host level=" << request.level << " difficulty=" << request.difficulty
         << " terrain_ms=" << result.terrain.preparationMilliseconds

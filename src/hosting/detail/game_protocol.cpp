@@ -84,16 +84,31 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     if (peer.phase != GamePhase::LoggedOn) throw ProtocolError("Duplicate game admission");
     if (!binding || (directTcpIp && !tcpIpUploadComplete)) throw ProtocolError("Native character upload is incomplete");
     if (!host.enter(*binding)) throw AdmissionFailure(6,"Game admission expired");
-    for (auto &packet : admission) sendGame(std::move(packet));
+    const auto rooms=host.visibleRooms(*binding);
+    const auto view=host.read(*binding);
+    const auto *current=view?terrain.map->activation.room(view->actor.position+Vec{.5f,.5f}):nullptr;
+    if (!current || rooms.empty()) throw ProtocolError("Entered player lacks an active native room");
+    const server::RoomView own{RegionId(terrain.request.level),
+        (int(terrain.origin.x)+current->x)/5,(int(terrain.origin.y)+current->y)/5};
+    for (auto &packet : admission) {
+        const bool loadAct=!packet.empty() && packet.front()==uint8_t(ServerMessage::LoadAct);
+        sendGame(std::move(packet));
+        if (loadAct) {
+            const auto reveal=[&](const auto &room) {sendGame(encodeServerPacket(ServerMessage::RevealRoom,[&](auto &out) {
+                out.u16(uint16_t(room.x));out.u16(uint16_t(room.y));out.u8(uint8_t(room.area));
+            }));};
+            // Original 1.13c admission reveals the initialized destination,
+            // then registers the complete near list (including its root).
+            reveal(own);
+            for (const auto &room : rooms) reveal(room);
+        }
+    }
     admission.clear();
     peer.phase = GamePhase::Entered;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();
     peer.areas.insert(RegionId(terrain.request.level));
-    for (const auto &[x, y] : terrain.rooms) peer.rooms.insert({RegionId(terrain.request.level), x, y});
-    if (const auto area = host.area(binding->game, RegionId(terrain.request.level))) {
-        for (const auto &exit : area->definition.exits) peer.warps.insert(exit.id);
-    }
+    peer.rooms.insert(rooms.begin(),rooms.end());
     setPaused(false);
 }
 void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {

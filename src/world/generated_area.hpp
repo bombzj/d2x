@@ -14,20 +14,21 @@ struct GeneratedArea {
     MapRecipe recipe;
     int palette{};
     std::optional<int> staffTomb;
-    std::vector<std::pair<int, int>> rooms; // Original tile anchors, activation order.
     struct RoomLink { int level{}, x{}, y{}; };
     std::map<std::pair<int, int>, std::vector<RoomLink>> nearRooms;
+    // Offline projection for authored object/exit/arrival descriptors only.
+    // Its selected collision and room random must never seed the authority.
     std::shared_ptr<const Map> map;
+    std::shared_ptr<const PreparedRoomTerrain> roomTerrain;
     double preparationMilliseconds{};
-    std::map<std::pair<int, int>, uint64_t> initialRoomRandom;
     std::map<std::pair<int, int>, RoomPopulationLayout> populationRooms;
     std::vector<Vec> populationWarpCenters;
     uint64_t levelRandom{};
     std::vector<NativeTileInfo> tileInfo;
     NativeLevelPlacement placement;
 };
-// Incremental host preparation; every operation stays on the archive owner's
-// thread. No partial terrain is published and reveal/RNG order is unchanged.
+// Resource/descriptor preparation on the archive owner's thread. The authority
+// receives pristine decoded room inputs and materializes its own DRLG history.
 class AreaGenerator {
     struct Impl;
     std::unique_ptr<Impl> impl_;
@@ -37,8 +38,7 @@ class AreaGenerator {
     bool advance(std::chrono::steady_clock::time_point deadline);
     GeneratedArea take();
 };
-// Host preparation uses the same generator/reveal operations as RemoteTown.
-// The returned Map retains every referenced DT1 library beyond generator/cache
-// destruction. Dynamic actors/objects and activation belong to the caller.
+// The Map is an offline authored-content projection and retains its libraries.
+// Only roomTerrain may supply authority terrain and active-room initial seeds.
 GeneratedArea generateArea(Archives &, AreaGenerationRequest);
 } // namespace d2x

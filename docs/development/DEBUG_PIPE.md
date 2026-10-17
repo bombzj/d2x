@@ -107,7 +107,7 @@ $spec.preview=$false
 
 复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数。当前已纳入Release构建；propertyQuery、显式词缀生成及properties预览的有限观察见[运行包记录](BUILD_AND_RUN.md#历史物品显示与生成收尾)，不扩大为全目标属性或自然掉落认证。
 
-后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred／populationMissing提供原人口准备缺口诊断。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
+后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred提供原型准备说明，populationMissing为实时人口coverage的暂缓来源数；它不再是宿主旧规划的未放置计数，populationPendingRooms为尚未完成的相关房间数，两者均从权威coverage计算并阻止提前清场。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command server-protocol

@@ -7,8 +7,8 @@ struct AreaGenerator::Impl {
     std::shared_ptr<const WorldCatalog> catalogSource;
     TileLibraryCache libraries;
     NativeMapGenerator generator;
+    std::shared_ptr<const PreparedRoomTerrain> roomTerrain;
     std::vector<size_t> rooms;
-    std::vector<std::pair<int, int>> anchors;
     size_t remaining{};
     std::optional<GeneratedArea> ready;
     double milliseconds{};
@@ -17,8 +17,11 @@ struct AreaGenerator::Impl {
           libraries(archives), generator(archives, *catalogSource, libraries, value.act, value.seed, value.difficulty) {
         if (catalogSource->level(request.level).act != request.act)
             throw std::runtime_error("Area belongs to another act");
+        NativeMapGenerator authority(archives,*catalogSource,libraries,value.act,value.seed,value.difficulty,
+            NativeRoomActivation::Side::Server);
+        roomTerrain=authority.prepareRoomTerrain(value.level,catalogSource);
         rooms = generator.levelRooms(request.level);
-        remaining = rooms.size(); anchors.reserve(remaining);
+        remaining = rooms.size();
     }
     GeneratedArea finish() {
         const auto &catalog = *catalogSource;
@@ -34,6 +37,7 @@ struct AreaGenerator::Impl {
         if (snapshot.map.rooms.empty()) throw std::runtime_error("Prepared native map lacks authored room footprints");
         snapshot.map.activation = RoomLayout(snapshot.map.grid.width, snapshot.map.grid.height, snapshot.map.rooms);
         GeneratedArea result;
+        result.roomTerrain=std::move(roomTerrain);
         result.request = request; result.origin = {float(snapshot.tileX * 5), float(snapshot.tileY * 5)};
         result.palette = level.palette;
         result.staffTomb = generator.layout().staffTomb;
@@ -41,7 +45,6 @@ struct AreaGenerator::Impl {
         result.levelRandom=generator.levelRandom(request.level);
         result.tileInfo=generator.levelTileInfo(request.level);
         result.placement=generator.layout().levels.at(request.level);
-        result.rooms = std::move(anchors);
         for (const auto id : rooms) {
             const auto &room = generator.tiles().rooms().at(id);
             bool protectedRoom=(room.room.flags&0x00030000u)!=0;
@@ -70,8 +73,6 @@ struct AreaGenerator::Impl {
             for(const auto &region:room.logicalRegions)
                 logical.regions.push_back({region.index,region.left,region.top,region.right,region.bottom,region.node});
             result.populationRooms.emplace(std::pair{room.room.x,room.room.y},std::move(logical));
-            if(room.initialActiveRandom)
-                result.initialRoomRandom.emplace(std::pair{room.room.x,room.room.y},*room.initialActiveRandom);
             auto &near = result.nearRooms[{room.room.x, room.room.y}];
             for (const auto adjacent : room.near) {
                 const auto &other = generator.tiles().rooms().at(adjacent);
@@ -96,12 +97,12 @@ bool AreaGenerator::advance(std::chrono::steady_clock::time_point deadline) {
     const auto started = std::chrono::steady_clock::now();
     if (started >= deadline) return false;
     if (state.remaining) {
-        // Preserve reverse allocation/reveal order, including all native RNG
-        // draws; a yield only separates operations, never replays one.
+        // Offline content descriptor projection. Its generated collision and
+        // tile/active random are discarded by the authority, which uses the
+        // pristine decoded room inputs and its actual DRLG create operations.
         do {
             const auto room = state.generator.tiles().rooms().at(state.rooms[state.remaining - 1]).room;
             state.generator.reveal(state.request.level, room.x, room.y);
-            state.anchors.emplace_back(room.x, room.y);
             --state.remaining;
         } while (state.remaining && std::chrono::steady_clock::now() < deadline);
     } else state.ready = state.finish();

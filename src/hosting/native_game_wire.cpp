@@ -118,7 +118,7 @@ Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player)
     });
 }
 std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const PersistentCharacter &state,
-    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &definition, const server::QuestFact &quests,const NativeActEnvironment &environment) {
+    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &, const server::QuestFact &quests,const NativeActEnvironment &environment) {
     std::vector<Bytes> result;
     const auto &player = state.player;
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
@@ -126,8 +126,8 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     const auto classId = uint8_t(found - data.characters.begin());
     auto emit = [&](ServerMessage id, auto fill) { result.push_back(encodeServerPacket(id, fill)); };
     emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(actTownLevels.at(size_t(area.request.act)))); out.u32(0); });
-    for (const auto &[x, y] : area.rooms)
-        emit(ServerMessage::RevealRoom, [&](auto &out) { out.u16(uint16_t(x)); out.u16(uint16_t(y)); out.u8(uint8_t(area.request.level)); });
+    // Actual visible rooms are inserted at enterEnvironment, after the
+    // authoritative player's StreamRoomAtCoords / ChangeClientRoom.
     emit(ServerMessage::AssignPlayer, [&](auto &out) {
         out.u32(uint32_t(player.id.value)); out.u8(classId);
         for (size_t i = 0; i < 16; ++i) out.u8(i < player.name.size() ? uint8_t(player.name[i]) : 0);
@@ -171,7 +171,7 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     for(auto &packet:nativeQuestUpdate(data,quests)) result.push_back(std::move(packet));
     // Objects are assigned by publishObjects after the authority's original
     // init callback. Admission must not invent neutral-mode object baselines.
-    for (auto &packet : nativeAreaWarps(area, definition)) result.push_back(std::move(packet));
+    // Warps use publishAreas' actual room visibility, like other world units.
     emit(ServerMessage::LoadComplete, [](auto &) {});
     return result;
 }

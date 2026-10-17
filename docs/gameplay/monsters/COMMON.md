@@ -1,29 +1,29 @@
 # 怪物公共规范与生命周期
 
-更新：2026-10-13。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+更新：2026-10-17。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
 
 ## 身份与完成口径
 
 MonStats真实身份、MonStats2外观、AI程序、rank、SuperUnique记录及出生来源分别登记；同一家族支持不代表所有实际类型已准入，同一类型跨幕或跨难度也不自动完成。MonsterKind或技能槽存在只是映射／数据，不等于当前server已有对应运行程序。非敌对单位不得混入普通敌对人口；阵营与目标规则见[FACTIONS](../combat/FACTIONS.md)。
 
-当前允许的替身仅为沉沦魔，真实monster／superUnique／spawnKey保留，用于缺失敌对类型；不允许中立NPC、友军、佣兵或宠物使用敌对替身。按[combat_content.cpp](../../../src/hosting/combat_content.cpp)当前条件，邪恶洞穴及第二至第五幕可准备这种替身；第一幕其他未支持类型保留暂缓。替身不代表真实外观、数值、AI或首领技能已实现。缺规则或无法放置的单位保留populationMissing／诊断，清场任务不能默认为已杀完。
+当前允许的敌对怪物替身仅为沉沦魔，真实monster／superUnique／spawnKey保留；不允许中立NPC、友军、佣兵或宠物使用敌对替身。hosting为缺失的敌对人口原型准备替身，并回填真实类型的出生碰撞、附加占位、MonProp、Restore和不可计数标志。替身不代表真实外观、战斗数值、AI或首领技能已实现。清场读取实时人口coverage及活动／休眠单位，未生成房间或暂缓来源不能默认为已清空。
 
 源码接入、构建、代表路径运行与完整原版验收分别记录。已有有限V2只覆盖相应历史包和列出路径；管理准入不认证自然刷新点，管理击杀不认证正常战斗。任务链与首领AI分开计量，任务证据见各幕任务页。
 
 ## MPQ准备契约
 
-hosting准备不可变纯值，server不读表、资源或客户端副本。自然人口和monster-spawn使用同一准入。下表描述已准入类型与实现族的准备字段，不代表其他幕全部类型已支持。缺必需原动作／技能／碰撞数据明确暂缓，不把远程回落成近战。
+hosting准备不可变纯值，server不读表、资源或客户端副本。自然人口、NPC与恢复共用prepareAdmissionActor及ActorPublication；管理出生仍有显式参数入口，不能作为自然分布证据。下表描述已准入类型与实现族的准备字段，不代表其他幕全部类型已支持。缺必需原动作／技能／碰撞数据明确暂缓，不把远程回落成近战。
 
 | 数据 | 已准备／使用 |
 | --- | --- |
-| 人口 | Levels三难度池／区域等级；MonStats稀疏、概率、群组、族群与真实spawn key沿既有人口计划 |
+| 人口 | Levels三难度池／区域等级；MonStats稀疏、概率、群组、族群与真实spawn key由server/population实时执行 |
 | AI | AI、aidist／aidel及八项aip的三难度值；aidist=0按原35，玩家候选另受原55约束；原房间LOSDraw／NO_LOS_DRAW与初次察觉射线、察觉后追击标记；邻室激活及主／低Threat候选分开 |
 | 数值 | Level／noRatio／MonLvl，生命／AC、独立A1／A2TH和伤害、三槽ElMode／Type／Pct／MinD／MaxD／Dur、六抗性、Crit、DamageRegen、ToBlock／NoShldBlock、经验及既有掉落 |
 | 路径／动作 | Velocity／Run、家族百分比、MeleeRng、BaseId／flying／opendoors、SizeX／spawnCol、mGH／mBL／mKB／mWL、resurrectMode／corpseSel；AnimData释放、GH／BL／死亡／复活时长 |
 | 技能／弹体 | MissA1／A2；Skill1–4／SkMode／SkLvl的实际执行槽、MonSeq事件、DifficultyLevels.MonsterSkillBonus／MonsterColdDiv；Missiles五段伤害／HitShift、SrcDamage／EType／长度、Range／LevRange、Vel／VelLev、Activate、CollideType／CollideKill／AlwaysExplode、ClientSend／CanSlow／ReturnFire／HitClass、原命中回调／子弹型号 |
 | 组件／表现 | MonStats2十六组件选择数、TotalPieces及HitClass；区域选中类型先准备最多三个十六槽组合，新增类型在TotalPieces>2且区域类型数未满13时补入；无区域池使用原单体前十二槽路径。原AC位宽发送，实际SH盾牌影响格挡；近战用MonStats2.HitClass，弹体用Missiles.HitClass，元素／暴击标记在接触成功时计算。MonSounds／Light／调色／COF／DCC仍由原客户端解释 |
 
-缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。怪物弹体已接NextHit／NextDelay的玩家及伙伴接触窗口、NoMultiShot／NoUniqueMod和独立随机。区域组合以人口计划选型后的区域随机流准备；完整原版全区域初始化／房间随机调度尚未复刻，不能宣称同种子外观和出生位置逐单位一致。Vision缓存、特殊AI强制察觉旗标及动态拥挤仍待完整接入。
+缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。怪物弹体已接NextHit／NextDelay的玩家及伙伴接触窗口、NoMultiShot／NoUniqueMod和独立随机。区域组合以整局区域选型后的区域子流准备；完整原版全区域初始化／房间随机调度尚未复刻，不能宣称同种子外观和出生位置逐单位一致。Vision缓存、特殊AI强制察觉旗标及动态拥挤仍待完整接入。
 
 ## 移动与目标依据
 
@@ -41,6 +41,12 @@ gameplay/monsters/decision提供动作纯值，melee／skirmish／ranged／shama
 
 两端共享方向／原偏移表、SEIS尖刺目标、固定点速度和原路径掩码。距离／绕行／家族决策、伤害／暴击／GH、组件组合及生命比例纯计算供不同来源复用；客户端没有权威输入就不调用。组合状态按实例／区域／原类型由monsters拥有，hosting只准备初始纯值，不用全局静态缓存。分层证据见[参考设计](../../architecture/REFERENCE_DESIGN.md)。
 
+## 出生与休眠的公共生命周期
+
+hosting准备纯值，server/population持有唯一自然生成游标，monsters持有唯一Actor及休眠节点。自然出生、NPC和恢复复用prepareAdmissionActor与ActorPublication；既有NPC身份和休眠身份分别复验区域定义与源节点，不由调用方自报已分配。任务清场统一查询population::System::coverage，不维护另一份预规划出生账。
+
+压缩／恢复入口在[monsters/inactive.cpp](../../../src/server/systems/monsters/inactive.cpp)，特殊恢复使用显式继续点，完成前不对客户端可见或受击。保存字段、落点／修饰器阶段、保留条件及特殊AI／MapAI等未闭合边界统一见[人口公共生命周期](POPULATION.md#公共出生压缩与特殊恢复)，此处不复制恢复台账。
+
 ## 动作、死亡与奖励
 
 怪物动作结束与下一次AI决策使用两个时钟：`busyUntil`只表示动作锁，`neutralAt`记录待处理的ENDANIM。普通攻击、技能、GH／BL及复活结束进入NU时，`monsters::resumeAi`按当前难度的MonStats `aidel／aidel(N)／aidel(H)`安排思考；非正值沿原规则取15。等待从动作结束算起，不能把AI分支的默认1帧重试当成攻击间隔，也不能把站立等待拼进动画长度。原先已安排且晚于结束时点的AI事件保留，不额外叠加等待；移动结束仍沿即时决策路径。佣兵的轮询间隔与NU等待分别保存，避免把固定5帧轮询错当其原表1帧aidel。召唤物也接同一结束处理，重生怪物只由原家族AI消费该时钟。
@@ -49,7 +55,7 @@ gameplay/monsters/decision提供动作纯值，melee／skirmish／ranged／shama
 
 怪物ENDANIM使用公共`monsterAnimationTicks`：`max(2,ceil((frames-startFrame)×256/speed))`，不借用玩家普通动作的减一帧规则。服务端A1／A2、技能和恢复与自有客户端怪物动画共用此结束计算，包含使用玩家图形的女武神；命中仍在原事件帧，只由权威结算。当前MPQ既有导出中，`ZMA1HTH／ZMA2HTH`均16帧、速度256、事件帧9，zombie1三难度aidel为15／14／13；无速度加成、中断或额外AI等待时，源码计算的连续起手间隔为31／30／29个25Hz帧。它是静态推导，不是本次运行测量。
 
-本次仅核对与修改源码／文档，未构建或运行；现有包不含本次修正。完整中途变速重排、击退结束转GH的特殊事件链及全怪物／全部词缀组合尚未认证，不能把通用时钟修正称为全MonStats逐帧复刻。
+上述源码已纳入当前Release包；本轮冒烟未逐帧测量怪物时钟。完整中途变速重排、击退结束转GH的特殊事件链及全怪物／全部词缀组合尚未认证，不能把通用时钟修正称为全MonStats逐帧复刻。
 
 GH、冻结、击退和死亡使未释放动作失效。可靠队列重试保留动作随机与首次释放位置／目标，接触计划只生成一次；已释放弹体可在来源死亡后继续，同区规则不跨区追踪。server-snapshot的rules列出准备参数、动作／技能，运行列另含盾牌、巢生计数、蛛网和中断。构建／运行事实见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)及对应幕怪物专题，逐字段接线不代表所有组合已认证。
 

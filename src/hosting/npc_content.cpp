@@ -117,6 +117,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
     std::set<uint16_t> callbacks;
     for(int index=64;index<=452;++index) if(!strings.speech(index).empty()) callbacks.insert(uint16_t(index));
     auto &area = prepared.authority;
+    if(int(area.id)==136) return;
     std::map<int,std::shared_ptr<const server::MonsterRule>> combatRules;
     const auto npcRule=[&](const MonsterRecord &record) {
         const auto name=strings.find(record.name);
@@ -134,7 +135,6 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         if(fresh) entry->second=prepareNeutralMonsterRule(archives,data,prepared.terrain.request,record);
         result.combat=entry->second;return result;
     };
-    unsigned prisonerGroups=0;
     std::vector<Vec> prisonerMarkers;
     for(const auto *code:{"izualghost","drehya","tyrael3"}) {
         const bool wanted=(area.act==3 && std::string_view(code)=="izualghost") || (area.act==4 && std::string_view(code)!="izualghost");
@@ -143,22 +143,22 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
     }
     for (size_t sourceIndex=0;sourceIndex<prepared.terrain.map->terrain.data.objects.size();++sourceIndex) {
         const auto &source=prepared.terrain.map->terrain.data.objects[sourceIndex];
+        if(source.flags&1u) continue;
         if(int(area.id)==111 && source.type==2 && source.nativeIdentity && source.id>=0) {
             const auto &objects=data.tables.at("objects");bool cage=false;
             for(size_t row=0;row<objects.rows().size();++row) if(objects.number(row,"Id")==source.id && objects.number(row,"InitFn")==62) cage=true;
             const auto *prisoner=catalog.find("act5pow");
             const Vec marker{float(source.x),float(source.y)};
             const bool duplicate=std::any_of(prisonerMarkers.begin(),prisonerMarkers.end(),[&](Vec at){return (at-marker).length()<1;});
-            if(cage && !duplicate && prisonerGroups<3 && prisoner && !prisoner->hostile() && prisoner->walkVelocity.value_or(0)>0) {
-                ++prisonerGroups;prisonerMarkers.push_back(marker);
-                unsigned count=0;
-                for(int radius=0;radius<=5 && count<5;++radius) for(int y=-radius;y<=radius && count<5;++y) for(int x=-radius;x<=radius && count<5;++x) {
-                    if(std::max(std::abs(x),std::abs(y))!=radius) continue;
-                    const Vec at{float(source.x+x),float(source.y+y)};
-                    if(!area.collision.walkable(at,prisoner->spawnRule()) || std::any_of(area.npcs.begin(),area.npcs.end(),[&](const auto &n){return (n.spawnPosition-at).length()<1;})) continue;
-                    area.npcs.push_back({{},at,npcRule(*prisoner),sourceIndex,Vec{float(source.x),float(source.y)},source.id});++count;
-                }
-                if(count!=5) area.populationDeferred.push_back("Incomplete original prisoner placement");
+            if(cage && !duplicate) {
+                if(!prisoner || prisoner->hostile() || prisoner->walkVelocity.value_or(0)<=0)
+                    throw std::runtime_error("Missing original caged prisoner rule");
+                prisonerMarkers.push_back(marker);
+                auto rule=npcRule(*prisoner);rule.questInitFunction=62;
+                // Prepare identities only. Init62 performs its 25 birth
+                // attempts and three-group limit in room activation order.
+                for(int slot=0;slot<5;++slot)
+                    area.npcs.push_back({{},marker,rule,sourceIndex,marker,source.id});
             }
         }
         const MonsterRecord *record = nullptr;
@@ -179,14 +179,15 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
                     if(init==60) {record=catalog.find("compellingorb");questInit=init;}
                 }
         }
-        if (!record || record->hostile() || ((!record->npc || !record->interact) && record->id!="baalthrone" && record->id!="compellingorb")) continue;
+        const bool townPreset=area.town && source.type==1 && record && !record->critter;
+        if (!record || record->hostile() || (!townPreset && (!record->npc || !record->interact) &&
+            record->id!="baalthrone" && record->id!="compellingorb")) continue;
         auto rule=npcRule(*record);
         rule.questInitFunction=questInit;
-        const Vec marker{float(source.x)+.5f,float(source.y)+.5f};
-        const auto position = questInit==54?marker:area.collision.nearest(marker,record->movementRule());
-        if (questInit!=54 && (!area.collision.walkable(position,record->movementRule()) || (position-marker).length()>15))
-            throw std::runtime_error("Original NPC spawn is obstructed: "+record->id);
-        area.npcs.push_back({{}, position, std::move(rule),sourceIndex,
+        const Vec marker{float(source.x)+(source.type==1?.5f:0.f),float(source.y)+(source.type==1?.5f:0.f)};
+        // Authored monsters are placed by the server's native retry search;
+        // object callbacks retain the actual marker coordinate.
+        area.npcs.push_back({{}, marker, std::move(rule),sourceIndex,
             source.type==2?std::optional<Vec>{Vec{float(source.x),float(source.y)}}:std::nullopt,
             source.type==2?source.id:-1});
     }

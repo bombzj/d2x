@@ -2,9 +2,6 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
-#include "gameplay/monsters/identity.hpp"
-#include "gameplay/monsters/kind.hpp"
-#include "server/systems/monsters/admission.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include <map>
 #include <optional>
@@ -14,7 +11,6 @@
 
 namespace d2x::server::population {
 // Prepared spawn identities and per-area population lifecycle; no implicit Fallen fallback.
-using Spawn = monsters::Admission;
 struct DensityRoom {
   enum class Phase { Trial,Search,Leader,LeaderSetup,PartySetup,Party,Hut,Group,Modifiers,Champions,ChampionModifiers,Extras,Done };
   Phase phase{Phase::Trial};
@@ -37,7 +33,12 @@ struct DensityRoom {
   std::vector<int> modifiers;
   std::vector<EntityId> minions;
 };
-struct AreaPopulation { uint64_t generation{}; std::set<std::string> admittedSpawnKeys; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::set<EntityId> admittedNpcs; std::set<std::string> rejectedDensityKeys; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
+struct Coverage {
+    size_t pendingRooms{},deferred{};
+    bool complete() const {return !pendingRooms && !deferred;}
+};
+struct Neighborhood {Vec center;float radius;};
+struct AreaPopulation { uint64_t generation{}; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::set<EntityId> admittedNpcs; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
 struct QuestBirth {RegionId area;uint64_t generation{};std::string name;DensityRoom cursor;std::optional<Vec> position;};
 struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};unsigned occurrence{};int retryAttempts{},finalRetryAttempts{},birthTicks{};};
 struct WanderRoom {
@@ -59,7 +60,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     void initializeRegions(const MonsterRegionRules &);
     const State &read() const { return state_; }
-    DomainResult<EntityId> admit(const Spawn &);
+    Coverage coverage(RegionId,std::optional<Neighborhood> neighborhood={}) const;
     DomainResult<> requestQuestBirth(RegionId,std::string_view,TickContext,std::optional<Vec> position={});
     DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={},unsigned occurrence=0,
       int retryAttempts=0,int finalRetryAttempts=0,int birthTicks=0);

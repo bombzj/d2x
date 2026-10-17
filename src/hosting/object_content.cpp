@@ -169,6 +169,12 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     for (size_t sourceIndex=0;sourceIndex<region.map.terrain.data.objects.size();++sourceIndex) {
         const auto &source=region.map.terrain.data.objects[sourceIndex];
         if (source.type != 2 || !source.nativeIdentity || (source.flags&1u)) continue;
+        // These exclusions are present in the local 1.13c preset dispatcher.
+        // Later reference versions add server event bosses here; retail does
+        // not, so their unverified event-server behavior is not synthesized.
+        if((request.level==133 || request.level==135) && source.id==397) continue;
+        if(request.level==134 && source.id==402) continue;
+        if(request.level==136 && (source.id==268 || source.id==269 || source.id==26)) continue;
         WorldObject object; object.id = ids.allocate(); object.act = area.act;
         presetOrders.emplace(object.id,sourceIndex);
         object.objectClass = preset(source.id, area.act, request.level);

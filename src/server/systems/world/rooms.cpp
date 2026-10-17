@@ -7,40 +7,44 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "world/native_room_activation.hpp"
+#include "world/room_terrain.hpp"
 #include <algorithm>
 #include <limits>
 
 namespace d2x::server::world {
-// The kernel retains compact immutable terrain instructions and authoritative
-// unit state. Active collision cells are materialized only for leased rooms.
-// No DT1, MPQ, rendering map or file handle crosses this boundary.
+// Decoded room inputs are immutable; each act owns its mutable DRLG and shared
+// tile state. Collision and the separate active-room seed are produced at the
+// actual create operation, never copied from an offline whole-level snapshot.
 struct System::RoomRuntime {
-    struct Run {
-        uint32_t count{};
-        uint16_t flags{};
-        uint8_t blocked{}, light{}, terrain{};
-        bool same(const Run &other) const {
-            return flags == other.flags && blocked == other.blocked && light == other.light && terrain == other.terrain;
-        }
-    };
     struct Room {
+        RoomTerrainId key;
         RegionId area;
-        size_t index{};
-        RoomBounds bounds;
-        std::vector<Run> terrain;
+        size_t index{SIZE_MAX};
+        RoomBounds bounds{};
+        int act{};
+        bool town{};
         std::vector<size_t> near;
+        uint64_t creationOrder{};
+    };
+    struct Act {
+        std::unique_ptr<RoomTerrainSession> terrain;
+        std::unique_ptr<NativeRoomActivation> activation;
+        std::optional<uint64_t> advancedTick;
     };
     System &owner;
     std::vector<Room> rooms;
     std::map<std::pair<RegionId, size_t>, size_t> identities;
+    std::map<std::pair<int,RoomTerrainId>,size_t> anchors;
     std::map<PlayerId, size_t> clients;
     std::map<PlayerId,std::vector<RoomView>> clientRooms;
     std::map<RoomView,size_t> roomClients;
-    std::unique_ptr<NativeRoomActivation> activation;
+    std::array<Act,5> acts;
     bool dirty{true};
     uint64_t currentTick{};
     explicit RoomRuntime(System &system) : owner(system) {}
     AreaState &area(RegionId id) { return owner.ports_.areas.areas_.at(id); }
+    NativeRoomActivation &activation(size_t id) {return *acts.at(size_t(rooms.at(id).act)).activation;}
+    RoomTerrainSession &terrain(size_t id) {return *acts.at(size_t(rooms.at(id).act)).terrain;}
     std::optional<size_t> locate(RegionId id, Vec point) const {
         const auto *source = owner.ports_.areas.find(id);
         if (!source) return {};
@@ -58,6 +62,8 @@ struct System::RoomRuntime {
     }
     void release(size_t id) {
         const auto &room = rooms.at(id);
+        terrain(id).release(room.key);
+        if (room.index==SIZE_MAX) return;
         cells(room, [](Grid &grid, size_t cell) {
             grid.fullTerrainCollision[cell] = 0xffff;
             grid.terrainCollision[cell] = 0xff;
@@ -69,39 +75,61 @@ struct System::RoomRuntime {
         ++state.definition.collision.obstacleRevision;
     }
     void create(size_t id) {
-        const auto &room = rooms.at(id);
-        auto &state = area(room.area);
-        if (state.rooms.at(room.index).loaded) return;
-        size_t run = 0;
-        uint32_t remaining = room.terrain.at(0).count;
-        cells(room, [&](Grid &grid, size_t cell) {
-            const auto &value = room.terrain.at(run);
-            grid.fullTerrainCollision[cell] = value.flags;
-            grid.blocked[cell] = value.blocked;
-            grid.lightBlocked[cell] = value.light;
-            grid.terrainCollision[cell] = value.terrain;
-            if (!--remaining && ++run < room.terrain.size()) remaining = room.terrain[run].count;
-        });
-        auto &active=state.rooms.at(room.index);
+        auto &room = rooms.at(id);
+        terrain(id).create(room.key);
         if(owner.ports_.areas.roomCreationOrder_==UINT64_MAX) throw std::overflow_error("Native room creation order exhausted");
-        active.creationOrder=++owner.ports_.areas.roomCreationOrder_;
-        active.loaded = true;
-        if(active.randomRevision!=UINT64_MAX) {
-            ++active.randomRevision;
-            active.random=room.index<state.definition.initialRoomRandom.size()?state.definition.initialRoomRandom[room.index]:std::nullopt;
-        } else active.random.reset();
-        if (owner.openedTombs_.contains(room.area)) for (const auto &cell : state.definition.openedTombWall) {
-            auto &grid = state.definition.collision;
-            const int x = int(cell.index % grid.width), y = int(cell.index / grid.width);
-            if (x < room.bounds.x || x >= room.bounds.x + room.bounds.width ||
-                y < room.bounds.y || y >= room.bounds.y + room.bounds.height) continue;
-            grid.blocked[cell.index] = cell.blocked; grid.lightBlocked[cell.index] = cell.light;
-            grid.terrainCollision[cell.index] = cell.terrain; grid.fullTerrainCollision[cell.index] = cell.full;
+        room.creationOrder=++owner.ports_.areas.roomCreationOrder_;
+    }
+    void project(size_t id,const RoomTerrainSample &sample) {
+        const auto &room=rooms.at(id);
+        auto &state=area(room.area);
+        auto &active=state.rooms.at(room.index);
+        if (sample.width!=room.bounds.width || sample.height!=room.bounds.height ||
+            sample.collision.size()!=size_t(sample.width)*sample.height)
+            throw std::runtime_error("Materialized native room collision extent changed");
+        size_t from{};bool changed{};
+        cells(room,[&](Grid &grid,size_t cell) {
+            const auto flags=sample.collision.at(from++);
+            changed|=grid.fullTerrainCollision[cell]!=flags;
+            grid.fullTerrainCollision[cell]=flags;grid.terrainCollision[cell]=uint8_t(flags);
+            grid.blocked[cell]=(flags&0x09)!=0;grid.lightBlocked[cell]=(flags&0x22)!=0;
+        });
+        if (!active.loaded) {
+            active.loaded=true;active.creationOrder=room.creationOrder;
+            if (active.randomRevision!=UINT64_MAX) {
+                ++active.randomRevision;active.random=sample.initialActiveRandom;
+            } else active.random.reset();
         }
-        ++state.definition.collision.obstacleRevision;
+        state.definition.populationRooms.at(room.index)=sample.population;
+        if (changed) ++state.definition.collision.obstacleRevision;
     }
     void rebuild() {
         if (!dirty) return;
+        // New resource handoffs extend the logical graph. Existing references,
+        // prefetch cursor, tiles and gameplay random remain in the same DRLG.
+        for (auto &[region,state] : owner.ports_.areas.areas_) {
+            (void)region;
+            if (!state.rooms.empty()) continue;
+            const auto &prepared=state.definition.roomTerrain;
+            if (!prepared || prepared->act()!=state.definition.act)
+                throw std::runtime_error("Authority area lacks decoded native room inputs");
+            auto &act=acts.at(size_t(prepared->act()));
+            if (!act.terrain) act.terrain=prepared->instantiate();
+            else act.terrain->include(*prepared);
+            for (const auto &link : prepared->rooms()) if (!anchors.contains({prepared->act(),link.id})) {
+                anchors.emplace(std::pair{prepared->act(),link.id},rooms.size());
+                Room room;room.key=link.id;room.area=RegionId(link.id.level);
+                room.act=prepared->act();room.town=link.town;
+                rooms.push_back(std::move(room));
+            }
+            for (const auto &link : prepared->rooms()) {
+                if (link.near.empty()) continue;
+                auto &room=rooms.at(anchors.at({prepared->act(),link.id}));std::vector<size_t> near;
+                for (const auto other : link.near) near.push_back(anchors.at({prepared->act(),other}));
+                if (!room.near.empty() && room.near!=near) throw std::runtime_error("Live native room graph changed");
+                room.near=std::move(near);
+            }
+        }
         for (auto &[region, state] : owner.ports_.areas.areas_) {
             const auto &layout = state.definition.activation.rooms();
             if (!state.rooms.empty()) continue;
@@ -113,16 +141,11 @@ struct System::RoomRuntime {
                 if (bounds.x < 0 || bounds.y < 0 || bounds.width <= 0 || bounds.height <= 0 ||
                     bounds.x + bounds.width > grid.width || bounds.y + bounds.height > grid.height)
                     throw std::runtime_error("Authority room lies outside its level");
-                Room room{region, index, bounds, {}, {}};
-                cells(room, [&](Grid &source, size_t cell) {
-                    Run value{1, source.fullTerrainCollision[cell], source.blocked[cell],
-                        source.lightBlocked[cell], source.terrainCollision[cell]};
-                    if (!room.terrain.empty() && room.terrain.back().same(value) && room.terrain.back().count < UINT32_MAX)
-                        ++room.terrain.back().count;
-                    else room.terrain.push_back(value);
-                });
-                identities.emplace(std::pair{region, index}, rooms.size());
-                rooms.push_back(std::move(room));
+                const RoomTerrainId key{int(region),(int(state.definition.origin.x)+bounds.x)/5,
+                    (int(state.definition.origin.y)+bounds.y)/5};
+                const auto id=anchors.at({state.definition.act,key});
+                auto &room=rooms.at(id);room.index=index;room.bounds=bounds;
+                identities.emplace(std::pair{region,index},id);
             }
             // Only authored room footprints own collision. Snapshot padding
             // must not shadow the adjacent level's real seam cells.
@@ -132,38 +155,46 @@ struct System::RoomRuntime {
             std::fill(grid.lightBlocked.begin(), grid.lightBlocked.end(), 1);
             ++grid.obstacleRevision;
         }
-        for (auto &room : rooms) {
-            room.near.clear();
-            const auto &source = area(room.area).definition;
-            for (const auto &link : source.roomNear.at(room.index)) {
-                const auto *target = owner.ports_.areas.find(link.area);
-                if (!target) continue;
-                const Vec point{float(link.x * 5) - target->definition.origin.x,
-                    float(link.y * 5) - target->definition.origin.y};
-                const auto adjacent = locate(link.area, point);
-                if (!adjacent) throw std::runtime_error("Prepared near-room anchor has no owner");
-                room.near.push_back(*adjacent);
-            }
-        }
-        // Changing the allocated graph requires rebuilding its derived counts.
-        // Never decrement references through a different near-room graph.
-        activation = std::make_unique<NativeRoomActivation>(NativeRoomActivation::Operations{
+        for (auto &act : acts) if (act.terrain && !act.activation)
+          act.activation = std::make_unique<NativeRoomActivation>(NativeRoomActivation::Operations{
             [this](size_t id) { return rooms.at(id).near; },
-            [](size_t) {},
+            [this](size_t id) { terrain(id).prepare(rooms.at(id).key); },
             [this](size_t id) { create(id); },
             [this](size_t id) { release(id); },
             [this](size_t id) { return tryRetire(id); }}, NativeRoomActivation::Side::Server);
-        for (size_t id = 0; id < rooms.size(); ++id)
-            if (area(rooms[id].area).rooms.at(rooms[id].index).loaded) activation->initialize(id);
-        clients.clear(); dirty = false;
+        dirty = false;
+        publish();
     }
     void publish() {
         for (auto &[id, state] : owner.ports_.areas.areas_)
             for (auto &room : state.rooms) { room.references = {}; room.status = 4; }
-        for (const auto &[id, status] : activation->states()) {
+        for (const auto &act : acts) if (act.activation) for (const auto &[id, status] : act.activation->states()) {
             const auto &room = rooms.at(id);
+            if (room.index==SIZE_MAX) continue;
             auto &state = area(room.area).rooms.at(room.index);
             state.references = status.references; state.status = status.status;
+            if (status.active) {
+                std::vector<std::pair<int,int>> opened;
+                if (owner.openedTombs_.contains(room.area)) {
+                    const auto &definition=area(room.area).definition;
+                    for (const auto &cell : definition.openedTombWall) {
+                        const std::pair tile{(int(cell.index%definition.collision.width)+int(definition.origin.x))/5,
+                            (int(cell.index/definition.collision.width)+int(definition.origin.y))/5};
+                        if (std::find(opened.begin(),opened.end(),tile)==opened.end()) opened.push_back(tile);
+                    }
+                }
+                const auto sample=act.terrain->sample(room.key,false,opened);
+                if (!sample) throw std::runtime_error("Active native room lacks collision");
+                project(id,*sample);
+            }
+        }
+    }
+    void change(std::optional<size_t> previous,std::optional<size_t> next) {
+        if (previous && next && rooms.at(*previous).act==rooms.at(*next).act)
+            activation(*next).changeClientRoom(previous,next);
+        else {
+            if (next) activation(*next).changeClientRoom({},next);
+            if (previous) activation(*previous).changeClientRoom(previous,{});
         }
     }
     void changeClientRooms(PlayerId player,const std::vector<RoomView> &next,uint64_t tick) {
@@ -184,11 +215,13 @@ struct System::RoomRuntime {
     }
     bool retain(size_t id, uint64_t tick) const {
         const auto &room = rooms.at(id);
+        const auto &act=acts.at(size_t(room.act));
+        if (room.town || int(room.area) == 120)
+            for (const auto &[key, state] : act.activation->states())
+                if (rooms.at(key).area == room.area && state.status <= 1) return true;
+        if (room.index==SIZE_MAX) return false;
         if(owner.ports_.areas.at(room.area).rooms.at(room.index).portalRetained) return true;
         const auto &source = owner.ports_.areas.at(room.area).definition;
-        if (source.town || int(room.area) == 120)
-            for (const auto &[key, state] : activation->states())
-                if (rooms.at(key).area == room.area && state.status <= 1) return true;
         const auto contains = [&](RegionId region, Vec point) { return locate(region, point) == id; };
         const auto &ports = owner.ports_;
         const auto portal = [&](const auto &value) {
@@ -219,6 +252,7 @@ struct System::RoomRuntime {
     }
     bool tryRetire(size_t id) {
         const auto &room=rooms.at(id);
+        if (room.index==SIZE_MAX) return true;
         if(!owner.ports_.monsters.compressRoom(room.area,room.index,currentTick)) return false;
         owner.ports_.objects.compressRoom(room.area,room.index,currentTick);
         return true;
@@ -227,14 +261,26 @@ struct System::RoomRuntime {
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
 System::~System() = default;
 void System::invalidateRooms() { rooms_->dirty = true; }
+void System::refreshRoomTerrain() {rooms_->rebuild();rooms_->publish();}
 void System::activate(RegionId region, Vec point) {
     activateAct(region);
     rooms_->rebuild();
     if (const auto id = rooms_->locate(region, point)) {
-        for (const auto near : rooms_->rooms.at(*id).near) rooms_->activation->initialize(near);
-        rooms_->activation->initialize(*id);
+        // Original StreamRoomAtCoords initializes the destination only.
+        // ChangeClientRoom supplies the actual reference propagation later.
+        rooms_->activation(*id).initialize(*id);
         rooms_->publish();
     }
+}
+void System::changeClientRoom(PlayerId id) {
+    rooms_->rebuild();
+    const auto *player=ports_.players.find(id);
+    const auto old=rooms_->clients.find(id);
+    const std::optional<size_t> previous=old==rooms_->clients.end()?std::nullopt:std::optional<size_t>{old->second};
+    const auto next=player && player->entered?rooms_->locate(player->area,player->position+Vec{.5f,.5f}):std::nullopt;
+    rooms_->change(previous,next);
+    if (next) rooms_->clients.insert_or_assign(id,*next);else rooms_->clients.erase(id);
+    rooms_->publish();
 }
 void System::updateRooms(TickContext tick) {
     rooms_->rebuild();
@@ -247,11 +293,14 @@ void System::updateRooms(TickContext tick) {
         const auto next = rooms_->locate(player.area, player.position + Vec{.5f, .5f});
         if (!next) throw std::runtime_error("Entered player has no owning native room");
         const auto old = rooms_->clients.find(id);
-        rooms_->activation->changeClientRoom(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next);
+        rooms_->change(old == rooms_->clients.end() ? std::nullopt : std::optional<size_t>{old->second}, next);
         rooms_->clients.insert_or_assign(id, *next);
+        rooms_->publish();
         std::vector<RoomView> registered;
         for(const auto adjacent:rooms_->rooms.at(*next).near) {
-            const auto &room=rooms_->rooms.at(adjacent);const auto &area=ports_.areas.at(room.area);
+            const auto &room=rooms_->rooms.at(adjacent);
+            if (room.index==SIZE_MAX) continue;
+            const auto &area=ports_.areas.at(room.area);
             if(area.rooms.at(room.index).loaded) registered.push_back({room.area,
                 (int(area.definition.origin.x)+room.bounds.x)/5,(int(area.definition.origin.y)+room.bounds.y)/5});
         }
@@ -259,18 +308,21 @@ void System::updateRooms(TickContext tick) {
         previous.erase(id);
     }
     for (const auto &[id, room] : previous) {
-        rooms_->activation->changeClientRoom(room, {});
+        rooms_->change(room, {});
         rooms_->clients.erase(id);
     }
     for(const auto id:departed) {rooms_->changeClientRooms(id,{},tick.tick);rooms_->clientRooms.erase(id);}
-    rooms_->activation->update(tick.tick, [&](size_t room) { return rooms_->retain(room, tick.tick); });
+    for (auto &act : rooms_->acts) if (act.activation && act.advancedTick!=tick.tick) {
+        act.activation->update(tick.tick, [&](size_t room) { return rooms_->retain(room, tick.tick); });
+        act.advancedTick=tick.tick;
+    }
     rooms_->publish();
-    for (const auto &[id, state] : rooms_->activation->states()) {
+    for (const auto &act : rooms_->acts) if (act.activation) for (const auto &[id, state] : act.activation->states()) {
         if (state.status >= 3) continue;
         const auto &room = rooms_->rooms.at(id);
-        const auto &definition = ports_.areas.at(room.area).definition;
-        for (const auto &near : definition.roomNear.at(room.index))
-            if (!ports_.areas.find(near.area)) request(near.area);
+        if (!ports_.areas.find(room.area)) request(room.area);
+        for (const auto near : room.near)
+            if (!ports_.areas.find(rooms_->rooms.at(near).area)) request(rooms_->rooms.at(near).area);
     }
 }
 bool System::visible(PlayerId id, RegionId region, Vec point) const {

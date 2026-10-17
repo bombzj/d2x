@@ -10,7 +10,6 @@
 #include "world/cow_level.hpp"
 #include "world/maze.hpp"
 #include "world/outdoor/outdoor.hpp"
-#include "world/population.hpp"
 #include "world/world_report.hpp"
 #include "world/region.hpp"
 #include "world/outdoor/native_act_layout.hpp"
@@ -29,6 +28,132 @@
 #include <fstream>
 #include <iostream>
 #include <raylib.h>
+
+namespace {
+// Existing native-map diagnostics, using the same decoded-input session and
+// server DRLG state machine as the authority world. No synthetic full-level
+// terrain is installed before these events.
+nlohmann::json replayHostRooms(d2x::Archives &archives,int level,uint32_t seed,int difficulty,
+    const nlohmann::json &request) {
+    using Json=nlohmann::json;
+    using Key=d2x::RoomTerrainId;
+    auto catalog=d2x::sharedWorldCatalog(archives,difficulty);
+    const int act=catalog->level(level).act;
+    d2x::TileLibraryCache libraries(archives);
+    std::unique_ptr<d2x::RoomTerrainSession> terrain;
+    std::vector<d2x::RoomTerrainLink> rooms;
+    std::map<Key,size_t> indices;
+    std::set<int> included;
+    const auto include=[&](int area) {
+        if (included.contains(area)) return;
+        if (catalog->level(area).act!=act) throw std::runtime_error("Host replay crosses acts");
+        d2x::NativeMapGenerator source(archives,*catalog,libraries,act,seed,difficulty,d2x::NativeRoomActivation::Side::Server);
+        const auto prepared=source.prepareRoomTerrain(area,catalog);
+        if (terrain) terrain->include(*prepared); else terrain=prepared->instantiate();
+        for (const auto &room : prepared->rooms()) if (!indices.contains(room.id)) {
+            indices.emplace(room.id,rooms.size());rooms.push_back(room);
+        } else if (!room.near.empty()) {
+            auto &old=rooms.at(indices.at(room.id));
+            if (!old.near.empty() && old.near!=room.near) throw std::runtime_error("Host replay graph changed");
+            old=room;
+        }
+        included.insert(area);
+    };
+    include(level);
+    Json creations=Json::array(),retirements=Json::array();
+    d2x::NativeRoomActivation activation({
+        [&](size_t id) {std::vector<size_t> result;for (const auto key : rooms.at(id).near) result.push_back(indices.at(key));return result;},
+        [&](size_t id) {terrain->prepare(rooms.at(id).id);},
+        [&](size_t id) {
+            const auto key=rooms.at(id).id;terrain->create(key);
+            const auto value=terrain->sample(key);
+            Json row{{"level",key.level},{"x",key.x},{"y",key.y},
+                {"tileRandom",{uint32_t(value->tileRandom),uint32_t(value->tileRandom>>32)}}};
+            row["activeRandom"]=value->initialActiveRandom?Json::array({uint32_t(*value->initialActiveRandom),
+                uint32_t(*value->initialActiveRandom>>32)}):Json{};
+            creations.push_back(std::move(row));
+        },
+        [&](size_t id) {
+            const auto key=rooms.at(id).id;terrain->release(key);
+            retirements.push_back({{"level",key.level},{"x",key.x},{"y",key.y}});
+        },{}},d2x::NativeRoomActivation::Side::Server);
+    std::array<std::optional<size_t>,8> clients;
+    uint64_t frame{};
+    Json report{{"id",level},{"seed",seed},{"difficulty",difficulty},{"mode","server"},
+        {"events",Json::array()},{"samples",Json::array()}};
+    const auto words=[](uint64_t value) {return Json::array({uint32_t(value),uint32_t(value>>32)});};
+    const auto identity=[](Key key) {return Json{{"level",key.level},{"x",key.x},{"y",key.y}};};
+    try {
+        const auto &events=request.at("native").at("events");
+        if (!events.is_array() || events.size()>65536) throw std::runtime_error("Invalid host DRLG events");
+        for (const auto &event : events) {
+            const auto op=event.at("op").get<std::string>();
+            const Key key{event.at("level"),event.at("x"),event.at("y")};
+            report["events"].push_back(event);include(key.level);
+            const auto id=indices.at(key);
+            if (op=="enter") {
+                auto &previous=clients.at(event.value("client",size_t{}));
+                activation.initialize(id);activation.changeClientRoom(previous,id);previous=id;
+            } else if (op=="change") {
+                auto &previous=clients.at(event.value("client",size_t{}));
+                if (!terrain->sample(key)) throw std::runtime_error("Native ChangeClientRoom requires an active destination");
+                activation.changeClientRoom(previous,id);previous=id;
+            } else if (op=="stream") activation.initialize(id);
+            else if (op=="leave") {
+                auto &previous=clients.at(event.value("client",size_t{}));
+                activation.changeClientRoom(previous,{});previous.reset();
+            } else if (op=="tick" || op=="frame") {
+                const auto count=event.value("frames",1u);
+                if (count>250) throw std::runtime_error("Host DRLG tick limit exceeded");
+                for (unsigned i=0;i<count;++i) {
+                    if (op=="tick") activation.updateDrlg();
+                    else activation.update(++frame,[&](size_t room) {
+                        if (!rooms.at(room).town && rooms.at(room).id.level!=120) return false;
+                        for (const auto &[other,state] : activation.states())
+                            if (rooms.at(other).id.level==rooms.at(room).id.level && state.status<=1) return true;
+                        return false;
+                    });
+                }
+            } else if (op=="retire") {
+                if (!activation.retire(id)) throw std::runtime_error("Host replay room is not eligible for retirement");
+            } else if (op=="reveal") activation.reveal(id);
+            else if (op=="hide") activation.hide(id);
+            else if (op=="sample" || op=="observe") {
+                const auto active=terrain->sample(key);
+                Json sample{{"level",key.level},{"x",key.x*5},{"y",key.y*5},{"loaded",bool(active)},
+                    {"collisionActive",bool(active)}};
+                if (!active && op=="sample") throw std::runtime_error("Host replay sample is inactive");
+                if (active) {
+                    sample["width"]=active->width;sample["height"]=active->height;sample["flags"]=active->collision;
+                    sample["near"]=Json::array();
+                    for (const auto near : active->activeNear) {
+                        const bool details=!event.value("ownedOnly",false) || near==key;
+                        const auto other=terrain->sample(near,details);
+                        if (!other) throw std::runtime_error("Host replay active near room lacks collision");
+                        auto data=identity(near);data["tileRandom"]=words(other->tileRandom);
+                        data["activeRandom"]=other->initialActiveRandom?words(*other->initialActiveRandom):Json{};
+                        data["logicalNear"]=Json::array();data["tiles"]=Json::array();
+                        if (event.value("ownedOnly",false)) data["details"]=details;
+                        for (const auto link : rooms.at(indices.at(near)).near) data["logicalNear"].push_back(identity(link));
+                        for (const auto &tile : other->tiles) data["tiles"].push_back({
+                            {"array",std::array{"floor","wall","shadow"}.at(size_t(tile.array))},
+                            {"x",tile.x},{"y",tile.y},{"type",tile.type},{"flags",tile.flags},
+                            {"library",tile.library},{"record",tile.record},{"collision",tile.collision}});
+                        sample["near"].push_back(std::move(data));
+                    }
+                }
+                report["samples"].push_back(std::move(sample));
+            } else throw std::runtime_error("Unknown host DRLG operation");
+        }
+    } catch (const std::exception &error) {report["error"]=error.what();report["failedEvent"]=report["events"].size()-1;}
+    report["creations"]=std::move(creations);report["retirements"]=std::move(retirements);
+    report["rooms"]=Json::array();
+    for (auto room=rooms.rbegin();room!=rooms.rend();++room) if (room->id.level==level)
+        report["rooms"].push_back({{"x",room->id.x},{"y",room->id.y},
+            {"width",room->width},{"height",room->height}});
+    return report;
+}
+}
 
 int main(int argc, char **argv) {
     try {
@@ -50,7 +175,7 @@ int main(int argc, char **argv) {
                    "  ... loot-plan <TC-name> <item-level> <seed> [upgrade-level]\n"
                    "  ... special <unique|set> <item-code> <item-level> <seed>\n"
                    "  ... loot-entry <monster> <normal|champion|unique|minion|boss|superunique> <difficulty:0-2> <level-ID> [superunique-ID]\n"
-                   "  ... population <level-ID> [normal|nightmare|hell] [seed]\n";
+                   "  Native population is inspected through server-snapshot.\n";
             return 0;
         }
         d2x::Archives a;
@@ -319,40 +444,6 @@ int main(int argc, char **argv) {
                                 << " hidden=" << cell.hidden() << " tile=" << map.tileIndex(cell, x, y)
                                 << '\n';
                     }
-        } else if (command == "population" && argc >= 4 && argc <= 6) {
-            d2x::PopulationSettings settings;
-            settings.seed = d2x::freshSeed();
-            if (argc >= 5) {
-                std::string difficulty = argv[4];
-                if (difficulty == "normal")
-                    settings.difficulty = 0;
-                else if (difficulty == "nightmare")
-                    settings.difficulty = 1;
-                else if (difficulty == "hell")
-                    settings.difficulty = 2;
-                else
-                    throw std::runtime_error("Difficulty expects normal, nightmare or hell");
-            }
-            if (argc == 6) {
-                std::string seed = argv[5];
-                auto [end, error] = std::from_chars(seed.data(), seed.data() + seed.size(), settings.seed);
-                if (error != std::errc{} || end != seed.data() + seed.size())
-                    throw std::runtime_error("Seed expects an unsigned 32-bit decimal integer");
-            }
-            d2x::WorldCatalog world(a);
-            d2x::DataTable stats(a.read("data/global/excel/monstats.txt"));
-            d2x::MonsterCatalog monsters(a, stats);
-            const auto &level = world.level(std::stoi(argv[3]));
-            auto available = world.availability(a, level.id);
-            if (level.act != 0 || !available.ready())
-                throw std::runtime_error("Population inspection requires an available Act I preset level");
-            const auto &recipe = *available.recipe;
-            const auto &preset = world.presets().at(recipe.preset);
-            d2x::Map map;
-            d2x::TileLibraryCache cache(a);
-            map.load(a, cache, recipe, settings.seed);
-            auto plan = d2x::planPopulation(monsters, &level, preset, map, settings);
-            d2x::writePopulationReport(std::cout, plan, &level, preset, settings);
         } else if (command == "native-map" && (argc == 6 || argc == 7)) {
             using Json = nlohmann::json;
             auto integer = [](std::string_view text, auto &value) {
@@ -362,6 +453,16 @@ int main(int argc, char **argv) {
             };
             int level{}, difficulty{}; uint32_t seed{};
             integer(argv[3], level); integer(argv[4], seed); integer(argv[5], difficulty);
+            if (argc==7 && std::string_view(argv[6])!="complete" && std::string_view(argv[6])!="prepared") {
+                std::ifstream input(argv[6]);
+                const auto original=Json::parse(input);
+                if (original.at("native").value("mode",std::string{})=="server") {
+                    if (original.at("id")!=level || original.at("seed")!=seed || original.at("difficulty")!=difficulty)
+                        throw std::runtime_error("Host replay identity mismatch");
+                    auto report=replayHostRooms(a,level,seed,difficulty,original);
+                    const bool failed=report.contains("error");std::cout<<report.dump()<<'\n';return failed?1:0;
+                }
+            }
             d2x::WorldCatalog catalog(a, difficulty);
             d2x::TileLibraryCache cache(a);
             d2x::NativeMapGenerator generator(a, catalog, cache, catalog.level(level).act, seed, difficulty);
@@ -379,17 +480,15 @@ int main(int argc, char **argv) {
                     {"auxiliary", r.auxiliary}, {"themeMask", r.themeMask}});
             }
             if (argc == 7 && std::string_view(argv[6]) == "prepared") {
-                // Export the actual host preparation path, without substituting
-                // completeLevel's different activation order.
+                // Resource preparation has no authority room tiles or seeds.
+                // Use native.mode=server events to materialize the host path.
                 const auto prepared = d2x::generateArea(a, {seed, catalog.level(level).act, level, difficulty});
                 const auto &grid = prepared.map->grid;
                 report["offset"] = {{"x", int(prepared.origin.x)}, {"y", int(prepared.origin.y)}};
                 report["size"] = {{"width", grid.width}, {"height", grid.height}};
-                report["collision"] = grid.fullTerrainCollision;
-                report["initialRoomRandom"] = Json::array();
-                for (const auto &[anchor, random] : prepared.initialRoomRandom)
-                    report["initialRoomRandom"].push_back({{"x", anchor.first}, {"y", anchor.second},
-                        {"low", uint32_t(random)}, {"high", uint32_t(random >> 32)}});
+                report["collision"] = std::vector<uint16_t>(size_t(grid.width)*grid.height,0xffff);
+                report["materializedRooms"] = 0;
+                report["decodedRooms"] = prepared.roomTerrain->rooms().size();
                 std::cout << report.dump() << '\n';
                 return 0;
             }

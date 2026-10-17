@@ -83,7 +83,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareLevelSpawn(
         *data->room,5,{},false,collision);
 }
 DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(const Admission &request,RoomRandomLoan loan,
-    int attempts,std::optional<size_t> logicalRegion,bool probe,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    int attempts,std::optional<size_t> logicalRegion,bool probe,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool stagedAdmission) {
     if(!request.rule || !collision || !std::isfinite(request.position.x) || !std::isfinite(request.position.y) ||
         request.area!=loan.room.area || request.identity.spawnKey.empty()) return {DomainStatus::InvalidRequest,{}};
     if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};
@@ -119,7 +119,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
             const auto index=layout->single?0:layout->cells.at(size_t(tileRow)*(layout->width+1)+tileColumn);
             if(layout->regions.at(index).index!=logicalIndex) return false;
         }
-        if(rule.spawnAuxiliary) {
+        if(rule.spawnAuxiliary && (!probe || stagedAdmission || !rule.spawnAuxiliaryOnAdmissionOnly)) {
             const auto &[offset,mask]=*rule.spawnAuxiliary;
             const int atX=column+int(offset.x),atY=row+int(offset.y);
             const auto adjacent=ports_.areas.roomAtPosition(room.area,Vec{float(room.x*5),float(room.y*5)}-roomArea.origin,atX,atY);
@@ -219,7 +219,8 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareTrapControl
 }
 DomainResult<EntityId> System::stageRoomSpawn(const Admission &request,RoomRandomLoan &loan,int attempts,EntityIds &ids,
     uint64_t &random,NativeBirthBatch &batch,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
-    const auto searched=prepareRoomSpawn(request,loan,attempts,{},true,collision);
+    // Defer allocation to the batch, but retain actual birth collision checks.
+    const auto searched=prepareRoomSpawn(request,loan,attempts,{},true,collision,true);
     if(!searched) return {searched.status,{}};
     auto &search=*(*searched.value)->data_;
     loan=*search.room;
@@ -236,247 +237,6 @@ DomainResult<EntityId> System::stageRoomSpawn(const Admission &request,RoomRando
     return {DomainStatus::Applied,id};
 }
 void System::publishBirthComponents(NativeBirthBatch &batch) noexcept {publishComponents(batch.palettes);}
-DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) {
-    if(modifierPending_ || restoring_) return {DomainStatus::Conflict,{}};
-    const auto &area=ports_.areas.at(region).definition;
-    const auto &bounds=area.activation.rooms().at(index);
-    const RoomView room{region,(int(area.origin.x)+bounds.x)/5,(int(area.origin.y)+bounds.y)/5};
-    const auto order=ports_.areas.roomUnitOrder(room);
-    for(const auto id:order) {
-        const auto *unit=find(id);if(!unit) continue;
-        if(unit->owner || !unit->admissionRule || unit->busyUntil>tick || unit->skillMotion || unit->poison || unit->wound ||
-            (!unit->alive() && !unit->rewardComplete)) return {DomainStatus::Unavailable,{}};
-        if(unit->revision>=UINT64_MAX-2) return {DomainStatus::Capacity,{}};
-        if(unit->questNpc || unit->rule.boss || unit->rule.nativeSpawnFloor || unit->identity.rank!=MonsterRank::Normal ||
-            unit->identity.spawnKey.starts_with("quest.") || unit->specialTargetOrder || unit->wanderTargetOrder)
-            return {DomainStatus::NotImplemented,{}};
-    }
-    auto loan=ports_.areas.roomRandom(room);if(!loan) return {loan.status,{}};
-    std::vector<std::pair<EntityId,bool>> decisions;
-    effects::AuraUnitPublication removal;
-    for(const auto id:order) {
-        const auto found=state_.actors.find(id);if(found==state_.actors.end()) continue;
-        const auto &unit=found->second;
-        const bool dead=!unit.alive();
-        bool compress=area.saveMonsters || unit.restoredFromInactive;
-        if(dead && tick>=unit.busyUntil && limitedRandom(loan.value->next,3)!=0) compress=false;
-        if(dead) {
-            if(unit.alignment()==UnitAlignment::Good || unit.identity.rank==MonsterRank::Unique || unit.identity.rank==MonsterRank::Champion ||
-                unit.identity.rank==MonsterRank::SuperUnique || unit.identity.rank==MonsterRank::Minion) compress=false;
-            if(unit.rule.states) for(const auto state:ports_.effects.unitStates(id,tick))
-                if(unit.rule.states->at(state).corpseUnselectable) compress=false;
-        }
-        if(unit.rule.restore==0) compress=false;
-        else if(unit.rule.restore==2) compress=true;
-        decisions.emplace_back(id,compress);
-        if(compress) {
-            const auto prepared=ports_.effects.prepareUnitCurseRemoval(removal,id,tick);
-            if(!prepared) return prepared;
-        }
-    }
-    if(!ports_.effects.validateAuraUnits(removal)) return {DomainStatus::Stale,{}};
-    if(!removal.facts.empty()) {
-        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},region},std::move(removal.facts)});
-        if(!sent) return {sent.status,{}};
-    }
-    ports_.effects.publishAuraUnits(removal);
-    ports_.areas.publishRoomRandom(*loan.value);
-    auto &saved=state_.inactive[{region,index}];
-    for(const auto &[id,compress]:decisions) {
-        const auto found=state_.actors.find(id);
-        const auto &unit=found->second;
-        const bool dead=!unit.alive();
-        if(compress) {
-            InactiveMonster node;
-            node.id=id;node.identity=unit.identity;node.implementation=unit.implementation;
-            node.area=region;node.position=unit.position;node.admissionRule=unit.admissionRule;
-            node.frame=tick;node.revision=unit.revision;node.life=unit.life;node.maximumLife=unit.maximumLife;
-            node.corpse=unit.corpse;node.selfResurrections=unit.selfResurrections;
-            if(unit.nativeStats && unit.rule.stats) {
-                const auto experience=unit.rule.stats->names.find("experience");
-                if(experience!=unit.rule.stats->names.end()) {
-                    const auto values=ports_.effects.unitStatValues(id,tick);
-                    if(!values) throw std::logic_error("Missing native inactive monster stats");
-                    node.experience=values->get({experience->second,0});
-                }
-            }
-            node.alignment=int(unit.alignment());node.hostile=unit.hostile;node.dead=dead;node.resurrected=unit.restoredFromInactive;
-            node.noTreasure=unit.rule.noTreasure;node.noExperience=unit.rule.noExperience;
-            node.uncounted=unit.uncounted;
-            node.ownsMinions=unit.ownsNativeMinions;node.transferMinions=unit.transferMinionsOnDeath;
-            node.minionOwner=unit.nativeMinionOwner;node.minions=unit.nativeMinions;
-            node.wander=unit.wanderTargetOrder!=0;node.special=unit.specialTargetOrder!=0;
-            node.modifiers=unit.rule.nativeModifiers;node.nameSeed=unit.rule.enchantment?unit.rule.enchantment->nameSeed:0;
-            node.skillPositions=unit.skillPositions;node.componentParameter=unit.components[10];node.nestSpawned=unit.nestSpawned;
-            saved.insert(saved.begin(),std::move(node));
-        }
-        ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
-        ports_.areas.removeRoomUnit(id);state_.actors.erase(found);
-    }
-    if(saved.empty()) state_.inactive.erase({region,index});
-    return {DomainStatus::Applied,std::monostate{}};
-}
-DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t tick) {
-    const auto *unit=find(source.id);if(!unit) return {DomainStatus::Stale,{}};
-    if(unit->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    auto candidate=*unit;
-    attributes::MonsterResourceTrace resources(candidate,tick);
-    const auto sources=ports_.effects.unitStatSources(source.id,tick);
-    resources.sampleSources(sources);
-    resources.writeBaseStat("maxhp",nativeNarrow(source.maximumLife),sources);
-    resources.writeBaseStat("alignment",source.alignment,sources);
-    resources.writeBaseStat("experience",source.experience,sources);
-    resources.seedLife(Fixed8::fromRaw(nativeNarrow(source.dead?0:uint32_t(tick-source.frame)<7500?source.life:source.maximumLife)));
-    auto life=resources.take();candidate.nativeStats=std::move(life.intrinsic);
-    candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=!source.dead && candidate.life==0;
-    candidate.nativeMinionOwner=source.minionOwner;candidate.nativeMinions=source.minions;
-    candidate.ownsNativeMinions=source.ownsMinions;candidate.transferMinionsOnDeath=source.transferMinions;
-    candidate.rule.noTreasure=source.noTreasure;candidate.rule.noExperience=source.noExperience;
-    candidate.restoredFromInactive=true;
-    candidate.corpse=source.corpse;candidate.selfResurrections=source.selfResurrections;
-    candidate.uncounted=source.uncounted;
-    candidate.identity=source.identity;
-    if(source.dead) {candidate.deathTick=tick;candidate.rewardComplete=true;}
-    if(source.admissionRule->sharedRandomComponents) {
-        candidate.components[10]=uint8_t(source.componentParameter);
-        if(source.admissionRule->sharedRandomComponents&(1u<<11)) candidate.components[11]=uint8_t(source.componentParameter);
-    }
-    if(candidate.rule.ai.kind==MonsterAiKind::SandMaggot) candidate.nestSpawned=source.nestSpawned;
-    if(source.wander) {
-        if(state_.nextWanderTargetOrder==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        candidate.wanderTargetOrder=state_.nextWanderTargetOrder;
-    }
-    if(source.special) {
-        if(state_.nextSpecialTargetOrder==UINT64_MAX) return {DomainStatus::Capacity,{}};
-        candidate.specialTargetOrder=state_.nextSpecialTargetOrder;
-    }
-    ++candidate.revision;
-    auto publication=prepareActorPublication({{source.id,std::move(candidate)}},0);
-    if(!validateActors(publication)) return {DomainStatus::Stale,{}};
-    publishActors(publication);
-    if(source.wander) ++state_.nextWanderTargetOrder;
-    if(source.special) ++state_.nextSpecialTargetOrder;
-    return {DomainStatus::Applied,std::monostate{}};
-}
-StepStatus System::restoreRoom(RegionId region,size_t index,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,bool sanctumCleared) {
-    if(restoring_ && modifierPending_) return StepStatus::Blocked;
-    if(restoring_) {
-        for(auto entry=state_.inactive.begin();entry!=state_.inactive.end();++entry) {
-            auto &nodes=entry->second;
-            if(nodes.empty() || nodes.front().id!=restoring_->id) continue;
-            const auto finished=finishRestoration(nodes.front(),tick);
-            if(!finished) return isDeferred(finished.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-            restoring_.reset();nodes.erase(nodes.begin());
-            if(nodes.empty()) state_.inactive.erase(entry);
-            return StepStatus::Blocked;
-        }
-        return StepStatus::NotImplemented;
-    }
-    const auto found=state_.inactive.find({region,index});if(found==state_.inactive.end()) return StepStatus::Complete;
-    auto &saved=found->second;
-    const auto &area=ports_.areas.at(region).definition;const auto &bounds=area.activation.rooms().at(index);
-    const RoomView room{region,(int(area.origin.x)+bounds.x)/5,(int(area.origin.y)+bounds.y)/5};
-    while(!saved.empty()) {
-        auto &source=saved.front();
-        if(int(region)==108 && sanctumCleared && !source.dead && source.identity.monster!="diablo") {
-            saved.erase(saved.begin());continue;
-        }
-        if(find(source.id)) {
-            if(modifierPending_) return StepStatus::Blocked;
-            if(source.identity.rank==MonsterRank::Unique || source.identity.rank==MonsterRank::Champion || source.identity.rank==MonsterRank::SuperUnique || source.identity.rank==MonsterRank::Minion) {
-                if(!find(source.id)->rule.enchantment) {
-                    const auto modifiers=prepareBirthModifiers(source.id,source.identity.rank,source.modifiers,{},tick,{},false,source.nameSeed);
-                    if(!modifiers) return isDeferred(modifiers.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-                    restoring_=source;return StepStatus::Blocked;
-                }
-            }
-            const auto finished=finishRestoration(source,tick);
-            if(!finished) return isDeferred(finished.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-            saved.erase(saved.begin());
-            if(!saved.empty()) return StepStatus::Blocked;
-            continue;
-        }
-        if(modifierPending_) return StepStatus::Blocked;
-        if(state_.actors.size()>=65536 || source.revision>=UINT64_MAX-1) return StepStatus::Blocked;
-        auto identity=source.identity;identity.rank=source.admissionRule->boss?MonsterRank::Boss:MonsterRank::Normal;
-        Admission request{identity,source.implementation,region,source.position,source.hostile,*source.admissionRule,source.skillPositions,tick,source.dead};
-        request.ignoreSpawnCollision=source.admissionRule->flying;
-        request.uncounted=source.uncounted;
-        auto loan=ports_.areas.roomRandom(room);if(!loan) return StepStatus::Blocked;
-        std::optional<RoomRandomLoan> sourceLoan;
-        std::optional<Vec> point;
-        for(const int attempts:{-1,source.identity.rank==MonsterRank::Minion?4:5}) {
-            const auto searched=prepareRoomSpawn(request,*loan.value,attempts,{},true,collision);
-            if(!searched) return isDeferred(searched.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-            auto &search=*(*searched.value)->data_;*loan.value=*search.room;
-            if(search.position) {point=search.position;break;}
-        }
-        if(!point) {
-            const int left=room.x*5+1,top=room.y*5+1;
-            for(int attempt=0;attempt<20 && !point;++attempt) {
-                request.position=Vec{float(left+int(limitedRandom(loan.value->next,uint32_t(bounds.width-1)))),
-                    float(top+int(limitedRandom(loan.value->next,uint32_t(bounds.height-1))))}-area.origin;
-                auto candidate=request;candidate.ignoreSpawnCollision=false;
-                const auto probe=prepareRoomSpawn(candidate,*loan.value,-1,{},true,collision);
-                if(!probe) return isDeferred(probe.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-                auto &search=*(*probe.value)->data_;*loan.value=*search.room;
-                if(!search.position) continue;
-                const auto birth=prepareRoomSpawn(request,*loan.value,-1,{},true,collision);
-                if(!birth) return isDeferred(birth.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-                auto &actual=*(*birth.value)->data_;*loan.value=*actual.room;
-                point=actual.position;
-                break;
-            }
-        }
-        if(!point) {
-            const auto global=source.position+area.origin;
-            const auto free=ports_.areas.nativeRestoreCoordinates(room,int(global.x),int(global.y),1,0x3c01,collision);
-            if(free) {
-                if(free->room!=loan.value->room) {
-                    auto destination=ports_.areas.roomRandom(free->room);
-                    if(!destination) return StepStatus::NotImplemented;
-                    sourceLoan=*loan.value;
-                    *loan.value=*destination.value;
-                }
-                request.area=free->room.area;
-                request.position=free->position;
-                const auto searched=prepareRoomSpawn(request,*loan.value,-1,{},true,collision);
-                if(!searched) return isDeferred(searched.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-                auto &search=*(*searched.value)->data_;*loan.value=*search.room;point=search.position;
-            }
-        }
-        const auto publishSearch=[&] {
-            if(sourceLoan) ports_.areas.publishRoomRandom(*sourceLoan);
-            ports_.areas.publishRoomRandom(*loan.value);
-        };
-        if(!point) {publishSearch();saved.erase(saved.begin());continue;}
-        request.position=*point;
-        auto random=ports_.random;ComponentPaletteState palettes;
-        auto prepared=prepareAdmissionActor(request,source.id,random,palettes,ports_.ids.cursor());
-        if(!prepared) return isDeferred(prepared.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-        auto actor=std::move(*prepared.value);
-        const auto allocated=actor.birthEquipmentItems;
-        actor.revision=source.revision+1;
-        actor.admissionRevision=actor.revision;
-        const std::array restored{source.id};
-        auto publication=prepareActorPublication({{source.id,std::move(actor)}},allocated,restored);
-        if(!validateActors(publication)) return StepStatus::Blocked;
-        if(!ports_.areas.validateRoomRandom(*loan.value) || (sourceLoan && !ports_.areas.validateRoomRandom(*sourceLoan)))
-            return StepStatus::Blocked;
-        publishSearch();
-        publishComponents(palettes);publishActors(publication);ports_.random=random;
-        if(source.identity.rank==MonsterRank::Unique || source.identity.rank==MonsterRank::Champion || source.identity.rank==MonsterRank::SuperUnique || source.identity.rank==MonsterRank::Minion) {
-            const auto modifiers=prepareBirthModifiers(source.id,source.identity.rank,source.modifiers,{},tick,{},false,source.nameSeed);
-            if(!modifiers) return isDeferred(modifiers.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-            restoring_=source;return StepStatus::Blocked;
-        }
-        const auto finished=finishRestoration(source,tick);
-        if(!finished) return isDeferred(finished.status)?StepStatus::Blocked:StepStatus::NotImplemented;
-        saved.erase(saved.begin());
-        if(!saved.empty()) return StepStatus::Blocked;
-    }
-    state_.inactive.erase(found);return StepStatus::Complete;
-}
 DomainResult<> System::finishSuperUniqueBirth(EntityId id,bool corpseUnavailable) {
     const auto found=state_.actors.find(id);
     if(found==state_.actors.end() || found->second.identity.rank!=MonsterRank::SuperUnique) return {DomainStatus::InvalidActor,{}};

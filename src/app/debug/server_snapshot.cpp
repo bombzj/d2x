@@ -31,6 +31,7 @@ Json area(const server::AreaView &value) {
     result["waypointIndex"] = a.waypointIndex;
     result["populationDeferred"] = value.populationDeferred;
     result["populationMissing"] = value.populationMissing;
+    result["populationPendingRooms"] = value.populationPendingRooms;
     result["waypointAnchor"] = a.waypointAnchor ? point(*a.waypointAnchor + a.origin) : Json(nullptr);
     for (const auto &edge : a.boundaries) result["boundaries"].push_back({{"destination", int(edge.destination)}, {"side", edge.side},
         {"plane", edge.plane + (edge.side % 2 ? a.origin.x : a.origin.y)},
@@ -86,7 +87,6 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &slot:s.hirelingRosters)
         result["hirelingRosters"].push_back({{"seller",slot.seller},{"revision",slot.revision},{"name",slot.name},
             {"seed",slot.seed},{"available",slot.available},{"hired",slot.hired}});
-    result["rejectedDensity"]=Json::array();
     result["modifierPreparation"]={{"pending",s.modifiersPending},{"failure",s.modifierFailure}};
     result["monsterEquipmentPreparation"]={{"pending",s.monsterEquipmentPending},{"failure",s.monsterEquipmentFailure}};
     result["densityPopulation"]=Json::array();
@@ -102,8 +102,6 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     for(const auto &room:s.wanderPopulation)
         result["wanderPopulation"].push_back({{"area",int(room.area)},{"room",room.room},{"epoch",room.epoch},
             {"phase",room.phase},{"search",room.search},{"count",room.count},{"deferred",room.deferred}});
-    for(const auto &[region,keys]:s.rejectedDensity)
-        result["rejectedDensity"].push_back({{"area",int(region)},{"spawnKeys",keys}});
     for(const auto &[region,population]:s.objectPopulation)
         result["objectPopulation"].push_back({{"area",int(region)},{"generation",population.generation},
             {"completedRooms",population.rooms},{"processed",population.processed},

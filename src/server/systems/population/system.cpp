@@ -14,6 +14,39 @@
 #include <iterator>
 #include <limits>
 namespace d2x::server::population {
+Coverage System::coverage(RegionId region,std::optional<Neighborhood> neighborhood) const {
+    const auto *area=ports_.areas.find(region);
+    if(!area) return {1,0};
+    const auto found=state_.areas.find(region);
+    const auto *population=found!=state_.areas.end() && found->second.generation==area->generation?&found->second:nullptr;
+    Coverage result;
+    for(size_t index=0;index<area->definition.activation.rooms().size();++index) {
+        const auto &room=area->definition.activation.rooms()[index];
+        if(neighborhood) {
+            const Vec nearest{std::clamp(neighborhood->center.x,float(room.x),float(room.x+room.width)),
+                std::clamp(neighborhood->center.y,float(room.y),float(room.y+room.height))};
+            if((nearest-neighborhood->center).length()>=neighborhood->radius) continue;
+        }
+        bool required=room.populate;
+        for(size_t preset=0;preset<area->definition.nativePresetMonsters.size();++preset) {
+            const auto &source=area->definition.nativePresetMonsters[preset];
+            if(area->definition.activation.room(source.sourcePosition.value_or(source.position))!=&room) continue;
+            required=true;
+            if(!source.deferred.empty()) ++result.deferred;
+            else if(population) {
+                const auto cursor=population->presets.find(source.order);
+                if(cursor!=population->presets.end() && !cursor->second.deferred.empty()) ++result.deferred;
+            }
+        }
+        if(!required) continue;
+        if(!population || !population->roomStages.contains(index) || population->roomStages.at(index)<3) ++result.pendingRooms;
+        if(population) {
+            const auto cursor=population->density.find(index);
+            if(cursor!=population->density.end() && !cursor->second.deferred.empty()) ++result.deferred;
+        }
+    }
+    return result;
+}
 void System::initializeRegions(const MonsterRegionRules &rules) {
     if(state_.regionRandom) throw std::logic_error("Monster regions are already initialized");
     auto random=ports_.random;
@@ -27,7 +60,6 @@ void System::initializeRegions(const MonsterRegionRules &rules) {
     state_.regionRandom=regionRandom;
     ports_.random=random;
 }
-DomainResult<EntityId> System::admit(const Spawn &spawn) { return ports_.monsters.admit(spawn); }
 DomainResult<> System::requestQuestBirth(RegionId region,std::string_view name,TickContext tick,std::optional<Vec> position) {
     const auto *area=ports_.areas.find(region);
     if(!area || !area->definition.nativeQuestMonsters.contains(name)) return {DomainStatus::NotImplemented,{}};
@@ -194,7 +226,8 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
         }
         if(owner) identity.ownerSpawnKey=ports_.monsters.find(owner)->identity.spawnKey;
         const auto &family=rules.classes.at(type);
-        Spawn admission{identity,prototype->second.implementation,region,point,family.hostile,prototype->second.rule,{},tick.tick};
+        monsters::Admission admission{identity,prototype->second.implementation,region,point,family.hostile,prototype->second.rule,{},tick.tick};
+        admission.uncounted=preset && preset->place==8 && cursor.phase==DensityRoom::Phase::Leader;
         if(object && object->birthTicks && cursor.phase==DensityRoom::Phase::Leader) admission.birthTicks=object->birthTicks;
         admission.resurrected=presetIndex.has_value() && cursor.phase==DensityRoom::Phase::Leader;
         if(preset && cursor.phase==DensityRoom::Phase::Leader) admission.skillPositions=preset->skillPositions;
@@ -574,7 +607,7 @@ StepStatus System::populateWanderer(RegionId region,size_t roomIndex,uint64_t ep
         }
         auto identity=prototype->second.identity;identity.origin=SpawnOrigin::Preset;
         identity.spawnKey="wander."+std::to_string(epoch)+"."+std::to_string(roomIndex);
-        Spawn admission{identity,prototype->second.implementation,region,point,false,prototype->second.rule,{},tick.tick};
+        monsters::Admission admission{identity,prototype->second.implementation,region,point,false,prototype->second.rule,{},tick.tick};
         admission.wanderTarget=true;
         const auto prepared=ports_.monsters.prepareRoomSpawn(admission,*loan.value,-1,{},probe,ports_.spatial.nativeCollisionSample());
         if(!prepared) return isDeferred(prepared.status) || prepared.status==DomainStatus::Conflict || prepared.status==DomainStatus::Stale?
@@ -631,23 +664,19 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         while(stage<3) {
             if(stage==0) {
-                struct PresetEntry {size_t order;const AreaNpc *npc;const PreparedMonster *monster;const AreaObject *object{};std::optional<size_t> native;};
+                struct PresetEntry {size_t order;const AreaNpc *npc{};const AreaObject *object{};std::optional<size_t> native;};
                 std::vector<PresetEntry> entries;
                 for(const auto &object:area.definition.objects)
                     if(area.definition.activation.room(object.position)==&bounds)
-                        entries.push_back({object.presetOrder.value_or(std::numeric_limits<size_t>::max()),nullptr,nullptr,&object});
+                        entries.push_back({object.presetOrder.value_or(std::numeric_limits<size_t>::max()),nullptr,&object});
                 for(const auto &npc:area.definition.npcs)
                     if(!npc.sourceObjectPosition && area.definition.activation.room(npc.spawnPosition)==&bounds &&
                         !population.admittedNpcs.contains(npc.id))
-                        entries.push_back({npc.presetOrder.value_or(std::numeric_limits<size_t>::max()),&npc,nullptr});
-                for(const auto &spawn:area.definition.population)
-                    if(spawn.identity.origin!=SpawnOrigin::Density && area.definition.activation.room(spawn.position)==&bounds &&
-                        !population.admittedSpawnKeys.contains(spawn.identity.spawnKey))
-                        entries.push_back({spawn.identity.presetOrder.value_or(std::numeric_limits<size_t>::max()),nullptr,&spawn});
+                        entries.push_back({npc.presetOrder.value_or(std::numeric_limits<size_t>::max()),&npc});
                 for(size_t index=0;index<area.definition.nativePresetMonsters.size();++index) {
                     const auto &source=area.definition.nativePresetMonsters[index];
                     if(area.definition.activation.room(source.sourcePosition.value_or(source.position))==&bounds)
-                        entries.push_back({source.order,nullptr,nullptr,nullptr,index});
+                        entries.push_back({source.order,nullptr,nullptr,index});
                 }
                 std::stable_sort(entries.begin(),entries.end(),[](const auto &first,const auto &second) {
                     if(bool(first.object)!=bool(second.object)) return bool(first.object);
@@ -662,15 +691,26 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                         if(result!=StepStatus::Complete) return result;
                     } else if(entry.npc) {
                         if(ports_.monsters.read().actors.size()>=65536) return StepStatus::Blocked;
-                        if(!ports_.monsters.find(entry.npc->id))
-                            ports_.monsters.admitNpc(entry.npc->id,region,entry.npc->spawnPosition,entry.npc->rule);
+                        if(!ports_.monsters.find(entry.npc->id) && !population.admittedNpcs.contains(entry.npc->id)) {
+                            const auto &npc=*entry.npc;
+                            if(!npc.rule.combat) return StepStatus::NotImplemented;
+                            const RoomView room{region,(int(area.definition.origin.x)+bounds.x)/5,
+                                (int(area.definition.origin.y)+bounds.y)/5};
+                            auto loan=ports_.areas.roomRandom(room);if(!loan) return StepStatus::Blocked;
+                            monsters::Admission request;request.identity.monster=npc.rule.code;
+                            request.identity.spawnKey="npc."+std::to_string(npc.id.value);
+                            request.area=region;request.position=npc.spawnPosition;request.rule=*npc.rule.combat;request.tick=tick.tick;
+                            auto placed=ports_.monsters.searchRoomSpawn(request,*loan.value,-1,ports_.spatial.nativeCollisionSample());
+                            if(placed && !*placed.value) placed=ports_.monsters.searchRoomSpawn(request,*loan.value,4,ports_.spatial.nativeCollisionSample());
+                            if(!placed) return isDeferred(placed.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+                            if(!ports_.areas.validateRoomRandom(*loan.value)) return StepStatus::Blocked;
+                            if(*placed.value) {
+                                const auto admitted=ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule,true);
+                                if(!admitted) return isDeferred(admitted.status) || admitted.status==DomainStatus::Stale?StepStatus::Blocked:StepStatus::NotImplemented;
+                            }
+                            ports_.areas.publishRoomRandom(*loan.value);
+                        }
                         population.admittedNpcs.insert(entry.npc->id);
-                    } else {
-                        const auto &spawn=*entry.monster;
-                        const auto result=admit({spawn.identity,spawn.implementation,region,spawn.position,true,spawn.rule,spawn.skillPositions,tick.tick});
-                        if(!result) return isDeferred(result.status) || result.status==DomainStatus::Conflict
-                            ?StepStatus::Blocked:StepStatus::NotImplemented;
-                        population.admittedSpawnKeys.insert(spawn.identity.spawnKey);
                     }
                 }
             } else if(stage==1) {

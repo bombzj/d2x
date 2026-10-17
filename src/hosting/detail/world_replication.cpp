@@ -25,10 +25,16 @@ void NativeRealmService::publishAreas(RegionId region) {
     std::vector<Bytes> packets;
     // Add references first, then remove the old ones, like ChangeClientRoom.
     // A shared seam never temporarily loses both of its collision owners.
-    for (const auto &room : rooms) if (!peer.rooms.contains(room))
-        packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
+    const auto reveal=[&](const auto &room) {packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
             out.u16(uint16_t(room.x)); out.u16(uint16_t(room.y)); out.u8(uint8_t(room.area));
-        }));
+        }));};
+    const auto view=host.read(*binding);
+    if (const auto *current=view?destination.map->activation.room(view->actor.position+Vec{.5f,.5f}):nullptr) {
+        const server::RoomView own{region,(int(destination.origin.x)+current->x)/5,
+            (int(destination.origin.y)+current->y)/5};
+        if (!peer.rooms.contains(own) && std::find(rooms.begin(),rooms.end(),own)!=rooms.end()) reveal(own);
+    }
+    for (const auto &room : rooms) if (!peer.rooms.contains(room)) reveal(room);
     std::set<EntityId> warps;
     for (const auto next : desired) {
         auto definition = host.area(binding->game, next)->definition;

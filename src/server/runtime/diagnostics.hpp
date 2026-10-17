@@ -111,7 +111,6 @@ struct DiagnosticSnapshot {
     std::optional<uint64_t> objectControlRandom,monsterRegionRandom,npcControlRandom,questControlRandom;
     std::vector<DiagnosticHirelingSlot> hirelingRosters;
     std::map<RegionId,objects::ObjectRegionPopulation> objectPopulation;
-    std::map<RegionId,std::set<std::string>> rejectedDensity;
     std::vector<DiagnosticDensity> densityPopulation;
     std::vector<DiagnosticWander> wanderPopulation;
     bool modifiersPending{};

@@ -26,6 +26,7 @@ target_sources(d2x_world PRIVATE src/world/chest.cpp)
 target_sources(d2x_world PRIVATE src/world/shrine_catalog.cpp)
 target_sources(d2x_world PRIVATE src/world/native_map.cpp)
 target_sources(d2x_world PRIVATE src/world/generated_area.cpp)
+target_sources(d2x_world PRIVATE src/world/room_terrain.cpp)
 target_sources(d2x_world PRIVATE src/world/outdoor/native_act_layout.cpp src/world/retail/outdoor_grid.cpp
   src/world/outdoor/native_jungle_layout.cpp src/world/outdoor/native_connections.cpp src/world/retail/boundary.cpp
   src/world/retail/border_presets.cpp src/world/retail/secondary_border.cpp
@@ -175,8 +176,6 @@ target_sources(d2x_content PRIVATE src/content/skills/state_data.cpp src/content
 target_link_libraries(d2x_content PUBLIC d2x_gameplay)
 target_sources(d2x_navigation PRIVATE src/world/interaction_geometry.cpp)
 
-add_library(d2x_population src/world/population.cpp)
-target_link_libraries(d2x_population PUBLIC d2x_content d2x_gameplay)
 target_sources(d2x_content PRIVATE src/content/items/socket_data.cpp)
 add_library(d2x_persistence src/persistence/d2s_codec.cpp src/persistence/save_file.cpp
   src/persistence/d2s_header.cpp src/persistence/d2s_fixed_sections.cpp
@@ -223,6 +222,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/loot/system.cpp
   src/server/systems/population/system.cpp
   src/server/systems/monsters/system.cpp
+    src/server/systems/monsters/inactive.cpp
     src/server/systems/monsters/special_actions.cpp
     src/server/systems/monsters/act2_skills.cpp
     src/server/systems/monsters/controlled.cpp
@@ -330,7 +330,7 @@ add_library(d2x_host src/hosting/game_host.cpp src/hosting/administration.cpp)
 target_link_libraries(d2x_host PUBLIC d2x_server)
 # MPQ preparation is outside both the authority and scheduler libraries.
 add_library(d2x_game_content src/hosting/skill_content.cpp src/hosting/combat_content.cpp src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp src/hosting/act2_monster_skills.cpp src/hosting/game_content.cpp src/hosting/character_content.cpp src/hosting/character_creation.cpp)
-target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence d2x_population)
+target_link_libraries(d2x_game_content PUBLIC d2x_world d2x_server PRIVATE d2x_persistence)
 add_library(d2x_character_host src/hosting/character_store.cpp src/hosting/automap_store.cpp src/hosting/embedded_realm.cpp
   src/hosting/native_game_wire.cpp src/hosting/native_combat_wire.cpp src/hosting/detail/monster_replication.cpp src/hosting/native_item_wire.cpp src/hosting/native_character_wire.cpp src/hosting/native_quest_wire.cpp
   src/hosting/detail/native_realm_service.cpp src/hosting/detail/realm_protocol.cpp
@@ -405,8 +405,8 @@ add_executable(d2x_assets src/asset_tool.cpp)
 add_executable(d2x_pvpgn src/server_main.cpp src/hosting/pvpgn_server.cpp)
 set_target_properties(d2x_pvpgn PROPERTIES OUTPUT_NAME d2x_server)
 target_link_libraries(d2x_pvpgn PRIVATE d2x_character_host d2x_persistence d2x_d2gs_protocol nlohmann_json::nlohmann_json)
-target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_population d2x_persistence raylib nlohmann_json::nlohmann_json)
-foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_population d2x_persistence d2x_presentation d2x_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x_server d2x_host d2x_game_content d2x_character_host d2x d2x_assets d2x_pvpgn)
+target_link_libraries(d2x_assets PRIVATE d2x_content d2x_world d2x_persistence raylib nlohmann_json::nlohmann_json)
+foreach(target IN ITEMS d2x_resources d2x_navigation d2x_world d2x_items d2x_content d2x_gameplay d2x_persistence d2x_presentation d2x_client d2x_network d2x_d2gs_protocol d2x_remote_client d2x_remote_scene d2x_server d2x_host d2x_game_content d2x_character_host d2x d2x_assets d2x_pvpgn)
   if(MSVC)
     target_compile_options(${target} PRIVATE /W4 /utf-8)
   else()

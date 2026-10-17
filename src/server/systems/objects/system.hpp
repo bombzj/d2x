@@ -51,13 +51,18 @@ class System {
     std::map<RegionId,ObjectRegionPopulation> population_;
     std::set<EntityId> admittedPresetNpcs_;
     std::set<EntityId> admittedPresets_;
+    std::map<EntityId,bool> sandsPresetDecisions_;
+    uint64_t sandsPresetCount_{};
     std::map<EntityId,EntityId> presetObjects_;
     std::vector<std::pair<RegionId,Vec>> waypointArrivals_;
     struct CainAttempt {EntityId marker;bool requested{},attempted{};std::set<EntityId> townPlayers;};
     CainAttempt cainAttempt_;
+    struct PrisonerGroup {Vec position;unsigned attempts{},spawned{};};
+    std::vector<PrisonerGroup> prisonerGroups_;
     bool waypointArrival(const Object &) const;
     void publishInitialization(const Object &);
     DomainResult<bool> spawnTownCain(const AreaNpc &,RegionId,Vec,uint64_t tick);
+    StepStatus spawnCagedPrisoners(const AreaObject &,RegionId,uint64_t tick);
     struct InactiveObject {
       EntityId previous,preset;
       RegionId area;Vec position;

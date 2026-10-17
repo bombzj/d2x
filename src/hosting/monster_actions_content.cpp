@@ -7,6 +7,7 @@
 #include "gameplay/skills/spec.hpp"
 #include "gameplay/skills/amazon_missile.hpp"
 #include "gameplay/combat/attack_timing.hpp"
+#include "gameplay/monsters/collision_spec.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cctype>
@@ -368,14 +369,7 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
         rule.collisionPattern=nativeUnitCollisionPattern(extra.number(row,"SizeX").value_or(0),
             town && !monsters.number(monsterRow,"interact").value_or(0));
         if(monsters.value(monsterRow,"BaseId")=="wraith1") rule.collisionPattern=NativeCollisionPattern::SmallNoPresence;
-        const auto nativeId=monsters.number(monsterRow,"hcIdx").value_or(-1);
-        rule.nativeSpawnFloor=extra.number(row,"spawnCol").value_or(0)==1 &&
-            nativeId!=153 && !(nativeId>=258 && nativeId<=263); // Native HellMeteor / tentacle exceptions.
-        const auto base=monsters.value(monsterRow,"BaseId");
-        if(base=="crownest1") rule.spawnAuxiliary=std::pair{Vec{0,3},MovementCollisionRule{0x3c01,2}};
-        else if(base=="sarcophagus") rule.spawnAuxiliary=std::pair{Vec{0,2},MovementCollisionRule{0x3c01,2}};
-        else if(base=="suckernest1") rule.spawnAuxiliary=std::pair{Vec{-2,-2},MovementCollisionRule{0x1c0,2}};
-        else if(base=="evilhut") rule.spawnAuxiliary=std::pair{Vec{2,4},MovementCollisionRule{0x3c01,2}};
+        prepareMonsterPlacementRules(data,monsterRow,rule);
         rule.stateTarget.attackable=extra.number(row,"isAtt").value_or(0)!=0;
         rule.curseable=extra.number(row,"mA1").value_or(0)!=0;
         rule.deadCollision=extra.number(row,"deadCol").value_or(0)!=0;
@@ -384,6 +378,26 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
         return;
     }
     throw std::runtime_error("Missing original monster state/target rules");
+}
+void prepareMonsterPlacementRules(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
+    const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
+    const auto name=monsters.value(monsterRow,"MonStatsEx");
+    size_t row=0;while(row<extra.rows().size() && extra.value(row,"Id")!=name) ++row;
+    if(row==extra.rows().size()) throw std::runtime_error("Missing original monster placement rule");
+    const auto nativeId=monsters.number(monsterRow,"hcIdx").value_or(-1);
+    const auto spawn=extra.number(row,"spawnCol").value_or(0);
+    rule.spawnCollision=monsterSpawnCollision(spawn,extra.number(row,"SizeX").value_or(0));
+    rule.nativeSpawnFloor=spawn==1 && nativeId!=153 && !(nativeId>=258 && nativeId<=263);
+    rule.spawnAuxiliary.reset();rule.spawnAuxiliaryOnAdmissionOnly=false;
+    const auto base=monsters.value(monsterRow,"BaseId");
+    if(base=="crownest1") rule.spawnAuxiliary=std::pair{Vec{0,3},MovementCollisionRule{0x3c01,2}};
+    else if(base=="sarcophagus") rule.spawnAuxiliary=std::pair{Vec{0,2},MovementCollisionRule{0x3c01,2}};
+    else if(base=="suckernest1") rule.spawnAuxiliary=std::pair{Vec{-2,-2},MovementCollisionRule{0x1c0,2}};
+    else if(base=="evilhut") rule.spawnAuxiliary=std::pair{Vec{2,4},MovementCollisionRule{0x3c01,2}};
+    else if(base=="vilemother1") {
+        rule.spawnAuxiliary=std::pair{Vec{},MovementCollisionRule{0x3c01,2}};
+        rule.spawnAuxiliaryOnAdmissionOnly=true;
+    }
 }
 void prepareMonsterBirthProperties(const ClassicData &data,size_t monsterRow,server::MonsterRule &rule) {
     rule.birthProperties.clear();

@@ -7,16 +7,13 @@
 #include "content/monsters/monster_experience.hpp"
 #include "content/monsters/monster_enchantment.hpp"
 #include "core/random.hpp"
-#include "world/population.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/monsters/implementation.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
-#include <cctype>
 #include <set>
 #include <map>
-#include <tuple>
 
 namespace d2x {
 namespace {
@@ -282,9 +279,6 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     const auto &catalog = *catalogSource;
     const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
     const auto &animations = *animationSource;
-    PresetRecord preset;
-    if (prepared.terrain.recipe.preset) preset = world.presets().at(prepared.terrain.recipe.preset);
-    // Generated maps use each room's MPQ Populate flag in planPopulation.
     const auto regionRules=prepareMonsterRegionRules(archives,data);
     auto gameRandom=initialRandom(request.seed);
     auto regionRandom=childRandom(gameRandom);
@@ -312,7 +306,6 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         const auto code=places.value(row,"code");
         if(!code.empty()) placeIds.emplace(std::string(code),int(placeIds.size()));
     }
-    std::vector<size_t> nativePresetOrders;
     const auto familyClass=[&](std::string_view code) {
         const auto *initial=catalog.find(code);if(!initial) return -1;
         const auto *base=catalog.find(initial->base);
@@ -341,13 +334,17 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         }
         return selected->index;
     };
+    std::set<std::string> deferred(catalog.diagnostics().begin(),catalog.diagnostics().end());
+    deferred.insert(area.populationDeferred.begin(),area.populationDeferred.end());
     for(size_t order=0;order<authored.objects.size();++order) {
         const auto &source=authored.objects[order];
         if(source.type!=1 || (source.flags&1u)) continue;
+        // Retail 1.13c SUNIT_SpawnPresetUnitsInRoom omits the monster
+        // preset pass in the Pandemonium Finale (RVA E1430).
+        if(request.level==136) continue;
         const auto presetMonster=catalog.preset(authored.act,source.id,authored.version,source.nativeIdentity);
         if(presetMonster.kind==MonsterPresetKind::Place) {
             const int place=placeIds.at(presetMonster.id);
-            nativePresetOrders.push_back(order);
             server::AreaDefinition::NativePresetMonster entry;
             entry.order=order;entry.position={source.x+.5f,source.y+.5f};entry.place=place;
             if(place==2 || place==3) {
@@ -373,7 +370,6 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(presetMonster.kind==MonsterPresetKind::SuperUnique) {
             const auto *unique=catalog.superUnique(presetMonster.id);
             if(!unique) throw std::runtime_error("Missing native superunique preset");
-            nativePresetOrders.push_back(order);
             server::AreaDefinition::NativePresetMonster entry;
             entry.order=order;entry.definition=classId(unique->monster);entry.position={source.x+.5f,source.y+.5f};
             entry.retry=true;entry.superUnique=unique->id;entry.uniqueIndex=unique->index;
@@ -391,16 +387,25 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             else if(unique->id=="Baal Subject 2") entry.extras.push_back({classId("skmage_cold3"),10,10,20,true,false});
             area.nativePresetMonsters.push_back(std::move(entry));continue;
         }
-        if(presetMonster.kind!=MonsterPresetKind::Monster) continue;
+        if(presetMonster.kind!=MonsterPresetKind::Monster) {
+            server::AreaDefinition::NativePresetMonster entry;
+            entry.order=order;entry.position={source.x+.5f,source.y+.5f};
+            entry.deferred="Unresolved DS1 monster preset: "+std::to_string(source.id);
+            deferred.insert(entry.deferred);area.nativePresetMonsters.push_back(std::move(entry));continue;
+        }
         const auto *record=catalog.find(presetMonster.id);
-        if(!record || !record->hostile()) continue;
+        // Interactive NPCs have their service admission below the object
+        // pass. Other non-critter presets, including friendly combatants and
+        // invisible environmental controllers, use the native birth rules.
+        if(!record) throw std::runtime_error("Resolved native preset has no MonStats identity");
+        if(record->critter || (record->npc && record->interact) ||
+            record->id=="baalthrone" || record->id=="compellingorb") continue;
         const bool retry=record->id!="radament" && record->base!="maggotqueen1" && record->id!="window1" && record->id!="window2";
         int collisionObject=0;
         const auto &stats=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
         const auto extraId=stats.value(record->sourceRow,"MonStatsEx");
         for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==extraId && extra.number(row,"objCol").value_or(0))
             collisionObject=record->id=="barricadedoor1"?571:record->id=="barricadedoor2"?572:0;
-        nativePresetOrders.push_back(order);
         if(request.level==110 && request.difficulty!=0 && (record->id=="minion1" || record->id=="deathmauler1")) continue;
         server::AreaDefinition::NativePresetMonster entry;
         entry.order=order;entry.definition=record->index;entry.collisionObject=collisionObject;
@@ -411,15 +416,11 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             entry.questVariant=classId(record->id=="catapult2"?"catapult3":"catapultspotter3");
         area.nativePresetMonsters.push_back(std::move(entry));
     }
-    auto plan=planPopulation(catalog,&level,preset,*prepared.terrain.map,{request.seed,request.difficulty,false},
-        &area.populationRoster,nativePresetOrders);
     for(const auto &code:area.populationRoster) {
         const auto &record=*catalog.find(code);
         populationRules.roster.push_back({record.index,record.rarity,classId(record.spawn),record.placeSpawn});
     }
     for(const auto &code:level.population.unique) populationRules.uniques.push_back(classId(code));
-    std::set<std::string> deferred(plan.diagnostics.begin(), plan.diagnostics.end());
-    deferred.insert(area.populationDeferred.begin(),area.populationDeferred.end());
     // Hit39 uses the full normal Levels list, not the region's randomly
     // selected population roster or the difficulty's nmon list.
     auto nativeRuleRandom=initialRandom(request.seed^uint32_t(request.level));
@@ -497,7 +498,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(registered==regionRules->classes.end()) throw std::runtime_error("Missing native population class");
         const auto &record=*catalog.find(registered->second.code);
         auto &entry=populationRules.classes[definition];
-        entry.hostile=record.hostile();
+        entry.hostile=record.hostile() || record.ai.starts_with("Trap-") || record.ai=="DesertTurret" || record.ai=="TrappedSoul";
         entry.figurineEligible=record.id!="fetish11" && !record.flying;
         entry.minimum=record.minGroup;entry.maximum=record.maxGroup;entry.sparse=record.sparse;
         entry.partyMinimum=record.partyMin;entry.partyMaximum=record.partyMax;
@@ -515,6 +516,11 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         if(record.placeSpawn && !record.spawn.empty()) required.push_back(classId(record.spawn));
         const auto restore=[&](server::MonsterRule &rule) {
             prepareMonsterBirthProperties(data,record.sourceRow,rule);
+            prepareMonsterPlacementRules(data,record.sourceRow,rule);
+            // A permitted visual/AI substitute must not shrink the native
+            // occupancy seen by the rest of this room's population search.
+            rule.collisionPattern=record.base=="wraith1"?NativeCollisionPattern::SmallNoPresence:
+                nativeUnitCollisionPattern(record.collisionSize);
             rule.neverCount=data.tables.at("monstats").number(record.sourceRow,"neverCount").value_or(0)!=0;
             rule.flying=record.flying;
             const auto &extra=data.tables.at("monstats2");
@@ -550,64 +556,6 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             area.nativeMonsterClasses.emplace(definition,std::move(*prototype));
         }
         else deferred.insert("Native population profile pending: "+record.id);
-    }
-    // Rules depend on native identity/rank and this area's difficulty/level,
-    // not the spawn position. Cache unsupported profiles as well.
-    using RuleKey = std::tuple<std::string, MonsterRank, std::string>;
-    std::map<RuleKey, std::optional<server::PreparedMonster>> rules;
-    auto enchantmentRandom=initialRandom(plan.sceneSeed);
-    std::map<std::string,MonsterEnchantment> owners;
-    auto prepare = [&](const MonsterIdentity &identity, Vec position) {
-        if(identity.rank!=MonsterRank::Normal && identity.rank!=MonsterRank::Boss) {
-            const auto owner=owners.find(identity.ownerSpawnKey);
-            auto result=combatMonster(archives,data,request,identity,position,world,catalog,animations,enchantmentRandom,owner==owners.end()?nullptr:&owner->second);
-            if(result && result->rule.enchantment) owners.insert_or_assign(identity.spawnKey,*result->rule.enchantment);
-            return result;
-        }
-        const RuleKey key{identity.monster, identity.rank, identity.superUnique};
-        auto [entry, inserted] = rules.try_emplace(key);
-        if (inserted) entry->second = combatMonster(archives, data, request, identity, {}, world, catalog, animations,enchantmentRandom);
-        auto result = entry->second;
-        if (result) { result->identity = identity; result->position = position; }
-        return result;
-    };
-    std::set<std::string> preparedSpawns;
-    for (const auto &spawn : plan.spawns) {
-        const auto *record = catalog.find(spawn.identity.monster);
-        if (!record || !record->hostile()) continue;
-        if(!spawn.identity.spawnParentKey.empty() && !preparedSpawns.contains(spawn.identity.spawnParentKey)) {
-            ++area.populationMissing;area.populationMissingPositions.push_back(spawn.position);
-            deferred.insert("Spawn parent pending: "+spawn.identity.spawnParentKey);continue;
-        }
-        auto preparedMonster=prepare(spawn.identity, spawn.position);
-        // The authorized enemy substitute retains real identity for quest/loot.
-        // Start with Den of Evil: otherwise skipped families would falsely clear it.
-        if (!preparedMonster && (request.level==8 || request.act>=1)) {
-            auto substitute=spawn.identity; substitute.monster="fallen1"; substitute.rank=MonsterRank::Normal; substitute.superUnique.clear();
-            preparedMonster=prepare(substitute, spawn.position);
-            if(preparedMonster) {
-                preparedMonster->identity=spawn.identity;
-                // Keep the existing passive PrisonDoor authority even while
-                // its native combat profile still needs preparation support.
-                if(record->id=="prisondoor") preparedMonster->implementation=MonsterKind::PrisonDoor;
-                deferred.insert("Enemy substitute: "+spawn.identity.monster+" -> fallen1");
-            }
-        }
-        if (!preparedMonster) { ++area.populationMissing; area.populationMissingPositions.push_back(spawn.position); deferred.insert("Combat pending: "+spawn.identity.monster); continue; }
-        if (!area.collision.walkable(spawn.position,preparedMonster->rule.spawnCollision)) {
-            // Prepared object collision and a permitted substitute's footprint
-            // can differ from the planner's native class. Recheck locally.
-            const auto adjusted=area.collision.nativeSpawn(spawn.position,5,preparedMonster->rule.spawnCollision);
-            if(!adjusted || (spawn.identity.origin==SpawnOrigin::Density &&
-                area.activation.room(*adjusted)!=area.activation.room(spawn.position))) {
-                ++area.populationMissing;area.populationMissingPositions.push_back(spawn.position);
-                deferred.insert("Spawn collision: "+spawn.identity.spawnKey);continue;
-            }
-            preparedMonster->position=*adjusted;
-        }
-        preparedMonster->skillPositions=spawn.skillPositions;
-        preparedSpawns.insert(spawn.identity.spawnKey);
-        area.population.push_back(std::move(*preparedMonster));
     }
     area.populationDeferred.assign(deferred.begin(), deferred.end());
 }

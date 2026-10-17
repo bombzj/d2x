@@ -15,6 +15,7 @@
 #include "server/systems/quests/system.hpp"
 #include "server/systems/population/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -83,7 +84,8 @@ DomainResult<bool> System::spawnTownCain(const AreaNpc &npc,RegionId region,Vec 
     if(!*placed.value) {room=initial;point=marker;placed=attempt(15);if(!placed) return {placed.status,{}};}
     for(const auto &[view,loan]:loans) {(void)view;if(!ports_.areas.validateRoomRandom(loan)) return {DomainStatus::Stale,{}};}
     if(*placed.value) {
-        ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule);
+        const auto admitted=ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule);
+        if(!admitted) return {admitted.status,{}};
         ports_.quests.registerTownCain(npc.id);
     }
     for(const auto &[view,loan]:loans) {(void)view;ports_.areas.publishRoomRandom(loan);}
@@ -100,6 +102,45 @@ void System::collision(RegionId area) {
             rule.width, rule.height, uint16_t(rule.collision[mode] ? rule.collisionMask : 0), rule.light[mode]});
     }
     ports_.world.objectCollision(area, std::move(values));
+}
+StepStatus System::spawnCagedPrisoners(const AreaObject &source,RegionId region,uint64_t tick) {
+    if(ports_.quests.read().initialFlags[questDefinition(QuestId::RescueOnMountArreat).nativeSlot]&0x8000)
+        return StepStatus::Complete;
+    auto group=std::find_if(prisonerGroups_.begin(),prisonerGroups_.end(),[&](const auto &entry) {
+        return entry.position.x==source.position.x && entry.position.y==source.position.y;
+    });
+    if(group==prisonerGroups_.end()) {
+        if(prisonerGroups_.size()>=3) return StepStatus::Complete;
+        prisonerGroups_.push_back({source.position});group=std::prev(prisonerGroups_.end());
+    }
+    const auto &area=ports_.areas.at(region).definition;
+    const auto *bounds=area.activation.room(source.position);if(!bounds) return StepStatus::NotImplemented;
+    const RoomView room{region,(int(area.origin.x)+bounds->x)/5,(int(area.origin.y)+bounds->y)/5};
+    for(const auto &npc:area.npcs) {
+        if(npc.rule.questInitFunction!=62 || !npc.sourceObjectPosition || npc.sourceObjectClass!=source.type ||
+            npc.sourceObjectPosition->x!=source.position.x || npc.sourceObjectPosition->y!=source.position.y ||
+            admittedPresetNpcs_.contains(npc.id)) continue;
+        if(!npc.rule.combat) return StepStatus::NotImplemented;
+        while(group->attempts<25 && group->spawned<5) {
+            if(ports_.monsters.read().actors.size()>=65536) return StepStatus::Blocked;
+            auto loan=ports_.areas.roomRandom(room);if(!loan) return StepStatus::Blocked;
+            monsters::Admission admission;admission.identity.monster=npc.rule.code;
+            admission.identity.spawnKey="npc."+std::to_string(npc.id.value);
+            admission.area=region;admission.position=source.position;admission.rule=*npc.rule.combat;admission.tick=tick;
+            const auto placed=ports_.monsters.searchRoomSpawn(admission,*loan.value,5,ports_.spatial.nativeCollisionSample());
+            if(!placed) return isDeferred(placed.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+            if(!ports_.areas.validateRoomRandom(*loan.value)) return StepStatus::Blocked;
+            if(*placed.value) {
+                const auto admitted=ports_.monsters.admitNpc(npc.id,region,**placed.value,npc.rule,true);
+                if(!admitted) return isDeferred(admitted.status) || admitted.status==DomainStatus::Stale?StepStatus::Blocked:StepStatus::NotImplemented;
+            }
+            ports_.areas.publishRoomRandom(*loan.value);
+            ++group->attempts;
+            if(*placed.value) {++group->spawned;admittedPresetNpcs_.insert(npc.id);break;}
+        }
+        if(group->attempts>=25 || group->spawned>=5) break;
+    }
+    return StepStatus::Complete;
 }
 DomainResult<> System::openMonsterDoor(EntityId id,Vec destination,uint64_t tick) {
     const auto *monster=ports_.monsters.find(id);
@@ -278,7 +319,18 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
         if(region!=requestedRegion || requestedRoom>=area.definition.activation.rooms().size() ||
             area.definition.activation.room(source.position)!=&area.definition.activation.rooms()[requestedRoom]) continue;
         if(!ports_.areas.loaded(region,source.position)) continue;
+        if(int(region)==134) {
+            auto decision=sandsPresetDecisions_.find(source.id);
+            if(decision==sandsPresetDecisions_.end()) {
+                // SUNIT's 1.13c Forgotten Sands object counter is evaluated
+                // in actual room activation order, once per authored object.
+                const bool omitted=++sandsPresetCount_==uint64_t(ports_.settings.mapSeed%3+3);
+                decision=sandsPresetDecisions_.emplace(source.id,omitted).first;
+            }
+            if(decision->second) continue;
+        }
         const auto admitChildren=[&] {
+            if(source.rule.initialization==62) return spawnCagedPrisoners(source,region,tick.tick);
             for(const auto &npc:area.definition.npcs) {
                 if(!npc.sourceObjectPosition || npc.sourceObjectClass!=source.type ||
                     npc.sourceObjectPosition->x!=source.position.x || npc.sourceObjectPosition->y!=source.position.y ||
@@ -301,7 +353,10 @@ StepStatus System::populatePresets(RegionId requestedRegion,size_t requestedRoom
                         ?StepStatus::Blocked:StepStatus::NotImplemented;
                     cainAttempt_.attempted=true;
                     if(!*spawned.value) continue;
-                } else if(!ports_.monsters.find(npc.id)) ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+                } else if(!ports_.monsters.find(npc.id)) {
+                    const auto admitted=ports_.monsters.admitNpc(npc.id,region,npc.spawnPosition,npc.rule);
+                    if(!admitted) return isDeferred(admitted.status) || admitted.status==DomainStatus::Stale?StepStatus::Blocked:StepStatus::NotImplemented;
+                }
                 admittedPresetNpcs_.insert(npc.id);
             }
             return StepStatus::Complete;

@@ -1,8 +1,8 @@
 # 地图、区域与地图界面
 
-五幕普通区域1–136共用NativeMapGenerator和当前MPQ。自研宿主generateArea与客户端RemoteTown共用同一生成／reveal算法；宿主蓝图按固定逆序准备，客户端按实际原包顺序重放。宿主通过原LOADACT／0x07传种子、幕及锚点，客户端自行重建，不共享C++地形快照。权威内核只持有独立碰撞值。当前自研进入保存幕的城镇，使用原DS1出生标记，不以inspectionArrival替代。新协议链的Act1营地入局和走跑已有限冒烟，其他幕／区域未在本轮复验，见[基线](../../BASELINE.md)。
+五幕普通区域1–136共用NativeMapGenerator和当前MPQ。自研宿主与客户端共用原选砖／碰撞算法；宿主按真实房间引用物化，客户端按实际原包顺序重放。宿主通过原LOADACT／0x07传种子、幕及锚点，客户端自行重建，不共享C++地形快照。权威内核持有纯值房间输入、独立物化状态及碰撞。当前自研进入保存幕的城镇，使用原DS1出生标记，不以inspectionArrival替代。本轮D2X实机覆盖Act1营地入局与4区探索、实际卸载／重入，其他幕／区域未做当前EXE实机验收，见[基线](../../BASELINE.md)。
 
-原版地形对照及剩余验证范围见[五幕地图](../gameplay/world/MAPS.md#地形准确性与恢复边界)，DLL重放和实机排查步骤见[地图对照排查](../development/MAP_PARITY.md)。
+原版地形对照及剩余验证范围见[五幕地图](../gameplay/world/MAPS.md#地形准确性与恢复边界)，DLL重放和实机排查步骤见[地图对照排查](../development/MAP_PARITY.md)。宿主已移除固定全区碰撞／随机回放，改用逐房间纯值物化；首差、原DLL及实机证据见[实机首差](../gameplay/world/MAPS.md#实机首差与合成调用边界)。
 
 ## 所有权与入口
 
@@ -10,8 +10,8 @@
 | --- | --- |
 | [world_catalog.cpp](../../src/content/world/world_catalog.cpp) | Levels／LvlTypes／LvlPrest／LvlMaze／LvlSub 等只读定义 |
 | [native_map.cpp](../../src/world/native_map.cpp)、[native_room_activation.cpp](../../src/world/native_room_activation.cpp) | 原布局、房间生命周期、有序近邻、真实 DT1 与完整碰撞 |
-| [generated_area.cpp](../../src/world/generated_area.cpp) | 共用完整区域入口，接收幕／区域／种子／难度，输出持有DT1库寿命的只读Map与原点 |
-| [game_content.cpp](../../src/hosting/game_content.cpp) | 读取当前MPQ职业、原出生点及静态物件初始阻挡，准备独立权威碰撞值；不执行玩法 |
+| [generated_area.cpp](../../src/world/generated_area.cpp)、[room_terrain.cpp](../../src/world/room_terrain.cpp) | 准备原型／内容描述与无图像的房间输入；后者以独立会话执行实际选砖、碰撞和随机 |
+| [game_content.cpp](../../src/hosting/game_content.cpp) | 读取当前MPQ规则、出生点及物件描述，交付未物化碰撞与纯值房间输入；不执行玩法 |
 | [remote_town.cpp](../../src/client/remote_town.cpp) | 原幕／种子、0x07／08及位置事件重放、锚点校验、活动 Map／Grid 和交互值 |
 | [remote_control.cpp](../../src/client/remote_control.cpp) | 原整数目标／GUID请求、靠近、旅行；显示路径不写权威位置 |
 | [automap_exploration.cpp](../../src/client/automap_exploration.cpp) | 本局区域探索掩码，城镇全揭示／野外可见格规则 |
@@ -24,23 +24,23 @@
 
 单机的hosting与客户端共用同一Archives挂载；server内核不读取MPQ。sharedWorldCatalog按挂载／三难度复用不可变世界表，TileLibraryCache按规范化路径共享已解码DT1的弱引用，地图和本地缓存持有资源寿命；新增挂载会清除共享条目。NativeMapGenerator按LevelType／Dt1Mask复用只读瓦片选择索引，随机流仍归每个生成器／房间；已分配房间另有坐标分桶，clientRoom只检查命中桶并保留重叠歧义拒绝。
 
-运行中的宿主区域准备由AreaGenerator保留原逆序reveal和种子状态，NativeRealmHost每次调度给房间生成约4毫秒软预算，完整地形与权威内容准备成功后才installArea。首个城镇仍同步准备；相邻区域仍由world提前请求。Archives、GPU和权威提交都留在原线程，无并发MPQ读取。单次布局／DS1／DT1解码、快照或人口准备不可中断，仍可能超过预算。
+AreaGenerator准备静态内容描述及三层房间引用传播所需的不可变输入；离线Map的碰撞／活动随机不进入权威。prepareWorldAreaContent交付的地形全为未物化0xffff，实际房间创建时才生成碰撞、逻辑格、地板记录及活动初值。原型解码和离线描述投影仍可能耗时；既有4毫秒软预算只分隔描述投影操作，不约束全部解码开销。首个城镇同步准备，相邻区域由world提前请求。
 
-world另以本人实际房间和共同RoomLayout.nearRooms提前请求已准备邻区中近邻房间接触的出口依赖，依据D2MOO DrlgActivate::DRLGACTIVATE_RoomExPropagateSetStatus／DRLGACTIVATE_ChangeClientRoom的近邻传播。准备触发不再只等待人物换级，但当前仍整区域准备／发布，不能宣称原版逐房间物化、引用计数与卸载时序已完整实现；4毫秒预算仍为软预算。
+world另以本人实际房间和共同RoomLayout.nearRooms提前请求已准备邻区中近邻房间接触的出口依赖，依据D2MOO DrlgActivate::DRLGACTIVATE_RoomExPropagateSetStatus／DRLGACTIVATE_ChangeClientRoom的近邻传播。内容仍按区域交接，但选砖／碰撞在实际创建事件执行；未接入内容的近邻仍可在同幕纯值会话中建立正确地形状态，内容接入后复用该状态。
 
 宿主NPC、战斗人口、环境单位和任务内容准备按Archives挂载复用不可变MonsterCatalog及AnimDataTable，首次完成后才发布，追加挂载清除缓存。原先环境单位逐类型构造完整目录及区域内多入口重复解析已移除；难度／区域等级、精英随机、人口身份与实体规则仍逐请求准备，不缓存随机结果。既有诊断`artifacts/diagnostics/20261012-211833-371733d4`的level2／3内容耗时3456／3615毫秒属于修正前EXE；修正后的耗时等待人工运行，不能据缓存改动宣称无卡顿。
 
 RemoteTown按约4毫秒软预算消费原顺序地图事件，未处理完时即使网络revision不变也继续推进；房间锚点与事件缺口校验保留，只用已物化房间选当前显示区域。地形修改的dirty状态跨帧保留；只在实际物化／释放地形或当前级别变化时重建快照，纯视野引用计数变化、同级房间内移动不再单独重建。SceneAssets以调色板／DT1瓦片身份复用Sprite，并持有对应库，避免房间集合变化时重复对已有瓦片逐像素哈希；GPU内容缓存仍负责真正的新图上传。
 
-服务端活动房间由[world::RoomRuntime](../../src/server/systems/world/rooms.cpp)持有，使用生成器导出的原始有序near-room列表，包含跨级邻接，不用距离环补猜。NativeRoomActivation在d2x_navigation中为双方共用纯状态机；服务端ChangeClientRoom先增加新房间引用，再释放旧引用，传播0／1／2／3级状态。碰撞按真实房间恢复，未物化格保持0xffff，快照外沿没有房间归属的补边不参与跨区碰撞。Population／Objects只准入已加载房间。普通怪物压缩后保留恢复记录，回访以同GUID重新执行出生及部分状态恢复，会重新分配单位种子／组件；物件按自身规则重新初始化并重绑身份。特殊怪物仍可能保留房间，地面物品完整休眠尚未实现，细节归[人口](../gameplay/monsters/POPULATION.md)。原07／08按玩家实际近房间增减，表示单客户端视野，不证明服务端活动房间已卸载。
+服务端活动房间由[world::RoomRuntime](../../src/server/systems/world/rooms.cpp)持有，使用生成器导出的原始有序near-room列表，包含跨级邻接，不用距离环补猜。NativeRoomActivation在d2x_navigation中为双方共用纯状态机；每幕保留独立会话，新增区域只扩展图，不清空原引用。目的房间初始化只物化目的房间，随后ChangeClientRoom先增加新引用再释放旧引用，传播0／1／2／3级状态。碰撞按真实房间恢复，未物化格保持0xffff，快照外沿没有房间归属的补边不参与跨区碰撞。Population／Objects只准入已加载房间。普通／特殊怪物与NPC共用休眠节点，回访以同GUID重新构造并完成保存状态与修饰器恢复；等待中的实体暂缓公开。忙碌或未结算单位继续保留房间，完整特殊AI／MapAI及地面物品休眠尚未实现；物件按自身规则重新初始化并重绑身份，细节归[人口](../gameplay/monsters/POPULATION.md)。原07／08按玩家实际近房间增减，表示单客户端视野，不证明服务端活动房间已卸载。
 
-时序依据为本地D2MOO `DrlgActivate.cpp::DRLGACTIVATE_Update`（服务端7 tick、客户端5 tick初始化间隔，单次物化一个视野外房间）、`Game.cpp::GAME_Update`（每12帧检查、无客户端计数超过10才考虑卸载）、`D2Dungeon.cpp::D2Common_10081_GetTileCountFromRoom`及`DRLGACTIVATE_TestRoomCanUnTile`的城镇／Rocky Summit／portal保留条件。D2X另外保留正在提交动作、伤害、弹体或掉落的房间，避免事务背压时释放其碰撞。保留谓词只读资格；NativeRoomActivation另调用tryRetire，完成可暂缓的怪物压缩／效果发布，再压缩物件，成功后才释放碰撞和房间随机。普通休眠节点同时保存CorpseState（不可用、已搜尸、死亡状态集合）及自复活次数，回访不会重新开放已消费的尸体。传送、WP、复活和新入场先激活真实目的房间，再查落点。
+1.13c实机及导入表确认DRLG_Update由客户端调用；bClient=0下的7 tick分支不是原版D2Game的预取调用链，宿主不再执行它。卸载依据为本地D2MOO `Game.cpp::GAME_Update`（每12帧检查、按Act活动房间头插链遍历、无客户端计数超过10才考虑卸载）、`D2Dungeon.cpp::D2Common_10081_GetTileCountFromRoom`及`DRLGACTIVATE_TestRoomCanUnTile`的城镇／Rocky Summit／portal保留条件。D2X另外保留正在提交动作、伤害、弹体或掉落的房间，避免事务背压时释放其碰撞。保留谓词只读资格；NativeRoomActivation另调用tryRetire，完成可暂缓的怪物压缩／效果发布，再压缩物件，成功后才释放碰撞和房间随机。普通休眠节点同时保存CorpseState（不可用、已搜尸、死亡状态集合）及自复活次数，回访不会重新开放已消费的尸体。传送、WP、复活和新入场先激活真实目的房间，再查落点。
 
-宿主[AreaPreparation](../../src/hosting/area_preparation.cpp)以独立MPQ句柄／缓存准备不可变区域蓝图，不共享可变Archives、地图生成器或UI回调；主循环只接收完成结果并按每局原请求顺序提交，离局取消票据，过期结果不进入新局。第一次蓝图准备仍按区域读取／生成，已生成地形压缩为逐房间恢复数据；当前并非D2MOO的逐房间MPQ分配和SUNITINACTIVE结构逐字复刻，蓝图及休眠实体内存也尚未逐房间回收。客户端原图上传仍在渲染线程，不能仅据工作线程宣称所有卡顿消除。
+宿主[AreaPreparation](../../src/hosting/area_preparation.cpp)以独立MPQ句柄／缓存准备不可变区域蓝图，不共享可变Archives、地图生成器或UI回调；主循环只接收完成结果并按每局原请求顺序提交，离局取消票据，过期结果不进入新局。原型按区域及三层邻接预解码；RoomTerrainSession只接收纯值输入，不保留MPQ句柄或图像。实际创建／释放发生在world所属会话；同一帧等待内容不重复推进卸载计数。全部原版资源回收和SUNITINACTIVE结构仍非逐字复刻，蓝图及休眠实体内存也尚未逐房间回收。客户端原图上传仍在渲染线程，不能仅据工作线程宣称所有卡顿消除。
 
-客户端NativeMapGenerator释放活动瓦片／碰撞，重入通过原图层和DT1重新物化。服务端RoomRuntime释放活动碰撞，重入回放Run保存的完整16位碰撞、阻挡、光遮挡及字节地形，另重放已开启墓墙；物件碰撞由objects按当前模式重建，房间流使用initialRoomRandom。原版InitRoomGrids重置瓦片流，选砖后再分出活动房间种子；两条流的核对范围见[地图验证](../gameplay/world/MAPS.md#当前源码逐事件复核)。
+两端释放活动瓦片／碰撞，重入均按保留的图层、原始种子及当前共享边界状态重新物化。旧Run／initialRoomRandom恢复已删除；已开墓墙从当前实际选中的地板／墙／阴影记录重投影，物件碰撞由objects按当前模式重建。InitRoomGrids重置瓦片流，选砖后再分出活动房间种子；后续玩法消费只更新活动随机。对照范围见[实机核对](../gameplay/world/MAPS.md#实机首差与合成调用边界)。
 
-旧包有限运行证据仍见[提交前冒烟](../development/BUILD_AND_RUN.md#本批提交前冒烟)；其中内容同步准备约3.7秒属于旧实现。21:55用户诊断同局level2／3内容阶段约205／226毫秒，仍不是当前房间生命周期版的运行验收。Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供人工定位剩余开销；新包构建身份和未运行范围统一见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+Play-Diagnostic.cmd的stderr.log中[area-load]记录宿主terrain_ms／content_ms与超过一个25Hz tick的客户端map_ms，供定位剩余开销；当前构建身份及实机范围见[逐房间构建](../development/BUILD_AND_RUN.md#当前逐房间地形构建)。旧包耗时不用于认证当前生命周期或性能。
 
 ## 客户端显示与操作
 
@@ -68,7 +68,7 @@ stash分叉证据来自同一旧包的`artifacts/diagnostics/20261012-233827-395
 
 UNIT_TILE入口按原D2MOO PlrMsg的D2Common_10399单位距离判断：超过50拒绝，超过4先走近，不大于4进入目的区域；不要求站到为目的地准备的半格落点。2026-10-13源码修正了旧旅行等待路径清空后再用0.1格误差比较半格arrival的问题，复用nativeUnitDistance，任务限制与目的房间激活仍由权威旅行处理。
 
-本次D2X Host／原版Join现场见忽略目录artifacts/diagnostics/20261013-080501-37ec6510和artifacts/cave-disconnect-20261013：两端反复交互Cold Plains入口GUID158，level9已准备但未旅行；原版连接5在324.29秒通过WP回城，324.30秒先收到旧level3的9个08撤房，随后才有旧单位移除与本人15移位，之后停止通信且没有69正常退局。原D2MOO Level::LEVEL_RemoveClient先移除单位再撤房；源码将08延后到旅行事实与本轮所有单位投影完成后，07仍先揭示，保留待撤房集合避免重复揭示。原版当天日志没有此次约08:10的对应异常，不能将较早崩溃地址或撤房顺序直接认定为此次掉线根因。这两处修正仅完成源码及编辑器诊断核对，未构建、运行或打包，进洞及回城稳定性待原版双端复验。
+此前D2X Host／原版Join现场见忽略目录artifacts/diagnostics/20261013-080501-37ec6510和artifacts/cave-disconnect-20261013：两端反复交互Cold Plains入口GUID158，level9已准备但未旅行；原版连接5在324.29秒通过WP回城，324.30秒先收到旧level3的9个08撤房，随后才有旧单位移除与本人15移位，之后停止通信且没有69正常退局。原D2MOO Level::LEVEL_RemoveClient先移除单位再撤房；源码将08延后到旅行事实与本轮所有单位投影完成后，07仍先揭示，保留待撤房集合避免重复揭示。原版当天日志没有此次约08:10的对应异常，不能将较早崩溃地址或撤房顺序直接认定为此次掉线根因。这两处修正已纳入当前构建；本轮地形专项不认证原版双端进洞／回城稳定性。
 
 拾取双方共用nativePickupReach：D2Common_10399单位距离不大于4，尺寸为玩家2／物品1，另检查0x0804缩短交互射线；移除服务端原有的1.8格欧氏距离门槛。02／04支持地面物品目标。物件使用UNITS_IsObjectInInteractRange对应几何；交谈以单位距离6判断，原13请求在距离7–8时排队走近。普通NPC单位路径按Path.cpp初始化nStepNum=0、PathMisc::sub_6FD5DB70单位距离不大于0停止，预测对普通02／04也逐步执行该判据；不把菜单资格6作为04移动终点。客户端已有足够近的直接点击仍按原13资格，远点靠近在当前本地普通单位路径到达后发送13，服务端复验交談资格；不把稀疏96位置采样当作请求门槛。移除枚举交互距离环并选最近候选点的第二套寻路，物件接近直接使用原单位目标路径。物件13与NPC13都保留待执行意图，到达后执行；新移动／攻击／交互、死亡、离区或目标失效会使旧意图失效。背压重试不重复执行已经成功的交互。
 
@@ -86,9 +86,9 @@ SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输�
 
 自动地图只有 AutomapExploration／AutomapCatalog／SceneAssets／SceneView 一套揭示、标记、缓存和绘制；RemoteTown 适配原服活动区域。同局返回记忆保留；单机／TCP/IP沿本地角色租约basename，Realm沿客户端保存根目录／Realm／角色名，按实际seed从原版.map／.ma0–3恢复本人图元；旧D2X探索格式停用。细节见[自动地图](../gameplay/world/AUTOMAP.md)。
 
-自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。完整区域加载不等于原服按需活区，完整房间时序及动态占位仍有缺口。
+自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。内容蓝图仍按区域保留，完整单位休眠时序及动态占位仍有缺口。
 
-generateArea把原生完整16位地形碰撞保留在Grid.fullTerrainCollision，权威移动经共同movementMask消费；既有未提供该字段的粗网格／原服显示仍沿原字节路径。区域边界拒绝外部Grid指针，内容准备后才复制给实例，避免生成器销毁后悬空或跨实例借用。
+generateArea的离线碰撞仅留在hosting内容描述中；实际RoomTerrainSession物化结果写入权威Grid.fullTerrainCollision，权威移动经共同movementMask消费完整16位值。既有未提供该字段的粗网格／原服显示仍沿原字节路径。内容交接不保留生成器Grid指针，避免销毁后悬空或跨实例借用。
 
 ## 限制与后续
 

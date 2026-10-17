@@ -211,10 +211,11 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
     if(prepared.empty()) return {DomainStatus::Unavailable,{}};
     return {DomainStatus::Applied,std::move(prepared)};
 }
-ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors,size_t allocatedIds,std::span<const EntityId> restored,std::shared_ptr<EntityIds::Publication> identities,std::span<const EntityId> retired) const {
+ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors,size_t allocatedIds,std::span<const EntityId> restored,std::shared_ptr<EntityIds::Publication> identities,std::span<const EntityId> retired,std::span<const EntityId> presets) const {
     ActorPublication result;result.cursor=ports_.ids.cursor();result.allocatedIds=allocatedIds;
     result.identities=identities?std::move(identities):allocatedIds?ports_.ids.preparePublication(allocatedIds):nullptr;
     result.restoredIdentities.insert(restored.begin(),restored.end());
+    result.presetIdentities.insert(presets.begin(),presets.end());
     result.actors=std::move(actors);
     for(const auto id:retired) {
         const auto *live=find(id);
@@ -277,13 +278,17 @@ bool System::validateActors(const ActorPublication &plan) const {
                     saved|=std::any_of(units.begin(),units.end(),[&](const auto &unit){return unit.id==id && unit.revision<candidate.revision;});
                 }
                 if(!saved || id.value>=ports_.ids.cursor()) return false;
+            } else if(plan.presetIdentities.contains(id)) {
+                const auto &npcs=ports_.areas.at(candidate.area).definition.npcs;
+                if(id.value>=ports_.ids.cursor() || !candidate.questNpc || candidate.identity.origin!=SpawnOrigin::Preset ||
+                    std::none_of(npcs.begin(),npcs.end(),[&](const auto &npc){return npc.id==id && npc.rule.code==candidate.identity.monster;})) return false;
             } else if(id.value<plan.cursor || id.value-plan.cursor>=plan.allocatedIds) return false;
             if(!ports_.areas.validateRoomUnit(*candidate.roomAdmission,id)) return false;
             if(candidate.wanderTargetOrder) ++wanderRegistrations;
             ++additions;
         }
     }
-    return additions<=65536 && additions<=plan.allocatedIds+plan.restoredIdentities.size() && state_.actors.size()-plan.removals.size()<=65536-additions && registrations<UINT64_MAX-state_.nextPetRegistrationOrder &&
+    return additions<=65536 && additions<=plan.allocatedIds+plan.restoredIdentities.size()+plan.presetIdentities.size() && state_.actors.size()-plan.removals.size()<=65536-additions && registrations<UINT64_MAX-state_.nextPetRegistrationOrder &&
         wanderRegistrations<=UINT64_MAX-state_.nextWanderTargetOrder;
 }
 void System::publishActors(ActorPublication &plan) noexcept {
@@ -379,23 +384,6 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
     stop(id);pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
-}
-DomainResult<> System::updateHireling(EntityId id,MonsterRule rule,WeaponDamage weapon,CombatModifiers modifiers,int strength,int dexterity,int vitality,
-    std::shared_ptr<const PersistentCharacter> equipment,uint64_t inventoryRevision,uint64_t characterRevision,NativeUnitStats intrinsic,Fixed8 maximum) {
-    const auto found=state_.actors.find(id);
-    if(found==state_.actors.end() || !found->second.hireling) return {DomainStatus::InvalidActor,{}};
-    auto &actor=found->second;
-    const bool levelUp=rule.level>actor.rule.level && actor.life>0;
-    if(!rule.stats || !intrinsic.sources || maximum.raw()<=0) return {DomainStatus::InvalidRequest,{}};
-    actor.rule=std::move(rule);actor.petWeapon=std::move(weapon);actor.petStats.attributes.combat=std::move(modifiers);
-    actor.rule.statGameType=ports_.settings.ladderMonsterStats();
-    actor.petStats.block=actor.rule.blockChance;
-    actor.nativeStats=std::move(intrinsic);
-    maximumLife(id,maximum.raw());
-    if(levelUp) actor.life=actor.maximumLife;
-    actor.hirelingStrength=strength;actor.hirelingDexterity=dexterity;actor.hirelingVitality=vitality;
-    actor.equipment=std::move(equipment);actor.hirelingInventoryRevision=inventoryRevision;actor.hirelingCharacterRevision=characterRevision;
-    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::stageRetirements(effects::AuraUnitPublication &publication,std::span<const EntityId> ids,uint64_t tick) const {
     for(const auto id:ids) {

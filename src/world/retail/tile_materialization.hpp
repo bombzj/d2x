@@ -100,6 +100,10 @@ class RetailTileMaterializer {
     // repeated Vis-slot pairing and smooth/warp room links without RNG draws.
     std::vector<size_t> establishNear(size_t room, const NativeActLayout &,
         const std::function<void(int)> &ensureLevel);
+    // Resource preparation may resolve the logical graph without creating
+    // tiles. Import that exact order into a new pure materialization session.
+    void preparedLinks(size_t room, std::span<const size_t> near,
+        std::span<const std::pair<int,size_t>> warps);
     void loadOutdoor(size_t room, const RetailOutdoorRoomData &, std::span<const size_t> near);
     // Called at UNTILE preparation, before any in-sight room creates tiles.
     void preparePresetUnits(size_t room, bool preloaded,
@@ -123,5 +127,6 @@ void sortRetailNearRooms(std::vector<size_t> &, const std::deque<RetailTileRoom>
 // Initial grid only: includes all three tile arrays, even hidden/lit tiles.
 // No synthetic outer barrier or actor collision.
 RetailRoomCollision projectRetailRoomCollision(const RetailTileMaterializer &, size_t room,
-    std::span<const size_t> activeNear);
+    std::span<const size_t> activeNear,
+    const std::function<bool(const RetailMaterializedTile &)> &include = {});
 } // namespace d2x

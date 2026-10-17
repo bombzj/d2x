@@ -6,7 +6,7 @@
 
 核对范围按七职业主动／被动、通用技能、怪物／精英、佣兵／召唤物和物品来源的生产入口追踪。玩家动作由`skills::cast/weaponCast`发布actions时间线，非玩家由`requestCast`发布怪物动作事件；战斗、飞弹、状态及归属分别归对应领域。被动通过属性来源的原生技能刷新／StatList计算，不为每项被动制造施法动作。公共入口相同不要求不同原St／Do、资格或采样时点被强行合并。
 
-当前源码已修正以下分歧，尚未构建或运行认证：
+当前源码已修正以下分歧并纳入Release构建；下列专用路径尚未专项运行认证：
 
 - 玩家尸爆、物品触发尸爆与死亡卫哨共用`effects::corpseExplosion`，使用当前原表公式、尸体基础生命表、原房间候选和一个物理／元素伤害结构。尸体不可用／隐藏状态、尸体种子及玩家消耗随同一候选发布，逐目标同步回调保留背压游标；旧双伤害分支及其专属生命／比例／半径快照已删除。
 - 怪物／佣兵／伙伴以真实属性选择St／Do等级并登记MPQ单位事件，预分配近战保留St结果，失效释放同步丢弃联系。孵化、Bestow、钻地回复、冲锋及怪物诅咒改用当次原公式／属性；四处hosting无实际单位的数值快照和旧怪物飞弹备用执行器已撤除，动作标记／动画准备继续保留。
@@ -22,7 +22,7 @@
 
 怪物动态规则入口为`skills::requestCast/releaseMonsters`、`combat::prepareNativeSkillContact`、`effects::monsterCurse`及`monsters::healSkill/startSkillMotion/activateWeb`。hosting保留原表、动画、程序身份与初始技能赋值；St／Do分别保存采样及背压进度。孵化按当次Calc1准备子体，共同发布并保留后续进度，零数量也进入死亡处理。Bestow先Calc2再Calc1，当前MPQ两式为空，保持零治疗；钻地回复以当次生命计算。冲锋在St读取当前velocitypercent及原Run，保留最低50%限制。怪物诅咒准备范围、期限、六槽属性及原filter，再逐目标处理抗性与覆盖；精英Cursed保留有意的来源快照。客户端／内容仍有消费者的resolveSkill接口继续保留。
 
-以上规则核对当前MPQ Skills／Missiles／DifficultyLevels、本地D2MOO MonsterUnique／MonsterMode／SUnitDmg、SkillSor Do20／21／23／29、PlrModes、Path/Step及SkillMonst；1.13c与参考转录的差异和地址见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。本轮未构建、运行检查、编写测试或打包。待运行核验重复修饰符／复合强化、冻结死亡、自然死亡／退休／上限替换、主人换区、同步回调背压，及静态力场下限／抗性、心灵传动各类目标、雷云通知顺序、移动轨迹／跨房间生成和St／Do之间属性变化。这里是源码入口核对，未完成全部逐ID／来源组合、当前MPQ完整数值或原版逐帧验收，也不沿用下文历史包证据认证本轮改动。
+以上规则核对当前MPQ Skills／Missiles／DifficultyLevels、本地D2MOO MonsterUnique／MonsterMode／SUnitDmg、SkillSor Do20／21／23／29、PlrModes、Path/Step及SkillMonst；1.13c与参考转录的差异和地址见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。本轮已构建／打包，有限冒烟只覆盖[运行包记录](../../development/BUILD_AND_RUN.md#当前逐房间地形构建)列出的路径；未新增测试程序。待运行核验重复修饰符／复合强化、冻结死亡、自然死亡／退休／上限替换、主人换区、同步回调背压，及静态力场下限／抗性、心灵传动各类目标、雷云通知顺序、移动轨迹／跨房间生成和St／Do之间属性变化。这里是源码入口核对，未完成全部逐ID／来源组合、当前MPQ完整数值或原版逐帧验收，也不沿用下文历史包证据认证本轮改动。
 
 ## 当前持续效果入口
 
@@ -65,9 +65,9 @@ SrvDo18补入当前MPQ的飓风装甲、Quickness、Fade和Venom，六AuraStat�
 | 城镇服务NPC | 同一个非玩家Actor；AreaNpc只保存GUID、出生点和交互／剧情能力 | 原表空Level／HP为零，存活模式独立于HP；不能伪造生命，也不接敌怪AI |
 | 友军剧情NPC | 同一个非玩家Actor及公共Participants／空间索引／属性／资源／复制路径 | act5pow保留npc=0、isAtt=1、mA1=0、noAura=0、Align=1；不创建影子怪物 |
 
-NPC规则由`hosting/npc_content`准备：`loadMonsterCombatProfile(NativeNpc)`共用MonStats／MonLvl缩放，`prepareMonsterLifecycle`共用状态、组件、动作时钟和技能来源。World分配原GUID后由`monsters::System::admitNpc`创建唯一运行实体；`AreaNpc.spawnPosition`只作出生内容，不随移动回写。NPC对话、交互靠近、任务距离和囚犯逃离读取真实Actor位置。Actor拥有HP、maxhp、随机种子、属性根和动作状态，`MonsterResourceTrace`处理状态投递／撤出与最大生命变化；NPC任务／服务能力不会授权攻击或治疗。
+NPC规则由`hosting/npc_content`准备：`loadMonsterCombatProfile(NativeNpc)`共用MonStats／MonLvl缩放，`prepareMonsterLifecycle`共用状态、组件、动作时钟和技能来源。预设NPC的GUID由World分配；动态任务NPC由`monsters::System::admitNpc`复验区域来源后，与Actor及装备共同发布新GUID；`AreaNpc.spawnPosition`只作出生内容，不随移动回写。NPC对话、交互靠近、任务距离和囚犯逃离读取真实Actor位置。Actor拥有HP、maxhp、随机种子、属性根和动作状态，`MonsterResourceTrace`处理状态投递／撤出与最大生命变化；NPC任务／服务能力不会授权攻击或治疗。
 
-囚犯移动消费公共速度修正、恢复／冰冻／眩晕／击退状态；移动提交成功后才推进路径节点，提交被拒绝时保留原路径游标。死亡使用既有状态死亡掩码，离区逃离则撤销Actor、房间链及该GUID的状态／周期事件和效果缓存。区域休眠不是实体删除，其他来源已经投递的有限状态仍由真实期限维护。NPC与其他非玩家单位共用AC、动作和A7／A8／AA状态及数值快照；hosting的NPC专用投影只保留任务感叹号，按玩家任务可见性过滤，避免重复分配GUID或维护第二套NPC状态。调试快照的NPC位置来自运行实体，出生点单独显示。
+囚犯移动消费公共速度修正、恢复／冰冻／眩晕／击退状态；移动提交成功后才推进路径节点，提交被拒绝时保留原路径游标。死亡使用既有状态死亡掩码，离区逃离则撤销Actor、房间链及该GUID的状态／周期事件和效果缓存。区域压缩共用[怪物休眠流程](../monsters/POPULATION.md#公共出生压缩与特殊恢复)，保存必要节点后退役活动实体与效果；它不等同于囚犯逃离后的永久移除，也不承诺保留全部短时状态。NPC与其他非玩家单位共用AC、动作和A7／A8／AA状态及数值快照；hosting的NPC专用投影只保留任务感叹号，按玩家任务可见性过滤，避免重复分配GUID或维护第二套NPC状态。调试快照的NPC位置来自运行实体，出生点单独显示。
 
 ### 按原程序区分接收资格
 
@@ -188,7 +188,7 @@ Howl／GrimWard使用独立TerrorUtility入口：投递Terror技能／等级1及
 | [casting.cpp](../../../src/server/systems/skills/casting.cpp) | 开始资格、目标绑定、动作／引导、延迟释放及背压重试；activationProgram统一将已准备规则分类，普通释放使用成员函数策略表 |
 | [activation.cpp](../../../src/server/systems/skills/activation.cpp) | 具名效果处理器，通过窄领域端口执行物品、召唤、状态、旅行、直接命中和弹体；不持有另一份施法时钟 |
 | [weapon.cpp](../../../src/server/systems/skills/weapon.cpp) | 原武器资格、成本、多段／回滚时序及释放；运行时weapon优先于普通效果分类 |
-| [item_triggers.cpp](../../../src/server/systems/effects/item_triggers.cpp) | 装备触发队列、概率与目标解析、效果已执行／通知待发送状态；itemTrigger复用程序分类，但保留零消耗、死亡与目标限制 |
+| [item_triggers.cpp](../../../src/server/systems/reactions/item_triggers.cpp) | 装备触发队列、概率与目标解析、效果已执行／通知待发送状态；itemTrigger复用程序分类，但保留零消耗、死亡与目标限制 |
 | [client_missile_program.hpp](../../../src/presentation/world/client_missile_program.hpp) | 已支持CltDo能力目录，集中静止、创建来源配对和子弹体图形资格；程序号来自MPQ，不是技能ID |
 | [client_missile_view.cpp](../../../src/presentation/world/client_missile_view.cpp) | 按CltDo单次分派逐帧专用行为，之后共用运动、碰撞、子弹体队列和表现时钟；不运行权威命中 |
 
@@ -339,7 +339,7 @@ TCP最终快照ignoredPackets为0、mapErrors为空；仍有已知的组件装�
 
 客户端与独立服务端均完成Release构建／打包，嵌入宿主与独立服务端共用同一领域实现；本轮没有运行PvPGN／原D2GS后端。抽取上述典型路径，不穷举每个怪物、武器或职业；女武神／死灵召唤物、全部特殊模式／装备状态速率组合、三难度、跨机器和Linux仍未运行认证。前包的全部断点及双客户端结果保留在上节，不能替代本包对应路径复验。
 
-原生救赎的尸体判定由`monsters::selectableCorpse`集中读取实际死亡动作、CorpseSel和Udead状态；不以经验／掉落结算完成代替死亡模式。玩家／非玩家的资源与种子、尸体REDEEMED及不可选标记通过同一候选提交。拉达门特的回收者是实际飞弹，求值和恢复不借用死亡怪物的资源；相关后续源码尚未构建或运行。
+原生救赎的尸体判定由`monsters::selectableCorpse`集中读取实际死亡动作、CorpseSel和Udead状态；不以经验／掉落结算完成代替死亡模式。玩家／非玩家的资源与种子、尸体REDEEMED及不可选标记通过同一候选提交。拉达门特的回收者是实际飞弹，求值和恢复不借用死亡怪物的资源；相关源码已纳入当前包，救赎及复活专用分支尚未专项运行验收。
 
 ## 通用施法表现有限证据
 

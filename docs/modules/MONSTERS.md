@@ -1,29 +1,29 @@
 # 怪物模块入口与所有权
 
-更新：2026-10-12。本页只维护代码入口、状态归属与模块协作；规则、按幕执行、原包表现及历史证据统一进入[怪物目录](../gameplay/monsters/README.md)。客户端消费所连接服务端的公开事实，不执行人口、AI、命中、复活或奖励。
+更新：2026-10-17。本页只维护代码入口、状态归属与模块协作；规则、按幕执行、原包表现及历史证据统一进入[怪物目录](../gameplay/monsters/README.md)。客户端消费所连接服务端的公开事实，不执行人口、AI、命中、复活或奖励。
 
 ## 服务端与内容入口
 
 | 入口 | 职责 |
 | --- | --- |
 | [monster_catalog.cpp](../../src/content/monsters/monster_catalog.cpp)及content/monsters | 当前MonStats／MonStats2、AI、动作、数值、词缀／经验／掉落适配 |
-| [population.cpp](../../src/world/population.cpp) | hosting与资源工具报告共用人口计划，客户端不据此出生 |
-| [combat_content.cpp](../../src/hosting/combat_content.cpp) | 人口／战斗规则、准入／替身与组件准备，不持活动AI |
+| [combat_content.cpp](../../src/hosting/combat_content.cpp) | 不可变区域规则、原型、预设描述及授权替身准备，不运行人口规划或持有活动AI |
 | [monster_actions_content.cpp](../../src/hosting/monster_actions_content.cpp) | 攻击／技能／弹体与原事件帧准备，内核不读MPQ |
 | [act2_monster_skills.cpp](../../src/hosting/act2_monster_skills.cpp) | 第二幕技能槽、MonSeq行时钟、固有光环及受击／死亡弹体的纯值准备 |
-| [population/system.cpp](../../src/server/systems/population/system.cpp) | 区域代次与spawn key准入，不因离开视野重生 |
+| [population/system.cpp](../../src/server/systems/population/system.cpp) | 唯一自然人口执行器：实时密度、DS1／任务／物件出生游标、房间阶段及清场覆盖查询 |
 | [monsters/system.cpp](../../src/server/systems/monsters/system.cpp)、[special_actions.cpp](../../src/server/systems/monsters/special_actions.cpp)、[controlled.cpp](../../src/server/systems/monsters/controlled.cpp) | 活动实体、生命、组件、位置／路线、版本、home／节点、复活／出生／死亡连锁及伙伴实体 |
+| [monsters/inactive.cpp](../../src/server/systems/monsters/inactive.cpp) | 普通／特殊怪物及NPC共用压缩、恢复继续点、旧GUID复验和可见性完成边界 |
 | [ai/system.cpp](../../src/server/systems/ai/system.cpp)及family_actions／nest_family／unique_actions | 目标、决策时钟与随机，调用纯策略并提交movement／skills窄请求 |
 | [gameplay/monsters](../../src/gameplay/monsters) | 家族／首领纯决策、方向、碰撞、速度、伤害及组件计算 |
 | [ai/act2_actions.cpp](../../src/server/systems/ai/act2_actions.cpp)、[monsters/act2_skills.cpp](../../src/server/systems/monsters/act2_skills.cpp) | 第二幕家族AI、飞行／栖息／颜色／再生、木乃伊支持资格、钻地、子怪及可中断移动；完整范围见所属幕 |
 | [skills/monster_actions.cpp](../../src/server/systems/skills/monster_actions.cpp) | 开始／释放、MonSeq多次事件及目标／中断／代次复验 |
 | [missiles/monster.cpp](../../src/server/systems/missiles/monster.cpp) | 权威弹体、接触及多发／地面效果 |
-| [effects/monster_enchantments.cpp](../../src/server/systems/effects/monster_enchantments.cpp)、[monster_periodic.cpp](../../src/server/systems/effects/monster_periodic.cpp) | 精英光环／诅咒／受击／死亡与周期效果时钟 |
+| [effects/monster_enchantments.cpp](../../src/server/systems/effects/monster_enchantments.cpp)、[frame_events.cpp](../../src/server/systems/effects/frame_events.cpp) | 精英光环／诅咒／受击／死亡与周期效果时钟 |
 | [monster_replication.cpp](../../src/hosting/detail/monster_replication.cpp) | 公开事实与状态的原包编码，不建第二份权威真值 |
 
 combat拥有待命中计划，death／loot／progression分别提交死亡、掉落和经验；quests消费真实身份／出生来源与死亡事实。companions拥有主人与控制关系，monsters拥有活动实体。固定步、事务／可靠输出和调度统一见[SERVER_SYSTEMS](SERVER_SYSTEMS.md)，不将状态集中回会话。
 
-Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集中表达当前受伤、战斗伙伴和普通攻击入口能力，由monsters目标／伤害、skills怪物施法及combat命中复用。它们不包括生命、区域、距离、视线、动作或所有权授权，调用者仍逐次复验这些条件；不是完整阵营／PvP接口。Hydra保留专用施放和不可受伤路径，诱饵可受伤但不进入普通攻击，女武神和佣兵保留各自装备／AI规则。静态城镇NPC仍归AreaStore与npc服务，不因type1相同迁入敌怪AI；中立不可替换敌人。
+Actor的damageable／combatCompanion／amazonAttacker／standardAttackSource集中表达当前受伤、战斗伙伴和普通攻击入口能力，由monsters目标／伤害、skills怪物施法及combat命中复用。它们不包括生命、区域、距离、视线、动作或所有权授权，调用者仍逐次复验这些条件；不是完整阵营／PvP接口。Hydra保留专用施放和不可受伤路径，诱饵可受伤但不进入普通攻击，女武神和佣兵保留各自装备／AI规则。AreaStore保存NPC定义和预分配身份，monsters持有其唯一活动Actor，npc与quests提供服务／任务行为；NPC共用出生属性与发布，不运行敌怪AI。中立不可替换敌人。
 
 ## 客户端入口
 

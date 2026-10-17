@@ -40,7 +40,7 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
             if(roomIndex!=requestedRoom) continue;
             if(roomIndex>=area.rooms.size() || !area.rooms[roomIndex].loaded || published.rooms.contains(roomIndex)) continue;
             const auto &bounds=rooms[roomIndex];
-            if(!bounds.populate || std::any_of(definition.objects.begin(),definition.objects.end(),[&](const auto &object) {
+            if(!bounds.populate || definition.populationRooms.at(roomIndex).waypoint || std::any_of(definition.objects.begin(),definition.objects.end(),[&](const auto &object) {
                 return object.rule.operation==23 && definition.activation.room(object.position)==&bounds;
             })) {published.rooms.insert(roomIndex);continue;}
             const RoomView room{region,(int(definition.origin.x)+bounds.x)/5,(int(definition.origin.y)+bounds.y)/5};
@@ -477,6 +477,7 @@ StepStatus System::populateRandomRoom(RegionId requestedRegion,size_t requestedR
                             const int replacement=rule.parameters[1]>0 && rule.parameters[1]<573?rule.parameters[1]:84;
                             if(!definition.objectRules.contains(replacement)) throw std::logic_error("Missing native healing shrine replacement");
                             object->definition=replacement;
+                            object->rule=definition.objectRules.at(replacement);
                             std::vector<size_t> candidates;
                             for(size_t index=0;index<definition.shrineGeneration.size();++index)
                                 if(definition.shrineGeneration[index].effectClass==2) candidates.push_back(index);

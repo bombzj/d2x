@@ -90,6 +90,7 @@ struct MonsterRule {
     MovementCollisionRule spawnCollision;
     bool nativeSpawnFloor{};
     std::optional<std::pair<Vec,MovementCollisionRule>> spawnAuxiliary;
+    bool spawnAuxiliaryOnAdmissionOnly{};
     NativeCollisionPattern collisionPattern{NativeCollisionPattern::None};
     bool demon{}, undead{}, boss{}, lesserUndead{};
     int stunState{-1};

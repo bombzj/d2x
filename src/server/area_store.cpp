@@ -1,4 +1,5 @@
 #include "area_store.hpp"
+#include "world/room_terrain.hpp"
 #include "world/native_spawn.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
@@ -6,6 +7,32 @@
 #include <cmath>
 
 namespace d2x::server {
+void AreaStore::validate(const AreaDefinition &initial) {
+    const auto &grid = initial.collision;
+    if (grid.width <= 0 || grid.height <= 0)
+        throw std::runtime_error("Empty prepared authority area");
+    const auto count = size_t(grid.width) * size_t(grid.height);
+    if (!initial.roomTerrain || initial.roomTerrain->act()!=initial.act)
+        throw std::runtime_error("Missing decoded native room inputs");
+    if (grid.blocked.size() != count || grid.lightBlocked.size() != count ||
+        grid.terrainCollision.size() != count || grid.objectCollision.size() != count ||
+        grid.objectLightBlocked.size() != count ||
+        grid.fullTerrainCollision.size() != count)
+        throw std::runtime_error("Incomplete prepared collision grid");
+    if (initial.activation.rooms().empty() || initial.roomNear.size() != initial.activation.rooms().size())
+        throw std::runtime_error("Missing original room topology");
+    for (const auto &near : initial.roomNear)
+        if (near.empty()) throw std::runtime_error("Missing original near-room list");
+    // Cross-area borrows must be installed by this store, never imported.
+    if (!initial.collision.neighbours.empty() || !initial.collision.navigationSources.empty() ||
+        std::any_of(grid.fullTerrainCollision.begin(),grid.fullTerrainCollision.end(),[](uint16_t value) {return value!=0xffff;}))
+        throw std::runtime_error("Invalid prepared authority area");
+    if (int(initial.id) < 1 || int(initial.id) > 255 || initial.act < 0 || initial.act > 4)
+        throw std::runtime_error("Invalid native area identity");
+    for(const auto &cell:initial.openedTombWall) if(cell.index>=count)
+        throw std::runtime_error("Invalid prepared tomb collision patch");
+}
+
 std::vector<std::pair<RegionId,size_t>> AreaStore::loadedRoomOrder() const {
     std::vector<std::pair<RegionId,size_t>> result;
     for(const auto &[region,area]:areas_)

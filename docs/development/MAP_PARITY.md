@@ -20,13 +20,17 @@ cmake --build <新证据目录>/oracle-build32 --config Release --target d2mapap
 | 事件／选项 | 含义 |
 | --- | --- |
 | reveal／hide | 调用原AddRoomData／RemoveRoomData |
+| stream | 原DLL以房间中心调用StreamRoomAtCoords；D2X宿主会话初始化同一目的房间，无引用变更 |
+| enter／change／leave | enter先初始化再ChangeClientRoom；change只切换已活动目的房间；leave将该client上一房间改为空。client为0–7，默认0 |
+| retire | 原DLL调用1.13c ordinal10150／RVA3CA20的RemoveRoomFromAct；D2X释放同一房间。用于已记录的实际释放或显式DRLG控制，不代表模拟了D2Game单位压缩 |
+| tick／frame | tick显式调用DRLG_Update；frame为D2X宿主会话推进GAME_Update卸载检查。frames最多250；原导出器不模拟完整游戏帧 |
 | sample／observe | 前者读取活动房间；后者也可读取未活动状态，不隐式激活 |
 | state=true | 导出loaded、collisionActive、逻辑近邻、tileRandom及activeRandom；activeRandom为未消费玩法随机的活动房间初值 |
 | ownedOnly=true | 保留全部近邻身份／顺序／随机和完整碰撞，仅本房间输出瓦片／单位／Pops明细，其他近邻标记details=false；全区采样逐房覆盖明细 |
 | phase | 证据标签 |
 | D2MAP_TRACE | 每步执行前刷新轨迹文件，便于定位原DLL中断 |
 
-D2MAP_SIDE=server仅令LoadAct使用bClient=0和空客户端回调，后续仍调用AddRoomData；它不模拟真实D2Game创建、人口或延后释放，不能用作服务端生命周期验收。
+D2MAP_SIDE=server令LoadAct使用bClient=0和空客户端回调。reveal／hide仍走视野入口；其他事件也只重放明确的DRLG操作，不模拟D2Game人口。真实1.13c D2Game不导入10715，实机记录的Update均来自客户端；服务端轨迹不得凭7 tick分支自行补入预取。当前导出器补丁／二进制及运行证据位于`artifacts/map-room-runtime-20261017-01`，旧批次EXE另行保留。
 
 D2X使用既有资源命令：
 
@@ -35,9 +39,9 @@ D2X使用既有资源命令：
 & .\build\bin\d2x_assets.exe .\assets\mpq2 native-map <level> <seed> <difficulty> prepared
 ```
 
-JSON模式只读取原版事件，独立生成地形；prepared走实际AreaGenerator准备路径，输出冻结碰撞及initialRoomRandom。complete使用另一条遍历顺序，不能替代prepared。
+JSON默认沿用客户端事件重放；native.mode="server"选择与权威world相同的纯值房间会话和服务端引用状态机，接受上表事件。区域输入按需合并，不重新初始化已有房间。输出creations记录每次实际创建后的瓦片随机／活动初值，retirements记录实际释放。prepared现在只验证资源准备，地形全为0xffff、materializedRooms=0；不再输出冻结初值。complete仍是离线地图投影，不能认证宿主实际时序。
 
-比较原点／尺寸、房间／事件／近邻有序列表、DT1路径及记录、单位／Pops、全部16位碰撞与两条房间流。列表长度单独核对，不排序。沿用[历史状态位掩码](../architecture/MULTIPLAYER.md#原版-dll-对照方法)，DT1路径统一大小写／分隔符；原导出缺省的outdoorFlags／auxiliary／themeMask补零，非零值保留比较。
+宿主模式比较尺寸、房间／事件／近邻有序列表、DT1路径及记录、全部16位碰撞与两条房间流；完整单位／Pops明细仍由既有客户端模式导出，不能据宿主地形对照宣称单位恢复通过。列表长度单独核对，不排序。沿用[历史状态位掩码](../architecture/MULTIPLAYER.md#原版-dll-对照方法)，DT1路径统一大小写／分隔符；原导出缺省的outdoorFlags／auxiliary／themeMask补零，非零值保留比较。
 
 ## 真实EXE排查
 
@@ -45,6 +49,10 @@ JSON模式只读取原版事件，独立生成地形；prepared走实际AreaGene
 2. 先D2X Host／原版Join，再反向Host／Join。同局比较同一全局坐标的道路、桥、墙、门洞、楼梯和warp；从两侧走过狭口，并观察攻击／飞弹阻挡及服务器位置校正。
 3. 选邻房A／B，分别观察A卸载而B保留、两房都卸载、交换返回次序及重复重入；另让一名玩家留在A作引用对照。D2X须看到loaded=true→false→true及重建后的creationOrder；07／08或离屏只表示客户端视野变化。原版服务端需可靠的只读观察确认实际释放。
 4. 在合法任务进度下开门／开墓墙后重复回访；核对静态地形、动态物件、单位恢复及后续随机分别是否变化。优先覆盖野外接缝、迷宫共享墙、虫穴／古墓、第三幕丛林、第五幕大区域，再扩展种子和难度。
+
+已执行的最小原版实例为`Game.exe -w -ns -seed 1`，隔离角色经原UI进入4区并返回。该参数仅用于原版诊断，D2X无对应产品入口。以已校验的1.13c地址记录LoadAct、视野引用、StreamRoomAtCoords、ChangeClientRoom、DRLG_Update、InitRoom及目标房间GetTileCache／共享砖查找；同时按Act+0x50区分服务端0／客户端1，Act+0x0c核对实际seed。释放须同时看到Room2+0x30的Room1为空及+0x28的HAS_ROOM（0x100000）清除，回访再记录InitRoom，不能以08或离屏代替。
+
+采样同时保留原始16位碰撞和静态投影。静态投影取实际原生DT1记录的25格碰撞及影响碰撞的tile flags 0x02／0x40／0x80，按活动near顺序合并；不以D2X生成值充当原版预期。随后分别重放实际07／08序列、补入实际Update序列、执行prepared，用第一个不同的共享砖命中／选砖参数／随机定位原因。实机结果、动态占位区别及证据路径统一见[实机首差](../gameplay/world/MAPS.md#实机首差与合成调用边界)。
 
 从仓库根启动D2X Host，先替换占位路径并建立新证据目录：
 
@@ -75,6 +83,6 @@ JSON模式只读取原版事件，独立生成地形；prepared走实际AreaGene
 
 ## 待核对项
 
-真实1.13c服务端的ChangeClientRoom、活动房间创建／删除、延后FreeRoom及单位压缩／恢复尚未完整取证。观察须区分服务端／客户端Act，地址按实际DLL校验；D2MOO 1.10f用于定位入口。
+真实1.13c单机已取得服务端初始化／ChangeClientRoom、两端房间实际释放／重建和出生随机证据，宿主已改为实际逐房间物化；包内双D2X客户端已有限核对不同路线及留守／释放。原版混合客户端、更多种子／交错、完整单位压缩／恢复及整级资源回收仍须单独核对。地址按实际DLL校验，D2MOO 1.10f只用于定位入口。
 
 发现差异时保留第一个不同的区域／房间／全局格、事件／帧、DT1记录、静态与动态碰撞层及两条房间流。先核对资源、种子、阶段和引用状态，再决定是否修改生成、缓存或恢复机制。

@@ -114,6 +114,8 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     return finish(id);
 }
 DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes,uint64_t itemCursor,const std::set<size_t> *stagedUniques) {
+    if(!request.rule || !request.rule->stats || !request.rule->formulas || request.rule->minimumLife<0 ||
+        request.rule->maximumLife<request.rule->minimumLife) return {DomainStatus::InvalidRequest,{}};
     const auto &rule=*request.rule;
     Actor actor;
     actor.admissionTick=request.tick;
@@ -128,7 +130,8 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
     actor.admissionRule=std::make_shared<const MonsterRule>(rule);
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.combatRandom=childRandom(random);
-    if(request.hostile && !request.deadMode) {
+    const bool activeAi=request.hostile || rule.ai.kind==MonsterAiKind::GoodNpcRanged;
+    if(activeAi && !request.deadMode) {
         uint64_t delay=1;
         if(request.birthTicks<=0) {
             const bool clients=std::any_of(ports_.players.all().begin(),ports_.players.all().end(),[&](const auto &entry) {
@@ -140,7 +143,7 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
         actor.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
             {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,request.tick+delay}));
     }
-    if(request.hostile) actor.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+    if(activeAi) actor.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
         {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,request.tick+1,true}));
     prepareInitialTimers(actor,request.tick);
     palettes=prepareComponents(actor,&palettes);
@@ -305,27 +308,29 @@ void System::publishComponents(ComponentPaletteState &candidate) noexcept {
         if(const auto current=state_.componentPalettes.find(area);current!=state_.componentPalettes.end()) current->second.swap(palettes);
     state_.componentPalettes.merge(candidate);
 }
-void System::admitNpc(EntityId id,RegionId region,Vec position,const NpcRule &npc) {
-    if(!id || state_.actors.contains(id) || !npc.combat || !ports_.areas.find(region) || state_.actors.size()>=65536)
-        throw std::invalid_argument("Invalid prepared NPC admission");
-    Actor actor;actor.id=id;actor.area=region;actor.position=actor.home=actor.movementGoal=position;
-    actor.identity.monster=npc.code;actor.identity.origin=SpawnOrigin::Preset;
-    actor.identity.spawnKey="npc."+std::to_string(id.value);actor.questNpc=true;actor.revision=1;actor.rule=*npc.combat;
-    auto random=ports_.random;actor.combatRandom=childRandom(random);
-    const auto entered=unsigned(std::count_if(ports_.players.all().begin(),ports_.players.all().end(),[](const auto &entry){return entry.second.entered;}));
-    actor.admittedPlayerCount=actor.rule.alignment?1u:std::clamp(std::max(entered,ports_.settings.virtualPlayers),1u,8u);
-    auto palettes=prepareComponents(actor);
-    const auto &rule=actor.rule;
-    if(rule.minimumLife<0 || rule.maximumLife<rule.minimumLife || !rule.stats || !rule.formulas)
-        throw std::invalid_argument("Invalid prepared NPC resources");
-    const auto base=rollMonsterLife(rule.minimumLife,rule.maximumLife,actor.combatRandom);
-    const auto hp=std::min(nativeAdd(base,nativePercentage(base,int32_t(50*(actor.admittedPlayerCount-1)),100)),(1<<23)-1);
-    actor.life=actor.maximumLife=nativeShiftLeft(hp,8);actor.modeAlive=hp==0;
-    actor.rewardComplete=true; // Service/quest actors have no hostile loot transaction.
-    actor.nativeStats=attributes::prepareMonsterStatSources(actor,ports_.areas.statTime(region));
-    auto room=ports_.areas.prepareRoomUnit(id,1,region,position);
-    std::map<EntityId,Actor> candidate;candidate.emplace(id,std::move(actor));
-    ports_.random=random;publishComponents(palettes);state_.actors.merge(candidate);ports_.areas.publishRoomUnit(*room);
+DomainResult<> System::admitNpc(EntityId id,RegionId region,Vec position,const NpcRule &npc,bool resurrected) {
+    if(!id || state_.actors.contains(id) || !npc.combat || !ports_.areas.find(region)) return {DomainStatus::InvalidRequest,{}};
+    if(state_.actors.size()>=65536) return {DomainStatus::Capacity,{}};
+    const bool allocate=id.value==ports_.ids.cursor();
+    if(allocate) {
+        const auto &definitions=ports_.areas.at(region).definition.questNpcs;
+        const auto source=definitions.find(npc.code);
+        if(source==definitions.end() || &source->second!=&npc) return {DomainStatus::InvalidRequest,{}};
+    }
+    Admission request;request.identity.monster=npc.code;request.identity.origin=SpawnOrigin::Preset;
+    request.identity.spawnKey="npc."+std::to_string(id.value);request.area=region;request.position=position;
+    request.rule=*npc.combat;request.tick=ports_.frameEvents.currentFrame();request.resurrected=resurrected;
+    auto random=ports_.random;ComponentPaletteState palettes;
+    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor()+size_t(allocate));
+    if(!prepared) return {prepared.status,{}};
+    auto actor=std::move(*prepared.value);actor.questNpc=true;actor.movementGoal=position;
+    const auto allocated=actor.birthEquipmentItems+size_t(allocate);
+    const std::array presets{id};
+    auto publication=prepareActorPublication({{id,std::move(actor)}},allocated,{},nullptr,{},
+        allocate?std::span<const EntityId>{}:std::span<const EntityId>{presets});
+    if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+    publishComponents(palettes);publishActors(publication);ports_.random=random;
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::moveNpc(EntityId id,RegionId region,Vec position,Vec destination,bool escaped) {
     const auto found=state_.actors.find(id);
@@ -625,7 +630,7 @@ DomainResult<> System::upgradeShrine(EntityId id,uint64_t tick) {
 DomainResult<> System::prepareBirthModifiers(EntityId id,MonsterRank rank,std::vector<int> modifiers,
     std::span<const EntityId> minions,uint64_t tick,std::optional<std::pair<uint64_t,uint64_t>> random,bool promoteMinions,std::optional<uint16_t> nameSeed) {
     const auto *actor=find(id);
-    if(!actor || !actor->alive() || modifiers.size()>9 ||
+    if(!actor || (!actor->alive() && !actor->restorationPending) || modifiers.size()>9 ||
         (rank!=MonsterRank::Unique && rank!=MonsterRank::Champion && rank!=MonsterRank::SuperUnique && !(nameSeed && rank==MonsterRank::Minion)))
         return {DomainStatus::InvalidRequest,{}};
     if(modifierPending_) return {DomainStatus::Conflict,{}};
@@ -694,13 +699,18 @@ StepStatus System::finishModifiers(TickContext context) {
         candidate.rule.selfResurrection=current.rule.selfResurrection;candidate.rule.restore=current.rule.restore;
         candidate.rule.neverCount=current.rule.neverCount;
         candidate.rule.flying=current.rule.flying;
+        candidate.rule.spawnCollision=current.rule.spawnCollision;
+        candidate.rule.collisionPattern=current.rule.collisionPattern;
+        candidate.rule.nativeSpawnFloor=current.rule.nativeSpawnFloor;
+        candidate.rule.spawnAuxiliary=current.rule.spawnAuxiliary;
+        candidate.rule.spawnAuxiliaryOnAdmissionOnly=current.rule.spawnAuxiliaryOnAdmissionOnly;
         const auto &mods=*candidate.rule.enchantment;
         attributes::MonsterResourceTrace resources(candidate,tick);
         const auto sources=ports_.effects.unitStatSources(current.id,tick);
         resources.sampleSources(sources);
         auto maximum=resources.read().maximum.raw();
         maximum=nativeAdd(maximum,nativePercentage(maximum,mods.lifePercent,100));
-        resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(maximum));
+        resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(current.alive()?maximum:0));
         if(mods.stopRegeneration) resources.writeBaseStat("hpregen",0,sources);
         const auto value=[&](std::string_view name) {return resources.values(sources).get({candidate.rule.stats->names.at(std::string(name)),0});};
         resources.writeBaseStat("level",nativeAdd(value("level"),mods.levelBonus),sources);
@@ -730,7 +740,7 @@ StepStatus System::finishModifiers(TickContext context) {
         if(mods.lifeScalePercent!=100) {
             maximum=resources.read().maximum.raw();
             maximum=nativeAdd(maximum,nativePercentage(maximum,nativeSubtract(mods.lifeScalePercent,100),100));
-            resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(maximum));
+            resources.writeBaseStat("maxhp",maximum,sources);resources.seedLife(Fixed8::fromRaw(current.alive()?maximum:0));
         }
         auto change=resources.take();candidate.nativeStats=std::move(change.intrinsic);
         candidate.life=change.life.raw();candidate.maximumLife=change.maximum.raw();++candidate.revision;
@@ -757,7 +767,7 @@ StepStatus System::finishModifiers(TickContext context) {
     publishActors(publication);
     modifierCommitted_=true;
     }
-    if(actor.rule.enchantment->aura) {
+    if(actor.alive() && actor.rule.enchantment->aura) {
         const auto &aura=*actor.rule.enchantment->aura;
         const auto assigned=ports_.effects.assignUnitAura(id,aura,tick,aura.rank);
         if(!assigned) return isDeferred(assigned.status) || assigned.status==DomainStatus::Conflict

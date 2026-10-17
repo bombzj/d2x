@@ -1,6 +1,6 @@
 # 第一幕怪物执行台账
 
-更新：2026-10-12。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-17。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
 
 当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。代表路径的有限V2见本页证据，其余分支仍为V1；源码接线不代表所有随机／难度组合已认证。
 
@@ -42,13 +42,13 @@ vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开
 
 boss／noRatio保留各难度MonStats等级；密度、精英组数、固定仆从数和TC各读当前难度。冠军、暗金、仆从变体见[精英](ELITES.md)。
 
-本次修正CorruptLancer、SkeletonMage及Bighead低生命接近的原单位距离停止条件，不再将WithSteps截短路线或混用WalkInRadiusToTarget。骷髅弓手／法师及萨满分别保留主目标与可射击目标，法师撤退失败仍射主目标；Bighead只用射击回调判断资格，实际攻击仍指向主目标。绕行使用原方向优先级±2与逐格碰撞；同区域近房间取原六tile间隙条件，依据见[COMMON](COMMON.md#移动与目标依据)。
+CorruptLancer、SkeletonMage及Bighead低生命接近使用原单位距离停止条件，不再将WithSteps截短路线或混用WalkInRadiusToTarget。骷髅弓手／法师及萨满分别保留主目标与可射击目标，法师撤退失败仍射主目标；Bighead只用射击回调判断资格，实际攻击仍指向主目标。绕行使用原方向优先级±2与逐格碰撞；同区域近房间取原六tile间隙条件，依据见[COMMON](COMMON.md#移动与目标依据)。
 
 源码／数据核对不等于完整运行认证。Vision缓存、跨区域完整活动房间、动态单位占位、全随机流及所有自然精英组合仍未认证；最小运行范围见本文有限证据。
 
 ## 三难度核对后的最小冒烟
 
-2026-10-12 Windows Release客户端和独立服务端已构建、打包。只复用包内EXE和现有调试管道，无新增测试脚本／用例／专用程序。证据在忽略目录`artifacts/act12-reaudit-20261012/smoke`，当时客户端SHA256 `91C1F0EE34054707A4BB8752161E5374221E4C6112FCCF9B0FC750166E8AA92F`，独立服务端 `5BE4F129D188A3DB51734361196B1364EFA2D91C0599A87A3C98E56CE52DE78D`，见同目录上级`package-hashes.json`。后续物品包身份由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护；下面的旧包运行结果不认证后续源码。
+2026-10-12历史有限观察位于忽略目录artifacts/act12-reaudit-20261012/smoke，包身份见同级package-hashes.json及[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。该批结果不认证后续源码。
 
 | 场景 | 实际观察 |
 | --- | --- |
@@ -57,7 +57,7 @@ boss／noRatio保留各难度MonStats等级；密度、精英组数、固定仆�
 | 保存退出／新进程重入 | 正常退局返回CharacterSelection；新进程ProtocolReady，生命644.3359375、法力215、等级91及经验1800000131恢复，物品数量保持 |
 | 两幕客户端／服务端 | scene.available=true，unavailableUnits=0，mapErrors／effectLimitations／characterIssues为空，failures=0；stderr为空 |
 
-普通场景有全局无关候选告警`Ambiguous duplicate MonStats Id disabled: cr_lancer8`，populationMissing=0；不把告警隐去或改成有效第二身份。噩梦／地狱仅本轮静态逐身份、逐难度核查，没有已解锁的隔离角色，不伪造存档来运行；全部AI分支、自然通关、词缀组合、巢生堵塞／耗尽及原版Join画面未重测。独立服务端只完成构建／打包，未启动PvPGN后端；最小冒烟不认证完整原版等价。
+该批保留全局无关候选告警Ambiguous duplicate MonStats Id disabled: cr_lancer8。普通难度最小观察不认证噩梦／地狱、全部AI／词缀分支、自然通关、巢生边界或完整原版等价；独立服务端未启动PvPGN后端。
 
 ## 逐身份源码与原资源核对
 
@@ -143,51 +143,18 @@ SkeletonRaise在骷髅及fetish1的原技能槽中存在，但普通Skeleton／F
 
 ## 有限运行证据
 
-2026-10-11第一幕批次的Windows Release历史包为D2S v96，客户端SHA256为`253F3AE1D28991F8BC7501B14EF9A7BC175C0D14B0C4756F1BE84158C329FA70`，独立服务端为`CAF7AF871442667A2AFE1F6F8965CD8737FDE11E4C36437BE984006087190450`。当前包见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，下面的证据不认证后续规则版本。92级女巫隔离角色、普通单机、当前MPQ；只用已有资源工具、游戏及调试管道，无新增测试脚本／用例／专用程序。证据目录为`artifacts/act1-audit-20261011/smoke`：
+历史普通难度观察包括63战斗身份与13固定身份的管理准入、萨满复活、正常Telekinesis击退、自然Countess火墙、安达利尔代表技能、强化受击／死亡表现及保存重入。管理准入不证明自然刷新，管理击杀不证明正常战斗；噩梦／地狱、全部AI／词缀组合、多人／Linux及逐随机一致性未认证。包身份统一见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，这些结果不认证后续源码。
 
-| 第一幕历史包证据 | 实际观察／边界 |
+| 本地证据目录 | 适用范围 |
 | --- | --- |
-| `final-identities.json`、`final-identities-summary.csv`及逐ID JSON | 63类型逐项生成后推进40帧，记录真实规则、单位模式／技能及原姓名；63项均成功，原图显示缺失0。管理击杀只用于清理条件，不认证正常玩家击杀／掉落概率或每条随机分支 |
-| `final-superuniques.json` | 13个固定身份全部准入，The Countess为AI22，真实姓名／调色显示缺失0；管理生成Flamespike不授予自然刷新点，Cow King不认证牛场开启事件 |
-| `shaman-before.json`、`shaman-revived.json`、`shaman-client.json`、PNG | 普通fallenshaman1尸体完成死亡奖励后被Bishibosh复活，恢复生命7，rewardComplete保留；客户端原图正常，没有误用S1复活动画 |
-| `knockback-active.json`、`knockback-client-confirmed.json`、PNG | 正常Telekinesis请求后牛怪处于KB原模式13，权威击退有效，GH原图可见，显示缺失0 |
-| `countess-initial-step.json`、`countess-observed.json`、`countess-combat.json`、PNG | 原Level25自然Countess及四个DS1节点；依次收到四处原弹体通知，100帧时有29段331地面火，火墙原图实际显示，显示缺失0 |
-| `nest-before.json`、`nest-observed.json`、`nest-exhausted.json` | crownest1出生6只后自行死亡，三次250帧观察中区域物品数均为141；记录耗尽NOTC边界 |
-| `final-save.json`、`final-reload.json`、`final-reload-summary.json` | 保存、正常退出及新进程重入，姓名／经验／基础技能一致，宿主失败0、角色准入问题0。只认证隔离角色往返 |
-
-最终客户端与独立服务端包均已更新；独立服务端只检查帮助启动，不据此认证DBS／PvPGN联网。原动画／参数静态核对涵盖三难度，运行仅限上述普通单机路径；多人、全部词缀／伙伴组合、全部随机顺序及逐像素速度比较未认证。既有`wraith_attack_1`声音中断淡出限制仍在客户端诊断中保留。
+| artifacts/act1-audit-20261011/smoke | 逐身份／固定身份准入、萨满、击退、自然Countess及代表首领观察 |
+| artifacts/act1-monsters-20261008、artifacts/act1-monsters-closeout-20261009 | 早期57普通身份、代表AI、组件／盾牌与保存重入；原服人物死亡记录不算成功击杀验收 |
+| artifacts/act1-all-monsters-closeout-20261009 | 六种额外战斗类型、固定身份、电／冰强化、正常玩家法术及保存重入 |
 
 ### 历史姓名与死亡表现观察
 
-2026-10-11此前姓名／死亡表现包在`artifacts/act1-map-closeout-20261010/recheck`保留代表单机观察。35级死灵角色副本、普通难度、当前MPQ、种子2044627023，只使用已有EXE与调试管道，无新增测试脚本／用例：
-
-| 当前包路径 | 实际观察／边界 |
-| --- | --- |
-| `verified-entry.json`、`verified-elites.json` | 正常营地→鲜血荒地，显示缺失0；Devil Sludge＋Aura Enchanted／transform14，Champion Skeleton／25，Rakanishu／29、Coldcrow／18，Blood Raven与Andariel／2。金／蓝标题截图保留于上级目录，最终包重复确认相同显示值 |
-| `verified-blood.json`、`verified-blood-lightning.json`／PNG | 血乌死亡50帧后，一套284控制器、285闪电与286接触原图；293烟雾及296灵魂，原图实际显示，后续294／297烟雾／灵魂链正常。三条重复DEATH通知不重复创建控制器 |
-| `verified-andy.json`／`verified-andy.png` | 一套307控制器、311火柱、308游走／309地面火；真实MPQ原图。`verified-tail.json`的显示弹体在寿命结束后清空，effectLimitations为空 |
-| 探索保存 | 关闭地图继续记忆，手动保存、正常退出／重启及换种子隔离；准确计数和错误文件保留证据由[自动地图](../world/AUTOMAP.md#证据与限制)维护 |
-
-首次包在读取新增怪物诊断时发生失效副本引用崩溃，报告保留于`artifacts/crashes/20261010-154534-611-92248-92352`；已改为帧内生成诊断值副本，最终包复测没有该崩溃。首领原死亡图形提前准备；同区资源长帧保留死亡程序，避免清除刚收到的死亡回调或已启动的子效果。没有把管理击杀视为AI／玩家正常击杀验收；本批不重测全部63身份、难度／词缀组合或联机，完整粒子随机／相机震动／落石残片逐帧仍未认证。
+历史观察覆盖原姓名／词缀／调色、强化受击／死亡以及首领死亡资源。当前实现和未认证的粒子／震动／残片边界见[表现专题](PRESENTATION.md)；源码修复不追认所有历史包。
 
 ### 历史普通与全部怪物包
 
-2026-10-09全部怪物批历史最终包为Windows Release、D2S v96；EXE SHA256 `95624C814123FCA8436F8C524D4A2E5843C4A3B53E7088DC8681924F8675E945`，DLL `9F7B1FAF7AF453E3DC481F05207C76460AECC38FF33A50E92823032228B2969F`。最终增量构建无warning／error，早期诊断仍保留；当前运行包另见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。只用现有EXE、原服与调试管道；资源、日志、截图、角色及参考代码保留在忽略目录。
-
-| 历史证据 | 覆盖与边界 |
-| --- | --- |
-| `artifacts/act1-monsters-20261008` | 57普通身份准入、19类AI代表动作、萨满复活／再次死亡、巢生、蛛网、吸血鬼远程及保存重入；普通难度92级女巫，不等于逐分支验收 |
-| `artifacts/act1-monsters-closeout-20261009` | 最终普通包57身份准入、区域三组合／13类型容量、盾牌骷髅BL、人物0D／19、第二鸟巢耗尽及蛛网来源死亡后到期；保存重入无短时状态 |
-| 同目录 `native-melee-ranged.json` | D2GS 1.13c fallen1 A1／A2／S2及quillrat1 A2；1级人物死亡，ignoredPackets=43（入局11），不能称成功击杀或完整原服回归 |
-
-2026-10-09第一幕全部怪物批次的历史最终包证据在`artifacts/act1-all-monsters-closeout-20261009`：
-
-| 路径 | 实际观察／边界 |
-| --- | --- |
-| 入场／准入 | 该批最终EXE正常营地→鲜血荒地；`final-admission.json`及`final-spawn-snapshot.json`：六种额外战斗类型和全部十三固定超级暗金成功；只证明该区域普通难度准入，不证明自然刷新位置 |
-| 首领代表动作 | `final-reaction-boss.json`：Andariel技能201喷毒／164毒弹、BloodRaven技能167、GargoyleTrap技能172；权威生命变化及客户端原动作。未认证全部随机分支、血鸟召唤／死亡连锁；调试Countess没有DS1路径节点，不以准入认证其火墙 |
-| 电／冰强化 | `final-reaction-client.json`、`final-reaction-server.json`、`final-reaction-cold.json`：Rakanishu一次GH的69生命81及后续0C触发209，无快照重复GH；八条195。Coldcrow死亡第五步时三十二条194；`final-cold.png`可见电弧及冰环，客户端原死动画自行生成64方向。后续命中观察冷却清触发，不推造隐藏等级 |
-| 正常玩家战斗 | `final-reaction-pve.json`：原3C确认右手44、原C2S施放；brute2生命24→20.859375及chilledUntil，伤害和状态由权威执行。没有只靠管理击杀认证普通攻击 |
-| 保存／重入 | `final-before-save.json`／`final-reentry-saved.json`：人物92级、生命931／法力217保存恢复；原入局ProtocolReady，短时状态不恢复。最终failures／ignoredPackets／unavailableUnits为0，characterIssues／mapErrors／effectLimitations及stderr为空 |
-
-这些为有限V2；准入、空诊断和静态核对不能把所有怪物或P3标为V3。噩梦／地狱、全部状态组合／取消与背压、多人、Linux及长期运行仍未认证。
+早期包只保留上表证据范围，当前二进制身份与构建记录由运行包记录维护。本页不重复保存包哈希、交付过程或逐次快照日志。

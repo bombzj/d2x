@@ -27,6 +27,7 @@ void NativeRoomActivation::ensureActive(size_t room, bool resetTimeout) {
     if (!state.prepared) { operations_.prepare(room); state.prepared = true; }
     operations_.create(room);
     state.active = true;
+    activeRooms_.push_front(room);
     state.inactiveChecks = 0;
     ++initialized_;
     if (resetTimeout) initializationTimeout_ = side_ == Side::Server ? 7 : 5;
@@ -55,6 +56,7 @@ void NativeRoomActivation::unsetStatus(size_t room, uint8_t status) {
         // FreeRoom removes grids/tiles, while TILELIB_LOADED and
         // PRESET_UNITS_ADDED survive. Reentry must not repeat lazy unit RNG.
         state.active = false;
+        activeRooms_.remove(room);
     }
 }
 void NativeRoomActivation::addReference(size_t room, uint8_t status) {
@@ -133,11 +135,10 @@ void NativeRoomActivation::changeClientRoom(std::optional<size_t> previous, std:
     if (previous) unsetRoot(*previous, 0);
     failed_ = false;
 }
-void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t)> &retain) {
+void NativeRoomActivation::updateDrlg() {
     if (failed_) throw std::runtime_error("Discard failed native room activation session");
     failed_ = true;
-    // DrlgActivate::Update yields after multiple synchronous allocations;
-    // otherwise one out-of-sight room is materialized every 7 server ticks.
+    // DrlgActivate::Update yields after multiple synchronous allocations.
     if (initialized_ > 1) initialized_ = 0;
     else if (--initializationTimeout_ == 0) {
         initializationTimeout_ = side_ == Side::Server ? 7 : 5;
@@ -153,16 +154,30 @@ void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t
         } while (current != begin && !initialized_);
         initialized_ = 0;
     }
-    if (side_ == Side::Server && tick % 12 == 0) {
-        for (auto &[room, state] : states_) {
-            if (!state.active) continue;
+    failed_ = false;
+}
+bool NativeRoomActivation::retire(size_t room) {
+    auto &state=states_.at(room);
+    if (!state.active || state.status<=1) return false;
+    if (operations_.tryRetire && !operations_.tryRetire(room)) return false;
+    operations_.release(room);state.active=false;activeRooms_.remove(room);
+    return true;
+}
+void NativeRoomActivation::update(uint64_t tick, const std::function<bool(size_t)> &retain) {
+    if (side_==Side::Client) {updateDrlg();return;}
+    if (failed_) throw std::runtime_error("Discard failed native room activation session");
+    failed_ = true;
+    // Original D2Game does not import/call DRLG_Update (10715). Its room
+    // materialization comes from StreamRoomAtCoords and reference propagation.
+    if (tick % 12 == 0) {
+        const auto active=activeRooms_;
+        for (const auto room : active) {
+            auto &state=states_.at(room);
             // D2Common_10081 resets while a client has room visibility.
             if (state.status <= 1) { state.inactiveChecks = 0; continue; }
             if (state.inactiveChecks < 11) ++state.inactiveChecks;
             if (state.inactiveChecks <= 10 || (retain && retain(room))) continue;
-            if (operations_.tryRetire && !operations_.tryRetire(room)) continue;
-            operations_.release(room);
-            state.active = false;
+            retire(room);
         }
     }
     failed_ = false;

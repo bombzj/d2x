@@ -42,6 +42,7 @@ class System {
     void prepareActTime(int);
     void updateRooms(TickContext);
     void invalidateRooms();
+    void refreshRoomTerrain();
     DomainResult<uint64_t> request(RegionId);
     void link();
     void assign(AreaDefinition &);
@@ -78,6 +79,7 @@ class System {
     std::vector<RoomView> visibleRooms(PlayerId) const;
     bool visible(PlayerId, RegionId, Vec) const;
     void activate(RegionId, Vec); // Synchronous destination-room acquisition.
+    void changeClientRoom(PlayerId); // Current entered player, including initial admission.
     StepStatus step(TickContext, FrameFacts &);
 };
 }

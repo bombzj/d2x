@@ -80,27 +80,13 @@ StepStatus System::baalStep(TickContext tick) {
             if(world.wavePrepared && world.wave<5 && ports_.population.questBirthComplete(p.area,"Baal Subject "+std::to_string(world.wave+1))) {
                 ++world.wave;world.wavePrepared=false;world.waveAt=tick.tick+100;
             }
-            // Missing population outside the throne must not block its waves.
-            // A missing nearby placement remains a real uncleared objective.
-            bool occupied=area.definition.populationMissing!=area.definition.populationMissingPositions.size();
-            for(const auto at:area.definition.populationMissingPositions) if((at-unit->position).length()<64) occupied=true;
+            bool occupied=!ports_.population.coverage(p.area,population::Neighborhood{unit->position,64}).complete();
             for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && !m.questNpc && !m.owner && m.life>0 && (m.position-unit->position).length()<64) occupied=true;}
             for(const auto &[room,units]:ports_.monsters.read().inactive) {
                 if(room.first!=p.area) continue;
                 for(const auto &inactive:units)
                     if(!ports_.monsters.find(inactive.id) && !inactive.dead && inactive.hostile && (inactive.position-unit->position).length()<64)
                         occupied=true;
-            }
-            const auto admitted=ports_.population.read().areas.find(p.area);
-            if(admitted==ports_.population.read().areas.end()) occupied=true;
-            else for(const auto &pending:area.definition.population) if(!admitted->second.admittedSpawnKeys.contains(pending.identity.spawnKey) &&
-                !admitted->second.rejectedDensityKeys.contains(pending.identity.spawnKey) && (pending.position-unit->position).length()<64) occupied=true;
-            if(admitted!=ports_.population.read().areas.end()) for(size_t index=0;index<area.definition.activation.rooms().size();++index) {
-                const auto &room=area.definition.activation.rooms()[index];if(!room.populate) continue;
-                const float nearestX=std::clamp(unit->position.x,float(room.x),float(room.x+room.width));
-                const float nearestY=std::clamp(unit->position.y,float(room.y),float(room.y+room.height));
-                if((Vec{nearestX,nearestY}-unit->position).length()<64 &&
-                    (!admitted->second.roomStages.contains(index) || admitted->second.roomStages.at(index)<3)) occupied=true;
             }
             if(occupied || (world.waveAt && tick.tick<world.waveAt)) continue;
             if(!world.wavePrepared) {world.wavePrepared=true;world.waveAt=tick.tick+250;continue;}
