@@ -17,17 +17,22 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
     if (rules.kind == MonsterAiKind::Wraith) {
         if (chance(p[input.contact ? 2 : 0])) {
             result.action = input.contact ? MonsterDecisionAction::Attack : MonsterDecisionAction::Approach;
-            if (!input.contact) result.approachRadius = 12;
+            if (!input.contact) {result.approachRadius = 12;result.pathSteps=1;}
         } else result.waitFrames = p[1];
         return result;
     }
     if (rules.kind == MonsterAiKind::Fallen) {
+        result.pathSteps=1;
+        if(!input.commanded && !input.contact && input.retaliating) {
+            result.action=MonsterDecisionAction::Approach;return result;
+        }
         if (!input.commanded && input.leader && input.distance < 15 && chance(p[0])) {
-            result.action = MonsterDecisionAction::Shout; return result;
+            result.action = MonsterDecisionAction::Shout;result.commandParty=true;return result;
         }
         if (input.contact) {
             if ((input.alerted && !input.commanded) || chance(p[2])) {
-                result.action = MonsterDecisionAction::Attack; result.attackMode = chance(p[3]) ? 4 : 5; result.alerted = false;
+                result.action = MonsterDecisionAction::Attack; result.attackMode = chance(p[3]) ? 4 : 5;
+                if(!input.commanded) result.alerted = false;
             } else if (!input.commanded && chance(30)) result.action = MonsterDecisionAction::Shout;
             else result.waitFrames = input.commanded ? 5 : 10;
         } else if (input.commanded || input.retaliating || input.distance <= p[1]) result.action = MonsterDecisionAction::Approach;
@@ -43,6 +48,7 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
         } else {
             result.action = MonsterDecisionAction::Approach;
             result.velocityPercent = 75 + 100 - std::clamp(input.lifePercent, 40, 100);
+            result.pathSteps=1;
         }
         return result;
     }
@@ -50,10 +56,10 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
         if (input.contact) {
             result.action = MonsterDecisionAction::Attack;
             result.attackMode = chance(p[3]) ? 4 : 5;
-        } else if (input.retaliating || input.burialGrounds || (input.distance < p[1] && chance(p[0]))) {
+        } else if (input.retaliating || (input.distance < p[1] && chance(p[0])) || input.burialGrounds) {
             result.action = MonsterDecisionAction::Approach;
-            result.velocityPercent = 175; result.running = true;
-        } else { result.action = MonsterDecisionAction::Wander; result.stopDistance = 3; }
+            result.velocityPercent = 175; result.running = true;result.pathSteps=1;
+        } else { result.action = MonsterDecisionAction::Wander; result.stopDistance = 3;result.pathSteps=1; }
         return result;
     }
     if (rules.kind == MonsterAiKind::Skeleton) {
@@ -61,19 +67,33 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
             result.action = input.contact ? MonsterDecisionAction::Attack : MonsterDecisionAction::Approach;
             result.stopDistance = rules.meleeRange;
             if (input.contact) result.attackMode = chance(p[3]) ? 4 : 5;
+            else result.pathSteps=1;
         } else result.waitFrames = p[1];
+        return result;
+    }
+    if(rules.kind==MonsterAiKind::CorruptLancer) {
+        const auto run=[&] {
+            result.action=MonsterDecisionAction::Approach;result.running=true;result.velocityPercent=175;
+            result.pathSteps=std::max(1,rules.meleeRange);
+        };
+        if(input.distance>p[4]) {run();result.charged=true;return result;}
+        if(input.contact) {
+            if(!result.charged && !chance(p[1])) {result.waitFrames=p[2];return result;}
+            result.charged=false;
+            if((input.skillMask&1) && chance(p[5])) {result.action=MonsterDecisionAction::Special;result.skillSlot=0;}
+            else if((input.skillMask&2) && chance(p[6])) {result.action=MonsterDecisionAction::Special;result.skillSlot=1;}
+            else if((input.skillMask&4) && chance(p[7])) {result.action=MonsterDecisionAction::Special;result.skillSlot=2;}
+            else result.action=MonsterDecisionAction::Attack;
+        } else if(chance(p[0])) {
+            if(chance(p[3])) run();
+            else {result.action=MonsterDecisionAction::Approach;result.pathSteps=3;}
+        } else result.waitFrames=p[2];
         return result;
     }
     if (input.contact) {
         bool attack;
-        if (rules.kind == MonsterAiKind::CorruptLancer) {
-            attack = result.charged || chance(p[1]);
-            if (attack) result.charged = false;
-            else result.waitFrames = p[2];
-        } else {
-            attack = chance(p[2]);
-            if (!attack) result.waitFrames = p[1];
-        }
+        attack = chance(p[2]);
+        if (!attack) result.waitFrames = p[1];
         if (attack) result.action = MonsterDecisionAction::Attack;
         return result;
     }
@@ -85,18 +105,10 @@ std::optional<MonsterDecision> decideMeleeMonster(const MonsterAiProfile &rules,
         }
         result.velocityPercent = 75 + (result.running ? p[3] : 0);
         result.stopDistance = result.running ? 2 : 0;
+        result.pathSteps=result.running?3:1;
     } else if (rules.kind == MonsterAiKind::Goatman) {
         if (!chance(p[0])) { result.waitFrames = p[1]; return result; }
-    } else {
-        if (input.distance > p[4]) { result.charged = true; result.running = true; }
-        else {
-            if (!chance(p[0])) { result.waitFrames = p[2]; return result; }
-            result.running = chance(p[3]);
-        }
-        result.velocityPercent = result.running ? 175 : 75;
-        result.stopDistance = result.running ? rules.meleeRange : 0;
-        // Fn036 uses PATH_SetStepNum, not WalkInRadiusToTarget.
-        result.pathSteps=result.running?std::max(1,rules.meleeRange):3;
+        result.pathSteps=1;
     }
     result.action = MonsterDecisionAction::Approach;
     return result;

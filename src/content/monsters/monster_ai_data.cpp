@@ -38,6 +38,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "MaggotEgg") profile.kind = MonsterAiKind::MaggotEgg;
     else if (ai == "MaggotLarva") profile.kind = MonsterAiKind::MaggotLarva;
     else if (ai == "ClawViper") profile.kind = MonsterAiKind::ClawViper;
+    else if (ai == "ClawViperEx") profile.kind = MonsterAiKind::ClawViperEx;
+    else if (ai == "WillOWisp") profile.kind = MonsterAiKind::Willowisp;
+    else if (ai == "ZakarumZealot") profile.kind = MonsterAiKind::ZakarumZealot;
     else if (ai == "SandLeaper") profile.kind = MonsterAiKind::SandLeaper;
     else if (ai == "Swarm") profile.kind = MonsterAiKind::Swarm;
     else if (ai == "Scarab") profile.kind = MonsterAiKind::Scarab;
@@ -54,8 +57,13 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Sarcophagus") profile.kind = MonsterAiKind::Sarcophagus;
     else if (ai == "ArcaneTower") profile.kind = MonsterAiKind::ArcaneTower;
     else if (ai == "GoodNpcRanged") profile.kind = MonsterAiKind::GoodNpcRanged;
+    else if (ai == "ThornHulk") profile.kind = MonsterAiKind::ThornHulk;
+    else if (ai == "FetishBlowgun") profile.kind = MonsterAiKind::FetishBlowgun;
+    else if (ai == "FetishShaman") profile.kind = MonsterAiKind::FetishShaman;
+    else if (ai == "Mosquito") profile.kind = MonsterAiKind::Mosquito;
+    else if (ai == "FrogDemon") profile.kind = MonsterAiKind::FrogDemon;
     else return std::nullopt;
-    if (profile.kind == MonsterAiKind::Vampire || profile.kind == MonsterAiKind::Baboon) {
+    if (profile.kind == MonsterAiKind::Vampire || profile.kind == MonsterAiKind::Baboon || profile.kind == MonsterAiKind::ZakarumZealot) {
         const int velocity = stats.number(row, "Velocity").value_or(0);
         const int run = stats.number(row, "Run").value_or(0);
         if (velocity > 0) profile.retreatVelocityBonus = std::clamp(100 * run / velocity - 100, 0, 120);
@@ -133,6 +141,9 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     case MonsterAiKind::SandRaider: percentages={0,1,2,3,6};break;
     case MonsterAiKind::SandMaggot: percentages={0,1,3};break;
     case MonsterAiKind::ClawViper: percentages={0,2,3};break;
+    case MonsterAiKind::ClawViperEx: percentages={0,2,3};break;
+    case MonsterAiKind::Willowisp: percentages={0,1,2};break;
+    case MonsterAiKind::ZakarumZealot: percentages={0,1,2,3};break;
     case MonsterAiKind::SandLeaper: percentages={0,1,2,3};break;
     case MonsterAiKind::Swarm: percentages={0,2};break;
     case MonsterAiKind::Scarab: percentages={0,1,3,4};break;
@@ -147,6 +158,11 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     case MonsterAiKind::Summoner: percentages={0,1,2,5};break;
     case MonsterAiKind::Duriel: percentages={1,2,3,4};break;
     case MonsterAiKind::MaggotEgg: percentages={1};break;
+    case MonsterAiKind::ThornHulk: percentages={0,1,2,3};break;
+    case MonsterAiKind::FetishBlowgun: percentages={1};break;
+    case MonsterAiKind::FetishShaman: percentages={0,3};break;
+    case MonsterAiKind::Mosquito: percentages={2,3};break;
+    case MonsterAiKind::FrogDemon: percentages={0,1,2,3,4};break;
     default:break;
     }
     for(int index:percentages) if(!percentage(index)) return std::nullopt;

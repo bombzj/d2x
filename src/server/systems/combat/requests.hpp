@@ -67,6 +67,8 @@ struct NativeSkillContact {
     std::shared_ptr<const MissileHitDamage> initialDamage;
     bool kick{},kickKnockback{},heldPrepared{},cancelled{},fillEventComplete{},elementsComplete{};
     int32_t allocatedPhysical{};
+    int32_t directHealing{};
+    bool directHealingComplete{};
 };
 struct SpellImpact {
     EntityId projectile, source;

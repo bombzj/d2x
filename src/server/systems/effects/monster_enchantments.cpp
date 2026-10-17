@@ -342,9 +342,37 @@ DomainResult<> System::monsterDamageEffect(EntityId id,uint64_t tick) {
 }
 DomainResult<> System::monsterDeathEffect(EntityId id,uint64_t tick) {
     const auto *unit=ports_.monsters.find(id);
-    if(!unit || unit->alive() || !unit->rule.deathBurst) return {DomainStatus::Applied,std::monostate{}};
+    if(!unit || unit->alive() || (!unit->rule.deathBurst && !unit->rule.boneDeathExplosion)) return {DomainStatus::Applied,std::monostate{}};
     auto &cycle=uniqueCycles_[id];if(cycle.queenDeath==unit->interruption) return {DomainStatus::Applied,std::monostate{}};
-    ModifierExecution execution;const auto result=executeMonsterModifier(id,23,tick,execution);
-    if(result) cycle.queenDeath=unit->interruption;return result;
+    if(!cycle.deathExecution) cycle.deathExecution=std::make_shared<ModifierExecution>();
+    const auto result=unit->rule.boneDeathExplosion?boneDeathEffect(id,tick,*cycle.deathExecution):executeMonsterModifier(id,23,tick,*cycle.deathExecution);
+    if(result) {cycle.queenDeath=unit->interruption;cycle.deathExecution.reset();}return result;
+}
+DomainResult<> System::boneDeathEffect(EntityId id,uint64_t tick,ModifierExecution &execution) {
+    const auto &unit=*ports_.monsters.find(id);const auto &area=ports_.areas.at(unit.area);
+    if(!execution.missile) {
+        const auto definition=ports_.missiles.nativeDefinition("monstercorpseexplode");if(!definition) return {DomainStatus::Unavailable,{}};
+        const auto born=ports_.missiles.spawnNative({id,unit.area,area.generation,tick,unit.position,unit.position,*definition,0,1});
+        if(!born) return {born.status,{}};execution.missile=*born.value;
+    }
+    if(!execution.damagePrepared) {
+        const auto table=unit.rule.lifeTables.at(size_t(unit.rule.difficulty));if(!table) return {DomainStatus::Unavailable,{}};
+        const auto values=unitStatValues(id,tick);if(!values) return {DomainStatus::Unavailable,{}};
+        const int level=logicalStatValue(*values,*unit.rule.stats,"level");
+        // Retail death mode passes Game.dwGameType (Ladder) alone here,
+        // unlike initial HP, which passes nGameType || dwGameType.
+        const auto bounds=monsterLifeBounds(*table,level,unit.rule.difficulty,ports_.monsters.gameSettings().ladder);
+        const int high=nativePercentage(bounds.maximum,unit.rule.corpseExplosionPercent,100),low=nativePercentage(high,60,100);
+        auto random=unit.combatRandom;
+        const int damage=nativeShiftLeft(nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeSubtract(high,low))))),7);
+        const auto contact=ports_.missiles.nativeAreaContact(execution.missile);if(!contact) return {DomainStatus::Unavailable,{}};
+        NativeAreaSpec spec;spec.source=id;spec.area=unit.area;spec.center=unit.position;
+        spec.radius=5;spec.filter=0x581;spec.resultFlags=1;spec.rank=1;spec.radialBarrier=true;
+        spec.damage.channels[0]=damage;spec.missileContact=std::make_shared<combat::SpellImpact>(*contact);
+        auto pulse=std::make_shared<NativeAreaPulse>();pulse->spec=std::move(spec);
+        const auto consumed=ports_.monsters.consumeRandom(id,unit.combatRandom,random);if(!consumed) return consumed;
+        execution.area=std::move(pulse);execution.damagePrepared=true;
+    }
+    return nativeArea(execution.area->spec,tick,execution.area);
 }
 }

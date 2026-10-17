@@ -140,6 +140,8 @@ struct AreaState {
         std::optional<uint64_t> random;
         uint64_t randomRevision{};
         uint64_t creationOrder{};
+        std::array<EntityId,4> lastDead{};
+        uint8_t deathIndex{};
     };
     std::vector<RoomState> rooms;
     std::vector<EntityId> unitHeads; // Native pUnitFirst, separate from room residency.
@@ -195,6 +197,8 @@ class AreaStore {
     void removeRoomUnit(EntityId) noexcept;
     void setMissileMask(RegionId,Vec,int size,bool occupied) noexcept;
     std::vector<EntityId> roomUnitOrder(RoomView) const;
+    void recordMonsterDeath(EntityId) noexcept;
+    std::array<EntityId,4> roomLastDead(RoomView) const noexcept;
     std::optional<RoomView> roomAtPosition(RegionId source,Vec observer,int32_t worldX,int32_t worldY) const;
     using CollisionSample=std::function<uint16_t(RoomView,int32_t,int32_t)>;
     DomainResult<RoomRandomLoan> roomRandom(RoomView) const;

@@ -11,7 +11,7 @@ struct ActiveCombatEffect {
     uint64_t revision{}; // Runtime list mutation identity, never persisted.
     std::optional<int32_t> nativeExpireFrame;
     uint64_t unitEventOrder{}; // SUNITEVENT_Register head insertion, independent of stat-list order.
-    bool activeAt(EffectFrame frame) const { return spec.nativeState || !expiresAt || frame < *expiresAt; }
+    bool activeAt(EffectFrame frame) const { return spec.nativeLifetime() || !expiresAt || frame < *expiresAt; }
 };
 struct RemovedCombatEffect {
     ActiveCombatEffect effect;

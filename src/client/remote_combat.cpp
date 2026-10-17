@@ -172,7 +172,7 @@ bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorp
         const auto found=monsters_.find(unit.classId.value_or(UINT16_MAX));
         if(found!=monsters_.end()) {
             const auto ai=tables_.at("monstats").value(found->second,"AI");
-            if(ai=="Vulture" || ai=="SandMaggot") return false;
+            if(ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon") return false;
         }
     }
     return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&

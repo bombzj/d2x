@@ -18,5 +18,6 @@ struct MonsterIdentity {
     bool championVariantAllowed = true;
     std::optional<size_t> presetOrder;
     std::string spawnParentKey;
+    int nativeClass{-1}; // Numeric presets retain their exact MonStats row, including duplicate names.
 };
 } // namespace d2x

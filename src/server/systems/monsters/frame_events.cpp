@@ -64,6 +64,10 @@ DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
     if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
     if(advanceMode(event.owner.unit,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
     const auto *unit=find(event.owner.unit);
+    if(unit && !unit->alive() && unit->rule.deathReinitialize && tick>=unit->busyUntil) {
+        if(!unit->rewardComplete) return {DomainStatus::Applied,std::monostate{}};
+        return reinitializeAfterDeath(unit->id,tick);
+    }
     if(!unit || (!unit->alive() && !unit->delayedDeathSource && tick>=unit->busyUntil)) ports_.frameEvents.cancel(event.handle);
     return {DomainStatus::Applied,std::monostate{}};
 }

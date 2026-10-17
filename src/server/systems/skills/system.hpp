@@ -34,6 +34,10 @@ class System {
     std::unique_ptr<Runtime> runtime_;
     StepStatus releaseMonsters(TickContext,EntityId);
     DomainResult<bool> releaseAssassinPet(MonsterRelease &,TickContext);
+    DomainResult<bool> releaseMonsterInferno(MonsterRelease &,TickContext);
+    DomainResult<bool> releaseMonsterMosquito(MonsterRelease &,TickContext);
+    DomainResult<Vec> startMonsterLeap(const CastRequest &);
+    DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);
     DomainResult<> startDruidPet(MonsterRelease &,TickContext);
     DomainResult<bool> releaseShadowSkill(MonsterRelease &,TickContext);

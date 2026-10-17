@@ -1,5 +1,6 @@
 #include "skirmish_decision.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 namespace d2x {
 bool hasSkirmishDecision(MonsterAiKind kind) {
@@ -11,12 +12,13 @@ std::optional<MonsterDecision> decideSkirmishMonster(const MonsterAiProfile &rul
     const auto &p=rules.params;
     auto chance=[&](int value) { return limitedRandom(out.random,100)<unsigned(value); };
     if (rules.kind == MonsterAiKind::BloodHawk) {
+        out.pathSteps=1;
         out.charged=false;
         if (in.contact) {
             if (in.charged || chance(p[2])) out.action=MonsterDecisionAction::Attack;
             else {out.action=MonsterDecisionAction::Retreat;out.stopDistance=4;out.velocityPercent=75+p[3];out.attackWhenMoveFails=true;}
         } else if (chance(p[0])) {
-            out.action=MonsterDecisionAction::Approach;out.charged=true;out.velocityPercent=75+p[4];
+            out.action=MonsterDecisionAction::Approach;out.charged=true;out.velocityPercent=75+p[4];out.pathDistance=std::clamp(in.distance,1,255);
         } else if (in.distance<=3) {
             out.action=MonsterDecisionAction::Retreat;out.stopDistance=4;out.velocityPercent=75+p[3];out.attackWhenMoveFails=true;
         } else {
@@ -26,19 +28,20 @@ std::optional<MonsterDecision> decideSkirmishMonster(const MonsterAiProfile &rul
         return out;
     }
     out.velocityPercent=125;
+    if(in.commanded) {out.phase=out.loop=0;out.action=MonsterDecisionAction::Approach;out.pathSteps=1;return out;}
     if (out.phase==0) {
-        if (!in.contact) {out.action=MonsterDecisionAction::Approach;return out;}
+        if (!in.contact) {out.action=MonsterDecisionAction::Approach;out.pathSteps=1;return out;}
         out.phase=1;out.loop=0;
     } else if (out.phase==1) {
-        out.loop=std::min(out.loop+1,p[2]+1);
+        out.loop=nativeAdd(out.loop,1);
         if (out.loop>p[2] && in.targetLifePercent>p[3]) {
             out.phase=2;out.loop=0;out.action=MonsterDecisionAction::Retreat;out.stopDistance=14;return out;
         }
-        if (!in.contact) {out.action=MonsterDecisionAction::Approach;return out;}
+        if (!in.contact) {out.action=MonsterDecisionAction::Approach;out.pathSteps=1;return out;}
     } else if (out.phase==2) {
         if (in.distance<=12) {out.action=MonsterDecisionAction::Retreat;out.stopDistance=14;return out;}
         if (++out.loop>1) {out.phase=0;out.loop=0;}
-        if (chance(20)) {out.action=MonsterDecisionAction::Circle;out.stopDistance=4;}
+        if (chance(20)) {out.action=MonsterDecisionAction::Circle;out.stopDistance=4;out.velocityPercent=75;}
         else out.waitFrames=10;
         return out;
     }

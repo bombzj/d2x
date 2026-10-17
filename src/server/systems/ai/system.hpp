@@ -18,6 +18,8 @@ namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::ai {
 // Decision state only; actions go through skill/movement requests, not direct damage.
 struct Controller {
+    struct Command {uint8_t code{};UnitTarget target;};
+    std::deque<Command> commands;
     EntityId actor;
   uint64_t admissionRevision{};
     uint64_t observedAiFunctionRevision{};
@@ -27,6 +29,7 @@ struct Controller {
     std::optional<EntityId> target;
     uint64_t nextDecision{}, random{}, nextPath{}, observedHit{}, observedDeath{};
     int phase{}, loop{};
+    int32_t thirdParameter{};
     bool pursuing{}, charged{}, commanded{}, alerted{};
     uint64_t lastSpawn{};
     bool acquiredTarget{};
@@ -36,6 +39,7 @@ struct Controller {
     std::array<int32_t,3> curseParameters{};
     uint64_t skillDeadline{},novaAt{},firewallAt{};
     int upgradeCooldown{};
+    int regenerationBonus{};
     int act2Attempts{};
     std::optional<Vec> flightGoal;
     uint64_t randomExpected{};
@@ -43,15 +47,20 @@ struct Controller {
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; };
 class System {
     State state_;
     const Ports ports_;
     DomainResult<> perform(Controller &,std::function<DomainResult<>()>);
     DomainResult<> requestAction(Controller &,const actions::MonsterCastRequest &);
-    StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
-    StepStatus act2Action(EntityId, UnitTarget, Vec, int, TickContext, Controller &);
+    StepStatus familyAction(EntityId, UnitTarget, Vec, int, TickContext, Controller &,int continuation=0);
+    StepStatus fetishShamanAction(EntityId,std::optional<UnitTarget>,Vec,TickContext,Controller &);
+    StepStatus act2Action(EntityId, UnitTarget, Vec, int, TickContext, Controller &,int continuation=0);
     StepStatus nestFamily(EntityId,UnitTarget,int,TickContext,Controller &);
+    StepStatus vultureFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus frogFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus willowispFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus zakarumZealotFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
     using ShootableTarget=NativeAiTarget;

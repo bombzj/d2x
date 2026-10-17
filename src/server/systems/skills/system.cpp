@@ -32,7 +32,8 @@ bool System::uninterruptible(EntityId actor) const {
 }
 size_t System::pendingReleases() const {return state_.pendingReleases();}
 bool System::busy(EntityId id,uint64_t tick) const {
-    return state_.recovering(id,tick) || state_.busy(id,tick) || runtime_->monsterModes.contains(id);
+    const auto mode=runtime_->monsterModes.find(id);
+    return state_.recovering(id,tick) || state_.busy(id,tick) || (mode!=runtime_->monsterModes.end() && !mode->second.frozenSequence);
 }
 void System::interrupt(const ActorContext &actor) {
     cancel(actor.player,actor.actor);
@@ -55,6 +56,7 @@ void System::cancel(PlayerId player, EntityId actor) {
     runtime_->druidStarts.erase(actor);
     runtime_->weaponStarts.erase(actor);
     runtime_->monsterWeaponStarts.erase(actor);
+    runtime_->monsterLeapStarts.erase(actor);
     state_.cancel(actor);
     ports_.effects.scheduleModeEnd(actor,ports_.frameEvents.currentFrame());
     if(const auto mode=runtime_->monsterModes.find(actor);mode!=runtime_->monsterModes.end()) {

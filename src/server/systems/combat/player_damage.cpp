@@ -146,6 +146,7 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
     if(impact.nativeSkill && impact.nativeSkill->progressive) {
         const auto result=advanceProgressive(impact,tick,true);if(!result) return result.status;
     }
+    {const auto result=postNativeSkillCharge(impact,tick);if(result!=DomainStatus::Applied) return result;}
     const auto hitClass=execution.hitClass;
     auto events=std::move(execution.itemEvents);const auto remainingLife=execution.remainingLife;
     const auto extras=execution.extras;
@@ -276,6 +277,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     if(impact.nativeSkill && impact.nativeSkill->progressive) {
         const auto result=advanceProgressive(impact,tick,true);if(!result) return result.status;
     }
+    {const auto result=postNativeSkillCharge(impact,tick);if(result!=DomainStatus::Applied) return result;}
     if(execution.hostile && !impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);
     const auto *source=ports_.monsters.find(impact.source);
     const auto *player=ports_.players.findActor(impact.source);

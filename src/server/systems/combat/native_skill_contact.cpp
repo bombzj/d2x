@@ -217,7 +217,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
     const bool startProgram=execution.melee && impact.weapon && !vengeance && !fireHit && !basicKick && (impact.weapon->wearSkill.weapon->allocatesMeleeAtStart() ||
         impact.weapon->wearSkill.weapon->doFunction==7 || impact.weapon->wearSkill.weapon->doFunction==9 || impact.weapon->wearSkill.weapon->doFunction==67 ||
         impact.weapon->wearSkill.weapon->doFunction==70 || impact.weapon->wearSkill.weapon->doFunction==76 || impact.weapon->wearSkill.weapon->doFunction==78);
-    const bool repeatedProgram=execution.melee && impact.weapon && impact.weapon->wearSkill.weapon->doFunction==13;
+    const bool repeatedProgram=execution.melee && impact.weapon &&
+        (impact.weapon->wearSkill.weapon->doFunction==13 || impact.weapon->wearSkill.weapon->doFunction==109);
     const bool prefilledPhysical=startProgram && (impact.weapon->wearSkill.weapon->startFunction==7 || impact.weapon->wearSkill.weapon->startFunction==29);
     const auto monsterProfile=[&](uint8_t mode)->DomainStatus {
         if(!source.monster || !execution.monsterProgram || execution.monsterProfilePrepared) return DomainStatus::Applied;
@@ -411,7 +412,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             const auto committed=ports_.transactions.commit(std::move(*wear.value));if(!committed) return committed.status;
         } else {const auto committed=consume(expected,random);if(committed!=DomainStatus::Applied) return committed;}
         if(prefilledPhysical) impact.areaDamage->hitFlags|=1;
-        if(startProgram && skill.weapon->startFunction!=6 && skill.weapon->startFunction!=7 && skill.weapon->startFunction!=10 && skill.weapon->startFunction!=16) {
+        if((startProgram && skill.weapon->startFunction!=6 && skill.weapon->startFunction!=7 && skill.weapon->startFunction!=10 && skill.weapon->startFunction!=16) ||
+           (repeatedProgram && skill.weapon->doFunction==109)) {
             impact.areaDamage->resultFlags|=uint16_t(row.number("resultflags"));
             impact.areaDamage->hitFlags|=uint32_t(row.number("hitflags"));
             if(row.number("hitclass")) damage.hitClass=uint8_t(row.number("hitclass"));
@@ -475,6 +477,17 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         const auto damage=evaluate(random,[&](SkillFormulaValues &values) {
             if(!execution.melee) {
                 auto damage=rollNativeSkillDamage(values,execution.skill,execution.rank,random);
+                if(execution.directFunction==107) {
+                    const auto range=values.physicalRange(execution.skill,execution.rank,true);
+                    const auto length=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"edln");
+                    const auto heal=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc3");
+                    if(!range || !length || !heal) throw std::logic_error("Missing native Mosquito damage formula");
+                    const int low=range->first>>8,high=range->second>>8;
+                    const auto drain=[&] {return nativeAdd(low,int(limitedRandom(random,uint32_t(nativeSubtract(high,low)))));};
+                    damage.channels[5]=nativeMultiply(2,drain());damage.poisonLength=*length;
+                    damage.manaLeech=nativeShiftLeft(drain(),8);damage.staminaLeech=nativeShiftLeft(drain(),8);
+                    execution.directHealing=nativePercentage(damage.channels[0],*heal,100);
+                }
                 if(execution.directFunction==21) {
                     const auto &row=catalog.skills.at(execution.skill);
                     impact.areaDamage->resultFlags=uint16_t(row.number("resultflags"));
@@ -585,6 +598,13 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
             ports_.monsters.commitEnchantmentDamage(source.id(),std::move(enchantment));
         impact.areaDamage->rolled->value=damage;impact.weapon=std::move(weapon);execution.rolled=true;
     }
+    if(execution.directFunction==107 && !execution.directHealingComplete) {
+        if(!source.monster) return DomainStatus::InvalidActor;
+        const auto seed=source.monster->combatRandom;
+        const auto healed=ports_.monsters.healSkill(source.id(),source.id(),std::max(0,execution.directHealing),tick.tick,{seed,seed});
+        if(!healed) return healed.status;
+        execution.directHealingComplete=true;
+    }
     if(vengeance && !execution.vengeanceCyclePosted) {
         const auto &skill=impact.weapon->wearSkill;
         ports_.actions.skillParameter(source.id(),{skill.sourceId,skill.charge?skill.charge->item.id:EntityId{}},0,(execution.vengeanceCycle+1)%3);
@@ -682,10 +702,18 @@ DomainStatus System::postNativeSkillCharge(SpellImpact &impact,TickContext tick)
     if(!impact.nativeSkill || !impact.nativeSkill->melee || impact.nativeSkill->chargePosted) return DomainStatus::Applied;
     auto &execution=*impact.nativeSkill;
     const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,impact.source);if(!caster) return DomainStatus::Stale;
+    const auto &skill=impact.weapon->wearSkill;
+    const bool monsterFrenzy=skill.weapon && skill.weapon->doFunction==109;
+    // Do109 applies its stack after the complete Drain callback, including
+    // the defender's damage reaction. Progressive charges precede Drain.
+    if(monsterFrenzy && !execution.actionComplete) return DomainStatus::Applied;
     if(execution.hit) {
-        const auto &skill=impact.weapon->wearSkill;
         if(skill.assassin && skill.assassin->chargeStat>=0) {
             const auto result=ports_.effects.progressiveCharge(caster->context(ports_.areas,tick.tick),skill);
+            if(!result) return result.status;
+        }
+        if(monsterFrenzy) {
+            const auto result=ports_.effects.frenzy(caster->context(ports_.areas,tick.tick),skill);
             if(!result) return result.status;
         }
     }

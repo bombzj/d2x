@@ -225,13 +225,21 @@ target_sources(d2x_server PRIVATE
     src/server/systems/monsters/inactive.cpp
     src/server/systems/monsters/special_actions.cpp
     src/server/systems/monsters/act2_skills.cpp
+    src/server/systems/monsters/leap.cpp
     src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
     src/server/systems/ai/act2_actions.cpp
     src/server/systems/ai/nest_family.cpp
+    src/server/systems/ai/vulture_family.cpp
+    src/server/systems/ai/frog_family.cpp
+    src/server/systems/ai/willowisp_family.cpp
+    src/server/systems/ai/zakarum_zealot.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
   src/server/systems/skills/action_events.cpp
   src/server/systems/skills/monster_action_events.cpp
+  src/server/systems/skills/monster_inferno.cpp
+    src/server/systems/skills/monster_mosquito.cpp
+  src/server/systems/skills/monster_leap.cpp
     src/server/systems/skills/activation.cpp
     src/server/systems/skills/shape.cpp
     src/server/systems/skills/druid_active.cpp
@@ -437,7 +445,7 @@ target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/native_status.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/effects/frame_events.cpp src/server/systems/effects/damage_states.cpp src/server/systems/effects/player_regeneration.cpp src/server/systems/effects/skill_state.cpp)
-target_sources(d2x_server PRIVATE src/server/systems/monsters/frame_events.cpp src/server/systems/monsters/regeneration.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/monsters/frame_events.cpp src/server/systems/monsters/regeneration.cpp src/server/systems/monsters/reinitialize.cpp)
 target_sources(d2x_server PRIVATE src/server/runtime/frame_event_dispatch.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/missiles/frame_events.cpp
     src/server/systems/missiles/rooms.cpp

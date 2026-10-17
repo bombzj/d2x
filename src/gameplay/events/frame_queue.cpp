@@ -192,8 +192,12 @@ bool FrameEventQueue::hasDue(FrameEventOwner owner,uint64_t frame) const {
 }
 bool FrameEventQueue::hasEvent(FrameEventOwner owner,FrameEventType type) const {
     const auto found=owners_.find(owner);if(found==owners_.end()) return false;
-    for(auto handle=found->second;handle;handle=nodes_.at(handle).unitNext)
-        if(nodes_.at(handle).event.type==type) return true;
+    for(auto handle=found->second;handle;handle=nodes_.at(handle).unitNext) {
+        const auto &node=nodes_.at(handle);
+        // An executing callback retains its node until it returns. Its
+        // cancelled timer must not suppress publication of a successor.
+        if(!node.cancelled && node.event.type==type) return true;
+    }
     return false;
 }
 bool FrameEventQueue::hasHandler(FrameEventOwner owner,uint32_t handler) const {

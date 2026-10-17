@@ -82,6 +82,7 @@ void loadLodTreasureData(ClassicData &data) {
         if (name.empty() || name == "Expansion")
             continue;
         ClassicMonsterData record;
+        record.sourceRow=row;
         record.name = name;
         record.token = monsters.value(row, "Code");
         const char *suffix[] = {"", "(N)", "(H)"};

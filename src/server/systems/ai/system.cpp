@@ -31,7 +31,16 @@ DomainResult<> System::perform(Controller &controller,std::function<DomainResult
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::requestAction(Controller &controller,const actions::MonsterCastRequest &request) {
-    return perform(controller,[this,request]{return ports_.skills.requestCast(request);});
+    return perform(controller,[this,request]{
+        const auto result=ports_.skills.requestCast(request);
+        const auto *unit=ports_.monsters.find(request.actor);
+        if(!isDeferred(result.status) && unit && unit->rule.ai.kind==MonsterAiKind::ThornHulk && request.skill==unit->rule.skillIds[0]) {
+            const auto found=state_.controllers.find(request.actor);
+            if(found!=state_.controllers.end()) found->second.nextDecision=result?
+                unit->busyUntil+uint64_t(unit->rule.ai.params[4]):request.tick+10;
+        }
+        return result;
+    });
 }
 std::optional<System::ShootableTarget> System::acquireTarget(const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) const {
     return acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},source,tick,missileRay,requireSight);
@@ -41,7 +50,7 @@ std::optional<System::ShootableTarget> System::shootableTarget(const monsters::A
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     std::erase_if(state_.controllers, [&](const auto &entry) {
-        const auto *actor=ports_.monsters.find(entry.first);return !actor || actor->life<=0;
+        const auto *actor=ports_.monsters.find(entry.first);return !actor || (actor->life<=0 && entry.second.commands.empty());
     });
     return StepStatus::Complete;
 }
@@ -82,11 +91,14 @@ StepStatus System::think(EntityId id,TickContext tick) {
             // commands on an actual function switch; selector-only Confuse
             // and Attract do not reset the family controller.
             const auto function=monster.curseControl.ai==CurseAi::DimVision || monster.curseControl.ai==CurseAi::Terror || monster.curseControl.ai==CurseAi::Taunt?monster.curseControl.ai:CurseAi::None;
-            const bool hasAlternative=monster.rule.ai.kind==MonsterAiKind::SandMaggot || monster.rule.ai.kind==MonsterAiKind::BatDemon;
+            const bool hasAlternative=monster.rule.ai.kind==MonsterAiKind::SandMaggot || monster.rule.ai.kind==MonsterAiKind::BatDemon ||
+                (monster.rule.ai.kind==MonsterAiKind::FrogDemon && function==CurseAi::Taunt && controller.phase>=2);
             const bool defer=!controller.alternateAi && controller.function==CurseAi::None && function!=CurseAi::None && hasAlternative;
             controller.observedAiFunctionRevision=monster.aiFunctionRevision;controller.function=function;controller.alternateAi=defer;
             if(!defer) {
-                controller.curseParameters.fill(0);controller.phase=controller.loop=0;controller.commanded=false;controller.charged=false;
+                controller.commands.clear();
+                controller.regenerationBonus=0;
+                controller.curseParameters.fill(0);controller.phase=controller.loop=controller.thirdParameter=0;controller.commanded=false;controller.charged=false;
                 controller.pursuing=false;controller.target.reset();controller.nextPath=0;
             }
             controller.nextDecision=std::max(controller.nextDecision,tick.tick);
@@ -107,6 +119,12 @@ StepStatus System::think(EntityId id,TickContext tick) {
         const auto *room=area.definition.activation.room(monster.position);
         const bool requireSight=room && !room->checkLosDraw && !controller.acquiredTarget;
         if(controller.alternateAi) {
+            if(monster.rule.ai.kind==MonsterAiKind::FrogDemon && controller.phase>=2) {
+                const auto skill=uint16_t(monster.rule.skillIds[0]);const auto &definition=monster.rule.skillActions.at(skill);
+                const auto cast=requestAction(controller,{id,skill,UnitTarget{id,0,1},tick.tick,definition.nativeMode});
+                if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
+                controller.phase=1;ports_.monsters.submerge(id);controller.nextDecision=tick.tick+12;continue;
+            }
             if(monster.rule.ai.kind==MonsterAiKind::SandMaggot && monster.burrowed && monster.rule.skillIds[0]>=0) {
                 const auto skill=uint16_t(monster.rule.skillIds[0]);const auto definition=monster.rule.skillActions.find(skill);
                 if(definition!=monster.rule.skillActions.end()) {
@@ -125,7 +143,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             }
             // The alternate callback re-enters AITHINK_ExecuteAiFn on the next
             // think, after returning a burrowed/roosting family to a usable mode.
-            controller.alternateAi=false;controller.curseParameters.fill(0);controller.phase=controller.loop=0;
+            controller.alternateAi=false;controller.curseParameters.fill(0);controller.phase=controller.loop=controller.thirdParameter=0;
             controller.commanded=controller.charged=controller.pursuing=false;controller.target.reset();controller.nextPath=0;
             controller.nextDecision=tick.tick+1;continue;
         }
@@ -245,10 +263,70 @@ StepStatus System::think(EntityId id,TickContext tick) {
             }
             continue;
         }
+        const bool fetishFamily=monster.rule.ai.kind==MonsterAiKind::Fetish || monster.rule.ai.kind==MonsterAiKind::FetishBlowgun;
+        if(monster.rule.ai.kind==MonsterAiKind::QuillRat && !controller.commands.empty()) {
+            const auto command=controller.commands.front();controller.commands.pop_front();
+            if(participants.find(command.target.id).id()) {
+                // Fn014 tests the command's referenced unit, then fires at
+                // its ordinary AI target rather than the command unit.
+                const auto result=requestAction(controller,{id,0,target.value_or(UnitTarget{}),tick.tick,5});
+                if(isDeferred(result.status)) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
+                if(!result) controller.nextDecision=tick.tick+10;
+                continue;
+            }
+        }
+        if(fetishFamily && !controller.commands.empty()) {
+            const auto command=controller.commands.front();controller.commands.pop_front();
+            if((command.code==1 || command.code==14) && participants.find(command.target.id).id()) {
+                controller.phase=controller.loop=0;controller.commanded=false;
+                ports_.monsters.stop(id);controller.pursuing=false;
+                DomainResult<> result{DomainStatus::Unavailable,{}};
+                if(command.code==1 && monster.rule.ai.kind==MonsterAiKind::FetishBlowgun)
+                    result=requestAction(controller,{id,0,command.target,tick.tick,4});
+                else if(const auto point=ports_.monsters.targetPosition(command.target.id,monster.area)) {
+                    result=perform(controller,[this,id,command,point,region=monster.area,generation=area.generation] {
+                        return ports_.monsters.requestMove({id,{region,generation,point->first},command.target.id,0,125,false,1});
+                    });
+                    controller.pursuing=bool(result);
+                }
+                if(isDeferred(result.status)) {blocked=true;continue;}
+                controller.nextDecision=tick.tick+(result?1:10);continue;
+            }
+        }
         if (!target) {
-            controller.pursuing = false; ports_.monsters.stop(id);
             const auto kind=monster.rule.ai.kind;
-            if(kind==MonsterAiKind::MaggotEgg || kind==MonsterAiKind::SandMaggotQueen || kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::BatDemon || kind==MonsterAiKind::Vulture)
+            if(kind==MonsterAiKind::FetishShaman) {
+                blocked|=fetishShamanAction(id,{},Vec{}-area.definition.origin,tick,controller)==StepStatus::Blocked;
+                continue;
+            }
+            if(fetishFamily || kind==MonsterAiKind::Vampire || kind==MonsterAiKind::Wraith || kind==MonsterAiKind::Skeleton || kind==MonsterAiKind::Goatman || kind==MonsterAiKind::Brute || kind==MonsterAiKind::Zombie || kind==MonsterAiKind::QuillRat || kind==MonsterAiKind::CorruptRogue || kind==MonsterAiKind::CorruptArcher || kind==MonsterAiKind::CorruptLancer || kind==MonsterAiKind::SkeletonBow || kind==MonsterAiKind::SkeletonMage || kind==MonsterAiKind::Bighead || kind==MonsterAiKind::Fallen || kind==MonsterAiKind::FallenShaman) {
+                // Native null-unit coordinates are global 0/0. Preserve
+                // phase/loop processing and the flags-7 failed-walk fallback.
+                blocked|=familyAction(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;
+                continue;
+            }
+            if(kind==MonsterAiKind::ZakarumZealot) {blocked|=zakarumZealotFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Willowisp) {blocked|=willowispFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Vulture) {
+                blocked|=vultureFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;
+            }
+            if(kind==MonsterAiKind::FrogDemon) {
+                blocked|=frogFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;
+            }
+            controller.pursuing = false; ports_.monsters.stop(id);
+            if(kind==MonsterAiKind::ThornHulk) {
+                controller.phase=0;
+                // Fn027 clears its remaining frenzy attacks without a
+                // target; WalkToTargetUnitWithFlags(7) then takes its failed
+                // move fallback (the native null target has coordinates 0/0).
+                if(rollRandom(controller.random)%100>=70) controller.nextDecision=tick.tick+10;
+                else {
+                    const auto point=monsterWanderPoint(monster.position,4,controller.random);
+                    controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,point},{},0,75,false,1}));
+                    controller.nextDecision=tick.tick+1;
+                }
+            }
+            if(kind==MonsterAiKind::ClawViperEx || kind==MonsterAiKind::PantherJavelin || kind==MonsterAiKind::PantherWoman || kind==MonsterAiKind::GreaterMummy || kind==MonsterAiKind::Mummy || kind==MonsterAiKind::Scarab || kind==MonsterAiKind::Swarm || kind==MonsterAiKind::SandRaider || kind==MonsterAiKind::MaggotEgg || kind==MonsterAiKind::SandMaggotQueen || kind==MonsterAiKind::SandMaggot || kind==MonsterAiKind::BatDemon || kind==MonsterAiKind::Mosquito)
                 blocked|=act2Action(id,{id,0,1},monster.position,monster.rule.size,tick,controller)==StepStatus::Blocked;
             continue;
         }
@@ -257,7 +335,18 @@ StepStatus System::think(EntityId id,TickContext tick) {
             ports_.monsters.stop(id);controller.pursuing=false;controller.nextDecision=tick.tick+5;continue;
         }
         if(const auto unique=uniqueAction(id,*target,targetPosition,tick,controller)) {blocked|=*unique==StepStatus::Blocked;continue;}
+        if(monster.rule.ai.kind==MonsterAiKind::FetishShaman) {
+            blocked|=fetishShamanAction(id,target,targetPosition,tick,controller)==StepStatus::Blocked;continue;
+        }
         const auto &rules = monster.rule.ai;
+        if(rules.kind==MonsterAiKind::ZakarumZealot) {blocked|=zakarumZealotFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Willowisp) {blocked|=willowispFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Vulture) {
+            blocked|=vultureFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(rules.kind==MonsterAiKind::FrogDemon) {
+            blocked|=frogFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;
+        }
         if(hasAct2Decision(rules.kind)) {
             blocked|=act2Action(id,*target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;
             continue;

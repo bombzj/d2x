@@ -16,6 +16,10 @@ struct MonsterDecisionInput {
     int upgradeCooldown{};
     bool canShoot{};
     int shootDistance{INT32_MAX};
+    bool hasTarget{true};
+    int continuation{};
+    uint8_t skillMask{};
+    bool hasCommand{};
 };
 struct MonsterDecision {
     MonsterDecisionAction action{MonsterDecisionAction::Idle};
@@ -34,5 +38,9 @@ struct MonsterDecision {
     int upgradeCooldown{};
     int pathSteps{}; // Native PATH_SetStepNum arrival bound, not route length.
     bool useShootableTarget{};
+    bool wanderAroundTarget{};
+    int failedEscapeContinuation{};
+    int pathDistance{5};
+    uint8_t pathType{13};
 };
 }

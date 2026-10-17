@@ -36,7 +36,7 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
@@ -56,6 +56,7 @@ struct MonsterAttackRule {
     int animationStartFrame{};
     std::shared_ptr<const StatList> modeStats;
     MonsterModePhysical ownerPhysical;
+    int infernoFrame{},infernoEndFrames{};
 };
 struct MonsterWebRule {CombatStateDefinition aura;};
 struct MonsterRule {
@@ -79,6 +80,7 @@ struct MonsterRule {
     int statGameType{1}; // Native nGameType || dwGameType, not the expansion flag.
     int nativeClass{}, level{}, minimumLife{}, maximumLife{}, defense{}, attackRating{};
     int corpseExplosionPercent{};
+    bool boneDeathExplosion{};
     int minimumDamage{}, maximumDamage{}, criticalChance{};
     std::array<int, 6> resistances{};
     int size{}, meleeRange{}, attackTicks{}, impactTick{}, deathTicks{}, decisionTicks{};
@@ -134,6 +136,8 @@ struct MonsterRule {
     std::map<uint16_t,MonsterAttackRule> skillActions;
     std::array<uint16_t,8> skillIds{};
     std::shared_ptr<const PreparedMonster> nestChild;
+    std::shared_ptr<const PreparedMonster> deathReinitialize;
+    std::vector<int> resurrectionClasses;
     Vec spawnOffset;
     uint8_t spawnMode{1};
     int spawnTicks{}, skillMoveState{-1};

@@ -93,6 +93,17 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
+### 当前客户端打包
+
+2026-10-17，基于`64a5acd2`及当前未提交工作区，Windows／MinGW／Ninja Release的`d2x`目标构建成功，已用现有`package.ps1`更新`dist/current`。构建期间仅补齐三处`nativeMonsterSkillRanks`直接头文件依赖，并将调试事件名称表与新增`SkillEndFact`对齐；保留既有非致命警告。
+
+| 当前客户端产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 33967433 | `12E0A55B0AC45F8B3D75BEDBDAB8C7D0D9D62F87171F6C3FE35EB9C5BB358E66` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+两文件摘要与`build/bin`一致；旧客户端程序备份于`artifacts/client-package-20261017-161736/previous`。原存档、截图与MPQ保留，独立服务端本轮未构建或更新。仅完成构建、打包和产物摘要核对，未启动游戏、运行测试或新增测试程序；当前工作区玩法与画面等待用户验证，此前包的有限运行结论不认证本包。
+
 ### 当前逐房间地形构建
 
 2026-10-17，基于`0bc3c264`后的本批源码，Windows／MinGW／Ninja Release的`d2x_assets`、`d2x`、`d2x_pvpgn`构建通过，打包前增量为no work to do。宿主不再消费固定全区投影的地形／活动随机，改由每幕房间会话随实际初始化、引用传播及释放物化；入场／旅行07改为目的房间加有序近邻。已用既有脚本更新客户端和独立服务端两包，包内EXE／DLL与构建产物摘要一致，旧程序及配置已备份。

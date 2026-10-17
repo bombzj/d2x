@@ -55,5 +55,7 @@ struct Admission {
     int birthTicks{};
     bool ignoreSpawnCollision{};
     bool uncounted{};
+    // MONSTER_Reinitialize retains pUnit->pSeed instead of allocating a seed.
+    std::optional<uint64_t> unitRandom{};
 };
 }

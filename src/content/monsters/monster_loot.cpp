@@ -16,18 +16,16 @@ MonsterLootEntry resolveMonsterLoot(const ClassicData &data, const MonsterCatalo
         return defer("Unsupported monster loot data profile");
     if (request.difficulty < 0 || request.difficulty > 2)
         return defer("Invalid loot difficulty");
-    const auto *monster = monsters.find(request.identity.monster);
+    const auto *monster = request.identity.nativeClass>=0?monsters.find(request.identity.nativeClass):monsters.find(request.identity.monster);
+    if(monster && monster->id!=request.identity.monster) monster=monsters.find(request.identity.monster);
     if (!monster || !monster->hostile())
         return defer("Unknown, ambiguous or non-hostile monster identity");
     const auto &table = data.tables.at("monstats");
     auto source = std::find_if(data.monsters.begin(), data.monsters.end(),
-                               [&](const auto &record) { return record.name == monster->id; });
+                               [&](const auto &record) { return record.sourceRow == monster->sourceRow; });
     if (source == data.monsters.end())
         return defer("Missing monster treasure record");
-    size_t row = 0;
-    for (; row < table.rows().size(); ++row)
-        if (table.value(row, "Id") == monster->id)
-            break;
+    const size_t row = monster->sourceRow;
     if (row == table.rows().size())
         return defer("Missing original monster row");
     const char *suffix[] = {"", "(N)", "(H)"};

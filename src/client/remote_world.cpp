@@ -922,6 +922,11 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         event.auxiliary = r.u16(); r.finish(); combatEvent(w, std::move(event));
         break;
     }
+    case 0xA5: {
+        OnlineCombatEvent event;event.packet=p.id;event.kind=OnlineCombatEvent::Kind::Skill;
+        event.source=key(r);event.skill=r.u16();r.finish();combatEvent(w,std::move(event));
+        break;
+    }
     case 0xA3: {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
         event.flags = r.u8(); event.skill = r.u16(); event.level = r.u16();

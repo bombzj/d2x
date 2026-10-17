@@ -72,6 +72,8 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 ## 原版1.13c静态与开发对照证据
 
+第三至第五幕怪物逐项接入使用同一1.13c D2Game只读快照（MD5 `978f6f74cd031bce6ecee602cd5988cc`）。AI表RVA `10E788`第27项指向`808A0`：ThornHulk剩余连击、普通攻击冷却、ENDANIM加aip5及移动失败标志7；SrvDo表RVA `1074A8`第109项指向`B6790`，经`B4520`伤害／Drain后调用`28E70`叠加Frenzy，栈数上限为技能等级。摘录位于忽略目录`artifacts/act345-monsters-20261017-01/item02-retail-*`；准入及运行状态由[第三幕台账](../gameplay/monsters/ACT3.md#逐项接入)维护。
+
 战斗资源与转换另只读核对`artifacts/d2gs-local/client-1.13c/D2Game.dll`，MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`。SrvDo指针表RVA1074A8的第79项为99830，99997安装98950恢复回调；99ACD保存整点上限，98A0E左移恢复生命，98A1A–98A24直接写未移位保存上限。另一回调914F0／915BD左移保存上限，不能与圣骑士路径混用。D95CC／D95DD／D95DF及D95E4–D95F2确认最大生命回调的除／乘、int64截断、signed32低位比较限幅，D9626–D9635确认上限右移8位、乘DamageRegen、signed右移4位后SetStat(HPREGEN)；原百分比算子为RVA14D0。D2Common同快照ordinal10887／RVA3A740为SetUnitStat入口。该核对仅读取原版二进制以裁定规则，未运行原DLL或D2X检查／编译，原文件不修改、提交或分发；落点及未完成流程见[圣骑士](../gameplay/skills/PALADIN.md#生命周期与边界)。
 
 战斗递减参数只读核对使用`artifacts/d2gs-local/client-1.13c/D2Common.dll`，MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`。RVA `0x4dc30`（ordinal10115）先计算并截断`110*level/(level+6)`，再乘参数差、signed除100并只作上限裁剪；RVA `0x4e624`／`0x4e674`／`0x4e6c4`参数包装调用该入口。2026-10-14据此区分1.10f D2MOO转录的乘法分组，公共原版规则已按该证据修改；未执行D2X静态检查、构建或测试。原DLL仅只读，不修改、提交或分发。
@@ -100,7 +102,11 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 自然生成规则另只读核对同一1.13c D2Game：VA6FC51079–6FC5113D确认PopulateFn1接受的类别，6FC50528–6FC50576确认Fn5为AND循环，6FC4EC22确认主题ID与候选数量的原资格判断，6FC527D0–6FC52A02确认祭坛治疗替换／次数及间距。RVAE1430确认133–136的零售预设排除与Forgotten Sands计数分支，不使用后续D2MOO版本额外插入的事件服首领。Init表VA6FD2E050第62项为6FC7C850，调用6FC7C2A0：三组坐标去重、25次参数5的真实act5pow出生、成功至多5人及0x03000000原标志。当前MPQ Objects／ObjGroup／Levels／MonStats／MonStats2／MonPlace／MonPreset／SuperUniques／Shrines的只读提取及反汇编保留于忽略目录`artifacts/population-rules-20261017/`；原DLL与表不修改、提交或分发。源码入口及认证限制见[人口](../gameplay/monsters/POPULATION.md)与[物件](../gameplay/world/OBJECTS.md#自然生成源码边界)。
 
+萨满另只读核对同一1.13c D2Game：AI表第65项RVA87BB0、SrvDo表第95项B6A60；死亡结束76040附近调用AFC50，以原GUID更改class并重新初始化。MPQ原表／动画与反汇编保留`artifacts/act345-monsters-20261017-01/item05-*`；仅为静态依据，运行边界由第三幕台账维护。
+
 ## 补充资料的边界
+
+当前MPQ的MonStats重复名称以编译`monstats.bin`交叉核对：734行、每行0x1A8，第617／723行的名称链接ID均为617，616行NextInClass也指向617；字符串使用首行，数值类别仍保持各自索引。源码据此保留重复行的独立属性／经验／掉落，原二进制与提取摘要只保留在忽略目录`artifacts/act345-monsters-20261017-01/item29-*`。
 
 [Blizzard原手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf)、[LoD手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20-%20Lord%20of%20Destruction.pdf)与Arreat Summit用于交叉核对操作、物品／药剂／技能用途；[D2R Data Guide](https://locbones.github.io/D2R_DataGuide/#missilestxt)及原数据字段指南只补函数／字段含义，不能把D2R时钟、参数或简化客户端行为当1.13c规范。
 

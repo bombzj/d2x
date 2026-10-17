@@ -36,8 +36,10 @@ std::function<uint16_t(RoomView,int32_t,int32_t)> System::nativeCollisionSample(
     };
     const auto monsterFootprint=[&](const monsters::Actor &unit) {
         if(!ports_.areas.loaded(unit.area,unit.position)) return;
+        if(unit.spawnReservation) footprint(unit.area,*unit.spawnReservation,NativeCollisionPattern::SmallUnit,0x100);
+        if(unit.hatching) {rectangle(unit.area,unit.position,3,3,0x8000);return;}
         if(!unit.alive() && !unit.rule.deadCollision) footprint(unit.area,unit.position,NativeCollisionPattern::SmallNoPresence,0x8000);
-        else if(!unit.burrowed) footprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
+        else if(!unit.burrowed && !unit.airborne && !unit.submerged) footprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
     };
     if(units) {
         // Contact callers supply the real adjacent-room unit chains. Avoid a

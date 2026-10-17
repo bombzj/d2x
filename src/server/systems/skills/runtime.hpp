@@ -14,13 +14,18 @@ struct System::Runtime {
     std::map<EntityId,Release> assassinStarts,druidStarts,weaponStarts;
     struct MonsterWeaponStart {uint64_t tick{};uint16_t skill{};uint8_t mode{};MonsterAttackRule program;};
     std::map<EntityId,MonsterWeaponStart> monsterWeaponStarts;
+    struct MonsterLeapStart {
+        uint64_t tick{},occurrence{};EntityId target;MonsterAttackRule attack;
+        Vec targetPosition,landing;unsigned stage{};
+    };
+    std::map<EntityId,std::shared_ptr<MonsterLeapStart>> monsterLeapStarts;
     std::map<FrameEventHandle,std::shared_ptr<DruidActiveExecution>> druidActive;
     struct MonsterMode {
         MonsterAttackRule program;
         uint16_t skill{};
         MonsterAnimationCursor animation;
         uint64_t identity{},interruption{},lastFrame{};
-        bool advanced{};
+        bool advanced{},frozenSequence{};
         MonsterAnimationStep step;
         std::optional<MonsterRelease> repeated;
     };

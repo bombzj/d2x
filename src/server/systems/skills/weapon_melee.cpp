@@ -164,6 +164,21 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
             }
         }
     }
+    if(doFunction==83) {
+        // Fire Hit drains and frees this combat, then calls its start
+        // function again, even after the sequence's final hit event.
+        if(!execution.following) {
+            auto following=pending;following.actor=actor;
+            following.weaponMelee=execution.following=std::make_shared<WeaponMeleeExecution>();
+            runtime_->weaponStarts.insert_or_assign(actor.actor,std::move(following));
+        }
+        auto following=pending;following.weaponMelee=execution.following;
+        const auto program=execution.contact->monsterProgram;
+        const auto prepared=startWeaponMelee(following,actor,program?&*program:nullptr);
+        if(!prepared) return prepared.status;
+        execution.occurrence.reset();pending.weaponMelee=std::move(following.weaponMelee);
+        pending.nativeCallbackStarted=false;return DomainStatus::Applied;
+    }
     pending.nativeCallbackStarted=false;execution.occurrence.reset();return DomainStatus::Applied;
 }
 }

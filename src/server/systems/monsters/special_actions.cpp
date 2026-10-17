@@ -323,8 +323,23 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
     if(!caster || !dead || source==corpse || caster->life<=0 || dead->life>0 || dead->owner || !dead->rule.corpseSelectable ||
         dead->corpse.unavailable || dead->corpse.searched || tick<dead->busyUntil || !dead->rewardComplete || dead->area!=caster->area) return false;
     if(caster->rule.ai.kind==MonsterAiKind::GreaterMummy) return mummySupportTarget(source,corpse,tick,true);
+    if(caster->rule.ai.kind==MonsterAiKind::FetishShaman) {
+        const int capability=caster->rule.ai.params[1];
+        const auto &classes=caster->rule.resurrectionClasses;
+        if(classes.empty() || dead->alignment()!=UnitAlignment::Evil ||
+            (dead->rule.baseClass!=classes[0] && (classes.size()<2 || dead->rule.baseClass!=classes[1] || capability==1)) ||
+            (!capability && minionOwner(corpse)!=source) ||
+            (capability<3 && nativeUniqueMonster(dead->identity.rank))) return false;
+        for(const auto state:ports_.effects.unitStates(corpse,tick))
+            if(dead->rule.states->at(state).corpseUnselectable) return false;
+        const Vec delta{std::floor(caster->position.x)-std::floor(dead->position.x),
+            std::floor(caster->position.y)-std::floor(dead->position.y)};
+        const int radius=caster->rule.ai.params[4];
+        return delta.x*delta.x+delta.y*delta.y<=radius*radius &&
+            ports_.areas.at(caster->area).definition.activation.nearby(caster->position,dead->position);
+    }
     const int radius=caster->rule.ai.params[3];
-    const bool unique=nativeUniqueMonster(caster->identity.rank);
+    const bool unique=nativeUniqueMonster(caster->identity.rank) && caster->identity.rank!=MonsterRank::Champion;
     if(unique) {
         // Fn013's unique callback accepts both Fallen and FallenShaman families,
         // excluding unique/champion corpses, with a squared coordinate metric.
@@ -339,12 +354,17 @@ bool System::resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) c
     return ports_.areas.at(caster->area).definition.activation.nearby(caster->position,dead->position) &&
         (unique || monsterAiDistance(caster->position,caster->rule.size,dead->position)<=radius*radius);
 }
+bool System::resurrectionPlacement(EntityId corpse) const {
+    const auto *actor=find(corpse);if(!actor) return false;
+    const auto &grid=ports_.areas.at(actor->area).definition.collision;
+    if(!grid.walkable(actor->position,actor->rule.collision)) return false;
+    for(const auto &[id,other]:state_.actors) if(id!=corpse && other.area==actor->area && other.life>0 && (actor->position-other.position).length()<1.f) return false;
+    for(const auto &[id,p]:ports_.players.all()) { (void)id;if(p.entered && p.area==actor->area && p.persistent.player.hp>0 && (actor->position-p.position).length()<1.f) return false; }
+    return true;
+}
 DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) {
-    if(!resurrectionTarget(source,corpse,tick)) return {DomainStatus::Unavailable,{}};
-    auto &actor=state_.actors.at(corpse);const auto &grid=ports_.areas.at(actor.area).definition.collision;
-    if(!grid.walkable(actor.position,actor.rule.collision)) return {DomainStatus::Unavailable,{}};
-    for(const auto &[id,other]:state_.actors) if(id!=corpse && other.area==actor.area && other.life>0 && (actor.position-other.position).length()<1.f) return {DomainStatus::Unavailable,{}};
-    for(const auto &[id,p]:ports_.players.all()) { (void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && (actor.position-p.position).length()<1.f) return {DomainStatus::Unavailable,{}}; }
+    if(!resurrectionTarget(source,corpse,tick) || !resurrectionPlacement(corpse)) return {DomainStatus::Unavailable,{}};
+    auto &actor=state_.actors.at(corpse);
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{corpse,1,actor.area,128,false,actor.position}}})) return {DomainStatus::Capacity,{}};
     actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.corpse={};actor.poison.reset();
     actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;
@@ -371,10 +391,48 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec orig
     if(admitted) {state_.actors.at(*admitted.value).rewardComplete=true;++nest.nestSpawned;nest.combatRandom=random;++nest.revision;}
     (void)tick;return admitted;
 }
-bool System::canSpawnNestChild(EntityId id) const {
+bool System::canSpawnNestChild(EntityId id,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) const {
     const auto *nest=find(id);if(!nest || nest->life<=0 || !nest->rule.nestChild) return false;
+    if(nest->rule.ai.kind==MonsterAiKind::FoulCrowNest) {
+        if(!collision) return false;
+        const auto &area=ports_.areas.at(nest->area).definition;
+        const auto point=nest->position+area.origin+Vec{0,3};
+        const int x=int(std::floor(point.x)),y=int(std::floor(point.y));
+        const auto room=ports_.areas.roomAtPosition(nest->area,nest->position,x,y);
+        return room && !ports_.areas.nativeCollisionMask(*room,x,y,2,0x3c01,collision);
+    }
     auto random=nest->combatRandom;
     return bool(nestBirthPoint(id,nest->position+nest->rule.spawnOffset,random));
+}
+DomainResult<> System::reserveNestSpawn(EntityId id,Vec position,bool active,uint64_t tick) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    if(unit.revision>UINT64_MAX-2) return {DomainStatus::Capacity,{}};
+    const auto changed=toggleAiState(id,unit.rule.uninterruptableState,active,tick);if(!changed) return changed;
+    if(active) unit.spawnReservation=position;else unit.spawnReservation.reset();
+    ++unit.revision;return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto *source=find(id);if(!source || !source->rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    if(source->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto &child=*source->rule.nestChild;const auto &area=ports_.areas.at(source->area).definition;
+    const auto global=position+area.origin;
+    const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
+    if(!room) return {DomainStatus::Unavailable,{}};
+    const auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
+    auto identity=child.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    identity.spawnKey=source->identity.spawnKey+".native-child."+std::to_string(ports_.ids.cursor());
+    auto rule=child.rule;rule.noTreasure=rule.noExperience=true;
+    auto birth=prepareRoomSpawn({identity,child.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,std::move(rule),{},tick},*loan.value,1,{},false,collision);
+    if(!birth) return {birth.status,{}};
+    if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
+    const auto born=(*birth.value)->actor();(*birth.value)->publish();
+    if(born) {
+        auto &unit=state_.actors.at(born);unit.rewardComplete=true;
+        auto &parent=state_.actors.at(id);++parent.nestSpawned;++parent.revision;
+    }
+    return {DomainStatus::Applied,born};
 }
 std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &random) const {
     const auto *source=find(id);if(!source || source->life<=0 || !source->rule.nestChild) return {};

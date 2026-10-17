@@ -267,11 +267,12 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         }
         if (!indices_.emplace(m.index, m.id).second)
             throw std::runtime_error("Duplicate MonStats hcIdx: " + std::to_string(m.index));
+        nativeClasses_.emplace(m.index,m);
         if (!monsters_.emplace(m.id, m).second) {
-            // Some shipped tables repeat Act V names (e.g. cr_lancer8). Do not
-            // guess which native row a string reference meant, or block Act I.
-            ambiguous_.insert(m.id);
-            diagnostics_.push_back("Ambiguous duplicate MonStats Id disabled: " + m.id);
+            // Shipped monstats.bin verifies first-name linker precedence:
+            // cr_lancer8's later row 723 still contains name-link ID 617.
+            // Numeric class lookup keeps the later row independently.
+            diagnostics_.push_back("Duplicate MonStats name uses first record; numeric row retained: " + m.id);
         }
     }
     if (archives.contains("data/global/animdata.d2")) {
@@ -286,10 +287,10 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         };
         // D2MOO MonsterTbls: variants scale base-ID rates by Velocity/Run;
         // pre-expansion RN uses half the base WL rate, not the RN AnimData rate.
-        for (auto &[id, actor] : monsters_) {
-            if (monsterImplementation(id).substitute && actor.ai != "Hireable") continue;
+        const auto prepareRates=[&](MonsterRecord &actor) {
+            if (monsterImplementation(actor.id).substitute && actor.ai != "Hireable") return;
             const auto base = monsters_.find(actor.base);
-            if (base == monsters_.end()) continue;
+            if (base == monsters_.end()) return;
             const auto walk = animationRate(base->second, "wl");
             const auto run = actor.index < 410
                 ? (walk ? std::optional<int>{*walk / 2} : std::nullopt)
@@ -305,7 +306,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
             };
             actor.walkAnimationRate = scaled(walk, actor.walkVelocity, base->second.walkVelocity);
             actor.runAnimationRate = scaled(run, actor.runVelocity, base->second.runVelocity);
-        }
+        };
+        for(auto &[id,actor]:monsters_) {(void)id;prepareRates(actor);}
+        for(auto &[id,actor]:nativeClasses_) {(void)id;prepareRates(actor);}
         for (auto &[id, actor] : monsters_)
             if (actor.id == "act2hire") {
                 const auto row = actor.sourceRow;
@@ -431,7 +434,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     const int monsterCount = indices_.empty() ? 0 : indices_.rbegin()->first + 1;
     int uniqueCount = 0;
     for (const auto &[index, id] : indices_)
-        nativePresets_.emplace(index, MonsterPreset{MonsterPresetKind::Monster, id});
+        nativePresets_.emplace(index, MonsterPreset{MonsterPresetKind::Monster, id,index});
     for (const auto &[id, unique] : uniques_) {
         uniqueCount = std::max(uniqueCount, unique.index + 1);
         nativePresets_.emplace(monsterCount + unique.index, MonsterPreset{MonsterPresetKind::SuperUnique, id});
@@ -459,10 +462,13 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
     supported_ = true;
 }
 const MonsterRecord *MonsterCatalog::find(std::string_view id) const {
-    if (ambiguous_.contains(id))
-        return nullptr;
     auto it = monsters_.find(id);
     return it == monsters_.end() ? nullptr : &it->second;
+}
+const MonsterRecord *MonsterCatalog::find(int nativeClass) const {
+    const auto found=nativeClasses_.find(nativeClass);if(found==nativeClasses_.end()) return nullptr;
+    const auto *named=find(found->second.id);
+    return named && named->index==nativeClass?named:&found->second;
 }
 const SuperUniqueRecord *MonsterCatalog::superUnique(std::string_view id) const {
     auto it = uniques_.find(id);
@@ -475,7 +481,7 @@ MonsterPreset MonsterCatalog::preset(int act, int index, int version, bool nativ
     }
     if (version <= 4) {
         auto it = indices_.find(index);
-        return it == indices_.end() ? MonsterPreset{} : MonsterPreset{MonsterPresetKind::Monster, it->second};
+        return it == indices_.end() ? MonsterPreset{} : MonsterPreset{MonsterPresetKind::Monster, it->second,index};
     }
     if (act < 0 || act >= 5 || index < 0 || size_t(index) >= presets_[act].size())
         return {};

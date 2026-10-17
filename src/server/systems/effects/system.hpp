@@ -249,7 +249,8 @@ class System {
     struct PendingMonsterCurse {AuraDefinition aura;SkillFormulaSnapshot source;std::vector<EntityId> targets;size_t next{};uint64_t tick{};};
     std::deque<std::pair<EntityId,PendingMonsterCurse>> monsterCurses_;
     StepStatus advanceMonsterCurses(uint64_t);
-    struct UniqueCycle {uint64_t nextLightning{};bool emissionPending{};std::optional<uint64_t> queenDeath;};
+    struct ModifierExecution;
+    struct UniqueCycle {uint64_t nextLightning{};bool emissionPending{};std::optional<uint64_t> queenDeath;std::shared_ptr<ModifierExecution> deathExecution;};
     std::map<EntityId,UniqueCycle> uniqueCycles_;
     struct ModifierExecution {
         EntityId owner,missile;std::vector<int> callbacks;size_t next{};
@@ -258,6 +259,7 @@ class System {
     };
     std::map<FrameEventHandle,ModifierExecution> modifierExecutions_;
     DomainResult<> executeMonsterModifier(EntityId,int,uint64_t,ModifierExecution &);
+    DomainResult<> boneDeathEffect(EntityId,uint64_t,ModifierExecution &);
     DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
 
     StepStatus advanceUnits(uint64_t);

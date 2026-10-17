@@ -55,7 +55,7 @@ void NativeRealmService::publishMonsters() {
         visible.insert(monster.id);
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;
         auto [entry, fresh] = peer.monsters.try_emplace(monster.id);
-        if(!fresh && (entry->second.modifiers!=monster.modifiers || entry->second.rankFlags!=monster.rankFlags || entry->second.nameSeed!=monster.nameSeed)) {
+        if(!fresh && (entry->second.nativeClass!=monster.nativeClass || entry->second.modifiers!=monster.modifiers || entry->second.rankFlags!=monster.rankFlags || entry->second.nameSeed!=monster.nameSeed)) {
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(1);out.u32(uint32_t(monster.id.value));}));
             entry->second={};fresh=true;
         }
@@ -69,7 +69,7 @@ void NativeRealmService::publishMonsters() {
             }));
             entry->second.life=monster.life;
         }
-        entry->second.modifiers=monster.modifiers;entry->second.rankFlags=monster.rankFlags;entry->second.nameSeed=monster.nameSeed;
+        entry->second.nativeClass=monster.nativeClass;entry->second.modifiers=monster.modifiers;entry->second.rankFlags=monster.rankFlags;entry->second.nameSeed=monster.nameSeed;
         if(monster.hireling) {
             const auto &record=*monster.hireling;
             const auto definition=std::find_if(content->hirelings.begin(),content->hirelings.end(),[&](const auto &entry){return entry.sourceRow==record.sourceRow;});

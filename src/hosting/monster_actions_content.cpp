@@ -172,7 +172,9 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         const auto &projectile=slot==1?record.attack1Projectile:record.attack2Projectile;
         if(!damage && !projectile) continue;
         const std::string mode=slot==1?"a1":"a2";
-        const auto clock=loadMonsterAttackTiming(animations,record.token,slot,monsterModeWeapon(archives,record.token,mode,record.baseWeapon),projectile?2:1);
+        const bool bowSkill=record.ai=="CorruptArcher" && slot==1 && data.tables.at("monstats").value(record.sourceRow,"Skill1")=="MonBow";
+        const int event=record.ai=="ClawViperEx" && slot==1?1:projectile || bowSkill?2:1;
+        const auto clock=loadMonsterAttackTiming(animations,record.token,slot,monsterModeWeapon(archives,record.token,mode,record.baseWeapon),event);
         if(!clock) continue;
         server::MonsterAttackRule attack;
         if(damage) {attack.minimum=damage->first;attack.maximum=damage->second;}
@@ -192,7 +194,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
     return result;
 }
 bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
-    if(hasAct2MonsterSkills(record.ai) || record.id=="vampire1") return prepareAct2MonsterSkills(archives,data,animations,record,rule);
+    if(hasAct2MonsterSkills(record.ai) || record.ai=="Vampire") return prepareAct2MonsterSkills(archives,data,animations,record,rule);
     const auto &stats=data.tables.at("monstats");const auto &skills=data.tables.at("skills");
     const auto &missiles=data.tables.at("missiles");const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const auto &difficulty=data.tables.at("difficultylevels");
@@ -258,7 +260,7 @@ bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,con
             size_t missileRow=0;while(missileRow<missiles.rows().size() && missiles.value(missileRow,"Missile")!=name) ++missileRow;
             if(missileRow==missiles.rows().size()) return false;
             int definition=missiles.number(missileRow,"Id").value_or(-1);
-            if(record.ai=="FallenShaman") {
+            if(record.ai=="FallenShaman" && skills.number(row,"srvdofunc").value_or(0)==85) {
                 // SrvDo085 selects the missile by position in the BaseId chain.
                 int offset=0;std::string next=record.base;
                 while(next!=record.id && offset<255) {

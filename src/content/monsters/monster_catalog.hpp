@@ -93,6 +93,7 @@ enum class MonsterPresetKind { Unknown, Monster, SuperUnique, Place };
 struct MonsterPreset {
     MonsterPresetKind kind = MonsterPresetKind::Unknown;
     std::string id;
+    int nativeClass{-1};
 };
 class MonsterCatalog {
     bool supported_ = false;
@@ -107,7 +108,7 @@ class MonsterCatalog {
     std::map<MonsterKind, std::map<std::string, std::string, std::less<>>> modeWeapons_;
     std::map<int, std::string> indices_;
     std::map<int, MonsterPreset> nativePresets_;
-    std::set<std::string, std::less<>> ambiguous_;
+    std::map<int,MonsterRecord> nativeClasses_;
     std::map<std::string, SuperUniqueRecord, std::less<>> uniques_;
     std::array<std::vector<std::string>, 5> presets_;
     std::set<std::string, std::less<>> places_;
@@ -124,6 +125,7 @@ class MonsterCatalog {
     const auto &towerReward() const { return towerReward_; }
     const auto &diagnostics() const { return diagnostics_; }
     const auto &monsters() const { return monsters_; }
+    const auto &nativeClasses() const { return nativeClasses_; }
     const MonsterAttackTiming *attackTiming(MonsterKind kind, int mode = 1) const {
         if (mode == 4 && kind == MonsterKind::Andariel) mode = 1;
         if (mode == 4 && kind == MonsterKind::BloodRaven) {
@@ -157,6 +159,7 @@ class MonsterCatalog {
         return found == kinds->second.end() ? std::string_view{} : std::string_view(found->second);
     }
     const MonsterRecord *find(std::string_view id) const;
+    const MonsterRecord *find(int nativeClass) const;
     const SuperUniqueRecord *superUnique(std::string_view id) const;
     MonsterPreset preset(int act, int index, int ds1Version, bool nativeIdentity = false) const;
 };

@@ -62,6 +62,6 @@ struct WeaponSkillSpec {
             (startFunction==6 && doFunction==11) || (startFunction==10 && doFunction==14) || (startFunction==42 && doFunction==83);
     }
     bool nativeMelee() const {return commonAttack || allocatesMeleeAtStart() || doFunction==7 || doFunction==9 || doFunction==13 ||
-        doFunction==67 || doFunction==70 || doFunction==76 || doFunction==78 || doFunction==150;}
+        doFunction==67 || doFunction==70 || doFunction==76 || doFunction==78 || doFunction==109 || doFunction==150;}
 };
 } // namespace d2x

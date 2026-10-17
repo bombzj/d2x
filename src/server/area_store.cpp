@@ -7,6 +7,20 @@
 #include <cmath>
 
 namespace d2x::server {
+void AreaStore::recordMonsterDeath(EntityId id) noexcept {
+    const auto unit=roomUnits_.find(id);
+    if(unit==roomUnits_.end() || !unit->second.room) return;
+    const auto [region,index]=*unit->second.room;
+    auto &room=areas_.at(region).rooms.at(index);
+    room.lastDead[room.deathIndex]=id;room.deathIndex=uint8_t((room.deathIndex+1)&3);
+}
+std::array<EntityId,4> AreaStore::roomLastDead(RoomView view) const noexcept {
+    const auto *area=find(view.area);if(!area) return {};
+    const auto *room=area->definition.activation.room(Vec{float(view.x*5),float(view.y*5)}-area->definition.origin);
+    if(!room) return {};
+    const auto index=size_t(room-area->definition.activation.rooms().data());
+    return index<area->rooms.size() && area->rooms[index].loaded?area->rooms[index].lastDead:std::array<EntityId,4>{};
+}
 void AreaStore::validate(const AreaDefinition &initial) {
     const auto &grid = initial.collision;
     if (grid.width <= 0 || grid.height <= 0)

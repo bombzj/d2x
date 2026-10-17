@@ -29,8 +29,8 @@ int readLinker(const DataTable &table, const char *name, Linker &linker) {
 int resolveLink(const Linker &linker, std::string_view name) {
     const auto found = linker.find(name);
     if (found == linker.end()) return -1;
-    if (found->second.size() != 1)
-        throw std::runtime_error("Ambiguous MPQ preset identity requires native linker verification: " + std::string(name));
+    // FOG's name linker reuses the first entry. Current monstats.bin retains
+    // 617 as the name-link ID in both cr_lancer8 rows (617 and 723).
     return found->second.front();
 }
 }

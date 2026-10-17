@@ -71,7 +71,11 @@ struct MonsterRelease {
     std::pair<uint64_t,uint64_t> formulaRandom;
     bool hitReleased{};
     uint64_t infernoUntil{};
+    uint64_t infernoEndAt{};
+    std::optional<Vec> leapDestination;
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
+    std::shared_ptr<effects::NativeAreaPulse> mosquito;
+    int mosquitoLoops{};
     bool nativeCallbackStarted{},cancelled{};
     std::shared_ptr<SkillRelease> nativeSkill;
 };

@@ -57,7 +57,7 @@ CorruptLancer、SkeletonMage及Bighead低生命接近使用原单位距离停止
 | 保存退出／新进程重入 | 正常退局返回CharacterSelection；新进程ProtocolReady，生命644.3359375、法力215、等级91及经验1800000131恢复，物品数量保持 |
 | 两幕客户端／服务端 | scene.available=true，unavailableUnits=0，mapErrors／effectLimitations／characterIssues为空，failures=0；stderr为空 |
 
-该批保留全局无关候选告警Ambiguous duplicate MonStats Id disabled: cr_lancer8。普通难度最小观察不认证噩梦／地狱、全部AI／词缀分支、自然通关、巢生边界或完整原版等价；独立服务端未启动PvPGN后端。
+旧批次曾禁用重复名称cr_lancer8；当前源码已按MPQ编译表恢复原名称链接与数值类别，见[第29项](ACT3.md#逐项接入)。普通难度最小观察不认证噩梦／地狱、全部AI／词缀分支、自然通关、巢生边界或完整原版等价；独立服务端未启动PvPGN后端。
 
 ## 逐身份源码与原资源核对
 

@@ -1905,7 +1905,9 @@ struct RemoteScene::Impl {
                 for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="QueenDeath") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
             }
             const bool burrowed=actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="SandMaggot";
+            const bool submerged=actual==8 && !u.actionSkill && monstats.value(row->second,"AI")=="FrogDemon";
             if(burrowed) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="MagottDown") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
+            if(submerged) for(int slot=1;slot<=8;++slot) if(monstats.value(row->second,"Skill"+std::to_string(slot))=="Submerge") pose=lower(std::string(monstats.value(row->second,"Sk"+std::to_string(slot)+"mode")));
             // D2Common COMPOSIT maps MONMODE_KNOCKBACK to the original GH art.
             if(actual==13) pose="gh";
             if (u.actionSkill || pose.starts_with("seq_")) {
@@ -1916,6 +1918,7 @@ struct RemoteScene::Impl {
                         request.attackTiming=hireling.attackTiming;request.recoveryTiming=hireling.recoveryTiming;request.fasterCast=hireling.fasterCast;
                     }
                     request.finalFrame=burrowed;
+                    if(submerged) {request.sequenceStart=0;request.sequenceEnd=1;request.persistentCycle=true;}
                     if(u.actionSkill) {
                         const auto skill=skillRows.find(*u.actionSkill);
                         if(skill!=skillRows.end()) {

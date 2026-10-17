@@ -170,13 +170,14 @@ struct Actor {
     bool shatterActive{};
     uint64_t holyFreezeUntil{};
     uint64_t webUntil{};
-    bool burrowed{};
-    bool airborne{}, holdPose{};
+    bool burrowed{},hatching{};
+    bool airborne{}, holdPose{}, targetFlagsDisabled{}, submerged{};
     uint8_t aiPose{1}; uint64_t poseUntil{};
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
-    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{};};
+    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{};};
     std::optional<SkillMotion> skillMotion;
+    std::optional<Vec> spawnReservation;
     int nestSpawned{};
     Vec home;
     std::vector<Vec> skillPositions;
@@ -196,7 +197,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool damageable() const { return !restorationPending && !burrowed && !airborne && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
+    bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || druidPet || necroSummon || conversion || hydra(); }
@@ -306,6 +307,7 @@ class System {
     DomainResult<> compressRoom(RegionId,size_t,uint64_t tick);
     StepStatus restoreRoom(RegionId,size_t,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,bool sanctumCleared);
     const State &read() const { return state_; }
+    const GameSettings &gameSettings() const noexcept {return ports_.settings;}
     ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds,std::span<const EntityId> restored={},
         std::shared_ptr<EntityIds::Publication> identities={},std::span<const EntityId> retired={},std::span<const EntityId> presets={}) const;
     bool validateActors(const ActorPublication &) const;
@@ -328,12 +330,14 @@ class System {
     void roomClientsChanged(RoomView,bool present,uint64_t tick);
     void resumeMode(EntityId,uint64_t tick);
     DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
+    DomainResult<> reinitializeAfterDeath(EntityId,uint64_t tick);
     StepStatus advanceMode(EntityId,TickContext);
     DomainResult<> attackProfile(EntityId,std::shared_ptr<const StatList>,uint64_t expected,uint64_t next);
     DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
     DomainResult<> schedulePresetReanimation(EntityId,uint64_t tick);
     DomainResult<> modifierEvent(const FrameEvent &,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     bool resurrectionTarget(EntityId source,EntityId corpse,uint64_t tick) const;
+    bool resurrectionPlacement(EntityId corpse) const;
     bool nativeUsableCorpse(EntityId,uint64_t tick) const;
     bool usableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     bool deadMode(EntityId,uint64_t tick) const;
@@ -354,12 +358,22 @@ class System {
     bool canLand(EntityId) const;
     DomainResult<> consumeRandom(EntityId,uint64_t expected,uint64_t next);
     DomainResult<> finishSuperUniqueBirth(EntityId,bool corpseUnavailable);
-    DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick);
+    DomainResult<> aiPose(EntityId,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait=0,bool preserveMovement=false);
+    DomainResult<bool> restoreGroundPresence(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    void monsterTargetable(EntityId,bool);
+    void submerge(EntityId);
     DomainResult<> aiColor(EntityId,int color,int overlay,uint64_t tick);
     void aiRegeneration(EntityId,int eighths);
+    int nativeAiRegeneration(EntityId,int eighths,int previousBonus,uint64_t tick);
+    void beginHatch(EntityId);
+    std::optional<Vec> leapLanding(EntityId,Vec) const;
+    bool canMonsterLeap(EntityId,Vec) const;
+    DomainResult<> finishLeaperLanding(EntityId,EntityId target,int skill,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick);
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
-    bool canSpawnNestChild(EntityId) const;
+    bool canSpawnNestChild(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision={}) const;
+    DomainResult<> reserveNestSpawn(EntityId,Vec,bool active,uint64_t tick);
+    DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);
     DomainResult<> activateWeb(EntityId,int skill,int rank,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);

@@ -129,7 +129,7 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
     actor.area = request.area; actor.position = actor.home = request.position; actor.skillPositions=request.skillPositions; actor.revision = 1; actor.rule = rule;
     actor.admissionRule=std::make_shared<const MonsterRule>(rule);
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
-    actor.combatRandom=childRandom(random);
+    actor.combatRandom=request.unitRandom?*request.unitRandom:childRandom(random);
     const bool activeAi=request.hostile || rule.ai.kind==MonsterAiKind::GoodNpcRanged;
     if(activeAi && !request.deadMode) {
         uint64_t delay=1;
@@ -512,7 +512,7 @@ DomainResult<Actor> System::prepareDeathActor(const Actor &current,uint64_t tick
             unit.corpse.unavailable|=definition->second.hideOnDeath || definition->second.shatterOnDeath || definition->second.corpseUnselectable;
         }
     }
-    unit.aiStates.clear();++unit.interruption;++unit.revision;
+    unit.aiStates.clear();unit.spawnReservation.reset();++unit.interruption;++unit.revision;
     return {DomainStatus::Applied,std::move(unit)};
 }
 std::vector<Actor> System::prepareMinionDeaths(Actor candidate,uint64_t tick,const std::map<EntityId,Actor> *staged) const {
@@ -822,7 +822,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // Fenris and resource vines must be able to approach a real corpse.
     if (actor.rule.nativeVelocity <= 0 || (request.target && !nativePathTarget(ports_.players,*this,request.target,actor.area)) || request.stopDistance<0 || request.stopDistance>255 ||
         request.velocityPercent<25 || request.velocityPercent>INT16_MAX) return {DomainStatus::InvalidRequest,{}};
-    const auto collision=actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision;
+    const auto collision=(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision;
     uint8_t pathType=request.circleTurn?1:request.pathType;
     // MonsterMode's default obstacle-search distance is 5; pet tactics supply
     // their own 40/100 bounds. Circling is
@@ -906,6 +906,7 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
 void System::finishAction(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
     auto &actor=found->second;actor.nativeActionUntil=actor.busyUntil=tick;
+    if(actor.skillMotion && actor.skillMotion->leaperRecovery) {actor.skillMotion.reset();actor.moving=false;}
     if(actor.neutralAt) actor.neutralAt=tick;
     ++actor.revision;
     const auto next=ports_.frameEvents.nextDue({FrameEventUnit::Monster,id},FrameEventType::AiThink).value_or(tick);
@@ -913,7 +914,7 @@ void System::finishAction(EntityId id,uint64_t tick) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce,bool softHit,std::optional<uint64_t> freezeLength,std::optional<bool> getHit,DamageStatus status) {
     auto it = state_.actors.find(id);
-    if(it!=state_.actors.end() && !it->second.alive() && it->second.rule.deathBurst) return ports_.effects.monsterDeathEffect(id,tick);
+    if(it!=state_.actors.end() && !it->second.alive() && (it->second.rule.deathBurst || it->second.rule.boneDeathExplosion)) return ports_.effects.monsterDeathEffect(id,tick);
     if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
     if(it->second.revision>UINT64_MAX-4) return {DomainStatus::Capacity,{}};
     auto actor = it->second;
@@ -1210,11 +1211,11 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             constexpr Vec center{.5f,.5f};
             const auto previousStep=actor.pathStep;
             const auto step=actor.pathStep.advance(grid,actor.position+center,actor.route.front()+center,
-                remaining,actor.airborne?MovementCollisionRule{0,1}:actor.rule.collision);
+                remaining,(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision);
             const Vec next=step.position-center;
             const bool atGoal=arrived(next);
             bool barrier=false;
-            if(!actor.airborne) for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
+            if(!actor.airborne && !actor.submerged) for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
             if(barrier) {actor.route.clear();actor.moving=false;break;}
             const auto previous=actor.position;actor.position=next;
             if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;break;}

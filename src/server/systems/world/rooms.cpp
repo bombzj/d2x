@@ -72,6 +72,7 @@ struct System::RoomRuntime {
         auto &state = area(room.area);
         state.rooms.at(room.index).loaded = false;
         state.rooms.at(room.index).random.reset();
+        state.rooms.at(room.index).lastDead={};state.rooms.at(room.index).deathIndex=0;
         ++state.definition.collision.obstacleRevision;
     }
     void create(size_t id) {

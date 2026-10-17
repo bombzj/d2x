@@ -58,5 +58,6 @@ struct CombatEffectSpec {
     bool registersUnitEvents{};
     std::vector<SkillUnitEventBinding> unitEvents;
     bool nativeMissileHitGate{}; // JUSTHIT stays set until its RemoveState callback.
+    bool nativeLifetime() const {return nativeState || (nativeDirectAllocation && state.id<0);}
 };
 } // namespace d2x

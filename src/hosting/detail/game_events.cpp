@@ -125,6 +125,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u8(pulse->ownerType);out.u32(uint32_t(pulse->owner.value));out.u8(pulse->target?pulse->targetType:0);out.u32(pulse->target?uint32_t(pulse->target.value):UINT32_MAX);out.u32(pulse->argumentX);out.u32(pulse->argumentY);
             }));
         }
+        else if(const auto *ended=std::get_if<server::SkillEndFact>(&fact)) {
+            if(!visibleActor(ended->actor,ended->type)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::SkillEnd,[&](auto &out) {
+                out.u8(ended->type);out.u32(uint32_t(ended->actor.value));out.u16(ended->skill);
+            }));
+        }
         else if (const auto *missile = std::get_if<server::MissileFact>(&fact)) {
             if(!visibleActor(missile->owner,missile->ownerType) || (missile->missile && peer.missiles.contains(missile->missile))) continue;
             delta.push_back(nativeMissile(*missile,shared.terrain.at(binding->game).at(missile->area).origin));

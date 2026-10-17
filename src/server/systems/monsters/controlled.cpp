@@ -302,7 +302,10 @@ void System::publishActors(ActorPublication &plan) noexcept {
         publishInitialAi(node.mapped());
         if(!node.mapped().alive() && (!node.mapped().owner || node.mapped().conversion))
             ports_.frameEvents.cancelHandler({FrameEventUnit::Monster,node.key()},FrameEventType::AiThink,0);
-        if(live!=state_.actors.end()) live->second=std::move(node.mapped());
+        if(live!=state_.actors.end()) {
+            if(live->second.alive() && !node.mapped().alive()) ports_.areas.recordMonsterDeath(node.key());
+            live->second=std::move(node.mapped());
+        }
         else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);state_.actors.insert(std::move(node));}
     }
     std::erase_if(birthEquipment_,[&](const auto &entry){return state_.actors.contains(entry.second.first.actor);});

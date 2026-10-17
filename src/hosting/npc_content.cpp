@@ -165,7 +165,7 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         int questInit=0;
         if (source.type == 1) {
             const auto preset = catalog.preset(area.act, source.id, prepared.terrain.map->terrain.data.version, source.nativeIdentity);
-            record = catalog.find(preset.id);
+            record = preset.nativeClass>=0?catalog.find(preset.nativeClass):catalog.find(preset.id);
         } else if (source.type == 2 && source.nativeIdentity) {
             const auto &objects = data.tables.at("objects");
             for (size_t row = 0; row < objects.rows().size(); ++row)

@@ -52,6 +52,9 @@ DomainResult<> System::monsterMelee(EntityId source,EntityId target,const Monste
         damage.lifeStealDivisor=rules.lifeStealDivisor;damage.manaStealDivisor=rules.manaStealDivisor;
         damage.lifeStealOverlay=rules.lifeStealOverlay;damage.manaStealOverlay=rules.manaStealOverlay;
         impact.areaDamage=MissileAreaDamage{};impact.areaDamage->resultFlags=5;impact.areaDamage->hitFlags=0x20;
+        // Do109 starts a zeroed DamageStrc, then ORs Skills.HitFlags on
+        // success; it does not inherit the ordinary monster attack flag.
+        if(skill.weapon->doFunction==109) impact.areaDamage->hitFlags=0;
         impact.areaDamage->rolled=std::make_shared<MissileAreaRoll>();impact.monsterStates=unit->rule.hitStates;
         auto prepared=prepareSpells({std::move(impact)});if(!prepared) return {prepared.status,{}};
         commitSpells(std::move(*prepared.value));

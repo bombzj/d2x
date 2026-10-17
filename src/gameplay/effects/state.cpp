@@ -15,9 +15,9 @@ void CombatEffectSet::scheduleExpiration(EffectFrame now,int32_t frame) {
     storage_->expirationEvents.insert({},FrameEventType::RemoveState,frame,now);
 }
 void CombatEffectSet::renewExpiration(ActiveCombatEffect &effect,const CombatEffectSpec &spec,EffectFrame now) {
-    if(!spec.duration || (spec.nativeState && uint32_t(*spec.duration)==0 &&
+    if(!spec.duration || (spec.nativeLifetime() && uint32_t(*spec.duration)==0 &&
         spec.nativeExpiration==NativeStateExpiration::NonzeroDuration)) return;
-    if(spec.nativeState) {
+    if(spec.nativeLifetime()) {
         effect.nativeExpireFrame=nativeAdd(nativeNarrow(uint32_t(now)),nativeNarrow(uint32_t(*spec.duration)));
         effect.expiresAt=now+uint32_t(*spec.duration);
         scheduleExpiration(now,*effect.nativeExpireFrame);
@@ -214,7 +214,7 @@ std::vector<RemovedCombatEffect> CombatEffectSet::erase(Predicate predicate, Eff
 }
 EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,const std::function<void()> &observe) {
     detach();
-    if (spec.state.id < -1 || (spec.state.id == -1 && (spec.duration || spec.state.group != 0 ||
+    if (spec.state.id < -1 || (spec.state.id == -1 && ((spec.duration && !spec.nativeDirectAllocation) || spec.state.group != 0 ||
         (spec.stacking != EffectStacking::ReplaceSource && spec.stacking != EffectStacking::Independent))) || spec.state.group < 0 || spec.source.definition < 0 ||
         (spec.source.level < 0 && !spec.nativeState) || (spec.duration && *spec.duration == 0 && !spec.nativeState))
         throw std::invalid_argument("Invalid combat state, source or duration");
@@ -397,7 +397,7 @@ std::vector<RemovedCombatEffect> CombatEffectSet::expire(EffectFrame now,const s
     removed.insert(removed.end(),native.begin(),native.end());return removed;
 }
 std::vector<RemovedCombatEffect> CombatEffectSet::expireOrdinary(EffectFrame now,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
-    return erase([=](const auto &effect){return !effect.spec.nativeState && !effect.activeAt(now);},EffectRemoval::Expired,observe,dead);
+    return erase([=](const auto &effect){return !effect.spec.nativeLifetime() && !effect.activeAt(now);},EffectRemoval::Expired,observe,dead);
 }
 std::vector<RemovedCombatEffect> CombatEffectSet::expireEvent(FrameEventHandle handle,EffectFrame now,const std::function<void()> &observe,std::optional<EffectUnitKind> dead) {
     const auto *event=storage_->expirationEvents.find(handle);
@@ -412,7 +412,7 @@ std::vector<RemovedCombatEffect> CombatEffectSet::removeDueNative(EffectFrame no
     // each withdrawal, so a nested callback observes the newest list first.
     for(;;) {
         const auto last=std::find_if(storage_->effects.rbegin(),storage_->effects.rend(),[=](const auto &effect) {
-            return effect.spec.nativeState && effect.nativeExpireFrame && *effect.nativeExpireFrame<=nativeNarrow(uint32_t(now));
+            return effect.spec.nativeLifetime() && effect.nativeExpireFrame && *effect.nativeExpireFrame<=nativeNarrow(uint32_t(now));
         });
         if(last==storage_->effects.rend()) break;
         const auto handle=last->handle;

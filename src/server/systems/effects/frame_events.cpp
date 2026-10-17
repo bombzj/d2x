@@ -147,7 +147,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
             player->inventoryRevision,player->characterRevision,resources.record()};
         restoreStaminaOnEffectRemoval(edit.player.stamina,resources.maximum().stamina,removed);
         edit.resourceBase=resources.maximum();edit.transient=projectEffectAttributes(states,tick);
-        for(const auto &entry:removed) if(!states.hasState(entry.effect.spec.state.id,tick) &&
+        for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !states.hasState(entry.effect.spec.state.id,tick) &&
             (!entry.effect.spec.nativeMissileHitGate || !entry.effect.spec.state.noSend))
             edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,entry.effect.spec.state.id,false});
         auto prepared=ports_.transactions.prepare(std::move(edit));
@@ -171,7 +171,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
     if(resources) life=resources->take();
     else if(monster) life=monsters::LifeChange{monster->id,monster->revision,Fixed8::fromRaw(monster->life),Fixed8::fromRaw(monster->maximumLife),monster->nativeStats,false};
     AuraUnitPublication plan;
-    for(const auto &entry:removed) if(!unit.states.hasState(entry.effect.spec.state.id,tick)) {
+    for(const auto &entry:removed) if(entry.effect.spec.state.id>=0 && !unit.states.hasState(entry.effect.spec.state.id,tick)) {
         unit.nativeStats.erase(entry.effect.spec.state.id);
         if(!entry.effect.spec.nativeMissileHitGate || !entry.effect.spec.state.noSend)
             plan.facts.emplace_back(StateFact{event.owner.unit,1,unit.area,entry.effect.spec.state.id,false});

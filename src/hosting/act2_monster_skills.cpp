@@ -63,16 +63,15 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
 }
 bool hasAct2MonsterSkills(std::string_view ai) {
     constexpr std::array names{"SandRaider","SandMaggot","SandMaggotQueen","MaggotEgg","MaggotLarva",
-        "ClawViper","SandLeaper","Swarm","Scarab","GreaterMummy","Mummy","PantherWoman",
-        "PantherJavelin","Baboon","Vulture","BatDemon","PinHead","Summoner","Duriel","Sarcophagus","ArcaneTower"};
+        "ClawViper","ClawViperEx","SandLeaper","Swarm","Scarab","GreaterMummy","Mummy","PantherWoman",
+        "PantherJavelin","Baboon","Vulture","BatDemon","PinHead","Summoner","Duriel","Sarcophagus","ArcaneTower","ThornHulk","FetishShaman","Mosquito","FrogDemon","CorruptArcher","CorruptLancer","WillOWisp"};
     return std::ranges::find(names,ai)!=names.end();
 }
 bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const AnimDataTable &animations,
                              const MonsterRecord &record,server::MonsterRule &rule) {
     using Action=server::MonsterAttackRule::Action;
     const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
-    rule.baseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id",record.base),"hcIdx");
-    if(record.ai=="SandRaider" || record.ai=="ClawViper") {
+    if(record.ai=="SandRaider" || record.ai=="ClawViper" || record.ai=="ClawViperEx") {
         rule.blueState=data.states.at("blue").definition.id;rule.redState=data.states.at("red").definition.id;
     }
     if(record.ai=="Vulture" || record.ai=="BatDemon") {
@@ -84,6 +83,10 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             if(!clock) return false;
             rule.aiPoseTicks.emplace(mode,std::max(1,int(std::ceil(clock->duration*25))));
         }
+    }
+    if(record.ai=="WillOWisp") {
+        const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));
+        if(!clock) return false;rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
     }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const int bonus=data.tables.at("difficultylevels").number(size_t(rule.difficulty),"MonsterSkillBonus").value_or(0);
@@ -113,18 +116,30 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         if(name.empty()) continue;
         const auto row=findSkillTableRow(skills,"skill",name);const int id=skillTableNumber(skills,row,"Id");
         int rank=stats.number(record.sourceRow,"Sk"+field+"lvl").value_or(0)+bonus;
+        if(record.ai=="WillOWisp") {rule.skillIds[slot]=uint16_t(id);continue;}
         if(name=="Holy Freeze") {
             rank=rule.ai.params[0]; // Duriel assigns the aura from AI, not Sk4lvl.
             rule.nativeAura=resolveBaseAura(data,id,rank);rule.skillIds[slot]=uint16_t(id);continue;
         }
         if(rank<1 || rank>255 || id<1 || id>UINT16_MAX) return false;
+        // Fn065 does not call its FetishAura slot. Keep the declaration and
+        // learned rank without inventing an additional active AI branch.
+        if(record.ai=="FetishShaman" && name=="FetishAura") {rule.skillIds[slot]=uint16_t(id);continue;}
         if(name=="QueenDeath") {
             server::MonsterAttackRule death;
             if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),1,death)) return false;
             rule.deathTicks=death.duration;rule.skillIds[slot]=uint16_t(id);continue;
         }
         server::MonsterAttackRule action;int event=2;
-        if(name=="Fire Hit" || name=="Jab") {action=baseAttack("S1");event=1;}
+        if(name=="Fire Hit" || name=="Jab") {action=baseAttack(name=="Jab" && record.ai=="CorruptLancer"?"A1":"S1");event=1;}
+        else if(name=="MonFrenzy") {
+            action=baseAttack("A2");event=1;
+            SkillCastSpec skill;skill.sourceId=id;skill.rank=rank;skill.weapon=WeaponSkillSpec{};
+            skill.weapon->startFunction=skills.number(row,"srvstfunc").value_or(0);
+            skill.weapon->doFunction=skills.number(row,"srvdofunc").value_or(0);
+            skill.weapon->frenzyState=data.states.at(std::string(skills.value(row,"aurastate"))).definition;
+            action.weaponSkill=std::move(skill);
+        }
         else if(name=="Smite") {action=baseAttack("A2");action.hitClass=0x65;action.knockback=(skills.number(row,"ResultFlags").value_or(0)&8)!=0;event=1;}
         else if(name=="Charge" || name=="SerpentCharge") {
             action=baseAttack(record.ai=="Duriel"?"A2":"A1");action.action=Action::Charge;action.knockback=true;action.alwaysHit=true;
@@ -141,6 +156,15 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         else if(name=="Resurrect2") action.action=Action::Resurrect;
         else if(name=="Bestow") action.action=Action::Heal;
         else if(name=="Weaken") action.action=Action::Curse;
+        else if(name=="MonPowerStrike" || name=="MonIceSpear") {action=baseAttack("A1");event=1;}
+        else if(name=="Mosquito") {action.action=Action::Mosquito;event=1;}
+        else if(name=="Submerge") {action.action=Action::Submerge;event=0;}
+        else if(name=="Emerge") {action.action=Action::Animation;event=0;}
+        else if(name=="FetishInferno") {
+            action.action=Action::Inferno;event=2;
+            action.infernoFrame=record.infernoAnimation;action.infernoEndFrames=record.infernoLength;
+            if(action.infernoFrame<0 || action.infernoEndFrames<=0 || !missile(skills.value(row,"srvmissilea"),rank)) return false;
+        }
         else if(name=="VampireFirewall") {
             action.action=Action::Firewall;action.missile=missile(skills.value(row,"srvmissilea"),rank);action.groundFire=missile(skills.value(row,"srvmissileb"),rank);
             if(!action.missile || !action.groundFire) return false;
@@ -164,14 +188,10 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         action.rank=uint8_t(rank);
         if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),event,action)) return false;
+        if(action.action==Action::Inferno && action.infernoFrame>=action.animation->frames) return false;
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
         action.useAttackRate=sourceMode=="A1" || sourceMode=="A2" || skills.number(row,"UseAttackRate").value_or(0)!=0;
         if(action.action==Action::Charge) {action.release=1;action.animationAction=0;}
-        if(action.action==Action::Leap) {
-            server::MonsterAttackRule takeoff;
-            if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),2,takeoff)) return false;
-            action.movementStart=takeoff.release;
-        }
         // Movement events drive a sequence, not repeated melee strikes.
         if(action.action==Action::Charge || action.action==Action::Leap || action.action==Action::SwarmMove) {action.releaseFrames.clear();action.animationEvents.clear();}
         rule.skillIds[slot]=uint16_t(id);rule.skillActions.insert_or_assign(uint16_t(id),std::move(action));
@@ -182,6 +202,14 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             ordinary->second.missile=rule.skillActions.at(uint16_t(id)).missile;
             ordinary->second.rank=uint8_t(rank);
         }
+    }
+    if(record.ai=="WillOWisp") {
+        server::MonsterAttackRule cast;
+        const auto &monsters=data.tables.at("monstats");
+        cast.missile=missile(monsters.value(record.sourceRow,"MissC"),1+bonus);if(!cast.missile) return false;
+        if(!clockAction(archives,animations,sequences,record,"SC",2,cast)) return false;
+        cast.casting=true;
+        cast.rank=uint8_t(1+bonus);rule.attacks.emplace(7,std::move(cast));
     }
     if(record.ai=="Scarab") rule.hitBurst=skillTableNumber(missiles,findSkillTableRow(missiles,"Missile","buglightning"),"Id");
     if(record.ai=="SandMaggotQueen") {

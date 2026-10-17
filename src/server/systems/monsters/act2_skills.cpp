@@ -11,6 +11,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
+#include "server/systems/attributes/monster_resources.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -19,19 +20,45 @@ namespace d2x::server::monsters {
 bool System::canLand(EntityId source) const {
     const auto *actor=find(source);if(!actor || actor->life<=0) return false;
     if(!ports_.areas.at(actor->area).definition.collision.walkable(actor->position,actor->rule.spawnCollision)) return false;
-    for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && other.area==actor->area && meleeDistance(actor->position,actor->rule.size,other.position,other.rule.size)<=0) return false;
+    for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor->area && meleeDistance(actor->position,actor->rule.size,other.position,other.rule.size)<=0) return false;
     for(const auto &[id,player]:ports_.players.all()) {
         (void)id;if(player.entered && player.area==actor->area && player.persistent.player.hp>0 && meleeDistance(actor->position,actor->rule.size,player.position,2)<=0) return false;
     }
     return true;
 }
-DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick) {
+void System::monsterTargetable(EntityId id,bool enabled) {
+    if(const auto found=state_.actors.find(id);found!=state_.actors.end() && found->second.targetFlagsDisabled==enabled) {
+        found->second.targetFlagsDisabled=!enabled;++found->second.revision;
+    }
+}
+void System::submerge(EntityId id) {
+    auto &actor=state_.actors.at(id);actor.submerged=actor.targetFlagsDisabled=true;
+    actor.collisionPattern=NativeCollisionPattern::SmallNoPresence;
+    actor.aiPose=8;actor.holdPose=true;++actor.revision;
+}
+DomainResult<bool> System::restoreGroundPresence(EntityId source,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;if(actor.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    // Native landing restores target flags before testing its ground presence.
+    actor.targetFlagsDisabled=false;++actor.revision;
+    if(!actor.airborne && !actor.submerged) return {DomainStatus::Applied,false};
+    const auto &area=ports_.areas.at(actor.area).definition;const auto point=actor.position+area.origin;
+    const auto room=ports_.areas.roomAtPosition(actor.area,actor.position,int(point.x),int(point.y));
+    if(!room) return {DomainStatus::Applied,false};
+    const auto landing=ports_.areas.nativeFreeCoordinates(*room,int(point.x),int(point.y),actor.rule.size,0x1c09,collision);
+    if(!landing) return {DomainStatus::Applied,false};
+    actor.area=landing->room.area;actor.position=landing->position+Vec{.5f,.5f};actor.airborne=actor.submerged=false;
+    actor.collisionPattern=NativeCollisionPattern::SmallUnit;
+    stop(source);return {DomainStatus::Applied,true};
+}
+DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait,bool preserveMovement) {
     auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto clock=actor.rule.aiPoseTicks.find(mode);
-    if(clock==actor.rule.aiPoseTicks.end()) return {DomainStatus::Unavailable,{}};
+    if(mode!=1 && clock==actor.rule.aiPoseTicks.end()) return {DomainStatus::Unavailable,{}};
     if(actor.airborne && !airborne && !canLand(source)) return {DomainStatus::Unavailable,{}};
-    actor.aiPose=mode;actor.holdPose=hold;actor.airborne=airborne;actor.poseUntil=tick+uint64_t(clock->second);
-    if(!airborne) {stop(source);actor.busyUntil=std::max(actor.busyUntil,actor.poseUntil);}
+    actor.aiPose=mode;actor.holdPose=hold;actor.airborne=airborne;actor.poseUntil=tick+uint64_t(mode==1?0:clock->second);
+    actor.targetFlagsDisabled=airborne;
+    if(!airborne) {if(!preserveMovement) stop(source);actor.busyUntil=std::max(actor.busyUntil,aiWait>0?tick+uint64_t(aiWait):actor.poseUntil);}
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::aiColor(EntityId source,int color,int overlay,uint64_t tick) {
@@ -54,10 +81,24 @@ void System::aiRegeneration(EntityId source,int eighths) {
     auto &actor=found->second;const int64_t bonus=(actor.maximumLife*actor.rule.damageRegen/4096)*eighths/8;
     if(actor.aiRegenerationBonus!=bonus) {actor.aiRegenerationBonus=bonus;++actor.revision;}
 }
+int System::nativeAiRegeneration(EntityId source,int eighths,int previousBonus,uint64_t tick) {
+    auto &actor=state_.actors.at(source);
+    attributes::MonsterResourceTrace resources(actor,tick);
+    const auto sources=ports_.effects.unitStatSources(source,tick);resources.sampleSources(sources);
+    const int rate=nativeStatValue(resources.values(sources),*actor.rule.stats,"hpregen");
+    const int bonus=eighths?nativeMultiply(rate,eighths)/8:previousBonus;
+    resources.writeBaseStat("hpregen",eighths?nativeAdd(rate,bonus):nativeSubtract(rate,bonus),sources);
+    auto changed=resources.take();actor.nativeStats=std::move(changed.intrinsic);
+    actor.life=changed.life.raw();actor.maximumLife=changed.maximum.raw();++actor.revision;
+    return bonus;
+}
+void System::beginHatch(EntityId id) {
+    auto &actor=state_.actors.at(id);if(!actor.hatching) {actor.hatching=true;++actor.revision;}
+}
 bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy) const {
     const auto *caster=find(source),*other=find(target);
     if(!caster || !other || source==target || caster->life<=0 || caster->rule.ai.kind!=MonsterAiKind::GreaterMummy ||
-       other->area!=caster->area || other->owner || other->conversion || !other->hostile ||
+       other->area!=caster->area || other->targetFlagsDisabled || other->hatching ||
        !sameAlignment(caster->alignment(),other->alignment()) || other->alignment()==UnitAlignment::Good) return false;
     // Fn022: ordinary greater mummies support lUndead; Radament supports both
     // undead classes and accepts unique corpses only on Normal difficulty.
@@ -68,7 +109,15 @@ bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bo
     const int radius=caster->rule.ai.params[4]+(radament?10:0);
     const Vec delta{float(int(caster->position.x)-int(other->position.x)),float(int(caster->position.y)-int(other->position.y))};
     if(delta.x*delta.x+delta.y*delta.y>radius*radius || !ports_.areas.at(caster->area).definition.activation.nearby(caster->position,other->position)) return false;
-    return dead?usableCorpse(target,caster->area,tick):other->life>0 && (healthy || other->life<other->maximumLife);
+    for(const auto state:ports_.effects.unitStates(target,tick))
+        if(other->rule.states->at(state).corpseUnselectable) return false;
+    if(healthy) return true; // The native counter includes healthy and dying units.
+    if(dead) {
+        for(const auto state:ports_.effects.unitStates(target,tick))
+            if(other->rule.states->at(state).hideOnDeath) return false;
+        return usableCorpse(target,caster->area,tick);
+    }
+    return other->alive() && other->life!=other->maximumLife;
 }
 DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,bool hatch,uint64_t tick,std::shared_ptr<SkillChildrenExecution> &retained) {
     if(!retained) retained=std::make_shared<SkillChildrenExecution>();auto &execution=*retained;
@@ -90,7 +139,7 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
             if(birthStatus!=DomainStatus::Applied) return false;
             if(!grid.walkable(point,child.rule.spawnCollision)) return false;
             bool occupied=false;
-            for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.life>0 && !other.burrowed && !other.airborne && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
+            for(const auto &[id,other]:state_.actors) if(id!=source && other.area==parent.area && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
             for(const auto &[id,other]:candidates) if(meleeDistance(point,child.rule.size,other.position,other.rule.size)<=0) {occupied=true;break;}
             for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==parent.area && p.persistent.player.hp>0 && meleeDistance(point,child.rule.size,p.position,2)<=0) occupied=true;}
             if(occupied) return false;
@@ -149,7 +198,7 @@ DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,b
     if(hatch) {
         // The hatch is terminal even if some larvae cannot be placed.
         const auto *parent=find(source);
-        const auto result=parent->alive()?damage(source,source,parent->life,tick):ports_.effects.monsterDeathEffect(source,tick);
+        const auto result=parent->alive()?scriptDeath(source,tick):ports_.effects.monsterDeathEffect(source,tick);
         if(!result) return result;
         auto &dead=state_.actors.at(source);dead.rewardComplete=true;dead.corpse.unavailable=true;
     }
@@ -162,38 +211,25 @@ DomainResult<> System::burrow(EntityId source,bool below,uint64_t tick) {
     if(!below) {
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
         if(!grid.walkable(actor.position,actor.rule.spawnCollision)) return {DomainStatus::Unavailable,{}};
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
+        for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(actor.position,actor.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     }
     (void)tick;stop(source);actor.burrowed=below;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0 || until<=tick) return {DomainStatus::InvalidActor,{}};
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive() || until<=tick) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto &grid=ports_.areas.at(actor.area).definition.collision;
     const auto occupied=[&](Vec point) {
-        for(const auto &[id,other]:state_.actors) if(id!=source && other.area==actor.area && other.life>0 && !other.burrowed && !other.airborne && meleeDistance(point,actor.rule.size,other.position,other.rule.size)<=0) return true;
+        for(const auto &[id,other]:state_.actors) if(id!=source && other.area==actor.area && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && meleeDistance(point,actor.rule.size,other.position,other.rule.size)<=0) return true;
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(point,actor.rule.size,p.position,2)<=0) return true;}
         return false;
     };
     const auto free=[&](Vec point) {return grid.walkable(point,actor.rule.spawnCollision) && !occupied(point);};
-    if(leap && !free(target)) {
-        // COLLISION_GetFreeCoordinates probes successive square perimeters,
-        // keeping the closest Manhattan candidate on the first free perimeter.
-        const Vec origin{std::floor(target.x),std::floor(target.y)};
-        bool found=false;
-        for(int radius=1;radius<50 && !found;++radius) {
-            int best=INT32_MAX;
-            const auto candidate=[&](int x,int y) {
-                const Vec point=origin+Vec{float(x),float(y)};
-                const int distance=std::abs(x)+std::abs(y);
-                if(distance<best && free(point)) {best=distance;target=point;found=true;}
-            };
-            for(int y=-radius;y<=radius;++y) {candidate(-radius,y);candidate(radius,y);}
-            for(int x=1-radius;x<radius;++x) {candidate(x,-radius);candidate(x,radius);}
-        }
-        if(!found) return {DomainStatus::Unavailable,{}};
-    } else if(!free(target)) return {DomainStatus::Unavailable,{}};
+    if(leap && !actor.aiStates.contains(actor.rule.skillMoveState)) {
+        const auto landing=leapLanding(source,target);if(!landing) return {DomainStatus::Unavailable,{}};
+        target=*landing;
+    } else if(!leap && !free(target)) return {DomainStatus::Unavailable,{}};
     if(!leap && !grid.nativeMovementSegment(actor.position,target,actor.rule.collision)) return {DomainStatus::Unavailable,{}};
     if(!actor.rule.formulas || !actor.rule.stats || actor.rule.nativeRunVelocity<=0) return {DomainStatus::Unavailable,{}};
     auto velocity=nativeShiftLeft(actor.rule.nativeRunVelocity,8);
@@ -204,10 +240,11 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
     }
     const float speed=float(velocity)*25.f/4096.f;
     if(speed<=0) return {DomainStatus::Unavailable,{}};
-    if(actor.rule.skillMoveState>=0 && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{source,1,actor.area,actor.rule.skillMoveState,true}}})) return {DomainStatus::Capacity,{}};
+    if(actor.rule.skillMoveState>=0 && !actor.aiStates.contains(actor.rule.skillMoveState) && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{source,1,actor.area,actor.rule.skillMoveState,true}}})) return {DomainStatus::Capacity,{}};
     until=std::max(until,tick+uint64_t(std::ceil((target-actor.position).length()/speed/TickContext::seconds))+1);
-    actor.skillMotion=Actor::SkillMotion{target,until,actor.interruption,speed,leap,{}};
-    actor.skillMotion->target=victim;actor.skillMotion->moveState=actor.rule.skillMoveState>=0;
+    actor.skillMotion=Actor::SkillMotion{target,leap?UINT64_MAX:until,actor.interruption,speed,leap,{}};
+    actor.pathStep.reset();
+    actor.skillMotion->target=victim;actor.skillMotion->moveState=actor.rule.skillMoveState>=0 && !actor.aiStates.contains(actor.rule.skillMoveState);
     actor.busyUntil=std::max(actor.busyUntil,until);actor.movementGoal=target;
     if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
@@ -231,7 +268,7 @@ DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) 
 }
 bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
     auto &motion=*actor.skillMotion;
-    const bool interrupted=actor.life<=0 || actor.interruption!=motion.interruption || actor.frozenUntil>tick || actor.stunnedUntil>tick || actor.knockedUntil>tick;
+    const bool interrupted=!actor.alive() || actor.interruption!=motion.interruption || actor.frozenUntil>tick || actor.stunnedUntil>tick || actor.knockedUntil>tick;
     if(!interrupted) {
         if(motion.target) {
             const auto target=targetPosition(motion.target,actor.area);
@@ -243,9 +280,13 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
         }
         while(!motion.route.empty() && (motion.route.front()-actor.position).length()<.01f) motion.route.pop_front();
         const Vec delta=(motion.route.empty()?motion.destination:motion.route.front())-actor.position;
-        const Vec next=actor.position+delta.unit()*std::min(delta.length(),motion.speed*TickContext::seconds);
-        if(tick<motion.until && (motion.leap || ports_.areas.at(actor.area).definition.collision.nativeMovementSegment(actor.position,next,actor.rule.collision))) {actor.position=next;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);actor.moving=delta.length()>.01f;++actor.revision;}
-        else motion.until=tick;
+        if(tick<motion.until) {
+            const Vec center{.5f,.5f};const auto &grid=ports_.areas.at(actor.area).definition.collision;
+            const auto step=actor.pathStep.advance(grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
+                motion.speed*TickContext::seconds,motion.leap?MovementCollisionRule{0,1}:actor.rule.collision);
+            actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);
+            actor.moving=step.travelled>0;++actor.revision;if(step.blocked) motion.until=tick;
+        } else motion.until=tick;
         if((motion.destination-actor.position).length()>.01f && tick<motion.until) return true;
     }
     if(motion.moveState && actor.rule.skillMoveState>=0 && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{actor.id,1,actor.area,actor.rule.skillMoveState,false}}})) return true;

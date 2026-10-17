@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/native_caster.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "attribute_projection.hpp"
 #include "server/player_store.hpp"
@@ -307,28 +308,34 @@ DomainResult<PotionPlan> System::skillState(const ActorContext &actor,CombatEffe
     plan.transient=projectEffectAttributes(states,actor.tick);return {DomainStatus::Applied,std::move(plan)};
 }
 DomainResult<> System::frenzy(const ActorContext &actor,const SkillCastSpec &skill) {
-    const auto *player=ports_.players.find(actor.player);
-    if(!player || !player->rules.skills || !player->rules.skills->formulas || !skill.weapon) return {DomainStatus::InvalidActor,{}};
-    const auto &program=*skill.weapon;const auto &rules=*player->rules.skills->stats;
+    const auto caster=skills::nativeCaster(ports_.players,ports_.monsters,actor.actor);
+    if(!caster || !caster->programs() || !caster->programs()->formulas || !skill.weapon) return {DomainStatus::InvalidActor,{}};
+    const auto &program=*skill.weapon;const auto &rules=*caster->programs()->stats;
     const StatKey stackStat{rules.names.at("skill_frenzy"),0};int stacks=1;
-    if(const auto found=state_.players.find(actor.actor);found!=state_.players.end())
-        for(const auto &effect:found->second.states.entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.frenzyState.id) {
+    const auto playerState=state_.players.find(actor.actor);
+    const auto *states=caster->player?(playerState==state_.players.end()?nullptr:&playerState->second.states):unitEffects(actor.actor);
+    if(states)
+        for(const auto &effect:states->entries()) if(effect.activeAt(actor.tick) && effect.spec.state.id==program.frenzyState.id) {
             const auto values=combatEffectNativeValues(effect.spec);
             const auto count=values?StatSnapshot{*values}.get(stackStat):effect.spec.source.level;
             stacks=nativeAdd(count,1);break;
         }
     stacks=std::min(stacks,skill.rank);
-    auto context=skills::formulaInput(*player);SkillFormulaValues formulas(*player->rules.skills->formulas,context);
+    auto context=caster->formulaInput(*this,actor.tick);SkillFormulaValues formulas(*caster->programs()->formulas,context);
     const auto length=formulas.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,"auralencalc");
     if(!length) return {DomainStatus::Unavailable,{}};
     CombatEffectSpec effect;effect.state=program.frenzyState;effect.duration=uint32_t(*length);
     effect.source={CombatEffectSource::Skill,actor.actor,skill.sourceId,skill.rank};effect.stacking=EffectStacking::ReuseState;
-    effect.nativeState=true;effect.refreshPassivesOnRemoval=true;effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
+    effect.nativeState=true;effect.nativeDirectAllocation=bool(caster->monster);effect.refreshPassivesOnRemoval=true;effect.nativeExpiration=NativeStateExpiration::EvenZeroDuration;
     effect.nativeValues.emplace();
     std::vector<StatValue> writes{{stackStat,stacks}};
     for(const auto &write:formulas.auraStats(skill.sourceId,stacks,6,true)) {
         writes.push_back(write);
         if(write.key.id==rules.names.at("attackrate")) writes.emplace_back(StatKey{rules.names.at("other_animrate"),0},write.value);
+    }
+    if(caster->monster) {
+        auto cast=skill;cast.appliedEffect=std::move(effect);cast.nativeEffectWrites=std::move(writes);
+        return unitSkill(actor.actor,cast,actor.tick);
     }
     return apply(actor,std::move(effect),false,writes);
 }
@@ -465,7 +472,7 @@ DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, b
     std::span<const StatValue> writes,bool refreshPassives) {
     const auto *player = ports_.players.find(actor.player);
     if (!player || player->actor != actor.actor || !player->entered || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    if (spec.state.id < 0 || spec.state.id > 255 || spec.physicalShield || spec.curseAi != CurseAi::None)
+    if (spec.state.id < -1 || (spec.state.id<0 && !spec.nativeDirectAllocation) || spec.state.id > 255 || spec.physicalShield || spec.curseAi != CurseAi::None)
         return {DomainStatus::Unavailable, {}}; // Those execution hooks are not yet installed.
     auto next = state_; auto &states = next.players[actor.actor].states;
     PlayerResourceTrace resources(*player,actor.tick,{},ports_.areas.statTime(player->area));
@@ -481,11 +488,11 @@ DomainResult<> System::apply(const ActorContext &actor, CombatEffectSpec spec, b
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,resources.record()};
     edit.resourceBase=resources.maximum();
     edit.transient = projectEffectAttributes(states, actor.tick);
-    for(const auto &removed:application.removed) if(!states.hasState(removed.effect.spec.state.id,actor.tick))
+    for(const auto &removed:application.removed) if(removed.effect.spec.state.id>=0 && !states.hasState(removed.effect.spec.state.id,actor.tick))
         edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,removed.effect.spec.state.id,false});
     const auto *installed=states.find(application.handle);
     if(!installed) throw std::runtime_error("Missing installed shrine state");
-    edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
+    if(spec.state.id>=0) edit.publicFacts.emplace_back(StateFact{player->actor,0,player->area,spec.state.id,true,nativeEffectStats(*player->rules.skills,installed->spec)});
     auto plan = ports_.transactions.prepare(std::move(edit));
     if (!plan) return {plan.status, {}};
     const auto result = ports_.transactions.commit(std::move(*plan.value));

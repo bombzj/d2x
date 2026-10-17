@@ -18,15 +18,14 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
     if (data.profile != "lod-named-txt-v1" || request.difficulty < 0 || request.difficulty > 2 ||
         request.playerLevel < 1)
         return defer("Unsupported monster experience profile or difficulty");
-    const auto *monster = monsters.find(request.identity.monster);
+    const auto *monster = request.identity.nativeClass>=0?monsters.find(request.identity.nativeClass):monsters.find(request.identity.monster);
+    if(monster && monster->id!=request.identity.monster) monster=monsters.find(request.identity.monster);
     if (!monster || !monster->hostile())
         return defer("Unknown or non-hostile monster identity");
     const auto &stats = data.tables.at("monstats");
     const auto &levels = data.tables.at("monlvl");
     const auto &experience = data.tables.at("experience");
-    size_t row = 0;
-    for (; row < stats.rows().size(); ++row)
-        if (stats.value(row, "Id") == monster->id) break;
+    const size_t row = monster->sourceRow;
     if (row == stats.rows().size())
         return defer("Missing original monster experience row");
     const char *suffix[] = {"", "(N)", "(H)"};

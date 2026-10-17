@@ -41,6 +41,7 @@ struct ClassicMonsterData {
     std::string name, token;
     std::array<std::array<std::optional<unsigned>, 4>, 3> treasureClasses{};
     std::array<int, 3> drain{};
+    size_t sourceRow{};
 };
 struct StashLayout {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
