@@ -95,6 +95,7 @@ class System {
     StepStatus hellMeteorFamily(EntityId,TickContext,Controller &);
     StepStatus trappedSoulFamily(EntityId,TickContext,Controller &);
     StepStatus catapultFamily(EntityId,TickContext,Controller &);
+    StepStatus npcBarbFamily(EntityId,TickContext,Controller &);
     StepStatus catapultSpotterFamily(EntityId,TickContext,Controller &);
     StepStatus nihlathakFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus putridDefilerFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
@@ -105,8 +106,8 @@ class System {
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
     using ShootableTarget=NativeAiTarget;
-    std::optional<ShootableTarget> shootableTarget(const monsters::Actor &, TickContext) const;
-    std::optional<ShootableTarget> acquireTarget(const monsters::Actor &,TickContext,bool missileRay,bool requireSight) const;
+    std::optional<ShootableTarget> shootableTarget(const monsters::Actor &, TickContext);
+    std::optional<ShootableTarget> acquireTarget(const monsters::Actor &,TickContext,bool missileRay,bool requireSight);
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

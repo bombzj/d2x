@@ -685,9 +685,11 @@ struct RemoteScene::Impl {
                 if(!initialization.streamRange) initialization.streamRange=skillCalculation(skill->second,level,function==48?"calc1":"aurarangecalc",owner).value_or(0);
                 if(!initialization.streamPeriod) initialization.streamPeriod=skillCalculation(skill->second,level,function==48?"calc2":"calc4",owner).value_or(0);
             }
-            if (id && !shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
-                    effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce, origin,slow,guidedTarget,velocityBonus,initialization))
+            const bool created=id && shared.launchClientMissile(*id, start, target, level, delay, remaining, pathIndex,
+                effectOwner(owner), actor != v.world.units.end() && combat.hostileSource(actor->second), pierce, origin,slow,guidedTarget,velocityBonus,initialization);
+            if(id && !created)
                 effectLimitations.insert("Missile client program unavailable: " + std::string(missiles.value(row, "Missile")));
+            return created;
         };
         auto monsterAttack = [&](const OnlineCombatEvent &event, OnlineUnit actor, std::string_view pose, float age) {
             if (!unitClass(actor) || !actor.position) return;
@@ -762,6 +764,46 @@ struct RemoteScene::Impl {
                 castAnimation ? castAnimation->releaseTime : -1.f);
             const auto castOverlay = overlayNames.find(skills.value(row->second, "castoverlay"));
             if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
+            if(skills.number(row->second,"cltstfunc")==44) {
+                // Native CltSt44 constructs in this order, at skill start.
+                constexpr std::array<std::string_view,6> names{"hellmeteordown","hellmeteorball",
+                    "hellmeteorup","hellmeteorball","hellmeteorlaunch2","hellmeteorlaunch1"};
+                std::array<size_t,6> rows{};
+                for(size_t index=0;index<names.size();++index) {
+                    const auto missile=missileNames.find(names[index]);
+                    if(missile==missileNames.end()) {
+                        effectLimitations.insert("HellMeteor client missile unavailable: "+std::string(names[index]));
+                        return;
+                    }
+                    rows[index]=missile->second;
+                }
+                const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+                auto point=event.point;if(!point && event.target) point=targetPosition(*event.target);
+                const int level=event.level.value_or(1);
+                // A1540 rejects missing/zero coordinates and targets over 100 subtiles.
+                if(point && point->x && point->y) {
+                    const int dx=nativeSubtract(int(point->x),int(actor.position->x));
+                    const int dy=nativeSubtract(int(point->y),int(actor.position->y));
+                    if(nativeAdd(nativeMultiply(dx,dx),nativeMultiply(dy,dy))<=10000) {
+                        const Vec at{float(point->x)+.5f,float(point->y)+.5f};
+                        ClientMissileInitialization falling;ClientMissileGraphics graphics;
+                        graphics.position[2]=0xAFC800;graphics.velocity[2]=-0xC800;falling.graphics=graphics;
+                        launch(rows[0],at,at,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,falling);
+                        launch(rows[1],at,at,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,falling);
+                    }
+                }
+                ClientMissileInitialization rising;ClientMissileGraphics graphics;
+                graphics.velocity[2]=0x7800;rising.graphics=graphics;
+                launch(rows[2],start,start,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,rising);
+                launch(rows[3],start,start,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,rising);
+                // Common #10441 is UNITS_SetAnimationSpeed in this binary;
+                // 0x80 is an animation speed, rather than missile flags.
+                ClientMissileInitialization launchAnimation;launchAnimation.animationRate=0x80;
+                const bool secondCreated=launch(rows[4],start,start,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,launchAnimation);
+                launch(rows[5],start,start,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,
+                    secondCreated?launchAnimation:ClientMissileInitialization{});
+                return;
+            }
             if(skills.number(row->second,"cltstfunc")==47) {
                 const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
                 const auto chain=catapultChainOffsets.find(unitClass(actor).value_or(UINT16_MAX));
@@ -777,6 +819,7 @@ struct RemoteScene::Impl {
                 graphics.position={nativeShiftLeft(nativeMultiply(-range,x),11),nativeShiftLeft(nativeMultiply(-range,y),11),nativeShiftLeft(nativeMultiply(*height,range),11)};
                 graphics.velocity={nativeShiftLeft(x,11),nativeShiftLeft(y,11),nativeShiftLeft(nativeSubtract(0,*height),11)};
                 graphics.step();init.graphics=graphics;
+                init.impactCount=skillCalculation(*event.skill,level,"calc4",event.source);
                 const Vec at{float(point->x)+.5f,float(point->y)+.5f};
                 launch(missile->second,at,at,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 return;
@@ -2495,7 +2538,7 @@ struct RemoteScene::Impl {
         if (elapsed > 0 && !suspended)
             emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
         shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
-            {float(origin.x), float(origin.y)}, missileTargets);
+            {float(origin.x), float(origin.y)}, missileTargets,binding.town);
         clientMissiles.clear();
         for (const auto &missile : shared.clientMissiles())
             clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});

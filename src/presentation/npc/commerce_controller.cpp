@@ -47,9 +47,9 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
         auto repairItemAt = [&]() -> const InventoryItemView * {
             const auto &inventory = view_.inventoryView();
             EntityId id;
-            if (auto cell = inventoryCell(input.mouse))
+            if (auto cell = inventoryCell(inventory, input.mouse))
                 id = inventory.itemAt(view_.inventoryView().containers.backpack, *cell);
-            if (auto slot = equipmentAt(input.mouse, view_.inventoryView().weaponSet))
+            if (auto slot = equipmentAt(inventory, input.mouse, inventory.weaponSet))
                 id = inventory.equipped(view_.inventoryView().containers, *slot);
             return inventory.item(id);
         };

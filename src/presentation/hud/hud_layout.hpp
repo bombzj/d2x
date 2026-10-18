@@ -1,5 +1,6 @@
 #pragma once
 #include "presentation/graphics/primitives.hpp"
+#include <array>
 
 namespace d2x {
 // One coordinate system for drawing and hit testing the original 800-pixel panel.
@@ -46,6 +47,9 @@ inline Rectangle hudMiniButton(const Sprite &image, int index) {
     return hudRect(328 + index * (image.texture.width + 1), 52 + image.texture.height,
                    float(image.texture.width), float(image.texture.height));
 }
+// MPQ frame pairs: character, inventory, skills, party, automap, messages,
+// quests, menu. Values are the semantic actions consumed by SceneController.
+inline constexpr std::array<int, 8> hudMiniActions{0, 1, 2, 4, 3, 7, 5, 6};
 inline Rectangle hudPickerSlot(bool right, int column, int row) {
     constexpr float side = 48;
     return hudRect(right ? 720 - (column + 1) * side : 90 + column * side,

@@ -84,10 +84,11 @@ struct InventoryView {
     bool dead = false;
     bool goldKnown = false;
     std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
-    InventoryLayoutView stashLayout, cubeLayout;
+    InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;
     EntityId ownTrade, peerTrade;
     std::array<std::array<int, 4>, 4> hirelingSlots{};
+    std::array<std::array<int, 4>, size_t(EquipmentSlot::Count)> equipmentSlots{};
     std::string cubeCode, staffRecipeOutput;
     std::optional<GroundLocation> dropLocation;
     std::map<EntityId, InventoryContainerView> containerViews;

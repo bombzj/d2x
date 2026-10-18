@@ -87,14 +87,14 @@ void SceneAssets::loadSkillIcons(Archives &archives, const ClassicData &content)
         if (!original) throw std::runtime_error("Original skill tree icon color source is missing");
         for (const auto &[id, entry] : content.skills.skills) {
             if (entry.classCode != tree.classCode) continue;
-            if (entry.iconCell < 0 || size_t(entry.iconCell) >= frames.size() ||
-                size_t(entry.iconCell) >= original->frames.size())
+            if (entry.iconCell < 0 || size_t(entry.iconCell + 1) >= frames.size() ||
+                size_t(entry.iconCell + 1) >= original->frames.size())
                 throw std::runtime_error("Missing original skill icon: " + entry.name);
             // Original D2Client RVA 78979: CelDrawColor, gray 5 / hover blue 3.
             // Picker RVA 3E770 receives the use-state transform; red is 1.
             skillIcons.emplace(id, SkillIcon{frames[entry.iconCell], entry.leftAllowed,
                 transformed(*original, entry.iconCell, 5), transformed(*original, entry.iconCell, 3),
-                transformed(*original, entry.iconCell, 1)});
+                transformed(*original, entry.iconCell, 1), transformed(*original, entry.iconCell + 1, 3)});
         }
     }
 }

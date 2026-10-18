@@ -41,8 +41,8 @@
 | Baal Corpse Explode | Do141沿原0x3002尸体查询逐具调用公共Do55，保留目标绑定与逐具背压；当前MPQ的CltSt82在1.13c越界而不调用。王座AI入口见[台账93及97项](../monsters/ACT3.md#逐项接入) |
 | Baal Nova／Inferno／Cold Missiles | 分别沿Do22、St53／Do95及Do139；原S3／S1／A1事件、Clt25／54／81和Do139首弹后置参数见[台账82至85项](../monsters/ACT3.md#逐项接入)。仅源码与相关编译，普通Baal／clone专用AI见92项，正常战斗未验收 |
 | Baal Taunt | 原284沿Do28目标放置；控制飞弹SrvDo34的剩余帧数及CltSt46／Do56／Hit62／63已接，真实非敌对控制Actor使用Fn136；源码／相关编译范围见[台账98至100项](../monsters/ACT3.md#逐项接入)，完整运行未验收 |
-| Catapult五种弹药 | Spotter按Fn126沿A1调用公共Do28，CltSt47目标锚点及原图形轨迹见[台账103至105项](../monsters/ACT3.md#逐项接入)；CltHit46／47／48／50专用表现仍缺，未做完整运行验收 |
-| HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；专用CltSt44仍缺 |
+| Catapult五种弹药 | Spotter按Fn126沿A1调用公共Do28，CltSt47目标锚点及原图形轨迹见[台账103至105项](../monsters/ACT3.md#逐项接入)；CltDo43发射端附着表现及有限实机见122项；CltHit46／47／48／50源码见114至117项（两包构建通过，专项运行未验收），未做完整运行验收 |
+| HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；落地CltHit36／起始CltSt44源码见112至113项，两包构建通过，专项运行未验收 |
 | Submerge／Emerge | St51／52保留原目标资格开关；Do94使用MonSeq显示零帧对应的序列位置停帧，支持触手／触手头倒放；不把触手下潜改成FrogDemon的额外脱离碰撞流程。六种水域身份及Fn056／057见[108项](../monsters/ACT3.md#逐项接入)，尚无该项实机结论 |
 | Baal Tentacle | Do140逐次抽数、原房间单点出生及初始A1／Idle15已接源码；普通Baal／UberBaal与clone的BaseId分支分别保留。普通Baal／clone的AI见92项，出生／恢复实机尚未完成，见[台账80至81项](../monsters/ACT3.md#逐项接入) |
 | Nihlathak | 五技能及Fn128接入见[台账74项](../monsters/ACT3.md#逐项接入)；Do55复用原尸体资格及公共尸爆，Do129接无拥有者／无单位目标的坐标传送，St62保存实际出生类型和模式。共用Clt54按客户端25Hz发射两束；本批尚无正常战斗实机 |

@@ -51,6 +51,8 @@ struct ViewState {
     AutomapFade automapFade = AutomapFade::Auto;
     Vec automapOffset;
     bool characterOpen = false;
+    // -1 is the close button; other values are attribute indices / skill IDs.
+    std::optional<int> characterPressed, skillTreePressed;
     std::optional<bool> pointButtonPressed;
     bool hirelingOpen = false, hireListOpen = false;
     bool portraitsVisible = true;
@@ -268,7 +270,7 @@ class SceneView {
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
                                ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {},int velocityBonus = 0,
                                ClientMissileInitialization initialization = {});
-    void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>);
+    void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>,bool town);
     void clearClientMissiles(bool retainDeathPrograms = false) {
         if(retainDeathPrograms) std::erase_if(clientMissiles_,[](const auto &effect){return !effect.deathProgram;});
         else clientMissiles_.clear();
@@ -313,6 +315,7 @@ class SceneView {
     ViewState &ui() { return view_; }
     const ViewState &ui() const { return view_; }
     const InventoryView &inventoryView() const { return inventoryView_; }
+    InventoryDrop inventoryDropAt(Vec mouse) const;
     void refreshInventory();
     const CharacterView &characterView() const { return characterView_; }
     void refreshCharacterView();

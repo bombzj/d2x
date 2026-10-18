@@ -123,9 +123,8 @@ void SceneView::drawControlPanel() const {
     if (view_.miniPanelOpen) {
         if (const auto *background = assets_.miniPanel.frame(0, 0))
             imageAt(background, hudMiniPanel(*background));
-        const std::vector<int> frames = std::vector<int>{0,2,4,6,8,10,12,14};
-        for (int index = 0; index < int(frames.size()); ++index)
-            if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]))
+        for (int index = 0; index < int(hudMiniActions.size()); ++index)
+            if (const auto *icon = assets_.miniPanelButtons.frame(0, index * 2))
                 imageAt(icon, hudMiniButton(*icon, index),
                         WHITE);
     }
@@ -135,11 +134,10 @@ std::optional<int> SceneView::miniPanelAt(Vec mouse) const {
     const auto *background = assets_.miniPanel.frame(0, 0);
     if (!background || !CheckCollisionPointRec(rv(mouse), hudMiniPanel(*background)))
         return std::nullopt;
-    const std::vector<int> frames = std::vector<int>{0,2,4,6,8,10,12,14};
-    for (int index = 0; index < int(frames.size()); ++index)
-        if (const auto *icon = assets_.miniPanelButtons.frame(0, frames[index]);
+    for (int index = 0; index < int(hudMiniActions.size()); ++index)
+        if (const auto *icon = assets_.miniPanelButtons.frame(0, index * 2);
             icon && CheckCollisionPointRec(rv(mouse), hudMiniButton(*icon, index)))
-            return frames[index] == 6 ? 7 : frames[index] / 2 - (frames[index] >= 8 ? 1 : 0);
+            return hudMiniActions[size_t(index)];
     return -1;
 }
 bool SceneView::leftSkillAllowed(int skill) const {
@@ -252,14 +250,14 @@ void SceneView::drawSkillControls(Vec mouse) const {
     }
     std::string hint;
     if (CheckCollisionPointRec(rv(mouse), hudRunButton()))
-        hint = "Walk / Run [SPACE]";
+        hint = "Walk / Run [R]";
     if (CheckCollisionPointRec(rv(mouse), hudMenuButton()))
         hint = view_.miniPanelOpen ? "Close mini panel" : "Open mini panel";
     if (auto button = miniPanelAt(mouse); button && *button >= 0) {
-        constexpr const char *labels[] = {"Character [C]", "Inventory [I]", "Skill Tree [S]",
-                                          "Automap [TAB]", "Party Screen [P]", "Quest Log [Q]",
-                                          "Game menu [Esc]"};
-        hint = *button == 7 ? "Message Log [M]" : labels[*button];
+        constexpr const char *keys[]{"minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
+            "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"};
+        constexpr const char *bindings[]{" [A]", " [I]", " [S]", " [Tab]", " [P]", " [Q]", "", " [M]"};
+        hint = assets_.characterLabels.at(keys[*button]) + bindings[*button];
     }
     if (CheckCollisionPointRec(rv(mouse), hudStamina()))
         hint = "Stamina: " + characterView_.number("stamina", int(characterView_.stamina)) + " / " +

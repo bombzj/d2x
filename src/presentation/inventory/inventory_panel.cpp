@@ -1,31 +1,22 @@
 #include "inventory_panel.hpp"
 #include "presentation/npc/hireling_panel.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace d2x {
-Rectangle equipmentBounds(EquipmentSlot slot) {
+Rectangle equipmentBounds(const InventoryView &inventory, EquipmentSlot slot) {
     if (slot == EquipmentSlot::AlternateRightHand) slot = EquipmentSlot::RightHand;
     if (slot == EquipmentSlot::AlternateLeftHand) slot = EquipmentSlot::LeftHand;
-    constexpr std::array<Rectangle, size_t(EquipmentSlot::Count)> bounds{{{135, 8, 54, 51},
-                                                                          {209, 35, 23, 24},
-                                                                          {133, 77, 56, 82},
-                                                                          {20, 47, 55, 112},
-                                                                          {251, 47, 55, 112},
-                                                                          {95, 180, 23, 24},
-                                                                          {209, 180, 23, 24},
-                                                                          {136, 179, 52, 25},
-                                                                          {252, 182, 54, 52},
-                                                                          {21, 181, 54, 53}}};
-    if (size_t(slot) >= bounds.size())
+    if (size_t(slot) >= inventory.equipmentSlots.size())
         return {};
-    auto box = bounds[size_t(slot)];
+    const auto &box = inventory.equipmentSlots[size_t(slot)];
     auto panel = inventoryBounds();
-    return {panel.x + box.x * inventoryScale(), panel.y + box.y * inventoryScale(), box.width * inventoryScale(),
-            box.height * inventoryScale()};
+    return {panel.x + box[0] * inventoryScale(), panel.y + box[1] * inventoryScale(),
+            (box[2] - box[0]) * inventoryScale(), (box[3] - box[1]) * inventoryScale()};
 }
-std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet) {
+std::optional<EquipmentSlot> equipmentAt(const InventoryView &inventory, Vec mouse, unsigned weaponSet) {
     for (int index = 0; index < int(EquipmentSlot::AlternateRightHand); ++index)
-        if (CheckCollisionPointRec(rv(mouse), equipmentBounds(EquipmentSlot(index)))) {
+        if (CheckCollisionPointRec(rv(mouse), equipmentBounds(inventory, EquipmentSlot(index)))) {
             auto slot = EquipmentSlot(index);
             return slot == EquipmentSlot::RightHand ? weaponHandSlot(false, weaponSet) :
                    slot == EquipmentSlot::LeftHand ? weaponHandSlot(true, weaponSet) : slot;
@@ -44,16 +35,11 @@ std::optional<unsigned> weaponTabAt(Vec mouse) {
             return set;
     return std::nullopt;
 }
-std::optional<Cell> inventoryCell(Vec mouse) {
-    auto grid = inventoryGrid();
-    if (!CheckCollisionPointRec(rv(mouse), grid))
+std::optional<Cell> inventoryCell(const InventoryView &inventory, Vec mouse) {
+    auto grid = inventoryGrid(inventory);
+    if (inventoryCellSize(inventory) <= 0 || !CheckCollisionPointRec(rv(mouse), grid))
         return std::nullopt;
-    return Cell{int((mouse.x - grid.x) / inventoryCellSize()), int((mouse.y - grid.y) / inventoryCellSize())};
-}
-Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition) {
-    auto grid = inventoryGrid();
-    return {grid.x + cell.x * inventoryCellSize(), grid.y + cell.y * inventoryCellSize(),
-            definition.width * inventoryCellSize(), definition.height * inventoryCellSize()};
+    return Cell{int((mouse.x - grid.x) / inventoryCellSize(inventory)), int((mouse.y - grid.y) / inventoryCellSize(inventory))};
 }
 std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const InventoryUi &ui) {
     const auto &c = inventory.containers;
@@ -65,10 +51,11 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
                          container->columns, rows, 29 * hudScale()});
     }
     if (ui.playerTradeOpen) grids.clear();
-    if (ui.open && inventory.container(c.backpack)) {
-        auto p = inventoryGrid();
+    if (ui.open && inventory.container(c.backpack) && inventory.backpackLayout.cellSize > 0) {
+        auto p = inventoryGrid(inventory);
         grids.push_back(
-            {c.backpack, {p.x, p.y}, {inventoryCellSize(), inventoryCellSize()}, 10, 4, inventoryCellSize()});
+            {c.backpack, {p.x, p.y}, {inventoryCellSize(inventory), inventoryCellSize(inventory)},
+             inventory.backpackLayout.columns, inventory.backpackLayout.rows, inventoryCellSize(inventory)});
     }
     if (ui.storage && inventory.storage == ui.storage) {
         auto p = storageBounds();
@@ -110,10 +97,7 @@ void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) 
             return;
         }
         if (!drag || !drag->onCursor || drag->item.id != item->id) {
-            const auto &definition = *inventory.definition(item->definition);
-            drag = InventoryDrag{item->handle(), {definition.width / 2, definition.height / 2}, {},
-                {definition.width * inventoryCellSize() / 2, definition.height * inventoryCellSize() / 2},
-                true, true, true};
+            drag = InventoryDrag{item->handle(), {}, true, true, true};
         } else drag->item = item->handle();
         identify.reset();
     } else if (drag && drag->onCursor) drag.reset();
@@ -122,7 +106,8 @@ bool inventorySurface(const InventoryUi &ui, Vec mouse) {
     return (ui.open && CheckCollisionPointRec(rv(mouse), classicSideBounds(true))) ||
            ((ui.storage || ui.cubeOpen || ui.playerTradeOpen) && CheckCollisionPointRec(rv(mouse), classicSideBounds(false)));
 }
-InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse, bool hirelingOpen) {
+InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse,
+                            std::array<int, 2> cursorPixels, bool hirelingOpen) {
     InventoryDrop drop;
     if (!ui.drag)
         return drop;
@@ -183,28 +168,42 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), std::nullopt,
                                  std::move(destination));
     };
-    if (auto slot = ui.open && !ui.playerTradeOpen ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
+    if (auto slot = ui.open && !ui.playerTradeOpen ? equipmentAt(inventory, mouse, inventory.weaponSet) : std::nullopt) {
         const auto *host = inventory.item(inventory.equipped(containers, *slot));
         if (host && socketTarget(*host)) {
             drop.command = SocketItem{source->handle(), host->handle()};
             drop.description = "Insert into socket";
         } else if (*slot == EquipmentSlot::Belt) {
             if (location->container == containers.beltEquipment) {
-                drop.bounds = equipmentBounds(*slot);
+                drop.bounds = equipmentBounds(inventory, *slot);
                 drop.description = "Release to cancel";
                 return drop;
             }
             drop.command.emplace(std::in_place_type<EquipBelt>, source->handle());
         } else
             drop.command.emplace(std::in_place_type<EquipItem>, source->handle(), *slot);
-        drop.bounds = equipmentBounds(*slot);
+        drop.bounds = equipmentBounds(inventory, *slot);
         if (!std::holds_alternative<SocketItem>(*drop.command)) drop.description = "Equip item";
     } else {
         for (const auto &grid : grids) {
             auto cell = grid.cellAt(mouse);
             if (!cell)
                 continue;
-            Cell origin{cell->x - ui.drag->grab.x, cell->y - ui.drag->grab.y};
+            // D2Client 1.13c RVA 945D0/94820: even footprints shift the
+            // pointer by a quarter of the DC6 dimension before cell division.
+            // Both native paths then subtract half the footprint and clamp at 0.
+            auto axis = [](int cell, float pointer, float start, float stride,
+                           int extent, int capacity, int pixels) {
+                if (extent % 2 == 0)
+                    cell = int(std::floor((pointer - start + (pixels / 4) * inventoryScale()) / stride));
+                if (extent == capacity) cell = capacity / 2;
+                return std::max(0, cell - extent / 2);
+            };
+            Cell origin{
+                axis(cell->x, mouse.x, grid.origin.x, grid.stride.x,
+                     definition.width, grid.columns, cursorPixels[0]),
+                axis(cell->y, mouse.y, grid.origin.y, grid.stride.y,
+                     definition.height, grid.rows, cursorPixels[1])};
             drop.bounds = grid.itemBounds(origin, definition);
             if (origin.x < 0 || origin.y < 0 || origin.x + definition.width > grid.columns ||
                 origin.y + definition.height > grid.rows) {

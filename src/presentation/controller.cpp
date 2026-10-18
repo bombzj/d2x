@@ -83,6 +83,32 @@ bool SceneController::handleMenu(const FrameInput &input) {
 }
 bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
+    if (!ui.characterOpen || ui.blocksInput() || ui.inventory.goldDialog) ui.characterPressed.reset();
+    if (!ui.skillTreeOpen || ui.blocksInput() || ui.inventory.goldDialog) ui.skillTreePressed.reset();
+    if (ui.inventory.goldDialog) return handleInventory(input);
+    if (ui.characterPressed || ui.skillTreePressed) {
+        if (input.escape) {
+            ui.characterPressed.reset(); ui.skillTreePressed.reset();
+        } else if (input.leftReleased) {
+            const auto character = ui.characterPressed, skill = ui.skillTreePressed;
+            ui.characterPressed.reset(); ui.skillTreePressed.reset();
+            if (input.insideViewport) {
+                if (character == -1 && CheckCollisionPointRec(rv(input.mouse), characterClose()))
+                    ui.characterOpen = false;
+                else if (character && *character >= 0 && view_.characterView().unspentAttributes > 0 &&
+                    !view_.characterView().unknownStats.contains("statpts") &&
+                    characterAttributeAt(input.mouse) == Attribute(*character))
+                    characterClient_.submit(AllocateAttribute{Attribute(*character)});
+                if (skill == -1 && CheckCollisionPointRec(rv(input.mouse), skillTreeClose(view_.characterView(), ui.skillPage)))
+                    ui.skillTreeOpen = false;
+                else if (skill && *skill >= 0 && view_.skillAt(input.mouse) == skill)
+                    if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate)
+                        characterClient_.submit(AllocateSkill{*skill});
+            }
+            return true;
+        } else if (input.leftHeld) return true;
+        else { ui.characterPressed.reset(); ui.skillTreePressed.reset(); }
+    }
     if (input.togglePortraits && !ui.capturesWorldInput()) {
         ui.portraitsVisible = !ui.portraitsVisible;
         ui.hirelingPortraitHovered = {};
@@ -163,7 +189,10 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
             if (input.leftPressed) {
                 inventoryClick_ = true;
                 if (*button == 7) {
-                    ui.messageLogOpen = true;
+                    FrameInput action;
+                    action.messageLog = true;
+                    const auto intent = view_.handleChat(action);
+                    if (!intent.error.empty()) view_.notice(intent.error, true);
                     ui.miniPanelOpen = false;
                     return true;
                 }
@@ -206,7 +235,8 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         else if (ui.travelMenu) {
             mapClient_.closeTravel(); ui.travelMenu = false;
         }
-        else if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.split)
+        else if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.split ||
+                 ui.inventory.goldDialog || ui.inventory.identify)
             ui.inventory.cancelGesture();
         else if (ui.inventory.open) {
             toggleInventory();
@@ -245,10 +275,11 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(false))) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), characterClose()))
-                ui.characterOpen = false;
-            else if (view_.characterView().unspentAttributes > 0)
+                ui.characterPressed = -1;
+            else if (view_.characterView().unspentAttributes > 0 &&
+                !view_.characterView().unknownStats.contains("statpts"))
                 if (auto attribute = characterAttributeAt(input.mouse))
-                    characterClient_.submit(AllocateAttribute{*attribute});
+                    ui.characterPressed = int(*attribute);
         }
         return true;
     }
@@ -257,7 +288,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         CheckCollisionPointRec(rv(input.mouse), classicSideBounds(true))) {
         if (input.leftPressed) {
             if (CheckCollisionPointRec(rv(input.mouse), skillTreeClose(view_.characterView(), ui.skillPage)))
-                ui.skillTreeOpen = false;
+                ui.skillTreePressed = -1;
             else {
                 bool switched = false;
                 for (int page = 1; page <= 3; ++page)
@@ -269,7 +300,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
                 if (!switched)
                     if (auto skill = view_.skillAt(input.mouse))
                         if (const auto *entry = view_.characterView().skill(*skill); entry && entry->canAllocate)
-                            characterClient_.submit(AllocateSkill{*skill});
+                            ui.skillTreePressed = *skill;
             }
         }
         return true;
@@ -303,6 +334,7 @@ bool SceneController::handleDeath(const FrameInput &input) {
     ui.npcMenu = ui.shopOpen = ui.hireListOpen = false;
     ui.help = ui.travelMenu = ui.gameMenuOpen = false; ui.showLoot = false;
     ui.pointButtonPressed.reset(); ui.shopConfirm.reset(); ui.shopSalePending.reset();
+    ui.characterPressed.reset(); ui.skillTreePressed.reset();
     view_.cancelNpcDialogue();
     if (input.focused && input.escape) actorClient_.respawn();
     return true;
@@ -384,6 +416,7 @@ void SceneController::resetInput() {
     temporaryRun_ = false;
     skillGesture_ = false;
     view_.ui().pointButtonPressed.reset();
+    view_.ui().characterPressed.reset(); view_.ui().skillTreePressed.reset();
     view_.ui().questPressed = -1;
     view_.ui().hirelingPortraitHovered={};
     view_.ui().hirelingPortraitHoverTime=0;
@@ -409,6 +442,7 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.skillPicker.reset();
     ui.partyOpen = ui.characterOpen = ui.hirelingOpen = ui.skillTreeOpen = ui.questOpen = false;
     ui.pointButtonPressed.reset();
+    ui.characterPressed.reset(); ui.skillTreePressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;
     ui.gameMenuPage = 0;

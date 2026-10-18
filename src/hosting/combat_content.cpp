@@ -608,7 +608,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         MonsterIdentity identity;identity.monster=record.id;identity.nativeClass=definition;identity.origin=SpawnOrigin::Density;identity.spawnKey="native."+record.id;
         auto prototype=combatMonster(archives,data,request,identity,{},world,catalog,animations,nativeRuleRandom);
         if(!prototype && !record.hostile() && record.ai!="GoodNpcRanged")
-            prototype=server::PreparedMonster{identity,{}, {},*prepareNeutralMonsterRule(archives,data,request,record)};
+            prototype=server::PreparedMonster{identity,record.ai=="NpcBarb"?std::optional{MonsterKind::NpcBarb}:std::nullopt, {},*prepareNeutralMonsterRule(archives,data,request,record)};
         if(!prototype && record.hostile()) {
             auto replacement=identity;replacement.monster="fallen1";
             prototype=combatMonster(archives,data,request,replacement,{},world,catalog,animations,nativeRuleRandom);

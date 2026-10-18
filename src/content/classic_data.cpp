@@ -322,6 +322,41 @@ ClassicData loadClassicData(Archives &archives) {
         data.missileReturnFire.emplace(*id, returnFire == 1);
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
+    for (const auto &character : data.characters) {
+        size_t row = 0;
+        for (; row < inventory.rows().size(); ++row)
+            if (inventory.value(row, "class") == character.name + "2") break;
+        if (row == inventory.rows().size())
+            throw std::runtime_error("Missing original 800px inventory layout: " + character.name);
+        const auto number = [&](const std::string &field) {
+            const auto value = inventory.number(row, field);
+            if (!value) throw std::runtime_error("Missing original player inventory field: " + field);
+            return *value;
+        };
+        const int left = number("invLeft"), top = number("invTop");
+        PlayerInventoryLayout layout;
+        layout.grid = {number("gridX"), number("gridY"), number("gridLeft") - left,
+            number("gridTop") - top, number("gridBoxWidth"), true};
+        const auto &grid = layout.grid;
+        if (grid.columns < 1 || grid.columns > 16 || grid.rows < 1 || grid.rows > 16 ||
+            grid.cellSize < 1 || grid.cellSize != number("gridBoxHeight") || grid.left < 0 || grid.top < 0 ||
+            grid.left + grid.columns * grid.cellSize > 320 || grid.top + grid.rows * grid.cellSize > 432)
+            throw std::runtime_error("Unsupported original player inventory grid: " + character.name);
+        constexpr const char *slots[]{"head", "neck", "torso", "rArm", "lArm",
+            "rHand", "lHand", "belt", "feet", "gloves", "rArm", "lArm"};
+        static_assert(std::size(slots) == size_t(EquipmentSlot::Count));
+        for (size_t slot = 0; slot < std::size(slots); ++slot) {
+            const std::string prefix = slots[slot];
+            auto &box = layout.slots[slot];
+            box = {number(prefix + "Left") - left, number(prefix + "Top") - top,
+                number(prefix + "Right") - left, number(prefix + "Bottom") - top};
+            if (box[0] < 0 || box[1] < 0 || box[2] > 320 || box[3] > 432 ||
+                box[2] <= box[0] || box[3] <= box[1] ||
+                box[2] - box[0] != number(prefix + "Width") || box[3] - box[1] != number(prefix + "Height"))
+                throw std::runtime_error("Unsupported original player inventory slot: " + character.name + "/" + prefix);
+        }
+        data.playerInventoryLayouts.emplace(character.code, std::move(layout));
+    }
     data.hirelings = loadHirelingDefinitions(data.tables.at("hireling"), data.tables.at("skills"));
     {
         data.tables.emplace("skilldesc", DataTable(archives.read("data/global/excel/skilldesc.txt")));

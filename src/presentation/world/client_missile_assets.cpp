@@ -6,6 +6,8 @@
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include <algorithm>
+#include <array>
+#include <string_view>
 
 namespace d2x {
 void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
@@ -85,6 +87,28 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         }
         for (size_t i = 0; i < program.hitChildren.size(); ++i)
             program.hitChildren[i] = linked(row, "CltHitSubMissile" + std::to_string(i + 1));
+        // Retail CltHit46 deliberately reads the server HitSubMissile slot.
+        if(program.hitFunction==46) program.hitChildren[0]=linked(row,"HitSubMissile1");
+        if(program.hitFunction==36) {
+            program.hellMeteorRadius=number("Param1");
+            // The native callback chooses from this three-class table.
+            constexpr std::array<std::string_view,3> fire{"firewall","firesmall","firemedium"};
+            for(size_t index=0;index<fire.size();++index) {
+                const auto found=names.find(fire[index]);
+                program.hitChildren[index]=found==names.end()?-1:found->second;
+            }
+        }
+        if(program.hitFunction==50 || program.hitFunction==52) {
+            const auto rocks=names.find("moltenboulder-flyingrocks");
+            program.boulderRocks=rocks==names.end()?-1:rocks->second;
+        }
+        if(program.hitFunction==48) {
+            constexpr std::array<std::string_view,3> cold{"freezingarrowexp1","freezingarrowexp2","catapult cold explosion"};
+            for(size_t index=0;index<cold.size();++index) {
+                const auto found=names.find(cold[index]);
+                program.hitChildren[index]=found==names.end()?-1:found->second;
+            }
+        }
         if (const auto child=missileRows_.find(program.children[0]); child!=missileRows_.end())
             program.childServerSent=table.number(child->second,"ClientSend").value_or(0)!=0;
         if (program.function==9 && program.hitFunction==18) {

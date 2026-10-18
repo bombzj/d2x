@@ -13,10 +13,10 @@ float scale() { return inventoryScale(); }
 Rectangle panelBounds() {
     return storageBounds();
 }
-Rectangle shopGrid() {
+Rectangle shopGrid(float cellSize) {
     auto panel = panelBounds();
     return {panel.x + 14 * scale(), panel.y + 62 * scale(),
-            10 * inventoryCellSize(), 10 * inventoryCellSize()};
+            10 * cellSize, 10 * cellSize};
 }
 Rectangle tabBounds(int index) {
     auto panel = panelBounds();
@@ -41,12 +41,12 @@ Rectangle confirmButton(bool yes) {
     return {bounds.x + (yes ? 43.f : 174.f), bounds.y + 184, 45, 46};
 }
 struct Placement { const ShopOfferView *offer; int page; Rectangle bounds; };
-std::vector<Placement> placements(const ShopView &shop, int category) {
+std::vector<Placement> placements(const ShopView &shop, int category, float cellSize) {
     std::vector<Placement> result;
     if (!shop.available) return result;
     std::array<bool, 100> occupied{};
     int page = 0;
-    auto grid = shopGrid();
+    auto grid = shopGrid(cellSize);
     for (const auto &offer : shop.offers) {
         const auto *item = &offer;
         if (!shop.gamble && (category==1 || category==2 ? offer.storePage!=1 && offer.storePage!=2 : offer.storePage!=category))
@@ -57,8 +57,8 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
             const auto [x,y]=*offer.cell;
             if(x<0 || y<0 || x+item->width>10 || y+item->height>10) continue;
             result.push_back({&offer,!shop.gamble && offer.storePage==2?1:0,
-                {grid.x+x*inventoryCellSize(),grid.y+y*inventoryCellSize(),
-                 item->width*inventoryCellSize(),item->height*inventoryCellSize()}});
+                {grid.x+x*cellSize,grid.y+y*cellSize,
+                 item->width*cellSize,item->height*cellSize}});
             continue;
         }
         auto locate = [&]() -> std::optional<std::array<int, 2>> {
@@ -83,18 +83,18 @@ std::vector<Placement> placements(const ShopView &shop, int category) {
             for (int x = (*cell)[0]; x < (*cell)[0] + item->width; ++x)
                 occupied[size_t(y * 10 + x)] = true;
         result.push_back({&offer, page,
-                          {grid.x + (*cell)[0] * inventoryCellSize(),
-                           grid.y + (*cell)[1] * inventoryCellSize(),
-                           item->width * inventoryCellSize(),
-                           item->height * inventoryCellSize()}});
+                          {grid.x + (*cell)[0] * cellSize,
+                           grid.y + (*cell)[1] * cellSize,
+                           item->width * cellSize,
+                           item->height * cellSize}});
     }
     return result;
 }
 int maximumPage(const std::vector<Placement> &items) {
     int maximum=0;for(const auto &item:items) maximum=std::max(maximum,item.page);return maximum;
 }
-bool tabAvailable(const ShopView &shop, int tab) {
-    auto items = placements(shop, tab);
+bool tabAvailable(const ShopView &shop, int tab, float cellSize) {
+    auto items = placements(shop, tab, cellSize);
     return tab == 2 ? maximumPage(items) > 0 : !items.empty();
 }
 } // namespace
@@ -113,7 +113,7 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.partyOpen = view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
     view_.shopCategory = 0;
     for (int tab = 0; tab < 4; ++tab)
-        if (!gamble && tabAvailable(shopView(), tab)) {
+        if (!gamble && tabAvailable(shopView(), tab, inventoryCellSize(inventoryView_))) {
             view_.shopCategory = tab;
             view_.shopPage = tab == 2 ? 1 : 0;
             break;
@@ -130,7 +130,7 @@ void SceneView::closeNpcShop() {
     view_.inventory.open = false;
 }
 bool SceneView::npcShopDropAt(Vec mouse) const {
-    return view_.shopOpen && CheckCollisionPointRec(rv(mouse), shopGrid());
+    return view_.shopOpen && CheckCollisionPointRec(rv(mouse), shopGrid(inventoryCellSize(inventoryView_)));
 }
 bool SceneView::npcShopRepairAllAt(Vec mouse) const {
     return view_.shopOpen && !view_.shopGamble && !view_.shopConfirm && shopView().repairAvailable &&
@@ -138,7 +138,7 @@ bool SceneView::npcShopRepairAllAt(Vec mouse) const {
         CheckCollisionPointRec(rv(mouse), shopButton(1));
 }
 void SceneView::scrollNpcShop(int pages) {
-    auto items = placements(shopView(), view_.shopCategory);
+    auto items = placements(shopView(), view_.shopCategory, inventoryCellSize(inventoryView_));
     view_.shopPage = std::clamp(view_.shopPage + pages, 0, maximumPage(items));
     if (view_.shopCategory == 1 || view_.shopCategory == 2)
         view_.shopCategory = view_.shopPage == 0 ? 1 : 2;
@@ -160,7 +160,7 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
         return {};
     }
     if (directBuy) {
-        for (const auto &item : placements(shopView(), view_.shopCategory))
+        for (const auto &item : placements(shopView(), view_.shopCategory, inventoryCellSize(inventoryView_)))
             if (item.page == view_.shopPage && CheckCollisionPointRec(rv(mouse), item.bounds))
                 return item.offer->slot;
         return {};
@@ -179,7 +179,7 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
     }
     for (int index = 0; !view_.shopGamble && index < 4; ++index)
         if (CheckCollisionPointRec(rv(mouse), tabBounds(index))) {
-            if (!tabAvailable(shopView(), index)) return {};
+            if (!tabAvailable(shopView(), index, inventoryCellSize(inventoryView_))) return {};
             view_.shopCategory = index;
             view_.shopPage = index == 2 ? 1 : 0;
             return {};
@@ -192,7 +192,7 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
         scrollNpcShop(1);
         return {};
     }
-    for (const auto &item : placements(shopView(), view_.shopCategory))
+    for (const auto &item : placements(shopView(), view_.shopCategory, inventoryCellSize(inventoryView_)))
         if (item.page == view_.shopPage &&
             CheckCollisionPointRec(rv(mouse), item.bounds)) {
             view_.shopConfirm = item.offer->slot;
@@ -214,7 +214,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
     const auto &shop = shopView();
     for (int index = 0; !view_.shopGamble && index < 4; ++index) {
         auto tab = tabBounds(index);
-        const bool available = tabAvailable(shopView(), index);
+        const bool available = tabAvailable(shopView(), index, inventoryCellSize(inventoryView_));
         if (!available) continue;
         bool selected = index == view_.shopCategory;
         if (auto sprite = assets_.vendorTabs.frame(0, selected ? index : index + 4)) {
@@ -226,7 +226,7 @@ void SceneView::drawNpcShop(Vec mouse) const {
         painter_.label(label, int(tab.x + (tab.width - painter_.measure(label, 13)) / 2),
                        int(tab.y) + 9, 13, gold);
     }
-    auto items = placements(shopView(), view_.shopCategory);
+    auto items = placements(shopView(), view_.shopCategory, inventoryCellSize(inventoryView_));
     const ShopOfferView *hovered = nullptr;
     for (const auto &entry : items) {
         if (entry.page != view_.shopPage) continue;

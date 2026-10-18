@@ -86,7 +86,8 @@ void SceneView::drawSkillTree(Vec mouse) const {
         const bool noPoints = !player.unknownStats.contains("newskills") && player.unspentSkills == 0;
         const bool bright = entry.canAllocate || (noPoints && entry.effectiveRankKnown && effective > 0);
         const bool hovered = CheckCollisionPointRec(rv(mouse), bounds);
-        const auto &texture = (hovered ? image->second.treeHovered :
+        const auto &texture = (hovered && view_.skillTreePressed == id ? image->second.treePressed :
+            hovered ? image->second.treeHovered :
             bright ? image->second.sprite : image->second.treeDisabled).texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)}, bounds,
                        {0, 0}, 0, WHITE);
@@ -112,7 +113,8 @@ void SceneView::drawSkillTree(Vec mouse) const {
     auto pointBox = skillTreeRect(252, 54, 48, 26);
     drawTreeLabel(assets_.font, points, pointBox);
     const auto close = skillTreeClose(characterView_, view_.skillPage);
-    if (const auto *button = assets_.questClose.frame(0, 10))
+    if (const auto *button = assets_.questClose.frame(0, 10 + (view_.skillTreePressed == -1 &&
+        CheckCollisionPointRec(rv(mouse), close))))
         DrawTexturePro(button->texture, {0, 0, float(button->texture.width), float(button->texture.height)},
                        close, {}, 0, WHITE);
     EndScissorMode();

@@ -544,6 +544,16 @@ DomainResult<std::optional<Vec>> System::findBaalTeleportPosition(EntityId id,ui
     ports_.areas.publishRoomRandom(*loan.value);
     return {DomainStatus::Applied,std::optional<std::optional<Vec>>{std::in_place,position}};
 }
+DomainResult<> System::setBaalThroneWave(EntityId id,int expected,int next) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    if(unit.rule.ai.kind!=MonsterAiKind::BaalThrone || next<0 || next>5) return {DomainStatus::InvalidRequest,{}};
+    if(unit.baalThroneWave==next) return {DomainStatus::Applied,std::monostate{}};
+    if(unit.baalThroneWave!=expected) return {DomainStatus::Stale,{}};
+    if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    unit.baalThroneWave=next;++unit.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::assignBaalNova(EntityId id,uint64_t tick) {
     return assignBaalSkill(id,"baal nova",{},tick);
 }

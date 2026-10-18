@@ -120,7 +120,10 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
             "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
             "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3",
-            "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash"}) {
+            "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash",
+            "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
+            "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
+            "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"}) {
         const auto value = characterStrings.find(key);
         if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
         characterLabels.emplace(key, value);
@@ -292,6 +295,9 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     if (gameMenuMarker.frames.empty())
         throw std::runtime_error("Original Escape menu marker is missing");
     inventoryPanel = uiGraphics_.single("data/global/ui/panel/invchar6.dc6");
+    inventoryGoldDialog = uiGraphics_.single("data/global/ui/menu/dialogbackground.dc6");
+    if (inventoryGoldDialog.frames.empty())
+        throw std::runtime_error("Original inventory gold dialog artwork is missing");
     if (inventoryPanel.frames.size() < 8)
         throw std::runtime_error("Original character/inventory panel artwork is missing");
     {
@@ -339,7 +345,7 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     questReplay = unitsGraphics_.single("data/global/ui/menu/questlast.dc6");
     goldCoin = unitsGraphics_.single("data/global/ui/panel/goldcoinbtn.dc6");
     if (questBackground.frames.size() < 4 || questSockets.frames.size() < 2 ||
-        questTabs.frames.size() < 8 || questClose.frames.size() < 12 ||
+        questTabs.frames.size() < 8 || questClose.frames.size() < 18 ||
         questReplay.frames.empty() || goldCoin.frames.size() < 2 ||
         std::any_of(questIcons.begin(), questIcons.end(),
                     [](const GpuAnimation &icon) { return icon.frames.size() < 27; }))

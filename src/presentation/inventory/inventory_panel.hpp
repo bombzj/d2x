@@ -4,12 +4,12 @@
 #include "gameplay/items/operations.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/hud/classic_panel.hpp"
+#include <array>
 
 namespace d2x {
 struct InventoryDrag {
     ItemHandle item;
-    Cell grab;
-    Vec pressedAt, pixelOffset;
+    Vec pressedAt;
     bool moved = false;
     bool pickedUp = false;
     bool onCursor = false;
@@ -29,6 +29,7 @@ struct GoldDialog {
     GoldAction action = GoldAction::Drop;
     std::string amount;
     unsigned maximum = 0;
+    bool selectAll = true;
 };
 struct InventoryUi {
     bool open = false, cubeOpen = false, forceSwap = false, beltExpanded = false, playerTradeOpen = false;
@@ -55,21 +56,23 @@ struct InventoryUi {
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
 inline float inventoryScale() { return classicPanelScale(); }
-inline float inventoryCellSize() { return 29 * inventoryScale(); }
+inline float inventoryCellSize(const InventoryView &inventory) { return inventory.itemCellSize[0] * inventoryScale(); }
 inline Rectangle orificeBounds() {return {106*inventoryScale(),98*inventoryScale(),108*inventoryScale(),164*inventoryScale()};}
 inline Rectangle orificeSlot() {const auto p=orificeBounds();return {p.x+16*inventoryScale(),p.y+12*inventoryScale(),76*inventoryScale(),108*inventoryScale()};}
 inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();return {p.x+(confirm?10:66)*inventoryScale(),p.y+126*inventoryScale(),32*inventoryScale(),32*inventoryScale()};}
 inline Rectangle inventoryBounds() {
     return classicPanelBounds(true);
 }
-inline Rectangle inventoryGrid() {
+inline Rectangle inventoryGrid(const InventoryView &inventory) {
     auto p = inventoryBounds();
-    return {p.x + 19 * inventoryScale(), p.y + 255 * inventoryScale(), 10 * inventoryCellSize(),
-            4 * inventoryCellSize()};
+    const auto &layout = inventory.backpackLayout;
+    return {p.x + layout.left * inventoryScale(), p.y + layout.top * inventoryScale(),
+            layout.columns * inventoryCellSize(inventory), layout.rows * inventoryCellSize(inventory)};
 }
 inline Rectangle inventoryClose() {
     auto p = inventoryBounds();
-    return {p.x + 19 * inventoryScale(), p.y + 389 * inventoryScale(),
+    // The 32x32 buysellbtn frame fits the invchar6 socket at (18,385).
+    return {p.x + 18 * inventoryScale(), p.y + 385 * inventoryScale(),
             32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle inventoryGold() {
@@ -80,12 +83,8 @@ inline Rectangle inventoryGold() {
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
 }
-inline Rectangle equippedBeltBounds() {
-    auto p = inventoryBounds();
-    return {p.x + 136 * inventoryScale(), p.y + 179 * inventoryScale(), 52 * inventoryScale(), 25 * inventoryScale()};
-}
-Rectangle equipmentBounds(EquipmentSlot slot);
-std::optional<EquipmentSlot> equipmentAt(Vec mouse, unsigned weaponSet);
+Rectangle equipmentBounds(const InventoryView &inventory, EquipmentSlot slot);
+std::optional<EquipmentSlot> equipmentAt(const InventoryView &inventory, Vec mouse, unsigned weaponSet);
 Rectangle weaponTabBounds(unsigned set, bool left);
 std::optional<unsigned> weaponTabAt(Vec mouse);
 inline Rectangle beltSlot(Cell cell) {
@@ -128,11 +127,15 @@ inline Rectangle storageGold(bool expansion) {
             176 * inventoryScale(), 22 * inventoryScale()};
 }
 inline Rectangle goldDialogBounds() {
-    return {inventoryBounds().x + 28, 192, 344, 166};
+    // Retail gold menu starts at (215,140) in 640x480, centered when the
+    // game canvas grows. The MPQ dialogbackground frame is 210x158.
+    return {W / 2.f - 105 * inventoryScale(), (H - HUD) / 2.f - 79 * inventoryScale(),
+            210 * inventoryScale(), 158 * inventoryScale()};
 }
 inline Rectangle goldDialogButton(int index) {
     auto p = goldDialogBounds();
-    return {p.x + 23 + index * 166, p.y + 123, 130, 29};
+    return {p.x + (35 + index * 105) * inventoryScale(), p.y + 115 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle splitBounds() {
     return {inventoryBounds().x + 24, 190, 352, 180};
@@ -145,8 +148,7 @@ inline Rectangle splitAdjust(int index) {
     auto p = splitBounds();
     return {p.x + 32 + index * 250, p.y + 60, 38, 32};
 }
-std::optional<Cell> inventoryCell(Vec mouse);
-Rectangle inventoryItemBounds(Cell cell, const ItemDefinition &definition);
+std::optional<Cell> inventoryCell(const InventoryView &inventory, Vec mouse);
 struct InventoryDrop {
     std::optional<InventoryIntent> command;
     InventoryError error = InventoryError::None;
@@ -158,5 +160,5 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
 ContainerGrid playerTradeGrid(const InventoryView &, bool own);
 bool inventorySurface(const InventoryUi &ui, Vec mouse);
 InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClient &client, const InventoryUi &ui, Vec mouse,
-                            bool hirelingOpen = false);
+                            std::array<int, 2> cursorPixels, bool hirelingOpen = false);
 } // namespace d2x

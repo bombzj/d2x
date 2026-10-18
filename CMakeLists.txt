@@ -267,6 +267,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/hell_meteor.cpp
     src/server/systems/ai/trapped_soul.cpp
     src/server/systems/ai/catapult.cpp
+    src/server/systems/ai/npc_barb.cpp
     src/server/systems/ai/catapult_spotter.cpp
     src/server/systems/ai/ancient_madawc.cpp
     src/server/systems/ai/nihlathak.cpp

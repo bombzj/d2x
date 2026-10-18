@@ -203,6 +203,7 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         DiagnosticMonster value{key, monster.identity.monster, monster.area, monster.position, monster.life, monster.maximumLife,
             monster.revision, monster.busyUntil, monster.moving, monster.running, monster.rewardComplete, {}};
         if (const auto found = systems_.ai.read().controllers.find(key); found != systems_.ai.read().controllers.end()) value.controller = found->second;
+        if(value.controller && monster.rule.ai.kind==MonsterAiKind::BaalThrone) value.controller->phase=monster.baalThroneWave;
         value.chilledUntil=monster.chilledUntil;value.frozenUntil=monster.frozenUntil;value.knockedUntil=monster.knockedUntil;value.nextHitTick=monster.nextHitTick;value.owner=monster.owner;
         value.rules=monster.rule.ai;value.damageRegen=monster.rule.damageRegen;value.threat=monster.rule.threat;
         value.admittedPlayers=monster.admittedPlayerCount;value.experienceBase=monster.rule.experienceBase;
@@ -224,7 +225,8 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
         value.alignment=monster.alignment();value.allegianceRevision=monster.allegianceRevision;value.curseControl=monster.curseControl;
         value.attractionTarget=monster.attractionTarget;value.attractionUntil=monster.attractionUntil;
         value.aiResetTimers=monster.aiResetTimers;value.aiResetsTracked=monster.nativeAiResetTracked;
-        value.specialTargetOrder=monster.specialTargetOrder;value.aiFunctionRevision=monster.aiFunctionRevision;value.detachedMinion=monster.detachedMinion;
+        value.specialTargetOrder=monster.specialTargetOrder;value.wanderTargetOrder=monster.wanderTargetOrder;
+        value.aiFunctionRevision=monster.aiFunctionRevision;value.detachedMinion=monster.detachedMinion;
         if(monster.assassinPet) if(const auto pet=systems_.companions.read().companions.find(key);pet!=systems_.companions.read().companions.end())
             value.assassin=DiagnosticMonster::Assassin{pet->second.assassinAi,pet->second.nextDecision,pet->second.expires,
                 pet->second.removeAt,pet->second.lastCorpse,pet->second.assassinMissile};

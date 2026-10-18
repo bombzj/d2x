@@ -8,7 +8,7 @@ void SceneView::drawBelt(Vec mouse) const {
     if (!belt) return;
     int rows = ui.open || ui.beltExpanded ? belt->rows : 1;
     auto bounds = beltBounds(rows);
-    const auto drop = inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
+    const auto drop = inventoryDropAt(mouse);
     for (int row = rows - 1; row >= 0; --row) {
         if (auto sprite = assets_.beltPanel.frame(0, 0); sprite && row > 0) {
             auto t = sprite->texture;

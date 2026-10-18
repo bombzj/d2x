@@ -38,7 +38,7 @@ StepStatus System::baalThroneFamily(EntityId id,TickContext tick,Controller &con
         }
         idle(10);return StepStatus::Complete;
     }
-    const auto result=perform(controller,[this,id,tick,wave=controller.phase,spawn=bool(controller.loop&1),hinted=false,assigned=false,casted=false]() mutable ->DomainResult<> {
+    const auto result=perform(controller,[this,id,tick,wave=unit.baalThroneWave,spawn=bool(controller.loop&1),hinted=false,assigned=false,casted=false]() mutable ->DomainResult<> {
         auto &ai=state_.controllers.at(id);
         const auto *unit=ports_.monsters.find(id);if(!unit || !unit->alive()) return {DomainStatus::InvalidActor,{}};
         const auto &area=ports_.areas.at(unit->area);
@@ -69,7 +69,10 @@ StepStatus System::baalThroneFamily(EntityId id,TickContext tick,Controller &con
             const auto cast=ports_.skills.requestCast(request);if(isDeferred(cast.status)) return cast;
             casted=true;
         }
-        if(spawn) {++ai.phase;ai.loop=(ai.loop|2)&~1;ai.thirdParameter=nativeAdd(nativeNarrow(uint32_t(tick.tick)),100);}
+        if(spawn) {
+            const auto advanced=ports_.monsters.setBaalThroneWave(id,wave,wave+1);if(!advanced) return advanced;
+            ai.loop=(ai.loop|2)&~1;ai.thirdParameter=nativeAdd(nativeNarrow(uint32_t(tick.tick)),100);
+        }
         else {
             const auto sound=ports_.quests.baalThroneSound(id,tick.tick);if(!sound) return sound;
             ai.loop|=1;ai.thirdParameter=nativeAdd(nativeNarrow(uint32_t(tick.tick)),250);

@@ -143,14 +143,15 @@ void SceneView::drawHelp() const {
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
                            "I / A / S                  Inventory / Character / Skills",
-                           "Arrow keys                 Move in screen directions",
+                           "Arrow keys                 Pan automap",
                            "Right click                Cast; click slot to choose",
                            "1 through 4 / B            Drink belt potion / Expand belt",
                            "Hover skill, F1-F8         Bind selected mouse skill",
                            "F1 through F8              Select bound mouse skill",
                            "R                          Toggle walk / run",
                            "Tab / V                    Automap / Switch map side",
-                           "W / O / P                Weapon swap / Hireling / Party",
+                           "W / O / P                  Weapon swap / Hireling / Party",
+                           "Enter / M                  Chat / Message log",
                            "Q / Home                   Quest log / Center map",
                            "F12 / Ctrl+F12             Map names / Screenshot",
                            "Ctrl+F1                   Close this panel"};
@@ -223,7 +224,7 @@ void SceneView::drawUi(Vec mouse) const {
     drawGameMenu();
     tradeInvite_.draw(worldViewport());
     tradeInvite_.drawGoldDialog();
-    if (deferredTooltip_.active)
+    if (deferredTooltip_.active && !view_.inventory.goldDialog && !view_.inventory.split && !view_.gameMenuOpen)
         drawItemText(deferredTooltip_.lines, deferredTooltip_.quality, deferredTooltip_.anchor,
                      deferredTooltip_.price, deferredTooltip_.priceLabel);
     if (!itemCursor) {

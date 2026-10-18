@@ -95,6 +95,9 @@ DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) 
             node.wander=unit.wanderTargetOrder!=0;node.special=snapshot.specialTargetOrder!=0;
             node.modifiers=unit.rule.nativeModifiers;node.nameSeed=unit.rule.enchantment?unit.rule.enchantment->nameSeed:0;
             node.skillPositions=unit.skillPositions;node.componentParameter=unit.components[10];node.nestSpawned=unit.nestSpawned;
+            node.baalThroneWave=unit.rule.ai.kind==MonsterAiKind::BaalThrone?unit.baalThroneWave:0;
+            if(unit.identity.monster=="diablo" && unit.aiHomeCommand &&
+                (unit.aiHomeCommand->x!=0 || unit.aiHomeCommand->y!=0)) node.aiHomeCommand=unit.aiHomeCommand;
             node.impMountedAi=unit.impMountedAi;
             node.whippedAi=unit.whippedAi;
             saved.insert(saved.begin(),std::move(node));
@@ -137,6 +140,7 @@ DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t 
     candidate.restoredFromInactive=true;candidate.restorationPending=false;
     const auto translation=ports_.areas.at(source.area).definition.origin-ports_.areas.at(candidate.area).definition.origin;
     candidate.home=source.home+translation;candidate.questNpc=source.questNpc;
+    candidate.aiHomeCommand=source.aiHomeCommand;
     candidate.skillPositions=source.skillPositions;
     for(auto &point:candidate.skillPositions) point=point+translation;
     if(candidate.questNpc) candidate.movementGoal=candidate.position;
@@ -155,6 +159,7 @@ DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t 
         if(source.admissionRule->sharedRandomComponents&(1u<<11)) candidate.components[11]=uint8_t(source.componentParameter);
     }
     if(candidate.rule.ai.kind==MonsterAiKind::SandMaggot) candidate.nestSpawned=source.nestSpawned;
+    if(candidate.rule.ai.kind==MonsterAiKind::BaalThrone) candidate.baalThroneWave=source.baalThroneWave;
     if(source.wander) {
         if(state_.nextWanderTargetOrder==UINT64_MAX) return {DomainStatus::Capacity,{}};
         candidate.wanderTargetOrder=state_.nextWanderTargetOrder;

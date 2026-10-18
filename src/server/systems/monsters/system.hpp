@@ -192,6 +192,8 @@ struct Actor {
     std::optional<SkillReservation> skillReservation;
     std::optional<Vec> spawnReservation;
     int nestSpawned{};
+    int baalThroneWave{}; // Native Fn134 parameter0; retained by inactive records.
+    std::optional<Vec> aiHomeCommand; // Command10 coordinates are global, independent of current room.
     Vec home;
     std::vector<Vec> skillPositions;
     uint64_t damageOccurrence{};
@@ -210,7 +212,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
-    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter; }
+    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter || rule.ai.kind==MonsterAiKind::NpcBarb; }
     bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -257,6 +259,8 @@ struct InactiveMonster {
     std::vector<Vec> skillPositions;
     int componentParameter{};
     int nestSpawned{};
+    int baalThroneWave{};
+    std::optional<Vec> aiHomeCommand;
     bool impMountedAi{},whippedAi{};
 };
 struct State {
@@ -352,6 +356,9 @@ class System {
     bool frozen(EntityId,uint64_t tick) const;
     EntityId minionOwner(EntityId) const;
     std::vector<EntityId> specialTargets() const;
+    DomainResult<> registerWanderTarget(EntityId);
+    DomainResult<Vec> ensureAiHomeCommand(EntityId);
+    void resetAiFunctionMemory(EntityId);
     std::vector<EntityId> pets(PlayerId) const;
     bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
     DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {},uint8_t mode=4);
@@ -421,6 +428,7 @@ class System {
     DomainResult<EntityId> spawnMinionChild(EntityId,Vec,int skill,MonsterSpawnParameters,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,MinionBirthProcedure=MinionBirthProcedure::Spawner);
     DomainResult<> assignBaalNova(EntityId,uint64_t tick);
     DomainResult<> assignBaalMonsterSpawn(EntityId,int mappedPreset,uint64_t tick);
+    DomainResult<> setBaalThroneWave(EntityId,int expected,int next);
     DomainResult<std::optional<Vec>> findBaalTeleportPosition(EntityId,uint64_t,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);

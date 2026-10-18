@@ -23,6 +23,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.leftHeld = IsMouseButtonDown(MOUSE_BUTTON_LEFT);
         input.rightHeld = IsMouseButtonDown(MOUSE_BUTTON_RIGHT);
         input.mouseWheel = GetMouseWheelMove();
+        input.wheel = input.mouseWheel;
     }
     if (!input.leftHeld && !input.rightHeld) {
         input.leftReleased = IsMouseButtonReleased(MOUSE_BUTTON_LEFT);
@@ -36,6 +37,18 @@ FrameInput pollInput(const Viewport &viewport) {
         input.escape = IsKeyPressed(KEY_ESCAPE);
         input.enter = IsKeyPressed(KEY_ENTER);
         input.backspace = IsKeyPressed(KEY_BACKSPACE);
+        input.entryHome = IsKeyPressed(KEY_HOME);
+        input.entryEnd = IsKeyPressed(KEY_END);
+        input.entryDelete = IsKeyPressed(KEY_DELETE);
+        input.entryStep = int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
+        input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
+        input.quantityDelta = int(input.wheel) + int(IsKeyPressed(KEY_UP)) - int(IsKeyPressed(KEY_DOWN));
+        for (int character = GetCharPressed(); character; character = GetCharPressed()) {
+            if (character >= 32 && character < 127) {
+                input.entryText += char(character);
+                if (character >= '0' && character <= '9') input.text += char(character);
+            } else if (character >= 127) input.entryUnsupported = true;
+        }
         input.tab = IsKeyPressed(KEY_TAB);
         input.chat = IsKeyPressed(KEY_ENTER);
         input.clear = IsKeyPressed(KEY_DELETE);
@@ -83,6 +96,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.quests = plain && IsKeyPressed(KEY_Q);
         input.hireling = plain && IsKeyPressed(KEY_O);
         input.party = plain && IsKeyPressed(KEY_P);
+        input.messageLog = plain && IsKeyPressed(KEY_M);
         input.run = plain && IsKeyPressed(KEY_R);
         input.expandBelt = plain && IsKeyPressed(KEY_B);
         input.minimapSide = plain && IsKeyPressed(KEY_V);

@@ -1399,9 +1399,6 @@ struct RemoteUiClients::Impl {
     void projectInventory() {
         const auto &online=session.read(); const auto &w=online.world; const auto &decoded=items.read();
         InventoryView v; v.revision=revision; v.gameGeneration=online.gameGeneration; v.areaGeneration=w.areaGeneration;
-        const auto &inventoryTable = data.tables.at("inventory");
-        v.itemCellSize = {inventoryTable.number(0, "gridBoxWidth").value_or(0),
-                          inventoryTable.number(0, "gridBoxHeight").value_or(0)};
         v.containers={containerId(1),containerId(2),containerId(3),containerId(4),containerId(5),containerId(6),containerId(7),containerId(8)};
         const auto &owned=v.containers;
         for (const auto &[id,kind,columns,rows]:std::vector<std::tuple<EntityId,ContainerKind,int,int>>{
@@ -1411,6 +1408,12 @@ struct RemoteUiClients::Impl {
             {owned.cursor,ContainerKind::Cursor,1,1},{owned.hirelingEquipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1}})
             v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows});
         auto layout=[](const auto &x){return InventoryLayoutView{x.columns,x.rows,x.left,x.top,x.cellSize,x.expansion};};
+        if (const auto playerLayout = data.playerInventoryLayouts.find(characterView.classCode);
+            playerLayout != data.playerInventoryLayouts.end()) {
+            v.backpackLayout = layout(playerLayout->second.grid);
+            v.equipmentSlots = playerLayout->second.slots;
+            v.itemCellSize = {v.backpackLayout.cellSize, v.backpackLayout.cellSize};
+        }
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
         if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
             const auto &table = data.tables.at("inventory");

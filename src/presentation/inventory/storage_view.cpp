@@ -38,7 +38,9 @@ void SceneView::drawStorage(Vec mouse) const {
                 if (auto item = inventory.item(inventory.itemAt(grid.container, *cell)))
                     drawItemTooltip(*item, {mouse.x + 170, mouse.y});
     }
-    const auto maximum = "Gold Max: " + std::to_string(inventoryView_.bankGoldLimit);
+    auto maximum = assets_.characterLabels.at("GoldMax");
+    if (const auto value = maximum.find("%d"); value != std::string::npos)
+        maximum.replace(value, 2, std::to_string(inventoryView_.bankGoldLimit));
     painter_.label(maximum, int(goldField.x + (goldField.width - painter_.measure(maximum, textSize)) / 2),
                    int(goldField.y + 30 * inventoryScale()), textSize, WHITE);
     if (const auto *close = assets_.questClose.frame(0, 10))

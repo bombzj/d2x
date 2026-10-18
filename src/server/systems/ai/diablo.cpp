@@ -22,11 +22,9 @@ namespace d2x::server::ai {
 StepStatus System::diabloFamily(EntityId id,TickContext tick,Controller &controller) {
     const auto &unit=*ports_.monsters.find(id);const auto &area=ports_.areas.at(unit.area);
     const auto &catalog=*unit.rule.formulas;
-    if(!controller.homeCommand) {
-        const auto at=unit.position+area.definition.origin;
-        controller.homeCommand=Vec{std::floor(at.x),std::floor(at.y)};
-    }
-    const auto home=*controller.homeCommand-area.definition.origin;
+    const auto command=ports_.monsters.ensureAiHomeCommand(id);
+    if(!command) return isDeferred(command.status)?StepStatus::Blocked:StepStatus::NotImplemented;
+    const auto home=*command.value-area.definition.origin;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto point=[&](combat::ParticipantView target) {
         return target.position()+ports_.areas.at(target.player?target.player->area:target.monster->area).definition.origin-area.definition.origin;
@@ -92,7 +90,7 @@ StepStatus System::diabloFamily(EntityId id,TickContext tick,Controller &control
             input.playerDifficulty=unit.rule.difficulty;input.melee=unitMeleeReach(area.definition.collision,unit.position,unit.rule.size,at,targetView.size(),unit.rule.meleeRange);
             input.blocked=!area.definition.collision.missileSegment(unit.position,at,{4,1});input.cold=ports_.effects.unitStates(target.id,tick.tick).contains(unit.rule.coldState);
             const int distance=monsterAiDistance(at,(targetView.size()>>1)+1,home);input.far=distance>85;input.further=distance>105;
-            if(portal) input.portal=uint16_t(portal->field)==108 && monsterAiDistance(portal->fieldPosition+ports_.areas.at(portal->field).definition.origin,0,*controller.homeCommand)<85;
+            if(portal) input.portal=uint16_t(portal->field)==108 && monsterAiDistance(portal->fieldPosition+ports_.areas.at(portal->field).definition.origin,0,*command.value)<85;
             for(const bool right:{false,true}) if(const auto skill=selected(targetView,right))
                 input.specialSkill|=skill->first==59 || skill->first==56 || (skill->first==51 && skill->second>3) || (skill->first==27 && skill->second>7);
             auto weights=diabloWeights(input);

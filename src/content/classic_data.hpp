@@ -4,6 +4,7 @@
 #include "gameplay/items/definitions.hpp"
 #include "gameplay/items/modifiers.hpp"
 #include "gameplay/items/equipment_set.hpp"
+#include "gameplay/items/equipment_rules.hpp"
 #include "gameplay/items/socket_records.hpp"
 #include "gameplay/items/cube_records.hpp"
 #include "gameplay/consumables/potions.hpp"
@@ -47,6 +48,11 @@ struct StashLayout {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
     bool expansion = false;
 };
+struct PlayerInventoryLayout {
+    StashLayout grid;
+    // Panel-local left, top, right, bottom, indexed by EquipmentSlot.
+    std::array<std::array<int, 4>, size_t(EquipmentSlot::Count)> slots{};
+};
 // Version-specific MPQ adapter. Rules consume typed records, not archive handles or TXT cells.
 struct MonsterSpecialMissile {
     std::shared_ptr<const SkillSpec> spec;
@@ -89,6 +95,7 @@ struct ClassicData {
     std::array<int, 3> hirelingBossDamagePercent{};
     StashLayout stashLayout;
     StashLayout cubeLayout;
+    std::map<std::string, PlayerInventoryLayout, std::less<>> playerInventoryLayouts;
     std::string cubeCode;
     StaffRecipeContent staffRecipe;
     GoldenBirdContent goldenBird;

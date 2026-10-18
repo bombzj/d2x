@@ -28,9 +28,9 @@ RemoteScene按原1.13c D2Client RVA20FB0消费新鲜DEATH动作，不从已入�
 | --- | --- |
 | 第二幕Duriel及任务固定目标 | 已接Duriel冲锋／Jab／Smite／光环、Summoner五槽、Radament支持技能和虫后死亡毒云；第二幕新增AI／动画接线及有限运行范围，见[第二幕](ACT2.md) |
 | 第三幕Mephisto／议会 | 已接Mephisto专用AI及六技能、议会治疗／Hydra；具体源码边界见[46／72项](ACT3.md#逐项接入)，正常首领战斗与全难度未完整验收 |
-| 第四幕Izual／Hephasto／Diablo | 衣卒尔Fn055及新星、Hephasto沿Smith已接；Diablo第73项仍在补且保留替身，封印组不等于完整精英验收，见[第四幕](ACT4.md) |
-| 第五幕古代人／Baal及五波 | 开战／重置、波次与任务完成控制已接；专用战斗AI、全部词缀／召唤／清理仍待补，见[第五幕](ACT5.md) |
-| 牛王、Uber／Pandemonium与其他扩展首领 | UberIzual的Fn144／冰甲／传送已接；第一幕固定Cow King及单个扩展首领不等于事件完成，其余首领程序与运行证据仍待补，见[SPECIAL](SPECIAL.md) |
+| 第四幕Izual／Hephasto／Diablo | 衣卒尔Fn055及新星、Hephasto沿Smith已接；Diablo第73项已接真实身份、Fn051及技能，封印组不等于完整精英验收，见[第四幕](ACT4.md) |
+| 第五幕古代人／Baal及五波 | 开战／重置、波次与任务完成控制已接；古代人专用AI、Baal／分身与王座AI已接，全部词缀／召唤清理和恢复仍缺，见[第五幕](ACT5.md) |
+| 牛王与高级事件 | Cow King随第一幕常规覆盖复核；Uber／Pandemonium高级事件本轮暂缓，已有接线保留，专用程序／出生缺口不计常规完成门槛，见[SPECIAL](SPECIAL.md) |
 
 第三至第五幕可能使用已授权替身，真实任务身份保留不等于真实首领战斗完成。管理击杀验证死亡后的任务链，不能认证Boss AI、技能组合、伤害平衡或正常通关；具体历史条件只维护在[第二幕任务](../quests/ACT2.md#有限运行证据)和[第三至第五幕任务](../quests/ACT3_5.md#依据与运行证据)。
 

@@ -24,6 +24,7 @@ struct ClientMissileInitialization {
     std::optional<std::array<int32_t,2>> parameters;
     std::optional<int> streamMissile,streamRange,streamPeriod;
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
+    std::optional<int> impactCount; // Catapult calc4 fallback, prepared from the cast skill.
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
     std::optional<bool> suppressLight; // Native creation flag0x4000; absent when pairing a plain 73.
 };
@@ -44,6 +45,8 @@ struct ClientMissileProgram {
     int guidedRadius{};
     std::array<int,2> poisonVelocity{};
     int loopFrames{}, immolationRadius{};
+    int boulderRocks{-1}; // Shared native Hit50/52 helper uses its code-defined rock class.
+    int hellMeteorRadius{}; // CltHit36 reads Param1, independently of cHitPar1.
     std::optional<BlizzardSpec> blizzard;
     std::optional<ArcSpec> chain;
     int chainCountDivisor{1};
@@ -62,8 +65,9 @@ struct ClientMissileVisual {
     // Existing static effects leave flight false. Flights advance at native 25 Hz.
     bool flight{}, deathProgram{};
     int level{1}, frame{}, velocityFixed{}, acceleration{}, directionIndex{};
+    std::optional<int> impactCount;
     // frame counts processed local callbacks. Native countdown resets must not
-    // rewind callbacks, animation, or the immutable constructor TotalFrames.
+    // rewind callbacks or animation; TotalFrames changes only for explicit native writes.
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
     bool suppressLight{};

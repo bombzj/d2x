@@ -49,7 +49,7 @@
 - `companions/native_summon`、`native_pet_move`和`monsters::prepareNativePet`供刺客／德鲁伊共用；AI阶段不拥有第二份单位位置、属性或随机流。动物、灵体、毒藤和资源藤各保留原分支。技能等级变化只重算PetType上限并从旧宠物起撤出，不重掷存活宠物的出生生命或重做被动列表。
 - 灵体隐藏光环按当前MPQ的sumskill链接准备，SetSummonPassiveStats在出生事务内按继承次序选择右技能；共用`effects/unit_aura_selection`的列表／原周期事件，不延迟到AI或用装备光环替代。
 - 藤蔓／狂狼找尸体走原圆形UnitFind范围和房间单位顺序，再检查原DEAD模式、deadCol、corpseSel、udead及敌我资格。CorpseCycler先标记不可选择、创建以主人为owner的恢复弹体，再发布A3；Fenris Rage保留独立吃尸／状态阶段。公共移动路径按真实单位查询目标位置，不以活体攻击资格拒绝尸体追踪；攻击／施法接收仍独立复验资格。
-- `presentation/remote`只消费原状态与A3／73／动作包；补齐原Clt67–69、Hurricane90、Volcano91、Armageddon92、CorpseCycler93和Vine89／St49，Fenris St51／Do79，以及飞弹Clt47–51／60、Hit52–56。熔浆巨岩保留反弹／地面火焰／飞石，火山落石使用原11位定点Gfx轨迹。客户端公式目录包含cltcalc1／2／3，原CelFile=null的控制弹体保留程序与寿命但不绘制图像。未传输的客户端粒子种子仅用于本地表现，不消费权威战斗种子。
+- `presentation/remote`只消费原状态与A3／73／动作包；补齐原Clt67–69、Hurricane90、Volcano91、Armageddon92、CorpseCycler93和Vine89／St49，Fenris St51／Do79，以及飞弹Clt47–51／60、Hit52–56。熔浆巨岩反弹／地面火焰已有；飞石数量、显式速度及构造Gfx步进已按共用助手修正源码（[怪物台账117项](../monsters/ACT3.md#逐项接入)，两包构建通过，专项运行未验收），火山落石使用原11位定点Gfx轨迹。客户端公式目录包含cltcalc1／2／3，原CelFile=null的控制弹体保留程序与寿命但不绘制图像。未传输的客户端粒子种子仅用于本地表现，不消费权威战斗种子。
 
 ## 同版本差异与证据
 

@@ -1,8 +1,20 @@
 #include "presentation/scene_view.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <cmath>
+#include <sstream>
 
 namespace d2x {
+InventoryDrop SceneView::inventoryDropAt(Vec mouse) const {
+    const auto &ui = view_.inventory;
+    if (!ui.drag) return {};
+    const auto *item = inventoryView_.item(ui.drag->item.id);
+    if (!item || item->revision != ui.drag->item.revision) return {};
+    const auto *icon = assets_.inventoryIcon(item->artKey, item->colorTransform, mapView().palette, item->artFrame);
+    if (!icon) return {};
+    return inventoryDrop(inventoryView_, inventoryClient_, ui, mouse,
+                         {icon->texture.width, icon->texture.height}, view_.hirelingOpen);
+}
 void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const {
     const auto &ui = view_.inventory;
     if (characterView_.dead || !ui.drag || !ui.drag->moved || ui.split || ui.goldDialog || view_.gameMenuOpen ||
@@ -162,12 +174,12 @@ void SceneView::drawInventory(Vec mouse) const {
                             tile.height * inventoryScale()},
                            {0, 0}, 0, WHITE);
         }
-    auto hoverCell = inventoryCell(mouse);
+    auto hoverCell = inventoryCell(inventory, mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
     const auto weaponSet = inventoryView_.weaponSet;
     const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
     const auto drop = overShop ? InventoryDrop{} :
-        inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
+        inventoryDropAt(mouse);
     if (inventoryView_.stashLayout.expansion && weaponSet == 1)
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
@@ -180,7 +192,7 @@ void SceneView::drawInventory(Vec mouse) const {
         auto slot = EquipmentSlot(index);
         if (slot == EquipmentSlot::RightHand) slot = weaponHandSlot(false, weaponSet);
         if (slot == EquipmentSlot::LeftHand) slot = weaponHandSlot(true, weaponSet);
-        auto bounds = equipmentBounds(slot);
+        auto bounds = equipmentBounds(inventory, slot);
         drawInventoryDrop(drop, bounds);
         auto equipped = inventory.item(inventory.equipped(inventoryView_.containers, slot));
         if (equipped && !ui.hidesItem(*equipped)) {
@@ -256,17 +268,46 @@ void SceneView::drawInventory(Vec mouse) const {
                        10);
     }
     if (ui.goldDialog) {
-        DrawRectangleRec(panel, {0, 0, 0, 175});
-        auto dialog = goldDialogBounds();
-        frame(dialog);
-        const char *title = ui.goldDialog->action == GoldAction::Deposit ? "DEPOSIT GOLD" :
-                            ui.goldDialog->action == GoldAction::Withdraw ? "WITHDRAW GOLD" : "DROP GOLD";
-        painter_.label(title, int(dialog.x + 22), int(dialog.y + 17), 18, gold);
-        painter_.label("Amount (max " + std::to_string(ui.goldDialog->maximum) + ")",
-                       int(dialog.x + 22), int(dialog.y + 53), 12, parchment);
-        painter_.label(ui.goldDialog->amount + "_", int(dialog.x + 25), int(dialog.y + 76), 20, WHITE);
-        for (int index = 0; index < 2; ++index)
-            itemButton(goldDialogButton(index), index ? "CANCEL" : "OK", gold);
+        const auto dialog = goldDialogBounds();
+        const auto draw = [](const Sprite *image, Rectangle bounds) {
+            if (image) DrawTexturePro(image->texture,
+                {0, 0, float(image->texture.width), float(image->texture.height)}, bounds, {}, 0, WHITE);
+        };
+        draw(assets_.inventoryGoldDialog.frame(0, 0), dialog);
+        const auto measure = [](const ClassicFont &font, const std::string &text) {
+            float width = 0;
+            for (auto character : utf8Decode(text)) width += font.widthOf(character);
+            return width;
+        };
+        const auto label = [&](const ClassicFont &font, const std::string &text, float x, float baseline) {
+            for (auto character : utf8Decode(text)) {
+                const auto *glyph = font.glyphOf(character);
+                if (glyph && character != ' ')
+                    draw(glyph, {dialog.x + (x + glyph->x) * inventoryScale(),
+                        dialog.y + (baseline + glyph->y - glyph->texture.height) * inventoryScale(),
+                        glyph->texture.width * inventoryScale(), glyph->texture.height * inventoryScale()});
+                x += font.widthOf(character);
+            }
+        };
+        const char *key = ui.goldDialog->action == GoldAction::Deposit ? "strBankGoldDeposit" :
+            ui.goldDialog->action == GoldAction::Withdraw ? "strBankGoldWithdraw" : "strDropGoldHowMuch";
+        const auto &questionFont = assets_.itemTextFonts[4];
+        std::istringstream words(assets_.characterLabels.at(key));
+        std::string line, word;
+        float baseline = 24;
+        const auto flush = [&] {
+            label(questionFont, line, (210 - measure(questionFont, line)) / 2, baseline);
+            baseline += 18;
+        };
+        while (words >> word) {
+            const auto candidate = line.empty() ? word : line + ' ' + word;
+            if (!line.empty() && measure(questionFont, candidate) > 194) { flush(); line = word; }
+            else line = candidate;
+        }
+        if (!line.empty()) flush();
+        label(assets_.font, ui.goldDialog->amount + "_", 29, 82);
+        draw(assets_.questClose.frame(0, 16), goldDialogButton(0));
+        draw(assets_.questClose.frame(0, 10), goldDialogButton(1));
     }
 }
 bool SceneView::drawInventoryCursor(Vec mouse) const {
@@ -285,7 +326,7 @@ bool SceneView::drawInventoryCursor(Vec mouse) const {
     drawItemIcon(*item,
                  {mouse.x - (icon->texture.width / 2) * inventoryScale(),
                   mouse.y - (icon->texture.height / 2) * inventoryScale(),
-                  definition.width * inventoryCellSize(), definition.height * inventoryCellSize()});
+                  definition.width * inventoryCellSize(inventoryView_), definition.height * inventoryCellSize(inventoryView_)});
     return true;
 }
 } // namespace d2x

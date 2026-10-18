@@ -80,6 +80,41 @@ bool SceneController::handleInventory(const FrameInput &input) {
     auto &ui = view_.ui().inventory;
     ui.forceSwap = input.control;
     const auto &inventory = view_.inventoryView();
+    if (ui.goldDialog) {
+        if (input.escape || input.rightPressed || (input.leftPressed && input.insideViewport &&
+                                   CheckCollisionPointRec(rv(input.mouse), goldDialogButton(1)))) {
+            ui.goldDialog.reset();
+            inventoryClick_ = true;
+            inventoryRight_ = input.rightPressed;
+            return true;
+        }
+        if (input.backspace || input.entryDelete) {
+            if (ui.goldDialog->selectAll) ui.goldDialog->amount.clear();
+            else if (!ui.goldDialog->amount.empty()) ui.goldDialog->amount.pop_back();
+            ui.goldDialog->selectAll = false;
+        }
+        for (char digit : input.text)
+            if (digit >= '0' && digit <= '9') {
+                if (ui.goldDialog->selectAll) ui.goldDialog->amount.clear();
+                ui.goldDialog->selectAll = false;
+                if (ui.goldDialog->amount.size() < 10) ui.goldDialog->amount += digit;
+            }
+        if (input.enter || (input.leftPressed && input.insideViewport &&
+                            CheckCollisionPointRec(rv(input.mouse), goldDialogButton(0)))) {
+            unsigned amount = 0;
+            const auto &digits = ui.goldDialog->amount;
+            auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), amount);
+            if (error != std::errc{} || end != digits.data() + digits.size() ||
+                !amount || amount > ui.goldDialog->maximum)
+                view_.notice("Enter a gold amount within the available limit.", true);
+            else {
+                inventoryClient_.submit(GoldTransaction{ui.goldDialog->action, amount});
+                ui.goldDialog.reset();
+            }
+        }
+        inventoryClick_ = input.leftPressed || inventoryClick_;
+        return true;
+    }
     auto &panel=view_.ui();
     if(panel.orificeObject) {
         if(panel.orificeItem) {const auto *item=inventory.item(panel.orificeItem->id);if(!item || item->revision!=panel.orificeItem->revision) panel.orificeItem.reset();}
@@ -181,35 +216,6 @@ bool SceneController::handleInventory(const FrameInput &input) {
         inventoryClient_.submit(TransmuteCube{});
         return true;
     }
-    if (ui.goldDialog) {
-        if (input.rightPressed || (input.leftPressed && input.insideViewport &&
-                                   CheckCollisionPointRec(rv(input.mouse), goldDialogButton(1)))) {
-            ui.goldDialog.reset();
-            inventoryClick_ = true;
-            inventoryRight_ = input.rightPressed;
-            return true;
-        }
-        if (input.backspace && !ui.goldDialog->amount.empty())
-            ui.goldDialog->amount.pop_back();
-        for (char digit : input.text)
-            if (ui.goldDialog->amount.size() < 9)
-                ui.goldDialog->amount += digit;
-        if (input.enter || (input.leftPressed && input.insideViewport &&
-                            CheckCollisionPointRec(rv(input.mouse), goldDialogButton(0)))) {
-            unsigned amount = 0;
-            const auto &digits = ui.goldDialog->amount;
-            auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), amount);
-            if (error != std::errc{} || end != digits.data() + digits.size() ||
-                !amount || amount > ui.goldDialog->maximum)
-                view_.notice("Enter a gold amount within the available limit.", true);
-            else {
-                inventoryClient_.submit(GoldTransaction{ui.goldDialog->action, amount});
-                ui.goldDialog.reset();
-            }
-        }
-        inventoryClick_ = input.leftPressed || inventoryClick_;
-        return true;
-    }
     bool bankField = ui.storage && CheckCollisionPointRec(
             rv(input.mouse), storageGold(inventory.stashLayout.expansion));
     if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
@@ -250,7 +256,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                     break;
                 }
             if (!target)
-                if (auto slot = equipmentAt(input.mouse, inventory.weaponSet))
+                if (auto slot = equipmentAt(inventory, input.mouse, inventory.weaponSet))
                     target = inventory.equipped(view_.inventoryView().containers, *slot);
             if (const auto *item = inventory.item(target))
                 if (queueInventory(IdentifyItem{*ui.identify, item->handle()}, source->id))
@@ -273,7 +279,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if (ui.drag->pickedUp) {
             if (input.leftPressed && input.insideViewport && !ui.pending) {
                 inventoryClick_ = true;
-                auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
+                auto drop = view_.inventoryDropAt(input.mouse);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id))
                         if(!ui.drag->onCursor) ui.drag.reset();
@@ -286,7 +292,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             ui.drag->moved = true;
         if (input.leftReleased) {
             if (ui.drag->moved && input.insideViewport) {
-                auto drop = inventoryDrop(inventory, inventoryClient_, ui, input.mouse, view_.ui().hirelingOpen);
+                auto drop = view_.inventoryDropAt(input.mouse);
                 if (drop.command) {
                     if (queueInventory(std::move(*drop.command), source->id)) {
                         if(!ui.drag->onCursor) ui.drag.reset();
@@ -299,10 +305,6 @@ bool SceneController::handleInventory(const FrameInput &input) {
             if (ui.drag->moved && !input.insideViewport)
                 ui.drag.reset();
             else {
-                const auto &definition = *inventory.definition(source->definition);
-                ui.drag->grab = {definition.width / 2, definition.height / 2};
-                ui.drag->pixelOffset = {definition.width * inventoryCellSize() / 2,
-                                        definition.height * inventoryCellSize() / 2};
                 ui.drag->pickedUp = true;
                 ui.drag->moved = true;
             }
@@ -323,7 +325,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             break;
         }
     }
-    auto equipmentSlot = ui.open && !ui.playerTradeOpen ? equipmentAt(input.mouse, inventory.weaponSet)
+    auto equipmentSlot = ui.open && !ui.playerTradeOpen ? equipmentAt(inventory, input.mouse, inventory.weaponSet)
                                  : std::nullopt;
     bool equipment = equipmentSlot.has_value();
     bool inBelt = belt && CheckCollisionPointRec(rv(input.mouse), beltBounds(rows));
@@ -450,17 +452,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 } else
                     queueInventory(MoveItem{item->handle(), AutoPlace{backpack}}, item->id);
             } else if (!input.leftReleased) {
-                const auto &location = std::get<ContainerLocation>(item->location);
-                if (equipment)
-                    ui.drag = InventoryDrag{item->handle(), {}, input.mouse,
-                                            {def->width * inventoryCellSize() / 2,
-                                             def->height * inventoryCellSize() / 2}};
-                else {
-                    auto bounds = hitGrid->itemBounds(location.cell, *def);
-                    ui.drag = InventoryDrag{item->handle(),
-                                            {cell->x - location.cell.x, cell->y - location.cell.y},
-                                            input.mouse, input.mouse - Vec{bounds.x, bounds.y}};
-                }
+                ui.drag = InventoryDrag{item->handle(), input.mouse};
             }
         }
         return true;

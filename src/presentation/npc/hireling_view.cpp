@@ -105,7 +105,7 @@ void SceneView::drawHireling(Vec mouse) const {
     constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
                                        EquipmentSlot::RightHand, EquipmentSlot::LeftHand};
     EntityId hovered;
-    const auto drop = inventoryDrop(inventoryView_, inventoryClient_, view_.inventory, mouse, true);
+    const auto drop = inventoryDropAt(mouse);
     for (size_t index = 0; index < 4; ++index) {
         const auto box = hirelingSlotBounds(index);
         auto id = inventory.equipped(slots, order[index]);

@@ -2,6 +2,7 @@
 
 namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
+    if(code=="act5barb1" || code=="act5barb2") return {MonsterKind::NpcBarb,false};
     if(code=="cantor1" || code=="cantor2" || code=="cantor3" || code=="cantor4" || code=="cantor5" || code=="cantor6") return {MonsterKind::ZakarumPriest,false};
     if(code=="zealot1" || code=="zealot2" || code=="zealot3" || code=="zealot4" || code=="zealot5") return {MonsterKind::ZakarumZealot,false};
     if(code=="willowisp1" || code=="willowisp2" || code=="willowisp3" || code=="willowisp4" || code=="willowisp5" || code=="willowisp6" || code=="willowisp7" || code=="willowisp8") return {MonsterKind::Willowisp,false};

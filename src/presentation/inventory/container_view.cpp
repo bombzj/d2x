@@ -16,7 +16,7 @@ void SceneView::drawContainerGrid(const ContainerGrid &grid, Vec mouse) const {
         if (dragged || (view_.orificeItem && view_.orificeItem->id==id)) continue;
         drawItemBackground(item, box, !ui.drag && id == hovered);
     }
-    const auto drop = inventoryDrop(inventoryView_, inventoryClient_, ui, mouse, view_.hirelingOpen);
+    const auto drop = inventoryDropAt(mouse);
     drawInventoryDrop(drop, grid.cellBounds({}, grid.columns, grid.rows));
     for (auto id : contents) {
         const auto &item = *inventory.item(id);

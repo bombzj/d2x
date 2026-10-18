@@ -19,6 +19,7 @@
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
 #include <cmath>
+#include <stdexcept>
 
 namespace d2x::server::monsters {
 DomainResult<std::vector<MonsterRule::BirthEquipment::Choice>> selectBirthEquipment(const MonsterRule &rule,uint64_t &random) {
@@ -371,6 +372,33 @@ std::vector<EntityId> System::specialTargets() const {
     for(const auto &[id,unit]:state_.actors) if(unit.specialTargetOrder) result.push_back(id);
     std::sort(result.begin(),result.end(),[&](EntityId left,EntityId right) {return state_.actors.at(left).specialTargetOrder>state_.actors.at(right).specialTargetOrder;});
     return result;
+}
+DomainResult<> System::registerWanderTarget(EntityId id) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    if(unit.rule.ai.kind!=MonsterAiKind::NpcBarb) return {DomainStatus::InvalidRequest,{}};
+    // Fn127 only registers node11. Existing group9/player nodes stay there.
+    if(unit.wanderTargetOrder || unit.specialTargetOrder || unit.owner) return {DomainStatus::Applied,std::monostate{}};
+    if(state_.nextWanderTargetOrder==UINT64_MAX || unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    unit.wanderTargetOrder=state_.nextWanderTargetOrder++;++unit.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<Vec> System::ensureAiHomeCommand(EntityId id) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    if(!unit.aiHomeCommand) {
+        if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        const auto global=unit.position+ports_.areas.at(unit.area).definition.origin;
+        unit.aiHomeCommand=Vec{std::floor(global.x),std::floor(global.y)};++unit.revision;
+    }
+    return {DomainStatus::Applied,*unit.aiHomeCommand};
+}
+void System::resetAiFunctionMemory(EntityId id) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
+    auto &unit=found->second;
+    if(!unit.aiHomeCommand && !unit.baalThroneWave) return;
+    if(unit.revision==UINT64_MAX) throw std::overflow_error("Monster AI memory revision exhausted");
+    unit.aiHomeCommand.reset();unit.baalThroneWave=0;++unit.revision;
 }
 void System::registerPet(Actor &unit) noexcept {
     publishInitialAi(unit);

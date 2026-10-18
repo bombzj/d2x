@@ -72,7 +72,7 @@ class SceneAssets {
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
-        Sprite treeDisabled, treeHovered, pickerUnavailable;
+        Sprite treeDisabled, treeHovered, pickerUnavailable, treePressed;
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;
@@ -135,7 +135,7 @@ class SceneAssets {
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
         cursor, targetingCursors, inventoryPanel, attributeButtons,
         attributePoints, attributeSocket, weaponTabs, vendorPanel, vendorTabs,
-        questBackground, questSockets, questTabs, questClose, questReplay, goldCoin,
+        questBackground, questSockets, questTabs, questClose, questReplay, goldCoin, inventoryGoldDialog,
         vendorButtons, vendorConfirm, waypointBorder, waypointPanel, waypointTabs, waypointIcons,
         storagePanel, cubePanel, orificePanel, orificeButtons, beltPanel, beltSocket, orbs, hostileIcon,
         globeOverlap, runButton, button, durabilityIcons;

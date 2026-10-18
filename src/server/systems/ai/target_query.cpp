@@ -77,19 +77,24 @@ std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts
     if(alternative && (!primary || (alternative->distance<=5 && area.definition.collision.path(source.position,primary->position,true,{}).empty()))) return alternative;
     return primary;
 }
-std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight,int searchDistance) {
+std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight,int searchDistance,uint64_t *borrowedRandom) {
     const auto &area=ports_.areas.at(source.area);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto search=source;const bool confused=source.curseControl.ai==CurseAi::Confuse;
     if(confused) {
-        auto random=source.combatRandom;const bool flip=(rollRandom(random)&1)!=0;
+        auto random=borrowedRandom?*borrowedRandom:source.combatRandom;
+        const bool flip=(rollRandom(random)&1)!=0;
         const auto original=source.alignment();
         const auto alignment=original==UnitAlignment::Neutral?(flip?UnitAlignment::Good:UnitAlignment::Evil):
             flip?(original==UnitAlignment::Evil?UnitAlignment::Good:UnitAlignment::Evil):original;
         if(!search.nativeStats || !search.rule.stats) return {};
         search.nativeStats->values.values[{search.rule.stats->names.at("alignment"),0}]=int(alignment);
         search.curseControl.ai=CurseAi::None;
-        if(!ports_.monsters.consumeRandom(source.id,source.combatRandom,random)) return {};
+        // AI callers already own a candidate seed for this callback. Keep
+        // selector and decision draws in that same loan, rather than publishing
+        // the selector behind the decision's expected seed.
+        if(borrowedRandom) *borrowedRandom=random;
+        else if(!ports_.monsters.consumeRandom(source.id,source.combatRandom,random)) return {};
     }
     const auto position=[&](combat::ParticipantView target) {
         const auto region=target.player?target.player->area:target.monster->area;

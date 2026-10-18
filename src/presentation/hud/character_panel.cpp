@@ -60,7 +60,8 @@ void SceneView::drawCharacter(Vec mouse) const {
         DrawTexturePro(sprite.texture, {0, 0, float(sprite.texture.width), float(sprite.texture.height)},
             box, {}, 0, WHITE);
     };
-    art(*assets_.questClose.frame(0, 10), characterClose());
+    art(*assets_.questClose.frame(0, 10 + (view_.characterPressed == -1 &&
+        CheckCollisionPointRec(rv(mouse), characterClose()))), characterClose());
     const auto label = [&](const char *key) -> const std::string & { return assets_.characterLabels.at(key); };
     const auto cell = [&](const std::string &value, float left, float baseline, float right,
                           bool small = false) {
@@ -94,7 +95,8 @@ void SceneView::drawCharacter(Vec mouse) const {
             const auto *socket = assets_.attributeSocket.frame(0, 0);
             art(*socket, {button.x - 3 * classicPanelScale(), button.y - 2 * classicPanelScale(),
                 socket->texture.width * classicPanelScale(), socket->texture.height * classicPanelScale()});
-            art(*assets_.attributeButtons.frame(0, 0), button);
+            art(*assets_.attributeButtons.frame(0, view_.characterPressed == index &&
+                CheckCollisionPointRec(rv(mouse), button) ? 1 : 0), button);
         }
     }
 
@@ -149,6 +151,5 @@ void SceneView::drawCharacter(Vec mouse) const {
         characterText(assets_.characterPointFont, label("strchrstat") + '\n' + label("strchrrema"), 11, 359, 89);
         cell(player.number("statpts", player.unspentAttributes), 92, 360, 129);
     }
-    (void)mouse;
 }
 } // namespace d2x

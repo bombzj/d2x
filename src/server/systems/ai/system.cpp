@@ -43,10 +43,24 @@ DomainResult<> System::requestAction(Controller &controller,const actions::Monst
         return result;
     });
 }
-std::optional<System::ShootableTarget> System::acquireTarget(const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) const {
-    return acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},source,tick,missileRay,requireSight);
+std::optional<System::ShootableTarget> System::acquireTarget(const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight) {
+    uint64_t *random=nullptr;
+    if(source.curseControl.ai==CurseAi::Confuse) {
+        const auto found=state_.controllers.find(source.id);
+        if(found!=state_.controllers.end() && found->second.actor==source.id) {
+            auto &controller=found->second;
+            if(controller.randomPublished) {
+                // A preceding mode/skill may have advanced the live unit seed.
+                // Start a new loan there, never on the previous AI candidate.
+                controller.random=controller.randomExpected=source.combatRandom;
+                controller.randomPublished=false;
+            }
+            random=&controller.random;
+        }
+    }
+    return acquireNativeAiTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},source,tick,missileRay,requireSight,0,random);
 }
-std::optional<System::ShootableTarget> System::shootableTarget(const monsters::Actor &source,TickContext tick) const {
+std::optional<System::ShootableTarget> System::shootableTarget(const monsters::Actor &source,TickContext tick) {
     return acquireTarget(source,tick,true,true);
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
@@ -99,7 +113,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.observedAiFunctionRevision=monster.aiFunctionRevision;controller.function=function;controller.alternateAi=defer;
             if(!defer) {
                 controller.commands.clear();
-                if(monster.rule.ai.kind!=MonsterAiKind::Baal && monster.rule.ai.kind!=MonsterAiKind::BaalClone) controller.homeCommand.reset();
+                if(monster.rule.ai.kind!=MonsterAiKind::Baal && monster.rule.ai.kind!=MonsterAiKind::BaalClone) {
+                    controller.homeCommand.reset();ports_.monsters.resetAiFunctionMemory(id);
+                }
                 controller.regenerationBonus=0;
                 controller.curseParameters.fill(0);controller.phase=controller.loop=controller.thirdParameter=0;controller.commanded=false;controller.charged=false;
                 controller.pursuing=false;controller.target.reset();controller.carrier.reset();controller.nextPath=0;
@@ -217,7 +233,6 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 ports_.monsters.stop(id);controller.nextDecision=tick.tick+5;continue;
             }
             const auto target=area.definition.town?std::optional<ShootableTarget>{}:shootableTarget(monster,tick);
-            controller.random=controller.randomExpected=ports_.monsters.find(id)->combatRandom;
             if(target && target->distance<20) {
                 if(rollRandom(controller.random)%100<30) {
                     const auto cast=requestAction(controller,{id,0,target->unit,tick.tick,4});
@@ -239,6 +254,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 controller.pursuing=bool(moved);controller.nextDecision=tick.tick+1;
             } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
             continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::NpcBarb) {
+            blocked|=npcBarbFamily(id,tick,controller)==StepStatus::Blocked;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::CatapultSpotter) {
             blocked|=catapultSpotterFamily(id,tick,controller)==StepStatus::Blocked;continue;

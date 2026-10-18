@@ -106,19 +106,32 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 本轮仅认证列出路径；未覆盖全部堆叠／装书、仓库／方块／交易、未鉴定／损坏目标、多人／原服、音频或Linux。没有新增测试脚本／用例／专用程序。构建／打包日志、包身份、原包日志、隔离存档、截图和重入快照位于`artifacts/inventory-swap-20261019/`。原大面板及怪物的既有运行证据仍只认证各节所列旧程序。
 
-### 当前后三幕怪物集成包（第73至111项）
+### 当前客户端大面板修正包
 
-2026-10-18，基于`bd540bf9`后的本批源码，Windows／MinGW／Ninja Release客户端`d2x`与独立服务端`d2x_pvpgn`完整构建通过，保留非致命警告。修正调试快照对已删除wave／wavePrepared字段的引用，并补齐QuestEffect／MonsterClassHint事件名称。现有脚本已更新`dist/current`和`dist/server`，包内EXE／DLL与构建产物摘要一致；旧程序及配置已备份，原MPQ／存档保留。
+2026-10-18，基于`15f46357`及当前未提交工作区，Windows／MinGW／Ninja Release的`d2x`构建通过（43个增量步骤），保留非致命警告；现有`package.ps1`更新`dist/current`。本包在前轮大面板修正上加入物品放置的原版双轴补偿与背包关闭按钮凹槽定位，详情见[包裹界面](../gameplay/items/INVENTORY_UI.md)。本轮只重建和打包客户端，未启动游戏，等待用户实测；独立服务端保持下节的程序身份。上一客户端程序备份于`artifacts/inventory-alignment-package-20261018/previous-client/`，原MPQ、旧包及用户存档保留。
 
-| 当前包内程序 | 字节 | SHA256 |
+| 当前客户端包内程序 | 字节 | SHA256 |
 | --- | --- | --- |
-| `dist/current/d2x.exe` | 35245114 | `12DDA2CB4DCAC1180A46F824ED6AAC33DA764DFDFC5386390C266180C87EF890` |
-| `dist/server/d2x_server.exe` | 27863174 | `8EB822AB1174B01115151EC096A8A8BCC8CD219B1ED69999DA2903856779AA13` |
+| `dist/current/d2x.exe` | 35292836 | `2ACAEEF28D5A64DD15537A13EE49D65F4943ABD9A6D924993BCD764507DA2A3F` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+前一客户端（35292728字节，SHA256 `8D4C88BA71FBC6B0808C5D521094512CE76EBCA324F73B6B97EEF097FDBE2E78`）已有有限UI冒烟：直接启动其包内EXE，使用当前`assets/mpq2`、英文、1280×816和独立UISmoke存档；通过嵌入宿主的原字节协议、既有调试输入及本进程窗口的原生键盘／滚轮消息完成。覆盖人物／女巫技能按压、底栏组队／日志映射、M日志、背包装备拖放、金币丢弃／存入、仓库及任务／佣兵／传送点／ESC面板，实际查看截图。正常quit后新进程重入确认人物／技能／物品位置及金币保存，再次正常quit，两次退出码均为0，宿主failures均为0、无缺图单位或地图错误。该证据不覆盖本包落格半格边界与关闭按钮的新定位；具体操作与未完成边界由[经典UI](../gameplay/ui/CLASSIC_HUD.md#主要面板对照边界)维护。
+
+传送点远距离接近曾超时，不能记作导航通过；改用管理旅行准备近距离条件后确认原0x63面板，只认证面板。`--hidden`仍建立真实OpenGL上下文但不初始化音频；未覆盖实体键盘人工操作、其他职业／窗口尺寸、多人／原服、Linux或完整原版逐像素对照。没有新增测试脚本／用例／专用程序。前轮构建／打包、运行与截图证据位于`artifacts/ui-panel-package-20261018/`；本轮构建／打包日志及程序摘要位于`artifacts/inventory-alignment-package-20261018/`。
+
+### 五幕常规怪物关键收尾包（历史客户端、当前独立服务端）
+
+2026-10-18，基于`15f46357`及当时未提交工作区，Windows／MinGW／Ninja Release客户端`d2x`与独立服务端`d2x_pvpgn`构建通过，保留非致命警告。该轮两包纳入[台账01至122项](../gameplay/monsters/ACT3.md#逐项接入)，新增HellMeteor／投石机落点与飞石、NpcBarb、王座Baal波次／Diablo命令恢复、迷乱随机借用，以及实机发现的CltDo43附着表现和目标节点诊断修正。使用现有打包脚本更新两包；旧程序／配置已备份，原MPQ和用户存档保留。其客户端身份已由上节替代，原有限怪物运行范围仍只认证本节程序。
+
+| 该轮包内程序 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 35277480 | `395F80C4C95E6472D8F25941703A3857F349F9D27B0900FCB8DD10BBBD23C3B3` |
+| `dist/server/d2x_server.exe` | 27871104 | `5539A3A444D00B2B9462577278082612B99F9CB438ED58E8B67DF7AA5DA71E11` |
 | 两包`d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
 
-直接启动包内客户端，使用当前`assets/mpq2`及隔离PackHost存档（90级女巫／普通难度），以`--hidden`建立图形上下文。Single Player进入库拉斯特海港（75）：ProtocolReady，nativeMapReady／movementAvailable／playerDisplayed均为true，缺图单位0、宿主failures=0；实际截图可见地形、人物和HUD，quit正常退出码0。服务端EXE无参数启动正确输出用法并返回约定的2，仅验证程序装载与参数入口；本轮未连接PvPGN后端。
+实际启动最终包内客户端，使用当前`assets/mpq2`、隔离PackHost存档（90级女巫／普通难度）及`--hidden`图形上下文：进入库拉斯特海港75，管理旅行到血腥丘陵110推进200帧，再返回75推进250帧；ProtocolReady，nativeMapReady／movementAvailable／playerDisplayed均为true，缺图单位0、宿主failures=0，正常quit退出码0。实际查看城镇、野外及HUD截图。自然预设act5barb1登记节点8、连续A1攻击deathmauler1，敌方实际选中并使其受伤／死亡；修正后的406附着弹跟随投石机且超过普通表寿命仍保留，effectLimitations清空。首次旅行因区域准备返回Unavailable，检查准备状态后重试成功，不计为成功旅行。服务端EXE无参数输出用法并返回约定的2，只验证装载和参数入口，未连接PvPGN后端。
 
-本轮未新增测试脚本／用例／专用程序。冒烟只覆盖入场／显示／退出，hidden跳过音频；未认证本批全部怪物战斗、多人、卸载恢复／逐随机、地面物品染色专项或完整独立服务端运行。后三幕仍有扩展首领出生修饰器／专用AI、专用客户端程序等缺口，见[逐项台账](../gameplay/monsters/ACT3.md)。证据位于忽略目录`artifacts/act345-package-20261018-02/`：build-fixed、package日志、package-manifest、online-status、server-snapshot、smoke截图及client-exit。
+本轮没有新增测试脚本／用例／专用程序；管理旅行不认证正常战役通行，hidden不覆盖音频。未验证全部怪物／技能、其他投石机弹药、迷乱战斗／背压、王座五波和Diablo卸载恢复、完整随机／多人或Linux；不能据此宣称五幕全部复刻完成。完整NPC／MapAI及其他重建缺口见[人口](../gameplay/monsters/POPULATION.md#公共出生压缩与特殊恢复)，钥匙／红门高级事件继续暂缓。构建、前后产物摘要、首次发现及修正后的快照／截图／退出证据保留在忽略目录`artifacts/campaign-package-20261018-01/`。
 
 
 ### 后三幕怪物历史收尾构建与冒烟（55606a14后）

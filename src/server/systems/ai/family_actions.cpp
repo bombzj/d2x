@@ -141,6 +141,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     const auto shootable=(monster.rule.ai.kind==MonsterAiKind::SkeletonBow || monster.rule.ai.kind==MonsterAiKind::SkeletonMage ||
         monster.rule.ai.kind==MonsterAiKind::Bighead || monster.rule.ai.kind==MonsterAiKind::FallenShaman ||
         monster.rule.ai.kind==MonsterAiKind::FetishBlowgun || monster.rule.ai.kind==MonsterAiKind::Vampire || monster.rule.ai.kind==MonsterAiKind::CorruptArcher)?shootableTarget(monster,tick):std::nullopt;
+    input.random=controller.random; // A Confuse missile-target query is part of this same AI loan.
     input.canShoot=bool(shootable);input.shootDistance=shootable?shootable->distance:INT32_MAX;
     std::optional<UnitTarget> corpse;
     if(monster.rule.ai.kind==MonsterAiKind::FallenShaman) {

@@ -84,6 +84,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "TrappedSoul") profile.kind = MonsterAiKind::TrappedSoul;
     else if (ai == "Catapult") profile.kind = MonsterAiKind::Catapult;
     else if (ai == "CatapultSpotter") profile.kind = MonsterAiKind::CatapultSpotter;
+    else if (ai == "NpcBarb") profile.kind = MonsterAiKind::NpcBarb;
     else if (ai == "DeathMauler") profile.kind = MonsterAiKind::DeathMauler;
     else if (ai == "BloodLord") profile.kind = MonsterAiKind::BloodLord;
     else if (ai == "FrozenHorror") profile.kind = MonsterAiKind::FrozenHorror;
@@ -187,6 +188,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     // true when malformed content reaches the pure decision programs.
     std::vector<int> percentages;
     switch(profile.kind) {
+    case MonsterAiKind::NpcBarb: percentages={1};break;
     case MonsterAiKind::SandRaider: percentages={0,1,2,3,6};break;
     case MonsterAiKind::SandMaggot: percentages={0,1,3};break;
     case MonsterAiKind::ClawViper: percentages={0,2,3};break;
