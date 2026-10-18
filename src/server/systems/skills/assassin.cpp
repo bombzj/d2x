@@ -64,7 +64,7 @@ DomainStatus System::activateAssassin(Release &pending,const ActorContext &actor
         if(caster->player) {
             if(player->persistent.player.mana<pending.skill.manaCost) return DomainStatus::Unavailable;
             transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-            edit.player.mana-=pending.skill.manaCost;edit.charge=pending.skill.charge;
+            edit.player.mana-=pending.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};edit.charge=pending.skill.charge;
             auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return plan.status;
             plan.value->missileBirth=std::move(*prepared.value);status=ports_.transactions.commit(std::move(*plan.value)).status;
             if(status==DomainStatus::Applied && pending.skill.charge) pending.skill.charge->item=player->persistent.inventory.items.at(pending.skill.charge->item.id).handle();
@@ -91,7 +91,7 @@ DomainStatus System::activateAssassin(Release &pending,const ActorContext &actor
         auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return prepared.status;
         if(caster->monster) return ports_.missiles.commitNativeBirth(std::move(*prepared.value)).status;
         transactions::CharacterEdit payment{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.charge=pending.skill.charge;}
+        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;}
         auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
         plan.value->missileBirth=std::move(*prepared.value);
         return ports_.transactions.commit(std::move(*plan.value)).status;
@@ -122,7 +122,7 @@ DomainStatus System::activateAssassin(Release &pending,const ActorContext &actor
         impact.monsterStates={rules.chilled,rules.poisoned,{}};
         const auto occurrence=impact.occurrence;auto queued=ports_.combat.prepareSpells({std::move(impact)});if(!queued) return queued.status;
         if(caster->player) {
-            const auto debit=ports_.transactions.release(actor,player->characterRevision,pending.manaPaid?Fixed8{}:pending.skill.manaCost,{},pending.manaPaid?std::optional<SkillCharge>{}:pending.skill.charge);
+            const auto debit=ports_.transactions.release(actor,player->characterRevision,pending.manaPaid?Fixed8{}:pending.skill.manaCost,{},pending.manaPaid?std::optional<SkillCharge>{}:pending.skill.charge,{},{},pending.manaPaid?-1:pending.skill.sourceId);
             if(!debit) return debit.status;
         }
         ports_.combat.commitSpells(std::move(*queued.value));pending.manaPaid=true;

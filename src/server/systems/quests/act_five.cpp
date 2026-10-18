@@ -12,6 +12,23 @@
 #include "gameplay/monsters/movement_math.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+DomainResult<> System::activateSiegeBoss(EntityId id,uint64_t tick) {
+    const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    const auto *unit=ports_.monsters.find(id);
+    if(!unit || unit->identity.superUnique!="Siege Boss" || state_.actFive.siegeBossActivated) return done();
+    const auto quest=QuestId::SiegeOnHarrogath;const auto &definition=questDefinition(quest);
+    if((state_.initialFlags[definition.nativeSlot]&0x8000) || state_.objectives[questIndex(quest)]) return done();
+    std::vector<EventBatch> batches;
+    for(const auto &[player,body]:ports_.players.all()) {
+        if(!body.entered) continue;
+        const auto &record=body.persistent.player;
+        const auto stage=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(quest)].stage;
+        if((stage<definition.completedStage && !unavailable(player,record,quest)) || credited(player,quest))
+            batches.push_back({0,tick,{}, {AudienceKind::Player,player,body.area},{QuestStatusFact{quest,2,0}}});
+    }
+    if(!batches.empty()) {const auto accepted=ports_.events.publishGroup(std::move(batches));if(!accepted) return {accepted.status,{}};}
+    state_.actFive.siegeBossActivated=true;return done();
+}
 std::optional<Dialogue> System::actFiveDialogue(const ActorContext &actor,const NpcRule &npc) const {
     const auto *p=ports_.players.find(actor.player);if(!p) return {};
     const auto available=[&](QuestId id){return !unavailable(actor.player,p->persistent.player,id);};

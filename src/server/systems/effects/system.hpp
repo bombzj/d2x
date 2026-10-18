@@ -31,7 +31,7 @@
 #include <functional>
 #include <map>
 #include <utility>
-namespace d2x::server {struct PlayerState;}
+namespace d2x::server {struct PlayerState;struct RoomView;}
 namespace d2x {struct WeaponSkillDamage;struct AssassinCharge;}
 namespace d2x {struct AuraSkillSpec;}
 namespace d2x::server::monsters {struct Actor;struct ActorPublication;}
@@ -130,7 +130,9 @@ struct NativeAuraTargetQuery {
     std::optional<uint64_t> tick; // Required by the native JUSTHIT finder flag.
     std::optional<Vec> sourcePosition; // Global missile position; owner identity still resolves allegiance.
 };
+struct NativeStateRemovalExecution {EntityId unit;int skill{},rank{};};
 struct AuraUnitPublication {
+    std::list<NativeStateRemovalExecution> removals;
     struct RecipientGuard {uint64_t areaGeneration{};};
     std::map<EntityId,RecipientGuard> recipients;
     struct SkillEventRegistration {EntityId unit;int state;EffectSource source;std::array<SkillUnitEventBinding,3> bindings;};
@@ -178,6 +180,7 @@ struct Ports {
 class System {
     CharacterAttributes unitDefenses(EntityId,uint64_t) const;
     State state_;
+    std::list<NativeStateRemovalExecution> nativeStateRemovals_;
     std::optional<uint64_t> frame_;
     unsigned framePhase_{};
     uint64_t nextAuraEventOrder_{1};
@@ -250,7 +253,13 @@ class System {
     std::deque<std::pair<EntityId,PendingMonsterCurse>> monsterCurses_;
     StepStatus advanceMonsterCurses(uint64_t);
     struct ModifierExecution;
-    struct UniqueCycle {uint64_t nextLightning{};bool emissionPending{};std::optional<uint64_t> queenDeath;std::shared_ptr<ModifierExecution> deathExecution;};
+    struct UniqueCycle {
+        uint64_t nextLightning{};bool emissionPending{};
+        std::optional<uint64_t> queenDeath,suicideHit;
+        bool suicideHitComplete{};
+        std::shared_ptr<FrameEventQueue::PreparedInsertion> suicideTimer;
+        std::shared_ptr<ModifierExecution> deathExecution;
+    };
     std::map<EntityId,UniqueCycle> uniqueCycles_;
     struct ModifierExecution {
         EntityId owner,missile;std::vector<int> callbacks;size_t next{};
@@ -260,6 +269,8 @@ class System {
     std::map<FrameEventHandle,ModifierExecution> modifierExecutions_;
     DomainResult<> executeMonsterModifier(EntityId,int,uint64_t,ModifierExecution &);
     DomainResult<> boneDeathEffect(EntityId,uint64_t,ModifierExecution &);
+    DomainResult<> suicideModeChange(EntityId,uint64_t);
+    DomainResult<> suicideDeathEffect(EntityId,uint64_t,ModifierExecution &);
     DomainResult<> monsterAura(EntityId,const AuraDefinition &,EntityId,uint64_t,uint64_t duration,bool owner=false);
 
     StepStatus advanceUnits(uint64_t);
@@ -267,6 +278,7 @@ class System {
     void prepareMonsterModifierEvents(monsters::Actor &,const monsters::Actor *) const;
     DomainResult<> monsterModifierEvent(const FrameEvent &,uint64_t);
     DomainResult<> monsterDamageEffect(EntityId,uint64_t);
+    DomainResult<> monsterBloodlust(EntityId source,EntityId target,int skill,int rank,uint64_t tick);
     DomainResult<> monsterDeathEffect(EntityId,uint64_t);
     DomainResult<> movementSkills(EntityId,uint64_t,uint8_t direction,Vec nativePosition);
     explicit System(Ports ports) : ports_(ports), itemTriggers_(ports.itemTriggers) {}
@@ -397,6 +409,8 @@ class System {
     void missileHitDelay(EntityId,uint64_t until);
     void triggerMonsterCurse(EntityId,uint64_t tick);
     DomainResult<> castMonsterCurse(EntityId,const AuraDefinition &,EntityId,uint64_t tick,bool unique=false,const SkillFormulaSnapshot *source=nullptr,const MonsterCursePulse *prepared=nullptr);
+    StepStatus finishNativeStateRemovals(uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> monsterPregnancy(EntityId,EntityId,int skill,int rank,uint64_t);
     DomainResult<> monsterCurse(EntityId,int skill,int rank,Vec,uint64_t,std::shared_ptr<MonsterCursePulse> &);
     StepStatus finishContacts(uint64_t tick);
     NativeContactBatch prepareDamageEvents(EntityId source,EntityId target,int64_t physical,int64_t total,bool missile,bool returnFire,uint64_t tick,bool suppress=false) const;

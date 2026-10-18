@@ -70,6 +70,7 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
             result.back().rankFlags=uint8_t((rank==MonsterRank::Champion?1:0)|((rank==MonsterRank::Champion || rank==MonsterRank::Unique || rank==MonsterRank::SuperUnique)?2:0)|(rank==MonsterRank::SuperUnique?4:0)|(rank==MonsterRank::Minion?8:0)|(mods.has(36)?16:0));
             result.back().nameSeed=mods.nameSeed;result.back().superUniqueIndex=uint16_t(std::max(0,monster.rule.superUniqueIndex));
         }
+        if(monster.whippedAi && std::ranges::find(result.back().modifiers,33)==result.back().modifiers.end()) result.back().modifiers.push_back(33);
         if(monster.amazonPet) {
             result.back().appearOverlay=monster.amazonPet->appearOverlay;
             if(monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
@@ -77,6 +78,11 @@ std::vector<MonsterSnapshot> System::visibleMonsters(PlayerId id, uint64_t tick)
         }
         if(monster.revived() && monster.owner) if(const auto *owner=ports_.players.find(*monster.owner)) result.back().storedOwner=owner->actor;
         result.back().stateStats=ports_.effects.unitStateStats(key,tick);
+        if(monster.changedClass && monster.rule.changeClassState>=0 && result.back().states.contains(monster.rule.changeClassState))
+            result.back().stateStats[monster.rule.changeClassState]={{monster.rule.shortParameterStat,*monster.changedClass}};
+        if(monster.nativeOwner && monster.rule.storedOwnerState>=0 && result.back().states.contains(monster.rule.storedOwnerState))
+            result.back().stateStats[monster.rule.storedOwnerState]={{monster.rule.stats->names.at("source_unit_type"),1},
+                {monster.rule.stats->names.at("source_unit_id"),int64_t(monster.nativeOwner.value)}};
         // SUNIT_SetAlign always owns an alignment state, including evil's
         // zero value (an empty state stat list on the original wire).
         if(monster.rule.alignmentState>=0 && monster.rule.alignmentStat>=0) {

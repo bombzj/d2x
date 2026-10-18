@@ -38,7 +38,7 @@ void System::curseControl(EntityId id,Actor::CurseControl control) {
         auto &actor=found->second;
         const auto function=[](CurseAi ai) {return ai==CurseAi::DimVision || ai==CurseAi::Terror || ai==CurseAi::Taunt?ai:CurseAi::None;};
         const bool changed=function(actor.curseControl.ai)!=function(control.ai);
-        if(changed) {++actor.aiFunctionRevision;actor.aiThinkAt=0;}
+        if(changed) {++actor.aiFunctionRevision;actor.aiThinkAt=0;actor.whippedAi=false;}
         actor.curseControl=std::move(control);++actor.revision;
         if(changed) scheduleAi(id,0);
     }
@@ -166,10 +166,13 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHireling(const ActorContex
         {{},{FrameEventUnit::Monster,actor.id},FrameEventType::AiThink,actor.aiThinkAt}));
     std::map<EntityId,Actor> result;actor.roomAdmission=ports_.areas.prepareRoomUnit(actor.id,1,actor.area,actor.position);prepareInitialTimers(actor,owner.tick);result.emplace(actor.id,std::move(actor));return {DomainStatus::Applied,std::move(result)};
 }
-DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SummonCastSpec &summon,const std::array<std::optional<Vec>,3> &positions,uint64_t &random) const {
-    const auto *p=ports_.players.find(owner.player);const auto *area=ports_.areas.find(owner.area);
-    if(!p || !p->entered || p->actor!=owner.actor || p->area!=owner.area || p->persistent.player.hp<=0 || !area ||
+DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &owner,const HydraRules &spec,const SummonCastSpec &summon,const std::array<std::optional<Vec>,3> &positions,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas) const {
+    const auto *p=ports_.players.findActor(owner.actor);const auto *caster=find(owner.actor);const auto *area=ports_.areas.find(owner.area);
+    const bool valid=p?p->player==owner.player && p->entered && p->area==owner.area && p->persistent.player.hp>0:
+        caster && caster->alive() && caster->area==owner.area;
+    if(!valid || !area ||
         area->generation!=owner.areaGeneration || area->definition.town) return {DomainStatus::InvalidActor,{}};
+    const int difficulty=p?int(p->persistent.difficulty):caster->rule.difficulty;
     if(state_.actors.size()>65536-3 || ports_.ids.cursor()>UINT32_MAX-3) return {DomainStatus::Capacity,{}};
     if(!summon.native || spec.defenseRatios.empty()) return {DomainStatus::Unavailable,{}};
     std::map<EntityId,Actor> prepared; auto cursor=ports_.ids.cursor();
@@ -178,17 +181,20 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
         const auto &head=spec.heads[i];const auto &definition=head.definition;
         if(!positions[i]) continue;
         const Vec position=*positions[i];
-        Actor actor;actor.id=EntityId{cursor++};actor.area=owner.area;actor.position=position;actor.revision=1;actor.owner=owner.player;
+        Actor actor;actor.id=EntityId{cursor++};actor.area=destinationAreas?destinationAreas->at(i):owner.area;actor.position=position;actor.revision=1;
+        if(p) actor.owner=p->player;
         actor.admissionTick=owner.tick;actor.nativeMinionOwner=owner.actor;
         actor.identity.monster=definition.code;actor.identity.spawnKey="pet."+std::to_string(actor.id.value);actor.identity.origin=SpawnOrigin::Summoned;
-        actor.implementation=kinds[i];actor.rule=head.rules.at(size_t(p->persistent.difficulty));actor.rule.petType=summon.petType;
+        actor.implementation=kinds[i];actor.rule=head.rules.at(size_t(difficulty));
+        actor.rule.ai.kind=MonsterAiKind::Hydra;
+        actor.rule.alignment=p?int(UnitAlignment::Good):int(caster->alignment());
         actor.rule.statGameType=ports_.settings.ladderMonsterStats();actor.combatRandom=childRandom(random);
         actor.components=chooseMonsterComponents(actor.rule.componentCounts,{},actor.combatRandom);
         auto preparedSummon=summon;auto &program=*preparedSummon.native;program.base=head.base.at(size_t(actor.rule.difficulty));
         // Current content is the LoD profile. MONSTERS_Initialize replaces
         // non-boss ratio-unit levels with the expansion area level in N/H.
         if(actor.rule.difficulty && !head.noRatio && !head.boss)
-            program.base.level=spec.areaLevels.at(int(owner.area)).at(size_t(actor.rule.difficulty));
+            program.base.level=spec.areaLevels.at(int(actor.area)).at(size_t(actor.rule.difficulty));
         const auto level=std::clamp(program.base.level,0,int(spec.defenseRatios.size()-1));
         if(!head.noRatio) program.base.attributes.defense=nativePercentage(
             spec.defenseRatios.at(size_t(level)).at(size_t(actor.rule.difficulty+(actor.rule.statGameType?3:0))),program.base.attributes.defense,100);
@@ -198,6 +204,11 @@ DomainResult<std::map<EntityId,Actor>> System::prepareHydra(const ActorContext &
         program.initialLife=Fixed8::fromRaw(nativeShiftLeft(std::min(whole,(1<<23)-1),8));
         preparedSummon.stats=program.base;actor.petStats=program.base;actor.rule.level=program.base.level;
         actor.nativeStats=attributes::prepareSummonStatSources(actor,preparedSummon,{},ports_.areas.statTime(actor.area));
+        if(!p) {
+            attributes::MonsterResourceTrace resources(actor,owner.tick);
+            resources.writeBaseStat("alignment",int(caster->alignment()),{});
+            actor.nativeStats=resources.take().intrinsic;
+        }
         actor.petStats.attributes.maxLifeFixed=Fixed8::fromRaw(nativeStatValue(actor.nativeStats->values,*actor.rule.stats,"maxhp"));
         actor.petStats.attributes.maxLife=actor.petStats.attributes.maxLifeFixed.raw()>>8;
         actor.petStats.attributes.combat=nativeCombatModifiers(actor.nativeStats->values,*actor.rule.stats,{});

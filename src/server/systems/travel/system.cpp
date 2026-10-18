@@ -94,11 +94,11 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     mutablePlayer.routeDestination=found->arrival;mutablePlayer.routeObstacles=area->definition.collision.obstacleRevision;
     return {DomainStatus::Applied, std::monostate{}};
 }
-DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, Fixed8 manaCost,std::optional<SkillCharge> charge) {
+DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, Fixed8 manaCost,std::optional<SkillCharge> charge,int skill) {
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
     if (target.area == actor.area) ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
-    const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge);
+    const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge,{},{},skill);
     if (result) cancel(actor.player);
     return result;
 }

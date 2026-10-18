@@ -4,6 +4,7 @@
 #include "hosting/native_quest_wire.hpp"
 #include "hosting/native_combat_wire.hpp"
 #include "gameplay/areas/waypoint.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include <limits>
 #include <cmath>
 
@@ -153,6 +154,12 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(!packet.empty()) delta.push_back(std::move(packet));
         }
         else if (const auto *quest = std::get_if<server::QuestFact>(&fact)) delta=nativeQuestUpdate(*content,*quest);
+        else if(const auto *quest=std::get_if<server::QuestStatusFact>(&fact)) {
+            const auto &definition=questDefinition(quest->quest);
+            delta.push_back(encodeServerPacket(ServerMessage::QuestUpdate,[&](auto &out){
+                out.u8(uint8_t(definition.nativeSlot-unsigned(definition.act)));out.u8(0);out.u8(quest->status);out.u16(quest->counter);
+            }));
+        }
         else if (const auto *removed=std::get_if<server::GroundRemoveFact>(&fact)) {
             if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(removed->item.value));}));
         }

@@ -94,6 +94,15 @@ struct Actor {
     std::optional<NativeSkillSlot> rightSkill; // Native right selection, separate from used/action skill.
     uint64_t aiThinkAt{};
     uint64_t aiThinkRevision{};
+    uint64_t hydraExpires{}; // Fn086 parameter 0; independent of owner survival.
+    EntityId nativeOwner; // UNITS_StoreOwner, distinct from AI minions and PlayerPets.
+    bool impMountedAi{},impDetachDeathPending{};
+    uint8_t impMountedSkill{},impMountedParameter{};
+    int minionSpawnClass{-1};uint64_t minionSpawnClassAiRevision{};
+    bool whippedAi{};
+    std::optional<int> changedClass;
+    EntityId lastAttacker;
+    uint8_t nativeMode{1},nativeAiState{};
     EntityId tauntTarget;
     bool mainOwnerCleared{};
     // AIGENERAL owner/list are distinct from UNITS_StoreOwner and PlayerPets.
@@ -203,6 +212,7 @@ struct Actor {
     bool standardAttackSource() const { return !owner || hireling || amazonAttacker() || assassinPet || druidPet || necroSummon || conversion || hydra(); }
 };
 int movementPercent(const Actor &, uint64_t tick);
+void recordNativeMode(Actor &,uint8_t mode);
 struct ActorPublication {
     std::map<EntityId,Actor> actors;
     std::map<EntityId,uint64_t> expected;
@@ -242,6 +252,7 @@ struct InactiveMonster {
     std::vector<Vec> skillPositions;
     int componentParameter{};
     int nestSpawned{};
+    bool impMountedAi{},whippedAi{};
 };
 struct State {
     std::map<EntityId, Actor> actors;
@@ -267,6 +278,8 @@ class System {
     std::optional<Restoration> restoring_;
     StepStatus advanceRestoration(uint64_t tick);
     DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick);
+    void setStoredOwner(Actor &,EntityId) const;
+    void initializeImpMount(Actor &) const;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
     bool recacheHirelingRoom(Actor &);
     ComponentPaletteState prepareComponents(Actor &,const ComponentPaletteState *staged=nullptr) const;
@@ -292,6 +305,12 @@ class System {
         for(const auto &[token,entry]:birthEquipment_) if(entry.second && !entry.second->deferred.empty()) return entry.second->deferred;
         return {};
     }
+    bool canImpregnate(EntityId source,EntityId target,uint64_t tick) const;
+    DomainResult<> impTeleport(EntityId,EntityId target,Vec,int skill,int rank,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> impRiderEvent(const FrameEvent &,uint64_t);
+    void resetImpAi(EntityId);
+    DomainResult<> setMinionSpawnClass(EntityId,int);
+    DomainResult<> spawnRemovedStateChild(EntityId,int skill,int rank,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
@@ -321,7 +340,7 @@ class System {
     std::vector<EntityId> specialTargets() const;
     std::vector<EntityId> pets(PlayerId) const;
     bool canRegisterSpecialTargets(size_t count) const noexcept {return count<=UINT64_MAX-state_.nextSpecialTargetOrder;}
-    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {});
+    DomainResult<> beginAttack(EntityId, uint64_t until, bool returnToNeutral = false, EntityId target = {},std::optional<NativeUnitStats> modeStats = {},uint8_t mode=4);
     DomainResult<> extendAttack(EntityId,uint64_t until);
     DomainResult<> finishDamageAction(EntityId,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit);
     uint64_t resumeAi(EntityId, uint64_t tick, uint64_t scheduled);
@@ -331,6 +350,9 @@ class System {
     void resumeMode(EntityId,uint64_t tick);
     DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
     DomainResult<> reinitializeAfterDeath(EntityId,uint64_t tick);
+    DomainResult<> reinitializeWhipped(EntityId source,EntityId target,int nativeClass,uint64_t tick);
+    void storeLastAttacker(EntityId target,EntityId source);
+    void neutralMode(EntityId);
     StepStatus advanceMode(EntityId,TickContext);
     DomainResult<> attackProfile(EntityId,std::shared_ptr<const StatList>,uint64_t expected,uint64_t next);
     DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
@@ -344,6 +366,7 @@ class System {
     bool selectableCorpse(EntityId,uint64_t tick) const;
     bool consumableCorpse(EntityId,RegionId,uint64_t,bool revive=false) const;
     void consumeCorpse(EntityId) noexcept;
+    DomainResult<> eatCorpse(EntityId,EntityId,int skill,int rank,uint64_t tick);
     void searchCorpse(EntityId id) noexcept {if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpse.searched=true;++it->second.revision;}}
     void refreshNecro(EntityId,MonsterRule,UnitCombatStats,std::shared_ptr<const NecroPetSpec>,std::optional<WeaponDamage>,std::optional<NativeUnitStats> = {},uint64_t tick=0);
     void curseControl(EntityId id,Actor::CurseControl control);
@@ -373,8 +396,11 @@ class System {
     DomainResult<EntityId> spawnNestChild(EntityId,uint64_t tick,Vec origin);
     bool canSpawnNestChild(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision={}) const;
     DomainResult<> reserveNestSpawn(EntityId,Vec,bool active,uint64_t tick);
-    DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,std::optional<int> fallbackClass={});
+    DomainResult<EntityId> spawnMinionChild(EntityId,Vec,int skill,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);
+    bool canNativeTeleport(EntityId,Vec,const std::function<uint16_t(RoomView,int32_t,int32_t)> &) const;
+    DomainResult<> nativeTeleport(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> activateWeb(EntityId,int skill,int rank,uint64_t tick);
     DomainResult<> heal(EntityId,int64_t amount);
     DomainResult<> healSkill(EntityId source,EntityId target,int64_t,uint64_t,std::pair<uint64_t,uint64_t>);
@@ -429,7 +455,8 @@ class System {
     bool canRemove(EntityId) const;
     DomainResult<> remove(EntityId);
     void withdrawQuestGroup(RegionId,std::string_view);
-    DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,const std::array<std::optional<Vec>,3> &,uint64_t &random) const;
+    DomainResult<std::map<EntityId,Actor>> prepareHydra(const ActorContext &, const HydraRules &,const SummonCastSpec &,const std::array<std::optional<Vec>,3> &,uint64_t &random,std::optional<std::array<RegionId,3>> destinationAreas={}) const;
+    DomainResult<> spawnHydra(EntityId,const HydraRules &,const SkillCastSpec &,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::map<EntityId,Actor>> prepareHireling(const ActorContext &,const MonsterRule &,std::string_view,Vec,int64_t life,uint64_t random,NativeUnitStats,int birthLevel,NativeBirthBatch &,std::span<const EntityId> retired={}) const;
     DomainResult<std::map<EntityId,Actor>> prepareNativePet(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,std::shared_ptr<PersistentCharacter>,size_t,std::optional<WeaponDamage> = {},std::span<const std::shared_ptr<const StatList>> = {},uint64_t random=0,std::optional<EquipmentStats> = {}) const;
     DomainResult<std::map<EntityId,Actor>> prepareNecro(const ActorContext &,const MonsterRule &,Vec,const SummonCastSpec &,uint64_t,size_t offset=0,std::span<const std::shared_ptr<const StatList>> = {},std::optional<MonsterComponents> components={},std::optional<bool> shield={}) const;
@@ -437,5 +464,6 @@ class System {
     DomainResult<> stageRetirements(effects::AuraUnitPublication &,std::span<const EntityId>,uint64_t tick) const;
     DomainResult<> warpPet(EntityId,const ActorContext &,Vec);
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
+    std::optional<std::pair<Vec,int>> nativeTargetPosition(EntityId,RegionId) const;
 };
 }

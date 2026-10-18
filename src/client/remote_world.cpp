@@ -1257,6 +1257,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
             throw ProtocolError("Invalid NPC assignment size");
         const auto tail = r.take(r.remaining());
         u.appearanceBits.assign(tail.begin(), tail.end());
+        u.assignmentRevision = w.revision;
         u.actionSkill.reset(); u.actionSkillLevel.reset(); u.direction.reset();
         u.actionRevision = w.revision; u.actionReceivedMilliseconds = receivedMilliseconds(); u.nativeMode = true;
         if (!tail.empty()) {

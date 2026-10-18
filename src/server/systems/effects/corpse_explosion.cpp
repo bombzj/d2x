@@ -80,7 +80,7 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
             const ActorContext actor{player.player,sourceId,player.area,ports_.areas.at(player.area).generation,0,tick};
             transactions::CharacterEdit edit{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
             if(payment) {
-                edit.player.mana-=payment->manaCost;edit.charge=payment->charge;
+                edit.player.mana-=payment->manaCost;edit.skillPayment=transactions::SkillManaPayment{payment->manaCost,payment->sourceId};edit.charge=payment->charge;
                 if(payment->missileId>=0) edit.publicFacts.emplace_back(MissileFact{sourceId,0,corpse->area,payment->missileId,rank,0,pulse.center,pulse.center});
             }
             edit.random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};

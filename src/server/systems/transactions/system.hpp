@@ -49,7 +49,7 @@ class System {
     // Atomic mana debit and optional same-area relocation at the release frame.
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, Fixed8 manaCost,
                            std::optional<PointTarget> relocation = {}, std::optional<SkillCharge> charge = {},
-                           std::vector<DomainFact> publicFacts = {}, std::optional<UnitRandomEdit> random = {});
+                           std::vector<DomainFact> publicFacts = {}, std::optional<UnitRandomEdit> random = {},int skill=-1);
     // Resource-only commit: no inventory clone or equipment re-evaluation per hit.
     DomainResult<> resources(const ActorContext &, uint64_t expected, Fixed8 life, Fixed8 mana, Fixed8 stamina,
                              std::vector<DomainFact> publicFacts = {});

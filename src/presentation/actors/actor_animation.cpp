@@ -74,6 +74,14 @@ void ActorAnimationState::observe(std::optional<uint8_t> currentMode, uint64_t a
     if (frozen && !frozenAt) frozenAt = now;
     if (!frozen && frozenAt) { startedAt += now - *frozenAt; frozenAt.reset(); }
 }
+std::optional<Vec> ActorAnimation::riderAnchor(float clock,float elapsed,Vec look) const {
+    if(!ready() || animation.riderAnchors.size()!=animation.frames.size()) return {};
+    const double ticks=std::floor(std::max(0.0,double(cycle?clock:elapsed))*25.0+1e-5);
+    const double advance=ticks*std::max(0.f,fps)/25.0;
+    const int frame=holdFrame>=0?int(std::min(advance,double(holdFrame))):cycle?int(std::fmod(advance,double(frameCount))):int(std::min(advance,double(frameCount-1)));
+    const int facing=direction(look,animation.directions);
+    return animation.riderAnchors[size_t(facing*animation.count+start+frame)];
+}
 float ActorAnimationState::elapsed(float now) const { return std::max(0.f, clock(now) - startedAt); }
 ActorAnimationCatalog::ActorAnimationCatalog(Archives &archives)
     : archives_(archives), timing_(archives.read("data/global/animdata.d2")),
@@ -92,8 +100,11 @@ ActorAnimation ActorAnimationCatalog::composite(Graphics &graphics,int palette,c
     std::array<const char *, 16> components;
     for (size_t index = 0; index < components.size(); ++index) components[index] = parts.components[index].c_str();
     std::optional<std::array<uint8_t, 256>> colors;
-    if (request.paletteTransform >= 0) {
-        const auto path = base + "cof/palshift.dat";
+    const auto path = base + "cof/palshift.dat";
+    // Retail D2Client RVA 53A44-53A5A returns a null color map when this
+    // monster has no palshift table. Its original component pixels still draw.
+    const bool nativeUnmapped=request.nativeMonsterTransform && !archives_.contains(path);
+    if (request.paletteTransform >= 0 && !nativeUnmapped) {
         if (request.randomTransform) {
             if (request.paletteTransform < 8) return result;
             const auto data = archives_.read("data/global/monsters/randtransforms.dat");

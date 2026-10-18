@@ -10,6 +10,8 @@ namespace d2x::server::skills {
 struct System::Runtime {
     struct Pending { ActorContext actor; Request request; };
     std::map<PlayerId,Pending> pending;
+    struct ImpEjection {EntityId rider;std::optional<Vec> landing;bool prepared{},interrupted{},kill{},complete{};};
+    std::map<EntityId,ImpEjection> impEjections;
     uint64_t nativeKickOccurrence{};
     std::map<EntityId,Release> assassinStarts,druidStarts,weaponStarts;
     struct MonsterWeaponStart {uint64_t tick{};uint16_t skill{};uint8_t mode{};MonsterAttackRule program;};

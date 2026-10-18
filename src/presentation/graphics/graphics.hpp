@@ -1,6 +1,8 @@
 #pragma once
 #include "resources/archive.hpp"
 #include "resources/formats.hpp"
+#include "core/math.hpp"
+#include <optional>
 #include <raylib.h>
 #include <unordered_map>
 #include <vector>
@@ -24,6 +26,7 @@ struct GpuAnimation {
     int directions = 0, count = 0;
     std::vector<Sprite> frames;
     bool completeComposite = false;
+    std::vector<std::optional<Vec>> riderAnchors; // Original S7 component frame offsets.
     const Sprite *frame(int direction, int index) const {
         if (frames.empty() || directions <= 0 || count <= 0 || direction < 0 || index < 0)
             return nullptr;

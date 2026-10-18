@@ -17,6 +17,14 @@
 #include <memory>
 #include <utility>
 namespace d2x::server::attributes {
+void appendStoredOwnerStats(const monsters::Actor &unit,std::vector<ModifierStatSource> &sources) {
+    if(!unit.nativeOwner || unit.rule.storedOwnerState<0 || !unit.rule.stats) return;
+    if(std::any_of(sources.begin(),sources.end(),[&](const auto &source){return source.source.definition==unit.rule.storedOwnerState;})) return;
+    ModifierStatSource source;source.source={StatSourceKind::State,unit.id,unit.rule.storedOwnerState,0};
+    source.rawValues.emplace();source.rawValues->emplace(StatKey{unit.rule.stats->names.at("source_unit_type"),0},1);
+    source.rawValues->emplace(StatKey{unit.rule.stats->names.at("source_unit_id"),0},nativeNarrow(uint32_t(unit.nativeOwner.value)));
+    sources.push_back(std::move(source));
+}
 namespace {
 std::shared_ptr<const StatList> prepareBirthProperties(monsters::Actor &unit) {
     if(unit.birthPropertiesPrepared) return unit.birthProperties;
@@ -135,7 +143,10 @@ void MonsterResourceTrace::inheritStateCallbacks(const CombatEffectSet &states) 
 StatSnapshot MonsterResourceTrace::values(std::span<const ModifierStatSource> sources) const {
     const auto &root=*change_.intrinsic->sources;
     if(activeFull_) return projectNativeStatValues(*actor_.rule.stats,root,*activeFull_);
-    if(!stateSources_ && !sources.empty()) return evaluateStatListWithSources(*actor_.rule.stats,root,sources);
+    if(!stateSources_ && !sources.empty()) {
+        std::vector<ModifierStatSource> sampled(sources.begin(),sources.end());appendStoredOwnerStats(actor_,sampled);
+        return evaluateStatListWithSources(*actor_.rule.stats,root,sampled);
+    }
     return evaluateStatList(*actor_.rule.stats,root,{&root,{}, {}});
 }
 void MonsterResourceTrace::storeFull(const StatSnapshot &full) {
@@ -274,7 +285,8 @@ void MonsterResourceTrace::withdrawPassiveState(int state,const CombatEffectSet 
     for(const int skill:skills) withdrawIntrinsicSource(StatSourceKind::Passive,skill,sources);
 }
 void MonsterResourceTrace::sampleSources(std::span<const ModifierStatSource> sources) {
-    const auto current=stateSources_?stateSources_():std::vector<ModifierStatSource>{sources.begin(),sources.end()};
+    auto current=stateSources_?stateSources_():std::vector<ModifierStatSource>{sources.begin(),sources.end()};
+    appendStoredOwnerStats(actor_,current);
     const auto &rules=*actor_.rule.stats;
     const auto previous=change_.intrinsic->sources;
     sampledStates_=current;

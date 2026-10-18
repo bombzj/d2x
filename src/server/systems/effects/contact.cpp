@@ -167,27 +167,21 @@ DomainResult<> System::advanceNativeCallback(NativeContactBatch &batch,uint64_t 
         return {};
     };
     if(function==1) {
-        if(!batch.returnFire) return done();
-        const auto *owner=unit.player?unit.player:unit.monster && unit.monster->owner?ports_.players.find(*unit.monster->owner):nullptr;
-        if(!owner || !owner->rules.skills) return {DomainStatus::NotImplemented,{}};
-        auto skill=skills::evaluate(*owner,callback.event.source.definition,rank);
-        if(unit.monster) {
-            bool prepared=false;
-            valuesFor(callback.unit,[&](SkillFormulaValues &values) {
-                const auto minimum=values.parameter(FormulaDomain::Skill,skill.sourceId,rank,"enms");
-                const auto maximum=values.parameter(FormulaDomain::Skill,skill.sourceId,rank,"exms");
-                const auto length=values.parameter(FormulaDomain::Skill,skill.sourceId,rank,"edln");
-                if(!minimum || !maximum || !length) return;
-                skill.minimumDamage=Fixed8::fromRaw(*minimum);skill.maximumDamage=Fixed8::fromRaw(*maximum);
-                skill.coldDurationFrames=*length;skill.coldDuration=float(uint32_t(*length))/25.f;prepared=true;
-            });
-            if(!prepared) return {DomainStatus::Unavailable,{}};
-        }
-        skill.manaCost=skill.startMana=0;skill.charge.reset();
-        const auto &area=ports_.areas.at(owner->area);
-        missiles::Spawn request{{owner->player,owner->actor,owner->area,area.generation,0,tick},skill,{},other.position(),true};
-        if(unit.monster) {request.emitter=callback.unit;request.emitterType=1;request.origin=unit.monster->position;request.deathTrigger=true;}
-        const auto spawned=ports_.missiles.spawn(request);
+        if(!batch.returnFire || !participants.canHarm(callback.unit,callback.other)) return done();
+        const auto *catalog=unit.player && unit.player->rules.skills?unit.player->rules.skills->formulas.get():
+            unit.monster?unit.monster->rule.formulas.get():nullptr;
+        if(!catalog) return {DomainStatus::Unavailable,{}};
+        const auto &program=catalog->skills.at(callback.event.source.definition);
+        const auto missile=ports_.missiles.nativeDefinition(program.reference("srvmissilea"));
+        if(!missile) return {DomainStatus::Unavailable,{}};
+        const auto region=unit.player?unit.player->area:unit.monster->area;
+        const auto otherRegion=other.player?other.player->area:other.monster->area;
+        const auto &area=ports_.areas.at(region);
+        const auto target=other.position()+ports_.areas.at(otherRegion).definition.origin-area.definition.origin;
+        // EventFunc01 owns a raw flags0x20 missile; the reacting monster is
+        // its owner, independently of a player controller or summon owner.
+        missiles::NativeSpawn request{callback.unit,region,area.generation,tick,unit.position(),target,*missile,program.id,rank};
+        const auto spawned=ports_.missiles.spawnNative(request);
         return {spawned.status,spawned?std::optional{std::monostate{}}:std::nullopt};
     } else if(function==2 || function==3) {
         if(function==2 && batch.physical<=0) return done();

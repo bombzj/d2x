@@ -19,7 +19,7 @@ class TradeInviteView {
     const ClassicFont &font_;
     const OriginalMenu &menu_;
     OnlinePlayerTrade trade_;
-    std::string waiting_, accept_, cancel_, goldLabel_, goldQuestion_, reason_;
+    std::string agreeTo_, waiting_, accept_, cancel_, goldLabel_, goldQuestion_, reason_;
     std::optional<std::string> goldDraft_;
     bool goldSelectAll_{};
     int panelPressed_{-1};

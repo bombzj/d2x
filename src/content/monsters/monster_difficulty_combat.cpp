@@ -44,8 +44,10 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     auto defense = scale("AC", "L-AC");
     auto critical = stats.number(row, "Crit");
     auto regen = stats.number(row, "DamageRegen");
-    if (!lowHp || !highHp || *lowHp < (npc?0:1) || *highHp < *lowHp ||
-        *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
+    // Shipped MinionSpawner rows can have minHP > maxHP. Keep both native
+    // values: the signed limited-random bound then yields minHP without a draw.
+    if (!lowHp || !highHp || *lowHp < (npc?0:1) || *highHp < 0 ||
+        *lowHp > (1 << 23) - 1 || *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
         (regen && (*regen < 0 || *regen > 4096)))
         return std::nullopt;
     MonsterCombatProfile result;

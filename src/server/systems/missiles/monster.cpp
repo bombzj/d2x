@@ -119,15 +119,19 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             if(x*x+y*y<request.minimumTargetDistanceSquared) continue;
         }
         spawn.nativeSkill=request.skill;spawn.parameters=request.parameters;spawn.directConstructor=!request.copyMonsterAttackBonus;spawn.distanceCountdown=request.distanceCountdown;spawn.startFrame=request.startFrame;spawn.totalFrames=request.totalFrames;
+        spawn.guidedTarget=request.guidedTarget;
         if(request.nativeVelocity) {
-            const auto fixed=missileVelocityFixed(*request.nativeVelocity,0,0);if(!fixed) return {DomainStatus::InvalidRequest,{}};
-            spawn.speeds={float(*fixed)*25.f/4096.f};
+            if(*request.nativeVelocity<0) return {DomainStatus::InvalidRequest,{}};
+            spawn.nativeVelocityRaw=request.velocityFixed?*request.nativeVelocity:nativeShiftLeft(*request.nativeVelocity,8);
+            const auto fixed=nativeMultiply(*spawn.nativeVelocityRaw,75)/100;
+            spawn.speeds={float(fixed)*25.f/4096.f};
         }
         bool drawn{};auto built=buildMonster(spawn,data->randomNext,data->ownerNext,drawn);
         if(!built) return {built.status,{}};
         for(auto &missile:*built.value) {
-            if(request.initialization==NativeSpawn::Initialization::ChargedSkill) {
-                missile.pathInitialization={MissilePathInitialization::Kind::ChargedSkill,request.initializationIndex};initializePath(missile);
+            if(request.initialization==NativeSpawn::Initialization::ChargedSkill || request.initialization==NativeSpawn::Initialization::DiabWall) {
+                missile.pathInitialization={request.initialization==NativeSpawn::Initialization::DiabWall?
+                    MissilePathInitialization::Kind::DiabWall:MissilePathInitialization::Kind::ChargedSkill,request.initializationIndex};initializePath(missile);
             } else if(request.initialization!=NativeSpawn::Initialization::None) {
                 int frames=request.initialization==NativeSpawn::Initialization::ProgressiveCharged?int(uint8_t(missile.nativeTotalFrames)):missile.nativeTotalFrames;
                 if(frames>=78) {frames=77;missile.nativeTotalFrames=77;missile.setCurrentFrame(77);}
@@ -138,6 +142,10 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                 missile.path.assign(path.begin(),path.end());
             }
             if(request.finalParameters) missile.parameters=*request.finalParameters;
+            if(request.postCreationFrames) {
+                missile.nativeTotalFrames=nativeMissileFrameCount(*request.postCreationFrames);
+                missile.setCurrentFrame(*request.postCreationFrames);
+            }
             if(request.storedOwner) missile.owner=*request.storedOwner;
             missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));
         }
@@ -272,7 +280,7 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
         missile.area=request.area;missile.generation=request.generation;missile.created=missile.executionTick=request.tick;
         missile.parameters=request.parameters;
         if(rule.serverHitFunction==12) missile.parameters[0]=rule.chainCount;
-        missile.guidance=!request.directConstructor && source?source->movementTarget:EntityId{};
+        missile.guidance=request.guidedTarget.value_or(!request.directConstructor && source?source->movementTarget:EntityId{});
         missile.remainingHits=rule.chainCount;missile.initializeFrames(request.totalFrames.value_or(rule.frames),rule.activate,request.startFrame);missile.definition=rule.definition;
         const auto origin=request.origins.empty()?request.position:request.origins[index];
         missile.position={std::floor(origin.x)+.5f,std::floor(origin.y)+.5f};missile.turnTarget=aim-missile.position;
@@ -284,9 +292,14 @@ DomainResult<std::vector<Missile>> System::buildMonster(const MonsterSpawn &requ
             (rule.sourceTown && ports_.areas.at(unitArea(request.source)).definition.town)) continue;
         if(rule.behavior==MonsterMissileRule::Behavior::GroundThrow) missile.setCurrentFrame(std::max(1,int(int64_t(missileDistance(missile.position,aim))*4096/std::max(1,int(rule.speed*4096.f/25.f)))));
         missile.acceleration=rule.acceleration;missile.maximumVelocity=rule.maximumVelocity;missile.collision=rule.collision;missile.random=childRandom(random);
-        if(rule.canSlow && rule.speed>0) {
+        if(rule.canSlow && missile.velocity.length()>0) {
             const int slow=ports_.effects.combatModifiers(request.source,request.tick).slowMissiles;
-            if(slow) {const auto fixed=missileVelocityFixed(rule.baseVelocity,rule.levelVelocity,rule.rank,slow);if(!fixed) return {DomainStatus::InvalidRequest,{}};missile.velocity=missile.velocity.unit()*(float(*fixed)*25.f/4096.f);}
+            if(slow) {
+                const auto fixed=request.nativeVelocityRaw?std::optional<int>{nativeMultiply(nativeMultiply(*request.nativeVelocityRaw,slow)/100,75)/100}:
+                    missileVelocityFixed(rule.baseVelocity,rule.levelVelocity,rule.rank,slow);
+                if(!fixed) return {DomainStatus::InvalidRequest,{}};
+                missile.velocity=missile.velocity.unit()*(float(*fixed)*25.f/4096.f);
+            }
         }
         if(request.distanceCountdown) {
             const auto velocity=int32_t(std::lround(missile.velocity.length()*4096.f/25.f));

@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/mana_payment.hpp"
 #include "gameplay/combat/life.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/units/resources.hpp"
@@ -258,7 +259,7 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     const auto *characterEdit = std::get_if<CharacterEdit>(&change);
     const auto &randomEdit=inventoryEdit?inventoryEdit->random:characterEdit->random;
     if(randomEdit && randomEdit->expected!=player->combatRandom) return {DomainStatus::Stale,{}};
-    const auto &transient = inventoryEdit && inventoryEdit->transient ? *inventoryEdit->transient :
+    auto transient = inventoryEdit && inventoryEdit->transient ? *inventoryEdit->transient :
         characterEdit && characterEdit->transient ? *characterEdit->transient : player->transient;
     if (characterEdit && characterEdit->revival) {
         const auto &revival = *characterEdit->revival; const auto *destination = ports_.areas.find(revival.area);
@@ -296,6 +297,20 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
     const auto charge=inventoryEdit?inventoryEdit->charge:characterEdit->charge;
+    const auto payment=inventoryEdit?inventoryEdit->skillPayment:characterEdit->skillPayment;
+    bool consumeBloodMana=false;
+    if(payment && !charge) {
+        if(payment->amount<0 || !player->rules.skills || !player->rules.skills->formulas ||
+           !player->rules.skills->formulas->skills.contains(payment->skill)) return {DomainStatus::InvalidRequest,{}};
+        const auto &program=player->rules.skills->formulas->skills.at(payment->skill);
+        const int blood=player->rules.character->bloodManaState;
+        consumeBloodMana=(payment->aura || program.number("mana") || program.number("lvlmana")) &&
+            transient.effects && transient.effects->hasState(blood,request->actor.tick);
+        if(consumeBloodMana) {
+            auto &mana=next.persistent.player.mana;
+            mana=Fixed8::fromRaw(nativeAdd(mana.raw(),payment->amount.raw()));
+        }
+    }
     if(charge) {
         const auto original=player->persistent.inventory.items.find(charge->item.id);
         if(original==player->persistent.inventory.items.end() || original->second.revision!=charge->item.revision || std::none_of(player->totals.chargedSkills.begin(),player->totals.chargedSkills.end(),[&](const auto &c){return c.item.id==charge->item.id && c.item.revision==charge->item.revision && c.layer==charge->layer && c.charges>0;})) return {DomainStatus::Stale,{}};
@@ -451,6 +466,44 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
                 }
                 initialAura(*auraStates,synchronize,read,auraPoison);
             }
+            if(consumeBloodMana) {
+                const int blood=player->rules.character->bloodManaState;
+                const auto &rules=*player->rules.character->stats;
+                const auto resources=[&] {
+                    const auto snapshot=read();
+                    return ResourceValues{Fixed8::fromRaw(snapshot.currentResources.at({rules.names.at("hitpoints"),0})),
+                        Fixed8::fromRaw(snapshot.currentResources.at({rules.names.at("mana"),0})),
+                        Fixed8::fromRaw(snapshot.currentResources.at({rules.names.at("stamina"),0}))};
+                };
+                const auto sample=[&](std::optional<ResourceValues> values={}) {
+                    auto projection=effects::projectEffectAttributes(*auraStates,request->actor.tick);
+                    observe({std::move(*projection.sources),std::move(projection.states),std::move(projection.effects),values});
+                };
+                auto values=resources();
+                if(auraStates->hasState(blood,request->actor.tick)) {
+                    int32_t threshold{};
+                    if(values.life>=payment->amount) {
+                        const auto *list=auraStates->findState(blood);
+                        if(!list) throw std::runtime_error("Missing native Blood Mana source");
+                        const auto &curse=player->rules.skills->formulas->skills.at(list->spec.source.definition);
+                        threshold=nativeShiftLeft(curse.number("param5"),8);
+                    }
+                    const auto consumed=nativeManaPayment(values.life,values.mana,payment->amount,true,threshold);
+                    const auto remove=[&] {
+                        auraStates->removeState(blood,[&]{sample();});
+                        auraFacts.emplace_back(StateFact{player->actor,0,player->area,blood,false});
+                    };
+                    // Underflow expires the list before writing one HP;
+                    // success writes HP before its threshold check. Generic
+                    // handlers retain these edits even when Consume fails.
+                    if(!consumed.accepted) {remove();values=resources();}
+                    values.life=consumed.life;sample(values);
+                    if(consumed.accepted && consumed.removeBloodMana) remove();
+                } else {
+                    values.mana=Fixed8::fromRaw(nativeSubtract(values.mana.raw(),payment->amount.raw()));
+                    sample(values);
+                }
+            }
             if(graph.units && graph.units->actors && !graph.stagedAurasPrepared) {
                 graph.stagedAurasPrepared=true;
                 ports_.effects.prepareStagedItemAuras(*graph.units,request->actor.tick,
@@ -552,6 +605,16 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     for(auto &key:next.persistent.player.skillHotkeys) if(key.owner!=UINT32_MAX && !next.persistent.inventory.items.contains(EntityId{key.owner})) key={};
     next.totals.sourceRevision = player->characterRevision + 1;
     refresh(next.persistent.player,player->persistent.player,player->definition,resourceMaximum,next.totals.character,request->resources);
+    if(payment && !charge) {
+        // Rebased plans retain resolved resources/state, not a second Consume
+        // invocation (weapon start and nested aura recipients).
+        if(auto *edit=std::get_if<InventoryEdit>(&change)) {
+            if(!edit->character) return {DomainStatus::InvalidRequest,{}};
+            edit->character->hp=next.persistent.player.hp;edit->character->mana=next.persistent.player.mana;edit->skillPayment.reset();
+        } else {
+            auto &character=std::get<CharacterEdit>(change);character.player.hp=next.persistent.player.hp;character.player.mana=next.persistent.player.mana;character.skillPayment.reset();
+        }
+    }
     if(charge || callbackEquipment) {if(auto *edit=std::get_if<InventoryEdit>(&change)) edit->equipment=equipment;else std::get<CharacterEdit>(change).equipment=equipment;}
     Plan result{{state_.next++}, {{player->actor, player->inventoryRevision}, {player->actor, player->characterRevision}},
         std::move(change), std::move(next)};

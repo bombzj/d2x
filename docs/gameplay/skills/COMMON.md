@@ -22,7 +22,7 @@
 
 怪物动态规则入口为`skills::requestCast/releaseMonsters`、`combat::prepareNativeSkillContact`、`effects::monsterCurse`及`monsters::healSkill/startSkillMotion/activateWeb`。hosting保留原表、动画、程序身份与初始技能赋值；St／Do分别保存采样及背压进度。孵化按当次Calc1准备子体，共同发布并保留后续进度，零数量也进入死亡处理。Bestow先Calc2再Calc1，当前MPQ两式为空，保持零治疗；钻地回复以当次生命计算。冲锋在St读取当前velocitypercent及原Run，保留最低50%限制。怪物诅咒准备范围、期限、六槽属性及原filter，再逐目标处理抗性与覆盖；精英Cursed保留有意的来源快照。客户端／内容仍有消费者的resolveSkill接口继续保留。
 
-以上规则核对当前MPQ Skills／Missiles／DifficultyLevels、本地D2MOO MonsterUnique／MonsterMode／SUnitDmg、SkillSor Do20／21／23／29、PlrModes、Path/Step及SkillMonst；1.13c与参考转录的差异和地址见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。本轮已构建／打包，有限冒烟只覆盖[运行包记录](../../development/BUILD_AND_RUN.md#当前逐房间地形构建)列出的路径；未新增测试程序。待运行核验重复修饰符／复合强化、冻结死亡、自然死亡／退休／上限替换、主人换区、同步回调背压，及静态力场下限／抗性、心灵传动各类目标、雷云通知顺序、移动轨迹／跨房间生成和St／Do之间属性变化。这里是源码入口核对，未完成全部逐ID／来源组合、当前MPQ完整数值或原版逐帧验收，也不沿用下文历史包证据认证本轮改动。
+以上规则核对当前MPQ Skills／Missiles／DifficultyLevels、本地D2MOO MonsterUnique／MonsterMode／SUnitDmg、SkillSor Do20／21／23／29、PlrModes、Path/Step及SkillMonst；1.13c与参考转录的差异和地址见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。该批次曾构建／打包，有限冒烟只覆盖[运行包记录](../../development/BUILD_AND_RUN.md#当前逐房间地形构建)列出的路径；未新增测试程序。待运行核验重复修饰符／复合强化、冻结死亡、自然死亡／退休／上限替换、主人换区、同步回调背压，及静态力场下限／抗性、心灵传动各类目标、雷云通知顺序、移动轨迹／跨房间生成和St／Do之间属性变化。这里是源码入口核对，未完成全部逐ID／来源组合、当前MPQ完整数值或原版逐帧验收，也不沿用下文历史包证据认证本轮改动。
 
 ## 当前持续效果入口
 
@@ -95,11 +95,11 @@ NPC规则由`hosting/npc_content`准备：`loadMonsterCombatProfile(NativeNpc)`�
 
 持续效果性能修复源码：玩家STATREGEN的普通路径读取已发布FullStats，只提交生命／耐力／法力变化；满资源且无列表撤出时只重排下一帧事件，不创建人物变更，不复制库存／装备／被动图。药剂列表／原状态位实际撤出时仍走完整资源轨迹和有序回调，保留HP→耐力→法力及整数边界。单纯资源变化输出不可变ResourcesFact，复用原属性增量编码，不引入私有游戏消息；非玩家未变化列表不每帧重贴，查询到同一有序状态列表及相同标准化值时复用已存FullStats，输入／顺序／上下文不同则走原重算。Blaze仅实际跨格时求值，物品恢复仅到期时复制库存候选。
 
-普通无聚气、无外部费用候选的玩家飞弹释放复用`transactions::release`：法力、拥有者随机游标及已准备的飞弹事实由同一输出预留／修订复验后提交，容量或资格失败不提前消费资源、随机或实体ID；带物品聚气、嵌套费用候选及非玩家来源继续各自原有事务。单技能等级查询直接消费同一原生等级公式，避免先构造全部已分配技能的等级映射。
+普通无聚气、无外部费用候选的玩家飞弹释放复用`transactions::release`：费用、拥有者随机游标及已准备的飞弹事实由同一输出预留／修订复验后提交，容量或资格失败不提前消费资源、随机或实体ID；带物品聚气、嵌套费用候选及非玩家来源继续各自原有事务。单技能等级查询直接消费同一原生等级公式，避免先构造全部已分配技能的等级映射。
 
 属性图求值中，非扩展叶子直接读取已有BaseStats并继续拒绝叶子拥有子贡献；它没有依赖拥有者的运算，不为每个缺失属性再建立两份零值缓存。扩展列表的生产者、反向操作、上下文、存储值和最小值规则仍由原公共求值器执行，不改变属性数值、来源顺序或随机消费。
 
-依据是本地1.10f D2MOO的`PLAYER/PlrModes::{EVENTS_HpRegen,EVENTS_StaminaRegen,EVENTS_ManaRegen,D2GAME_EVENTS_StatRegen_6FC80F80}`、`D2Common/D2StatList::STATLIST_UnitGetStatValue`及`SKILLS/Skills::D2GAME_SKILLMANA_Consume_6FD10A50`的普通法力分支：原单位读取已发布属性，普通资源加减不重穿装备／刷新全体被动。此轮没有重新反汇编1.13c对应函数，沿用已迁移数值，不将工程优化宣称为新确认的1.13c规则；这也不认证尚未统一的全部技能费用／Blood Mana入口。队列与管道的可让出调度属于D2X实现，语义核对和当前源码边界见下节。构建身份、测量及有限运行边界统一由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。
+依据是本地1.10f D2MOO的`PLAYER/PlrModes::{EVENTS_HpRegen,EVENTS_StaminaRegen,EVENTS_ManaRegen,D2GAME_EVENTS_StatRegen_6FC80F80}`、`D2Common/D2StatList::STATLIST_UnitGetStatValue`及`SKILLS/Skills::D2GAME_SKILLMANA_Consume_6FD10A50`的普通法力分支：原单位读取已发布属性，普通资源加减不重穿装备／刷新全体被动。该性能优化当时未重新反汇编1.13c对应函数，沿用已迁移数值，不将工程优化宣称为新确认的1.13c规则；该历史证据不认证后续费用／Blood Mana入口。队列与管道的可让出调度属于D2X实现，语义核对和当前源码边界见下节。构建身份、测量及有限运行边界统一由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。
 
 ### 性能优化的复刻约束核对
 
@@ -114,7 +114,7 @@ NPC规则由`hosting/npc_content`准备：`loadMonsterCombatProfile(NativeNpc)`�
 | 飞弹费用与随机 | 构造仍在全局／拥有者随机游标的副本上执行，未移动`launch/make`内的抽取位置；身份、容量与费用失败不提交这些游标或实体ID，重试从未消费的游标重算。普通费用快捷事务在复验后一起提交费用、拥有者随机候选和事实，聚气／复合费用／死亡触发保留原路径。复核修正快捷事务的无条件ManaFact，带随机候选的释放改用ResourcesFact，维持旧CharacterFact相同资源的增量编码及零费用不重复发属性包。事实类型／事务诊断编号不同不代表原生事件等价。 |
 | 宿主让出与调试I/O | 4毫秒预算仅在一个逻辑帧完成后检查；背压保持同帧、队列执行节点及Simulation阶段，完成前不扣帧债务，批量单步不把重试计为完成。I/O线程不执行玩法。对相同逻辑帧输入，不新增随机抽取、不按墙钟重排同帧回调；实时网络命令所属逻辑帧可能因宿主处理时机变化，不能据此承诺相同墙钟输入具有相同整场随机轨迹。 |
 
-尚不能认证整个战斗与原版逐事件一致：现有Simulation领域阶段并非完整原队列1／2、AI／动作／同步命中交错，STATREGEN的下一次事件仍由D2X事务在成功后发布；D2MOO在回调开头直接插入，涉及嵌套定时器时还需要全局顺序迁移。普通技能费用也尚未统一Blood Mana分支；玩家HP百分比的`LAST_SENT_HP_PCT`差值大于4发送策略未在本次再生入口闭合。这些是既有缺口，不能由性能冒烟或本轮局部对照宣称完成。后续对齐须以当前MPQ及1.13c函数证据裁决版本差异，不用降低频率、合并随机、改目标顺序来绕过成本。
+尚不能认证整个战斗与原版逐事件一致：现有Simulation领域阶段并非完整原队列1／2、AI／动作／同步命中交错，STATREGEN的下一次事件仍由D2X事务在成功后发布；D2MOO在回调开头直接插入，涉及嵌套定时器时还需要全局顺序迁移。普通技能Blood Mana费用已接人物事务并构建，普通法术／传送及不足生命获有限实机观察；玩家HP百分比的`LAST_SENT_HP_PCT`差值大于4发送策略未在本次再生入口闭合。这些是既有缺口，不能由性能冒烟或本轮局部对照宣称完成。后续对齐须以当前MPQ及1.13c函数证据裁决版本差异，不用降低频率、合并随机、改目标顺序来绕过成本。
 
 Howl／GrimWard使用独立TerrorUtility入口：投递Terror技能／等级1及普通移除回调，不借用死灵mA1／Possessed筛选和RestoreAi回调；抗性／Attract拒绝列表时仍执行原目标切换及一帧idle。既有构建与有限运行覆盖以运行包记录为准，本次复核修正的构建与有限资源观察见上述记录，未新增相关AI行为运行认证。完整Kill／Killed事件、所有技能生产端、专属飞弹及全局原顺序仍在迁移，不能把公共列表接入当作全部战斗验收。
 
@@ -266,7 +266,9 @@ curse_resolve::curseStateDuration保留原期限减去单独取整百分比、�
 
 公共evaluateNativeAura读取当前MPQ的AuraStatCalc／PassiveCalc、AuraRangeCalc、PerDelay及公共原伤害／法力参数，不再为这两类玩家周期消费者另列类型化公式。SrvDo065用Aura六槽同时准备拥有者与目标，遇缺槽停止；拥有者法力严格大于费用且PassiveState≤0时，才准备额外Passive五槽。固定1.13c D2Game RVA9AA63–9AA75确认这两个额外门；狂热的damagepercent按原SetStat覆盖半额。SrvDo066／081的拥有者用Passive五槽，非玩家可越过法力门，目标六槽仍要求当前raw法力≥费用；082只准备拥有者Passive五槽，尸体过程独立。数值保留各Stat原单位，不能将ValShift=0的元素附加伤害再当8.8移动。拥有者直接Passive写入与BasicAura回调分开：后者处理生命／有害时长，逐项写入非零属性、attackrate紧接other_animrate、末尾写技能／等级元数据，随后才写拥有者额外Passive。同等级状态复用保留来源及未写值，覆盖重复键。服务端接收者调整读取怪物基础抗性作破免判定，玩家／佣兵豁免；速度与attackrate按原ColdEffect下限处理，显式other_animrate槽独立。原始周期消费者现保留Direct及有害时长操作在原槽序中的位置，拥有者额外Passive仍走列表SetStat。ItemStatCost.Direct／MaxStat由当前MPQ链接到StatRule；公共nativeAuraDirectStatValue按signed32加法及最大值比较生成原值，不添加零下限。玩家的生命／法力／耐力沿资源候选写入；具备原始来源的非玩家用同一生命或基础属性候选，数值不改变时不计入生效。列表非零指令计入生效，作用谓词仅随该接收者提交成功积累；当前周期用途等价于原field_40>0，不保存原完整计数。毒／诅咒期限改用公共nativePercentage，现有不可治愈诅咒仍计入生效但不缩短；零期限直接更新现有句柄，不重投整张毒属性表。持续／负回绕期限仍明确要求完整单位调度。
 
-周期费用在接收者及脉冲准备后独立提交，并保留manaCommitted，末尾重排背压不重复扣费。没有生效时撤销禁止回蓝，有生效时先设置再调用费用分支；法力不足不撤销已经执行的作用。Blood Mana从当前MPQ的blood_mana及其来源技能Param5准备：生命不足先撤出列表再写256 raw生命；否则代扣生命，低于Param5<<8时撤出。固定1.13c D2Game RVA9A326–9A36B确认直接值相加、MaxStat上限、值改变才计数，9A30A–9A31F确认attackrate伴随写入；9A5CC–9A5FE确认按计数设置／清除禁止回蓝再调用9ED20，9ED20–9ED6C确认Blood Mana优先及普通不足法力返回，BE20–BEDC确认生命代扣、Param5阈值及不足生命写256。独立状态位／列表撤出及被动刷新边界已接前序持续效果模块，这些光环费用与来源程序也已纳入构建；完整直接属性回调（包括玩家单位非资源基础值）、随机流、目标排序及同帧事件／伤害完成顺序仍待闭合。当前原生周期事件驱动已通过本轮构建与代表路径观察；前序有限观察不认证全部费用／反噬组合。
+周期费用在接收者及脉冲准备后独立提交，并保留manaCommitted，末尾重排背压不重复扣费。没有生效时撤销禁止回蓝，有生效时先设置再调用费用分支；法力不足不撤销已经执行的作用。Blood Mana从当前MPQ的blood_mana及其来源技能Param5准备：生命不足先撤出列表再写256 raw生命；否则代扣生命，低于Param5<<8时撤出。固定1.13c D2Game RVA9A326–9A36B确认直接值相加、MaxStat上限、值改变才计数，9A30A–9A31F确认attackrate伴随写入；9A5CC–9A5FE确认按计数设置／清除禁止回蓝再调用9ED20，9ED20–9ED6C确认Blood Mana优先及普通不足法力返回，BE20–BEDC确认生命代扣、Param5阈值及不足生命写256。独立状态位／列表撤出及被动刷新边界已接前序持续效果模块，既有光环费用与来源程序曾纳入构建，本次共用扣费改动已构建，普通法术／传送与不足生命获得有限实机观察；完整直接属性回调（包括玩家单位非资源基础值）、随机流、目标排序及同帧事件／伤害完成顺序仍待闭合。当前原生周期事件驱动已通过本轮构建与代表路径观察；前序有限观察不认证全部费用／反噬组合。
+
+普通技能费用现通过显式SkillManaPayment标记进入人物／库存事务，覆盖当前法术、武器、召唤、传送及Telekinesis扣费入口；伤害／法力吸取不使用此标记。零售1.13c CheckMana（9EC80–9ED1D）仍检查法力，Consume（9F850–9F969）在mana／lvlmana均为零时提前返回，聚气先走物品次数；普通费用持blood_mana才进入BE20。通用Start／Do调用点9FE87／A1C8A不检查其返回值，因此生命不足不撤销已接受的程序。生命小于费用时先逐项撤出列表、执行状态／被动回调，再写1生命；否则先减生命，再按来源技能Param5阈值撤出，恰好相等允许写0。普通费用与AuraConsume共用纯数值函数；事务保留原法力资格检查，已准备方案重建时不重复扣费，效果发布沿人物已提交集合收尾。此项已纳入Release；Fire Bolt、Teleport及生命不足的有限实机范围见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。恰好零生命后的死亡／再生、背压、聚气及其余费用组合仍待验证，不代表全部费用执行时序认证。
 
 ### 原时段属性输入
 

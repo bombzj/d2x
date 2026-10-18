@@ -150,6 +150,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    std::erase_if(runtime_->impEjections,[&](const auto &entry){return !ports_.monsters.find(entry.first);});
     auto &pending_=runtime_->pending;
     std::erase_if(runtime_->weaponStarts,[&](const auto &entry) {
         const auto *player=ports_.players.findActor(entry.first);

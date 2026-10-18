@@ -1,25 +1,39 @@
 # 怪物、首领与精英技能
 
-更新：2026-10-17。本页负责非玩家敌对单位的技能入口与覆盖台账。身份、AI、人口、动作、数据契约及有限运行证据由[怪物目录](../monsters/README.md)链接负责页维护。第三至第五幕按[逐项接入](../monsters/ACT3.md#逐项接入)补齐，未完成项目不计为覆盖。
+更新：2026-10-18。本页负责非玩家敌对单位的技能入口与覆盖台账。身份、AI、人口、动作、数据契约及有限运行证据由[怪物目录](../monsters/README.md)链接负责页维护。第三至第五幕按[逐项接入](../monsters/ACT3.md#逐项接入)补齐，未完成项目不计为覆盖。构建与实际运行范围只见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，下表描述源码入口，不认证全部行为。
 
 ## 当前执行家族
 
 | 使用者／能力 | 当前自研入口与边界 |
 | --- | --- |
 | 沉沦魔萨满 | 本族尸体复活、按BaseId链选择火弹、普通近战；不开放任意尸体复活 |
-| 鸟巢 | 原序列出生、数量／间隔及耗尽死亡；巢子不重复给予经验／掉落 |
+| 鸟巢／GenericSpawner | 原序列出生、数量／间隔及耗尽死亡；Nest的St49保存实际类型／位置／模式并预约，Do91释放预约后创建无经验／掉落子体。GenericSpawner读取区域已选类型，但有效MonStats.spawn优先，当前evilhut使用imp1；预检与出生偏移分别核对 |
 | 蜘蛛 | arach1至7的SpiderLay轨迹、蛛网／地面减速；生命周期与效果分开持有；本轮六变体的有限实机范围见第三幕 |
-| 沙地跳跃者 | Leap（132）的怪物St40／Do77分支：起手原A1接触、落点／飞行和落地后退，UNINTERRUPTABLE／SKILL_MOVE与原A5结束同步；不追加玩家Leap范围击退，尚待统一构建／实机 |
-| 骨Fetish | MonStats.deathDmg的死亡模式回调：原飞弹117承载物理范围伤害，原表等级生命／Ladder、难度倍率及单位随机；与火强化死亡效果分开，尚待统一构建／实机 |
-| Fetish萨满 | FetishInferno（178）沿原St53／Do95：A1事件2、INFERNO起止、calc3续放、MonStats2收尾；原飞弹144以自身行伤害和实际等级执行；Resurrect2沿原序列复活。FetishAura不增加AI施放分支；萨满死亡重建另见第三幕，尚待统一构建／实机 |
+| 沙地跳跃者 | Leap（132）的怪物St40／Do77分支：起手原A1接触、落点／飞行和落地后退，UNINTERRUPTABLE／SKILL_MOVE与原A5结束同步；不追加玩家Leap范围击退 |
+| 骨Fetish | MonStats.deathDmg的死亡模式回调：原飞弹117承载物理范围伤害，原表等级生命／Ladder、难度倍率及单位随机；与火强化死亡效果分开 |
+| Fetish萨满 | FetishInferno（178）沿原St53／Do95：A1事件2、INFERNO起止、calc3续放、MonStats2收尾；原飞弹144以自身行伤害和实际等级执行；Resurrect2沿原序列复活。FetishAura不增加AI施放分支；客户端Clt54连续发射仍待补，萨满死亡重建另见第三幕 |
 | ThornHulk | MonFrenzy（215）：A2的原攻击事件，独立命中／伤害处理后才叠加monfrenzy；skill_frenzy栈数以技能等级为上限，持续时间及移动／攻击／其他动画加速均读Skills公式，沿公共状态计时到期移除；AI连击与普通攻击冷却见第三幕 |
-| 吸血鬼 | vampire1至9准备自身Fireball／FireHead／Firewall／Meteor，Fn028按原表掩码选择；普通法术使用独立可射击目标，火墙／陨石使用主目标；冷却和动作核对见第三幕第07项，尚待统一构建／实机 |
+| 吸血鬼 | vampire1至9准备自身Fireball／FireHead／Firewall／Meteor，Fn028按原表掩码选择；普通法术使用独立可射击目标，火墙／陨石使用主目标；冷却和动作核对见第三幕第07项 |
+| 萨卡兰姆祭司／议会 | ZakarumHeal（179）沿Do96；祭司按最后合格单位、议会按严格最低整数生命百分比选择。议会Hydra（62）沿St14／Do144，怪物拥有者不进入PlayerPets或套玩家阵营；三头各自Fn086及截止帧，普通S1另发自身MissS1 |
+| 邪恶之母／FingerMage | 邪恶之母Nest（167）的`seq_vileres`使用事件2；St49保存自身加原表偏移，Do91去除预约后搜索幼体。FingerMageSpider（196）沿原Do101构造飞弹177、原循环公式及SrvDo11拥有者目标回退；命中沿既有SrvHit19状态／重应用规则 |
+| Regurgitator | RegurgitatorEat（214）沿S1事件1／Do108，删除实际尸体GUID并按其原生命上限和calc1给自身回血；随后普通A2发射自身regurgitatorcorpse |
+| AbyssKnight | DoomKnightMissile（335）沿Do148按实际S3组件偏移飞弹；MonBoneArmor（210）沿自己的Do18状态、公式和事件槽，当前MPQ没有玩家Bone Armor的吸收事件，不补造回调；MonBoneSpirit槽在Fn073不主动调用 |
+| OblivionKnight | MonBoneSpirit（211）沿Do10传递原目标并初始化SrvDo7；Decrepify（87）与MonCurseCast（212）沿公共诅咒列表。零售Do112抽签表为66／72／82／87／91，但仍按原索引执行跳转分支，状态／公式行与回调分开保留，不能套用参考代码的六项表 |
+| 巨型恶魔 | MegademonInferno（319）共用已接St53／Do95，读取自己的飞弹675、两帧密度、S1回绕和结束参数；不复用Fetish飞弹伤害或女巫Inferno；客户端Clt54连续发射仍待补 |
+| Imp | Imp Teleport（330）沿Do129与attached／sourceunit，逐帧骑乘跟随由ActiveState的Do147执行；Imp Fire Missile（299）沿Do132按类链偏移，Ex（356）保留基础飞弹。骑乘Fireball（283）使用原Do0构造，Inferno（282）沿St59随机期限、Do126三帧续放及十三帧收尾；原技能ID、构造后Range、Clt71／72／74／88与S7定位分别处理。ImpBolt只保留声明。源码／原DLL静态核对 |
+| Overseer／SuicideMinion | Cry Help（290）沿Do128复制有期限的真实仆从命令；Healing Vortex（291）发原弹体425并沿已有SrvHit43治疗；Overseer Whip（295）沿Do131的公式／抽签、bloodlust列表和同GUID重建，特殊AI15继续Fn117。自爆是UMod33死亡定时器及客户端动画回调，不能算作Skills施放 |
+| MinionSpawner | 技能302沿St62保存出生类／坐标／模式，Do135先原点、失败再四圈搜索；成功后禁经验／掉落、保存生成器owner并播放sumoverlay。与Nest的预约／不可中断流程分开；源码／原DLL静态核对 |
 | 安达利尔 | AndyPoisonBolt及AndrialSpray多次释放；毒伤、方向与原Clt／Srv偏移分开处理 |
 | 血乌 | Quick Strike序列及zombie2召唤；普通弓箭与专用召唤分别准备 |
 | 伯爵夫人 | 真实DS1路径节点上的FirewallMaker／地面火；缺节点不自造落点 |
 | GargoyleTrap | 原序列发射、距离／轴向限制；是可击杀单位型陷阱，不是刺客陷阱或普通物件 |
 | 精英主动／周期效果 | Amplify Damage、友方属性光环、Holy Fire／Freeze／Shock脉冲、低生命Teleport；只是精英来源入口，不表示对应玩家职业全部可用 |
 | 精英受击／死亡效果 | 电强化延时／冷却与充能弹、冰／火死亡事件等由独立效果时钟处理；并非每项都是可施放Skills行 |
+| ReanimatedHorde | Self-resurrect由UMod34死亡／定时回调启动；St61复起、Fn114恢复目标标志，34回调恢复奖励资格。Charge用自身序列及三射线预检；源码核对 |
+| Succubus／SuccubusWitch | Defense Curse（309）／Blood Mana（310）沿Do30，SuccubusBolt（345）沿St4／原弹体665；两类AI、技能槽和动作各用自身原表。普通Blood Mana费用由[公共机制](COMMON.md)维护；源码核对 |
+| Izual／UberIzual | Frost Nova（44）沿Do22原生64方向构造；Uber另接Chilling Armor（60）的Do18／EventFunc01和MonTeleport（184）的Do98。冰甲反击使用实际反击者，无玩家拥有者前提；源码核对 |
+| Mephisto | PrimeLightning／MephistoMissile走普通原生飞弹，PrimeBolt走Do17；PrimePoisonNova走Do99及Clt55，MephFrostNova走Do22，Blizzard走Do28。原始弹速、回绕及施放后AI随机继续点见怪物台账 |
+| Diablo（进行中） | DiabCold的Do100、DiabWall的Do102／Clt58及DiabLight的Do152／Clt56已接部分源码；完整AI、DiabRun、DiabPrison等尚未完成，仍使用替身。Clt56灯光标志及完整客户端随机尚未闭合，不计为怪物覆盖 |
 
 普通箭矢、尖刺、骷髅法师元素弹、近战与元素附伤已有共享程序，但A1／A2或MissA1／A2不一定对应独立Skills行。SkeletonRaise槽是复活动画，不归普通AI主动；关系见[第一幕](../monsters/ACT1.md)。第三至第五幕程序尚未全面迁入，任务死亡链和身份替身不能认证战斗技能。
 
@@ -66,13 +80,13 @@
 
 ## 代码与归档
 
-Mosquito（206）：`mosquito1`至4使用原SQ事件1，起手按双方GUID独立抽取循环预算；每次释放先按物理伤害的calc3回血，再结算自身随机流生成的物理、毒和法力／耐力消耗，离开近战范围终止吸取。序列回绕遵循原Param1和剩余帧计数，未把预算次数直接当作实际命中次数；本轮实机核对待统一构建后进行。
+Mosquito（206）：`mosquito1`至4使用原SQ事件1，起手按双方GUID独立抽取循环预算；每次释放先按物理伤害的calc3回血，再结算自身随机流生成的物理、毒和法力／耐力消耗，离开近战范围终止吸取。序列回绕遵循原Param1和剩余帧计数，未把预算次数直接当作实际命中次数；本轮未专项实机核对。
 
-Submerge（176）／Emerge（180）：青蛙恶魔的隐藏和现身声明。目标资格与地面碰撞分别更新；Submerge在原序列零帧暂停，不阻断AI定时；现身前沿原1C09空位恢复入口处理位置和地面碰撞。远程显示读取自己的原序列与S1图形，本轮实机核对待统一构建后进行。
+Submerge（176）／Emerge（180）：青蛙恶魔的隐藏和现身声明。目标资格与地面碰撞分别更新；Submerge在原序列零帧暂停，不阻断AI定时；现身前沿原1C09空位恢复入口处理位置和地面碰撞。远程显示读取自己的原序列与S1图形，本轮未专项实机核对。
 
-MonBow（339）／MonFireArrow（340）／MonExplodingArrow（342）：`cr_archer6`至8按Fn035的槽顺序选择，A1事件2分别释放cr_arrow6、firearrow和explodingarrow，技能ID／等级随原飞弹构造传入公共伤害与碰撞执行器；St4仅检查射击资格，不提前发射。本轮三种箭的实机核对待统一构建后进行。
+MonBow（339）／MonFireArrow（340）／MonExplodingArrow（342）：`cr_archer6`至8按Fn035的槽顺序选择，A1事件2分别释放cr_arrow6、firearrow和explodingarrow，技能ID／等级随原飞弹构造传入公共伤害与碰撞执行器；St4仅检查射击资格，不提前发射。三种箭未专项实机核对。
 
-第五幕持矛罗格的Jab（10）读取自己的seq_crlancerjab及A1物理参数；MonPowerStrike（344）／MonIceSpear（347）沿公共St6起手分配、Do2事件结算，读取各自雷／冰伤和持续时间。Fn036按存在的技能槽依次抽取概率，冲近后清除强制攻击标记；本轮实机核对待统一构建后进行。
+第五幕持矛罗格的Jab（10）读取自己的seq_crlancerjab及A1物理参数；MonPowerStrike（344）／MonIceSpear（347）沿公共St6起手分配、Do2事件结算，读取各自雷／冰伤和持续时间。Fn036按存在的技能槽依次抽取概率，冲近后清除强制攻击标记；本轮未专项实机核对。
 
 [monster_actions_content.cpp](../../../src/hosting/monster_actions_content.cpp)及[act2_monster_skills.cpp](../../../src/hosting/act2_monster_skills.cpp)按当前MonStats槽、Skills、Missiles、MonSeq及难度准备规则；[skills/monster_actions.cpp](../../../src/server/systems/skills/monster_actions.cpp)持开始／释放队列，monsters执行复活／出生／移动，missiles／effects执行弹体和效果。AI只提交窄请求，不另建技能执行器。精英所有权见[精英](../monsters/ELITES.md)与[首领](../monsters/BOSSES.md)。
 

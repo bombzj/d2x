@@ -13,6 +13,7 @@ TradeInviteView::TradeInviteView(Archives &archives, const ClassicFont &font, co
     : graphics_(archives, "data/global/palette/sky/pal.dat"), font_(font), menu_(menu) {
     try {
         const ClassicStrings strings(archives);
+        agreeTo_ = strings.find("strTradeAgreeTo");
         waiting_ = strings.find("strWaitingForOtherPlayer");
         accept_ = strings.find("strTradeAccept");
         cancel_ = strings.find("strUiMenu1");
@@ -22,7 +23,7 @@ TradeInviteView::TradeInviteView(Archives &archives, const ClassicFont &font, co
         buttons_ = graphics_.single("data/global/ui/panel/buysellbtn.dc6");
         goldDialog_ = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
         if (!menu_.ready()) throw std::runtime_error(menu_.reason());
-        if (waiting_.empty() || accept_.empty() || cancel_.empty() || !font_.ready)
+        if (agreeTo_.empty() || waiting_.empty() || accept_.empty() || cancel_.empty() || !font_.ready)
             throw std::runtime_error("Original player trade invitation resources are missing");
         if (goldLabel_.empty() || goldQuestion_.empty() || panel_.count < 4 || buttons_.count < 18 || goldDialog_.count < 1)
             throw std::runtime_error("Original player trade panel resources are missing");
@@ -60,10 +61,11 @@ std::array<std::string, 2> TradeInviteView::options() const {
     return {trade_.phase == OnlinePlayerTrade::Phase::Outgoing ? waiting_ : accept_, cancel_};
 }
 Rectangle TradeInviteView::bounds(Rectangle viewport) const {
-    return menu_.bounds({viewport.x+viewport.width/2,36},viewport,{},options());
+    const std::string_view title = trade_.phase == OnlinePlayerTrade::Phase::Incoming ? agreeTo_ : std::string_view{};
+    return menu_.bounds({viewport.x+viewport.width/2,36},viewport,title,options());
 }
 int TradeInviteView::hit(Vec mouse, Rectangle viewport) const {
-    return menu_.hit(bounds(viewport),false,2,mouse);
+    return menu_.hit(bounds(viewport),trade_.phase == OnlinePlayerTrade::Phase::Incoming,2,mouse);
 }
 bool TradeInviteView::enabled(int row) const {
     using Response = OnlinePlayerTrade::Response;
@@ -98,7 +100,8 @@ PlayerTradeIntent TradeInviteView::handle(const FrameInput &input, Rectangle vie
 void TradeInviteView::draw(Rectangle viewport) const {
     if (!ready_ || !trade_.active() || trade_.phase == OnlinePlayerTrade::Phase::Open) return;
     const int highlighted = keyboardSelection_ ? selected_ : hovered_;
-    menu_.draw(bounds(viewport),{},options(),enabled(highlighted) ? highlighted : -1);
+    const std::string_view title = trade_.phase == OnlinePlayerTrade::Phase::Incoming ? agreeTo_ : std::string_view{};
+    menu_.draw(bounds(viewport),title,options(),enabled(highlighted) ? highlighted : -1);
 }
 namespace {
 Rectangle tradeRect(float x, float y, float width, float height) {

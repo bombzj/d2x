@@ -11,6 +11,7 @@ namespace d2x {struct SummonCastSpec;struct SkillAuraChange;class CombatEffectSe
 namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::attributes {
 class MonsterResourceTrace;
+void appendStoredOwnerStats(const monsters::Actor &,std::vector<ModifierStatSource> &);
 std::vector<ChargedSkill> monsterChargedSkills(const monsters::Actor &,const StatList &);
 using MonsterAuraMutation=std::function<void(monsters::Actor &,MonsterResourceTrace &,const SkillAuraChange &)>;
 void recordMonsterItemAura(monsters::Actor &,StatValue,EntityId,const StatSnapshot &,

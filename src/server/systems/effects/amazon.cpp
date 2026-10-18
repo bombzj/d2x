@@ -25,6 +25,7 @@ CharacterModifiers System::unitModifiers(EntityId id,uint64_t tick) const {
 std::vector<ModifierStatSource> System::unitStatSources(EntityId id,uint64_t tick) const {
     std::vector<ModifierStatSource> sources;
     if(const auto *effects=unitEffects(id)) sources=combatEffectStatSources(effects->entries(),tick);
+    if(const auto *unit=ports_.monsters.find(id)) attributes::appendStoredOwnerStats(*unit,sources);
     return sources;
 }
 bool System::unitLifeState(EntityId id,uint64_t tick) const {
@@ -162,7 +163,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
     if(emitter && (!pet || !pet->hireling || pet->owner!=actor.player || pet->area!=actor.area || pet->life<=0 || skill.manaCost || skill.charge)) return {DomainStatus::InvalidActor,{}};
     const EntityId source=pet?pet->id:actor.actor;
     auto units=std::make_shared<AuraUnitPublication>();
-    transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+    transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     const auto &rules=*p->rules.skills->stats;
     const auto &stat=rules.definitions.at(program.stat);
     const auto primary=program.nativeStat?*program.nativeStat:StatValue{{program.stat,0},

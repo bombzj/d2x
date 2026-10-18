@@ -145,10 +145,10 @@ DomainResult<> System::skill(const ActorContext &actor, const SkillCastSpec &ski
          {caster->rules.skills->nativeStats.at("bonearmormax"),installed->spec.physicalShieldMaximum}}});
     if(skill.effect==SkillBehavior::BoneArmor && skill.castOverlayId>=0) edit.publicFacts.emplace_back(OverlayFact{target->actor,0,target->area,skill.castOverlayId});
     std::vector<transactions::Change> changesToPrepare;
-    if(target==caster) {edit.charge=skill.charge;edit.publicFacts.insert(edit.publicFacts.end(),facts.begin(),facts.end());}
+    if(target==caster) {edit.charge=skill.charge;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.publicFacts.insert(edit.publicFacts.end(),facts.begin(),facts.end());}
     else {
         transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
-        debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+        debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
         debit.publicFacts.insert(debit.publicFacts.end(),facts.begin(),facts.end());
         changesToPrepare.emplace_back(std::move(debit));
     }

@@ -28,5 +28,7 @@ struct MonsterModeInput {
     EntityId owner;
     uint64_t occurrence{};
 };
+// DATATBLS physical fields without mode posting, elements or player scaling.
+MonsterModePhysical monsterModePhysicalBounds(const MonsterModeTable &,unsigned profile,int level,int difficulty,int gameType);
 std::shared_ptr<const StatList> prepareMonsterModeStats(const MonsterModeTable &,const StatRuleCatalog &,const MonsterModeInput &,uint64_t &random);
 }

@@ -37,6 +37,7 @@ class RemoteCombat {
     std::map<std::string, std::set<uint16_t>, std::less<>> innateSkills_;
     std::vector<OnlineCombatSkillView> catalog_;
     std::map<OnlineUnitKey, OnlineCombatUnitStates> unitStates_;
+    std::map<OnlineUnitKey,std::pair<uint64_t,uint16_t>> changedClasses_;
     struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; };
     std::map<OnlineUnitKey, Ownership> unitOwners_;
     std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
@@ -59,6 +60,8 @@ class RemoteCombat {
     bool hostile(const OnlineUnit &) const;
     bool hostileSource(const OnlineUnit &) const;
     uint8_t ownershipTransform(const OnlineUnit &) const;
+    std::optional<OnlineUnitKey> storedOwner(const OnlineUnit &) const;
+    std::optional<uint16_t> monsterClass(const OnlineUnit &) const;
     bool corpseSelectable(const OnlineUnit &) const;
     bool monsterTargetEligible(const OnlineUnit &, bool targetCorpse) const;
     bool skillTargetEligible(const OnlineUnit &, uint16_t skill) const;

@@ -2,6 +2,8 @@
 #include <set>
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/actions/state.hpp"
+#include "gameplay/effects/state.hpp"
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -35,7 +37,7 @@ DomainResult<> System::consumeRandom(const ActorContext &actor,uint64_t expected
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fixed8 cost, std::optional<PointTarget> relocation,
-    std::optional<SkillCharge> charge,std::vector<DomainFact> publicFacts,std::optional<UnitRandomEdit> random) {
+    std::optional<SkillCharge> charge,std::vector<DomainFact> publicFacts,std::optional<UnitRandomEdit> random,int skill) {
     const auto found = ports_.players.players_.find(actor.player);
     if (found == ports_.players.players_.end()) return {DomainStatus::InvalidActor, {}};
     auto &player = found->second;
@@ -48,8 +50,13 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     if (cost < 0 || player.persistent.player.mana < cost) return {DomainStatus::Unavailable, {}};
     if (relocation && (relocation->area != player.area || relocation->generation != area->generation || !area->definition.teleportAllowed ||
         !area->definition.collision.walkable(relocation->position, playerMovement))) return {DomainStatus::Unavailable, {}};
-    if(charge) {
+    const bool bloodMana=(skill>=0 || cost>0) && player.rules.character && player.transient.effects &&
+        player.transient.effects->hasState(player.rules.character->bloodManaState,actor.tick);
+    if(charge || bloodMana) {
         CharacterEdit edit{actor,player.inventoryRevision,expected,player.persistent.player};edit.player.mana-=cost;edit.charge=charge;
+        if(skill<0) if(const auto used=ports_.actions.usedSkill(actor.actor)) skill=used->skill;
+        if(!charge && skill<0) return {DomainStatus::Unavailable,{}};
+        edit.skillPayment=SkillManaPayment{cost,skill};
         edit.random=random;
         edit.publicFacts=std::move(publicFacts);
         if(relocation) edit.publicFacts.emplace_back(RepositionFact{player.actor,player.area,relocation->position});

@@ -113,6 +113,8 @@ struct AreaDefinition : AreaMetadata {
     std::shared_ptr<const CollisionField> collisionField;
     std::map<std::string,PreparedMonster,std::less<>> environmentMonsters;
     std::vector<std::string> populationRoster;
+    std::vector<std::pair<int,bool>> genericSpawnRoster; // Actual MonReg selections and original genericSpawn flags.
+    int genericSpawnFallback{-1};
     std::map<int,ShrineRule> shrineRules;
     std::vector<ShrineGenerationEntry> shrineGeneration;
     ObjectPopulationRules objectPopulation;
@@ -126,6 +128,7 @@ struct AreaDefinition : AreaMetadata {
     std::vector<RoomPopulationLayout> populationRooms;
     std::vector<NativeLevelSpawnEntry> normalSpawnRoster;
     std::map<int,PreparedMonster> nativeMonsterClasses;
+    std::map<int,int> nativeSummonClasses; // Common region family selection, prepared from MPQ.
 };
 struct AreaView { AreaMetadata definition; uint64_t generation{}; std::vector<std::string> populationDeferred; size_t populationMissing{},populationPendingRooms{}; };
 struct AreaState {

@@ -22,7 +22,7 @@ struct SkillFormulaRecord {
     int classId{-1},page{};
     int passiveState{-1},suppressionState{-1};
     int auraState{-1},auraTargetState{-1};
-    int reactionOverlay{-1},procOverlay{-1},serverOverlay{-1};
+    int reactionOverlay{-1},procOverlay{-1},serverOverlay{-1},summonOverlay{-1};
     uint16_t passiveLayer{};
     uint8_t elementType{};
     std::map<std::string,int32_t,std::less<>> numbers;

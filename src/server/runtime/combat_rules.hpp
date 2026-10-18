@@ -36,7 +36,7 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
@@ -68,6 +68,19 @@ struct MonsterRule {
     std::array<std::shared_ptr<const MonsterModeTable>,3> modeTables;
     std::array<std::shared_ptr<const MonsterLifeTable>,3> lifeTables;
     int ownerDamageSkill{-1};
+    int fingerMageCurseState{-1};
+    int boneArmorState{-1};
+    int pregnantState{-1},painwormBaseClass{-1},impBaseClass{-1};
+    int attachedState{-1},siegeBeastBaseClass{-1},barricadeTowerBaseClass{-1};
+    int storedOwnerState{-1};
+    int bloodlustState{-1},changeClassState{-1},shortParameterStat{-1};
+    std::map<int,int> whipClasses;
+    bool deathKillsStoredOwner{};
+    int monsterChainOffset{};
+    std::array<std::array<int,8>,4> impParameters{};
+    std::array<uint16_t,8> impBaseSkills{};
+    std::array<uint8_t,8> impBaseModes{};
+    int closeCurseState{-1},doomKnightBaseClass{-1};
     std::map<int,int> baseSkillRanks;
     std::vector<std::pair<int,int>> initialSkills;
     struct BirthProperty {uint8_t chance{};int parameter{},minimum{},maximum{};std::vector<PropertyInstruction> program;};

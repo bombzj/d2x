@@ -39,6 +39,7 @@ std::optional<MissileRingEmission> missileRingEmission(int elapsed, int period, 
 // SrvDo16 / CltDo20 rotate inside the native elapsed-frame window.
 std::optional<Vec> missileOrbTurn(Vec target, int elapsed, int window, int period);
 std::vector<Vec> missileRingBurst(int step);
+Vec primePoisonNovaDirection(int index);
 Vec missileDiagonalTurn(Vec target);
 // Native Fire Wall places makers perpendicular to the integer caster/aim ray.
 Vec missileWallDirection(Vec caster, Vec target);

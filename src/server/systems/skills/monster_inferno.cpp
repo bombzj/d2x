@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "runtime.hpp"
 #include "evaluation.hpp"
+#include "server/area_store.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/missiles/system.hpp"
@@ -19,15 +20,23 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
     if(pending.infernoEndAt) return tick.tick>=pending.infernoEndAt?done():DomainResult<bool>{DomainStatus::Applied,false};
     const auto &catalog=*unit->rule.formulas;const int skill=pending.request.skill;
     const auto &row=catalog.skills.at(skill);
-    if(row.number("srvdofunc")!=95 || pending.attack.infernoEndFrames<=0) return {DomainStatus::NotImplemented,{}};
+    const bool imp=row.number("srvdofunc")==126;
+    if((row.number("srvdofunc")!=95 && row.number("srvdofunc")!=152 && !imp) || pending.attack.infernoEndFrames<=0) return {DomainStatus::NotImplemented,{}};
     const auto finish=[&] {
         pending.hitReleased=true;
-        pending.infernoEndAt=tick.tick+uint64_t(pending.attack.infernoEndFrames);
+        pending.infernoEndAt=tick.tick+uint64_t(imp?13:pending.attack.infernoEndFrames);
+        if(imp) if(const auto mode=runtime_->monsterModes.find(unit->id);mode!=runtime_->monsterModes.end()) {
+            mode->second.frozenSequence=true;mode->second.step={};
+        }
         pending.due=pending.infernoEndAt;ports_.monsters.extendAttack(unit->id,pending.due);
         return DomainResult<bool>{DomainStatus::Applied,false};
     };
-    const auto target=ports_.monsters.targetPosition(std::get<UnitTarget>(pending.request.target).id,unit->area);
-    if(!target) return finish();
+    const auto target=ports_.monsters.nativeTargetPosition(std::get<UnitTarget>(pending.request.target).id,unit->area);
+    if(target) pending.launch=std::pair{unit->position,target->first};
+    const auto aim=target?std::optional{target->first}:pending.launch?std::optional{pending.launch->second}:std::nullopt;
+    if(!aim) return finish();
+    const auto global=*aim+ports_.areas.at(unit->area).definition.origin;
+    if(!int(global.x) || !int(global.y)) return finish();
     const auto sampled=ports_.effects.unitStatValues(unit->id,tick.tick);
     if(!sampled) return {DomainStatus::Unavailable,{}};
     const auto ranks=nativeMonsterSkillRanks(unit->rule.baseSkillRanks,*sampled,*unit->rule.stats,catalog);
@@ -41,17 +50,26 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
     const auto definition=ports_.missiles.nativeDefinition(row.reference("srvmissilea"));
     if(!definition) return {DomainStatus::Unavailable,{}};
     const auto &missile=catalog.missiles.at(*definition);
-    // Retail Do95 leaves the missile skill ID zero. FetishInferno damage
-    // comes from the missile row; level controls velocity and beam length.
-    missiles::NativeSpawn spawn{unit->id,unit->area,pending.generation,tick.tick,unit->position,target->first,*definition,0,rank};
-    int frames=calculate("calc1");if(frames<=0) frames=nativeAdd(missile.number("param2"),rank-1);
-    spawn.totalFrames=std::clamp(frames,1,255);
+    // Retail Do95 leaves the missile skill ID zero. The monster Inferno / Arctic Blast programs
+    // use their own missile damage; level controls velocity and beam length.
+    missiles::NativeSpawn spawn{unit->id,unit->area,pending.generation,tick.tick,unit->position,*aim,*definition,imp?skill:0,rank};
+    if(imp) spawn.postCreationFrames=nativeAdd(missile.number("param2"),calculate("calc2"));
+    else {
+        int frames=calculate("calc1");if(frames<=0) frames=nativeAdd(missile.number("param2"),rank-1);
+        spawn.postCreationFrames=std::clamp(frames,1,255);
+    }
     spawn.nativeVelocity=nativeAdd(missile.number("vel"),nativeMultiply(rank,missile.number("vellev"))/8);
     auto prepared=ports_.missiles.prepareNativeBirth(std::span<const missiles::NativeSpawn>{&spawn,1});
-    if(!prepared) return isDeferred(prepared.status)?DomainResult<bool>{prepared.status,{}}:finish();
-    const bool created=!(*prepared.value)->facts().empty();
-    const auto committed=ports_.missiles.commitNativeBirth(std::move(*prepared.value));if(!committed) return {committed.status,{}};
-    if(!created) return finish();
+    if(!prepared && isDeferred(prepared.status)) return {prepared.status,{}};
+    bool created=false;
+    if(prepared) {
+        // ClientSend controls 0x73 visibility, independently of construction.
+        created=bool((*prepared.value)->first());
+        const auto committed=ports_.missiles.commitNativeBirth(std::move(*prepared.value));if(!committed) return {committed.status,{}};
+    }
+    // Do126 still rewinds and schedules after a failed constructor. Do95
+    // takes its separate ENDANIM failure branch instead.
+    if(!created && !imp) return finish();
     pending.hitReleased=true;
     if(const auto mode=runtime_->monsterModes.find(unit->id);mode!=runtime_->monsterModes.end()) {
         mode->second.animation.frame=pending.attack.infernoFrame*256;
@@ -59,7 +77,7 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
         mode->second.step.ended=false;
     }
     if(tick.tick>=pending.infernoUntil || !ports_.effects.unitStates(unit->id,tick.tick).contains(catalog.infernoState)) return finish();
-    pending.due=tick.tick+uint64_t(std::max(1,calculate("calc3")));
+    pending.due=tick.tick+uint64_t(imp?3:std::max(1,calculate("calc3")));
     ports_.monsters.extendAttack(unit->id,pending.due);
     return {DomainStatus::Applied,false};
 }

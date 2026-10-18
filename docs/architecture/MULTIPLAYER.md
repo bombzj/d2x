@@ -96,7 +96,7 @@
 | --- | --- |
 | 调度／动作 | 当前可达玩家／怪物动作、AI／伙伴、移动、物件及物品再生已接所属帧事件，旧批量释放／怪物step已撤出。完整世界休眠重建及原全局交错验收保留，见[动作边界](../modules/SERVER_SYSTEMS.md#调度与动作的职责及迁移边界) |
 | 近战／随机 | 普攻、专用武器程序、怪物／佣兵／伙伴共用原生联系与单位种子；旧Damage、rollWeaponSkillDamage及动作随机副本已撤出。见[逐程序对照](../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移) |
-| 属性／费用／死亡 | 原始列表与`expireOrdinary`维护并存；Blood Mana未覆盖全部费用入口，Kill／Killed、再生致死及击杀恢复尚未形成完整公共事件链 |
+| 属性／费用／死亡 | 原始列表与`expireOrdinary`维护并存；Blood Mana已接当前显式技能费用入口，普通法术／传送及不足生命获有限实机观察，全部来源／重试组合尚未认证，Kill／Killed、再生致死及击杀恢复尚未形成完整公共事件链 |
 | 装备／伙伴 | `reactions/item_triggers`仍有玩家阶段适配与未实现ItemEffect程序；非玩家来源、双持、换装及撤出组合未闭合 |
 | 飞弹／世界 | Do18已连开箱／金币操作和控制Actor出生，专用开箱及原出生顺序仍待核对；Rabies已有近战感染与根载体。Hit6／23／54、Hit39完整出生、非玩家骨墙及门户／客户端剩余程序继续收尾 |
 | 接口清理／复核 | 无调用的`missileDamageRange(float,float)`、旧`rollSmiteDamage`及旧Vengeance伤害分支已删除；`weaponVolley`仅余客户端表现消费者。旧GameSession不是当前权威执行器；R6继续跨内容复核 |

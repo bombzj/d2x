@@ -300,11 +300,11 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const auto action=AttackFact{actor.actor,unit,0,type,actor.area,p.position,target.position,actor.sequence,
         uint16_t(selected),uint8_t(effectiveRank),bool(staged.skill.leap)};
     if(staged.assassinKick || (staged.skill.assassin && staged.skill.assassin->program==AssassinProgram::PsychicHammer)) {
-        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action});
+        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action},{},staged.skill.sourceId);
         if(!debit) return debit;
         staged.manaPaid=true;runtime_->assassinStarts.erase(actor.actor);
     } else if(inferno) {
-        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action});
+        const auto debit=ports_.transactions.release(actor,p.characterRevision,staged.skill.manaCost,{},staged.skill.charge,{action},{},staged.skill.sourceId);
         if(!debit) return debit;
         if(staged.skill.charge) {
             staged.skill.charge->item=p.persistent.inventory.items.at(staged.skill.charge->item.id).handle();

@@ -32,7 +32,7 @@ DomainStatus System::startDruidPeriodic(Release &pending,const ActorContext &act
         transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,prepared.value->character};
         edit.transient=prepared.value->transient;edit.resourceBase=prepared.value->resourceBase;edit.publicFacts=prepared.value->publicFacts;
         edit.random=transactions::UnitRandomEdit{player->combatRandom,random};
-        if(!pending.manaPaid) {edit.player.mana-=pending.skill.manaCost;edit.charge=pending.skill.charge;}
+        if(!pending.manaPaid) {edit.player.mana-=pending.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};edit.charge=pending.skill.charge;}
         auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return plan.status;
         const auto committed=ports_.transactions.commit(std::move(*plan.value));if(!committed) return committed.status;
         ports_.effects.commit(std::move(*prepared.value));
@@ -46,6 +46,9 @@ DomainStatus System::startDruidPeriodic(Release &pending,const ActorContext &act
 }
 DomainResult<> System::activeStateEvent(const FrameEvent &event,uint64_t tick) {
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    if(event.owner.type==FrameEventUnit::Monster) if(const auto *unit=ports_.monsters.find(event.owner.unit);
+        unit && unit->rule.ai.kind==MonsterAiKind::Imp && event.customId==unit->rule.skillIds[0])
+        return ports_.monsters.impRiderEvent(event,tick);
     const auto caster=nativeCaster(ports_.players,ports_.monsters,event.owner.unit);
     auto &retained=runtime_->druidActive;
     const auto finish=[&] {ports_.frameEvents.cancel(event.handle);retained.erase(event.handle);return done();};

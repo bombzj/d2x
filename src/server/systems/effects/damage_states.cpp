@@ -14,7 +14,6 @@ AuraUnitPublication System::prepareDamageStates(monsters::Actor candidate,UnitDa
     stageDamageStates(plan,std::move(candidate),std::move(damage),tick);return plan;
 }
 void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candidate,UnitDamageStates damage,uint64_t tick) const {
-    prepareMonsterModifierEvents(candidate,ports_.monsters.find(candidate.id));
     const auto id=candidate.id;
     if(!candidate.alive() && ((candidate.killMinionsOnDeath && !candidate.minionDeathHandled) ||
         (candidate.ownsNativeMinions && !candidate.ownershipDeathHandled))) {
@@ -41,7 +40,10 @@ void System::stageDamageStates(AuraUnitPublication &plan,monsters::Actor candida
         plan.eventsOnly.erase(id);std::erase(plan.lifeOrder,id);
     } else if(const auto found=units_.find(id);found!=units_.end()) unit=found->second;
     std::map<EntityId,monsters::Actor> actors;actors.emplace(id,std::move(candidate));
-    if(plan.actors && plan.actors->actors.contains(id)) plan.actors->actors.at(id)=std::move(actors.begin()->second);
+    if(plan.actors && plan.actors->actors.contains(id)) {
+        prepareMonsterModifierEvents(actors.begin()->second,ports_.monsters.find(id));
+        plan.actors->actors.at(id)=std::move(actors.begin()->second);
+    }
     else {
         auto publication=ports_.monsters.prepareActorPublication(std::move(actors),0);
         if(!plan.actors) plan.actors=std::make_shared<monsters::ActorPublication>(std::move(publication));

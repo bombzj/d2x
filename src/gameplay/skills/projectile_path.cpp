@@ -94,6 +94,11 @@ std::vector<Vec> missileRingBurst(int step) {
     for (int direction = 0; direction < 64; direction += step) result.push_back(missileRingDirection(direction));
     return result;
 }
+Vec primePoisonNovaDirection(int index) {
+    constexpr std::array<Vec,16> directions{{{0,2},{1,2},{2,2},{2,1},{2,0},{2,-1},{2,-2},{1,-2},
+        {0,-2},{-1,-2},{-2,-2},{-2,-1},{-2,0},{-2,1},{-2,2},{-1,2}}};
+    return directions[unsigned(index)&15];
+}
 Vec missileDiagonalTurn(Vec target) {
     const int x = int(target.x), y = int(target.y);
     return {float((x - y) / 2), float((x + y) / 2)};

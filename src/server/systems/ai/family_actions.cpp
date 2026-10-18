@@ -134,6 +134,10 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     input.upgradeCooldown=controller.upgradeCooldown;
     input.continuation=continuation;
     input.hasTarget=bool(target.id);
+    if(monster.rule.ai.kind==MonsterAiKind::Smith) {
+        const int maximum=int(monster.maximumLife>>8);
+        input.lifePercent=maximum?int((monster.life>>8)*100/maximum):0;
+    }
     const auto shootable=(monster.rule.ai.kind==MonsterAiKind::SkeletonBow || monster.rule.ai.kind==MonsterAiKind::SkeletonMage ||
         monster.rule.ai.kind==MonsterAiKind::Bighead || monster.rule.ai.kind==MonsterAiKind::FallenShaman ||
         monster.rule.ai.kind==MonsterAiKind::FetishBlowgun || monster.rule.ai.kind==MonsterAiKind::Vampire || monster.rule.ai.kind==MonsterAiKind::CorruptArcher)?shootableTarget(monster,tick):std::nullopt;
@@ -262,7 +266,7 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
                 if(!controller.pursuing && (monster.rule.ai.kind==MonsterAiKind::Wraith || monster.rule.ai.kind==MonsterAiKind::SkeletonBow)) decision->waitFrames=10;
             } else if(boss && boss->returnHome) controller.pursuing=bool(ports_.monsters.requestMove({id,{monster.area,area.generation,monster.home},{},0,decision->velocityPercent,decision->running}));
             else controller.pursuing = bool(ports_.monsters.requestMove({id,{monster.area,area.generation,actionPosition},actionTarget.id,decision->stopDistance,decision->velocityPercent,decision->running,decision->pathSteps,0,0,13,uint8_t(decision->pathDistance)}));
-            if(!controller.pursuing && (monster.rule.ai.kind==MonsterAiKind::ThornHulk || monster.rule.ai.kind==MonsterAiKind::Vampire || monster.rule.ai.kind==MonsterAiKind::Skeleton || monster.rule.ai.kind==MonsterAiKind::Goatman || monster.rule.ai.kind==MonsterAiKind::Brute || (monster.rule.ai.kind==MonsterAiKind::Bighead && input.lifePercent>=monster.rule.ai.params[0]) ||
+            if(!controller.pursuing && (monster.rule.ai.kind==MonsterAiKind::Smith || monster.rule.ai.kind==MonsterAiKind::DoomKnight || monster.rule.ai.kind==MonsterAiKind::ThornHulk || monster.rule.ai.kind==MonsterAiKind::Vampire || monster.rule.ai.kind==MonsterAiKind::Skeleton || monster.rule.ai.kind==MonsterAiKind::Goatman || monster.rule.ai.kind==MonsterAiKind::Brute || (monster.rule.ai.kind==MonsterAiKind::Bighead && input.lifePercent>=monster.rule.ai.params[0]) ||
                 (monster.rule.ai.kind==MonsterAiKind::Fallen && !input.commanded && !input.retaliating) ||
                 (monster.rule.ai.kind==MonsterAiKind::CorruptRogue && !decision->running) ||
                 (monster.rule.ai.kind==MonsterAiKind::Fetish && !input.commanded))) {

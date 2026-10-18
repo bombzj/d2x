@@ -64,6 +64,7 @@ struct ActThreeState {
     bool orbSequenceStarted{},orbFxPending{};
 };
 struct ActFourState {
+    bool izualActivated{};
     bool izualSlain{},ghostSpawned{},hammerDropped{},forgePlaced{},forgeSmashed{},diabloSlain{},diabloSpawned{},portalOpened{};
     bool sanctumCleared{};
     Vec ghostPosition;
@@ -73,6 +74,7 @@ struct ActFourState {
     uint64_t diabloAt{};
 };
 struct ActFiveState {
+    bool siegeBossActivated{};
     bool anyaThawed{},anyaSpawned{},anyaPortal{},ancientsActive{},ancientsDefeated{},throneDeparted{},baalSlain{},tyraelSpawned{},exitPortal{};
     unsigned rescued{},wave{};
     uint64_t ancientAt{},waveAt{};

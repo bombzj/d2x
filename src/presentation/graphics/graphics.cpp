@@ -204,6 +204,8 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
                     dir = d;
                 return &a->frames[dir * a->framesPerDirection + (f % a->framesPerDirection)];
             };
+            const auto *anchor=get(14);
+            gpu.riderAnchors.push_back(anchor?std::optional{Vec{float(anchor->x),float(anchor->y)}}:std::nullopt);
             for (auto [c, a] : parts) {
                 auto p = get(c);
                 left = std::min(left, p->x);

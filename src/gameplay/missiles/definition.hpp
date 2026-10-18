@@ -19,7 +19,7 @@ struct MissileLevelDamage {
 };
 struct MissileSkillDamage {int rankSkill{-1},damageSkill{-1};};
 struct MissilePathInitialization {
-    enum class Kind { None,ChargedSkill,ChargedBurst } kind{};
+    enum class Kind { None,ChargedSkill,ChargedBurst,DiabWall } kind{};
     int index{};
 };
 struct MissileRule {

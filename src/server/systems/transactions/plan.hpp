@@ -26,6 +26,10 @@ enum class ResourceRefresh { Clamp, AttributeGain, LevelUp, StaminaPotion };
 struct WorldEdit { uint64_t expected{}; items::State next; };
 struct DirectedFacts { PlayerId player; std::vector<DomainFact> facts; };
 struct UnitRandomEdit {uint64_t expected{},next{};};
+// The candidate has already deducted this ordinary skill cost from mana.
+// This marker permits the native Blood Mana procedure; damage/drain and
+// inventory resource changes do not pass through skill consumption.
+struct SkillManaPayment {Fixed8 amount;int skill{-1};bool aura{};};
 struct InventoryEdit {
     ActorContext actor;
     uint64_t expectedRevision{}, expectedCharacterRevision{};
@@ -48,6 +52,7 @@ struct InventoryEdit {
     std::vector<ResourceMaximums> resourceMaximums;
     std::optional<ResourceMaximums> resourceBase;
     std::optional<UnitRandomEdit> random;
+    std::optional<SkillManaPayment> skillPayment;
 };
 struct ItemAuraTimerCompletion {
     EntityId source;
@@ -77,6 +82,7 @@ struct CharacterEdit {
     std::optional<ItemAuraTimerCompletion> itemAuraTimer;
     std::optional<UnitRandomEdit> random;
     bool cancelItemAuras{};
+    std::optional<SkillManaPayment> skillPayment;
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {

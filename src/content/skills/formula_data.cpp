@@ -110,6 +110,7 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             };
             record.auraState=nativeState("aurastate");record.auraTargetState=nativeState("auratargetstate");
             record.reactionOverlay=overlay("cltoverlaya");record.procOverlay=overlay("prgoverlay");record.serverOverlay=overlay("srvoverlay");
+            record.summonOverlay=overlay("sumoverlay");
             const auto metadata=loadSkillEligibilityMetadata(skills,row);
             static_cast<SkillEquipmentRule &>(record.restore)=metadata;
             record.restore.inGame=metadata.inGame;record.restore.aura=metadata.aura;record.restore.passive=metadata.passive;

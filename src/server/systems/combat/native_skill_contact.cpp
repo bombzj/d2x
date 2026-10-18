@@ -476,7 +476,14 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         auto weapon=impact.weapon;
         const auto damage=evaluate(random,[&](SkillFormulaValues &values) {
             if(!execution.melee) {
-                auto damage=rollNativeSkillDamage(values,execution.skill,execution.rank,random);
+                auto damage=execution.directFunction==100?MissileHitDamage{}:rollNativeSkillDamage(values,execution.skill,execution.rank,random);
+                if(execution.directFunction==100) {
+                    const auto length=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"edln");
+                    if(!length) throw std::logic_error("Missing native DiabCold freeze length");
+                    damage.freezeLength=*length;
+                    rollNativeSkillElement(damage,values,execution.skill,execution.rank,random);
+                    if(const auto hitClass=catalog.skills.at(execution.skill).number("hitclass")) damage.hitClass=uint8_t(hitClass);
+                }
                 if(execution.directFunction==107) {
                     const auto range=values.physicalRange(execution.skill,execution.rank,true);
                     const auto length=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"edln");

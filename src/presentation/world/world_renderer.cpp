@@ -107,7 +107,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
         items.push_back(entry);
     }
     for (const auto &effect : clientMissiles_) {
-        if (effect.age < 0) continue;
+        if (effect.age < 0 || effect.hiddenUntilCurrentFrame) continue;
         WorldDrawItem entry; entry.missile = effect.missileId;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;

@@ -50,9 +50,12 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto nativeVelocity = missileVelocityFixed(program.velocity+velocityBonus,program.velocityPerLevel,level,program.canSlow?slowPercent:0);
     if (!nativeVelocity ||
         (program.acceleration && program.maximumVelocity <= 0)) return false;
-    const int velocity = capabilities->stationary ? 0 : program.function==4 && program.poisonVelocity[0]>0?poisonCloudVelocity(program.poisonVelocity[0]):*nativeVelocity;
+    const auto rawVelocity=initialization.velocityRaw.value_or(0);
+    const auto explicitVelocity=nativeMultiply(program.canSlow && slowPercent?nativeMultiply(rawVelocity,slowPercent)/100:rawVelocity,75)/100;
+    const int velocity = capabilities->stationary ? 0 : initialization.velocityRaw?explicitVelocity:
+        program.function==4 && program.poisonVelocity[0]>0?poisonCloudVelocity(program.poisonVelocity[0]):*nativeVelocity;
     const int tableFrames=nativeMissileFrameCount(nativeAdd(program.frames,nativeMultiply(level,program.framesPerLevel)));
-    const float tableDuration = float(tableFrames) / 25.f;
+    const float tableDuration = float(initialization.totalFrames.value_or(tableFrames)) / 25.f;
     const float fullDuration = tableDuration > 0 ? tableDuration : assets_.projectileVisuals.at(id).lifetime;
     const float duration = remaining.value_or((program.groundThrow || initialization.distanceLimited)?float(groundThrowFrames(start,target,velocity))/25.f:program.function==7 && !guidedTarget?std::max(1.f/25.f,(target-start).length()/std::max(.001f,float(velocity)*25.f/4096.f)):fullDuration);
     if (duration <= 0 || !std::isfinite(duration) || !std::isfinite(delay) ||
@@ -69,7 +72,11 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         for (auto it = clientMissiles_.rbegin(); it != clientMissiles_.rend(); ++it) {
             if (!matchesCreation(*it,id,owner,start,target-start,sources,expectedAge,.25f+std::max(0.f,delay))) continue;
             it->creationSources |= sources;
+            if(initialization.totalFrames) it->nativeTotalFrames=nativeMissileFrameCount(*initialization.totalFrames);
+            if(initialization.hiddenUntilCurrentFrame) it->hiddenUntilCurrentFrame=initialization.hiddenUntilCurrentFrame;
+            if(initialization.animationRate) it->animationRate=initialization.animationRate;
             if(initialization.parameters) it->nativeParameters=initialization.parameters;
+            if(initialization.velocityRaw) {it->velocityFixed=velocity;it->velocity=(target-start).unit()*(float(velocity)*25.f/4096.f);}
             if(initialization.streamRange) it->streamRange=*initialization.streamRange;
             if(initialization.streamPeriod) it->streamPeriod=*initialization.streamPeriod;
             if(initialization.graphics) {
@@ -102,7 +109,8 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     // Retail packet 73 (D2Client RVA AEEE0) constructs the full table range,
     // then calls SetCurrentFrame(packet.frame), leaving TotalFrames untouched.
     // The packet never supplies an animation frame or a callback-age prefix.
-    effect.nativeTotalFrames=tableFrames;
+    effect.nativeTotalFrames=nativeMissileFrameCount(initialization.totalFrames.value_or(tableFrames));
+    effect.hiddenUntilCurrentFrame=initialization.hiddenUntilCurrentFrame;
     effect.setCurrentFrame(int(std::lround(duration*25.f)));
     if(source==ClientMissileSource::Synchronization) {
         const auto &visual=assets_.projectileVisuals.at(id);
@@ -140,8 +148,14 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     if(initialization.path!=ClientMissileInitialization::Path::None) {
         int frames=initialization.path==ClientMissileInitialization::Path::Charged?int(uint8_t(effect.nativeTotalFrames)):effect.nativeTotalFrames;
         if(frames>=78) {frames=77;effect.nativeTotalFrames=77;effect.setCurrentFrame(77);effect.duration=77.f/25.f;}
-        const auto path=initialization.path==ClientMissileInitialization::Path::Charged?chargedBoltPath(start,target,frames,effect.random):assassinProgressiveSpiral(start,target,frames,effect.random);
-        effect.path.assign(path.begin(),path.end());
+        const bool wall=initialization.path==ClientMissileInitialization::Path::DiabWall;
+        if(!wall || rollRandom(effect.random)%100>=20) {
+            const auto path=initialization.path==ClientMissileInitialization::Path::Charged || wall?chargedBoltPath(start,target,frames,effect.random):assassinProgressiveSpiral(start,target,frames,effect.random);
+            effect.path.assign(path.begin(),path.end());
+            // Packet73 carries the initialized path's first point. Keep that
+            // ray for pairing its synchronization with this DiabWall cast.
+            if(wall && !effect.path.empty()) effect.creationDirection=(effect.path.front()-start).unit();
+        }
     }
     if(const auto fall=assets_.blizzardFalls.find(id);fall!=assets_.blizzardFalls.end()) {
         effect.flight=false;effect.duration=float((fall->second.fallDistance+fall->second.fallRate-1)/fall->second.fallRate)/25.f;
@@ -568,7 +582,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             } else next = next + effect.velocity * (1.f / 25.f);
             float fraction = 1.f;
             bool wall = false;
-            if (program.collision.mask & 0x0005) {
+            if(effect.hiddenUntilCurrentFrame && effect.nativeCurrentFrames<=*effect.hiddenUntilCurrentFrame) effect.hiddenUntilCurrentFrame.reset();
+            if (!effect.hiddenUntilCurrentFrame && (program.collision.mask & 0x0005)) {
                 if (const auto contact = missileTerrainContact(grid, effect.pos, next, program.collision, origin)) {
                     fraction = *contact; wall = true;
                 }
@@ -592,7 +607,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             if ((program.function==6 || program.function==22 || program.function==27) && !wall && missileChangedCell(start,next))
                 emit(program.children[0],{float(int(next.x))+.5f,float(int(next.y))+.5f},{},effect,childAge);
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
-            if (program.collide && program.function != 19)
+            if (!effect.hiddenUntilCurrentFrame && program.collide && program.function != 19)
                 for (const auto &target : targets) {
                     if ((program.holyBolt && !target.undead) || (program.function==7 && ((!effect.guidance && !effect.guidanceSearched) || (effect.guidance && target.id!=effect.guidance))) || target.id == effect.owner || target.hostile == effect.hostile ||
                         std::find(effect.contacts.begin(), effect.contacts.end(), target.id) != effect.contacts.end()) continue;

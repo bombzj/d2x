@@ -68,13 +68,16 @@ struct MonsterRelease {
     bool formulaPrepared{};
     bool releaseRankPrepared{};
     int32_t formulaValue{};
+    int32_t formulaValue2{};
     std::pair<uint64_t,uint64_t> formulaRandom;
     bool hitReleased{};
     uint64_t infernoUntil{};
     uint64_t infernoEndAt{};
     std::optional<Vec> leapDestination;
+    std::optional<int> nestClass; // St49's captured fallback; valid MonStats.spawn takes priority.
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
     std::shared_ptr<effects::NativeAreaPulse> mosquito;
+    std::shared_ptr<effects::NativeAreaPulse> directSkill;
     int mosquitoLoops{};
     bool nativeCallbackStarted{},cancelled{};
     std::shared_ptr<SkillRelease> nativeSkill;

@@ -11,6 +11,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     // owning system's state, never to this per-step scratch buffer.
     if(!frame_) {frame_=tick.tick;facts_={};for(auto &metric:metrics_) metric.nanoseconds=0;}
     else if(*frame_!=tick.tick) throw std::logic_error("Simulation resumed an unfinished frame with another timestamp");
+    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
     if(systems.monsters.finishModifiers(tick)!=StepStatus::Complete) return false;
     const auto run=[&](SystemId id,auto &&operation) {
         const auto started=std::chrono::steady_clock::now();
@@ -38,14 +39,17 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
                 event.owner.type==FrameEventUnit::Monster && event.type==FrameEventType::ModeChange && !event.payload?SystemId::Monsters:
                 (event.owner.type==FrameEventUnit::Player || event.owner.type==FrameEventUnit::Monster) && (event.type==FrameEventType::ModeChange || event.type==FrameEventType::EndAnimation)?SystemId::Skills:
                 event.owner.type==FrameEventUnit::Monster && (event.type==FrameEventType::AiReset || event.type==FrameEventType::StatRegeneration)?SystemId::Monsters:SystemId::Effects;
-            DomainResult<> result;
-            run(owner,[&] {
+            DomainResult<> result{DomainStatus::Applied,std::monostate{}};
+            if(completedNativeEvent_!=event.handle.value) run(owner,[&] {
                 result=dispatchFrameEvent(systems,event,tick);
                 return isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale?
                     StepStatus::Blocked:StepStatus::Complete;
             });
             if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return false;
             if(!result && result.status!=DomainStatus::InvalidActor) throw std::logic_error("Native frame event has no implemented handler");
+            completedNativeEvent_=event.handle.value;
+            if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
+            completedNativeEvent_=0;
             return true;
         })) return false;
         phase_=Phase::Domains;
@@ -94,6 +98,10 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     if(phase_==Phase::Combat) {
     run(SystemId::Combat,[&]{return systems.combat.step(tick,facts_);});
     if(steps_[size_t(SystemId::Combat)]==StepStatus::Blocked) return false;
+    phase_=Phase::StateRemovals;
+    }
+    if(phase_==Phase::StateRemovals) {
+    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
     phase_=Phase::Trade;
     }
     if(phase_==Phase::Trade) {
@@ -112,6 +120,10 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     steps_[size_t(SystemId::Objects)] = systems.objects.step(tick, facts_);
     if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
     if(systems.monsters.pendingModifiers()) return false;
+    phase_=Phase::ObjectRemovals;
+    }
+    if(phase_==Phase::ObjectRemovals) {
+    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
     phase_=Phase::Modifiers;
     }
     if(phase_==Phase::Modifiers) {

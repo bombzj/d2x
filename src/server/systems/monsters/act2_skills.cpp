@@ -17,6 +17,33 @@
 #include <cmath>
 
 namespace d2x::server::monsters {
+bool System::canNativeTeleport(EntityId id,Vec point,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) const {
+    const auto *unit=find(id);if(!unit || !unit->alive() || !collision) return false;
+    const auto &area=ports_.areas.at(unit->area).definition;const auto global=point+area.origin;
+    const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
+    const auto room=ports_.areas.roomAtPosition(unit->area,unit->position,x,y);
+    return room && !ports_.areas.at(room->area).definition.town &&
+        !ports_.areas.nativeCollisionMask(*room,x,y,unit->rule.size,0x3c01,collision) &&
+        area.collision.segment(unit->position,point,{}, {0xc01,1});
+}
+DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end() || !found->second.alive() || !collision) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto global=point+ports_.areas.at(unit.area).definition.origin;
+    const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
+    auto room=ports_.areas.roomAtPosition(unit.area,unit.position,x,y);
+    if(!room) if(const auto *owner=find(minionOwner(id))) {
+        const auto &area=ports_.areas.at(owner->area).definition;
+        if(const auto *bounds=area.activation.room(owner->position))
+            room=RoomView{owner->area,(int(area.origin.x)+bounds->x)/5,(int(area.origin.y)+bounds->y)/5};
+    }
+    if(!room) return {DomainStatus::Unavailable,{}};
+    const auto landing=ports_.areas.nativeFreeCoordinates(*room,x,y,unit.rule.size,0x1c09,collision);
+    if(!landing) return {DomainStatus::Unavailable,{}};
+    (void)tick;stop(id);unit.area=landing->room.area;unit.position=landing->position+Vec{.5f,.5f};
+    ports_.areas.moveRoomUnit(id,unit.area,unit.position);++unit.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 bool System::canLand(EntityId source) const {
     const auto *actor=find(source);if(!actor || actor->life<=0) return false;
     if(!ports_.areas.at(actor->area).definition.collision.walkable(actor->position,actor->rule.spawnCollision)) return false;
@@ -56,6 +83,7 @@ DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airbor
     auto &actor=found->second;const auto clock=actor.rule.aiPoseTicks.find(mode);
     if(mode!=1 && clock==actor.rule.aiPoseTicks.end()) return {DomainStatus::Unavailable,{}};
     if(actor.airborne && !airborne && !canLand(source)) return {DomainStatus::Unavailable,{}};
+    recordNativeMode(actor,mode);
     actor.aiPose=mode;actor.holdPose=hold;actor.airborne=airborne;actor.poseUntil=tick+uint64_t(mode==1?0:clock->second);
     actor.targetFlagsDisabled=airborne;
     if(!airborne) {if(!preserveMovement) stop(source);actor.busyUntil=std::max(actor.busyUntil,aiWait>0?tick+uint64_t(aiWait):actor.poseUntil);}

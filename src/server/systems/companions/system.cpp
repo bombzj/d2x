@@ -122,7 +122,7 @@ DomainResult<> System::hydra(const ActorContext &actor,const SkillCastSpec &skil
     auto units=std::make_shared<effects::AuraUnitPublication>();const auto allocated=actors.value->size();
     ports_.effects.stageAuraActors(*units,std::move(*actors.value),allocated);
     const auto retired=ports_.monsters.stageRetirements(*units,retire,actor.tick);if(!retired) return retired;
-    transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
+    transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},units);if(!plan) return {plan.status,{}};
     plan.value->gameRandom=transactions::UnitRandomEdit{expectedRandom,random};
     for(const auto &[room,loan]:loans) {(void)room;plan.value->roomRandomLoans.push_back(std::make_shared<const RoomRandomLoan>(loan));}

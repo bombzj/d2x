@@ -24,7 +24,7 @@ struct Request { Action action; uint16_t skill{}; bool right{}, repeat{}, statio
 using CastRequest = actions::MonsterCastRequest;
 using Cast = actions::SkillAction;
 using State = actions::State;
-struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; };
+struct Ports { const PlayerStore &players; const AreaStore &areas; monsters::System &monsters; MovementSystem &movement; combat::System &combat; transactions::System &transactions; missiles::System &missiles; travel::System &travel; EventOutbox &events; effects::System &effects; companions::System &companions; objects::System &objects; inventory::System &inventory; loot::System &loot; const social::System &social; actions::State &actions; reactions::ItemTriggers &itemTriggers; const spatial::System &spatial; FrameEventQueue &frameEvents; ai::System &ai; };
 class System {
   State &state_;
     const Ports ports_;
@@ -36,6 +36,8 @@ class System {
     DomainResult<bool> releaseAssassinPet(MonsterRelease &,TickContext);
     DomainResult<bool> releaseMonsterInferno(MonsterRelease &,TickContext);
     DomainResult<bool> releaseMonsterMosquito(MonsterRelease &,TickContext);
+    DomainResult<> releaseOverseer(MonsterRelease &,TickContext);
+    DomainResult<> releaseMonsterSpell(MonsterRelease &,TickContext);
     DomainResult<Vec> startMonsterLeap(const CastRequest &);
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);
@@ -90,6 +92,7 @@ class System {
     System &operator=(const System &)=delete;
     const State &read() const { return state_; }
     void cancel(PlayerId, EntityId);
+    DomainResult<> ejectImp(EntityId carrier,uint64_t tick);
     void interrupt(const ActorContext &);
     bool uninterruptible(EntityId actor) const;
     size_t pendingReleases() const;

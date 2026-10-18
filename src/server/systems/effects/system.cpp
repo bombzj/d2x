@@ -201,7 +201,7 @@ EffectApplication applyCurseState(CombatEffectSet &states,const CurseSpec &progr
         if(spec.curseAi==CurseAi::Confuse || spec.curseAi==CurseAi::Attract) {
             seed.nativeRemoval=NativeStateRemoval::ClearTargets;seed.refreshPassivesOnRemoval=false;
         } else {
-            seed.refreshPassivesOnRemoval=true;
+            seed.refreshPassivesOnRemoval=spec.nativeRemoval!=NativeStateRemoval::Pregnant;
             if(spec.curseAi!=CurseAi::None) seed.nativeRemoval=NativeStateRemoval::RestoreAi;
         }
         seed.nativeValues.emplace();seed.nativeValues->clear();

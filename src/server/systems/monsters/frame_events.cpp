@@ -64,6 +64,10 @@ DomainResult<> System::modeEvent(const FrameEvent &event,uint64_t tick) {
     if(tick<event.due) return {DomainStatus::Applied,std::monostate{}};
     if(advanceMode(event.owner.unit,{tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
     const auto *unit=find(event.owner.unit);
+    if(unit && unit->rule.deathKillsStoredOwner && !unit->alive() && tick>=unit->busyUntil && find(unit->nativeOwner)) {
+        const auto killed=scriptDeath(unit->nativeOwner,tick);if(!killed) return killed;
+    }
+    if(unit && unit->hydra() && !unit->owner && !unit->alive() && tick>=unit->busyUntil) return remove(unit->id);
     if(unit && !unit->alive() && unit->rule.deathReinitialize && tick>=unit->busyUntil) {
         if(!unit->rewardComplete) return {DomainStatus::Applied,std::monostate{}};
         return reinitializeAfterDeath(unit->id,tick);
@@ -146,7 +150,9 @@ DomainResult<> System::modifierEvent(const FrameEvent &event,uint64_t tick,
         resources.sampleSources(ports_.effects.unitStatSources(unit->id,tick));resources.seedLife(resources.read().maximum);
         auto life=resources.take();candidate.nativeStats=std::move(life.intrinsic);
         candidate.life=life.life.raw();candidate.maximumLife=life.maximum.raw();candidate.modeAlive=false;
-        candidate.rule.noTreasure=candidate.rule.noExperience=true;candidate.rewardComplete=true;
+        // UMod34 clears the NOXP | NOTC flags installed by ResurrectUnit.
+        candidate.rule.noTreasure=candidate.rule.noExperience=false;candidate.rewardComplete=false;
+        candidate.targetFlagsDisabled=true;
         candidate.riseUntil=candidate.busyUntil=tick+uint64_t(candidate.rule.selfResurrection->ticks);candidate.riseMode=8;
         candidate.neutralAt=candidate.riseUntil;candidate.corpse={};candidate.killer={};
         candidate.ownershipDeathHandled=false;++candidate.selfResurrections;++candidate.revision;

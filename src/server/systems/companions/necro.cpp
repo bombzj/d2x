@@ -127,7 +127,7 @@ DomainResult<> System::revive(const ActorContext &actor,const SkillCastSpec &ski
     Companion pet{id,actor.player,Kind::Summon,uint16_t(skill.sourceId)};pet.rank=skill.rank;pet.expires=spec.lifetimeFrames>0?actor.tick+uint64_t(spec.lifetimeFrames):UINT64_MAX;pet.ownerTeleport=owner.teleportRevision;pet.nextDecision=actor.tick+15;pet.ownerLevel=owner.persistent.player.level;pet.effectiveRanks=owner.totals.skillRanks;pet.hardRanks=owner.persistent.player.skillRanks;next.companions.emplace(id,std::move(pet));
     size_t count=0;for(const auto &[key,existing]:next.companions) {(void)key;if(existing.owner==actor.player && existing.sourceSkill==uint16_t(skill.sourceId) && !existing.removeAt) ++count;}
     std::vector<EntityId> retire;for(auto &[key,existing]:next.companions) if(count>size_t(skill.summon->limit) && key!=id && existing.owner==actor.player && existing.sourceSkill==uint16_t(skill.sourceId) && !existing.removeAt) {const auto *old=ports_.monsters.find(key);if(old) {existing.removeAt=actor.tick+uint64_t(old->rule.deathTicks);retire.push_back(key);--count;}}
-    transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
+    transactions::CharacterEdit edit{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
     edit.publicFacts.emplace_back(StateFact{id,1,actor.area,spec.reviveState.id,true});
     const auto visual=spec.reviveVisuals.at(size_t(std::clamp(actors.at(id).rule.size,1,3)-1));edit.publicFacts.emplace_back(MissileFact{id,1,actor.area,visual.first,skill.rank,0,actors.at(id).position,actors.at(id).position});
     auto events=std::make_shared<effects::AuraUnitPublication>();ports_.effects.stageAuraActors(*events,std::move(actors),0);
@@ -328,7 +328,7 @@ DomainResult<> System::necro(const ActorContext &actor,const SkillCastSpec &orig
         debit=ports_.transactions.commit(std::move(*cost.value));
     } else {
         transactions::CharacterEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.player};
-        edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
+        edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
         if(ownerRandom) edit.random=transactions::UnitRandomEdit{owner->combatRandom,*ownerRandom};
         if(summon.golem && !iron && owner->persistent.ironGolem) edit.ironGolem=std::optional<ItemInstance>{};
         auto cost=ports_.transactions.prepare(std::move(edit),nullptr,{},auraUnits);if(!cost) return {cost.status,{}};

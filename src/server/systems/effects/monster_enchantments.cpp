@@ -5,6 +5,7 @@
 #include "gameplay/skills/aura_resolve.hpp"
 #include "gameplay/skills/curse_resolve.hpp"
 #include "server/systems/skills/evaluation.hpp"
+#include "server/systems/skills/system.hpp"
 #include "gameplay/effects/queries.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "server/player_store.hpp"
@@ -23,6 +24,11 @@
 #include <optional>
 #include <stdexcept>
 namespace d2x::server::effects {
+DomainResult<> System::monsterBloodlust(EntityId source,EntityId target,int skill,int rank,uint64_t tick) {
+    const auto *unit=ports_.monsters.find(source);if(!unit || unit->rule.bloodlustState<0) return {DomainStatus::InvalidActor,{}};
+    AuraDefinition aura;aura.skill=skill;aura.rank=rank;aura.state=unit->rule.states->at(unit->rule.bloodlustState);
+    return castMonsterCurse(source,aura,target,tick,true);
+}
 DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,EntityId target,uint64_t tick,bool unique,const SkillFormulaSnapshot *sourceInput,const MonsterCursePulse *prepared) {
     const auto *emitter=ports_.monsters.find(source);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -100,18 +106,41 @@ DomainResult<> System::monsterCurse(EntityId source,int skill,int rank,Vec cente
             return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
         };
         auto input=skills::formulaInput(*unit,*stats,draw);SkillFormulaValues values(*unit->rule.formulas,input);
-        const auto &row=unit->rule.formulas->skills.at(skill);const auto state=unit->rule.states->find(row.auraTargetState);
+        const bool randomCurse=unit->rule.formulas->skills.at(skill).number("srvdofunc")==112;
+        int selectedSkill=skill,index=-1;
+        if(randomCurse) {
+            // Retail 1.13c removed Iron Maiden from this five-entry table,
+            // but retained the original index-based callback jump table.
+            constexpr std::array names{"amplify damage","weaken","life tap","decrepify","lower resist"};
+            index=int(limitedRandom(random,uint32_t(names.size())));
+            selectedSkill=unit->rule.formulas->skillIds.at(names[size_t(index)]);
+        }
+        const auto &row=unit->rule.formulas->skills.at(selectedSkill);const auto state=unit->rule.states->find(row.auraTargetState);
         if(state==unit->rule.states->end()) return {DomainStatus::Unavailable,{}};
-        const auto range=values.calculation(FormulaDomain::Skill,skill,rank,"aurarangecalc");
-        const auto length=values.calculation(FormulaDomain::Skill,skill,rank,"auralencalc");
+        const auto range=values.calculation(FormulaDomain::Skill,selectedSkill,rank,"aurarangecalc");
+        const auto length=values.calculation(FormulaDomain::Skill,selectedSkill,rank,"auralencalc");
         if(!range || !length) return {DomainStatus::Unavailable,{}};
         CurseSpec program;program.state=state->second;program.rejectZeroPrimary=true;program.nativeValues.emplace();
-        program.primaryStat=values.auraStatKey(skill,1);program.nativeWrites=values.auraStats(skill,rank,6,false,true);
+        if(randomCurse) {
+            const auto write=[&](std::string_view name,int32_t value) {program.nativeWrites.emplace_back(StatKey{unit->rule.stats->names.at(std::string(name)),0},value);};
+            switch(index) {
+            case 0:write("damageresist",-100);break;
+            case 1:write("damagepercent",-50);break;
+            case 2:program.unitEvents={{5,4}};break;
+            case 3:program.unitEvents={{1,5},{2,5}};break;
+            case 4:
+                write("velocitypercent",row.number("param7"));write("damagepercent",-50);
+                write("damageresist",-50);write("attackrate",row.number("param7"));break;
+            }
+            if(!program.nativeWrites.empty()) program.primaryStat=program.nativeWrites.front().key;
+        } else {
+            program.primaryStat=values.auraStatKey(skill,1);program.nativeWrites=values.auraStats(skill,rank,6,false,true);
+        }
         for(const auto &write:program.nativeWrites) program.nativeValues->insert_or_assign(write.key,write.value);
-        const auto targets=nativeAuraCandidateRecipients({source,unit->area,*range,uint32_t(row.number("aurafilter")),false,
+        const auto targets=nativeAuraCandidateRecipients({source,unit->area,*range,randomCurse?3u:uint32_t(row.number("aurafilter")),false,
             center+ports_.areas.at(unit->area).definition.origin,NativeAuraTargetMode::TargetRange,tick});
         const auto consumed=ports_.monsters.consumeRandom(source,expected,random);if(!consumed) return consumed;
-        pulse.aura.skill=skill;pulse.aura.rank=rank;pulse.aura.state=state->second;pulse.length=*length;
+        pulse.aura.skill=selectedSkill;pulse.aura.rank=rank;pulse.aura.state=state->second;pulse.length=*length;
         pulse.program=std::move(program);pulse.targets=targets;pulse.tick=tick;pulse.prepared=true;
     }
     while(pulse.next<pulse.targets.size()) {
@@ -230,7 +259,12 @@ void System::prepareMonsterModifierEvents(monsters::Actor &unit,const monsters::
             {{},{FrameEventUnit::Monster,unit.id},FrameEventType::MonsterModifier,due,false,monsterModifierTimerHandler,callback})));
     };
     for(const auto modifier:modifierCallbacks(unit)) {
-        if(death && ((modifier==9 && unique) || (modifier==18 && unique) || modifier==10 || modifier==31)) schedule(unit.deathTick+4);
+        if(death && modifier==34 && unit.alignment()==UnitAlignment::Evil && unit.rule.selfResurrection &&
+            int(limitedRandom(unit.combatRandom,100))<unit.rule.selfResurrection->chance)
+            unit.initialModifierTimers.push_back(std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,unit.id},FrameEventType::MonsterModifier,
+                    unit.deathTick+uint64_t(unit.rule.selfResurrection->delay),false,0,34})));
+        if(death && ((modifier==9 && unique) || (modifier==18 && unique) || modifier==10 || modifier==31 || modifier==33)) schedule(unit.deathTick+4);
         if((death || getHit) && modifier==20) schedule((death?unit.deathTick:ports_.frameEvents.currentFrame())+2);
         if(getHit && unique && modifier==17) schedule(ports_.frameEvents.currentFrame()+2);
     }
@@ -238,6 +272,7 @@ void System::prepareMonsterModifierEvents(monsters::Actor &unit,const monsters::
     if(death && unit.rule.deathBurst) schedule(unit.deathTick+1,23);
 }
 DomainResult<> System::executeMonsterModifier(EntityId id,int modifier,uint64_t tick,ModifierExecution &execution) {
+    if(modifier==33) return suicideDeathEffect(id,tick,execution);
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const auto *unit=ports_.monsters.find(id);if(!unit) return done();
     const auto &m=*unit;const auto &area=ports_.areas.at(m.area);
@@ -334,6 +369,7 @@ DomainResult<> System::monsterModifierEvent(const FrameEvent &event,uint64_t tic
     modifierExecutions_.erase(event.handle);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::monsterDamageEffect(EntityId id,uint64_t tick) {
+    const auto suicide=suicideModeChange(id,tick);if(!suicide) return suicide;
     const auto death=monsterDeathEffect(id,tick);if(!death) return death;
     const auto *m=ports_.monsters.find(id);
     if(!m || !m->rule.enchantment || !nativeUniqueMonster(m->identity.rank) || !m->rule.enchantment->has(17) ||
@@ -342,6 +378,9 @@ DomainResult<> System::monsterDamageEffect(EntityId id,uint64_t tick) {
 }
 DomainResult<> System::monsterDeathEffect(EntityId id,uint64_t tick) {
     const auto *unit=ports_.monsters.find(id);
+    if(unit && !unit->alive() && unit->rule.ai.kind==MonsterAiKind::SiegeBeast) {
+        const auto ejected=ports_.skills.ejectImp(id,tick);if(!ejected) return ejected;
+    }
     if(!unit || unit->alive() || (!unit->rule.deathBurst && !unit->rule.boneDeathExplosion)) return {DomainStatus::Applied,std::monostate{}};
     auto &cycle=uniqueCycles_[id];if(cycle.queenDeath==unit->interruption) return {DomainStatus::Applied,std::monostate{}};
     if(!cycle.deathExecution) cycle.deathExecution=std::make_shared<ModifierExecution>();

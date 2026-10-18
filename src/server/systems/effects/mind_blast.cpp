@@ -46,7 +46,7 @@ DomainResult<> System::mindBlast(const ActorContext &actor,const SkillCastSpec &
         if(caster->player) {
             const auto *player=caster->player;
             transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-            edit.player.mana-=pulse.skill.manaCost;edit.charge=pulse.skill.charge;edit.random=transactions::UnitRandomEdit{expected,random};
+            edit.player.mana-=pulse.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pulse.skill.manaCost,pulse.skill.sourceId};edit.charge=pulse.skill.charge;edit.random=transactions::UnitRandomEdit{expected,random};
             auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
             const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid;
         } else {const auto result=consume(expected,random);if(!result) return result;}

@@ -15,7 +15,7 @@
 
 namespace d2x {
 struct ClientMissileInitialization {
-    enum class Path { None,Charged,Spiral } path{};
+    enum class Path { None,Charged,Spiral,DiabWall } path{};
     std::optional<uint32_t> seed;
     std::optional<int> animationRate,pixelHeight,ballisticHeight;
     std::optional<ClientMissileGraphics> graphics;
@@ -23,6 +23,8 @@ struct ClientMissileInitialization {
     std::optional<std::array<int,3>> bounce; // count, restitution %, native initial arc frames.
     std::optional<std::array<int32_t,2>> parameters;
     std::optional<int> streamMissile,streamRange,streamPeriod;
+    std::optional<int> totalFrames,hiddenUntilCurrentFrame;
+    std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
 };
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
@@ -63,6 +65,7 @@ struct ClientMissileVisual {
     // rewind callbacks, animation, or the immutable constructor TotalFrames.
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
+    std::optional<int> hiddenUntilCurrentFrame;
     int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
     Vec turnTarget;

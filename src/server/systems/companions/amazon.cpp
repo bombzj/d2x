@@ -155,7 +155,7 @@ DomainResult<> System::amazon(const ActorContext &actor,const SkillCastSpec &ski
         });
     const auto retired=ports_.monsters.stageRetirements(*units,retire,actor.tick);if(!retired) return retired;
     transactions::CharacterEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.player};
-    edit.player.mana-=skill.manaCost;edit.charge=skill.charge;
+    edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;
     auto cost=ports_.transactions.prepare(std::move(edit),nullptr,{},units);if(!cost) return {cost.status,{}};
     cost.value->roomRandom=std::make_shared<const RoomRandomLoan>(*roomRandom.value);
     if(gameRandom) cost.value->gameRandom=transactions::UnitRandomEdit{pending_.at(actor.actor).birthRandom->first,*gameRandom};

@@ -91,7 +91,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareRoomSpawn(c
     const auto global=request.position+roomArea.origin;const auto room=loan.room;
     const auto &rule=*request.rule;
     if(rule.enchantment) return {DomainStatus::NotImplemented,{}};
-    if(rule.nativeClass<0 || !rule.stats || !rule.formulas || rule.minimumLife<0 || rule.maximumLife<rule.minimumLife)
+    if(rule.nativeClass<0 || !rule.stats || !rule.formulas || rule.minimumLife<0 || rule.maximumLife<0)
         return {DomainStatus::InvalidRequest,{}};
     const auto *bounds=roomArea.activation.room(Vec{float(room.x*5),float(room.y*5)}-roomArea.origin);
     if(!bounds) return {DomainStatus::Unavailable,{}};
@@ -302,6 +302,35 @@ bool System::consumableCorpse(EntityId id,RegionId area,uint64_t tick,bool reviv
 void System::consumeCorpse(EntityId id) noexcept {
     if(auto it=state_.actors.find(id);it!=state_.actors.end()) {it->second.corpse.unavailable=true;++it->second.revision;}
 }
+DomainResult<> System::eatCorpse(EntityId source,EntityId target,int skill,int rank,uint64_t tick) {
+    const auto *caster=find(source),*corpse=find(target);
+    if(!caster || !caster->alive() || !corpse || corpse->hireling || !deadMode(target,tick) || source==target)
+        return {DomainStatus::InvalidActor,{}};
+    if(caster->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    attributes::MonsterResourceTrace resources(*caster,tick,ports_.effects.unitEffects(source));
+    const auto sources=ports_.effects.unitStatSources(source,tick);resources.sampleSources(sources);
+    std::optional<std::pair<uint64_t,uint64_t>> seed;
+    if(corpse->maximumLife>0) {
+        auto random=caster->combatRandom;
+        const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+            return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+        };
+        auto input=skills::formulaInput(*caster,resources.values(sources),draw);SkillFormulaValues values(*caster->rule.formulas,input);
+        const auto percent=values.calculation(FormulaDomain::Skill,skill,rank,"calc1");if(!percent) return {DomainStatus::Unavailable,{}};
+        const auto amount=nativePercentage(nativeChecked(corpse->maximumLife),*percent,100);
+        const auto life=nativeAdd(resources.read().life.raw(),amount);
+        resources.seedLife(Fixed8::fromRaw(std::min(std::max(life,1),resources.read().maximum.raw())));
+        if(random!=caster->combatRandom) seed=std::pair{caster->combatRandom,random};
+    }
+    auto change=resources.take();if(seed) {change.random=seed;change.changed=true;}
+    if(!canCommitLife(change)) return {DomainStatus::Stale,{}};
+    // Do108 removes the actual GUID before writing the eater's HP. It does
+    // not leave a hidden corpse which another AI can resolve later.
+    ports_.effects.forgetUnit(target);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,target});
+    ports_.areas.removeRoomUnit(target);state_.actors.erase(target);
+    if(!commitLife(std::move(change))) throw std::logic_error("Regurgitator resource commit lost its reservation");
+    return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::lightningEmission(EntityId id,bool emitted,uint64_t tick) {
     auto it=state_.actors.find(id);if(it==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
     auto &actor=it->second;
@@ -391,8 +420,24 @@ DomainResult<EntityId> System::spawnNestChild(EntityId id,uint64_t tick,Vec orig
     if(admitted) {state_.actors.at(*admitted.value).rewardComplete=true;++nest.nestSpawned;nest.combatRandom=random;++nest.revision;}
     (void)tick;return admitted;
 }
+DomainResult<> System::setMinionSpawnClass(EntityId id,int nativeClass) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    unit.minionSpawnClass=nativeClass;unit.minionSpawnClassAiRevision=unit.aiFunctionRevision;++unit.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 bool System::canSpawnNestChild(EntityId id,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) const {
-    const auto *nest=find(id);if(!nest || nest->life<=0 || !nest->rule.nestChild) return false;
+    const auto *nest=find(id);if(!nest || nest->life<=0 || (!nest->rule.nestChild && nest->rule.ai.kind!=MonsterAiKind::GenericSpawner)) return false;
+    if(nest->rule.ai.kind==MonsterAiKind::GenericSpawner) {
+        if(!collision) return false;
+        const auto &area=ports_.areas.at(nest->area).definition;
+        // Fn129 probes EvilHut's native preflight (+2,+4), independently
+        // of MonStats.spawnx/spawny (+2,+5 in the current MPQ).
+        const auto point=nest->position+area.origin+Vec{2,4};
+        const int x=int(std::floor(point.x)),y=int(std::floor(point.y));
+        const auto room=ports_.areas.roomAtPosition(nest->area,nest->position,x,y);
+        return room && !ports_.areas.nativeCollisionMask(*room,x,y,2,0x3c01,collision);
+    }
     if(nest->rule.ai.kind==MonsterAiKind::FoulCrowNest) {
         if(!collision) return false;
         const auto &area=ports_.areas.at(nest->area).definition;
@@ -413,10 +458,14 @@ DomainResult<> System::reserveNestSpawn(EntityId id,Vec position,bool active,uin
     ++unit.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uint64_t tick,
-    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
-    const auto *source=find(id);if(!source || !source->rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,std::optional<int> fallbackClass) {
+    const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
     if(source->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
-    const auto &child=*source->rule.nestChild;const auto &area=ports_.areas.at(source->area).definition;
+    const auto &area=ports_.areas.at(source->area).definition;
+    const auto *prototype=source->rule.nestChild.get();
+    if(!prototype && fallbackClass) if(const auto chosen=area.nativeMonsterClasses.find(*fallbackClass);chosen!=area.nativeMonsterClasses.end()) prototype=&chosen->second;
+    if(!prototype) return {DomainStatus::Unavailable,{}};
+    const auto &child=*prototype;
     const auto global=position+area.origin;
     const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
     if(!room) return {DomainStatus::Unavailable,{}};
@@ -433,6 +482,45 @@ DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uin
         auto &parent=state_.actors.at(id);++parent.nestSpawned;++parent.revision;
     }
     return {DomainStatus::Applied,born};
+}
+DomainResult<EntityId> System::spawnMinionChild(EntityId id,Vec position,int skill,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto *source=find(id);if(!source || !source->rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    const auto &originArea=ports_.areas.at(source->area).definition;
+    const auto global=position+originArea.origin;
+    const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
+    if(!room) return {DomainStatus::Unavailable,{}};
+    auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
+    const auto &prototype=*source->rule.nestChild;
+    auto identity=prototype.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    identity.spawnKey=source->identity.spawnKey+".minion-child."+std::to_string(ports_.ids.cursor());
+    Admission request{identity,prototype.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,prototype.rule,{},tick};
+    request.birthTicks=source->rule.spawnTicks;
+    auto birth=prepareRoomSpawn(request,*loan.value,-1,{},false,collision);
+    if(!birth) return {birth.status,{}};
+    if(!(*birth.value)->actor()) {
+        // The failed origin probe consumed the room's orientation/sign
+        // draws. Continue the same loan through the four-ring fallback.
+        *loan.value=*(*birth.value)->data_->room;
+        birth=prepareRoomSpawn(request,*loan.value,4,{},false,collision);
+        if(!birth) return {birth.status,{}};
+    }
+    const auto born=(*birth.value)->actor();
+    if(born) {
+        auto &child=(*birth.value)->data_->actors.actors.at(born);
+        child.rule.noExperience=child.rule.noTreasure=true;child.rewardComplete=true;
+        child.admissionRule=std::make_shared<const MonsterRule>(child.rule);
+        setStoredOwner(child,id);
+    }
+    if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
+    const int overlay=source->rule.formulas->skills.at(skill).summonOverlay;
+    if(born && overlay>=0) {
+        const auto &child=(*birth.value)->data_->actors.actors.at(born);
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},child.area},{OverlayFact{born,1,child.area,overlay}}});
+        if(!sent) return {sent.status,{}};
+    }
+    (*birth.value)->publish();
+    return born?DomainResult<EntityId>{DomainStatus::Applied,born}:DomainResult<EntityId>{DomainStatus::Unavailable,{}};
 }
 std::optional<Vec> System::nestBirthPoint(EntityId id,Vec origin,uint64_t &random) const {
     const auto *source=find(id);if(!source || source->life<=0 || !source->rule.nestChild) return {};
@@ -490,7 +578,7 @@ DomainResult<> System::healSkill(EntityId source,EntityId target,int64_t amount,
     if(caster->combatRandom!=random.first) return {DomainStatus::Stale,{}};
     if(caster->revision==UINT64_MAX || patient->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     attributes::MonsterResourceTrace resources(*patient,tick,ports_.effects.unitEffects(target));
-    resources.seedLife(Fixed8::fromRaw(nativeChecked(std::clamp<int64_t>(patient->life+amount,1,patient->maximumLife))));
+    resources.seedLife(Fixed8::fromRaw(nativeChecked(std::min(std::max<int64_t>(patient->life+amount,1),patient->maximumLife))));
     auto change=resources.take();
     if(source==target) {change.random=random;change.changed=true;}
     if(!canCommitLife(change)) return {DomainStatus::Conflict,{}};

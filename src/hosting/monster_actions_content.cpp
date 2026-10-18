@@ -173,7 +173,7 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
         if(!damage && !projectile) continue;
         const std::string mode=slot==1?"a1":"a2";
         const bool bowSkill=record.ai=="CorruptArcher" && slot==1 && data.tables.at("monstats").value(record.sourceRow,"Skill1")=="MonBow";
-        const int event=record.ai=="ClawViperEx" && slot==1?1:projectile || bowSkill?2:1;
+        const int event=(record.ai=="ClawViperEx" || record.ai=="Imp") && slot==1?1:projectile || bowSkill?2:1;
         const auto clock=loadMonsterAttackTiming(animations,record.token,slot,monsterModeWeapon(archives,record.token,mode,record.baseWeapon),event);
         if(!clock) continue;
         server::MonsterAttackRule attack;
@@ -346,6 +346,9 @@ void prepareMonsterStateRules(const ClassicData &data,size_t monsterRow,server::
     rule.freezeDivisor=data.monsterFreezeDivisor.at(size_t(rule.difficulty));
     if(rule.coldDivisor<=0 || rule.freezeDivisor<=0) throw std::runtime_error("Invalid original monster cold difficulty divisor");
     const auto &monsters=data.tables.at("monstats"),&extra=data.tables.at("monstats2");
+    rule.bloodlustState=data.states.at("bloodlust").definition.id;
+    rule.changeClassState=data.states.at("changeclass").definition.id;
+    rule.shortParameterStat=rule.stats->names.at("shortparam1");
     rule.bossTransfer=monsters.number(monsterRow,"bossxfer").value_or(0)!=0;
     rule.neverCount=monsters.number(monsterRow,"neverCount").value_or(0)!=0;
     rule.flying=monsters.number(monsterRow,"flying").value_or(0)!=0;

@@ -93,6 +93,30 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
+### 当前后三幕怪物收尾构建与冒烟
+
+2026-10-18，基于`55606a14`及本批源码，Windows／MinGW／Ninja Release的`d2x`与`d2x_pvpgn`构建通过，保留非致命警告。补齐新增文件的直接类型依赖、变量作用域及QuestStatusFact诊断名称；实机暴露的问题已修正：原AC赋值代次、缺可选palshift表的怪物显示、110级怪物经验准备、原表倒置生命界限，以及无攻击槽的SuicideMinion管理准入。
+
+| 当前构建产物 | 字节 | SHA256 |
+| --- | --- | --- |
+| `build/bin/d2x.exe` | 34614805 | `E49CFB497E3ABF01DC1AAC59FB28EC09225976B11CEBC7B943D50950E7B455B1` |
+| `build/bin/d2x_server.exe` | 27275662 | `E2BF851AF9E267F080F25BEEA05250201A569630D58D1B653FA9C905DE087481` |
+
+使用当前`assets/mpq2`、隔离PackHost女巫90级／普通难度／种子1，真实EXE以`--hidden`建立图形上下文，通过既有调试管道和原客户端请求操作；生成、补资源及旅行只用于准备条件。证据在忽略目录`artifacts/act345-closeout-20261018-01/`，构建日志为`artifacts/act345-monsters-20261017-01/build-closeout-*`。
+
+| 实际观察 | 程序及范围 |
+| --- | --- |
+| 最终EXE入场／显示／自爆 | 管道`act345-last-18`：修正可选调色表后，吹箭Fetish场景外观不可用为0（前版为13）；SuicideMinion准入后自行进入DEATH／DEAD，步进未阻塞。未隔离认证自爆伤害／碰撞／随机 |
+| 最终EXE费用 | Succubus施加Blood Mana；Fire Bolt扣2.5生命，Teleport扣23生命，法力均保持583。余3.5生命时Teleport后变为1生命、状态114撤出；无诅咒时Teleport保持529生命并扣法力（12帧后561.34765625，含回蓝） |
+| 最终EXE Mephisto／移动 | 观察到PrimePoisonNova（192）与角色受伤；原图可绘制、无地图错误。普通移动从(5229,4724)到(5227,4724)，停止后位置一致 |
+| 最终EXE保存／新进程 | 正常退局后管道`act345-reopen-18`重新启动同一EXE；金币200204、精力220、属性点0、右技能54、生命529／法力583一致；入局failures=0、无缺图／地图错误，正常退出码0 |
+| 中间构建`1B282A9A` | UberIzual准入并施放冰甲／新星，公开chillingarmor状态；MinionSpawner1保留原表两界限72／50并实际生成Minion1；VileMother生成三个幼体；Witch施放SuccubusBolt，FrozenHorror观察到普通攻击；Imp实际骑乘SiegeBeast，双向sourceunit及attached发布，坐骑死亡后撤出并恢复移动 |
+| 中间构建`C3DF49AE` | Izual施放Frost Nova，Mephisto毒云／受伤及原图有限观察；只认证该中间程序，不能替代最终EXE逐项重测 |
+
+前述中间构建不计为最终EXE全家族复测；ReanimatedHorde本次死亡样本未触发自复活。仍未验证全难度／全家族、原DLL逐随机轨迹、完整房间卸载恢复、多人TCP、冰甲反击伤害／随机及跨房传送、Blood Mana精确零生命与全部充能／光环／召唤／背压组合。Clt54连续发射仍缺；Mephisto攻击音效存在Compound组解析限制，另观察到identity298脚步FsOff未建立；音频设备因hidden未测试。独立服务端仅构建，未启动PvPGN后端或原D2GS。
+
+本次未新增测试脚本／用例／专用程序，未打包；`dist/current`和`dist/server`的EXE摘要保持下节既有记录。构建还包含工作区既有的交易邀请标题改动（`trade_invite_view.*`及NETWORK文档），未计入本次怪物提交或专项验证。第三至第五幕源码／未完成项见[逐项台账](../gameplay/monsters/ACT3.md)，不把本轮有限冒烟标为完整复刻完成。
+
 ### 当前客户端打包
 
 2026-10-17，基于`64a5acd2`及当前未提交工作区，Windows／MinGW／Ninja Release的`d2x`目标构建成功，已用现有`package.ps1`更新`dist/current`。构建期间仅补齐三处`nativeMonsterSkillRanks`直接头文件依赖，并将调试事件名称表与新增`SkillEndFact`对齐；保留既有非致命警告。

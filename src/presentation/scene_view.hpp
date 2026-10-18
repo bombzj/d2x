@@ -121,6 +121,9 @@ class SceneView {
     UiPainter painter_;
     UiPainter speechPainter_;
     ViewState view_;
+    struct ScreenShake {double startMilliseconds{};int magnitude{},buildMilliseconds{},holdMilliseconds{},fadeMilliseconds{};};
+    std::optional<ScreenShake> screenShake_;
+    Vec screenShakeOffset_;
     std::optional<std::tuple<int, int, bool, bool>> automapLayout_;
     ChatView chat_;
     OriginalMenu originalMenu_;
@@ -322,6 +325,7 @@ class SceneView {
     void refreshInteractions();
     void refreshNpcView(EntityId npc);
     Vec screen(Vec position) const;
+    void shakeScreen(int magnitude,int buildFrames,int holdFrames,int fadeFrames,float delay);
     Vec world(Vec position) const;
     void drawInteractionLabel(const std::string &, Vec, int offset = 70) const;
     void drawPlayerLabel(const std::string &, Vec, bool hostile) const;

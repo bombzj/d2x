@@ -36,6 +36,7 @@ DomainResult<transactions::Plan> System::ironGolemCost(const ActorContext &actor
     world.world.items.erase(material.id);world.equipment.items.erase(material.id);
     transactions::InventoryEdit edit{actor,owner->inventoryRevision,owner->characterRevision,owner->persistent.inventory,{},owner->persistent.player.weaponSet};
     edit.character=owner->persistent.player;edit.character->mana-=skill.manaCost;edit.charge=skill.charge;
+    edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};
     edit.world=transactions::WorldEdit{world.revision,std::move(world)};edit.ironGolem=std::optional<ItemInstance>{material};
     edit.publicFacts.emplace_back(GroundRemoveFact{material.id});
     return ports_.transactions.prepare(std::move(edit),nullptr,{},std::move(units));
@@ -145,7 +146,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
             const int x=int(position->position.x)-int(player->position.x),y=int(position->position.y)-int(player->position.y);
             if(x*x+y*y>telekinesis->telekinesisRange*telekinesis->telekinesisRange) return {DomainStatus::InvalidRequest,{}};
             transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,record};
-            edit.player.mana-=telekinesis->manaCost;edit.charge=telekinesis->charge;edit.publicFacts.emplace_back(SoundFact{actor.actor,0,actor.area,0x13});
+            edit.player.mana-=telekinesis->manaCost;edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};edit.charge=telekinesis->charge;edit.publicFacts.emplace_back(SoundFact{actor.actor,0,actor.area,0x13});
             auto plan=ports_.transactions.prepare(std::move(edit));return plan?ports_.transactions.commit(std::move(*plan.value)):DomainResult<>{plan.status,{}};
         }
         record.mana-=telekinesis->manaCost;
@@ -289,6 +290,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.equipment = std::move(equipment); edit.character = std::move(record);if(telekinesis) edit.charge=telekinesis->charge;
+    if(telekinesis) edit.skillPayment=transactions::SkillManaPayment{telekinesis->manaCost,telekinesis->sourceId};
     if (request.drop) edit.publicFacts.emplace_back(GroundDropFact{world.world.items.at(source.id)});
     edit.world = transactions::WorldEdit{world.revision, std::move(world)};
     auto plan = ports_.transactions.prepare(std::move(edit));

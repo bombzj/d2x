@@ -52,7 +52,7 @@ class System {
         const auto found=state_.synchronizations.find(id);
         return found!=state_.synchronizations.end() && found->second.until!=0;
     }
-    DomainResult<> teleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {});
+    DomainResult<> teleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
     void closePlayerPortal(PlayerId id) { state_.portals.erase(id); }

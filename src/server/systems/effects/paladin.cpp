@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/skills/mana_payment.hpp"
 #include "attribute_projection.hpp"
 #include "gameplay/skills/targeting.hpp"
 #include "gameplay/combat/geometry.hpp"
@@ -470,6 +471,9 @@ void System::prepareUnitEffects(AuraUnitPublication &plan,EntityId id,const Unit
     if(plan.actors) if(const auto staged=plan.actors->actors.find(id);staged!=plan.actors->actors.end()) actor=&staged->second;
     if(life && !actor) throw std::invalid_argument("Missing prepared control unit");
     if(const auto current=units_.find(id);current!=units_.end()) {
+        if(actor && !actor->alive()) for(const auto &effect:current->second.states.entries())
+            if(effect.spec.nativeRemoval==NativeStateRemoval::Pregnant && !unit.states.find(effect.handle))
+                plan.removals.push_back({id,effect.spec.source.definition,effect.spec.source.level});
         plan.expectedEffects.emplace(id,current->second.states);
         if(life) prepareUnitControl(*actor,current->second.states,unit.states,*life,tick);
     } else {
@@ -546,6 +550,7 @@ void System::publishAuraUnits(AuraUnitPublication &plan) noexcept {
         if(current==units_.end()) units_.insert(std::move(node));else current->second=std::move(node.mapped());
     }
     for(const auto &[id,velocity]:plan.velocity) ports_.monsters.velocityModifier(id,velocity);
+    nativeStateRemovals_.splice(nativeStateRemovals_.end(),plan.removals);
 }
 std::vector<StatValue> nativeEffectStats(const SkillRules &rules,const CharacterModifiers &m) {
     CombatEffectSpec effect;effect.modifiers=m;return nativeEffectStats(rules,effect);
@@ -946,8 +951,9 @@ DomainResult<> System::paladinAura(const ActorContext &actor,const AuraDefinitio
             resources.seedResources(edit.player.hp,edit.player.mana,edit.player.stamina);
             r.states.removeState(state,observe);edit.player=resources.record();
             if(healing) {
-                if(edit.player.mana<a.manaPerPulse) return {DomainStatus::Unavailable,{}};
+                if(edit.player.mana<a.manaPerPulse && !r.states.hasState(caster->rules.character->bloodManaState,actor.tick)) return {DomainStatus::Unavailable,{}};
                 edit.player.mana-=a.manaPerPulse;
+                edit.skillPayment=transactions::SkillManaPayment{a.manaPerPulse,a.skill,true};
                 resources.seedResources(edit.player.hp,edit.player.mana,edit.player.stamina);
                 CombatEffectSpec stop;stop.state.id=state;stop.source=spec.source;stop.duration=duration;r.states.apply(std::move(stop),actor.tick,observe);
                 edit.player=resources.record();
@@ -1066,11 +1072,8 @@ DomainResult<> System::consumeAuraMana(const ActorContext &actor,const AuraDefin
         const int bloodState=player->rules.character->bloodManaState;
         if(bloodState>=0 && recovery.states.hasState(bloodState,actor.tick)) {
             auto record=resources.record();
-            if(record.hp<a.manaPerPulse) {
-                recovery.states.removeState(bloodState,observe);
-                record=resources.record();record.hp=Fixed8::fromRaw(256);
-                resources.seedResources(record.hp,record.mana,record.stamina);
-            } else {
+            int32_t threshold{};
+            if(record.hp>=a.manaPerPulse) {
                 std::optional<int> bloodSkill;
                 for(const auto &effect:recovery.states.entries()) if(effect.spec.state.id==bloodState && effect.activeAt(actor.tick)) {
                     bloodSkill=effect.spec.source.definition;break;
@@ -1078,11 +1081,12 @@ DomainResult<> System::consumeAuraMana(const ActorContext &actor,const AuraDefin
                 if(!bloodSkill || !player->rules.skills || !player->rules.skills->formulas)
                     throw std::runtime_error("Missing native Blood Mana skill source");
                 const auto &recordRule=player->rules.skills->formulas->skills.at(*bloodSkill);
-                const auto threshold=nativeShiftLeft(recordRule.number("param5"),8);
-                record.hp=Fixed8::fromRaw(nativeSubtract(record.hp.raw(),a.manaPerPulse.raw()));
-                resources.seedResources(record.hp,record.mana,record.stamina);
-                if(record.hp.raw()<threshold) recovery.states.removeState(bloodState,observe);
+                threshold=nativeShiftLeft(recordRule.number("param5"),8);
             }
+            const auto payment=nativeManaPayment(record.hp,record.mana,a.manaPerPulse,true,threshold);
+            if(!payment.accepted) {recovery.states.removeState(bloodState,observe);record=resources.record();}
+            resources.seedResources(payment.life,record.mana,record.stamina);
+            if(payment.accepted && payment.removeBloodMana) recovery.states.removeState(bloodState,observe);
         } else {
             auto record=resources.record();
             // AuraConsume may fail after the flag is set. It does not borrow

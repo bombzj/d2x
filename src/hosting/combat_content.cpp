@@ -3,6 +3,7 @@
 #include "monster_actions_content.hpp"
 #include "npc_content.hpp"
 #include "content/classic_data.hpp"
+#include "content/skills/table_values.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "content/monsters/monster_experience.hpp"
 #include "content/monsters/monster_enchantment.hpp"
@@ -107,11 +108,11 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     if (profile && enchantment) profile = enchantedMonsterCombat(*profile,*enchantment);
     const auto weapon = monsterModeWeapon(archives, record->token, "a1", record->baseWeapon);
-    auto attack = loadMonsterAttackTiming(animations, record->token, 1, weapon, record->ai=="ClawViperEx"?1:record->attack1Projectile ? 2 : 1);
+    auto attack = loadMonsterAttackTiming(animations, record->token, 1, weapon, record->ai=="ClawViperEx" || record->ai=="Imp"?1:record->attack1Projectile ? 2 : 1);
     auto death = loadMonsterMotionTiming(animations, record->token, "dt", monsterModeWeapon(archives, record->token, "dt", record->baseWeapon));
     const auto delay = data.tables.at("monstats").number(record->sourceRow, request.difficulty == 0 ? "aidel" : request.difficulty == 1 ? "aidel(N)" : "aidel(H)");
     if (!profile || !profile->defense || !death || !record->aiProfiles.at(size_t(request.difficulty)) ||
-        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower")) return {};
+        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner")) return {};
     if ((record->ai=="CorruptRogue" || record->ai=="CorruptLancer") &&
         !loadMonsterMotionTiming(animations, record->token, "rn", monsterModeWeapon(archives, record->token, "rn", record->baseWeapon))) {
         return {};
@@ -119,6 +120,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     server::MonsterRule rule;
     rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.auraPrograms=data.nativeAuraPrograms;
     rule.noManaRegenState=data.states.at("nomanaregen").definition.id;
+    rule.storedOwnerState=data.states.at("sourceunit").definition.id;
+    rule.deathKillsStoredOwner=data.tables.at("monstats").number(record->sourceRow,"SplEndDeath").value_or(0)==2;
     rule.states=data.nativeStates;
     rule.statGameType=request.ladderMonsterStats;
     rule.enchantment=enchantment;
@@ -190,7 +193,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if (record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
     if(record->ai=="FetishShaman") {
         const auto &stats=data.tables.at("monstats");
@@ -205,13 +208,16 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if(!child) return {};
         rule.deathReinitialize=std::make_shared<const server::PreparedMonster>(std::move(*child));
     }
-    if(record->ai=="FoulCrowNest" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
+    if(record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
         const auto spawn=data.tables.at("monstats").value(record->sourceRow,"spawn");
-        if(!record->nest && spawn.empty()) return {};
-        auto childIdentity=identity;childIdentity.monster=record->nest?record->nest->child:std::string(spawn);childIdentity.origin=SpawnOrigin::Summoned;childIdentity.rank=MonsterRank::Normal;childIdentity.superUnique.clear();
-        auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations,random);
-        if(!child) return {};
-        rule.nestChild=std::make_shared<const server::PreparedMonster>(std::move(*child));
+        const auto code=record->nest?record->nest->child:std::string(spawn);
+        if(!catalog.find(code) && record->ai!="GenericSpawner") return {};
+        if(catalog.find(code)) {
+            auto childIdentity=identity;childIdentity.monster=code;childIdentity.origin=SpawnOrigin::Summoned;childIdentity.rank=MonsterRank::Normal;childIdentity.superUnique.clear();
+            auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations,random);
+            if(!child) return {};
+            rule.nestChild=std::make_shared<const server::PreparedMonster>(std::move(*child));
+        }
         rule.spawnOffset={float(data.tables.at("monstats").number(record->sourceRow,"spawnx").value_or(0)),float(data.tables.at("monstats").number(record->sourceRow,"spawny").value_or(0))};
         rule.spawnMode=data.tables.at("monstats").value(record->sourceRow,"spawnmode")=="S1"?8:1;
         if(rule.spawnMode==8) {
@@ -306,6 +312,11 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
     std::vector<std::string> roster;
     for(const int selected:selection.classes) roster.push_back(regionRules->classes.at(selected).code);
     area.populationRoster=std::move(roster);
+    if(const auto *fallback=catalog.find("imp5")) area.genericSpawnFallback=fallback->index;
+    for(const auto &code:area.populationRoster) {
+        const auto *record=catalog.find(code);if(!record) throw std::runtime_error("Missing GenericSpawner region class");
+        area.genericSpawnRoster.emplace_back(record->index,data.tables.at("monstats").number(record->sourceRow,"genericSpawn").value_or(0)!=0);
+    }
     area.componentPalettes=selection.components;
     auto &populationRules=area.populationRules;
     populationRules.density=std::min(level.population.density.at(size_t(request.difficulty)),10000);
@@ -353,6 +364,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         }
         return selected->index;
     };
+    for(const auto &[nativeClass,record]:catalog.nativeClasses()) area.nativeSummonClasses.emplace(nativeClass,familyClass(record.id));
     std::set<std::string> deferred(catalog.diagnostics().begin(),catalog.diagnostics().end());
     deferred.insert(area.populationDeferred.begin(),area.populationDeferred.end());
     for(size_t order=0;order<authored.objects.size();++order) {
@@ -454,6 +466,17 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
+    if(request.act==4) required.push_back(area.genericSpawnFallback);
+    if(request.act==4) {
+        auto code=std::string("suicideminion1");
+        while(!code.empty()) {
+            const auto *record=catalog.find(code);if(!record) break;
+            required.push_back(record->index);code=record->next;
+        }
+    }
+    const auto &skillTable=data.tables.at("skills");
+    const auto pregnancyChild=skillTable.value(findSkillTableRow(skillTable,"skill","Impregnate"),"summon");
+    required.push_back(classId(pregnancyChild));required.push_back(familyClass(pregnancyChild));
     std::string chestFamily="flyingscimitar";
     const std::array chestFamilies{request.act==1?"mummy1":"zombie1","skeleton1","sk_archer1",
         "skmage_pois1","skmage_cold1","skmage_fire1","skmage_ltng1"};

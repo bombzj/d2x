@@ -223,7 +223,7 @@ DomainResult<> System::skillUnit(const ActorContext &actor,const SkillCastSpec &
     target.nativeStats[spec.state.id]=nativeEffectStats(*caster->rules.skills,installed->spec);
     const bool changedStats=previousStats!=target.nativeStats[spec.state.id];
     transactions::CharacterEdit debit{actor,caster->inventoryRevision,caster->characterRevision,caster->persistent.player};
-    debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+    debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     for(const int state:application.clearedStates) if(!target.states.hasState(state,actor.tick))
         debit.publicFacts.emplace_back(StateFact{id,1,m->area,state,false});
     for(const auto &removed:application.removed) if(!target.states.hasState(removed.effect.spec.state.id,actor.tick))

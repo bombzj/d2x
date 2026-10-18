@@ -1,40 +1,15 @@
 # 第五幕怪物执行边界
 
-更新：2026-10-17。当前任务组、古代人开战／重置、Baal五波及死亡完成链已有控制，完整本幕怪物AI与首领战斗尚未迁入。公共边界见[COMMON](COMMON.md)。
+更新：2026-10-18。实际身份、原版依据和逐项限制统一见[第三至第五幕接入台账](ACT3.md#逐项接入)，本页不重复逐变体记录。公共边界见[COMMON](COMMON.md)。
 
-蜘蛛`arach6`／`arach7`、ThornHulk的`thornhulk5`、近战Fetish的`fetish6`至`fetish8`及吹箭`fetishblow6`至`fetishblow8`已按自己的MPQ身份、动作和参数接入；源码与有限运行范围见[第三幕逐项接入](ACT3.md#逐项接入)。其余第五幕变体不能据此推断完成。
-
-| 范围 | 当前状态／待补 |
+| 范围 | 当前源码与缺口 |
 | --- | --- |
-| 野外、堡垒、冰洞、神殿及世界之石人口 | 地图／人口准备已有；全部本幕类型和跨幕客串变体、三难度与专用行为待核对 |
-| 牢门／囚犯 | 牢门保留真实身份、静止且不追击／攻击；原战斗／外观数值仍使用替身。囚犯为中立NPC移动实体，完整可受伤／死亡AI未接 |
-| Shenk、Nihlathak等任务固定目标 | 任务生成／个人资格／死亡链已有；专用战斗技能与AI待迁入 |
-| 古代人 | 开战、任务组撤销／重置及领奖资格已有；真实AI、原随机词缀筛选、完整召唤／效果清理尚未完成 |
-| Baal及五波 | 实例任务控制与波次、死亡完成／离场已有；各波领队与仆从、Baal自身技能／阶段尚未完整迁入 |
-| 其他精英、固定与扩展单位 | 逐类型和专用程序待登记，普通框架／替身不代表完成 |
+| 跨幕客串家族 | 蜘蛛、ThornHulk、Fetish／吹箭／萨满／骨Fetish、吸血鬼、狒狒、蝙蝠、跳跃者、蛆虫、血鹰及其他已登记变体按自身MPQ行准备；不能扩展为所有客串身份已验收 |
+| 第五幕专用家族 | 已接ReanimatedHorde、FrozenHorror、BloodLord、DeathMauler、BaalMinion、PutridDefiler、SiegeBeast、Imp、GenericSpawner、Minion／SuicideMinion、Overseer、MinionSpawner及Succubus／Witch；技能、骑乘／转换／出生和明确缺口见台账55至69项 |
+| Shenk／Nihlathak | Shenk沿Overseer并保留任务激活；Nihlathak专用AI／技能仍待补，任务死亡链不等于战斗完成 |
+| 古代人／Baal及五波 | 开战／任务组重置、波次和任务完成已有控制；古代人、Baal专用战斗及全部领队／词缀／召唤清理尚未完整迁入 |
+| 扩展首领 | UberIzual接Fn144、Chilling Armor和MonTeleport；其余扩展事件和首领不能据此推断完成 |
+| 客户端／恢复 | FrozenHorror及跨幕喷火家族的Clt54连续发射仍待补；完整休眠重建、原全局交错／随机及全部多人组合未认证 |
+| 牢门／囚犯 | 牢门保留真实身份、静止且不追击／攻击，原战斗／外观数值仍使用替身；囚犯为中立NPC移动实体，完整受伤／死亡AI未接 |
 
-牢门和囚犯不可因为模型属于非玩家单位就套敌对追击程序；具体特殊分类见[SPECIAL](SPECIAL.md)。囚犯伤亡／失败分支与原蓝门演出、古代人和Baal任务的有限证据及其他限制唯一维护在[第三至第五幕任务](../quests/ACT3_5.md)，不将管理击杀流程作为真实Boss战斗认证。
-
-野蛮人佣兵真实活动实体、AI、Bash／Stun、原服务及奖励／保存已接，代表单机路径取得有限运行证据，见[佣兵](../characters/HIRELINGS.md)。规则先核对当前MPQ及本地原版DLL，D2MOO用于定位调用链；首领与精英差异见[BOSSES](BOSSES.md)和[ELITES](ELITES.md)。目前没有本幕全类型正常战斗／原服专项验收。
-
-`fetishshaman6`至`fetishshaman8`的萨满喷火、复活／命令及死亡转换已随[第三幕第05项](ACT3.md#逐项接入)接入；三难度数据静态核对完成，尚待统一构建／实机。
-
-`bonefetish6`／`bonefetish7`沿[骨Fetish第06项](ACT3.md#逐项接入)接入；死亡爆炸为即时原生范围接触，尚待统一构建／实机。
-
-`vampire6`至`vampire9`随[吸血鬼第07项](ACT3.md#逐项接入)接入原法术和AI；尚待统一构建／实机。
-
-`baboon6`至`baboon8`随[狒狒第08项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`batdemon6`／`batdemon7`随[蝙蝠恶魔第09项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`blunderbore5`／`blunderbore6`随[PinHead第10项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`sandleaper6`／`sandleaper7`随[跳跃者第11项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`maggotbaby6`随[幼体第13项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`maggotegg6`随[虫卵第14项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`sandmaggot6`／`sandmaggot7`随[蛆虫成体第15项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
-
-`foulcrow5`至`foulcrow8`随[血鹰第16项](ACT3.md#逐项接入)接入；尚待统一构建／实机。
+构建与有限运行范围见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。管理生成、补资源及击杀仅准备隔离条件，不能认证正常战役；任务／囚犯／古代人及五波限制见[第三至第五幕任务](../quests/ACT3_5.md)。野蛮人佣兵独立见[佣兵](../characters/HIRELINGS.md)，不混入敌对怪物完成数。其他首领与精英边界见[BOSSES](BOSSES.md)、[ELITES](ELITES.md)。

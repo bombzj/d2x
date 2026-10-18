@@ -4,6 +4,15 @@
 #include <algorithm>
 #include <stdexcept>
 namespace d2x {
+MonsterModePhysical monsterModePhysicalBounds(const MonsterModeTable &table,unsigned profile,int level,int difficulty,int gameType) {
+    if(profile>=table.physical.size() || difficulty<0 || difficulty>2 || level<0 || !table.levels || table.levels->empty())
+        throw std::invalid_argument("Missing native monster physical bounds");
+    const auto found=table.levels->find(std::min(level,table.levels->rbegin()->first));
+    if(found==table.levels->end()) throw std::runtime_error("Missing native MonLvl physical row");
+    const auto &ratio=found->second.at(size_t(difficulty+(gameType?3:0)));const auto &base=table.physical[profile];
+    return table.noRatio?base:MonsterModePhysical{nativePercentage(ratio.damage,base.minimum,100),
+        nativePercentage(ratio.damage,base.maximum,100),nativePercentage(ratio.rating,base.rating,100)};
+}
 std::shared_ptr<const StatList> prepareMonsterModeStats(const MonsterModeTable &table,const StatRuleCatalog &rules,const MonsterModeInput &input,uint64_t &random) {
     if(input.mode>=16 || input.difficulty<0 || input.difficulty>2 || input.level<0 || !table.levels || table.levels->empty())
         throw std::invalid_argument("Missing native monster mode inputs");

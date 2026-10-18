@@ -22,7 +22,9 @@ std::optional<MonsterBossDecision> decideBossMonster(const MonsterAiProfile &pro
     auto attack=[&]{out.action=MonsterDecisionAction::Attack;};
     auto approach=[&](int stop=1,int speed=75,bool run=false){out.action=MonsterDecisionAction::Approach;out.stopDistance=stop;out.velocityPercent=speed;out.running=run;};
     auto spell=[&](int slot){out.action=MonsterDecisionAction::Special;out.skillSlot=slot;};
-    if(profile.kind==MonsterAiKind::Smith) {if(in.contact) attack();else approach(1,75+(100-in.lifePercent)/2);}
+    if(profile.kind==MonsterAiKind::Smith) {
+        if(in.contact) attack();else {approach(0,75+(100-std::clamp(in.lifePercent,0,100))/2);out.pathSteps=1;}
+    }
     else if(profile.kind==MonsterAiKind::Griswold) {
         if(in.contact) {if(chance(80)) attack();else out.waitFrames=10;}
         else if(chance(50)) approach();else out.waitFrames=10;

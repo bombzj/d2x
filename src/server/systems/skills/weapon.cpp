@@ -265,7 +265,8 @@ DomainResult<> System::weaponCast(const ActorContext &actor,const Request &reque
             if constexpr(std::is_same_v<Edit,transactions::CharacterEdit>) edit.player=record;
             else if constexpr(std::is_same_v<Edit,transactions::InventoryEdit>) edit.character=record;
             if constexpr(std::is_same_v<Edit,transactions::CharacterEdit> || std::is_same_v<Edit,transactions::InventoryEdit>) {
-                edit.resourceBase=attackState->resourceBase;edit.publicFacts=attackState->publicFacts;
+                edit.resourceBase=attackState->resourceBase;edit.publicFacts=attackState->publicFacts;edit.transient=attackState->transient;
+                if(!program.manaOnRelease) edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};
             }
         },change);
         cost=ports_.transactions.prepare(std::move(change));if(!cost) return {cost.status,{}};

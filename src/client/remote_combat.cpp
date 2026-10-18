@@ -81,7 +81,7 @@ bool RemoteCombat::innateSkill(uint16_t id) const {
 bool RemoteCombat::hostile(const OnlineUnit &unit) const {
     if (!hostileSource(unit)) return false;
     if(unit.key.type==0) return true;
-    const auto monster = monsters_.find(*unit.classId);
+    const auto monster = monsters_.find(*monsterClass(unit));
     return tables_.at("monstats").number(monster->second, "killable").value_or(0) != 0;
 }
 bool RemoteCombat::hostileSource(const OnlineUnit &unit) const {
@@ -130,6 +130,37 @@ bool RemoteCombat::hostilePlayers(uint32_t first, uint32_t second) const {
     // Native 1.13c D2Client RVA 4FD90 returns zero for a missing relation.
     return relation!=relations.end() && (relation->second & 8) != 0;
 }
+std::optional<OnlineUnitKey> RemoteCombat::storedOwner(const OnlineUnit &unit) const {
+    const auto snapshot=unitStates_.find(unit.key);if(snapshot==unitStates_.end() || !snapshot->second.decoded) return {};
+    for(const auto &[id,state]:snapshot->second.states) {
+        (void)id;if(state.name!="sourceunit") continue;
+        std::optional<uint8_t> type;std::optional<uint32_t> owner;
+        for(const auto &stat:state.stats) {
+            const auto row=stats_.find(stat.id);if(row==stats_.end()) continue;
+            const auto name=tables_.at("itemstatcost").value(row->second,"Stat");
+            if(name=="source_unit_type" && stat.value>=0 && stat.value<=6) type=uint8_t(stat.value);
+            if(name=="source_unit_id" && stat.value>=0 && stat.value<=UINT32_MAX) owner=uint32_t(stat.value);
+        }
+        // A zero type is omitted by the native base stat list.
+        if(owner && *owner) return OnlineUnitKey{type.value_or(0),*owner};
+    }
+    return {};
+}
+std::optional<uint16_t> RemoteCombat::monsterClass(const OnlineUnit &unit) const {
+    if(unit.key.type!=1) return unit.classId;
+    const auto snapshot=unitStates_.find(unit.key);
+    if(snapshot!=unitStates_.end() && snapshot->second.decoded) for(const auto &[id,state]:snapshot->second.states) {
+        (void)id;if(state.name!="changeclass") continue;
+        for(const auto &stat:state.stats) {
+            const auto row=stats_.find(stat.id);if(row==stats_.end() || tables_.at("itemstatcost").value(row->second,"Stat")!="shortparam1") continue;
+            if(stat.value>=0 && stat.value<=UINT16_MAX && monsters_.contains(uint16_t(stat.value))) return uint16_t(stat.value);
+        }
+    }
+    // State.setfunc=5 reinitializes the local unit. Removing the stat list
+    // has no inverse class change; retain it until another AC assignment.
+    const auto changed=changedClasses_.find(unit.key);
+    return changed!=changedClasses_.end() && changed->second.first==unit.assignmentRevision?std::optional{changed->second.second}:unit.classId;
+}
 uint8_t RemoteCombat::ownershipTransform(const OnlineUnit &unit) const {
     // RVA A7ACD -> 21B10: Utrans=255 uses the pet roster and hostility,
     // not party membership. No roster owner returns transform zero.
@@ -149,8 +180,8 @@ bool RemoteCombat::allied(const OnlineUnit &unit) const {
     return first && second && sameAlignment(*first,*second);
 }
 RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUnit &unit) const {
-    if (unit.key.type != 1 || !unit.classId) return MonsterDisposition::Unknown;
-    const auto monster = monsters_.find(*unit.classId);
+    if (unit.key.type != 1 || !monsterClass(unit)) return MonsterDisposition::Unknown;
+    const auto monster = monsters_.find(*monsterClass(unit));
     if (monster == monsters_.end()) return MonsterDisposition::Unknown;
     const auto &view = session_.read();
     if (!view.load.playerUnitId) return MonsterDisposition::Unknown;
@@ -168,8 +199,10 @@ RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUn
 }
 bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
     if(unit.key.type!=1) return false;
+    if(!targetCorpse) if(const auto snapshot=unitStates_.find(unit.key);snapshot!=unitStates_.end() && snapshot->second.decoded)
+        for(const auto &[id,state]:snapshot->second.states) {(void)id;if(state.name=="attached") return false;}
     if(!targetCorpse && unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
-        const auto found=monsters_.find(unit.classId.value_or(UINT16_MAX));
+        const auto found=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
         if(found!=monsters_.end()) {
             const auto ai=tables_.at("monstats").value(found->second,"AI");
             if(ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon") return false;
@@ -186,7 +219,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     if(n("srvstfunc")==34 && n("srvdofunc")==72) return monsterTargetEligible(unit,true);
     if(n("srvstfunc")==33 && (n("srvdofunc")==69 || n("srvdofunc")==75)) {
         if(!monsterTargetEligible(unit,true)) return false;
-        const auto monster=monsters_.find(unit.classId.value_or(UINT16_MAX));
+        const auto monster=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
         const auto extended=tables_.at("monstats").value(monster->second,"MonStatsEx");
         const auto &extra=tables_.at("monstats2");
         for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==extended)
@@ -245,7 +278,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) c
         tables_.at("skills").number(row->second, "srvdofunc") == 21;
 }
 bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
-    const auto monster=monsters_.find(unit.classId.value_or(UINT16_MAX));
+    const auto monster=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
     if (unit.key.type!=1 || monster==monsters_.end()) return false;
     const auto &extras=tables_.at("monstats2");
     const auto identity=tables_.at("monstats").value(monster->second,"MonStatsEx");
@@ -378,7 +411,7 @@ void RemoteCombat::update() {
     const auto &view = session_.read();
     const auto &world = view.world;
     if (game_ != view.gameGeneration || area_ != world.areaGeneration) {
-        game_ = view.gameGeneration; area_ = world.areaGeneration; unitStates_.clear(); unitOwners_.clear();
+        game_ = view.gameGeneration; area_ = world.areaGeneration; unitStates_.clear(); unitOwners_.clear();changedClasses_.clear();
     }
     catalog_.clear();
     const auto &skills = tables_.at("skills");
@@ -399,6 +432,7 @@ void RemoteCombat::update() {
         catalog_.push_back(std::move(entry));
     }
     std::erase_if(unitStates_, [&](const auto &entry) { return !world.units.contains(entry.first); });
+    std::erase_if(changedClasses_,[&](const auto &entry){const auto unit=world.units.find(entry.first);return unit==world.units.end() || unit->second.assignmentRevision!=entry.second.first;});
     std::erase_if(unitOwners_, [&](const auto &entry) { return !world.units.contains(entry.first); });
     for (const auto &[key, unit] : world.units) {
         if (key.type == 1 && unit.appearanceRevision) {
@@ -471,6 +505,8 @@ void RemoteCombat::update() {
                 }
             }
         } catch (const std::exception &error) { output.states.clear(); output.decoded = false; output.reason = error.what(); }
+        if(key.type==1) if(const auto changed=monsterClass(unit);changed && changed!=unit.classId)
+            changedClasses_.insert_or_assign(key,std::pair{unit.assignmentRevision,*changed});
     }
 }
 }

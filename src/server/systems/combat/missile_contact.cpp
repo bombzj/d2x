@@ -111,6 +111,7 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
         source=participants.find(impact.source);target=participants.find(impact.targets[impact.next]);
         if(!target.id()) return DomainStatus::Stale;
     }
+    if(!preludeOnly && target.monster) ports_.monsters.storeLastAttacker(target.id(),source.id());
     if(preludeOnly || !contact.hit) return DomainStatus::Applied;
     if(!source.id()) return DomainStatus::Unavailable;
     if(impact.nativeSkill) {

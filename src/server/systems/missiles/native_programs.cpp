@@ -23,7 +23,9 @@ void System::initializeGuidance(Missile &missile,EntityId target,Vec point) cons
     missile.guidance=target;missile.parameters[0]=target?1:2;
     const auto dx=uint16_t(int32_t(std::floor(point.x))-int32_t(std::floor(missile.position.x)));
     const auto dy=uint16_t(int32_t(std::floor(point.y))-int32_t(std::floor(missile.position.y)));
-    missile.parameters[1]=int32_t(uint32_t(dx)|(uint32_t(dy)<<16));
+    // Retail Do10 sign-extends both WORD deltas before SHL/ADD. A negative
+    // X consequently borrows from the packed Y word; preserve that bit pattern.
+    missile.parameters[1]=nativeAdd(int16_t(dx),nativeShiftLeft(int16_t(dy),16));
     if(!target) {
         const auto velocity=int32_t(std::lround(missile.velocity.length()*4096.f/25.f));
         missile.setCurrentFrame(velocity>0?nativeMultiply(std::max(missileDistance(missile.position,point),1),4096)/velocity:0);
@@ -36,13 +38,15 @@ void System::initializePath(Missile &missile) const {
     const auto low=uint32_t(int32_t(std::floor(target.x+area.definition.origin.x))+missile.pathInitialization.index);
     missile.random=initialRandom(low);
     int distance{};
-    if(missile.pathInitialization.kind==MissilePathInitialization::Kind::ChargedSkill) {
-        distance=uint8_t(missile.nativeTotalFrames);
+    const bool wall=missile.pathInitialization.kind==MissilePathInitialization::Kind::DiabWall;
+    if(missile.pathInitialization.kind==MissilePathInitialization::Kind::ChargedSkill || wall) {
+        distance=wall?missile.nativeTotalFrames:int(uint8_t(missile.nativeTotalFrames));
         if(distance>=78) {distance=77;missile.nativeTotalFrames=77;missile.setCurrentFrame(77);}
     } else distance=std::min(missile.nativeTotalFrames,255);
+    missile.expires=missile.created+uint64_t(missile.lifetimeFrames);
+    if(wall && rollRandom(missile.random)%100<20) return;
     const auto path=chargedBoltPath(missile.position,target,distance,missile.random);
     missile.path.assign(path.begin(),path.end());
-    missile.expires=missile.created+uint64_t(missile.lifetimeFrames);
 }
 RuleNumber System::withMissileOwnerFormula(Advance &plan,const std::function<RuleNumber(SkillFormulaValues &)> &evaluate) const {
     const auto &missile=plan.next;const auto &rule=missile.nativeDamage->rule;
@@ -359,7 +363,11 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
                 }
         }
     } else if(function==11) {
-        const auto target=unitPosition(missile,missile.guidance);
+        auto target=unitPosition(missile,missile.guidance);
+        // Raw Do101 does not install a missile target. SrvDo11 falls back
+        // to its owner's current path target on each callback, so a later
+        // retarget changes the projectile's next homing step as well.
+        if(!target && owner.monster) target=unitPosition(missile,owner.monster->movementTarget);
         const auto period=rule.serverParameters[0]>0?rule.serverParameters[0]:5;
         if(target && countdown%period==0 && missileDistance(missile.position,*target)<=rule.serverParameters[1]) {
             const auto step=float(std::max(rule.serverParameters[2],1));

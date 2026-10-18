@@ -6,7 +6,7 @@
 
 当前可达动作／AI／移动／物件及物品再生已接所属帧事件，旧武器与怪物近战数值链已删除并共用原生联系。主要缺口是完整世界休眠重建、队列1／2全局交错及逐随机轨迹验收、全部属性／费用／死亡回调、剩余专用飞弹与世界载体、装备／伙伴组合，以及既有内容迁回后的逐项对齐。德鲁伊／刺客、后三幕专用AI／首领及特殊程序继续受上述底座门槛约束；不能以历史技能数量或公共函数存在宣称完整复刻。
 
-已实现技能的执行入口核对及旧路径清理见[技能公共规范](docs/gameplay/skills/COMMON.md#技能执行路径源码核对)；死亡效果、直接伤害／移动持续技能及怪物准备快照已完成源码迁移，替换入口与待验证边界由该页维护，原版依据见[资料来源](docs/resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。上述技能路径尚无本轮运行认证；地形资源工具构建不扩大到战斗验收，历史包也不认证后续源码改动。
+已实现技能的执行入口核对及旧路径清理见[技能公共规范](docs/gameplay/skills/COMMON.md#技能执行路径源码核对)；死亡效果、直接伤害／移动持续技能及怪物准备快照已完成源码迁移，替换入口与待验证边界由该页维护，原版依据见[资料来源](docs/resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。上述路径未完成逐项运行验收；第三至第五幕新增怪物与普通费用获得有限实机观察，具体程序身份和覆盖只见运行包记录，历史包不认证后续源码。
 
 实际阶段、优先级和完成条件统一见[战斗重构进度与剩余步骤](docs/architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)；源码与具体缺口见[内核子系统](docs/modules/SERVER_SYSTEMS.md)、[持续效果公共机制](docs/gameplay/skills/COMMON.md)，数值函数入口见[公共规则](docs/architecture/COMBAT_SHARED_RULES.md#重点战斗数值的当前公共入口)。已有构建／有限运行、当前包身份及性能证据只由[运行包记录](docs/development/BUILD_AND_RUN.md#运行包记录)维护，不沿用旧包认证后续工作区；本页不另复制批次记录。
 
@@ -26,7 +26,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 地图／世界 | 五幕地图生成及客户端房间重建已有原版瓦片／静态碰撞对照；宿主已改为每幕逐房间物化，原DLL、原版实机轨迹及包内双客户端TCP/IP探索、留守／卸载／重入有限对照通过；连续跨区寻路、旅行、探索缓存及常见环境物件 | 原版混合客户端及更广泛多人交错、完整单位随机／恢复、蓝图／休眠实体回收及特殊内容仍有缺口；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存、装备、掉落、商店、合成、角色成长及死亡／尸体；掉落双流、冻结批次、逐操作属性及指定词缀已纳入Release构建；生成、镶嵌及保存重入获有限观察 | 原版同帧出生／逐件落点时序、全来源／属性组合仍未精确认证，复杂争用、硬核与多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／独立伙伴施法及德鲁伊变形／召唤等现有程序已纳入Release构建；历史普通攻击与野外怪物／物件观察只覆盖相应包，其他技能运行范围见专题 | 全技能与来源组合验收、完整双持与触发组合、完整PvP规则；[刺客进度](docs/gameplay/skills/ASSASSIN.md)、[技能](docs/gameplay/skills/README.md)、[战斗](docs/gameplay/combat/FACTIONS.md) |
-| 怪物／伙伴 | 第一、第二幕三难度怪物行为、精英／首领、佣兵及部分召唤物 | 第三至第五幕、完整召唤与伙伴行为；[怪物](docs/gameplay/monsters/README.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
+| 怪物／伙伴 | 第一、第二幕三难度怪物行为、精英／首领、佣兵及部分召唤物；第三至第五幕已按家族登记01至72项源码，含议会、Izual／UberIzual、Mephisto及第五幕专用家族 | Diablo第73项仍为替身，古代人／Baal／Nihlathak等专用程序、Clt54连续喷火、完整休眠／随机交错及全难度战斗验收仍缺；[逐项台账](docs/gameplay/monsters/ACT3.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕个人任务主流程、组队任务及奖励保存 | 复杂剧情、机关和特殊多人任务；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
 | 多人／表现 | 组队、聊天、交易、敌意、共享收益及相关界面；物品提示及库存原调色、镶孔叠层、无形混色与定位已纳入Release两包，代表物品显示及重入获有限观察；自动地图原版大小／定位、PL2 Fade和方向键事件平移已纳入Release客户端包，画面与操作待用户测试 | 特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
 

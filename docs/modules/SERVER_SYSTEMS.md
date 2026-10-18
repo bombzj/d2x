@@ -150,7 +150,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | crafting | 方块／镶嵌与原38任务加工事务 | execute／pending／install；hosting准备不可变输出，前置任务资格由quests负责 |
 | loot | 掉落选择与来源结算记录 | plan／step；沿用LootRequest／LootPlan，不写死概率 |
 | population | 区域选型、密度／预设／任务／物件出生游标及房间阶段 | step／coverage；实际Actor由monsters唯一发布，清场复用覆盖查询 |
-| monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离 |
+| monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离。nativeTargetPosition只查真实GUID及同幕坐标，保留尸体／跨区目标；接收资格由技能／接触程序判断，此后续源码尚未构建／运行 |
 | ai | 目标、决策时间与控制器 | step；产生动作，不直接结算伤害 |
 | skills | 选技／热键／施放及持续动作 | execute／requestCast／step；AI使用实体来源请求，不伪装成玩家 |
 | missiles | 弹体实体和寿命 | spawn／step；碰撞后向combat提交结算请求 |

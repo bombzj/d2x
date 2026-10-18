@@ -40,7 +40,9 @@ MonsterExperienceAward resolveMonsterExperience(const ClassicData &data, const M
             return defer("Missing area monster level");
         level = area->second.population.level[request.difficulty];
     }
-    if (*level < 1 || *level > 99)
+    // The player cap is not a monster cap: current MPQ bosses include
+    // level 110. Scaled experience validates the actual MonLvl row below.
+    if (*level < 1)
         return defer("Unsupported monster level");
     uint64_t base = unsigned(*percent);
     if (!noRatio) {

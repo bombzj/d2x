@@ -89,6 +89,7 @@ std::optional<server::HydraRules> prepareHydraRules(const ClassicData &data) {
             attack.missile=prepareMonsterMissile(data,missileId,1);
             if(!attack.missile) throw std::runtime_error("Unsupported native Hydra attack missile");
             attack.missile->skillDamage=MissileSkillDamage{head.definition.attackSkill,damageId};
+            rule.skillIds[0]=uint16_t(head.definition.attackSkill);
             rule.skillActions.emplace(uint16_t(head.definition.attackSkill),std::move(attack));
         }
     }

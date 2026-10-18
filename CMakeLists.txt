@@ -150,6 +150,7 @@ add_library(d2x_gameplay
   src/gameplay/skills/summon_resolve.cpp src/gameplay/skills/amazon_summon_resolve.cpp
   src/gameplay/skills/projectile_path.cpp src/gameplay/skills/damage_curve.cpp
   src/gameplay/skills/formula_parameters.cpp
+  src/gameplay/skills/mana_payment.cpp
   src/gameplay/skills/passive_stats.cpp
   src/gameplay/monsters/mode_stats.cpp
   src/gameplay/monsters/life_stats.cpp
@@ -225,6 +226,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/monsters/inactive.cpp
     src/server/systems/monsters/special_actions.cpp
     src/server/systems/monsters/act2_skills.cpp
+    src/server/systems/monsters/imp.cpp
     src/server/systems/monsters/leap.cpp
     src/server/systems/monsters/controlled.cpp
   src/server/systems/ai/system.cpp src/server/systems/ai/family_actions.cpp
@@ -234,10 +236,36 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/frog_family.cpp
     src/server/systems/ai/willowisp_family.cpp
     src/server/systems/ai/zakarum_zealot.cpp
+    src/server/systems/ai/zakarum_priest.cpp
+    src/server/systems/ai/high_priest.cpp
+    src/server/systems/ai/vile_family.cpp
+    src/server/systems/ai/finger_mage.cpp
+    src/server/systems/ai/regurgitator.cpp
+    src/server/systems/ai/abyss_knight.cpp
+    src/server/systems/ai/oblivion_knight.cpp
+    src/server/systems/ai/siege_beast.cpp
+    src/server/systems/ai/imp.cpp
+    src/server/systems/ai/generic_spawner.cpp
+    src/server/systems/ai/minion.cpp
+    src/server/systems/ai/suicide_minion.cpp
+    src/server/systems/ai/overseer.cpp
+    src/server/systems/ai/minion_spawner.cpp
+    src/server/systems/ai/succubus.cpp
+    src/server/systems/ai/izual.cpp
+    src/server/systems/ai/mephisto.cpp
+    src/server/systems/ai/putrid_defiler.cpp
+    src/server/systems/ai/baal_minion.cpp
+    src/server/systems/ai/frozen_horror.cpp
+    src/server/systems/ai/reanimated_horde.cpp
+    src/server/systems/ai/megademon.cpp
+    src/server/systems/monsters/pregnancy.cpp
+    src/server/systems/monsters/hydra.cpp
   src/server/systems/skills/system.cpp src/server/systems/skills/monster_actions.cpp src/server/systems/skills/casting.cpp
   src/server/systems/skills/action_events.cpp
   src/server/systems/skills/monster_action_events.cpp
   src/server/systems/skills/monster_inferno.cpp
+  src/server/systems/skills/monster_spell.cpp
+  src/server/systems/skills/imp.cpp
     src/server/systems/skills/monster_mosquito.cpp
   src/server/systems/skills/monster_leap.cpp
     src/server/systems/skills/activation.cpp
@@ -445,7 +473,7 @@ target_sources(d2x_character_host PRIVATE src/hosting/loot_content.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/state.cpp src/gameplay/units/restoration.cpp src/gameplay/units/resources.cpp src/gameplay/consumables/potions.cpp src/gameplay/events/frame_queue.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/effects/native_status.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/effects/frame_events.cpp src/server/systems/effects/damage_states.cpp src/server/systems/effects/player_regeneration.cpp src/server/systems/effects/skill_state.cpp)
-target_sources(d2x_server PRIVATE src/server/systems/monsters/frame_events.cpp src/server/systems/monsters/regeneration.cpp src/server/systems/monsters/reinitialize.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/monsters/frame_events.cpp src/server/systems/monsters/regeneration.cpp src/server/systems/monsters/reinitialize.cpp src/server/systems/skills/overseer.cpp)
 target_sources(d2x_server PRIVATE src/server/runtime/frame_event_dispatch.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/missiles/frame_events.cpp
     src/server/systems/missiles/rooms.cpp
@@ -475,5 +503,5 @@ target_sources(d2x_server PRIVATE src/server/systems/companions/hireling.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/enchantment_damage.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/unique_modifiers.cpp)
-target_sources(d2x_server PRIVATE src/server/systems/effects/monster_enchantments.cpp)
+target_sources(d2x_server PRIVATE src/server/systems/effects/monster_pregnancy.cpp src/server/systems/effects/monster_enchantments.cpp src/server/systems/effects/suicide_minion.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/ai/unique_actions.cpp)

@@ -82,6 +82,8 @@ class System {
     const State &read() const { return state_; }
     void initialize(const CharacterRecord &);
     void nativeEliteBorn(EntityId,bool eligible);
+    DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);
+    DomainResult<> activateIzual(uint64_t tick);
     void rebindObject(EntityId previous,EntityId current);
     void registerCainObject(EntityId,int definition,int initialization,RegionId,Vec);
     void registerTownCain(EntityId);

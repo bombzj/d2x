@@ -113,7 +113,7 @@ DomainStatus System::activateDruid(Release &pending,const ActorContext &actor,Ve
     if(caster->monster) return ports_.missiles.commitNativeBirth(std::move(*prepared.value)).status;
     const auto *player=caster->player;
     transactions::CharacterEdit edit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-    if(!pending.manaPaid) {edit.player.mana-=pending.skill.manaCost;edit.charge=pending.skill.charge;}
+    if(!pending.manaPaid) {edit.player.mana-=pending.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};edit.charge=pending.skill.charge;}
     auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return plan.status;
     plan.value->missileBirth=std::move(*prepared.value);
     return ports_.transactions.commit(std::move(*plan.value)).status;

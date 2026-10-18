@@ -10,7 +10,7 @@ std::optional<MonsterNormalCombat> loadMonsterNormalCombat(const DataTable &stat
     const auto lowDamage = stats.number(row, "A1MinD");
     const auto highDamage = stats.number(row, "A1MaxD");
     if (!level || *level < 1 || !lowLife || !highLife || !lowDamage || !highDamage ||
-        *lowLife <= 0 || *highLife < *lowLife || *lowDamage < 0 || *highDamage < *lowDamage)
+        *lowLife <= 0 || *highLife < 0 || *lowDamage < 0 || *highDamage < *lowDamage)
         return std::nullopt;
     int lifeRatio = 100, damageRatio = 100;
     if (stats.number(row, "noRatio").value_or(0) == 0) {
@@ -30,7 +30,7 @@ std::optional<MonsterNormalCombat> loadMonsterNormalCombat(const DataTable &stat
     const auto maxLife = scaled(*highLife, lifeRatio);
     const auto minDamage = scaled(*lowDamage, damageRatio);
     const auto maxDamage = scaled(*highDamage, damageRatio);
-    if (minLife < 1 || maxLife > (1 << 23) - 1 || minDamage < 0 || maxDamage > 1000000)
+    if (minLife < 1 || minLife > (1 << 23) - 1 || maxLife > (1 << 23) - 1 || minDamage < 0 || maxDamage > 1000000)
         return std::nullopt;
     MonsterNormalCombat combat{int(minLife), int(maxLife),
                                std::pair{int(minDamage), int(maxDamage)}, std::nullopt, {}};

@@ -58,6 +58,8 @@ struct MonsterSpawn {
     bool distanceCountdown{}; // Native constructor flag 0x400.
     std::optional<int> startFrame; // Native constructor flag 0x200, including an explicit zero.
     std::optional<int> totalFrames; // Native 0x8000 range override, applied before path initialization.
+    std::optional<EntityId> guidedTarget;
+    std::optional<int32_t> nativeVelocityRaw; // Constructor's 8.8 value before slow / 75% scaling.
 };
 struct MonsterLaunch { EntityId first; };
 struct NativeSpawn {
@@ -75,7 +77,7 @@ struct NativeSpawn {
     int32_t scatterRadius{};
     int32_t minimumTargetDistanceSquared{};
     std::optional<std::pair<uint64_t,uint64_t>> ownerSeedEdit;
-    enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill } initialization{};
+    enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill,DiabWall } initialization{};
     uint32_t initialSeed{};
     std::optional<int32_t> nativeVelocity;
     std::optional<std::array<int32_t,2>> finalParameters;
@@ -84,5 +86,8 @@ struct NativeSpawn {
     std::optional<EntityId> storedOwner;
     bool copyMonsterAttackBonus{}; // SKILLS_CreateMissile, as distinct from raw params.
     bool transient{}; // SrvDo029 owns a real temporary missile until its direct callback finishes.
+    std::optional<EntityId> guidedTarget;
+    std::optional<int> postCreationFrames; // SetTotal/Current after construction; preserve Activate.
+    bool velocityFixed{}; // Flag0x10: nativeVelocity already has eight fractional bits.
 };
 }

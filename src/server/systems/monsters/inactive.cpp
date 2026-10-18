@@ -95,6 +95,8 @@ DomainResult<> System::compressRoom(RegionId region,size_t index,uint64_t tick) 
             node.wander=unit.wanderTargetOrder!=0;node.special=snapshot.specialTargetOrder!=0;
             node.modifiers=unit.rule.nativeModifiers;node.nameSeed=unit.rule.enchantment?unit.rule.enchantment->nameSeed:0;
             node.skillPositions=unit.skillPositions;node.componentParameter=unit.components[10];node.nestSpawned=unit.nestSpawned;
+            node.impMountedAi=unit.impMountedAi;
+            node.whippedAi=unit.whippedAi;
             saved.insert(saved.begin(),std::move(node));
         }
     }
@@ -139,6 +141,12 @@ DomainResult<> System::finishRestoration(const InactiveMonster &source,uint64_t 
     for(auto &point:candidate.skillPositions) point=point+translation;
     if(candidate.questNpc) candidate.movementGoal=candidate.position;
     candidate.corpse=source.corpse;candidate.selfResurrections=source.selfResurrections;
+    // The compressed native record retains special AI state16, but does not
+    // serialize UNITS_StoreOwner or its attached/sourceunit stat lists.
+    // Restore runs state16's initializer once, then its first think sees the
+    // missing owner and returns to Fn122 with NU1.
+    if(!source.dead && source.impMountedAi) initializeImpMount(candidate);
+    candidate.whippedAi=!source.dead && source.whippedAi;
     candidate.uncounted=source.uncounted;
     candidate.identity=source.identity;
     if(source.dead) {candidate.deathTick=tick;candidate.rewardComplete=true;}

@@ -15,6 +15,7 @@
 #include "gameplay/monsters/curse_decision.hpp"
 #include "server/systems/effects/system.hpp"
 #include "core/random.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
 DomainResult<> System::perform(Controller &controller,std::function<DomainResult<>()> operation) {
@@ -85,6 +86,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.random = monster.combatRandom;
             if(monster.rule.ai.kind==MonsterAiKind::Sarcophagus) controller.skillDeadline=monster.admissionTick+uint64_t(monster.rule.ai.params[0]);
             if(monster.rule.ai.kind==MonsterAiKind::FoulCrowNest) controller.lastSpawn=monster.admissionTick;
+            if(monster.rule.ai.kind==MonsterAiKind::GenericSpawner) controller.phase=nativeNarrow(uint32_t(monster.admissionTick));
         }
         if(controller.observedAiFunctionRevision!=monster.aiFunctionRevision) {
             // AITHINK_ExecuteAiFn clears the three family parameters and AI
@@ -99,9 +101,10 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 controller.commands.clear();
                 controller.regenerationBonus=0;
                 controller.curseParameters.fill(0);controller.phase=controller.loop=controller.thirdParameter=0;controller.commanded=false;controller.charged=false;
-                controller.pursuing=false;controller.target.reset();controller.nextPath=0;
+                controller.pursuing=false;controller.target.reset();controller.carrier.reset();controller.nextPath=0;
+                if(monster.rule.ai.kind==MonsterAiKind::GenericSpawner) controller.phase=nativeNarrow(uint32_t(tick.tick));
             }
-            controller.nextDecision=std::max(controller.nextDecision,tick.tick);
+            controller.nextDecision=tick.tick;
         }
         if(controller.observedAiThinkRevision!=monster.aiThinkRevision) {
             controller.observedAiThinkRevision=monster.aiThinkRevision;controller.nextDecision=monster.aiThinkAt;
@@ -295,16 +298,38 @@ StepStatus System::think(EntityId id,TickContext tick) {
         }
         if (!target) {
             const auto kind=monster.rule.ai.kind;
+            if(kind==MonsterAiKind::SuicideMinion || monster.whippedAi) {blocked|=suicideMinionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Overseer) {blocked|=overseerFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::MinionSpawner) {blocked|=minionSpawnerFamily(id,{},INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Mephisto) {blocked|=mephistoFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Succubus || kind==MonsterAiKind::SuccubusWitch) {blocked|=succubusFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Minion) {blocked|=minionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::GenericSpawner) {blocked|=genericSpawnerFamily(id,{},INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Imp) {blocked|=impFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::SiegeBeast) {blocked|=siegeBeastFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::PutridDefiler) {blocked|=putridDefilerFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::BaalMinion) {blocked|=baalMinionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::FrozenHorror) {blocked|=frozenHorrorFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::ReanimatedHorde) {blocked|=reanimatedHordeFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Megademon) {blocked|=megademonFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::OblivionKnight) {blocked|=oblivionKnightFamily(id,{},Vec{}-area.definition.origin,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::AbyssKnight) {blocked|=abyssKnightFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Regurgitator) {blocked|=regurgitatorFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::FingerMage) {blocked|=fingerMageFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::VileMother || kind==MonsterAiKind::VileDog) {blocked|=vileFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Hydra) {blocked|=hydraFamily(id,{},INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::HighPriest) {blocked|=highPriestFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::FetishShaman) {
                 blocked|=fetishShamanAction(id,{},Vec{}-area.definition.origin,tick,controller)==StepStatus::Blocked;
                 continue;
             }
-            if(fetishFamily || kind==MonsterAiKind::Vampire || kind==MonsterAiKind::Wraith || kind==MonsterAiKind::Skeleton || kind==MonsterAiKind::Goatman || kind==MonsterAiKind::Brute || kind==MonsterAiKind::Zombie || kind==MonsterAiKind::QuillRat || kind==MonsterAiKind::CorruptRogue || kind==MonsterAiKind::CorruptArcher || kind==MonsterAiKind::CorruptLancer || kind==MonsterAiKind::SkeletonBow || kind==MonsterAiKind::SkeletonMage || kind==MonsterAiKind::Bighead || kind==MonsterAiKind::Fallen || kind==MonsterAiKind::FallenShaman) {
+            if(fetishFamily || kind==MonsterAiKind::DeathMauler || kind==MonsterAiKind::BloodLord || kind==MonsterAiKind::Smith || kind==MonsterAiKind::DoomKnight || kind==MonsterAiKind::Vampire || kind==MonsterAiKind::Wraith || kind==MonsterAiKind::Skeleton || kind==MonsterAiKind::Goatman || kind==MonsterAiKind::Brute || kind==MonsterAiKind::Zombie || kind==MonsterAiKind::QuillRat || kind==MonsterAiKind::CorruptRogue || kind==MonsterAiKind::CorruptArcher || kind==MonsterAiKind::CorruptLancer || kind==MonsterAiKind::SkeletonBow || kind==MonsterAiKind::SkeletonMage || kind==MonsterAiKind::Bighead || kind==MonsterAiKind::Fallen || kind==MonsterAiKind::FallenShaman) {
                 // Native null-unit coordinates are global 0/0. Preserve
                 // phase/loop processing and the flags-7 failed-walk fallback.
                 blocked|=familyAction(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;
                 continue;
             }
+            if(kind==MonsterAiKind::ZakarumPriest) {blocked|=zakarumPriestFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::ZakarumZealot) {blocked|=zakarumZealotFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Willowisp) {blocked|=willowispFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Vulture) {
@@ -339,6 +364,29 @@ StepStatus System::think(EntityId id,TickContext tick) {
             blocked|=fetishShamanAction(id,target,targetPosition,tick,controller)==StepStatus::Blocked;continue;
         }
         const auto &rules = monster.rule.ai;
+        if(rules.kind==MonsterAiKind::SuicideMinion || monster.whippedAi) {blocked|=suicideMinionFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Overseer) {blocked|=overseerFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::MinionSpawner) {blocked|=minionSpawnerFamily(id,target,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Mephisto) {blocked|=mephistoFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Izual || rules.kind==MonsterAiKind::UberIzual) {blocked|=izualFamily(id,*target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Succubus || rules.kind==MonsterAiKind::SuccubusWitch) {blocked|=succubusFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Minion) {blocked|=minionFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::GenericSpawner) {blocked|=genericSpawnerFamily(id,target,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Imp) {blocked|=impFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::SiegeBeast) {blocked|=siegeBeastFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::PutridDefiler) {blocked|=putridDefilerFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::BaalMinion) {blocked|=baalMinionFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::FrozenHorror) {blocked|=frozenHorrorFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::ReanimatedHorde) {blocked|=reanimatedHordeFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Megademon) {blocked|=megademonFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::OblivionKnight) {blocked|=oblivionKnightFamily(id,target,targetPosition,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::AbyssKnight) {blocked|=abyssKnightFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Regurgitator) {blocked|=regurgitatorFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::FingerMage) {blocked|=fingerMageFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::VileMother || rules.kind==MonsterAiKind::VileDog) {blocked|=vileFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Hydra) {blocked|=hydraFamily(id,target,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::HighPriest) {blocked|=highPriestFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::ZakarumPriest) {blocked|=zakarumPriestFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::ZakarumZealot) {blocked|=zakarumZealotFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Willowisp) {blocked|=willowispFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Vulture) {

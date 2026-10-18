@@ -41,7 +41,7 @@ DomainResult<> System::nativeTerror(const ActorContext &actor,const SkillCastSpe
     auto candidate=prepareFear(request,actor.tick);if(!candidate) return {candidate.status,{}};
     auto publication=std::move(*candidate.value);
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-    debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+    debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     auto prepared=ports_.transactions.prepare(std::move(debit),nullptr,{},std::move(publication));if(!prepared) return {prepared.status,{}};
     return ports_.transactions.commit(std::move(*prepared.value));
 }
@@ -178,7 +178,7 @@ DomainResult<> System::nativeAttract(const ActorContext &actor,const SkillCastSp
     changes.push_back(std::move(selectedLife));
     for(auto &life:changes) {const auto id=life.actor;prepareUnitEffects(*publication,id,next.at(id),std::move(life),actor.tick);}
     transactions::CharacterEdit debit{actor,player->inventoryRevision,player->characterRevision,player->persistent.player};
-    debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+    debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     auto prepared=ports_.transactions.prepare(std::move(debit),nullptr,{},std::move(publication));if(!prepared) return {prepared.status,{}};
     return ports_.transactions.commit(std::move(*prepared.value));
 }
@@ -199,7 +199,7 @@ DomainResult<> System::curse(const ActorContext &actor,const SkillCastSpec &skil
     std::vector<monsters::LifeChange> lifeChanges;
     const auto payment=caster->monster?ActorContext{player->player,player->actor,player->area,ports_.areas.at(player->area).generation,actor.sequence,actor.tick}:actor;
     transactions::CharacterEdit debit{payment,player->inventoryRevision,player->characterRevision,player->persistent.player};
-    debit.player.mana-=skill.manaCost;debit.charge=skill.charge;
+    debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     auto publication=std::make_shared<AuraUnitPublication>();
     const bool cloak=program.targetProcedure==CurseSpec::TargetProcedure::Cloak;
     if(cloak) {

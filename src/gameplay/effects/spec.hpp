@@ -25,7 +25,7 @@ struct EffectSource {
 // is exclusive on the recipient, independent of source or stacking policy.
 enum class EffectStacking { ReplaceState, ReplaceSource, Independent, AuraLevel, CurseLevel, SkillLevel, ReuseState };
 enum class EffectRemoval { Expired, Replaced, Death, Hit, Dispelled, SourceRemoved, Cleared };
-enum class NativeStateRemoval { Default,BasicAura,HolyFreeze,SkillShrine,RestoreAi,ClearTargets,Cold,Freeze,Shape };
+enum class NativeStateRemoval { Default,BasicAura,HolyFreeze,SkillShrine,RestoreAi,ClearTargets,Cold,Freeze,Shape,Pregnant };
 enum class NativeStateExpiration { NonzeroDuration,EvenZeroDuration };
 struct EffectVisual {
     int overlayId = -1;

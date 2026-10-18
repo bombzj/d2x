@@ -1,6 +1,6 @@
 # 首领与专用策略
 
-更新：2026-10-11。本页维护专用首领／固定单位策略及任务控制与战斗AI的边界。精英rank与SuperUnique数据归[ELITES](ELITES.md)，普通家族归各幕台账，逐技能程序归[怪物技能](../skills/MONSTERS.md)。专用AI、幕首领和固定金怪不是同一个分类。
+更新：2026-10-18。本页维护专用首领／固定单位策略及任务控制与战斗AI的边界。精英rank与SuperUnique数据归[ELITES](ELITES.md)，普通家族归各幕台账，逐技能程序归[怪物技能](../skills/MONSTERS.md)。专用AI、幕首领和固定金怪不是同一个分类。
 
 ## 已接第一幕专用程序
 
@@ -27,10 +27,10 @@ RemoteScene按原1.13c D2Client RVA20FB0消费新鲜DEATH动作，不从已入�
 | 范围 | 当前实现与明确缺口 |
 | --- | --- |
 | 第二幕Duriel及任务固定目标 | 已接Duriel冲锋／Jab／Smite／光环、Summoner五槽、Radament支持技能和虫后死亡毒云；第二幕新增AI／动画接线及有限运行范围，见[第二幕](ACT2.md) |
-| 第三幕Mephisto及任务固定目标 | 任务身份／机关／死亡链已接；完整战斗程序尚未迁入，见[第三幕](ACT3.md) |
-| 第四幕Diablo及封印首领 | 任务生成／死亡条件已有控制；真实首领技能与战斗AI尚未迁入，见[第四幕](ACT4.md) |
+| 第三幕Mephisto／议会 | 已接Mephisto专用AI及六技能、议会治疗／Hydra；具体源码边界见[46／72项](ACT3.md#逐项接入)，正常首领战斗与全难度未完整验收 |
+| 第四幕Izual／Hephasto／Diablo | 衣卒尔Fn055及新星、Hephasto沿Smith已接；Diablo第73项仍在补且保留替身，封印组不等于完整精英验收，见[第四幕](ACT4.md) |
 | 第五幕古代人／Baal及五波 | 开战／重置、波次与任务完成控制已接；专用战斗AI、全部词缀／召唤／清理仍待补，见[第五幕](ACT5.md) |
-| 牛王、Uber／Pandemonium与其他扩展首领 | 第一幕固定Cow King准备不等于扩展事件完成；扩展首领逐项战斗程序与证据尚未建立，见[SPECIAL](SPECIAL.md) |
+| 牛王、Uber／Pandemonium与其他扩展首领 | UberIzual的Fn144／冰甲／传送已接；第一幕固定Cow King及单个扩展首领不等于事件完成，其余首领程序与运行证据仍待补，见[SPECIAL](SPECIAL.md) |
 
 第三至第五幕可能使用已授权替身，真实任务身份保留不等于真实首领战斗完成。管理击杀验证死亡后的任务链，不能认证Boss AI、技能组合、伤害平衡或正常通关；具体历史条件只维护在[第二幕任务](../quests/ACT2.md#有限运行证据)和[第三至第五幕任务](../quests/ACT3_5.md#依据与运行证据)。
 

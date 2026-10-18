@@ -145,7 +145,7 @@ DomainResult<> System::nativeSummon(const ActorContext &actor,const SkillCastSpe
     ports_.effects.stageSummonEvents(*publication,id,skill.sourceId,skill.rank,*owner->rules.skills->formulas,actor.tick);
     const auto removal=ports_.monsters.stageRetirements(*publication,retired,actor.tick);if(!removal) return removal;
     transactions::CharacterEdit edit{ownerContext,owner->inventoryRevision,owner->characterRevision,owner->persistent.player};
-    if(!controlled) {edit.player.mana-=skill.manaCost;edit.charge=skill.charge;}
+    if(!controlled) {edit.player.mana-=skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};edit.charge=skill.charge;}
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},publication);if(!plan) return {plan.status,{}};
     plan.value->roomRandom=std::make_shared<const RoomRandomLoan>(*roomSeed.value);
     const auto nextRandom=prepared.equipmentRandom?prepared.equipmentRandom:

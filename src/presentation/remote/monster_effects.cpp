@@ -33,6 +33,11 @@ void RemoteMonsterEffects::observe(const OnlineUnit &unit,Definition definition,
     else if(actor.mode!=0 && actor.mode!=12) actor.cold=-1;
     if(*event.action==8 && definition.scarab && fps>0) actor.scarab=now-age+2.f/fps;
     if(*event.action==8 && definition.queen) releases_.push_back({unit.key,321});
+    if(*event.action==8 && definition.suicideParameter>=0 && fps>0) {
+        // Retail UMod33, RVA 1FFC0: DT animation frame 4. The corpse
+        // explosion is unconditional, alongside the optional fire/ice effect.
+        actor.suicide=now-age+4.f/fps;actor.suicideParameter=definition.suicideParameter;
+    } else if(actor.mode!=0 && actor.mode!=12) actor.suicide=-1;
 }
 std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const OnlineWorldView &world,float now) {
     std::erase_if(actors_,[&](const auto &entry){
@@ -47,6 +52,11 @@ std::vector<RemoteMonsterEffects::Release> RemoteMonsterEffects::advance(const O
         }
         if(actor.cold>=0 && now>=actor.cold) {releases_.push_back({key,194});actor.cold=-1;}
         if(actor.scarab>=0 && now>=actor.scarab) {releases_.push_back({key,225});actor.scarab=-1;}
+        if(actor.suicide>=0 && now>=actor.suicide) {
+            if(actor.suicideParameter==1) releases_.push_back({key,427});
+            else if(actor.suicideParameter>=2) releases_.push_back({key,428});
+            releases_.push_back({key,426});actor.suicide=-1;
+        }
     }
     return std::exchange(releases_,{});
 }

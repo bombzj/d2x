@@ -85,9 +85,10 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     if (!area || area->definition.town || !request.hostile || !request.rule || (!request.implementation && request.rule->trap==MonsterRule::Trap::None) || request.identity.spawnKey.empty())
         return {DomainStatus::InvalidRequest, {}};
     const auto &rule = *request.rule;
-    if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < rule.minimumLife ||
+    if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < 0 ||
         rule.nativeVelocity < 0 || rule.nativeVelocity > 255 || rule.difficulty < 0 || rule.difficulty > 2 || rule.alignment < 0 || rule.alignment > 2 ||
-        rule.level <= 0 || (rule.attacks.empty() && rule.skillActions.empty())) return {DomainStatus::InvalidRequest, {}};
+        rule.level <= 0 || (rule.attacks.empty() && rule.skillActions.empty() &&
+        rule.ai.kind!=MonsterAiKind::SuicideMinion)) return {DomainStatus::InvalidRequest, {}};
     const auto finish=[&](EntityId id)->DomainResult<EntityId> {
         const auto *unit=find(id);
         if(unit && unit->rule.enchantment && unit->rule.enchantment->aura && !unit->rightSkill) {
@@ -115,7 +116,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
 }
 DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,EntityId id,uint64_t &random,ComponentPaletteState &palettes,uint64_t itemCursor,const std::set<size_t> *stagedUniques) {
     if(!request.rule || !request.rule->stats || !request.rule->formulas || request.rule->minimumLife<0 ||
-        request.rule->maximumLife<request.rule->minimumLife) return {DomainStatus::InvalidRequest,{}};
+        request.rule->maximumLife<0) return {DomainStatus::InvalidRequest,{}};
     const auto &rule=*request.rule;
     Actor actor;
     actor.admissionTick=request.tick;
@@ -447,7 +448,7 @@ bool System::commitLife(LifeChange &&change) noexcept {
         if(change.curseControl) {
             const auto before=unit.curseControl.ai,after=change.curseControl->ai;
             if(change.reselectAi || (before!=after && before!=CurseAi::Confuse && after!=CurseAi::Confuse && before!=CurseAi::Attract && after!=CurseAi::Attract)) {
-                ++unit.aiFunctionRevision;unit.aiThinkAt=0;
+                ++unit.aiFunctionRevision;unit.aiThinkAt=0;unit.whippedAi=false;
             }
             unit.curseControl=*change.curseControl;
         }
@@ -784,6 +785,23 @@ std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId ar
     if(m && m->area==area && m->life>0 && m->damageable()) return std::pair{m->position,m->rule.size};
     return {};
 }
+std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,RegionId region) const {
+    const auto *area=ports_.areas.find(region);if(!area) return {};
+    // SUNIT_GetTargetUnit is an identity lookup, including a real corpse;
+    // harm/life qualification belongs to the receiving program or contact.
+    for(const auto &[key,player]:ports_.players.all()) {
+        (void)key;if(player.actor!=id || !player.entered) continue;
+        const auto *target=ports_.areas.find(player.area);
+        if(target && target->definition.act==area->definition.act)
+            return std::pair{player.position+target->definition.origin-area->definition.origin,2};
+    }
+    if(const auto *unit=find(id)) {
+        const auto *target=ports_.areas.find(unit->area);
+        if(target && target->definition.act==area->definition.act)
+            return std::pair{unit->position+target->definition.origin-area->definition.origin,unit->rule.size};
+    }
+    return {};
+}
 bool System::recacheHirelingRoom(Actor &actor) {
     if(!actor.hireling) return true;
     constexpr Vec center{.5f,.5f};
@@ -845,6 +863,7 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     // PATH_SetStepNum stores steps - 1 as a unit-distance arrival bound.
     // It never limits the number of route points (D2Common PathMisc).
     const auto goal=request.circleTurn?route.back():request.destination.position;
+    recordNativeMode(actor,request.running?15:2);
     actor.route = std::move(route); actor.movementTarget = request.circleTurn?EntityId{}:request.target;
     actor.pathStep.reset();
     actor.pathSteps=uint8_t(request.pathSteps);
@@ -863,11 +882,12 @@ void System::stop(EntityId id) {
         if (!actor.route.empty() || actor.moving || actor.running) { actor.route.clear(); actor.moving = false; actor.running = false; ++actor.revision; }
     }
 }
-DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral, EntityId target,std::optional<NativeUnitStats> modeStats) {
+DomainResult<> System::beginAttack(EntityId id, uint64_t until, bool returnToNeutral, EntityId target,std::optional<NativeUnitStats> modeStats,uint8_t mode) {
     auto it = state_.actors.find(id);
     if (it == state_.actors.end() || !it->second.alive()) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     if(actor.nativeActionRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    recordNativeMode(actor,mode);
     ++actor.nativeActionRevision;actor.nativeActionInterruption=actor.interruption;actor.nativeActionUntil=until;
     if(modeStats) actor.nativeStats=std::move(modeStats);
     actor.aiPose=1;actor.holdPose=false;actor.poseUntil=0;
@@ -893,6 +913,7 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
     if(!actor.alive()) {actor.neutralAt.reset();return scheduled;}
     if(!actor.neutralAt || tick<*actor.neutralAt || frozen(id,tick)) return scheduled;
     const auto ended=std::max(*actor.neutralAt,actor.frozenUntil);
+    recordNativeMode(actor,1);
     actor.neutralAt.reset();
     // MonsterMode::sub_6FC64310 preserves an already scheduled future AI
     // event. Default aidel starts at ENDANIM, not at attack start, and is
@@ -905,7 +926,7 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
 }
 void System::finishAction(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
-    auto &actor=found->second;actor.nativeActionUntil=actor.busyUntil=tick;
+    auto &actor=found->second;recordNativeMode(actor,1);actor.nativeActionUntil=actor.busyUntil=tick;
     if(actor.skillMotion && actor.skillMotion->leaperRecovery) {actor.skillMotion.reset();actor.moving=false;}
     if(actor.neutralAt) actor.neutralAt=tick;
     ++actor.revision;
@@ -914,7 +935,10 @@ void System::finishAction(EntityId id,uint64_t tick) {
 }
 DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint64_t tick, uint64_t coldFrames, bool freeze, uint8_t hitClass,std::optional<PoisonApplication> poison,bool poisonOnly,uint64_t stunFrames,std::optional<OpenWoundsApplication> wound,int64_t absorbed,bool clearStun,int64_t crushing,int coldPierce,bool softHit,std::optional<uint64_t> freezeLength,std::optional<bool> getHit,DamageStatus status) {
     auto it = state_.actors.find(id);
-    if(it!=state_.actors.end() && !it->second.alive() && (it->second.rule.deathBurst || it->second.rule.boneDeathExplosion)) return ports_.effects.monsterDeathEffect(id,tick);
+    const auto suicideModifier=[](const Actor &unit){return std::ranges::find(unit.rule.nativeModifiers,33)!=unit.rule.nativeModifiers.end() ||
+        (unit.rule.enchantment && unit.rule.enchantment->has(33));};
+    if(it!=state_.actors.end() && !it->second.alive() && suicideModifier(it->second)) return ports_.effects.monsterDamageEffect(id,tick);
+    if(it!=state_.actors.end() && !it->second.alive() && (it->second.rule.deathBurst || it->second.rule.boneDeathExplosion || it->second.rule.ai.kind==MonsterAiKind::SiegeBeast)) return ports_.effects.monsterDeathEffect(id,tick);
     if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
     if(it->second.revision>UINT64_MAX-4) return {DomainStatus::Capacity,{}};
     auto actor = it->second;
@@ -1018,6 +1042,11 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     ++actor.revision; if(amount>0 && !poisonOnly && !status.actionOnly) ++actor.damageOccurrence;
     actor.combatRandom=random;
     if (recovery) ++actor.hitOccurrence;
+    if(!status.deferAction && !poisonOnly) {
+        if(dead) recordNativeMode(actor,0);
+        else if(recovery) recordNativeMode(actor,3);
+        else if(softHit || getHit.value_or(false)) actor.nativeAiState=19;
+    }
     actor.chilledUntil = chilled; actor.frozenUntil = frozen;
     actor.shatterActive=shatterActive;actor.corpse.states=std::move(deathStates);
     actor.stunnedUntil=stunned;
@@ -1060,6 +1089,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         ports_.frameEvents.cancel({FrameEventUnit::Monster,id},FrameEventType::PeriodicStats);
     }
     for(auto &cascade:cascades) ports_.frameEvents.publish(std::move(cascade));
+    if(const auto *published=find(id);!dead && published && suicideModifier(*published)) return ports_.effects.monsterDamageEffect(id,tick);
     return dead?ports_.effects.monsterDeathEffect(id,tick):DomainResult<>{DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::finishDamageAction(EntityId id,EntityId source,int64_t amount,uint64_t tick,uint8_t hitClass,bool softHit,std::optional<bool> getHit) {
@@ -1079,8 +1109,8 @@ DomainResult<> System::block(EntityId id,uint64_t tick) {
             hit.actionTarget=MotionTarget{actor.movementTarget,uint8_t(ports_.players.findActor(actor.movementTarget)?0:1)};
         auto result=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{hit}});
         if(!result) return {result.status,{}};
-        stop(id);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;++actor.revision;
-    }
+        stop(id);recordNativeMode(actor,6);++actor.interruption;actor.reactionMode=6;actor.reactionUntil=tick+std::min<uint64_t>(reactionTicks,UINT64_MAX-tick);actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;++actor.revision;
+    } else {actor.nativeAiState=19;++actor.revision;}
     return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::holyFreeze(EntityId id,uint64_t until,uint64_t tick) {
@@ -1113,10 +1143,14 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
     auto actor=current;
     if(knockback && actor.rule.knockbackTicks<=0) {knockback=false;getHit=true;}
     const bool stunned=states.contains(actor.rule.stunState);
-    if(!knockback && (!getHit || !stunned || actor.rule.hitRecoveryTicks<=0)) return {DomainStatus::Applied,std::monostate{}};
+    if(!knockback && (!getHit || !stunned || actor.rule.hitRecoveryTicks<=0)) {
+        if(getHit) {found->second.nativeAiState=19;++found->second.revision;}
+        return {DomainStatus::Applied,std::monostate{}};
+    }
     if(actor.revision==UINT64_MAX || actor.interruption==UINT64_MAX || actor.hitOccurrence==UINT64_MAX) return {DomainStatus::Capacity,{}};
     const auto duration=knockback?actor.rule.knockbackTicks:recoveryTicks(actor,ports_.effects,tick,false);
     actor.route.clear();actor.moving=false;actor.movementTarget={};
+    recordNativeMode(actor,knockback?13:3);
     actor.reactionMode=knockback?8:3;actor.reactionUntil=tick+std::min<uint64_t>(uint64_t(duration),UINT64_MAX-tick);
     actor.busyUntil=actor.reactionUntil;actor.neutralAt=actor.reactionUntil;
     ++actor.interruption;++actor.revision;++actor.hitOccurrence;
@@ -1137,11 +1171,11 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
 }
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
 bool System::canRemove(EntityId id) const {
-    const auto *unit=find(id);if(!unit || !unit->owner) return false;
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra())) return false;
     return !ports_.frameEvents.hasHandler({FrameEventUnit::Monster,id},effects::monsterModifierTimerHandler);
 }
 DomainResult<> System::remove(EntityId id) {
-    const auto *unit=find(id);if(!unit || !unit->owner) return {DomainStatus::InvalidActor,{}};
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra())) return {DomainStatus::InvalidActor,{}};
     if(!canRemove(id)) return {DomainStatus::Unavailable,{}};
     const auto it=state_.actors.find(id);
     ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
@@ -1229,7 +1263,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         }
         // Path exhaustion/collision returns FALSE from D2Common_10226 and
         // leaves WALK/RUN in this frame; do not publish a stale chase target.
-        if(actor.route.empty()) {actor.moving=false;actor.running=false;}
+        if(actor.route.empty()) {recordNativeMode(actor,1);actor.moving=false;actor.running=false;}
     }
     return blocked ? StepStatus::Blocked : StepStatus::Complete;
 }

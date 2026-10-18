@@ -1,7 +1,9 @@
 #include "client/actor_client.hpp"
 #include "content/classic_data.hpp"
 #include "scene_view.hpp"
+#include "core/random.hpp"
 #include <algorithm>
+#include <chrono>
 
 namespace d2x {
 namespace {
@@ -91,6 +93,25 @@ void SceneView::advanceWorldPresentation(float dt) {
     dt = std::clamp(dt, 0.f, .1f);
     advanceGroundAnimations(dt);
     view_.animationTime += dt;
+    if(screenShake_) {
+        const auto &shake=*screenShake_;
+        const double now=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+        const int64_t elapsed=int64_t(now-shake.startMilliseconds);
+        const int64_t end=int64_t(shake.buildMilliseconds)+shake.holdMilliseconds+shake.fadeMilliseconds;
+        if(elapsed>end) {screenShake_.reset();screenShakeOffset_={};}
+        else if(elapsed>=0) {
+            const int magnitude=elapsed<shake.buildMilliseconds?int(int64_t(shake.magnitude)*elapsed/shake.buildMilliseconds):
+                elapsed<int64_t(shake.buildMilliseconds)+shake.holdMilliseconds?shake.magnitude:
+                shake.fadeMilliseconds?int(int64_t(shake.magnitude)*(end-elapsed)/shake.fadeMilliseconds):0;
+            if(magnitude>0) screenShakeOffset_={float(int(limitedRandom(projectileVisualRandom_,uint32_t(2*magnitude)))-magnitude),
+                float(int(limitedRandom(projectileVisualRandom_,uint32_t(2*magnitude)))-magnitude)};
+        }
+    }
+}
+void SceneView::shakeScreen(int magnitude,int buildFrames,int holdFrames,int fadeFrames,float delay) {
+    if(magnitude<0 || buildFrames<0 || holdFrames<=0 || fadeFrames<0) return;
+    const double now=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count();
+    screenShake_=ScreenShake{now+double(delay)*1000,magnitude,buildFrames*40,holdFrames*40,fadeFrames*40};
 }
 SceneView::~SceneView() {
     if (highlightShader_.id)
@@ -152,12 +173,12 @@ Rectangle SceneView::worldViewport() const {
 Vec SceneView::screen(Vec p) const {
     const auto viewport = worldViewport();
     const float centerX = viewport.x + viewport.width * .5f;
-    return (project(p) - view_.camera) * view_.zoom + Vec{centerX, (H - HUD) * .5f};
+    return (project(p) - view_.camera) * view_.zoom + Vec{centerX, (H - HUD) * .5f}+screenShakeOffset_;
 }
 Vec SceneView::world(Vec p) const {
     const auto viewport = worldViewport();
     const float centerX = viewport.x + viewport.width * .5f;
-    return unproject((p - Vec{centerX, (H - HUD) * .5f}) * (1 / view_.zoom) + view_.camera);
+    return unproject((p - Vec{centerX, (H - HUD) * .5f}-screenShakeOffset_) * (1 / view_.zoom) + view_.camera);
 }
 void SceneView::notice(std::string text, bool error) {
     view_.lootNotice = std::move(text);

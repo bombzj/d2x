@@ -326,6 +326,7 @@ StepStatus System::resolveSpells(TickContext tick,std::optional<std::pair<Entity
                 (impact.undeadOnly && !target->rule.undead) ||
                 (impact.nextDelay && target->nextHitTick > tick.tick)) { ++impact.next; continue; }
             int64_t amount = impact.currentDamage();
+            ports_.monsters.storeLastAttacker(target->id,source.id());
             int64_t absorbed=0;
             const int sourcePercent=monsterSource?hirelingDamagePercent(*monsterSource,*target):100;
             const auto scale=[&](int64_t value){return sourcePercent==100 || value<=0?nativeChecked(value):nativePercentage(nativeChecked(value),sourcePercent,100);};

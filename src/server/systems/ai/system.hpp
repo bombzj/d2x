@@ -18,7 +18,7 @@ namespace d2x::server::monsters {struct Actor;}
 namespace d2x::server::ai {
 // Decision state only; actions go through skill/movement requests, not direct damage.
 struct Controller {
-    struct Command {uint8_t code{};UnitTarget target;};
+    struct Command {uint8_t code{};UnitTarget target;uint64_t until{};};
     std::deque<Command> commands;
     EntityId actor;
   uint64_t admissionRevision{};
@@ -26,7 +26,7 @@ struct Controller {
     uint64_t observedAiThinkRevision{};
     CurseAi function{CurseAi::None};
     bool alternateAi{};
-    std::optional<EntityId> target;
+    std::optional<EntityId> target,carrier;
     uint64_t nextDecision{}, random{}, nextPath{}, observedHit{}, observedDeath{};
     int phase{}, loop{};
     int32_t thirdParameter{};
@@ -47,7 +47,7 @@ struct Controller {
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; };
 class System {
     State state_;
     const Ports ports_;
@@ -61,6 +61,30 @@ class System {
     StepStatus frogFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     StepStatus willowispFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     StepStatus zakarumZealotFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus zakarumPriestFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus highPriestFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus hydraFamily(EntityId,std::optional<UnitTarget>,int,TickContext,Controller &);
+    StepStatus vileFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus fingerMageFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus regurgitatorFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus abyssKnightFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus oblivionKnightFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    bool chargeRayAvailable(const monsters::Actor &,Vec) const;
+    StepStatus siegeBeastFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus impFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus genericSpawnerFamily(EntityId,std::optional<UnitTarget>,int,TickContext,Controller &);
+    StepStatus minionFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus suicideMinionFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus overseerFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus minionSpawnerFamily(EntityId,std::optional<UnitTarget>,int,TickContext,Controller &);
+    StepStatus succubusFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus izualFamily(EntityId,UnitTarget,Vec,int,int,TickContext,Controller &);
+    StepStatus mephistoFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus putridDefilerFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus baalMinionFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus frozenHorrorFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus reanimatedHordeFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus megademonFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     std::optional<StepStatus> uniqueAction(EntityId,UnitTarget,Vec,TickContext,Controller &);
     void commandParty(const monsters::Actor &);
     using ShootableTarget=NativeAiTarget;
@@ -71,5 +95,6 @@ class System {
     const State &read() const { return state_; }
     StepStatus step(TickContext, FrameFacts &);
     StepStatus think(EntityId,TickContext);
+    void commandMinions(EntityId,UnitTarget,uint64_t until);
 };
 }

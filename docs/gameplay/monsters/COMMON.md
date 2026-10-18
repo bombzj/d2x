@@ -1,6 +1,6 @@
 # 怪物公共规范与生命周期
 
-更新：2026-10-17。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+更新：2026-10-18。本页维护怪物迁入规范、规则准备、运行态与共享计算边界。分类／按幕状态见[目录](README.md)，代码入口见[模块](../../modules/MONSTERS.md)，原函数结构证据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
 
 ## 身份与完成口径
 
@@ -24,6 +24,8 @@ hosting准备不可变纯值，server不读表、资源或客户端副本。自�
 | 组件／表现 | MonStats2十六组件选择数、TotalPieces及HitClass；区域选中类型先准备最多三个十六槽组合，新增类型在TotalPieces>2且区域类型数未满13时补入；无区域池使用原单体前十二槽路径。原AC位宽发送，实际SH盾牌影响格挡；近战用MonStats2.HitClass，弹体用Missiles.HitClass，元素／暴击标记在接触成功时计算。MonSounds／Light／调色／COF／DCC仍由原客户端解释 |
 
 缺省35／15、SEIS种子、路径掩码、方向表及GH阈值是已核实原程序常量，参数不写成演示数值。ResurrectMode=xx不是动画，按MONSTERSPAWN_GetResurrectMode的越界模式规则使用NU，不因此拒绝骷髅／法师／小矮人。怪物弹体已接NextHit／NextDelay的玩家及伙伴接触窗口、NoMultiShot／NoUniqueMod和独立随机。区域组合以整局区域选型后的区域子流准备；完整原版全区域初始化／房间随机调度尚未复刻，不能宣称同种子外观和出生位置逐单位一致。Vision缓存、特殊AI强制察觉旗标及动态拥挤仍待完整接入。
+
+生命的两个原表界限分别保存，不交换或强制令maxHP≥minHP；当前MPQ的MinionSpawner1普通难度即为反序。公共`rollMonsterLife`沿原`min + limited(max-min+1)`，有符号界限≤0时返回min且不抽随机；内容与准入不再先行拒绝该行。经验准备不将玩家99级上限用于怪物，按实际MonLvl行处理110级UberIzual等身份，人物等级与经验比例仍分别校验。SuicideMinion使用真实AI／死亡定时器，不为通过准入伪造攻击槽。
 
 ## 移动与目标依据
 

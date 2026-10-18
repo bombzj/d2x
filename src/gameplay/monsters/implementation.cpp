@@ -2,6 +2,7 @@
 
 namespace d2x {
 MonsterImplementation monsterImplementation(const std::string &code) {
+    if(code=="cantor1" || code=="cantor2" || code=="cantor3" || code=="cantor4" || code=="cantor5" || code=="cantor6") return {MonsterKind::ZakarumPriest,false};
     if(code=="zealot1" || code=="zealot2" || code=="zealot3" || code=="zealot4" || code=="zealot5") return {MonsterKind::ZakarumZealot,false};
     if(code=="willowisp1" || code=="willowisp2" || code=="willowisp3" || code=="willowisp4" || code=="willowisp5" || code=="willowisp6" || code=="willowisp7" || code=="willowisp8") return {MonsterKind::Willowisp,false};
     if(code=="frogdemon1" || code=="frogdemon2" || code=="frogdemon3") return {MonsterKind::FrogDemon,false};
@@ -58,8 +59,37 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "hydra1") return {MonsterKind::Hydra1, false};
     if (code == "hydra2") return {MonsterKind::Hydra2, false};
     if (code == "hydra3") return {MonsterKind::Hydra3, false};
+    if (code == "councilmember1" || code == "councilmember2" || code == "councilmember3" || code == "baalhighpriest") return {MonsterKind::HighPriest, false};
+    if (code == "fingermage1" || code == "fingermage2" || code == "fingermage3" || code == "fingermage4" || code == "fingermage5") return {MonsterKind::FingerMage, false};
+    if (code == "regurgitator1" || code == "regurgitator2" || code == "regurgitator3" || code == "regurgitator4") return {MonsterKind::Regurgitator, false};
+    if (code == "doomknight1" || code == "dkfig1" || code == "dkfig2") return {MonsterKind::DoomKnight, false};
+    if (code == "doomknight2") return {MonsterKind::AbyssKnight, false};
+    if (code == "doomknight3" || code == "dkmag1" || code == "dkmag2" || code == "dkmag3") return {MonsterKind::OblivionKnight, false};
+    if (code == "mephisto") return {MonsterKind::Mephisto, false};
+    if (code == "uberizual") return {MonsterKind::UberIzual, false};
+    if (code == "izual") return {MonsterKind::Izual, false};
+    if (code == "succubuswitch1" || code == "succubuswitch2" || code == "succubuswitch3" || code == "succubuswitch4" || code == "succubuswitch5" || code == "succubuswitch6" || code == "succubuswitch7" || code == "succubuswitch8" || code == "succubuswitch9") return {MonsterKind::SuccubusWitch, false};
+    if (code == "succubus1" || code == "succubus2" || code == "succubus3" || code == "succubus4" || code == "succubus5" || code == "succubus6" || code == "succubus7" || code == "succubus8") return {MonsterKind::Succubus, false};
+    if (code == "minion1" || code == "minion2" || code == "minion3" || code == "minion4" || code == "minion5" || code == "minion6" || code == "minion7" || code == "minion8" || code == "minion9" || code == "minion10" || code == "minion11") return {MonsterKind::Minion, false};
+    if (code == "suicideminion1" || code == "suicideminion2" || code == "suicideminion3" || code == "suicideminion4" || code == "suicideminion5" || code == "suicideminion6" || code == "suicideminion7" || code == "suicideminion8") return {MonsterKind::SuicideMinion, false};
+    if (code == "overseer1" || code == "overseer2" || code == "overseer3" || code == "overseer4" || code == "overseer5" || code == "overseer6") return {MonsterKind::Overseer, false};
+    if (code == "evilhut") return {MonsterKind::GenericSpawner, false};
+    if (code == "minionspawner1" || code == "minionspawner2" || code == "minionspawner3" || code == "minionspawner4" || code == "minionspawner5" || code == "minionspawner6" || code == "minionspawner7" || code == "minionspawner8" || code == "demonspawner") return {MonsterKind::MinionSpawner, false};
+    if (code == "imp1" || code == "imp2" || code == "imp3" || code == "imp4" || code == "imp5" || code == "imp6" || code == "imp7" || code == "imp8") return {MonsterKind::Imp, false};
+    if (code == "siegebeast1" || code == "siegebeast2" || code == "siegebeast3" || code == "siegebeast4" || code == "siegebeast5") return {MonsterKind::SiegeBeast, false};
+    if (code == "putriddefiler1" || code == "putriddefiler2" || code == "putriddefiler3" || code == "putriddefiler4" || code == "putriddefiler5") return {MonsterKind::PutridDefiler, false};
+    if (code == "baalminion1" || code == "baalminion2" || code == "baalminion3") return {MonsterKind::BaalMinion, false};
+    if (code == "deathmauler1" || code == "deathmauler2" || code == "deathmauler3" || code == "deathmauler4" || code == "deathmauler5" || code == "deathmauler6") return {MonsterKind::DeathMauler, false};
+    if (code == "bloodlord1" || code == "bloodlord2" || code == "bloodlord3" || code == "bloodlord4" || code == "bloodlord5" || code == "bloodlord6" || code == "bloodlord7") return {MonsterKind::BloodLord, false};
+    if (code == "frozenhorror1" || code == "frozenhorror2" || code == "frozenhorror3" || code == "frozenhorror4" || code == "frozenhorror5") return {MonsterKind::FrozenHorror, false};
+    if (code == "reanimatedhorde1" || code == "reanimatedhorde2" || code == "reanimatedhorde3" || code == "reanimatedhorde4" || code == "reanimatedhorde5" || code == "reanimatedhorde6") return {MonsterKind::ReanimatedHorde, false};
+    if (code == "megademon1" || code == "megademon2" || code == "megademon3" || code == "megademon4" || code == "megademon5" || code == "megademon6" || code == "venomlord") return {MonsterKind::Megademon, false};
+    if (code == "vilemother1" || code == "vilemother2" || code == "vilemother3" || code == "vilemother4" || code == "vilemother5") return {MonsterKind::VileMother, false};
+    if (code == "vilechild1" || code == "vilechild2" || code == "vilechild3" || code == "vilechild4" || code == "vilechild5" ||
+        code == "painworm1" || code == "painworm2" || code == "painworm3" || code == "painworm4" || code == "painworm5") return {MonsterKind::VileDog, false};
     if (code == "andariel") return {MonsterKind::Andariel, false};
     if (code == "smith") return {MonsterKind::Smith, false};
+    if (code == "hephasto") return {MonsterKind::Smith, false};
     if (code == "griswold") return {MonsterKind::Griswold, false};
     if (code == "bloodraven") return {MonsterKind::BloodRaven, false};
     if (code == "necroskeleton") return {MonsterKind::NecroSkeleton, false};

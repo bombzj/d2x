@@ -145,7 +145,7 @@ DomainStatus System::activateCorpseSearch(Release &pending,const ActorContext &a
     const auto &program=*pending.skill.corpseSearch;auto random=corpse.combatRandom;
     const bool found=limitedRandom(random,100)<unsigned(program.chance);
     transactions::CharacterEdit payment{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
-    payment.player.mana-=pending.skill.manaCost;payment.charge=pending.skill.charge;
+    payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,program.noSelectState,true});
     DomainResult<> result;
     if(found && !program.potion) {
@@ -179,7 +179,7 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
     const auto &owner=*ports_.players.find(actor.player);
     auto skill=pending.skill;skill.missileCount=corpse.rule.corpseSize;
     transactions::CharacterEdit payment{actor,owner.inventoryRevision,owner.characterRevision,owner.persistent.player};
-    payment.player.mana-=skill.manaCost;payment.charge=skill.charge;
+    payment.player.mana-=skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};payment.charge=skill.charge;
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,skill.grimWard->noSelectState,true});
     payment.publicFacts.emplace_back(StateFact{pending.unit,1,actor.area,skill.grimWard->noDrawState,true});
     auto cost=ports_.transactions.prepare(std::move(payment));if(!cost) return cost.status;
@@ -216,7 +216,7 @@ DomainStatus System::activateAmazonMagic(Release &pending, const ActorContext &a
     return ports_.effects.amazonMagic(actor, pending.skill).status;
 }
 DomainStatus System::activateTeleport(Release &pending, const ActorContext &actor, Vec target) {
-    return ports_.travel.teleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge).status;
+    return ports_.travel.teleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge,pending.skill.sourceId).status;
 }
 DomainStatus System::activateHydra(Release &pending, const ActorContext &actor, Vec target) {
     return ports_.companions.hydra(actor, pending.skill, target).status;
@@ -262,7 +262,7 @@ DomainStatus System::activateStaticField(Release &pending, const ActorContext &a
         spec.targets=ports_.effects.nativeAuraCandidateRecipients({actor.actor,actor.area,radius,uint32_t(row.number("aurafilter")),false,
             {},effects::NativeAuraTargetMode::OwnerRange,actor.tick});
         transactions::CharacterEdit payment{actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.charge=pending.skill.charge;}
+        if(!pending.manaPaid) {payment.player.mana-=pending.skill.manaCost;payment.skillPayment=transactions::SkillManaPayment{pending.skill.manaCost,pending.skill.sourceId};payment.charge=pending.skill.charge;}
         payment.random=transactions::UnitRandomEdit{player.combatRandom,random};
         auto plan=ports_.transactions.prepare(std::move(payment));if(!plan) return plan.status;
         const auto paid=ports_.transactions.commit(std::move(*plan.value));if(!paid) return paid.status;
@@ -288,7 +288,7 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
             auto pulse=std::make_shared<effects::NativeAreaPulse>();auto &spec=pulse->spec;
             spec.source=actor.actor;spec.area=actor.area;spec.center=player.position;spec.skill=skill.sourceId;spec.rank=skill.rank;
             spec.directFunction=21;spec.targets=std::vector<EntityId>{pending.unit};
-            const auto paid=ports_.transactions.release(actor,player.characterRevision,pending.manaPaid?Fixed8{}:skill.manaCost,{},pending.manaPaid?std::optional<SkillCharge>{}:skill.charge);
+            const auto paid=ports_.transactions.release(actor,player.characterRevision,pending.manaPaid?Fixed8{}:skill.manaCost,{},pending.manaPaid?std::optional<SkillCharge>{}:skill.charge,{},{},pending.manaPaid?-1:skill.sourceId);
             if(!paid) return paid.status;
             pending.manaPaid=true;pending.directSkill=std::move(pulse);
         }
@@ -300,7 +300,7 @@ DomainStatus System::activateTelekinesis(Release &pending, const ActorContext &a
     case 4: return ports_.inventory.telekinesis(actor, pending.unit, skill).status;
     case 2:
         if (!pending.manaPaid) {
-            const auto debit = ports_.transactions.release(actor, player.characterRevision, skill.manaCost, {}, skill.charge);
+            const auto debit = ports_.transactions.release(actor, player.characterRevision, skill.manaCost, {}, skill.charge,{},{},skill.sourceId);
             if (!debit) return debit.status;
             pending.manaPaid = true;
         }

@@ -280,14 +280,14 @@ DomainResult<EntityId> System::spawn(const Spawn &r) {
     const bool resourcePayment=!nativeOwner && !cost && !r.deathTrigger && !r.skill.charge && (!r.free || ownerRandom!=p->combatRandom);
     if(!nativeOwner && !cost && !resourcePayment && (!r.free || ownerRandom!=p->combatRandom)) {
         transactions::CharacterEdit edit{r.actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
-        if(!r.free) {edit.player.mana-=r.skill.manaCost;edit.charge=r.skill.charge;}
+        if(!r.free) {edit.player.mana-=r.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{r.skill.manaCost,r.skill.sourceId};edit.charge=r.skill.charge;}
         edit.random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
         auto transaction=ports_.transactions.prepare(std::move(edit));if(!transaction) return {transaction.status,{}};
         cost=std::move(*transaction.value);
     } else if(cost) cost->random=transactions::UnitRandomEdit{ownerExpected,ownerRandom};
     const auto released=nativeOwner?ports_.monsters.consumeRandom(nativeOwner->id,ownerExpected,ownerRandom):
         resourcePayment?ports_.transactions.release(r.actor,p->characterRevision,r.free?Fixed8{}:r.skill.manaCost,
-            {},{},std::move(facts),transactions::UnitRandomEdit{ownerExpected,ownerRandom}):
+            {},{},std::move(facts),transactions::UnitRandomEdit{ownerExpected,ownerRandom},r.free?-1:r.skill.sourceId):
         cost?ports_.transactions.commit(std::move(*cost)):DomainResult<>{DomainStatus::Applied,std::monostate{}};
     if (!released) return {released.status,{}};
     if(resourcePayment) facts.clear();

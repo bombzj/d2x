@@ -16,6 +16,7 @@ DomainResult<transactions::Plan> System::weaponCost(const ActorContext &actor,co
     if(mana<0 || p->persistent.player.mana<mana) return {DomainStatus::Unavailable,{}};
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.inventory,{},p->persistent.player.weaponSet};
     edit.character=p->persistent.player;edit.character->mana-=mana;
+    if(payMana) edit.skillPayment=transactions::SkillManaPayment{mana,skill.sourceId};
     edit.transient=transient;
     EntityId consume;
     if(!weapon.item && (payAmmo || wear)) return {DomainStatus::InvalidRequest,{}};

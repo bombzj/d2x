@@ -51,7 +51,7 @@ DomainResult<DirectContact> System::nativeWeaponContact(const Spawn &request,std
         if(!caster->player) return {DomainStatus::InvalidActor,{}};
         const auto &player=*caster->player;
         transactions::CharacterEdit edit{request.actor,player.inventoryRevision,player.characterRevision,player.persistent.player};
-        edit.player.mana-=request.skill.manaCost;edit.charge=request.skill.charge;
+        edit.player.mana-=request.skill.manaCost;edit.skillPayment=transactions::SkillManaPayment{request.skill.manaCost,request.skill.sourceId};edit.charge=request.skill.charge;
         auto transaction=ports_.transactions.prepare(std::move(edit));if(!transaction) return {transaction.status,{}};
         cost=std::move(*transaction.value);
     }
