@@ -64,7 +64,7 @@ struct Grid {
     std::vector<uint16_t> objectCollision;
     // Authority-owned COLLIDE_MISSILE bits. Separate from immutable DT1 flags
     // and object rasterization, which may be rebuilt while missiles are alive.
-    std::vector<uint16_t> missileCollision;
+    std::vector<uint16_t> missileCollision; // Mutable native Set/ResetMask writes, including skill reservations.
     uint64_t missileCollisionRevision{};
     Bytes objectLightBlocked;
     uint64_t obstacleRevision = 0;

@@ -21,6 +21,17 @@ FrameEventType hazardEvent(const Object &object) {
     }
 }
 }
+void System::activateAncientStatues(const std::array<EntityId,3> &statues,uint64_t tick) {
+    RegionId region;
+    for(const auto id:statues) {
+        auto &object=state_.objects.at(id);region=object.area;
+        object.mode=3;object.until=0;++object.revision;
+        const FrameEventOwner owner{FrameEventUnit::Object,id};
+        ports_.frameEvents.cancelHandler(owner,FrameEventType::MonsterModifier,0);
+        ports_.frameEvents.insertPrepared({{},owner,FrameEventType::MonsterModifier,tick+20,false,0,0,0,tick+20});
+    }
+    collision(region);
+}
 void System::schedule(Object &object) {
     const FrameEventOwner owner{FrameEventUnit::Object,object.id};
     const auto synchronize=[&](FrameEventType type,uint64_t due) {
@@ -36,6 +47,8 @@ void System::schedule(Object &object) {
         object.rule.initialization!=24 && object.mode==1?object.until:0);
     synchronize(FrameEventType::ActiveState,object.reset);
     synchronize(hazardEvent(object),object.hazardAt);
+    if(object.rule.initialization>=63 && object.rule.initialization<=65)
+        synchronize(FrameEventType::MonsterModifier,ports_.quests.ancientStatueDue(object.id)); // Object QUESTFN is event7.
     synchronize(FrameEventType::Trap,object.trapAt);
     synchronize(FrameEventType::AiReset,object.lootAt);
     synchronize(FrameEventType::DelayedPortal,object.portalAt);
@@ -50,6 +63,7 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
     }
     bool changed=false;
     if(event.type==FrameEventType::EndAnimation && object.until==event.payload) {
+        ports_.quests.finishAncientObjectAnimation(object.id);
         if(object.mode==1) {object.mode=object.rule.operation==10 && int(object.area)==38?5:2;changed=true;}
         object.until=0;
     } else if(event.type==FrameEventType::ActiveState && object.reset==event.payload) {
@@ -84,6 +98,11 @@ DomainResult<> System::frameEvent(const FrameEvent &event,uint64_t tick) {
                 loot::ObjectSource{object.definition,object.rule.operation,{},{}}});
             if(!queued) return {queued.status,{}};
             object.pending=true;object.lootAt=0;
+        }
+    } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization>=63 && object.rule.initialization<=65) {
+        const auto result=ports_.quests.ancientStatueEvent(object.id,tick);if(!result) return result;
+        if(const auto mode=ports_.quests.objectMode(object.area,object.id,object.definition,object.rule.operation,tick);mode && *mode!=object.mode) {
+            object.mode=*mode;changed=true;
         }
     } else if(event.type==FrameEventType::MonsterModifier && object.rule.initialization==59 && object.hazardAt==event.payload) {
         if(object.mode==1) {object.mode=2;++object.revision;collision(object.area);}

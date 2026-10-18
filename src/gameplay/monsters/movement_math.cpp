@@ -4,6 +4,12 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x {
+std::optional<Vec> catapultDirection(int chainOffset) {
+    // D2Common_11066 indexes the native MonStats family chain.
+    constexpr std::array<Vec,4> directions{Vec{0,1},Vec{1,0},Vec{1,0},Vec{-1,0}};
+    if(chainOffset<0 || chainOffset>=int(directions.size())) return {};
+    return directions[size_t(chainOffset)];
+}
 int monsterAiDistance(Vec from, int size, Vec target) {
     return unitCoordinateDistanceWithSize(int(std::floor(from.x)), int(std::floor(from.y)),
         int(std::floor(target.x)), int(std::floor(target.y)), size);

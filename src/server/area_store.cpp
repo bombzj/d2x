@@ -240,6 +240,23 @@ void AreaStore::setMissileMask(RegionId source,Vec position,int size,bool occupi
         if(previous!=grid.missileCollision[index]) ++grid.missileCollisionRevision;
     }
 }
+void AreaStore::setNativePatternMask(RegionId source,Vec position,NativeCollisionPattern pattern,uint16_t mask,bool occupied) noexcept {
+    const auto found=areas_.find(source);if(found==areas_.end()) return;
+    const auto global=position+found->second.definition.origin;
+    const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
+    for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
+        const auto bits=nativeCollisionFootprint(pattern,dx,dy,mask);if(!bits) continue;
+        const auto room=roomAtPosition(source,position,x+dx,y+dy);if(!room) continue;
+        auto &area=areas_.at(room->area);auto &grid=area.definition.collision;
+        const int column=x+dx-int(area.definition.origin.x),row=y+dy-int(area.definition.origin.y);
+        if(column<0 || row<0 || column>=grid.width || row>=grid.height) continue;
+        const auto index=size_t(row)*grid.width+column;
+        if(index>=grid.missileCollision.size()) std::terminate();
+        const auto previous=grid.missileCollision[index];
+        grid.missileCollision[index]=occupied?uint16_t(previous|bits):uint16_t(previous&~bits);
+        if(previous!=grid.missileCollision[index]) ++grid.missileCollisionRevision;
+    }
+}
 std::optional<std::pair<RegionId,size_t>> AreaStore::unitRoom(RegionId region,Vec point) const noexcept {
     const auto *area=find(region);if(!area) return {};
     const auto *room=area->definition.activation.room(point);if(!room) return {};

@@ -1,5 +1,6 @@
 #include "remote_scene.hpp"
 #include "monster_effects.hpp"
+#include "gameplay/monsters/movement_math.hpp"
 #include "presentation/scene_view.hpp"
 #include "client/remote_combat.hpp"
 #include "content/character/realm_portrait.hpp"
@@ -19,9 +20,12 @@
 #include "gameplay/skills/formula_parameters.hpp"
 #include "gameplay/skills/assassin_progressive.hpp"
 #include "gameplay/actions/shape_timing.hpp"
+#include "gameplay/actions/monster_timing.hpp"
+#include "gameplay/rules/arithmetic.hpp"
 #include "world/interaction_geometry.hpp"
 #include "world/native_path_step.hpp"
 #include "world/native_target_path.hpp"
+#include "world/native_spawn.hpp"
 #include "network/protocol/bits.hpp"
 #include "presentation/hud/hud_layout.hpp"
 #include "presentation/world/scene_geometry.hpp"
@@ -80,6 +84,17 @@ struct RemoteScene::Impl {
         Vec direction;
     };
     struct Motion {
+        struct ScriptedSequence {
+            MonsterAnimationCursor animation;
+            uint8_t event{};
+            uint64_t revision{};
+            float nextTick{},velocity{};
+            Vec destination;
+            bool moving{},ended{},stopping{};
+            uint16_t leapFlags{0x1080};
+            std::optional<ClientMissileGraphics> leapGraphics;
+        };
+        std::optional<ScriptedSequence> scriptedSequence;
         std::optional<OnlinePoint> last;
         Vec look;
         float movedAt{-1};
@@ -144,13 +159,17 @@ struct RemoteScene::Impl {
     std::optional<LocalCast> localCast;
     struct Channel {size_t skillRow{},missileRow{};int level{};float next{},started{};uint64_t revision{};OnlinePoint destination;std::optional<OnlineUnitKey> target;uint64_t random{};std::optional<float> until;float releaseAt{};};
     std::map<OnlineUnitKey,Channel> channels;
+    struct OwnerMissile {size_t missileRow{};uint16_t skill{};int level{};float due{};uint64_t assignment{},revision{},discontinuity{};};
+    std::map<OnlineUnitKey,OwnerMissile> ownerMissiles;
     struct BlazeTrail { OnlinePoint cell; uint64_t discontinuity{}; };
     std::map<OnlineUnitKey,BlazeTrail> blazeTrails;
     std::map<int, size_t> monsterRows;
+    std::map<int,int> catapultChainOffsets;
     std::map<int, int> monsterWalkRates;
     std::map<int, int> monsterRunRates;
     std::map<std::pair<int,int>,std::string> hirelingSkillModes;
     std::map<std::string, size_t, std::less<>> monsterExtra;
+    std::map<std::string,std::vector<uint8_t>,std::less<>> monsterSequenceFlags;
     struct MonsterIdentity { bool champion{},unique{},minion{},ghostly{}; std::optional<uint16_t> superUnique; uint16_t nameSeed{}; std::vector<uint8_t> modifiers; };
     std::map<OnlineUnitKey,MonsterIdentity> monsterIdentities;
     std::map<OnlineUnitKey,std::pair<int,bool>> monsterTransforms;
@@ -274,11 +293,23 @@ struct RemoteScene::Impl {
         // MonsterTbls loads KB's rate from the base identity's WL AnimData,
         // scaling variants by their MPQ Velocity (UNITS_GetBaseAnimSpeed).
         const AnimDataTable animations(a.read("data/global/animdata.d2"));
+        const DataTable sequences(a.read("data/global/excel/monseq.txt"));
+        for(size_t row=0;row<sequences.rows().size();++row)
+            monsterSequenceFlags[std::string(sequences.value(row,"sequence"))].push_back(uint8_t(sequences.number(row,"event").value_or(0)));
         std::map<std::string_view,size_t,std::less<>> baseRows;
         for(const auto &[id,row]:monsterRows) { (void)id;baseRows.emplace(monstats.value(row,"Id"),row); }
         for(const auto &[id,row]:monsterRows) {
             const auto base=baseRows.find(monstats.value(row,"BaseId"));
             if(base==baseRows.end()) continue;
+            if(monstats.value(row,"AI")=="CatapultSpotter") {
+                auto current=base->second;
+                for(int offset=0;offset<4;++offset) {
+                    if(current==row) {catapultChainOffsets.emplace(id,offset);break;}
+                    const auto next=baseRows.find(monstats.value(current,"NextInClass"));
+                    if(next==baseRows.end()) break;
+                    current=next->second;
+                }
+            }
             const auto extra=monsterExtra.find(monstats.value(base->second,"MonStatsEx"));
             if(extra==monsterExtra.end()) continue;
             const auto token=lower(std::string(monstats.value(base->second,"Code")));
@@ -731,6 +762,37 @@ struct RemoteScene::Impl {
                 castAnimation ? castAnimation->releaseTime : -1.f);
             const auto castOverlay = overlayNames.find(skills.value(row->second, "castoverlay"));
             if (castOverlay != overlayNames.end()) overlay(int(castOverlay->second), event.source);
+            if(skills.number(row->second,"cltstfunc")==47) {
+                const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+                const auto chain=catapultChainOffsets.find(unitClass(actor).value_or(UINT16_MAX));
+                auto point=event.point;if(!point && event.target) point=targetPosition(*event.target);
+                if(missile==missileNames.end() || chain==catapultChainOffsets.end() || !point) return;
+                const auto direction=catapultDirection(chain->second);if(!direction) return;
+                const int range=std::max(1,int(int16_t(missiles.number(missile->second,"Range").value_or(0))));
+                const int level=event.level.value_or(1);
+                const auto height=skillCalculation(*event.skill,level,"cltcalc1",event.source);if(!height) return;
+                const int x=nativeMultiply(int(direction->x)-int(direction->y),16);
+                const int y=nativeMultiply(int(direction->x)+int(direction->y),8);
+                ClientMissileInitialization init;ClientMissileGraphics graphics;
+                graphics.position={nativeShiftLeft(nativeMultiply(-range,x),11),nativeShiftLeft(nativeMultiply(-range,y),11),nativeShiftLeft(nativeMultiply(*height,range),11)};
+                graphics.velocity={nativeShiftLeft(x,11),nativeShiftLeft(y,11),nativeShiftLeft(nativeSubtract(0,*height),11)};
+                graphics.step();init.graphics=graphics;
+                const Vec at{float(point->x)+.5f,float(point->y)+.5f};
+                launch(missile->second,at,at,level,-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                return;
+            }
+            if(skills.number(row->second,"cltstfunc")==46) {
+                const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+                auto point=event.point;if(!point && event.target) point=targetPosition(*event.target);
+                const auto sound=skills.value(row->second,"prgsound");
+                if(!sound.empty()) emitSound(PresentationSoundEvent::Kind::Original,source->second,age,-1,-1,std::string(sound));
+                // CltSt46 constructs the control at start, before A1's release.
+                if(missile!=missileNames.end() && point) {
+                    const Vec at{float(point->x)+.5f,float(point->y)+.5f};
+                    launch(missile->second,at,at,event.level.value_or(1),-age,{},event.source);
+                }
+                return;
+            }
             if(skills.value(row->second,"charclass")=="ass" && skills.number(row->second,"cltstfunc")==5 && event.target) {
                 const auto targetOverlay=overlayNames.find(skills.value(row->second,"tgtoverlay"));
                 if(targetOverlay!=overlayNames.end() && castAnimation && castAnimation->releaseTime>=0)
@@ -769,6 +831,16 @@ struct RemoteScene::Impl {
                     launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
             }
             const int function = skills.number(row->second, "cltdofunc").value_or(0);
+            if(function==73) {
+                // Clt73 samples the caster's position at its action callback,
+                // after any authoritative placement/correction has arrived.
+                const auto arrival=missileNames.find(skills.value(row->second,"cltmissileb"));
+                if(arrival!=missileNames.end() && castAnimation && castAnimation->releaseTime>=0)
+                    ownerMissiles[event.source]={arrival->second,*event.skill,1,
+                        time+castAnimation->releaseTime-age,source->second.assignmentRevision,
+                        source->second.actionRevision,source->second.positionDiscontinuity};
+                return;
+            }
             if(function==75) {
                 if(castAnimation && castAnimation->releaseTime>=0)
                     shared.shakeScreen(skills.number(row->second,"Param1").value_or(0),skills.number(row->second,"Param2").value_or(0),
@@ -857,8 +929,8 @@ struct RemoteScene::Impl {
             auto emit = [&](Vec destination, int index = -1) {
                 launch(missile->second, start, destination, level, animation->releaseTime-age, {}, event.source, index);
             };
-            if((function==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) || function==56 || function==71 || function==77 || (function==6 && skills.value(row->second,"charclass")=="ass")) {
-                channels[event.source]={row->second,missile->second,level,time+animation->releaseTime-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
+            if((function==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) || function==54 || function==56 || function==71 || function==77 || (function==6 && skills.value(row->second,"charclass")=="ass")) {
+                channels[event.source]={row->second,missile->second,level,time+(function==54?1.f/25.f:animation->releaseTime)-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
                 channels[event.source].releaseAt=time+animation->releaseTime-age;
                 if(function==77) channels[event.source].until=time-age+float(std::max(1,skillCalculation(*event.skill,level,"calc2",event.source).value_or(1)))/25.f;
             }
@@ -930,7 +1002,7 @@ struct RemoteScene::Impl {
                 if(const auto rate=skillCalculation(*event.skill,level,"calc1",event.source);rate && *rate>0) init.animationRate=*rate;
                 launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
             }
-            else if(function==70) {
+            else if(function==70 || function==81) {
                 ClientMissileInitialization initialization;
                 initialization.parameters=std::array<int32_t,2>{-(int(end.y)-int(start.y)),int(end.x)-int(start.x)};
                 launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
@@ -1159,6 +1231,22 @@ struct RemoteScene::Impl {
                             if(code=="andariel") deathMissile("andycontrol0");
                             else if(code=="bloodraven") {
                                 deathMissile("brdeathcontrol"); deathMissile("brdeathspirits1"); deathMissile("brdeathsmokes1");
+                            }
+                            else if(code=="ancientbarb1" || code=="ancientbarb2" || code=="ancientbarb3") {
+                                const int operation=code=="ancientbarb1"?63:code=="ancientbarb2"?64:62;
+                                for(const auto &[key,statue]:v.world.units) if(key.type==2 && statue.position) {
+                                    bool matches=false;
+                                    for(size_t object=0;object<objects.rows().size();++object)
+                                        if(objects.number(object,"Id")==unitClass(statue) && objects.number(object,"OperateFn")==operation) {matches=true;break;}
+                                    if(!matches) continue;
+                                    if(const auto center=missileNames.find("ancient death center");center!=missileNames.end()) {
+                                        ClientMissileInitialization initialization;initialization.distanceLimited=true;
+                                        initialization.parameters=std::array{int32_t(key.id),int32_t{0}};
+                                        launch(center->second,at,Vec{float(statue.position->x)+.5f,float(statue.position->y)+.5f},1,-age,{},
+                                            event.source,-1,0,ClientMissileSource::Death,{},0,initialization);
+                                    }
+                                    break;
+                                }
                             }
                         }
                     }
@@ -1426,6 +1514,18 @@ struct RemoteScene::Impl {
                 }
             }
         }
+        for(auto it=ownerMissiles.begin();it!=ownerMissiles.end();) {
+            const auto owner=v.world.units.find(it->first);const auto &pending=it->second;
+            if(owner==v.world.units.end() || !owner->second.position || owner->second.assignmentRevision!=pending.assignment ||
+               onlineMonsterCorpse(owner->second) || (owner->second.actionRevision!=pending.revision &&
+               owner->second.positionDiscontinuity==pending.discontinuity && owner->second.actionSkill!=pending.skill)) {
+                it=ownerMissiles.erase(it);continue;
+            }
+            if(time<pending.due) {++it;continue;}
+            const auto point=*owner->second.position;const Vec at{float(point.x)+.5f,float(point.y)+.5f};
+            launch(pending.missileRow,at,at,pending.level,pending.due-time,{},it->first);
+            it=ownerMissiles.erase(it);
+        }
         for(auto it=channels.begin();it!=channels.end();) {
             auto &channel=it->second;const auto owner=v.world.units.find(it->first);
             const bool own=playerId && it->first==OnlineUnitKey{0,*playerId};
@@ -1449,39 +1549,41 @@ struct RemoteScene::Impl {
             const Vec start=Vec{float(owner->second.position->x)+.5f,float(owner->second.position->y)+.5f};
             const Vec end{float(channel.destination.x)+.5f,float(channel.destination.y)+.5f};
             const int channelFunction=skills.number(channel.skillRow,"cltdofunc").value_or(0);
-            const bool imp=channelFunction==71,diablo=channelFunction==56;
+            const bool imp=channelFunction==71,diablo=channelFunction==56,arctic=channelFunction==54;
             const auto beamRange=skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"calc1",it->first).value_or(0);
-            const int frames=std::max(1,diablo?std::clamp(beamRange>0?beamRange:missiles.number(channel.missileRow,"Param2").value_or(0)+channel.level-1,1,255):
+            const int frames=std::max(1,(diablo || arctic)?std::clamp(beamRange>0?beamRange:missiles.number(channel.missileRow,"Param2").value_or(0)+channel.level-1,1,255):
                 imp?missiles.number(channel.missileRow,"Param2").value_or(0)+
                 skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"cltcalc2",it->first).value_or(0):
                 skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"calc1",it->first).value_or(1));
             const bool fury=skills.number(channel.skillRow,"cltdofunc")==6 && skills.value(channel.skillRow,"charclass")=="ass";
             int emitted=0;
-            while(channel.next<=time && emitted++<8) {
-                auto variant=channel.missileRow;
-                const auto alternate=missileNames.find(skills.value(channel.skillRow,"cltmissileb"));
-                if(!imp && !diablo && alternate!=missileNames.end() && (rollRandom(channel.random)&1)) variant=alternate->second;
-                int velocity=0;ClientMissileInitialization init;
-                if(diablo) {
-                    // 58370 selects the light-suppression flag, then one of
-                    // these five original velocity adjustments (D5BE0).
-                    (void)(rollRandom(channel.random)&3);
-                    constexpr std::array<int,5> offsets{-1,-3,-2,-1,0};
-                    init.velocityRaw=nativeShiftLeft(missiles.number(variant,"Vel").value_or(0)+offsets[limitedRandom(channel.random,5)],8);
-                    init.totalFrames=frames;init.animationRate=(missiles.number(variant,"AnimLen").value_or(0)<<8)/frames;
+            while(channel.next<=time && (diablo || arctic || emitted++<8)) {
+                for(int beam=0;beam<(arctic?2:1);++beam) {
+                    auto variant=channel.missileRow;
+                    const auto alternate=missileNames.find(skills.value(channel.skillRow,"cltmissileb"));
+                    if(!imp && !diablo && alternate!=missileNames.end() && (rollRandom(channel.random)&1)) variant=alternate->second;
+                    int velocity=0;ClientMissileInitialization init;
+                    if(diablo || arctic) {
+                        // 58370 draws light suppression before velocity. Clt54's
+                        // D5C78 has -2..2; Clt56 uses the D5BE0 table below.
+                        init.suppressLight=(rollRandom(channel.random)&3)!=0;
+                        constexpr std::array<int,5> offsets{-1,-3,-2,-1,0};
+                        init.velocityRaw=nativeShiftLeft(missiles.number(variant,"Vel").value_or(0)+(arctic?int(limitedRandom(channel.random,5))-2:offsets[limitedRandom(channel.random,5)]),8);
+                        init.totalFrames=frames;init.animationRate=(missiles.number(variant,"AnimLen").value_or(0)<<8)/frames;
+                    }
+                    if(imp) {
+                        variant=channel.missileRow;velocity=int(limitedRandom(channel.random,5))-2;
+                        int height=skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"cltcalc1",it->first).value_or(0);
+                        if(const auto pose=motion.find(it->first);pose!=motion.end()) height-=int(pose->second.riderOffset.y);
+                        ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(height,11);
+                        graphics.velocity[2]=nativeShiftLeft(-2*height/frames,11);init.graphics=graphics;init.totalFrames=frames;
+                    }
+                    launch(variant,start,end,channel.level,channel.next-time,fury?std::optional<float>{}:std::optional<float>{float(frames)/25.f},it->first,-1,0,ClientMissileSource::Cast,{},velocity,init);
                 }
-                if(imp) {
-                    variant=channel.missileRow;velocity=int(limitedRandom(channel.random,5))-2;
-                    int height=skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"cltcalc1",it->first).value_or(0);
-                    if(const auto pose=motion.find(it->first);pose!=motion.end()) height-=int(pose->second.riderOffset.y);
-                    ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(height,11);
-                    graphics.velocity[2]=nativeShiftLeft(-2*height/frames,11);init.graphics=graphics;init.totalFrames=frames;
-                }
-                launch(variant,start,end,channel.level,channel.next-time,fury?std::optional<float>{}:std::optional<float>{float(frames)/25.f},it->first,-1,0,ClientMissileSource::Cast,{},velocity,init);
                 channel.next+=float(diablo?std::max(1,skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"cltcalc1",it->first).value_or(0)):
                     fury?std::max(1,skills.number(channel.skillRow,"Param4").value_or(0)):1)/25.f;
             }
-            if(channel.next<time) channel.next=time; // Bound catch-up after a stalled render frame.
+            if(!diablo && !arctic && channel.next<time) channel.next=time; // Clt54/56 retain every native callback.
             ++it;
         }
         if(localCast && channelSkill(localCast->command.skill) && localCast->started>=0 && playerId && !channels.contains({0,*playerId})) localCast.reset();
@@ -1552,6 +1654,158 @@ struct RemoteScene::Impl {
             : map.grid.path(m.position - origin + center, goal - origin + center, true, rule);
         for (auto point : path)
             m.route.push_back(point + origin - center);
+    }
+    bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision) {
+        const auto skill=u.actionSkill?skillRows.find(*u.actionSkill):skillRows.end();
+        const bool whirlwind=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==45;
+        const bool leap=skill!=skillRows.end() && skills.number(skill->second,"cltdofunc")==44;
+        if(u.key.type!=1 || skill==skillRows.end() || (!whirlwind && !leap && skills.number(skill->second,"cltdofunc")!=59) || onlineMonsterCorpse(u)) {
+            m.scriptedSequence.reset();return false;
+        }
+        const auto monster=monsterRows.find(unitClass(u).value_or(UINT16_MAX));
+        if(monster==monsterRows.end()) return false;
+        const auto sequence=monsterSequenceFlags.find(monsterSkillMode(monster->second,*u.actionSkill));
+        if(sequence==monsterSequenceFlags.end() || sequence->second.empty()) return false;
+        if(!m.scriptedSequence || m.scriptedSequence->revision!=u.actionRevision) {
+            auto destination=u.destination?std::optional{Vec{float(u.destination->x),float(u.destination->y)}}:
+                u.destinationUnit?localUnitPosition(*u.destinationUnit):std::nullopt;
+            if(!destination) return false;
+            if(leap) {
+                const int x=int(std::floor(m.position.x)),y=int(std::floor(m.position.y));
+                const int tx=int(std::floor(destination->x)),ty=int(std::floor(destination->y));
+                const int distance=unitCoordinateDistance(x,y,tx,ty);if(!distance) return false;
+                int landingX=tx+2*(tx-x)/distance,landingY=ty+2*(ty-y)/distance;
+                std::map<std::pair<int,int>,uint16_t> occupied;
+                for(const auto &[key,other]:world().units) if(key.type<=1 && other.position &&
+                    !(key.type?onlineMonsterCorpse(other):playerDead(other))) {
+                    const auto point=localUnitPosition(key);if(!point) continue;
+                    const auto flying=motion.find(key);
+                    if(flying!=motion.end() && flying->second.scriptedSequence && flying->second.scriptedSequence->leapGraphics) continue;
+                    auto pattern=nativeUnitCollisionPattern(unitSize(other));
+                    if(key.type==1) if(const auto row=monsterRows.find(unitClass(other).value_or(UINT16_MAX));row!=monsterRows.end() && monstats.value(row->second,"BaseId")=="wraith1") pattern=NativeCollisionPattern::SmallNoPresence;
+                    for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
+                        occupied[{int(std::floor(point->x))+dx,int(std::floor(point->y))+dy}]|=nativeCollisionFootprint(pattern,dx,dy,key.type?0x100:0x80);
+                }
+                const auto clear=[&](int column,int row) {
+                    if(!map.activation.room(Vec{float(column),float(row)}-origin)) return false;
+                    for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx) {
+                        if(!nativeCollisionSizeCell(unitSize(u),dx,dy)) continue;
+                        if(map.grid.movementMask(column+dx-int(origin.x),row+dy-int(origin.y))&0x1c09) return false;
+                        if(const auto found=occupied.find({column+dx,row+dy});found!=occupied.end() && (found->second&0x1c09)) return false;
+                    }
+                    return true;
+                };
+                if(!clear(landingX,landingY)) {
+                    const auto found=nativeSpawnCoordinate(tx,ty,50,clear);if(!found) return false;
+                    landingX=found->first;landingY=found->second;
+                }
+                destination=Vec{float(landingX),float(landingY)};
+                if(!map.grid.collisionSegment(m.position-origin,*destination-origin,0x804)) return false;
+            }
+            m.scriptedSequence=Motion::ScriptedSequence{};auto &run=*m.scriptedSequence;
+            run.animation.remaining=int(sequence->second.size())*256;run.revision=u.actionRevision;
+            run.destination=*destination;run.nextTick=time+NativePathStep::seconds;
+            const auto receivedNow=uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch()).count());
+            if(u.actionReceivedMilliseconds && receivedNow>=u.actionReceivedMilliseconds)
+                run.nextTick-=float(receivedNow-u.actionReceivedMilliseconds)/1000.f;
+            m.route.clear();m.goal.reset();m.pathStep.reset();m.correction={};m.correctionLeft=0;
+            if(whirlwind) {
+                const Vec center{.5f,.5f};
+                auto path=map.grid.nativeUnitPath(m.position-origin+center,run.destination-origin+center,7,100,{0xc01,collision.size});
+                for(const auto point:path) m.route.push_back(point+origin-center);
+                run.velocity=monsterMovementSpeed(monstats.number(monster->second,"Velocity").value_or(0),100);
+                m.goal=run.destination;run.moving=true;
+            }
+        }
+        auto &run=*m.scriptedSequence;const auto row=skill->second;
+        if(combatBinding) if(const auto snapshot=combatBinding->states().find(u.key);snapshot!=combatBinding->states().end() && snapshot->second.decoded)
+            for(const auto &[id,state]:snapshot->second.states) {(void)id;if(state.name=="freeze") {run.nextTick=time+NativePathStep::seconds;return true;}}
+        const auto parameter=[&](int slot){return skills.number(row,"Param"+std::to_string(slot)).value_or(0);};
+        while(!run.ended && run.nextTick<=time+1e-5f) {
+            run.nextTick+=NativePathStep::seconds;
+            if(run.animation.remaining<=0) {run.ended=true;m.route.clear();m.goal.reset();break;}
+            bool stopped=false;
+            // ModeChange advances movement before Clt59. Path completion
+            // sets flag2 and invokes Do immediately, before StopSequence.
+            if(run.moving) {
+                while(!m.route.empty() && (m.route.front()-m.position).length()<.01f) m.route.pop_front();
+                if(!m.route.empty()) {
+                    const Vec center{.5f,.5f};const auto next=m.route.front();
+                    const auto step=m.pathStep.advance(map.grid,m.position+center,next+center,
+                        run.velocity*NativePathStep::seconds,leap?MovementCollisionRule{0,unitSize(u)}:whirlwind?MovementCollisionRule{0x401,collision.size}:collision,origin);
+                    m.look=next-m.position;m.position=step.position-center;
+                    if(step.blocked) m.route.clear();else if(step.reached) m.route.pop_front();
+                }
+                stopped=m.route.empty();
+            }
+            if(leap && run.leapGraphics) run.leapGraphics->step();
+            const int frame=run.animation.frame>>8;
+            if(leap) {
+                if(stopped) run.leapFlags|=2;
+                if(stopped || run.event==1 || run.event==2 || run.event==3 || run.event==4) {
+                    if(run.leapFlags&0x100) {
+                        const int distance=unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),int(run.destination.x),int(run.destination.y));
+                        if(run.leapGraphics && (run.leapGraphics->position[2]>>11)>0 && distance) {
+                            run.animation.frame=(run.animation.frame&255)+(distance<2?12:10)*256;
+                            run.animation.remaining=(run.animation.remaining&~255)+256;
+                        } else {
+                            run.leapGraphics.reset();run.moving=false;m.route.clear();m.goal.reset();
+                            run.leapFlags=0x1000;
+                        }
+                    } else if(run.leapFlags&0x80) {
+                        const int speed=monstats.number(monster->second,"Run").value_or(0);if(speed<=0) return false;
+                        const int distance=std::max(1,unitCoordinateDistance(int(std::floor(m.position.x)),int(std::floor(m.position.y)),int(run.destination.x),int(run.destination.y)));
+                        int frames=distance*16/speed;if(frames>1) --frames;frames=std::max(1,frames);
+                        ClientMissileGraphics graphics;graphics.flags=2;graphics.remaining=frames;
+                        const int gravity=std::max(500,distance<27?8462-270*distance:1224-72*distance);
+                        graphics.acceleration[2]=-gravity;graphics.velocity[2]=nativeDivide(nativeMultiply(nativeMultiply(frames,frames),gravity)/2,frames);
+                        run.leapGraphics=graphics;run.leapFlags=0x1101;run.velocity=float(speed)*25.f/16.f;
+                        m.route={run.destination};m.goal=run.destination;m.pathStep.reset();run.moving=true;
+                    }
+                    if(stopped) {run.leapFlags=0;run.stopping=true;run.moving=false;run.leapGraphics.reset();m.route.clear();m.goal.reset();}
+                }
+                run.event=advanceMonsterAnimation(run.animation,int(sequence->second.size()),256,0,true,sequence->second).event;
+                continue;
+            }
+            if(whirlwind) {
+                if(stopped) {run.stopping=true;run.moving=false;m.route.clear();m.goal.reset();}
+                else if(!run.stopping && (run.event==1 || run.event==2 || run.event==4)) {
+                    // Clt45 differs from monster Do76: rewind to 3 and keep
+                    // five frames, as C6583/C658B in the retail client.
+                    run.animation.frame=(run.animation.frame&255)+3*256;run.animation.remaining=5*256;
+                }
+                run.event=advanceMonsterAnimation(run.animation,int(sequence->second.size()),256,0,true,sequence->second).event;
+                continue;
+            }
+            bool contact=false;
+            if(u.destinationUnit) if(const auto target=world().units.find(*u.destinationUnit);target!=world().units.end())
+                if(const auto at=localUnitPosition(*u.destinationUnit)) contact=nativeUnitDistance(m.position,unitSize(u),*at,unitSize(target->second))<=1;
+            if((stopped || contact) && frame<=parameter(4)) {
+                run.moving=false;run.animation.remaining=nativeShiftLeft(parameter(1),8);run.animation.frame=nativeShiftLeft(parameter(2),8);
+                m.route.clear();m.goal.reset();
+            } else if((run.event==1 || run.event==2 || run.event==4) && frame<=parameter(4)) {
+                if(frame==parameter(3)) {
+                    const int velocity=skillCalculation(*u.actionSkill,u.actionSkillLevel.value_or(1),"calc1",u.key).value_or(0);
+                    // MONSTERS_Initialize's base is 75. The old walking wire
+                    // percentage includes its mode velocity and cannot stand
+                    // in for this new skill mode's native stat query.
+                    int percentage=75;
+                    if(combatBinding) if(const auto snapshot=combatBinding->states().find(u.key);snapshot!=combatBinding->states().end() && snapshot->second.decoded)
+                        for(const auto &[id,state]:snapshot->second.states) {(void)id;for(const auto &stat:state.stats)
+                            if(stat.id==monsterText->nativeStats->names.at("velocitypercent") && !stat.parameter) percentage=nativeAdd(percentage,nativeChecked(stat.value));}
+                    const auto raw=nativePercentage(std::max(256,nativeShiftLeft(velocity,8)),percentage,100);
+                    run.velocity=float(raw)*25.f/4096.f;
+                    const Vec center{.5f,.5f};
+                    auto path=map.grid.nativeUnitPath(m.position-origin+center,run.destination-origin+center,1,5,collision);
+                    m.route.clear();for(const auto point:path) m.route.push_back(point+origin-center);
+                    m.goal=run.destination;m.pathStep.reset();run.moving=true;
+                } else if(frame==parameter(4)) {
+                    run.animation.remaining=nativeShiftLeft(parameter(5),8);run.animation.frame=nativeShiftLeft(parameter(6),8);
+                }
+            }
+            run.event=advanceMonsterAnimation(run.animation,int(sequence->second.size()),256,0,true,sequence->second).event;
+        }
+        return true;
     }
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin) {
         auto &m = motion[u.key];
@@ -1665,6 +1919,11 @@ struct RemoteScene::Impl {
         // the owner starts a cast (the server normally omits its skill packet).
         if (m.castHandoff) activeRequest = false;
         const Vec before = m.position + m.correction;
+        if(displayScriptedSequence(u,m,map,origin,rule)) {
+            if((m.position+m.correction-before).length()>.001f) m.movedAt=time;
+            m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
+            return m.position+m.correction;
+        }
         auto pointForUnit = [&](const std::optional<OnlineUnitKey> &key) -> std::optional<Vec> {
             if (!key) return {};
             if (key->type == 4) {
@@ -1853,6 +2112,7 @@ struct RemoteScene::Impl {
     std::string monsterSkillMode(size_t monster, uint16_t skill) const {
         const auto row=skillRows.find(skill);
         if (row==skillRows.end()) return {};
+        if(skills.value(row->second,"skill")=="Baal Inferno") return "s1";
         if(monstats.value(monster,"AI")=="Imp" && skills.number(row->second,"cltdofunc")==71) return "sc";
         // D2Common SKILLS_GetSeqNumFromSkill resolves the owning monster's slot,
         // not Skills.seqnum. The same Nest skill has different crow/Blood Raven sequences.
@@ -2085,6 +2345,23 @@ struct RemoteScene::Impl {
                 const auto rate=rates.find(*unitClass(u));
                 if(rate!=rates.end()) request.animationRate=rate->second*std::max(25,int(u.velocityPercent.value_or(100)))/100;
             }
+            // Do95's client mode callback rewinds the normal graphics frame
+            // before advancing it. A MonStats sequence keeps its own cursor.
+            if(const auto channel=channels.find(u.key);channel!=channels.end() &&
+                skills.number(channel->second.skillRow,"cltdofunc")==54 && !pose.starts_with("seq_")) {
+                if(const auto *base=shared.actorAnimation(request,artPalette);base && base->fps>0) {
+                    const auto movement=motion.find(u.key);
+                    const int ticks=movement==motion.end()?0:int(std::floor(movement->second.animation.elapsed(time)*25.f+1e-5f));
+                    const int speed=std::max(1,int(std::round(base->fps*256.f/25.f)));
+                    const int threshold=monstats2.number(e,"InfernoAnim").value_or(0),rollback=monstats2.number(e,"InfernoRollback").value_or(0);
+                    const int crossing=((threshold+1)*256+speed-1)/speed;
+                    if(ticks>crossing) {
+                        const int period=std::max(1,((threshold+1-rollback)*256+speed-1)/speed);
+                        const int frame=(rollback*256+((ticks-crossing-1)%period+1)*speed)>>8;
+                        request.animationHoldFrame=std::clamp(frame,0,base->frameCount-1);
+                    }
+                }
+            }
             return shared.actorAnimation(request, artPalette);
         } catch (const net::protocol::ProtocolError &) {
             return nullptr;
@@ -2117,7 +2394,7 @@ struct RemoteScene::Impl {
             monsterTransforms.clear();
             deathCallbacks.clear(); preparedDeaths.clear();
             monsterEffects.clear();
-            shared.clearClientMissiles(); channels.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
+            shared.clearClientMissiles(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); effectLimitations.clear(); missileCastRevisions.clear(); overlayVisuals.clear(); stateTimes.clear(); shattered.clear();
             soundEvents.clear();
             combatSequence = v.world.combatSequence;
             localRequestSequence = v.world.combatRequest ? v.world.combatRequest->sequence : 0;
@@ -2144,7 +2421,7 @@ struct RemoteScene::Impl {
             std::erase_if(motion,[&](const auto &entry) { return entry.first.type!=0 || entry.first.id!=playerId; });
             shared.clearClientMissiles(true);
             monsterEffects.clear();
-            missileCastRevisions.clear(); channels.clear(); blazeTrails.clear(); overlayVisuals.clear(); localCast.reset();
+            missileCastRevisions.clear(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); overlayVisuals.clear(); localCast.reset();
             soundEvents.clear();
             const auto beforeGap=combatSequence;
             combatSequence = v.world.combatSequence;
@@ -2470,7 +2747,7 @@ struct RemoteScene::Impl {
                 (u.mode == 4 || (u.mode && *u.mode >= 7 && *u.mode <= 15) || u.mode == 19) :
                 (u.mode == 6 || u.mode == 18 || u.mode == 20))) ||
                 (key.type == 1 && u.mode && *u.mode >= 3 && *u.mode <= 11);
-            const bool completedAction = oneShot && visual->finished(m.animation.elapsed(time));
+            const bool completedAction = m.scriptedSequence?m.scriptedSequence->ended:oneShot && visual->finished(m.animation.elapsed(time));
             if (completedAction) {
                 auto idle = u; idle.actionSkill.reset(); idle.nativeMode = false;
                 idle.mode = key.type == 0 ? 7 : 1;
@@ -2491,9 +2768,12 @@ struct RemoteScene::Impl {
                 audio.movementCycle = audio.moving ? visual->duration() : 0.f;
                 audio.audible = CheckCollisionPointRec(rv(screen(feet)),shared.worldViewport());
             }
+            const float runClock=m.scriptedSequence?float(m.scriptedSequence->animation.frame)/256.f/25.f:0;
             const auto *image = key.type == 2 ? visual->sample(objectElapsed, objectElapsed, m.look)
+                : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look)
                 : visual->sample(m.animation.clock(time), m.animation.elapsed(time), m.look);
-            const auto p = screen(feet) + visual->offset+m.riderOffset;
+              const auto p = screen(feet) + visual->offset+m.riderOffset+
+                  (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{});
             if (player) player->reason = "Outside viewport";
             if (!image || !visible(*image, p))
                 continue;

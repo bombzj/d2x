@@ -30,6 +30,8 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
     if(!continuing && (ports_.monsters.frozen(unit->id,tick) || unit->stunnedUntil>tick || unit->knockedUntil>tick)) return done();
     if(!continuing && !ports_.areas.loaded(unit->area,unit->position)) {ports_.monsters.extendAttack(unit->id,tick+1);return done();}
     if(clock->second.program.action==MonsterAttackRule::Action::DiabloRun) return monsterRunEvent(event,tick);
+    if(clock->second.program.action==MonsterAttackRule::Action::Whirlwind) return monsterWhirlwindEvent(event,tick);
+    if(clock->second.program.action==MonsterAttackRule::Action::LeapAttack) return monsterLeapAttackEvent(event,tick);
     // Native monster Inferno replaces MODECHANGE with its next callback.
     // A retained continuous dispatcher must not advance animation between
     // callbacks, or emit additional releases while waiting for ENDANIM.
@@ -51,7 +53,8 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
             program.animationSequence,program.animationFlags);
         mode.lastFrame=tick;mode.advanced=true;
     }
-    if(program.action==MonsterAttackRule::Action::Submerge && (mode.animation.frame>>8)<=0) {
+    if(program.action==MonsterAttackRule::Action::Submerge && program.submergeHoldFrame>=0 &&
+       (mode.animation.frame>>8)==program.submergeHoldFrame) {
         // Do94 clears the action flag and stops the sequence at frame zero.
         // Its AI timer keeps running and may replace this held mode.
         mode.frozenSequence=true;mode.step={};mode.animation.remaining=256;

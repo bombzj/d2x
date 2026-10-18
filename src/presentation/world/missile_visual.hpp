@@ -25,6 +25,7 @@ struct ClientMissileInitialization {
     std::optional<int> streamMissile,streamRange,streamPeriod;
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
+    std::optional<bool> suppressLight; // Native creation flag0x4000; absent when pairing a plain 73.
 };
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
@@ -65,6 +66,7 @@ struct ClientMissileVisual {
     // rewind callbacks, animation, or the immutable constructor TotalFrames.
     int nativeTotalFrames{}, nativeCurrentFrames{},nativeSequenceFrame{};
     std::optional<int> animationRate;
+    bool suppressLight{};
     std::optional<int> hiddenUntilCurrentFrame;
     int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }

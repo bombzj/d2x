@@ -28,7 +28,7 @@ DomainResult<> dispatchFrameEvent(GameSystems &systems,const FrameEvent &event,T
         break;
     case FrameEventUnit::Monster:
         if(event.type==FrameEventType::AiThink) {
-            if(const auto *unit=systems.monsters.find(event.owner.unit);unit && unit->rule.trap!=MonsterRule::Trap::None)
+            if(const auto *unit=systems.monsters.find(event.owner.unit);unit && unit->rule.trap!=MonsterRule::Trap::None && unit->rule.ai.kind!=MonsterAiKind::TrappedSoul)
                 return systems.objects.trapEvent(event.owner.unit,tick.tick);
             if(systems.companions.read().companions.contains(event.owner.unit)) return systems.companions.think(event.owner.unit,tick);
             return systems.ai.think(event.owner.unit,tick)==StepStatus::Blocked?

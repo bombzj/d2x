@@ -287,8 +287,8 @@ void SceneView::drawNpcShop(Vec mouse) const {
             const auto &name = found->offer->name;
             int fontSize = 16;
             while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
-            painter_.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32},
-                           fontSize, itemColor(found->offer->quality));
+            const UiPainter namePainter(assets_.itemTextFonts[itemTextFontIndex(found->offer->quality, ItemTextTone::Name)]);
+            namePainter.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32}, fontSize, WHITE);
             painter_.label(found->offer->priceKnown ? std::to_string(found->offer->price) + " GOLD?" : "BUY FROM SERVER?",
                            int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
         }

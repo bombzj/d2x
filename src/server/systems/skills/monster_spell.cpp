@@ -6,13 +6,16 @@
 #include "server/systems/missiles/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/native_area.hpp"
+#include "server/systems/effects/corpse_explosion.hpp"
 #include "server/systems/spatial/system.hpp"
 #include "server/systems/objects/system.hpp"
+#include "server/systems/travel/system.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "evaluation.hpp"
 #include "native_caster.hpp"
+#include "core/random.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -24,13 +27,133 @@ DomainResult<> System::releaseMonsterSpell(MonsterRelease &pending,TickContext t
     const auto formulas=source->rule.formulas;const auto &catalog=*formulas;const auto &program=catalog.skills.at(pending.request.skill);
     const int function=program.number("srvdofunc");
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    if(function==141) {
+        if(!pending.directSkill) {
+            auto pulse=std::make_shared<effects::NativeAreaPulse>();
+            auto radius=nativeAdd(program.number("param5"),nativeMultiply(pending.attack.rank-1,program.number("param6")));
+            if(!radius) radius=nativeAdd(program.number("param1"),nativeMultiply(pending.attack.rank-1,program.number("param2")));
+            const auto skill=catalog.skillIds.find("baal corpse explode");if(skill==catalog.skillIds.end()) return {DomainStatus::Unavailable,{}};
+            pulse->spec.source=source->id;pulse->spec.area=source->area;pulse->spec.skill=skill->second;pulse->spec.rank=pending.attack.rank;
+            pulse->spec.center=source->position;pulse->spec.radius=radius;pulse->spec.filter=0x3002;
+            pulse->targets=ports_.effects.nativeAuraCandidateRecipients({source->id,source->area,radius,0x3002,false,
+                source->position+ports_.areas.at(source->area).definition.origin,effects::NativeAuraTargetMode::TargetRange,tick.tick});
+            pulse->prepared=true;pending.directSkill=std::move(pulse);pending.nativeCallbackStarted=true;
+        }
+        auto &pulse=*pending.directSkill;
+        while(pulse.next<pulse.targets.size()) {
+            const auto corpse=pulse.targets[pulse.next];
+            if(!pending.corpseExplosion) {
+                const auto assigned=ports_.monsters.setNativeTarget(pending.request.actor,corpse);if(!assigned) return assigned;
+                pending.corpseExplosion=std::make_shared<effects::CorpseExplosionPulse>();
+            }
+            const auto exploded=ports_.effects.corpseExplosion(pending.request.actor,corpse,pulse.spec.skill,pulse.spec.rank,tick.tick,pending.corpseExplosion);
+            if(isDeferred(exploded.status)) return exploded;
+            if(exploded.status==DomainStatus::Conflict || exploded.status==DomainStatus::Stale) return {DomainStatus::Capacity,{}};
+            if(!exploded && exploded.status!=DomainStatus::Unavailable && exploded.status!=DomainStatus::InvalidActor) return exploded;
+            pending.corpseExplosion.reset();++pulse.next;
+        }
+        pulse.complete=true;pending.nativeCallbackStarted=false;return done();
+    }
+    if(function==139) {
+        const auto definition=ports_.missiles.nativeDefinition(program.reference("srvmissilea"));
+        if(!definition) return {DomainStatus::Unavailable,{}};
+        const auto victim=std::get<UnitTarget>(pending.request.target).id;
+        const auto target=ports_.monsters.nativeTargetPosition(victim,source->area);if(!target) return done();
+        const auto &area=ports_.areas.at(source->area).definition;
+        const auto origin=source->position+area.origin,destination=target->first+area.origin;
+        const auto dx=nativeSubtract(int(std::floor(destination.x)),int(std::floor(origin.x)));
+        const auto dy=nativeSubtract(int(std::floor(destination.y)),int(std::floor(origin.y)));
+        missiles::NativeSpawn birth{source->id,source->area,pending.generation,tick.tick,
+            source->position,target->first,*definition,pending.request.skill,pending.attack.rank};
+        birth.copyMonsterAttackBonus=true;
+        // Do139 edits the missile returned by CreateMissile, after that
+        // wrapper has already made any multishot companions.
+        birth.firstFinalParameters=std::array<int32_t,2>{nativeSubtract(0,dy),dx};
+        const auto born=ports_.missiles.spawnNative(birth);
+        return {born.status,born?std::optional{std::monostate{}}:std::nullopt};
+    }
+    if(function==140) {
+        if(!pending.tentacles) {
+            actions::MonsterTentacleExecution execution;
+            const auto expected=source->combatRandom;auto random=expected;
+            execution.count=source->rule.difficulty+int(rollRandom(random)%3)+2;
+            if(source->rule.baalTentacleClasses[0]>=0) {
+                const auto variant=source->rule.difficulty+int(limitedRandom(random,2));
+                if(variant<0 || variant>=int(source->rule.baalTentacleClasses.size())) return {DomainStatus::Unavailable,{}};
+                execution.nativeClass=source->rule.baalTentacleClasses[size_t(variant)];execution.nativeMode=4;
+                // GetMinionSpawnInfo rolls these coordinates even though
+                // Do140 replaces both with coordinates around the target.
+                (void)limitedRandom(random,24);(void)limitedRandom(random,24);
+            } else execution.nativeClass=source->rule.spawnFallbackClass;
+            if(execution.nativeClass<0) return {DomainStatus::Unavailable,{}};
+            const auto victim=std::get<UnitTarget>(pending.request.target).id;
+            const auto point=ports_.monsters.nativeTargetPosition(victim,source->area);
+            const auto &area=ports_.areas.at(source->area).definition;
+            const auto global=point.value_or(std::pair{source->position,0}).first+area.origin;
+            execution.center=Vec{float(std::floor(global.x)),float(std::floor(global.y))}-area.origin;
+            const auto consumed=ports_.monsters.consumeRandom(source->id,expected,random);if(!consumed) return consumed;
+            pending.tentacles=execution;pending.nativeCallbackStarted=true;
+        }
+        auto &execution=*pending.tentacles;
+        while(execution.next<execution.count) {
+            source=ports_.monsters.find(pending.request.actor);if(!source) return {DomainStatus::InvalidActor,{}};
+            if(!execution.point) {
+                const auto expected=source->combatRandom;auto random=expected;
+                const auto x=int(rollRandom(random)%18)-9,y=int(rollRandom(random)%18)-9;
+                const auto consumed=ports_.monsters.consumeRandom(source->id,expected,random);if(!consumed) return consumed;
+                execution.point=execution.center+Vec{float(x),float(y)};
+            }
+            const auto born=ports_.monsters.spawnMinionChild(source->id,*execution.point,pending.request.skill,
+                {execution.nativeClass,execution.nativeMode,0},tick.tick,ports_.spatial.nativeCollisionSample(),MinionBirthProcedure::BaalTentacle);
+            if(isDeferred(born.status)) return {born.status,{}};
+            if(born.status!=DomainStatus::Applied && born.status!=DomainStatus::Unavailable) return {born.status,{}};
+            execution.point.reset();++execution.next;
+        }
+        pending.nativeCallbackStarted=false;return done();
+    }
+    if(function==68) {
+        if(!pending.formulaPrepared) {
+            const auto definition=ports_.missiles.nativeDefinition(program.reference("srvmissilea"));if(!definition) return {DomainStatus::Unavailable,{}};
+            std::vector<missiles::NativeSpawn> births;
+            for(const auto heading:missileRingBurst(1)) births.push_back({source->id,source->area,pending.generation,tick.tick,
+                source->position,source->position+heading,*definition,pending.request.skill,pending.attack.rank});
+            auto birth=ports_.missiles.prepareNativeBirth(births);
+            if(!birth && isDeferred(birth.status)) return {birth.status,{}};
+            if(birth) {const auto published=ports_.missiles.commitNativeBirth(*birth.value);if(!published) return {published.status,{}};}
+            pending.formulaPrepared=true;pending.nativeCallbackStarted=true;
+        }
+        if(!pending.formulaValue2) {
+            source=ports_.monsters.find(pending.request.actor);if(!source) return {DomainStatus::InvalidActor,{}};
+            const auto sampled=ports_.effects.unitStatValues(source->id,tick.tick);if(!sampled) return {DomainStatus::Unavailable,{}};
+            const auto expected=source->combatRandom;auto random=expected;
+            const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {
+                return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));
+            };
+            auto input=formulaInput(*source,*sampled,draw);SkillFormulaValues values(catalog,input);
+            const auto duration=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,"auralencalc");
+            if(!duration) return {DomainStatus::Unavailable,{}};
+            const auto consumed=ports_.monsters.consumeRandom(source->id,expected,random);if(!consumed) return consumed;
+            pending.formulaValue=*duration;pending.formulaValue2=1;
+        }
+        const auto result=ports_.effects.skillAuraState(pending.request.actor,pending.request.actor,pending.request.skill,pending.attack.rank,
+            pending.formulaValue,tick.tick,effects::NativeSkillStateProcedure::Warcry);
+        pending.nativeCallbackStarted=isDeferred(result.status);return result;
+    }
+    if(function==55) {
+        const auto target=std::get<UnitTarget>(pending.request.target);
+        const auto result=ports_.effects.corpseExplosion(source->id,target.id,pending.request.skill,pending.attack.rank,tick.tick,pending.corpseExplosion);
+        pending.nativeCallbackStarted=pending.corpseExplosion && pending.corpseExplosion->prepared && !pending.corpseExplosion->complete;
+        return result;
+    }
     if(function==104) {
         const auto victim=std::get<UnitTarget>(pending.request.target);
         RegionId region;Vec point;
         if(victim.type==2) {
             const auto object=ports_.objects.read().objects.find(victim.id);
-            if(object==ports_.objects.read().objects.end()) return done();
-            region=object->second.area;point=object->second.position;
+            auto at=ports_.travel.nativePortalPosition(victim.id);
+            if(object!=ports_.objects.read().objects.end()) at=std::pair{object->second.area,object->second.position};
+            if(!at) return done();
+            region=at->first;point=at->second;
         } else {
             const auto target=ports_.monsters.nativeTargetPosition(victim.id,source->area);if(!target) return done();
             const auto *player=ports_.players.findActor(victim.id);const auto *monster=ports_.monsters.find(victim.id);

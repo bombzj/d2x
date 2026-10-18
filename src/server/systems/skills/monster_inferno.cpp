@@ -72,8 +72,13 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
     if(!created && !imp) return finish();
     pending.hitReleased=true;
     if(const auto mode=runtime_->monsterModes.find(unit->id);mode!=runtime_->monsterModes.end()) {
-        mode->second.animation.frame=pending.attack.infernoFrame*256;
-        mode->second.animation.remaining=(pending.attack.animation->frames-pending.attack.infernoFrame)*256;
+        // B3270 tests Skills.monanim, not the monster slot's actual mode.
+        // Nihlathak uses a sequence through MonStats but this skill has xx:
+        // its normal graphics frame resets without rewinding the sequence.
+        if(row.reference("monanim")=="sq") {
+            mode->second.animation.frame=(pending.attack.infernoFrame-1)*256;
+            mode->second.animation.remaining=(pending.attack.infernoFrame+1)*256;
+        } else if(!pending.attack.animationSequence) mode->second.animation.frame=pending.attack.infernoFrame*256;
         mode->second.step.ended=false;
     }
     if(tick.tick>=pending.infernoUntil || !ports_.effects.unitStates(unit->id,tick.tick).contains(catalog.infernoState)) return finish();

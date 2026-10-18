@@ -254,6 +254,22 @@ target_sources(d2x_server PRIVATE
     src/server/systems/ai/succubus.cpp
     src/server/systems/ai/izual.cpp
     src/server/systems/ai/mephisto.cpp
+    src/server/systems/ai/diablo.cpp
+    src/server/systems/ai/ancient_talic.cpp
+    src/server/systems/ai/ancient_korlic.cpp
+    src/server/systems/ai/evil_hole.cpp
+    src/server/systems/ai/tentacle.cpp
+    src/server/systems/ai/baal_tentacle.cpp
+    src/server/systems/ai/baal.cpp
+    src/server/systems/ai/baal_to_stairs.cpp
+    src/server/systems/ai/baal_throne.cpp
+    src/server/systems/ai/baal_taunt.cpp
+    src/server/systems/ai/hell_meteor.cpp
+    src/server/systems/ai/trapped_soul.cpp
+    src/server/systems/ai/catapult.cpp
+    src/server/systems/ai/catapult_spotter.cpp
+    src/server/systems/ai/ancient_madawc.cpp
+    src/server/systems/ai/nihlathak.cpp
     src/server/systems/ai/putrid_defiler.cpp
     src/server/systems/ai/baal_minion.cpp
     src/server/systems/ai/frozen_horror.cpp
@@ -270,6 +286,8 @@ target_sources(d2x_server PRIVATE
     src/server/systems/skills/monster_mosquito.cpp
   src/server/systems/skills/monster_leap.cpp
   src/server/systems/skills/monster_run.cpp
+  src/server/systems/skills/monster_whirlwind.cpp
+  src/server/systems/skills/monster_leap_attack.cpp
     src/server/systems/skills/activation.cpp
     src/server/systems/skills/shape.cpp
     src/server/systems/skills/druid_active.cpp
@@ -503,6 +521,8 @@ target_sources(d2x_game_content PRIVATE src/hosting/quest_world_content.cpp)
 target_sources(d2x_game_content PRIVATE src/hosting/hireling_content.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/companions/hireling.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/boss_decision.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/diablo_decision.cpp)
+target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/baal_decision.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/enchantment_damage.cpp)
 target_sources(d2x_gameplay PRIVATE src/gameplay/monsters/unique_modifiers.cpp)
 target_sources(d2x_server PRIVATE src/server/systems/effects/monster_pregnancy.cpp src/server/systems/effects/monster_enchantments.cpp src/server/systems/effects/suicide_minion.cpp)

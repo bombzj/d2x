@@ -2,10 +2,50 @@
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "gameplay/combat/geometry.hpp"
+#include "gameplay/units/distance.hpp"
 #include <algorithm>
 #include <cmath>
 
 namespace d2x::server::monsters {
+std::optional<Vec> System::leapAttackLanding(EntityId source,EntityId target,const std::function<uint16_t(RoomView,int32_t,int32_t)> &sample) const {
+    const auto *actor=find(source);if(!actor || !actor->alive() || source==target) return {};
+    const auto victim=targetPosition(target,actor->area);if(!victim) return {};
+    const auto &area=ports_.areas.at(actor->area).definition;
+    if(unitMeleeReach(area.collision,actor->position,actor->rule.size,victim->first,victim->second,actor->rule.meleeRange)) return {};
+    const auto from=actor->position+area.origin,to=victim->first+area.origin;
+    const int x=int(std::floor(from.x)),y=int(std::floor(from.y)),tx=int(std::floor(to.x)),ty=int(std::floor(to.y));
+    const int divisor=unitCoordinateDistance(x,y,tx,ty);if(!divisor) return {};
+    const auto room=ports_.areas.roomAtPosition(actor->area,actor->position,x,y);if(!room) return {};
+    int landingX=tx+2*(tx-x)/divisor,landingY=ty+2*(ty-y)/divisor;
+    auto destination=ports_.areas.roomAtPosition(actor->area,actor->position,landingX,landingY);
+    if(!destination || ports_.areas.nativeCollisionMask(*destination,landingX,landingY,actor->rule.size,0x1c09,sample)) {
+        const auto found=ports_.areas.nativeFreeCoordinates(*room,tx,ty,actor->rule.size,0x1c09,sample);
+        if(!found) return {};destination=found->room;
+        const auto point=found->position+ports_.areas.at(destination->area).definition.origin;
+        landingX=int(point.x);landingY=int(point.y);
+    }
+    if(destination->area!=actor->area || ports_.areas.at(destination->area).definition.town) return {};
+    const Vec landing=Vec{float(landingX),float(landingY)}-area.origin;
+    if(!area.collision.collisionSegment(actor->position,landing,0x804)) return {};
+    return landing;
+}
+DomainResult<> System::reserveLeapAttack(EntityId source,Vec target) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    // Retail St41 reserves PLAYER even for a monster. Landing resets MONSTER.
+    ports_.areas.setNativePatternMask(actor.area,target,actor.rule.collisionPattern,0x80,true);
+    actor.skillReservation=Actor::SkillReservation{target,0x100};++actor.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::startLeapAttackMotion(EntityId source) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.skillReservation) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;
+    actor.skillMotion=Actor::SkillMotion{actor.skillReservation->position,UINT64_MAX,actor.interruption,float(actor.rule.nativeRunVelocity)*25.f/16.f,true,{}};
+    actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0,actor.rule.size};
+    actor.collisionPattern=NativeCollisionPattern::None;actor.pathStep.reset();actor.movementTarget={};
+    actor.movementGoal=actor.skillReservation->position;actor.pathType=9;++actor.revision;
+    return {DomainStatus::Applied,std::monostate{}};
+}
 std::optional<Vec> System::leapLanding(EntityId source,Vec target) const {
     const auto *actor=find(source);if(!actor || !actor->alive()) return {};
     const auto &grid=ports_.areas.at(actor->area).definition.collision;

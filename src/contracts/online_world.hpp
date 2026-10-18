@@ -274,6 +274,7 @@ struct OnlineWorldView {
     // authorize a menu in this same interaction (another player may activate first).
     std::optional<WaypointActivation> waypointActivation;
     uint64_t lateWaypointReplies{};
+    uint32_t questEffects{}; // Original packet89 event bitmap, cleared per game.
     uint64_t ignoredPackets{};
 
     void clear() {
@@ -343,7 +344,7 @@ struct OnlineWorldView {
         waypointSource.reset();
         waypointRequested.reset();
         waypointActivation.reset();
-        lateWaypointReplies = ignoredPackets = 0;
+        lateWaypointReplies = ignoredPackets = 0; questEffects=0;
     }
 };
 inline bool onlineMonsterCorpse(const OnlineUnit &unit) {

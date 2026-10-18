@@ -232,6 +232,11 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             if(isDeferred(result.status)) return result.status;
             if(!result) throw std::logic_error("Invalid Baal missile world publication");
             plan.started=true;
+        } else if(operation.kind==Advance::OperationKind::BaalWave) {
+            const auto &wave=plan.baalWaves.at(operation.index);
+            const auto born=ports_.quests.spawnBaalWave(wave.area,wave.position,wave.mappedPreset,tick.tick);
+            if(!born) return born.status;
+            plan.started=true;
         } else if(operation.kind==Advance::OperationKind::Fear) {
             const auto result=ports_.effects.nativeFear(plan.fears.at(operation.index),tick.tick);
             if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return result.status;

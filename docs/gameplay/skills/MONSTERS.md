@@ -11,7 +11,7 @@
 | 蜘蛛 | arach1至7的SpiderLay轨迹、蛛网／地面减速；生命周期与效果分开持有；本轮六变体的有限实机范围见第三幕 |
 | 沙地跳跃者 | Leap（132）的怪物St40／Do77分支：起手原A1接触、落点／飞行和落地后退，UNINTERRUPTABLE／SKILL_MOVE与原A5结束同步；不追加玩家Leap范围击退 |
 | 骨Fetish | MonStats.deathDmg的死亡模式回调：原飞弹117承载物理范围伤害，原表等级生命／Ladder、难度倍率及单位随机；与火强化死亡效果分开 |
-| Fetish萨满 | FetishInferno（178）沿原St53／Do95：A1事件2、INFERNO起止、calc3续放、MonStats2收尾；原飞弹144以自身行伤害和实际等级执行；Resurrect2沿原序列复活。FetishAura不增加AI施放分支；客户端Clt54连续发射仍待补，萨满死亡重建另见第三幕 |
+| Fetish萨满 | FetishInferno（178）沿原St53／Do95：A1事件2、INFERNO起止、calc3续放、MonStats2收尾；原飞弹144以自身行伤害和实际等级执行；Resurrect2沿原序列复活。FetishAura不增加AI施放分支；客户端Clt54连续发射源码与待验边界见怪物台账74项，萨满死亡重建另见第三幕 |
 | ThornHulk | MonFrenzy（215）：A2的原攻击事件，独立命中／伤害处理后才叠加monfrenzy；skill_frenzy栈数以技能等级为上限，持续时间及移动／攻击／其他动画加速均读Skills公式，沿公共状态计时到期移除；AI连击与普通攻击冷却见第三幕 |
 | 吸血鬼 | vampire1至9准备自身Fireball／FireHead／Firewall／Meteor，Fn028按原表掩码选择；普通法术使用独立可射击目标，火墙／陨石使用主目标；冷却和动作核对见第三幕第07项 |
 | 萨卡兰姆祭司／议会 | ZakarumHeal（179）沿Do96；祭司按最后合格单位、议会按严格最低整数生命百分比选择。议会Hydra（62）沿St14／Do144，怪物拥有者不进入PlayerPets或套玩家阵营；三头各自Fn086及截止帧，普通S1另发自身MissS1 |
@@ -19,7 +19,7 @@
 | Regurgitator | RegurgitatorEat（214）沿S1事件1／Do108，删除实际尸体GUID并按其原生命上限和calc1给自身回血；随后普通A2发射自身regurgitatorcorpse |
 | AbyssKnight | DoomKnightMissile（335）沿Do148按实际S3组件偏移飞弹；MonBoneArmor（210）沿自己的Do18状态、公式和事件槽，当前MPQ没有玩家Bone Armor的吸收事件，不补造回调；MonBoneSpirit槽在Fn073不主动调用 |
 | OblivionKnight | MonBoneSpirit（211）沿Do10传递原目标并初始化SrvDo7；Decrepify（87）与MonCurseCast（212）沿公共诅咒列表。零售Do112抽签表为66／72／82／87／91，但仍按原索引执行跳转分支，状态／公式行与回调分开保留，不能套用参考代码的六项表 |
-| 巨型恶魔 | MegademonInferno（319）共用已接St53／Do95，读取自己的飞弹675、两帧密度、S1回绕和结束参数；不复用Fetish飞弹伤害或女巫Inferno；客户端Clt54连续发射仍待补 |
+| 巨型恶魔 | MegademonInferno（319）共用已接St53／Do95，读取自己的飞弹675、两帧密度、S1回绕和结束参数；不复用Fetish飞弹伤害或女巫Inferno；客户端Clt54连续发射源码与待验边界见怪物台账74项 |
 | Imp | Imp Teleport（330）沿Do129与attached／sourceunit，逐帧骑乘跟随由ActiveState的Do147执行；Imp Fire Missile（299）沿Do132按类链偏移，Ex（356）保留基础飞弹。骑乘Fireball（283）使用原Do0构造，Inferno（282）沿St59随机期限、Do126三帧续放及十三帧收尾；原技能ID、构造后Range、Clt71／72／74／88与S7定位分别处理。ImpBolt只保留声明。源码／原DLL静态核对 |
 | Overseer／SuicideMinion | Cry Help（290）沿Do128复制有期限的真实仆从命令；Healing Vortex（291）发原弹体425并沿已有SrvHit43治疗；Overseer Whip（295）沿Do131的公式／抽签、bloodlust列表和同GUID重建，特殊AI15继续Fn117。自爆是UMod33死亡定时器及客户端动画回调，不能算作Skills施放 |
 | MinionSpawner | 技能302沿St62保存出生类／坐标／模式，Do135先原点、失败再四圈搜索；成功后禁经验／掉落、保存生成器owner并播放sumoverlay。与Nest的预约／不可中断流程分开；源码／原DLL静态核对 |
@@ -33,7 +33,19 @@
 | Succubus／SuccubusWitch | Defense Curse（309）／Blood Mana（310）沿Do30，SuccubusBolt（345）沿St4／原弹体665；两类AI、技能槽和动作各用自身原表。普通Blood Mana费用由[公共机制](COMMON.md)维护；源码核对 |
 | Izual／UberIzual | Frost Nova（44）沿Do22原生64方向构造；Uber另接Chilling Armor（60）的Do18／EventFunc01和MonTeleport（184）的Do98。冰甲反击使用实际反击者，无玩家拥有者前提；源码核对 |
 | Mephisto | PrimeLightning／MephistoMissile走普通原生飞弹，PrimeBolt走Do17；PrimePoisonNova走Do99及Clt55，MephFrostNova走Do22，Blizzard走Do28。原始弹速、回绕及施放后AI随机继续点见怪物台账 |
-| Diablo（进行中） | Do100、Do102／Clt58、Do152／Clt56延续前批；PrimeFirewall走Do024原顺序，DiabRun以St54捕获坐标及独立序列回调执行，DiabPrison生成四个真实部件并接受门户目标，Diablogeddon复用Do124／Active146。冲锋和门户施法已保留原坐标通知；完整AI及客户端冲锋／灯光／随机仍缺，Diablo／clone保留替身；源码入口及原版地址统一见怪物台账第73项，未计为完成覆盖 |
+| Diablo | Do100、Do102／Clt58、Do152／Clt56、Do024、St54／Do103、Do104、Do124／Active146已接Fn051真实身份；DiabRun客户端St41／Do59保留独立定点移动／序列，骨牢以原房间探测／出生并接受旅行系统门户。Clt56灯光抑制标记贯穿出生、73合并与绘制；源码入口、原版地址和未验收边界统一见怪物台账第73项，未完成战斗／随机／恢复验收 |
+| Korlic | Leap Attack独立接怪物St41／Do78和客户端St30／Clt44；落点预约、原Run速度、空中序列保持、落地定时与命中分别处理，未套用SandLeaper普通Leap。完整交错及实机限制见[台账77项](../monsters/ACT3.md#逐项接入) |
+| Talic | 旋风斩沿怪物St38／Do76，保留本族序列回退／单位随机命中次数与固定终点碰撞预约；命中复用公共近战、原公式、接收与反射。客户端St31／Clt45独立推进，不套用玩家命中间隔，见[台账76项](../monsters/ACT3.md#逐项接入)；本项未做战斗实机 |
+| Madawc | Shout复用公共战吼状态和飞弹命中程序，新增野生怪物Do68入口，64个环形原生飞弹先于自身状态发布；未做本项实机，见[台账75项](../monsters/ACT3.md#逐项接入) |
+| Baal Monster Spawn | 原550飞弹SrvHit54读取拥有者当前Param1后走公共任务SuperUnique出生，参数映射动态读取当前MPQ；王座主AI已连接，见[台账94及97项](../monsters/ACT3.md#逐项接入) |
+| Baal Corpse Explode | Do141沿原0x3002尸体查询逐具调用公共Do55，保留目标绑定与逐具背压；当前MPQ的CltSt82在1.13c越界而不调用。王座AI入口见[台账93及97项](../monsters/ACT3.md#逐项接入) |
+| Baal Nova／Inferno／Cold Missiles | 分别沿Do22、St53／Do95及Do139；原S3／S1／A1事件、Clt25／54／81和Do139首弹后置参数见[台账82至85项](../monsters/ACT3.md#逐项接入)。仅源码与相关编译，普通Baal／clone专用AI见92项，正常战斗未验收 |
+| Baal Taunt | 原284沿Do28目标放置；控制飞弹SrvDo34的剩余帧数及CltSt46／Do56／Hit62／63已接，真实非敌对控制Actor使用Fn136；源码／相关编译范围见[台账98至100项](../monsters/ACT3.md#逐项接入)，完整运行未验收 |
+| Catapult五种弹药 | Spotter按Fn126沿A1调用公共Do28，CltSt47目标锚点及原图形轨迹见[台账103至105项](../monsters/ACT3.md#逐项接入)；CltHit46／47／48／50专用表现仍缺，未做完整运行验收 |
+| HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；专用CltSt44仍缺 |
+| Submerge／Emerge | St51／52保留原目标资格开关；Do94使用MonSeq显示零帧对应的序列位置停帧，支持触手／触手头倒放；不把触手下潜改成FrogDemon的额外脱离碰撞流程。六种水域身份及Fn056／057见[108项](../monsters/ACT3.md#逐项接入)，尚无该项实机结论 |
+| Baal Tentacle | Do140逐次抽数、原房间单点出生及初始A1／Idle15已接源码；普通Baal／UberBaal与clone的BaseId分支分别保留。普通Baal／clone的AI见92项，出生／恢复实机尚未完成，见[台账80至81项](../monsters/ACT3.md#逐项接入) |
+| Nihlathak | 五技能及Fn128接入见[台账74项](../monsters/ACT3.md#逐项接入)；Do55复用原尸体资格及公共尸爆，Do129接无拥有者／无单位目标的坐标传送，St62保存实际出生类型和模式。共用Clt54按客户端25Hz发射两束；本批尚无正常战斗实机 |
 
 普通箭矢、尖刺、骷髅法师元素弹、近战与元素附伤已有共享程序，但A1／A2或MissA1／A2不一定对应独立Skills行。SkeletonRaise槽是复活动画，不归普通AI主动；关系见[第一幕](../monsters/ACT1.md)。第三至第五幕程序尚未全面迁入，任务死亡链和身份替身不能认证战斗技能。
 

@@ -54,6 +54,7 @@ RequestResult NpcMessage(GameplayContext &context, net::protocol::Reader &in) {
     const auto id=in.u32(); const auto text=in.u16(), reserved=in.u16(); in.finish();
     if(reserved) return {RequestStatus::Rejected};
     if(text==396) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadJournal,QuestId::ArcaneSanctuary,EntityId{id},text});
+    if(text==20002) return submitGameplay(context,server::quests::Request{server::quests::Action::ReadAncientAltar,QuestId::RiteOfPassage,EntityId{id},text});
     return submitGameplay(context,server::npc::Request{TalkToNpc{EntityId{id},TalkToNpc::Action::Acknowledge,text}});
 }
 RequestResult BuyItem(GameplayContext &context, net::protocol::Reader &in) {

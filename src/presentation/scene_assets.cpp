@@ -399,12 +399,10 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
  }
 void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) {
     auto &graphics = graphicsForAct(palette);
-    auto loadIcon = [&](const std::string &art, std::array<int, 2> transform) {
-        if (art.empty()) return;
-        const auto key = std::tuple{palette, art, transform[0], transform[1]};
-        if (itemIcons.contains(key)) return;
+    auto loadArt = [&](const std::string &art, std::array<int, 2> transform) -> GpuAnimation {
+        if (art.empty()) return {};
         const auto *source = graphics.animation(art);
-        if (!source) return;
+        if (!source) return {};
         const uint8_t *shift = nullptr;
         if (transform[0] > 0 && transform[0] < 9 && transform[1] >= 0 && transform[1] < 21) {
             // D2CMP 1.13c RVA 150D0: original transform group registration.
@@ -426,7 +424,14 @@ void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) 
             if (shift) for (auto &pixel : pixels.pixels) if (pixel) pixel = shift[pixel];
             image.frames.push_back(graphics.upload(pixels, true));
         }
-        itemIcons.emplace(key, std::move(image));
+        return image;
+    };
+    auto loadIcon = [&](const std::string &art, std::array<int, 2> transform) {
+        if (art.empty()) return;
+        const auto key = std::tuple{palette, art, transform[0], transform[1]};
+        if (itemIcons.contains(key)) return;
+        auto image = loadArt(art, transform);
+        if (!image.frames.empty()) itemIcons.emplace(key, std::move(image));
     };
     if (itemSockets.at(size_t(palette)).frames.empty())
         itemSockets.at(size_t(palette)) = graphics.single("data/global/ui/panel/gemsocket.dc6", true);
@@ -436,13 +441,18 @@ void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) 
         loadIcon(item.artKey, {});
         for (const auto &socket : item.socketItems) loadIcon(socket.artKey, socket.colorTransform);
         if (!std::holds_alternative<GroundLocation>(item.location) || item.groundArt.empty()) continue;
-        const auto key=item.artKey+":"+item.groundArt;
+        const auto key = std::tuple{item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]};
         if (itemGround.contains(key)) continue;
-        auto image=graphicsForAct(palette).single(item.groundArt,true);
+        auto image = loadArt(item.groundArt, item.groundColorTransform);
         if (image.frames.empty()) continue;
         for(auto &frame:image.frames) frame.y-=frame.texture.height;
         itemGround.emplace(key,std::move(image));
     }
+}
+
+const GpuAnimation *SceneAssets::groundItemAnimation(const InventoryItemView &item) const {
+    const auto found = itemGround.find({item.groundArt, item.groundColorTransform[0], item.groundColorTransform[1]});
+    return found == itemGround.end() ? nullptr : &found->second;
 }
 
 const Sprite *SceneAssets::inventoryIcon(const std::string &art, std::array<int, 2> transform,

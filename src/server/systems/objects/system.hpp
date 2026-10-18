@@ -125,6 +125,7 @@ class System {
     DomainResult<> execute(const ActorContext &, const Request &, std::optional<int> remoteRange = {});
     DomainResult<> openMonsterDoor(EntityId,Vec destination,uint64_t tick);
     DomainResult<> openOrbMist(EntityId,uint64_t tick);
+    void activateAncientStatues(const std::array<EntityId,3> &,uint64_t tick);
     DomainResult<> openTowerChest(EntityId,uint64_t tick);
     DomainResult<> towerGold(GroundLocation,uint64_t tick);
     void countessKilled(Vec,uint64_t tick);

@@ -47,7 +47,7 @@ SkillDescriptionSource source(const DataTable &table, size_t row, bool missile =
                 "mana","lvlmana","manashift","minmana","tohit","levtohit","srcdam",
                 "noratio","hcidx","level","level(n)","level(h)","passive","kick","immediate","periodic",
                 "intown","srvstfunc","srvdofunc","cltstfunc","usemanaondo","decquant","aurafilter","targetpet","targetally","pcltdofunc","pclthitfunc",
-                "aitype","aibonus","reqlevel","progressive","useattackrate","restrict","nocostinstate",
+                "aitype","aibonus","attackrank","reqlevel","progressive","useattackrate","restrict","nocostinstate",
                 "srcdamage","srcmissdmg","holy","missileskill","half2hsrc","applymastery","explosion",
                 "alwaysexplode","collidekill","pierce","collidefriend","lastcollide","collidetype","collision","activate","town","srctown","psrvdofunc","psrvhitfunc","psrvdmgfunc","tohit","gethit","softhit","knockback","hitclass","nexthit","nextdelay","returnfire","candestroy","size","vel","vellev","accel","maxvel","canslow","clientsend","subloop","substart","substop","hitflags","resultflags"};
             // Skills.Range is a targeting token (h2h/rng/both/none), whereas

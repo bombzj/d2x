@@ -97,6 +97,10 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 shared.terrain.at(binding->game).at(at.region).origin, GroundItemAction::Drop));
             peer.groundItems.insert_or_assign(drop->item.id, drop->item.revision);
         }
+        else if(const auto *hint=std::get_if<server::MonsterClassHintFact>(&fact)) {
+            if(!visibleActor(hint->actor,1)) continue;
+            delta.push_back(encodeServerPacket(ServerMessage::MonsterClassHint,[&](auto &out){out.u16(hint->nativeClass);}));
+        }
         else if(const auto *sound=std::get_if<server::SoundFact>(&fact)) {
             if(!visibleActor(sound->actor,sound->type)) continue;
             delta.push_back(encodeServerPacket(ServerMessage::UnitSound,[&](auto &out){out.u8(sound->type);out.u32(uint32_t(sound->actor.value));out.u16(sound->sound);}));
@@ -163,6 +167,8 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 out.u8(uint8_t(definition.nativeSlot-unsigned(definition.act)));out.u8(0);out.u8(quest->status);out.u16(quest->counter);
             }));
         }
+        else if(const auto *effect=std::get_if<server::QuestEffectFact>(&fact))
+            delta.push_back(encodeServerPacket(ServerMessage::QuestEffect,[&](auto &out){out.u8(effect->effect);}));
         else if (const auto *removed=std::get_if<server::GroundRemoveFact>(&fact)) {
             if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(removed->item.value));}));
         }

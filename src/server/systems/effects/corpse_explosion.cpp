@@ -29,7 +29,7 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
     if(!pulse.prepared) {
         pulse.base={};
         const auto *corpse=ports_.monsters.find(corpseId);
-        if(!corpse || corpseId==sourceId || !ports_.monsters.consumableCorpse(corpseId,corpse->area,tick)) return {DomainStatus::Unavailable,{}};
+        if(!corpse || corpseId==sourceId || !ports_.monsters.nativeUsableCorpse(corpseId,tick)) return {DomainStatus::Unavailable,{}};
         const auto expected=corpse->combatRandom;auto random=expected;
         const auto ownerExpected=source.player?source.player->combatRandom:source.monster->combatRandom;auto ownerRandom=ownerExpected;
         const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {

@@ -102,7 +102,7 @@ Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对�
 | 宝箱陷阱 | 钥匙与开箱掉落沿原事务；触发声与35帧延迟、区域等级兼容分支、火弹／闪电／毒云／新星、大小火焰、区域怪物生成均已接。控制器保留真实MonStats身份，不套沉沦魔；允许的敌怪替身仍保留真实逻辑身份 |
 | 地刺／火焰／裂隙 | InitFn24按原整数格占用、警告与释放时钟；InitFn22按原范围及周期只伤玩家；InitFn34原随机火盆模式；InitFn58只按原时钟动画，不自造伤害 |
 | 灵魂／丛林藏物／邪恶瓮 | OperateFn48两种原模式路径及火焰／延迟掉落；OperateFn51按Parm1延迟掉落并独立触发陷阱；OperateFn68按原区域可行走怪物目录生成精英与所属随从。真实TrappedSoul怪物AI保留无TC语义 |
-| 原怪物陷阱 | Trap-Missile／Poison／Nova有限攻击与退场，横／纵箭的轴距与区域变体，Trap-Melee机会／停顿，DesertTurret原转向／散射／短长间隔，TrappedSoul唤醒／朝向动作；命中、抗性、毒／冷与NextHit进入共同战斗路径 |
+| 原怪物陷阱 | Trap-Missile／Poison／Nova有限攻击与退场，横／纵箭的轴距与区域变体，Trap-Melee机会／停顿，DesertTurret原转向／散射／短长间隔，TrappedSoul出生入口保留，唤醒／朝向动作已由原生Fn099及公共动作帧接管（[怪物台账102项](../monsters/ACT3.md#逐项接入)）；命中、抗性、毒／冷与NextHit进入共同战斗路径 |
 | 其他藏物 | 书架按原卷轴／书比例，普通容器、棺材、架子、尸体及任务物件沿既有掉落与操作入口；所有模式碰撞读MPQ，开启动画按FrameCnt1+1衔接 |
 
 祭坛增益、物件时钟、机关AI、区域掉落和弹体是局内状态；宝石消耗／拾取后的库存按原D2S字段保存。保存边界详见[存档](../../modules/SAVES.md)。本地管理object-spawn／grant-shrine只准备真实MPQ条件，须用正常0x13操作；不作为自然地图随机概率或正常通关证据。

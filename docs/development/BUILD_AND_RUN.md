@@ -93,11 +93,26 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
-### 当前后三幕怪物收尾构建与冒烟
+### 当前后三幕怪物集成包（第73至111项）
+
+2026-10-18，基于`bd540bf9`后的本批源码，Windows／MinGW／Ninja Release客户端`d2x`与独立服务端`d2x_pvpgn`完整构建通过，保留非致命警告。修正调试快照对已删除wave／wavePrepared字段的引用，并补齐QuestEffect／MonsterClassHint事件名称。现有脚本已更新`dist/current`和`dist/server`，包内EXE／DLL与构建产物摘要一致；旧程序及配置已备份，原MPQ／存档保留。
+
+| 当前包内程序 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 35245114 | `12DDA2CB4DCAC1180A46F824ED6AAC33DA764DFDFC5386390C266180C87EF890` |
+| `dist/server/d2x_server.exe` | 27863174 | `8EB822AB1174B01115151EC096A8A8BCC8CD219B1ED69999DA2903856779AA13` |
+| 两包`d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+直接启动包内客户端，使用当前`assets/mpq2`及隔离PackHost存档（90级女巫／普通难度），以`--hidden`建立图形上下文。Single Player进入库拉斯特海港（75）：ProtocolReady，nativeMapReady／movementAvailable／playerDisplayed均为true，缺图单位0、宿主failures=0；实际截图可见地形、人物和HUD，quit正常退出码0。服务端EXE无参数启动正确输出用法并返回约定的2，仅验证程序装载与参数入口；本轮未连接PvPGN后端。
+
+本轮未新增测试脚本／用例／专用程序。冒烟只覆盖入场／显示／退出，hidden跳过音频；未认证本批全部怪物战斗、多人、卸载恢复／逐随机、地面物品染色专项或完整独立服务端运行。后三幕仍有扩展首领出生修饰器／专用AI、专用客户端程序等缺口，见[逐项台账](../gameplay/monsters/ACT3.md)。证据位于忽略目录`artifacts/act345-package-20261018-02/`：build-fixed、package日志、package-manifest、online-status、server-snapshot、smoke截图及client-exit。
+
+
+### 后三幕怪物历史收尾构建与冒烟（55606a14后）
 
 2026-10-18，基于`55606a14`及本批源码，Windows／MinGW／Ninja Release的`d2x`与`d2x_pvpgn`构建通过，保留非致命警告。补齐新增文件的直接类型依赖、变量作用域及QuestStatusFact诊断名称；实机暴露的问题已修正：原AC赋值代次、缺可选palshift表的怪物显示、110级怪物经验准备、原表倒置生命界限，以及无攻击槽的SuicideMinion管理准入。
 
-| 当前构建产物 | 字节 | SHA256 |
+| 该轮构建产物 | 字节 | SHA256 |
 | --- | --- | --- |
 | `build/bin/d2x.exe` | 34614805 | `E49CFB497E3ABF01DC1AAC59FB28EC09225976B11CEBC7B943D50950E7B455B1` |
 | `build/bin/d2x_server.exe` | 27275662 | `E2BF851AF9E267F080F25BEEA05250201A569630D58D1B653FA9C905DE087481` |
@@ -117,11 +132,11 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 该轮未新增测试脚本／用例／专用程序，也未打包；随后打包及最小冒烟见下节。构建包含交易邀请标题改动（`trade_invite_view.*`及NETWORK文档），未做该界面专项验证。第三至第五幕源码／未完成项见[逐项台账](../gameplay/monsters/ACT3.md)，不把本轮有限冒烟标为完整复刻完成。
 
-### 当前客户端与独立服务端打包
+### fb7cb723客户端与独立服务端打包
 
 2026-10-18，源码`fb7cb723`，Windows／MinGW／Ninja Release增量构建`d2x`、`d2x_pvpgn`均为no work to do；现有两份打包脚本已更新`dist/current`及`dist/server`。本轮无需新增编译修复，前轮修复与较广运行范围见上节。
 
-| 当前产物 | 字节 | SHA256 |
+| 该轮包内产物 | 字节 | SHA256 |
 | --- | --- | --- |
 | `dist/current/d2x.exe` | 34614805 | `E49CFB497E3ABF01DC1AAC59FB28EC09225976B11CEBC7B943D50950E7B455B1` |
 | `dist/server/d2x_server.exe` | 27275662 | `E2BF851AF9E267F080F25BEEA05250201A569630D58D1B653FA9C905DE087481` |
@@ -131,7 +146,7 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 这次仅按要求做入场／显示／退出最小冒烟；hidden跳过音频，未做战斗、多人、独立服务端启动或全家族验证。第三至第五幕进度仍见逐项台账。
 
-打包后继续第73项Diablo底座：本批未提交源码的Release客户端和独立服务端均构建通过，客户端SHA256为`DD9A7AC035C0514C9FFEF3045E15A3FC32D31AB5954FAEC6E0105BE8F1E0233F`，服务端为`91A191A606318E559711FA15D335549FFFDDC2EE31CAA1238547B19C2C62B180`。直接运行新客户端，以另一份隔离角色副本复查入场／显示／quit，场景及角色可显示、不可用单位0、地图错误为空、退出码0；证据在同一目录`source-smoke`与`summary.json`。这批源码尚未重新打包，Diablo／clone仍为替身，未做新增技能战斗验收；不能用该最小入场结果宣称第73项或后三幕全部完成。
+打包后的第73项底座已提交并推送为`bd540bf9`；该版Release客户端SHA256为`DD9A7AC035C0514C9FFEF3045E15A3FC32D31AB5954FAEC6E0105BE8F1E0233F`，服务端为`91A191A606318E559711FA15D335549FFFDDC2EE31CAA1238547B19C2C62B180`，隔离角色最小入场／显示／quit退出码0，证据见同目录`source-smoke`。随后第73至74项Diablo／clone、Nihlathak及共用Clt54接入后的源码，Release双目标最终构建通过；客户端SHA256为`D04062EF902AD9B8ECB805C5DEFF9C1E29A6F9BBE1B3C6F400B23F75A9447EF3`，服务端为`7D0B734BA7247D3E1B01130CFCB556ABC715521E936305265F136973E5C5A962`。证据见`artifacts/act345-monsters-20261017-01/item74-verified-build.log`及`item74-build-result.json`；该版尚未启动或重新打包，不能沿用前者的冒烟结论，也未认证新增首领战斗或后三幕全部完成。
 
 ### 当前逐房间地形构建
 

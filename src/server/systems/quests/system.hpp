@@ -8,7 +8,7 @@
 #include "state.hpp"
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::quests {
-enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal };
+enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
   std::optional<uint64_t> controlRandom;
@@ -74,8 +74,13 @@ class System {
     DomainResult<> acknowledgeActFive(const ActorContext &,const Request &,const NpcRule &);
     DomainResult<> operateActFive(const ActorContext &,EntityId,int,int,Vec);
     void resetAncients();
+    DomainResult<> readAncientAltar(const ActorContext &,EntityId);
     void orderStones();
   public:
+    uint64_t ancientStatueDue(EntityId) const;
+    uint64_t ancientObjectAnimationEnd(EntityId) const;
+    DomainResult<> ancientStatueEvent(EntityId,uint64_t);
+    void finishAncientObjectAnimation(EntityId);
     explicit System(Ports ports) : ports_(ports) {}
     void initializeControl();
     DomainResult<> initializeZoo(RegionId,uint64_t tick);
@@ -84,6 +89,7 @@ class System {
     void nativeEliteBorn(EntityId,bool eligible);
     DomainResult<> activateSiegeBoss(EntityId,uint64_t tick);
     DomainResult<> activateIzual(uint64_t tick);
+    DomainResult<> activateNihlathak(uint64_t tick);
     void rebindObject(EntityId previous,EntityId current);
     void registerCainObject(EntityId,int definition,int initialization,RegionId,Vec);
     void registerTownCain(EntityId);
@@ -103,6 +109,10 @@ class System {
     std::optional<int> objectMode(RegionId,EntityId,int definition,int operation,uint64_t tick) const;
     void onTownPortal(RegionId region) {if(int(region)==120) resetAncients();}
     DomainResult<> baalFx(RegionId,Vec);
+    DomainResult<> spawnBaalWave(RegionId,Vec,int mappedPreset,uint64_t tick);
+    DomainResult<> openWorldstoneChamber(EntityId);
+    DomainResult<> baalThroneClassHints(EntityId,unsigned wave,uint64_t tick);
+    DomainResult<> baalThroneSound(EntityId,uint64_t tick);
     DomainResult<> sealAfterglow(RegionId,EntityId,Vec,uint64_t tick);
     DomainResult<> cairnFx(RegionId,Vec,int destination,uint64_t tick);
     StepStatus step(TickContext,FrameFacts &);

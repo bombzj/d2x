@@ -1,6 +1,6 @@
 # 原物品协议、图形与反馈
 
-更新：2026-10-15。本页唯一维护原位流／公开信息、原图、声音及客户端反馈限制；权威规则按[物品目录](README.md)归档，存档归[SAVES](../../modules/SAVES.md)。两种服务端共用一套客户端，原请求参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)。
+更新：2026-10-18。本页唯一维护原位流／公开信息、原图、声音及客户端反馈限制；权威规则按[物品目录](README.md)归档，存档归[SAVES](../../modules/SAVES.md)。两种服务端共用一套客户端，原请求参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)。
 
 ## 原包与成功条件
 
@@ -29,6 +29,12 @@ RemoteInventory消费9C／9D、0A、3E、2A、58、77、97；UI预览位置、Cu
 普通物品、品质／词缀、数量、耐久、防御、孔数、孔内／套装／符文之语列表、自动词缀及个性化名字按原位流和当前MPQ读取。面板和地面共用item_display；已鉴定暗金／套装才使用真实fileIndex及特殊原图，未鉴定不推测第0行。库存图形、染色与镶孔叠层由下节维护；世界身体组件仍保留真实MPQ外观，不从图标混色推定逐组件透明已经实现。网络品质显式转换；Tempered、耳朵及身体部件的D2S布局现由服务端支持，编码与样本认证边界统一见[SAVES](../../modules/SAVES.md)。
 
 地面flippy按原25Hz播放一次停末帧；action=2／新mode=5触发，静态快照和属性更新不重播，mode=5不可拾取。怪物／物件新生掉落和手动丢弃使用同一事实与原包入口。原item_flippy起始声、dropsound／dropsfxframe落地声由SoundCatalog和SceneAudio消费；缺声组或帧给诊断，不使用替代WAV。
+
+地面图形由`item_appearance.cpp::groundColorTransform`准备底表`Transform`组及暗金／套装`chrtransform`颜色；词缀、第一颗宝石和自动词缀的优先级与下方库存染色共用，不把`InvTrans/invtransform`套给地面。`SceneAssets`使用当前MPQ八张21×256索引变换和当前幕调色板上传每个flippy帧，缓存区分原图及颜色组／颜色行，换幕清理当前地面缓存。同底材不同染色不会共用未染色原图。地面普通绘制使用CelDraw mode 5语义，选中使用当前幕原调色板高亮变换（mode 7），不再用RGB约三倍增亮；无形物品在地面不套库存的TRANS50。
+
+地面名称与提示共用`itemTextFontIndex`及当前MPQ Sky PL2字体变换，不再用手写RGB乘原字体像素。魔法／稀有／套装／暗金／Crafted／Tempered按原品质颜色，符文为橙色、已鉴定符文之语为金色、普通镶孔／无形为灰色；名称色调由共同物品描述的首行提供。当前PL2灰色RGB为(105,105,105)，原地面路径使用的(128,128,128)已撤出。
+
+上述地面染色依据本地D2MOO `ITEMS_GetColor`的`nTransType=0`分支；该参考没有D2Client绘制实现，因而定点核对同一1.13c D2Client RVA `6CF9B–6CFE0`：物品分支以NULL玩家和变换类型0取色，普通／选中分别使用5／7。当前MPQ帽子`cap/uap`的Transform=2、InvTrans=8，`The Gnasher`只有chrtransform=dyel，证明地面与库存参数不能互用。原表摘录、变换资源摘要和只读反汇编留于忽略目录`artifacts/ground-item-colors-20261018/`。本次只做资源／源码静态核对，未构建、运行或打包；五幕光照、所有品质及选中效果的原版画面对照仍待验证，不沿用下方库存历史运行认证地面改动。
 
 拾取反馈核对请求前同GUID、所有权、钱包或合堆／装书两侧数量变化；单独移除、Updated、分包未对齐或未知属性不提前报告。初始快照、死亡、切区、中断不延续旧跟踪。连续通知有界排队；金币多人分配或缺基线不推测成功。
 

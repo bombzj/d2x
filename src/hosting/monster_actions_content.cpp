@@ -132,6 +132,7 @@ std::optional<server::MonsterMissileRule> prepareMonsterMissile(const ClassicDat
     case 24:break;
     case 25:rule.behavior=server::MonsterMissileRule::Behavior::PoisonBottle;break;
     case 19:break; // FingerMageSpider posts its native six-slot recipient state.
+    case 54:break; // Baal Monster Spawn resolves its owner's live preset parameter.
     case 55:break; // BaalInferno uses the shared direct hit plus ordered mana withdrawal.
     case 4:case 5:case 7:case 8:case 9:case 10:case 11:case 17:case 18:case 20:case 21:case 22:case 26:case 27:case 28:case 29:case 32:case 33:case 35:case 36:case 37:case 38:case 40:case 43:case 44:case 45:case 47:case 48:case 50:case 51:case 52:case 53:case 56:case 57:case 58:case 59:break;
     case 0:break;
@@ -194,6 +195,25 @@ std::map<uint8_t,server::MonsterAttackRule> prepareMonsterAttacks(Archives &arch
     return result;
 }
 bool prepareMonsterSpecialActions(Archives &archives,const ClassicData &data,const AnimDataTable &animations,const MonsterRecord &record,server::MonsterRule &rule) {
+    if(record.ai=="EvilHole") {
+        rule.environmentController=true;
+        if(record.id=="demonhole") rule.uberMinionState=data.states.at("uberminion").definition.id;
+        for(const auto &[mode,name]:std::array<std::pair<uint8_t,std::string_view>,2>{{{10,"s3"},{11,"s4"}}}) {
+            const auto motion=loadMonsterMotionTiming(animations,record.token,name,monsterModeWeapon(archives,record.token,name,record.baseWeapon));
+            if(!motion) return false;
+            rule.aiPoseTicks.emplace(mode,monsterAnimationTicks({motion->frames,motion->speed}));
+        }
+        return true;
+    }
+    if(record.ai=="Catapult") {
+        const auto motion=loadMonsterMotionTiming(animations,record.token,"a1",monsterModeWeapon(archives,record.token,"a1",record.baseWeapon));
+        if(!motion) return false;
+        server::MonsterAttackRule action;action.action=server::MonsterAttackRule::Action::Animation;
+        action.nativeMode=4;action.animation=AnimationTiming{motion->frames,motion->speed};
+        action.animationFlags=motion->flags;action.animationAction=0;action.animationEvent=motion->flags.empty()?0:motion->flags.front();
+        action.duration=monsterAnimationTicks(*action.animation);action.release=1;
+        rule.attacks.insert_or_assign(4,std::move(action));return true;
+    }
     if(hasAct2MonsterSkills(record.ai) || record.ai=="Vampire") return prepareAct2MonsterSkills(archives,data,animations,record,rule);
     const auto &stats=data.tables.at("monstats");const auto &skills=data.tables.at("skills");
     const auto &missiles=data.tables.at("missiles");const DataTable sequences(archives.read("data/global/excel/monseq.txt"));

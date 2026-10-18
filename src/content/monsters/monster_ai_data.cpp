@@ -9,7 +9,7 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     if (difficulty < 0 || difficulty > 2) return std::nullopt;
     MonsterAiProfile profile;
     if (ai == "Skeleton") profile.kind = MonsterAiKind::Skeleton;
-    else if (ai == "Idle" && stats.value(row,"Id").starts_with("boneprison")) profile.kind = MonsterAiKind::Idle;
+    else if (ai == "Idle" && (stats.value(row,"Id").starts_with("boneprison") || stats.value(row,"Id")=="prisondoor" || stats.value(row,"Id")=="window1" || stats.value(row,"Id")=="window2")) profile.kind = MonsterAiKind::Idle;
     else if (ai == "Brute") profile.kind = MonsterAiKind::Brute;
     else if (ai == "Zombie") profile.kind = MonsterAiKind::Zombie;
     else if (ai == "Fallen") profile.kind = MonsterAiKind::Fallen;
@@ -57,6 +57,11 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "Overseer") profile.kind = MonsterAiKind::Overseer;
     else if (ai == "MinionSpawner") profile.kind = MonsterAiKind::MinionSpawner;
     else if (ai == "Mephisto") profile.kind = MonsterAiKind::Mephisto;
+    else if (ai == "Diablo") profile.kind = MonsterAiKind::Diablo;
+    else if (ai == "Ancient" && stats.value(row,"Id")=="ancientbarb1") profile.kind = MonsterAiKind::AncientTalic;
+    else if (ai == "Ancient" && stats.value(row,"Id")=="ancientbarb2") profile.kind = MonsterAiKind::AncientMadawc;
+    else if (ai == "Ancient" && stats.value(row,"Id")=="ancientbarb3") profile.kind = MonsterAiKind::AncientKorlic;
+    else if (ai == "Nihlathak") profile.kind = MonsterAiKind::Nihlathak;
     else if (ai == "UberIzual") profile.kind = MonsterAiKind::UberIzual;
     else if (ai == "Izual") profile.kind = MonsterAiKind::Izual;
     else if (ai == "SuccubusWitch") profile.kind = MonsterAiKind::SuccubusWitch;
@@ -66,6 +71,19 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     else if (ai == "SiegeBeast") profile.kind = MonsterAiKind::SiegeBeast;
     else if (ai == "PutridDefiler") profile.kind = MonsterAiKind::PutridDefiler;
     else if (ai == "BaalMinion") profile.kind = MonsterAiKind::BaalMinion;
+    else if (ai == "EvilHole") profile.kind = MonsterAiKind::EvilHole;
+    else if (ai == "Tentacle") profile.kind = MonsterAiKind::Tentacle;
+    else if (ai == "TentacleHead") profile.kind = MonsterAiKind::TentacleHead;
+    else if (ai == "BaalTentacle") profile.kind = MonsterAiKind::BaalTentacle;
+    else if (ai == "BaalCrab") profile.kind = MonsterAiKind::Baal;
+    else if (ai == "BaalCrabClone") profile.kind = MonsterAiKind::BaalClone;
+    else if (ai == "BaalToStairs") profile.kind = MonsterAiKind::BaalToStairs;
+    else if (ai == "BaalThrone") profile.kind = MonsterAiKind::BaalThrone;
+    else if (ai == "BaalTaunt") profile.kind = MonsterAiKind::BaalTaunt;
+    else if (ai == "HellMeteor") profile.kind = MonsterAiKind::HellMeteor;
+    else if (ai == "TrappedSoul") profile.kind = MonsterAiKind::TrappedSoul;
+    else if (ai == "Catapult") profile.kind = MonsterAiKind::Catapult;
+    else if (ai == "CatapultSpotter") profile.kind = MonsterAiKind::CatapultSpotter;
     else if (ai == "DeathMauler") profile.kind = MonsterAiKind::DeathMauler;
     else if (ai == "BloodLord") profile.kind = MonsterAiKind::BloodLord;
     else if (ai == "FrozenHorror") profile.kind = MonsterAiKind::FrozenHorror;
@@ -190,6 +208,13 @@ std::optional<MonsterAiProfile> loadMonsterAiProfile(const DataTable &stats, siz
     case MonsterAiKind::Succubus: percentages={0,1,2,6,7};break;
     case MonsterAiKind::SuccubusWitch: percentages={0,1,2,4,6,7};break;
     case MonsterAiKind::Mephisto: percentages={0,1,2};break;
+    case MonsterAiKind::Nihlathak: percentages={0,2,3};break;
+    case MonsterAiKind::AncientMadawc: percentages={1,2,3};break;
+    case MonsterAiKind::AncientTalic: percentages={1,2};break;
+    case MonsterAiKind::AncientKorlic: percentages={1,2};break;
+    case MonsterAiKind::Tentacle:
+    case MonsterAiKind::TentacleHead: percentages={0,1};break;
+    case MonsterAiKind::BaalTentacle: percentages={0};break;
     case MonsterAiKind::UberIzual:
     case MonsterAiKind::Izual: percentages={0,1,2,3};break;
     case MonsterAiKind::BaalMinion: percentages={0,1,2};break;

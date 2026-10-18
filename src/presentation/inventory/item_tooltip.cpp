@@ -3,6 +3,26 @@
 #include <algorithm>
 
 namespace d2x {
+size_t SceneView::itemTextFontIndex(ItemQuality quality, ItemTextTone tone) {
+    switch (tone) {
+    case ItemTextTone::Name:
+        switch (quality) {
+        case ItemQuality::Magic: return 3;
+        case ItemQuality::Rare: return 9;
+        case ItemQuality::Set: return 2;
+        case ItemQuality::Unique: return 4;
+        case ItemQuality::Crafted: case ItemQuality::Tempered: return 8;
+        default: return 0;
+        }
+    case ItemTextTone::RunewordName: return 4;
+    case ItemTextTone::SocketedName: return 5;
+    case ItemTextTone::Property: return 3;
+    case ItemTextTone::Error: return 1;
+    case ItemTextTone::SetProperty: return 2;
+    case ItemTextTone::RuneName: return 8;
+    default: return 0;
+    }
+}
 void SceneView::itemButton(Rectangle bounds, const char *label, Color color) const {
     if (auto sprite = assets_.button.frame(0, 0)) {
         auto texture = sprite->texture;
@@ -34,26 +54,6 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
         } while (start < line.text.size());
     }
     if (text.empty()) return;
-    auto fontIndex = [&](ItemTextTone tone) -> size_t {
-        switch (tone) {
-        case ItemTextTone::Name:
-            switch (quality) {
-            case ItemQuality::Magic: return 3;
-            case ItemQuality::Rare: return 9;
-            case ItemQuality::Set: return 2;
-            case ItemQuality::Unique: return 4;
-            case ItemQuality::Crafted: case ItemQuality::Tempered: return 8;
-            default: return 0;
-            }
-        case ItemTextTone::RunewordName: return 4;
-        case ItemTextTone::SocketedName: return 5;
-        case ItemTextTone::Property: return 3;
-        case ItemTextTone::Error: return 1;
-        case ItemTextTone::SetProperty: return 2;
-        case ItemTextTone::RuneName: return 8;
-        default: return 0;
-        }
-    };
     int fontSize = 16, rowHeight = 20;
     size_t rowsPerColumn = 0, columns = 0;
     std::vector<int> widths;
@@ -81,7 +81,7 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
     for (size_t column = 0; column < columns; ++column) {
         for (size_t row = 0; row < rowsPerColumn && column * rowsPerColumn + row < text.size(); ++row) {
             size_t i = column * rowsPerColumn + row;
-            const UiPainter painter(assets_.itemTextFonts[fontIndex(rows[i].tone)]);
+            const UiPainter painter(assets_.itemTextFonts[itemTextFontIndex(quality, rows[i].tone)]);
             const Rectangle bounds{float(columnX), box.y + 9 + float(row * rowHeight), float(widths[column]), float(rowHeight)};
             if (rows[i].propertyOffset == std::string::npos || rows[i].propertyOffset >= text[i].size())
                 painter.inBox(text[i], bounds, fontSize, WHITE);

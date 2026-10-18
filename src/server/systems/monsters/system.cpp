@@ -78,17 +78,24 @@ void playerCountBonus(MonsterRule &rule,unsigned count) {
 }
 void System::withdrawQuestGroup(RegionId region,std::string_view name) {
     const auto key="quest."+std::string(name);
-    std::erase_if(state_.actors,[&](const auto &entry){const auto &m=entry.second;const bool removed=m.area==region && !m.owner && m.identity.origin==SpawnOrigin::Preset && (m.identity.spawnKey==key || m.identity.ownerSpawnKey==key);if(removed) {ports_.effects.forgetUnit(entry.first);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,entry.first});ports_.areas.removeRoomUnit(entry.first);}return removed;});
+    for(auto it=state_.actors.begin();it!=state_.actors.end();) {
+        const auto &actor=it->second;
+        if(actor.area!=region || actor.owner || actor.identity.origin!=SpawnOrigin::Preset ||
+           (actor.identity.spawnKey!=key && actor.identity.ownerSpawnKey!=key)) {++it;continue;}
+        stopScriptedMotion(it->first);
+        ports_.effects.forgetUnit(it->first);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,it->first});ports_.areas.removeRoomUnit(it->first);
+        it=state_.actors.erase(it);
+    }
 }
 DomainResult<EntityId> System::admit(const Admission &request) {
     const auto *area = ports_.areas.find(request.area);
     if (!area || area->definition.town || !request.hostile || !request.rule || (!request.implementation && request.rule->trap==MonsterRule::Trap::None) || request.identity.spawnKey.empty())
         return {DomainStatus::InvalidRequest, {}};
     const auto &rule = *request.rule;
-    if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < 0 ||
+    if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife < 0 || rule.maximumLife < 0 ||
         rule.nativeVelocity < 0 || rule.nativeVelocity > 255 || rule.difficulty < 0 || rule.difficulty > 2 || rule.alignment < 0 || rule.alignment > 2 ||
         rule.level <= 0 || (rule.attacks.empty() && rule.skillActions.empty() &&
-        rule.ai.kind!=MonsterAiKind::SuicideMinion && rule.ai.kind!=MonsterAiKind::Idle)) return {DomainStatus::InvalidRequest, {}};
+        rule.ai.kind!=MonsterAiKind::SuicideMinion && rule.ai.kind!=MonsterAiKind::EvilHole && rule.ai.kind!=MonsterAiKind::Idle)) return {DomainStatus::InvalidRequest, {}};
     const auto finish=[&](EntityId id)->DomainResult<EntityId> {
         const auto *unit=find(id);
         if(unit && unit->rule.enchantment && unit->rule.enchantment->aura && !unit->rightSkill) {
@@ -131,7 +138,7 @@ DomainResult<Actor> System::prepareAdmissionActor(const Admission &request,Entit
     actor.admissionRule=std::make_shared<const MonsterRule>(rule);
     actor.rule.statGameType=ports_.settings.ladderMonsterStats();
     actor.combatRandom=request.unitRandom?*request.unitRandom:childRandom(random);
-    const bool activeAi=request.hostile || rule.ai.kind==MonsterAiKind::GoodNpcRanged;
+    const bool activeAi=actor.nativeAi();
     if(activeAi && !request.deadMode) {
         uint64_t delay=1;
         if(request.birthTicks<=0) {
@@ -577,12 +584,12 @@ std::vector<Actor> System::prepareMinionDeaths(Actor candidate,uint64_t tick,con
     for(const auto id:order) result.push_back(std::move(changed.at(id)));
     return result;
 }
-DomainResult<> System::scriptDeath(EntityId id,uint64_t tick) {
+DomainResult<> System::scriptDeath(EntityId id,uint64_t tick,EntityId source) {
     const auto *live=find(id);if(!live) return {DomainStatus::InvalidActor,{}};
     if(!live->alive()) return ports_.effects.monsterDeathEffect(id,tick);
     const auto &current=*live;
     auto prepared=prepareDeathActor(id,tick);if(!prepared) return {prepared.status,{}};
-    auto unit=std::move(*prepared.value);
+    auto unit=std::move(*prepared.value);if(source) unit.killer=source;
     auto cascades=prepareDeathSweep(unit,tick);
     auto publication=ports_.effects.prepareDamageStates(std::move(unit),{},tick);
     if(!ports_.effects.validateAuraUnits(publication)) return {DomainStatus::Stale,{}};
@@ -782,7 +789,7 @@ std::optional<std::pair<Vec,int>> System::targetPosition(EntityId id,RegionId ar
         (void)key;if(p.actor==id && p.entered && p.area==area && p.persistent.player.hp>0) return std::pair{p.position,2};
     }
     const auto *m=find(id);
-    if(m && m->area==area && m->life>0 && m->damageable()) return std::pair{m->position,m->rule.size};
+    if(m && m->area==area && m->alive() && m->damageable()) return std::pair{m->position,m->rule.size};
     return {};
 }
 std::optional<std::pair<Vec,int>> System::nativeTargetPosition(EntityId id,RegionId region) const {
@@ -831,7 +838,7 @@ bool System::recacheHirelingRoom(Actor &actor) {
 }
 DomainResult<> System::requestMove(const MoveRequest &request) {
     const auto it = state_.actors.find(request.actor);
-    if (it == state_.actors.end() || it->second.life <= 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || !it->second.alive()) return {DomainStatus::InvalidActor, {}};
     auto &actor = it->second;
     const auto &area = ports_.areas.at(actor.area);
     if (request.destination.area != actor.area || request.destination.generation != area.generation)
@@ -939,7 +946,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
         (unit.rule.enchantment && unit.rule.enchantment->has(33));};
     if(it!=state_.actors.end() && !it->second.alive() && suicideModifier(it->second)) return ports_.effects.monsterDamageEffect(id,tick);
     if(it!=state_.actors.end() && !it->second.alive() && (it->second.rule.deathBurst || it->second.rule.boneDeathExplosion || it->second.rule.ai.kind==MonsterAiKind::SiegeBeast)) return ports_.effects.monsterDeathEffect(id,tick);
-    if (it == state_.actors.end() || (it->second.life<=0 && !it->second.delayedDeathSource && !(status.actionOnly && it->second.modeAlive)) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
+    if (it == state_.actors.end() || (!it->second.alive() && !it->second.delayedDeathSource) || !it->second.damageable() || crushing < 0) return {DomainStatus::InvalidActor, {}};
     if(it->second.revision>UINT64_MAX-4) return {DomainStatus::Capacity,{}};
     auto actor = it->second;
     if(wound && !actor.rule.stateTarget.acceptsCurseList()) wound.reset();
@@ -1171,13 +1178,14 @@ DomainResult<> System::missileReaction(EntityId id,EntityId source,bool getHit,b
 }
 void System::rewardComplete(EntityId id) { if (auto it = state_.actors.find(id); it != state_.actors.end()) it->second.rewardComplete = true; }
 bool System::canRemove(EntityId id) const {
-    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra())) return false;
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs)) return false;
     return !ports_.frameEvents.hasHandler({FrameEventUnit::Monster,id},effects::monsterModifierTimerHandler);
 }
 DomainResult<> System::remove(EntityId id) {
-    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra())) return {DomainStatus::InvalidActor,{}};
+    const auto *unit=find(id);if(!unit || (!unit->owner && !unit->hydra() && unit->rule.ai.kind!=MonsterAiKind::BaalToStairs)) return {DomainStatus::InvalidActor,{}};
     if(!canRemove(id)) return {DomainStatus::Unavailable,{}};
     const auto it=state_.actors.find(id);
+    stopScriptedMotion(id);
     ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});ports_.areas.removeRoomUnit(id);state_.actors.erase(it);return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::advanceMode(EntityId only,TickContext tick) {
@@ -1189,7 +1197,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             const auto result=damage(id,actor.killer,0,tick.tick,0,false,0,{},true,0,{},0,false,0,0,true,{},false,{*actor.delayedDeathSource});
             if(!result) {blocked=true;continue;}
         }
-        if(actor.alive() && !actor.questNpc && !actor.skillMotion && actor.knockedUntil<=tick.tick && actor.stunnedUntil<=tick.tick &&
+        if(actor.alive() && actor.nativeAi() && !actor.skillMotion && actor.knockedUntil<=tick.tick && actor.stunnedUntil<=tick.tick &&
            tick.tick>=actor.busyUntil && !frozen(id,tick.tick) && !actor.route.empty() && actor.pathStep.changedCell() &&
            ports_.areas.loaded(actor.area,actor.position+Vec{.5f,.5f})) {
             const auto result=ports_.effects.movementSkills(id,tick.tick,actor.pathStep.direction(),actor.pathStep.nativePosition());
@@ -1204,7 +1212,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(actor.curseControl.ai!=CurseAi::None && actor.curseControl.until<=tick.tick) actor.curseControl={};
             if(actor.attractionUntil<=tick.tick) actor.attractionTarget={};
         }
-        (void)id; if(!actor.questNpc) actor.moving = false;
+        (void)id; if(actor.nativeAi()) actor.moving = false;
         if(actor.conversion && (actor.life<=0 || !actor.owner || !ports_.players.find(*actor.owner) || !ports_.players.find(*actor.owner)->entered)) {
             const auto result=ports_.effects.endConversion(id,tick.tick);
             if(!result) {blocked=true;continue;}
@@ -1220,10 +1228,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             actor.knockbackGoal.reset();actor.knockedUntil=0;
         }
         if(actor.holyFreezeUntil && actor.holyFreezeUntil<=tick.tick) actor.holyFreezeUntil=0;
-        if(actor.questNpc) continue; // Quest movement consumes this same actor in npc::System.
+        if(!actor.nativeAi()) continue; // Scripted native NPC AI owns its path; quest escapes use npc::System.
         if(actor.skillMotion && (actor.skillMotion->eventDriven || advanceSkillMotion(actor,tick.tick))) continue;
         if (frozen(id,tick.tick) || actor.stunnedUntil>tick.tick) continue;
-        if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
+        if (!actor.alive() || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;
         const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
         if(!target) {stop(id);continue;}

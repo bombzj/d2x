@@ -15,10 +15,68 @@ void System::neutralMode(EntityId id) {
     stop(id);
     if(auto found=state_.actors.find(id);found!=state_.actors.end()) recordNativeMode(found->second,1);
 }
+DomainResult<> System::suppressTreasure(EntityId id) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;
+    if(!unit.rule.noTreasure) {
+        if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+        unit.rule.noTreasure=true;++unit.revision;
+    }
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::setNativeTarget(EntityId id,EntityId target) {
+    const auto found=state_.actors.find(id);if(found==state_.actors.end()) return {DomainStatus::InvalidActor,{}};
+    auto &unit=found->second;if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    unit.movementTarget=target;++unit.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 void System::storeLastAttacker(EntityId target,EntityId source) {
     if(auto found=state_.actors.find(target);found!=state_.actors.end() && found->second.alive() && found->second.lastAttacker!=source) {
         found->second.lastAttacker=source;++found->second.revision;
     }
+}
+DomainResult<> System::reinitializeBaalToStairs(EntityId id,uint64_t tick) {
+    const auto *previous=find(id);
+    if(!previous || !previous->alive() || !previous->questNpc || previous->identity.monster!="baalthrone")
+        return {DomainStatus::InvalidActor,{}};
+    if(previous->revision==UINT64_MAX || previous->admissionRevision==UINT64_MAX || previous->allegianceRevision==UINT64_MAX || previous->aiFunctionRevision==UINT64_MAX)
+        return {DomainStatus::Capacity,{}};
+    const auto &npcs=ports_.areas.at(previous->area).definition.questNpcs;
+    const auto stairs=npcs.find("baalcrabstairs");
+    if(stairs==npcs.end() || !stairs->second.combat || stairs->second.combat->ai.kind!=MonsterAiKind::BaalToStairs)
+        return {DomainStatus::NotImplemented,{}};
+    Admission request;request.identity=previous->identity;request.identity.monster=stairs->first;
+    request.identity.nativeClass=stairs->second.nativeClass;request.implementation=MonsterKind::BaalToStairs;
+    request.area=previous->area;request.position=previous->position;request.rule=*stairs->second.combat;
+    request.tick=tick;request.unitRandom=previous->combatRandom;request.uncounted=previous->uncounted;
+    auto random=ports_.random;ComponentPaletteState palettes;
+    auto prepared=prepareAdmissionActor(request,id,random,palettes,ports_.ids.cursor());
+    if(!prepared) return {prepared.status,{}};
+    auto candidate=std::move(*prepared.value);const auto allocated=candidate.birthEquipmentItems;
+    // MONSTER_Free leaves MonsterData and the GUID in place. Reinitialize
+    // rebuilds attributes, skills and AI; it does not execute UMod33's buff.
+    candidate.rule.enchantment=previous->rule.enchantment;
+    candidate.rule.nativeModifiers=previous->rule.nativeModifiers;
+    candidate.rule.superUniqueIndex=previous->rule.superUniqueIndex;
+    candidate.rule.uniqueTranslation=previous->rule.uniqueTranslation;
+    candidate.rule.noTreasure|=previous->rule.noTreasure;candidate.rule.noExperience|=previous->rule.noExperience;
+    candidate.questNpc=true;candidate.roomAdmission=previous->roomAdmission;
+    candidate.revision=previous->revision+1;candidate.admissionRevision=previous->admissionRevision+1;
+    candidate.allegianceRevision=previous->allegianceRevision+1;candidate.aiFunctionRevision=previous->aiFunctionRevision+1;
+    candidate.changedClass=stairs->second.nativeClass;candidate.aiStates.insert(candidate.rule.changeClassState);
+    candidate.admissionRule=std::make_shared<const MonsterRule>(candidate.rule);
+    candidate.aiThinkAt=tick+5;candidate.aiThinkRevision=1;
+    candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+        {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,tick+5}));
+    auto publication=prepareActorPublication({{id,std::move(candidate)}},allocated);
+    if(!validateActors(publication)) return {DomainStatus::Stale,{}};
+    const auto &changed=publication.actors.at(id);
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},changed.area},
+        {StateFact{id,1,changed.area,changed.rule.changeClassState,true,
+            {{StatKey{uint16_t(changed.rule.shortParameterStat),0},*changed.changedClass}}}}});
+    if(!sent) return {sent.status,{}};
+    ports_.effects.forgetUnit(id);ports_.frameEvents.cancelOwner({FrameEventUnit::Monster,id});
+    publishComponents(palettes);publishActors(publication);ports_.random=random;
+    return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::reinitializeWhipped(EntityId source,EntityId target,int nativeClass,uint64_t tick) {
     const auto *previous=find(target),*caster=find(source);

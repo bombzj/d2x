@@ -79,7 +79,7 @@ DomainResult<bool> System::restoreGroundPresence(EntityId source,const std::func
     stop(source);return {DomainStatus::Applied,true};
 }
 DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait,bool preserveMovement) {
-    auto found=state_.actors.find(source);if(found==state_.actors.end() || found->second.life<=0) return {DomainStatus::InvalidActor,{}};
+    auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const auto clock=actor.rule.aiPoseTicks.find(mode);
     if(mode!=1 && clock==actor.rule.aiPoseTicks.end()) return {DomainStatus::Unavailable,{}};
     if(actor.airborne && !airborne && !canLand(source)) return {DomainStatus::Unavailable,{}};
@@ -294,6 +294,25 @@ DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) 
     actor.busyUntil=std::max(actor.busyUntil,until);if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::settleDelayedDeath(EntityId id,uint64_t tick) {
+    const auto *actor=find(id);
+    if(!actor || !actor->delayedDeathSource || ports_.effects.unitStates(id,tick).contains(actor->rule.uninterruptableState)) return {DomainStatus::Applied,std::monostate{}};
+    const auto result=damage(id,actor->killer,0,tick,0,false,0,{},true,0,{},0,false,0,0,true,{},false,{*actor->delayedDeathSource});
+    return {result.status,result?std::optional{std::monostate{}}:std::nullopt};
+}
+DomainResult<> System::startWhirlwindMotion(EntityId source,Vec target) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;const Vec center{.5f,.5f};
+    auto route=ports_.areas.at(actor.area).definition.collision.nativeUnitPath(actor.position+center,target+center,7,100,{0xc01,actor.rule.size});
+    if(route.empty()) return {DomainStatus::Unavailable,{}};
+    for(auto &point:route) point=point-center;
+    actor.skillReservation=Actor::SkillReservation{route.back()};
+    ports_.areas.setNativePatternMask(actor.area,route.back(),actor.rule.collisionPattern,0x100,true);
+    actor.skillMotion=Actor::SkillMotion{route.back(),UINT64_MAX,actor.interruption,monsterMovementSpeed(actor.rule.nativeVelocity,100),false,std::move(route)};
+    actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0x401,actor.rule.size};
+    actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;actor.pathType=7;actor.pathDistance=100;actor.pathSteps=1;
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+}
 DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocity) {
     const auto found=state_.actors.find(source);
     if(found==state_.actors.end() || !found->second.alive() || velocity<0) return {DomainStatus::InvalidActor,{}};
@@ -307,16 +326,22 @@ DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocit
     actor.skillMotion->eventDriven=true;actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
-bool System::advanceDiabloRun(EntityId source,uint64_t tick) {
+bool System::advanceScriptedMotion(EntityId source,uint64_t tick) {
     const auto found=state_.actors.find(source);if(found==state_.actors.end()) return false;
     auto &actor=found->second;
     const bool moving=actor.skillMotion && actor.skillMotion->eventDriven && advanceSkillMotion(actor,tick);
     if(!moving) {actor.moving=false;++actor.revision;}
     return moving;
 }
-void System::stopDiabloRun(EntityId source) {
+void System::stopScriptedMotion(EntityId source) {
     const auto found=state_.actors.find(source);if(found==state_.actors.end()) return;
-    auto &actor=found->second;if(!actor.skillMotion || !actor.skillMotion->eventDriven) return;
+    auto &actor=found->second;
+    if(actor.skillReservation) {
+        ports_.areas.setNativePatternMask(actor.area,actor.skillReservation->position,actor.rule.collisionPattern,actor.skillReservation->clearMask,false);
+        actor.skillReservation.reset();++actor.revision;
+    }
+    if(actor.skillMotion && actor.skillMotion->eventDriven && actor.skillMotion->leap) actor.collisionPattern.reset();
+    if(!actor.skillMotion || !actor.skillMotion->eventDriven) return;
     actor.skillMotion.reset();actor.pathStep.reset();actor.moving=false;++actor.revision;
 }
 bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
@@ -332,17 +357,17 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
             } else motion.until=tick;
         }
         while(!motion.route.empty() && (motion.route.front()-actor.position).length()<.01f) motion.route.pop_front();
-        const Vec delta=(motion.route.empty()?motion.destination:motion.route.front())-actor.position;
         if(tick<motion.until) {
             const Vec center{.5f,.5f};const auto &grid=ports_.areas.at(actor.area).definition.collision;
             const auto step=actor.pathStep.advance(grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
-                motion.speed*TickContext::seconds,motion.leap?MovementCollisionRule{0,1}:actor.rule.collision);
+                motion.speed*TickContext::seconds,motion.collision.value_or(motion.leap?MovementCollisionRule{0,1}:actor.rule.collision));
             actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);
             actor.moving=step.travelled>0;++actor.revision;if(step.blocked) motion.until=tick;
         } else motion.until=tick;
         if((motion.destination-actor.position).length()>.01f && tick<motion.until) return true;
     }
     if(motion.moveState && actor.rule.skillMoveState>=0 && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{actor.id,1,actor.area,actor.rule.skillMoveState,false}}})) return true;
+    if(motion.leap && motion.eventDriven) {actor.collisionPattern.reset();actor.pathType=2;}
     actor.skillMotion.reset();++actor.revision;return false;
 }
 }

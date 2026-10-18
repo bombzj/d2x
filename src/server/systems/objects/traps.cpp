@@ -99,7 +99,7 @@ StepStatus System::monsterTrap(TickContext tick,EntityId only) {
         const auto &[id,monster]=*entry;
         if(!ports_.events.hasCapacity(4,2)) return StepStatus::Blocked;
         if (!ports_.areas.loaded(monster.area, monster.position)) continue;
-        const auto &rule=monster.rule;if(rule.trap==Trap::None || monster.life<=0) continue;
+        const auto &rule=monster.rule;if(rule.trap==Trap::None || rule.ai.kind==MonsterAiKind::TrappedSoul || monster.life<=0) continue;
         auto &clock=traps_[id];
         if(clock.admissionRevision!=monster.admissionRevision) {clock={};clock.admissionRevision=monster.admissionRevision;}
         if(clock.release && clock.interruption!=monster.interruption) {clock.release=0;clock.next=monster.busyUntil;}const auto &area=ports_.areas.at(monster.area);if(area.definition.town) continue;
@@ -158,13 +158,6 @@ StepStatus System::monsterTrap(TickContext tick,EntityId only) {
             aim=monster.position+offsets[clock.direction]*float(rule.trapParameters[4]);
             if(!area.definition.collision.collisionSegment(monster.position,aim,0x0804) || !area.definition.collision.collisionSegment(monster.position,target->position,0x0804)) {clock.shots=std::max(0,clock.shots-1);clock.next=tick.tick+10;continue;}
             mode=8;fire=true;delay=uint64_t(std::max(1,++clock.shots<=rule.trapParameters[1]?rule.trapParameters[0]:rule.trapParameters[2]));if(clock.shots>rule.trapParameters[1]) clock.shots=0;
-        } else if(rule.trap==Trap::Soul) {
-            if(distance<5) {
-                if(!clock.shots) {mode=9;++clock.shots;}
-                else if(distance<=rule.meleeRange && tick.tick>clock.delayUntil) {const auto delta=target->position-monster.position;mode=delta.x<=0 && delta.y>=0?4:delta.x<0 || delta.y>0?8:5;clock.delayUntil=tick.tick+(mode==8?5:35);}
-                else mode=8;
-                fire=true;
-            } else if(clock.shots) {mode=8;fire=true;}
         }
         if(!fire || !rule.attacks.contains(mode)) {clock.next=tick.tick+delay;continue;}
         const auto &attack=rule.attacks.at(mode);

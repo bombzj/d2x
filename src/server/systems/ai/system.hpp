@@ -42,12 +42,13 @@ struct Controller {
     int regenerationBonus{};
     int act2Attempts{};
     std::optional<Vec> flightGoal;
+    std::optional<Vec> homeCommand; // Native command10's global coordinates, captured on first boss think.
     uint64_t randomExpected{};
     bool randomPublished{};
     std::deque<std::function<DomainResult<>()>> pending;
 };
 struct State { std::map<EntityId, Controller> controllers; };
-struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; };
+struct Ports { monsters::System &monsters; const PlayerStore &players; const AreaStore &areas; skills::System &skills; objects::System &objects; const social::System &social; effects::System &effects; const spatial::System &spatial; quests::System &quests; const travel::System &travel; };
 class System {
     State state_;
     const Ports ports_;
@@ -80,6 +81,22 @@ class System {
     StepStatus succubusFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus izualFamily(EntityId,UnitTarget,Vec,int,int,TickContext,Controller &);
     StepStatus mephistoFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus talicFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus madawcFamily(EntityId,TickContext,Controller &);
+    StepStatus korlicFamily(EntityId,TickContext,Controller &);
+    StepStatus evilHoleFamily(EntityId,int distance,TickContext,Controller &);
+    StepStatus tentacleFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
+    StepStatus baalTentacleFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
+    StepStatus diabloFamily(EntityId,TickContext,Controller &);
+    StepStatus baalFamily(EntityId,TickContext,Controller &);
+    StepStatus baalToStairsFamily(EntityId,TickContext,Controller &);
+    StepStatus baalThroneFamily(EntityId,TickContext,Controller &);
+    StepStatus baalTauntFamily(EntityId,TickContext,Controller &);
+    StepStatus hellMeteorFamily(EntityId,TickContext,Controller &);
+    StepStatus trappedSoulFamily(EntityId,TickContext,Controller &);
+    StepStatus catapultFamily(EntityId,TickContext,Controller &);
+    StepStatus catapultSpotterFamily(EntityId,TickContext,Controller &);
+    StepStatus nihlathakFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus putridDefilerFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);
     StepStatus baalMinionFamily(EntityId,std::optional<UnitTarget>,Vec,int,TickContext,Controller &);
     StepStatus frozenHorrorFamily(EntityId,std::optional<UnitTarget>,Vec,int,int,TickContext,Controller &);

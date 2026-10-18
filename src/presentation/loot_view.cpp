@@ -2,22 +2,6 @@
 #include <algorithm>
 
 namespace d2x {
-Color SceneView::itemColor(ItemQuality quality) {
-    switch (quality) {
-    case ItemQuality::Magic:
-        return {105, 105, 255, 255};
-    case ItemQuality::Crafted:
-        return {255, 168, 0, 255};
-    case ItemQuality::Rare:
-        return {255, 255, 100, 255};
-    case ItemQuality::Set:
-        return {0, 255, 0, 255};
-    case ItemQuality::Unique:
-        return {199, 179, 119, 255};
-    default:
-        return WHITE;
-    }
-}
 void SceneView::advanceGroundAnimations(float dt) {
     if (groundGameGeneration_ != inventoryView_.gameGeneration || groundAreaGeneration_ != inventoryView_.areaGeneration) {
         groundGameGeneration_ = inventoryView_.gameGeneration; groundAreaGeneration_ = inventoryView_.areaGeneration;
@@ -39,8 +23,8 @@ void SceneView::advanceGroundAnimations(float dt) {
         if (animation.revision != item.groundAnimationRevision)
             animation = {item.groundAnimationRevision, std::max(0.f, item.groundAnimationAge)};
         if (!animation.flipSoundConsumed || !animation.landSoundConsumed) {
-            const auto art = assets_.itemGround.find(item.artKey + ":" + item.groundArt);
-            if (art == assets_.itemGround.end() || art->second.count <= 0) continue;
+            const auto *art = assets_.groundItemAnimation(item);
+            if (!art || art->count <= 0) continue;
             const auto at = screen(staticUnitPosition(location->position));
             const auto viewport = worldViewport();
             const bool audible = CheckCollisionPointRec(rv(at),viewport);
@@ -54,15 +38,14 @@ void SceneView::advanceGroundAnimations(float dt) {
     }
 }
 const Sprite *SceneView::groundItemSprite(const InventoryItemView &item) const {
-    const auto key=item.groundArt.empty()?item.artKey:item.artKey+":"+item.groundArt;
-    auto found=assets_.itemGround.find(key);
-    if(found==assets_.itemGround.end() || found->second.count<=0) return nullptr;
+    const auto *art = assets_.groundItemAnimation(item);
+    if (!art || art->count <= 0) return nullptr;
     const auto animation = groundAnimations_.find(item.id);
     // Preserve the old single-player 25 Hz flippy and final-frame hold. Only
     // its trigger now comes from the server item event rather than ItemChange.
-    const int frame=animation==groundAnimations_.end() || animation->second.age>=4.f?found->second.count-1:
-        std::min(found->second.count-1,int(animation->second.age*25));
-    return found->second.frame(0,frame);
+    const int frame=animation==groundAnimations_.end() || animation->second.age>=4.f?art->count-1:
+        std::min(art->count-1,int(animation->second.age*25));
+    return art->frame(0,frame);
 }
 void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     const auto *item = inventoryView_.item(id);
@@ -72,9 +55,16 @@ void SceneView::drawGroundItem(const InventoryItemView &item, bool highlighted) 
     auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
-    // Diablerie Loot.selected / Materials.SetRendererHighlighted. Preserve the MPQ
-    // pixels and alpha; highlight the same current frame used for hit testing.
-    drawSelectableSprite(groundItemSprite(item), p, highlighted, WHITE, {3.f, 1.01f});
+    const auto *image = groundItemSprite(item);
+    if (!image) return;
+    // D2Client 1.13c RVA 6CF9B: ground items use CelDraw 5, or 7 when
+    // selected. Ethereal inventory TRANS50 is not applied to ground flippy.
+    const int act = mapView().palette;
+    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    if (highlighted && blend)
+        blend->drawHighlight(image, {p.x + image->x, p.y + image->y,
+            float(image->texture.width), float(image->texture.height)});
+    else sprite(image, p);
 }
 std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
     std::vector<LootLabel> layout, visible;
@@ -107,10 +97,8 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         }
         if (!placed)
             continue;
-        const bool plain = item.quality == ItemQuality::Normal || item.quality == ItemQuality::Superior || item.quality == ItemQuality::Inferior;
-        const auto color = item.identified && item.runeword ? Color{199, 179, 119, 255} :
-            plain && (item.sockets || (item.nativeFlags & 0x400000u)) ? Color{128, 128, 128, 255} : itemColor(item.quality);
-        LootLabel label{item.handle(), std::move(text), box, ground, color};
+        const auto tone = item.tooltip.empty() ? ItemTextTone::Name : item.tooltip.front().tone;
+        LootLabel label{item.handle(), std::move(text), box, ground, itemTextFontIndex(item.quality, tone)};
         layout.push_back(label);
         if (view_.showLoot || id == inventoryView_.pickupTarget ||
             CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), ([&] { const auto at=screen(staticUnitPosition(location->position)); const auto *image=groundItemSprite(item);
@@ -150,7 +138,8 @@ void SceneView::drawLootLabels(Vec mouse) const {
                                                          : Color{0, 0, 0, 218});
         int fontSize = 16;
         while (fontSize > 1 && painter_.measure(label.text, fontSize) > label.bounds.width - 8) --fontSize;
-        painter_.inBox(label.text, label.bounds, fontSize, label.color);
+        const UiPainter namePainter(assets_.itemTextFonts[label.fontIndex]);
+        namePainter.inBox(label.text, label.bounds, fontSize, WHITE);
     }
 }
 } // namespace d2x

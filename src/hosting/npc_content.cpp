@@ -1,5 +1,6 @@
 #include "npc_content.hpp"
 #include "content/monsters/monster_catalog.hpp"
+#include "content/monsters/monster_ai_data.hpp"
 #include "content/npc/vendor_stock.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "content/monsters/monster_animation.hpp"
@@ -73,6 +74,11 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
         request.difficulty,world->level(request.level).population.level.at(size_t(request.difficulty)),{},request.ladderMonsterStats,MonsterStatPurpose::NativeNpc);
     if(!profile || !profile->defense) throw std::runtime_error("Missing original NPC stat profile: "+record.id);
     auto rule=std::make_shared<server::MonsterRule>();
+    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter") {
+        const auto ai=loadMonsterAiProfile(data.tables.at("monstats"),record.sourceRow,record.ai,request.difficulty);
+        if(!ai) throw std::runtime_error("Missing original scripted NPC AI: "+record.id);
+        rule->ai=*ai;
+    }
     rule->stats=data.nativeStats;rule->formulas=data.nativeFormulas;rule->auraPrograms=data.nativeAuraPrograms;
     rule->nativeClass=record.index;rule->level=profile->level;rule->difficulty=request.difficulty;rule->statGameType=request.ladderMonsterStats;
     rule->minimumLife=profile->damage.minLife;rule->maximumLife=profile->damage.maxLife;
@@ -95,6 +101,9 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
     rule->blockWithoutShield=data.tables.at("monstats").number(record.sourceRow,"NoShldBlock").value_or(0)!=0;
     rule->threat=data.tables.at("monstats").number(record.sourceRow,"threat").value_or(0);
     if(!prepareMonsterLifecycle(archives,data,*animations,record,*rule)) throw std::runtime_error("Missing original NPC lifecycle: "+record.id);
+    if(record.ai=="BaalToStairs" || record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter") rule->decisionTicks=rule->neutralDelayTicks;
+    if((record.ai=="BaalThrone" || record.ai=="BaalTaunt" || record.ai=="HellMeteor" || record.ai=="CatapultSpotter") && !prepareAct2MonsterSkills(archives,data,*animations,record,*rule))
+        throw std::runtime_error("Missing original scripted monster skills");
     const auto &extra=data.tables.at("monstats2");
     for(size_t row=0;row<extra.rows().size();++row) if(extra.value(row,"Id")==data.tables.at("monstats").value(record.sourceRow,"MonStatsEx") && extra.number(row,"mDT").value_or(0)) {
         const auto death=loadMonsterMotionTiming(*animations,record.token,"dt",monsterModeWeapon(archives,record.token,"dt",record.baseWeapon));
@@ -135,6 +144,11 @@ void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea 
         if(fresh) entry->second=prepareNeutralMonsterRule(archives,data,prepared.terrain.request,record);
         result.combat=entry->second;return result;
     };
+    if(area.act==4) {
+        const auto *stairs=catalog.find("baalcrabstairs");
+        if(!stairs || stairs->hostile()) throw std::runtime_error("Missing original Baal stairs class");
+        area.questNpcs.emplace(stairs->id,npcRule(*stairs));
+    }
     std::vector<Vec> prisonerMarkers;
     for(const auto *code:{"izualghost","drehya","tyrael3"}) {
         const bool wanted=(area.act==3 && std::string_view(code)=="izualghost") || (area.act==4 && std::string_view(code)!="izualghost");

@@ -158,7 +158,7 @@ class SceneView {
         std::string text;
         Rectangle bounds;
         Vec ground;
-        Color color;
+        size_t fontIndex = 0;
     };
     std::vector<LootLabel> lootLabels(Vec mouse) const;
     void drawGroundItem(EntityId item, bool highlighted) const;
@@ -223,7 +223,7 @@ class SceneView {
         deferredTooltip_.anchor = anchor;
     }
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
-    static Color itemColor(ItemQuality quality);
+    static size_t itemTextFontIndex(ItemQuality, ItemTextTone);
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets = false) const;
     void drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const;

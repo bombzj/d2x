@@ -35,6 +35,10 @@ class System {
     StepStatus releaseMonsters(TickContext,EntityId);
     DomainResult<bool> releaseAssassinPet(MonsterRelease &,TickContext);
     DomainResult<bool> releaseMonsterInferno(MonsterRelease &,TickContext);
+    DomainResult<> startMonsterWhirlwind(const CastRequest &,const MonsterAttackRule &);
+    DomainResult<> monsterWhirlwindEvent(const FrameEvent &,uint64_t);
+    DomainResult<> startMonsterLeapAttack(const CastRequest &,const MonsterAttackRule &);
+    DomainResult<> monsterLeapAttackEvent(const FrameEvent &,uint64_t);
     DomainResult<bool> releaseMonsterMosquito(MonsterRelease &,TickContext);
     DomainResult<> releaseOverseer(MonsterRelease &,TickContext);
     DomainResult<> releaseMonsterSpell(MonsterRelease &,TickContext);

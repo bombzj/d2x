@@ -36,6 +36,8 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
             const auto motion=loadMonsterMotionTiming(animations,record.token,mode,weapon);
             const auto frame=sequences.number(row,"frame");
             if(!motion || !frame || *frame<0 || *frame>255 || frames>=10000) return false;
+            if(action.action==server::MonsterAttackRule::Action::Submerge && *frame==0 && action.submergeHoldFrame<0)
+                action.submergeHoldFrame=frames;
             action.animationFlags.push_back(uint8_t(sequences.number(row,"event").value_or(0)));
             if(sequences.number(row,"event").value_or(0)==event) {
                 action.animationEvents.push_back(frames);
@@ -63,7 +65,7 @@ bool clockAction(Archives &archives,const AnimDataTable &animations,const DataTa
 }
 }
 bool hasAct2MonsterSkills(std::string_view ai) {
-    if(ai=="Overseer" || ai=="SuicideMinion" || ai=="MinionSpawner" || ai=="Succubus" || ai=="SuccubusWitch" || ai=="Izual" || ai=="UberIzual" || ai=="Mephisto") return true;
+    if(ai=="Tentacle" || ai=="TentacleHead" || ai=="CatapultSpotter" || ai=="HellMeteor" || ai=="BaalTaunt" || ai=="BaalThrone" || ai=="BaalCrab" || ai=="BaalCrabClone" || ai=="Overseer" || ai=="SuicideMinion" || ai=="MinionSpawner" || ai=="Succubus" || ai=="SuccubusWitch" || ai=="Izual" || ai=="UberIzual" || ai=="Mephisto" || ai=="Diablo" || ai=="Nihlathak" || ai=="Ancient") return true;
     constexpr std::array names{"SandRaider","SandMaggot","SandMaggotQueen","MaggotEgg","MaggotLarva",
         "ClawViper","ClawViperEx","SandLeaper","Swarm","Scarab","GreaterMummy","Mummy","PantherWoman",
         "PantherJavelin","Baboon","Vulture","BatDemon","PinHead","Summoner","Duriel","Sarcophagus","ArcaneTower","ThornHulk","FetishShaman","Mosquito","FrogDemon","CorruptArcher","CorruptLancer","WillOWisp","ZakarumPriest","HighPriest","VileMother","FingerMage","Regurgitator","AbyssKnight","OblivionKnight","Megademon","ReanimatedHorde","FrozenHorror","BloodLord","DeathMauler","BaalMinion","PutridDefiler","SiegeBeast","Imp","GenericSpawner"};
@@ -73,9 +75,19 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
                              const MonsterRecord &record,server::MonsterRule &rule) {
     using Action=server::MonsterAttackRule::Action;
     const auto &stats=data.tables.at("monstats"),&skills=data.tables.at("skills"),&missiles=data.tables.at("missiles");
+    if(record.base=="baalcrab") {
+        rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","baalclone"),"hcIdx");
+        auto code=std::string("baaltentacle1");
+        for(auto &nativeClass:rule.baalTentacleClasses) {
+            const auto row=findSkillTableRow(stats,"Id",code);
+            nativeClass=skillTableNumber(stats,row,"hcIdx");code=stats.value(row,"NextInClass");
+        }
+    }
+    if(record.ai=="BaalCrabClone") rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","skeleton1"),"hcIdx");
     if(record.ai=="UberIzual" && (stats.value(record.sourceRow,"Skill2").empty() || stats.value(record.sourceRow,"Skill3").empty())) return false;
     if(record.ai=="SuccubusWitch" && stats.value(record.sourceRow,"Skill5").empty()) return false;
-    if(record.ai=="Overseer") {
+    if(record.ai=="Overseer" || record.ai=="Nihlathak") {
+        if(record.ai=="Nihlathak") rule.spawnFallbackClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","minion1"),"hcIdx");
         auto child=std::string(skills.value(findSkillTableRow(skills,"skill","Overseer Whip"),"summon"));
         auto minion=std::string("minion1");
         for(unsigned index=0;!minion.empty() && index<256;++index) {
@@ -91,6 +103,13 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
     }
     if(record.ai=="SiegeBeast") rule.impBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","imp1"),"hcIdx");
+    if(record.ai=="CatapultSpotter") {
+        auto chain=record.base;
+        while(chain!=record.id && rule.monsterChainOffset<4) {
+            chain=stats.value(findSkillTableRow(stats,"Id",chain),"NextInClass");++rule.monsterChainOffset;
+        }
+        if(chain!=record.id || rule.monsterChainOffset>=4) return false;
+    }
     if(record.ai=="Imp") {
         rule.attachedState=data.states.at("attached").definition.id;
         rule.siegeBeastBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","siegebeast1"),"hcIdx");
@@ -120,6 +139,11 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         rule.painwormBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","painworm1"),"hcIdx");
     }
     if(record.ai=="OblivionKnight") rule.doomKnightBaseClass=skillTableNumber(stats,findSkillTableRow(stats,"Id","doomknight1"),"hcIdx");
+    if(record.ai=="Diablo") {
+        const auto clock=loadMonsterMotionTiming(animations,record.token,"s4",monsterModeWeapon(archives,record.token,"s4",record.baseWeapon));
+        if(!clock) return false;
+        rule.aiPoseTicks.emplace(11,monsterAnimationTicks({clock->frames,clock->speed}));
+    }
     if(record.ai=="SandRaider" || record.ai=="ClawViper" || record.ai=="ClawViperEx") {
         rule.blueState=data.states.at("blue").definition.id;rule.redState=data.states.at("red").definition.id;
     }
@@ -186,10 +210,15 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             if(!clockAction(archives,animations,sequences,record,stats.value(record.sourceRow,"Sk"+field+"mode"),1,death)) return false;
             rule.deathTicks=death.duration;rule.skillIds[slot]=uint16_t(id);continue;
         }
-        server::MonsterAttackRule action;int event=(record.ai=="Izual" || record.ai=="UberIzual")?1:2;
-        if(name=="PrimeBolt" || name=="PrimePoisonNova" || name=="DiabCold" || name=="DiabWall" || name=="PrimeFirewall" || name=="VampireFirewall" || name=="Diablogeddon" || name=="DiabPrison" || (record.ai=="Mephisto" && name=="Blizzard")) {
-            action.action=Action::NativeSpell;if(name=="DiabCold") event=1;
+        server::MonsterAttackRule action;int event=(record.ai=="Izual" || record.ai=="UberIzual" || record.ai=="BaalCrab" || record.ai=="BaalCrabClone")?1:2;
+        if(name=="PrimeBolt" || name=="PrimePoisonNova" || name=="DiabCold" || name=="DiabWall" || name=="PrimeFirewall" || name=="VampireFirewall" || name=="Diablogeddon" || name=="DiabPrison" || name=="NihlathakCorpseExplosion" || name=="Shout" || name=="Baal Tentacle" || (record.ai=="Mephisto" && name=="Blizzard")) {
+            action.action=Action::NativeSpell;if(name=="DiabCold" || name=="NihlathakCorpseExplosion" || name=="Baal Tentacle") event=1;
         }
+        else if(name=="Baal Taunt" || name=="HellMeteor" || name=="Catapult Charged Ball" || name=="Catapult Spike Ball" || name=="CatapultBlizzard" || name=="CatapultPlague" || name=="CatapultMeteor") action.action=Action::NativeSpell;
+        else if(name=="Baal Corpse Explode") {action.action=Action::NativeSpell;event=2;}
+        else if(name=="Baal Cold Missiles") {action.action=Action::NativeSpell;event=1;}
+        else if(name=="Whirlwind") {action.action=Action::Whirlwind;event=1;}
+        else if(name=="Leap Attack") {action.action=Action::LeapAttack;event=1;}
         else if(name=="DiabRun") {action.action=Action::DiabloRun;event=1;}
         else if(name=="Cry Help") {action.action=Action::Rally;event=1;}
         else if(name=="MinionSpawner") {action.action=Action::SpawnMinion;event=1;}
@@ -218,7 +247,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         } else if(name=="Nest") {action.action=Action::Nest;event=record.ai=="VileMother"?2:4;}
         else if(name=="Resurrect2") action.action=Action::Resurrect;
         else if(name=="Bestow" || name=="ZakarumHeal") action.action=Action::Heal;
-        else if(name=="MonTeleport" || name=="Imp Teleport") {action.action=Action::Teleport;if(name=="Imp Teleport") event=1;}
+        else if(name=="MonTeleport" || name=="Imp Teleport" || name=="Baal Teleport" || name=="Baal Clone Teleport") {
+            action.action=Action::Teleport;if(name!="MonTeleport") event=1;
+        }
         else if(name=="Hydra") action.action=Action::Hydra;
         else if(name=="Siege Beast Stomp") {
             // Retail Do134 rejects an absent SrvMissileA before rolling damage.
@@ -238,9 +269,9 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         else if(name=="MonPowerStrike" || name=="MonIceSpear") {action=baseAttack("A1");event=1;}
         else if(name=="Mosquito") {action.action=Action::Mosquito;event=1;}
-        else if(name=="Submerge") {action.action=Action::Submerge;event=0;}
+        else if(name=="Submerge") {action.action=Action::Submerge;event=1;}
         else if(name=="Emerge") {action.action=Action::Animation;event=0;}
-        else if(name=="FetishInferno" || name=="MegademonInferno" || name=="Horror Arctic Blast" || name=="Imp Inferno" || name=="DiabLight") {
+        else if(name=="FetishInferno" || name=="MegademonInferno" || name=="Horror Arctic Blast" || name=="Imp Inferno" || name=="DiabLight" || name=="Baal Inferno") {
             action.action=Action::Inferno;event=name=="Horror Arctic Blast" || name=="Imp Inferno"?1:2;
             action.infernoFrame=record.infernoAnimation;action.infernoEndFrames=record.infernoLength;
             if(action.infernoFrame<0 || action.infernoEndFrames<=0 || !missile(skills.value(row,"srvmissilea"),rank)) return false;
@@ -272,13 +303,16 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             if(name=="Healing Vortex") {action.action=Action::SupportMissile;event=1;}
             if(name=="SuccubusBolt") action.action=Action::NativeMissile;
             if(name=="PrimeLightning" || name=="MephistoMissile") action.action=Action::NativeMissile;
-            if(name=="MephFrostNova" || name=="DiabFire") action.action=Action::Nova;
+            if(name=="MephFrostNova" || name=="DiabFire" || name=="Baal Nova") {
+                action.action=Action::Nova;if(name=="Baal Nova") event=1;
+            }
             action.missile=*prepared;
         }
         action.rank=uint8_t(rank);
-        // Mounted state16 takes its skill ID and mode from imp1, including
-        // variants whose own Sk5mode declares seq_impinferno instead of SC.
-        const auto actionMode=record.ai=="Imp" && name=="Imp Inferno"?std::string_view{"SC"}:stats.value(record.sourceRow,"Sk"+field+"mode");
+        // These AI branches choose a fixed mode instead of the slot mode.
+        // Baal's main handler passes S1 even though Sk2mode declares a sequence.
+        const auto actionMode=name=="Baal Inferno"?std::string_view{"S1"}:
+            record.ai=="Imp" && name=="Imp Inferno"?std::string_view{"SC"}:stats.value(record.sourceRow,"Sk"+field+"mode");
         if(!clockAction(archives,animations,sequences,record,actionMode,event,action)) return false;
         if(action.action==Action::Inferno && action.infernoFrame>=action.animation->frames) return false;
         const auto sourceMode=stats.value(record.sourceRow,"Sk"+field+"mode");
@@ -294,6 +328,14 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             ordinary->second.missile=rule.skillActions.at(uint16_t(id)).missile;
             ordinary->second.rank=uint8_t(rank);
         }
+    }
+    if(record.ai=="BaalThrone") {
+        const auto row=findSkillTableRow(skills,"skill","Baal Monster Spawn");
+        const auto id=skillTableNumber(skills,row,"Id");
+        const auto spawn=missile(skills.value(row,"srvmissile"),1);if(!spawn) return false;
+        server::MonsterAttackRule action;action.action=Action::NativeMissile;action.rank=1;action.missile=*spawn;
+        if(!clockAction(archives,animations,sequences,record,"S3",2,action)) return false;
+        rule.skillActions.insert_or_assign(uint16_t(id),std::move(action));
     }
     if(record.ai=="WillOWisp") {
         server::MonsterAttackRule cast;

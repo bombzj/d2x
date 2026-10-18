@@ -25,6 +25,8 @@
 
 namespace d2x {struct StatRuleCatalog;struct SkillFormulaCatalog;}
 namespace d2x::server {
+struct MonsterSpawnParameters {int nativeClass{-1};uint8_t nativeMode{1};int birthTicks{};};
+enum class MinionBirthProcedure {Spawner, BaalTentacle, BaalClone};
 struct PreparedMonster;
 // Value-only admission contracts; archive/table lookups belong to hosting.
 struct AttackAnimation { int frames{}, speed{}, actionFrame{}, startFrame{}; std::vector<uint8_t> events; };
@@ -36,7 +38,7 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell, DiabloRun } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell, DiabloRun, Whirlwind, LeapAttack } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};
@@ -49,6 +51,7 @@ struct MonsterAttackRule {
     std::optional<AnimationTiming> animation{};
     int animationAction{-1};
     bool animationSequence{};
+    int submergeHoldFrame{-1}; // MonSeq clock point whose displayed frame is zero.
     uint8_t animationEvent{1};
     std::vector<int> animationEvents{};
     std::vector<uint8_t> animationFlags;
@@ -153,6 +156,9 @@ struct MonsterRule {
     std::vector<int> resurrectionClasses;
     Vec spawnOffset;
     uint8_t spawnMode{1};
+    int spawnFallbackClass{-1};
+    int uberMinionState{-1};
+    std::array<int,4> baalTentacleClasses{{-1,-1,-1,-1}};
     int spawnTicks{}, skillMoveState{-1};
     int baseClass{}, blueState{-1}, redState{-1};
     std::map<uint8_t,int> aiPoseTicks{};

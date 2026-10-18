@@ -32,7 +32,7 @@ DomainResult<> System::monsterRunEvent(const FrameEvent &event,uint64_t tick) {
     auto &pending=release->second;auto &mode=clock->second;
     const auto formulas=source->rule.formulas;const auto &row=formulas->skills.at(pending.request.skill);
     if(!mode.movementAdvanced || mode.movementFrame!=tick) {
-        mode.runStopped=pending.hitReleased && !ports_.monsters.advanceDiabloRun(id,tick);
+        mode.runStopped=pending.hitReleased && !ports_.monsters.advanceScriptedMotion(id,tick);
         mode.movementFrame=tick;mode.movementAdvanced=true;
     }
     if(mode.runStopped) {

@@ -221,7 +221,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     }
     // Variant names are maintained beside the domain fact catalog.
     constexpr std::array names{"mana", "reposition", "life", "attack", "hit", "death", "item", "inventory", "character",
-        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status"};
+        "quest", "attribute", "travel", "object", "chat", "command", "npc-messages", "merchant", "ui", "waypoint", "state", "missile", "skill-pulse", "sound", "overlay", "item-targeting", "ground-drop", "npc-service", "ground-remove", "item-skill", "ground-restored", "hireling-list", "trade", "trade-items", "player-message", "chat-relation", "party-notice", "environment", "resources", "skill-end", "quest-status", "quest-effect", "monster-class-hint"};
     static_assert(names.size() == std::variant_size_v<server::DomainFact>);
     result["corpses"]=Json::array();
     for(const auto &corpse:s.corpses) result["corpses"].push_back({{"id",corpse.id.value},{"owner",corpse.owner.value},{"area",int(corpse.region)},{"localPosition",point(corpse.position)},{"container",corpse.items.value},{"recoverableExperience",corpse.recoverableExperience}});
@@ -244,7 +244,7 @@ Json debugServerSnapshot(const server::DiagnosticSnapshot &s, uint64_t since, ui
     const auto &a3=s.actThree;const auto &a4=s.actFour;const auto &a5=s.actFive;
     result["questExecution"]["actThree"]={{"figurineSource",a3.figurineSource.value},{"figurineDropped",a3.figurineDropped},{"gidbinnSpawned",a3.gidbinnSpawned},{"gidbinnDropped",a3.gidbinnDropped},{"orbSmashed",a3.orbSmashed},{"orbHits",a3.orbHits},{"mephistoSlain",a3.mephistoSlain}};
     result["questExecution"]["actFour"]={{"izualSlain",a4.izualSlain},{"ghostSpawned",a4.ghostSpawned},{"forgePlaced",a4.forgePlaced},{"forgeSmashed",a4.forgeSmashed},{"forgeHits",a4.forgeHits},{"seals",a4.seals},{"diabloSpawned",a4.diabloSpawned},{"diabloSlain",a4.diabloSlain}};
-    result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"wave",a5.wave},{"wavePrepared",a5.wavePrepared},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
+    result["questExecution"]["actFive"]={{"rescued",a5.rescued},{"anyaThawed",a5.anyaThawed},{"anyaSpawned",a5.anyaSpawned},{"ancientsActive",a5.ancientsActive},{"ancientsDefeated",a5.ancientsDefeated},{"throneDeparted",a5.throneDeparted},{"baalSlain",a5.baalSlain},{"tyraelSpawned",a5.tyraelSpawned}};
     result["den"]={{"remaining",s.denRemaining},{"cleared",s.denCleared},{"stages",Json::array()}};
     for(const auto &book:s.record.quests) result["den"]["stages"].push_back(book.at(questIndex(QuestId::DenOfEvil)).stage);
     result["quests"]=Json::array();

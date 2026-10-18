@@ -19,6 +19,7 @@ struct LevelRecord;
 struct Map;
 struct ClassicData;
 struct InventoryView;
+struct InventoryItemView;
 struct TownAutomapCell {
     Sprite image;
     Vec offset; // full-size native automap coordinates, before the /2 mini division
@@ -128,7 +129,7 @@ class SceneAssets {
     std::map<int, MonsterLight> monsterLights;
     std::map<std::string, GpuAnimation> petPortraits;
     std::string hirelingPotionHint, hirelingInventoryHint;
-    std::map<std::string, GpuAnimation> itemGround;
+    std::map<std::tuple<std::string, int, int>, GpuAnimation> itemGround;
     std::map<std::tuple<int, std::string, int, int>, GpuAnimation> itemIcons;
     std::array<GpuAnimation, 5> itemSockets;
     GpuAnimation panel, miniPanel, miniPanelButtons, miniPanelToggle,
@@ -163,6 +164,7 @@ class SceneAssets {
     const ProjectileVisual *ensureProjectile(int id);
     const SkillOverlayVisual *ensureOverlay(int id);
     void loadInventoryArt(const InventoryView &inventory, int palette);
+    const GpuAnimation *groundItemAnimation(const InventoryItemView &) const;
     const Sprite *inventoryIcon(const std::string &art, std::array<int, 2> transform,
                                 int palette, unsigned frame = 0) const;
     const ActorAnimation *actorAnimation(const ActorAnimationRequest &, int palette) const;

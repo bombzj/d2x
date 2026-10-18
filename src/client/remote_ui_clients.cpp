@@ -1215,6 +1215,7 @@ struct RemoteUiClients::Impl {
             projection.specialRow = item.specialRow;
             projection.iconCells = {di.width, di.height};
             projection.colorTransform = inventoryColorTransform(data, data.items, item);
+            projection.groundColorTransform = groundColorTransform(data, data.items, item);
             if (definition->equipment.isType("gold"))
                 projection.artFrame = item.quantity < 100 ? 0 : item.quantity < 500 ? 1 : item.quantity < 5000 ? 2 : 3;
             projection.socketContentsKnown = complete.has_value();

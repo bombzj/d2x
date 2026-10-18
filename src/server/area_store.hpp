@@ -81,6 +81,7 @@ struct AreaDefinition : AreaMetadata {
         MonsterRank rank{MonsterRank::Normal};
         std::string superUnique;
         int uniqueIndex{-1},minimum{},maximum{};
+        int mappedClass{-1}; // DATATBLS_MapSuperUniqueId(2, uniqueIndex).
         std::array<int,3> modifiers{};
         bool automatic{},stacks{};
         bool randomElite{};
@@ -199,6 +200,7 @@ class AreaStore {
     void moveRoomUnit(EntityId,RegionId,Vec) noexcept;
     void removeRoomUnit(EntityId) noexcept;
     void setMissileMask(RegionId,Vec,int size,bool occupied) noexcept;
+    void setNativePatternMask(RegionId,Vec,NativeCollisionPattern,uint16_t mask,bool occupied) noexcept;
     std::vector<EntityId> roomUnitOrder(RoomView) const;
     void recordMonsterDeath(EntityId) noexcept;
     std::array<EntityId,4> roomLastDead(RoomView) const noexcept;

@@ -142,6 +142,7 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
                 missile.path.assign(path.begin(),path.end());
             }
             if(request.finalParameters) missile.parameters=*request.finalParameters;
+            if(request.firstFinalParameters && &missile==&built.value->front()) missile.parameters=*request.firstFinalParameters;
             if(request.postCreationFrames) {
                 missile.nativeTotalFrames=nativeMissileFrameCount(*request.postCreationFrames);
                 missile.setCurrentFrame(*request.postCreationFrames);

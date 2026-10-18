@@ -39,6 +39,7 @@
 #include <functional>
 #include <set>
 #include <string>
+#include <string_view>
 #include <vector>
 namespace d2x::server::effects {struct AuraUnitPublication;}
 
@@ -99,6 +100,7 @@ struct Actor {
     bool impMountedAi{},impDetachDeathPending{};
     uint8_t impMountedSkill{},impMountedParameter{};
     int minionSpawnClass{-1};uint64_t minionSpawnClassAiRevision{};
+    int baalSpawnPreset{}; // Baal Monster Spawn's live SKILLS_Param1.
     bool whippedAi{};
     std::optional<int> changedClass;
     EntityId lastAttacker;
@@ -184,8 +186,10 @@ struct Actor {
     uint8_t aiPose{1}; uint64_t poseUntil{};
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
-    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};};
+    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};std::optional<MovementCollisionRule> collision;};
     std::optional<SkillMotion> skillMotion;
+    struct SkillReservation {Vec position;uint16_t clearMask{0x100};};
+    std::optional<SkillReservation> skillReservation;
     std::optional<Vec> spawnReservation;
     int nestSpawned{};
     Vec home;
@@ -206,6 +210,7 @@ struct Actor {
         return owner || conversion?UnitAlignment::Good:UnitAlignment(rule.alignment);
     }
     bool enemyTarget() const { return hostile && !sameAlignment(UnitAlignment::Good, alignment()) && !rule.environmentController; }
+    bool nativeAi() const { return !questNpc || rule.ai.kind==MonsterAiKind::BaalToStairs || rule.ai.kind==MonsterAiKind::BaalThrone || rule.ai.kind==MonsterAiKind::BaalTaunt || rule.ai.kind==MonsterAiKind::HellMeteor || rule.ai.kind==MonsterAiKind::CatapultSpotter; }
     bool damageable() const { return !restorationPending && !burrowed && !targetFlagsDisabled && !hatching && (questNpc?rule.stateTarget.attackable:((hostile && !rule.environmentController) || (rule.ai.kind==MonsterAiKind::GoodNpcRanged && rule.stateTarget.attackable) || amazonPet || (assassinPet && assassinPet->definition->attackable) || (druidPet && druidPet->definition->attackable) || necroSummon || hireling || conversion)); }
     bool combatCompanion() const { return bool(amazonPet) || bool(assassinPet) || bool(druidPet) || necroSummon || hireling || conversion; }
     bool amazonAttacker() const { return amazonPet && !amazonPet->decoy; }
@@ -279,12 +284,14 @@ class System {
     StepStatus advanceRestoration(uint64_t tick);
     DomainResult<> finishRestoration(const InactiveMonster &,uint64_t tick);
     void setStoredOwner(Actor &,EntityId) const;
+    DomainResult<> assignBaalSkill(EntityId,std::string_view,std::optional<int>,uint64_t);
     void initializeImpMount(Actor &) const;
     std::optional<Vec> nestBirthPoint(EntityId,Vec,uint64_t &) const;
     bool recacheHirelingRoom(Actor &);
     ComponentPaletteState prepareComponents(Actor &,const ComponentPaletteState *staged=nullptr) const;
     void publishComponents(ComponentPaletteState &) noexcept;
     DomainResult<Actor> prepareAdmissionActor(const Admission &,EntityId,uint64_t &random,ComponentPaletteState &,uint64_t itemCursor=0,const std::set<size_t> *stagedUniques=nullptr);
+    DomainResult<bool> diabloPrison(RegionId,Vec,int,uint64_t,bool probe,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> prepareAdmissionEquipment(Actor &,uint64_t &random,uint64_t itemCursor,const std::set<size_t> *stagedUniques);
     void registerPet(Actor &) noexcept;
     void publishInitialAi(Actor &) noexcept;
@@ -310,8 +317,14 @@ class System {
     DomainResult<> impRiderEvent(const FrameEvent &,uint64_t);
     void resetImpAi(EntityId);
     DomainResult<> setMinionSpawnClass(EntityId,int);
+    DomainResult<> startWhirlwindMotion(EntityId,Vec);
+    std::optional<Vec> leapAttackLanding(EntityId source,EntityId target,const std::function<uint16_t(RoomView,int32_t,int32_t)> &) const;
+    DomainResult<> reserveLeapAttack(EntityId source,Vec target);
+    DomainResult<> startLeapAttackMotion(EntityId source);
+    DomainResult<> settleDelayedDeath(EntityId,uint64_t);
     DomainResult<> spawnRemovedStateChild(EntityId,int skill,int rank,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> spawnDiabloPrison(RegionId,Vec,int nativeClass,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<bool> probeDiabloPrison(RegionId,Vec,int nativeClass,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
@@ -351,9 +364,12 @@ class System {
     void resumeMode(EntityId,uint64_t tick);
     DomainResult<> modeEvent(const FrameEvent &,uint64_t tick);
     DomainResult<> reinitializeAfterDeath(EntityId,uint64_t tick);
+    DomainResult<> reinitializeBaalToStairs(EntityId,uint64_t tick);
     DomainResult<> reinitializeWhipped(EntityId source,EntityId target,int nativeClass,uint64_t tick);
     void storeLastAttacker(EntityId target,EntityId source);
+    DomainResult<> setNativeTarget(EntityId,EntityId);
     void neutralMode(EntityId);
+    DomainResult<> suppressTreasure(EntityId);
     StepStatus advanceMode(EntityId,TickContext);
     DomainResult<> attackProfile(EntityId,std::shared_ptr<const StatList>,uint64_t expected,uint64_t next);
     DomainResult<> resetAiSelector(EntityId,uint64_t timer,uint64_t tick);
@@ -379,8 +395,8 @@ class System {
     DomainResult<> startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim={});
     DomainResult<> startSwarmMove(EntityId source,Vec target,uint64_t tick);
     DomainResult<> startDiabloRun(EntityId source,Vec target,int32_t velocity);
-    bool advanceDiabloRun(EntityId source,uint64_t tick);
-    void stopDiabloRun(EntityId source);
+    bool advanceScriptedMotion(EntityId source,uint64_t tick);
+    void stopScriptedMotion(EntityId source);
     bool advanceSkillMotion(Actor &,uint64_t tick);
     bool canLand(EntityId) const;
     DomainResult<> consumeRandom(EntityId,uint64_t expected,uint64_t next);
@@ -401,7 +417,12 @@ class System {
     bool canSpawnNestChild(EntityId,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision={}) const;
     DomainResult<> reserveNestSpawn(EntityId,Vec,bool active,uint64_t tick);
     DomainResult<EntityId> spawnNativeNestChild(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,std::optional<int> fallbackClass={});
-    DomainResult<EntityId> spawnMinionChild(EntityId,Vec,int skill,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<EntityId> spawnEvilHoleChild(EntityId,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<EntityId> spawnMinionChild(EntityId,Vec,int skill,MonsterSpawnParameters,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,MinionBirthProcedure=MinionBirthProcedure::Spawner);
+    DomainResult<> assignBaalNova(EntityId,uint64_t tick);
+    DomainResult<> assignBaalMonsterSpawn(EntityId,int mappedPreset,uint64_t tick);
+    DomainResult<std::optional<Vec>> findBaalTeleportPosition(EntityId,uint64_t,
+        const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<> teleport(EntityId,Vec,uint64_t tick,int heal = 0,bool nativeFreePosition = false);
     bool canNativeTeleport(EntityId,Vec,const std::function<uint16_t(RoomView,int32_t,int32_t)> &) const;
     DomainResult<> nativeTeleport(EntityId,Vec,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
@@ -447,7 +468,7 @@ class System {
     DomainResult<> prepareModifiers(PreparedModifiers);
     StepStatus finishModifiers(TickContext);
     DomainResult<> finishTrap(EntityId,uint64_t tick);
-    DomainResult<> scriptDeath(EntityId,uint64_t tick);
+    DomainResult<> scriptDeath(EntityId,uint64_t tick,EntityId source={});
     std::vector<Actor> prepareMinionDeaths(Actor,uint64_t tick,const std::map<EntityId,Actor> *staged=nullptr) const;
     DomainResult<> reduceShrineLife(EntityId,int64_t amount);
     DomainResult<> requestMove(const MoveRequest &);

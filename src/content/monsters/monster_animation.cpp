@@ -1,5 +1,6 @@
 #include "resources/archive.hpp"
 #include "monster_animation.hpp"
+#include <algorithm>
 #include <cctype>
 #include <string>
 #include <utility>
@@ -23,12 +24,17 @@ std::optional<MonsterMotionTiming> loadMonsterMotionTiming(const AnimDataTable &
     std::string key = std::string(token) + std::string(mode) + std::string(weapon);
     for (auto &ch : key) ch = char(std::toupper(static_cast<unsigned char>(ch)));
     const auto *record = animations.find(key);
-    if (!record || record->frames == 0 || record->frames > 144 ||
+    if (!record || record->frames == 0 ||
         record->speed <= 0 || record->speed > 65535)
         return std::nullopt;
-    const float duration = float(record->frames * 256) / record->speed / 25.f;
+    const float duration = float(record->frames) * 256.f / record->speed / 25.f;
     if (duration <= 0 || duration > 20) return std::nullopt;
-    return MonsterMotionTiming{duration,int(record->frames),record->speed,{record->frameFlags.begin(),record->frameFlags.begin()+record->frames}};
+    // AnimData has 144 event slots, independently of its animation length.
+    // UNITS_GetEventFrameInfo returns zero beyond those slots; Baal's
+    // original death animation has 200 frames.
+    std::vector<uint8_t> flags(record->frames);
+    std::copy_n(record->frameFlags.begin(),std::min(size_t(record->frames),record->frameFlags.size()),flags.begin());
+    return MonsterMotionTiming{duration,int(record->frames),record->speed,std::move(flags)};
 }
 std::optional<MonsterAttackTiming> loadMonsterAttackTiming(const AnimDataTable &animations,
                                                            std::string_view token, int mode,

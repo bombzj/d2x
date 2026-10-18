@@ -7,11 +7,27 @@
 #include "server/systems/world/system.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/transactions/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include <algorithm>
 namespace d2x::server::quests {
+DomainResult<> System::activateNihlathak(uint64_t tick) {
+    const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    const auto quest=QuestId::BetrayalOfHarrogath;const auto &definition=questDefinition(quest);
+    if(state_.actFive.nihlathakActivated || (state_.initialFlags[definition.nativeSlot]&0x8000) || state_.objectives[questIndex(quest)]) return done();
+    std::vector<EventBatch> batches;
+    for(const auto &[player,body]:ports_.players.all()) {
+        if(!body.entered) continue;
+        const auto &record=body.persistent.player;
+        const auto stage=record.quests.at(size_t(ports_.settings.difficulty))[questIndex(quest)].stage;
+        if((stage<definition.completedStage && !unavailable(player,record,quest)) || credited(player,quest))
+            batches.push_back({0,tick,{}, {AudienceKind::Player,player,body.area},{QuestStatusFact{quest,3,0}}});
+    }
+    if(!batches.empty()) {const auto accepted=ports_.events.publishGroup(std::move(batches));if(!accepted) return {accepted.status,{}};}
+    state_.actFive.nihlathakActivated=true;return done();
+}
 DomainResult<> System::activateSiegeBoss(EntityId id,uint64_t tick) {
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const auto *unit=ports_.monsters.find(id);
@@ -118,14 +134,19 @@ DomainResult<> System::operateActFive(const ActorContext &actor,EntityId source,
     if(operation==65 && int(actor.area)==120) {
         auto &world=state_.actFive;
         if(world.ancientsActive || world.ancientsDefeated) return {DomainStatus::Conflict,{}};
-        const auto &groups=ports_.areas.at(actor.area).definition.nativeQuestMonsters;
-        for(const auto name:ancientIdentities) if(!groups.contains(name)) return {DomainStatus::Unavailable,{}};
+        const auto message=ports_.areas.at(actor.area).definition.questObjectMessages.find(operation);
+        if(message==ports_.areas.at(actor.area).definition.questObjectMessages.end()) return {DomainStatus::Unavailable,{}};
         if(!unavailable(actor.player,record,QuestId::RiteOfPassage)) book[questIndex(QuestId::RiteOfPassage)].stage=std::max(book[questIndex(QuestId::RiteOfPassage)].stage,3u);
-        const auto result=commit(actor,std::move(record));
+        auto readers=world.ancientAltarReaders;readers.insert_or_assign(actor.player,ActFiveState::AncientReader{actor.actor,source,actor.areaGeneration});
+        transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(record)};
+        edit.facts.emplace_back(fact(actor.player,edit.player,actor.area));edit.facts.emplace_back(NpcMessagesFact{source,{{0,message->second}},2});
+        const auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+        const auto result=ports_.transactions.commit(*plan.value);
         if(result) {
             ports_.travel.closePortals(actor.area);
-            world.ancientsActive=true;world.ancientAt=actor.tick+20;
-            state_.objectModes[source]=2;
+            world.ancientAltar=source;world.ancientAltarReaders.swap(readers);
+            world.ancientAltarEnd=actor.tick+std::max(uint64_t{1},ports_.objects.read().objects.at(source).rule.openingTicks-1);
+            state_.objectModes[source]=1;
         }
         return result;
     }

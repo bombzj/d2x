@@ -5,9 +5,61 @@
 #include "server/systems/combat/participants.hpp"
 #include "gameplay/monsters/melee_decision.hpp"
 #include "gameplay/monsters/movement_math.hpp"
+#include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 namespace d2x::server::ai {
+NativeBossTarget acquireNativeBossTarget(const NativeAiTargetPorts &ports,const monsters::Actor &source,
+    const std::function<int(EntityId)> &score) {
+    const auto &area=ports.areas.at(source.area);
+    const combat::Participants participants{ports.players,ports.monsters,ports.social};
+    NativeBossTarget result;std::optional<NativeAiTarget> alternative;int alternativeScore{};
+    const auto position=[&](combat::ParticipantView unit) {
+        return unit.position()+ports.areas.at(unit.player?unit.player->area:unit.monster->area).definition.origin-area.definition.origin;
+    };
+    const auto sameAct=[&](combat::ParticipantView unit) {
+        return unit.id() && ports.areas.at(unit.player?unit.player->area:unit.monster->area).definition.act==area.definition.act;
+    };
+    const auto consider=[&](EntityId id,bool special=false,bool deadHead=false) {
+        const auto unit=participants.find(id);if(!unit.id()) return;
+        const int value=deadHead?0:score(id);
+        auto &maximum=special?alternativeScore:result.score;
+        auto &target=special?alternative:result.target;
+        if(value>maximum) {
+            maximum=value;const auto at=position(unit);
+            target=NativeAiTarget{{id,0,uint8_t(unit.monster?1:0)},at,unit.size(),monsterAiDistance(at,0,source.position)};
+        }
+        if(!special) ++result.count;
+    };
+    // A4610 walks each player head and its reverse-inserted pet chain. Only
+    // the head is culled; a dead head still contributes one to nCounter.
+    for(uint8_t slot=0;slot<8;++slot) for(const auto &[key,player]:ports.players.all()) {
+        (void)key;if(player.targetNodeIndex!=slot || !player.entered || !sameAct({&player,nullptr})) continue;
+        if(uint32_t(monsterAiDistance(position({&player,nullptr}),0,source.position))>=1020) continue;
+        consider(player.actor,false,player.persistent.player.hp<=0);
+        auto pets=ports.monsters.pets(player.player);
+        std::sort(pets.begin(),pets.end(),[&](EntityId left,EntityId right) {
+            return ports.monsters.find(left)->petRegistrationOrder>ports.monsters.find(right)->petRegistrationOrder;
+        });
+        for(const auto id:pets) consider(id);
+    }
+    std::vector<EntityId> wanderers;
+    for(const auto &[id,unit]:ports.monsters.read().actors) if(unit.wanderTargetOrder) wanderers.push_back(id);
+    std::sort(wanderers.begin(),wanderers.end(),[&](EntityId left,EntityId right) {
+        return ports.monsters.find(left)->wanderTargetOrder>ports.monsters.find(right)->wanderTargetOrder;
+    });
+    for(const auto id:wanderers) if(sameAct(participants.find(id))) consider(id);
+    for(const auto id:ports.monsters.specialTargets()) if(sameAct(participants.find(id))) consider(id,true);
+    if(alternative && alternative->distance<5 && (!result.target ||
+        !unitMeleeReach(area.definition.collision,source.position,source.rule.size,result.target->position,result.target->size,source.rule.meleeRange))) {
+        const Vec center{.5f,.5f};
+        if(!result.target || area.definition.collision.nativeUnitPath(source.position+center,result.target->position+center,
+            2,source.pathDistance,source.rule.collision).empty()) {
+            result.target=alternative;result.score=alternativeScore;
+        }
+    }
+    return result;
+}
 std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts &ports,const PlayerState &source) {
     const auto &area=ports.areas.at(source.area);const auto *room=area.definition.activation.room(source.position);
     if(!room) return {};const combat::Participants participants{ports.players,ports.monsters,ports.social};
@@ -95,7 +147,7 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
         for(const auto id:wanderers) consider(id,false,true);
         for(const auto id:ports_.monsters.specialTargets()) consider(id,true);
     } else if(const auto *room=area.definition.activation.room(source.position)) {
-        const auto current=RoomView{source.area,int(area.definition.origin.x)+room->x,int(area.definition.origin.y)+room->y};
+        const auto current=RoomView{source.area,(int(area.definition.origin.x)+room->x)/5,(int(area.definition.origin.y)+room->y)/5};
         const auto visit=[&](RoomView view) {for(const auto id:ports_.areas.roomUnitOrder(view)) consider(id);};
         if(confused && !missileRay) visit(current);
         else {

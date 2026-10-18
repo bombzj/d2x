@@ -51,7 +51,7 @@ std::optional<System::ShootableTarget> System::shootableTarget(const monsters::A
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     std::erase_if(state_.controllers, [&](const auto &entry) {
-        const auto *actor=ports_.monsters.find(entry.first);return !actor || (actor->life<=0 && entry.second.commands.empty());
+        const auto *actor=ports_.monsters.find(entry.first);return !actor || (!actor->alive() && entry.second.commands.empty());
     });
     return StepStatus::Complete;
 }
@@ -74,11 +74,11 @@ StepStatus System::think(EntityId id,TickContext tick) {
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     // One owner invocation. Early exits finish this native AI callback.
     do {
-        if(monster.questNpc || monster.rule.trap!=MonsterRule::Trap::None) continue;
-        // MPQ Idle / old monster_ai::PrisonDoor: a destructible gate never
-        // pursues or attacks, including its permitted content substitute.
-        if(monster.implementation==MonsterKind::PrisonDoor) {ports_.monsters.stop(id);continue;}
-        if (monster.life <= 0 || (monster.owner && !monster.conversion && !monster.revived())) continue;
+        if(!monster.nativeAi() || (monster.rule.trap!=MonsterRule::Trap::None && monster.rule.ai.kind!=MonsterAiKind::TrappedSoul)) continue;
+        // Idle destructibles have the original empty Fn000, with no pursuit
+        // or combat callback. Room/mode and damage handling remain shared.
+        if(monster.implementation==MonsterKind::PrisonDoor || monster.implementation==MonsterKind::Window) {ports_.monsters.stop(id);continue;}
+        if (!monster.alive() || (monster.owner && !monster.conversion && !monster.revived())) continue;
         auto [entry, fresh] = state_.controllers.try_emplace(id);
         auto &controller = entry->second;
         if (fresh) {
@@ -99,6 +99,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
             controller.observedAiFunctionRevision=monster.aiFunctionRevision;controller.function=function;controller.alternateAi=defer;
             if(!defer) {
                 controller.commands.clear();
+                if(monster.rule.ai.kind!=MonsterAiKind::Baal && monster.rule.ai.kind!=MonsterAiKind::BaalClone) controller.homeCommand.reset();
                 controller.regenerationBonus=0;
                 controller.curseParameters.fill(0);controller.phase=controller.loop=controller.thirdParameter=0;controller.commanded=false;controller.charged=false;
                 controller.pursuing=false;controller.target.reset();controller.carrier.reset();controller.nextPath=0;
@@ -239,9 +240,38 @@ StepStatus System::think(EntityId id,TickContext tick) {
             } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
             continue;
         }
+        if(monster.rule.ai.kind==MonsterAiKind::CatapultSpotter) {
+            blocked|=catapultSpotterFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::Catapult) {
+            blocked|=catapultFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::TrappedSoul) {
+            blocked|=trappedSoulFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::HellMeteor) {
+            blocked|=hellMeteorFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::BaalTaunt) {
+            blocked|=baalTauntFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::BaalThrone) {
+            blocked|=baalThroneFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::BaalToStairs) {
+            blocked|=baalToStairsFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
         if(monster.rule.ai.kind==MonsterAiKind::Idle) {
             ports_.monsters.neutralMode(id);controller.pursuing=false;controller.nextDecision=tick.tick+200;continue;
         }
+        if(monster.rule.ai.kind==MonsterAiKind::Diablo) {
+            blocked|=diabloFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::Baal || monster.rule.ai.kind==MonsterAiKind::BaalClone) {
+            blocked|=baalFamily(id,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::AncientMadawc) {blocked|=madawcFamily(id,tick,controller)==StepStatus::Blocked;continue;}
+        if(monster.rule.ai.kind==MonsterAiKind::AncientKorlic) {blocked|=korlicFamily(id,tick,controller)==StepStatus::Blocked;continue;}
         const auto acquired=acquireTarget(monster,tick,false,requireSight);
         std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2,distance=INT32_MAX;
         if(acquired) {target=acquired->unit;targetPosition=acquired->position;targetSize=acquired->size;distance=acquired->distance;}
@@ -299,11 +329,20 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 controller.nextDecision=tick.tick+(result?1:10);continue;
             }
         }
+        if(monster.rule.ai.kind==MonsterAiKind::EvilHole) {
+            blocked|=evilHoleFamily(id,distance,tick,controller)==StepStatus::Blocked;continue;
+        }
+        if(monster.rule.ai.kind==MonsterAiKind::Tentacle || monster.rule.ai.kind==MonsterAiKind::TentacleHead) {
+            blocked|=tentacleFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;
+        }
         if (!target) {
             const auto kind=monster.rule.ai.kind;
+            if(kind==MonsterAiKind::BaalTentacle) {blocked|=baalTentacleFamily(id,{},Vec{},0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::SuicideMinion || monster.whippedAi) {blocked|=suicideMinionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Overseer) {blocked|=overseerFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::MinionSpawner) {blocked|=minionSpawnerFamily(id,{},INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::AncientTalic) {blocked|=talicFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
+            if(kind==MonsterAiKind::Nihlathak) {blocked|=nihlathakFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Mephisto) {blocked|=mephistoFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Succubus || kind==MonsterAiKind::SuccubusWitch) {blocked|=succubusFamily(id,{},Vec{}-area.definition.origin,0,INT32_MAX,tick,controller)==StepStatus::Blocked;continue;}
             if(kind==MonsterAiKind::Minion) {blocked|=minionFamily(id,{},Vec{}-area.definition.origin,0,tick,controller)==StepStatus::Blocked;continue;}
@@ -367,9 +406,12 @@ StepStatus System::think(EntityId id,TickContext tick) {
             blocked|=fetishShamanAction(id,target,targetPosition,tick,controller)==StepStatus::Blocked;continue;
         }
         const auto &rules = monster.rule.ai;
+        if(rules.kind==MonsterAiKind::BaalTentacle) {blocked|=baalTentacleFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::SuicideMinion || monster.whippedAi) {blocked|=suicideMinionFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Overseer) {blocked|=overseerFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::MinionSpawner) {blocked|=minionSpawnerFamily(id,target,distance,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::AncientTalic) {blocked|=talicFamily(id,target,targetPosition,targetSize,tick,controller)==StepStatus::Blocked;continue;}
+        if(rules.kind==MonsterAiKind::Nihlathak) {blocked|=nihlathakFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Mephisto) {blocked|=mephistoFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Izual || rules.kind==MonsterAiKind::UberIzual) {blocked|=izualFamily(id,*target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}
         if(rules.kind==MonsterAiKind::Succubus || rules.kind==MonsterAiKind::SuccubusWitch) {blocked|=succubusFamily(id,target,targetPosition,targetSize,distance,tick,controller)==StepStatus::Blocked;continue;}

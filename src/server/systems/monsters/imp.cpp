@@ -52,7 +52,16 @@ DomainResult<> System::impRiderEvent(const FrameEvent &event,uint64_t tick) {
 }
 DomainResult<> System::impTeleport(EntityId id,EntityId target,Vec point,int skill,int rank,uint64_t tick,
     const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
-    const auto *source=find(id);if(!source || source->rule.ai.kind!=MonsterAiKind::Imp) return {DomainStatus::InvalidActor,{}};
+    const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
+    // Do129 also serves Nihlathak's coordinate-only cast. Its unowned,
+    // untargeted branch is GeneralTeleport and needs no Imp attachment state.
+    if(source->rule.ai.kind!=MonsterAiKind::Imp) {
+        if(!source->alive()) return {DomainStatus::InvalidActor,{}};
+        if(!source->rule.formulas || !source->rule.formulas->skills.contains(skill) || source->rule.formulas->skills.at(skill).number("srvdofunc")!=129)
+            return {DomainStatus::InvalidRequest,{}};
+        if(source->nativeOwner || target) return {DomainStatus::NotImplemented,{}};
+        return nativeTeleport(id,point,tick,collision);
+    }
     if(source->impDetachDeathPending) {
         const auto killed=scriptDeath(id,tick);
         if(killed) state_.actors.at(id).impDetachDeathPending=false;

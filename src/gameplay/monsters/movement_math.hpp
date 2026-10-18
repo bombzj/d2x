@@ -2,9 +2,11 @@
 #include "core/math.hpp"
 #include <cstdint>
 #include <array>
+#include <optional>
 namespace d2x {
 // Master monster_wander geometry, separated from Enemy and Grid ownership.
 int monsterAiDistance(Vec from, int size, Vec target);
+std::optional<Vec> catapultDirection(int chainOffset);
 Vec monsterWanderPoint(Vec from, int radius, uint64_t &random);
 Vec monsterRetreatPoint(Vec from, Vec target, int distance);
 std::array<Vec,3> monsterCirclePoints(Vec from, Vec target, int distance, uint64_t &random);

@@ -15,6 +15,7 @@ void prepareQuestWorld(Archives &archives,const ClassicData &data,PreparedWorldA
         server::AreaDefinition::NativePresetMonster source;
         source.definition=record->index;source.position=position;source.retry=true;
         source.superUnique=name;source.uniqueIndex=boss->index;source.stacks=boss->stacks;
+        source.mappedClass=(catalog.nativeClasses().empty()?0:catalog.nativeClasses().rbegin()->first+1)+boss->index;
         source.modifiers=boss->modifiers;source.automatic=boss->autoPosition;
         const int extra=boss->minGroup && boss->maxGroup?prepared.terrain.request.difficulty:0;
         source.minimum=boss->minGroup+extra;source.maximum=boss->maxGroup+extra;

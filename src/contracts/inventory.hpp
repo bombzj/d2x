@@ -53,6 +53,7 @@ struct InventoryItemView {
     std::vector<InventorySocketView> socketItems;
     bool socketContentsKnown = false;
     InventoryCellTone cellTone = InventoryCellTone::Unknown;
+    std::array<int, 2> groundColorTransform{};
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {

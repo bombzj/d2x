@@ -10,7 +10,7 @@
 namespace d2x::server::monsters {
 void System::prepareInitialTimers(Actor &unit,uint64_t tick) const {
     const FrameEventOwner owner{FrameEventUnit::Monster,unit.id};
-    if(unit.questNpc) return;
+    if(!unit.nativeAi()) return;
     if(!unit.initialAiTimer && (unit.alive() || unit.owner)) unit.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::AiThink,tick+1}));
     if(!unit.initialModeTimer) unit.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion({{},owner,FrameEventType::ModeChange,tick+1,true}));
 }
@@ -31,7 +31,7 @@ void System::publishInitialAi(Actor &unit) noexcept {
     unit.initialAiTimer.reset();
 }
 void System::resumeMode(EntityId id,uint64_t tick) {
-    const auto *unit=find(id);if(!unit || unit->questNpc) return;
+    const auto *unit=find(id);if(!unit || !unit->nativeAi()) return;
     const FrameEventOwner owner{FrameEventUnit::Monster,id};
     if(ports_.frameEvents.hasEvent(owner,FrameEventType::ModeChange)) return;
     ports_.frameEvents.insertPrepared({{},owner,FrameEventType::ModeChange,tick+1,true});
@@ -39,7 +39,7 @@ void System::resumeMode(EntityId id,uint64_t tick) {
 void System::roomClientsChanged(RoomView room,bool present,uint64_t tick) {
     std::vector<ActorPublication> publications;
     for(const auto id:ports_.areas.roomUnitOrder(room)) {
-        const auto *unit=find(id);if(!unit || unit->questNpc) continue;
+        const auto *unit=find(id);if(!unit || !unit->nativeAi()) continue;
         if(unit->revision==UINT64_MAX || unit->aiThinkRevision==UINT64_MAX)
             throw std::overflow_error("Monster room client revision exhausted");
         auto candidate=*unit;candidate.initialAiTimer.reset();
@@ -79,7 +79,7 @@ void System::scheduleAi(EntityId id,uint64_t due) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
     const auto &unit=found->second;
     const FrameEventOwner owner{FrameEventUnit::Monster,id};
-    if((!unit.alive() && (!unit.owner || unit.conversion)) || unit.questNpc) {
+    if((!unit.alive() && (!unit.owner || unit.conversion)) || !unit.nativeAi()) {
         ports_.frameEvents.cancelHandler(owner,FrameEventType::AiThink,0);return;
     }
     due=std::max(due,ports_.frameEvents.currentFrame()+1);

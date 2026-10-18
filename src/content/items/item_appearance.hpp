@@ -9,6 +9,8 @@ class ItemCatalog;
 struct ItemInstance;
 // D2Common inventory palette group and Colors.txt row; {0,0} means no shift.
 std::array<int, 2> inventoryColorTransform(const ClassicData &, const ItemCatalog &, const ItemInstance &);
+// Ground flippy uses Transform/chrtransform, separately from InvTrans/invtransform.
+std::array<int, 2> groundColorTransform(const ClassicData &, const ItemCatalog &, const ItemInstance &);
 void loadItemAppearances(std::vector<ItemDefinition> &items,
                          const std::map<std::string, DataTable, std::less<>> &tables,
                          const std::vector<std::string> &armorTypes);

@@ -109,6 +109,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     for (const auto &effect : clientMissiles_) {
         if (effect.age < 0 || effect.hiddenUntilCurrentFrame) continue;
         WorldDrawItem entry; entry.missile = effect.missileId;
+        entry.suppressMissileLight=effect.suppressLight;
         entry.position = clientMissilePosition(effect, map.grid, scene.terrainOrigin) - scene.terrainOrigin;
         entry.heading = effect.flight || effect.direction.length() <= 0 ? effect.velocity : effect.direction;
         entry.age = effect.age; entry.remaining = effect.duration - effect.age;
@@ -178,7 +179,7 @@ void SceneView::drawWorldLighting(const WorldDrawView &scene, std::span<const Wo
             const auto found = assets_.projectileVisuals.find(item.missile);
             if (found == assets_.projectileVisuals.end()) continue;
             const auto &light = found->second;
-            if (light.lightRadius > 0 && item.age * 25.f + .00001f >= light.initSteps)
+            if (!item.suppressMissileLight && light.lightRadius > 0 && item.age * 25.f + .00001f >= light.initSteps)
                 lights.push_back({item.position, float(light.lightRadius), light.lightColor});
         } else if (item.overlay >= 0) {
             const auto found = assets_.overlayLights.find(item.overlay);

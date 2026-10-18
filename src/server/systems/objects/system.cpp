@@ -97,9 +97,11 @@ void System::collision(RegionId area) {
         if (object.area != area) continue;
         schedule(object);
         const auto &rule = object.rule; const auto mode = size_t(object.mode);
-        if (rule.width <= 0 || rule.height <= 0 || (!rule.collision[mode] && !rule.light[mode])) continue;
+        const bool statueReleased=rule.initialization>=63 && rule.initialization<=65 && (object.mode==3 || object.mode==4);
+        const bool colliding=rule.collision[mode] && !statueReleased;
+        if (rule.width <= 0 || rule.height <= 0 || (!colliding && !rule.light[mode])) continue;
         values.push_back({id, int(object.position.x) - rule.width / 2, int(object.position.y) - rule.height / 2,
-            rule.width, rule.height, uint16_t(rule.collision[mode] ? rule.collisionMask : 0), rule.light[mode]});
+            rule.width, rule.height, uint16_t(colliding ? rule.collisionMask : 0), rule.light[mode]});
     }
     ports_.world.objectCollision(area, std::move(values));
 }
@@ -459,7 +461,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         };
         if(const auto status=advanceUrn();status!=StepStatus::Complete) return status;
         if(const auto mode=ports_.quests.objectMode(object.area,id,object.definition,object.rule.operation,tick.tick);mode && object.mode!=*mode) {
-            object.mode=*mode;object.until=0;++object.revision;changed.insert(object.area);
+            object.mode=*mode;object.until=ports_.quests.ancientObjectAnimationEnd(id);++object.revision;changed.insert(object.area);
         }
         if(object.rule.operation==25) {
             const auto &quest=ports_.quests.read().actTwo;

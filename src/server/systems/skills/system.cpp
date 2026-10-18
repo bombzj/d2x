@@ -49,7 +49,7 @@ bool channelled(const SkillCastSpec &skill) {
 }
 }
 void System::cancel(PlayerId player, EntityId actor) {
-    ports_.monsters.stopDiabloRun(actor);
+    ports_.monsters.stopScriptedMotion(actor);
     auto &pending_=runtime_->pending;
     ports_.companions.cancel(actor);
     pending_.erase(player);
@@ -58,6 +58,8 @@ void System::cancel(PlayerId player, EntityId actor) {
     runtime_->weaponStarts.erase(actor);
     runtime_->monsterWeaponStarts.erase(actor);
     runtime_->monsterLeapStarts.erase(actor);
+    runtime_->monsterWhirlwindStarts.erase(actor);
+    runtime_->monsterLeapAttackStarts.erase(actor);
     state_.cancel(actor);
     ports_.effects.scheduleModeEnd(actor,ports_.frameEvents.currentFrame());
     if(const auto mode=runtime_->monsterModes.find(actor);mode!=runtime_->monsterModes.end()) {
@@ -151,6 +153,19 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     return result;
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
+    for(auto it=runtime_->monsterModes.begin();it!=runtime_->monsterModes.end();) {
+        const auto id=it->first;++it;
+        if(!ports_.monsters.find(id)) {
+            // Quest withdrawal cancels the owner's frame events. No callback
+            // remains to retire a retained mode or contact on the next frame.
+            runtime_->monsters.erase(id);cancel({},id);
+        }
+    }
+    const auto missing=[&](const auto &entry) {return !ports_.monsters.find(entry.first);};
+    std::erase_if(runtime_->monsterWeaponStarts,missing);
+    std::erase_if(runtime_->monsterLeapStarts,missing);
+    std::erase_if(runtime_->monsterWhirlwindStarts,missing);
+    std::erase_if(runtime_->monsterLeapAttackStarts,missing);
     std::erase_if(runtime_->impEjections,[&](const auto &entry){return !ports_.monsters.find(entry.first);});
     auto &pending_=runtime_->pending;
     std::erase_if(runtime_->weaponStarts,[&](const auto &entry) {

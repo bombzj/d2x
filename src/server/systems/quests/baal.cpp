@@ -8,9 +8,50 @@
 #include "server/systems/missiles/system.hpp"
 #include "gameplay/quest/catalog.hpp"
 #include <stdexcept>
+#include <algorithm>
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "core/random.hpp"
 namespace d2x::server::quests {
+DomainResult<> System::baalThroneClassHints(EntityId id,unsigned wave,uint64_t tick) {
+    const auto *source=ports_.monsters.find(id);
+    if(!source || source->rule.ai.kind!=MonsterAiKind::BaalThrone || wave>=5) return {DomainStatus::InvalidActor,{}};
+    const auto &area=ports_.areas.at(source->area).definition;
+    const auto preset=area.nativeQuestMonsters.find("Baal Subject "+std::to_string(wave+1));
+    if(preset==area.nativeQuestMonsters.end()) return {DomainStatus::NotImplemented,{}};
+    std::vector<DomainFact> facts{MonsterClassHintFact{id,source->area,uint16_t(preset->second.definition)}};
+    // SUnitMsg::sub_6FCC6470 queues A4; it does not remove any server corpse.
+    const auto extra=wave==0?"fallen5":wave==1?"skmage_cold3":"";
+    if(*extra) {
+        const auto found=std::find_if(area.nativeMonsterClasses.begin(),area.nativeMonsterClasses.end(),[&](const auto &entry){return entry.second.identity.monster==extra;});
+        if(found==area.nativeMonsterClasses.end()) return {DomainStatus::NotImplemented,{}};
+        facts.push_back(MonsterClassHintFact{id,source->area,uint16_t(found->first)});
+    }
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},source->area},std::move(facts)});
+    return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+}
+DomainResult<> System::baalThroneSound(EntityId id,uint64_t tick) {
+    const auto *source=ports_.monsters.find(id);
+    if(!source || source->rule.ai.kind!=MonsterAiKind::BaalThrone) return {DomainStatus::InvalidActor,{}};
+    const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},source->area},{SoundFact{id,1,source->area,16}}});
+    return sent?DomainResult<>{DomainStatus::Applied,std::monostate{}}:DomainResult<>{sent.status,{}};
+}
+DomainResult<> System::openWorldstoneChamber(EntityId source) {
+    const auto *unit=ports_.monsters.find(source);
+    if(!unit || unit->rule.ai.kind!=MonsterAiKind::BaalToStairs) return {DomainStatus::InvalidActor,{}};
+    const auto removed=ports_.monsters.remove(source);if(!removed) return removed;
+    state_.actFive.throneDeparted=true;
+    return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<> System::spawnBaalWave(RegionId region,Vec position,int mappedPreset,uint64_t tick) {
+    const auto *area=ports_.areas.find(region);if(!area) return {DomainStatus::Unavailable,{}};
+    for(const auto &[name,preset]:area->definition.nativeQuestMonsters) if(preset.mappedClass==mappedPreset) {
+        const auto born=ports_.population.requestQuestBirth(region,name,{tick},position);
+        if(born.status==DomainStatus::Conflict || born.status==DomainStatus::Stale) return {DomainStatus::Capacity,{}};
+        if(born.status==DomainStatus::Unavailable) return {DomainStatus::Applied,std::monostate{}};
+        return born;
+    }
+    return {DomainStatus::NotImplemented,{}};
+}
 DomainResult<> System::initializeZoo(RegionId region,uint64_t tick) {
     if(state_.actFive.zooMonster) return {DomainStatus::Applied,std::monostate{}};
     const auto &candidates=ports_.areas.at(region).definition.zooCandidates;
@@ -76,25 +117,6 @@ StepStatus System::baalStep(TickContext tick) {
     for(const auto &[id,p]:ports_.players.all()) {
         if(!p.entered || p.persistent.player.hp<=0) continue;
         const auto &area=ports_.areas.at(p.area);const ActorContext actor{id,p.actor,p.area,area.generation,0,tick.tick};
-        if(int(p.area)==131 && !world.throneDeparted) for(const auto &throne:area.definition.npcs) if(const auto *unit=ports_.monsters.find(throne.id);throne.rule.code=="baalthrone" && unit && unit->alive() && (p.position-unit->position).length()<64) {
-            if(world.wavePrepared && world.wave<5 && ports_.population.questBirthComplete(p.area,"Baal Subject "+std::to_string(world.wave+1))) {
-                ++world.wave;world.wavePrepared=false;world.waveAt=tick.tick+100;
-            }
-            bool occupied=!ports_.population.coverage(p.area,population::Neighborhood{unit->position,64}).complete();
-            for(const auto &[monsterId,m]:ports_.monsters.read().actors) {(void)monsterId;if(m.area==p.area && !m.questNpc && !m.owner && m.life>0 && (m.position-unit->position).length()<64) occupied=true;}
-            for(const auto &[room,units]:ports_.monsters.read().inactive) {
-                if(room.first!=p.area) continue;
-                for(const auto &inactive:units)
-                    if(!ports_.monsters.find(inactive.id) && !inactive.dead && inactive.hostile && (inactive.position-unit->position).length()<64)
-                        occupied=true;
-            }
-            if(occupied || (world.waveAt && tick.tick<world.waveAt)) continue;
-            if(!world.wavePrepared) {world.wavePrepared=true;world.waveAt=tick.tick+250;continue;}
-            if(world.wave<5) {
-                const auto spawned=spawnQuestGroup(actor,"Baal Subject "+std::to_string(world.wave+1));
-                if(spawned) {++world.wave;world.wavePrepared=false;world.waveAt=tick.tick+100;}else blocked=true;
-            } else world.throneDeparted=true;
-        }
         if(int(p.area)==132 && !world.exitPortal && p.persistent.player.quests.at(size_t(ports_.settings.difficulty))[questIndex(QuestId::EveOfDestruction)].flags&baalTyraelSpoken) {
             const auto portal=ports_.travel.prepareSpecialPortal(actor,travel::SpecialPortalKind::BaalExit,0);
             if(portal) {ports_.travel.commitSpecialPortal(*portal.value);world.exitPortal=true;}else blocked=true;

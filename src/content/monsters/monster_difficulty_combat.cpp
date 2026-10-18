@@ -10,12 +10,14 @@ namespace d2x {
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel,bool ladderStats,MonsterStatPurpose purpose) {
     const bool npc=purpose==MonsterStatPurpose::NativeNpc;
+    const bool zeroDefaults=purpose!=MonsterStatPurpose::Combatant;
     if (difficulty < 0 || difficulty > 2 || areaLevel < (npc?0:1)) return std::nullopt;
     static constexpr std::array suffix{"", "(N)", "(H)"};
     const std::string ending = suffix[size_t(difficulty)];
     // Compiled MonStats blanks are zero. Service NPCs are living native
     // monsters with level/maxhp zero, rather than fabricated level-1 actors.
-    const auto nativeLevel = npc?std::optional{stats.number(row,"Level"+ending).value_or(0)}:stats.number(row,"Level"+ending);
+    // Idle destructibles also retain compiled zero fields, with a real combat level.
+    const auto nativeLevel = zeroDefaults?std::optional{stats.number(row,"Level"+ending).value_or(0)}:stats.number(row,"Level"+ending);
     const bool noRatio = stats.number(row, "noRatio").value_or(0) != 0;
     if (!nativeLevel || *nativeLevel < (npc?0:1)) return std::nullopt;
     const bool boss = stats.number(row, "boss").value_or(0) != 0;
@@ -25,7 +27,7 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
         if (levels.number(levelRow, "Level") == level) break;
     if (levelRow == levels.rows().size()) return std::nullopt;
     auto scale = [&](std::string_view field, std::string_view ratioField) -> std::optional<int> {
-        const auto source = npc?std::optional{stats.number(row,std::string(field)+ending).value_or(0)}:stats.number(row,std::string(field)+ending);
+        const auto source = zeroDefaults?std::optional{stats.number(row,std::string(field)+ending).value_or(0)}:stats.number(row,std::string(field)+ending);
         if (!source || *source < 0) return std::nullopt;
         if (noRatio) return source;
         const auto ratioName=ladderStats?ratioField:ratioField.substr(2);
@@ -46,7 +48,7 @@ std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     auto regen = stats.number(row, "DamageRegen");
     // Shipped MinionSpawner rows can have minHP > maxHP. Keep both native
     // values: the signed limited-random bound then yields minHP without a draw.
-    if (!lowHp || !highHp || *lowHp < (npc?0:1) || *highHp < 0 ||
+    if (!lowHp || !highHp || *lowHp < (zeroDefaults?0:1) || *highHp < 0 ||
         *lowHp > (1 << 23) - 1 || *highHp > (1 << 23) - 1 || (critical && (*critical < 0 || *critical > 100)) ||
         (regen && (*regen < 0 || *regen > 4096)))
         return std::nullopt;

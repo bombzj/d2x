@@ -28,6 +28,9 @@ void System::rebindObject(EntityId previous,EntityId current) {
     if(previous==current) return;
     if(auto mode=state_.objectModes.extract(previous);!mode.empty()) {mode.key()=current;state_.objectModes.insert(std::move(mode));}
     if(state_.actThree.gidbinnAltar==previous) state_.actThree.gidbinnAltar=current;
+    if(state_.actFive.ancientAltar==previous) state_.actFive.ancientAltar=current;
+    for(auto &[player,reader]:state_.actFive.ancientAltarReaders) {(void)player;if(reader.altar==previous) reader.altar=current;}
+    for(auto &ancient:state_.actFive.ancients) if(ancient.statue==previous) ancient.statue=current;
     if(state_.actOne.cairnPending && state_.actOne.cairnPending->owner==previous) state_.actOne.cairnPending->owner=current;
     if(state_.actOne.cainInvisibleObject==previous) state_.actOne.cainInvisibleObject=current;
     if(state_.actOne.cainStartObject==previous) state_.actOne.cainStartObject=current;
@@ -135,6 +138,15 @@ DomainResult<> System::execute(const ActorContext &actor,const Request &request)
             return {DomainStatus::Applied,std::monostate{}};
         }
         if(result) state_.actTwo.journals.erase(source);
+        return result;
+    }
+    if(request.action==Action::ReadAncientAltar) {
+        if(!request.npc || request.message!=20002 || int(actor.area)!=120 || p->persistent.player.hp<=0) return {DomainStatus::InvalidRequest,{}};
+        const auto reader=state_.actFive.ancientAltarReaders.find(actor.player);
+        if(reader==state_.actFive.ancientAltarReaders.end() || reader->second.altar!=*request.npc ||
+           reader->second.actor!=actor.actor || reader->second.generation!=actor.areaGeneration) return {DomainStatus::Stale,{}};
+        const auto result=readAncientAltar(actor,*request.npc);
+        if(result) state_.actFive.ancientAltarReaders.erase(actor.player);
         return result;
     }
     if(!request.npc || !request.message) return {DomainStatus::InvalidRequest,{}};

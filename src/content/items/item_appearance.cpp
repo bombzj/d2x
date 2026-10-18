@@ -4,12 +4,15 @@
 #include <string_view>
 
 namespace d2x {
-std::array<int, 2> inventoryColorTransform(const ClassicData &content, const ItemCatalog &catalog,
-                                          const ItemInstance &item) {
+namespace {
+enum class ItemColorTarget { Inventory, Ground };
+std::array<int, 2> itemColorTransform(const ClassicData &content, const ItemCatalog &catalog,
+                                     const ItemInstance &item, ItemColorTarget target) {
     const auto *definition = catalog.find(item.definition);
     if (!definition) return {};
     const auto &base = content.tables.at(definition->base.sourceTable);
-    const int group = base.number(definition->base.sourceRow, "InvTrans").value_or(0);
+    const bool inventory = target == ItemColorTarget::Inventory;
+    const int group = base.number(definition->base.sourceRow, inventory ? "InvTrans" : "Transform").value_or(0);
     auto transform = [&](int color) -> std::array<int, 2> {
         return group > 0 && group < 9 && color >= 0 && color < 21
             ? std::array{group, color} : std::array<int, 2>{};
@@ -36,7 +39,7 @@ std::array<int, 2> inventoryColorTransform(const ClassicData &content, const Ite
         if (item.specialRow < 0) return {};
         const auto &table = content.tables.at(item.quality == ItemQuality::Unique ? "uniqueitems" : "setitems");
         if (size_t(item.specialRow) >= table.rows().size()) return {};
-        return transform(colorCode(table.value(size_t(item.specialRow), "invtransform")));
+        return transform(colorCode(table.value(size_t(item.specialRow), inventory ? "invtransform" : "chrtransform")));
     } else if ((item.nativeFlags & 0x800u) && !item.socketedItems.empty()) {
         // Only the first inventory node is inspected, even if it is a rune/jewel.
         const auto &first = item.socketedItems.front();
@@ -54,6 +57,16 @@ std::array<int, 2> inventoryColorTransform(const ClassicData &content, const Ite
         return transform(colorCode(table.value(item.nativeAutoAffix - 1, "transformcolor")));
     }
     return {};
+}
+} // namespace
+std::array<int, 2> inventoryColorTransform(const ClassicData &content, const ItemCatalog &catalog,
+                                          const ItemInstance &item) {
+    return itemColorTransform(content, catalog, item, ItemColorTarget::Inventory);
+}
+std::array<int, 2> groundColorTransform(const ClassicData &content, const ItemCatalog &catalog,
+                                       const ItemInstance &item) {
+    // ITEMS_GetColor(NULL, item, ..., 0), as used by the world item renderer.
+    return itemColorTransform(content, catalog, item, ItemColorTarget::Ground);
 }
 void loadItemAppearances(std::vector<ItemDefinition> &items,
                          const std::map<std::string, DataTable, std::less<>> &tables,

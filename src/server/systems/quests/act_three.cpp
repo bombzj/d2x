@@ -224,7 +224,10 @@ std::optional<int> System::objectMode(RegionId region,EntityId id,int definition
     }
     if(area->definition.act==4) {
         if(operation==67) return state_.actFive.anyaThawed?2:0;
-        if(operation>=62 && operation<=64) return state_.actFive.ancientsDefeated?2:state_.actFive.ancientsActive?(tick<state_.actFive.ancientAt?3:4):0;
+        if(operation>=62 && operation<=64) {
+            if(const auto mode=state_.objectModes.find(id);mode!=state_.objectModes.end()) return mode->second;
+            return state_.actFive.ancientsDefeated?2:0;
+        }
         if(operation==66) return state_.actFive.ancientsDefeated?2:0;
         if(operation==70) return int(region)==132 || state_.actFive.throneDeparted?2:0;
     }

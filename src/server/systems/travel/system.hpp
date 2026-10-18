@@ -43,6 +43,7 @@ class System {
     DomainResult<> linkNativePortal(EntityId source,uint64_t tick);
     void commitSpecialPortal(SpecialPortalPlan plan) noexcept {state_.specialPortals.swap(plan.next);}
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
+    std::optional<std::pair<RegionId,Vec>> nativePortalPosition(EntityId) const;
     DomainResult<> useSpecial(const ActorContext &,const Request &,std::optional<int> remoteRange = {});
     DomainResult<> execute(const ActorContext &, const Request &);
     StepStatus step(TickContext, FrameFacts &);

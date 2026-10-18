@@ -51,6 +51,17 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         rule.serverHitFunction==41 || rule.serverHitFunction==42 || rule.serverHitFunction==46 || rule.serverHitFunction==49)
         return uint8_t((rule.explosion?0:2)|(rule.killOnHit?1:0));
     switch(rule.serverHitFunction) {
+    case 54: {
+        const auto *owner=ports_.monsters.find(missile.owner);
+        if(!target && owner && owner->rule.formulas && owner->rule.baseSkillRanks.contains(missile.skill.sourceId)) {
+            const auto skill=owner->rule.formulas->skillIds.find("baal monster spawn");
+            if(skill!=owner->rule.formulas->skillIds.end() && skill->second==missile.skill.sourceId) {
+                plan.operations.push_back({Advance::OperationKind::BaalWave,plan.baalWaves.size()});
+                plan.baalWaves.push_back({missile.area,missile.position,owner->baalSpawnPreset});
+            }
+        }
+        return 1;
+    }
     case 39: {
         auto observer=missile.position;
         if(const auto live=state_.missiles.find(missile.id);live!=state_.missiles.end() && live->second.area==missile.area)
@@ -430,7 +441,6 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         return 1;
     }
     case 55: {
-        if(!target) return 1;
         const auto *player=ports_.players.findActor(target);
         if(!player) return 2;
         if(rule.hitParameters[0]<=0 || player->persistent.player.mana<=0) return 1;

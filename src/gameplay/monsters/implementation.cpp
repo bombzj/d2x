@@ -46,7 +46,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "blunderbore1" || code == "blunderbore2" || code == "blunderbore3" ||
         code == "blunderbore4" || code == "blunderbore5" || code == "blunderbore6") return {MonsterKind::PinHead, false};
     if (code == "summoner") return {MonsterKind::Summoner, false};
-    if (code == "duriel") return {MonsterKind::Duriel, false};
+    if (code == "duriel" || code == "uberduriel") return {MonsterKind::Duriel, false};
     if (code == "sarcophagus") return {MonsterKind::Sarcophagus, false};
     if (code == "dopplezon" || code == "valkyrie") return {MonsterKind::AmazonPet, false};
     if (code == "claygolem") return {MonsterKind::ClayGolem, false};
@@ -57,6 +57,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "bonewall") return {MonsterKind::BoneWall, false};
     if (code == "boneprison1" || code == "boneprison2" || code == "boneprison3" || code == "boneprison4") return {MonsterKind::BonePrison, false};
     if (code == "prisondoor") return {MonsterKind::PrisonDoor, false};
+    if (code == "window1" || code == "window2") return {MonsterKind::Window, false};
     if (code == "hydra1") return {MonsterKind::Hydra1, false};
     if (code == "hydra2") return {MonsterKind::Hydra2, false};
     if (code == "hydra3") return {MonsterKind::Hydra3, false};
@@ -67,6 +68,19 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "doomknight2") return {MonsterKind::AbyssKnight, false};
     if (code == "doomknight3" || code == "dkmag1" || code == "dkmag2" || code == "dkmag3") return {MonsterKind::OblivionKnight, false};
     if (code == "mephisto") return {MonsterKind::Mephisto, false};
+    if (code == "ancientbarb1") return {MonsterKind::AncientTalic, false};
+    if (code == "ancientbarb2") return {MonsterKind::AncientMadawc, false};
+    if (code == "ancientbarb3") return {MonsterKind::AncientKorlic, false};
+    if (code == "evilhole1" || code == "evilhole2" || code == "evilhole3" || code == "evilhole4" || code == "evilhole5" || code == "demonhole") return {MonsterKind::EvilHole, false};
+    if (code == "tentacle1" || code == "tentacle2" || code == "tentacle3") return {MonsterKind::Tentacle, false};
+    if (code == "tentaclehead1" || code == "tentaclehead2" || code == "tentaclehead3") return {MonsterKind::TentacleHead, false};
+    if (code == "baaltentacle1" || code == "baaltentacle2" || code == "baaltentacle3" || code == "baaltentacle4" || code == "baaltentacle5") return {MonsterKind::BaalTentacle, false};
+    if (code == "nihlathakboss") return {MonsterKind::Nihlathak, false};
+    if (code == "baalcrab") return {MonsterKind::Baal, false};
+    if (code == "baalclone") return {MonsterKind::BaalClone, false};
+    if (code == "baalcrabstairs") return {MonsterKind::BaalToStairs, false};
+    if (code == "catapult1" || code == "catapult2" || code == "catapult3" || code == "catapult4") return {MonsterKind::Catapult, false};
+    if (code == "diablo" || code == "diabloclone") return {MonsterKind::Diablo, false};
     if (code == "uberizual") return {MonsterKind::UberIzual, false};
     if (code == "izual") return {MonsterKind::Izual, false};
     if (code == "succubuswitch1" || code == "succubuswitch2" || code == "succubuswitch3" || code == "succubuswitch4" || code == "succubuswitch5" || code == "succubuswitch6" || code == "succubuswitch7" || code == "succubuswitch8" || code == "succubuswitch9") return {MonsterKind::SuccubusWitch, false};
@@ -88,7 +102,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "vilemother1" || code == "vilemother2" || code == "vilemother3" || code == "vilemother4" || code == "vilemother5") return {MonsterKind::VileMother, false};
     if (code == "vilechild1" || code == "vilechild2" || code == "vilechild3" || code == "vilechild4" || code == "vilechild5" ||
         code == "painworm1" || code == "painworm2" || code == "painworm3" || code == "painworm4" || code == "painworm5") return {MonsterKind::VileDog, false};
-    if (code == "andariel") return {MonsterKind::Andariel, false};
+    if (code == "andariel" || code == "uberandariel") return {MonsterKind::Andariel, false};
     if (code == "smith") return {MonsterKind::Smith, false};
     if (code == "hephasto") return {MonsterKind::Smith, false};
     if (code == "griswold") return {MonsterKind::Griswold, false};

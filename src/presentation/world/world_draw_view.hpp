@@ -26,6 +26,7 @@ struct WorldDrawItem {
     bool loop = false;
     int height = 1;
     std::optional<int> missileFrame;
+    bool suppressMissileLight{};
 };
 struct WorldDrawView {
     struct Alert { EntityId unit; Vec position; };

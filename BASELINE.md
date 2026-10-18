@@ -26,7 +26,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 地图／世界 | 五幕地图生成及客户端房间重建已有原版瓦片／静态碰撞对照；宿主已改为每幕逐房间物化，原DLL、原版实机轨迹及包内双客户端TCP/IP探索、留守／卸载／重入有限对照通过；连续跨区寻路、旅行、探索缓存及常见环境物件 | 原版混合客户端及更广泛多人交错、完整单位随机／恢复、蓝图／休眠实体回收及特殊内容仍有缺口；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存、装备、掉落、商店、合成、角色成长及死亡／尸体；掉落双流、冻结批次、逐操作属性及指定词缀已纳入Release构建；生成、镶嵌及保存重入获有限观察 | 原版同帧出生／逐件落点时序、全来源／属性组合仍未精确认证，复杂争用、硬核与多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／独立伙伴施法及德鲁伊变形／召唤等现有程序已纳入Release构建；历史普通攻击与野外怪物／物件观察只覆盖相应包，其他技能运行范围见专题 | 全技能与来源组合验收、完整双持与触发组合、完整PvP规则；[刺客进度](docs/gameplay/skills/ASSASSIN.md)、[技能](docs/gameplay/skills/README.md)、[战斗](docs/gameplay/combat/FACTIONS.md) |
-| 怪物／伙伴 | 第一、第二幕三难度怪物行为、精英／首领、佣兵及部分召唤物；第三至第五幕已按家族登记01至72项源码，含议会、Izual／UberIzual、Mephisto及第五幕专用家族 | Diablo第73项仍为替身，古代人／Baal／Nihlathak等专用程序、Clt54连续喷火、完整休眠／随机交错及全难度战斗验收仍缺；[逐项台账](docs/gameplay/monsters/ACT3.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
+| 怪物／伙伴 | 第一、第二幕三难度怪物行为、精英／首领、佣兵及部分召唤物；第三至第五幕已按家族登记01至111项源码并纳入Release两包，最新仅做入场／显示／退出冒烟；含议会、Izual／UberIzual、Mephisto、Diablo／clone、Nihlathak、Madawc、Talic、Korlic、Baal／clone及第五幕专用家族 | 扩展首领及环境专用程序、Clt54完整客户端随机／动画核对、完整休眠／随机交错及全难度战斗验收仍缺；[逐项台账](docs/gameplay/monsters/ACT3.md)、[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕个人任务主流程、组队任务及奖励保存 | 复杂剧情、机关和特殊多人任务；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
 | 多人／表现 | 组队、聊天、交易、敌意、共享收益及相关界面；物品提示及库存原调色、镶孔叠层、无形混色与定位已纳入Release两包，代表物品显示及重入获有限观察；自动地图原版大小／定位、PL2 Fade和方向键事件平移已纳入Release客户端包，画面与操作待用户测试 | 特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
 

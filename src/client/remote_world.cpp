@@ -927,6 +927,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         event.source=key(r);event.skill=r.u16();r.finish();combatEvent(w,std::move(event));
         break;
     }
+    case 0x89: {
+        const auto effect=r.u8();r.finish();
+        if(effect<20) w.questEffects|=uint32_t{1}<<effect;
+        // Retail effect18 only sets this bit; its immediate callback is null.
+        break;
+    }
     case 0xA3: {
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Skill;
         event.flags = r.u8(); event.skill = r.u16(); event.level = r.u16();

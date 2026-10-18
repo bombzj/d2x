@@ -30,7 +30,11 @@ void prepareObjects(Archives &archives, const ClassicData &content, PreparedWorl
     const auto rows = decodeTable(archives.read("data/global/excel/objects.txt"));
     const DataTable objectTable(archives.read("data/global/excel/objects.txt"));
     const DataTable missiles(archives.read("data/global/excel/missiles.txt"));
-    if(request.act==4) {ClassicStrings strings(archives);if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);}
+    if(request.act==4) {
+        ClassicStrings strings(archives);
+        if(!strings.speech(20131).empty()) area.questObjectMessages.emplace(67,20131);
+        if(!strings.speech(20002).empty()) area.questObjectMessages.emplace(65,20002);
+    }
     const DataTable groups(archives.read("data/global/excel/objgroup.txt"));
     const auto &monsters=content.tables.at("monstats");
     for(size_t row=0;row<monsters.rows().size();++row) {

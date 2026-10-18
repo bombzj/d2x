@@ -93,6 +93,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
                 program.hitChildren[0],program.hitParameters[0],program.hitChildren[1],program.hitChildren[2],program.hitChildren[3],
                 program.hitParameters[1],program.hitParameters[2]});
         }
+        if(program.function==55) if(const auto cloud=names.find("ancient death cloud");cloud!=names.end()) program.children[0]=cloud->second;
         clientMissilePrograms.emplace(id, program);
         if (program.hitFunction == 3 && (program.hitChildren[1] >= 0 || program.hitChildren[2] >= 0))
             projectileImpactVariants.emplace(id, std::array{program.hitChildren[1], program.hitChildren[2]});

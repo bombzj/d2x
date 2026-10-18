@@ -3,6 +3,7 @@
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_difficulty_combat.hpp"
 #include "content/monsters/monster_experience.hpp"
+#include "content/monsters/monster_ai_data.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
 #include "core/random.hpp"
@@ -43,13 +44,20 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     if(rule.minimumLife<=0 || rule.maximumLife<rule.minimumLife) return {};
     rule.defense=scale("AC","L-AC");rule.damageRegen=stats.number(record->sourceRow,"DamageRegen").value_or(0);rule.criticalChance=stats.number(record->sourceRow,"Crit").value_or(0);
     rule.coldEffect=record->coldEffect[size_t(request.difficulty)];prepareMonsterStateRules(data,record->sourceRow,rule);rule.stunState=data.states.at("stunned").definition.id;
-    rule.noTreasure=rule.trap==Trap::Soul;
+    if(rule.trap==Trap::Soul) {
+        const auto ai=loadMonsterAiProfile(stats,record->sourceRow,record->ai,request.difficulty);if(!ai) return {};
+        rule.ai=*ai;
+    }
     rule.hitStates={data.states.at("cold").definition,data.states.at("poison").definition,{}};
     constexpr const char *resistance[]{"ResDm","ResMa","ResFi","ResLi","ResCo","ResPo"};for(size_t i=0;i<6;++i) rule.resistances[i]=stats.number(record->sourceRow,std::string(resistance[i])+suffix).value_or(0);
     for(size_t i=0;i<8;++i) rule.trapParameters[i]=stats.number(record->sourceRow,"aip"+std::to_string(i+1)+suffix).value_or(0);
     if(!prepareMonsterComponents(data,*record,rule)) return {};
     const auto animationSource = archives.prepared<AnimDataTable>([&] { return AnimDataTable(archives.read("data/global/animdata.d2")); });
     const auto &animations = *animationSource;
+    if(rule.trap==Trap::Soul) {
+        if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) return {};
+        rule.decisionTicks=rule.neutralDelayTicks;
+    }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const auto make=[&](std::string mode,std::string missile,int rank,bool sequence=false)->std::optional<server::MonsterAttackRule> {
         const int event=rule.trap==Trap::Turret?4:missile.empty()?1:2;
@@ -61,6 +69,14 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
         if(!timing && !motion) return {};
         server::MonsterAttackRule attack;attack.duration=std::max(1,int(std::ceil((timing?timing->duration:motion->duration)*25)));attack.release=timing?std::clamp(int(std::ceil(timing->impact*25)),1,attack.duration):attack.duration;attack.rank=uint8_t(rank);
         attack.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="s2"?9:4;
+        if(rule.trap==Trap::Soul) {
+            attack.useAttackRate=lower=="a1" || lower=="a2";
+            attack.animationEvent=uint8_t(event);
+            attack.animation=AnimationTiming{timing?timing->frames:motion->frames,timing?timing->speed:motion->speed};
+            attack.animationAction=timing?timing->actionFrame:0;
+            attack.animationFlags=timing?timing->flags:motion->flags;
+            if(lower=="s1" || lower=="s2") {attack.action=server::MonsterAttackRule::Action::Animation;attack.animationEvent=0;}
+        }
         const std::string slot=lower=="a2"?"A2":"A1";
         attack.minimum=scale(slot+"MinD","L-DM");attack.maximum=scale(slot+"MaxD","L-DM");attack.rating=scale(slot+"TH","L-TH");
         if(!missile.empty()) {

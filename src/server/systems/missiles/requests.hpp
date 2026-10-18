@@ -81,6 +81,7 @@ struct NativeSpawn {
     uint32_t initialSeed{};
     std::optional<int32_t> nativeVelocity;
     std::optional<std::array<int32_t,2>> finalParameters;
+    std::optional<std::array<int32_t,2>> firstFinalParameters; // Post-wrapper edit of its returned missile only.
     int initializationIndex{};
     std::optional<int> totalFrames;
     std::optional<EntityId> storedOwner;

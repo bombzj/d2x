@@ -75,10 +75,16 @@ struct ActFourState {
 };
 struct ActFiveState {
     bool siegeBossActivated{};
+    bool nihlathakActivated{};
     bool anyaThawed{},anyaSpawned{},anyaPortal{},ancientsActive{},ancientsDefeated{},throneDeparted{},baalSlain{},tyraelSpawned{},exitPortal{};
-    unsigned rescued{},wave{};
-    uint64_t ancientAt{},waveAt{};
-    bool wavePrepared{};
+    unsigned rescued{};
+    uint64_t ancientAt{};
+    struct Ancient {EntityId statue,monster;uint64_t birthAt{},animationEnd{};bool spawned{},dead{},restorePending{},deathFx{},deathFxMissile{};};
+    std::array<Ancient,3> ancients;
+    EntityId ancientAltar;
+    struct AncientReader {EntityId actor,altar;uint64_t generation{};};
+    std::map<PlayerId,AncientReader> ancientAltarReaders;
+    uint64_t ancientRestoreAt{},ancientAltarEnd{};
     Vec baalPosition;
     EntityId baalFxSource;
     bool baalFxStarted{};

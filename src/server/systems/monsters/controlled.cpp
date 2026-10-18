@@ -250,11 +250,11 @@ ActorPublication System::prepareActorPublication(std::map<EntityId,Actor> actors
             candidate.initialWakeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::MonsterModifier,ports_.frameEvents.currentFrame()+75,false,0,41}));
         if(!live || (!live->alive() && candidate.alive())) prepareInitialTimers(candidate,ports_.frameEvents.currentFrame());
-        if(!candidate.questNpc &&
+        if(candidate.nativeAi() &&
            (!live || candidate.alive()!=live->alive()) && (candidate.alive() || candidate.owner) && !candidate.initialAiTimer)
             candidate.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::AiThink,ports_.frameEvents.currentFrame()+1}));
-        if(!candidate.questNpc && (!live || (!live->alive() && candidate.alive())) && !candidate.initialModeTimer)
+        if(candidate.nativeAi() && (!live || (!live->alive() && candidate.alive())) && !candidate.initialModeTimer)
             candidate.initialModeTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
                 {{},{FrameEventUnit::Monster,id},FrameEventType::ModeChange,ports_.frameEvents.currentFrame()+1,true}));
     }

@@ -11,6 +11,7 @@
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
 #include "server/systems/attributes/monster_resources.hpp"
+#include "server/systems/attributes/monster_sources.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/skills/evaluation.hpp"
 #include "core/random.hpp"
@@ -427,8 +428,8 @@ DomainResult<> System::setMinionSpawnClass(EntityId id,int nativeClass) {
     return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::canSpawnNestChild(EntityId id,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) const {
-    const auto *nest=find(id);if(!nest || nest->life<=0 || (!nest->rule.nestChild && nest->rule.ai.kind!=MonsterAiKind::GenericSpawner)) return false;
-    if(nest->rule.ai.kind==MonsterAiKind::GenericSpawner) {
+    const auto *nest=find(id);if(!nest || nest->life<=0 || (!nest->rule.nestChild && nest->rule.ai.kind!=MonsterAiKind::GenericSpawner && nest->rule.ai.kind!=MonsterAiKind::Nihlathak)) return false;
+    if(nest->rule.ai.kind==MonsterAiKind::GenericSpawner || nest->rule.ai.kind==MonsterAiKind::Nihlathak) {
         if(!collision) return false;
         const auto &area=ports_.areas.at(nest->area).definition;
         // Fn129 probes EvilHut's native preflight (+2,+4), independently
@@ -483,22 +484,116 @@ DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uin
     }
     return {DomainStatus::Applied,born};
 }
-DomainResult<EntityId> System::spawnMinionChild(EntityId id,Vec position,int skill,uint64_t tick,
+DomainResult<EntityId> System::spawnEvilHoleChild(EntityId id,uint64_t tick,
     const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
-    const auto *source=find(id);if(!source || !source->rule.nestChild) return {DomainStatus::InvalidActor,{}};
+    const auto *source=find(id);
+    if(!source || !source->alive() || source->rule.ai.kind!=MonsterAiKind::EvilHole) return {DomainStatus::InvalidActor,{}};
+    const auto *prototype=source->rule.nestChild.get();if(!prototype) return {DomainStatus::Unavailable,{}};
+    const auto &area=ports_.areas.at(source->area).definition;
+    const auto global=source->position+area.origin;
+    const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
+    if(!room) return {DomainStatus::Applied,EntityId{}};
+    const auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
+    auto identity=prototype->identity;identity.origin=SpawnOrigin::Summoned;identity.ownerSpawnKey.clear();
+    identity.spawnKey=source->identity.spawnKey+".hole-child."+std::to_string(ports_.ids.cursor());
+    Admission request{identity,prototype->implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,prototype->rule,{},tick};
+    request.birthTicks=source->rule.spawnTicks;
+    // Fn076 uses radius 2 and flags 0x42: no normal modifiers or party.
+    auto birth=prepareRoomSpawn(request,*loan.value,2,{},false,collision);
+    if(!birth) return {birth.status,{}};
+    const auto born=(*birth.value)->actor();
+    std::vector<DomainFact> facts;
+    if(born) {
+        auto &child=(*birth.value)->data_->actors.actors.at(born);
+        child.rule.noExperience=child.rule.noTreasure=true;child.rewardComplete=true;
+        child.admissionRule=std::make_shared<const MonsterRule>(child.rule);
+        if(source->rule.uberMinionState>=0) {
+            child.aiStates.insert(source->rule.uberMinionState);
+            facts.emplace_back(StateFact{born,1,child.area,source->rule.uberMinionState,true});
+            facts.emplace_back(OverlayFact{born,1,child.area,202});
+        }
+    }
+    if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
+    if(!facts.empty()) {
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},room->area},std::move(facts)});
+        if(!sent) return {sent.status,{}};
+    }
+    (*birth.value)->publish();return {DomainStatus::Applied,born};
+}
+DomainResult<std::optional<Vec>> System::findBaalTeleportPosition(EntityId id,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    const auto *unit=find(id);if(!unit || !unit->alive() || !collision) return {DomainStatus::InvalidActor,{}};
+    const auto &area=ports_.areas.at(unit->area).definition;
+    const auto *bounds=area.activation.room(unit->position);if(!bounds) return {DomainStatus::Unavailable,{}};
+    const auto prototype=area.nativeMonsterClasses.find(unit->rule.nativeClass);
+    if(prototype==area.nativeMonsterClasses.end()) return {DomainStatus::NotImplemented,{}};
+    const RoomView room{unit->area,(int(area.origin.x)+bounds->x)/5,(int(area.origin.y)+bounds->y)/5};
+    auto loan=ports_.areas.roomRandom(room);if(!loan) return {loan.status,{}};
+    std::optional<Vec> position;
+    for(int attempt=0;attempt<20;++attempt) {
+        // MonsterRegion::sub_6FC66260 replaces its input coordinates with
+        // room-seed draws. With a7=0 it skips warp exclusion, not probing.
+        const Vec point{float(bounds->x+1+int(limitedRandom(loan.value->next,uint32_t(bounds->width-1)))),
+            float(bounds->y+1+int(limitedRandom(loan.value->next,uint32_t(bounds->height-1))))};
+        auto identity=prototype->second.identity;identity.spawnKey="baal-teleport-probe."+std::to_string(id.value);
+        Admission request{identity,prototype->second.implementation,unit->area,point,true,prototype->second.rule,{},tick};
+        const auto probe=searchRoomSpawn(request,*loan.value,-1,collision);if(!probe) return {probe.status,{}};
+        if(*probe.value) {position=**probe.value;break;}
+    }
+    if(!ports_.areas.validateRoomRandom(*loan.value)) return {DomainStatus::Stale,{}};
+    ports_.areas.publishRoomRandom(*loan.value);
+    return {DomainStatus::Applied,std::optional<std::optional<Vec>>{std::in_place,position}};
+}
+DomainResult<> System::assignBaalNova(EntityId id,uint64_t tick) {
+    return assignBaalSkill(id,"baal nova",{},tick);
+}
+DomainResult<> System::assignBaalMonsterSpawn(EntityId id,int mappedPreset,uint64_t tick) {
+    if(mappedPreset<0) return {DomainStatus::InvalidRequest,{}};
+    return assignBaalSkill(id,"baal monster spawn",mappedPreset,tick);
+}
+DomainResult<> System::assignBaalSkill(EntityId id,std::string_view name,std::optional<int> mappedPreset,uint64_t tick) {
+    const auto *live=find(id);if(!live || !live->alive() || !live->rule.formulas) return {DomainStatus::InvalidActor,{}};
+    if(live->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    const auto found=live->rule.formulas->skillIds.find(std::string(name));
+    if(found==live->rule.formulas->skillIds.end() || !live->rule.skillActions.contains(found->second)) return {DomainStatus::Unavailable,{}};
+    const auto &program=live->rule.formulas->skills.at(found->second);
+    if(program.passiveState>0) return {DomainStatus::NotImplemented,{}};
+    auto candidate=*live;const auto *states=ports_.effects.unitEffects(id);
+    // MainSkillHandler / BaalThrone assign rank 1. The original difficulty
+    // bonus is not reapplied by SKILLS_AssignSkill.
+    attributes::assignMonsterSkill(candidate,states?*states:CombatEffectSet{},found->second,1,tick,{});
+    if(mappedPreset) candidate.baalSpawnPreset=*mappedPreset;
+    ++candidate.revision;
+    auto plan=ports_.effects.prepareDamageStates(std::move(candidate),{},tick);
+    if(!ports_.effects.validateAuraUnits(plan)) return {DomainStatus::Conflict,{}};
+    if(!plan.facts.empty()) {
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},live->area},std::move(plan.facts)});
+        if(!sent) return {sent.status,{}};
+    }
+    ports_.effects.publishAuraUnits(plan);return {DomainStatus::Applied,std::monostate{}};
+}
+DomainResult<EntityId> System::spawnMinionChild(EntityId id,Vec position,int skill,MonsterSpawnParameters parameters,uint64_t tick,
+    const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision,MinionBirthProcedure procedure) {
+    const auto *source=find(id);if(!source) return {DomainStatus::InvalidActor,{}};
     const auto &originArea=ports_.areas.at(source->area).definition;
+    const bool nativeBaal=procedure!=MinionBirthProcedure::Spawner;
+    const bool clone=procedure==MinionBirthProcedure::BaalClone;
+    const PreparedMonster *prototype=source->rule.nestChild && source->rule.nestChild->rule.nativeClass==parameters.nativeClass?source->rule.nestChild.get():nullptr;
+    if(!prototype) if(const auto found=originArea.nativeMonsterClasses.find(parameters.nativeClass);found!=originArea.nativeMonsterClasses.end()) prototype=&found->second;
+    if(!prototype) return {nativeBaal?DomainStatus::NotImplemented:DomainStatus::Unavailable,{}};
+    if(parameters.nativeMode!=1 && parameters.nativeMode!=8 && !(nativeBaal && parameters.nativeMode==4)) return {DomainStatus::NotImplemented,{}};
     const auto global=position+originArea.origin;
     const auto room=ports_.areas.roomAtPosition(source->area,source->position,int(std::floor(global.x)),int(std::floor(global.y)));
     if(!room) return {DomainStatus::Unavailable,{}};
     auto loan=ports_.areas.roomRandom(*room);if(!loan) return {loan.status,{}};
-    const auto &prototype=*source->rule.nestChild;
-    auto identity=prototype.identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
+    auto identity=prototype->identity;identity.ownerSpawnKey.clear();identity.origin=SpawnOrigin::Summoned;
     identity.spawnKey=source->identity.spawnKey+".minion-child."+std::to_string(ports_.ids.cursor());
-    Admission request{identity,prototype.implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,prototype.rule,{},tick};
-    request.birthTicks=source->rule.spawnTicks;
+    Admission request{identity,prototype->implementation,room->area,global-ports_.areas.at(room->area).definition.origin,true,prototype->rule,{},tick};
+    request.birthTicks=parameters.birthTicks;
+    if(clone) request.minionOwner=id;
     auto birth=prepareRoomSpawn(request,*loan.value,-1,{},false,collision);
     if(!birth) return {birth.status,{}};
-    if(!(*birth.value)->actor()) {
+    if(!(*birth.value)->actor() && !nativeBaal) {
         // The failed origin probe consumed the room's orientation/sign
         // draws. Continue the same loan through the four-ring fallback.
         *loan.value=*(*birth.value)->data_->room;
@@ -511,9 +606,44 @@ DomainResult<EntityId> System::spawnMinionChild(EntityId id,Vec position,int ski
         child.rule.noExperience=child.rule.noTreasure=true;child.rewardComplete=true;
         child.admissionRule=std::make_shared<const MonsterRule>(child.rule);
         setStoredOwner(child,id);
+        if(nativeBaal) {
+            // GetMinionSpawnInfo chooses A1, not the ordinary S1 rise mode.
+            // The initial mode has no target/contact. Do140 then replaces
+            // the initial AI wake-up with Idle(15).
+            recordNativeMode(child,parameters.nativeMode);
+            if(parameters.nativeMode==4) {
+                const auto attack=child.rule.attacks.find(parameters.nativeMode);
+                if(attack==child.rule.attacks.end()) return {DomainStatus::Unavailable,{}};
+                child.riseMode=parameters.nativeMode;
+                child.riseUntil=child.busyUntil=tick+uint64_t(attack->second.duration);
+                child.neutralAt=child.riseUntil;
+            }
+            child.aiThinkAt=tick+15;++child.aiThinkRevision;
+            child.initialAiTimer=std::make_shared<FrameEventQueue::PreparedInsertion>(ports_.frameEvents.prepareInsertion(
+                {{},{FrameEventUnit::Monster,born},FrameEventType::AiThink,child.aiThinkAt}));
+        }
+        if(clone) {
+            const auto values=ports_.effects.unitStatValues(id,tick);if(!values) return {DomainStatus::Unavailable,{}};
+            const auto maximum=nativeStatValue(*values,*source->rule.stats,"maxhp")/3;
+            const auto life=nativeStatValue(*values,*source->rule.stats,"hitpoints")/3;
+            attributes::MonsterResourceTrace resources(child,tick);
+            resources.writeBaseStat("maxhp",maximum,{});
+            resources.writeBaseStat("hpregen",0,{});
+            resources.seedLife(Fixed8::fromRaw(life));
+            auto change=resources.take();child.nativeStats=std::move(change.intrinsic);
+            child.maximumLife=change.maximum.raw();child.life=change.life.raw();child.modeAlive=child.life==0;
+            child.ownsNativeMinions=true;child.transferMinionsOnDeath=false;
+            auto &parent=(*birth.value)->data_->actors.actors.at(id);
+            parent.nativeMinionOwner=id;parent.ownsNativeMinions=true;parent.transferMinionsOnDeath=false;
+            setStoredOwner(parent,born);setStoredOwner(child,id);
+        }
     }
     if(!(*birth.value)->validate()) return {DomainStatus::Stale,{}};
-    const int overlay=source->rule.formulas->skills.at(skill).summonOverlay;
+    const int overlay=nativeBaal?-1:source->rule.formulas->skills.at(skill).summonOverlay;
+    if(born && clone) {
+        const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},source->area},{SoundFact{id,1,source->area,16}}});
+        if(!sent) return {sent.status,{}};
+    }
     if(born && overlay>=0) {
         const auto &child=(*birth.value)->data_->actors.actors.at(born);
         const auto sent=ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},child.area},{OverlayFact{born,1,child.area,overlay}}});

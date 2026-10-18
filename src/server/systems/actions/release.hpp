@@ -14,6 +14,12 @@ namespace d2x::server::skills {struct AssassinKickExecution;struct DruidMeleeExe
 namespace d2x::server::combat {struct NativeSkillContact;}
 namespace d2x::server::monsters {struct SkillChildrenExecution;}
 namespace d2x::server::actions {
+struct MonsterTentacleExecution {
+    int count{},next{},nativeClass{-1};
+    uint8_t nativeMode{1};
+    Vec center;
+    std::optional<Vec> point;
+};
 struct SkillRelease {
     ActorContext actor;
     SkillCastSpec skill;
@@ -75,6 +81,8 @@ struct MonsterRelease {
     uint64_t infernoEndAt{};
     std::optional<Vec> leapDestination;
     std::optional<int> nestClass; // St49's captured fallback; valid MonStats.spawn takes priority.
+    MonsterSpawnParameters minionSpawn; // St62 captures class/mode before the release callback.
+    std::optional<MonsterTentacleExecution> tentacles;
     std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
     std::shared_ptr<effects::NativeAreaPulse> mosquito;
     std::shared_ptr<effects::NativeAreaPulse> directSkill;

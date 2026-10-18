@@ -10,6 +10,16 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
+std::optional<std::pair<RegionId,Vec>> System::nativePortalPosition(EntityId id) const {
+    const auto endpoint=[&](const Portal &portal)->std::optional<std::pair<RegionId,Vec>> {
+        if(id && id==portal.fieldId) return std::pair{portal.field,portal.fieldPosition};
+        if(id && id==portal.townId) return std::pair{portal.town,portal.townPosition};
+        return {};
+    };
+    for(const auto &[owner,portal]:state_.portals) {(void)owner;if(const auto at=endpoint(portal)) return at;}
+    for(const auto &[key,portal]:state_.specialPortals) {(void)key;if(const auto at=endpoint(portal)) return at;}
+    return {};
+}
 std::optional<Vec> System::portalPosition(const ActorContext &actor,EntityId id) const {
     for(const auto &[owner,portal]:state_.portals) { (void)owner;
         if(portal.field==actor.area && portal.fieldId==id) return portal.fieldPosition;

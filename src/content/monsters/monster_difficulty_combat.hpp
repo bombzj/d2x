@@ -13,7 +13,7 @@ struct MonsterCombatProfile {
     int damageRegen = 0;
     std::array<int, 6> resistances{};
 };
-enum class MonsterStatPurpose { Combatant, NativeNpc };
+enum class MonsterStatPurpose { Combatant, NativeNpc, StaticCombatant };
 // Resolve MonStats against the game's normal or L-* MonLvl columns.
 std::optional<MonsterCombatProfile> loadMonsterCombatProfile(
     const DataTable &stats, size_t row, const DataTable &levels, int difficulty, int areaLevel, std::optional<int> forcedLevel = {},bool ladderStats=true,

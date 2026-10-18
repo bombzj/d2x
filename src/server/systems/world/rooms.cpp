@@ -68,6 +68,9 @@ struct System::RoomRuntime {
             grid.fullTerrainCollision[cell] = 0xffff;
             grid.terrainCollision[cell] = 0xff;
             grid.blocked[cell] = grid.lightBlocked[cell] = 1;
+            if(cell<grid.missileCollision.size() && grid.missileCollision[cell]) {
+                grid.missileCollision[cell]=0;++grid.missileCollisionRevision;
+            }
         });
         auto &state = area(room.area);
         state.rooms.at(room.index).loaded = false;
@@ -238,6 +241,7 @@ struct System::RoomRuntime {
         // Complete committed work before retiring collision. This also covers
         // output backpressure: pending damage/loot cannot be lost on unload.
         for (const auto &[key, value] : ports.monsters.read().actors) {
+            if(value.skillReservation && contains(value.area,value.skillReservation->position)) return true;
             if (!contains(value.area, value.position)) continue;
             if (value.owner || value.busyUntil > tick || value.poison || value.wound || value.skillMotion ||
                 value.knockbackGoal || (value.life <= 0 && !value.rewardComplete) || ports.skills.busy(key, tick)) return true;

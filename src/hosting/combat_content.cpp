@@ -91,9 +91,11 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(record) identity.nativeClass=record->index;
     if(record) if(auto environment=prepareEnvironmentMonster(archives,data,request,identity,position)) return environment;
     if (!record || (!record->hostile() && record->ai!="GoodNpcRanged") || !record->aiProfiles.at(size_t(request.difficulty))) return {};
+    const auto implementation=monsterImplementation(record->id).kind;
+    const bool staticCombatant=implementation==MonsterKind::PrisonDoor || implementation==MonsterKind::Window || implementation==MonsterKind::EvilHole;
     auto profile = loadMonsterCombatProfile(data.tables.at("monstats"), record->sourceRow, data.tables.at("monlvl"),
         request.difficulty, level.population.level.at(size_t(request.difficulty)),currentLevel,request.ladderMonsterStats,
-        record->hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
+        staticCombatant?MonsterStatPurpose::StaticCombatant:record->hostile()?MonsterStatPurpose::Combatant:MonsterStatPurpose::NativeNpc);
     std::optional<MonsterEnchantment> enchantment;
     const auto *fixed = identity.superUnique.empty() ? nullptr : catalog.superUnique(identity.superUnique);
     if (!identity.superUnique.empty() && (!fixed || (!selected && fixed->monster!=identity.monster))) return {};
@@ -112,7 +114,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     auto death = loadMonsterMotionTiming(animations, record->token, "dt", monsterModeWeapon(archives, record->token, "dt", record->baseWeapon));
     const auto delay = data.tables.at("monstats").number(record->sourceRow, request.difficulty == 0 ? "aidel" : request.difficulty == 1 ? "aidel(N)" : "aidel(H)");
     if (!profile || !profile->defense || !death || !record->aiProfiles.at(size_t(request.difficulty)) ||
-        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner")) return {};
+        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner" && record->ai!="BaalTentacle" && record->ai!="Tentacle" && record->ai!="TentacleHead" && record->ai!="EvilHole" && record->ai!="Catapult")) return {};
     if ((record->ai=="CorruptRogue" || record->ai=="CorruptLancer") &&
         !loadMonsterMotionTiming(animations, record->token, "rn", monsterModeWeapon(archives, record->token, "rn", record->baseWeapon))) {
         return {};
@@ -193,7 +195,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if (record->ai!="EvilHole" && record->ai!="Catapult" && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
     if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
         if(!birth) return {};
@@ -213,10 +215,10 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
         if(!child) return {};
         rule.deathReinitialize=std::make_shared<const server::PreparedMonster>(std::move(*child));
     }
-    if(record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
+    if(record->ai=="EvilHole" || record->ai=="MinionSpawner" || record->ai=="GenericSpawner" || record->ai=="Nihlathak" || record->ai=="FoulCrowNest" || record->ai=="VileMother" || record->ai=="BloodRaven" || record->ai=="SandMaggot" || record->ai=="SandMaggotQueen" || record->ai=="MaggotEgg" || record->ai=="Sarcophagus") {
         const auto spawn=data.tables.at("monstats").value(record->sourceRow,"spawn");
         const auto code=record->nest?record->nest->child:std::string(spawn);
-        if(!catalog.find(code) && record->ai!="GenericSpawner") return {};
+        if(!catalog.find(code) && record->ai!="GenericSpawner" && record->ai!="Nihlathak") return {};
         if(catalog.find(code)) {
             auto childIdentity=identity;childIdentity.monster=code;childIdentity.origin=SpawnOrigin::Summoned;childIdentity.rank=MonsterRank::Normal;childIdentity.superUnique.clear();
             auto child=combatMonster(archives,data,request,std::move(childIdentity),{},world,catalog,animations,random);
@@ -250,7 +252,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
 
     // QUESTSFX_MainHandler: these values are original code, not MPQ parameters.
     if(record->ai=="BloodRaven") rule.deathSweep=server::MonsterRule::DeathSweep{35,25,125,true};
-    if(record->ai=="Andariel") rule.deathSweep=server::MonsterRule::DeathSweep{35,1,51,false};
+    if(record->id=="andariel") rule.deathSweep=server::MonsterRule::DeathSweep{35,1,51,false};
     if(record->id=="radament") {
         const auto definition=data.nativeFormulas->missileIds.at("radamentdeath");
         const auto range=data.nativeFormulas->missiles.at(definition).number("range");
@@ -471,7 +473,19 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         else deferred.insert("Native spawn profile pending: "+code);
     }
     std::vector<int> required=selection.classes;
-    if(request.act==4) required.push_back(area.genericSpawnFallback);
+    if(request.act==4) {
+        // Do140 selects by difficulty and the original NextInClass chain.
+        // The clone's different BaseId takes GetMinionSpawnInfo's class-0
+        // fallback; do not silently give it Baal's special-case branch.
+        auto code=std::string("baaltentacle1");
+        while(!code.empty()) {
+            const auto *record=catalog.find(code);if(!record) break;
+            required.push_back(record->index);code=record->next;
+        }
+        required.push_back(classId("skeleton1"));
+        required.push_back(classId("baalclone"));
+    }
+    if(request.act==4) {required.push_back(area.genericSpawnFallback);required.push_back(familyClass("minion1"));}
     if(request.act==4) {
         auto code=std::string("suicideminion1");
         while(!code.empty()) {
