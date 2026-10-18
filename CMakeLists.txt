@@ -226,6 +226,7 @@ target_sources(d2x_server PRIVATE
     src/server/systems/monsters/inactive.cpp
     src/server/systems/monsters/special_actions.cpp
     src/server/systems/monsters/act2_skills.cpp
+    src/server/systems/monsters/diablo_prison.cpp
     src/server/systems/monsters/imp.cpp
     src/server/systems/monsters/leap.cpp
     src/server/systems/monsters/controlled.cpp
@@ -268,6 +269,7 @@ target_sources(d2x_server PRIVATE
   src/server/systems/skills/imp.cpp
     src/server/systems/skills/monster_mosquito.cpp
   src/server/systems/skills/monster_leap.cpp
+  src/server/systems/skills/monster_run.cpp
     src/server/systems/skills/activation.cpp
     src/server/systems/skills/shape.cpp
     src/server/systems/skills/druid_active.cpp

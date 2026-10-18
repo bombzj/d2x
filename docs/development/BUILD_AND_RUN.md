@@ -115,18 +115,23 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 前述中间构建不计为最终EXE全家族复测；ReanimatedHorde本次死亡样本未触发自复活。仍未验证全难度／全家族、原DLL逐随机轨迹、完整房间卸载恢复、多人TCP、冰甲反击伤害／随机及跨房传送、Blood Mana精确零生命与全部充能／光环／召唤／背压组合。Clt54连续发射仍缺；Mephisto攻击音效存在Compound组解析限制，另观察到identity298脚步FsOff未建立；音频设备因hidden未测试。独立服务端仅构建，未启动PvPGN后端或原D2GS。
 
-本次未新增测试脚本／用例／专用程序，未打包；`dist/current`和`dist/server`的EXE摘要保持下节既有记录。构建还包含工作区既有的交易邀请标题改动（`trade_invite_view.*`及NETWORK文档），未计入本次怪物提交或专项验证。第三至第五幕源码／未完成项见[逐项台账](../gameplay/monsters/ACT3.md)，不把本轮有限冒烟标为完整复刻完成。
+该轮未新增测试脚本／用例／专用程序，也未打包；随后打包及最小冒烟见下节。构建包含交易邀请标题改动（`trade_invite_view.*`及NETWORK文档），未做该界面专项验证。第三至第五幕源码／未完成项见[逐项台账](../gameplay/monsters/ACT3.md)，不把本轮有限冒烟标为完整复刻完成。
 
-### 当前客户端打包
+### 当前客户端与独立服务端打包
 
-2026-10-17，基于`64a5acd2`及当前未提交工作区，Windows／MinGW／Ninja Release的`d2x`目标构建成功，已用现有`package.ps1`更新`dist/current`。构建期间仅补齐三处`nativeMonsterSkillRanks`直接头文件依赖，并将调试事件名称表与新增`SkillEndFact`对齐；保留既有非致命警告。
+2026-10-18，源码`fb7cb723`，Windows／MinGW／Ninja Release增量构建`d2x`、`d2x_pvpgn`均为no work to do；现有两份打包脚本已更新`dist/current`及`dist/server`。本轮无需新增编译修复，前轮修复与较广运行范围见上节。
 
-| 当前客户端产物 | 字节 | SHA256 |
+| 当前产物 | 字节 | SHA256 |
 | --- | --- | --- |
-| `dist/current/d2x.exe` | 33967433 | `12E0A55B0AC45F8B3D75BEDBDAB8C7D0D9D62F87171F6C3FE35EB9C5BB358E66` |
-| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+| `dist/current/d2x.exe` | 34614805 | `E49CFB497E3ABF01DC1AAC59FB28EC09225976B11CEBC7B943D50950E7B455B1` |
+| `dist/server/d2x_server.exe` | 27275662 | `E2BF851AF9E267F080F25BEEA05250201A569630D58D1B653FA9C905DE087481` |
+| 两包`d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
 
-两文件摘要与`build/bin`一致；旧客户端程序备份于`artifacts/client-package-20261017-161736/previous`。原存档、截图与MPQ保留，独立服务端本轮未构建或更新。仅完成构建、打包和产物摘要核对，未启动游戏、运行测试或新增测试程序；当前工作区玩法与画面等待用户验证，此前包的有限运行结论不认证本包。
+包内程序摘要与`build/bin`一致，旧程序和配置备份于`artifacts/client-package-20261018-01/previous`，原存档／MPQ保留。直接启动包内客户端，读取隔离PackHost副本、当前MPQ，以内存单机入场库拉斯特海港（75）：ProtocolReady、场景／玩家可显示、地图错误为空、不可用单位0、宿主failures=0；通过既有管道quit正常结束，进程已退出。证据在同目录`online-status.json`、`server-snapshot.json`及启动日志。
+
+这次仅按要求做入场／显示／退出最小冒烟；hidden跳过音频，未做战斗、多人、独立服务端启动或全家族验证。第三至第五幕进度仍见逐项台账。
+
+打包后继续第73项Diablo底座：本批未提交源码的Release客户端和独立服务端均构建通过，客户端SHA256为`DD9A7AC035C0514C9FFEF3045E15A3FC32D31AB5954FAEC6E0105BE8F1E0233F`，服务端为`91A191A606318E559711FA15D335549FFFDDC2EE31CAA1238547B19C2C62B180`。直接运行新客户端，以另一份隔离角色副本复查入场／显示／quit，场景及角色可显示、不可用单位0、地图错误为空、退出码0；证据在同一目录`source-smoke`与`summary.json`。这批源码尚未重新打包，Diablo／clone仍为替身，未做新增技能战斗验收；不能用该最小入场结果宣称第73项或后三幕全部完成。
 
 ### 当前逐房间地形构建
 

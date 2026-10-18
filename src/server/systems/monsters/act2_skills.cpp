@@ -294,6 +294,31 @@ DomainResult<> System::startSwarmMove(EntityId source,Vec target,uint64_t tick) 
     actor.busyUntil=std::max(actor.busyUntil,until);if(actor.neutralAt) actor.neutralAt=actor.busyUntil;
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
+DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocity) {
+    const auto found=state_.actors.find(source);
+    if(found==state_.actors.end() || !found->second.alive() || velocity<0) return {DomainStatus::InvalidActor,{}};
+    auto &actor=found->second;const Vec center{.5f,.5f};
+    auto route=ports_.areas.at(actor.area).definition.collision.nativeUnitPath(actor.position+center,target+center,1,5,actor.rule.collision);
+    for(auto &point:route) point=point-center;
+    // St54 captured coordinates and cleared pTargetUnit. Do103 must not
+    // pursue the target's new position, use ordinary run speed, or apply 75%.
+    actor.skillMotion=Actor::SkillMotion{route.empty()?actor.position:route.back(),UINT64_MAX,actor.interruption,
+        float(velocity)*25.f/4096.f,false,std::move(route)};
+    actor.skillMotion->eventDriven=true;actor.pathStep.reset();actor.movementTarget={};actor.movementGoal=target;
+    ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
+}
+bool System::advanceDiabloRun(EntityId source,uint64_t tick) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end()) return false;
+    auto &actor=found->second;
+    const bool moving=actor.skillMotion && actor.skillMotion->eventDriven && advanceSkillMotion(actor,tick);
+    if(!moving) {actor.moving=false;++actor.revision;}
+    return moving;
+}
+void System::stopDiabloRun(EntityId source) {
+    const auto found=state_.actors.find(source);if(found==state_.actors.end()) return;
+    auto &actor=found->second;if(!actor.skillMotion || !actor.skillMotion->eventDriven) return;
+    actor.skillMotion.reset();actor.pathStep.reset();actor.moving=false;++actor.revision;
+}
 bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
     auto &motion=*actor.skillMotion;
     const bool interrupted=!actor.alive() || actor.interruption!=motion.interruption || actor.frozenUntil>tick || actor.stunnedUntil>tick || actor.knockedUntil>tick;

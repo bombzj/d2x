@@ -239,6 +239,9 @@ StepStatus System::think(EntityId id,TickContext tick) {
             } else {ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;}
             continue;
         }
+        if(monster.rule.ai.kind==MonsterAiKind::Idle) {
+            ports_.monsters.neutralMode(id);controller.pursuing=false;controller.nextDecision=tick.tick+200;continue;
+        }
         const auto acquired=acquireTarget(monster,tick,false,requireSight);
         std::optional<UnitTarget> target;Vec targetPosition;int targetSize=2,distance=INT32_MAX;
         if(acquired) {target=acquired->unit;targetPosition=acquired->position;targetSize=acquired->size;distance=acquired->distance;}

@@ -38,6 +38,7 @@ class System {
     DomainResult<bool> releaseMonsterMosquito(MonsterRelease &,TickContext);
     DomainResult<> releaseOverseer(MonsterRelease &,TickContext);
     DomainResult<> releaseMonsterSpell(MonsterRelease &,TickContext);
+    DomainResult<> monsterRunEvent(const FrameEvent &,uint64_t tick);
     DomainResult<Vec> startMonsterLeap(const CastRequest &);
     DomainResult<bool> releaseMonsterLeap(MonsterRelease &,TickContext);
     DomainResult<bool> releaseDruidPet(MonsterRelease &,TickContext);

@@ -3,10 +3,12 @@
 #include "content/classic_data.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/skills/aura_data.hpp"
+#include "content/skills/table_values.hpp"
 #include "server/runtime/prepared_rules.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/skills/amazon_summon_spec.hpp"
+#include "gameplay/skills/druid_spec.hpp"
 #include <cctype>
 #include <stdexcept>
 namespace d2x {
@@ -195,6 +197,25 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             if (collision != data.missileCollisions.end()) definition.collision = collision->second;
         }
         prepared->definitions.emplace(id, std::move(definition));
+    }
+    // Do124 also belongs to monster skills such as Diablogeddon. Prepare its
+    // state and active callback without adding it to a character skill tree.
+    for(size_t row=0;row<skillTable.rows().size();++row) {
+        if(!skillTable.value(row,"charclass").empty() || skillTable.number(row,"srvdofunc")!=124) continue;
+        const int id=skillTableNumber(skillTable,row,"Id");
+        auto program=std::make_shared<DruidSkillSpec>();program->program=DruidProgram::Periodic;program->doFunction=124;
+        program->state=data.states.at(std::string(skillTable.value(row,"aurastate"))).definition;
+        const auto &states=data.tables.at("states");
+        program->activeFunction=skillTableNumber(states,findSkillTableRow(states,"id",std::to_string(program->state.id)),"srvactivefunc");
+        for(size_t index=0;index<program->missiles.size();++index) {
+            const auto name=skillTable.value(row,std::array{"srvmissilea","srvmissileb","srvmissilec"}[index]);
+            if(!name.empty()) program->missiles[index]=skillTableNumber(data.tables.at("missiles"),findSkillTableRow(data.tables.at("missiles"),"Missile",name),"Id");
+        }
+        SkillRuleSpec spec;spec.sourceId=id;spec.effect=SkillBehavior::Druid;spec.state=program->state;
+        spec.missileId=program->missiles[0];spec.druid=std::move(program);
+        spec.hitShift=skillTableNumber(skillTable,row,"HitShift",SkillNumberPolicy::BlankIsZero);
+        spec.hitClass=skillTableNumber(skillTable,row,"HitClass",SkillNumberPolicy::BlankIsZero);
+        prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }
     // General skills are prepared for every class; availability still comes
     // from that class's CharStats, not from point-backed skill ranks.

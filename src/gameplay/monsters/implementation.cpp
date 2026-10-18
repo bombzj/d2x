@@ -55,6 +55,7 @@ MonsterImplementation monsterImplementation(const std::string &code) {
     if (code == "firegolem") return {MonsterKind::FireGolem, false};
     if (code == "necromage") return {MonsterKind::NecroMage, false};
     if (code == "bonewall") return {MonsterKind::BoneWall, false};
+    if (code == "boneprison1" || code == "boneprison2" || code == "boneprison3" || code == "boneprison4") return {MonsterKind::BonePrison, false};
     if (code == "prisondoor") return {MonsterKind::PrisonDoor, false};
     if (code == "hydra1") return {MonsterKind::Hydra1, false};
     if (code == "hydra2") return {MonsterKind::Hydra2, false};

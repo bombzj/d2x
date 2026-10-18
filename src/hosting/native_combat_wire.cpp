@@ -184,6 +184,13 @@ Bytes nativeMonsterMotion(const MonsterSnapshot &monster, Vec origin) {
     });
 }
 std::vector<Bytes> nativeAttack(const server::AttackFact &fact, Vec origin) {
+    if(fact.actorType==1 && fact.skill && fact.target && fact.targetType==2)
+        return {encodeServerPacket(ServerMessage::CastPoint,[&](auto &out) {
+            // The monster object selector admitted by Do104 is encoded as
+            // PathFirstPoint(GUID, UNIT_OBJECT), not a CastUnit notification.
+            key(out,1,fact.actor);out.u32(fact.skill);out.u8(fact.rank);
+            out.u16(uint16_t(fact.target.value));out.u16(2);out.u16(0);
+        })};
     if(fact.actorType==1 && !fact.skill && !fact.target)
         return {encodeServerPacket(ServerMessage::NpcActionPoint,[&](auto &out) {
             out.u32(uint32_t(fact.actor.value));out.u8(fact.monsterMode==9?14:fact.monsterMode==8?12:fact.monsterMode==5?17:11);

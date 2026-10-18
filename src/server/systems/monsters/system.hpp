@@ -184,7 +184,7 @@ struct Actor {
     uint8_t aiPose{1}; uint64_t poseUntil{};
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
-    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{};};
+    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};};
     std::optional<SkillMotion> skillMotion;
     std::optional<Vec> spawnReservation;
     int nestSpawned{};
@@ -311,6 +311,7 @@ class System {
     void resetImpAi(EntityId);
     DomainResult<> setMinionSpawnClass(EntityId,int);
     DomainResult<> spawnRemovedStateChild(EntityId,int skill,int rank,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
+    DomainResult<> spawnDiabloPrison(RegionId,Vec,int nativeClass,uint64_t,const std::function<uint16_t(RoomView,int32_t,int32_t)> &);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareLevelSpawn(RegionId,Vec roomPosition,Vec requested,uint64_t tick,
         const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     DomainResult<std::shared_ptr<NativeBirthPublication>> prepareRoomSpawn(const Admission &,RoomRandomLoan,int attempts,
@@ -377,6 +378,9 @@ class System {
     DomainResult<> burrow(EntityId source,bool below,uint64_t tick);
     DomainResult<> startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim={});
     DomainResult<> startSwarmMove(EntityId source,Vec target,uint64_t tick);
+    DomainResult<> startDiabloRun(EntityId source,Vec target,int32_t velocity);
+    bool advanceDiabloRun(EntityId source,uint64_t tick);
+    void stopDiabloRun(EntityId source);
     bool advanceSkillMotion(Actor &,uint64_t tick);
     bool canLand(EntityId) const;
     DomainResult<> consumeRandom(EntityId,uint64_t expected,uint64_t next);

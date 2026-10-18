@@ -49,6 +49,7 @@ bool channelled(const SkillCastSpec &skill) {
 }
 }
 void System::cancel(PlayerId player, EntityId actor) {
+    ports_.monsters.stopDiabloRun(actor);
     auto &pending_=runtime_->pending;
     ports_.companions.cancel(actor);
     pending_.erase(player);

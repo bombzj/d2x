@@ -33,7 +33,7 @@
 | Succubus／SuccubusWitch | Defense Curse（309）／Blood Mana（310）沿Do30，SuccubusBolt（345）沿St4／原弹体665；两类AI、技能槽和动作各用自身原表。普通Blood Mana费用由[公共机制](COMMON.md)维护；源码核对 |
 | Izual／UberIzual | Frost Nova（44）沿Do22原生64方向构造；Uber另接Chilling Armor（60）的Do18／EventFunc01和MonTeleport（184）的Do98。冰甲反击使用实际反击者，无玩家拥有者前提；源码核对 |
 | Mephisto | PrimeLightning／MephistoMissile走普通原生飞弹，PrimeBolt走Do17；PrimePoisonNova走Do99及Clt55，MephFrostNova走Do22，Blizzard走Do28。原始弹速、回绕及施放后AI随机继续点见怪物台账 |
-| Diablo（进行中） | DiabCold的Do100、DiabWall的Do102／Clt58及DiabLight的Do152／Clt56已接部分源码；完整AI、DiabRun、DiabPrison等尚未完成，仍使用替身。Clt56灯光标志及完整客户端随机尚未闭合，不计为怪物覆盖 |
+| Diablo（进行中） | Do100、Do102／Clt58、Do152／Clt56延续前批；PrimeFirewall走Do024原顺序，DiabRun以St54捕获坐标及独立序列回调执行，DiabPrison生成四个真实部件并接受门户目标，Diablogeddon复用Do124／Active146。冲锋和门户施法已保留原坐标通知；完整AI及客户端冲锋／灯光／随机仍缺，Diablo／clone保留替身；源码入口及原版地址统一见怪物台账第73项，未计为完成覆盖 |
 
 普通箭矢、尖刺、骷髅法师元素弹、近战与元素附伤已有共享程序，但A1／A2或MissA1／A2不一定对应独立Skills行。SkeletonRaise槽是复活动画，不归普通AI主动；关系见[第一幕](../monsters/ACT1.md)。第三至第五幕程序尚未全面迁入，任务死亡链和身份替身不能认证战斗技能。
 
@@ -63,7 +63,7 @@
 | 166 Swarm Move | 5步移动／路径回退入口；原Swarm使用Fn019，不主动施放此槽 |
 | 167 Nest | crownest1至4：St49固定点预留／不可中断，原SQ事件4清预留并沿房间随机流出生，子怪NOXP／NOTC；成功预检即消耗一次尝试，耗尽NOTC死亡。sarcophagus保留独立AI入口 |
 | 169 VampireFireball | vampire1；原vampirefireball弹体、范围爆炸及难度等级 |
-| 170 VampireFirewall | vampire1／Summoner；两侧maker及中心／路径地火，目标落点 |
+| 170 VampireFirewall | vampire1／Summoner；Do024按两侧maker→可选中心地火顺序创建，使用原整数垂线终点和原始构造入口，路径地火由原飞弹程序派生 |
 | 171 VampireMeteor | vampire1声明；延迟中心、等级伤害／半径、原18处地火及持续帧；MPQ掩码3不自然调用 |
 | 172 GargoyleTrap | 原机关射线、MonSeq释放与轴向资格，复用已接入口 |
 | 182 Bestow | GreaterMummy／Radament；支持目标资格及原公式，当前calc1／calc2空值导致0治疗 |

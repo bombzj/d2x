@@ -88,7 +88,7 @@ DomainResult<EntityId> System::admit(const Admission &request) {
     if (rule.nativeClass < 0 || rule.nativeClass > UINT16_MAX || rule.minimumLife <= 0 || rule.maximumLife < 0 ||
         rule.nativeVelocity < 0 || rule.nativeVelocity > 255 || rule.difficulty < 0 || rule.difficulty > 2 || rule.alignment < 0 || rule.alignment > 2 ||
         rule.level <= 0 || (rule.attacks.empty() && rule.skillActions.empty() &&
-        rule.ai.kind!=MonsterAiKind::SuicideMinion)) return {DomainStatus::InvalidRequest, {}};
+        rule.ai.kind!=MonsterAiKind::SuicideMinion && rule.ai.kind!=MonsterAiKind::Idle)) return {DomainStatus::InvalidRequest, {}};
     const auto finish=[&](EntityId id)->DomainResult<EntityId> {
         const auto *unit=find(id);
         if(unit && unit->rule.enchantment && unit->rule.enchantment->aura && !unit->rightSkill) {
@@ -927,7 +927,7 @@ uint64_t System::resumeAi(EntityId id,uint64_t tick,uint64_t scheduled) {
 void System::finishAction(EntityId id,uint64_t tick) {
     const auto found=state_.actors.find(id);if(found==state_.actors.end()) return;
     auto &actor=found->second;recordNativeMode(actor,1);actor.nativeActionUntil=actor.busyUntil=tick;
-    if(actor.skillMotion && actor.skillMotion->leaperRecovery) {actor.skillMotion.reset();actor.moving=false;}
+    if(actor.skillMotion && (actor.skillMotion->leaperRecovery || actor.skillMotion->eventDriven)) {actor.skillMotion.reset();actor.moving=false;}
     if(actor.neutralAt) actor.neutralAt=tick;
     ++actor.revision;
     const auto next=ports_.frameEvents.nextDue({FrameEventUnit::Monster,id},FrameEventType::AiThink).value_or(tick);
@@ -1221,7 +1221,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         }
         if(actor.holyFreezeUntil && actor.holyFreezeUntil<=tick.tick) actor.holyFreezeUntil=0;
         if(actor.questNpc) continue; // Quest movement consumes this same actor in npc::System.
-        if(actor.skillMotion && advanceSkillMotion(actor,tick.tick)) continue;
+        if(actor.skillMotion && (actor.skillMotion->eventDriven || advanceSkillMotion(actor,tick.tick))) continue;
         if (frozen(id,tick.tick) || actor.stunnedUntil>tick.tick) continue;
         if (actor.life <= 0 || tick.tick < actor.busyUntil) continue;
         if (actor.route.empty()) continue;

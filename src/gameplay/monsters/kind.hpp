@@ -8,7 +8,7 @@ enum class MonsterKind { Fallen, Zombie, Skeleton, CorruptRogue, Brute, Goatman,
                          SandRaider, SandMaggot, SandMaggotQueen, MaggotEgg, MaggotLarva,
                          ClawViper, SandLeaper, Swarm, Scarab, GreaterMummy, Mummy,
                          PantherWoman, PantherJavelin, Baboon, Vulture, BatDemon, PinHead,
-                         Summoner, Duriel, Sarcophagus, ArcaneTower, AssassinPet, DruidPet, ThornHulk, FetishBlowgun, FetishShaman, Mosquito, FrogDemon, Willowisp, ZakarumZealot, ZakarumPriest, HighPriest, VileMother, VileDog, FingerMage, Regurgitator, DoomKnight, AbyssKnight, OblivionKnight, Megademon, ReanimatedHorde, FrozenHorror, BloodLord, DeathMauler, BaalMinion, PutridDefiler, SiegeBeast, Imp, GenericSpawner, Minion, SuicideMinion, Overseer, MinionSpawner, Succubus, SuccubusWitch, Izual, UberIzual, Mephisto, Count };
+                         Summoner, Duriel, Sarcophagus, ArcaneTower, AssassinPet, DruidPet, ThornHulk, FetishBlowgun, FetishShaman, Mosquito, FrogDemon, Willowisp, ZakarumZealot, ZakarumPriest, HighPriest, VileMother, VileDog, FingerMage, Regurgitator, DoomKnight, AbyssKnight, OblivionKnight, Megademon, ReanimatedHorde, FrozenHorror, BloodLord, DeathMauler, BaalMinion, PutridDefiler, SiegeBeast, Imp, GenericSpawner, Minion, SuicideMinion, Overseer, MinionSpawner, Succubus, SuccubusWitch, Izual, UberIzual, Mephisto, BonePrison, Count };
 struct MonsterDefinition {
     MonsterKind id;
     const char *token;

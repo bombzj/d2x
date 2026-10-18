@@ -36,7 +36,7 @@ struct MonsterAttackRule {
     std::vector<MonsterElementAttack> elements;
     std::optional<MonsterMissileRule> missile{};
     enum class Action { Damage, Resurrect, Nest, Web, Spray, Firewall, Teleport, Trap, Skill,
-                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell } action{Action::Damage};
+                        Heal, BurrowUp, BurrowDown, Lay, Hatch, Charge, Leap, SwarmMove, Nova, Curse, Animation, Assassin, Druid, Inferno, Mosquito, Submerge, GroundMissile, Hydra, NativeMissile, EatCorpse, DefensiveBuff, Impregnate, Rally, Whip, SupportMissile, SpawnMinion, NativeSpell, DiabloRun } action{Action::Damage};
     uint8_t nativeMode{4}, rank{1};
     std::optional<MonsterMissileRule> extraQuill{};
     std::vector<int> releaseFrames{};

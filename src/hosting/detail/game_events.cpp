@@ -63,7 +63,10 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
         else if (const auto *attack = std::get_if<server::AttackFact>(&fact)) {
             if (attack->actorType == 1 && !peer.monsters.contains(attack->actor)) continue;
             auto projected=*attack;
-            if(projected.target && !visibleActor(projected.target,projected.targetType)) projected.target={};
+            const bool objectSelector=projected.actorType==1 && projected.skill && projected.targetType==2;
+            // Do104's point selector survives target visibility filtering,
+            // just as the original path's (object GUID, 2) coordinates do.
+            if(projected.target && !objectSelector && !visibleActor(projected.target,projected.targetType)) projected.target={};
             if (attack->actorType == 0 && attack->actor != host.read(*binding)->actor.id &&
                 std::none_of(peer.visible.begin(), peer.visible.end(), [&](const auto &entry) { return entry.second.actor == attack->actor; })) continue;
             // PlrMsg::sub_6FC81D20 omits ordinary owner skill actions. Its client

@@ -112,7 +112,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     auto death = loadMonsterMotionTiming(animations, record->token, "dt", monsterModeWeapon(archives, record->token, "dt", record->baseWeapon));
     const auto delay = data.tables.at("monstats").number(record->sourceRow, request.difficulty == 0 ? "aidel" : request.difficulty == 1 ? "aidel(N)" : "aidel(H)");
     if (!profile || !profile->defense || !death || !record->aiProfiles.at(size_t(request.difficulty)) ||
-        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner")) return {};
+        !record->walkVelocity || *record->walkVelocity < 0 || (*record->walkVelocity==0 && record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="Sarcophagus" && record->ai!="ArcaneTower" && record->ai!="GenericSpawner" && record->ai!="MinionSpawner")) return {};
     if ((record->ai=="CorruptRogue" || record->ai=="CorruptLancer") &&
         !loadMonsterMotionTiming(animations, record->token, "rn", monsterModeWeapon(archives, record->token, "rn", record->baseWeapon))) {
         return {};
@@ -193,7 +193,12 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     }
     const bool requiresSecondAttack=record->hostile()?bool(profile->damage.attack2Damage):
         record->attack2Projectile.has_value() || data.tables.at("monstats").number(record->sourceRow,std::string("A2MinD")+suffix).has_value();
-    if (record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if (record->ai!="Idle" && record->ai!="FoulCrowNest" && record->ai!="GargoyleTrap" && record->ai!="MaggotEgg" && record->ai!="Sarcophagus" && record->ai!="SandMaggotQueen" && record->ai!="ArcaneTower" && record->ai!="Summoner" && record->ai!="FetishShaman" && record->ai!="GenericSpawner" && record->ai!="SuicideMinion" && record->ai!="MinionSpawner" && (!rule.attacks.contains(4) || (requiresSecondAttack && !rule.attacks.contains(5)))) return {};
+    if(monsterImplementation(record->id).kind==MonsterKind::BonePrison) {
+        const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
+        if(!birth) return {};
+        rule.spawnTicks=monsterAnimationTicks({birth->frames,birth->speed});
+    }
     if(!prepareMonsterSpecialActions(archives,data,animations,*record,rule)) return {};
     if(record->ai=="FetishShaman") {
         const auto &stats=data.tables.at("monstats");
@@ -475,6 +480,13 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
         }
     }
     const auto &skillTable=data.tables.at("skills");
+    {
+        // Diabloclone can use Do104 outside Act IV. These are pure MPQ
+        // prototypes; preparing them does not materialize rooms or units.
+        const auto summon=skillTable.value(findSkillTableRow(skillTable,"skill","DiabPrison"),"summon");
+        const auto first=classId(summon);
+        for(int part=0;first>=0 && part<4;++part) required.push_back(first+part);
+    }
     const auto pregnancyChild=skillTable.value(findSkillTableRow(skillTable,"skill","Impregnate"),"summon");
     required.push_back(classId(pregnancyChild));required.push_back(familyClass(pregnancyChild));
     std::string chestFamily="flyingscimitar";

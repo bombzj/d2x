@@ -29,6 +29,7 @@ DomainResult<> System::monsterActionEvent(const FrameEvent &event,uint64_t tick)
     }
     if(!continuing && (ports_.monsters.frozen(unit->id,tick) || unit->stunnedUntil>tick || unit->knockedUntil>tick)) return done();
     if(!continuing && !ports_.areas.loaded(unit->area,unit->position)) {ports_.monsters.extendAttack(unit->id,tick+1);return done();}
+    if(clock->second.program.action==MonsterAttackRule::Action::DiabloRun) return monsterRunEvent(event,tick);
     // Native monster Inferno replaces MODECHANGE with its next callback.
     // A retained continuous dispatcher must not advance animation between
     // callbacks, or emit additional releases while waiting for ENDANIM.

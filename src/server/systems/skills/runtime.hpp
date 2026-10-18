@@ -26,8 +26,8 @@ struct System::Runtime {
         MonsterAttackRule program;
         uint16_t skill{};
         MonsterAnimationCursor animation;
-        uint64_t identity{},interruption{},lastFrame{};
-        bool advanced{},frozenSequence{};
+        uint64_t identity{},interruption{},lastFrame{},movementFrame{};
+        bool advanced{},frozenSequence{},movementAdvanced{},runStopped{};
         MonsterAnimationStep step;
         std::optional<MonsterRelease> repeated;
     };

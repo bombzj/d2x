@@ -187,9 +187,10 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             rule.deathTicks=death.duration;rule.skillIds[slot]=uint16_t(id);continue;
         }
         server::MonsterAttackRule action;int event=(record.ai=="Izual" || record.ai=="UberIzual")?1:2;
-        if(name=="PrimeBolt" || name=="PrimePoisonNova" || name=="DiabCold" || name=="DiabWall" || (record.ai=="Mephisto" && name=="Blizzard")) {
+        if(name=="PrimeBolt" || name=="PrimePoisonNova" || name=="DiabCold" || name=="DiabWall" || name=="PrimeFirewall" || name=="VampireFirewall" || name=="Diablogeddon" || name=="DiabPrison" || (record.ai=="Mephisto" && name=="Blizzard")) {
             action.action=Action::NativeSpell;if(name=="DiabCold") event=1;
         }
+        else if(name=="DiabRun") {action.action=Action::DiabloRun;event=1;}
         else if(name=="Cry Help") {action.action=Action::Rally;event=1;}
         else if(name=="MinionSpawner") {action.action=Action::SpawnMinion;event=1;}
         else if(name=="Overseer Whip") {action.action=Action::Whip;event=1;}
@@ -244,10 +245,7 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
             action.infernoFrame=record.infernoAnimation;action.infernoEndFrames=record.infernoLength;
             if(action.infernoFrame<0 || action.infernoEndFrames<=0 || !missile(skills.value(row,"srvmissilea"),rank)) return false;
         }
-        else if(name=="VampireFirewall") {
-            action.action=Action::Firewall;action.missile=missile(skills.value(row,"srvmissilea"),rank);action.groundFire=missile(skills.value(row,"srvmissileb"),rank);
-            if(!action.missile || !action.groundFire) return false;
-        } else {
+        else {
             auto missileName=skills.value(row,"srvmissile");if(missileName.empty()) missileName=skills.value(row,"srvmissilea");
             const bool towerBolt=record.ai=="ArcaneTower" && name=="Lightning" && record.attack1Projectile;
             auto prepared=towerBolt?prepareMonsterMissile(data,record.attack1Projectile->id,rank):missile(missileName,rank);

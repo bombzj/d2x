@@ -7,10 +7,12 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/effects/native_area.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "gameplay/skills/projectile_path.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "evaluation.hpp"
+#include "native_caster.hpp"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,6 +24,39 @@ DomainResult<> System::releaseMonsterSpell(MonsterRelease &pending,TickContext t
     const auto formulas=source->rule.formulas;const auto &catalog=*formulas;const auto &program=catalog.skills.at(pending.request.skill);
     const int function=program.number("srvdofunc");
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
+    if(function==104) {
+        const auto victim=std::get<UnitTarget>(pending.request.target);
+        RegionId region;Vec point;
+        if(victim.type==2) {
+            const auto object=ports_.objects.read().objects.find(victim.id);
+            if(object==ports_.objects.read().objects.end()) return done();
+            region=object->second.area;point=object->second.position;
+        } else {
+            const auto target=ports_.monsters.nativeTargetPosition(victim.id,source->area);if(!target) return done();
+            const auto *player=ports_.players.findActor(victim.id);const auto *monster=ports_.monsters.find(victim.id);
+            if(!player && !monster) return done();
+            region=player?player->area:monster->area;
+            point=target->first+ports_.areas.at(source->area).definition.origin-ports_.areas.at(region).definition.origin;
+        }
+        const auto &area=ports_.areas.at(region);
+        if(area.definition.town) return done();
+        const auto summon=program.reference("summon");
+        const auto first=std::ranges::find_if(area.definition.nativeMonsterClasses,[&](const auto &entry){return entry.second.identity.monster==summon;});
+        if(first==area.definition.nativeMonsterClasses.end()) return {DomainStatus::Unavailable,{}};
+        return ports_.monsters.spawnDiabloPrison(region,point,first->first,tick.tick,ports_.spatial.nativeCollisionSample());
+    }
+    if(function==124) {
+        const auto caster=nativeCaster(ports_.players,ports_.monsters,source->id);
+        if(!caster || !caster->programs() || !caster->programs()->definitions.contains(pending.request.skill)) return {DomainStatus::Unavailable,{}};
+        if(!pending.nativeSkill) {
+            const auto actor=caster->context(ports_.areas,tick.tick);
+            auto skill=evaluateNativeSkill(*caster,ports_.effects,pending.request.skill,pending.attack.rank,tick.tick);
+            pending.nativeSkill=std::make_shared<Release>(Release{actor,std::move(skill),{},
+                {source->area,pending.generation,source->position},{},tick.tick,1});
+        }
+        const auto result=startDruidPeriodic(*pending.nativeSkill,caster->context(ports_.areas,tick.tick));
+        return {result,result==DomainStatus::Applied?std::optional{std::monostate{}}:std::nullopt};
+    }
     if(function==100) {
         const auto region=source->area;
         if(!pending.directSkill) {
@@ -46,8 +81,36 @@ DomainResult<> System::releaseMonsterSpell(MonsterRelease &pending,TickContext t
         pending.nativeCallbackStarted=false;return done();
     }
     const auto missile=ports_.missiles.nativeDefinition(program.reference("srvmissilea"));
-    if(!missile || (function!=17 && function!=28 && function!=99 && function!=102)) return {DomainStatus::Unavailable,{}};
+    if(!missile || (function!=17 && function!=24 && function!=28 && function!=99 && function!=102)) return {DomainStatus::Unavailable,{}};
     const auto &row=catalog.missiles.at(*missile);
+    if(function==24) {
+        const auto victim=std::get<UnitTarget>(pending.request.target).id;
+        const auto target=victim!=source->id?ports_.monsters.nativeTargetPosition(victim,source->area):std::nullopt;
+        const auto point=target?std::optional{target->first}:pending.launch?std::optional{pending.launch->second}:std::nullopt;
+        if(!point) return done();
+        const auto &area=ports_.areas.at(source->area);
+        const auto global=*point+area.definition.origin;
+        const int x=int(std::floor(global.x)),y=int(std::floor(global.y));
+        const auto room=ports_.areas.roomAtPosition(source->area,source->position,x,y);
+        if(!x || !y || !room || ports_.areas.at(room->area).definition.town ||
+           ports_.areas.nativeCollisionMask(*room,x,y,row.number("size"),5,ports_.spatial.nativeCollisionSample(5))) return done();
+        const auto owner=source->position+area.definition.origin;
+        const int dx=nativeSubtract(int(std::floor(owner.x)),x),dy=nativeSubtract(int(std::floor(owner.y)),y);
+        const Vec at{float(x)-area.definition.origin.x,float(y)-area.definition.origin.y};
+        // Retail Do024 (RVA437D0) constructs the two makers before the
+        // optional center fire, with raw params rather than CreateMissile's
+        // monster attack bonus / multishot wrapper. Their unnormalised
+        // perpendicular endpoints use integer world coordinates.
+        std::vector<missiles::NativeSpawn> births;
+        births.push_back({source->id,source->area,pending.generation,tick.tick,at,
+            at+Vec{-float(dy),float(dx)},*missile,pending.request.skill,pending.attack.rank});
+        births.push_back({source->id,source->area,pending.generation,tick.tick,at,
+            at+Vec{float(dy),-float(dx)},*missile,pending.request.skill,pending.attack.rank});
+        if(const auto fire=ports_.missiles.nativeDefinition(program.reference("srvmissileb")))
+            births.push_back({source->id,source->area,pending.generation,tick.tick,at,at,*fire,pending.request.skill,pending.attack.rank});
+        const auto prepared=ports_.missiles.prepareNativeBirth(births);if(!prepared) return {prepared.status,{}};
+        const auto born=ports_.missiles.commitNativeBirth(*prepared.value);return {born.status,born?std::optional{std::monostate{}}:std::nullopt};
+    }
     if(function==28) {
         const auto victim=std::get<UnitTarget>(pending.request.target);
         const auto target=ports_.monsters.nativeTargetPosition(victim.id,source->area);

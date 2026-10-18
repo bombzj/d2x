@@ -16,6 +16,7 @@
 #include "server/systems/effects/system.hpp"
 #include "server/systems/companions/system.hpp"
 #include "server/systems/spatial/system.hpp"
+#include "server/systems/objects/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "gameplay/combat/attack_timing.hpp"
 #include "gameplay/actions/monster_timing.hpp"
@@ -30,6 +31,7 @@
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include "core/random.hpp"
 namespace d2x::server::skills {
@@ -55,6 +57,15 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     else {const auto found=rule.attacks.find(request.monsterMode);if(found!=rule.attacks.end()) prepared=&found->second;}
     if((petAttack && request.skill) || !prepared) return {DomainStatus::Unavailable,{}};
     auto slot=*prepared;
+    const bool prison=slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==104;
+    if(prison && target->type<=1) destination=ports_.monsters.nativeTargetPosition(target->id,monster->area);
+    if(prison && target->type==2) {
+        const auto object=ports_.objects.read().objects.find(target->id);
+        if(object==ports_.objects.read().objects.end()) return {DomainStatus::InvalidActor,{}};
+        const auto &region=ports_.areas.at(object->second.area);
+        if(region.definition.act!=area.definition.act) return {DomainStatus::InvalidActor,{}};
+        destination=std::pair{object->second.position+region.definition.origin-area.definition.origin,0};
+    }
     if(request.skill && slot.action!=MonsterAttackRule::Action::Teleport) {
         const auto sampled=ports_.effects.unitStatValues(monster->id,request.tick);
         if(!sampled || !rule.stats || !rule.formulas) return {DomainStatus::Unavailable,{}};
@@ -99,13 +110,14 @@ DomainResult<> System::requestCast(const CastRequest &request) {
     const bool shadowSelf=monster->assassinPet && monster->assassinPet->definition->warp &&
         !target->id && rule.formulas->skills.at(request.skill).number("aitype")==1;
     const bool druidTeleport=monster->druidPet && request.skill && rule.formulas->skills.at(request.skill).number("srvdofunc")==98;
-    const bool selfAction=slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
+    const bool periodic=slot.action==MonsterAttackRule::Action::NativeSpell && rule.formulas->skills.at(request.skill).number("srvdofunc")==124;
+    const bool selfAction=periodic || slot.action==MonsterAttackRule::Action::SpawnMinion || slot.action==MonsterAttackRule::Action::DefensiveBuff || nativeNest || shadowSelf || druidTeleport || slot.action==MonsterAttackRule::Action::Teleport || slot.action==MonsterAttackRule::Action::BurrowUp || slot.action==MonsterAttackRule::Action::BurrowDown || slot.action==MonsterAttackRule::Action::Hatch || slot.action==MonsterAttackRule::Action::Animation || slot.action==MonsterAttackRule::Action::Lay || slot.action==MonsterAttackRule::Action::Submerge;
     const bool special=slot.action!=MonsterAttackRule::Action::Damage;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(overseerSupport && (target->id==monster->id || !(victim?victim->alive():participants.find(target->id).player && participants.find(target->id).player->persistent.player.hp>0))) return {DomainStatus::InvalidActor,{}};
     const bool corpseSkill=(monster->assassinPet && rule.formulas->skills.at(request.skill).number("srvdofunc")==55) ||
         (monster->druidPet && request.skill && (rule.formulas->skills.at(request.skill).number("srvstfunc")==63 || rule.formulas->skills.at(request.skill).number("srvdofunc")==137));
-    if(!overseerSupport && !pregnancy && !eating && !coordinateHydra && !coordinateWisp && !resurrection && !healing && !selfAction && !corpseSkill && !continuingLeap && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
+    if(!prison && !overseerSupport && !pregnancy && !eating && !coordinateHydra && !coordinateWisp && !resurrection && !healing && !selfAction && !corpseSkill && !continuingLeap && !participants.canHarm(monster->id,target->id)) return {DomainStatus::InvalidActor,{}};
     if(eating) {
         if(!victim || victim->hireling || !ports_.monsters.deadMode(target->id,request.tick)) return {DomainStatus::Unavailable,{}};
         destination=std::pair{victim->position+ports_.areas.at(victim->area).definition.origin-area.definition.origin,victim->rule.size};
@@ -121,7 +133,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         destination=std::pair{*request.position,0};
     }
     if(resurrection && ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick)) destination=std::pair{victim->position,victim->rule.size};
-    if(!destination || target->type>1 || (target->type==1 && !victim && !selfAction && !coordinateHydra) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
+    if(!destination || target->type>(prison?2:1) || (target->type==1 && !victim && !selfAction && !coordinateHydra) || (resurrection && !ports_.monsters.resurrectionTarget(monster->id,target->id,request.tick))) return {DomainStatus::InvalidActor,{}};
     if(slot.action==MonsterAttackRule::Action::Hydra) {
         const auto global=destination->first+area.definition.origin;
         const auto room=ports_.areas.roomAtPosition(monster->area,monster->position,int(std::floor(global.x)),int(std::floor(global.y)));
@@ -260,8 +272,12 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         release.releaseFrames=timing.events;
         if(slot.action==MonsterAttackRule::Action::Spray || request.position || slot.action==MonsterAttackRule::Action::Leap) release.launch=std::pair{monster->position,destination->first};
         if(coordinateWisp) release.launch=std::pair{monster->position,*request.position};
-        if(slot.action==MonsterAttackRule::Action::Inferno)
+        if(slot.action==MonsterAttackRule::Action::Inferno || slot.action==MonsterAttackRule::Action::DiabloRun)
             release.launch=std::pair{monster->position,destination->first};
+        if(slot.action==MonsterAttackRule::Action::DiabloRun) {
+            const auto point=destination->first+area.definition.origin;
+            release.launch->second=Vec{std::floor(point.x),std::floor(point.y)}-area.definition.origin;
+        }
         if(nativeNest || slot.action==MonsterAttackRule::Action::SpawnMinion)
             release.launch=std::pair{monster->position,monster->position+rule.spawnOffset};
         monsterReleases_.emplace(request.actor,std::move(release));
@@ -275,7 +291,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         if(!reserved) {monsterReleases_.erase(monster->id);return reserved;}
     }
     auto event = ports_.events.publish({0, request.tick, {}, {AudienceKind::Area, {}, monster->area},
-        {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
+        {AttackFact{monster->id, (request.position || slot.action==MonsterAttackRule::Action::Web || slot.action==MonsterAttackRule::Action::DiabloRun)?EntityId{}:target->id, 1, target->type, monster->area, monster->position, slot.action==MonsterAttackRule::Action::Web?monster->position:destination->first, request.tick + 1, request.skill, slot.rank, false, request.monsterMode}}});
     if (!event) {
         // Output backpressure retains the already allocated start contact.
         if(!isDeferred(event.status)) ports_.combat.cancel(monster->id);
@@ -289,7 +305,7 @@ DomainResult<> System::requestCast(const CastRequest &request) {
         ports_.monsters.toggleAiState(monster->id,rule.formulas->infernoState,true,request.tick);
     const bool neutral=request.monsterMode<16 && !(rule.immediateAiModes & (uint16_t(1)<<request.monsterMode));
     const auto begun=ports_.monsters.beginAttack(monster->id, request.tick + duration,neutral,
-        request.position || slot.action==MonsterAttackRule::Action::Web ? EntityId{} : target->id,std::move(modeState),request.monsterMode);
+        request.position || slot.action==MonsterAttackRule::Action::Web || slot.action==MonsterAttackRule::Action::DiabloRun ? EntityId{} : target->id,std::move(modeState),request.monsterMode);
     if(begun && slot.action==MonsterAttackRule::Action::Charge) {
         const auto delta=destination->first-monster->position;
         const float stop=float(rule.meleeRange+3)+.5f;
@@ -648,6 +664,7 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
         case MonsterAttackRule::Action::Firewall:
         case MonsterAttackRule::Action::Charge:
         case MonsterAttackRule::Action::Leap:
+        case MonsterAttackRule::Action::DiabloRun:
         case MonsterAttackRule::Action::Mosquito:
         case MonsterAttackRule::Action::Damage: special=false;break;
         }
