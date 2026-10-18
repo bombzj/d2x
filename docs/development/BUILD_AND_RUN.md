@@ -93,6 +93,19 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 ## 运行包记录
 
+### 当前镶嵌材料换拿修正包
+
+2026-10-19，基于`15f46357`及已有未提交工作区，Windows／MinGW／Ninja Release的`d2x`构建通过（4个增量步骤），现有`package.ps1`更新`dist/current`。修正符文／宝石／珠宝对非空孔目标错误选择镶嵌、移除背包拖拽操作提示卡；独立服务端未重建／打包。前一客户端备份于`artifacts/inventory-swap-20261019/previous-client/`，原MPQ与用户存档保留。下文旧包记录保留各自历史身份。
+
+| 当前客户端程序 | 字节 | SHA256 |
+| --- | --- | --- |
+| `dist/current/d2x.exe` | 35292818 | `228C6458B5C5571F82C550E3961D337D19214B4AA2F9FB32CA08986BDD894872` |
+| `dist/current/d2x_bncs_legacy.dll` | 639578 | `23895A63AABA49CD4B6040921AFBE2DAF4933FA146B9308C438B6300544DB4E7` |
+
+直接运行上述包内EXE、当前五个MPQ、英文、1280×816、嵌入宿主原字节协议及新建独立SwapSmoke存档。管理生成符文／宝石／珠宝与两顶帽子、原物品请求摆放仅用于准备条件；经既有ui-input连续按下／松开执行真实控制器，确认符文↔药水、宝石↔卷轴、珠宝↔药水、符文↔无孔／满孔帽子及已装备帽子两次镶嵌，原回包均Updated；实际查看同帧手持截图，未出现自制操作提示卡。正常quit保存后新进程重入，物品位置及两颗孔内符文恢复，两次退出码均为0，宿主failures=0，缺图单位0、mapErrors为空。具体操作与限制见[包裹界面](../gameplay/items/INVENTORY_UI.md#操作)。
+
+本轮仅认证列出路径；未覆盖全部堆叠／装书、仓库／方块／交易、未鉴定／损坏目标、多人／原服、音频或Linux。没有新增测试脚本／用例／专用程序。构建／打包日志、包身份、原包日志、隔离存档、截图和重入快照位于`artifacts/inventory-swap-20261019/`。原大面板及怪物的既有运行证据仍只认证各节所列旧程序。
+
 ### 当前后三幕怪物集成包（第73至111项）
 
 2026-10-18，基于`bd540bf9`后的本批源码，Windows／MinGW／Ninja Release客户端`d2x`与独立服务端`d2x_pvpgn`完整构建通过，保留非致命警告。修正调试快照对已删除wave／wavePrepared字段的引用，并补齐QuestEffect／MonsterClassHint事件名称。现有脚本已更新`dist/current`和`dist/server`，包内EXE／DLL与构建产物摘要一致；旧程序及配置已备份，原MPQ／存档保留。

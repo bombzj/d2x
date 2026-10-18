@@ -167,6 +167,13 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
         return drop;
     }
     const auto &definition = *inventory.definition(source->definition);
+    // Retail 1.13c RVA 8C2B0 only selects 0x28 for an identified,
+    // unbroken socketed host with room. Other targets keep normal swap/equip.
+    const auto socketTarget = [&](const InventoryItemView &host) {
+        return !ui.playerTradeOpen && !ui.forceSwap && definition.socketFiller && source->identified &&
+            host.identified && (host.nativeFlags & 0x800u) && !(host.nativeFlags & 0x100u) &&
+            host.socketContentsKnown && host.socketItems.size() < host.sockets;
+    };
     auto removeTo = [&](ItemDestination destination) {
         if (location->container == containers.beltEquipment)
             drop.command.emplace(std::in_place_type<EquipBelt>, source->handle(), std::move(destination));
@@ -178,7 +185,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
     };
     if (auto slot = ui.open && !ui.playerTradeOpen ? equipmentAt(mouse, inventory.weaponSet) : std::nullopt) {
         const auto *host = inventory.item(inventory.equipped(containers, *slot));
-        if (!ui.forceSwap && definition.socketFiller && host) {
+        if (host && socketTarget(*host)) {
             drop.command = SocketItem{source->handle(), host->handle()};
             drop.description = "Insert into socket";
         } else if (*slot == EquipmentSlot::Belt) {
@@ -224,7 +231,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                 auto targetCell = std::get<ContainerLocation>(target->location).cell;
                 const auto *targetDefinition = inventory.definition(target->definition);
                 drop.bounds = grid.itemBounds(targetCell, *targetDefinition);
-                if (!ui.playerTradeOpen && !ui.forceSwap && definition.socketFiller) {
+                if (socketTarget(*target)) {
                     drop.command = SocketItem{source->handle(), target->handle()};
                     drop.description = "Insert into socket";
                 } else if (!ui.playerTradeOpen && !ui.forceSwap && targetDefinition->bookCapacity &&

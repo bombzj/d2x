@@ -209,9 +209,6 @@ void SceneView::drawInventory(Vec mouse) const {
                 hovered = equipped->id;
         }
     }
-    std::string hint = ui.pending                  ? "Moving item..."
-                       : ui.drag && ui.drag->moved ? drop.description
-                                                   : "Select an item or drag it to another slot.";
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == backpack)
             drawContainerGrid(grid, mouse);
@@ -234,11 +231,6 @@ void SceneView::drawInventory(Vec mouse) const {
         if (auto item = inventory.item(hovered); item && !ui.hidesItem(*item))
             drawItemTooltip(*item, {mouse.x + 170, mouse.y},
                 inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
-    } else if (ui.drag && ui.drag->moved && !overShop && !hint.empty()) {
-        int width = painter_.measure(hint, 12) + 24;
-        frame({panel.x - width - 12, 450, float(width), 30});
-        painter_.label(hint, int(panel.x - width), 459, 12,
-                       drop.error == InventoryError::None ? gold : Color{242, 137, 114, 255});
     }
     if (ui.split) {
         DrawRectangleRec(panel, {0, 0, 0, 175});
