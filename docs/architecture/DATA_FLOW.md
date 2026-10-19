@@ -1,6 +1,6 @@
 # 数据流与生命周期
 
-更新：2026-10-11。本文维护客户端、嵌入宿主与独立PvPGN游戏服务沿原协议交换状态的数据流。实现范围见[基线](../../BASELINE.md)，包身份见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)，实施顺序见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)，独立服务的有限互通证据与限制见[部署页](../development/PVPGN_SERVER.md#有限冒烟)。
+更新：2026-10-11。本文维护客户端、嵌入宿主与独立PvPGN游戏服务沿原协议交换状态的数据流。实现范围见[基线](../../BASELINE.md)，实施顺序见[总计划](MULTIPLAYER.md)，库边界见[架构](OVERVIEW.md)，独立服务的后端契约与限制见[部署页](../development/PVPGN_SERVER.md)。
 
 | 数据 | 流向 | 所有权与限制 |
 | --- | --- | --- |

@@ -36,7 +36,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `server-snapshot.monsters`另含当前难度、MPQ Drain和实际physicalResistance；`openWounds`只读返回固定点每帧rate、until／next及实际source／credit，空状态为零。rate单位为1/256生命，快照tick为下一待执行帧；事件背压时next可落后，恢复后补齐期限内应付伤害。字段不允许直接修改怪物或授予效果，结算见[武器命中效果](../gameplay/combat/WEAPON_EFFECTS.md)。
 
-刺客陷阱／影子的怪物记录另含可选 `assassin`：`parameters` 为实际AI参数，`nextDecision`、`expires`、`removeAt`、`lastCorpse`、`missile` 分别观察决策、期限、撤出、所选尸体与附属飞弹。数据只读复制伙伴运行态，不是第二份AI、客户端协议或修改单位的入口。活动单位可能仍在移动／动作中，不能仅以 `nextDecision` 小于当前帧判定阻塞；应一并查看固定步进度、实际动作／事件及队列。有限运行范围见[刺客](../gameplay/skills/ASSASSIN.md)。
+刺客陷阱／影子的怪物记录另含可选 `assassin`：`parameters` 为实际AI参数，`nextDecision`、`expires`、`removeAt`、`lastCorpse`、`missile` 分别观察决策、期限、撤出、所选尸体与附属飞弹。数据只读复制伙伴运行态，不是第二份AI、客户端协议或修改单位的入口。活动单位可能仍在移动／动作中，不能仅以 `nextDecision` 小于当前帧判定阻塞；应一并查看固定步进度、实际动作／事件及队列。实现范围与原版依据见[刺客](../gameplay/skills/ASSASSIN.md)。
 
 当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间每步同步两次，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。新字段未运行认证，后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
 
@@ -128,7 +128,7 @@ $spec.preview=$false
 | `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；金币输入另支持key=select-all（Ctrl+A）及Shift选区；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
-| `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；冒烟范围见[联网记录](../modules/NETWORK.md#既有有限证据)，不能据此认证完整M4 |
+| `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；当前范围、原服参考与缺口见[联网模块](../modules/NETWORK.md) |
 | `online-chat-input` | message经过与游戏UI相同的通用分流，支持/nopickup、/players、房间／头顶／私聊和BNCS命令。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
 | `online-party-action` | unitId为当前名册真实GUID，action为invite／cancel／accept／leave（leave目标为本人）；可选gameGeneration复验本局。与P界面共用RealmSession.party_action，只发送原5E；accepted不修改名册／队号，真实结果读取75／8B／8D。 |
@@ -236,7 +236,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 
 `online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
-accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易有限运行证据见联网交付；全部物品交易、赌博／多买、佣兵装备仍未完整认证。
+accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易消息见[联网参考](../modules/NETWORK.md#原服物件与交易观察)；全部物品交易、赌博／多买、佣兵装备仍待完整核对。
 
 ```powershell
 # 查看原服物品；返回全部物品，按 mode／owner 筛选

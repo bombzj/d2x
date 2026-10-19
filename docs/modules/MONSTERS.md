@@ -46,6 +46,6 @@ RemoteCombat内部以Unknown／Hostile／NonHostile区分信息缺失与已知�
 
 规则准备、生命周期与迁入更新[COMMON](../gameplay/monsters/COMMON.md)；类型／AI覆盖更新所属幕；精英和专用策略分别更新ELITES／BOSSES；出生／房间更新POPULATION，原包／资源更新PRESENTATION。技能算法、任务、佣兵与掉落仍归原专题，入口见目录。
 
-当前按幕缺口、替身适用范围和历史有限证据由专题维护，不在模块页复制完成清单。准入成功、任务完成或资源可读不等于真实怪物战斗验收；旧映射／旧单机实现不恢复客户端执行器。
+当前按幕缺口、替身适用范围和原版依据由专题维护，不在模块页复制完成清单。准入成功、任务完成或资源可读不等于真实怪物战斗已对齐原版；旧映射／旧单机实现不恢复客户端执行器。
 
 共享移动的原停止距离与绕行路径在`world/navigation`，目标与射击回调分离在`server/systems/ai/system`，两幕家族只提交对应移动／技能意图；依据与适配边界见[公共规则](../gameplay/monsters/COMMON.md#移动与目标依据)。

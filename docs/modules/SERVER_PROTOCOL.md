@@ -29,11 +29,11 @@ native_game_wire在本人新准入的0x59后发送原0xAA初始状态快照；mo
 
 native_character_wire的四抗条目只发布安亚永久奖励，装备／状态／难度在共用客户端投影合成；佣兵原9E／9F／A0发布MonsterAI_SendMercStats对应的基础成长值及当前生命，装备和状态同样由原副本合成。不能把权威最终抗性或佣兵装备后总值再作为原基础列表发送。对应显示和验证边界归[人物属性](../gameplay/characters/ATTRIBUTES.md)及[佣兵](../gameplay/characters/HIRELINGS.md)。
 
-野蛮人移动技能复用原16位置批次同步权威坐标，保留4C／4D技能动作；跳跃／旋风的动作通知也同步本人，避免普通本人预测在等待近战范围时不启动。原0D/action19按生命校正消费，不清除不可打断动作。具体范围和运行证据见[野蛮人](../gameplay/skills/BARBARIAN.md)。
+野蛮人移动技能复用原16位置批次同步权威坐标，保留4C／4D技能动作；跳跃／旋风的动作通知也同步本人，避免普通本人预测在等待近战范围时不启动。原0D/action19按生命校正消费，不清除不可打断动作。具体范围、原版依据和缺口见[野蛮人](../gameplay/skills/BARBARIAN.md)。
 
 内核现在提供GameCommand、command_dispatch及26个新领域State／Ports骨架，详见[内核子系统](SERVER_SYSTEMS.md)。submitGameplay统一将连接身份和当前来源区域／代次绑定到内部命令；01／03走跑及02／04出口靠近使用此入口，3A／3B已接人物成长事务，41复活及13本人尸体取回已接death；不新增私有包或客户端分支。
 
-亚马逊批按原SCmd／D2PacketDef新增7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。81可独立登记本人佣兵，7F非玩家分支投影本人宠物生命／区域，光标喂药使用61/body=0。头像及佣兵链的准确范围与有限运行边界见[佣兵](../gameplay/characters/HIRELINGS.md)。
+按原SCmd／D2PacketDef编码7A宠物归属（固定13字节），复用9D的monster ownerType公开装备及A8状态属性；73保留原pierce字节，仅按ClientSend发包。PlayerPets归属名册独立于可见单位，房间离开只发0A，不伪造归属删除；原服与自研客户端都消费相同原包。81可独立登记本人佣兵，7F非玩家分支投影本人宠物生命／区域，光标喂药使用61/body=0。头像及佣兵链的原版依据、当前范围与缺口见[佣兵](../gameplay/characters/HIRELINGS.md)。
 
 通用十项复用原攻击／技能请求，书本／卷轴SrvDo113路由到库存与旅行。原3F现为implemented：固定8字节保留目标光标、来源GUID及技能ID，成功鉴定后取消光标；数量／物品及门户仍用原消息。它仅表示准备，不表示鉴定已成功，详见[通用技能](../gameplay/skills/GENERAL.md)。
 
@@ -47,7 +47,7 @@ B4覆盖原游戏端准入失败：6为票据／姓名／游戏资格错误，15
 
 5F UpdatePosition由handlers_movement解码为MovementAction::Synchronize，经权威队列交给travel/position_sync；不取消正在使用的技能或既有跨区移动。沿本地D2MOO PlrMsg::Rcv0x5F_UpdatePlayerPos使用原整数距离（大轴加小轴一半）：死亡／正在使用技能和小于5的偏差忽略；sync_warped期间、距离小于15或大于45时，无单位移动目标则重新寻路。15–45校验当前／相邻活动房间、WALL|NOPLAYER|OBJECT的精确路径（最多77格）及普通玩家落点，失败发送原15回传本人权威位置；成功向旁观者同步位置，发布当前MPQ的sync_warped状态，不再向本人发15打断预测。跨区域先发布TravelFact以更新房间兴趣，保留仍可达的既有目的地。状态期限及单机频繁同步延长依据PlrMsg／Clients，状态和历史不写入D2S。交易期间不借同步移动角色或结束交易。
 
-此处复用当前Grid精确寻路和已准备的双向步行边界，并非完整复刻原PATHTYPE_WALL_FOLLOW的选路顺序；不会以近似路径、最近落点、未知区域或瓦片传送出口放行。自有客户端既有15消费者清除预测请求并记录位置断点，共用原版回包，不新增私有ACK；自有客户端按原版1.13c的位置容差主动发送5F，并保留本人当前显示位置；18／95／96不再触发本人强制位移或改写已提交目标。原版处理函数、容差及尚未复刻的房间门控见[本人位置回包](MAP.md#本人位置回包)。2026-10-12旧构建日志的第二趟出城失步及原版悬停问题仍待新包人工复验，证据归[怪物表现](../gameplay/monsters/PRESENTATION.md#原版加入自研宿主的待核实问题)。
+此处复用当前Grid精确寻路和已准备的双向步行边界；公共WallFollow入口与适配限制见[共用寻路](MAP.md#共用寻路)，不会以最近落点、未知区域或瓦片传送出口放行。自有客户端既有15消费者清除预测请求并记录位置断点，共用原版回包，不新增私有ACK；自有客户端按原版1.13c的位置容差主动发送5F，并保留本人当前显示位置；18／95／96不再触发本人强制位移或改写已提交目标。原版处理函数、容差及尚未复刻的房间门控见[本人位置回包](MAP.md#本人位置回包)。原版Join的出城失步及悬停问题见[怪物表现](../gameplay/monsters/PRESENTATION.md#原版加入自研宿主的待核实问题)，根因与完整原版行为仍待核对。
 
 共享目录覆盖当前RealmSession发送及已交叉核对的11个预留请求，S2C覆盖现有1.13c长度表全部143项（含B4入局错误）。宿主实现状态独立于客户端消费；只确认身份／长度的消息为Reserved／stub，未知长度继续失败，不从旧头文件猜测。
 
@@ -65,7 +65,7 @@ B4覆盖原游戏端准入失败：6为票据／姓名／游戏资格错误，15
 
 库存GUID在宿主端通过inventoryInput绑定服务端ItemHandle；原包不增加revision或请求ID。请求在固定步复验来源、位置、活动武器组和交换目标，成功经InventoryFact生成原9C／9D／0A，切组另发97及23；同笔CharacterFact发原1F／21人物增量；可靠通知与可覆盖的PlayerSnapshot.command分开。一次队列写入包含整笔原字节包，接收成功才确认Outbox；失败终止连接并保留实例／存档租约。无通用成功ACK或错误fallback；详细规则／暂缓范围见[物品目录](../gameplay/items/README.md)。
 
-2026-10-12补齐原C2S 2A直接入方块、63背包自动入腰带与37最后购入物品鉴定；37不允许任意免费鉴定，2A不授予合成授权。D2X快捷入带同步发送63，调试原入口提供cube-store／belt-auto；运行证据和未核实边界见[物品核对](../gameplay/items/EVIDENCE.md#客户端与服务端物品核对)。
+原C2S 2A直接入方块、63背包自动入腰带与37最后购入物品鉴定已接；37不允许任意免费鉴定，2A不授予合成授权。D2X快捷入带同步发送63，调试入口提供cube-store／belt-auto；原版依据和未核实边界见[物品核对](../gameplay/items/EVIDENCE.md#客户端与服务端物品核对)。
 
 库存移入Cursor的原9D/action5／8及相关移除回包保留事实before中的来源body、坐标和InvPage；新mode4不等于这些字段全部归零。装备与卸装x对应已映射活动武器组的原body，存储拿取保留来源S2C page。来源仅供原包移除位置，不改变权威Cursor或磁盘位置；自有客户端依mode消费，未靠私有ACK补偿。原版Join现场与原Host回包差异、修正版验证边界见[职业装备对照](../gameplay/items/EVIDENCE.md#职业装备与原版拒绝对照)。
 

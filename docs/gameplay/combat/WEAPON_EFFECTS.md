@@ -1,6 +1,6 @@
 # 武器吸取、压碎性打击与撕裂伤口
 
-更新：2026-10-12。本页维护PvP伤害及玩家对敌对怪物的四项武器命中效果、公共计算与提交边界。装备资格／手位见[装备](../items/EQUIPMENT.md)，普通动作／弹药见[通用技能](../skills/GENERAL.md)，运行证据见[物品证据](../items/EVIDENCE.md)。
+更新：2026-10-12。本页维护PvP伤害及玩家对敌对怪物的四项武器命中效果、公共计算与提交边界。装备资格／手位见[装备](../items/EQUIPMENT.md)，普通动作／弹药见[通用技能](../skills/GENERAL.md)，原版规则与协议参考见[物品依据](../items/EVIDENCE.md)。
 
 ## 来源与结算
 
@@ -24,7 +24,7 @@
 
 属性诅咒按原aurafilter接玩家并成组提交；AI控制诅咒不控制玩家。近战荆棘按`SkillPal::SKILLS_ApplyThornsDamage`对玩家／佣兵攻击者使用`(percent+4)/8`，随后走伤害管线；攻击者铁处女、目标生命偷取诅咒与原冰甲反击接同一来源／目标。反伤发生标识单独递增，背压不丢原命中或重复反伤。伤害提交后的吸取、叠加及反噬沿既有分阶段提交。
 
-致命伤捕获玩家归功与名字／职业，随后断线不改判PvE；PvP金币、经验与原击杀提示见[玩家死亡](../characters/PLAYER_DEATH.md)。目前不新增耳朵战利品、硬核死亡／尸体权限或尚未实现的职业技能。Leap纯击退、Slow Missiles对玩家等专用非伤害分支仍需独立对齐，不把通用伤害入口当作所有PvP技能组合完成。本轮普通攻击／火弹、死亡与复活取得隔离TCP双客户端有限观察，范围见[提交前冒烟](../../development/BUILD_AND_RUN.md#本批提交前冒烟)；尚无原版PvP实机对照。
+致命伤捕获玩家归功与名字／职业，随后断线不改判PvE；PvP金币、经验与原击杀提示见[玩家死亡](../characters/PLAYER_DEATH.md)。目前不新增耳朵战利品、硬核死亡／尸体权限或尚未实现的职业技能。Leap纯击退、Slow Missiles对玩家等专用非伤害分支仍需独立对齐，不把通用伤害入口当作所有PvP技能组合完成；尚缺原版PvP实机对照。
 
 ## 客户端动画
 
@@ -42,7 +42,7 @@ LocalBlood的CltDo2按原动画完成时停止移动、保留最后一帧地面�
 
 `replication`从仍存活怪物的真实wound派生openwounds可见状态，与首次命中／到期的StateFact一致；首次可见、离区再回来及输出背压期间均保留原状态。不能仅发首次开启事件，却在下一次怪物快照中遗漏并撤销它。
 
-接触随机保留在目标阶段，输出背压不重新创建随机子流；耐久提交保留已应用标记。目标伤害／撕裂提交成功后进入资源回补阶段，资源与原Overlay成组发布，成功后清除待回补值。Sacrifice反噬在吸取之后执行，单独保留阶段；背压重试不再次扣目标生命或重复吸取。玩家死亡、换区或来源控制代次失效仍按公共战斗资格处理。
+接触随机保留在目标阶段，输出背压不重新创建随机子流；耐久提交保留已应用标记。目标伤害／撕裂提交成功后进入资源回补阶段，资源与原Overlay成组发布，成功后清除待回补值。Sacrifice已按原St29／Do64在目标Drain前提交反噬，见[旧近战链与随机迁移](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)；背压重试不再次扣目标生命或重复吸取。玩家死亡、换区或来源控制代次失效仍按公共战斗资格处理。
 
 撕裂的下一次扣血标记仅在伤害事实提交成功后推进；输出容量不足时保留未付帧数，恢复后补齐到期限内应付的固定点伤害，再清理到期状态。正常固定步每次只有一帧，容量重试既不漏帧也不重复支付。
 
@@ -50,8 +50,8 @@ LocalBlood的CltDo2按原动画完成时停止移动、保留最后一帧地面�
 
 ## 原版依据与限制
 
-本地D2MOO `SUnitDmg::SUNITDMG_ExecuteEvents`／`SUNITDMG_AddLeechedLife`／`SUNITDMG_AddLeechedMana`、`SkillItem::SKILLITEM_EventFunc15_OpenWounds`／`SKILLITEM_EventFunc16_CrushingBlow`、`Skills::sub_6FD10EC0`、`SkillPal`盾击与Sacrifice，以及`SkillAma::SKILLS_SrvDo008_MultipleShot_Teeth_ShockWave`；参数及原图以当前MPQ为准。本机原1.13c D2Game.dll MD5 `978f6f74cd031bce6ecee602cd5988cc`的RVA `0xACC30`只读核对了压碎的boss／类型标记2、人数、远程、抗性及原Overlay147分支，静态证据保留在忽略目录`artifacts/weapon-effects/native-crushing.txt`，原DLL不修改／分发。
+本地D2MOO `SUnitDmg::SUNITDMG_ExecuteEvents`／`SUNITDMG_AddLeechedLife`／`SUNITDMG_AddLeechedMana`、`SkillItem::SKILLITEM_EventFunc15_OpenWounds`／`SKILLITEM_EventFunc16_CrushingBlow`、`Skills::sub_6FD10EC0`、`SkillPal`盾击与Sacrifice，以及`SkillAma::SKILLS_SrvDo008_MultipleShot_Teeth_ShockWave`；参数及原图以当前MPQ为准。本机原1.13c D2Game.dll MD5 `978f6f74cd031bce6ecee602cd5988cc`的RVA `0xACC30`只读核对了压碎的boss／类型标记2、人数、远程、抗性及原Overlay147分支，原DLL不修改／分发。
 
-本机原1.13c D2Client.dll MD5 `f5860c629d309b8fc1f96174babcf633`只读核对了状态回调表RVA `0xDEA48`的85项→`0xC9000`、喷血helper `0x4C500`、创建helper `0xB0450`→`0xB30F0`与CltDo2 `0xB3060`→公共程序`0xB17C0`。同版本D2Common.dll MD5 `ee1238806ef6d6d9801d12a09d128fe1`核对字段装载偏移与停止条件、速度归零、128续帧；静态证据在忽略目录`artifacts/weapon-effects/visual/native-*.txt`。不执行、修改或分发原DLL。
+本机原1.13c D2Client.dll MD5 `f5860c629d309b8fc1f96174babcf633`只读核对了状态回调表RVA `0xDEA48`的85项→`0xC9000`、喷血helper `0x4C500`、创建helper `0xB0450`→`0xB30F0`与CltDo2 `0xB3060`→公共程序`0xB17C0`。同版本D2Common.dll MD5 `ee1238806ef6d6d9801d12a09d128fe1`核对字段装载偏移与停止条件、速度归零、128续帧；不修改或分发原DLL。
 
-当前覆盖已实现玩家武器技能对敌对怪物的四项效果及上节PvP伤害入口。未实现职业技能、全部多目标／装备触发组合及客户端逐像素表现仍按所属专题的限制；有限运行不能推定所有职业、武器、多人和三难度均已认证。
+当前覆盖已实现玩家武器技能对敌对怪物的四项效果及上节PvP伤害入口。未实现职业技能、全部多目标／装备触发组合及客户端逐像素表现仍按所属专题的限制；各职业、武器、多人和三难度分别核对。

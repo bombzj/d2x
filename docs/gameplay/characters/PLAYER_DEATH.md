@@ -14,11 +14,11 @@
 
 致命伤提交时保存实际玩家归功、名字及职业，death转换捕获后不再依赖击杀者仍在线。玩家及其受控单位击杀另一玩家不扣经验，按`PLAYER_ApplyDeathPenalty`只掉落`min(level,20)% ×（携带金币＋银行金币）`的惩罚额；携带不足时从银行补足，其余携带金币保留。金币与尸体转移使用同一库存／世界事务，地面无法容纳的金币不丢失，重试不重复结算。
 
-同一死亡事务向已入场玩家发送5A/type6、color4、两段姓名及原击杀者职业编号；D2X使用当前MPQ的sysmsg7显示“was slain by”。生命与DT／DEAD仍沿已有玩家模式回包，客户端不凭通知自行死亡。耳朵战利品、专家死亡／尸体loot许可及完整PvP保存组合未扩展；本轮敌对玩家死亡／type6提示及复活取得有限观察；未验证完整金币／经验惩罚组合，见[提交前冒烟](../../development/BUILD_AND_RUN.md#本批提交前冒烟)。
+同一死亡事务向已入场玩家发送5A/type6、color4、两段姓名及原击杀者职业编号；D2X使用当前MPQ的sysmsg7显示“was slain by”。生命与DT／DEAD仍沿已有玩家模式回包，客户端不凭通知自行死亡。耳朵战利品、专家死亡／尸体loot许可及完整PvP保存组合未扩展；完整金币／经验惩罚组合仍缺原版对照。
 
 ## 编码与原版依据
 
-自研宿主的伙伴联动以death::Transition.ready为同一权威DT结束点：调用companions::ownerDied后，四类佣兵写死亡位并开始自身DT，召唤物进入死亡／移除。复活与保存须等待companionsSettled，背压不提前清理或保存存活佣兵；怪物本身受伤或寿命到期仍可独立死亡。依据PlrModes::PLRMODE_StartXY_Dead → PlayerPets::D2GAME_KillPlayerPets／sub_6FC7CDC0，不能仅在玩家hp归零时立即杀伙伴。本批主人死亡与佣兵复活保存取得代表单机证据；完整时序／背压组合未认证，详见[佣兵](HIRELINGS.md#当前包有限冒烟)。
+自研宿主的伙伴联动以death::Transition.ready为同一权威DT结束点：调用companions::ownerDied后，四类佣兵写死亡位并开始自身DT，召唤物进入死亡／移除。复活与保存须等待companionsSettled，背压不提前清理或保存存活佣兵；怪物本身受伤或寿命到期仍可独立死亡。依据PlrModes::PLRMODE_StartXY_Dead → PlayerPets::D2GAME_KillPlayerPets／sub_6FC7CDC0，不能仅在玩家hp归零时立即杀伙伴。完整时序／背压组合仍待核对，详见[佣兵](HIRELINGS.md)。
 
 独立D2S工具保留原JM尸体段，编码支持最早非空尸体及物品位置；不提供产品恢复入口，详见[存档](../../modules/SAVES.md)。D2S没有客户端死亡动画、未完成施法或短时状态字段。
 

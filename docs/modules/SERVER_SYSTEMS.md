@@ -1,26 +1,34 @@
 # 自研游戏内核与子系统
 
-更新：2026-10-16。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)，包身份见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)，历史运行证据由对应玩法专题维护。
+更新：2026-10-16。本文维护内核入口、所有权和扩展约定；功能顺序见[总计划](../architecture/MULTIPLAYER.md)，原包入口见[服务端协议](SERVER_PROTOCOL.md)。实现范围见[基线](../../BASELINE.md)；各专题维护当前实现、原版依据和明确缺口，不保留自研冒烟台账。
 
 ## 当前范围
 
-跨单位持续效果的新增源码统一接收标志准备、只读列表查询与复制状态来源；NPC与其他非玩家共用唯一MonsterActor、原生属性和资源，AreaNpc只保留出生／任务／服务元数据。是否接收仍由原技能filter及公共投递／直接分配策略分别决定。三种护盾、非玩家自施法、普通攻击的状态属性消费和召唤物死亡撤出共用实际单位候选；所有者边界、源码入口及未完成事件交错见[公共效果边界](../gameplay/skills/COMMON.md#跨单位接收与载体边界)。这些载体／状态切片已纳入已有构建，列出的有限路径以[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)为准；未逐项观察的跨单位／生命周期组合仍未验收。阶段和下一步统一见[总计划2.3节](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。
+跨单位持续效果的新增源码统一接收标志准备、只读列表查询与复制状态来源；NPC与其他非玩家共用唯一MonsterActor、原生属性和资源，AreaNpc只保留出生／任务／服务元数据。是否接收仍由原技能filter及公共投递／直接分配策略分别决定。三种护盾、非玩家自施法、普通攻击的状态属性消费和召唤物死亡撤出共用实际单位候选；所有者边界、源码入口及未完成事件交错见[公共效果边界](../gameplay/skills/COMMON.md#跨单位接收与载体边界)。跨单位／生命周期的完整组合仍待核对。阶段和下一步统一见[总计划2.3节](../architecture/MULTIPLAYER.md#23-战斗重构实际阶段与剩余步骤)。
 
 玩家入场、行走、库存／装备、人物成长、世界换区、多人投影、普通近战、女巫及亚马逊技能、掉落／消耗、玩家死亡、普通物件／NPC和五幕27项个人任务／奖励／旅行由权威内核执行。26个领域加玩家／移动形成28项目录；各自具有独立State、read、类型化请求及显式Ports，由GameSystems持有。inventory规划物品，attributes计算总值，progression规划成长，transactions提交人物事务；World管理区域准备／驻留，Travel提交位置／区域过渡，replication派生可见参与者，social实现广播／私聊、屏蔽关系、队伍邀请／成员权威及可见头顶消息，trade实现双人原子物品／金币交换。其他规则保持NotImplemented；总体未完成，当前范围以本页、[库存](INVENTORY.md)、[人物](CHARACTER.md)和[ACT1](../gameplay/quests/ACT1.md)为准。
 
 命令目录中的Scaffold在入队前被拒绝，不因有函数入口就宣称Queued。3A／3B成长、13的UNIT_TILE及15同局聊天已执行领域入口；传送点、门户、普通物件／NPC、城镇服务及跨幕旅行已接；队伍及有向敌意由social执行；玩家交易见[PLAYER_TRADE](../gameplay/items/PLAYER_TRADE.md)。普通攻击／选技／热键／停止已接skills；人口准入已准备的第一幕普通／精英／首领怪物。世界物品生成与普通掉落已接items／loot，不能据此宣称全部来源规则完成。
 
-属性候选已接当前MPQ的物品单位事件注册链、物品光环逐写回调和运行态计时器；reactions::ItemTriggers消费已发布注册链及原始参数层几率。光环激活／撤销、零值状态撤出、逐来源资源上限、独立状态位及被动刷新在同一候选中按序执行；非零immediate的BasicAura已同步准备拥有者与周围接收者。玩家、佣兵、铁魔及女武神来源，嵌套回调与单人／双库存／人物成组事务已接共享候选图，输出接受和修订复验后一起发布。这些来源／持续效果机制已纳入前序构建；代表光环、诅咒、战吼、祭坛及伤害前回调有各自有限运行记录，完整非玩家属性回调、队列2物品事件交错、生命周期及全局排序仍未认证。具体算法与限制见[COMMON](../gameplay/skills/COMMON.md#当前持续效果入口)，当前飞弹／周期事件的迁移及验证边界见下节。
+属性候选已接当前MPQ的物品单位事件注册链、物品光环逐写回调和运行态计时器；reactions::ItemTriggers消费已发布注册链及原始参数层几率。光环激活／撤销、零值状态撤出、逐来源资源上限、独立状态位及被动刷新在同一候选中按序执行；非零immediate的BasicAura已同步准备拥有者与周围接收者。玩家、佣兵、铁魔及女武神来源，嵌套回调与单人／双库存／人物成组事务已接共享候选图，输出接受和修订复验后一起发布。完整非玩家属性回调、队列2物品事件交错、生命周期及全局排序仍待闭合。具体算法与限制见[COMMON](../gameplay/skills/COMMON.md#当前持续效果入口)，当前飞弹／周期事件的迁移及边界见下节。
 
 ## 原生帧事件迁移
 
 `GameSystems.frameEvents`单独拥有玩法定时器，`EventOutbox`仍只负责可靠输出；两者没有混用。公共`gameplay/events/frame_queue`保留原五类队列、64桶、持续／到期插入顺序、拥有者索引、逐身份取消、回调延迟删除和跨背压游标。PreparedInsertion与PreparedEdit先分配节点并捕获原登记集合，接受领域候选后再链接，废弃候选不发布；状态列表的本地事件身份随不可变候选保留，实例事件通过payload映射回原状态候选。
 
-`effects/frame_events`接收玩家／单位REMOVESTATE，`monsters/frame_events`接收独立AIRESET。人物事务、单位光环候选及直接佣兵／怪物状态路径一起准备／发布期限，旧每帧批量AIRESET扫描已撤出。`runtime/frame_event_dispatch`只路由至负责领域，`Simulation`保留Events阶段，事件未完成不进入后续逻辑帧；人物离场、怪物实体撤出及任务实体撤出取消各自的实例定时器。诊断frameEvents与可靠输出历史分开。当前派发还包括飞弹MODECHANGE、玩家／非玩家PERIODICSKILLS／PERIODICSTATS／STATREGEN及非玩家MonsterModifier；Object／Item／Game和其他事件仍没有完整派发，见`runtime/frame_event_dispatch`。AI已有单单位think入口，兼容遍历仍保留；AI思考期限、完整动作模式、房间休眠／激活及死亡取消顺序仍需迁入；此底座／持续效果期限模块的CMake/all构建、两包更新及列出的有限Single Player观察通过；实际包身份及未覆盖范围见构建运行记录。不能据类别队列存在就宣称全部原版时序已完成。
+`effects/frame_events`接收玩家／单位REMOVESTATE，`monsters/frame_events`接收独立AIRESET。人物事务、单位光环候选及直接佣兵／怪物状态路径一起准备／发布期限，旧每帧批量AIRESET扫描已撤出。`runtime/frame_event_dispatch`只路由至负责领域，`Simulation`保留Events阶段，事件未完成不进入后续逻辑帧；人物离场、怪物实体撤出及任务实体撤出取消各自的实例定时器。诊断frameEvents与可靠输出历史分开。当前派发还包括飞弹MODECHANGE、玩家／非玩家PERIODICSKILLS／PERIODICSTATS／STATREGEN及非玩家MonsterModifier。AI、动作、移动、物件及物品事件的已迁范围见下表；完整房间休眠／激活、死亡取消顺序和全局事件交错仍待闭合。
 
-飞弹后续迁移已提供`missiles::System::frameEvent`单单位入口，保留自己的Advance候选；发射批次持续事件先准备节点，再随发射接受发布。玩家、怪物、子弹体及直接技能实际子弹体已准备／发布持续事件，结束自注销；实例事件阶段先刷新只读空间索引，飞弹回调同步推进接受命中，并保留发射／HP阶段，原后续域阶段不再重复推进。Advance现记录子弹体／命中／诅咒的调用顺序，逐项发布并同步完成联系后才进入下一项；任意4096弹体阈值已撤出，同步SpellImpact准备不等待后续阶段释放256节点阈值，正常排队联系仍有独立准入限额。持续效果的任意128列表阈值也已撤出，避免同步回调阻塞在尚未执行的REMOVESTATE之前；原列表仍由候选准备实际分配，输出容量独立处理。装备光环接原PeriodicStats 9，右手光环及雷云风暴接PeriodicSkills 8，旧玩家光环／风暴轮询已撤出。右手选择候选在装备来源更新后清旧拥有者列表、执行immediate或投递无期限空列表，并一起准备custom ID -1；周期读取当前active槽等级。雷云按原目标GUID循环，临时弹体从game seed初始化私有随机流，伤害后通知与重排保留游标。佣兵／召唤光环使用原AssignSkill右手选择及custom ID -1，旧佣兵光环轮询已撤出；正skill ID保留原列表驱动分支。怪物模型新增独立rightSkill槽，单位选择由无人物主请求的事务图准备，复验状态／生命／接收者／定时器后一起发布，避免借用无关人物提交。光环附魔在创建后SetSkills／AssignSkill，都瑞尔在正常AI执行时首次分配原Aura；旧自然怪物双光环轮询已移除，附魔选择不再与当前右手光环并行保留。怪物技能分配通过共享来源／被动刷新候选，创建与机关／任务／诊断准入传入实际逻辑帧。嵌套接收者准备保留Capacity／Stale等失败类别。child_creation保留拥有式蓝图／创建程序，子体的实际技能、等级伤害与来源属性在有序操作处准备；节点、计时器和事实先分配，SUNIT身份／game seed消费形成独立保留阶段，输出背压不重掷、不覆盖已变化的游戏随机流。正常玩家／怪物发射及寒冰甲反射已从game seed生成弹体私有种子，不再以技能请求注入施放者种子；怪物发射返回其原行动种子。共同依据为固定D2MOO SUNIT_InitSeed、MISSILES_CreateMissileFromParams及SkillSor.EventFunc01；尚未运行认证，也不能把此迁移视作全部1.13c随机顺序认证。公共missiles/damage_data又接原范围构造、逐属性写入、加倍判定及FullDamageParams／单元素投掷；D2Common 1.13c字节确认unsigned加倍判定及来源恶魔ED一次累加，范围投掷与雷云先接新公共入口。普通敌方弹体现保存范围并逐目标进入combat/missile_contact，四类种子的所有者分别持有，格挡／双爪格挡／闪避读取实际受击者属性，内部命中类别游标先于同步回调推进；玩家恢复种子随HP事务提交。子体准备来源范围后一次接受实际拥有者／父体种子贷款。内容层monster_type_data按当前MPQ的MonType三等价关系准备只读目录，伤害的参数层匹配保留原128边界。combat/drain和missile_drain区分百分比／直接吸取，实际来源资源先于目标HP补回，怪物目标资源在HP后写回公共来源。effects/missile_delay为NextHit准备原JUSTHIT状态、空列表与REMOVESTATE，门控等原回调而非到期帧比较，零NextDelay也保留原排期。敌方弹体来源换区／死亡／归属变化不直接删弹，来源撤出抑制后续命中／子体。佣兵弹体已改为无投掷程序参数与共用伤害范围分开，创建阶段不再生成武器固定伤害；精通按实际当前usedSkill，判定由共享公式目录导入。公共damage_program与逐目标执行接原SrvDmg，转换与额外选定元素投掷保留阶段，冻结／冷却分别传入受击端；GetHit／SoftHit／KnockBack由MPQ和实际不可中断位准备，6／8目标标志与图形按顺序发布。原1.13c D2Game实际31槽表及1–14入口片段已与DLL字节匹配；狂犬病仍要求真实期限参数，缺失不假定。玩家武器弹体旧快照已在后续源码撤出；技能／物品事件统一顺序、特殊命中程序及全局执行交错仍待完成。已有飞弹／周期、数值／接触切片已纳入Release构建，代表Single Player观察及包身份见运行包记录；完整数值、随机和组合尚未验收，不沿用历史样例认证全部程序。
+`missiles::System::frameEvent`提供单单位入口，保留自己的Advance候选；发射批次持续事件先准备节点，再随发射接受发布。玩家、怪物、子弹体及直接技能实际子弹体已准备／发布持续事件，结束自注销；实例事件阶段先刷新只读空间索引，飞弹回调同步推进接受命中，并保留发射／HP阶段，原后续域阶段不再重复推进。Advance记录子弹体／命中／诅咒的调用顺序，逐项发布并同步完成联系后才进入下一项；任意4096弹体阈值已撤出，同步SpellImpact准备不等待后续阶段释放256节点阈值，正常排队联系仍有独立准入限额。持续效果的任意128列表阈值也已撤出，避免同步回调阻塞在尚未执行的REMOVESTATE之前；原列表仍由候选准备实际分配，输出容量独立处理。
 
-装备光环PeriodicStats的节点跟随人物事务／单位生命候选发布；候选放弃不登记，提交无分配链接。来源GUID和技能参数保留，当前聚合等级在单事件开始时采样；取消决定、接收者／伤害阶段和下一期限跨背压保留。玩家死亡事务、怪物死亡／退休取消周期事件；活冻结怪物跳过PeriodicStats，单次事件消耗、持续事件等解冻。旧全单位装备光环扫描和旧飞弹推进公开入口已撤出。此大模块已通过本轮构建与代表路径冒烟，完整周期／原版时序仍未验收。
+装备光环接原PeriodicStats 9，右手光环及雷云风暴接PeriodicSkills 8，旧玩家光环／风暴轮询已撤出。右手选择候选在装备来源更新后清旧拥有者列表、执行immediate或投递无期限空列表，并一起准备custom ID -1；周期读取当前active槽等级。雷云按原目标GUID循环，临时弹体从game seed初始化私有随机流，伤害后通知与重排保留游标。佣兵／召唤光环使用原AssignSkill右手选择及custom ID -1，旧佣兵光环轮询已撤出；正skill ID保留原列表驱动分支。怪物模型新增独立rightSkill槽，单位选择由无人物主请求的事务图准备，复验状态／生命／接收者／定时器后一起发布，避免借用无关人物提交。光环附魔在创建后SetSkills／AssignSkill，都瑞尔在正常AI执行时首次分配原Aura；旧自然怪物双光环轮询已移除，附魔选择不再与当前右手光环并行保留。怪物技能分配通过共享来源／被动刷新候选，创建与机关／任务／诊断准入传入实际逻辑帧。嵌套接收者准备保留Capacity／Stale等失败类别。
+
+child_creation保留拥有式蓝图／创建程序，子体的实际技能、等级伤害与来源属性在有序操作处准备；节点、计时器和事实先分配，SUNIT身份／game seed消费形成独立保留阶段，输出背压不重掷、不覆盖已变化的游戏随机流。正常玩家／怪物发射及寒冰甲反射已从game seed生成弹体私有种子，不再以技能请求注入施放者种子；怪物发射返回其原行动种子。共同依据为固定D2MOO SUNIT_InitSeed、MISSILES_CreateMissileFromParams及SkillSor.EventFunc01；完整1.13c随机顺序仍待核对。
+
+公共missiles/damage_data接原范围构造、逐属性写入、加倍判定及FullDamageParams／单元素投掷；D2Common 1.13c字节确认unsigned加倍判定及来源恶魔ED一次累加，范围投掷与雷云先接新公共入口。普通敌方弹体现保存范围并逐目标进入combat/missile_contact，四类种子的所有者分别持有，格挡／双爪格挡／闪避读取实际受击者属性，内部命中类别游标先于同步回调推进；玩家恢复种子随HP事务提交。子体准备来源范围后一次接受实际拥有者／父体种子贷款。内容层monster_type_data按当前MPQ的MonType三等价关系准备只读目录，伤害的参数层匹配保留原128边界。combat/drain和missile_drain区分百分比／直接吸取，实际来源资源先于目标HP补回，怪物目标资源在HP后写回公共来源。effects/missile_delay为NextHit准备原JUSTHIT状态、空列表与REMOVESTATE，门控等原回调而非到期帧比较，零NextDelay也保留原排期。敌方弹体来源换区／死亡／归属变化不直接删弹，来源撤出抑制后续命中／子体。
+
+佣兵弹体已改为无投掷程序参数与共用伤害范围分开，创建阶段不再生成武器固定伤害；精通按实际当前usedSkill，判定由共享公式目录导入。公共damage_program与逐目标执行接原SrvDmg，转换与额外选定元素投掷保留阶段，冻结／冷却分别传入受击端；GetHit／SoftHit／KnockBack由MPQ和实际不可中断位准备，6／8目标标志与图形按顺序发布。原1.13c D2Game实际31槽表及1–14入口片段已与DLL字节匹配；狂犬病仍要求真实期限参数，缺失不假定。玩家武器弹体旧快照已撤出；技能／物品事件统一顺序、特殊命中程序、全局执行交错及完整数值／随机／来源组合仍待闭合。
+
+装备光环PeriodicStats的节点跟随人物事务／单位生命候选发布；候选放弃不登记，提交无分配链接。来源GUID和技能参数保留，当前聚合等级在单事件开始时采样；取消决定、接收者／伤害阶段和下一期限跨背压保留。玩家死亡事务、怪物死亡／退休取消周期事件；活冻结怪物跳过PeriodicStats，单次事件消耗、持续事件等解冻。旧全单位装备光环扫描和旧飞弹推进公开入口已撤出。完整周期／原版时序仍待核对。
 
 ### 调度与动作的职责及迁移边界
 
@@ -31,7 +39,7 @@
 | Event：五类单位、持续链／64桶及原插入顺序 | FrameEventQueue持执行游标，Events阶段背压续执行同一逻辑帧；已进入的同步联系不会因自我中断重做。持续节点按原规则忽略显式handler，移动／怪物效果用保留的customId分派、去重及撤销 |
 | SUnit：玩家起手及百分比回绕 | gameplay/actions/timeline按AnimData完整标记、起始帧及速率排MODECHANGE／ENDANIM；同帧跨多个标记分别执行，未跨过标记不补造命中。普通／形态武器、SC、Kick及支持序列共用此入口 |
 | 专用序列 | Strafe／Fend／Zeal／Fury按MPQ次数及回绕重排，GUID后继／最小GUID回绕；Charge移除250帧超时及手写3／7帧延迟，使用序列4的Rewind8进入近战、Rewind7分配命中；LeapAttack落地Rewind16，普通Leap结束延迟1；DragonTalon按100%回绕重排，DragonFlight等待实际第二标记 |
-| Units／MonsterMode：逐帧动画与MonSeq | skills/monster_action_events保留FP8时钟、本次跨越的最后非零标记和内容准备的原事件号（包括4）；monsters::modeEvent推进普通／技能移动和延迟死亡。烈焰之径／蛛网在移动模式读取上次PATH跨格标志；死亡／GH效果按原修饰符到期事件执行，非GH电强化接同步伤害回调。旧怪物批量step、轨迹轮询及精英期限轮询已删除；已纳入当前构建，专用回调及全局交错尚未专项运行验收 |
+| Units／MonsterMode：逐帧动画与MonSeq | skills/monster_action_events保留FP8时钟、本次跨越的最后非零标记和内容准备的原事件号（包括4）；monsters::modeEvent推进普通／技能移动和延迟死亡。烈焰之径／蛛网在移动模式读取上次PATH跨格标志；死亡／GH效果按原修饰符到期事件执行，非GH电强化接同步伤害回调。旧怪物批量step、轨迹轮询及精英期限轮询已删除；专用回调及全局交错仍待核对 |
 | AiThink：野生AI、复活怪、佣兵、召唤物、陷阱 | 出生／复活、模式结束及AI切换登记单位事件；所选决定与待提交操作保留到同帧接受，输出背压不另抽决定。伙伴step只同步关系／准备结果 |
 | ObjMode／ItemMode | objects/frame_events执行结束、陷阱、祭坛重置、井、周期机关及延迟掉落；井每次使用登记独立单次补充。修复／补量由Item STATREGEN逐件执行；库存／地面step只同步时钟和垃圾生命周期，不伪造物品ENDANIM删除程序 |
 | flag4模式列表 | 速率列表逐次独立投递；结束、格挡／受击、中断及死亡撤出。旧effects批量模式到期扫描已删除，取消后清理按revision保留新动作列表 |
@@ -59,7 +67,7 @@ skills::step不再批量释放玩家／怪物动作，ai::step仅回收控制器
 
 依据为固定[D2MOO](../resources/THIRD_PARTY.md)的Event、SUnit／SUnitDmg、PlrModes、MonsterMode、AiUtil、ObjMode、ItemMode及职业Skill文件，规则由当前MPQ准备。原1.13c St32=6FC473C0、St35=6FCB8BA0、Do150=6FCB9000、Do13=6FC6DAC0及相关Drain片段共2788字节与本地DLL一致；本次另核对Do7至Do14所在区间（6FC6CB00–6FC6D040）1344个字节。Fend查找回绕分支仍写候选数量，固定D2MOO提前返回漏写；LightningStrike Do14原版6FC6CFE4／6FC6CFF1读取X／Y，固定D2MOO写Y／Y，采用原版X／Y。DLL SHA256为24b293b86f95bea0228826c502ea04737ba21b91ca9832e52aac4b11fef14f53；以上仅认证列出分支，不外推整函数。
 
-当前可达动作与旧近战消费者已迁入；完整队列2登记、全部属性／费用／死亡回调、世界休眠重建、专用飞弹与内容缺口仍按总计划4–8项闭合。全条件逐帧／随机轨迹及全部装备／难度／PvP组合未认证。构建、包身份及有限冒烟统一见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+当前可达动作与旧近战消费者已迁入；完整队列2登记、全部属性／费用／死亡回调、世界休眠重建、专用飞弹与内容缺口仍按总计划4–8项闭合。全条件逐帧／随机轨迹及全部装备／难度／PvP组合仍缺原版对照。
 
 ### 飞弹数值与接触收尾源码
 
@@ -73,11 +81,11 @@ skills::step不再批量释放玩家／怪物动作，ai::step仅回收控制器
 
 SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteor范围使用一次FullDamageParams；共享抽样对象也保留无目标时的抽样。范围查询开始复用原整数半径、filter与相邻房间单位链；跨区域按原遍历中连续的区域段提交，共享一次抽样，不按区域重排接收者。祝福之锤的专注加成改写实际magic上下限，GlacialSpike独立长度继续覆写对应元素字段。FireHead的单元素来源治疗在普通伤害投掷前经原生资源候选执行。多重箭外围箭抑制来源DealtMissileDamage和物品Hit登记，保留受击者事件及百分比吸取。目标item_damagetargetac在成功准确率的直接联系结束后处理，格挡／闪避也执行，佣兵与范围复制除外；HP与后置属性写入分阶段，重试不重复扣血。物品触发准备的任意4096工作数门槛已撤出，避免同步联系等待尚未进入的后续领域阶段。
 
-原版1.13c的SrvHit表、指法师SrvHit19和SpiderGoo的SrvHit16已从本地D2Game.dll提取（表VA `6FD2DA48`，指法师函数RVA `3E8A0`，证据`artifacts/missile-native-20261015/`）。两者首次分配后仍将空指针传入六槽写入及续期函数，已有列表才写属性；实现保留该分支。SrvHit52也保留原版检查HitSubMissile1却向创建器传入零飞弹ID的行为，不自行修正D2MOO中的疑似遗漏。这些字节核对不能外推成本轮所有程序都已验证。
+原版1.13c的SrvHit表、指法师SrvHit19和SpiderGoo的SrvHit16已从本地D2Game.dll提取（表VA `6FD2DA48`，指法师函数RVA `3E8A0`）。两者首次分配后仍将空指针传入六槽写入及续期函数，已有列表才写属性；实现保留该分支。SrvHit52也保留原版检查HitSubMissile1却向创建器传入零飞弹ID的行为，不自行修正D2MOO中的疑似遗漏。这些字节核对只覆盖列出的分支。
 
 公共公式计算器的飞弹Rand按原D2Common ordinal 10231、回调`6FDBB140`和范围助手`6FD51180`处理：回调的上下文偏移别名到本次调用按值传入的ID／等级参数，构成每次求值独立的64位种子；不会消费拥有者或飞弹的运行种子。SrvDmg转换读取已导入的DmgCalc1，并保留原调用的`(-1,-1)`参数。嵌套技能公式仍使用实际单位随机贷款。祝福之锤使用原Fog.dll浮点表的32个步进值、FP16和截断规则，客户端／服务端共用路径。
 
-普通弹体逐步改由原Do／Hit选择执行，圣光弹接收矩阵取TargetPet／TargetAlly及命中参数；火球、献祭箭、冰尖柱、陨石、药瓶、连锁、闪电之怒和天堂之拳进入公共接触／子体流程。范围复制保留HitFlags／ResultFlags，零结果字不执行接收；无成功位的受击表现不扣血。范围和天堂之拳直接SetDamageFlags阶段不重跑碰撞的HitByMissile／SrvDmg。目标爆发在其实际阶段枚举，天堂之拳先完成主目标，再创建周围子体。Howl、战吼、BattleCry与Grim Ward的原程序分别保留期限、列表拥有者、随机来源及AI入口；Grim Ward周期在飞弹自身属性／种子上计算，并保留难度AI诅咒除数。BaalFx、CairnStones、RadamentDeath与OrbMist已接原Do／Hit及真实所有者／对象GUID。NativeSpawn使用已准备公式／属性目录，区分直接创建与怪物技能包装，保留0x400距离倒计时与0x200构造起始帧，不套多重射击、佣兵武器程序或怪物技能TOHIT附加值。0x200先减Range再分别安装Total／Current／Activate，并独立写动画序列；其后的Current重设仍不修改Total。塔楼及剩余特殊程序、完整碰撞字段与全局事件交错仍在实施；此处不是“全部飞弹已完成”的声明；构建与有限运行范围由运行包记录维护。
+普通弹体逐步改由原Do／Hit选择执行，圣光弹接收矩阵取TargetPet／TargetAlly及命中参数；火球、献祭箭、冰尖柱、陨石、药瓶、连锁、闪电之怒和天堂之拳进入公共接触／子体流程。范围复制保留HitFlags／ResultFlags，零结果字不执行接收；无成功位的受击表现不扣血。范围和天堂之拳直接SetDamageFlags阶段不重跑碰撞的HitByMissile／SrvDmg。目标爆发在其实际阶段枚举，天堂之拳先完成主目标，再创建周围子体。Howl、战吼、BattleCry与Grim Ward的原程序分别保留期限、列表拥有者、随机来源及AI入口；Grim Ward周期在飞弹自身属性／种子上计算，并保留难度AI诅咒除数。BaalFx、CairnStones、RadamentDeath与OrbMist已接原Do／Hit及真实所有者／对象GUID。NativeSpawn使用已准备公式／属性目录，区分直接创建与怪物技能包装，保留0x400距离倒计时与0x200构造起始帧，不套多重射击、佣兵武器程序或怪物技能TOHIT附加值。0x200先减Range再分别安装Total／Current／Activate，并独立写动画序列；其后的Current重设仍不修改Total。塔楼及剩余特殊程序、完整碰撞字段与全局事件交错仍在实施。
 
 `NativeBirthPublication`在私有候选中保留飞弹节点、ID连续区间、世界／实际主人种子、房间节点、定时事件和原包事实；消息容量不足不先提交种子。`transactions::Plan::missileBirth`允许骨墙根段占用同一ID区间前缀，人物／实际Actor与飞弹候选经完整容量接受后共同发布；分组事务和次级接收者不能静默夹带该出生候选。怪物发射及NativeSpawn复用同一构造／发布流程。
 
@@ -85,13 +93,13 @@ SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteo
 
 原0x40 COLLIDE_MISSILE字段独立于DT1和物件栅格，AreaStore预分配后按原点／十字／方形Set／Reset位操作；普通Collision脚印随出生／移动／撤出更新，Do3／34静止点及Do5范围按实际程序写入。寻位与跨房间地形查询读取同一Grid入口，不用重叠计数替换原位语义。公共`native_spawn`保留边缘／内部扫描顺序、Manhattan优先级、首个同分及PosIncrement；`native_field`从当前MPQ的data/global/expfield.d2逐格追踪，保留11099不检查最终中心格的分支。ClassicData准备原256列方向表，AreaStore提供带房间游标的GetFreeCoordinates／GetFreeSpaceEx候选；size0的CheckMask仍检查中心格，与size0的SetMask无占位分开。world的GetFreeSpaceEx从实际调用者房间开始，保留(+2,+3)及原退路；永久门目的端接size3／0xBE11／PosIncrement5的原生寻位。
 
-spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，死亡后无deadCol的尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407），证据在artifacts/missile-native-20261015/native-contact*及native-unit-contact-113c.asm；没有把不同版本同号ordinal当成相同函数。
+spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，死亡后无deadCol的尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407）；没有把不同版本同号ordinal当成相同函数。
 
 items::createNativeGold提供原生落地金币入口，已由Do18的TowerGold操作经objects调用：调用方提供已寻位的精确坐标，当前MPQ区域等级由AreaMetadata保留；SUNIT两条出生种子分别用于单位基础属性与物品起始种子，数量使用单位随机流。候选、事实、ID和全局随机一起发布，重试不提前消费。objects/tower已准备控制Actor及towerchestspawner，TowerOpen仍经loot的ObjectSource准备；专用开箱语义、出生和跨阶段等待顺序尚须核对，不能据接通调用认定完整原程序。
 
 Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界寻位及真实Actor候选，房间随机／全局随机／ID／组件一起发布；出生组件与HP改由实际单位种子按序投掷。详细入口、1.13c依据及水面／完整出生限制见[权威出生](../gameplay/monsters/POPULATION.md)。不再用普通地形nearest或巢穴子怪代替该生成程序，但它仍未完成全路径复刻。
 
-剩余飞弹范围包括Do18专用开箱及出生交错核对、Hit6／23／54、Hit39水面及完整怪物出生程序、模式7的飞弹目标、其余动态模式切换及原生对象／房间生命周期交错、非玩家骨墙出生、客户端未迁程序和跨领域事件交错。狂犬病近战感染及根载体已在skills/druid_melee接入，剩余按德鲁伊专题核对完整组合，不再列为缺生产入口。当前MPQ仍实际引用Hit39／54；Hit6／23为空用法不能替代其公共程序实现。门户还需QUESTS_PortalCheck及源对象出生先于目的端寻位的顺序；同步投影不代表全部历史Set／Reset位交错已迁完。未认证完整原版过程或结果，不以空槽、无操作分支或旧二进制冒烟覆盖这些缺口；已有源码的构建不认证这些剩余分支，当前证据边界见运行包记录。
+剩余飞弹范围包括Do18专用开箱及出生交错核对、Hit6／23／54、Hit39水面及完整怪物出生程序、模式7的飞弹目标、其余动态模式切换及原生对象／房间生命周期交错、非玩家骨墙出生、客户端未迁程序和跨领域事件交错。狂犬病近战感染及根载体已在skills/druid_melee接入，剩余按德鲁伊专题核对完整组合，不再列为缺生产入口。当前MPQ仍实际引用Hit39／54；Hit6／23为空用法不能替代其公共程序实现。门户还需QUESTS_PortalCheck及源对象出生先于目的端寻位的顺序；同步投影不代表全部历史Set／Reset位交错已迁完。
 
 任务控制飞弹的房间保留使用原HASPORTAL语义（原ToggleHasPortalFlag参数0置位，1清除），并进入world房间退休判定。巴尔死亡只创建当前MPQ的控制飞弹，剩余100帧时才调用泰瑞尔出生；删除原立即出生分支。任务空位助手按原1.13c RVA34130的传入半径、行列顺序和跨房间查找移植，保留RVA3420f实际以Y比较X上界的分支；泰瑞尔调用半径为100，与固定1.10f参考的19不同。凯恩最后激活从STONE LAMBDA位置+(6,-3)创建控制飞弹；已完成角色重建世界的原直接开门入口仍保留。永久门源坐标直接使用控制飞弹位置，目的端按上述公共寻位进入实际目标房间，仍未认证完整门户／房间构造顺序。
 
@@ -99,11 +107,11 @@ Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界�
 
 救赎与拉达门特共用原尸体选择入口：实际死亡动作完成、MonStats2 CorpseSel及States Udead掩码，奖励／掉落是否结算不再充当MONMODE_DEAD。玩家及非玩家救赎按原随机顺序求Calc1，再写HP、求Calc3并写MANA；资源／随机流、REDEEMED状态、不可选标记共同发布。拉达门特控制飞弹剩余24至2帧做机会回收，剩余1帧跳过机会；公式及HP／MANA写入留在真实飞弹上，不转给已死所有者。拉达门特死亡前置FX同血鸦／安达利尔共用原UNITFIND顺序、恶方过滤与来源私有随机流，延迟击杀进入实例MonsterModifier事件21；原deathCascades批量扫描已撤出，来源撤出不删除接收者已登记的事件。UNINTERRUPTABLE时按原TempSummon回调延后3帧，不预先扣至0HP。脚本死亡也经公共死亡状态候选撤出列表、保留死亡掩码并提交资源／表现，不把ModeChange伪装成普通受击。其他UMod回调、玩家所有宠物的即时原登记撤出及完整世界／事件交错仍需收尾。
 
-以上是实现与剩余边界，已有切片已纳入构建，不能把它们全部继续标为未编译；逐路径有限运行及最新工作区覆盖以[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)为准。原证据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`；当前MPQ字段摘录位于忽略目录`artifacts/missile-source-migration-20261015/`。不能用冰封球／毒新星等有限冒烟认证未观察的程序、全部随机或全局顺序。
+原版依据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`，参数取当前MPQ。各程序、随机消费和全局顺序分别核对；已迁入的单个程序不能代表完整飞弹执行链。
 
 `missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
 
-仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体运行范围见职业专题。跨区域及原生伤害状态已有源码和构建；全部创建初始化、来源与组合仍需同版本证据及获授权后的运行验收。
+仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体边界见职业专题。跨区域及原生伤害状态已有实现；全部创建初始化、来源与组合仍缺同版本对照。
 
 ## 组合与所有权
 
@@ -150,7 +158,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | crafting | 方块／镶嵌与原38任务加工事务 | execute／pending／install；hosting准备不可变输出，前置任务资格由quests负责 |
 | loot | 掉落选择与来源结算记录 | plan／step；沿用LootRequest／LootPlan，不写死概率 |
 | population | 区域选型、密度／预设／任务／物件出生游标及房间阶段 | step／coverage；实际Actor由monsters唯一发布，清场复用覆盖查询 |
-| monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离。nativeTargetPosition只查真实GUID及同幕坐标，保留尸体／跨区目标；接收资格由技能／接触程序判断，此后续源码尚未构建／运行 |
+| monsters | 活动非玩家实体、身份、位置和版本 | admit／requestMove／remove／step；与人口生成、AI决策分离。nativeTargetPosition只查真实GUID及同幕坐标，保留尸体／跨区目标；接收资格由技能／接触程序判断 |
 | ai | 目标、决策时间与控制器 | step；产生动作，不直接结算伤害 |
 | skills | 选技／热键／施放及持续动作 | execute／requestCast／step；AI使用实体来源请求，不伪装成玩家 |
 | missiles | 弹体实体和寿命 | spawn／step；碰撞后向combat提交结算请求 |
@@ -249,25 +257,29 @@ GreaterMummy辅助候选按原Fn022要求与施法者同阵营且目标非善方
 
 物品触发由[reactions/item_triggers](../../src/server/systems/reactions/item_triggers.hpp)唯一持有队列，装备事件生产者通过显式Ports准备并提交，effects仍在既有阶段推进它。actions与reactions由GameSystems直接持有，实例帧队列已加入Simulation的Events阶段。飞弹的状态、发射请求和私有推进候选分开；当前源码的commitAdvance按程序操作顺序逐项发布子弹体、命中及诅咒，同步完成联系后再进入下一项，背压保留已接受阶段。事务计划在[transactions/plan](../../src/server/systems/transactions/plan.hpp)，世界物品候选在[items/state](../../src/server/systems/items/state.hpp)，不通过执行器头暴露。死亡奖励推进位于[death/rewards](../../src/server/systems/death/rewards.cpp)，沿用首次捕获与分阶段重试。
 
-公共减免、物理护盾、法力护盾与六通道接收使用原整数算子；人物资源、施法费用／伤害、光环数值、人物资源事实和快照正在贯穿迁入`Fixed8`。最大资源保留CharStats四分之一点增量及ItemStatCost.ValShift，物品每级资源加成不先截成整点。普通玩家攻击已进入武器技能接触路径，非玩家武器／普通伤害共享分通道减免、吸收及来源类别比例；完整阶段反应和帧顺序仍待后续任务。装备贡献记录只解释本次聚合，不是第二份可写属性账本。2026-10-13实施前审查源码通过Windows／MinGW／Ninja Release的CMake及d2x、d2x_pvpgn、d2x_assets编译链接，未运行或打包；该构建含非致命警告，日志位于`artifacts/combat-refactor-build-20261013/`。此后数值／属性和持续效果迁移已完成多轮模块构建、打包及有限运行；当前飞弹帧推进／周期驱动增量已通过本轮Windows Release构建及代表路径冒烟，尚未完成全部语义验收。实际状态见页首和运行包记录，历史审查构建不认证后续修改。
+公共减免、物理护盾、法力护盾与六通道接收使用原整数算子；人物资源、施法费用／伤害、光环数值、人物资源事实和快照正在贯穿迁入`Fixed8`。最大资源保留CharStats四分之一点增量及ItemStatCost.ValShift，物品每级资源加成不先截成整点。普通玩家攻击已进入武器技能接触路径，非玩家武器／普通伤害共享分通道减免、吸收及来源类别比例；完整阶段反应和帧顺序仍待闭合。装备贡献记录只解释本次聚合，不是第二份可写属性账本。
 
 属性计算保存带原层的只读来源：玩家／单位基础、实际装备与套装、逐技能被动、逐状态列表及怪物模式分别持有，普通查询消费FullStats缓存；原始SetStat、KeepZero、参数层和MinAccr查询分别表达。FHR／FCR／FBR、基础属性、抗性／吸收、手位与六通道数值已消费该来源，技能公式查询区分基础／总值和基础／有效技能等级，原1.13c递减参数采用公共原整数算子。
 
-效果安装、复用、逐SetStat、旧来源撤出、状态位与移除回调分别准备；人物PlayerResourceTrace及单位MonsterResourceTrace保留中间资源上限，费用／状态／资源与事实在同一候选中复验后发布，避免重复缩放。原始光环、诅咒、护甲、战吼、祭坛及伤害前技能回调已接这些入口，状态期限由实例REMOVESTATE事件处理；兼容效果仍保留自己的维护路径。转换、诱饵／女武神、死灵召唤与Hydra也已接原始属性／技能来源，具体原顺序及未闭合程序分别由所属职业页维护。这些前序迁移已纳入构建；运行只认证列出的有限路径，不能写成全职业／全组合精确一致。
+效果安装、复用、逐SetStat、旧来源撤出、状态位与移除回调分别准备；人物PlayerResourceTrace及单位MonsterResourceTrace保留中间资源上限，费用／状态／资源与事实在同一候选中复验后发布，避免重复缩放。原始光环、诅咒、护甲、战吼、祭坛及伤害前技能回调已接这些入口，状态期限由实例REMOVESTATE事件处理；兼容效果仍保留自己的维护路径。转换、诱饵／女武神、死灵召唤与Hydra也已接原始属性／技能来源，具体原顺序及未闭合程序分别由所属职业页维护。
 
-玩家与非玩家已接STATREGEN资源事件，非玩家消费当前HPREGEN、States.life／PreventHeal及AI再生桥接，毒／烧伤／开放伤口由原生列表贡献负值；具体期限、药剂与延迟死亡入口见COMMON。已纳入已有构建，实际药剂／资源有限观察与未覆盖范围以运行包记录及COMMON为准。完整直接属性回调、所有技能生产端、随机消费、动态主人关系、模式／中断、死亡及跨领域执行顺序未闭合；当前飞弹／周期增量见[原生帧事件迁移](#原生帧事件迁移)。详细来源入口见[COMMON](../gameplay/skills/COMMON.md)、[装备](../gameplay/items/EQUIPMENT.md)及[公共规则](../architecture/COMBAT_SHARED_RULES.md)。
+玩家与非玩家已接STATREGEN资源事件，非玩家消费当前HPREGEN、States.life／PreventHeal及AI再生桥接，毒／烧伤／开放伤口由原生列表贡献负值；具体期限、药剂与延迟死亡入口见COMMON。完整直接属性回调、所有技能生产端、随机消费、动态主人关系、模式／中断、死亡及跨领域执行顺序未闭合；当前飞弹／周期入口见[原生帧事件迁移](#原生帧事件迁移)。详细来源入口见[COMMON](../gameplay/skills/COMMON.md)、[装备](../gameplay/items/EQUIPMENT.md)及[公共规则](../architecture/COMBAT_SHARED_RULES.md)。
 
 技能公式参数环境位于`gameplay/skills/formula_parameters`，宿主从当前MPQ已准备源复制不可变标量、公式、引用、描述飞弹及原类型层号，不向玩法传入MPQ或界面对象。`skills/evaluation`为玩家借用基础／有效等级与原始基础／总属性，并为具备原始来源的怪物／佣兵保存本次总属性采样的共享寿命；当前资源在调用点借用。MonStats全部八个正等级技能槽按原槽顺序准备，难度技能加成属于基础等级；佣兵表的正等级技能覆盖同名基础槽。怪物等级共用原allskills、single、nonclass、element与最大等级算法，单项技能不会替怪物创建新槽。普通怪物入场按槽赋值刷新被动；同等级缓存不重算，等级变化逐槽覆盖旧值。SkillDamage已能从玩家或当前所属区域内身份匹配的怪物主人采样公共物理范围及命中系数。`stat(base)`读取基础，`mod/accr`在D2Common回调中读取总值，`tohit`始终调用公共UNITS命中率算法。技能引用的有效等级与`blvl`分开，玩家等级改从原始属性快照读取all／class／tab／single／nonclass／element加成，已有槽只在完整求和后限幅，等级零的已有槽保留；初始装备StartSkill进入原single层，内建技能和额外装备技能也准备等级上下文。技能／飞弹参数词汇和伤害取整顺序分开。主技能伤害协同、法力、元素持续时间及圣光弹治疗已接此环境；最小伤害跳过协同的分支和最小／最大独立求值保留。未知词汇／缺随机回调明确拒绝。公式技能引用已按D2MOO优先无物品所有者项、缺项才选最高充能等级，并使用Experience原零号职业最大等级限幅；诅咒削弱免疫已共用原基础抗性判断，并排除玩家和佣兵；有原始来源时读取基础列表，不把总抗性当基础。完整技能实例更新／撤销、触发来源、全部召唤物上下文、跨区原主人关系、各专属Do/Hit/Dmg采样及原增量缓存时点仍待后续任务，不能据此认定所有公式已迁移。
 
-`gameplay/items/native_sources`统一准备装备／套装原始列表，`statListWithWeapon`只复制手位标记并依据ItemStatCost.damagerelated排除另一武器；`native_equipment_stats`从每个选定手位投影近战、投掷、命中与IAS输入。近战保留ItemNormalDamage，投射物取源范围时排除它，投掷专精按技能ITypeA[0]原类型祖先与Range选择，不因其数值为零回退到近战专精。战斗标量编码与投影共用一份属性字段绑定。原始属性及技能公式目录已提升为当前MPQ加载后共享的不可变目录，玩家、怪物、伙伴和佣兵规则借用同一份，不按单位重复构造。佣兵装备已消费同一原始列表及手位算法，最大生命保留Fixed8，基础列表按MonsterAI原字段保存佣兵表伤害到secondary、基础hpregen按maxhp/2000保存；状态叠加后重新求原始上限；最大资源变化共用ItemMode回调的double除／乘、int64截断后signed32窄化及raw下限1，怪物回调的hpregen先把上限右移8位再乘后右移4位，与入场unsigned原始乘积区分。现有玩家事务与佣兵／怪物上限刷新已接此算子，逐条物品／状态回调的完整更新顺序仍待迁移。入场和装备刷新安装只读来源／快照并绑定真实单位ID；防御、原抗性和吸收开始读取它们。佣兵上限刷新与即时非玩家查询共用独立效果来源；全部佣兵被动更新触发与旧类型化行为仍待迁移。普通怪物入场也安装原基础属性，保留MONSTERS_Initialize的原速率基线；多人生命加成先在整点计算、按原23位上限限幅、最后左移8位。玩家／佣兵共用逐槽被动属性刷新。ElemTypes层号从当前MPQ准备，不写死元素目录。普通模式的primary伤害／命中属于MonsterMode临时列表，未作为A1猜测写入基础列表。模式表现在共享MonStats原字段及MonLvl非L／L两组六项比例，按单位当前等级、难度和模式在玩法层求值；宿主现在传递原nGameType与ladder条件的合并选择：本地／TCP-IP准备L列，独立PvPGN非天梯房间准备普通列；入场生命、护甲、经验和动作比例共用该选择，初始区域与异步区域使用相同配置。已具备原始来源的怪物／佣兵攻击准备模式列表，原单位种子在候选中抽取元素概率，chance>=100不掷数，随机元素在此选择，同类型槽按SetStat覆盖。模式列表随动作开始安装，近战／飞弹读取既定元素，容量失败不提前安装列表或提交概率种子。武器命中／发射前从该发生的模式列表、当前装备和状态重新采样原范围／命中／元素／专精，避免佣兵保留装备准备时的primary空值。这些基础／武器来源迁移已纳入前序构建；完整模式切换与事件调度、原种子所有权、精英程序／再生次序、召唤装备、转换及直接属性回调仍未全部闭合或运行认证。
+`gameplay/items/native_sources`统一准备装备／套装原始列表，`statListWithWeapon`只复制手位标记并依据ItemStatCost.damagerelated排除另一武器；`native_equipment_stats`从每个选定手位投影近战、投掷、命中与IAS输入。近战保留ItemNormalDamage，投射物取源范围时排除它，投掷专精按技能ITypeA[0]原类型祖先与Range选择，不因其数值为零回退到近战专精。战斗标量编码与投影共用一份属性字段绑定。原始属性及技能公式目录已提升为当前MPQ加载后共享的不可变目录，玩家、怪物、伙伴和佣兵规则借用同一份，不按单位重复构造。
+
+佣兵装备已消费同一原始列表及手位算法，最大生命保留Fixed8，基础列表按MonsterAI原字段保存佣兵表伤害到secondary、基础hpregen按maxhp/2000保存；状态叠加后重新求原始上限；最大资源变化共用ItemMode回调的double除／乘、int64截断后signed32窄化及raw下限1，怪物回调的hpregen先把上限右移8位再乘后右移4位，与入场unsigned原始乘积区分。现有玩家事务与佣兵／怪物上限刷新已接此算子，逐条物品／状态回调的完整更新顺序仍待迁移。入场和装备刷新安装只读来源／快照并绑定真实单位ID；防御、原抗性和吸收开始读取它们。佣兵上限刷新与即时非玩家查询共用独立效果来源；全部佣兵被动更新触发与旧类型化行为仍待迁移。
+
+普通怪物入场也安装原基础属性，保留MONSTERS_Initialize的原速率基线；多人生命加成先在整点计算、按原23位上限限幅、最后左移8位。玩家／佣兵共用逐槽被动属性刷新。ElemTypes层号从当前MPQ准备，不写死元素目录。普通模式的primary伤害／命中属于MonsterMode临时列表，未作为A1猜测写入基础列表。模式表共享MonStats原字段及MonLvl非L／L两组六项比例，按单位当前等级、难度和模式在玩法层求值；宿主传递原nGameType与ladder条件的合并选择：本地／TCP-IP准备L列，独立PvPGN非天梯房间准备普通列；入场生命、护甲、经验和动作比例共用该选择，初始区域与异步区域使用相同配置。已具备原始来源的怪物／佣兵攻击准备模式列表，原单位种子在候选中抽取元素概率，chance>=100不掷数，随机元素在此选择，同类型槽按SetStat覆盖。模式列表随动作开始安装，近战／飞弹读取既定元素，容量失败不提前安装列表或提交概率种子。武器命中／发射前从该发生的模式列表、当前装备和状态重新采样原范围／命中／元素／专精，避免佣兵保留装备准备时的primary空值。完整模式切换与事件调度、原种子所有权、精英程序／再生次序、召唤装备、转换及直接属性回调仍未全部闭合。
 
 模式计算的版本边界：固定D2MOO中MonsterMode调用元素标志为0x40+i，MonsterTbls的noRatio元素分支写入S1字段，存在需要原1.13c证据裁定的转录／版本疑点；当前新模式目录按MPQ各槽保留原字段，未把这两个旧版本疑点认证为1.13c规则。怪物为主人时的SkillDamage公式环境仍需接入，当前明确拒绝该缺输入路径；玩家主人物理范围及tohit已沿共享公式环境采样。Burn数值已保留于MonsterHit，持续Burn提交程序尚待结算阶段接入，不能据此认定全部通道及技能程序已完成。
 
-充能技能直接从同一批生效装备贡献提取，完整套装贡献没有独立物品充能所有者；选择、绑定和施放共用来源解析，实际扣费仍由事务复验物品。死亡奖励使用Restore、HirelingExperience、Loot、PlayerExperience单向阶段，并保留逐玩家经验游标；奖励值仍在首次捕获，不随背压后的装备和等级重算。death/rewards.cpp在实施前审查构建通过，本轮资源类型迁移已通过Release构建，完整运行语义仍待后续复验。
+充能技能直接从同一批生效装备贡献提取，完整套装贡献没有独立物品充能所有者；选择、绑定和施放共用来源解析，实际扣费仍由事务复验物品。死亡奖励使用Restore、HirelingExperience、Loot、PlayerExperience单向阶段，并保留逐玩家经验游标；奖励值仍在首次捕获，不随背压后的装备和等级重算。完整奖励交错和资源恢复语义仍待核对。
 
 恢复动作通过预分配的单单位节点准备，在人物事务或动作事实成功后安装，效果模块不再直接写恢复表。法术接触使用Contact／FollowUp／Recoil阶段，新请求只允许Contact入队；已提交目标伤害后，资源吸取、转换和反冲按原有顺序继续，反冲背压不重复转换。普通非武器弹体由创建时固定伤害改为保存区间并在接触候选中逐目标抽样；玩家格挡读取对应目标伤害。上述抽样时点、吸收回血及资源归零变化的原版依据和未覆盖分支见[公共规则](../architecture/COMBAT_SHARED_RULES.md#当前源码适配边界)，不能用既有运行证据认证。
 
-本节敌意及PvP增量在实施前审查构建通过，后续整数语义迁移也已纳入前序Windows Release构建与打包；当前重构后的完整PvP路径未运行复验，既有佣兵代表单机结果不认证本轮修改，完整运行与性能验收仍未完成。现有快照提供阶段耗时、Blocked、队列与空间候选计数，见[调试管道](../development/DEBUG_PIPE.md)。运行验收仍需同地图／种子／人数的单人、2人、8人、密集弹体对照，以及转换往返、离队／断线、来源死亡、换区、背压、反伤／牺牲／耐久和击杀归功；没有p50／p95／p99或内存收益测量，不以结构改善代替性能结论。
+完整PvP执行与性能边界仍待核对。现有快照提供阶段耗时、Blocked、队列与空间候选计数，见[调试管道](../development/DEBUG_PIPE.md)。需覆盖同地图／种子／人数的单人、2人、8人、密集弹体，以及转换往返、离队／断线、来源死亡、换区、背压、反伤／牺牲／耐久和击杀归功；没有p50／p95／p99或内存收益测量，不以结构改善代替性能结论。
 
 ## 女巫全技能执行
 
@@ -285,13 +297,13 @@ hosting仅对原ClientSend弹体编码73；该标志不等同常规创建广播�
 
 ## 死灵技能与召唤
 
-66–95共30项已接，当前MPQ准备纯规则、动作与资源事实；执行范围和有限单机证据维护在[死灵技能](../gameplay/skills/NECROMANCER.md)。actions持待释放值，skills执行释放与尸体消费编排，effects/necro持有诅咒及接触反应，companions/necro持有召唤上限／同行／墙段增长／重生寿命及准备队列，monsters唯一持有实体和生命；反伤、吸取与血魔分配分阶段重试。精通变化沿hosting重新准备既有伙伴，不重新消费材料。
+66–95共30项已接，当前MPQ准备纯规则、动作与资源事实；执行范围、原版依据和缺口维护在[死灵技能](../gameplay/skills/NECROMANCER.md)。actions持待释放值，skills执行释放与尸体消费编排，effects/necro持有诅咒及接触反应，companions/necro持有召唤上限／同行／墙段增长／重生寿命及准备队列，monsters唯一持有实体和生命；反伤、吸取与血魔分配分阶段重试。精通变化沿hosting重新准备既有伙伴，不重新消费材料。
 
 铁魔地面材料移除、法力／充能和原kf保存值同笔事务提交；存活退出恢复，主人／铁魔死亡、取消或被其他石魔替换清除。尸体可用性、原重生资格与身份由monsters复验；原PetType／7A、状态属性及弹体表现沿公共客户端投影，客户端不判消耗／伤害／材料保存。磁盘仍为v96，见[SAVES](SAVES.md)。
 
 ## 亚马逊武器、被动与伙伴
 
-24项主动／6项被动均已接；本轮已构建打包，列出的路径完成有限冒烟和原服回归。完整逐项原回调、共享算法和边界见[亚马逊技能](../gameplay/skills/AMAZON.md)。`skills/weapon`持有武器资格、接近、原Jab／Impale序列和Strafe／Fend回滚释放；`inventory/weapon_cost`及transactions原子提交弹药、数量／耐久、法力和公开事实；`missiles/weapon`管理武器弹体、引导／穿透／毒云／地面火，`combat`使用原六通道快照、命中和目标修正，`effects/amazon`管理内视与慢速箭。接触命中结果只掷一次传给combat；范围回调与箭本体使用不同发生标识，背压不重复扣费／掷伤。
+24项主动／6项被动均已接；逐项原回调、共享算法、原服参考和缺口见[亚马逊技能](../gameplay/skills/AMAZON.md)。`skills/weapon`持有武器资格、接近、原Jab／Impale序列和Strafe／Fend回滚释放；`inventory/weapon_cost`及transactions原子提交弹药、数量／耐久、法力和公开事实；`missiles/weapon`管理武器弹体、引导／穿透／毒云／地面火，`combat`使用原六通道快照、命中和目标修正，`effects/amazon`管理内视与慢速箭。接触命中结果只掷一次传给combat；范围回调与箭本体使用不同发生标识，背压不重复扣费／掷伤。
 
 女武神使用类型化 `companions::Preparation／Prepared` 内容队列；hosting读取当前MPQ并沿现有物品生成准备纯值，结果绑定请求及预留种子。装备revision、等级、基础技能及来源区域变化拒绝迟到结果，自然资源恢复不会取消准备。companions控制诱饵期限／替换、女武神AI／同行／换区／主人退出，monsters唯一拥有实体／生命／路线／装备；统一分配实例ID，不使用玩家物品原ID，不发敌怪经验／掉落。
 
@@ -299,17 +311,17 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 
 ## 刺客武学、陷阱与影子
 
-251–280 的 30 项职业技能已实现、构建打包；程序映射、同版本证据和有限运行范围见[刺客技能](../gameplay/skills/ASSASSIN.md)，实际包身份只见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。`content/skills/assassin_data` 与 `hosting/assassin_summon_content` 读取当前MPQ并准备纯规则；`gameplay/skills/assassin_progressive`、`assassin_summon`、`native_damage` 及 `gameplay/combat/weapon_block` 提供共享整数算法。
+251–280 的 30 项职业技能已接入；程序映射、原版依据和缺口见[刺客技能](../gameplay/skills/ASSASSIN.md)。`content/skills/assassin_data` 与 `hosting/assassin_summon_content` 读取当前MPQ并准备纯规则；`gameplay/skills/assassin_progressive`、`assassin_summon`、`native_damage` 及 `gameplay/combat/weapon_block` 提供共享整数算法。
 
 `skills/assassin`／`assassin_kick`／`assassin_pet` 编排原开始、序列和动作事件；`combat/native_skill_contact`／`progressive_contact` 与 `missiles/native_weapon_contact` 复用实际接收、资源、耐久、触发和最后动作。蓄气由effects的原状态／属性列表唯一持有；释放游标仅保留已提交步骤，踢击预分配不替换成普通近战或临时弹体。刀盾周期、斗篷和心灵爆震由effects沿公共状态／事件撤出执行。
 
 `companions/native_summon`／`assassin_ai`／`shadow_ai` 持宠物控制、弹药和AI阶段；`monsters::Actor` 唯一持有身份、位置、属性、装备、技能和随机。影子由 `skills/native_caster` 读取真实非玩家来源，不构造玩家替身。技能继承通过原子属性事务提交，纯内部变化没有公开事实时不申请空输出；容量重试保留原判定，普通规则拒绝不能成为永久背压。目标选择复用 `ai/target_query`，技能列表保持原追加顺序，宠物上限来自原PetType；归属／解散沿原0x7A及公共协议投影。
 
-客户端两种宿主共用原包、MPQ动画／序列与Clt程序，双爪ht2、蓄气叠层、终结子体、陷阱、持续刃怒、斗篷亮度及影子变身沿现有表现层。有限单机观察不认证全局队列交错、全部物品触发／装备、多人及整套原版调色／音效。
+客户端两种宿主共用原包、MPQ动画／序列与Clt程序，双爪ht2、蓄气叠层、终结子体、陷阱、持续刃怒、斗篷亮度及影子变身沿现有表现层。全局队列交错、全部物品触发／装备、多人及完整原版调色／音效仍待核对。
 
 ## 德鲁伊元素、变形与召唤
 
-221–250的30项职业技能及传递依赖已接源码，构建／运行状态见[德鲁伊技能](../gameplay/skills/DRUID.md)。`skills/druid`编排原Do与出生，`druid_active`保留ActiveState145／146的重调度和已消费阶段，`druid_melee`保留起手分配、准确率、排出、蓄层与感染阶段；`druid_pet`执行BearSmite、Vine Attack、CorpseCycler、Fenris Rage、Teleport2及普通攻击。公共`native_skill_contact`继续拥有真正伤害／事件接收；宠物普通攻击直接使用真实非玩家来源，不通过主人的临时玩家替身。
+221–250的30项职业技能及传递依赖已接源码，原版依据和缺口见[德鲁伊技能](../gameplay/skills/DRUID.md)。`skills/druid`编排原Do与出生，`druid_active`保留ActiveState145／146的重调度和已消费阶段，`druid_melee`保留起手分配、准确率、排出、蓄层与感染阶段；`druid_pet`执行BearSmite、Vine Attack、CorpseCycler、Fenris Rage、Teleport2及普通攻击。公共`native_skill_contact`继续拥有真正伤害／事件接收；宠物普通攻击直接使用真实非玩家来源，不通过主人的临时玩家替身。
 
 `companions/druid_ai`分开乌鸦、灵狼／狂狼、熊、灵体、毒藤和生命／法力藤；`native_summon`、`native_pet_move`与`monsters::prepareNativePet`供刺客／德鲁伊共享。原生可用尸体资格`nativeUsableCorpse`与其他技能的选择／消费附加限制分开；Druid尸体查询保留圆形范围及房间单位次序。变形状态、限制技能与原模式／速度元数据在hosting准备，纯模式／速度计算位于`gameplay/actions/shape_timing`，身份、资源和位置仍属于原玩家。
 
@@ -337,7 +349,7 @@ EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstanc
 
 loot捕获来源、受益者与准备身份，hosting读取当前MPQ并迁用master的resolveMonsterLoot／planItemLoot；items持有安装后的世界物品，inventory规划拾取／丢弃，transactions同时提交人物和地面草稿。内核不读Archives，世界物品不写角色D2S；掉落选择与准备／安装语义见[LOOT](../gameplay/items/LOOT.md)，原图／回包见[PRESENTATION](../gameplay/items/PRESENTATION.md)。
 
-items维护落地代次、自恢复和过期；inventory接近拾取绑定落地代次，提交时读取最新属性句柄，不把自恢复造成的revision变化视为一次新落地。跨所有权时钟见[DURABILITY](../gameplay/items/DURABILITY.md)，距离／合并／生命周期见[GROUND](../gameplay/items/GROUND.md)，随机、容量和可靠输出边界见[物品COMMON](../gameplay/items/COMMON.md)。诊断item-spawn复用同一内容准备与安装入口；具体未完成范围与历史有限证据由物品专题维护。
+items维护落地代次、自恢复和过期；inventory接近拾取绑定落地代次，提交时读取最新属性句柄，不把自恢复造成的revision变化视为一次新落地。跨所有权时钟见[DURABILITY](../gameplay/items/DURABILITY.md)，距离／合并／生命周期见[GROUND](../gameplay/items/GROUND.md)，随机、容量和可靠输出边界见[物品COMMON](../gameplay/items/COMMON.md)。诊断item-spawn复用同一内容准备与安装入口；原版依据和具体缺口由物品专题维护。
 
 ## 资源、药水与效果
 
@@ -345,7 +357,7 @@ gameplay/units/resources／restoration、CombatEffectSet与职业药水倍率从
 
 inventory/consumption准备数量、腰带位置和效果计划；effects预先准备状态，transactions先发布完整事实再交换人物／物品／效果草稿。恢复计算、原状态与到期规则统一见[腰带与消耗品](../gameplay/items/BELT_AND_CONSUMABLES.md)，不在本页重复维护药剂参数。effects.heal同样规划NPC治疗；NPC请求入口见[城镇交互](../gameplay/npc/INTERACTIONS.md)，治疗规则与范围见消耗品页。
 
-状态事实的标量数值已改为共用原始属性编码和当前MPQ的ValShift，已提供原始效果映射的程序读取同一映射；状态事实及非玩家快照已改为StatValue，保留原StatKey参数层和signed32数值。A8／AA编码按固定D2MOO证据先取排序后的16项基础值，再跳过Send Bits=0，按原有符号／无符号边界限幅，写真实参数层并保留低位；现有客户端已按Send Param Bits读取。States.nosend已从当前MPQ准备，并同时过滤更新及初始快照；空编码不进入输出队列。完整状态／事件生命周期及其他原版1.13c差异仍待后续闭合。hosting以原1F同步资源／派生属性，以A7／A8／A9同步已提交状态并为晚入视野者重建；effects不持客户端状态，运行时钟不写D2S。反击、护盾、诅咒与持续伤害按对应技能程序登记，未接执行器明确拒绝，不能仅显示状态当作完整效果；已接与未完成程序见[技能目录](../gameplay/skills/README.md)。调试快照提供effects、restoration、loot待处理数及暂缓原因；历史运行结论只见[物品证据](../gameplay/items/EVIDENCE.md)与基线。
+状态事实的标量数值已改为共用原始属性编码和当前MPQ的ValShift，已提供原始效果映射的程序读取同一映射；状态事实及非玩家快照已改为StatValue，保留原StatKey参数层和signed32数值。A8／AA编码按固定D2MOO证据先取排序后的16项基础值，再跳过Send Bits=0，按原有符号／无符号边界限幅，写真实参数层并保留低位；现有客户端已按Send Param Bits读取。States.nosend已从当前MPQ准备，并同时过滤更新及初始快照；空编码不进入输出队列。完整状态／事件生命周期及其他原版1.13c差异仍待后续闭合。hosting以原1F同步资源／派生属性，以A7／A8／A9同步已提交状态并为晚入视野者重建；effects不持客户端状态，运行时钟不写D2S。反击、护盾、诅咒与持续伤害按对应技能程序登记，未接执行器明确拒绝，不能仅显示状态当作完整效果；已接与未完成程序见[技能目录](../gameplay/skills/README.md)。调试快照提供effects、restoration、loot待处理数及暂缓原因；原版物品规则和协议依据见[物品参考](../gameplay/items/EVIDENCE.md)。
 
 ## 死亡与尸体
 
@@ -357,11 +369,11 @@ inventory/consumption准备数量、腰带位置和效果计划；effects预先�
 
 hosting/object_content 沿用旧单机 configureWorldObject、Act 1 人口生成、箱子初始化和神殿选择；运行时 objects 只持准备好的规则和状态。门切换时同步服务端碰撞，关门复验玩家／怪物占位；原生交互距离和靠近路径复用 interaction_geometry。普通箱子、木桶、可搜寻尸体走 loot 的内容准备队列，钥匙消耗与地面物品安装由同一库存事务提交；准备失败保留物件。神殿支持资源恢复和常见定时属性效果，水井支持资源恢复与补充次数；原 51 增量发送状态及 InteractType，进入视野重新投影，客户端未改。
 
-574–579 神殿、580–581 箱子及 582 秘法符号使用真实原物件。野外祭坛1–22、井水解除状态、爆炸桶连锁／伤害箱、宝箱陷阱、地刺／周期火焰及原陷阱怪物AI已按当前MPQ和本地D2MOO接入；`hosting/environment_content`准备规则，objects拥有时钟并向战斗／弹体／掉落提交。环境伤害不假造玩家来源，无经验／击杀恢复，控制器退场无TC；普通敌怪人口仍以已有Act 1实现为限。世界物件、区域掉落和商店不写D2S，宝石消耗／拾取后的库存沿原字段保存；特殊藏物、任务机关、入口与有限运行边界统一见[物件](../gameplay/world/OBJECTS.md)。复杂争用／全部变体未认证，缺规则明确拒绝。
+574–579 神殿、580–581 箱子及 582 秘法符号使用真实原物件。野外祭坛1–22、井水解除状态、爆炸桶连锁／伤害箱、宝箱陷阱、地刺／周期火焰及原陷阱怪物AI已按当前MPQ和本地D2MOO接入；`hosting/environment_content`准备规则，objects拥有时钟并向战斗／弹体／掉落提交。环境伤害不假造玩家来源，无经验／击杀恢复，控制器退场无TC；普通敌怪人口按各幕怪物专题维护。世界物件、区域掉落和商店不写D2S，宝石消耗／拾取后的库存沿原字段保存；特殊藏物、任务机关、入口与缺口统一见[物件](../gameplay/world/OBJECTS.md)。复杂争用／全部变体仍待核对，缺规则明确拒绝。
 
 ## NPC 与城镇服务
 
-`hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，包括第一幕InitFn54凯恩标记；不生成敌对替身。NPC 子系统管理同区域、活人、距离／视线与交谈身份、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少文本则不编造。静态城镇NPC与五幕任务对白已接；第五幕囚犯使用独立逃离路径，动态任务NPC通过world窄入口准入。NPC的唯一运行位置、资源与属性由monsters::Actor拥有，AreaNpc只保存出生点／GUID及能力元数据；Participants、状态期限／死亡、属性消费和数值复制共用既有非玩家路径，逃离时删除Actor与事件。任务可见性仍按观察者过滤。此源码已纳入当前工作区all目标构建；本轮刺客冒烟不认证完整NPC效果接收矩阵、闲逛AI或中立主动战斗，四类佣兵服务和同行执行见佣兵专题。
+`hosting/npc_content` 从原生地图预置与 MonStats 准备中立 NPC，包括第一幕InitFn54凯恩标记；不生成敌对替身。NPC 子系统管理同区域、活人、距离／视线与交谈身份、首次介绍确认；介绍键沿现有 D2S 字段保存。对白编号从当前 TBL 反查，缺少文本则不编造。静态城镇NPC与五幕任务对白已接；第五幕囚犯使用独立逃离路径，动态任务NPC通过world窄入口准入。NPC的唯一运行位置、资源与属性由monsters::Actor拥有，AreaNpc只保存出生点／GUID及能力元数据；Participants、状态期限／死亡、属性消费和数值复制共用既有非玩家路径，逃离时删除Actor与事件。任务可见性仍按观察者过滤。完整NPC效果接收矩阵、闲逛AI或中立主动战斗仍待核对，四类佣兵服务和同行执行见佣兵专题。
 
 content/npc/vendor_stock迁用master的planVendorStock／vendorItem，hosting/merchant_content从MPQ准备物品与报价，merchant唯一拥有NPC货架／个人赌博及准备身份。NPC交谈与原请求复验后交transactions，先提交物品／金币事实再发送原回执；客户端报价不授权扣款。刷新、回购、批量、维修与鉴定规则见[经济](../gameplay/items/ECONOMY.md)，客户端手势见[NPC交易](../gameplay/npc/TRADE.md)，物品位流及2A成功码见[PRESENTATION](../gameplay/items/PRESENTATION.md)。NPC对话沿原AC／27／2F／31。
 
@@ -387,4 +399,4 @@ merchant固定步清理已关闭／死亡／换区／离线交谈的货架与待
 
 移动规划与玩家／怪物路线推进共用Grid.nativeMovementSegment的原生碰撞语义，避免路线可达却被另一套分段检查卡住；弹体及视线仍使用各自语义。门户准备显式使用objects类别，读取MPQ原59范围／模式／帧数；原13在hosting按已发布门户GUID提交TravelRequest，普通物件领域不以“找不到物件”猜测门户。
 
-公共属性准备与D2S校验的Properties函数13依据及百分比最大耐久规则见[AFFIXES](../gameplay/items/AFFIXES.md)，不在本页复制属性实现清单。当前包／有限运行证据见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)，物品历史范围见[EVIDENCE](../gameplay/items/EVIDENCE.md)。
+公共属性准备与D2S校验的Properties函数13依据及百分比最大耐久规则见[AFFIXES](../gameplay/items/AFFIXES.md)，不在本页复制属性实现清单。物品规则依据与原版协议参考见[EVIDENCE](../gameplay/items/EVIDENCE.md)。

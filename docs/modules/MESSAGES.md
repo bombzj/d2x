@@ -1,6 +1,6 @@
 # 原协议消息速查
 
-更新：2026-10-12。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)，运行包见[开发指南](../development/BUILD_AND_RUN.md#运行包记录)。这是源码契约，不是逐包运行认证。
+更新：2026-10-12。本文唯一维护消息编码、参数、分帧与预留目录；连接与副本见[NETWORK](NETWORK.md)，服务端分派与扩展见[SERVER_PROTOCOL](SERVER_PROTOCOL.md)。原版版本与来源、当前编码支持和未核实字段分别注明；不维护自研运行台账。
 
 ## 编码约定
 

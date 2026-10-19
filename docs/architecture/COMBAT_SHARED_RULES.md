@@ -66,7 +66,7 @@
 ### 当前源码适配边界
 
 - [玩家事件表](../../src/gameplay/actions/timeline.hpp)按SUnit起手和回卷程序从完整AnimData／已支持序列标记排MODECHANGE／ENDANIM；普通／狼熊武器动作及Strafe／Fend／Zeal／Fury逐次重排已接。旧durationTicks不再充当这些玩家动作的结束事件，weaponVolley仅余客户端预测；特殊模式及怪物StopSequence、AI／移动和物件／物品事件已接所属单位回调，旧批量释放与怪物step已撤出，完整原全局交错尚未认证，见[动作边界](../modules/SERVER_SYSTEMS.md#调度与动作的职责及迁移边界)。
-- [整数比例](../../src/gameplay/rules/arithmetic.hpp)适配DATATBLS_ApplyRatio／MONSTERUNIQUE_CalculatePercentage的分支与窄化，并区分普通32位乘除及D2StatList的浮点百分比。技能／飞弹曲线分别保留协同与HitShift顺序；`Fixed8`持权威资源与伤害，显示转换不反写权威值。[通道接收](../../src/gameplay/combat/reception.hpp)按SkillSor能量护盾的物理、火、电、冰、魔法顺序共享法力，再处理来源允许的生命／法力／耐力损失。分通道减免保留原负中间量和吸收，再以原32位语义求和；来源类别比例在减免前应用，穿抗在上限前处理。吸收回血先封顶，再扣伤害；正伤害扣减后不足256单位归零，毒率参与接触总伤害后安装持续毒。完整原事件订阅顺序、来源采样时点及全部技能／飞弹程序仍未完成；这些公共数值及飞弹／周期切片已纳入Windows Release构建，有限观察及未覆盖范围以[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)为准。固定本地1.13c DLL的新增反汇编核对只证明已引用控制分支，不认证完整运行结果。
+- [整数比例](../../src/gameplay/rules/arithmetic.hpp)适配DATATBLS_ApplyRatio／MONSTERUNIQUE_CalculatePercentage的分支与窄化，并区分普通32位乘除及D2StatList的浮点百分比。技能／飞弹曲线分别保留协同与HitShift顺序；`Fixed8`持权威资源与伤害，显示转换不反写权威值。[通道接收](../../src/gameplay/combat/reception.hpp)按SkillSor能量护盾的物理、火、电、冰、魔法顺序共享法力，再处理来源允许的生命／法力／耐力损失。分通道减免保留原负中间量和吸收，再以原32位语义求和；来源类别比例在减免前应用，穿抗在上限前处理。吸收回血先封顶，再扣伤害；正伤害扣减后不足256单位归零，毒率参与接触总伤害后安装持续毒。完整原事件订阅顺序、来源采样时点及全部技能／飞弹程序仍未完成。固定本地1.13c DLL的反汇编核对只覆盖已引用控制分支。
 - [飞弹伤害区间](../../src/gameplay/missiles/damage.hpp)依据MISSMODE_RollDamageValue保留非正值判断、倒置区间交换及整数范围抽样。普通非武器弹体创建时保存区间，在接触候选中逐目标抽样并保存结果，背压不重掷；区间缩放／相加使用整数。当前[飞弹伤害数据](../../src/gameplay/missiles/damage_data.hpp)拆分原范围继承、属性写入和命中投掷；范围投掷及雷云风暴的限定入口开始接入。武器、怪物及其余直接／持续伤害尚未全部迁入，创建与命中的采样时点、支配及来源生命周期仍待收尾。移除创建时浮点伤害抽样改变了随机消费顺序，不宣称已恢复完整原版随机序列。
 - 圣光弹按MISSMODE_SrvHit07_HolyBolt_FistOfTheHeavenBolt区分友方治疗和敌方伤害抽样，治疗非正时才回退到伤害区间。当前仍依赖既有友方资格与技能准备值，未由此补齐全部HitPar策略。环境伤害对非玩家的吸收回血已交给同一次怪物伤害提交，不再扣血后单独回血。
 - `effects::unitStatValues`共用属性／当前资源查询：缓存FullStats提供派生属性，玩家生命／法力／耐力和非玩家生命从各自唯一可写资源持有者覆盖，避免回收弹体等消费者误把缺省值零当作当前资源。单位视图不另持可写生命副本。
@@ -90,7 +90,7 @@
 | 变形模式／攻击基础速度 | `actions/shape_timing::shapeMonsterMode`／`shapeAttackSpeed`、`skills/shape` | 原玩家→怪物模式表／回退，`D2Common_11043`与`ITEMS_GetWeaponAttackSpeed`；武器自身速度先形成原人形A1周期，再求形态基础速度并调用共享EIAS | 当前MPQ狼／熊已接；全部oskill／双持／手位组合仍需实证，不能用人形帧数代替形态帧数 |
 | 单位距离与尸体范围 | `units/distance::unitDistanceWithSizes`／`unitCoordinateDistanceWithSize`、`companions/druid_corpse` | `UNITS_GetDistanceToOtherUnit`先减双方半尺寸并逐轴截零；AI FullUnitSize保留单侧尺寸的原绝对值；UnitFind尸体范围另用平方圆判定 | 世界候选与资格属于服务器，不能把以上三种距离合并为一个欧氏距离或通用最近目标 |
 | 技能／飞弹基础伤害、耗蓝、长度 | `skills/damage_curve` | `SKILLS_CalculateDamageBonusByLevel`、`SKILLS_GetManaCosts`、`SKILLS_GetMin/MaxElemDamage`、`MISSILE`对应曲线；保留技能／飞弹不同缩放次序与最小伤害分支；伤害／费用用原8.8值 | 帧时钟迁移、完整公式上下文和程序角色仍未完成；当前具名准备器不是全公式覆盖 |
-| 百分比、抗性、吸收、护盾 | `rules/arithmetic`、`combat/mitigation::mitigateDamageChannels`、`combat/shield`、`combat/reception` | 原算术分为百分比／普通乘除／stat百分比，玩家及非玩家接收消费共同六通道算子，保留负中间量 | 护盾已接技能事件登记与伤害前回调；完整事件交错、Hit／Result标志和未迁程序仍未闭合，已有飞弹／周期构建不能认证完整DMG链精确 |
+| 百分比、抗性、吸收、护盾 | `rules/arithmetic`、`combat/mitigation::mitigateDamageChannels`、`combat/shield`、`combat/reception` | 原算术分为百分比／普通乘除／stat百分比，玩家及非玩家接收消费共同六通道算子，保留负中间量 | 护盾已接技能事件登记与伤害前回调；完整事件交错、Hit／Result标志和未迁程序仍未闭合 |
 
 对应原函数集中在[D2MOO Units.cpp](../../reference/d2moo/source/D2Common/src/Units/Units.cpp)、[D2Skills.cpp](../../reference/d2moo/source/D2Common/src/D2Skills.cpp)、[SUnitDmg.cpp](../../reference/d2moo/source/D2Game/src/UNIT/SUnitDmg.cpp)及[MonsterUnique.cpp](../../reference/d2moo/source/D2Game/src/MONSTER/MonsterUnique.cpp)。服务端和表现层已经调用相同的常见动作速率函数，客户端仍只消费已知输入。公式、完整动作推进和完整伤害流程分别按各自原契约继续核对，不将这些算子推广为所有模式的默认成功实现。
 

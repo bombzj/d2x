@@ -1,10 +1,10 @@
 # 地图对照与房间恢复排查
 
-核对结果见[五幕地图](../gameplay/world/MAPS.md#对照与验证边界)，历史样本见[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)，EXE身份见[构建记录](BUILD_AND_RUN.md#运行包记录)。
+原版地形样本与核对边界见[五幕地图](../gameplay/world/MAPS.md#对照与验证边界)，原DLL版本及历史原版样本见[原版对照](../architecture/MULTIPLAYER.md#原版-dll-对照方法)。本文维护可重复的导出／重放方法及限制。
 
 ## 已恢复的DLL导出与独立重放
 
-旧会话记录已找回，旧原始报告及EXE未找到。本轮重建既有reference/d2mapapi_mod和d2x_assets，新导出、重放结果、源码摘要及构建日志位于`artifacts/map-parity-20261017-01`。
+原版导出使用既有`reference/d2mapapi_mod`，D2X重放使用`d2x_assets`。每次核对记录实际原DLL版本、摘要、MPQ挂载与事件输入；原始报告使用当次指定的新目录，不依赖历史产物包长期保留。
 
 原版导出器使用Win32：
 
@@ -30,7 +30,7 @@ cmake --build <新证据目录>/oracle-build32 --config Release --target d2mapap
 | phase | 证据标签 |
 | D2MAP_TRACE | 每步执行前刷新轨迹文件，便于定位原DLL中断 |
 
-D2MAP_SIDE=server令LoadAct使用bClient=0和空客户端回调。reveal／hide仍走视野入口；其他事件也只重放明确的DRLG操作，不模拟D2Game人口。真实1.13c D2Game不导入10715，实机记录的Update均来自客户端；服务端轨迹不得凭7 tick分支自行补入预取。当前导出器补丁／二进制及运行证据位于`artifacts/map-room-runtime-20261017-01`，旧批次EXE另行保留。
+D2MAP_SIDE=server令LoadAct使用bClient=0和空客户端回调。reveal／hide仍走视野入口；其他事件也只重放明确的DRLG操作，不模拟D2Game人口。真实1.13c D2Game不导入10715，实机记录的Update均来自客户端；服务端轨迹不得凭7 tick分支自行补入预取。
 
 D2X使用既有资源命令：
 
@@ -83,6 +83,6 @@ JSON默认沿用客户端事件重放；native.mode="server"选择与权威world
 
 ## 待核对项
 
-真实1.13c单机已取得服务端初始化／ChangeClientRoom、两端房间实际释放／重建和出生随机证据，宿主已改为实际逐房间物化；包内双D2X客户端已有限核对不同路线及留守／释放。原版混合客户端、更多种子／交错、完整单位压缩／恢复及整级资源回收仍须单独核对。本专题既有地址已按实际DLL校验；后续规则与调用链优先读D2MOO，发现版本差异后再定点核对。
+真实1.13c单机已取得服务端初始化／ChangeClientRoom、两端房间实际释放／重建和出生随机依据，宿主已改为实际逐房间物化。原版混合客户端、更多种子／交错、完整单位压缩／恢复及整级资源回收仍须单独核对。本专题既有地址已按实际DLL校验；后续规则与调用链优先读D2MOO，发现版本差异后再定点核对。
 
 发现差异时保留第一个不同的区域／房间／全局格、事件／帧、DT1记录、静态与动态碰撞层及两条房间流。先核对资源、种子、阶段和引用状态，再决定是否修改生成、缓存或恢复机制。

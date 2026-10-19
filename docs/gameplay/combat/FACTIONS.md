@@ -10,10 +10,10 @@ RemoteCombat与RemoteScene目标选择统一核对原服alignment、真实单位
 
 客户端type1目标分类明确保留Unknown：未知MonStats身份或未解码状态不自动成为友军，只有已知NonHostile才通过友方技能的该项检查，存活和目标位置仍另验。hostileSource=false仅表示未确认敌对，不能作为通用友方授权；宠物名册、NPC／中立表与alignment沿当前公开值处理。依据D2MOO SUnit的GetOwner／AreUnitsAligned分开职责，不新增队伍或PvP语义。
 
-服务端monsters::Actor能力谓词仅集中已有非玩家实体规则，不能以damageable推断敌对、以combatCompanion推断控制权限。AI目标威胁优先级、召唤归属与期限、NPC服务资格、伤害和物品事务仍由各领域持有。重构已随佣兵批构建、打包，佣兵代表单机路径取得有限证据；完整关系／争用边界未认证，历史包不能证明此次修改通过。
+服务端monsters::Actor能力谓词仅集中已有非玩家实体规则，不能以damageable推断敌对、以combatCompanion推断控制权限。AI目标威胁优先级、召唤归属与期限、NPC服务资格、伤害和物品事务仍由各领域持有；完整关系／争用边界仍待核对。
 
 ## 关系副本与证据
 
-remote_social保存原名册／队伍／关系值，公开信息与本人私有状态分开；离开视野不等于退出名册。原服交易UI／发送及自研[交易权威](../items/PLAYER_TRADE.md)已接；聊天ignore／squelch执行原方向关系。组队邀请／名册权威已接，完整敌意／PvP仍未实现；聊天关系不能充当战斗服务权限。
+remote_social保存原名册／队伍／关系值，公开信息与本人私有状态分开；离开视野不等于退出名册。原服交易UI／发送及自研[交易权威](../items/PLAYER_TRADE.md)已接；聊天ignore／squelch执行原方向关系。组队邀请／名册及有向敌意已接，PvP当前入口与缺口见[武器与PvP](WEAPON_EFFECTS.md#pvp伤害)；聊天关系不能充当战斗服务权限。
 
 原规则核对本地D2MOO SUnit::SUNIT_AreUnitsAligned、SUnitDmg伤害／经验分配与原包定义。关系及倍率仍由原服执行；MPQ数值不写死。协议边界见[联网模块](../../modules/NETWORK.md#多人只读副本)。

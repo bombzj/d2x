@@ -1,6 +1,6 @@
 # 客户端契约与原协议基线
 
-更新：2026-10-11。原服与自研宿主共用完整客户端，只有连接选择不同。当前Windows客户端为Release包；有限自研／原服冒烟见[联网记录](NETWORK.md#既有有限证据)，启动耗时及包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+更新：2026-10-11。原服与自研宿主共用完整客户端，只有连接选择不同。本文维护客户端职责、原协议入口及限制；原服输出参考见[联网模块](NETWORK.md#既有有限证据)，当前实现范围见[基线](../../BASELINE.md)。
 
 技能客户端修改边界由[COMMON](../gameplay/skills/COMMON.md#技能迁入规范)维护；弓弩／箭袋及宠物投影的原版修复与死亡图未核实项见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
@@ -43,15 +43,15 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 技能资格的 MPQ 导入、固有技能清单和学习／主动技能判断共用 skill_eligibility；怪物目标选择、按住锁定和发送前校验共用 RemoteCombat.monsterTargetEligible，表现中的死亡判断共用 onlineMonsterCorpse。协议适配仍核对场景代次、单位分配、选中 owner、范围和地图绑定。
 
-按住施放的目标唯一由SceneController持有；RemoteScene.frame返回当帧悬停／资格，handleWorld完成松开、失焦、死亡、移除、技能与场景代次校验后，drawTargetInfo读取同一个锁定ID绘制顶部信息。已锁定单位的施放允许鼠标离开世界表面／移到底栏；资源加载长帧保留已有单位锁定并复验实际按键，仍丢弃积压的新按下／地面施法。新按下与地面施法仍需世界命中。悬停姓名独立于选中技能的施法资格，锁定优先于鼠标下的其他怪物或地面物品；不另存显示锁定或跨帧借用副本。姓名／特殊说明与边界见[怪物表现](../gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。目标锁定修正已纳入前序Windows Release构建；所列锁定／长帧组合未专项运行复验，历史有限观察不认证全部路径。
+按住施放的目标唯一由SceneController持有；RemoteScene.frame返回当帧悬停／资格，handleWorld完成松开、失焦、死亡、移除、技能与场景代次校验后，drawTargetInfo读取同一个锁定ID绘制顶部信息。已锁定单位的施放允许鼠标离开世界表面／移到底栏；资源加载长帧保留已有单位锁定并复验实际按键，仍丢弃积压的新按下／地面施法。新按下与地面施法仍需世界命中。悬停姓名独立于选中技能的施法资格，锁定优先于鼠标下的其他怪物或地面物品；不另存显示锁定或跨帧借用副本。姓名／特殊说明与原版边界见[怪物表现](../gameplay/monsters/PRESENTATION.md#目标姓名与按住锁定)。完整锁定／长帧组合仍待核对。
 
 人物与任务投影编入 d2x_client，使用显式只读事实和当前 ClassicData／MPQ，不依赖 RealmSession、GameSession、设备、GPU 或本地执行器。RemoteUiClients 负责解码状态适配及协议命令，不再内嵌任务文字选择规则。未收到状态或缺必要输入保留未知；不把游戏共享旗标当成本人完成记录。
 
-任务显示、通知与未知状态规则统一见[任务系统](../gameplay/quests/SYSTEM.md#唯一显示链)，具体面板生命周期见[NPC／任务接口](NPC_QUEST.md)。任务资格、NPC服务和奖励由所连接服务端决定；客户端不从地图种子、公共旗标或旧执行器补推进。
+任务显示、通知与未知状态规则统一见[任务系统](../gameplay/quests/SYSTEM.md#原协议与客户端投影)，具体面板生命周期见[NPC／任务接口](NPC_QUEST.md)。任务资格、NPC服务和奖励由所连接服务端决定；客户端不从地图种子、公共旗标或旧执行器补推进。
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
 
-Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。此修复已随当前客户端构建入包，未专项运行认证。
+Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。
 
 底栏只加载原联机minipanel，显示／命中共用一组按钮；NPC、库存、人物、任务、地图、选项等面板没有Local备用实现。已接服务的范围见对应模块，未接服务或缺失原服状态明确不可用，不调用本地服务补齐。帮助页移除旧本地Save／Load、授予金币／经验等提示；原服调试暂停及在线command入口保留。
 
@@ -63,7 +63,7 @@ Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteS
 
 GameSession、Simulation、SkillRuntime、InventoryService、客户端本地任务／AI／奖励执行源码及d2x_session目标已删除。gameplay／items保留两端适用的纯函数和值；服务端调用纯任务阶段规则，客户端不能调用它推进权威记录。PersistentCharacter是纯领域保存值，CharacterSaveData为其别名；客户端库不链接persistence，产品经嵌入宿主链接。旧法杖插入面板没有原服生产者，其空状态／资源／绘制入口已删除，原协议插杖流程仍未实现。原MPQ、reference、旧包、mvp和用户文件保留。
 
-完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。运行证据由联网及对应玩法专题维护，包身份见[运行包记录](../development/BUILD_AND_RUN.md#运行包记录)。
+完整细节与原服协议限制见[联网模块](NETWORK.md)、[NPC／任务](NPC_QUEST.md)、[人物](CHARACTER.md)、[库存](INVENTORY.md)及[地图](MAP.md)。各专题维护原版依据、当前实现和明确缺口。
 
 ## 女巫公共客户端补齐
 
@@ -77,9 +77,9 @@ GameSession、Simulation、SkillRuntime、InventoryService、客户端本地任�
 
 本轮遵循同一授权边界，具体原Clt函数／DLL RVA、30项范围和公共计算见[亚马逊](../gameplay/skills/AMAZON.md)。Shared sequence／weaponVolley、引导、分裂候选、整数圆盘／环形和GUID继任用于原客户端程序，不读取服务端领域状态。本人IAS／武器速度／Pierce仅用已知属性及已解码装备；远端隐藏值不推算。Srv与Clt的牺牲火期限、目标候选及转向参数分别取原表。
 
-RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD现按PetType与TBL读取原图、数量／单只生命及佣兵交互，原7F非玩家分支与81本人佣兵登记已接；实现与有限运行边界见[头像](../gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。
+RemoteScene补CltDo18–22、ClientMissile补原尾迹／毒烟／引导及Hit12／14／25。RemoteWorld消费原13字节7A宠物归属，归属名册与可见monster生命周期分离；9D保留ownerType，孔内／公开装备按实际主人清理。States的gfxtype=2人物伪装使用原动作映射及既有COF合成器，未添加自研宿主显示分支。头像HUD现按PetType与TBL读取原图、数量／单只生命及佣兵交互，原7F非玩家分支与81本人佣兵登记已接；实现、原版依据与缺口见[头像](../gameplay/characters/HIRELINGS.md#召唤物与佣兵头像)。
 
-亚马逊30项已构建打包，列出的自研及原服代表路径完成有限运行；证据及未认证边界见亚马逊专题，其他技能的历史证据不能认证其新增路径。
+亚马逊各项程序与原服参考分别由职业专题维护；完整像素、声音、共享随机及来源组合仍有缺口。
 
 ## 通用十项原版修复
 

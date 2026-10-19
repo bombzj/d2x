@@ -21,6 +21,9 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 构建、打包和自研运行情况在当次交付中说明，不进入长期功能台账。日志、截图、运行包及排障副本是可清理的临时产物；文档不依赖临时目录长期存在，也不把已删除材料写成现存依据。修改历史由Git追溯。
 
 移动内容时保留有效证据和链接，外部已引用的锚点保留或同步修正。保存语义变化同步SAVES／格式／校验边界；执行授权以[协作约定](../AGENTS.md)和[验证指南](development/TESTING.md)为准，不在各页重复维护授权规则。
+
+| 开发与参考主题 | 入口 |
+| --- | --- |
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |

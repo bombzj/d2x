@@ -29,11 +29,11 @@ hosting准备不可变纯值，server不读表、资源或客户端副本。自�
 
 ## 移动与目标依据
 
-PATH_SetStepNum保存steps−1，PathMisc.sub_6FD5DB70以D2Common_10399单位距离判停止，不是路线点数量。本地原版1.13c D2Common.dll VA6FD5DBC7–6FD5DBD9调用6FDCFCD0后读取动态路径0x93字段比较，已只读核对。DLL SHA256为`59FA5928522F566F2BF99675571206AD70DF889C89D3D07FA87EDF5083E06E10`；证据在`artifacts/act12-reaudit-20261012/native-path-arrival.txt`，源码不加载原DLL执行。
+PATH_SetStepNum保存steps−1，PathMisc.sub_6FD5DB70以D2Common_10399单位距离判停止，不是路线点数量。本地原版1.13c D2Common.dll VA6FD5DBC7–6FD5DBD9调用6FDCFCD0后读取动态路径0x93字段比较，已只读核对。DLL SHA256为`59FA5928522F566F2BF99675571206AD70DF889C89D3D07FA87EDF5083E06E10`；源码不加载原DLL执行。
 
 两幕绕行沿D2MOO AiTactics.sub_6FCD0E80及PathMisc.sub_6FDAA720：一次随机选type5／6，方向优先级转±2，逐格查原碰撞／大小，碰壁或反转停止，参数为路程上限；0不造一格绕行。RoomLayout.nearby与nearRooms共用DRLG同区域各轴间隙＜6 tile条件；跨区域链接及完整活动调度仍待接。
 
-普通怪物Toward／Straight／WallFollow的算法统一放在d2x_navigation，由权威requestMove与客户端原67／68表现共同调用；失败路径选择属于服务端策略，客户端只执行实际收到的类型。参数、参考函数及仍使用通用AStar的入口见[共用寻路](../../modules/MAP.md#共用寻路)，本次构建不等于原版路线逐帧验证。
+普通怪物Toward／Straight／WallFollow的算法统一放在d2x_navigation，由权威requestMove与客户端原67／68表现共同调用；失败路径选择属于服务端策略，客户端只执行实际收到的类型。参数、参考函数及仍使用通用AStar的入口见[共用寻路](../../modules/MAP.md#共用寻路)，完整路线及执行时序仍需分别核对。
 
 server/ai.shootableTarget独立提供AiUtil回调6目标／距离：近房间、FullUnitSize距离≤48、可伤害资格和原missile barrier视线，Threat≤1另选。各家族只在原射击分支使用，不能覆盖主目标、接战判断、元素偏好及坐标技能落点；开始／释放仍复验来源、目标、区域、技能资格。完整强制目标／Vision缓存尚未实现。
 
@@ -57,7 +57,7 @@ hosting准备纯值，server/population持有唯一自然生成游标，monsters
 
 怪物ENDANIM使用公共`monsterAnimationTicks`：`max(2,ceil((frames-startFrame)×256/speed))`，不借用玩家普通动作的减一帧规则。服务端A1／A2、技能和恢复与自有客户端怪物动画共用此结束计算，包含使用玩家图形的女武神；命中仍在原事件帧，只由权威结算。当前MPQ既有导出中，`ZMA1HTH／ZMA2HTH`均16帧、速度256、事件帧9，zombie1三难度aidel为15／14／13；无速度加成、中断或额外AI等待时，源码计算的连续起手间隔为31／30／29个25Hz帧。它是静态推导，不是本次运行测量。
 
-上述源码已纳入当前Release包；本轮冒烟未逐帧测量怪物时钟。完整中途变速重排、击退结束转GH的特殊事件链及全怪物／全部词缀组合尚未认证，不能把通用时钟修正称为全MonStats逐帧复刻。
+完整中途变速重排、击退结束转GH的特殊事件链及全怪物／全部词缀组合仍待核对，不能把通用时钟修正称为全MonStats逐帧复刻。
 
 GH、冻结、击退和死亡使未释放动作失效。可靠队列重试保留动作随机与首次释放位置／目标，接触计划只生成一次；已释放弹体可在来源死亡后继续，同区规则不跨区追踪。server-snapshot的rules列出准备参数、动作／技能，运行列另含盾牌、巢生计数、蛛网和中断。具体实现与组合缺口归对应幕怪物专题，逐字段接线不代表所有组合已对齐原版。
 
@@ -71,7 +71,7 @@ death首次捕获活击杀者身份及经验，loot携带真实rank／固定TC�
 
 BL按本机1.13c action18的单位分支编码为6A/type/GUID，事件与后续快照共用monsterBlock。不可见或不存在的目标使用合法查询类型及原无目标GUID(-1)，本机D2Common ordinal11129／PATH_SetTargetUnit接受查询返回的null；不把坐标装进身份字段。特殊攻击动作的快照也按MonsterMsg／SCmd选择完整6B／6C结构，保留目标及当前位置。
 
-用户EA5256包原版Join于2026-10-13 07:40:04在D2Client RVA A4E27崩溃。日志117.894664秒的`69 86000000 12 C511 CF11 0000`为fallen1 GUID134／class19格挡。原客户端action18跳4E253，再由A604F按单位类型扩展单位表；异常ecx=4559，edx=6FDF3008，减查询表基址6FBBA608并除512恰为4549，即错误包的Y／X。坐标被当作身份导致越界查表，已直接对应异常寄存器，不能把本次异常归为已证实的掉落问题。原日志、DLL哈希及只读反汇编在`artifacts/melee-hold-crash-20261013`。本轮仅修正源码／静态核对，未构建、运行或打包；原版Join实测尚未认证。
+原版1.13c Join连接D2X宿主时于2026-10-13 07:40:04在D2Client RVA A4E27崩溃。日志117.894664秒的`69 86000000 12 C511 CF11 0000`为fallen1 GUID134／class19格挡；该错误消息来自D2X宿主。原客户端action18跳4E253，再由A604F按单位类型扩展单位表；异常ecx=4559，edx=6FDF3008，减查询表基址6FBBA608并除512恰为4549，即错误包的Y／X。坐标被当作身份导致越界查表，已直接对应异常寄存器，不能把本次异常归为已证实的掉落问题。该原版消费者反馈与静态控制链支持上节6A单位目标编码；完整原版Join战斗仍待核对。
 
 ## 迁入流程与台账
 
