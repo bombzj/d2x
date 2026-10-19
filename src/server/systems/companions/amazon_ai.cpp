@@ -21,6 +21,9 @@ StepStatus System::amazonStep(Companion &pet,TickContext tick) {
         return StepStatus::Complete;
     }
     if(tick.tick<pet.nextDecision) return StepStatus::Complete;
+    // Fn067's WALK/RUN returns to AI at path completion. A polling wake-up
+    // must not select another target or reset a partially executed path.
+    if(!body->route.empty()) {pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=36;
     const auto cast=ports_.skills.read().casts.find(owner->actor);

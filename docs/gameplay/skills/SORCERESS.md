@@ -1,6 +1,6 @@
 # 女巫技能
 
-更新：2026-10-09。自研服务端执行26项主动、4项被动，原服与自研共用原协议客户端。此页维护30项职责、女巫专属Clt／Srv差异、原版依据和缺口；公共规范与整体状态见[COMMON](COMMON.md)。
+更新：2026-10-19。自研服务端执行26项主动、4项被动，原服与自研共用原协议客户端。此页维护30项职责、女巫专属Clt／Srv差异、原版依据和缺口；公共规范与整体状态见[COMMON](COMMON.md)。
 
 女巫持续状态现从公共原公式环境准备AuraLen／AuraStat／Passive槽及modifierlist元数据，使用独立状态位与原有符号移除事件。冰甲按原状态组先撤出再投递，附魔保持同级复用及后续非零写入；Blaze、Thunder Storm及Energy Shield采用对应原始列表生命周期。能量盾百分比／耗蓝因子读取calc1／calc2，魔法耗尽撤出状态并随同一人物候选发布事实，骨甲池写入／撤出也在资源观察边界执行。单位事件登记次序已独立保存；骨甲与能量盾按登记先后处理，能量盾耗尽在接收流程内撤出，冻结反应读取当前原calc整数帧。完整伤害前派发及所有跨职业组合仍需迁移／对齐。
 
@@ -28,7 +28,7 @@
 | 51 Fire Wall | SkillSor SrvDo24；MissMode SrvDo6／Dmg3 | C、D、missileWallDirection、跨格、速度 | 两侧maker生成各端执行，服务器真实火段伤害 |
 | 52 Enchant | SkillSor SrvDo25 | C、D、线性期限／命中率 | 服务端友方资格、来源及成组事务；客户端原状态 |
 | 53 Chain Lightning | SkillSor SrvDo26；MissMode SrvHit12 | C、D最小值门槛、seq12、跳数、GUID successor | 真实候选／再次命中归服务端；客户端CltHit16可见链段 |
-| 54 Teleport | SkillSor SrvDo27 | C、位置／碰撞几何 | 服务端资格／位移；客户端原位置校正 |
+| 54 Teleport | SkillSor SrvDo27、SUnit公共重定位及COLLISION_GetFreeCoordinates | C、Levels.Teleport、原尺寸／掩码与落点搜索 | 释放时取得真实房间并寻位，支持已准备且步行相连的同幕邻区；客户端原位置校正 |
 | 55 Glacial Spike | 通用Handler；MissMode SrvHit13 | C、D、L、范围／冻结等级曲线 | 服务端接触范围冷伤／冻结；客户端CltHit14冰图 |
 | 56 Meteor | SkillSor SrvDo28；MissMode SrvHit14 | C、D；地面火evaluateMissileDamageFixed；范围／期限 | 18个权威火偏移与客户端CltDo9／Hit18图层分开 |
 | 57 Thunder Storm | SkillSor SrvSt13／SrvDo29 | C、D、linear期限、dm56递减周期 | 服务端定时选敌／落雷；客户端原A3瞬时图 |
@@ -60,6 +60,10 @@
 
 `actions`持有玩家／怪物待释放动作，`skills`解释施放、冷却、释放及射流；`missiles`持有权威飞行／子弹，`combat/spell_damage`处理逐目标伤害／NextDelay，`effects`持有装甲反击、吸收及周期，`companions`持有Hydra归属／期限／AI，单位属性／生命／模式仍归monsters。Hydra不再由伙伴另发AttackFact及玩家发射请求，改为请求337怪物技能，沿相同动作／释放入口发射。心灵传动复用inventory／objects／travel各自资格和事务；客户端开仓库／传送点等待原77／63，地面目标来自原物品副本，失败拾取音效为原2C的0x13。
 
+Teleport普通施放、聚气与物品触发共用`travel::castTeleport`。请求保留原50子格轴向范围，不以点击处已可步行或当前区域矩形作为起手资格。释放时按来源Levels.Teleport裁决：0拒绝，2使用UNITS_TestCollisionByCoordinates的两端尺寸2缩短射线及0x0804掩码，其他非零值不检查穿越路径。目的地只从原本房间／邻接房间解析，先取得真实地形，再以玩家尺寸2、掩码0x1c09调用公共nativeFreeCoordinates；先原点，失败后按原周界顺序、曼哈顿距离及首个同距候选搜索，外半径50不包含边界，失败不使用原点后备。不要求从源点步行到达，也不另加怪物／玩家避让半径。
+
+实际落点、法力／聚气及可靠位置事实共用人物事务，输出背压不提前扣费或移动。相连同幕邻区复验目的区域代次及碰撞，TravelFact和位置事实一起接受后提交区域／房间归属；成功清空旧路线、定点步进及移动交互目标，并更新传送历史位置和代次。客户端只提交原目标、等待原15位置包，不预判落点。原版1.13c D2Game SrvDo表RVA1074A8第27项指向43450；43484–434C1确认Levels.Teleport及0x0804分支，E19C0／E1A44–E1A83确认公共重定位的尺寸查询、0x1c09、关闭失败后备及路径重置入口。D2Common ordinal10509／RVA4D840传入最大距离50、步长1并调用4D140。DLL摘要见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)；当前MPQ Skills[54].SrvDoFunc=27、Levels.Teleport仍动态准备。上述为源码／原表／原DLL静态核对，尚未进行本项实机回归。
+
 未释放动作随移动／死亡／换区取消；已释放弹体可在施法者死亡后完成，玩家离开或区域代次变化时清理。持续Inferno不能将每帧续射的结束刻误投影为站立，原0D只在动作真实结束后发出。受控Hydra不发敌怪经验／掉落；三头生命周期、337弹体及强化沿各自领域。
 
 hosting独立prepareHydraRules从当前MPQ准备三头／三难度基础、初始技能槽、生命及模式表、普通／L-AC比例、LoD区域等级和PetType；服务端不读取原表。原单位初始化后先赋Hydra自身技能，再安装主人原Passive／Aura／Calc1／SumSkill，因此火焰精通为召唤时的基础贡献。共用prepareSummonStatSources，关闭SetSummonBaseStats和召唤抵抗；初始生命按生命表投掷并保留raw单位。当前三头生命表为零；maxhp的fMin／MinAccr／ValShift不代表缺项查询最小生命，keepzero关闭时SetStat(0)移除字段，缺项仍返回零。实体通过modeAlive保持活动，死亡模式清除该标记；参与者查询、动作入口、死亡／到期、拥有者清理和复制开始区分原生命与存活，不人为安装256。
@@ -74,7 +78,7 @@ hosting独立prepareHydraRules从当前MPQ准备三头／三难度基础、初�
 
 ## 边界
 
-- 同区Teleport资格／碰撞及位置事务已接；同行者传送、跨区弹体及完整路径定点量化未完成。
+- Teleport已接原落点搜索和已准备、步行相连的同幕邻区；未准备区域、完整同行者即时迁移／多人包序及全部地图组合尚未对齐，跨区弹体仍未完成。
 - Chilling Armor的完整远程AI、ReturnFire来源组合及客户端接触流程仍待对齐。
 - 碎冰、爆炸密度、连锁在延迟／可见性变化下的时序、循环声音、三难度／全装备／协同等级／免疫和背压仍没有完整认证。
 - 充能、装备触发、武器通用限制由[库存](../../modules/INVENTORY.md)及[GENERAL](GENERAL.md)维护；保存字段与校验边界由[SAVES](../../modules/SAVES.md)维护。晚入视野和客户端权限沿COMMON，不以本页30项入口扩张其他职业或宣称完整原版对齐。

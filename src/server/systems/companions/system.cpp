@@ -50,9 +50,13 @@ DomainResult<> System::think(EntityId id,TickContext tick) {
     if(body) {
         auto due=std::max(tick.tick+1,found->second.nextDecision);
         if(body->revived() && body->alive()) {
-            if(ports_.ai.think(id,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
-            if(const auto controller=ports_.ai.read().controllers.find(id);controller!=ports_.ai.read().controllers.end())
-                due=std::min(due,std::max(tick.tick+1,controller->second.nextDecision));
+            // A newly accepted owner-follow path belongs to companions until
+            // it ends; invoking the family here would overwrite it immediately.
+            if(!found->second.nativePetMoving || body->route.empty()) {
+                if(ports_.ai.think(id,tick)==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
+                if(const auto controller=ports_.ai.read().controllers.find(id);controller!=ports_.ai.read().controllers.end())
+                    due=std::min(due,std::max(tick.tick+1,controller->second.nextDecision));
+            }
         }
         if(body->alive()) due=std::max(due,std::max({body->busyUntil,body->stunnedUntil,body->knockedUntil}));
         if(found->second.removeAt) due=std::min(due,std::max(tick.tick+1,found->second.removeAt));

@@ -398,8 +398,9 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                 const auto player = *world.playerPosition;
                 if (std::abs(int(player.x) - point->x) > 50 || std::abs(int(player.y) - point->y) > 50)
                     return reject("Cast exceeds the native 50-subtile request range");
-                if (!binding.origin || point->x < binding.origin->x || point->y < binding.origin->y ||
-                    int(point->x - binding.origin->x) >= binding.width || int(point->y - binding.origin->y) >= binding.height)
+                const bool teleport=tables_.at("skills").number(row->second,"srvdofunc")==27;
+                if (!binding.origin || (!teleport && (point->x < binding.origin->x || point->y < binding.origin->y ||
+                    int(point->x - binding.origin->x) >= binding.width || int(point->y - binding.origin->y) >= binding.height)))
                     return reject("Cast target is outside the current map binding");
             }
         }

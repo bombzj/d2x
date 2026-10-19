@@ -23,6 +23,8 @@
 
 actions持有动作与待释放队列，skills解释并推进技能程序，companions拥有伙伴／上限／寿命，monsters拥有实体／AI准备值／生命，effects拥有诅咒与接触反应，transactions提交人物／库存／地面材料，combat持有伤害和来源复验。资源不足、目标消失、尸体已消费、非金属／未鉴定材料、缺原资源均明确拒绝，不自造参数或召唤替身。
 
+骷髅／法师／石魔及重生单位已有路线时，`companions/necroStep`不重选目标或重启追击／跟随，归位和固有光环仍先处理。重生单位的主人跟随使用现有`nativePetMoving`运行标记，路线执行期间不再同时调用原怪物家族AI覆盖它；家族自身的移动仍由`ai::System`推进，跟随结束或归位后交回家族决策。依据为本地D2MOO Fn067_NecroPet、PetMove及MonsterMode的WL／RN结束回调；此处只修正路线继续与两个AI入口的交接，完整Fn067目标／命令和全重生家族仍待对齐，不改变D2S。
+
 死灵消耗尸体通过monsters.consumableCorpse复验，区别于寻物等使用的尸体选择入口：除现有死亡完成、区域、不可选／已搜索及奖励保护外，要求MPQ准备的MonStats原速度非零。依据D2COMMON_11017_CheckUnitIfConsumeable及SkillNec的起手／释放调用；重生另保留revive、AI、rank与首领约束。尚未完整映射原DEATH／DEAD模式和全部Udead状态掩码，完整尸体资格仍待对齐。
 
 公共curseStateDuration现供死灵、亚马逊状态和祭坛使用：先算nativePercentage(期限,抗性,100)，再从原期限中减去；仅当前States.curse启用抗性拒绝，负抗性不钳零，零期限不强行变成一帧。怪物抗性从当前原始属性来源查询，缺原始来源的旧生产端保留显式适配。AI难度除法仍在原调用端先执行。依据D2MOO Skills::sub_6FD10EC0，完整原事件排序仍未闭合。

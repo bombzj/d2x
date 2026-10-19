@@ -12,6 +12,7 @@
 #include "gameplay/quest/acts/act_two_state.hpp"
 #include "server/systems/quests/system.hpp"
 #include "server/systems/social/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "world/interaction_geometry.hpp"
 #include <algorithm>
 #include <cmath>
@@ -97,10 +98,57 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
 DomainResult<> System::teleport(const ActorContext &actor, PointTarget target, Fixed8 manaCost,std::optional<SkillCharge> charge,int skill) {
     const auto *player = ports_.players.find(actor.player);
     if (!player) return {DomainStatus::InvalidActor, {}};
-    if (target.area == actor.area) ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
+    ports_.world.activate(target.area, target.position + Vec{.5f,.5f});
     const auto result = ports_.transactions.release(actor, player->characterRevision, manaCost, target,charge,{},{},skill);
-    if (result) cancel(actor.player);
+    if (result) {
+        cancel(actor.player);
+        if(target.area!=actor.area) {
+            ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);
+        }
+    }
     return result;
+}
+DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target,Fixed8 manaCost,std::optional<SkillCharge> charge,int skill) {
+    const auto *player=ports_.players.find(actor.player);
+    const auto *source=ports_.areas.find(actor.area);
+    if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0)
+        return {DomainStatus::InvalidActor,{}};
+    if(!source || source->generation!=actor.areaGeneration || target.area!=actor.area || target.generation!=actor.areaGeneration)
+        return {DomainStatus::Stale,{}};
+    if(!std::isfinite(target.position.x) || !std::isfinite(target.position.y)) return {DomainStatus::InvalidRequest,{}};
+    const auto &definition=source->definition;
+    if(!definition.teleportMode) return {DomainStatus::Unavailable,{}};
+    const Vec global=target.position+definition.origin;
+    if(global.x<0 || global.y<0 || global.x>UINT16_MAX || global.y>UINT16_MAX) return {DomainStatus::InvalidRequest,{}};
+    const int column=int(std::floor(global.x+.5f)),row=int(std::floor(global.y+.5f));
+    const auto *bounds=definition.activation.room(player->position+Vec{.5f,.5f});
+    if(!bounds) return {DomainStatus::Unavailable,{}};
+    const RoomView current{actor.area,(int(definition.origin.x)+bounds->x)/5,(int(definition.origin.y)+bounds->y)/5};
+    // SrvDo27 -> SUNIT relocation: resolve the original room neighbourhood,
+    // acquire its terrain, then search size 2 / 0x1c09 at the release frame.
+    const auto acquire=[&](RoomView view) {
+        const auto *area=ports_.areas.find(view.area);
+        if(!area || area->definition.act!=definition.act) return false;
+        const Vec point=Vec{float(column),float(row)}-area->definition.origin;
+        const auto *room=area->definition.activation.room(point+Vec{.5f,.5f});
+        if(!room || (int(area->definition.origin.x)+room->x)/5!=view.x ||
+            (int(area->definition.origin.y)+room->y)/5!=view.y) return false;
+        ports_.world.activate(view.area,point+Vec{.5f,.5f});return true;
+    };
+    bool acquired=acquire(current);
+    if(!acquired) for(const auto room:definition.roomNear.at(size_t(bounds-definition.activation.rooms().data())))
+        if(acquire(room)) {acquired=true;break;}
+    if(!acquired) return {DomainStatus::Unavailable,{}};
+    // UNITS_TestCollisionByCoordinates shortens both ends by unit size 2.
+    if(definition.teleportMode==2 && !definition.collision.interactionSegment(player->position,target.position,2,{}))
+        return {DomainStatus::Unavailable,{}};
+    const auto room=ports_.areas.roomAtPosition(actor.area,player->position+Vec{.5f,.5f},column,row);
+    if(!room) return {DomainStatus::Unavailable,{}};
+    const auto sample=ports_.spatial.nativeCollisionSample(0x1c09);
+    const auto free=ports_.areas.nativeFreeCoordinates(*room,column,row,2,0x1c09,sample);
+    if(!free) return {DomainStatus::Unavailable,{}};
+    const auto &destination=ports_.areas.at(free->room.area);
+    return teleport(actor,{free->room.area,destination.generation,free->position},manaCost,charge,skill);
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     const auto synchronizationStatus=expireSynchronizations(tick);

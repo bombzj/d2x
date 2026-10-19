@@ -192,7 +192,7 @@ StepStatus System::populateDensity(RegionId region,size_t roomIndex,TickContext 
     }
     const RoomView room{region,layout.x,layout.y};
     const auto status=[&](DomainStatus result) {
-        if(result==DomainStatus::Capacity || result==DomainStatus::Conflict || result==DomainStatus::Stale) return StepStatus::Blocked;
+        if(isDeferred(result) || result==DomainStatus::Conflict || result==DomainStatus::Stale) return StepStatus::Blocked;
         if(cursor.deferred.empty()) cursor.deferred="Native population operation pending: class="+std::to_string(cursor.definition)+
             " phase="+std::to_string(int(cursor.phase))+" status="+std::to_string(int(result));
         return StepStatus::NotImplemented;

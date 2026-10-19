@@ -17,9 +17,6 @@ StepStatus System::npcBarbFamily(EntityId id,TickContext tick,Controller &contro
     const auto &unit=*ports_.monsters.find(id);const auto &area=ports_.areas.at(unit.area);
     const auto &params=unit.rule.ai.params;
     controller.nextDecision=tick.tick+1;
-    // The native WALK/RUN mode returns to AI when its path ends. Polling an
-    // accepted path here must not draw another wander point or restart it.
-    if(controller.pursuing && !unit.route.empty()) return StepStatus::Complete;
     controller.pursuing=false;
     const auto *room=area.definition.activation.room(unit.position);
     const auto target=acquireTarget(unit,tick,false,room && !room->checkLosDraw && !controller.acquiredTarget);

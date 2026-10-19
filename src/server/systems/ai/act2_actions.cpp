@@ -29,15 +29,6 @@ StepStatus System::act2Action(EntityId id,UnitTarget target,Vec point,int size,T
         kind==MonsterAiKind::Summoner || kind==MonsterAiKind::GreaterMummy)?shootableTarget(monster,tick):std::nullopt;
     const int distance=target.id==id?INT32_MAX:monsterAiDistance(point,target.type?size:0,monster.position);
     const bool clear=area.definition.collision.missileSegment(monster.position,point,{4,1});
-    if(controller.pursuing && !monster.route.empty() && !monster.burrowed && !monster.airborne) {
-        if(monster.movementTarget && tick.tick>=controller.nextPath) {
-            const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
-            const auto moved=destination?ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,monster.pathSteps}):DomainResult<>{DomainStatus::Unavailable,{}};
-            controller.nextPath=tick.tick+18;
-            if(!moved) {ports_.monsters.stop(id);controller.pursuing=false;}
-        }
-        controller.nextDecision=tick.tick+1;return StepStatus::Complete;
-    }
     ports_.monsters.stop(id);controller.pursuing=false;
     std::optional<UnitTarget> corpse,heal;
     int supportCount=0;

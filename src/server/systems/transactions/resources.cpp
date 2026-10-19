@@ -4,6 +4,7 @@
 #include "server/area_store.hpp"
 #include "server/systems/actions/state.hpp"
 #include "gameplay/effects/state.hpp"
+#include <algorithm>
 #include <cmath>
 #include <utility>
 #include <vector>
@@ -48,8 +49,32 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
     if(random && player.combatRandom!=random->expected) return {DomainStatus::Stale,{}};
     if (expected == UINT64_MAX) return {DomainStatus::Capacity, {}};
     if (cost < 0 || player.persistent.player.mana < cost) return {DomainStatus::Unavailable, {}};
-    if (relocation && (relocation->area != player.area || relocation->generation != area->generation || !area->definition.teleportAllowed ||
-        !area->definition.collision.walkable(relocation->position, playerMovement))) return {DomainStatus::Unavailable, {}};
+    const auto *destination=relocation?ports_.areas.find(relocation->area):nullptr;
+    if(relocation) {
+        if(!destination || relocation->generation!=destination->generation || !area->definition.teleportAllowed ||
+            destination->definition.act!=area->definition.act ||
+            !ports_.areas.loaded(relocation->area,relocation->position+Vec{.5f,.5f}) ||
+            !destination->definition.collision.walkable(relocation->position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Unavailable,{}};
+        if(relocation->area!=actor.area) {
+            Vec origin;const auto navigation=area->definition.collision.linkedNavigation(origin);
+            if(std::none_of(navigation.navigationSources.begin(),navigation.navigationSources.end(),
+                [&](const auto &entry){return entry.grid==&destination->definition.collision;})) return {DomainStatus::Unavailable,{}};
+        }
+        if(player.teleportRevision==UINT64_MAX) return {DomainStatus::Capacity,{}};
+    }
+    const auto relocated=[&] {
+        if(!relocation) return;
+        player.area=relocation->area;player.position=relocation->position;
+        player.lastTeleportPosition=player.position+destination->definition.origin;
+        ports_.areas.moveRoomUnit(player.actor,player.area,player.position);
+        player.route.clear();player.moving=false;player.runningNow=false;player.pathStep.reset();
+        player.movementTarget.reset();player.movementArrival.reset();
+        player.routeDestination=player.position;player.routeObstacles=destination->definition.collision.obstacleRevision;
+        ++player.teleportRevision;
+    };
+    const auto travelFact=[&] {
+        return TravelFact{player.player,player.actor,actor.area,relocation->area,destination->generation,relocation->position,false};
+    };
     const bool bloodMana=(skill>=0 || cost>0) && player.rules.character && player.transient.effects &&
         player.transient.effects->hasState(player.rules.character->bloodManaState,actor.tick);
     if(charge || bloodMana) {
@@ -59,10 +84,13 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         edit.skillPayment=SkillManaPayment{cost,skill};
         edit.random=random;
         edit.publicFacts=std::move(publicFacts);
-        if(relocation) edit.publicFacts.emplace_back(RepositionFact{player.actor,player.area,relocation->position});
+        if(relocation) {
+            if(relocation->area!=actor.area) edit.facts.emplace_back(travelFact());
+            edit.publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area});
+        }
         auto plan=prepare(std::move(edit));if(!plan) return {plan.status,{}};
         const auto result=commit(std::move(*plan.value));
-        if(result && relocation) {player.position=relocation->position;player.lastTeleportPosition=player.position+area->definition.origin;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;++player.teleportRevision;}
+        if(result) relocated();
         return result;
     }
     const auto mana = player.persistent.player.mana - cost;
@@ -75,13 +103,16 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         resourceFact=ResourcesFact{player.actor,{before.hp,before.mana,before.stamina},{before.hp,mana,before.stamina}};
     }
     std::vector<EventBatch> events{{0, actor.tick, {}, {AudienceKind::Player, player.player, player.area}, {std::move(resourceFact)}}};
-    if (relocation) publicFacts.emplace_back(RepositionFact{player.actor, player.area, relocation->position});
+    if(relocation) {
+        if(relocation->area!=actor.area) events.front().facts.emplace_back(travelFact());
+        publicFacts.emplace_back(RepositionFact{player.actor,relocation->area,relocation->position,relocation->area==actor.area});
+    }
     if (!publicFacts.empty()) events.push_back({0, actor.tick, {}, {AudienceKind::Area, {}, player.area},std::move(publicFacts)});
     auto result = ports_.events.publishGroup(std::move(events));
     if (!result) return {result.status, {}};
     player.persistent.player.mana = mana; ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
     if(random) player.combatRandom=random->next;
-    if (relocation) { player.position = relocation->position;player.lastTeleportPosition=player.position+area->definition.origin;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false; ++player.teleportRevision; }
+    relocated();
     return {DomainStatus::Applied, std::monostate{}};
 }
 }

@@ -19,7 +19,6 @@
 namespace d2x::server::ai {
 StepStatus System::fetishShamanAction(EntityId id,std::optional<UnitTarget> target,Vec position,TickContext tick,Controller &controller) {
     const auto &monster=*ports_.monsters.find(id);const auto &area=ports_.areas.at(monster.area);
-    if(controller.pursuing && !monster.route.empty()) {controller.nextDecision=tick.tick+1;return StepStatus::Complete;}
     controller.pursuing=false;ports_.monsters.stop(id);
     const auto stats=ports_.effects.unitStatValues(id,tick.tick);if(!stats) return StepStatus::Blocked;
     const auto ranks=nativeMonsterSkillRanks(monster.rule.baseSkillRanks,*stats,*monster.rule.stats,*monster.rule.formulas);
@@ -107,17 +106,6 @@ StepStatus System::familyAction(EntityId id, UnitTarget target, Vec position, in
     if(monster.rule.ai.kind==MonsterAiKind::Fallen && !controller.commands.empty()) {
         controller.commanded=controller.commands.front().code==1;
         if(!controller.commanded) {controller.commands.pop_front();ports_.monsters.stop(id);controller.nextDecision=tick.tick+10;return StepStatus::Complete;}
-    }
-    // Keep an accepted WL/RN action, including an independent shootable target.
-    if (controller.pursuing && !monster.route.empty()) {
-        if (monster.movementTarget && tick.tick >= controller.nextPath) {
-            const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
-            const auto result=destination?ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,monster.pathSteps}):DomainResult<>{DomainStatus::Unavailable,{}};
-            controller.nextPath = tick.tick + 18;
-            if (!result) { ports_.monsters.stop(id); controller.pursuing = false; }
-        }
-        controller.nextDecision = tick.tick + 1;
-        return StepStatus::Complete;
     }
     controller.pursuing = false; ports_.monsters.stop(id);
     int targetLife = target.id?100:0;

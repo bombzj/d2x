@@ -53,6 +53,8 @@ SrvSt／Do为当前MPQ分派，—表示没有该回调，不能据此判断未�
 
 诱饵和女武神现在都经过现有准备边界，结果绑定请求、独立种子、装备revision、等级、基础技能及区域代次；自然回蓝不取消准备，提交时仍复验法力。物品及孔内项使用实例统一新ID，伙伴退役不发敌怪经验／掉落。死亡、替换、到期及主人离开由companions清理；女武神攻击／同行／换区在 `companions/amazon_ai`，诱饵保持固定位置。
 
+女武神已有WL／RN路线时，AI轮询只等待路线结束，不重选敌人或再次提交同一路径，避免重置定点步进；换区／远距归位仍先处理，诱饵不进入移动AI。依据为本地D2MOO Fn067_NecroPet、AiTactics移动及MonsterMode的WL／RN结束回调；完整目标选择、同行规则与原版逐帧时序仍待对齐。
+
 NativeSummonStats保存显式主人公式输出：Calc1／Calc2／诱饵Calc3、五项Passive加值、六项Aura非零写入、五个SumSkill／SumSkCalc槽及普通／L列MonLvl加值。诱饵主人生命不先截成整点；初始及百分比生命使用原整数算子并保留Fixed8。当前两个MonStats记录按已核实noRatio=1准备，初始生命先掷整点、限23位再左移8位；其他ratio模式不由此推断支持，完整诱饵／女武神流程仍待对齐。
 
 attributes/prepareSummonStatSources从基础列表依序安装初始技能、召唤等级／MonLvl加值、Passive基础AddStat、Aura独立列表、生命Calc增长和SumSkill赋值，再投递装备来源。继承技能按参数层与原同等级缓存调用共享被动刷新；装备加技能后重新求有效等级。最大生命变化沿MonsterResourceTrace回调，原始生命／上限与来源一起落入单位候选。MonEquip贡献从同一native_sources入口保留原始属性、孔内项和参数层，临时物品ID及其嵌套来源统一绑定实际ID；基础MonStats抗性与技能／装备抗性不合并为另一份基础值。怪物公式、状态和选定武器查询已能读取这份来源，模式表共用当前MPQ的不可变目录。

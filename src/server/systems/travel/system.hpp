@@ -22,7 +22,7 @@ struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, r
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };
 struct SpecialPortalPlan {std::map<EntityId,Portal> next;};
-struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; };
+struct Ports { PlayerStore &players; AreaStore &areas; world::System &world; trade::System &trade; npc::System &npc; transactions::System &transactions; EventOutbox &events; inventory::System &inventory; items::System &items; objects::System &objects; quests::System &quests; const social::System &social; uint64_t &random; const GameSettings &settings; const spatial::System &spatial; };
 class System {
     State state_;
     const Ports ports_;
@@ -54,6 +54,7 @@ class System {
         return found!=state_.synchronizations.end() && found->second.until!=0;
     }
     DomainResult<> teleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
+    DomainResult<> castTeleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
     void closePlayerPortal(PlayerId id) { state_.portals.erase(id); }

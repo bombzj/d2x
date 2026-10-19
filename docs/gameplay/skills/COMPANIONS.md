@@ -24,6 +24,8 @@ Battle Command作用于佣兵自身的临时全技能属性，在生效和到期
 
 [hireling_content.cpp](../../../src/hosting/hireling_content.cpp)准备四类原佣兵规则，[companions/hireling_control.cpp](../../../src/server/systems/companions/hireling_control.cpp)选择行动并提交技能／效果请求；[companion_content.cpp](../../../src/hosting/companion_content.cpp)准备亚马逊宠物，[companions/system.cpp](../../../src/server/systems/companions/system.cpp)持归属与寿命。权威技能、弹体、命中和状态仍归相应领域，客户端只消费原归属／单位／动作消息。
 
+移动继续点按原AI分别持有：四类佣兵在`hirelingStep`的WALK／RUN判断保留路线；女武神与死灵召唤物在各自AI重选目标前保留路线，重生另区分主人跟随与原家族移动。影子、德鲁伊召唤物和BladeCreeper已有`route.empty()`判断；固定诱饵、Hydra与不移动的卫哨不进入跟随移动。归位、寿命／死亡和动作背压仍归既有入口，不因等待路线而停止生命周期处理。具体依据与缺口见所属职业及佣兵专题。
+
 刺客内容由 `hosting/assassin_summon_content` 准备，`companions/assassin`／`assassin_ai`／`shadow_ai` 持归属、弹药、AI与继承，`skills/native_caster` 提供真实影子的独立施法者视图；`ai/target_query` 共享原生目标选择。实体、装备、来源技能与种子仍唯一归 `monsters::Actor`，技能和效果执行仍归已有领域。实际程序与版本证据只见刺客专题。
 
 后续按当前Hireling、MonStats、PetType、Skills及MonEquip登记单位使用的技能、等级／装备来源、实际AI条件、原版依据与缺口。某单位复用已实现技能不表示该单位完整可用；同名怪物版本也不自动等同玩家版本。具体规则链接所属职业与佣兵页，不在本页追加自研运行台账。

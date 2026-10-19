@@ -123,7 +123,8 @@ StepStatus System::think(EntityId id,TickContext tick) {
             }
             controller.nextDecision=tick.tick;
         }
-        if(controller.observedAiThinkRevision!=monster.aiThinkRevision) {
+        const bool rescheduled=controller.observedAiThinkRevision!=monster.aiThinkRevision;
+        if(rescheduled) {
             controller.observedAiThinkRevision=monster.aiThinkRevision;controller.nextDecision=monster.aiThinkAt;
         }
         controller.nextDecision=ports_.monsters.resumeAi(id,tick.tick,controller.nextDecision);
@@ -227,6 +228,31 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 }
             }
             controller.target.reset();controller.pursuing=bool(moved);controller.nextDecision=tick.tick+1;continue;
+        }
+        // WALK/RUN normally re-enters the family AI when the path ends.
+        // Our frame polls must continue that mode before target selection,
+        // commands, unique modifiers or family chance rolls can replace it.
+        // These families explicitly schedule AI while moving (AiThink /
+        // AiBaal's trailing Idle); Madawc only does so for coordinate escape.
+        const auto kind=monster.rule.ai.kind;
+        const bool timedMovement=kind==MonsterAiKind::Vulture || kind==MonsterAiKind::Baal ||
+            kind==MonsterAiKind::BaalClone || kind==MonsterAiKind::BaalMinion ||
+            kind==MonsterAiKind::AncientTalic || kind==MonsterAiKind::AncientKorlic ||
+            (kind==MonsterAiKind::AncientMadawc && !monster.movementTarget);
+        if(!blind && !rescheduled && !timedMovement && !monster.burrowed && !monster.airborne &&
+           controller.pursuing && !monster.route.empty()) {
+            if(monster.movementTarget && tick.tick>=controller.nextPath) {
+                const auto destination=ports_.monsters.targetPosition(monster.movementTarget,monster.area);
+                if(!destination) {ports_.monsters.stop(id);controller.pursuing=false;}
+                else if(destination->first.x!=monster.movementGoal.x || destination->first.y!=monster.movementGoal.y) {
+                    const auto moved=ports_.monsters.requestMove({id,{monster.area,area.generation,destination->first},
+                        monster.movementTarget,monster.stopDistance,monster.velocityPercent,monster.running,
+                        monster.pathSteps,0,0,monster.pathType,monster.pathDistance});
+                    if(!moved) {ports_.monsters.stop(id);controller.pursuing=false;}
+                }
+                controller.nextPath=tick.tick+18;
+            }
+            controller.nextDecision=tick.tick+1;continue;
         }
         if(monster.rule.ai.kind==MonsterAiKind::GoodNpcRanged) {
             if(monster.moving || !monster.route.empty() || monster.aiPose>1) {

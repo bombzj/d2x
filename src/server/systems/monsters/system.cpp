@@ -884,8 +884,9 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     if((pathType!=1 && pathType!=2 && pathType!=7 && pathType!=13 && pathType!=15) || !pathDistance)
         return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
+    // A retained WallFollow path still needs its unit-target search bound.
     auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
-        area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision);
+        area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,pathType==15 && bool(request.target));
     if(route.empty() && !request.circleTurn && (pathType==2 || pathType==7 || pathType==13)) {
         // MonsterMode retries failed Toward paths with WallFollow. The
         // solver raises its search bound to 40 for a live unit target.

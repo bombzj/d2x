@@ -81,7 +81,10 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
         const auto &key=std::get<UnitTarget>(*request.target);unit=key.id;type=key.type;
         const auto position=unitPosition(actor,key,definition.spec.effect);if(!position) return {DomainStatus::InvalidRequest,{}};target.position=*position;
     }
-    if(!inside(area.definition.collision,target.position) || std::abs(target.position.x-p.position.x)>50 || std::abs(target.position.y-p.position.y)>50)
+    const bool teleport=definition.spec.effect==SkillBehavior::Teleport;
+    if(!std::isfinite(target.position.x) || !std::isfinite(target.position.y) ||
+        (!teleport && !inside(area.definition.collision,target.position)) ||
+        std::abs(target.position.x-p.position.x)>50 || std::abs(target.position.y-p.position.y)>50)
         return {DomainStatus::InvalidRequest,{}};
     const auto source=selectedSource(p,selected,request.right);
     if(!source) return {DomainStatus::Unavailable,{}};
@@ -169,7 +172,6 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     if(source->charged) {skill.charge=SkillCharge{source->charged->item,source->charged->layer};skill.manaCost=skill.startMana=0;}
     if(!std::isfinite(skill.manaCost) || skill.manaCost<0 || !std::isfinite(skill.startMana) || skill.startMana<0 ||
         p.persistent.player.mana<std::max(skill.manaCost,skill.startMana)) return {DomainStatus::Unavailable,{}};
-    if(skill.effect==SkillBehavior::Teleport && (!area.definition.teleportAllowed || !area.definition.collision.walkable(target.position,playerMovement))) return {DomainStatus::Unavailable,{}};
     if(skill.effect==SkillBehavior::Telekinesis && (!unit || !within(p.position,target.position,skill.telekinesisRange))) return {DomainStatus::InvalidRequest,{}};
     if((skill.effect==SkillBehavior::Blizzard || skill.effect==SkillBehavior::Hydra || skill.effect==SkillBehavior::FireWall || skill.effect==SkillBehavior::Meteor) &&
         !area.definition.collision.missileSegment(target.position,target.position,{5,1})) return {DomainStatus::Unavailable,{}};
@@ -553,7 +555,7 @@ DomainResult<> System::itemTrigger(const ActorContext &actor,SkillCastSpec skill
     case ActivationProgram::AmazonSummon: return skill.summon && skill.summon->amazon?ports_.companions.amazon(actor,skill,position):ports_.companions.necro(actor,skill,position,target);
     case ActivationProgram::Curse: return ports_.effects.curse(actor,skill,position,target);
     case ActivationProgram::AmazonMagic: return ports_.effects.amazonMagic(actor,skill);
-    case ActivationProgram::Teleport: return ports_.travel.teleport(actor,{actor.area,actor.areaGeneration,position},0);
+    case ActivationProgram::Teleport: return ports_.travel.castTeleport(actor,{actor.area,actor.areaGeneration,position},0);
     case ActivationProgram::Hydra: return ports_.companions.hydra(actor,skill,position);
     case ActivationProgram::Missile: {
         missiles::Spawn spawn{actor,std::move(skill),collision,position,true};spawn.deathTrigger=dead;

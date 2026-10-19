@@ -35,6 +35,10 @@ PATH_SetStepNum保存steps−1，PathMisc.sub_6FD5DB70以D2Common_10399单位距
 
 普通怪物Toward／Straight／WallFollow的算法统一放在d2x_navigation，由权威requestMove与客户端原67／68表现共同调用；失败路径选择属于服务端策略，客户端只执行实际收到的类型。参数、参考函数及仍使用通用AStar的入口见[共用寻路](../../modules/MAP.md#共用寻路)，完整路线及执行时序仍需分别核对。
 
+普通家族已接受的WL／RN在`server/ai/system.cpp`统一沿路线继续，结束前不重选主目标、不执行暗金修饰器或重新抽取家族动作。该入口覆盖第一、二幕公共家族，以及鬼火、青蛙恶魔、萨卡兰姆、议会祭司、邪恶之母／幼体、手指法师、尸体吞食者、骑士、巨型恶魔、复活尸、冰冻恐惧、寄生虫、攻城兽、小恶魔、仆从／自爆仆从、督军、魅魔、衣卒尔、墨菲斯托、迪亚波罗、尼拉塞克及普通NPC移动；FetishShaman、NpcBarb不另维护一份路线继续判断。追踪目标位置未变时不重复重置定点路径；位置改变后的既有18帧重规划保留路径类型、搜索距离、速度与到达参数，WallFollow单位目标仍使用原40下界。失效目标、受击、冻结、碰撞、活动房间退出和显式AI重排继续走各自公共入口；诅咒替代AI保留独立路径。
+
+移动中显式调用`AITACTICS_Idle`的家族保留原定时再决策：秃鹫Fn023为12帧／自身停顿，Baal／clone沿AiBaal为25帧，BaalMinion Fn141读取aip4；Talic／Korlic接近为10帧，Madawc逃离为25帧，其普通单位目标接近仍等待路线结束。Baboon、Regurgitator和Nihlathak在同次回调中移动后立即进入NU的分支仍保留原中止。依据为本地D2MOO AiThink对应函数、AiBaal、AiTactics及MonsterMode的WL／RN结束回调；本节为源码依据，完整动态目标／跨房间／多人及逐随机轨迹仍待核对。
+
 server/ai.shootableTarget独立提供AiUtil回调6目标／距离：近房间、FullUnitSize距离≤48、可伤害资格和原missile barrier视线，Threat≤1另选。各家族只在原射击分支使用，不能覆盖主目标、接战判断、元素偏好及坐标技能落点；开始／释放仍复验来源、目标、区域、技能资格。完整强制目标／Vision缓存尚未实现。
 
 ## 状态所有权与公共计算

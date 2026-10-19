@@ -22,7 +22,9 @@ void RetailTileMaterializer::initializeLogicals(size_t current) {
         throw std::runtime_error("Missing native logical room grids");
     std::vector<uint8_t> blocked(cells);
     const auto wall=[](const RetailMaterializedTile &tile) {
-        return ((tile.flags&0x1c000)>>14)==2 && tile.type!=15 && !(tile.flags&0x800);
+        // Retail 1.13c RVA 814E1/81595 compares the encoded layer to
+        // 0x4000 (the first wall layer), unlike D2MOO's layer-1 predicate.
+        return (tile.flags&0x1c000)==0x4000 && tile.type!=15 && !(tile.flags&0x800);
     };
     const auto mark=[&](const RetailMaterializedTile &tile) {
         const int column=tile.x-room.room.x,row=tile.y-room.room.y;

@@ -351,13 +351,17 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
     if(body->area!=owner->area || missileDistance(body->position,owner->position)>50 || pet.ownerTeleport!=owner->teleportRevision) {
         for(int radius=1;radius<=4;++radius) for(int x=-radius;x<=radius;++x) for(int y=-radius;y<=radius;++y) {
             if(std::max(std::abs(x),std::abs(y))!=radius) continue;
-            if(ports_.monsters.warpPet(pet.actor,context,{std::floor(owner->position.x)+x+.5f,std::floor(owner->position.y)+y+.5f})) {pet.ownerTeleport=owner->teleportRevision;pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
+            if(ports_.monsters.warpPet(pet.actor,context,{std::floor(owner->position.x)+x+.5f,std::floor(owner->position.y)+y+.5f})) {pet.ownerTeleport=owner->teleportRevision;pet.nativePetMoving=false;pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
         }
         return StepStatus::Complete;
     }
     if(body->necroPet && body->necroPet->aura && !ports_.effects.hirelingAuraActive(body->id,body->necroPet->aura->skill,body->necroPet->aura->rank))
         if(isDeferred(ports_.effects.hirelingAura(body->id,*body->necroPet->aura,tick.tick).status)) return StepStatus::Blocked;
     if(tick.tick<pet.nextDecision) return StepStatus::Complete;
+    // Preserve both pet follow paths and a Revive's original family movement.
+    // Warp, aura and lifecycle handling remain outside this decision boundary.
+    if(!body->route.empty()) {pet.nextDecision=tick.tick+1;return StepStatus::Complete;}
+    pet.nativePetMoving=false;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     EntityId target;int nearest=36;
     for(const auto id:participants.enemies(body->id,body->area)) {
@@ -375,7 +379,10 @@ StepStatus System::necroStep(Companion &pet,TickContext tick) {
             const auto result=requestAction(pet,{pet.actor,skill,UnitTarget{target,0,uint8_t(enemy.player?0:1)},tick.tick});
             if(isDeferred(result.status)) return StepStatus::Blocked;
         } else ports_.monsters.requestMove({pet.actor,{body->area,area.generation,enemy.position()},target,body->rule.meleeRange,75,false});
-    } else if(missileDistance(body->position,owner->position)>4) ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});
+    } else if(missileDistance(body->position,owner->position)>4) {
+        const auto moved=ports_.monsters.requestMove({pet.actor,{body->area,area.generation,owner->position},owner->actor,4,75,false});
+        if(moved && body->revived()) pet.nativePetMoving=true;
+    }
     pet.nextDecision=tick.tick+uint64_t(std::max(1,body->rule.decisionTicks));return StepStatus::Complete;
 }
 DomainResult<bool> System::growBoneWall(EntityId source,EntityId root,int skillId,int rank,RegionId region,Vec position,uint64_t tick) {

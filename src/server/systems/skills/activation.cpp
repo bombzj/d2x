@@ -216,7 +216,7 @@ DomainStatus System::activateAmazonMagic(Release &pending, const ActorContext &a
     return ports_.effects.amazonMagic(actor, pending.skill).status;
 }
 DomainStatus System::activateTeleport(Release &pending, const ActorContext &actor, Vec target) {
-    return ports_.travel.teleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge,pending.skill.sourceId).status;
+    return ports_.travel.castTeleport(actor, {actor.area, actor.areaGeneration, target}, pending.skill.manaCost, pending.skill.charge,pending.skill.sourceId).status;
 }
 DomainStatus System::activateHydra(Release &pending, const ActorContext &actor, Vec target) {
     return ports_.companions.hydra(actor, pending.skill, target).status;

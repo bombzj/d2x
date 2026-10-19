@@ -46,7 +46,7 @@ class System {
     DomainResult<> commitCharacters(std::vector<Plan>, std::optional<WorldEdit> = {});
     // Two inventory owners, one output reservation and no intermediate writes.
     DomainResult<> commitInventories(std::vector<Plan>);
-    // Atomic mana debit and optional same-area relocation at the release frame.
+    // Atomic mana debit and optional relocation through connected same-act areas.
     DomainResult<> release(const ActorContext &, uint64_t expectedCharacterRevision, Fixed8 manaCost,
                            std::optional<PointTarget> relocation = {}, std::optional<SkillCharge> charge = {},
                            std::vector<DomainFact> publicFacts = {}, std::optional<UnitRandomEdit> random = {},int skill=-1);
