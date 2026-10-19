@@ -248,7 +248,7 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         while(count<rule.subMissiles.size() && rule.subMissiles[count]>=0 && rule.serverParameters[count+1]>0) ++count;
         if(!count) {plan.finished=true;return result;}
         if(countdown>=rule.serverParameters[0]) {
-            auto random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(missile.position.x+area.definition.origin.x)));
+            uint64_t random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(missile.position.x+area.definition.origin.x)));
             const auto index=limitedRandom(random,uint32_t(count));plan.damageRolls->random=random;missile.random=random;
             if(countdown%rule.serverParameters[index+1]==0)
                 planNativeChild(plan,rule.subMissiles[index],missile.position,{}).hitOnCreation=EntityId{};
@@ -342,7 +342,7 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         if(range<=0) {const auto value=missileSkillFormula(plan,"aurarangecalc");if(!value) throw std::logic_error("Missing Volcano radius");range=std::max(*value,1);}
         if(period<=0) {const auto value=missileSkillFormula(plan,"calc4");if(!value) throw std::logic_error("Missing Volcano period");period=std::max(*value,1);}
         if(elapsed>rule.serverParameters[2] && elapsed<rule.serverParameters[3] && elapsed%period==0) {
-            auto random=(missile.random&0xffffffff00000000ULL)|uint32_t(missile.parameters[0]);
+            uint64_t random=(missile.random&0xffffffff00000000ULL)|uint32_t(missile.parameters[0]);
             const auto span=uint32_t(nativeAdd(nativeMultiply(2,range),1));
             const auto x=nativeSubtract(int32_t(limitedRandom(random,span)),range),y=nativeSubtract(int32_t(limitedRandom(random,span)),range);
             missile.parameters[0]=int32_t(uint32_t(random));missile.random=random;plan.damageRolls->random=random;
@@ -377,7 +377,7 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         }
     } else if(function==35 && elapsed%std::max(rule.serverParameters[0],1)==0) {
         // SEED_InitLowSeed preserves the native high word (unlike InitSeed).
-        auto random=(missile.random&0xffffffff00000000ULL)|uint32_t(missile.parameters[0]);
+        uint64_t random=(missile.random&0xffffffff00000000ULL)|uint32_t(missile.parameters[0]);
         const auto packed=uint32_t(missile.parameters[1]);
         const auto x=int32_t(int16_t(packed)),y=int32_t(int16_t(packed>>16));
         auto xPart=x,yPart=y;if(rollRandom(random)&1) xPart=-xPart;else yPart=-yPart;
