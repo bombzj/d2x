@@ -30,6 +30,7 @@ struct Draft {
     bool fits(EntityId, ContainerLocation, EntityId ignore = {}) const;
     std::optional<ContainerLocation> space(EntityId, EntityId) const;
     DomainStatus move(EntityId, ContainerLocation);
+    DomainStatus compactBeltColumn(int column);
     DomainStatus resizeBelt(int rows);
     DomainStatus equipment(const EquipItem &, EquipmentMode);
     DomainResult<bool> autoEquip(EntityId);

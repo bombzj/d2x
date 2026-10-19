@@ -22,8 +22,7 @@ void SceneView::drawStorage(Vec mouse) const {
     const int textSize = int(16 * inventoryScale());
     if (const auto *coin = assets_.goldCoin.frame(0, 0))
         DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                       {goldField.x + 3 * inventoryScale(), goldField.y + 4 * inventoryScale(),
-                        coin->texture.width * inventoryScale(), coin->texture.height * inventoryScale()},
+                       storageGoldButton(layout.expansion),
                        {0, 0}, 0, WHITE);
     painter_.label(bankGold,
                    int(goldField.x + (goldField.width - painter_.measure(bankGold, textSize)) / 2),
@@ -33,7 +32,7 @@ void SceneView::drawStorage(Vec mouse) const {
         if (grid.container != ui.storage)
             continue;
         drawContainerGrid(grid, mouse);
-        if (!ui.drag && !ui.split)
+        if (!ui.drag)
             if (auto cell = grid.cellAt(mouse))
                 if (auto item = inventory.item(inventory.itemAt(grid.container, *cell)))
                     drawItemTooltip(*item, {mouse.x + 170, mouse.y});

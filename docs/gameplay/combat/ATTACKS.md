@@ -22,4 +22,4 @@ Skills、Missiles、AnimData、COF／DCC、ItemTypes和当前装备外观提供�
 
 原规则入口：本地D2MOO PlrMsg／PlrModes、Missiles／MissMode、PathMisc、D2Skills；Diablerie Missile／MissileFunctions只交叉核对显示结构。当前MPQ始终决定原图与参数，参考服务端函数不代表完整D2Client视觉实现。
 
-怪物共用collision_spec／movement_math／projectile_math／damage／components的纯计算，AI、动态碰撞、生命周期和伤害分别归server领域。安达利尔／GargoyleTrap射线保留原Clt／Srv差异，电强化八条充能路径共用，冰强化采用各自环射步长。0C／69 GH生命高位是电强化触发位；GH方向槽为生命字节。MPQ契约见[怪物COMMON](../monsters/COMMON.md)，原包与运行边界见[表现](../monsters/PRESENTATION.md)及[第一幕证据](../monsters/ACT1.md#有限运行证据)，原函数依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。
+怪物共用collision_spec／movement_math／projectile_math／damage／components的纯计算，AI、动态碰撞、生命周期和伤害分别归server领域。安达利尔／GargoyleTrap射线保留原Clt／Srv差异，电强化八条充能路径共用，冰强化采用各自环射步长。0C／69 GH生命高位是电强化触发位；GH方向槽为生命字节。MPQ契约见[怪物COMMON](../monsters/COMMON.md)，原包依据与表现缺口见[表现](../monsters/PRESENTATION.md)，第一幕身份范围见[ACT1](../monsters/ACT1.md)，原函数依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)。

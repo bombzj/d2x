@@ -2555,7 +2555,7 @@ struct RemoteScene::Impl {
         shared.ui().camera = project(camera);
         const auto viewport = shared.worldViewport();
         const bool surface = shared.ui().blocksInput() || shared.ui().skillPicker || shared.ui().inventory.drag ||
-            shared.ui().inventory.split || shared.ui().inventory.goldDialog || shared.ui().inventory.identify ||
+            shared.ui().inventory.goldDialog || shared.ui().inventory.identify ||
             shared.characterView().dead || hudSurface(mouse) || !CheckCollisionPointRec(rv(mouse),viewport) || uiConsumed;
         const bool menu = shared.ui().gameMenuOpen;
         auto screen = [&](Vec p) { return shared.screen(p); };
@@ -3006,7 +3006,7 @@ struct RemoteScene::Impl {
         auto &hit = intent.input;
         hit.available = !surface && !waypointOpen && !v.world.npcConversation;
         hit.targetingAvailable = !shared.ui().blocksInput() && !shared.ui().skillPicker &&
-            !shared.ui().inventory.drag && !shared.ui().inventory.split && !shared.ui().inventory.goldDialog &&
+            !shared.ui().inventory.drag && !shared.ui().inventory.goldDialog &&
             !shared.ui().inventory.identify && !shared.characterView().dead && !waypointOpen && !v.world.npcConversation;
         hit.movementAvailable = binding.movementAvailable;
         hit.origin = {float(origin.x), float(origin.y)};

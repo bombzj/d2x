@@ -74,6 +74,8 @@ struct ViewState {
     int shopPage = 0;
     int shopCategory = 0;
     std::optional<uint32_t> shopConfirm;
+    Vec shopConfirmAt;
+    int shopConfirmChoice = 0;
     std::optional<ItemHandle> shopSalePending;
     EntityId waypointSource;
     int waypointAct = 0;
@@ -227,7 +229,7 @@ class SceneView {
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     static size_t itemTextFontIndex(ItemQuality, ItemTextTone);
     void itemButton(Rectangle bounds, const char *label, Color color) const;
-    void drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets = false) const;
+    void drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets = false, float pixelScale = 0) const;
     void drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const;
     void drawItemArt(const std::string &key, Rectangle bounds) const;
     bool drawInventoryCursor(Vec mouse) const;
@@ -316,6 +318,7 @@ class SceneView {
     const ViewState &ui() const { return view_; }
     const InventoryView &inventoryView() const { return inventoryView_; }
     InventoryDrop inventoryDropAt(Vec mouse) const;
+    size_t goldDialogCaretAt(Vec mouse) const;
     void refreshInventory();
     const CharacterView &characterView() const { return characterView_; }
     void refreshCharacterView();

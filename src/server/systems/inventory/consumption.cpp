@@ -17,8 +17,12 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
     const auto *item = draft.resolve(request.item);
     if (!item || item->revision == UINT64_MAX) return {DomainStatus::Stale, {}};
     const auto *location = std::get_if<ContainerLocation>(&item->location);
-    const auto container = source == Source::Belt ? draft.containers().belt : draft.containers().backpack;
-    if (!location || location->container != container || !draft.owned(*location)) return {DomainStatus::InvalidRequest, {}};
+    draft.storage = storageAccess(actor.player); draft.cube = cubeAccess(actor.player);
+    const auto &containers = draft.containers();
+    const bool allowed = location && (source == Source::Belt ? location->container == containers.belt :
+        location->container == containers.backpack || (draft.storage && location->container == containers.stash) ||
+        (draft.cube && location->container == containers.cube));
+    if (!allowed || !draft.owned(*location) || draft.at({containers.cursor,{}})) return {DomainStatus::InvalidRequest, {}};
     if(const auto *definition=ports_.definitions->find(item->definition);definition && definition->opensCube) return openCube(actor,request.item);
     if(const auto rule=player->rules.character->itemSkills.find(item->definition);rule!=player->rules.character->itemSkills.end())
         return rule->second.action==ItemSkillAction::Identify?beginIdentify(actor,request.item):ports_.travel.createPortal(actor,request.item);
@@ -65,17 +69,8 @@ DomainResult<> System::consume(const ActorContext &actor, const UseItem &request
         consumed.location, removed ? std::nullopt : std::optional<ItemLocation>{consumed.location}, consumed.quantity});
     if (removed) draft.edit.inventory.items.erase(id);
     if (removed && origin.container == draft.containers().belt) {
-        const auto rows = draft.edit.inventory.containers.at(origin.container).spec.rows;
-        int ready = 0;
-        for (int row = 0; row < rows; ++row) {
-            const auto above = draft.at({origin.container, {origin.cell.x, row}});
-            if (!above) continue;
-            if (row != ready) {
-                const auto moved = draft.move(above, {origin.container, {origin.cell.x, ready}});
-                if (moved != DomainStatus::Applied) return {moved, {}};
-            }
-            ++ready;
-        }
+        const auto result=draft.compactBeltColumn(origin.cell.x);
+        if (result!=DomainStatus::Applied) return {result,{}};
     }
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), draft.edit.weaponSet};

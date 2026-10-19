@@ -121,6 +121,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
             "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3",
             "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash",
+            "VerifyTransaction1", "VerifyTransaction2", "VerifyTransaction3", "VerifyTransaction5",
             "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
             "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
             "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"}) {
@@ -358,11 +359,9 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     vendorPanel = graphics_.single("data/global/ui/panel/buysell.dc6");
     vendorTabs = graphics_.single("data/global/ui/panel/buyselltabs.dc6");
     vendorButtons = graphics_.single("data/global/ui/panel/buysellbtn.dc6");
-    vendorConfirm = graphics_.single("data/global/ui/menu/dialogbackground.dc6");
     if (!content.vendors.empty() &&
         (vendorPanel.frames.size() < 4 || vendorTabs.frames.size() < 8 ||
-         vendorButtons.frames.size() < 16 ||
-         vendorConfirm.frames.empty()))
+         vendorButtons.frames.size() < 16))
         throw std::runtime_error("Original vendor UI artwork is missing");
     waypointBorder = uiGraphics_.single("data/global/ui/panel/800borderframe.dc6");
     waypointPanel = uiGraphics_.single("data/global/ui/menu/waygatebackground.dc6");

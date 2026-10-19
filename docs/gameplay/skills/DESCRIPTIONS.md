@@ -1,6 +1,6 @@
 # MPQ 技能描述
 
-本页唯一维护技能选择器与技能树的描述程序、公式输入和原版依据。当前公共表驱动层已进入 Windows Release 包，并完成下面列出的有限单机冒烟；不代表七职业全部数值与像素验收。技能执行、人物面板伤害和学习资格分别由职业专题、[人物模块](../../modules/CHARACTER.md)与[公共规范](COMMON.md)负责。
+本页唯一维护技能选择器与技能树的描述程序、公式输入、原版依据和缺口。当前公共层按原表分派，七职业全部数值与像素仍需逐项对照。技能执行、人物面板伤害和学习资格分别由职业专题、[人物模块](../../modules/CHARACTER.md)与[公共规范](COMMON.md)负责。
 
 ## 数据与入口
 
@@ -60,7 +60,7 @@ SkillDesc 的三组字段均导入 `line / texta / textb / calca / calcb`：等�
 
 原小数格式使用截断后的整数部分／小数部分，不用浮点四舍五入或统一的 `%.1f`。固定点范围的 `%d.%d-%d.%d` 保留原程序格式，不另作零填充或去尾零。
 
-SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1el / me3o` 等名称，不另造别名。弹体参数分别读取 Param、CltParam、HitPar、CltHitPar、DmgParam 及各自的线性／递减对。原1.13c D2Common RVA4DC30／ordinal10115确认dm递减参数先截断等级比值，公式与权威曲线已共用该原版算子，并纳入前序Windows Release构建；全部描述程序未逐项运行复验。原 1.13c 的 `mps` 将完整等级法力乘 25 后除以 2；它与 D2MOO 1.10f 转录不同，以本机原二进制为准。原 raw 描述弹体回调仍按参数编号除以 3，因此 `m2eo/ey` 读取描述弹体 1、`me3o/y` 读取描述弹体 2；这是已核实的原显示映射，不在描述层擅自改成普通弹体槽号。
+SkillCalc／MissCalc词汇已从本机MPQ核对，使用原 `mana / pets / m1el / me3o`等名称，不另造别名。弹体参数分别读取Param、CltParam、HitPar、CltHitPar、DmgParam及各自的线性／递减对。原1.13c D2Common RVA4DC30／ordinal10115确认dm递减参数先截断等级比值，公式与权威曲线共用该原版算子；全部描述程序仍缺逐项对照。原1.13c的`mps`将完整等级法力乘25后除以2；它与D2MOO 1.10f转录不同，以本机原二进制为准。原raw描述弹体回调仍按参数编号除以3，因此`m2eo/ey`读取描述弹体1、`me3o/y`读取描述弹体2；这是已核实的原显示映射，不在描述层擅自改成普通弹体槽号。
 
 充能选择器的数量行使用当前 TBL `ModStre10d` 格式，不保留手写英文 Charges 文案；原 owner／等级／余量语义不变。
 
@@ -72,31 +72,14 @@ SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1
 
 以下范围尚不能宣称全部数值或像素认证：
 
-- 武器来源伤害接玩家／佣兵共用战斗投影准备的完整原武器值；缺少完整装备输入时仍保持未知。人物面板另按 SkillDesc.DescDam／DescAtt 调度，不把描述行程序当作动作程序；数值、格挡和有限冒烟由[人物属性](../characters/ATTRIBUTES.md)维护，全部特殊动作尚未全面认证。
+- 武器来源伤害接玩家／佣兵共用战斗投影准备的完整原武器值；缺少完整装备输入时仍保持未知。人物面板另按SkillDesc.DescDam／DescAtt调度，不把描述行程序当作动作程序；数值、格挡、原版依据与缺口由[人物属性](../characters/ATTRIBUTES.md)维护，全部特殊动作尚未对齐。
 - `stat.base / stat.mod` 不从已收到的累计属性反推；依赖这两种输入的表达式保持未知。随机表达式不消费玩法随机流，尚未支持的词法保持未知。
 - 程序 48 接当前资料片路径；旧经典版模式的额外分支不在本项目当前资料片入口认证范围。
 - TBL 原标题色号已接现有协同标题契约；任意嵌入颜色、极长多行说明与全部装备／充能状态的最终排版仍需原版截图核对。
 - 选择器已接普通技能的成对装备条件及已知资源条件，不等于完整复刻 SKILLS_GetUseState。基础动作仍沿已有投掷事实，主武器优先级／魔法箭物品属性、变身限制、技能延迟和原客户端动作冷却显示尚未完整投影；SrvDo116 的变身免资源分支未取得完整形态事实时不推断资源失败。未以城镇禁用替代这些状态。
-- 本批完成有限单机运行，未连接 D2GS，未建立测试脚本／用例／专用程序；程序入口齐全与原表覆盖不等于全部参数通过运行验收。
+- 全部75个程序参数、复杂装备／充能／变身／冷却、完整像素、多客户端及Linux仍缺完整核对；程序入口齐全和原表覆盖不等于全部参数已对齐。
 
-## 当前包有限冒烟
-
-2026-10-11，Windows Release，当前 `assets/mpq2`，嵌入宿主经原 MCP／D2GS 字节队列。使用 `artifacts/skill-description-smoke-20261011/` 中独立复制的等级 90 截图角色、新建女巫和全未学刺客；不修改 `saves/` 原件。等级 90 角色多数基础技能为 2，各职业三个重点技能为 10，无装备加成；具体技能／装备副本保存在同目录 JSON。通过现有 `ui-input` 实际悬停及 `screenshot` 观察，物品准备仅使用宿主管理生成，不作自然掉落证据。
-
-| 实际路径 | 观察结果与证据 |
-| --- | --- |
-| 女巫 Fire Bolt／Ice Bolt／Frozen Armor／Blaze 的树和选择器、Warmth 的树 | 当前／下一等级、通用法力、时间／伤害及协同分组无问号；两个界面保留原字段顺序。`tree-*`、`picker-*` 截图 |
-| Holy Fire／Holy Shield 树及选择器 | 半径、两种火伤、盾击／持续／防御／格挡按表显示；缺盾时圣盾整块提示及图标红色，装备原 Buckler 后恢复白色。`picker-holy-shield-unarmed.png`／`picker-holy-shield-equipped.png` |
-| Poison Nova 树和选择器、Poison Dagger 选择器 | 总毒伤与持续相邻；毒匕首含命中与法力小数，空手红色、装备正常 Dagger 后白色。`tree-poison-nova.png`、`picker-poison-*` |
-| Raise Skeleton 树 | 通用伤害、当前／下一等级、宠物属性及协同显示；修复 TBL 重复键后数量为骷髅战士总数。最终证据 `tree-raise-skeleton-final.png`，旧同名非 final 截图保留为失败现场 |
-| Fists of Fire／Wake of Inferno 树和选择器 | 三段 Charge 前缀、半径／每秒伤害、射击次数及协同顺序与已提供原截图相符。`tree-fists-of-fire.png`、`tree-wake-of-inferno.png` 及对应 picker |
-| 全未学刺客 | 可学习火焰拳为白正文 First Level；缺前置的 Inferno Sentry 为绿色标题／红正文、Required Level 及 First Level，不显示 Current 0。`tree-unlearned-*` |
-| 新女巫原初始法杖授予 Fire Bolt | 原包基础 0、有效 1、物品属性 107/36；绿色授予标题和 `(item)` 标记，当前／预览值正常。`tree-item-granted-fire-bolt.png`、`fresh-start.json` |
-| 保存正常退出并在新进程恢复 | 圣骑士装备／活动武器组及破损耐久保持；初始 0xAA 解码成功、地图／行走／本人显示可用，无服务端失败。`reentry.json`／`reentry-server.json` |
-
-冒烟暴露并修复表字段类型、无关 MonStats 重复名和 TBL 重复键问题。自研入局漏发原 0xAA 使空状态未知，已依据 D2MOO `SUNITMSG_FirstFn`／`D2GAME_STATES_SendUnitStates_6FCC58E0` 补入初始状态快照；空列表仍发 0xFF 终止，后续 A7／A8／A9 保留。客户端未改成缺包默认零。新准入不携带临时状态属性列表；运行中全状态重同步及所有他人属性组合未在此验收。
-
-构建日志在 `artifacts/skill-tooltip-20261007/build-release-20261011.log` 及本证据目录的增量日志；实际包哈希由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。装备耐久提示结果只在[经典 HUD](../ui/CLASSIC_HUD.md#装备耐久提示)维护。本次未认证全部 75 个程序参数、复杂装备／充能／变身／冷却、原版完整像素、多客户端、Linux或原服运行。后续三张原版截图促成的 StrSkill119／多状态标题修正已纳入前序构建，但未专项运行复验，不属于此表的历史冒烟结论。
+初始状态快照依据D2MOO `SUNITMSG_FirstFn`／`D2GAME_STATES_SendUnitStates_6FCC58E0`；空列表仍发0xFF终止，后续A7／A8／A9保留。客户端不把缺包默认成零；新准入不携带临时状态属性列表，运行中全状态重同步及所有他人属性组合仍有缺口。装备耐久提示由[经典HUD](../ui/CLASSIC_HUD.md#装备耐久提示)维护。
 
 ## 原版证据
 
@@ -115,17 +98,15 @@ SkillCalc／MissCalc 词汇已从本机 MPQ 核对，使用原 `mana / pets / m1
 | 同套 D2Common，MD5 `ee1238806ef6d6d9801d12a09d128fe1` | 1.13c ordinal 10435／RVA `0x51B80` 对应描述公式，参数解释入口 `0x51070`；不直接套用 D2MOO 1.10f 的 ordinal |
 | 同套 D2Common 使用状态与手部／资源条件 | ordinal 10787／RVA `0x52340` 对应 SKILLS_GetUseState；`0x50610` 手部类型／空手／损坏／弹药，`0x50F00` 成对组别与优先级，`0x50AF0` 原消耗及血魔法／充能，`0x4FDC0` startmana／inferno。与 D2MOO 的 SKILLS_GetUseState、sub_6FDB1130 和 CheckStat／CheckStartStat 对照；本机 1.13c 使用本机导出身份 |
 
-原版导出表、TBL、反汇编和截图保留在忽略目录 `artifacts/skill-tooltip-20261007`，只作本地证据，不纳入源码或分发。
+以上原版导出身份和调用点用于定点核对，原表、DLL及截图不纳入源码或分发；结论不依赖临时导出文件长期保留。
 
 ## 截图证据与待补
 
-用户已提供选择器：Fire Bolt 等级 2、Ice Bolt／Frozen Armor／Blaze／Raise Skeleton 等级 1；并补充这五个技能及 Warmth 等级 2 的原版树提示。原图保存为本页证据目录的 `tree-*-20261011.png`，不纳入源码或分发。它们支持标签、排序、法力小数、帧转秒、平均伤害、宠物行和物品授予提示的显示方式；装备、难度、版本与基础技能清单未完整给出，不能据此认证所有公式数值。
+用户提供的原版选择器包括Fire Bolt等级2、Ice Bolt／Frozen Armor／Blaze／Raise Skeleton等级1，并补充这五个技能及Warmth等级2的原版树提示。它们支持标签、排序、法力小数、帧转秒、平均伤害、宠物行和物品授予提示的显示方式；装备、难度、版本与基础技能清单未完整给出，不能据此确认所有公式数值。
 
 用户另补 Holy Fire／Poison Nova／Holy Shield／Fists of Fire／Wake of Inferno 的等级 10 树提示及未学习的 Amplify Damage。Wake of Inferno 是 TBL 显示名，Skills 行名为 `Inferno Sentry`；它们通过 SkillDesc／TBL 关联，不加程序别名。最后一张是死灵诅咒的未学技能样本，不是刺客充能或陷阱的首次等级样本。
 
-后续补充选择器全图与 Holy Fire／Holy Shield／Wake of Inferno／Fists of Fire 等级 10、Poison Dagger 等级 2 提示，保存在同一忽略目录的 `picker-*-20261011.png`。这批毒系选择器是 Poison Dagger，不是 Poison Nova，不将它记为后者的双界面认证。
-
-最后补齐 Poison Nova 等级 10 选择器及 Fists of Fire／Wake of Inferno 未学习时的普通树提示，分别为 `picker-poison-nova-20261011.png`、`tree-fists-of-fire-unlearned-20261011.png`、`tree-wake-of-inferno-unlearned-20261011.png`。本轮仅核对原表／原二进制与截图并修改源码、文档，没有构建或运行；此前原截图补充清单已齐。
+选择器全图另含Holy Fire／Holy Shield／Wake of Inferno／Fists of Fire等级10、Poison Dagger等级2提示；随后补齐Poison Nova等级10选择器及Fists of Fire／Wake of Inferno未学习时的普通树提示。Poison Dagger与Poison Nova分别记录，不互相替代两界面的参考条件。
 
 | 树截图 | 对描述层的约束 |
 | --- | --- |

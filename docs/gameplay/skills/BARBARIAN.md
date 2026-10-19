@@ -1,10 +1,10 @@
 # 野蛮人技能
 
-更新：2026-10-11。自研宿主已接当前 MPQ 的 30 项野蛮人技能（126–155）：20 项主动、10 项被动。当前包身份由[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护，历史有限证据见本页末节；入口齐备不表示全部装备、等级和多人组合已认证。
+更新：2026-10-11。自研宿主已接当前 MPQ 的 30 项野蛮人技能（126–155）：20 项主动、10 项被动。本页维护当前实现、原版依据与缺口；入口齐备不表示全部装备、等级和多人组合已对齐。
 
 定义入口为 `src/content/skills/barbarian_data.cpp`；纯规则在 `gameplay/skills`，动作、移动、弹体、命中、状态和尸体消耗分别由 server 对应系统拥有。客户端读取原协议状态、播放当前 MPQ 原图并提交命令。MPQ 数值、公式、武器类型、状态、弹体及尸体尺寸动态准备；本地 D2MOO 的 `SkillBar.cpp`、`MissMode.cpp`、`SequenceTbls.cpp`、武器速度和路径函数仅作职责及算法证据，见[资料来源](../../resources/THIRD_PARTY.md)。
 
-十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。当前Bash／Stun／Concentrate／Berserk起手Alloc、动作Do2兑现；Bash的calc2只改已分配物理分量。DoubleSwing、Frenzy、Whirlwind及LeapAttack已接原生联系；动作、回绕和单位种子边界见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。下节冒烟属于此前野蛮人技能批，不认证这些新增源码。
+十项被动的提示和实际贡献共用`evaluateBarbarianPassive`；Frenzy、跳跃、尸体搜索及Berserk共用显式递减曲线，呐喊／武器协同及序列命中时钟使用[公共函数](COMMON.md#公共函数抽取)。当前Bash／Stun／Concentrate／Berserk起手Alloc、动作Do2兑现；Bash的calc2只改已分配物理分量。DoubleSwing、Frenzy、Whirlwind及LeapAttack已接原生联系；动作、回绕和单位种子边界见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。
 
 专心的flag-4增益现跟随动作revision，在结束／中断／替换时撤销；狂战士按原calc2准备期限，非正结果采用原10帧分支；旋风的Aura／Passive及modifierlist元数据走逐写入资源观察，移动状态跟随同一动作。Frenzy保留原skill_frenzy堆叠与逐项速度写入。完整模式切换／事件顺序仍见[公共边界](COMMON.md#当前持续效果入口)。
 
@@ -43,11 +43,11 @@
 | 154 | War Cry | 原环形物理伤害、三项协同、眩晕与弹体命中冷却 |
 | 155 | Battle Command | 原友方环形弹道、全技能 +1、被动重新计算、持续时间协同与刷新 |
 
-狂乱的命中增益也读取原AuraLen／AuraStat公式：skill_frenzy为独立raw层数，命中后加一并限于技能等级，复用列表并按有符号期限登记移除；攻击速度另写other_animrate，不通过替换列表执行中间撤出。此批构建／运行结果由构建指南维护。
+狂乱的命中增益也读取原AuraLen／AuraStat公式：skill_frenzy为独立raw层数，命中后加一并限于技能等级，复用列表并按有符号期限登记移除；攻击速度另写other_animrate，不通过替换列表执行中间撤出。
 
 ## 生命周期与限制
 
-友方Shout／Battle Orders／Battle Command的本轮源码已接原始列表生命周期：当前MPQ AuraLenCalc的signed32结果保留为原移除帧，同状态复用列表，六个非零AuraStat按顺序写入，随后执行公共被动刷新；零期限也登记移除事件，列表与状态位不因时间查询提前消失。移除先撤出属性，再清状态和刷新被动。人物费用、资源上限和效果使用已准备资源记录提交，避免把逐写上限回调重放到已经调整过的资源上。依据D2MOO SkillBar::SKILLS_ApplyWarcryStats、SkillDruid::sub_6FCFE0E0及Skills::sub_6FD14C30。原始战吼列表迁移已纳入前序构建，三种友方战吼安装／到期及资源变化有有限Single Player观察；当前飞弹传播重构仍未构建，完整敌方AI函数／参数和全局事件排序仍待继续迁移，不能据历史包认证全部重构流程。敌方Howl／Taunt的原始列表现开始共用RestoreAi移除候选，状态撤出与普通AI恢复随同一单位提交；特殊目标重置与AI函数恢复的区别见死灵专题。
+友方Shout／Battle Orders／Battle Command已接原始列表生命周期：当前MPQ AuraLenCalc的signed32结果保留为原移除帧，同状态复用列表，六个非零AuraStat按顺序写入，随后执行公共被动刷新；零期限也登记移除事件，列表与状态位不因时间查询提前消失。移除先撤出属性，再清状态和刷新被动。人物费用、资源上限和效果使用已准备资源记录提交，避免把逐写上限回调重放到已经调整过的资源上。依据D2MOO SkillBar::SKILLS_ApplyWarcryStats、SkillDruid::sub_6FCFE0E0及Skills::sub_6FD14C30。完整敌方AI函数／参数、飞弹传播和全局事件排序仍有缺口。敌方Howl／Taunt的原始列表共用RestoreAi移除候选，状态撤出与普通AI恢复随同一单位提交；特殊目标重置与AI函数恢复的区别见[死灵专题](NECROMANCER.md)。
 
 学习、前置、技能上限、左右键、法力、充能和城镇资格仍按共用入口校验。六精通按真实武器类型匹配，同类加成取最高值；空手不冒充武器。双挥／双投／Frenzy 必须同时有两个合格武器，换装后释放复验来源；Whirlwind 允许单武器。投掷分别消耗各手真实数量，整次技能不重复扣法力。被动随有效技能等级和装备重新计算。
 
@@ -55,26 +55,6 @@ Find Potion／Find Item 搜索保留尸体显示并设置 `corpse_noselect`；Gr
 
 Battle Command 在被动求值前加入临时技能来源；协同仍只读基础技能等级。佣兵的临时全技能加成参与内容缓存重算，生效和到期都更新实际技能等级；刷新保留 Battle Orders 的生命上限，BO基数仍取装备后的未加成生命。状态、Frenzy 层数、移动动作、图腾、尸体标记和弹体不写 D2S；技能基础等级与选择沿原 v96 字段保存。保存与校验边界见[存档](../../modules/SAVES.md)。
 
-现有玩家武器路径对吸血／吸蓝、压碎／撕裂组合仍明确暂缓，不因野蛮人技能入口齐备而放宽；完整 PvP、多人争用、跨机器及 Linux 未认证。跳跃的原图飞行／落地序列已接，原客户端垂直高度曲线尚无已核实实现，不用自造高度替代。六精通的所有武器／层级及全部状态组合不作为代表冒烟的认证范围。
+吸血／吸蓝、压碎／撕裂的公共实现与组合缺口见[命中效果](../combat/WEAPON_EFFECTS.md)；完整PvP、多人争用、跨机器与Linux仍缺对照。跳跃的原图飞行／落地序列已接，原客户端垂直高度曲线尚无已核实实现，不用自造高度替代。六精通全部武器／层级、精英眩晕随机、装备／状态组合和视觉／声音时序仍未完整对齐。
 
-本轮持续效果收尾包的有限观察及包身份见[构建指南](../../development/BUILD_AND_RUN.md#运行包记录)。下述旧记录不能替代本轮未运行的组合验证。
-
-## 当前包有限冒烟
-
-本节为2026-10-11公共抽取前的历史证据，源码提交`f2efa6a`对应的收尾包客户端SHA256为`6CE740D7F60FCBD7D2E1345F66A9F5EF33107FE4E94FDFDE6000DAFA1CB065E4`，独立服务端为`E75EB3319FFA6030CF3CF2FA93633497B3BDF2956071F2638072809382F7EE1F`；不认证此次公共函数重构包。
-
-2026-10-11，Windows Release／当前 MPQ 1.13c，使用现有 `Send-D2XCommand.ps1` 和原协议请求，未新增测试脚本。管理员准备58级角色、真实武器和怪物；这不认证自然升级或掉落概率。
-
-| 代表路径 | 观察结果 |
-| --- | --- |
-| 学习／被动／保存 | 126–155全部通过正常学习入口；Battle Command令已学技能有效等级增加并重新计算被动。最终包重载保留30项基础等级与技能选择，临时状态不带入新局 |
-| 武器／双持 | Double Swing造成实际伤害；Concentrate攻击期间防御增加、动作后恢复；Berserk状态使防御为零并按自身时长保留；Frenzy命中生成状态94并在到期后清除 |
-| 双投 | 当前MPQ `jav`／`tax` 各一件，双投分别生成弹体1／35，消耗两手实际数量；未穷举所有武器／IAS组合 |
-| 移动 | Leap飞行中原状态18及动作132保留，坐标通过原16同步；Leap Attack固定落点后攻击；Whirlwind状态18／174、原图与移动结束清理。本批前一构建再次核对Leap落地、无残留动作／移动状态 |
-| 友方战吼 | Shout／Battle Orders状态经原协议到本人和罗格佣兵；有效等级2的BO令本人生命上限169→233、佣兵198→273.24，当前生命不按增益额外治疗。最终包等级1的BO令本人169→228，当前生命仍169；佣兵上限198→267.296875，BC令其火焰箭／内视6→7，到期后实际火焰箭回到6且BO上限保持 |
-| 敌方战吼 | Battle Cry的原降伤／降防属性、Howl恐惧、Taunt属性及War Cry物理伤害已观察；存活 `brute3` 收到原stunned状态21。原MPQ禁止上述战吼在城镇施放，入口明确拒绝 |
-| 尸体／图腾 | Find Potion搜索产出第一幕 `hp2`；Find Item另一次搜索产出 `cqv`，状态118阻止再次使用。Grim Ward消耗尸体、显示原大型图腾256、持续1000帧并完整结束，无残留弹体 |
-
-本批冒烟修复空NoDrop批次永久等待容量导致尸体搜索挂起，以及移动技能原16输出目录未开放的问题；Battle Cry接触采用当前MPQ NextDelay。构建客户端和独立服务端均通过，历史包身份见本节首段。证据保留在忽略的 `artifacts/barbarian-*.json`、`barbarian-buffs.png`、`barbarian-whirlwind.png`、`barbarian-grimward.png`；最终包记录为 `barbarian-final-package.json`，角色为 `BarbSmoke-20261011.d2s`。期间修复后重打包，较早截图／分项记录属于本批相应构建，不冒充全部在最终EXE重跑。
-
-只认证上述代表单机路径；未运行联机／原服／Linux，未穷举全部等级、装备、六精通类型、精英眩晕随机、多人争用、容量和所有视觉／声音组合。跳跃高度曲线限制见上节。
+尸体搜索的空NoDrop结果不等待不存在的落地容量；移动技能通过原16同步，Battle Cry接触采用当前MPQ NextDelay。以上为当前执行规则，不维护自研运行台账。

@@ -172,11 +172,14 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     }
     const bool hasDurability=baseDurable && property("item_indesctructible")<=0;
     const bool canEthereal=hasDurability && !definition->questTag && item.quality!=ItemQuality::Inferior && item.quality!=ItemQuality::Set;
+    if(generation.forceEthereal && !canEthereal)
+        throw std::runtime_error("This item cannot be ethereal under the original item rules");
     const bool rolledEthereal=canEthereal && generation.rollNaturalEthereal && limitedRandom(local,100)<5;
-    if(forcedEthereal || rolledEthereal) {
+    const bool generatedEthereal=generation.forceEthereal || rolledEthereal;
+    if(forcedEthereal || generatedEthereal) {
         item.nativeFlags|=0x400000u;
         if(definition->family==ItemFamily::Armor) item.defense=item.defense*3/2;
-        if(rolledEthereal) item.nativeMaxDurability=item.nativeMaxDurability/2+1;
+        if(generatedEthereal) item.nativeMaxDurability=item.nativeMaxDurability/2+1;
     }
     const unsigned limit = unsigned(std::max(0, std::min({definition->base.sockets.value_or(0),
         definition->base.socketsByLevel[item.level <= 25 ? 0 : item.level <= 40 ? 1 : 2], definition->width * definition->height, 6})));
@@ -192,7 +195,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     autoProperties(data,*definition,item,local);
     const auto complete=resolveItemStats(data,item,int(item.level));
     const auto maximumDurability=std::min(255u,itemMaximumDurability(data,item,complete));
-    item.durability=generation.rollNaturalEthereal && !rolledEthereal && !property("item_maxdurability_percent")
+    item.durability=generation.rollNaturalEthereal && !generatedEthereal && !property("item_maxdurability_percent")
         ? std::min(maximumDurability,baseDurability*generation.durabilityMultiplier):maximumDurability;
     updateCubeRequiredLevel(data,item);item.identified=visible;
     item.nativeQuestDifficulty = unsigned(difficulty);

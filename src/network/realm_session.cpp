@@ -1032,6 +1032,9 @@ struct RealmSession::Impl {
             const bool merchant = action == OnlineItemAction::Buy || action == OnlineItemAction::Sell ||
                 action == OnlineItemAction::Repair || action == OnlineItemAction::RepairAll || action == OnlineItemAction::IdentifyAll;
             bool related = packet.id == 0x97 && action == OnlineItemAction::SwitchWeapons;
+            // 0x3F completes only the use/preparation request, never Identify.
+            related |= packet.id == 0x3F && action == OnlineItemAction::Use &&
+                view.world.itemTargetingSource == request->command.item;
             related |= packet.id == 0x77 && action == OnlineItemAction::CubeOpen && view.world.storage.kind == OnlineStorageKind::Cube;
             related |= packet.id == 0x9C && action == OnlineItemAction::TradeOpen && view.world.shopSource == request->command.npc;
             if ((packet.id == 0x1D || packet.id == 0x1E || packet.id == 0x1F) && !packet.body.empty()) {
@@ -2397,13 +2400,16 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         case OnlineItemAction::Identify:
             // Original pSpell01 prepares TARGETING before applying the target. TCP preserves order.
             if (world.itemTargetingSource != command.item) {
-                Writer prepare; prepare.u8(0x20); prepare.u32(command.item); prepare.u32(point.x); prepare.u32(point.y);
+                Writer prepare; prepare.u8(mode == 2 ? 0x26 : 0x20); prepare.u32(command.item);
+                if (mode == 2) { prepare.u32(0); prepare.u32(0); }
+                else { prepare.u32(point.x); prepare.u32(point.y); }
                 p.sent(p.gs, prepare.release());
             }
             out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
         case OnlineItemAction::SwitchWeapons: out.u8(0x60); break;
         case OnlineItemAction::CubeOpen:
-            p.close_interaction();
+            // Keep the stash lease until the server opens a cube stored inside it.
+            if (world.storage.kind != OnlineStorageKind::Stash) p.close_interaction();
             out.u8(0x20); out.u32(command.item); out.u32(point.x); out.u32(point.y);
             world.storage.requested = OnlineStorageKind::Cube; world.storage.requestedSource = command.item;
             ++world.interactionGeneration;

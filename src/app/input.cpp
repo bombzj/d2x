@@ -41,6 +41,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.entryEnd = IsKeyPressed(KEY_END);
         input.entryDelete = IsKeyPressed(KEY_DELETE);
         input.entryStep = int(IsKeyPressed(KEY_RIGHT)) - int(IsKeyPressed(KEY_LEFT));
+        input.entrySelectAll = input.control && IsKeyPressed(KEY_A);
         input.pageDelta = int(IsKeyPressed(KEY_PAGE_DOWN)) - int(IsKeyPressed(KEY_PAGE_UP));
         input.quantityDelta = int(input.wheel) + int(IsKeyPressed(KEY_UP)) - int(IsKeyPressed(KEY_DOWN));
         for (int character = GetCharPressed(); character; character = GetCharPressed()) {
@@ -90,7 +91,7 @@ FrameInput pollInput(const Viewport &viewport) {
         // Ctrl/Alt keep their debug and modifier roles, so plain letters drive
         // the panels the same way the debug ui-input keys do.
         const auto plain = !input.control && !input.alt;
-        input.inventory = plain && IsKeyPressed(KEY_I);
+        input.inventory = plain && (IsKeyPressed(KEY_I) || IsKeyPressed(KEY_B));
         input.character = plain && IsKeyPressed(KEY_A);
         input.skillTree = plain && IsKeyPressed(KEY_S);
         input.quests = plain && IsKeyPressed(KEY_Q);
@@ -98,7 +99,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.party = plain && IsKeyPressed(KEY_P);
         input.messageLog = plain && IsKeyPressed(KEY_M);
         input.run = plain && IsKeyPressed(KEY_R);
-        input.expandBelt = plain && IsKeyPressed(KEY_B);
+        input.expandBelt = plain && IsKeyPressed(KEY_GRAVE);
         input.minimapSide = plain && IsKeyPressed(KEY_V);
         input.automap = input.tab;
         input.automapCenter = IsKeyPressed(KEY_HOME);

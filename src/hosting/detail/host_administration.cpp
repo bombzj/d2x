@@ -137,7 +137,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             const auto &spawn = std::get<AdminSpawn>(request.arguments);
             if (peer.phase != GamePhase::Entered || spawn.level < 1 || spawn.level > 99 || !content->items.find(spawn.code)) return {AdminStatus::InvalidArguments, "Enter a game and supply an MPQ item code and level 1..99"};
             if(spawn.propertyQuery) {
-                if(spawn.propertyQuery->size()>64 || !spawn.properties.empty() || !spawn.affixes.empty() || spawn.sockets || spawn.durability || spawn.position || (spawn.quality!="magic" && spawn.quality!="rare"))
+                if(spawn.propertyQuery->size()>64 || !spawn.properties.empty() || !spawn.affixes.empty() || spawn.sockets || spawn.ethereal || spawn.durability || spawn.position || (spawn.quality!="magic" && spawn.quality!="rare"))
                     return {AdminStatus::InvalidArguments,"propertyQuery requires magic/rare quality and no generation overrides"};
                 const auto &base=*content->items.find(spawn.code);
                 const auto rules=loadItemQualityRules(*content,content->tables.at("itemratio"),spawn.code);
@@ -234,7 +234,13 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
                 if(record==records.end()) return {AdminStatus::InvalidArguments,"Generated affix has no original record"};
                 description.affixes.push_back({affix.prefix,affix.row,record->name,affix.propertyRolls});
             }
-            auto item = prepareItem(*content, {spawn.code, 1, {}, unsigned(spawn.level), std::move(generation)}, random, character.difficulty);
+            generation.forceEthereal=spawn.ethereal;
+            ItemInstance item;
+            try {
+                item=prepareItem(*content, {spawn.code, 1, {}, unsigned(spawn.level), std::move(generation)}, random, character.difficulty);
+            } catch(const std::exception &error) {
+                return {AdminStatus::InvalidArguments,std::string("Generated item was rejected: ")+error.what()};
+            }
             if (spawn.durability) {
                 auto identified=item;identified.identified=true;
                 const auto maximum=itemMaximumDurability(*content,identified,resolveItemStats(*content,identified,int(item.level)));

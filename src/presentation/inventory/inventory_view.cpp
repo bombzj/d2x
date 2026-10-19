@@ -5,6 +5,17 @@
 #include <sstream>
 
 namespace d2x {
+size_t SceneView::goldDialogCaretAt(Vec mouse) const {
+    if (!view_.inventory.goldDialog) return 0;
+    const auto &amount = view_.inventory.goldDialog->amount;
+    float x = goldDialogEntry().x;
+    for (size_t index = 0; index < amount.size(); ++index) {
+        const float width = assets_.font.widthOf(uint32_t(amount[index])) * inventoryScale();
+        if (mouse.x < x + width / 2) return index;
+        x += width;
+    }
+    return amount.size();
+}
 InventoryDrop SceneView::inventoryDropAt(Vec mouse) const {
     const auto &ui = view_.inventory;
     if (!ui.drag) return {};
@@ -17,7 +28,7 @@ InventoryDrop SceneView::inventoryDropAt(Vec mouse) const {
 }
 void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) const {
     const auto &ui = view_.inventory;
-    if (characterView_.dead || !ui.drag || !ui.drag->moved || ui.split || ui.goldDialog || view_.gameMenuOpen ||
+    if (characterView_.dead || !ui.drag || !ui.drag->moved || ui.goldDialog || view_.gameMenuOpen ||
         (view_.capturesWorldInput(!ui.playerTradeOpen) && !view_.shopOpen) || drop.bounds.width <= 0)
         return;
     auto bounds = GetCollisionRec(drop.bounds, surface);
@@ -49,7 +60,8 @@ void SceneView::drawItemBackground(const InventoryItemView &item, Rectangle boun
         item.cellTone == InventoryCellTone::Usable ? Color{0, 0, 128, 255} : Color{128, 0, 0, 255};
     blend->drawRectangle(bounds, color);
 }
-void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets) const {
+void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets, float pixelScale) const {
+    const float scale = pixelScale > 0 ? pixelScale : inventoryScale();
     const auto [width, height] = item.iconCells;
     if (width < 1 || height < 1) return;
     const auto [cellWidth, cellHeight] = inventoryView_.itemCellSize;
@@ -57,13 +69,13 @@ void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bo
     const int act = mapView().palette;
     const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
     // Equipment centers the occupied grid, rather than shrinking the DC6 to fit.
-    const Vec origin{bounds.x + std::floor((bounds.width / inventoryScale() - width * cellWidth) / 2) * inventoryScale(),
-                     bounds.y + std::floor((bounds.height / inventoryScale() - height * cellHeight) / 2) * inventoryScale()};
+    const Vec origin{bounds.x + std::floor((bounds.width / scale - width * cellWidth) / 2) * scale,
+                     bounds.y + std::floor((bounds.height / scale - height * cellHeight) / 2) * scale};
     auto draw = [&](const std::string &art, std::array<int, 2> transform, uint32_t flags, Vec position, unsigned frame = 0) {
         const auto *icon = assets_.inventoryIcon(art, transform, act, frame);
         if (!icon || !icon->texture.id) return;
-        const Rectangle pixels{position.x + icon->x * inventoryScale(), position.y + icon->y * inventoryScale(),
-            icon->texture.width * inventoryScale(), icon->texture.height * inventoryScale()};
+        const Rectangle pixels{position.x + icon->x * scale, position.y + icon->y * scale,
+            icon->texture.width * scale, icon->texture.height * scale};
         if (flags & 0x400000u) {
             if (blend) blend->drawHalf(icon, pixels);
         } else
@@ -140,16 +152,16 @@ void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bo
     for (unsigned index = 0; index < item.sockets; ++index) {
         const int x = positions[index * 2], y = positions[index * 2 + 1];
         if (!x || !y) continue; // No native layout for this footprint/socket count.
-        const Vec socket{origin.x + ((x - 1) * cellWidth / 2) * inventoryScale(),
-                         origin.y + ((y + 1) * cellHeight / 2) * inventoryScale()};
+        const Vec socket{origin.x + ((x - 1) * cellWidth / 2) * scale,
+                         origin.y + ((y + 1) * cellHeight / 2) * scale};
         if (hole && blend)
-            blend->drawSocket(hole, {socket.x + (hole->x - 1) * inventoryScale(),
-                socket.y + (hole->y - hole->texture.height) * inventoryScale(),
-                hole->texture.width * inventoryScale(), hole->texture.height * inventoryScale()});
+            blend->drawSocket(hole, {socket.x + (hole->x - 1) * scale,
+                socket.y + (hole->y - hole->texture.height) * scale,
+                hole->texture.width * scale, hole->texture.height * scale});
         if (index < item.socketItems.size()) {
             const auto &child = item.socketItems[index];
             draw(child.artKey, child.colorTransform, child.nativeFlags,
-                 {socket.x, socket.y - cellHeight * inventoryScale()});
+                 {socket.x, socket.y - cellHeight * scale});
         }
     }
 }
@@ -227,8 +239,7 @@ void SceneView::drawInventory(Vec mouse) const {
     const auto goldField = inventoryGold();
     if (const auto *coin = assets_.goldCoin.frame(0, 0))
         DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                       {goldField.x + 3 * inventoryScale(), goldField.y + 4 * inventoryScale(),
-                        coin->texture.width * inventoryScale(), coin->texture.height * inventoryScale()},
+                       inventoryGoldButton(),
                        {0, 0}, 0, WHITE);
     if (const auto *close = assets_.questClose.frame(0, 10))
         DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
@@ -239,33 +250,10 @@ void SceneView::drawInventory(Vec mouse) const {
     if (ui.identify)
         painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale()),
                        int(panel.y + 364 * inventoryScale()), 12, gold);
-    if (!ui.split && !ui.drag) {
+    if (!ui.drag) {
         if (auto item = inventory.item(hovered); item && !ui.hidesItem(*item))
             drawItemTooltip(*item, {mouse.x + 170, mouse.y},
                 inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
-    }
-    if (ui.split) {
-        DrawRectangleRec(panel, {0, 0, 0, 175});
-        auto dialog = splitBounds();
-        frame(dialog);
-        painter_.label("SPLIT STACK", int(dialog.x + 24), int(dialog.y + 19), 18, gold);
-        auto source = inventory.item(ui.split->item.id);
-        std::string quantity =
-            std::to_string(ui.split->quantity) + " / " + (source ? std::to_string(source->quantity) : "0");
-        painter_.label(quantity, int(dialog.x + (dialog.width - painter_.measure(quantity, 20)) / 2),
-                       int(dialog.y + 66), 20);
-        for (int i = 0; i < 2; ++i) {
-            auto box = splitAdjust(i);
-            frame(box);
-            painter_.label(i ? "+" : "-", int(box.x + 14), int(box.y + 8), 16, gold);
-            box = splitButton(i);
-            frame(box);
-            const char *text = i ? "CANCEL" : "SPLIT";
-            painter_.label(text, int(box.x + (box.width - painter_.measure(text, 12)) / 2), int(box.y + 9),
-                           12, gold);
-        }
-        painter_.label("Wheel / arrows: quantity   Enter: confirm", int(dialog.x + 23), int(dialog.y + 108),
-                       10);
     }
     if (ui.goldDialog) {
         const auto dialog = goldDialogBounds();
@@ -305,7 +293,20 @@ void SceneView::drawInventory(Vec mouse) const {
             else line = candidate;
         }
         if (!line.empty()) flush();
-        label(assets_.font, ui.goldDialog->amount + "_", 29, 82);
+        const auto &entry = *ui.goldDialog;
+        const auto prefixWidth = [&](size_t count) {
+            return measure(assets_.font,entry.amount.substr(0,count));
+        };
+        const auto first = std::min(entry.caret,entry.anchor), last = std::max(entry.caret,entry.anchor);
+        if (first != last) {
+            // D2Win EditBox draws the selected text over MixRGB(0x40,0x40,0x40).
+            DrawRectangleRec({dialog.x + (29 + prefixWidth(first)) * inventoryScale(),
+                dialog.y + 66 * inventoryScale(), (prefixWidth(last)-prefixWidth(first)) * inventoryScale(),
+                16 * inventoryScale()}, {64,64,64,255});
+        }
+        label(assets_.font, entry.amount, 29, 82);
+        if (uint64_t(GetTime() * 4) & 1)
+            label(assets_.font, "_", 29 + prefixWidth(entry.caret), 82);
         draw(assets_.questClose.frame(0, 16), goldDialogButton(0));
         draw(assets_.questClose.frame(0, 10), goldDialogButton(1));
     }

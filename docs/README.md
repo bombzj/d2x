@@ -12,11 +12,13 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | BASELINE | 当前实现范围、架构边界、功能缺口与专题链接；保持短篇 | 开发过程、构建／打包／运行状态、包身份、验证记录、源码实现细节 |
 | architecture | 大模块、依赖、数据流、设计依据；MULTIPLAYER维护后续顺序 | 重复的当前包清单、逐技能验收 |
 | modules | 代码入口、状态所有权、接口与失败边界 | 复制各职业／物品／任务规则和全部运行记录 |
-| gameplay及分类README | 分类入口、原版规则、实现范围和该专题有限证据 | 跨专题重复台账、把旧证据写成当前整体通过 |
-| development | 编码与验证方法、构建／启停／诊断；BUILD_AND_RUN维护包身份，专项性能和部署证据放对应页 | 重复包身份、业务实现清单 |
+| gameplay及分类README | 分类入口、原版规则与参考结果、当前实现范围及明确缺口 | 自研运行台账、跨专题重复记录、无范围的完成宣称 |
+| development | 编码与验证方法、构建／启停／诊断、原版对照方法及部署边界 | 历次构建／打包流水、历史包身份、业务实现清单 |
 | resources／licenses | 原资源、参考来源、固定版本与许可 | 玩法完成宣称 |
 
-更新原负责段落，不按每次会话追加日志。已有专题证据只链接，不再复制到基线；被替代的包身份与修改过程由Git追溯，原始证据留忽略目录`artifacts/`。新证据必须说明包／条件／范围／失败与未覆盖项，不能沿用旧包结论认证新源码。
+更新原负责段落，不按每次会话追加日志。长期文档只维护当前实现、可定位的原版依据、已知差异及待核实项，统一口径见[总计划](architecture/MULTIPLAYER.md#21-统一状态口径)。原版参考记录版本、函数／RVA、MPQ表字段，或实机条件、操作和关键结果；混合连接明确原版所在的一侧。
+
+构建、打包和自研运行情况在当次交付中说明，不进入长期功能台账。日志、截图、运行包及排障副本是可清理的临时产物；文档不依赖临时目录长期存在，也不把已删除材料写成现存依据。修改历史由Git追溯。
 
 移动内容时保留有效证据和链接，外部已引用的锚点保留或同步修正。保存语义变化同步SAVES／格式／校验边界；执行授权以[协作约定](../AGENTS.md)和[验证指南](development/TESTING.md)为准，不在各页重复维护授权规则。
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
@@ -49,7 +51,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 角色 | [属性／成长](gameplay/characters/ATTRIBUTES.md)、[佣兵](gameplay/characters/HIRELINGS.md)、[死亡／尸体](gameplay/characters/PLAYER_DEATH.md) |
 | 战斗 | [阵营](gameplay/combat/FACTIONS.md)、[数值显示](gameplay/combat/NUMBERS.md)、[攻击／弹体](gameplay/combat/ATTACKS.md)、[武器命中效果](gameplay/combat/WEAPON_EFFECTS.md)、[随机机制](gameplay/combat/RANDOMNESS.md) |
 | 技能 | [全分类目录](gameplay/skills/README.md)、[公共规范／所有权／状态](gameplay/skills/COMMON.md)、[MPQ 选择器／树描述](gameplay/skills/DESCRIPTIONS.md)；目录包含七职业、通用、怪物／精英、佣兵／召唤物、物品技能与特殊／未归档条目 |
-| 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及历史证据 |
+| 物品 | [全分类目录](gameplay/items/README.md)、[公共规范](gameplay/items/COMMON.md)；定义／生成／属性、装备／库存／容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济、原包表现／特殊身份及原版依据 |
 | NPC | [交互／对白](gameplay/npc/INTERACTIONS.md)、[交易／服务](gameplay/npc/TRADE.md) |
 | 任务 | [系统与协议／所有权](gameplay/quests/SYSTEM.md)、[第一幕执行与证据](gameplay/quests/ACT1.md)、[第二幕执行与证据](gameplay/quests/ACT2.md)、[第三至第五幕执行与缺口](gameplay/quests/ACT3_5.md) |
 | 怪物 | [全分类目录](gameplay/monsters/README.md)、[公共规范](gameplay/monsters/COMMON.md)、[自然生成工作总览](gameplay/monsters/POPULATION.md#自然生成工作总览)；五幕台账、精英／固定身份、首领、人口、原包表现及特殊／未归档单位 |
@@ -58,14 +60,14 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 
 ## 维护约定
 
-技能分类与归属更新skills/README，公共规范／跨职业计算／状态更新COMMON；逐技能分派／专属Clt与Srv差异更新负责专题，复用同一技能只链接原页。MONSTERS登记怪物专用技能，COMPANIONS登记单位使用入口，ITEM_SKILLS登记物品来源与专用程序，SPECIAL保留未归档条目；详细运行证据链接所属职业或已有怪物／佣兵专题或[物品证据](gameplay/items/EVIDENCE.md)，不复制。原模块调用证据更新REFERENCE_DESIGN；保存、人物投影、协议分别链接SAVES、CHARACTER、NETWORK；描述程序／公式／原版截图统一维护skills/DESCRIPTIONS。
+技能分类与归属更新skills/README，公共规范／跨职业计算／状态更新COMMON；逐技能分派／专属Clt与Srv差异更新负责专题，复用同一技能只链接原页。MONSTERS登记怪物专用技能，COMPANIONS登记单位使用入口，ITEM_SKILLS登记物品来源与专用程序，SPECIAL保留未归档条目；原版依据和参考结果归所属职业、怪物、佣兵或物品专题，不复制运行流水。原模块调用证据更新REFERENCE_DESIGN；保存、人物投影、协议分别链接SAVES、CHARACTER、NETWORK；描述程序／公式／原版截图约束统一维护skills/DESCRIPTIONS。
 
-怪物分类与归属更新monsters/README，公共规范／规则准备／生命周期更新COMMON；实际类型覆盖更新ACT页，专用策略更新BOSSES，rank／词缀更新ELITES，出生／房间更新POPULATION，原包／原图更新PRESENTATION，特殊身份更新SPECIAL。模块页只维护代码分工；具体技能、任务、佣兵与掉落链接原专题，第一／第二幕运行证据分别归ACT1／ACT2，不复制第二份完成清单。
+怪物分类与归属更新monsters/README，公共规范／规则准备／生命周期更新COMMON；实际类型覆盖更新ACT页，专用策略更新BOSSES，rank／词缀更新ELITES，出生／房间更新POPULATION，原包／原图更新PRESENTATION，特殊身份更新SPECIAL。模块页只维护代码分工；具体技能、任务、佣兵与掉落链接原专题，各幕页维护所属身份的原版依据与缺口，不复制第二份完成清单。
 
-物品分类更新items/README，COMMON维护公共规范，DATA／MODEL维护原表与身份，GENERATION／AFFIXES／EQUIPMENT分别维护生成／属性／贡献；操作、容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济更新对应专题。UI／原包分别归INVENTORY_UI／PRESENTATION，特殊条目归SPECIAL，物品历史记录归EVIDENCE；充能／触发、任务阶段、佣兵与D2S仍链接原负责页，模块只维护代码入口。
+物品分类更新items/README，COMMON维护公共规范，DATA／MODEL维护原表与身份，GENERATION／AFFIXES／EQUIPMENT分别维护生成／属性／贡献；操作、容器／消耗、镶嵌／耐久、掉落／地面／金币、方块／任务／经济更新对应专题。UI／原包分别归INVENTORY_UI／PRESENTATION，特殊条目归SPECIAL，原版依据归各负责页；充能／触发、任务阶段、佣兵与D2S仍链接原负责页，模块只维护代码入口。
 
-任务通用边界更新SYSTEM，各幕规则／缺口／证据更新ACT专题，原编码与奖励位更新SAVES，客户端端口更新NPC_QUEST；不跨页面重复维护同一规则。全局交付更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。根README维护项目展示、能力概况与启动入口，详细操作和部署链接开发指南。
+任务通用边界更新SYSTEM，各幕规则／缺口／原版依据更新ACT专题，原编码与奖励位更新SAVES，客户端端口更新NPC_QUEST；不跨页面重复维护同一规则。全局能力概况与主要缺口更新BASELINE，实施顺序更新MULTIPLAYER，接口／所有权更新modules，原规则／表现限制更新对应专题；其他页面链接负责页面，不复制批次流水。根README维护项目展示、能力概况与启动入口，详细操作和部署链接开发指南。
 
-保留可追溯原版证据与明确未知项，删掉被替代的入口、兼容分支和历史完成宣称；已导入定义／已显示面板不等于联机服务完成。最新未构建源码不能沿用旧运行结论。资源、日志、截图与旧包留忽略目录，历史修改由Git追溯。
+保留可定位的原版依据与明确未知项，删掉被替代的入口和历史完成宣称；已导入定义／已显示面板不等于联机服务完成。资源、日志、截图、存档和运行包不纳入源码提交；临时产物允许清理，删除运行记录不改变已有实现或消除已知缺口。整理文档不删除代码兼容分支，代码变更仍按负责模块处理。
 
 移动／删除文档须同步相对链接及源码引用；保存语义变化同步SAVES／格式／校验边界，旧档不静默迁移。默认不构建、运行或打包，不编写测试脚本、用例或专用程序；以当轮用户授权为准。

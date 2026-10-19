@@ -31,7 +31,7 @@ void SceneView::drawCube(Vec mouse) const {
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == inventoryView_.containers.cube) {
             drawContainerGrid(grid, mouse);
-            if (!ui.drag && !ui.split && !ui.goldDialog)
+            if (!ui.drag && !ui.goldDialog)
                 if (auto cell = grid.cellAt(mouse))
                     if (auto item = inventoryView_.item(inventoryView_.itemAt(grid.container, *cell)))
                         drawItemTooltip(*item, {mouse.x + 170, mouse.y});

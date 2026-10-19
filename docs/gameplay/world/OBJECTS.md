@@ -12,11 +12,11 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
 
-传送点OperateFn23在mode1／2的点击例外与启动后ON动画／灯光已入包，详见[联网修正](../../modules/NETWORK.md#本批源码修正)；本批共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
+传送点OperateFn23在mode1／2保留点击例外，启动后衔接ON动画／灯光，详见[联网实现](../../modules/NETWORK.md#本批源码修正)；共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
 
 祭坛表现源码补回公共绘制迁移时漏掉的未领取类型图／闪光层及物件COF阴影。真实Objects.SubClass／OperateFn识别祭坛，原服0x51的InteractType经既有shrineStateName映射到当前MPQ States.overlay1／2和Overlay DCC；只在原服mode0显示，mode1开始后移除，角色增益图仍只读原服状态。物件Overlay使用原静态落点及Height1，角色用Height2，secondary层先入队，两层各自按PreDraw排序；不使用物件X／Yoffset移动Overlay。
 
-OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(FrameCnt1+1)/25秒衔接ON，模式动画、Start／帧数及灯光继续读当前MPQ；既有修正仅改变显示模式；本批共用模式另补原MPQ对象碰撞更新，不写回原服副本或授予效果。历史5c65e8d的world_renderer／state_overlay_view保留了上述类型层与阴影，6914308迁移公共世界队列时遗漏类型层，后续联机物件入口没有完整恢复；资源解码／COF合成沿用既有实现。另据ObjMode／SCmd修正0x4D物件操作通知：其技能字段实际是操作者GUID，等级字段是祭坛类型；只对玩家／怪物生成施法动作，不清除物件0x0E模式或生成伪施法效果。本批已构建入包，真实AF经验祭坛未领取图层及角色state137已观察；最终包实机领取另一个class2生命祭坛后mode1／nativeMode=true、actionSkill为空且本体保留，原服确认不可再点击及生命恢复；复验范围见联网交付记录，精确Overlay节拍及原版全部祭坛表现不据此宣称通过。
+OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(FrameCnt1+1)/25秒衔接ON，模式动画、Start／帧数及灯光继续读当前MPQ；显示模式与对象碰撞分别投影，不写回原服副本或授予效果。资源解码／COF合成沿用公共实现。另据ObjMode／SCmd解释0x4D物件操作通知：其技能字段实际是操作者GUID，等级字段是祭坛类型；只对玩家／怪物生成施法动作，不清除物件0x0E模式或生成伪施法效果。原服state137及生命祭坛模式／回复参考见[联网](../../modules/NETWORK.md#原服物件与交易观察)；精确Overlay节拍及全部祭坛表现仍待原版对照。
 
 ## 野外箱子、破坏物与陷阱
 
@@ -42,7 +42,7 @@ OperateFn2的非循环OP按D2MOO OBJECTS_OperateFunction02_Shrine所安排的(Fr
 
 `content/world/object_mode.hpp`与ActorAnimation／RemoteTown共用已核实的ENDANIM期限：OperateFn1／3／4／5／7／14／15／23／30／48／51／68及非循环2，在Mode2存在时按(FrameCnt1+1)/25秒衔接。D2MOO `sub_6FC74AC0`直接写OPENED并释放对应碰撞，不安排后续单位刷新，因此不能一直等待第二个0x0E。副本模式保留原值，显示和对象层各自投影；ON重新从零计时。同模式0x0E标志刷新保留原动画起点，0x51新指派重置表现缓存。
 
-OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影修复适用于原服和自研连接。2026-10-10已随野外物件批构建、打包，自研祭坛公共蓝门往返有限验证见下文；精确表现节拍未逐帧认证。
+OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12_PermanentPortal的ENDANIM；当前MPQ class59／60的CycleAnim1=0、CycleAnim2=1，开启后按原ON资源持续循环，不停在OP末帧。自研蓝门openingTicks也按FrameCnt1+1准备，不能用FrameDelta反算权威期限。旧master门户绘制已经分开OP／ON，但其单机衔接期限不是原ENDANIM依据；当前公共投影适用于原服和自研连接，精确表现节拍仍待逐帧对照。
 
 声音选择不在Objects.txt。当前1.13c D2Client原对象声表RVA F6C58及读取入口22570提供模式选择，源码按当前MPQ Token／OperateFn绑定已核实族，共享Token的5f／6t／jw按原名称／操作区分。Sounds表继续提供文件、组大小、音量；不分发DLL、导出表或WAV。原0x2C事件11是item_key_used，22按CharStats职业选needkey组，13／14是object_trap_trigger／release，不能把事件号当Sounds.Index。重入已打开物件不重播旧交互声。
 
@@ -54,7 +54,7 @@ OperateFn15蓝／红门的OP→ON衔接依据Objects::InitFunction11_Portal／12
 
 自然生成专项的整体目标、当前进度、后续顺序与注意事项集中见[自然生成工作总览](../monsters/POPULATION.md#自然生成工作总览)；本节只维护物件算法和实际限制。主线包括自然箱子／陷阱／祭坛及必要任务物件，不扩展为佣兵或职业召唤物自身功能完善。
 
-`hosting/object_content.cpp`准备ObjGroup／Objects纯值，服务端路径不再调用旧第一幕撒点；`server/systems/objects/population.cpp`使用活动房间随机贷款、ObjectControl候选与同步碰撞，已核对PopulateFn1–9、治疗保底及原主题分派。本轮优先收尾分布／碰撞／数量与关联出生规则，构建及双包身份统一见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；完整休眠、GUID、初始化交错及全变体实机认证仍未完成。旧`world/object_population.cpp`仍是世界工具的适配路径，不代表服务端原随机顺序。
+`hosting/object_content.cpp`准备ObjGroup／Objects纯值，服务端路径不再调用旧第一幕撒点；`server/systems/objects/population.cpp`使用活动房间随机贷款、ObjectControl候选与同步碰撞，已核对PopulateFn1–9、治疗保底及原主题分派。完整休眠、GUID、初始化交错及全变体仍未闭合。旧`world/object_population.cpp`仍是世界工具的适配路径，不代表服务端原随机顺序。
 
 实例按怪物区域、ObjectControl、NPCControl、QuestControl顺序分出子流，再创建玩家。石柱顺序及日蚀延迟使用任务控制流；NPCControl的佣兵名单和库存消费见[佣兵](../characters/HIRELINGS.md)与[经济](../items/ECONOMY.md)，不代表全局交错完成。物件准入不再按GUID派生种子，而按SUNIT_InitSeed取游戏子流。Init1/2/3/27/34/57/58使用准入候选，金币／灵魂辅助初始化完成后才执行PreOperate及特殊覆盖；宝箱重置后的单位种子供掉落使用。Init8火把固定OPENED，Init14／26火盆固定OPERATING；Init11在OPERATING时安装ENDANIM，Init12中性转OPERATING并安装ENDANIM。特殊箱资格／模式及574–579覆盖位于普通初始化之后，后者用单位流；塔楼特殊箱整体覆盖陷阱3并清锁。宿主只提供有序Shrines目录。原分派空槽保持空操作，但有实际回调的任务控制点、失败分支和初始化交错仍未闭合，未覆盖的分支不能按无操作认证。
 
@@ -74,7 +74,7 @@ Init28金币占位物按1.13c VA6FC4F580–6FC4F68B执行ObjectControl的1–9�
 
 Init79按当前MonStats.hcIdx／zoo准备资格，任务流最多十次抽取1..记录数-1，失败保存0；每局一次，经原0x50任务36通知已入场玩家及哈洛加斯投影，客户端只读保存结果，不生成敌人。动态／预设入口已接；随机物件批若意外包含Zoo明确暂缓。当前MPQ Init28／46／79的PreOperate均为0，Init37无实际对象记录。
 
-物件休眠按SaveMonsters／ISRESURRECT、Restore／RestoreVirgins及bSparkChest位2判定，非循环OPERATING按Mode2转OPENED；恢复重新分配GUID并运行真实初始化，再按原SubClass位1／位32及保存帧分派祭坛、井和普通物件，分别恢复类型／期限、次数／补充事件或箱锁／陷阱／闪光字节，重绑既有预设及任务引用。井水帧差除法保留无符号32位运算后转有符号值及字节次数，每次最多补一份。DS1和恢复入口保存ISRESURRECT，临时陷阱火焰设置位2且小火焰不得越过源房间X边界。完整InteractType／DropItemCode、跨类型压缩次序及所有任务初始化仍未完成，不认证完整物件恢复。构建覆盖见运行包记录，完整运行行为尚未认证。
+物件休眠按SaveMonsters／ISRESURRECT、Restore／RestoreVirgins及bSparkChest位2判定，非循环OPERATING按Mode2转OPENED；恢复重新分配GUID并运行真实初始化，再按原SubClass位1／位32及保存帧分派祭坛、井和普通物件，分别恢复类型／期限、次数／补充事件或箱锁／陷阱／闪光字节，重绑既有预设及任务引用。井水帧差除法保留无符号32位运算后转有符号值及字节次数，每次最多补一份。DS1和恢复入口保存ISRESURRECT，临时陷阱火焰设置位2且小火焰不得越过源房间X边界。完整InteractType／DropItemCode、跨类型压缩次序及所有任务初始化仍未完成。
 
 Init11／12按原关卡分支准备目的地字节，普通物件休眠保留并经原指派包输出。第五幕关卡111／112／117的Init12安装下一帧DELAYEDPORTAL：复用源门GUID，以原链接寻位冻结另一端坐标，经真实物件准入分配另一端GUID和单位子流，旅行域登记配对并保留两端房间。内容等待不重掷已确定位置，原寻位失败移除源门；物件系统保留实际开启模式，门户投影不重复指派。链接寻位失败再次执行TileInfo11搜索时，保留原坐标及后备搜索返回的独立房间；后备也失败则使用首个房间。原生静态物件可显式登记该房间，门户保留逻辑消费同一归属。泰瑞尔开返城门入口另执行TileInfo12、步长7的PortalCheck及后续步长5搜索，不由墓墙已打开状态触发；此入口仍沿用虚拟门户载体。跨网格坐标、其他专用门户创建／旅行及全部失败副作用仍未闭合，不能据该分支接通认证全部门户。
 
@@ -84,13 +84,13 @@ Init11／12按原关卡分支准备目的地字节，普通物件休眠保留并
 
 活动房间内火焰、裂隙及已安排的箱子陷阱不再附加附近玩家门控；裂隙仅mode0／2重启动画并消费下一次ObjectControl抽签。火焰、尖刺及灵魂周期伤害沿源房间玩家链，以UNITS_GetDistanceToOtherUnit的尺寸整数距离筛选，单位流按该链序消费；命中参数和伤害乘法保留32位语义。周期伤害逐目标同步排空后再读取下一目标资源，背压保留目标游标、已接受随机和承伤阶段。原OBJEVAL调用ExecuteEvents参数0，按近战承伤事件处理；承伤准备、事件和扣血分阶段保留。完整对象来源回调、原交互射线、怪物目标分支及全部事件交错仍未闭合，不能据该路径接通认证全部环境伤害。
 
-Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对象进入OPERATING，分别安装FrameCnt1+1的ENDANIM和27帧MONUMOD事件。蜘蛛森林使用当前MPQ的vilechild1，沿原普通出生接口尝试一次，不执行邪恶瓮的随机寻位、精英升级或额外重试。封印OperateFn54–56先按原偏移、大小3、半径13／14／15及0x3f11放置掩码寻位，再创建真实class131；27帧回调用实际余光坐标请求对应固定首领，放置失败每10帧重试。出生背压保留当前事件和随机游标，不提前标记完成。动态对象准入先验证真实房间，在候选中分配GUID及初始化随机，成功后发布ID／随机状态，并由碰撞发布同步安装事件。封印自身按原OperateFn52进入OPERATING，FrameCnt1×2结束；余光创建设置原HASPORTAL保留语义，ToggleHasPortalFlag(0)设置、(1)清除。跨区域寻位、完整失败／休眠恢复及原事件队列交错仍未认证，构建覆盖见运行包记录，完整运行行为尚未认证。
+Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对象进入OPERATING，分别安装FrameCnt1+1的ENDANIM和27帧MONUMOD事件。蜘蛛森林使用当前MPQ的vilechild1，沿原普通出生接口尝试一次，不执行邪恶瓮的随机寻位、精英升级或额外重试。封印OperateFn54–56先按原偏移、大小3、半径13／14／15及0x3f11放置掩码寻位，再创建真实class131；27帧回调用实际余光坐标请求对应固定首领，放置失败每10帧重试。出生背压保留当前事件和随机游标，不提前标记完成。动态对象准入先验证真实房间，在候选中分配GUID及初始化随机，成功后发布ID／随机状态，并由碰撞发布同步安装事件。封印自身按原OperateFn52进入OPERATING，FrameCnt1×2结束；余光创建设置原HASPORTAL保留语义，ToggleHasPortalFlag(0)设置、(1)清除。跨区域寻位、完整失败／休眠恢复及原事件队列交错仍有缺口。
 
-塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍未认证，构建覆盖见运行包记录，完整运行行为尚未认证。
+塔楼不再运行GUID种子奖励计时器：Init47登记最多八只箱子，女伯爵死亡请求真实trap-firebolt死亡模式控制器，再按登记顺序创建towerchestspawner。Do18通过有序提交执行无玩家开箱、飞弹流坐标抽签、GetFreeSpaceEx和createNativeGold，Hit33释放房间保留；掉落准备期间暂停同帧。三次魔法TC与四瓶药水复用专用箱子分支，金币不借玩家资格、MF／GF或二次落点搜索。完整原任务资格、控制怪物初始化及队列交错仍有缺口。
 
 2026-10-10源码对照master单机的session_objects／session_shrines、本地D2MOO及当前MPQ补全野外路径。hosting从Objects／Shrines／MonStats／MonLvl／Missiles／Skills、MonSeq与AnimData准备规则；server的objects、monsters、missiles、combat、effects和loot只消费准备值。客户端继续接收原物件、状态、怪物与弹体包，界面不结算伤害。
 
-限时祭坛6–15的状态程序现集中于server/systems/objects/shrines.cpp，按当前MPQ准备参数，使用公共诅咒期限和原始状态列表。主属性在投递前分配，同类型复用保留主项；战斗祭坛随后写tohit，耐力祭坛随后写stamina及staminarecoverybonus。技能祭坛以真实shrine_skill状态经公共技能等级入口增加原算法的2级，不伪造item_allskills或使用Arg0替代；申请和移除各保留原被动刷新，特殊移除保留二次刷新。耐力祭坛先恢复现有上限，再投递列表；撤销时先传播属性，再执行独立耐力恢复回调。人物当前资源与派生来源分开，列表stamina差值由资源轨迹消费。依据D2MOO ObjMode的CombatBoost／SkillBoost／Stamina和D2Common技能等级入口。此迁移已纳入前序Windows Release构建，技能／防御／耐力祭坛的列出路径有有限Single Player观察，实例帧队列包另观察了防御祭坛准确到期与带临时状态退出重载，见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；全部1.13c专用回调、完整同帧排序及组合仍未认证。
+限时祭坛6–15的状态程序现集中于server/systems/objects/shrines.cpp，按当前MPQ准备参数，使用公共诅咒期限和原始状态列表。主属性在投递前分配，同类型复用保留主项；战斗祭坛随后写tohit，耐力祭坛随后写stamina及staminarecoverybonus。技能祭坛以真实shrine_skill状态经公共技能等级入口增加原算法的2级，不伪造item_allskills或使用Arg0替代；申请和移除各保留原被动刷新，特殊移除保留二次刷新。耐力祭坛先恢复现有上限，再投递列表；撤销时先传播属性，再执行独立耐力恢复回调。人物当前资源与派生来源分开，列表stamina差值由资源轨迹消费。依据D2MOO ObjMode的CombatBoost／SkillBoost／Stamina和D2Common技能等级入口；全部1.13c专用回调、完整同帧排序及组合仍有缺口。
 
 | 路径 | 当前实现 |
 | --- | --- |
@@ -113,40 +113,21 @@ Init59按Objects::VileDogAfterglow及Quests::ObjectEvents接入：仅中立对�
 
 当前MPQ箭陷阱245／246的ServerSubMissile1为空，保留其原弹体与CltDo3视觉子弹体，不根据客户端毒烟图自造服务端毒伤尾迹。陷阱连锁闪电使用原93弹体的后继目标与次数；女巫玩家技能的范围仍由技能专题维护。
 
-当前2026-10-16包已实机检查鲜血荒地自然class140容器及洞穴class54尸体：正常开启动画／结束、掉落／拾取、模式与MPQ碰撞；修复异步掉落使用第0帧而被再生计时器拒绝的问题。包身份、截图及有限边界统一见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
+异步掉落使用真实当前帧，避免以第0帧安装时被再生计时器拒绝。全部祭坛／陷阱变体、三难度与五幕自然生成、概率分布、满队列与争用及逐帧／像素表现仍需原版对照。
 
-## 历史有限冒烟（2026-10-10）
-
-2026-10-10在networking本批源码上完成Windows Release客户端／独立服务端构建及两包更新。用`dist/current/d2x.exe`、本地`assets/mpq2`、独立一级女巫角色执行Single Player；管理命令只准备原物件／怪物／物品条件，操作与拾取通过现有客户端原请求。暂停／单步观察25Hz状态。末次修改将新星方向数从16修正为D2MOO原64枚，并用当前包复验新星及爆炸桶连锁；其余覆盖在同批此前构建／包观察，下表区分范围。证据保留于忽略目录`artifacts/objects-complete-20261010/`，未新增测试脚本／用例／程序。
-
-| 覆盖 | 实际结果 |
-| --- | --- |
-| 最终包：新星陷阱 | 原trap-nova控制器释放64枚678，人物生命40→34.921875，经验16不变；`final-nova-first.json` |
-| 最终包：爆炸桶连锁 | 正常0x13同时引爆相距两格的两只class11，均进入mode1；补满生命后降至30.203125，经验16不变；`final-barrel-chain.json` |
-| 本批前一包：喷火雕像 | 真实turret1／class348执行原序列，释放三枚283火球；不是沉沦魔替身 |
-| 本批前一包：毒素祭坛 | 原22掉出七瓶gpm并释放六枚48毒球；落地生成96枚223毒云 |
-| 本批前一包：门户祭坛 | owner0公共蓝门经正常0x13完成邪恶洞穴→营地→邪恶洞穴往返 |
-| 本批前一包：邪恶瓮 | class466打开并掉落后，生成本区域zombie1精英及六名所属随从，ownerSpawnKey指向该瓮组 |
-| 本批前一包：宝石与保存 | 背包gcw消耗一次、地面gfw拾取；save→quit→新进程--load后gfw仍在背包、旧gcw不存在，经验16保留，效果／弹体／门户为空 |
-| 构建修正期间：代表祭坛 | 技能祭坛state134；空背包宝石分支及gcw→gfw；火焰祭坛生命40→20并发16枚62；爆炸祭坛掉九瓶opm及六枚45；怪物祭坛同GUID普通怪物升Unique并回满，只传播真实所属随从 |
-| 构建修正期间：爆炸与周期物件 | 相邻class11连锁模式变化；修正射线后爆炸桶生命40→37.3867，经验不变；class250结算物理／火焰；class196警告后释放地刺，class162周期火焰生命40→25.515625 |
-| 构建修正期间：代表陷阱与井 | class5陷阱2打开后生成原class326火弹控制器、676命中并正常退场；原class329释放16枚677毒云并施加state2；井恢复生命并消耗一份，持续站在毒云中会立即重新中毒。原火焰／箱子画面留有截图 |
-
-本批前一包客户端SHA256为`716405E400D05EFEC3EBCF3A0F7308F9632F9B8259BCB609AEBA0193CE70D111`，末次包身份见基线。本批复验修正了爆炸桶射线判断、雕像MonSeq事件4、新星64方向及拥挤地面掉落队列阻塞。早期毒素祭坛掉落阻塞与无路靠近样本仍保留，不能把管理换区／定位当成寻路通过。未逐项运行全部祭坛／陷阱变体、三难度及五幕自然生成，未验证随机概率、满队列／争用、长期稳定性、Linux或独立服务端后端互通；按用户要求未执行联机测试。精确原版逐帧／像素仍未认证。
-
-井水与NPC治疗的宠物状态撤销开始使用同一MonsterResourceTrace候选：恢复生命与撤出curable／poison／freeze保留各原调用的先后，列表移除回调、生命上限和事实随人物治疗一次接受后一起发布。NPC治疗覆盖当前拥有的已实现召唤及佣兵，保留实际接收区域；未受伤且无状态的宠物不制造恢复音效。依据ObjMode::OBJMODE_PetIterate_Heal、SUnitNpc::HealPlayer／PetIterate_Heal；完整PlayerPets链顺序、死亡模式和未实现职业仍由伙伴／事件阶段维护，有限运行范围见构建指南。
+井水与NPC治疗的宠物状态撤销使用同一MonsterResourceTrace候选：恢复生命与撤出curable／poison／freeze保留各原调用的先后，列表移除回调、生命上限和事实随人物治疗一次接受后一起发布。NPC治疗覆盖当前拥有的已实现召唤及佣兵，保留实际接收区域；未受伤且无状态的宠物不制造恢复音效。依据ObjMode::OBJMODE_PetIterate_Heal、SUnitNpc::HealPlayer／PetIterate_Heal；完整PlayerPets链顺序、死亡模式和未实现职业仍由伙伴／事件阶段维护。
 
 ## 自研任务物件
 
-树OperateFn12、石柱9、牢笼10、古书6、马勒斯21及塔箱InitFn47均从当前MPQ准备。objects管理模式／碰撞／时钟，通过quests、travel和loot窄入口提交实际任务物品、资格、门户及掉落；玩法不读取MPQ。原DS1 TileInfo11可编码为style30／sequence11，不只扫描style33。完成游戏的牢笼按原SPECIAL1（mode5）恢复，不能套普通宝箱mode2。具体范围及原交互冒烟只维护在[第一幕任务](../quests/ACT1.md)。第二幕祭坛／箱子／日志／插杖／墓墙与后三幕祭坛／宝珠／熔炉／封印／冻结安雅／山顶机关已接，具体操作、恢复例外及缺口见[第二幕](../quests/ACT2.md)与[第三至第五幕](../quests/ACT3_5.md)。野外机关见上节；完整剧情、房间生命周期及全部变体不据有限验证宣称与原版一致。
+树OperateFn12、石柱9、牢笼10、古书6、马勒斯21及塔箱InitFn47均从当前MPQ准备。objects管理模式／碰撞／时钟，通过quests、travel和loot窄入口提交实际任务物品、资格、门户及掉落；玩法不读取MPQ。原DS1 TileInfo11可编码为style30／sequence11，不只扫描style33。完成游戏的牢笼按原SPECIAL1（mode5）恢复，不能套普通宝箱mode2。具体规则及缺口只维护在[第一幕任务](../quests/ACT1.md)。第二幕祭坛／箱子／日志／插杖／墓墙与后三幕祭坛／宝珠／熔炉／封印／冻结安雅／山顶机关已接，具体操作、恢复例外及缺口见[第二幕](../quests/ACT2.md)与[第三至第五幕](../quests/ACT3_5.md)。完整剧情、房间生命周期及全部变体仍未对齐。
 
-后续源码把塔书、石柱、牢笼、树和马勒斯架的已核实初始模式放到公共物件准入候选，动态／预设／恢复在首次碰撞发布前应用。Init13在物件成功发布后登记实际class61隐形控制物件，恢复重绑GUID；石柱事务接受后同步更新其模式，五次操作对应SPECIAL4／mode6。门的飞弹位置来自已操作Lambda石柱GUID，缺失时按原相邻房间及单位链查找，不再借用蓝图坐标。通用任务对象链、石柱初始化的原任务计时器、卷轴消费及全部任务分支仍未闭合；构建覆盖见运行包记录，完整运行行为尚未认证。
+塔书、石柱、牢笼、树和马勒斯架的已核实初始模式位于公共物件准入候选，动态／预设／恢复在首次碰撞发布前应用。Init13在物件成功发布后登记实际class61隐形控制物件，恢复重绑GUID；石柱事务接受后同步更新其模式，五次操作对应SPECIAL4／mode6。门的飞弹位置来自已操作Lambda石柱GUID，缺失时按原相邻房间及单位链查找，不再借用蓝图坐标。通用任务对象链、石柱初始化的原任务计时器、卷轴消费及全部任务分支仍未闭合。
 
-Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不创建隐藏Actor，不提前消耗出生种子。内容准备不再替该标记选最近可走点；运行时执行任务专用矩形寻位，再按5、最多二十次10、最后15的出生搜索顺序尝试，实际成功才创建凯恩，搜索失败仍保留房间随机消费。完整失败后冻结尝试，标记、任务进城请求或新玩家进入城镇时才允许重试，不在每帧持续推进随机；容量阻塞不标记尝试完成。零售1.13c D2Game的Init54入口6FC86320、出生入口6FC860D0及任务寻位6FC54130确认上述顺序、边界修正、半径100及Y比较房间右边界的原分支。当前仍使用预分配NPC身份；全部任务位／事件触发、原GUID分配和NPC初始AI仍未闭合，不能认证完整凯恩出生。构建覆盖见运行包记录，完整运行行为尚未认证。
+Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不创建隐藏Actor，不提前消耗出生种子。内容准备不再替该标记选最近可走点；运行时执行任务专用矩形寻位，再按5、最多二十次10、最后15的出生搜索顺序尝试，实际成功才创建凯恩，搜索失败仍保留房间随机消费。完整失败后冻结尝试，标记、任务进城请求或新玩家进入城镇时才允许重试，不在每帧持续推进随机；容量阻塞不标记尝试完成。零售1.13c D2Game的Init54入口6FC86320、出生入口6FC860D0及任务寻位6FC54130确认上述顺序、边界修正、半径100及Y比较房间右边界的原分支。当前仍使用预分配NPC身份；全部任务位／事件触发、原GUID分配和NPC初始AI仍未闭合。
 
 ## 自研传送点
 
-2026-10-09源码核对旧master单机交互、当前MPQ与本地D2MOO后补齐下列规则；已在历史第二幕任务包构建／打包，后续包继续包含。新增传送点边界未逐项运行认证，包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，有限证据见[第二幕任务](../quests/ACT2.md#有限运行证据)。
+下列规则来自当前MPQ、本地D2MOO及旧master单机交互范围核对；第二幕旅行与任务边界见[第二幕任务](../quests/ACT2.md)。完整多人和特殊旅行仍有缺口。
 
 | 路径 | 当前源码规则与分工 |
 | --- | --- |
@@ -163,7 +144,7 @@ Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不�
 
 物件入场和进入视野统一由publishObjects使用权威初始化后的模式指派；nativeAreaWarps仅指派warp，不再从AreaMetadata发模式0的第二份物件。这样城镇InitFn17／mode2会以真实51模式首次送达，野外中性WP及开门／箱子／神坛也使用同一物件状态出口。旧WP模式1→2的ENDANIM仍静默衔接，不能用额外默认点亮补包掩盖入场基线错误。
 
-23:38用户诊断中，城镇WP GUID51／class119的三次入场51均为mode0，后续无相应模式更新；同局只读宿主快照为operation23／mode2。原因是入场先发虚构中性基线并记peer.objects revision0，后续WP特例只发送mode1，跳过已有的mode2。源码现已删除中性物件入场路径与其缓存登记，按D2MOO ObjRgn::OBJECTS_InitFunction17_Waypoint的城镇OBJMODE_OPENED初始化值指派；个人解锁位、WP菜单和旅行资格没有改变。证据在`artifacts/akara-waypoint-20261012`及`artifacts/diagnostics/20261012-233827-395a3c2d`；2026-10-13 Release单机入场51已为mode2，远处单击WP得到原63菜单，Rogue Encampment为unlocked；证据在artifacts/path-smoke-20261013-002214/delivery-final。新房间中立物件首次入场无模式变化时也刷新权威碰撞，原SUNIT_Add／SUNIT_Restore按HasCollision[当前模式]建立占位；原遗漏导致Objects[37]／GUID52、54、64只在客户端有0x0400障碍。
+城镇传送点按D2MOO ObjRgn::OBJECTS_InitFunction17_Waypoint的OBJMODE_OPENED初始化值指派，不能先发虚构中性基线再只补mode1。个人解锁位、菜单和旅行资格独立处理。新房间中立物件首次入场即使没有模式变化也刷新权威碰撞；原SUNIT_Add／SUNIT_Restore按HasCollision[当前模式]建立占位，避免只有客户端保留障碍。
 
 依据：D2Game ObjMode::OperateFunction23／WAYPOINT、ObjRgn::InitFunction17、PlrMsg::Rcv0x49、SUnitNpc::WARRIV1；D2Common D2Waypoints、DrlgDrlgWarp::GetWaypointRoomExFromLevel、D2Dungeon::FindActSpawnLocationEx及D2Collision::GetFreeCoordinatesImpl。当前MPQ为39个传送点及16种OperateFn23物件；容量112是原布局，不代表新增传送点或解锁后续幕任务。
 
@@ -171,13 +152,13 @@ Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不�
 
 ## 限制与证据
 
-宝箱上锁／钥匙、特殊箱掉落／陷阱、全部神坛效果、特殊任务物件及五幕全部变体未逐项实机认证。隐藏控制器、怪物陷阱和火焰物件使用真实原身份，不把中立控制物件替换成敌人。0x51不带原服sparklyChest标志，未核实的独立闪光层暂缓；原箱本体／特殊箱音仍沿当前MPQ。自研实现与本批有限冒烟见上文，原服历史证据见下方。旧session的直接grant-shrine／宝箱生成入口已删除；当前同名管理命令只向自研objects准入真实物件，效果须原0x13操作触发。保留world/chest与content掉落资料供内容准备，不作为客户端结算器。
+宝箱上锁／钥匙、特殊箱掉落／陷阱、全部神坛效果、特殊任务物件及五幕全部变体未逐项对齐。隐藏控制器、怪物陷阱和火焰物件使用真实原身份，不把中立控制物件替换成敌人。0x51不带原服sparklyChest标志，未核实的独立闪光层暂缓；原箱本体／特殊箱音仍沿当前MPQ。旧session的直接grant-shrine／宝箱生成入口已删除；当前同名管理命令只向自研objects准入真实物件，效果须原0x13操作触发。保留world/chest与content掉落资料供内容准备，不作为客户端结算器。
 
 本地D2MOO Objects／ObjMode／ObjRgn、ItemMode、Items、D2Collision及当前MPQ核对原语义。有限法力神坛、门／传送点／门户观察见[联网记录](../../modules/NETWORK.md#既有有限证据)，地形与生成限制见[地图](MAPS.md)。
 
-## 此前原服包与手动观察
+## 原服手动观察方法
 
-2026-10-07本批已完成Windows Release构建和dist/current更新，包身份及有限运行证据见[当前交付](../../modules/NETWORK.md#当前批交付)。已确认包内程序双账号同房、营地及Cold Plains地图就绪；实际箱子、踢桶及随机陷阱未操作验收，依用户要求交由用户继续观察。
+原服祭坛模式、状态与回复参考见[联网](../../modules/NETWORK.md#原服物件与交易观察)。以下为用户授权运行后的观察方法；不作为已执行记录。
 
 1. 从运行包Play.cmd启动，正常登录建房。先单客户端检查普通箱子、棺材、尸体／石堆、木桶、罐子：左键点击，观察靠近、动作、打开／碎裂及原服实际掉落。停留一秒再观察本体，避免只看中间帧；应保留原打开图或残骸，不持续播放破碎动画。破坏后能否走过按该物件MPQ规则判断，不能要求所有箱子都可穿过。
 2. 普通木桶观察原踢击及破碎；爆炸木桶观察爆炸、附近连锁和真实生命变化。上锁箱子使用女巫分别在没有钥匙／带钥匙时操作，观察Locked Chest名称、缺钥匙提示、钥匙消耗及实际打开；刺客有原免钥匙规则，不适合作此观察。

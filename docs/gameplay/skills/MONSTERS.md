@@ -1,6 +1,6 @@
 # 怪物、首领与精英技能
 
-更新：2026-10-18。本页负责非玩家敌对单位的技能入口与覆盖台账。身份、AI、人口、动作、数据契约及有限运行证据由[怪物目录](../monsters/README.md)链接负责页维护。第三至第五幕按[逐项接入](../monsters/ACT3.md#逐项接入)补齐，未完成项目不计为覆盖。构建与实际运行范围只见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，下表描述源码入口，不认证全部行为。
+更新：2026-10-18。本页负责非玩家敌对单位的技能入口与覆盖台账。身份、AI、人口、动作、数据契约、原版依据及缺口由[怪物目录](../monsters/README.md)链接负责页维护。第三至第五幕按[逐项接入](../monsters/ACT3.md#逐项接入)补齐，未完成项目不计为覆盖；下表描述当前源码入口，完整行为仍须按原程序逐项对齐。
 
 ## 当前执行家族
 
@@ -8,7 +8,7 @@
 | --- | --- |
 | 沉沦魔萨满 | 本族尸体复活、按BaseId链选择火弹、普通近战；不开放任意尸体复活 |
 | 鸟巢／GenericSpawner | 原序列出生、数量／间隔及耗尽死亡；Nest的St49保存实际类型／位置／模式并预约，Do91释放预约后创建无经验／掉落子体。GenericSpawner读取区域已选类型，但有效MonStats.spawn优先，当前evilhut使用imp1；预检与出生偏移分别核对 |
-| 蜘蛛 | arach1至7的SpiderLay轨迹、蛛网／地面减速；生命周期与效果分开持有；本轮六变体的有限实机范围见第三幕 |
+| 蜘蛛 | arach1至7的SpiderLay轨迹、蛛网／地面减速；生命周期与效果分开持有，变体接入及缺口见第三幕 |
 | 沙地跳跃者 | Leap（132）的怪物St40／Do77分支：起手原A1接触、落点／飞行和落地后退，UNINTERRUPTABLE／SKILL_MOVE与原A5结束同步；不追加玩家Leap范围击退 |
 | 骨Fetish | MonStats.deathDmg的死亡模式回调：原飞弹117承载物理范围伤害，原表等级生命／Ladder、难度倍率及单位随机；与火强化死亡效果分开 |
 | Fetish萨满 | FetishInferno（178）沿原St53／Do95：A1事件2、INFERNO起止、calc3续放、MonStats2收尾；原飞弹144以自身行伤害和实际等级执行；Resurrect2沿原序列复活。FetishAura不增加AI施放分支；客户端Clt54连续发射源码与待验边界见怪物台账74项，萨满死亡重建另见第三幕 |
@@ -39,10 +39,10 @@
 | Madawc | Shout复用公共战吼状态和飞弹命中程序，新增野生怪物Do68入口，64个环形原生飞弹先于自身状态发布；未做本项实机，见[台账75项](../monsters/ACT3.md#逐项接入) |
 | Baal Monster Spawn | 原550飞弹SrvHit54读取拥有者当前Param1后走公共任务SuperUnique出生，参数映射动态读取当前MPQ；王座主AI已连接，见[台账94及97项](../monsters/ACT3.md#逐项接入) |
 | Baal Corpse Explode | Do141沿原0x3002尸体查询逐具调用公共Do55，保留目标绑定与逐具背压；当前MPQ的CltSt82在1.13c越界而不调用。王座AI入口见[台账93及97项](../monsters/ACT3.md#逐项接入) |
-| Baal Nova／Inferno／Cold Missiles | 分别沿Do22、St53／Do95及Do139；原S3／S1／A1事件、Clt25／54／81和Do139首弹后置参数见[台账82至85项](../monsters/ACT3.md#逐项接入)。仅源码与相关编译，普通Baal／clone专用AI见92项，正常战斗未验收 |
-| Baal Taunt | 原284沿Do28目标放置；控制飞弹SrvDo34的剩余帧数及CltSt46／Do56／Hit62／63已接，真实非敌对控制Actor使用Fn136；源码／相关编译范围见[台账98至100项](../monsters/ACT3.md#逐项接入)，完整运行未验收 |
-| Catapult五种弹药 | Spotter按Fn126沿A1调用公共Do28，CltSt47目标锚点及原图形轨迹见[台账103至105项](../monsters/ACT3.md#逐项接入)；CltDo43发射端附着表现及有限实机见122项；CltHit46／47／48／50源码见114至117项（两包构建通过，专项运行未验收），未做完整运行验收 |
-| HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；落地CltHit36／起始CltSt44源码见112至113项，两包构建通过，专项运行未验收 |
+| Baal Nova／Inferno／Cold Missiles | 分别沿Do22、St53／Do95及Do139；原S3／S1／A1事件、Clt25／54／81和Do139首弹后置参数见[台账82至85项](../monsters/ACT3.md#逐项接入)。普通Baal／clone专用AI见92项，完整正常战斗仍待对齐 |
+| Baal Taunt | 原284沿Do28目标放置；控制飞弹SrvDo34的剩余帧数及CltSt46／Do56／Hit62／63已接，真实非敌对控制Actor使用Fn136；源码及缺口见[台账98至100项](../monsters/ACT3.md#逐项接入)，完整行为仍待对齐 |
+| Catapult五种弹药 | Spotter按Fn126沿A1调用公共Do28，CltSt47目标锚点及原图形轨迹见[台账103至105项](../monsters/ACT3.md#逐项接入)；CltDo43发射端附着表现见122项，CltHit46／47／48／50源码见114至117项，完整弹药组合仍待对齐 |
+| HellMeteor | Fn033／原213技能和坐标Do28服务端见[台账101项](../monsters/ACT3.md#逐项接入)；落地CltHit36／起始CltSt44源码见112至113项，完整行为仍待对齐 |
 | Submerge／Emerge | St51／52保留原目标资格开关；Do94使用MonSeq显示零帧对应的序列位置停帧，支持触手／触手头倒放；不把触手下潜改成FrogDemon的额外脱离碰撞流程。六种水域身份及Fn056／057见[108项](../monsters/ACT3.md#逐项接入)，尚无该项实机结论 |
 | Baal Tentacle | Do140逐次抽数、原房间单点出生及初始A1／Idle15已接源码；普通Baal／UberBaal与clone的BaseId分支分别保留。普通Baal／clone的AI见92项，出生／恢复实机尚未完成，见[台账80至81项](../monsters/ACT3.md#逐项接入) |
 | Nihlathak | 五技能及Fn128接入见[台账74项](../monsters/ACT3.md#逐项接入)；Do55复用原尸体资格及公共尸爆，Do129接无拥有者／无单位目标的坐标传送，St62保存实际出生类型和模式。共用Clt54按客户端25Hz发射两束；本批尚无正常战斗实机 |
@@ -88,7 +88,7 @@
 
 普通A2、骷髅法师元素弹、投矛／投瓶从MissA1／A2准备；绿色瓶子按原八方向产生rancidgascloud及SubLoop时长，橙瓶当前没有有效Srv爆炸半径，不自造范围伤害。甲虫GH／死亡的buglightning与虫后死亡的queenpoisoncloud各为四个基方向×两条ChargedBolt路径；固有计时不覆盖精英电／冰／火词缀。
 
-本批源码已接移动序列回绕、飞行／栖息／集群AI，技能声明与AI启用条件分开保留。Windows包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，历史有限冒烟见[第二幕](../monsters/ACT2.md#有限运行证据)，不据本表宣称三难度完整战斗验收。
+当前源码已接移动序列回绕、飞行／栖息／集群AI，技能声明与AI启用条件分开保留。逐身份实现、原版依据和缺口见[第二幕](../monsters/ACT2.md)，三难度完整战斗仍待对齐。
 
 ## 代码与归档
 
@@ -104,4 +104,4 @@ MonBow（339）／MonFireArrow（340）／MonExplodingArrow（342）：`cr_arche
 
 已有公共方向／路径计算及原Clt／Srv差异沿[技能COMMON](COMMON.md)和[怪物COMMON](../monsters/COMMON.md)维护。怪物调用职业技能时链接职业页，怪物专用程序才在本页登记算法；与物件、任务死亡演出、伙伴能力的分类见[目录](README.md)。
 
-后续逐项补当前MPQ技能ID／原名、实际使用槽与AI条件、Clt／Srv程序、共享函数、执行和证据。当前表为代码执行家族摘要，不是全部非玩家Skills行清单；未归档行先列入[SPECIAL](SPECIAL.md)。历史代表路径有限V2及未认证分支以[第一幕证据](../monsters/ACT1.md#有限运行证据)为准。
+后续逐项补当前MPQ技能ID／原名、实际使用槽与AI条件、Clt／Srv程序、共享函数、实际执行、原版依据及明确缺口。当前表为代码执行家族摘要，不是全部非玩家Skills行清单；未归档行先列入[SPECIAL](SPECIAL.md)。第一幕类型及程序边界见[第一幕](../monsters/ACT1.md)，不以自研运行记录提升完成度。

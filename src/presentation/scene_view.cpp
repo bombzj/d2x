@@ -121,7 +121,7 @@ ChatIntent SceneView::handleChat(const FrameInput &input) {
     chat_.setLogOpen(view_.messageLogOpen);
     const bool canOpen = !view_.playerTradeBlocking && !view_.gameMenuOpen && !view_.help && !view_.npcMenu && !view_.shopOpen &&
         !view_.hireListOpen && view_.dialogue.empty() && !view_.travelMenu && !view_.inventory.drag &&
-        !view_.inventory.split && !view_.inventory.goldDialog && !view_.inventory.identify;
+        !view_.inventory.goldDialog && !view_.inventory.identify;
     auto intent = chat_.handle(input, canOpen);
     view_.chatInputOpen = chat_.inputOpen(); view_.messageLogOpen = chat_.logOpen();
     return intent;
@@ -142,7 +142,7 @@ void SceneView::updateParty(const OnlineSocialView &social, uint32_t self, uint6
         });
 }
 PartyIntent SceneView::handleParty(const FrameInput &input) {
-    if (view_.blocksInput() || view_.inventory.drag || view_.inventory.split ||
+    if (view_.blocksInput() || view_.inventory.drag ||
         view_.inventory.goldDialog || view_.inventory.identify) {
         bool hidden = false;
         party_.handle(input, hidden);

@@ -10,7 +10,7 @@
 
 loot在死亡奖励结算时捕获真实怪物身份、rank、受益角色及MF／GF，首次准备借用真实怪物随机流；Find Item使用成功搜索后的尸体流。物件使用自身流，装备架借用AreaStore房间随机租约。首次生成按请求入队序号进行，每件预留实例双种子，来源流最终状态经复验发布。准备完成即冻结批次并登记暗金生成限制，容量／落点背压只重试安装，不重新读取暗金集合或重掷属性；零经验死亡也可提交准备。钥匙与落地仍沿原有事务一起提交，生成记账与最终落地分开。
 
-原NoDrop产生空批次时正常完成，不申请零条事件容量。野蛮人尸体搜索等待同一来源的原死亡掉落结算；Find Potion按原幕／难度药水表生成，Find Item沿真实怪物TC并在各层忽略NoDrop，成功或失败搜索均提交消耗与尸体禁止重用。规则和代表证据见[野蛮人](../skills/BARBARIAN.md)。
+原NoDrop产生空批次时正常完成，不申请零条事件容量。野蛮人尸体搜索等待同一来源的原死亡掉落结算；Find Potion按原幕／难度药水表生成，Find Item沿真实怪物TC并在各层忽略NoDrop，成功或失败搜索均提交消耗与尸体禁止重用。规则、原版依据和缺口见[野蛮人](../skills/BARBARIAN.md)。
 
 普通箱桶、可搜寻物件与装备架有各自来源准备；钥匙、物件状态和掉落安装须同一提交边界成功。任务固定物品或奖励不靠普通TC替代，门／宝箱／物件机关仍由[OBJECTS](../world/OBJECTS.md)持有。
 
@@ -18,10 +18,10 @@ loot在死亡奖励结算时捕获真实怪物身份、rank、受益角色及MF�
 
 ## 待补范围与台账
 
-2026-10-15源码按D2MOO DropTC将Picks=0作为一次选择；真实怪物身份hellbovine沿hosting/loot_content传入特殊品质选择，允许Sets原ID29的奶牛专属候选，其他来源仍排除。词缀概率修正及1.13c静态依据见[AFFIXES](AFFIXES.md)。这些改动已纳入当前Release构建，尚未逐项运行认证自然来源，不表示全部来源或随机序列已与原版一致。
+当前源码按D2MOO DropTC将Picks=0作为一次选择；真实怪物身份hellbovine沿hosting/loot_content传入特殊品质选择，允许Sets原ID29的奶牛专属候选，其他来源仍排除。词缀概率修正及1.13c静态依据见[AFFIXES](AFFIXES.md)；全部自然来源和随机序列仍待原版对齐。
 
 后续源码支持TC直接指定UniqueItems／SetItems名称（含Annihilus），合法指定记录不再额外抽签；恢复负MF分支。装备架按原表行和rarity减原level-to-act值筛选，武器六次非金属尝试后保留最后候选，品质改用独立CreateItemEx的Unique／Rare／Set顺序，不套TC的128倍／MF公式。帧后准备与生成后落点安装仍不同于原版同帧逐件出生，完整限制见[GENERATION](GENERATION.md)。
 
 每个TC／来源登记区域／难度、等级、rank／固定身份、任务资格、人数／队伍、MF／GF、随机与输出／证据。完整近队友NoDrop、组队经验／归属、全部首杀／任务／特殊奖励、特殊箱／陷阱来源及全概率组合尚未完成或认证。来源未准备明确暂缓，不自行填写概率。
 
-当前有限自然掉落／箱桶／TC代表路径见[EVIDENCE](EVIDENCE.md)；资源工具报告和管理员item-spawn不认证自然掉落。数据／原函数入口见[DATA](DATA.md)和[参考设计](../../architecture/REFERENCE_DESIGN.md)。
+数据／原函数入口见[DATA](DATA.md)和[参考设计](../../architecture/REFERENCE_DESIGN.md)；资源工具报告和管理员item-spawn不能作为原版自然掉落的依据。

@@ -45,10 +45,12 @@ std::vector<FrameInput> parseDebugInput(const nlohmann::json &request) {
         else if (key == "message-log" || key == "m") frame.messageLog = true;
         else if (key == "home") frame.entryHome = frame.automapCenter = true;
         else if (key == "end") frame.entryEnd = true;
+        else if (key == "select-all") frame.entrySelectAll = true;
         else if (key == "delete") frame.entryDelete = true;
         else if (key == "page-up") frame.pageDelta = -1;
         else if (key == "page-down") frame.pageDelta = 1;
         else if (key == "tab") frame.tab = frame.automap = true;
+        else if (key == "belt" || key == "expand-belt" || key == "~") frame.expandBelt = true;
         else if (key == "inventory") frame.inventory = true;
         else if (key == "character") frame.character = true;
         else if (key == "quests") frame.quests = true;

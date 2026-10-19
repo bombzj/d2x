@@ -50,7 +50,7 @@
 
 ## 明确缺口与后续条件
 
-- 组队资格、物品交付和公共／个人无法完成判定按任务分别接入，详见[任务系统](SYSTEM.md#资格准备与提交)。衣卒尔、议会、迪亚波罗、督军、尼拉塞克使用同房间／近邻；衣卒尔和墨菲斯托另含实际击杀者，尼拉塞克要求安雅已取得资格。2026-10-12已构建，古书全幕奖励、晚到无法完成及保存重入取得[有限TCP证据](SYSTEM.md#有限运行核查)；其余新增分支未专项运行，地图近邻身份、复杂剧情／争用及全部多人边界仍不能宣称完整复刻。
+- 组队资格、物品交付和公共／个人无法完成判定按任务分别接入，详见[任务系统](SYSTEM.md#资格准备与提交)。衣卒尔、议会、迪亚波罗、督军、尼拉塞克使用同房间／近邻；衣卒尔和墨菲斯托另含实际击杀者，尼拉塞克要求安雅已取得资格。地图近邻身份、复杂剧情／争用及全部多人边界仍未完整复刻。
 - 后三幕全量怪物AI／首领程序尚未迁入，替身允许验证任务事件链，不能据此认证正常战斗通关。
 - 牢门保留原身份和静止／不攻击语义，tile生成怪物现已进入公共地图输出；当前战斗／外观数值仍来自已授权替身，不代表原牢门完整数值与演出已迁入。
 - 囚犯目前是中立NPC移动实体，缺少完整可受伤／死亡AI；因此12–14人奖励和最多11人失败不能通过真实伤亡自然发生。人数奖励边界已改为12人可完成，12–13人同档；释放者采用当前附近人物选择，并非原AI完整搜索／循环器。原囚犯蓝门演出也未实现。
@@ -59,20 +59,8 @@
 - 古代人三人专用AI／技能已接；雕像各自20帧QUESTFN、放置失败10帧重试和死亡后任务定时恢复已补源码，原文20002确认后启动，死亡云及89／18事件已接，见[怪物台账75至79项](../monsters/ACT3.md#逐项接入)。重置按任务组撤销实体；原随机词缀筛选与召唤／效果清理的全部边界仍待补。
 - 三难度、原D2GS对照、多人／跨机器、Linux及完整存档异常分支没有本轮运行认证。任务主流程接入不等于P8完整战役验收。
 
-## 依据与运行证据
+## 原版依据与限制
 
 先参考master单机各幕conversation／events／npc、session_quest_rewards、session_later_act_objects、session_prisoners、session_ancients、session_baal，再核对本地D2MOO `QUESTS/ACT3`、`ACT4`、`ACT5`、ObjMode、Quests状态／特殊进度编码与当前MPQ。D2Common记录解释可共享，D2Game权威执行不搬到客户端。来源及共用链见[任务系统](SYSTEM.md)。
 
-2026-10-09全部源码完成后统一Windows Release构建／打包，随后以普通难度84级角色副本通过现有named pipe做有限冒烟；冒烟暴露的问题修复后重新构建并复验。最终`build-14.log`、`package-final.log`和快照位于忽略目录`artifacts/act3-5-quests-20261009`；该历史包EXE SHA256 `9440CD86160F5635C2921F14AA37F2D053B75D91D84383C29C46675D96E8F5E4`，不是[当前运行包](../../development/BUILD_AND_RUN.md#运行包记录)。
-
-| 范围 | 实际结果与代表证据 |
-| --- | --- |
-| 第三幕 | 原书架／Alkor交书加5属性；议会死亡触发雕像／连枷，Meshif／Alkor生命药剂使用加20生命；基德宾祭坛／任务精英／Ormus戒指／Asheara铁狼分别领完；持意志两次破珠、Mephisto死亡与原342门进入第四幕。`tome-rewarded.json`、`bird-potion-fixed.json`、`gidbinn-rewarded.json`、`orb-smashed.json`、`guardian-passage.json` |
-| 第四幕 | Izual死亡与Tyrael加2技能；Hephasto原锤、放石／三次锤击、4宝石及1符文、Cain确认；五封印／三头目触发Diablo，Tyrael566门进入第五幕。`izual-slain.json`、`forge-smashed.json`、`diablo-slain.json`、`harrogath-passage.json` |
-| 第五幕奖励 | Shenk／Larzuk原38／58给帽子2孔；三牢门死亡后15中立囚犯逃离，Qual-Kehk三符文并保留已有铁狼；冻结对象原20131消息、Malah解冻药与抗性卷轴使用、Anya稀有奖励、Nihlathak死亡／原加工给2孔帽子署名Hero。`larzuk-socketed.json`、`rescue-rewarded.json`、`anya-rewarded.json`、`anya-personalized.json` |
-| 古代人与巴尔 | 祭坛生成三古代人／击杀给1.4M经验；新副本用原回城卷轴重置战斗并实际进城；原五波含第二波冰法师、563进入大厅、Baal死亡／Tyrael20175对白／565出口返回109、最终flags72。`ancients-rewarded.json`、`ancients-portal-reset-fixed.json`、`baal-wave-1.json`至`5.json`、`baal-exit.json` |
-| 修复与恢复 | 复验牢门25帧后仍在原位置；最终原v96保存经工具解码和新进程入局，五幕个人记录、343生命／86技能余点／120属性余点、孔数／署名／铁狼恢复；最终ProtocolReady，地图／移动／玩家显示可用，host失败／characterIssues／ignoredPackets／mapErrors／effectLimitations为0或空，stderr为空。`prison-doors-static-before.json`／`after.json`、`final-save-info.txt`、`final-restored.json`、`final-online.json` |
-
-冒烟用管理员换区、补材料、击杀当前原生身份怪物与有界步进准备条件，实际交互／对白／拾取／加工／门户仍走原包；管理员生成敌人不用于目标资格。破珠使用管理员准备的意志，三器官／方块完整链和下水道定时机关未运行认证；安雅红门往返、所有NPC说明位、奖励容量／背压异常、完整三难度及多人未逐一覆盖。基德宾首次等待期间角色被击杀后复活、清理附近敌人再复验，不能把替身或管理条件记为正常通关。
-
-最终Harrogath场景仍报告`unavailableUnits=23`，可渲染单位为6；地图／移动可用及上述空错误列表不能证明全部单位外观已支持。本轮不据此改客户端或认证后三幕完整视觉。
+三器官／方块完整链、下水道定时机关、安雅红门往返、全部NPC说明位、奖励容量／背压异常及完整三难度／多人仍有核对缺口。管理换区、补材料和击杀不能作为正常通关依据；全部城镇单位外观、后三幕剧情与完整视觉仍需原版逐项对照。

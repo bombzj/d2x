@@ -16,6 +16,7 @@ struct InventoryDefinitionView {
     int width = 0, height = 0, beltRows = 0;
     unsigned maxStack = 0, bookCapacity = 0;
     bool beltAllowed = false, opensCube = false, identifySource = false;
+    bool usable = false;
     bool autoBelt = false;
     std::string beltPotionType;
     std::array<bool, size_t(EquipmentSlot::Count)> slots{};
@@ -26,6 +27,11 @@ struct InventorySocketView {
     std::string artKey;
     std::array<int, 2> colorTransform{};
     uint32_t nativeFlags = 0;
+};
+struct InventoryStackView {
+    int fileIndex = 0;
+    std::array<int64_t,6> damage{};
+    bool operator==(const InventoryStackView &) const = default;
 };
 enum class InventoryCellTone { Unknown, Unusable, Usable };
 struct InventoryItemView {
@@ -54,6 +60,7 @@ struct InventoryItemView {
     bool socketContentsKnown = false;
     InventoryCellTone cellTone = InventoryCellTone::Unknown;
     std::array<int, 2> groundColorTransform{};
+    std::optional<InventoryStackView> stack;
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {

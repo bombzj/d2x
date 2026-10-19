@@ -15,12 +15,8 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
     if (player.persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
     if (request.weaponSet && *request.weaponSet != player.persistent.player.weaponSet) return {DomainStatus::Stale, {}};
     detail::Draft draft(player, catalog, rules, characterRules); draft.storage=storage;
-    const auto cubeCarried=std::any_of(player.persistent.inventory.items.begin(),player.persistent.inventory.items.end(),[&](const auto &entry) {
-        const auto *at=std::get_if<ContainerLocation>(&entry.second.location); const auto *def=catalog.find(entry.second.definition);
-        return at && at->container==player.persistent.containers.backpack && def && def->opensCube;
-    });
-    draft.cube=cube && cubeCarried;
-    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (trade && id==trade) || (cube && cubeCarried && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
+    draft.cube=cube;
+    const auto stored = [&](EntityId id) { return id==player.persistent.containers.backpack || (trade && id==trade) || (cube && id==player.persistent.containers.cube) || (storage && id==player.persistent.containers.stash); };
     for (const auto guard : request.equipmentGuards)
         if (!draft.resolve(guard)) return {DomainStatus::Stale, {}};
     const auto &containers = draft.containers();
@@ -57,7 +53,11 @@ DomainResult<Edit> plan(const PlayerState &player, const Request &request, const
             } else if (*origin != cursor || (!stored(target->container) && target->container != containers.belt))
                 return DomainStatus::InvalidRequest;
             if (!draft.fits(item->id, *target)) return DomainStatus::Conflict;
-            return draft.move(item->id, *target);
+            const auto previous=*origin;
+            const auto result=draft.move(item->id, *target);
+            if (result!=DomainStatus::Applied) return result;
+            return previous.container==containers.belt
+                ? draft.compactBeltColumn(previous.cell.x) : result;
         } else if constexpr (std::is_same_v<T, SwapItems>) {
             const auto *first = draft.resolve(operation.first), *second = draft.resolve(operation.second);
             if (!first || !second) return DomainStatus::Stale;

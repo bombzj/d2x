@@ -1,6 +1,6 @@
 # Windows调试管道
 
-直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算。构建／包状态见[运行包记录](BUILD_AND_RUN.md#运行包记录)。
+直接运行EXE只在显式--debug-pipe时启用，Play.cmd默认d2x-debug。原服和Single Player均使用同一RealmSession，因此共用online-*、UI输入、截图、状态、quit及表现pause/resume命令。命令名称保留online不表示只允许TCP。另有显式嵌入宿主管理能力，执行端位于服务端，管道不直接读写D2S或客户端副本；原服连接拒绝这些管理命令。自研暂未实现的操作不会产生成功结算；功能范围及缺口见[基线](../../BASELINE.md)，构建／运行方法见[开发指南](BUILD_AND_RUN.md)。
 
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
 ## 启动与调用
@@ -16,7 +16,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 .\scripts\Send-D2XCommand.ps1 -Command online-leave-game
 ```
 
-自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。该修复已随当前Release包完成快照、250帧任务、取消及正常退出的有限运行观察，身份和耗时见[运行包记录](BUILD_AND_RUN.md#当前性能修复与实测)。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
+自定义管道用-PipeName，超时-TimeoutMs范围100–60000、默认10000。脚本遇ok=false／连接失败／超时抛异常。管道由独立重叠I/O线程收发有界文本，主线程每轮最多领取一个命令；线程不读取玩法、MPQ或GPU。响应不再按渲染帧限制每帧4 KiB，调用脚本按字节块写入MemoryStream而非逐字节PowerShell循环，仍保留16 KiB请求／4 MiB响应上限、当前用户ACL及断开后的代次复验；quit等待本次响应交付或连接截止。登录／建房用UI、快捷参数或下面原命令，每一步查询阶段再继续；不能连发非幂等请求。测试服账号／端口只维护在[本机部署](../architecture/MULTIPLAYER.md#本机部署与验证入口)。
 
 ## 原服收包记录
 
@@ -44,7 +44,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 `online-world.scene.localCast`为本人当前施法表现的skill／age；age=-1表示仍待接近／开始，动作结束或真正中断后为null。`scene.clientMissiles`返回当前视觉队列的id、全局position、age和remaining；负age表示还没到释放帧，队列包含飞行及命中图形，不包含服务端伤害或命中真值。用它核对普通点击后Stop仍保留待释放飞弹、引导停止清理及生命周期；结合截图检查实际原图，不能仅凭服务端missileCount／伤害宣称客户端显示完成。
 
-当前Windows包已通过现有脚本有限运行目录、save／load／step／grant-experience／grant-gold，以及伤害、物品／怪物生成和怪物击杀管理路径；具体证据及未运行边界见[联网记录](../modules/NETWORK.md#既有有限证据)。JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
+JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／PlayerId绑定。管理调用在当前宿主调度线程执行，网络worker仍只经字节队列访问服务端。失败返回ok=false和明确status，不以HTTP式私有ACK修改原MCP／D2GS。
 
 | 命令 | 参数和当前结果 |
 | --- | --- |
@@ -65,7 +65,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 | `grant-gold` | amount为1至UINT32_MAX的正整数；通过人物事务授予金币，复验钱包上限 |
 | `set-players` | amount为1–8；设置当前本地实例虚拟人数，与游戏内/players共用类型化宿主入口。仅已入局的本机宿主角色可用，客人及账号Realm拒绝；不写D2S，人数规则见[命令分流](../modules/NETWORK.md#游戏内命令分流) |
 | `monster-spawn` | code为当前MPQ monstats身份，x／y为当前区域全局subtile。复用自然人口的怪物准入／数值／动作准备，再交population／monsters；返回entityId。rank默认normal，可选champion／unique／boss／superunique；superunique须提供当前SuperUniques精确身份superUnique，且code必须匹配原Class。仆从只由自然领队人口生成，不提供无领队调试替身。不接受level覆盖，等级随区域／难度，不支持身份、城镇、碰撞和容量明确拒绝 |
-| `item-spawn` | code必填、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；durability可显式指定0..实际最大耐久。seed可选0..UINT32_MAX；affixes可指定magic／rare原表词缀及范围内rolls，详见下文。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
+| `item-spawn` | code必填、level可选及世界x/y；quality默认normal，可选magic／rare／unique／set／superior／inferior按当前MPQ生成，sockets可选0..6并校验原上限；`ethereal:true`按原无形规则设置标志并应用防御／耐久效果，不适用的基底或品质明确拒绝；durability可显式指定0..实际最大耐久。seed可选0..UINT32_MAX；affixes可指定magic／rare原表词缀及范围内rolls，详见下文。仅item-spawn接受这些项，缺生成规则明确拒绝；走统一地面安装入口 |
 | `player-damage` | amount为非负整数生命点，转换为原固定点后走人物伤害事务及正常死亡结算 |
 | `grant-shrine` | code，level可选；在当前位置附近生成当前MPQ祭坛，效果仍须正常交互领取 |
 | `object-spawn` | code为Objects定义的十进制字符串，x／y为可选原世界坐标，shrine／trap可选；仅本地管理入口，生成原物件以准备观察条件，不直接授予祭坛效果或结算陷阱 |
@@ -76,13 +76,13 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
-item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能用来认证自然掉落。已纳入当前Release构建，显式Magic词缀实际生成及原位流／保存重入获有限观察，范围见[运行包记录](BUILD_AND_RUN.md#历史物品显示与生成收尾)。
+item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能作为原版自然掉落的依据。
 
 ### 按目标属性生成
 
 同一item-spawn提供三个步骤，不新增私有游戏协议：
 
-1. `propertyQuery`为Properties代码子串，空字符串列出全部；按code／level／quality返回合法词缀行、组、需求等级及每条属性的code／param／min／max／input。默认quality=magic，可指定rare。只读查询不创建物品；不能与properties、affixes、durability、sockets或坐标混用。
+1. `propertyQuery`为Properties代码子串，空字符串列出全部；按code／level／quality返回合法词缀行、组、需求等级及每条属性的code／param／min／max／input。默认quality=magic，可指定rare。只读查询不创建物品；不能与properties、affixes、durability、sockets、ethereal或坐标混用。
 2. `properties`为1–12个目标，和affixes互斥，默认quality=magic，仅支持magic／rare。单值属性使用`{code,value,param?}`；固定复合属性使用`{code,min,max,param?}`，两种形式互斥。param可为非负整数或原Skills精确技能名称；空参数按0匹配。属性代码使用Properties原键，不接受中文显示文案、任意stat ID或浮点值。未知字段明确拒绝。
 3. `preview:true`完整准备并验证后返回item，不落地、不登记暗金、不分配世界物品ID。使用返回的seed重发相同参数并设preview=false，可复现本项目生成入口；当前MPQ与暗金可用性等输入必须保持一致。预览不验证地面落点，实际生成仍可能因位置／容量拒绝。
 
@@ -90,7 +90,7 @@ item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、ro
 
 返回item包含code、quality、seed、itemSeed、level、requiredLevel、defense、durability、maximumDurability、sockets、ethereal、affixes及stats。affixes列原行号、名称、实际rolls；stats列原ItemStatCost名称／ID／参数层和保存值（不是角色面板换算值），用于检查附带属性。所有item-spawn产物在安装前通过现有D2S导出／编码／解码与装备规则准备；无法编码的位宽、重复属性层和不支持布局会拒绝。输入错误返回invalid-arguments，目标缺候选包含properties下标和代码；组／容量无解单独报告。编码通过不等于已完成真实保存／重入或所有属性消费者认证。
 
-下面的短剑20%攻击速度示例已静态核对本地MPQ导出的swing2词缀；该合法目标已在当前包中完成预览；完整执行仍按各步返回值确认：
+下面的短剑20%攻击速度示例依据当前MPQ的swing2词缀；完整执行须按各步返回值确认：
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments @{
@@ -105,9 +105,9 @@ $spec.preview=$false
 .\scripts\Send-D2XCommand.ps1 -Command item-spawn -Arguments $spec
 ```
 
-复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数。当前已纳入Release构建；propertyQuery、显式词缀生成及properties预览的有限观察见[运行包记录](BUILD_AND_RUN.md#历史物品显示与生成收尾)，不扩大为全目标属性或自然掉落认证。
+复合属性先查询其代码，再把返回的min／max／param作为目标，例如dmg-cold的min／max为伤害端点、param为原帧数；charged及触发技能的min／max／param按原表含义匹配，不将min/max解释成通用随机区间。server-commands的itemGeneration可发现这套参数；目标匹配不提供全属性消费者或自然掉落的原版依据。
 
-后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred提供原型准备说明，populationMissing为实时人口coverage的暂缓来源数；它不再是宿主旧规划的未放置计数，populationPendingRooms为尚未完成的相关房间数，两者均从权威coverage计算并阻止提前清场。actFive不再输出旧计时器的wave／wavePrepared字段；当前王座波次由BaalThrone AI维护。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。冒烟条件与有限证据见[第二幕](../gameplay/quests/ACT2.md#有限运行证据)。
+后三幕新增只读诊断为questExecution.actThree／actFour／actFive，分别显示任务掉落／宝珠、封印／熔炉、囚犯／古代人／五波；npcs显示hidden／moving；area.populationDeferred提供原型准备说明，populationMissing为实时人口coverage的暂缓来源数；它不再是宿主旧规划的未放置计数，populationPendingRooms为尚未完成的相关房间数，两者均从权威coverage计算并阻止提前清场。actFive不再输出旧计时器的wave／wavePrepared字段；当前王座波次由BaalThrone AI维护。不提供直接改任务的命令。第二幕诊断在server-snapshot的questExecution.actTwo：eclipse、altarDestroyed、journalRead、staffTombOffset、tombAt、tombOpen与durielSlain；它们只读实例运行态，不作为客户端输入。online-status的world.eclipse／quests.staffTombOffset／staffInteraction来自原包。插杖仍须正常交互取得租约、将真实法杖移到Cursor，再用online-staff-update提交；没有直接授予任务完成的管理入口。规则、原版依据与缺口见[第二幕](../gameplay/quests/ACT2.md)。
 
 ```powershell
 .\scripts\Send-D2XCommand.ps1 -Command server-protocol
@@ -125,7 +125,7 @@ $spec.preview=$false
 
 | 命令 | 参数与结果 |
 | --- | --- |
-| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
+| `ui-input` | 复用既有FrameInput诊断格式：x／y逻辑坐标、button=left／right、leftHeld／leftReleased／rightHeld、key、shift／control／focused等；frames可一次排队1–32帧，每绘制帧消费一项。聊天用key=enter／escape／message-log（或m）、entryText可打印ASCII、backspace、delete／left／right／home／end编辑；金币输入另支持key=select-all（Ctrl+A）及Shift选区；日志支持up／down／page-up／page-down及wheel。允许局前页面及已显示、未测试暂停的局内UI；游戏或区域代次切换／暂停清队列，普通控制器提交原服意图，不直接改权威副本 |
 | `pause` / `resume` | 只在显式调试管道启用；pause要求在线ProtocolReady，冻结画面和界面输入。回执presentationPaused／networkRunning=true；不暂停原服。Single Player在下一宿主调度帧应用权威暂停，以server-status.paused为准；恢复采用最新副本，旧动作不重放 |
 | `online-status` | 顶层presentationPaused；online.protocol按SID／MCP／game返回包ID、received／sent／unconsumed、逻辑字节数和lastReceived；只读 `online`：stage、error、revision、connectionGeneration、gameGeneration、Realm／角色／游戏列表、load、延迟（首个pong前null）、gameQueuePosition、gameListComplete、world／scene；联网模式的 `status` 是其别名 |
 | `online-social` / `online-chat` | 同一完整只读快照的accountChat及world.social：名册身份及字段可用性、队伍／关系原值、公开位置、聊天原语言nameBytes／textBytes；只读、不刷新。共享界面就绪后额外chatUi返回ready／inputOpen／logOpen／draft／scroll／rows／unavailableMessages／reason，只有表现和草稿，不是发送回执。scene.automap.markers只读标记类型／名称／位置／cel；冒烟范围见[联网记录](../modules/NETWORK.md#既有有限证据)，不能据此认证完整M4 |
@@ -213,15 +213,15 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 | equip | Cursor itemId、body=1–10；原head／neck／tors／rarm／larm／rrin／lrin／belt／feet／glov；自动按当前槽和两手武器选原交换包 |
 | unequip | 当前装备itemId；空Cursor，body取服务器该物品部位 |
 | swap | Cursor itemId、targetId、x／y；当前可访问的原格子交换 |
-| use | 背包或腰带itemId；mercenary默认false，true仅腰带；使用方块暂拒绝，回城卷轴／书用online-town-portal |
+| use | 背包、已打开仓库／方块或腰带itemId；mercenary默认false，true仅腰带；方块用cube-open，回城卷轴／书可按原0x20使用，技能快捷入口仍用online-town-portal |
 | belt-place | Cursor itemId、beltSlot从0计；不得超当前MPQ腰带容量 |
 | belt-swap | Cursor itemId、腰带targetId；槽位取目标服务器位置 |
 | stack | 源itemId、targetId；原兼容堆叠请求，不支持自选拆分数量 |
 | book | 卷轴itemId、书targetId；必须为当前MPQ Books原配对 |
 | socket | Cursor填充物itemId、宿主targetId；鉴定、归属和已知空孔校验 |
-| identify | 背包鉴定卷轴／书itemId、未鉴定targetId；目标限背包／装备，Cursor须空 |
+| identify | 可访问容器内鉴定卷轴／书itemId、未鉴定targetId；目标为可访问容器或装备，Cursor须空；先0x20准备，0x3F只确认准备，0x27才提交目标 |
 | switch-weapons | 无itemId；空Cursor，0x97确认后更新weaponSet |
-| cube-open | 本人背包方块itemId；按当前MPQ pSpell=7提交使用，0x77确认后开放方块格 |
+| cube-open | 本人背包或已打开仓库方块itemId；按当前MPQ pSpell=7提交使用，0x77确认后开放方块格 |
 | storage-close | 无itemId；关闭当前／待确认箱子或方块，可取消Pending；发送后标SentNoAck |
 | transmute | 无itemId；已确认方块、空Cursor且有材料；配方与产物由原服决定 |
 | gold-deposit / gold-withdraw | amount为正整数；已确认箱子、空Cursor；复验已知钱包／箱子余额，最终上限和金额由原服决定 |
@@ -273,26 +273,26 @@ d2x_assets <MPQ目录> save-info <file.d2s>
 - Win32 管道只在 app 模块，处理非阻塞；JSON 使用 nlohmann/json 3.11.3。命令入口和呈现在客户端线程；RealmSession 的后台 worker 持锁消费原服回包并更新权威副本，界面只读取客户端快照。
 - 该脚本是通用调用入口，未加入专用测试脚本／测试程序。调试接口由用户授权新增。
 
-局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice` 不包含字段内容或密码。测试暂停拒绝所有 UI 输入。
+局前 `ui-input` 与游戏内共用帧输入契约；`entryText` 为至多255个可打印ASCII字节，`tab` 切换字段，`wheel` 为有限滚轮增量。`key=1–4`复用腰带列快捷键，`key=belt`／`expand-belt`／`~`切换腰带展开，`f1–f8`选择已绑定技能或绑定选择器悬停项；原 `text` 仍只用于数字输入。局前坐标同样使用逻辑视口，应用转换到800×600原图布局；回执 `frontend.page/notice` 不包含字段内容或密码。测试暂停拒绝所有 UI 输入。
 
 LAN宿主的server-status新增rooms／participants摘要：实例slot／generation、容量、玩家、区域、阶段及失败信息。宿主未连接本机角色时也可查询；管理远端角色须同时指定hostSlot、hostGeneration、hostPlayer，不能按名字猜绑定。save／grant-experience沿原管理入口处理对应服务端角色；断线保存失败保留实例和租约，显式save成功后才继续回收。load需要主内存客户端重建入局，不能用另一人的请求操纵本机客户端；共享房间禁止重载。调试管道仍只在本机用户授权范围内，LAN不开放它。
 
 ## 验证边界
 
-只使用已有程序／命令／参考服；不新增测试脚本、用例或专用程序。实际观察统一见[联网记录](../modules/NETWORK.md)，最新未入包源码不能引用旧冒烟作认证。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行未完整验证。
+只使用已有程序／命令／参考服，不新增测试脚本、用例或专用程序。实际执行在当次交付中说明，长期文档保留当前实现、原版依据与具体缺口。Windows管道不能替代原服协议；跨用户ACL拒绝与Linux实际运行仍待核对。
 
-P1源码的healingQueued／manaQueued表示仍有恢复时钟的原药水状态数；连续喝同状态药水合并时长与恢复率，不再按瓶数增长。观察药水须同时核对资源、原state、剩余时长及物品消费；本轮没有运行证据。
+P1源码的healingQueued／manaQueued表示仍有恢复时钟的原药水状态数；连续喝同状态药水合并时长与恢复率，不再按瓶数增长。观察药水须同时核对资源、原state、剩余时长及物品消费。
 
 P5 server-snapshot增加chargedSkills（item／revision／skill／rank／charges／maximum）、player.selectedSkillOwners及itemTriggers.pending／deferred。deferred是最近暂缓程序原因，pending是未结算事件数；不修改实际技能或次数。正常施法仍经online-*原包，管理快照不能作为原服行为认证。
 
 区域快照的objectDeferred列出尚未实现的原物件预设回调身份（574–582）；这些不是已生成的物件，不参与碰撞或掉落。普通缺失表项仍使内容准备失败。
 
-冒烟使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照用于观察，不能代替逐只普通攻击或完整AI认证；本批证据与边界见[运行包记录](BUILD_AND_RUN.md#运行包记录)。
+诊断使用已有宿主管理准备与online-*原包，不新增客户端状态旁路。怪物准入／规则快照只提供当时状态，完整普通攻击、AI和原版逐随机行为仍须独立核对。
 
-server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；实际验证范围见[第一幕怪物证据](../gameplay/monsters/ACT1.md#有限运行证据)，管理准备不能作为真实首领战斗认证。
+server-snapshot的怪物identity包含rank／superUnique／spawnKey／ownerSpawnKey；enchantment包含词缀、nameSeed、等级、增伤／命中／速度／抗性及光环参数；home／skillPositions保留原出生点和DS1技能节点。这些为宿主管理观察，不是新增游戏消息；身份、原版依据与缺口见[第一幕怪物](../gameplay/monsters/ACT1.md)，管理准备不能作为真实首领战斗依据。
 
 ### 女巫战斗诊断
 
-源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息。当前帧事件底座包已提供这些字段，具体版本和有限观察见运行包记录。
+源码中的`server-snapshot.frameEvents`观察实例玩法定时器，和可靠输出历史`eventHistory`分开；包含总数、当前帧／阶段、执行／下一游标及受limit限制的记录，记录按事件身份排列，不代表派发顺序。事件记录暴露单位类别、事件号、期限、持续标记、原custom参数、本地状态事件payload及延迟删除标记；怪物AIRESET列表同时暴露独立identity。诊断不写入存档或原客户端消息，原始调度入口及缺口见[技能公共规范](../gameplay/skills/COMMON.md#帧事件底座与持续效果期限)。
 
 管理命令`missile-hit`接收`source`（当前区域真实活敌怪GUID）、`amount`（正伤害生命单位）、`missile`（当前MPQ原弹体ID）。它投递公共combat命中候选，单步推进后执行伤害／护盾及ReturnFire反击，用于隔离观察ChillingArmor反击链；不生成怪物AI、不增加客户端私有消息。`player-damage`也走物理伤害／护盾入口。server-snapshot怪物增加chilledUntil／frozenUntil／knockedUntil／nextHitTick／owner，弹体增加skill／rank／program／age／lifetime／remainingHits。诊断操作不能替代通过原技能包进行冒烟。

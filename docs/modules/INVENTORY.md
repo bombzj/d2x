@@ -38,10 +38,10 @@ merchant的stock只读查询统一选择普通NPC共享货架或按玩家／NPC�
 
 [online_items.hpp](../../src/contracts/online_items.hpp)的onlineItemOwnedBy／onlineCursorItem／onlineHasCursorItem统一解释已知玩家归属与原mode4光标。移动、技能发送、交易、库存投影和42清光标消费复用；玩家GUID未知不等于物品owner未知时属于本人。这些是只读原包查询，不推断背包、仓库、交易或商店操作权限；各入口仍复验自己的容器、阶段和revision。
 
-hosting的`native_item_wire::ownedAction`按动作选择原9C／9D，不按“物品属于玩家”选择包号。背包放入、数量、腰带放入／取出／交换及光标创建走9C；容器取出、穿戴、卸装、交换装备、属性更新、镶嵌和切组走9D。初始库存、增量与交易展示共用选择，依据本地D2MOO SCmd及当前1.13c D2Client的两个动作回调；原版加入时发现的失败及修正边界见[服务端协议有限冒烟](SERVER_PROTOCOL.md#本批有限冒烟)。
+hosting的`native_item_wire::ownedAction`按动作选择原9C／9D，不按“物品属于玩家”选择包号。背包放入、数量、腰带放入／取出／交换及光标创建走9C；容器取出、穿戴、卸装、交换装备、属性更新、镶嵌和切组走9D。初始库存、增量与交易展示共用选择，依据本地D2MOO SCmd及当前1.13c D2Client的两个动作回调；原版客户端与宿主的方向、字段及缺口见[协议参考](../gameplay/items/EVIDENCE.md#职业装备与原版拒绝对照)，服务端编码入口见[服务端协议](SERVER_PROTOCOL.md)。
 
 ## 修改归属
 
 修改规则更新所属物品专题；充能／触发更新[物品技能](../gameplay/skills/ITEM_SKILLS.md)，任务阶段／奖励更新任务页，原D2S与准入更新[SAVES](SAVES.md)。固定步、命令与可靠事件结构归[SERVER_SYSTEMS](SERVER_SYSTEMS.md)，不复制第二份当前范围或包日志。
 
-未知规则／位流、缺实际掷值或未准备来源显式拒绝／暂缓；定义、stub、生成、原包显示和实际执行分开登记。有限运行与失败样本统一见[EVIDENCE](../gameplay/items/EVIDENCE.md)，不以旧包认证当前新增源码。
+未知规则／位流、缺实际掷值或未准备来源显式拒绝／暂缓；定义、stub、生成、原包显示和实际执行分别登记当前范围、原版依据与缺口，不维护自研运行台账。

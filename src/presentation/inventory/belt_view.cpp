@@ -6,7 +6,7 @@ void SceneView::drawBelt(Vec mouse) const {
     const auto &inventory = inventoryView_;
     auto belt = inventory.container(inventoryView_.containers.belt);
     if (!belt) return;
-    int rows = ui.open || ui.beltExpanded ? belt->rows : 1;
+    int rows = ui.open || ui.beltExpanded || ui.beltHovered ? belt->rows : 1;
     auto bounds = beltBounds(rows);
     const auto drop = inventoryDropAt(mouse);
     for (int row = rows - 1; row >= 0; --row) {
@@ -20,11 +20,10 @@ void SceneView::drawBelt(Vec mouse) const {
             drawInventoryDrop(drop, box);
             auto item = inventory.item(inventory.itemAt(belt->id, {column, row}));
             if (item) {
-                bool dragged = ui.drag && ui.drag->item.id == item->id;
-                if (!dragged) {
+                if (!ui.hidesItem(*item)) {
                     const bool over = !ui.drag && CheckCollisionPointRec(rv(mouse), box);
                     if (over) drawItemBackground(*item, box, true);
-                    drawItemIcon(*item, box);
+                    drawItemIcon(*item, box, false, hudScale());
                 }
             }
             if (row == 0)

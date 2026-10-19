@@ -22,6 +22,6 @@
 
 operation28已接原赫拉迪克法杖／克林姆连枷组装和个人任务阶段，同笔提交材料、产物及任务事实。牛门／钥匙门／最终门经travel准备真实目的地图及原Objects红门，成功后才提交材料消耗与公共双向门；地图失败保留材料，容量背压保留请求和种子。牛门按普通／噩梦／地狱个人巴尔完成及牛王记录，Pandemonium按地狱第五幕城镇、原材料与本局已开门集合限制。地图准备不等于目的地怪物和任务已实现。
 
-Token背包使用与一次性任务消耗归[QUEST_ITEMS](QUEST_ITEMS.md)，不伪造Akara免费重置资格。五幕个人任务的已接路径与运行证据由各幕任务页维护；牛王资格写入、Pandemonium真实首领／固定奖励、完整世界活动与多人仍有独立缺口，生成门户不认证这些依赖。
+Token背包使用与一次性任务消耗归[QUEST_ITEMS](QUEST_ITEMS.md)，不伪造Akara免费重置资格。五幕个人任务的实现范围、原版依据与缺口由各幕任务页维护；牛王资格写入、Pandemonium真实首领／固定奖励、完整世界活动与多人仍有独立缺口，生成门户不认证这些依赖。
 
-普通／Crafted、第二幕法杖组装和Token等有列出路径的有限证据，见[EVIDENCE](EVIDENCE.md)及各幕任务专题；第三幕使用预先准备的意志不认证三器官／完整方块链，特殊门、全部配方／输出组合、三难度、多人和背压仍未全面验收。依据为master、当前MPQ及本地D2MOO CubeParser、PlrTrade、ItemsMagic／Items。后续按每条CubeMain输入／operation／输出登记C／S／V，不因匹配或导入成功批量标完成。
+普通／Crafted、任务材料组装和Token已有执行入口；第三幕三器官／完整方块链、特殊门、全部配方／输出组合、三难度、多人和背压仍须逐项对齐。依据为master迁入参考、当前MPQ及本地D2MOO CubeParser、PlrTrade、ItemsMagic／Items。后续按每条CubeMain输入／operation／输出登记客户端／服务端实现、原版依据、已知差异与待核实项，不因匹配或导入成功批量标完成。

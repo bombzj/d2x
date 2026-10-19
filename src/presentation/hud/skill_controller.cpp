@@ -7,7 +7,7 @@
 namespace d2x {
 bool SceneController::handleSkills(const FrameInput &input) {
     auto &ui = view_.ui();
-    if (ui.inventory.drag || ui.inventory.split || ui.inventory.goldDialog || ui.inventory.identify ||
+    if (ui.inventory.drag || ui.inventory.goldDialog || ui.inventory.identify ||
         view_.characterView().dead) {
         ui.skillPicker.reset();
         return false;

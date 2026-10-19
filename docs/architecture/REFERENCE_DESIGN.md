@@ -73,11 +73,11 @@ D2Common包含单位、属性、技能公式、物品计算、路径／碰撞和
 
 原版数据及版本差异优先于参考实现。已知NPC消息menu=0／2的1.13c证据与参考快照差异见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。没有源码的部分不以简化开源客户端代替原版结论；先标明缺证据，再做最小范围核对。
 
-公共函数抽取以`D2Common/src/D2Skills.cpp::SKILLS_GetSpecialParamValue`的ln／dm分派、EvaluateSkillFormula及GetElementalLength为边界依据。原1.13c递减顺序已于2026-10-14只读核对：固定D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`，RVA `0x4dc30`／ordinal10115先对`110*level/(level+6)`作signed32截断，再对参数差乘该比值、除100、加最小参数并只作上限裁剪；RVA4DC36／4DC3D／4DC4F／4DC52–4DC63直接确认其乘除顺序。技能参数包装在RVA4E624／4E674／4E6C4调用该入口，特殊参数路径也有调用。D2MOO 1.10f的11033转录采用另一乘法分组，不用于覆盖同版本原证据。本项目rank_bonus与公式参数环境现共用该原版算子，正等级包装和dm78／飞弹的等级零调用保持区别；该算子迁移已纳入前序Windows Release构建；原DLL核对只支持所列数值分支，不认证完整技能事件流程。
+公共函数抽取以`D2Common/src/D2Skills.cpp::SKILLS_GetSpecialParamValue`的ln／dm分派、EvaluateSkillFormula及GetElementalLength为边界依据。原1.13c递减顺序已于2026-10-14只读核对：固定D2Common MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`，RVA `0x4dc30`／ordinal10115先对`110*level/(level+6)`作signed32截断，再对参数差乘该比值、除100、加最小参数并只作上限裁剪；RVA4DC36／4DC3D／4DC4F／4DC52–4DC63直接确认其乘除顺序。技能参数包装在RVA4E624／4E674／4E6C4调用该入口，特殊参数路径也有调用。D2MOO 1.10f的11033转录采用另一乘法分组，不用于覆盖同版本原证据。本项目rank_bonus与公式参数环境共用该原版算子，正等级包装和dm78／飞弹的等级零调用保持区别；原DLL核对只支持所列数值分支，完整技能事件流程仍需分别核对。
 
 `D2Common/src/DataTbls/SequenceTbls.cpp`将序列帧／事件作为公共基础，既有本机1.13c证据见下节女巫／亚马逊核对；本项目的animationFrameTicks和weaponSequenceHitTicks让表现与权威武器释放共用时钟／事件遍历，保留动作、手位和阶段差异。`D2Game/src/SKILLS/Skills.cpp::sub_6FD0FE80`／`SKILLS_FindAuraTarget`为范围遍历及筛选，`sub_6FD10EC0`为共用诅咒安装，`SkillBar.cpp::SKILLS_ApplyWarcryStats`被呐喊弹体调用；本项目已共用范围几何、AI资格及原始状态列表／资源回调；候选、关系、状态／随机和提交保持领域所有权，完整事件排序仍待收拢。
 
-当前MPQ仍由content准备；table_values统一原表读取和明确的空值／拒绝策略，不读取D2MOO附带表。七职业与其他来源的接入／缺口、前序构建及有限运行、当前尚未构建的飞弹／周期迁移统一见[COMMON](../gameplay/skills/COMMON.md#公共函数抽取)。
+当前MPQ仍由content准备；table_values统一原表读取和明确的空值／拒绝策略，不读取D2MOO附带表。七职业与其他来源的接入、原版依据及缺口统一见[COMMON](../gameplay/skills/COMMON.md#公共函数抽取)。
 
 ## 7. 本项目的提取单位与所有权
 
@@ -141,7 +141,7 @@ MPQ 加载参考：本地 D2MOO `D2Common/src/DataTbls/DataTbls.cpp` 的 `sgptDa
 
 ### 女巫公共层的原版核对
 
-2026-10-08直接核对本地固定D2MOO 5596f5c与原1.13c DLL。参考源码为1.10f重建，不能沿用其ordinal认定1.13c入口；以下1.13c编号均重新从本机PE导出／导入和调用指令核对。DLL摘要及基址见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)，只读分析输出在忽略目录artifacts/sorceress-d2gs-20261008，不加入源码。
+2026-10-08直接核对本地固定D2MOO 5596f5c与原1.13c DLL。参考源码为1.10f重建，不能沿用其ordinal认定1.13c入口；以下1.13c编号均重新从本机PE导出／导入和调用指令核对。DLL摘要及基址见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)，原DLL不加入源码。
 
 “公共”需区分模块能被谁调用和具体计算是否只实现一次。原1.13c D2Client确实静态导入D2Game的13个ordinal入口（10038／10047／10037／10040／10017／10039／10049／10053／10006／10024／10019／10008／10043）；不能说客户端程序完全不使用D2Game。单机／TCP Host也在产品进程内运行本地服务端，复用D2Game的权威内核。远端联机客户端的表现程序则不因此成为第二个权威世界；下列冰封球两套散射与暴风雪两套创建流程仍分别位于D2Client和D2Game。DLL导入关系本身不能证明某技能整体已抽成共用函数。对应本项目，嵌入／LAN／未来独立宿主共用server内核；两端真正相同的计算再共用gameplay纯函数。
 
@@ -185,6 +185,6 @@ SkillMonst SrvDo088及原CltDo048的Andariel九射方向表合并到andarielSpra
 
 SCmd::sub_6FC3FC80给出AC的五rank位、固定hcIdx、九词缀＋终止及nameSeed；PlrMsg::sub_6FC81F60将Player.h的PLRMODE_KNOCKBACK19映射为0F/action20，客户端原生Player模式和wire模式按各自表解释，不能把action20当隐藏Kick。原表MonProp血鸟地狱knock在hosting准备。客户端只作有原版依据的修正／公共提取，不为自研服务端增加消息或玩法分支。
 
-原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。运行证据见[第一幕](../gameplay/monsters/ACT1.md#有限运行证据)，完整随机流等限制统一见[怪物COMMON](../gameplay/monsters/COMMON.md)。
+原1.13c D2Client RVA20340／20BF0／20BC0确认电强化四个基数方向各两条ChargedBolt路径、GH帧2及非GH生命回调；20C40／A1020／A0DB0确认冰强化死亡帧4及环射。4E095／4E14D／1FCA0确认GH方向槽和生命高位的发射资格。monsterLightningRays／chargedBoltPath两端共用，环射保留Clt步长1／Srv步长2。RemoteMonsterEffects只持副本显示时钟，server/effects持MONUMOD延时／冷却／伤害。当前194／195视觉速度与寿命无等级增量，客户端不猜隐藏等级。身份范围见[第一幕](../gameplay/monsters/ACT1.md)，完整随机流等限制统一见[怪物COMMON](../gameplay/monsters/COMMON.md)。
 
 精英调色的原1.13c依据为A7A5A（TransLvl+2）、A7A7E（UNIQUE且无UMod15）、539E0（classId+nameSeed，单次随机9..38）、A7AAC／A7AEB（MonStats2与固定SuperUnique难度Utrans覆盖）、A7B1A（>=30回退2）、53AA5（全局randtransforms的value-8行）；公共ActorAnimation显式区分原始palshift行与旧相对TransLvl。随机姓名沿master的UniquePrefix／Suffix适配和ChampionFormatX，不据此宣称完整原命名随机流。死亡回调20FB0、52230、52320及客户端弹体表DD8A0的CltDo21=B86F0、22=B8550、27=B8130、29=BC210用于补第一幕原死亡图形；B0050、B0000、BB5B0提供计时与火柱选择，随机只属于显示。

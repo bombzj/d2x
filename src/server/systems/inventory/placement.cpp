@@ -1,4 +1,5 @@
 #include "planning.hpp"
+#include "gameplay/items/belt_rules.hpp"
 #include "gameplay/items/inventory_order.hpp"
 #include <limits>
 
@@ -60,8 +61,9 @@ std::optional<ContainerLocation> Draft::space(EntityId id, EntityId destination)
             const auto bottom=at({destination,{x,0}});
             const auto *other=bottom?catalog.find(edit.inventory.items.at(bottom).definition):nullptr;
             if(!other) continue;
-            bool matching=other->code==base->code;
-            for(const auto type:{"hpot","mpot","rpot"}) matching=matching || (base->equipment.isType(type) && other->equipment.isType(type));
+            const auto family=beltPotionFamily(base->code);
+            const bool matching=other->code==base->code ||
+                (!family.empty() && family==beltPotionFamily(other->code));
             if(matching) for(int y=0;y<c->spec.rows;++y) {
                 const ContainerLocation target{destination,{x,y}};
                 if(fits(id,target)) return target;
@@ -88,6 +90,21 @@ DomainStatus Draft::move(EntityId id, ContainerLocation destination) {
     item.location = destination;
     ++item.revision;
     reinsertInventoryItem(edit.inventory,id);
+    return DomainStatus::Applied;
+}
+DomainStatus Draft::compactBeltColumn(int column) {
+    // 1.13c D2Game RVA D2540: scan this column bottom to top and preserve order.
+    const auto belt=containers().belt;
+    int ready=0;
+    for (int row=0;row<edit.inventory.containers.at(belt).spec.rows;++row) {
+        const auto item=at({belt,{column,row}});
+        if (!item) continue;
+        if (row!=ready) {
+            const auto result=move(item,{belt,{column,ready}});
+            if (result!=DomainStatus::Applied) return result;
+        }
+        ++ready;
+    }
     return DomainStatus::Applied;
 }
 DomainStatus Draft::resizeBelt(int rows) {

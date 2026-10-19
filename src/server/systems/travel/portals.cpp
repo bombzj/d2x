@@ -42,7 +42,11 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     for(const auto &[id,value]:p->persistent.inventory.items) {
         if(requested && (requested->id!=id || requested->revision!=value.revision)) continue;
         const auto found=p->rules.character->itemSkills.find(value.definition); if(found==p->rules.character->itemSkills.end() || found->second.action!=ItemSkillAction::Portal || (skill && *skill!=found->second.skill)) continue;
-        const auto *at=std::get_if<ContainerLocation>(&value.location); if(!at || at->container!=p->persistent.containers.backpack || !(found->second.book?value.charges:value.quantity)) continue;
+        const auto *at=std::get_if<ContainerLocation>(&value.location);
+        // Explicit item use has already checked the open storage lease in inventory::consume.
+        const bool stored = at && (at->container==p->persistent.containers.backpack ||
+            (requested && (at->container==p->persistent.containers.stash || at->container==p->persistent.containers.cube || at->container==p->persistent.containers.belt)));
+        if(!stored || !(found->second.book?value.charges:value.quantity)) continue;
         item=&value; rule=&found->second; break;
     }
     if(!item || item->revision==UINT64_MAX) return {DomainStatus::InvalidRequest,{}};
@@ -54,7 +58,12 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     auto &consumed=draft.edit.inventory.items.at(item->id); ++consumed.revision;
     const bool remove=rule->book? (--consumed.charges,false):--consumed.quantity==0;
     draft.edit.changes.push_back({item->id,consumed.revision,remove?ItemChangeKind::Removed:ItemChangeKind::QuantityChanged,item->location,remove?std::nullopt:std::optional<ItemLocation>{item->location},consumed.quantity});
+    const auto origin=std::get<ContainerLocation>(item->location);
     if(remove) draft.edit.inventory.items.erase(item->id);
+    if(remove && origin.container==p->persistent.containers.belt) {
+        const auto result=draft.compactBeltColumn(origin.cell.x);
+        if(result!=DomainStatus::Applied) return {result,{}};
+    }
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
     const auto result=ports_.transactions.commit(std::move(*plan.value)); if(result) {state_.portals.swap(portals);ports_.quests.onTownPortal(actor.area);} return result;

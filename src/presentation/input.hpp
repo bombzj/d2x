@@ -22,6 +22,7 @@ struct FrameInput {
     bool backspace = false;
     bool messageLog = false, entryHome = false, entryEnd = false, entryDelete = false, entryUnsupported = false;
     int entryStep = 0;
+    bool entrySelectAll = false;
     bool showLoot = false;
     bool help = false, automap = false, collision = false;
     bool minimapSide = false;

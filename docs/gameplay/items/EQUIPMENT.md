@@ -6,7 +6,7 @@
 
 身体需求由公共loadout／contributions／requirements计算，不重复维护力量／敏捷公式。未鉴定、损坏、非活动手部不贡献，护符只在背包生效；普通交换、双手冲突、装备与两组武器切换已有权威执行。属性／需求变化同步重新校验装备，装备资格与人物总值同笔提交。
 
-人物资格／来源刷新迁移已纳入前序Windows Release构建；完整装备组合未运行认证。人物资格通过同步候选回调采样保留的原始物品／套装、缓存被动及临时来源，保留参数层、等级和幕时段的原op运算。`updateEquipmentActivation`按原库存护符补投、bodyloc1–10禁用、反复启用及最后套装刷新执行；原首轮要求ITEMS_IsCharmUsable，只补投背包可用护符，身体装备不抢先按库存顺序投递。候选保留旧有效来源，因此需求检查可读取已投递装备的自身支撑。BROKEN与NOEQUIP分别维护，不能从未活动直接推断NOEQUIP。库存变化、幕通知和需求属性变化触发装备刷新；普通状态采样不无条件重投所有套装。
+人物资格通过同步候选回调采样保留的原始物品／套装、缓存被动及临时来源，保留参数层、等级和幕时段的原op运算。`updateEquipmentActivation`按原库存护符补投、bodyloc1–10禁用、反复启用及最后套装刷新执行；原首轮要求ITEMS_IsCharmUsable，只补投背包可用护符，身体装备不抢先按库存顺序投递。候选保留旧有效来源，因此需求检查可读取已投递装备的自身支撑。BROKEN与NOEQUIP分别维护，不能从未活动直接推断NOEQUIP。库存变化、幕通知和需求属性变化触发装备刷新；普通状态采样不无条件重投所有套装，完整装备组合仍待原版对齐。
 
 套装候选掩码按当前活动组实际装备位置与BROKEN／NOEQUIP读取，不以已投递来源集合代替。撤出本件前先撤出该套装的单位全局列表；补投先刷新全局列表再合并本件及条件层，最后逐体位重投套装。候选保留单位六个ITEMSET槽，全局同套属性指令合并为同一原始列表；公共equipmentSetContributions亦用于类型化投影。固定1.13c D2Common ordinal10600／RVA2C910确认UpdateSets的掩码与撤出分支，RVA2C630处理全局列表；ItemMods RVA45F90中部分奖励取min(count,full−1)，全套分支仍比较原count，不采用D2MOO将count本身截断的重建笔误。
 
@@ -20,13 +20,13 @@ item_aura回调开始单独保留Totals.itemAuraChanges：每项记录物品GUID
 
 ItemAuraTimer候选已沿物品GUID保存激活／撤销顺序：激活先取消同GUID全部事件、采样当时PerDelay并排期，再执行已支持的immediate；撤销先撤出AuraState来源、传播资源／被动回调，再取消事件。SkillFormulaSnapshot保存当次回调的来源、属性、资源和等级，资源单独提交不重放账本。玩家及单位的状态来源、接收者、计时器在共同候选中复验修订并随输出接受发布，成组及嵌套回调累积同一候选，入场使用真实逻辑帧。普通光环、装备光环、佣兵与怪物使用公共原公式、列表／资源轨迹和逐目标作用／伤害游标，不能由此推定完整物品事件与生命周期已复刻。
 
-当前未构建的飞弹／周期模块把这些计时器接入GameSystems.frameEvents的PeriodicStats 9；effects/item_auras逐GUID事件读取当前聚合等级，保留跨背压阶段并在程序结束后采样当前PerDelay重排。旧全单位光环扫描已撤出；玩家右手及单位技能周期分别使用PeriodicSkills 8，完整原事件优先级、物品队列2交错及同步重入仍待闭合。共享来源与算法入口见[COMMON](../skills/COMMON.md#当前持续效果入口)，构建／有限运行与包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)；该批原生周期迁移尚未编译或运行，不属于前序光环包的冒烟范围。
+飞弹／周期模块把这些计时器接入GameSystems.frameEvents的PeriodicStats 9；effects/item_auras逐GUID事件读取当前聚合等级，保留跨背压阶段并在程序结束后采样当前PerDelay重排。旧全单位光环扫描已撤出；玩家右手及单位技能周期分别使用PeriodicSkills 8，完整原事件优先级、物品队列2交错及同步重入仍待闭合。共享来源与算法入口见[COMMON](../skills/COMMON.md#当前持续效果入口)。
 
-当前Weapons的sst短法杖单手mindam／maxdam为空，双手2handmindam／2handmaxdam为1／5；纯双手武器不能被要求同时具有单手伤害。prepareNativeEquipmentSources现在独立准备单手、双手通道，合法空白取0且不借用另一通道，也不因劣质最低伤害补出不存在的近战通道；投掷通道仍以原MaxMisDam门处理。该修复已构建，并由女巫持初始短法杖正常入局确认；全武器品质／无形组合仍需原版对照。
+当前Weapons的sst短法杖单手mindam／maxdam为空，双手2handmindam／2handmaxdam为1／5；纯双手武器不能被要求同时具有单手伤害。prepareNativeEquipmentSources现在独立准备单手、双手通道，合法空白取0且不借用另一通道，也不因劣质最低伤害补出不存在的近战通道；投掷通道仍以原MaxMisDam门处理。全武器品质／无形组合仍需原版对照。
 
 需求使用公共nativePercentage(base,pct,100)后原signed32加值及无形减10，不将负需求钳为零；原资格还要求单位力量／敏捷各自大于零。数量拒绝只针对原主类型book；D2X书本的原QUANTITY保存在charges，普通装备／弹药不因实例quantity为零统一失去属性贡献。固定1.13c D2Common.dll（MD5 `ee1238806ef6d6d9801d12a09d128fe1`）ordinal10244／RVA26DB0，26E7F–26E9F调用RVA11E0共享比例，26EBF–26EC9无形减值，26EDD起确认正属性条件；27040–27059仅为怪物hcIdx0x230／0x231接受原bar职业例外。佣兵携带真实nativeClass，不用人物职业外观代替该条件。箭袋活动贡献通过quiverReady按当前组另一手的原Quiver类型判断；1.13c D2Game D1830–D188E将非装备操作的资格与箭袋条件组合，库存更新D51A0随后按体位处理。铁魔材料的原强制装备通过显式skipRequirements策略保留，已鉴定／金属资格仍由材料入口复验，不伪造力量／敏捷以通过公共需求。
 
-玩家装备预览及RemoteInventory提交沿当前MPQ ItemTypes.Class／Equiv1／Equiv2继承职业限制；例如女巫持刺客爪应显示WrongClass并在客户端拒绝该装备意图，不等待不存在的通用库存ACK。服务端仍复验最终资格，拒绝的装备草案不改变Cursor或现有装备。保留光标与有限原版拒绝证据见[物品核对](EVIDENCE.md#职业装备与原版拒绝对照)。
+玩家装备预览及RemoteInventory提交沿当前MPQ ItemTypes.Class／Equiv1／Equiv2继承职业限制；例如女巫持刺客爪应显示WrongClass并在客户端拒绝该装备意图，不等待不存在的通用库存ACK。服务端仍复验最终资格，拒绝的装备草案不改变Cursor或现有装备。保留光标与原版拒绝行为见[协议参考](EVIDENCE.md#职业装备与原版拒绝对照)。
 
 套装按不同SetItems记录身份计数，同一部件的两个实例不重复计数，条件随机值在生成时冻结；addfunc=1按特定其他部件、addfunc=2按不同部件数激活。公共activeSetItemLayers两端使用，依据D2Common Items::sub_6FDA4380；客户端仅消费已知属性，不安装权威贡献。普通、符文之语和已激活套装层的技能来源沿同一有效装备资格收集。
 
@@ -38,7 +38,7 @@ ItemAuraTimer候选已沿物品GUID保存激活／撤销顺序：激活先取消
 
 物品说明以查看角色职业为上下文：野蛮人查看原1or2handed武器同时显示单手和双手伤害，其他职业仅显示双手伤害。装备后的角色伤害和动作按实际握持计算，不用说明中两组基础伤害替代人物数值。选角与世界原组件投影也按剑盾／单剑选择正确武器类，保留原图。
 
-依据本地D2MOO `Items::ITEMS_Is1Or2Handed`、`Inventory::INVENTORY_GetWieldType`、`ItemMode::sub_6FC43280`及当前MPQ；原D2S v96仍保存既有body位置／武器组，没有新增握持字段或私有段，重入从原装备位置推导。没有存档格式迁移。本轮代表运行范围与包身份由[EVIDENCE](EVIDENCE.md)及[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)维护。
+依据本地D2MOO `Items::ITEMS_Is1Or2Handed`、`Inventory::INVENTORY_GetWieldType`、`ItemMode::sub_6FC43280`及当前MPQ；原D2S v96仍保存既有body位置／武器组，没有新增握持字段或私有段，重入从原装备位置推导。没有存档格式迁移；完整握持、动作与保存组合仍待核对。
 
 ## 入口与边界
 
@@ -46,4 +46,4 @@ ItemAuraTimer候选已沿物品GUID保存激活／撤销顺序：激活先取消
 
 武器、防具、盾、腰带、靴／手套、戒指／项链、护符及职业专属基础类型共享资格框架，仍须逐条登记特殊属性与消费者。玩家吸血／吸魔／压碎／撕裂已接公共[武器命中效果](../combat/WEAPON_EFFECTS.md)，按实际出手武器收集本件贡献。完整双持组合、专用触发和部分职业消费者仍有缺口；能显示属性不能算该效果已执行。四类佣兵装备服务与自身属性贡献已接，类型限制和有限换装证据见[佣兵](../characters/HIRELINGS.md)；女武神装备准备不代表本人或佣兵全类型支持。
 
-有限装备／切组／套装与保存证据见[EVIDENCE](EVIDENCE.md)；全属性、全部套装组合、技能来源失效、多人及三难度未整体认证。
+全属性、全部套装组合、技能来源失效、多人及三难度的装备／切组与保存流程仍待逐项原版对齐。

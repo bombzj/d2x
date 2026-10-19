@@ -1,8 +1,8 @@
-# 第一幕怪物执行台账
+# 第一幕怪物实现与依据
 
 更新：2026-10-17。本页负责第一幕实际类型与普通AI家族；精英规则见[ELITES](ELITES.md)，专用首领策略见[BOSSES](BOSSES.md)，客户端支持见[PRESENTATION](PRESENTATION.md)。
 
-当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。代表路径的有限V2见本页证据，其余分支仍为V1；源码接线不代表所有随机／难度组合已认证。
+当前MPQ第一幕Levels的mon／nmon／umon池共57个身份；连同固定预设／任务怪的andariel、bloodraven、griswold、smith、skmage_pois3及gargoyletrap，共63个可击杀敌对战斗类型。19类普通AI之外接Smith、Griswold、BloodRaven、Countess、Andariel、GargoyleTrap，共25类程序。普通、冠军、暗金、超级暗金、仆从和幕首领保留各自身份与规则。迁入规范见[COMMON](COMMON.md)。本页登记实际身份、程序、原版依据与缺口；源码接线不代表所有随机／难度组合已对齐。
 
 | AI家族 | 当前MPQ身份 | 权威程序 |
 | --- | --- | --- |
@@ -30,7 +30,7 @@ vampire5三难度aip5仅开启位1；表中Firewall／Meteor槽的位2／4未开
 
 ## 三难度重新核对
 
-2026-10-12重新提取当前`assets/mpq2`的Levels、MonStats／2、MonPreset、SuperUniques、MonLvl、MonUMod、MonProp、DifficultyLevels、Skills、Missiles与MonSeq。普通mon／umon、噩梦／地狱nmon，加固定／任务及递归spawn／minion重建集合：三个难度各63类，当前身份集合相同，参数分别准备。24个原AI名加Countess专用程序为25类。逐身份矩阵位于忽略目录`artifacts/act12-reaudit-20261012/identity-difficulty.csv`，全集沿用下表。
+依据当前`assets/mpq2`的Levels、MonStats／2、MonPreset、SuperUniques、MonLvl、MonUMod、MonProp、DifficultyLevels、Skills、Missiles与MonSeq，按普通mon／umon、噩梦／地狱nmon，加固定／任务及递归spawn／minion重建集合：三个难度各63类，当前身份集合相同，参数分别准备。24个原AI名加Countess专用程序为25类；逐身份全集见下表。
 
 | 分支 | 普通 | 噩梦 | 地狱 |
 | --- | --- | --- | --- |
@@ -44,26 +44,13 @@ boss／noRatio保留各难度MonStats等级；密度、精英组数、固定仆�
 
 CorruptLancer、SkeletonMage及Bighead低生命接近使用原单位距离停止条件，不再将WithSteps截短路线或混用WalkInRadiusToTarget。骷髅弓手／法师及萨满分别保留主目标与可射击目标，法师撤退失败仍射主目标；Bighead只用射击回调判断资格，实际攻击仍指向主目标。绕行使用原方向优先级±2与逐格碰撞；同区域近房间取原六tile间隙条件，依据见[COMMON](COMMON.md#移动与目标依据)。
 
-源码／数据核对不等于完整运行认证。Vision缓存、跨区域完整活动房间、动态单位占位、全随机流及所有自然精英组合仍未认证；最小运行范围见本文有限证据。
-
-## 三难度核对后的最小冒烟
-
-2026-10-12历史有限观察位于忽略目录artifacts/act12-reaudit-20261012/smoke，包身份见同级package-hashes.json及[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。该批结果不认证后续源码。
-
-| 场景 | 实际观察 |
-| --- | --- |
-| 普通第一幕冰冷之原 | 自然人口与骷髅法师真实准入；100固定步后法师移动／动作、人物受伤；原技能36火弹命中，法师生命15→11.18359375 |
-| 普通第二幕干燥高地 | 自然人口与高等木乃伊真实准入；125固定步后追击／动作及人物受伤；原移动命令到达4818／5178 |
-| 保存退出／新进程重入 | 正常退局返回CharacterSelection；新进程ProtocolReady，生命644.3359375、法力215、等级91及经验1800000131恢复，物品数量保持 |
-| 两幕客户端／服务端 | scene.available=true，unavailableUnits=0，mapErrors／effectLimitations／characterIssues为空，failures=0；stderr为空 |
-
-旧批次曾禁用重复名称cr_lancer8；当前源码已按MPQ编译表恢复原名称链接与数值类别，见[第29项](ACT3.md#逐项接入)。普通难度最小观察不认证噩梦／地狱、全部AI／词缀分支、自然通关、巢生边界或完整原版等价；独立服务端未启动PvPGN后端。
+Vision缓存、跨区域完整活动房间、动态单位占位、全随机流及所有自然精英组合仍有缺口。重复名称cr_lancer8已按MPQ编译表恢复原名称链接与数值类别，见[第29项](ACT3.md#逐项接入)；不能因身份和程序接线就宣称全部难度与自然组合已对齐。
 
 ## 逐身份源码与原资源核对
 
 2026-10-11直接从当前`assets/mpq2`提取MonStats、MonStats2、Levels、SuperUniques、Skills、Missiles、MonSeq、DifficultyLevels与AnimData，重建57项区域池＋6项固定／任务身份。以下每行均已核对真实身份、三难度AI参数准备、攻击／技能调用、原动作与组件路径；这属于源码／资源核对，不表示每行全部随机分支已运行验收。
 
-表中459项已声明的普通动作对应166个不同COF，AnimData均存在；逐COF层和MonStats2变体核对6971项引用（含重复／nil），非nil组件缺失0。KB按D2Common COMPOSIT映射到GH，不要求不存在的KB图片；时钟按BaseId的WL AnimData与Velocity比例准备。八条相关MonSeq保留原帧、模式及事件；安达利尔喷毒为九次event2。原nil组件按空层省略，不补造图片。原资源与CSV索引保留在忽略目录`artifacts/act1-audit-20261011`。
+表中459项已声明的普通动作对应166个不同COF，AnimData均存在；逐COF层和MonStats2变体核对6971项引用（含重复／nil），非nil组件缺失0。KB按D2Common COMPOSIT映射到GH，不要求不存在的KB图片；时钟按BaseId的WL AnimData与Velocity比例准备。八条相关MonSeq保留原帧、模式及事件；安达利尔喷毒为九次event2。原nil组件按空层省略，不补造图片。
 
 | MonStats ID | hcIdx | AI | 原Token | 主动能力／槽位边界 |
 | --- | ---: | --- | --- | --- |
@@ -141,20 +128,4 @@ SkeletonRaise在骷髅及fetish1的原技能槽中存在，但普通Skeleton／F
 
 63类型／25类AI描述本批源码接入，完整Vision／活动房间／动态拥挤、全局随机顺序、全部难度与精英组合、多人任务／经验／掉落仍有缺口；血乌／安达利尔死亡表现和精英姓名／调色的已接范围及认证边界分别见BOSSES与ELITES。逐MonStats身份与三难度参数准备的静态台账已补齐；区域与三难度逐分支运行验收尚未完成，不能把家族或身份表扩张为完整逐分支验收。
 
-## 有限运行证据
-
-历史普通难度观察包括63战斗身份与13固定身份的管理准入、萨满复活、正常Telekinesis击退、自然Countess火墙、安达利尔代表技能、强化受击／死亡表现及保存重入。管理准入不证明自然刷新，管理击杀不证明正常战斗；噩梦／地狱、全部AI／词缀组合、多人／Linux及逐随机一致性未认证。包身份统一见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)，这些结果不认证后续源码。
-
-| 本地证据目录 | 适用范围 |
-| --- | --- |
-| artifacts/act1-audit-20261011/smoke | 逐身份／固定身份准入、萨满、击退、自然Countess及代表首领观察 |
-| artifacts/act1-monsters-20261008、artifacts/act1-monsters-closeout-20261009 | 早期57普通身份、代表AI、组件／盾牌与保存重入；原服人物死亡记录不算成功击杀验收 |
-| artifacts/act1-all-monsters-closeout-20261009 | 六种额外战斗类型、固定身份、电／冰强化、正常玩家法术及保存重入 |
-
-### 历史姓名与死亡表现观察
-
-历史观察覆盖原姓名／词缀／调色、强化受击／死亡以及首领死亡资源。当前实现和未认证的粒子／震动／残片边界见[表现专题](PRESENTATION.md)；源码修复不追认所有历史包。
-
-### 历史普通与全部怪物包
-
-早期包只保留上表证据范围，当前二进制身份与构建记录由运行包记录维护。本页不重复保存包哈希、交付过程或逐次快照日志。
+原协议、双方阵营和原版Host的怪物消息观察见[表现专题](PRESENTATION.md)；精英姓名／调色、首领粒子／震动／残片的原客户端依据及缺口由各自专题维护。管理准入、管理击杀及自研画面不能作为自然刷新、正常首领战斗或原版画面的依据。

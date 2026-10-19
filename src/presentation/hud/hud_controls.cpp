@@ -179,7 +179,7 @@ std::vector<SceneView::SkillPickerSlot> SceneView::skillPickerSlots(bool right) 
     return slots;
 }
 void SceneView::drawSkillControls(Vec mouse) const {
-    if (view_.capturesWorldInput() || view_.inventory.drag || view_.inventory.split ||
+    if (view_.capturesWorldInput() || view_.inventory.drag ||
         view_.inventory.goldDialog || view_.inventory.identify)
         return;
     std::optional<std::optional<int>> hovered;uint32_t hoveredOwner=UINT32_MAX;

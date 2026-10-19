@@ -32,13 +32,23 @@ Rectangle pageButton(bool next) {
     auto panel = panelBounds();
     return {panel.x + (next ? 61.f : 14.f) * scale(), panel.y + 384 * scale(), 38 * scale(), 32 * scale()};
 }
-Rectangle confirmBounds() {
-    auto panel = panelBounds();
-    return {panel.x + 73, panel.y + 158, 265, 248};
+struct Confirmation {
+    std::string title;
+    std::vector<std::string> rows;
+};
+Confirmation confirmation(const ShopView &shop, uint32_t slot,
+    const std::map<std::string,std::string,std::less<>> &labels) {
+    Confirmation menu{labels.at("VerifyTransaction5"), {}};
+    const auto found = std::find_if(shop.offers.begin(),shop.offers.end(),
+        [&](const ShopOfferView &offer) { return offer.slot == slot; });
+    if (found == shop.offers.end()) return menu;
+    menu.rows = {found->name.substr(0,found->name.find('\n')),labels.at("VerifyTransaction3"),
+        found->priceKnown ? std::to_string(found->price) : std::string{},
+        labels.at("VerifyTransaction1"),labels.at("VerifyTransaction2")};
+    return menu;
 }
-Rectangle confirmButton(bool yes) {
-    auto bounds = confirmBounds();
-    return {bounds.x + (yes ? 43.f : 174.f), bounds.y + 184, 45, 46};
+Rectangle confirmationBounds(const OriginalMenu &painter, Vec anchor, const Confirmation &menu) {
+    return painter.bounds(anchor,{0,0,float(W),float(H)},menu.title,menu.rows);
 }
 struct Placement { const ShopOfferView *offer; int page; Rectangle bounds; };
 std::vector<Placement> placements(const ShopView &shop, int category, float cellSize) {
@@ -111,13 +121,9 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.inventory.open = true;
     view_.inventory.cubeOpen = false;
     view_.partyOpen = view_.questOpen = view_.characterOpen = view_.skillTreeOpen = view_.hirelingOpen = false;
-    view_.shopCategory = 0;
-    for (int tab = 0; tab < 4; ++tab)
-        if (!gamble && tabAvailable(shopView(), tab, inventoryCellSize(inventoryView_))) {
-            view_.shopCategory = tab;
-            view_.shopPage = tab == 2 ? 1 : 0;
-            break;
-        }
+    // Native 1.13c RVA 9C213 opens trade on page 3. Shelf packets arrive
+    // asynchronously; their partial contents cannot choose the initial page.
+    view_.shopCategory = gamble ? 0 : 3;
     return true;
 }
 void SceneView::closeNpcShop() {
@@ -150,12 +156,15 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
             view_.shopConfirm.reset();
             return {};
         }
-        if (CheckCollisionPointRec(rv(mouse), confirmButton(true))) {
+        const auto menu = confirmation(shopView(),*view_.shopConfirm,assets_.characterLabels);
+        const auto box = confirmationBounds(originalMenu_,view_.shopConfirmAt,menu);
+        const int selected = originalMenu_.hit(box,true,menu.rows.size(),mouse);
+        if (selected == 3) {
             auto slot = *view_.shopConfirm;
             view_.shopConfirm.reset();
             return slot;
         }
-        if (CheckCollisionPointRec(rv(mouse), confirmButton(false)))
+        if (selected == 4)
             view_.shopConfirm.reset();
         return {};
     }
@@ -196,6 +205,8 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
         if (item.page == view_.shopPage &&
             CheckCollisionPointRec(rv(mouse), item.bounds)) {
             view_.shopConfirm = item.offer->slot;
+            view_.shopConfirmAt = mouse;
+            view_.shopConfirmChoice = 0;
             return {};
         }
     return {};
@@ -274,30 +285,10 @@ void SceneView::drawNpcShop(Vec mouse) const {
             deferTooltip(detail->tooltip, detail->quality, {mouse.x + 170, mouse.y}, detail->priceKnown ? std::optional<unsigned>{detail->price} : std::nullopt, assets_.characterLabels.at("Cost"));
     }
     if (view_.shopConfirm) {
-        auto popup = confirmBounds();
-        if (auto sprite = assets_.vendorConfirm.frame(0, 0)) {
-            const auto &texture = sprite->texture;
-            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-                           popup, {0, 0}, 0, WHITE);
-        }
-        auto found = std::find_if(items.begin(), items.end(), [&](const Placement &entry) {
-            return entry.offer->slot == *view_.shopConfirm;
-        });
-        if (found != items.end()) {
-            const auto &name = found->offer->name;
-            int fontSize = 16;
-            while (fontSize > 1 && painter_.measure(name, fontSize) > popup.width - 44) --fontSize;
-            const UiPainter namePainter(assets_.itemTextFonts[itemTextFontIndex(found->offer->quality, ItemTextTone::Name)]);
-            namePainter.inBox(name, {popup.x + 22, popup.y + 40, popup.width - 44, 32}, fontSize, WHITE);
-            painter_.label(found->offer->priceKnown ? std::to_string(found->offer->price) + " GOLD?" : "BUY FROM SERVER?",
-                           int(popup.x) + 24, int(popup.y) + 88, 14, parchment);
-        }
-        for (bool yes : {true, false}) {
-            auto button = confirmButton(yes);
-            DrawRectangleLinesEx(button, 1, gold);
-            painter_.label(yes ? "YES" : "NO", int(button.x) + (yes ? 4 : 9),
-                           int(button.y) + 8, 13, gold);
-        }
+        const auto menu = confirmation(shop,*view_.shopConfirm,assets_.characterLabels);
+        const auto box = confirmationBounds(originalMenu_,view_.shopConfirmAt,menu);
+        const int hovered = originalMenu_.hit(box,true,menu.rows.size(),mouse);
+        originalMenu_.draw(box,menu.title,menu.rows,hovered >= 3 ? hovered : 3+view_.shopConfirmChoice);
     }
 }
 } // namespace d2x

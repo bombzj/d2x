@@ -45,7 +45,7 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
     const auto &c = inventory.containers;
     std::vector<ContainerGrid> grids;
     if (const auto *container = inventory.container(c.belt)) {
-        const int rows = ui.open || ui.beltExpanded ? container->rows : 1;
+        const int rows = ui.open || ui.beltExpanded || ui.beltHovered ? container->rows : 1;
         const auto belt = beltSlot({0, 0});
         grids.push_back({c.belt, {belt.x, belt.y}, {31 * hudScale(), -32 * hudScale()},
                          container->columns, rows, 29 * hudScale()});
@@ -87,18 +87,22 @@ ContainerGrid playerTradeGrid(const InventoryView &inventory, bool own) {
         {p.x+l.left*inventoryScale(),p.y+l.top*inventoryScale()},{cell,cell},l.columns,l.rows,cell};
 }
 void InventoryUi::syncCursor(const InventoryView &inventory, EntityId reserved) {
-    if (!pending) pendingPlacement.reset();
+    if (!pending) {
+        if (pendingPlacement && pendingPlacement->taking && drag && !drag->onCursor &&
+            drag->item.id == pendingPlacement->item && !inventory.cursorItem()) drag.reset();
+        pendingPlacement.reset();
+    }
     if (const auto *item = inventory.cursorItem()) {
         // Suppress a newly assigned intermediate cursor during a queued take,
         // but keep an already authoritative cursor until placement is confirmed.
-        if (item->id == reserved || (pendingPlacement && pending==item->id && pendingPlacement->item==item->id &&
+        if (item->id == reserved || (pendingPlacement && !pendingPlacement->taking && pending==item->id && pendingPlacement->item==item->id &&
             pendingPlacement->source!=item->location)) {
             drag.reset();
             return;
         }
-        if (!drag || !drag->onCursor || drag->item.id != item->id) {
+        if (!drag || drag->item.id != item->id) {
             drag = InventoryDrag{item->handle(), {}, true, true, true};
-        } else drag->item = item->handle();
+        } else { drag->item = item->handle(); drag->onCursor = true; }
         identify.reset();
     } else if (drag && drag->onCursor) drag.reset();
 }
@@ -155,7 +159,7 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
     // Retail 1.13c RVA 8C2B0 only selects 0x28 for an identified,
     // unbroken socketed host with room. Other targets keep normal swap/equip.
     const auto socketTarget = [&](const InventoryItemView &host) {
-        return !ui.playerTradeOpen && !ui.forceSwap && definition.socketFiller && source->identified &&
+        return !ui.playerTradeOpen && definition.socketFiller && source->identified &&
             host.identified && (host.nativeFlags & 0x800u) && !(host.nativeFlags & 0x100u) &&
             host.socketContentsKnown && host.socketItems.size() < host.sockets;
     };
@@ -189,6 +193,21 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
             auto cell = grid.cellAt(mouse);
             if (!cell)
                 continue;
+            if (grid.container == containers.belt && (!definition.beltAllowed || definition.width != 1 || definition.height != 1)) {
+                drop.bounds = beltSlot(*cell);
+                drop.error = InventoryError::UnsupportedUse;
+                drop.description = inventoryErrorText(drop.error);
+                return drop;
+            }
+            const auto *pointed = inventory.item(inventory.itemAt(grid.container,*cell));
+            const auto *pointedDefinition = pointed ? inventory.definition(pointed->definition) : nullptr;
+            if (!ui.playerTradeOpen && pointed && pointed->id != source->id && pointedDefinition &&
+                pointedDefinition->opensCube && grid.container != containers.cube) {
+                drop.bounds = grid.itemBounds(std::get<ContainerLocation>(pointed->location).cell,*pointedDefinition);
+                drop.command = MoveItem{source->handle(),AutoPlace{containers.cube}};
+                drop.error = client.preview(*drop.command);
+                return drop;
+            }
             // D2Client 1.13c RVA 945D0/94820: even footprints shift the
             // pointer by a quarter of the DC6 dimension before cell division.
             // Both native paths then subtract half the footprint and clamp at 0.
@@ -233,11 +252,15 @@ InventoryDrop inventoryDrop(const InventoryView &inventory, const IInventoryClie
                 if (socketTarget(*target)) {
                     drop.command = SocketItem{source->handle(), target->handle()};
                     drop.description = "Insert into socket";
-                } else if (!ui.playerTradeOpen && !ui.forceSwap && targetDefinition->bookCapacity &&
+                } else if (!ui.playerTradeOpen && targetDefinition->bookCapacity &&
                     targetDefinition->bookScroll == source->definition) {
                     drop.command = LoadBook{source->handle(), target->handle()};
                     drop.description = "Add pages to tome";
-                } else if (!ui.playerTradeOpen && !ui.forceSwap && definition.maxStack > 1 && target->definition == source->definition) {
+                } else if (!ui.playerTradeOpen && definition.maxStack > 1 && target->definition == source->definition &&
+                    source->quality == target->quality && (source->quality == ItemQuality::Normal ||
+                    source->quality == ItemQuality::Superior || source->quality == ItemQuality::Inferior) &&
+                    !((source->nativeFlags ^ target->nativeFlags) & 0x00400000u) &&
+                    !source->sockets && !target->sockets && source->stack && target->stack && source->stack == target->stack) {
                     drop.command = MergeStacks{source->handle(), target->handle()};
                     drop.description = "Merge into this stack";
                 } else {

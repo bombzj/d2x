@@ -509,17 +509,11 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Swap requires the cursor item and a fitting backpack destination");
         break;
     case OnlineItemAction::Use:
-        if (!owned(wire) || !(backpack(wire) || wire.mode == 2) || !baseNumber(wire, "useable"))
-            return reject("Use requires a usable item in this player's backpack or belt");
+        if (!owned(wire) || view_.cursor || !(accessible(wire) || wire.mode == 2) || !baseNumber(wire, "useable"))
+            return reject("Use requires a usable item in an accessible owned container or belt");
         if (command.mercenary && wire.mode != 2) return reject("Native mercenary item use requires a belt item");
         if (baseNumber(wire, "pSpell") == 7)
             return reject("Cube UI context and transmutation are not connected yet");
-        for (size_t row = 0; row < tables_.at("books").rows().size(); ++row) {
-            const auto &books = tables_.at("books");
-            if (books.value(row, "ScrollSkill") == "Scroll of Townportal" &&
-                (books.value(row, "ScrollSpellCode") == wire.code || books.value(row, "BookSpellCode") == wire.code))
-                return reject("Use online-town-portal to cast an available native portal skill");
-        }
         break;
     case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:
         if (!cursor() || !baseNumber(wire, "belt")) return reject("Only an allowed cursor consumable can enter the belt");
@@ -533,10 +527,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
                 if (owned(item) && item.mode == 2 && item.x == command.beltSlot) return reject("Belt slot is occupied; use belt-swap");
         break;
     case OnlineItemAction::Stack:
-        if (!owned(wire) || !(cursor() || backpack(wire)) || !(target->mode == 1 || backpack(*target)) ||
+        if (!owned(wire) || !(cursor() || accessible(wire)) || !(target->mode == 1 || accessible(*target)) ||
             wire.code != target->code || !baseNumber(wire, "stackable")) return reject("Stack requires compatible owned stackable items");
-        if (targetData->quantity && *targetData->quantity >= unsigned(std::max(0, baseNumber(*target, "maxstack"))))
-            return reject("Target stack is full");
         break;
     case OnlineItemAction::Book: {
         if (!cursor() || !isType(wire, "scro") || !accessible(*target) || !isType(*target, "book"))
@@ -545,18 +537,17 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         for (size_t row = 0; row < books.rows().size(); ++row)
             pair |= books.value(row, "ScrollSpellCode") == wire.code && books.value(row, "BookSpellCode") == target->code;
         if (!pair) return reject("Current MPQ has no matching scroll and tome pair");
-        if (!targetData->quantity || *targetData->quantity >= unsigned(std::max(0, baseNumber(*target, "maxstack"))))
-            return reject("Target tome quantity is unknown or full");
+        if (!targetData->quantity) return reject("Target tome quantity is unknown");
         break;
     }
     case OnlineItemAction::Socket:
         if (!cursor() || !decoded.identified || !isType(wire, "sock") ||
-            !(backpack(*target) || target->mode == 1) || !targetData->identified || targetData->sockets <= targetData->filledSockets)
+            !(accessible(*target) || target->mode == 1) || !targetData->identified || targetData->sockets <= targetData->filledSockets)
             return reject("Socket requires an identified cursor filler and a known empty socket in an owned item");
         break;
     case OnlineItemAction::Identify: {
-        if (!backpack(wire) || view_.cursor || targetData->identified || !(backpack(*target) || target->mode == 1))
-            return reject("Identify requires an empty cursor, a backpack source and an unidentified backpack or equipped target");
+        if ((!accessible(wire) && !(owned(wire) && wire.mode==2)) || view_.cursor || targetData->identified || !(accessible(*target) || target->mode == 1))
+            return reject("Identify requires an empty cursor, an accessible source and an unidentified accessible or equipped target");
         const auto &books = tables_.at("books"); bool source = false;
         for (size_t row = 0; row < books.rows().size(); ++row)
             if ((books.value(row, "ScrollSpellCode") == wire.code || books.value(row, "BookSpellCode") == wire.code) &&
@@ -574,8 +565,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Cube placement requires a cursor/ground item and this player's stored cube");
         break;
     case OnlineItemAction::CubeOpen:
-        if (!backpack(wire) || view_.cursor || !isType(wire, "ques") || baseNumber(wire, "pSpell") != 7)
-            return reject("Open cube requires this player's original usable backpack cube and empty cursor");
+        if (!accessible(wire) || view_.cursor || !isType(wire, "ques") || baseNumber(wire, "pSpell") != 7)
+            return reject("Open cube requires this player's accessible original cube and empty cursor");
         break;
     case OnlineItemAction::Buy:
         if (wire.action != 11 || wire.ownerType != 1 || wire.owner != command.npc || wire.mode != 0)

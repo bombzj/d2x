@@ -39,13 +39,14 @@ struct InputState {
     std::map<EntityId, InputItem> items;
     EntityId trade{};
 };
-struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; };
+struct Access { EntityId source; ContainerKind kind; uint64_t revision{}; RegionId area{}; std::optional<int> remoteRange{}; EntityId parentStash{}; };
 struct Pickup { ActorContext actor; GroundTransfer request; uint64_t locomotion{}, groundGeneration{}; };
 struct State { std::map<PlayerId, Access> storage; std::map<PlayerId, Pickup> pickups; };
 struct Ports { const PlayerStore &players; items::System &items; transactions::System &transactions; const ItemCatalog *definitions; MovementSystem &movement; effects::System &effects; const AreaStore &areas; EventOutbox &events; travel::System &travel; trade::System &trade; const quests::System &quests; const social::System &social; };
 class System {
     State state_;
     const Ports ports_;
+    bool stashAccess(PlayerId, const Access &) const;
     StepStatus replenish(TickContext);
     std::map<PlayerId,uint64_t> restorationRevisions_;
   public:

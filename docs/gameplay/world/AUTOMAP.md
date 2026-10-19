@@ -28,7 +28,7 @@ D2X保存根目录由`--host-saves`指定，默认`saves`；原版Windows通过�
 
 手动Save／Reload、正常离局、正常关闭和已观察到的断线保存本人记忆，切换原自动地图层、换入不同seed时也落盘。强制结束进程不保证最后探索落盘。每个文件使用原子替换，保留`.bak`；轮换先清空退役槽再切换索引，避免中断时把旧地形当成新seed，两个文件不是跨文件原子事务。文件上限16MiB；未知版本、非普通文件及损坏链拒绝并保留。地图失败独立提示，不阻止D2S保存。D2S v96未改动，客户端偏好仍独立保存。
 
-格式证据为本机1.13c D2Client：RVA `0x5F3E0`索引／路径、`0x60510`写块、`0x61140`四组序列化、`0x61E70`读链及object seed过滤、`0x61880`瓦片坐标、`0x61780`物件坐标；D2MOO `D2Structs.OtherDLLs.h`、`D2Dungeon.cpp`和`LevelsTbls.cpp`交叉核对字段。已有原版Save下24字节`.map`及`.maN`作为结构证据。该实现尚未构建或做原版读写往返验证，不能把静态还原记作互通验收。
+格式证据为本机1.13c D2Client：RVA `0x5F3E0`索引／路径、`0x60510`写块、`0x61140`四组序列化、`0x61E70`读链及object seed过滤、`0x61880`瓦片坐标、`0x61780`物件坐标；D2MOO `D2Structs.OtherDLLs.h`、`D2Dungeon.cpp`和`LevelsTbls.cpp`交叉核对字段。已有原版Save下24字节`.map`及`.maN`作为结构证据；原版读写往返仍待核对，静态还原不能证明互通。
 
 ## 原版Host下的连续移动
 
@@ -36,7 +36,7 @@ D2X保存根目录由`--host-saves`指定，默认`saves`；原版Windows通过�
 
 D2X单机此前较平滑的原因还包括宿主发送过密：`publishMotion`把原资源检查的“四次”错当成四个25Hz模拟帧，并额外因移动命令或路径偏移变化发送96。现在补上D2MOO `Game::sub_6FC39030`的外层条件（已有待发送包且10帧，或20帧，另有生命差值分支），再执行`PlrMsg::sub_6FC82360`的药水／生命法力／耐力比较和四次无资源变化检查；仅坐标偏移达到2才发96，正常移动请求不作为额外ACK。入场、明确拒绝的移动和强制位置纠正仍保留各自处理。因此原版不是固定每两秒发位置：平稳城镇步行常为约2–4秒，资源变化会改变节奏。
 
-只读分析此前`artifacts/server-protocol-smoke-20261011/npc-host-comparison`的已存回包：`d2x-ready-host-received.jsonl`内同体力移动96样本多为0.15–0.17秒；`original-received.jsonl`／`original-combat-received.jsonl`同类样本多为3–4秒。它们解释旧版差异，不是本次修复后的冒烟证据。按本次要求，未构建、运行、打包或新增测试程序。
+2026-10-11本机原版1.13c Host向D2X客户端发送的同体力移动96样本间隔多为3–4秒。该观察支持按显示路径连续推进地图中心；资源变化、其他动作和全部网络条件不能据此归为固定周期。
 
 ## 原图与标记
 
@@ -69,8 +69,6 @@ Fade逐图元选择原CelDraw模式，使用当前幕MPQ `pal.pl2`的实际混�
 
 原城镇全图依据D2MOO DrlgPreset整房AutoMap及pfTownAutomap；邻房／视野事件、原图布局与选项参考固定本地仓库和当前MPQ。四个参考没有完整D2Client揭示节拍／Fade程序，显示参数另按本机1.13c静态程序核对，不能仅用D2Gfx TRANS枚举推导。
 
-显示静态依据：D2Client RVA 0x5F9F0小图原点／范围，0x608D0居中、0x60950大小、0x60C40地图原点／侧栏，0x3F860相机投影、0x10E54设置H−40；0x5FB10–0x5FB40方向键每事件16像素；0x5F970／0x5F9C0与0x60346–0x604EA核对Fade、按幕Auto、距离分档及图元裁剪；0x62760城镇拼图。D2gfx ordinal10079／RVA0xAFF0通向D2DDraw接口+0x98（RVA0x6F60），其0x6E20使用DC6原偏移／底边裁剪；0x6A10确认三档实际trans表选择。当前MPQ的maximaps与act2map原帧、第一幕PL2只读提取留`artifacts/automap-display-20261017/`；原DLL版本身份见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。这些显示改动已纳入Windows Release客户端包，身份见[运行包记录](../../development/BUILD_AND_RUN.md#当前自动地图显示客户端包)；未启动游戏、运行测试、截图对照或作性能认证，等待用户测试。侧栏强制改变小图有效边、分辨率／模式变化时，显示布局缓存强制清平移；原系统键重复节拍由窗口平台提供，仍需实际平台操作对照。
+显示静态依据：D2Client RVA 0x5F9F0小图原点／范围，0x608D0居中、0x60950大小、0x60C40地图原点／侧栏，0x3F860相机投影、0x10E54设置H−40；0x5FB10–0x5FB40方向键每事件16像素；0x5F970／0x5F9C0与0x60346–0x604EA核对Fade、按幕Auto、距离分档及图元裁剪；0x62760城镇拼图。D2gfx ordinal10079／RVA0xAFF0通向D2DDraw接口+0x98（RVA0x6F60），其0x6E20使用DC6原偏移／底边裁剪；0x6A10确认三档实际trans表选择。资源来自当前MPQ的maximaps、act2map原帧和各幕PL2；原DLL版本身份见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。侧栏强制改变小图有效边、分辨率／模式变化时，显示布局缓存强制清平移；原系统键重复节拍由窗口平台提供，仍需实际平台操作对照。
 
-营地原大地图／NPC及五幕旅行返回探索有此前有限截图观察；最新包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。2026-10-10动态标记依原版截图、D2MOO公开队伍包及本地原客户端静态程序补齐，该批TCP路径与未覆盖范围见[组队有限证据](../../modules/NETWORK.md#组队有限证据)。
-
-此前`artifacts/act1-map-closeout-20261010`中的跨进程、换seed及坏文件记录针对已停用的D2X版本2格式，不认证当前原版二进制读写。现有AutomapCatalog仍以坐标稳定选择MPQ中的cel变体，尚未还原原共享automap RNG及其调用节拍；文件记录／恢复实际cel，不宣称每次新探索的变体与原版逐像素相同。原版揭示节拍、全部缩放／侧栏／光照组合、五幕跨进程、Realm实际缓存往返及Linux仍未完成验收。当前自研宿主S2C 03的object seed仍为0，物件生成随机流的独立原版还原不在此次缓存格式改动内；连接原版Host时使用其实际object seed。地形规则见[地图](MAPS.md)，所有权见[地图模块](../../modules/MAP.md)。
+现有AutomapCatalog仍以坐标稳定选择MPQ中的cel变体，尚未还原原共享automap RNG及其调用节拍；文件记录／恢复实际cel，不能保证每次新探索的变体与原版逐像素相同。原版揭示节拍、全部缩放／侧栏／光照组合、五幕跨进程、Realm实际缓存往返及Linux仍缺完整核对。当前自研宿主S2C 03的object seed仍为0，物件生成随机流的独立原版还原尚未完成；连接原版Host时使用其实际object seed。地形规则见[地图](MAPS.md)，所有权见[地图模块](../../modules/MAP.md)。

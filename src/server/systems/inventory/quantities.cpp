@@ -14,16 +14,16 @@ int64_t property(const EquipmentRules &rules, EntityId id, int level, std::strin
 bool equal(const ItemInstance &a, const ItemInstance &b, const EquipmentRules &rules, int level) {
     if (a.definition != b.definition || a.quality != b.quality || a.gradeRow != b.gradeRow || a.specialRow != b.specialRow ||
         (a.quality != ItemQuality::Normal && a.quality != ItemQuality::Superior && a.quality != ItemQuality::Inferior) ||
-        ((a.nativeFlags ^ b.nativeFlags) & 0x00400000u) || a.grantedSkill != b.grantedSkill || a.sockets || b.sockets) return false;
+        ((a.nativeFlags ^ b.nativeFlags) & 0x00400000u) || a.sockets || b.sockets) return false;
     for (const auto stat : {"mindamage", "maxdamage", "secondary_mindamage", "secondary_maxdamage",
-        "item_throw_mindamage", "item_throw_maxdamage", "item_mindamage_percent", "item_maxdamage_percent"})
+        "item_throw_mindamage", "item_throw_maxdamage"})
         if (property(rules, a.id, level, stat) != property(rules, b.id, level, stat)) return false;
     return !property(rules, a.id, level, "item_numsockets") && !property(rules, b.id, level, "item_numsockets");
 }
 }
 unsigned Draft::stackSpace(const ItemInstance &a,const ItemInstance &b) const {
     const auto *from=std::get_if<ContainerLocation>(&a.location),*to=std::get_if<ContainerLocation>(&b.location);
-    const auto permitted=[&](EntityId id){return (storage && id==containers().stash) || id==containers().backpack || id==containers().cursor || id==containers().equipment;};
+    const auto permitted=[&](EntityId id){return (storage && id==containers().stash) || (cube && id==containers().cube) || id==containers().backpack || id==containers().cursor || id==containers().equipment;};
     const auto *base=catalog.find(b.definition);
     if(a.id==b.id || !from || !to || !owned(*from) || !owned(*to) || !permitted(from->container) || !permitted(to->container) ||
         !base || base->maxStack<=1 || base->bookCapacity || !equal(a,b,rules,player.persistent.player.level)) return 0;
@@ -37,7 +37,7 @@ DomainStatus Draft::merge(const MergeStacks &command) {
     const auto *from = std::get_if<ContainerLocation>(&a->location), *to = std::get_if<ContainerLocation>(&b->location);
     if (!from || !to || !owned(*from) || !owned(*to)) return DomainStatus::InvalidRequest;
     const auto permitted = [&](EntityId id) {
-        return (storage && id == containers().stash) || id == containers().backpack || id == containers().cursor || id == containers().equipment;
+        return (storage && id == containers().stash) || (cube && id == containers().cube) || id == containers().backpack || id == containers().cursor || id == containers().equipment;
     };
     if (!permitted(from->container) || !permitted(to->container)) return DomainStatus::InvalidRequest;
     const auto *definition = catalog.find(b->definition);

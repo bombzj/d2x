@@ -38,7 +38,7 @@ A2Q0杰海因欢迎使用原槽8位0，独立于六项日志和普通初见。�
 
 日志确认等待区域准备时由服务端保留有界请求，固定步复验人物、区域代次、存活、对象来源与交互几何后重试；不要求客户端重复发送已确认文本。插杖开启和租约清理使用同一交互几何。对象发起的旅行由travel绑定移动序号，后续移动／死亡／换区会使等待失效。
 
-新游戏按个人插杖提交资格及当前真实墓穴恢复class100入口。成杖说明、日志待确认与日食等状态的原编码／不保存边界及校验边界统一见[存档](../../modules/SAVES.md#任务槽与奖励语义)；下节仅记录历史验证范围。
+新游戏按个人插杖提交资格及当前真实墓穴恢复class100入口。成杖说明、日志待确认与日食等状态的原编码／不保存边界及校验边界统一见[存档](../../modules/SAVES.md#任务槽与奖励语义)。
 
 罗达门特使用同房间／近邻及第二幕队友资格；赫拉森日志按事件关卡共享。都瑞尔死亡只给当时巢穴、实际击杀者及第二幕队友杀敌许可；泰瑞尔开放门前抵达巢穴的其他未完成人物也可参加第二阶段及其组队传播。蓝门事件完成后入局不追授这一阶段，已有个人stage3／4仍可确认杰海因／马席夫。建局关闭与本局错过目标会限制实际对白／推进，不清除保存的个人待领奖权利。近邻与多阶段事务边界见[任务系统](SYSTEM.md#资格准备与提交)。
 
@@ -46,24 +46,4 @@ A2Q0杰海因欢迎使用原槽8位0，独立于六项日志和普通初见。�
 
 先参考master的第二幕任务、物件、插杖UI和旅行，再核对本地D2MOO `QUESTS/ACT2/A2Q0..6`、ObjMode操作24／25／34／39–43、PlrMsg原44、D2PacketDef、D2QuestRecord及当前MPQ。纯记录／地图算法可以共享，目标认定、资格和发奖只归服务端，见[任务系统](SYSTEM.md#核对与后续扩展)。
 
-完整城镇移动／剧情时序、丢失全部法杖材料后的实例计数细分状态和插杖特效仍待补齐；怪物完整AI及战斗认证以[第二幕怪物](../monsters/ACT2.md)的当前范围为准。组队传播及都瑞尔／泰瑞尔晚到边界已按上述事件区分接入，2026-10-12修正已构建，但本轮[有限TCP冒烟](SYSTEM.md#有限运行核查)没有运行第二幕目标／晚到事件。旧单机与第一幕证据不认证当前第二幕，更不认证三难度、多人、原服或Linux。
-
-## 有限运行证据
-
-2026-10-09历史包完成Windows Release构建（`build-09.log`），EXE SHA256为`6F249024C009CEF71BAA684E96E83B5B13F4FB0A775ACE2CB2B6AF3E5CF10D86`。它不是[当前运行包](../../development/BUILD_AND_RUN.md#运行包记录)。忽略目录`artifacts/act2-quests-20261009`保留构建／运行日志、快照、截图和临时存档；未新增测试脚本、用例或专用程序。
-
-同日重新构建确认无待编译内容并重新打包，同一EXE的独立复验保存在`artifacts/act2-recheck-20261009`。从材料检查点副本启动，实际重做Cain339（说明位15→31）、日志确认等待与红门往返、插杖取消／提交、开墓／进入巢穴、Tyrael救援／蓝门、Jerhyn／Meshif交接与跨幕往返；新进程恢复六任务阶段4／6／4／4／3／5、说明位31、技能点84和已消耗材料，并再次恢复class100 mode2入口。重载时ProtocolReady、ignoredPackets=0、unavailableUnits=0、mapErrors为空、宿主failures=0，两次stderr为空。复验未重新获取技能书／材料或重做日食，这些只由下表的前次样本覆盖。具体快照为`cain-assembled`、`journal-read`、`staff-submitted`、`tomb-open`、`tyrael-rescued`、`meshif-east`、`saved-snapshot`、`reloaded-snapshot`／`reloaded-online`及`reloaded-tomb`。
-
-普通难度临时女巫Hero，地图种子1144830459，实际真墓70／偏移4。经验、位置和自然怪物死亡由既有管理命令准备，交谈、拾取、消费、方块、插杖、机关及门户旅行发送原online请求。怪物使用授权替身，不能作为正常战斗证据；人物未走第一幕正常通关前置。以下是有限单人路径，其他分支仍未认证：
-
-| 实际路径 | 观察与证据 |
-| --- | --- |
-| 罗达门特 | 自然目标死亡掉原技能书；拾取消费后余技能点83→84，Atma334确认。最终stage4／Used=2；`radament-book-scroll`、`atma-cain-reward`、`final-reloaded-snapshot` |
-| 材料与合成 | 原卷轴箱／方块箱／杖身箱／祭坛掉落；Cain335消耗卷轴、336–338说明；原方块配方消耗msf／vip生成hst。`cube-drop`、`shaft-drop`、`staff-assembled` |
-| 日食 | 蛇谷触发、Drognan348、祭坛破坏和371确认；服务端与原0x53客户端环境均恢复。最终stage4；`eclipse-active`、`eclipse-status`、`altar-destroyed` |
-| 日志与召唤者 | 自然Summoner死亡、396阅读、原0x50偏移4；第一次确认等待峡谷准备后自动建立红门，不二次确认，红门74↔46及operation34的74↔54实际往返；城镇427／406清除待确认。`journal-retry-final`、`red-portal-canyon`、`arcane-cellar-warp` |
-| 插杖／墓穴 | 原0x58打开原图面板、0x44取消／重开／提交，hst删除与stage6一起提交，结果5；延迟后class100 mode2、共享开墙与operation43进入73；保存重入再次恢复入口。`orifice.png`、`staff-submitted`、`tomb-open`、`duriel-before-final` |
-| 救援与跨幕 | 自然Duriel死亡、Tyrael302及蓝门73→40、Jerhyn253／442、Meshif450后40→75并由Meshif2返回40；跨幕完成位及75传送点随事务提交。`tyrael-rescued`、`meshif-sailed`、`six-quests-confirmed` |
-| 保存恢复 | 新进程恢复六任务阶段4／6／4／4／3／5、技能书Used、余技能点84、方块和跨幕位；已消耗的材料／法杖不再出现，待确认位不复活。最终宿主failures=0、characterIssues为空、客户端ignoredPackets=0。`final-saved-snapshot`、`final-reloaded-snapshot`、`final-reloaded-online` |
-
-冒烟修复了杰海因标记遗漏、日志确认准备等待、插杖租约距离不一致、巢穴入口标记选择及对象旅行移动序号绑定。早期失败样本与旧包快照仍保留，只以上述成功样本认证对应路径。等待开墙期间曾发生死亡并用原复活请求回城，未把该过程作为首领战斗或完整死亡系统认证。
+完整城镇移动／剧情时序、丢失全部法杖材料后的实例计数细分状态和插杖特效仍待补齐；怪物AI及战斗边界以[第二幕怪物](../monsters/ACT2.md)为准。组队传播及都瑞尔／泰瑞尔晚到资格已按上述事件区分接入，但第二幕多阶段目标、三难度、多人、原服及Linux仍缺完整对照；其他幕的资格结论不能代替本幕核对。

@@ -55,7 +55,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
         };
         if (ui.shopSalePending) return true;
         if (input.escape) {
-            if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog)
+            if (ui.inventory.identify || ui.inventory.goldDialog)
                 ui.inventory.cancelGesture();
             else if (ui.shopRepair) ui.shopRepair = false;
             else if (ui.shopConfirm)
@@ -64,7 +64,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                 view_.closeNpcShop();
                 npcClient_.submit(EndNpcConversation{ui.dialogueObject});
             }
-        } else if (input.inventory || (!ui.shopConfirm && !ui.inventory.split && !ui.inventory.goldDialog &&
+        } else if (input.inventory || (!ui.shopConfirm && !ui.inventory.goldDialog &&
                    input.insideViewport && input.leftPressed &&
                    CheckCollisionPointRec(rv(input.mouse), inventoryClose()))) {
             view_.closeNpcShop();
@@ -91,10 +91,12 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                 return true;
             }
             return handleInventory(input);
-        } else if (ui.inventory.identify || ui.inventory.split || ui.inventory.goldDialog) {
+        } else if (ui.inventory.identify || ui.inventory.goldDialog) {
             return handleInventory(input);
         } else {
-            if (input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
+            if (ui.shopConfirm && input.menuDelta)
+                ui.shopConfirmChoice = std::clamp(ui.shopConfirmChoice+input.menuDelta,0,1);
+            if (!ui.shopConfirm && input.pageDelta) view_.scrollNpcShop(-input.pageDelta);
             if (!ui.shopConfirm && input.insideViewport && input.leftPressed &&
                        view_.inventoryView().stashLayout.expansion &&
                        weaponTabAt(input.mouse).has_value()) {
@@ -103,12 +105,19 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
             } else if (input.enter && ui.shopConfirm) {
                 const auto slot = *ui.shopConfirm;
                 ui.shopConfirm.reset();
-                npcClient_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
+                if (!ui.shopConfirmChoice)
+                    npcClient_.submit(BuyVendorItem{ui.dialogueObject, slot, ui.shopGamble});
             } else if (!ui.shopConfirm && input.insideViewport &&
                        (inventorySurface(ui.inventory, input.mouse) ||
                         CheckCollisionPointRec(rv(input.mouse), beltBounds(
                             view_.inventoryView().container(view_.inventoryView().containers.belt)->rows)))) {
-                if (ui.shopRepair && input.leftPressed) {
+                if (input.control && input.leftPressed && !ui.shopRepair) {
+                    if (const auto *item = repairItemAt(); item &&
+                        npcClient_.canRequestSale(ui.dialogueObject,item->handle())) {
+                        ui.shopSalePending = item->handle();
+                        npcClient_.submit(SellVendorItem{ui.dialogueObject,item->handle()});
+                    }
+                } else if (ui.shopRepair && input.leftPressed) {
                     if (const auto *item = repairItemAt())
                         npcClient_.submit(RepairVendorItem{ui.dialogueObject, item->handle()});
                 } else return handleInventory(input);
@@ -169,7 +178,7 @@ bool SceneController::handleHirelingPortrait(const FrameInput &input, float elap
             if (drop && queueInventory(UseHirelingPotion{drag.item}, drag.item.id)) ui.inventory.drag.reset();
         } else if (input.rightPressed && ui.hirelingPortraitHoverTime>=hirelingPortraitHoverSeconds &&
             view_.hirelingView().active && !ui.inventory.identify && !ui.inventory.pending &&
-            !ui.inventory.split && !ui.inventory.goldDialog) {
+            !ui.inventory.goldDialog) {
             ui.hirelingOpen = true;
             ui.partyOpen = ui.characterOpen = ui.questOpen = false;
             ui.skillPicker.reset();

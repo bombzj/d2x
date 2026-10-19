@@ -141,7 +141,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     }
     if (handleHirelingToggle(input)) return true;
     if (handleQuestToggle(input)) return true;
-    if (input.party && !ui.blocksInput() && !ui.inventory.drag && !ui.inventory.split &&
+    if (input.party && !ui.blocksInput() && !ui.inventory.drag &&
         !ui.inventory.goldDialog && !ui.inventory.identify) {
         if (!view_.partyReady()) { view_.notice(view_.partyReason(), true); return true; }
         ui.partyOpen = !ui.partyOpen;
@@ -235,8 +235,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         else if (ui.travelMenu) {
             mapClient_.closeTravel(); ui.travelMenu = false;
         }
-        else if ((ui.inventory.drag && !ui.inventory.drag->onCursor) || ui.inventory.split ||
-                 ui.inventory.goldDialog || ui.inventory.identify)
+        else if (ui.inventory.goldDialog || ui.inventory.identify)
             ui.inventory.cancelGesture();
         else if (ui.inventory.open) {
             toggleInventory();
@@ -264,11 +263,8 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         return true;
     }
     if (ui.automap) ui.automapOffset = ui.automapOffset - input.movement * 16.f;
-    // Skill hotkeys and belt keys remain live while a non-modal side panel is open.
+    // Skill hotkeys remain live while a non-modal side panel is open.
     if (handleSkills(input)) return true;
-    if (!ui.inventory.drag && !ui.inventory.split && !ui.inventory.goldDialog && !ui.inventory.identify)
-        for (int column = 0; column < 4; ++column)
-            if (input.belt[column]) inventoryClient_.submit(UseBeltColumn{column, input.shift});
     if (handleHirelingPortrait(input, elapsed)) return true;
     if (handleHirelingPanel(input)) return true;
     if (ui.characterOpen && input.insideViewport &&
@@ -322,9 +318,9 @@ bool SceneController::handleDeath(const FrameInput &input) {
     temporaryRun_ = false;
     releaseAfterLoad_ = true;
     ui.inventory.cancelGesture(); ui.inventory.open = ui.inventory.cubeOpen = false;
-    ui.inventory.drag.reset(); ui.inventory.selected = {}; ui.inventory.beltExpanded = false;
+    ui.inventory.drag.reset(); ui.inventory.selected = {}; ui.inventory.beltExpanded = ui.inventory.beltHovered = false;
     ui.inventory.pendingPlacement.reset();
-    ui.inventory.forceSwap = false; ui.inventory.pendingMessage.clear();
+    ui.inventory.pendingMessage.clear();
     ui.inventory.storage = {}; ui.skillPicker.reset(); ui.inventory.pending = {};
     ui.inventoryQuestNpc = {};
     ui.partyOpen = ui.characterOpen = ui.skillTreeOpen = ui.questOpen = ui.hirelingOpen = false;
@@ -348,6 +344,23 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         !CheckCollisionPointRec(rv(input.mouse), hirelingPortraitHitBounds(view_.partyPortraitOffset()))) {
         ui.hirelingPortraitHovered={};ui.hirelingPortraitHoverTime=0;ui.hirelingPortraitCanFeed=false;
     }
+    const auto &inventory = view_.inventoryView();
+    // Native 0x3F is preparation, never identification success. Repeated
+    // preparation of the same source is an event even after Escape cancelled UI.
+    if(ui.inventory.targetingGeneration!=inventory.gameGeneration) {
+        ui.inventory.targetingGeneration=inventory.gameGeneration;ui.inventory.targetingRevision=0;ui.inventory.identify.reset();
+    }
+    if(inventory.targetingReady && ui.inventory.targetingRevision!=inventory.targetingRevision) {
+        ui.inventory.targetingRevision=inventory.targetingRevision;
+        ui.inventory.identify=inventory.targetingSource;
+        if(ui.inventory.identify) {ui.inventory.open=true;ui.inventory.drag.reset();ui.inventory.goldDialog.reset();}
+    }
+    // 1.13c RVA 26FEC: hover opens the belt and leaving its full bounds closes it.
+    const auto *belt = inventory.container(inventory.containers.belt);
+    const bool canHoverBelt = input.focused && input.insideViewport && !ui.inventory.playerTradeOpen &&
+        !ui.gameMenuOpen && (!ui.blocksInput() || ui.shopOpen) && !ui.skillPicker;
+    ui.inventory.beltHovered = canHoverBelt && belt && CheckCollisionPointRec(rv(input.mouse),
+        beltBounds(ui.inventory.beltHovered || ui.inventory.beltExpanded || ui.inventory.open ? belt->rows : 1));
     ui.showLoot = input.focused && input.showLoot;
     if (!input.focused) {
         actorClient_.stopMoving();
@@ -365,7 +378,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (!input.leftHeld && !input.leftPressed) pickupClick_ = false;
     // Capture before handlers close panels or shift the world viewport.
     if ((input.leftPressed || input.rightPressed) &&
-        (ui.blocksInput() || ui.skillPicker || ui.inventory.drag || ui.inventory.split ||
+        (ui.blocksInput() || ui.skillPicker || ui.inventory.drag ||
          ui.inventory.goldDialog || ui.inventory.identify || hudSurface(input.mouse) ||
          !input.insideViewport || !CheckCollisionPointRec(rv(input.mouse), view_.worldViewport()) ||
          (ui.miniPanelOpen && view_.miniPanelAt(input.mouse)))) {
@@ -385,6 +398,12 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (input.run) actorClient_.toggleRun();
     if (input.weaponSwap && !ui.blocksInput() && !ui.inventory.drag) inventoryClient_.submit(SwitchWeaponSet{});
+    // Belt keys are also active during a merchant conversation.
+    const bool beltInput = (!ui.blocksInput() || (ui.shopOpen && !ui.shopConfirm && !ui.shopSalePending)) &&
+        !ui.inventory.goldDialog && !ui.inventory.identify && !ui.inventory.pending;
+    if (beltInput && !ui.inventory.drag)
+        for (int column = 0; column < 4; ++column)
+            if (input.belt[column]) inventoryClient_.submit(UseBeltColumn{column, input.shift});
     if (handleNpcDialogue(input) || handleNpcMenu(input) || handleHirelingList(input) || handleNpcShop(input)) {
         inventoryClick_ = inventoryClick_ || input.leftPressed;
         inventoryRight_ = inventoryRight_ || input.rightPressed;

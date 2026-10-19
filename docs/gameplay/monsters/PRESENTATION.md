@@ -14,9 +14,9 @@
 | 地面／状态程序 | SpiderLay及已有叠层、火球／火墙／陨石原程序；完整随机起帧／散布／落轨未认证，显示程序存在不表示AI实际会使用该槽 |
 | 首领专用动作 | 血乌、安达利尔等真实序列／喷毒与技能；血乌／安达利尔原死亡回调和MPQ图形已接，执行范围见[BOSSES](BOSSES.md) |
 | 精英回调 | 原AC身份与电／冰强化回调；随机姓名组合／冠军标签／难度与随机调色已接，全部词缀演出未认证 |
-| 第二幕技能 | 召唤者五槽、尖塔环形闪电、原虫后死亡序列／毒云、甲虫固有闪电、钻地末帧及绿瓶子毒云已接；移动回绕、S3／S4栖息、S1飞行及原PL2状态调色已接；有限包内观察见ACT2，全部声音及原服画面未逐项复验 |
+| 第二幕技能 | 召唤者五槽、尖塔环形闪电、原虫后死亡序列／毒云、甲虫固有闪电、钻地末帧及绿瓶子毒云已接；移动回绕、S3／S4栖息、S1飞行及原PL2状态调色已接；全部声音及原服画面仍缺逐项对照 |
 
-实际类型与家族不在此重复登记，见[第一幕](ACT1.md)与[五幕目录](README.md)。本表仅说明客户端程序，有限冒烟只覆盖列出路径，不能据此认证全部怪物、随机战斗分支或原服行为。
+实际类型与家族不在此重复登记，见[第一幕](ACT1.md)与[五幕目录](README.md)。本表仅说明客户端程序，程序接线不代表全部怪物、随机战斗分支或原版画面已对齐。
 
 ## 原包与公开信息
 
@@ -26,7 +26,7 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 晚入视野恢复当前模式、生命、阶级与已公开状态，不重播历史攻击／弹体；换区或移除清对应显示缓存。原服／自研共用消费者，不为自研宿主多发私有或强制本人消息。
 
-原AC重新赋值递增客户端`assignmentRevision`，动作／改类缓存据此失效；changeclass列表移除本身不恢复旧类型。怪物没有可选`cof/palshift.dat`时保留原组件像素，不把缺调色表当成缺动画；零售1.13c D2Client RVA53A44–53A5A在对应表指针为空时返回空色图。此规则同样用于当前MPQ无该表的吹箭Fetish和第五幕佣兵，不另加类型特判。外观不可用时`scene.effectLimitations`列出单位类型、class、mode和skill；当前实机范围见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。
+原AC重新赋值递增客户端`assignmentRevision`，动作／改类缓存据此失效；changeclass列表移除本身不恢复旧类型。怪物没有可选`cof/palshift.dat`时保留原组件像素，不把缺调色表当成缺动画；零售1.13c D2Client RVA53A44–53A5A在对应表指针为空时返回空色图。此规则同样用于当前MPQ无该表的吹箭Fetish和第五幕佣兵，不另加类型特判。外观不可用时`scene.effectLimitations`列出单位类型、class、mode和skill。
 
 ## 目标姓名与按住锁定
 
@@ -34,19 +34,19 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 普通姓名读取MonStats.NameStr的当前TBL；随机暗金、冠军变体、固定超级暗金与仆从说明共用[精英姓名](ELITES.md#姓名标签与调色)入口，悬停与锁定不使用不同文本。冠军标签已在姓名中，不重复列成词缀说明；暗金只列AC已公开词缀，不猜隐藏属性。普通姓名白色、冠军蓝色，暗金／超级暗金及MonStats.boss首领金色，沿master已有颜色与原字体入口；血乌／安达利尔boss身份来自当前MPQ。生命未知保留未知，比例沿原0..128刻度与命中触发位解释。
 
-恢复行为静态对照master的SceneController.combatTarget与hud目标优先级；D2MOO MonsterUnique／SCmd提供公开阶级／词缀依据，当前MPQ提供姓名和boss字段。此修正已随此前野蛮人技能Release包纳入，第一幕历史包保留；本轮未专项复验按住锁定，不能使用上一批精英悬停截图认证它。
+锁定行为静态对照master的SceneController.combatTarget与hud目标优先级；D2MOO MonsterUnique／SCmd提供公开阶级／词缀依据，当前MPQ提供姓名和boss字段。完整手势中断与目标切换组合仍需原版对照。
 
 ## 原版加入自研宿主的待核实问题
 
-2026-10-12用户报告：原版1.13c加入D2X Host后，城外怪物可见但悬停没有姓名／生命条，技能未击杀。离线核对本地`artifacts/item-protocol-20261012-090747-corrected/host-packets.jsonl`的原版连接3及`vanilla-field-analysis.json`，未重新启动、构建或运行测试；该次EXE的SHA256为`5B82BE77B893472E4BEBC30EB19B367936B28A685230AA5B26E522CEA122BDD4`，不能用当前未构建源码替代该日志。
+2026-10-12用户报告：原版1.13c加入D2X Host后，城外怪物可见但悬停没有姓名／生命条，技能未击杀。以下保留原版客户端现场和同日原版Host对照；D2X宿主输出只能说明该现场输入，不能作为原版服务端规则依据。
 
 - 怪物AC确实发送，城外样本为原class5僵尸和63硬毛老鼠，初始生命128；没有收到任何指向单位的攻击请求。日志不记录原版本地悬停命中检查，不能仅凭没有攻击请求确定可选标志损坏。
-- 同类原版Host旧样本`npc-host-comparison/original-combat-received.jsonl`的seq679–681／885–887为AC→AA含state105 alignment→6D；该次D2X的seq1530–1532／2412–2414为AC→空AA→6D。旧`replication::visibleMonsters`仅在转化等效果中补阵营状态，普通敌人快照缺此状态。原D2Common的GetUnitAlignment（1.13c导出10830）缺状态时默认敌方0，因此此差异尚不能认证为悬停故障根因。
+- 同类原版Host样本的seq679–681／885–887为AC→AA含state105 alignment→6D；该次D2X的seq1530–1532／2412–2414为AC→空AA→6D。旧`replication::visibleMonsters`仅在转化等效果中补阵营状态，普通敌人快照缺此状态。原D2Common的GetUnitAlignment（1.13c导出10830）缺状态时默认敌方0，因此此差异尚不能确定为悬停故障根因。
 - 第一趟出城权威位置已进入荒原；第二趟在seq2411以后反复保持城镇边界内的(5802,5742)，而原版5F报告位置继续向西移动。seq2394选择64冰封球、seq2435发送坐标施法(5769,5752)，随后没有18／95资源变化或怪物命中回包。该目标已在当前权威区域西界5800外，现有技能入口会先按区域边界拒绝；不能据此认定冰封球伤害算法失效。完整命令结算状态未采集，跨界停住的具体碰撞／路线失败分支仍未确定。
 
-该次旧构建的5F仍是stub；当前源码已按D2MOO接入距离分档、房间／路径／落点校验、同步状态及15位置纠偏，细节与寻路适配边界见[服务端协议](../../modules/SERVER_PROTOCOL.md)。5F修正版SHA256为`2F915E76F9DF038FDA34D8DAC30F565F8FFBA2606F253F224699B3B06B716636`；用户复验仍不能悬停。`artifacts/position-sync-host-20261012-104706/host-packets.jsonl`的原版连接5已进入城外，存在坐标施法、资源变化、怪物受伤／死亡，但没有敌人单位目标请求；不能继续用停在城内解释此次悬停失败。
+该次5F仍是stub；当前源码已按D2MOO接入距离分档、房间／路径／落点校验、同步状态及15位置纠偏，细节与寻路适配边界见[服务端协议](../../modules/SERVER_PROTOCOL.md)。接入5F后用户复验仍不能悬停：原版连接5已进入城外，存在坐标施法、资源变化、怪物受伤／死亡，但没有敌人单位目标请求；不能继续用停在城内解释该次悬停失败。
 
-同日按用户授权，以隔离一级女巫ProtocolGuest加入原版1.13c Host，走出营地并对僵尸施放36火弹。完整双向日志和对比数据在`artifacts/original-field-comparison-20261012-111137/client-packets.jsonl`及`comparison.json`：
+同日以隔离一级女巫ProtocolGuest由D2X客户端加入原版1.13c Host，走出营地并对僵尸施放36火弹，取得以下原版消息参考：
 
 - 原僵尸class5的seq1611–1613与沉沦魔class19的seq1577–1579再次确认AC→AA含alignment105→6D。旧包普通敌人缺该阵营状态，但缺状态默认敌方的原版依据未改变。
 - 原版额外发送六个7字节AB单位生命包，如seq1693的`AB010C00000040`、seq1750的`AB010C00000035`。D2X Host旧对照为零，旧客户端世界消费者和宿主消息目录也没有AB入口。原D2MOO SCmd::SendPacket0xAB及SUnitMsg提供包型依据；AB证明生命同步缺口，不能认证为选中开关。
@@ -55,7 +55,7 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 ### 已补齐的源码与复验边界
 
-按上述原日志、本地D2MOO与当前MPQ完成以下修改，客户端和嵌入宿主一起构建打包；按用户要求不启动游戏，以上历史日志不认证新包。
+当前源码按上述原版消息、本地D2MOO与当前MPQ接入以下行为；全部原版客户端组合仍待核对。
 
 | 差异 | 当前实现与依据 |
 | --- | --- |
@@ -69,13 +69,13 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 
 ### 玩家阵营遗漏与当前修正
 
-上述包的SHA256为`FB12CA6AEA42364799072D7F4B08BCF915205FE346181260E3E89BA2290EB594`。用户原版Join复验仍不能悬停；`artifacts/hover-host-20261012-144716/host-packets.jsonl`连接3包含1707条双向记录，已确认怪物AA、AB及新67／68字段实际发送。坐标冰封球后六只怪物收到归零AB及死亡动作，但没有敌怪单位目标请求。`packet-type-audit.json`比较两份记录的全部已观察包型及计数；角色、种子、操作不同，不是全部字段的同条件一致性认证。
+用户在补齐怪物AA、AB及67／68字段后以原版Join复验仍不能悬停。该次连接3收到这些消息，坐标冰封球后六只怪物收到归零AB及死亡动作，但没有敌怪单位目标请求。角色、种子和操作与原版Host样本不同，包型比较不能证明全部字段在同条件下一致。
 
 本次确认此前漏查玩家自身阵营：原版Host记录seq17给玩家发送`AA00020000000C6959F9FF1F`（state105、stat172、alignment=2），自研记录seq453为`AA00B600000008FF`，只有空状态列表。D2MOO `PLAYER_Create`明确调用`sub_6FCBDD30(pPlayer, 2, 1)`；原1.13c D2Common ordinal10830／RVA391F0对玩家缺失alignment返回0，ordinal10666／RVA84D30将0与0判断为同阵营。D2Client RVAA64E2调用该关系函数，结果进入RVAA68E0的悬停／技能资格筛选，因此缺失玩家alignment可使普通敌人被排除。补怪物alignment=0不能补偿玩家端的错误。
 
 `nativePlayerInitialStates`从当前MPQ解析状态／属性ID，按原规则发送玩家友方值2；本人59后及远端玩家首次可见／重新入视野共用该AA编码。固定身份状态不混入临时效果差分缓存，避免后续A9误清除；当前MPQ alignment的plrstaydeath=1，死亡保留。自有客户端`remote_world`与`RemoteCombat::update`按MPQ解码玩家AA属性，无须新增包型；当前敌对筛选已读取双方阵营，具体规则见下节。此前仅看怪物侧状态的D2X表现不能认证原版的双方阵营判断。
 
-当前修正版已构建；D2X Join／Host取得敌对玩家与fallen1的有限伤害观察，见[提交前冒烟](../../development/BUILD_AND_RUN.md#本批提交前冒烟)。原版进程只读访问被Windows拒绝，未取得可选位／LOS现场值，不能宣称用户悬停已恢复。原版Host与自研Host的同种子人口、全部路径类型、动态占位、完整房间／可见性时序和逐帧位置尚未完全对齐；AStar仍为当前网格实现。新包仍需复验原版Join的怪物悬停、单位技能命中及死亡后保存重入。
+原版进程只读访问被Windows拒绝，未取得可选位／LOS现场值，悬停恢复尚未确认。原版Host与自研Host的同种子人口、全部路径类型、动态占位、完整房间／可见性时序和逐帧位置尚未完全对齐；AStar仍为当前网格实现。原版Join的怪物悬停、单位技能命中及死亡后保存重入仍待核对。
 
 ## 客户端与服务端阵营规则
 
@@ -87,7 +87,7 @@ hosting沿SCmd／MonsterMsg编码原AC阶级、superunique hcIdx、词缀／name
 - 宿主普通怪物、宠物和NPC首次可见发送alignment AA；玩家本人及远端玩家也发送善方AA。非零阵营恢复为0时用A8带显式零属性，A7只启用状态不会清旧值。AI、伤害关系和怪物投影共用有效阵营；来源绑定包含阵营及控制代次。
 - `MonStats2.Utrans=255`按原D2Client RVAA7ACD→RVA21B10使用7A宠物名册及主人对观察者的敌意位；有主人且非敌对（含本人）取变换1，无主人或敌对取0。它不使用队伍资格，原先按同队判定和颠倒0／1的显示已修正。
 
-依据包含本地D2MOO D2StatList、SUnit、SkillSor::SrvDo025、SkillPal::SrvDo079及MissMode::SrvHit07、当前MPQ表、既有原版Host日志与原1.13c DLL静态反汇编。本轮源码取得上述隔离客户端有限观察；旧原日志不认证新实现，原版悬停恢复仍待后续实机复验。静态NPC伤亡、未实现AI、完整PvP和完整空间可选性仍按既有专题边界，不宣称消除了全部原版差异。
+依据包含本地D2MOO D2StatList、SUnit、SkillSor::SrvDo025、SkillPal::SrvDo079及MissMode::SrvHit07、当前MPQ表、原版Host消息与原1.13c DLL静态反汇编。原版悬停恢复仍待实机核对；静态NPC伤亡、未实现AI、完整PvP和完整空间可选性仍有专题所列缺口。
 
 ## 原图、声音与尸体
 
@@ -99,6 +99,6 @@ MonStats→MonStats2组件／尺寸／Light、Skills／Missiles／MonSeq、AnimD
 
 0x69动作9按尸体当前位置校正，GH动作6的方向槽按生命字节解释并清除旧路径；0C／69生命高位是电强化公开发射资格，不能当阶级。server/effects持MONUMOD延时／十帧冷却，RemoteMonsterEffects只持显示时钟。当前194／195速度／寿命无等级增量，不猜隐藏等级；不同MPQ启用增量时明确不可用，ClientSend为空不强发73。
 
-原函数依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，有限运行见[第一幕证据](ACT1.md#有限运行证据)。原资源不足时明确不可用；已授权敌对替身保留真实身份，中立单位不可替换；实际宿主适用条件见[COMMON](COMMON.md)。
+原函数依据见[参考设计](../../architecture/REFERENCE_DESIGN.md#第一幕怪物公共计算依据)，第一幕身份与执行范围见[ACT1](ACT1.md)。原资源不足时明确不可用；已授权敌对替身保留真实身份，中立单位不可替换；实际宿主适用条件见[COMMON](COMMON.md)。
 
-随机姓名组合与调色选择见[ELITES](ELITES.md#姓名标签与调色)；完整命名随机流、状态透明／速度、空间音频、其他幕特殊死亡和全部客户端程序仍有限。模块文件归属见[怪物模块](../../modules/MONSTERS.md)，第一幕有限原服样本见[第一幕证据](ACT1.md#有限运行证据)，其他有限原服观察见[联网记录](../../modules/NETWORK.md#既有有限证据)；本地D2MOO MonsterMsg／MonsterMode／SkillMonst／SCmd提供原语义，不能替代完整D2Client证据。
+随机姓名组合与调色选择见[ELITES](ELITES.md#姓名标签与调色)；完整命名随机流、状态透明／速度、空间音频、其他幕特殊死亡和全部客户端程序仍有缺口。模块文件归属见[怪物模块](../../modules/MONSTERS.md)，原服技能／物品等消息参考见[联网](../../modules/NETWORK.md#既有有限证据)；本地D2MOO MonsterMsg／MonsterMode／SkillMonst／SCmd提供原语义，不能替代完整D2Client依据。

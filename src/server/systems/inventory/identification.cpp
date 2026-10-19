@@ -12,7 +12,11 @@ DomainResult<> System::beginIdentify(const ActorContext &actor,ItemHandle handle
     if(item==p->persistent.inventory.items.end() || item->second.revision!=handle.revision) return {DomainStatus::Stale,{}};
     const auto &source=item->second;const auto *at=std::get_if<ContainerLocation>(&source.location);
     const auto rule=p->rules.character->itemSkills.find(source.definition);
-    if(!at || at->container!=p->persistent.containers.backpack || rule==p->rules.character->itemSkills.end() ||
+    const auto &containers = p->persistent.containers;
+    const bool accessible = at && (at->container == containers.backpack || at->container == containers.belt ||
+        (at->container == containers.stash && storageAccess(actor.player)) ||
+        (at->container == containers.cube && cubeAccess(actor.player)));
+    if(!accessible || rule==p->rules.character->itemSkills.end() ||
         rule->second.action!=ItemSkillAction::Identify || rule->second.cursor<0 || rule->second.cursor>254 ||
         !(rule->second.book?source.charges:source.quantity)) return {DomainStatus::InvalidRequest,{}};
     for(const auto &[id,value]:p->persistent.inventory.items) {(void)id;const auto *location=std::get_if<ContainerLocation>(&value.location);if(location && location->container==p->persistent.containers.cursor) return {DomainStatus::Conflict,{}};}
@@ -40,7 +44,8 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     if (source->revision == UINT64_MAX || target->revision == UINT64_MAX) return {DomainStatus::Capacity, {}};
     const auto *from = std::get_if<ContainerLocation>(&source->location), *to = std::get_if<ContainerLocation>(&target->location);
     const auto &containers = draft.containers();
-    if (!from || from->container != containers.backpack || !to || !draft.owned(*to) ||
+    if (!from || (from->container != containers.backpack && from->container != containers.belt && !(draft.storage && from->container == containers.stash) &&
+        !(cube && from->container == containers.cube)) || !to || !draft.owned(*to) ||
         (to->container != containers.backpack && to->container != containers.equipment && to->container != containers.beltEquipment &&
          !(draft.storage && to->container == containers.stash) && !(cube && to->container == containers.cube)) || draft.at({containers.cursor, {}}) || target->identified)
         return {DomainStatus::InvalidRequest, {}};
@@ -55,7 +60,12 @@ DomainResult<> System::identify(const ActorContext &actor, const IdentifyItem &r
     const bool removed = rule->second.book ? (--used.charges, false) : --used.quantity == 0;
     draft.edit.changes.push_back({used.id, used.revision, removed ? ItemChangeKind::Removed : ItemChangeKind::QuantityChanged,
         used.location, removed ? std::nullopt : std::optional<ItemLocation>{used.location}, used.quantity});
+    const auto origin=*from;
     if (removed) draft.edit.inventory.items.erase(request.source.id);
+    if (removed && origin.container==containers.belt) {
+        const auto result=draft.compactBeltColumn(origin.cell.x);
+        if (result!=DomainStatus::Applied) return {result,{}};
+    }
     transactions::InventoryEdit edit{actor, player.inventoryRevision, player.characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), player.persistent.player.weaponSet};
     edit.facts.emplace_back(ItemTargetingFact{request.source.id,-1});

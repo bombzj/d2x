@@ -13,31 +13,28 @@ struct InventoryDrag {
     bool moved = false;
     bool pickedUp = false;
     bool onCursor = false;
+    std::optional<Vec> releasedAt;
 };
 // Presentation only: keep the picked-up source hidden until native
 // cursor/placement facts arrive, without predicting a destination inventory.
 struct InventoryPendingPlacement {
     EntityId item;
     ItemLocation source;
-};
-struct SplitDialog {
-    ItemHandle item;
-    unsigned quantity = 1;
-    EntityId destination;
+    bool taking = false;
 };
 struct GoldDialog {
     GoldAction action = GoldAction::Drop;
     std::string amount;
     unsigned maximum = 0;
-    bool selectAll = true;
+    size_t caret = amount.size(), anchor = 0;
+    bool selecting = false;
 };
 struct InventoryUi {
-    bool open = false, cubeOpen = false, forceSwap = false, beltExpanded = false, playerTradeOpen = false;
+    bool open = false, cubeOpen = false, beltExpanded = false, beltHovered = false, playerTradeOpen = false;
     EntityId selected, pending, storage;
     std::string pendingMessage;
     std::optional<InventoryDrag> drag;
     std::optional<InventoryPendingPlacement> pendingPlacement;
-    std::optional<SplitDialog> split;
     std::optional<ItemHandle> identify;
     uint64_t targetingRevision{}, targetingGeneration{};
     std::optional<GoldDialog> goldDialog;
@@ -49,7 +46,7 @@ struct InventoryUi {
     }
     void cancelGesture() {
         if (drag && !drag->onCursor) drag.reset();
-        split.reset();
+        else if (drag) drag->releasedAt.reset();
         identify.reset();
         goldDialog.reset();
     }
@@ -79,6 +76,12 @@ inline Rectangle inventoryGold() {
     auto p = inventoryBounds();
     return {p.x + 82 * inventoryScale(), p.y + 391 * inventoryScale(),
             120 * inventoryScale(), 20 * inventoryScale()};
+}
+inline Rectangle inventoryGoldButton() {
+    const auto p = inventoryBounds();
+    // Native 1.13c goldcoinbtn anchor, inside the invchar6 gold socket.
+    return {p.x + 84 * inventoryScale(), p.y + 392 * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
 }
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
@@ -126,6 +129,13 @@ inline Rectangle storageGold(bool expansion) {
             p.y + (expansion ? 20 : 218) * inventoryScale(),
             176 * inventoryScale(), 22 * inventoryScale()};
 }
+inline Rectangle storageGoldButton(bool expansion) {
+    const auto p = storageBounds();
+    // Native stash button moves down 198 pixels in the classic layout.
+    return {p.x + 75 * inventoryScale(),
+            p.y + (expansion ? 23 : 221) * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
 inline Rectangle goldDialogBounds() {
     // Retail gold menu starts at (215,140) in 640x480, centered when the
     // game canvas grows. The MPQ dialogbackground frame is 210x158.
@@ -137,16 +147,10 @@ inline Rectangle goldDialogButton(int index) {
     return {p.x + (35 + index * 105) * inventoryScale(), p.y + 115 * inventoryScale(),
             32 * inventoryScale(), 32 * inventoryScale()};
 }
-inline Rectangle splitBounds() {
-    return {inventoryBounds().x + 24, 190, 352, 180};
-}
-inline Rectangle splitButton(int index) {
-    auto p = splitBounds();
-    return {p.x + 22 + index * 165, p.y + 138, 143, 28};
-}
-inline Rectangle splitAdjust(int index) {
-    auto p = splitBounds();
-    return {p.x + 32 + index * 250, p.y + 60, 38, 32};
+inline Rectangle goldDialogEntry() {
+    const auto p = goldDialogBounds();
+    return {p.x + 29 * inventoryScale(), p.y + 62 * inventoryScale(),
+            152 * inventoryScale(), 24 * inventoryScale()};
 }
 std::optional<Cell> inventoryCell(const InventoryView &inventory, Vec mouse);
 struct InventoryDrop {

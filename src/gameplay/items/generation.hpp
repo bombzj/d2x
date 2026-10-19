@@ -32,6 +32,7 @@ struct ItemGeneration {
     bool rollNaturalSockets = false;
     bool suppressNaturalSockets = false;
     bool rollNaturalEthereal = false;
+    bool forceEthereal = false;
     unsigned durabilityMultiplier = 1;
     int socketDifficulty = 0;
     std::optional<ItemSeeds> seeds;

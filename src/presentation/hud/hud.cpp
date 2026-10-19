@@ -145,7 +145,7 @@ void SceneView::drawHelp() const {
                            "I / A / S                  Inventory / Character / Skills",
                            "Arrow keys                 Pan automap",
                            "Right click                Cast; click slot to choose",
-                           "1 through 4 / B            Drink belt potion / Expand belt",
+                           "1 through 4 / ~            Drink belt potion / Expand belt",
                            "Hover skill, F1-F8         Bind selected mouse skill",
                            "F1 through F8              Select bound mouse skill",
                            "R                          Toggle walk / run",
@@ -224,7 +224,7 @@ void SceneView::drawUi(Vec mouse) const {
     drawGameMenu();
     tradeInvite_.draw(worldViewport());
     tradeInvite_.drawGoldDialog();
-    if (deferredTooltip_.active && !view_.inventory.goldDialog && !view_.inventory.split && !view_.gameMenuOpen)
+    if (deferredTooltip_.active && !view_.inventory.goldDialog && !view_.gameMenuOpen)
         drawItemText(deferredTooltip_.lines, deferredTooltip_.quality, deferredTooltip_.anchor,
                      deferredTooltip_.price, deferredTooltip_.priceLabel);
     if (!itemCursor) {

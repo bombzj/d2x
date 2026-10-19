@@ -64,7 +64,7 @@ Json commands() {
     for (const auto &entry : adminCommands()) {
         result.push_back({{"command", entry.command}, {"implemented", entry.implemented}, {"argumentKind", argumentName(entry.arguments)}});
         if(entry.operation==AdminOperation::SpawnItem) {
-            result.back()["itemGeneration"]={{"seed","optional uint32"},{"affixes",{{"kind","prefix or suffix"},{"row","zero-based original MagicPrefix/MagicSuffix TXT row"},{"rolls","optional values in nonempty mod1..mod3 order; original ranges required"}}},{"limits","magic: one per side; rare: three per side; no repeated group"}};
+            result.back()["itemGeneration"]={{"seed","optional uint32"},{"ethereal","optional boolean true; forces original ethereal item behavior when allowed by the base and quality"},{"affixes",{{"kind","prefix or suffix"},{"row","zero-based original MagicPrefix/MagicSuffix TXT row"},{"rolls","optional values in nonempty mod1..mod3 order; original ranges required"}}},{"limits","magic: one per side; rare: three per side; no repeated group"}};
             auto &generation=result.back()["itemGeneration"];
             generation["properties"]={{"code","original Properties code"},{"value","exact roll for a direct-roll property"},
                 {"min/max","both required instead of value for fixed compound properties"},{"param","optional integer or exact MPQ skill name"},
@@ -199,14 +199,14 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if (request.contains("x") || request.contains("y")) position = Vec{float(unsignedValue(request.at("x"), 65535)), float(unsignedValue(request.at("y"), 65535))};
             if (entry->operation == AdminOperation::SpawnMonster && request.contains("level"))
                 throw std::invalid_argument("Monster level comes from the current MPQ area and difficulty; omit level");
-            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets") || request.contains("seed") || request.contains("affixes") || request.contains("properties") || request.contains("preview") || request.contains("propertyQuery")))
+            if (entry->operation != AdminOperation::SpawnItem && (request.contains("quality") || request.contains("durability") || request.contains("sockets") || request.contains("ethereal") || request.contains("seed") || request.contains("affixes") || request.contains("properties") || request.contains("preview") || request.contains("propertyQuery")))
                 throw std::invalid_argument("Item generation fields apply only to item-spawn");
             AdminSpawn spawn{std::move(code), int(level), position};
             if(request.contains("propertyQuery")) {
                 spawn.propertyQuery=request.at("propertyQuery").get<std::string>();
                 if(spawn.propertyQuery->size()>64) throw std::invalid_argument("propertyQuery exceeds 64 bytes");
-                if(request.contains("properties") || request.contains("affixes") || request.contains("durability") || request.contains("sockets") || position)
-                    throw std::invalid_argument("propertyQuery cannot be combined with properties/affixes/durability/sockets/coordinates");
+                if(request.contains("properties") || request.contains("affixes") || request.contains("durability") || request.contains("sockets") || request.contains("ethereal") || position)
+                    throw std::invalid_argument("propertyQuery cannot be combined with properties/affixes/durability/sockets/ethereal/coordinates");
                 if(!request.contains("quality")) spawn.quality="magic";
             }
             if(request.contains("properties")) {
@@ -259,6 +259,10 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if(!spawn.properties.empty() && spawn.quality!="magic" && spawn.quality!="rare") throw std::invalid_argument("properties requires magic or rare quality");
             if (request.contains("durability")) spawn.durability = unsigned(unsignedValue(request.at("durability"), 255));
             if(request.contains("sockets")) spawn.sockets=unsigned(unsignedValue(request.at("sockets"),6));
+            if(request.contains("ethereal")) {
+                if(!request.at("ethereal").is_boolean()) throw std::invalid_argument("ethereal must be boolean");
+                spawn.ethereal=request.at("ethereal").get<bool>();
+            }
             if(request.contains("seed")) spawn.seed=uint32_t(unsignedValue(request.at("seed"),UINT32_MAX));
             if(request.contains("affixes")) {
                 const auto &affixes=request.at("affixes");

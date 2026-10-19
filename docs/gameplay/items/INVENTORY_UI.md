@@ -1,26 +1,38 @@
 # 包裹界面
 
-更新：2026-10-18。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-19。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
 
 I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提供原石框和I／II武器标签；格子、部位、物品图及说明按原表读取。面板只消费InventoryView和提交意图，不访问可写库存或会话。
 
-关闭按钮使用buysellbtn第10帧的原32×32尺寸，对齐invchar6背包底板凹槽内的(18,385)，相对旧坐标向左1、向上4原生像素；绘制和点击命中共用inventoryClose及侧栏缩放。此定位已完成原资源及调用链静态核对，并纳入当前Windows Release客户端包；未启动游戏，等待用户实测。
+关闭按钮使用buysellbtn第10帧的原32×32尺寸，对齐invchar6背包底板凹槽内的(18,385)；绘制和点击命中共用inventoryClose及侧栏缩放。定位依据为原资源及调用链静态核对，完整画面对照仍待完成。
+
+金币按钮与金额文字栏分别定位：当前MPQ goldcoinbtn为20×18，背包按钮在面板内(84,392)，扩展仓库在(75,23)，经典仓库在(75,221)。按本地1.13c D2Client RVA8D0DF–8D2DF及invchar6／tradestash原底图核对，移除由文字栏另加偏移导致的错位；inventoryGoldButton／storageGoldButton同时用于绘制和点击命中，完整窗口／缩放组合仍待原版对照。
 
 每职业背包／装备布局由ClassicData从当前MPQ inventory.txt的800像素职业行（名称后缀2）准备，减去该行invLeft／invTop成为原图内坐标；gridX／gridY／gridBoxWidth／Height及十个部位的四边／宽高共同校验。RemoteUiClients按当前职业投影backpackLayout／equipmentSlots／itemCellSize，绘制、装备／鉴定／维修命中、拖放和手持尺寸读取同一值，备用手共用主手几何；删除表现层的手写装备坐标和背包10×4／29像素参数。此项只更改只读布局，不改库存容量、物品事务或D2S。仓库、方块和交易格继续使用各自原表行。
 
-金币输入改用当前MPQ dialogbackground的210×158原图、buysellbtn的确认／取消帧及strDropGoldHowMuch／strBankGoldDeposit／strBankGoldWithdraw文案，仓库上限读取GoldMax格式。首次输入替换预填金额，Backspace／Delete编辑，Escape／右键只取消弹窗；弹窗接管输入及提示，不穿透到下面的属性／物品操作。原版输入框全部选中／箭头表现和完整本地化排版仍未认证。上述修改已进入当前Windows Release客户端，背包拖放／装备及金币丢弃／存入取得有限运行和保存重入证据；全部大面板的原版对照边界与实际范围统一见[经典UI](../ui/CLASSIC_HUD.md#主要面板对照边界)。
+金币输入改用当前MPQ dialogbackground的210×158原图、buysellbtn的确认／取消帧及strDropGoldHowMuch／strBankGoldDeposit／strBankGoldWithdraw文案，仓库上限读取GoldMax格式。预填金额初始全选；数字替换选区，左右箭头／Home／End与Shift移动选区，Ctrl+A全选，Backspace删除前字、Delete删除后字，鼠标定位／拖选。选择底色按D2Win EditBox的MixRGB(0x40,0x40,0x40)，光标为250ms闪烁的下划线；Escape／右键只取消弹窗，输入不穿透到下面的操作。完整本地化排版仍待核对；全部大面板的原版对照边界见[经典UI](../ui/CLASSIC_HUD.md#主要面板对照边界)。
+
+商店贸易初始选择Misc（原D2Client 1.13c RVA9C213传入页3），不使用异步到达的部分货架内容选择默认页。原invPage 1／2／3／4分别投影为Armor／Weapons／Weapons第二页／Misc，标签取当前MPQ TBL的strBSArmor／strBSWeapons／strBSMisc；赌博沿独立页。
 
 ## 操作
 
-镶嵌材料换拿按本地1.13c D2Client RVA8C2B0及D2MOO ItemMode::D2GAME_ITEMSOCKET_PlaceItem核对：只有已鉴定、未损坏、有原socketed标记且确认还有空孔的目标才提交SocketItem；符文／宝石／珠宝遇到药水、卷轴、无孔或满孔装备走原交换／装备路径，不因材料类型单独抢占操作。背包与人物装备共用目标判定；移除自制Insert／Move／Merge／Equip等拖拽操作提示卡，保留原物品说明、占格颜色及真实操作错误。2026-10-19当前Windows Release包经真实UI输入确认符文↔药水、宝石↔卷轴、珠宝↔药水、符文↔无孔／满孔帽子，以及已装备两孔帽子依次填入两颗符文；原回包均Updated，正常退出后新进程恢复物品位置与两颗孔内符文。隔离角色、管理生成仅用于准备条件；未覆盖仓库／方块／交易、未鉴定／损坏目标、多人／原服及全部堆叠／装书组合，包身份及日志见[运行包记录](../../development/BUILD_AND_RUN.md#当前镶嵌材料换拿修正包)。
+镶嵌材料换拿按本地1.13c D2Client RVA8C2B0及D2MOO ItemMode::D2GAME_ITEMSOCKET_PlaceItem核对：只有已鉴定、未损坏、有原socketed标记且确认还有空孔的目标才提交SocketItem；符文／宝石／珠宝遇到药水、卷轴、无孔或满孔装备走原交换／装备路径，不因材料类型单独抢占操作。背包与人物装备共用目标判定；移除自制Insert／Move／Merge／Equip等拖拽操作提示卡，保留原物品说明、占格颜色及真实操作错误。仓库／方块／交易、未鉴定／损坏目标、多人及全部堆叠／装书组合仍待原版对齐。
 
-左键拿起、放置、交换、装备或投向地面；Shift转移到当前已确认箱子／方块，未打开容器时背包药水按原0x63自动入带。同类跨等级药水列与MPQ AutoBelt的预览规则见[腰带与消耗](BELT_AND_CONSUMABLES.md)。右键按物品提交使用／装备，卷轴／书鉴定进入目标流程；物品光标与装备／容器安置等待原回包。W或I／II标签提交武器切换，0x97确认后更新。
+左键按下即提交原拿起请求（存储物品0x19，装备／腰带沿各自入口），随后才由Cursor提交放置、交换、装备或丢地；ESC／右键不返还已拿起物品。快速拖放在拿起回包未到时保留松开位置，确认Cursor后继续提交；拿起失败解除临时手势。Shift左键仅对背包原belt物品提交0x63自动入带；不保留额外的仓库／方块／交易快速转移或自动装备。Ctrl左键在商店提交原0x33出售，不作为强制交换修饰键。Ctrl+Shift拆分弹窗及手势已移除。同类药水列与MPQ AutoBelt见[腰带与消耗](BELT_AND_CONSUMABLES.md)。
 
-落格源码已按本地1.13c D2Client RVA945D0／94820修正：宽、高分别计算，偶数占格的一轴先加原DC6对应尺寸的整数四分之一，再除目标格距；随后减去占格数的整数一半，左／上边界钳至0，占满该轴的物品固定从0开始。预览与提交经SceneView::inventoryDropAt读取同一当前MPQ图像尺寸，不再使用与居中Cursor矛盾的旧抓取格；按住拖放、点击拿起、原回包Cursor共用算法，腰带一格物品仍使用原格命中。此修正已完成源码／调用链静态核对，并纳入当前Windows Release客户端包，身份见[运行包记录](../../development/BUILD_AND_RUN.md#当前客户端大面板修正包)；本轮未运行，旧包有限拖放证据不覆盖半格边界，等待用户实测。
+右键只对当前MPQ useable物品提交使用，戒指、武器、防具不会自动装备或卸下；左右手与两枚戒指由实际拖放部位决定。双持、双手冲突及职业资格仍由共用装备规则复验。卷轴／书鉴定先发0x20，收到0x3F准备事件才进入目标选择，再发0x27；空书不进入目标选择。可访问的仓库／方块内物品也走使用及鉴定流程；关闭容器后不保留其访问资格。仓库中的方块打开后保留原仓库物件／距离租约，避免把远处仓库当永久背包。W或I／II标签提交武器切换，0x97确认后更新。
+
+原版1.13c存放方块按D2MOO ItemMode::sub_6FC49DC0及D2Client的0x2A分支：将手持物品点到已存储的方块图标时提交间接放入，不交换方块；目标可在背包或当前已打开仓库，满方块由服务端拒绝并保留Cursor。不把旧网页所述反向“拿着方块点其他物品”补成1.13c不存在的该请求。
+
+同类堆叠按D2Common ITEMS_AreStackablesEqual比较基础类型、品质、原fileIndex、无形标记、六项原伤害值并拒绝带孔及非普通／劣质／超强品质；不兼容投掷武器走交换。兼容物品分别选择原0x21合并及0x29装书；已确认满容量时由客户端只读预判立即拒绝，保留Cursor，不交换，也不等待原版无变化时不会发送的库存回包。堆叠容量读取原maxstack及已知item_extra_stack，未满时仍由服务端独立复验和提交数量。
+
+左键购买确认复用boxpieces原菜单、原字体及VerifyTransaction5／3／1／2文案，依次显示购买、物品名、Gold、金额和Yes／No；上下键切换确认项，Enter提交当前项，右键／ESC取消。右键直接购买保留原路径。
+
+落格源码已按本地1.13c D2Client RVA945D0／94820修正：宽、高分别计算，偶数占格的一轴先加原DC6对应尺寸的整数四分之一，再除目标格距；随后减去占格数的整数一半，左／上边界钳至0，占满该轴的物品固定从0开始。预览与提交经SceneView::inventoryDropAt读取同一当前MPQ图像尺寸，不再使用与居中Cursor矛盾的旧抓取格；按住拖放、点击拿起、原回包Cursor共用算法，腰带一格物品仍使用原格命中。完整物品尺寸、容器及半格边界仍待原版对照。
 
 包裹打开时地面拾取可请求Cursor；关闭时请求原服通常拾取／安置。自动装书、AutoStack、腰带补位及空位由连接的服务端决定，客户端不自行合并物品。已有手持物品不得用关闭面板清掉；ESC只关闭面板，不取消服务器Cursor。
 
-拖放提交后，InventoryUi保留待处理来源GUID／原位置的可见性覆盖：从格子拿起的组合操作等待真实Cursor／安置回包期间，不重新绘制原格或中间Cursor图。若来源已是服务器确认的Cursor，提交放置／装备时保持手持图，直到原回包改变其位置；Pending仍禁止重复提交，不预画目标位置。背包、腰带、仓库／方块、装备／佣兵与交易格共用hidesItem；数量和占格只读原包投影。拒绝、超时、取消或切区按请求生命周期解除覆盖，实际Cursor由syncCursor恢复。旧master直接完成本地事务，不能照搬其立即清拖拽时序。旧覆盖路径随2026-10-10佣兵批取得代表证据；此次保留已确认Cursor的修改及原版对照边界见[EVIDENCE](EVIDENCE.md#职业装备与原版拒绝对照)，全部容器／交易及拒绝／切区组合未认证。
+按下拿起后，InventoryUi保留待处理来源GUID／原位置的可见性覆盖，等待期间隐藏原格；直接拿起的真实Cursor回包立即恢复手持图。组合操作的中间Cursor仍按待安置状态隐藏。若来源已是服务器确认的Cursor，提交放置／装备时保持手持图，直到原回包改变其位置；Pending仍禁止重复提交，不预画目标位置。背包、腰带、仓库／方块、装备／佣兵与交易格共用hidesItem；数量和占格只读原包投影。拒绝、超时、取消或切区按请求生命周期解除覆盖，实际Cursor由syncCursor恢复。旧master直接完成本地事务，不能照搬其立即清拖拽时序。原版对照见[协议参考](EVIDENCE.md#职业装备与原版拒绝对照)，全部容器／交易及拒绝／切区组合仍待核对。
 
 ## 权威与限制
 

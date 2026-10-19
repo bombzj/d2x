@@ -1,5 +1,6 @@
 #include "gameplay/skills/amazon_passive_spec.hpp"
 #include "remote_ui_clients.hpp"
+#include "gameplay/items/belt_rules.hpp"
 #include "item_skill_sources.hpp"
 #include "client/character_projection.hpp"
 #include "client/quest_projection.hpp"
@@ -237,6 +238,24 @@ struct RemoteUiClients::Impl {
                     }
                     return InventoryError::None;
                 }
+                else if constexpr (std::is_same_v<T, MergeStacks>) {
+                    const auto *target=o.inventoryView.item(c.target.id);
+                    if (!target) return InventoryError::UnknownItem;
+                    const auto *base=o.data.items.find(target->definition);
+                    const auto native=o.session.read().world.items.find(guid(target->id));
+                    const auto decoded=o.items.read().items.find(guid(target->id));
+                    if (!base || native==o.session.read().world.items.end() || decoded==o.items.read().items.end())
+                        return InventoryError::UnknownItem;
+                    const auto instance=o.completeItem(native->second,decoded->second,target->location);
+                    if (!instance) return InventoryError::InvalidRequest;
+                    int64_t maximum=base->maxStack;
+                    for (const auto &stat : resolveItemStats(o.data,*instance,o.characterView.level))
+                        if (!stat.layer && (stat.effect.empty()?stat.name:stat.effect)=="item_extra_stack") maximum+=stat.value;
+                    // A full target has no native mutation/ACK. Keep the cursor
+                    // usable instead of waiting for a response that cannot arrive.
+                    return maximum>0 && target->quantity>=uint64_t(maximum)
+                        ? InventoryError::StackFull : InventoryError::None;
+                }
                 else if constexpr (std::is_same_v<T, LoadBook>) {
                     const auto *source=o.inventoryView.item(c.scroll.id), *target=o.inventoryView.item(c.book.id);
                     if (!source || !target) return InventoryError::UnknownItem;
@@ -254,11 +273,12 @@ struct RemoteUiClients::Impl {
                     const auto *item=o.inventoryView.item(c.item.id);
                     if (!item) return InventoryError::UnknownItem;
                     if (item->revision!=c.item.revision) return InventoryError::SourceChanged;
-                    if (!o.hirelingView.active) return InventoryError::AccessDenied;
                     const auto *potion=o.data.potion(item->definition);
                     if (!potion || (potion->kind!=PotionKind::Healing && potion->kind!=PotionKind::Rejuvenation && potion->kind!=PotionKind::Remedy))
                         return InventoryError::UnsupportedUse;
                     const auto *where=std::get_if<ContainerLocation>(&item->location);
+                    if (!o.hirelingView.active && (!where || where->container!=o.inventoryView.containers.belt))
+                        return InventoryError::AccessDenied;
                     if (!where || (where->container!=o.inventoryView.containers.backpack &&
                         where->container!=o.inventoryView.containers.cursor && where->container!=o.inventoryView.containers.belt))
                         return InventoryError::AccessDenied;
@@ -532,6 +552,20 @@ struct RemoteUiClients::Impl {
         else {
             ContainerLocation target;
             if (const auto *automatic = std::get_if<AutoPlace>(&destination)) {
+                if (automatic->container == owned.cube) {
+                    for (const auto &[id, cube] : inventoryView.items) {
+                        const auto *base = inventoryView.definition(cube.definition);
+                        const auto *at = std::get_if<ContainerLocation>(&cube.location);
+                        if (!base || !base->opensCube || !at ||
+                            (at->container != owned.backpack && at->container != inventoryView.storage)) continue;
+                        next.action = OnlineItemAction::CubeStore; next.target = guid(id);
+                        next.itemRevision = handle.revision; next.targetRevision = cube.revision;
+                        if (items.read().cursor != next.item) compositeTake(next);
+                        else enqueue(next);
+                        return;
+                    }
+                    notice = "An accessible stored cube is required."; return;
+                }
                 auto cell = freeCell(automatic->container,*item);
                 if (!cell) { notice = "No room in that container."; return; }
                 target = {automatic->container,*cell};
@@ -619,13 +653,6 @@ struct RemoteUiClients::Impl {
                             c.context = onlineIntentContext(session.read());
                             enqueue(c); return;
                         }
-                        const auto &books = data.tables.at("books");
-                        for (size_t row=0; row<books.rows().size(); ++row)
-                            if (books.value(row,"ScrollSkill") == "Scroll of Townportal" &&
-                                (books.value(row,"ScrollSpellCode") == item->definition || books.value(row,"BookSpellCode") == item->definition)) {
-                                if (!control.townPortal()) notice = control.reason();
-                                return;
-                            }
                     }
                 }
                 c.action = OnlineItemAction::Use; c.item = guid(v.item.id); c.itemRevision = v.item.revision;
@@ -640,10 +667,10 @@ struct RemoteUiClients::Impl {
                     }
                 }
             } else if constexpr (std::is_same_v<T, UseBeltColumn>) {
-                for (int y=0;y<inventoryView.container(owned.belt)->rows;++y)
-                    if (const auto *item = inventoryView.item(inventoryView.itemAt(owned.belt,{v.column,y}))) {
-                        c.action = OnlineItemAction::Use; c.item = guid(item->id); c.itemRevision = item->revision; c.mercenary = v.hireling; break;
-                    }
+                if (const auto *item = inventoryView.item(inventoryView.itemAt(owned.belt,{v.column,0}))) {
+                    if (v.hireling && inventory.preview(UseHirelingPotion{item->handle()})!=InventoryError::None) return;
+                    c.action = OnlineItemAction::Use; c.item = guid(item->id); c.itemRevision = item->revision; c.mercenary = v.hireling;
+                }
                 if (c.action != OnlineItemAction::Use) return;
             } else if constexpr (std::is_same_v<T, SwapItems>) {
                 c.item = guid(v.first.id); c.itemRevision = v.first.revision; c.target = guid(v.second.id); c.targetRevision = v.second.revision;
@@ -1212,6 +1239,19 @@ struct RemoteUiClients::Impl {
                 }
             }
             InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
+            if (complete && di.revision == native.revision && definition->maxStack > 1 && !definition->bookCapacity) {
+                InventoryStackView stack;
+                stack.fileIndex = di.fileIndex;
+                constexpr std::array<std::string_view,6> names{"mindamage","maxdamage","secondary_mindamage",
+                    "secondary_maxdamage","item_throw_mindamage","item_throw_maxdamage"};
+                for (const auto &stat : stats) if (!stat.layer)
+                    for (size_t index=0;index<names.size();++index)
+                        if (stat.name == names[index]) {
+                            if (stat.replace) stack.damage[index] = stat.rawValue;
+                            else stack.damage[index] += stat.rawValue;
+                        }
+                projection.stack = stack;
+            }
             projection.specialRow = item.specialRow;
             projection.iconCells = {di.width, di.height};
             projection.colorTransform = inventoryColorTransform(data, data.items, item);
@@ -1476,9 +1516,10 @@ struct RemoteUiClients::Impl {
             def.width=di.width; def.height=di.height; def.beltRows=definition->beltRows; def.maxStack=definition->maxStack; def.bookCapacity=definition->bookCapacity;
             def.beltAllowed=definition->beltAllowed; def.opensCube=definition->opensCube; def.twoHanded=definition->equipment.twoHanded;
             def.autoBelt=definition->autoBelt;
-            for(const auto type:{"hpot","mpot","rpot"}) if(definition->equipment.isType(type)) def.beltPotionType=type;
+            def.beltPotionType=beltPotionFamily(native.code);
             def.shield=definition->equipment.isType("shld"); def.quiver=!definition->equipment.quiver.empty();
             def.socketFiller=definition->equipment.isType("sock"); def.identifySource=data.isIdentifyScroll(native.code)||data.isIdentifyScroll(def.bookScroll);
+            def.usable=data.tables.at(definition->base.sourceTable).number(definition->base.sourceRow,"useable").value_or(0)!=0;
             for(size_t slot=0;slot<def.slots.size();++slot) def.slots[slot]=definition->equipment.fits(EquipmentSlot(slot));
             v.definitions.emplace(native.code,std::move(def));
             auto projection=projectItem(native,di,location);
@@ -1631,7 +1672,8 @@ struct RemoteUiClients::Impl {
         questView=projectQuestDisplay(data,questInput);
         shopView={}; shopView.revision=revision; shopView.actor=characterView.actor; shopView.npc=npcView.npc;
         shopView.bankGold=inventoryView.bankGold; shopView.pricesKnown=false;
-        shopView.tabLabels={"Weapons","Armor","Armor","Misc"};
+        shopView.tabLabels={data.itemStrings.at("strBSArmor"),data.itemStrings.at("strBSWeapons"),
+            data.itemStrings.at("strBSWeapons"),data.itemStrings.at("strBSMisc")};
         const auto identity=npcIdentity();
         shopView.gamble=w.shopGamble;
         shopView.available=npcView.valid && (identity=="nihlathak" || data.vendors.contains(identity));

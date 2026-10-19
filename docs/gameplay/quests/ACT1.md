@@ -1,6 +1,6 @@
 # 第一幕任务
 
-本页维护第一幕六项任务的服务端执行范围、原身份与核对入口。通用所有权、原协议与扩展约定见[任务系统](SYSTEM.md)；源码实现与运行认证分开记录。
+本页维护第一幕六项任务的服务端执行范围、原身份、原版依据与缺口。通用所有权、原协议与扩展约定见[任务系统](SYSTEM.md)。
 
 ## 原任务身份
 
@@ -32,7 +32,7 @@
 
 血乌奖励生成真实罗格伙伴；同行、战斗、死亡和保存的范围及未完成服务见[佣兵](../characters/HIRELINGS.md)。
 
-目标资格按事件冻结并绑定actor；邪恶洞窟记录实际击杀参与者，血乌使用同房间／近邻，女伯爵和安达利尔使用事件关卡并单独包含实际击杀者，随后向第一幕队友传播。马勒斯交付按原1.13c组队回调授予所有至少8级队友，不套用同幕限制；实际携带马勒斯可保留交付例外。已关闭本局任务不会继续自动接取／推进，旧档待领奖资格仍可消费。详细规则与地图邻接限制见[任务系统](SYSTEM.md#资格准备与提交)。管理生成的怪物不授予任务进度；自然身份的管理伤害仍经过死亡领域，仅用于准备冒烟条件。完整欢迎／NPC对白时序、Cain逃离牢笼的行走演出、原五幕剧情、多人争用、三难度及完整原服回归仍未全面认证。2026-10-12已构建，仓库交还马勒斯、跨幕队友灌注资格、晚到拒绝及保存重入取得[有限TCP证据](SYSTEM.md#有限运行核查)，其余新增第一幕目标规则未专项运行。
+目标资格按事件冻结并绑定actor；邪恶洞窟记录实际击杀参与者，血乌使用同房间／近邻，女伯爵和安达利尔使用事件关卡并单独包含实际击杀者，随后向第一幕队友传播。马勒斯交付按原1.13c组队回调授予所有至少8级队友，不套用同幕限制；实际携带马勒斯可保留交付例外。已关闭本局任务不会继续自动接取／推进，旧档待领奖资格仍可消费。详细规则与地图邻接限制见[任务系统](SYSTEM.md#资格准备与提交)。管理生成的怪物不授予任务进度；管理伤害不能作为自然战斗依据。完整欢迎／NPC对白时序、Cain逃离牢笼的行走演出、五幕剧情、多人争用及三难度仍缺完整原版对照。
 
 ## 原规则证据
 
@@ -44,22 +44,4 @@
 
 slot41、凯恩代救及奖励保存语义由[存档](../../modules/SAVES.md#任务槽与奖励语义)维护。Warriv城镇解锁的规则与未覆盖边界见[传送点](../world/OBJECTS.md#自研传送点)。
 
-## 有限运行证据
-
-2026-10-09历史包完成Windows Release构建、打包及普通难度单人冒烟。EXE SHA256为`427D1D7AA3741CE581144A4F6699D12E3CD656BA10B48CFA2956DD437F6E1430`。临时女巫Hero，地图种子1316597569，MPQ为`assets/mpq2`。使用已有调试管道准备经验、位置、自然怪物死亡及加工输入；交谈、拾取、机关、门户、重置、灌注和NPC旅行由同一客户端发送原C2S。不是一级角色正常通关、首领战斗或组队资格验收。没有新建测试程序、脚本或用例。
-
-证据统一保留在忽略目录`artifacts/act1-quests-20261009`，失败样本也保留。上述摘要标识历史证据包，[当前运行包](../../development/BUILD_AND_RUN.md#运行包记录)另行维护，不沿用旧证据认证新增路径。
-
-| 路径 | 实际观察与证据 |
-| --- | --- |
-| 邪恶洞穴 | 真实洞穴46个人口清零，原Akara76给一次技能点；学技后原重置退款，Den flags=1。`den-entered`／`den-cleared`／`den-rewarded`／`den-respec` |
-| 血乌奖励 | 自然血乌死亡后原Kashya92，记录class271／level3／life45／merc02／sourceRow12；真实owned roguehire出生并同行。`burial-rewarded`／`cain-rescued`／`final-reloaded` |
-| 凯恩机关与救援 | 原树取bks、原拾取与Akara112换bkd；原0x50五柱顺序19、21、17、20、18，两端一致。原交互打开红门60到38，牢笼生成蓝门59回营地。`cain-translated`／`cain-stones`／`cain-portal`／`cain-rescued` |
-| 凯恩服务 | Akara118给真实7级Magic戒指，Cain城镇单位实际出现；金币0时原identify-all仍成功。`cain-rewarded-before-npc`／`cain-identify`。前一文件保留修复Town Cain准备前的样本，不认证当时NPC出生 |
-| 遗忘之塔 | 自然The Countess死亡，InitFn47箱时钟与后续金币实际生成；常规TC同时产出符文。`tower-reward-final`；这段推进人物死亡，按原复活回城后继续其余任务 |
-| 交易工具 | 原马勒斯生成／拾取hdm、Charsi163消费授予资格；真实白cap放Cursor，原38／58加工后Rare品质6、level13、identified、背包位置。`malus-returned`／`imbue-final`／`imbue-client` |
-| 安达利尔与跨幕 | 自然Andy死亡，原定时蓝门回营地；原Warriv旅行1→40→1，Andy阶段5及completedActs[0][0]=true。`andariel-slain`／`andariel-portal`／`warriv-east`／`warriv-west` |
-| 新进程保存恢复 | 最终包新进程恢复六阶段4、4、8、4、6、5、重置used位、幕完成位、真实罗格记录和Rare已鉴定cap。五柱mode2及红门实际恢复，原交互进入Tristram，牢笼原mode5。`final-reloaded`／`final-reloaded-items`／`final-restored-cairn`／`final-completed-tristram` |
-| 重复资格与诊断 | 重入Akara无重复奖励或重置选项，原重置请求被客户端明确拒绝；六条原5D状态13。最终ProtocolReady、ignoredPackets=0、宿主failures=0、characterIssues为空、stderr为空。`final-akara-no-repeat`／`final-online-status`／`final-server-status` |
-
-上述证据只覆盖列出的普通难度单人路径；其余随机分支、三难度、容量／背压、多人及Linux未认证。旧单机任务冒烟不认证当前联机；原服接取／STARTED／日志恢复的独立证据见[联网记录](../../modules/NETWORK.md#既有有限证据)。
+原服接取／STARTED／日志消息参考见[联网](../../modules/NETWORK.md#既有有限证据)，NPC介绍顺序与确认消息见[服务端协议](../../modules/SERVER_PROTOCOL.md#原版-host-与自研-host-对照)。这些观察不覆盖完整任务通关、全部随机分支、容量／背压及多人资格。

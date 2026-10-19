@@ -14,19 +14,10 @@
 
 核对入口：本地 D2MOO `D2Common/src/Units/Units.cpp::UNITS_GetDefense`、`D2Skills.cpp::SKILLS_GetConcentrationDamageBonus`、`D2Game/src/QUESTS/ACT5/A5Q3.cpp::ACT5Q3_UpdateResistances` 和 `UNIT/SUnitMsg.cpp::D2GAME_STATES_SendUnitStates_6FCC58E0`；原1.13c D2Client 的 DescDam／DescAtt 调度表 RVA F5210／F52A0。表值以当前MPQ为准，原DLL及参考仓库不成为运行依赖。
 
-## 当前包有限冒烟
-
-2026-10-11 Windows Release，MPQ `assets/mpq2`，当前包身份见[运行包记录](../../development/BUILD_AND_RUN.md#运行包记录)。使用 `artifacts/character-stats-smoke-20261011` 的隔离角色、实际页面截图和原包投影；`online-status.characterUi` 是同一页面视图，server-snapshot仅作权威数值对照，不作为画面证明。
-
-- 女巫90级：空手伤害／命中、经验／资源／四属性和四抗无问号；火弹39–50、冰弹35–51；帽子后防御11→16，冰甲后21，与权威值一致。保存重入保留装备，临时冰甲不入档。
-- 圣骑士90级：普通武器伤害4–13／命中203；圣盾防御43、格挡8，重击46–56；暗金蛇皮甲原25四抗与增强防御投影后防御852，与权威值一致。圣盾首次暴露 clc1 参数名遗漏，失败现场保留，修复后同路径无未知字段。
-- 祝福之锤137–143，专注原状态携带 damagepercent=75 后187–195，切走光环恢复137–143。首次暴露自研玩家光环只发状态名、未发原数值列表；修复原状态消息后往返一致，宿主 failures=0。
-- 破损匕首按空手1–3计算；盾牌／低耐久头盔仍参与防御30，切空副武器组后防御25、格挡0，未重复使用旧手部。没有新增测试脚本／用例／程序，没有覆盖用户原档。
-
-全部职业特殊动作、装备／套装／孔内及难度组合、负抗性、跑步格挡、原服本轮实连与Linux尚未全面运行认证；缺少事实仍明确未知，不通过删问号或伪造零值掩盖。
+全部职业特殊动作、装备／套装／孔内及难度组合、负抗性、跑步格挡和Linux仍缺完整原版对照；缺少事实仍明确未知，不通过删问号或伪造零值掩盖。`online-status.characterUi`是同一页面视图，server-snapshot仅用于权威数值观察，不能作为原版画面依据。
 
 ## 操作与保存
 
 人物面板提交0x3A分配属性、技能树提交0x3B学习，资格按已知点数、职业、原reqlevel＋基础等级、前置及上限校验；最终结果等原包回包，超时未知，不自动重试。0x2C事件2仅播放原cursor_level_up表现。
 
-R／底栏切换走跑，按住Ctrl临时跑步；选择保存在客户端偏好。资源消耗／回复由权威服务端决定。原服持久化由D2GS／D2DBS，自研由hosting／persistence保存D2S；客户端不读档或执行成长。自研属性／成长基础及剩余边界见[角色模块](../../modules/CHARACTER.md#自研服务端属性与成长基础)，本批已构建打包，经验升级／加点有有限冒烟。全部升级边界与任务奖励完整验收仍缺，见[联网记录](../../modules/NETWORK.md#既有有限证据)。
+R／底栏切换走跑，按住Ctrl临时跑步；选择保存在客户端偏好。资源消耗／回复由权威服务端决定。原服持久化由D2GS／D2DBS，自研由hosting／persistence保存D2S；客户端不读档或执行成长。自研属性／成长基础及剩余边界见[角色模块](../../modules/CHARACTER.md#自研服务端属性与成长基础)，原服成长／属性消息参考见[联网](../../modules/NETWORK.md#既有有限证据)；全部升级边界与任务奖励仍需完整核对。

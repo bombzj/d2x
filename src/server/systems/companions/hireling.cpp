@@ -328,15 +328,18 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
         return {DomainStatus::InvalidActor,{}};
     const monsters::Actor *merc=nullptr;
     for(const auto &[id,pet]:state_.companions) if(pet.owner==actor.player && pet.kind==Kind::Hireling) {merc=ports_.monsters.find(id);break;}
-    if(!merc || merc->life<=0 || merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)) return {DomainStatus::Unavailable,{}};
     inventory::detail::Draft draft(*player,*player->rules.items,*player->rules.equipment,*player->rules.character);
     const auto *source=draft.resolve(item);if(!source || !source->quantity || source->revision==UINT64_MAX) return {DomainStatus::Stale,{}};
     const auto *at=std::get_if<ContainerLocation>(&source->location);
     if(!at || at->container!=(belt?draft.containers().belt:draft.containers().cursor)) return {DomainStatus::InvalidRequest,{}};
+    if(belt && draft.at({draft.containers().cursor,{}})) return {DomainStatus::Conflict,{}};
     const auto definition=player->rules.potions->find(source->definition);
     if(definition==player->rules.potions->end()) return {DomainStatus::NotImplemented,{}};
     const auto &potion=definition->second;
     if(potion.kind!=PotionKind::Healing && potion.kind!=PotionKind::Rejuvenation && potion.kind!=PotionKind::Remedy) return {DomainStatus::InvalidRequest,{}};
+    if ((!merc || merc->life<=0) && belt)
+        return ports_.inventory.execute(actor,{UseItem{item},inventory::Source::Belt});
+    if(!merc || merc->life<=0 || (!belt && (merc->area!=actor.area || !area->definition.activation.nearby(player->position,merc->position)))) return {DomainStatus::Unavailable,{}};
     if(merc->revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
     auto recipient=*merc;++recipient.revision;
     effects::UnitDamageStates statuses;statuses.source=merc->id;
@@ -363,11 +366,8 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
         consumed.location,removed?std::nullopt:std::optional{consumed.location},consumed.quantity});
     if(removed) draft.edit.inventory.items.erase(item.id);
     if(removed && belt) {
-        int target=0;const auto rows=draft.edit.inventory.containers.at(location.container).spec.rows;
-        for(int row=0;row<rows;++row) if(const auto above=draft.at({location.container,{location.cell.x,row}})) {
-            if(row!=target && draft.move(above,{location.container,{location.cell.x,target}})!=DomainStatus::Applied) return {DomainStatus::Unavailable,{}};
-            ++target;
-        }
+        const auto result=draft.compactBeltColumn(location.cell.x);
+        if(result!=DomainStatus::Applied) return {result,{}};
     }
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),player->persistent.player.weaponSet};
     auto units=std::make_shared<effects::AuraUnitPublication>(ports_.effects.prepareDamageStates(std::move(recipient),statuses,actor.tick));
