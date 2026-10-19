@@ -1003,7 +1003,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     if (auto feedback = sharedClients->takeNotice(); !feedback.text.empty()) sharedUi->notice(std::move(feedback.text),feedback.error);
                     mapDisplay.visible = panels.automap; mapDisplay.large = panels.automapLarge;
                     mapDisplay.right = panels.minimapRight; mapDisplay.offset = panels.automapOffset; mapDisplay.running = sharedClients->running();
-                    worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,
+                    worldFrame = scene->frame(view,*town.map(),town.read(),*sharedUi,combat,*sharedClients,
                         sharedController->uiConsumed(),input.mouse,input.rightHeld || input.rightPressed,
                         localConnection && !lanConnection && (!input.focused || panels.gameMenuOpen));
                     if(noPickup && !input.showLoot) worldFrame.input.pickup.reset();

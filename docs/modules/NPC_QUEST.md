@@ -7,7 +7,7 @@
 | 入口 | 职责 |
 | --- | --- |
 | [quest_projection.cpp](../../src/client/quest_projection.cpp) | QuestProjectionInput结合当前MPQ生成本人任务标题、说明、状态和原图槽 |
-| [quest.hpp](../../src/contracts/quest.hpp)、[quest_client.hpp](../../src/client/quest_client.hpp) | 当前难度本人任务值视图；不暴露可写旗标或完整存档 |
+| [quest.hpp](../../src/contracts/quest.hpp)、[quest_client.hpp](../../src/client/quest_client.hpp) | 当前难度本人任务值视图与完成动画已阅意图；不暴露可写旗标或完整存档 |
 | [npc.hpp](../../src/contracts/npc.hpp)、[npc_client.hpp](../../src/client/npc_client.hpp) | 对白／菜单／服务视图与窄语义意图 |
 | [remote_ui_clients.cpp](../../src/client/remote_ui_clients.cpp) | 原任务、NPC提示、对白和货架适配公共端口 |
 | [remote_control.cpp](../../src/client/remote_control.cpp) | 按原GUID靠近／交谈、确认／关闭与旅行请求 |

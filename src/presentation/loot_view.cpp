@@ -51,12 +51,17 @@ void SceneView::drawGroundItem(EntityId id, bool highlighted) const {
     const auto *item = inventoryView_.item(id);
     if (item) drawGroundItem(*item, highlighted);
 }
-void SceneView::drawGroundItem(const InventoryItemView &item, bool highlighted) const {
+void SceneView::drawGroundItem(const InventoryItemView &item, bool highlighted,
+                               const PaletteBlendView *lighting, Color light) const {
     auto p = screen(staticUnitPosition(std::get<GroundLocation>(item.location).position));
     if (p.x < -80 || p.x > W + 80 || p.y < -80 || p.y > H - HUD + 80)
         return;
     const auto *image = groundItemSprite(item);
     if (!image) return;
+    if (lighting) {
+        lighting->drawLit(image, p, {&light, 1}, WHITE, highlighted ? Vector2{1.7f, 1} : Vector2{1, 1});
+        return;
+    }
     // D2Client 1.13c RVA 6CF9B: ground items use CelDraw 5, or 7 when
     // selected. Ethereal inventory TRANS50 is not applied to ground flippy.
     const int act = mapView().palette;

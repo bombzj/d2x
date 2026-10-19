@@ -5,12 +5,37 @@
 #include <cmath>
 #include <rlgl.h>
 #include <stdexcept>
+#include <string>
+#include <utility>
 
 namespace d2x {
 namespace {
+enum LightUniform {
+    LightScreenHeight, LightPlayerScreen, LightPlayerWorld, LightOrigin, LightZoom, LightAmbient,
+    LightSampleCount, LightHighlight, LightSamples, LightIndexed, LightMap, LightPalette, LightIndices, LightTable
+};
+enum LitBlendUniform { BlendLight, BlendDestination, BlendPalette, BlendLightTable, BlendScreenTable };
+enum WallBlendUniform { WallSampleCount, WallSamples, WallDestination, WallLightTable, WallIndices, WallTransTable };
+constexpr const char *wallLighting = R"(
+uniform int sampleCount;
+uniform vec4 lightSamples[6];
+int wallLightRow(vec2 uv, ivec2 size, bool translucent) {
+    int left = int(round(lightSamples[0].a * 255.0));
+    if (sampleCount == 1) return left / 8;
+    int x = int(floor(uv.x * float(size.x)));
+    int column = clamp(x / 32, 0, 4);
+    left = int(round(lightSamples[column].a * 255.0));
+    int right = int(round(lightSamples[column + 1].a * 255.0));
+    // CmnSubtile: transparent tiles always use the Gouraud cache; opaque
+    // tiles enter it only at delta >= 10. Cache endpoints are already 5-bit.
+    if (!translucent && abs(right - left) < 10) return left / 8;
+    return (32 * (left / 8) + (right / 8 - left / 8) * (x % 32)) / 32;
+}
+)";
 constexpr const char *paletteLookup = R"(
 #version 330
 in vec2 fragTexCoord;
+in vec4 fragColor;
 out vec4 finalColor;
 uniform sampler2D texture0;
 uniform sampler2D destination;
@@ -53,36 +78,115 @@ void main() {
 )";
 constexpr const char *lightingFragment = R"(
 uniform sampler2D lightTable;
+uniform sampler2D lightMap;
 uniform vec2 playerScreen;
 uniform vec2 playerWorld;
 uniform vec2 maskOrigin;
 uniform float screenHeight;
 uniform float zoom;
-uniform vec3 ambient;
+// Packed native light: normalized color in RGB, independent intensity in A.
+uniform vec4 ambient;
+uniform int sourceIndexed;
+uniform vec2 highlightTransform;
 void main() {
+    vec4 source = texture(texture0, fragTexCoord);
+    if (source.a == 0.0) discard;
+    int originalIndex = int(round(source.r * 255.0));
+    if (sourceIndexed != 0) source.rgb = texelFetch(palette, ivec2(originalIndex, 0), 0).rgb;
+    source *= fragColor;
+    source.rgb = clamp((source.rgb * highlightTransform.x - 0.5) * highlightTransform.y + 0.5, 0.0, 1.0);
     vec2 pixel = vec2(gl_FragCoord.x, screenHeight - gl_FragCoord.y);
     vec2 delta = (pixel - playerScreen) / zoom;
     vec2 world = playerWorld + vec2(delta.x / 32.0 + delta.y / 16.0,
                                     delta.y / 16.0 - delta.x / 32.0);
     vec2 position = world - maskOrigin;
-    vec3 light = ambient;
+    vec4 light = ambient;
     if (all(greaterThanEqual(position, vec2(0.0))) &&
-        all(lessThan(position, vec2(textureSize(texture0, 0)))))
+        all(lessThan(position, vec2(textureSize(lightMap, 0)))))
         // Light texels are subtile corners, not centers: keep the integer
         // world corner aligned with its texel center for Gouraud sampling.
-        light = max(light, texture(texture0, (position + 0.5) / vec2(textureSize(texture0, 0))).rgb);
-    vec3 background = texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb;
-    // D2Gfx CmnSubtile: uint8 intensity >> 3 selects PL2 Shadows[0..31].
-    // The software scalar table does not establish hardware colored-light
-    // rules. Keep the pre-existing RGB multiplication for colored samples;
-    // do not invent per-channel PL2 transforms and call them native.
-    if (light.r != light.g || light.r != light.b) {
-        finalColor = vec4(background * light, 1.0);
-        return;
+        light = texture(lightMap, (position + 0.5) / vec2(textureSize(lightMap, 0)));
+    if (sampleCount == 1) light = lightSamples[0];
+    else if (sampleCount == 6) {
+        // D2Gdi 5F0C / D2DDraw 73DC: block x >> 5 selects two of the
+        // six wall samples. They are duplicated vertically, even on tall walls.
+        light = vec4(1.0,1.0,1.0,float(wallLightRow(fragTexCoord,textureSize(texture0,0),false) * 8) / 255.0);
     }
-    int index = paletteIndex(background);
-    int row = clamp(int(light.r * 255.0) / 8, 0, 31);
-    finalColor = texelFetch(lightTable, ivec2(index, row), 0);
+    // GDI/DDraw consume the independent intensity for floors and cels too.
+    // Switching to RGB multiplication for a colored source would discard
+    // PL2 and darken an otherwise saturated ice-armor light.
+    int index = sourceIndexed != 0 && all(equal(fragColor.rgb, vec3(1.0))) &&
+                all(equal(highlightTransform, vec2(1.0))) ? originalIndex : paletteIndex(source.rgb);
+    int intensity = sampleCount == 0 ? int(light.a * 255.0) : int(round(light.a * 255.0));
+    int row = clamp(intensity / 8, 0, 31);
+    finalColor = vec4(texelFetch(lightTable, ivec2(index, row), 0).rgb, source.a);
+}
+)";
+constexpr const char *wallBlendFragment = R"(
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+uniform sampler2D destination;
+uniform sampler2D lightTable;
+uniform sampler2D paletteIndices;
+uniform sampler2D transparentTable;
+vec3 paletteColor(int index) { return texelFetch(lightTable,ivec2(index,32),0).rgb; }
+int backgroundIndex(vec3 color) {
+    ivec3 rgb = ivec3(round(color * 255.0)) / 4;
+    int key = rgb.r + rgb.g * 64 + rgb.b * 4096;
+    int result = int(round(texelFetch(paletteIndices,ivec2(key % 512,key / 512),0).r * 255.0));
+    if (all(equal(paletteColor(result),color))) return result;
+    float nearest = 4.0;
+    for (int i = 0; i < 256; ++i) {
+        vec3 delta = paletteColor(i) - color;
+        float distance = dot(delta,delta);
+        if (distance < nearest) { nearest = distance; result = i; }
+        if (distance == 0.0) break;
+    }
+    return result;
+}
+)";
+constexpr const char *wallBlendMain = R"(
+void main() {
+    vec4 source = texture(texture0,fragTexCoord);
+    if (source.a < 0.5) discard;
+    int sourceIndex = int(round(source.r * 255.0));
+    int row = wallLightRow(fragTexCoord,textureSize(texture0,0),true);
+    int litIndex = int(round(texelFetch(lightTable,ivec2(sourceIndex,row),0).a * 255.0));
+    int background = backgroundIndex(texelFetch(destination,ivec2(gl_FragCoord.xy),0).rgb);
+    // Roof/transparent-wall helper indexes trans[litSource][destination].
+    // Existing UI textures are transposed; use the corresponding coordinates.
+    finalColor = texelFetch(transparentTable,ivec2(litIndex,background),0);
+}
+)";
+constexpr const char *litBlendFragment = R"(
+#version 330
+in vec2 fragTexCoord;
+out vec4 finalColor;
+uniform sampler2D texture0;
+uniform sampler2D palette;
+uniform sampler2D lightTable;
+uniform sampler2D destination;
+uniform sampler2D screenTable;
+uniform vec4 sourceLight;
+int closestIndex(vec3 color) {
+    int result = 0; float nearest = 4.0;
+    for (int i = 0; i < 256; ++i) {
+        vec3 delta = texelFetch(palette, ivec2(i, 0), 0).rgb - color;
+        float distance = dot(delta, delta);
+        if (distance < nearest) { nearest = distance; result = i; }
+        if (distance == 0.0) break;
+    }
+    return result;
+}
+void main() {
+    vec4 source = texture(texture0, fragTexCoord);
+    if (source.a < 0.5) discard;
+    int index = int(round(source.r * 255.0));
+    vec3 lit = texelFetch(lightTable, ivec2(index, clamp(int(round(sourceLight.a * 255.0)) / 8, 0, 31)), 0).rgb;
+    int background = closestIndex(texelFetch(destination, ivec2(gl_FragCoord.xy), 0).rgb);
+    finalColor = texelFetch(screenTable, ivec2(background, closestIndex(lit)), 0);
 }
 )";
 constexpr const char *rectangleFragment = R"(
@@ -146,10 +250,13 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     for (size_t i = 0; i < blend.size(); ++i)
         blend[i] = colors[bytes[0x23500 + i]];
     rectangleTable_ = upload(blend.data(), 256, 256);
-    std::vector<Color> light(32 * 256);
-    for (size_t i = 0; i < light.size(); ++i)
+    std::vector<Color> light(33 * 256);
+    for (size_t i = 0; i < 32 * 256; ++i) {
         light[i] = colors[bytes[0x400 + i]];
-    lightTable_ = upload(light.data(), 256, 32);
+        light[i].a = bytes[0x400 + i]; // Preserve the exact index across PL2 -> trans.
+    }
+    std::copy(colors.begin(),colors.end(),light.begin() + 32 * 256);
+    lightTable_ = upload(light.data(), 256, 33);
     // Fast inverse for unchanged palette pixels, with an exact RGB comparison
     // in the shader. Quantized-key collisions always use the full lookup.
     std::vector<Color> indices(512 * 512, Color{0, 0, 0, 255});
@@ -161,10 +268,24 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     destination_ = LoadRenderTexture(W, H);
     SetTextureFilter(destination_.texture, TEXTURE_FILTER_POINT);
     const auto blendSource = std::string(paletteLookup) + fragment;
-    const auto lightSource = std::string(paletteLookup) + lightingFragment;
+    const auto lightSource = std::string(paletteLookup) + wallLighting + lightingFragment;
+    const auto wallSource = std::string(wallBlendFragment) + wallLighting + wallBlendMain;
     const auto rectangleSource = std::string(paletteLookup) + rectangleFragment;
     shader_ = LoadShaderFromMemory(nullptr, blendSource.c_str());
     lightingShader_ = LoadShaderFromMemory(nullptr, lightSource.c_str());
+    litBlendShader_ = LoadShaderFromMemory(nullptr, litBlendFragment);
+    wallBlendShader_ = LoadShaderFromMemory(nullptr, wallSource.c_str());
+    const std::array<const char *,14> lightingNames{{"screenHeight", "playerScreen", "playerWorld", "maskOrigin",
+        "zoom", "ambient", "sampleCount", "highlightTransform", "lightSamples[0]", "sourceIndexed",
+        "lightMap", "palette", "paletteIndices", "lightTable"}};
+    for (size_t i = 0; i < lightingNames.size(); ++i)
+        lightingLocations_[i] = GetShaderLocation(lightingShader_, lightingNames[i]);
+    const std::array<const char *,5> blendNames{{"sourceLight", "destination", "palette", "lightTable", "screenTable"}};
+    for (size_t i = 0; i < blendNames.size(); ++i)
+        litBlendLocations_[i] = GetShaderLocation(litBlendShader_, blendNames[i]);
+    const std::array<const char *,6> wallNames{{"sampleCount","lightSamples[0]","destination","lightTable","paletteIndices","transparentTable"}};
+    for (size_t i = 0; i < wallNames.size(); ++i)
+        wallBlendLocations_[i] = GetShaderLocation(wallBlendShader_,wallNames[i]);
     rectangleShader_ = LoadShaderFromMemory(nullptr, rectangleSource.c_str());
     destinationLocation_ = GetShaderLocation(shader_, "destination");
     paletteLocation_ = GetShaderLocation(shader_, "palette");
@@ -173,11 +294,15 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     opaqueLocation_ = GetShaderLocation(shader_, "nativeOpaque");
     if (!palette_.id || !screenTable_.id || !halfTable_.id || !socketTable_.id || !quarterTable_.id || !highlightTable_.id || !rectangleTable_.id || !lightTable_.id || !paletteIndices_.id || !destination_.id ||
         destinationLocation_ < 0 || paletteLocation_ < 0 || tableLocation_ < 0 || indicesLocation_ < 0 || opaqueLocation_ < 0 ||
-        GetShaderLocation(lightingShader_, "lightTable") < 0 ||
+        std::ranges::any_of(lightingLocations_, [](int location) { return location < 0; }) ||
+        std::ranges::any_of(litBlendLocations_, [](int location) { return location < 0; }) ||
+        std::ranges::any_of(wallBlendLocations_, [](int location) { return location < 0; }) ||
         GetShaderLocation(rectangleShader_, "rectangleTable") < 0 ||
         GetShaderLocation(rectangleShader_, "rectangleColor") < 0) {
         UnloadShader(rectangleShader_);
         UnloadShader(lightingShader_);
+        UnloadShader(litBlendShader_);
+        UnloadShader(wallBlendShader_);
         UnloadShader(shader_);
         UnloadRenderTexture(destination_);
         UnloadTexture(paletteIndices_);
@@ -193,6 +318,8 @@ PaletteBlendView::PaletteBlendView(Archives &archives, int act) {
     }
 }
 PaletteBlendView::~PaletteBlendView() {
+    UnloadShader(wallBlendShader_);
+    UnloadShader(litBlendShader_);
     UnloadShader(rectangleShader_);
     UnloadShader(lightingShader_);
     UnloadShader(shader_);
@@ -243,32 +370,117 @@ void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
     DrawRectangle(left, top, right - left, bottom - top, WHITE);
     EndShaderMode();
 }
-void PaletteBlendView::drawLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom,
-                                    Color ambient) const {
+void PaletteBlendView::setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom,
+                                  Color ambient) {
+    worldLightMap_ = lightMap; lightPlayer_ = player; lightPlayerScreen_ = playerScreen;
+    lightOrigin_ = origin; lightZoom_ = zoom; lightAmbient_ = ambient;
+}
+void PaletteBlendView::drawWall(const Sprite *image, Vec position, std::span<const Color> samples, uint8_t alpha) const {
+    if (!image || !image->texture.id || alpha < 64) return;
+    if (alpha == 255) { drawLit(image,position,samples); return; }
+    if (!image->indexedTexture.id || (samples.size() != 1 && samples.size() != 6))
+        throw std::invalid_argument("Transparent wall requires original indices and native wall samples");
+    const Rectangle bounds{float(int(position.x + image->x)),float(int(position.y + image->y)),
+        float(image->texture.width),float(image->texture.height)};
+    const int left = std::max(0,int(bounds.x)), top = std::max(0,int(bounds.y));
+    const int right = std::min(W,int(bounds.x + bounds.width)), bottom = std::min(H,int(bounds.y + bounds.height));
+    if (left >= right || top >= bottom) return;
     rlDrawRenderBatchActive();
     const auto target = rlGetActiveFramebuffer();
-    rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
-    rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
-    rlBlitFramebuffer(0, HUD, W, H, 0, HUD, W, H, 0x00004000);
+    rlBindFramebuffer(RL_READ_FRAMEBUFFER,target);
+    rlBindFramebuffer(RL_DRAW_FRAMEBUFFER,destination_.id);
+    rlBlitFramebuffer(left,H-bottom,right,H-top,left,H-bottom,right,H-top,0x00004000);
     rlEnableFramebuffer(target);
+    BeginShaderMode(wallBlendShader_);
+    const int count = int(samples.size());
+    SetShaderValue(wallBlendShader_,wallBlendLocations_[WallSampleCount],&count,SHADER_UNIFORM_INT);
+    std::array<std::array<float,4>,6> packed{};
+    for (size_t i = 0; i < samples.size(); ++i) packed[i][3] = samples[i].a / 255.f;
+    SetShaderValueV(wallBlendShader_,wallBlendLocations_[WallSamples],packed.data(),SHADER_UNIFORM_VEC4,6);
+    // D2gfx 9667/967B/9689: 192..254, 128..191, 64..127.
+    const auto table = alpha >= 192 ? quarterTable_ : alpha >= 128 ? halfTable_ : socketTable_;
+    for (const auto &[uniform,texture] : std::array<std::pair<WallBlendUniform,Texture2D>,4>{{
+            {WallDestination,destination_.texture},{WallLightTable,lightTable_},
+            {WallIndices,paletteIndices_},{WallTransTable,table}}})
+        SetShaderValueTexture(wallBlendShader_,wallBlendLocations_[uniform],texture);
+    DrawTexturePro(image->indexedTexture,{0,0,bounds.width,bounds.height},bounds,{},0,WHITE);
+    EndShaderMode();
+}
+void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<const Color> samples,
+                              Color tint, Vector2 highlight, bool screenBlend) const {
+    if (!image || !image->texture.id) return;
+    if (!samples.empty() && samples.size() != 1 && samples.size() != 6)
+        throw std::invalid_argument("World light samples must be floor, unit, or six wall columns");
+    const auto packed = [](Color color) {
+        return std::array<float,4>{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
+    };
+    if (screenBlend) {
+        if (!image->indexedTexture.id || samples.size() != 1) return;
+        const Rectangle bounds{float(int(position.x + image->x)), float(int(position.y + image->y)),
+                               float(image->texture.width), float(image->texture.height)};
+        const int left = std::max(0, int(bounds.x)), top = std::max(0, int(bounds.y));
+        const int right = std::min(W, int(bounds.x + bounds.width));
+        const int bottom = std::min(H, int(bounds.y + bounds.height));
+        if (left >= right || top >= bottom) return;
+        rlDrawRenderBatchActive();
+        const auto target = rlGetActiveFramebuffer();
+        rlBindFramebuffer(RL_READ_FRAMEBUFFER, target);
+        rlBindFramebuffer(RL_DRAW_FRAMEBUFFER, destination_.id);
+        rlBlitFramebuffer(left, H - bottom, right, H - top, left, H - bottom, right, H - top, 0x00004000);
+        rlEnableFramebuffer(target);
+        BeginShaderMode(litBlendShader_);
+        const auto light = packed(samples.front());
+        SetShaderValue(litBlendShader_, litBlendLocations_[BlendLight], light.data(), SHADER_UNIFORM_VEC4);
+        for (const auto &[uniform, texture] : std::array<std::pair<LitBlendUniform,Texture2D>,4>{{
+                {BlendDestination, destination_.texture}, {BlendPalette, palette_},
+                {BlendLightTable, lightTable_}, {BlendScreenTable, screenTable_}}})
+            SetShaderValueTexture(litBlendShader_, litBlendLocations_[uniform], texture);
+        DrawTexturePro(image->indexedTexture, {0,0,bounds.width,bounds.height}, bounds, {}, 0, WHITE);
+        EndShaderMode();
+        return;
+    }
     BeginShaderMode(lightingShader_);
-    auto set = [&](const char *name, const void *value, ShaderUniformDataType type) {
-        SetShaderValue(lightingShader_, GetShaderLocation(lightingShader_, name), value, type);
+    const auto set = [&](LightUniform uniform, const void *value, ShaderUniformDataType type) {
+        SetShaderValue(lightingShader_, lightingLocations_[uniform], value, type);
     };
     const float height = float(H);
-    set("screenHeight", &height, SHADER_UNIFORM_FLOAT);
-    set("playerScreen", &playerScreen, SHADER_UNIFORM_VEC2);
-    set("playerWorld", &player, SHADER_UNIFORM_VEC2);
-    set("maskOrigin", &origin, SHADER_UNIFORM_VEC2);
-    set("zoom", &zoom, SHADER_UNIFORM_FLOAT);
-    const float environment[3]{ambient.r / 255.f, ambient.g / 255.f, ambient.b / 255.f};
-    set("ambient", environment, SHADER_UNIFORM_VEC3);
-    SetShaderValueTexture(lightingShader_, GetShaderLocation(lightingShader_, "destination"), destination_.texture);
-    SetShaderValueTexture(lightingShader_, GetShaderLocation(lightingShader_, "palette"), palette_);
-    SetShaderValueTexture(lightingShader_, GetShaderLocation(lightingShader_, "paletteIndices"), paletteIndices_);
-    SetShaderValueTexture(lightingShader_, GetShaderLocation(lightingShader_, "lightTable"), lightTable_);
-    DrawTexturePro(lightMap, {0, 0, float(lightMap.width), float(lightMap.height)},
-                   {0, 0, float(W), float(H - HUD)}, {}, 0, WHITE);
+    set(LightScreenHeight, &height, SHADER_UNIFORM_FLOAT);
+    set(LightPlayerScreen, &lightPlayerScreen_, SHADER_UNIFORM_VEC2);
+    set(LightPlayerWorld, &lightPlayer_, SHADER_UNIFORM_VEC2);
+    set(LightOrigin, &lightOrigin_, SHADER_UNIFORM_VEC2);
+    set(LightZoom, &lightZoom_, SHADER_UNIFORM_FLOAT);
+    const auto ambient = packed(lightAmbient_);
+    set(LightAmbient, ambient.data(), SHADER_UNIFORM_VEC4);
+    const int count = int(samples.size());
+    set(LightSampleCount, &count, SHADER_UNIFORM_INT);
+    set(LightHighlight, &highlight, SHADER_UNIFORM_VEC2);
+    std::array<std::array<float,4>,6> lightSamples{};
+    for (size_t i = 0; i < samples.size(); ++i) lightSamples[i] = packed(samples[i]);
+    SetShaderValueV(lightingShader_, lightingLocations_[LightSamples],
+                    lightSamples.data(), SHADER_UNIFORM_VEC4, 6);
+    const bool indexed = image->indexedTexture.id && image->layers.empty();
+    const int sourceIndexed = indexed ? 1 : 0;
+    set(LightIndexed, &sourceIndexed, SHADER_UNIFORM_INT);
+    const auto bind = [&] {
+        // Raylib exposes four extra sampler slots: source texture0 plus these four.
+        for (const auto &[uniform, texture] : std::array<std::pair<LightUniform,Texture2D>,4>{{
+                {LightMap, worldLightMap_}, {LightPalette, palette_},
+                {LightIndices, paletteIndices_}, {LightTable, lightTable_}}})
+            SetShaderValueTexture(lightingShader_, lightingLocations_[uniform], texture);
+    };
+    if (image->layers.empty()) {
+        bind();
+        DrawTexture(indexed ? image->indexedTexture : image->texture,
+                    int(position.x + image->x), int(position.y + image->y), tint);
+    } else for (const auto &layer : image->layers) {
+        if (layer.softAdditive) {
+            rlSetBlendFactors(0x0307, 1, 0x8006);
+            BeginBlendMode(BLEND_CUSTOM);
+        } else BeginBlendMode(BLEND_ALPHA);
+        bind();
+        DrawTexture(layer.texture, int(position.x + layer.x), int(position.y + layer.y), tint);
+        EndBlendMode();
+    }
     EndShaderMode();
 }
 void PaletteBlendView::draw(const Sprite *image, Vec position) const {

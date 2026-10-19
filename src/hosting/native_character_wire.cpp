@@ -1,6 +1,7 @@
 #include "native_character_wire.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/character/attributes.hpp"
+#include "gameplay/stats/stat_list.hpp"
 #include "gameplay/quest/acts/act_five_state.hpp"
 #include "protocol/message_catalog.hpp"
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <cmath>
 #include <map>
 #include <set>
+#include <string_view>
 #include <stdexcept>
 #include <utility>
 #include <variant>
@@ -25,10 +27,15 @@ void hirelingStatus(std::vector<Bytes> &packets, const ClassicData &data, const 
         out.u32(dead?uint32_t(std::min<int64_t>(50000,15LL*record.level*record.level/2)):0);
     }));
 }
-Values values(const CharacterRecord &record, const server::attributes::Totals &totals) {
+Values values(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     const auto &a = totals.character;
     const auto &c = a.combat;
     const int permanentResistance=questResistance(record.quests);
+    const auto baseStat = [&](std::string_view name) {
+        const auto id = data.nativeStats->names.at(std::string(name));
+        return totals.statSources ? baseStatValue(*data.nativeStats,*totals.statSources,{id,0}) >>
+            data.nativeStats->definitions.at(id).valueShift : 0;
+    };
     return {{"strength", a.strength}, {"energy", a.energy}, {"dexterity", a.dexterity}, {"vitality", a.vitality},
         {"statpts", record.unspentAttributes}, {"newskills", record.unspentSkills},
         {"hitpoints", record.hp}, {"maxhp", a.maxLifeFixed}, {"mana", record.mana}, {"maxmana", a.maxManaFixed},
@@ -42,7 +49,11 @@ Values values(const CharacterRecord &record, const server::attributes::Totals &t
         {"damageresist", c.physicalResist}, {"magicresist", c.magicResist},
         {"normal_damage_reduction", c.flatPhysicalReduction}, {"magic_damage_reduction", c.flatMagicReduction},
         {"item_poisonlengthresist", c.poisonLengthResist}, {"item_absorbfire_percent", c.fireAbsorbPercent},
-        {"item_reducedprices", c.reducedPrices}, {"item_lightradius", a.lightRadius - 13},
+        {"item_reducedprices", c.reducedPrices},
+        // Common #10513 -> PlrMsg 822D0 sends Stats, not FullStats.
+        // The client's posted 9D equipment/state lists supply their bonuses.
+        {"item_lightradius", baseStat("item_lightradius")},
+        {"item_lightcolor", baseStat("item_lightcolor")},
         {"item_fasterattackrate", c.fasterAttack}, {"item_fastercastrate", c.fasterCast},
         {"item_fastergethitrate", c.fasterHitRecovery}, {"item_fasterblockrate", c.fasterBlock},
         {"manarecoverybonus", c.manaRecovery}};
@@ -139,7 +150,7 @@ std::vector<Bytes> nativeLife(const ClassicData &data, const server::LifeFact &f
 }
 std::vector<Bytes> nativeCharacterPackets(const ClassicData &data, const CharacterRecord &record, const server::attributes::Totals &totals) {
     std::vector<Bytes> result;
-    emitAttributes(result, data,nativeValues(data, values(record, totals)));
+    emitAttributes(result, data,nativeValues(data, values(data, record, totals)));
     hirelingStatus(result,data,record.hireling);
     const auto baseRanks = nativeBaseSkillRanks(data, record);
     if (record.id.value > UINT32_MAX || baseRanks.size() > 255) throw std::runtime_error("Skill list exceeds native capacity");
@@ -179,7 +190,7 @@ std::vector<Bytes> nativePublicCharacterAttributes(const ClassicData &data, cons
 }
 std::vector<Bytes> nativeCharacterDelta(const ClassicData &data, const server::CharacterFact &fact) {
     std::vector<Bytes> result;
-    emitAttributes(result, data,nativeValues(data, values(fact.after, fact.current)), nativeValues(data, values(fact.before, fact.previous)));
+    emitAttributes(result, data,nativeValues(data, values(data, fact.after, fact.current)), nativeValues(data, values(data, fact.before, fact.previous)));
     if((fact.before.hireling.hp>0)!=(fact.after.hireling.hp>0) || fact.before.hireling.seed!=fact.after.hireling.seed ||
         fact.before.hireling.sourceRow!=fact.after.hireling.sourceRow) hirelingStatus(result,data,fact.after.hireling);
     std::set<int> ids;

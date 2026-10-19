@@ -8,6 +8,7 @@
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
 #include "gameplay/quest/tools_of_trade.hpp"
@@ -110,6 +111,14 @@ DomainResult<> System::commit(const ActorContext &actor,CharacterRecord record,b
 DomainResult<> System::execute(const ActorContext &actor,const Request &request) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(request.action==Action::ViewLog) {
+        if(!request.message || *request.message>=nativeQuestStatusCount) return {DomainStatus::InvalidRequest,{}};
+        const auto difficulty=size_t(ports_.settings.difficulty),slot=size_t(*request.message);
+        if(p->persistent.player.questLogViewed[difficulty][slot]) return {DomainStatus::Applied,std::monostate{}};
+        auto record=p->persistent.player;
+        record.questLogViewed[difficulty][slot]=true;
+        return commit(actor,std::move(record));
+    }
     if(request.action==Action::Refresh) {
         orderStones();
         const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,actor.area},{projection(actor.player,p->persistent.player,actor.area)}});

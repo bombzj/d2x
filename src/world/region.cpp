@@ -186,12 +186,12 @@ void Region::refreshObjectCollision(float time) {
     for (const auto &object : objects) {
         if (object.questHidden || object.collisionWidth <= 0 || object.collisionHeight <= 0) continue;
         const size_t mode = size_t(object.modeAt(time));
-        if (!object.hasCollision[mode] && !object.blocksLight[mode]) continue;
+        if (!object.hasCollision[mode]) continue;
         // COLLISION_CreateBoundingBox: integer subtile center, including even sizes.
         obstacles.push_back({object.id, int(std::floor(object.pos.x)) - object.collisionWidth / 2,
             int(std::floor(object.pos.y)) - object.collisionHeight / 2,
             object.collisionWidth, object.collisionHeight,
-            uint16_t(object.hasCollision[mode] ? object.collisionMask : 0), object.blocksLight[mode]});
+            object.collisionMask, (object.collisionMask & 0x22) != 0});
     }
     map.grid.setObstacles(std::move(obstacles));
 }

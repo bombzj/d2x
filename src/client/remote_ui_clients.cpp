@@ -87,18 +87,29 @@ struct RemoteUiClients::Impl {
     std::chrono::steady_clock::time_point waitingUntil;
     using EquipmentStatKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,int,unsigned,bool>;
     struct CachedEquipmentStat { EquipmentStatKey key; std::optional<int> value; };
-    mutable std::map<std::string,CachedEquipmentStat,std::less<>> equipmentStats;
+    mutable std::map<std::pair<OnlineUnitKey,std::string>,CachedEquipmentStat> equipmentStats;
     using CombatEquipmentKey=std::tuple<uint64_t,uint64_t,uint64_t,uint64_t,uint64_t,std::string,int,int,int,int,unsigned,bool,int,int,int,int,std::map<int,int>>;
     struct CachedCombatEquipment {CombatEquipmentKey key;std::optional<CombatDisplayEquipment> value;};
     mutable std::map<OnlineUnitKey,CachedCombatEquipment> combatEquipment;
 
     struct Actor final : IActorClient {
         Impl &o; explicit Actor(Impl &owner) : o(owner) {}
+        mutable EntityId lightActor;
+        mutable uint64_t lightGeneration{~uint64_t{}};
+        mutable int lightRadius{13};
         ActorView controlledActor() const override {
             ActorView v; v.id = o.characterView.actor; v.region = o.mapView.region;
             v.dead = o.characterView.dead; v.position = o.mapView.observer;
-            v.lightRadius = int(std::clamp(int64_t(CharacterAttributes{}.lightRadius) +
-                int64_t(o.stat("item_lightradius").value_or(0)), int64_t(1), int64_t(18)));
+            if (lightActor != v.id || lightGeneration != o.generation) {
+                lightActor = v.id; lightGeneration = o.generation; lightRadius = 13;
+            }
+            // Client 18BC0 -> A8B60: a nonpositive request leaves the
+            // existing light unchanged; positive requests update immediately.
+            if (const auto id=o.session.read().load.playerUnitId) if (const auto light=o.light({0,*id})) {
+                const int64_t requested = 13 + int64_t(light->radiusModifier);
+                if (requested > 0) lightRadius = int(std::min<int64_t>(18, requested));
+            }
+            v.lightRadius = lightRadius;
             return v;
         }
         bool control(ActorControlIntent intent) override {
@@ -345,6 +356,9 @@ struct RemoteUiClients::Impl {
     struct Quests final : IQuestClient {
         Impl &o; explicit Quests(Impl &owner) : o(owner) {}
         const QuestView &read() const override { return o.questView; }
+        bool acknowledgeCompletion(QuestId quest) override {
+            return o.session.acknowledge_quest_log(uint16_t(questDefinition(quest).nativeSlot),o.context.gameGeneration);
+        }
     } quests{*this};
     struct Npc final : INpcClient {
         Impl &o; explicit Npc(Impl &owner) : o(owner) {}
@@ -705,24 +719,25 @@ struct RemoteUiClients::Impl {
     }
     // Original private item packets carry the local equipment stat lists. Native NOEQUIP/BROKEN
     // flags and active body slots decide contributions; no server flavor or hidden remote stats.
-    std::optional<int> knownEquipmentStat(std::string_view name, int level) const {
+    std::optional<int> knownEquipmentStat(std::string_view name, int level, std::optional<OnlineUnitKey> owner = {}) const {
         const auto &online=session.read(); const auto &world=online.world;
-        if (!online.load.playerUnitId) return {};
-        const auto actor=world.units.find({0,*online.load.playerUnitId});
+        if (!owner && online.load.playerUnitId) owner=OnlineUnitKey{0,*online.load.playerUnitId};
+        if (!owner) return {};
+        const auto actor=world.units.find(*owner);
         if (actor==world.units.end()) return {};
         const EquipmentStatKey key{online.gameGeneration,world.itemRevision,items.read().revision,
             actor->second.appearanceRevision,level,world.weaponSet,actor->second.equipmentObserved};
-        if (const auto cached=equipmentStats.find(name);cached!=equipmentStats.end() && cached->second.key==key)
+        const auto identity=std::pair{*owner,std::string(name)};
+        if (const auto cached=equipmentStats.find(identity);cached!=equipmentStats.end() && cached->second.key==key)
             return cached->second.value;
-        const auto value=calculateKnownEquipmentStat(name,level);
-        equipmentStats.insert_or_assign(std::string(name),CachedEquipmentStat{key,value});
+        const auto value=calculateKnownEquipmentStat(name,level,*owner);
+        equipmentStats.insert_or_assign(identity,CachedEquipmentStat{key,value});
         return value;
     }
-    std::optional<int> calculateKnownEquipmentStat(std::string_view name, int level) const {
+    std::optional<int> calculateKnownEquipmentStat(std::string_view name, int level, OnlineUnitKey owner) const {
         const auto &online=session.read(); const auto &world=online.world;
         int64_t total=0;
-        if (!online.load.playerUnitId) return {};
-        const auto actor = world.units.find({0, *online.load.playerUnitId});
+        const auto actor = world.units.find(owner);
         if (actor == world.units.end() || !actor->second.equipmentObserved) return {};
         const auto statRow = std::find_if(data.itemStats.begin(), data.itemStats.end(),
             [&](const auto &entry) { return entry.name == name; });
@@ -730,7 +745,7 @@ struct RemoteUiClients::Impl {
         std::map<std::string, std::set<int32_t>, std::less<>> equippedSets;
         std::vector<ItemInstance> setPieces;
         for (const auto &[equippedId, equipped] : world.items) {
-            if (equipped.ownerType != 0 || equipped.owner != online.load.playerUnitId) continue;
+            if (equipped.ownerType != owner.type || equipped.owner != owner.id) continue;
             if (equipped.flags & 0x4100u) continue;
             const auto *base = data.items.find(equipped.code);
             const bool active = (equipped.mode == 1 && equipped.body <= 10) || (equipped.mode == 0 && equipped.page == 1 && base && base->equipment.isType("char"));
@@ -815,6 +830,40 @@ struct RemoteUiClients::Impl {
             return int(value);
         }
         return {};
+    }
+    std::optional<UnitLightAttributes> light(OnlineUnitKey key) const {
+        const auto &online=session.read();
+        const auto unit=online.world.units.find(key);
+        if (unit==online.world.units.end() || key.type!=0) return {};
+        const bool self=online.load.playerUnitId && key.id==*online.load.playerUnitId;
+        const auto base=[&](std::string_view name) -> int32_t {
+            if (self) return int32_t(stat(name).value_or(0));
+            const auto id=data.nativeStats->names.find(name);
+            if (id==data.nativeStats->names.end()) return 0;
+            const auto value=unit->second.attributes.find(uint8_t(id->second));
+            return value==unit->second.attributes.end()?0:
+                value->second >> data.nativeStats->definitions.at(id->second).valueShift;
+        };
+        const auto states=combat.states().find(key);
+        if (!unit->second.stateSequence || states==combat.states().end() || !states->second.decoded ||
+            states->second.sequence!=unit->second.stateSequence) return {};
+        const auto full=[&](std::string_view name) -> std::optional<int32_t> {
+            const auto equipment=knownEquipmentStat(name,base("level"),key);
+            if (!equipment) return {};
+            const auto id=data.nativeStats->names.at(std::string(name));
+            const auto shift=data.nativeStats->definitions.at(id).valueShift;
+            int64_t total=int64_t(base(name))+*equipment;
+            for (const auto &[state,list]:states->second.states) {
+                (void)state;
+                for (const auto &entry:list.stats)
+                    if (entry.id==id && !entry.parameter) total+=entry.value >> shift;
+            }
+            if (total<INT32_MIN || total>INT32_MAX) return {};
+            return int32_t(total);
+        };
+        const auto radius=full("item_lightradius"), color=full("item_lightcolor");
+        if (!radius || !color) return {};
+        return UnitLightAttributes{*radius,uint32_t(*color)};
     }
     void projectSkillUseFacts(CharacterProjectionInput &input) const {
         const auto &online = session.read();
@@ -1813,6 +1862,7 @@ struct RemoteUiClients::Impl {
             combatEquipment.clear();equipmentStats.clear();
         }
         std::erase_if(combatEquipment,[&](const auto &entry){return !session.read().world.units.contains(entry.first);});
+        std::erase_if(equipmentStats,[&](const auto &entry){return !session.read().world.units.contains(entry.first.first);});
         if (areaGeneration!=session.read().world.areaGeneration) {
             areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset(); waitingContext.reset();
         }
@@ -1831,6 +1881,7 @@ std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemActi
     return action == OnlineItemAction::RepairAll ? impl_->repairAllQuote() : impl_->itemQuote(item, action);
 }
 void RemoteUiClients::update(const OnlineSceneView &s, std::optional<Vec> position){impl_->update(s, position);}
+std::optional<UnitLightAttributes> RemoteUiClients::light(OnlineUnitKey key) const { return impl_->light(key); }
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}
 IInventoryClient &RemoteUiClients::inventory(){return impl_->inventory;}

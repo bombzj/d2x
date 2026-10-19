@@ -86,6 +86,10 @@ bool GameInstance::prepareSave(PlayerId id) {
 std::optional<PersistentCharacter> GameInstance::exportCharacter(PlayerId id,bool settledOnly) const {
     const auto *player = players_.find(id);
     if (!player) return {};
+    // Native 58 can precede 69 in the same transport pump. Saving the last
+    // committed record here would retire the player before its queued log
+    // receipt (or another accepted character change) reaches the fixed step.
+    if(settledOnly && std::any_of(commands_.begin(),commands_.end(),[&](const auto &pending) {return pending.player==id;})) return {};
     if(settledOnly && systems_.quests.pendingGoals(id)) return {};
     if (player->persistent.player.hp <= 0) {
         const auto death = systems_.death.read().transitions.find(player->actor);

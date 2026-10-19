@@ -5,7 +5,8 @@ namespace d2x {
 class IQuestClient {
   public:
     virtual ~IQuestClient() = default;
-    // Borrow only until the next read/destruction; log gestures are local UI.
+    // Borrow only until the next read/destruction.
     virtual const QuestView &read() const = 0;
+    virtual bool acknowledgeCompletion(QuestId) = 0;
 };
 } // namespace d2x

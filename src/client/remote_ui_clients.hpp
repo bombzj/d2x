@@ -17,6 +17,8 @@ namespace d2x {
 class Archives;
 struct ClassicData;
 struct OnlineSceneView;
+struct OnlineUnitKey;
+struct UnitLightAttributes { int32_t radiusModifier{}; uint32_t color{}; };
 class RemoteInventory;
 class RemoteCombat;
 class RemoteControl;
@@ -44,5 +46,6 @@ class RemoteUiClients {
     std::optional<uint64_t> waitingItemRequest() const;
     RemoteUiNotice takeNotice();
     std::optional<unsigned> itemQuote(uint32_t item, OnlineItemAction action) const;
+    std::optional<UnitLightAttributes> light(OnlineUnitKey) const;
 };
 }

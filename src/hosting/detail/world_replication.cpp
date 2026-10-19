@@ -12,10 +12,40 @@ void NativeRealmService::publishAreas(RegionId region) {
     const auto &destination = areas.at(region);
     const auto crossAct = terrain.request.act != destination.request.act;
     if (crossAct) {
+        // LEVEL_ChangeAct drops the client's old room interest before 05/03.
+        // Clearing only our cache leaves the retail client holding old units
+        // while its act and room storage are released.
+        std::set<std::pair<uint8_t,EntityId>> removals;
+        for(const auto &[player,visible]:peer.visible) {
+            (void)player;removals.emplace(0,visible.actor);
+            for(const auto &[item,equipment]:visible.equipment) { (void)equipment;removals.emplace(4,item); }
+        }
+        for(const auto &[id,monster]:peer.monsters) { (void)monster;removals.emplace(1,id); }
+        for(const auto &[id,revision]:peer.objects) { (void)revision;removals.emplace(2,id); }
+        for(const auto &[id,revision]:peer.portals) { (void)revision;removals.emplace(2,id); }
+        for(const auto &[id,revision]:peer.groundItems) { (void)revision;removals.emplace(4,id); }
+        for(const auto &[id,revision]:peer.corpses) { (void)revision;removals.emplace(0,id); }
+        for(const auto &[corpse,equipment]:peer.corpseEquipment) {
+            (void)corpse;for(const auto id:equipment) removals.emplace(4,id);
+        }
+        for(const auto id:peer.warps) removals.emplace(5,id);
+        std::vector<Bytes> unload;
+        for(const auto &[type,id]:removals) unload.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out) {
+            out.u8(type);out.u32(uint32_t(id.value));
+        }));
+        for(const auto &room:peer.rooms) unload.push_back(encodeServerPacket(ServerMessage::HideRoom,[&](auto &out) {
+            out.u16(uint16_t(room.x));out.u16(uint16_t(room.y));out.u8(uint8_t(room.area));
+        }));
+        if(!unload.empty()) sendGameBatch(std::move(unload));
         sendGame(encodeServerPacket(ServerMessage::UnloadAct, [](auto &) {}));
         sendGame(encodeServerPacket(ServerMessage::LoadAct, [&](auto &out) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
             out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(0);
+        }));
+        const auto environment=host.environment(binding->game,region);
+        if(!environment) throw net::protocol::ProtocolError("Loaded act lacks its native environment");
+        sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
+            out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
         }));
         peer.areas.clear(); peer.rooms.clear(); peer.warps.clear(); peer.visible.clear(); peer.monsters.clear(); peer.missiles.clear(); peer.pets.clear(); peer.petVitals.clear(); peer.groundItems.clear(); peer.corpses.clear(); peer.corpseEquipment.clear(); peer.objects.clear(); peer.portals.clear(); peer.npcQuestAlerts.clear(); peer.shopItems.clear(); peer.shopOwner = {}; peer.states.clear();
     }
@@ -25,7 +55,7 @@ void NativeRealmService::publishAreas(RegionId region) {
     std::vector<Bytes> packets;
     // Add references first, then remove the old ones, like ChangeClientRoom.
     // A shared seam never temporarily loses both of its collision owners.
-    const auto reveal=[&](const auto &room) {packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
+    const auto reveal=[&](const auto &room) {if(!peer.rooms.insert(room).second) return;packets.push_back(encodeServerPacket(ServerMessage::RevealRoom, [&](auto &out) {
             out.u16(uint16_t(room.x)); out.u16(uint16_t(room.y)); out.u8(uint8_t(room.area));
         }));};
     const auto view=host.read(*binding);
@@ -52,10 +82,15 @@ void NativeRealmService::publishAreas(RegionId region) {
     peer.rooms.insert(rooms.begin(), rooms.end()); peer.warps = std::move(warps);
     if (terrain.request.level != int(region)) terrain = destination;
     if(crossAct) {
-        const auto environment=host.environment(binding->game,region);
-        if(!environment) throw net::protocol::ProtocolError("Loaded act lacks its native environment");
-        sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
-            out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);
+        // LEVEL_ChangeAct marks the player TELEPORTED. The changing-act
+        // update sends 15(flag=1) before 04, so the original client attaches
+        // its retained player to the destination room before finishing load.
+        // publishAreas can run before the TravelFact is drained.
+        if(!view) throw net::protocol::ProtocolError("Loaded act lacks its native player");
+        const auto position=view->actor.position+terrain.origin;
+        sendGame(encodeServerPacket(ServerMessage::Reposition,[&](auto &out) {
+            out.u8(0);out.u32(uint32_t(view->actor.id.value));
+            out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(1);
         }));
         sendGame(encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}));
     }
@@ -73,10 +108,12 @@ void NativeRealmService::publishRoomRemovals() {
 }
 void NativeRealmService::changeArea(const server::TravelFact &fact) {
     if (fact.player != binding->player) throw std::logic_error("Travel recipient mismatch");
+    const auto &areas=shared.terrain.at(binding->game);
+    const bool crossAct=areas.at(fact.from).request.act!=areas.at(fact.to).request.act;
     publishAreas(fact.to);
     if (fact.revived) sendGame(nativePlayerAssignment(*content, *host.exportCharacter(*binding,false), *host.read(*binding), terrain.origin));
     const auto position = fact.position + terrain.origin;
-    if (!fact.walking) sendGame(encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
+    if (!fact.walking && !crossAct) sendGame(encodeServerPacket(ServerMessage::Reposition, [&](auto &out) {
         out.u8(0); out.u32(uint32_t(fact.actor.value));
         out.u16(uint16_t(std::lround(position.x))); out.u16(uint16_t(std::lround(position.y))); out.u8(0);
     }));

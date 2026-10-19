@@ -98,6 +98,7 @@ class RealmSession {
     bool interact_npc(uint32_t serverUnitId, std::optional<OnlineIntentContext> context = {});
     bool close_npc(std::optional<OnlineIntentContext> context = {});
     bool acknowledge_npc_message(uint16_t stringId, std::optional<OnlineIntentContext> context = {});
+    bool acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration);
     bool npc_travel(uint32_t parameter, std::optional<OnlineIntentContext> context = {}); // Original action 0, NPC-dependent parameter.
     bool hireling_service(OnlineHirelingAction, std::optional<uint16_t> name = {}, std::optional<OnlineIntentContext> context = {});
     bool create_town_portal(uint16_t skillId, std::optional<OnlineIntentContext> context = {}); // MPQ-resolved item skill.

@@ -1,29 +1,36 @@
 #pragma once
 #include "content/world/world_catalog.hpp"
-#include "core/id.hpp"
 #include "core/math.hpp"
-#include "gameplay/model/definitions.hpp"
 #include "raylib.h"
 #include "palette_blend_view.hpp"
 #include "world/navigation.hpp"
 #include <array>
-#include <vector>
+#include <cstdint>
+#include <memory>
 #include <span>
+#include <vector>
 
 namespace d2x {
 struct SceneLight {
     Vec position;
-    float radius = 0;
+    int radius = 0;
     Color color{0, 0, 0, 255};
+    enum class Occlusion { None, Propagated };
+    Occlusion occlusion = Occlusion::None;
+};
+Color sceneLightColor(uint32_t nativeColor);
+struct SceneLightRegion {
+    int x, y, width, height;
+    const LevelRecord *level; // Borrowed only for the synchronous world draw.
 };
 // View-only light mask. DT1 and object-mode flags supply visibility; no lighting state is saved.
 class LightingView {
     static constexpr int maskRadius = 30;
     static constexpr int maskSide = maskRadius * 2 + 1;
     Texture2D lightMap_{};
-    std::vector<Color> pixels_;
-    mutable std::vector<Color> lightPixels_;
-    mutable std::vector<Color> cornerPixels_;
+    // RGB is the native normalized color; alpha carries independent intensity.
+    std::vector<Color> lightPixels_;
+    std::vector<Color> cornerPixels_;
     // Transient presentation state, initialized as ENVIRONMENT_AllocDrlgEnvironment.
     struct Environment {
         int ticks = 0, cycle = 2, intensity = 128;
@@ -34,23 +41,26 @@ class LightingView {
     bool eclipse_ = false;
     int cloakLevel_{-1},cloakFrame_{},cloakRise_{},cloakTotal_{},cloakAngle_{};
     float cloakFactor_{1};
-    RegionId cachedRegion_{};
-    int cachedX_ = -1, cachedY_ = -1, cachedRadius_ = -1;
-    uint64_t cachedObstacleRevision_ = 0;
-    int originX_ = 0, originY_ = 0;
+    Vec origin_{};
+    Color ambient_{};
+    struct Sources;
+    std::unique_ptr<Sources> sources_;
 
   public:
     LightingView();
     ~LightingView();
     LightingView(const LightingView &) = delete;
     LightingView &operator=(const LightingView &) = delete;
-    void invalidate() { cachedRadius_ = -1; }
     void advance(float dt, const LevelRecord &level);
     void resetEnvironment();
+    void resetSources();
+    int overlayRadius(uint64_t owner, int overlay, float startedAt, int initial, int target);
+    void finishSources();
     void setEclipse(bool active);
     void beginCloak(int duration,int level);
-    void update(const Grid &grid, const LevelRecord &level, RegionId region, Vec player, int radius);
-    void draw(const PaletteBlendView &palette, const LevelRecord &level, Vec player, Vec playerScreen,
-              float zoom, int radius, std::span<const SceneLight> lights) const;
+    void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
+                 std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions);
+    Color sample(Vec position) const;
+    void bind(PaletteBlendView &, Vec player, Vec playerScreen, float zoom) const;
 };
 } // namespace d2x

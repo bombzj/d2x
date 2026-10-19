@@ -23,6 +23,8 @@ struct WorldDrawItem {
     int missile = -1, overlay = -1;
     Vec heading;
     float age = 0, remaining = 0;
+    EntityId lightOwner;
+    float lightStartedAt = 0;
     bool loop = false;
     int height = 1;
     std::optional<int> missileFrame;
@@ -32,11 +34,13 @@ struct WorldDrawView {
     struct Alert { EntityId unit; Vec position; };
     struct Object { int identity = -1, mode = 0; Vec position; };
     struct Monster { int identity = -1; Vec position; };
+    struct PlayerLight { Vec position; int radius; uint32_t color; };
     const Map *map = nullptr;
     RegionId region{};
     int level = 0, palette = 0;
     uint64_t gameGeneration = 0, areaGeneration = 0;
     Vec observer, roomObserver, terrainOrigin;
+    uint32_t observerLightColor{}; // Native item_lightcolor, 0 selects white.
     float time = 0, elapsed = 0;
     std::optional<bool> eclipse;
     std::optional<int> cloakDuration;
@@ -46,5 +50,6 @@ struct WorldDrawView {
     std::vector<Alert> alerts;
     std::vector<Object> objects;
     std::vector<Monster> monsters;
+    std::vector<PlayerLight> playerLights;
 };
 } // namespace d2x

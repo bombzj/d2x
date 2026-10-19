@@ -151,9 +151,13 @@ PartyIntent SceneView::handleParty(const FrameInput &input) {
     return party_.handle(input, view_.partyOpen);
 }
 void SceneView::drawSelectableSprite(const Sprite *image, Vec position, bool highlighted, Color tint,
-                                     Vector2 highlight) const {
+                                     Vector2 highlight, const PaletteBlendView *lighting, Color light) const {
     if (!image || !image->texture.id)
         return;
+    if (lighting) {
+        lighting->drawLit(image, position, {&light, 1}, tint, highlighted ? highlight : Vector2{1, 1});
+        return;
+    }
     if (highlighted && highlightShader_.id) {
         SetShaderValue(highlightShader_, highlightTransform_, &highlight, SHADER_UNIFORM_VEC2);
         BeginShaderMode(highlightShader_);
@@ -201,13 +205,13 @@ void SceneView::refreshInteractions() {
         for (size_t index=0; index<questAnimations_.size(); ++index) {
             const auto id = QuestId(index);
             const auto &previous = questView_.entry(id), &current = quests.entry(id);
+            if (quests.actor != questView_.actor) questAnimations_[index] = {};
+            queueQuestAnimation(id, current.completionPending);
             if (!previous.known || !current.known || quests.actor != questView_.actor) {
-                // Initial owner snapshots establish the baseline, not a new reward.
-                questAnimations_[index] = {};
-                questAnimations_[index].completed = current.completed;
+                // Only the owner's unviewed native record queues completion,
+                // including completion saved before the log was viewed.
                 continue;
             }
-            queueQuestAnimation(id, current.completed);
             if (previous.active != current.active || previous.completed != current.completed ||
                 (id != QuestId::DenOfEvil && previous.description != current.description)) {
                 view_.questUpdated = int(index);

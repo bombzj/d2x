@@ -6,6 +6,7 @@
 #include "network/protocol/message_schema.hpp"
 #include "network/protocol/bits.hpp"
 #include "network/protocol/tcpip.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include <algorithm>
 #include <array>
 #include <limits>
@@ -2192,6 +2193,26 @@ bool RealmSession::acknowledge_npc_message(uint16_t stringId, std::optional<Onli
         ++p.view.world.revision; p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {
         p.fail(OnlineErrorKind::Transport, "NPC message could not be queued"); return false;
+    }
+}
+bool RealmSession::acknowledge_quest_log(uint16_t nativeSlot, uint64_t gameGeneration) {
+    std::lock_guard lock(impl_->mutex);
+    impl_->snapshotDirty = true;
+    auto &p = *impl_;
+    if (!p.require(OnlineStage::ProtocolReady)) return false;
+    if (snapshot_.connectionGeneration != p.view.connectionGeneration ||
+        snapshot_.gameGeneration != p.view.gameGeneration || gameGeneration != p.view.gameGeneration ||
+        nativeSlot >= nativeQuestStatusCount || !p.view.load.playerUnitId) return false;
+    try {
+        Writer out; out.u8(0x58); out.u16(nativeSlot);
+        p.sent(p.gs, out.release());
+        // Native D2Client also records its own playback receipt locally.
+        // This changes no objective, entitlement or reward bit.
+        if (auto &flags = p.view.world.quests.playerFlags; flags) (*flags)[nativeSlot] |= 0x1000;
+        p.view.world.quests.revision = ++p.view.world.revision;
+        p.view.error.reset(); p.changed(); return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Quest log acknowledgement could not be queued"); return false;
     }
 }
 bool RealmSession::submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context) {

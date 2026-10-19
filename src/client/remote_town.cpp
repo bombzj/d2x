@@ -205,16 +205,15 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         if (unit.mode && *unit.mode < 8) {
             const auto suffix = std::to_string(mode);
             const bool collision = number("HasCollision" + suffix) != 0;
-            const bool light = number("BlocksLight" + suffix) != 0;
             const int width = number("SizeX"), height = number("SizeY");
-            if ((collision || light) && width > 0 && height > 0) {
+            if (collision && width > 0 && height > 0) {
                 const bool door = number("IsDoor") != 0, missile = number("BlockMissile") != 0;
                 const uint16_t mask = door ? (number("BlocksVis") ? 0x0806 : missile ? 0x0804 : 0x0400)
                     : (number("SubClass") & 4) ? 0x8000 : missile ? 0x0404 : 0x0400;
                 // Include the silent native ENDANIM transition. MPQ supplies the
                 // opened collision; server mode and all operation results stay unchanged.
                 obstacles.push_back({EntityId{uint64_t(key.id) + 1}, x - width / 2, y - height / 2,
-                    width, height, uint16_t(collision ? mask : 0), light});
+                    width, height, mask, (mask & 0x22) != 0});
             }
         }
         const int operation = number("OperateFn");

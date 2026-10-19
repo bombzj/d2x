@@ -74,6 +74,8 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `travel` | level（1–136），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作正常通行资格认证 |
 | `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
 
+暂停状态下用`travel`准备截图时，`applied`只说明人物旅行已提交，不能据此认定目的房间的物件恢复已经执行。恢复可能等待正常逻辑帧；先推进必要帧数，并检查目标玩家的`server-snapshot.objects`及客户端实际物件分配，再固定画面。原版与D2X须使用同一批已恢复物件，避免把准备时序造成的火把缺失误判为生成或光照差异。
+
 查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
 
 item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能作为原版自然掉落的依据。

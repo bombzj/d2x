@@ -3,6 +3,7 @@
 #include "core/fixed.hpp"
 #include "gameplay/character/allocation.hpp"
 #include "gameplay/character/skill_choices.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/state.hpp"
 #include "gameplay/quest/prelude.hpp"
 #include <array>
@@ -42,6 +43,8 @@ struct CharacterRecord {
     std::array<SkillHotkey, 16> skillHotkeys{}; // Native D2S/0x7B slots; HUD uses the first eight.
     std::array<int, 4> selectedSkills{-1, -1, -1, -1};
     QuestBook quests{};
+    // Native UPDATEQUESTLOG, by difficulty and filter slot; not reward authority.
+    std::array<std::array<bool, nativeQuestStatusCount>, 3> questLogViewed{};
     std::array<bool, 3> cowKingKilled{}; // Native A1Q4 CUSTOM6, per difficulty.
     // Native A1-A4 act-change records, separate from killing the act boss.
     std::array<std::array<bool, 4>, 3> completedActs{};

@@ -99,9 +99,9 @@ void System::collision(RegionId area) {
         const auto &rule = object.rule; const auto mode = size_t(object.mode);
         const bool statueReleased=rule.initialization>=63 && rule.initialization<=65 && (object.mode==3 || object.mode==4);
         const bool colliding=rule.collision[mode] && !statueReleased;
-        if (rule.width <= 0 || rule.height <= 0 || (!colliding && !rule.light[mode])) continue;
+        if (rule.width <= 0 || rule.height <= 0 || !colliding) continue;
         values.push_back({id, int(object.position.x) - rule.width / 2, int(object.position.y) - rule.height / 2,
-            rule.width, rule.height, uint16_t(colliding ? rule.collisionMask : 0), rule.light[mode]});
+            rule.width, rule.height, rule.collisionMask, (rule.collisionMask & 0x22) != 0});
     }
     ports_.world.objectCollision(area, std::move(values));
 }

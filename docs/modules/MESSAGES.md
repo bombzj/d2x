@@ -97,7 +97,7 @@
 | 4F | UiAction，partial | 7 | u16 action,high,low；金额=high<<16\|low，不是直接u32小端读取 |
 | 50 | DropGold | 9 | u32 player,amount |
 | 51 | BindHotkey | 9 | u32 packed,owner；skill低15位、bit15左手、slot高16位 |
-| 58 | QuestCompleted，stub | 3 | u16 quest |
+| 58 | QuestCompleted，日志已阅 | 3 | u16 原filter槽0..40；设置本人当前难度UPDATEQUESTLOG，非发奖请求 |
 | 59 | MoveNpc，stub | 17 | u32 type,guid,x,y |
 | 5D | PlayerRelation，stub | 7 | u8 relation,toggle; u32 player |
 | 5E | PartyAction，权威及客户端邀请／取消／接受／离队已接 | 6 | u8 action（6邀请／7取消／8接受／9离队）; u32 player（离队为本人GUID） |

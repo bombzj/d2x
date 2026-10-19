@@ -5,7 +5,7 @@
 
 namespace d2x {
 namespace {
-constexpr float questAnimationSeconds = 3.f;
+constexpr float questFrameSeconds = .1f;
 constexpr int questCompletedFrame = 24;
 void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
     if (!image || !image->texture.id) return;
@@ -18,8 +18,7 @@ void drawArt(const Sprite *image, Rectangle bounds, Color tint = WHITE) {
 void SceneView::resetQuestAnimations() {
     questAnimations_ = {};
     for (size_t index = 0; index < questAnimations_.size(); ++index)
-        questAnimations_[index].completed =
-            questView_.entry(QuestId(index)).completed;
+        queueQuestAnimation(QuestId(index), questView_.entry(QuestId(index)).completionPending);
 }
 
 void SceneView::drawQuestNotice() const {
@@ -33,18 +32,18 @@ void SceneView::drawQuestNotice() const {
             int(bounds.y) - 19, 13, WHITE);
 }
 
-void SceneView::queueQuestAnimation(QuestId quest, bool completed) {
+void SceneView::queueQuestAnimation(QuestId quest, bool pending) {
     const auto index = questIndex(quest);
     if (index >= questAnimations_.size()) return;
     auto &animation = questAnimations_[index];
-    if (completed && !animation.completed) {
+    if (pending && !animation.pending) {
         animation.phase = QuestCompletionAnimation::Phase::Pending;
         animation.elapsed = 0;
-    } else if (!completed) {
+    } else if (!pending) {
         animation.phase = QuestCompletionAnimation::Phase::Idle;
         animation.elapsed = 0;
     }
-    animation.completed = completed;
+    animation.pending = pending;
 }
 
 void SceneView::advanceQuestAnimations(float dt) {
@@ -52,9 +51,14 @@ void SceneView::advanceQuestAnimations(float dt) {
         auto &animation = questAnimations_[index];
         if (!view_.questOpen || questView_.entry(QuestId(index)).act != view_.questAct) {
             if (animation.phase == QuestCompletionAnimation::Phase::Playing)
+                animation.phase = QuestCompletionAnimation::Phase::Acknowledge;
+        }
+        if (animation.phase == QuestCompletionAnimation::Phase::Acknowledge) {
+            if (questClient_.acknowledgeCompletion(QuestId(index)))
                 animation.phase = QuestCompletionAnimation::Phase::Idle;
             continue;
         }
+        if (!view_.questOpen || questView_.entry(QuestId(index)).act != view_.questAct) continue;
         if (animation.phase == QuestCompletionAnimation::Phase::Pending) {
             animation.phase = QuestCompletionAnimation::Phase::Playing;
             animation.elapsed = 0;
@@ -62,9 +66,8 @@ void SceneView::advanceQuestAnimations(float dt) {
             assets_.sceneAudio.playRegistered("quest_done");
         } else if (animation.phase == QuestCompletionAnimation::Phase::Playing) {
             animation.elapsed += dt;
-            const auto &art = assets_.questIcons[questView_.entry(QuestId(index)).icon];
-            if (animation.elapsed * art.count / questAnimationSeconds >= questCompletedFrame)
-                animation.phase = QuestCompletionAnimation::Phase::Idle;
+            if (animation.elapsed >= (questCompletedFrame + 1) * questFrameSeconds)
+                animation.phase = QuestCompletionAnimation::Phase::Acknowledge;
         }
     }
 }
@@ -90,7 +93,7 @@ void SceneView::drawQuests(Vec) const {
         const auto id = questView_.displayed(view_.questAct, size_t(index));
         const auto stateIndex = questIndex(id);
         const auto &record = questView_.entry(id);
-        int artFrame = !record.active ? 26 : record.completed ? 24 : 25;
+        int artFrame = record.completed ? 24 : record.active ? 25 : 26;
         drawArt(assets_.questSockets.frame(0, 0), bounds);
         const auto iconBounds = questArtRect(24.f + float(index % 3) * 100.f,
                                             37.f + float(index / 3) * 95.f, 72, 86);
@@ -100,7 +103,7 @@ void SceneView::drawQuests(Vec) const {
         const bool completing = animation.phase == QuestCompletionAnimation::Phase::Playing;
         if (completing)
             artFrame = std::min(questCompletedFrame,
-                               int(animation.elapsed * art.count / questAnimationSeconds));
+                               int(animation.elapsed / questFrameSeconds));
         const auto *icon = art.frame(0, artFrame);
         drawArt(icon, iconBounds);
         if (!record.known) painter_.label("?", int(bounds.x+bounds.width*.5f), int(bounds.y+bounds.height*.5f), 16, gold);

@@ -44,6 +44,12 @@ struct MapTerrain {
         int level{}, x{}, y{}, width{}, height{}, preset{}, file{}, parentX{}, parentY{};
         std::vector<size_t> near;
         uint32_t flags{};
+        // Original coordinate-list identity and box[0] origin, not collision
+        // regions or the clipped population box[1]. Presentation only reads it.
+        struct LogicalRegion { int index{}, left{}, top{}; };
+        std::vector<LogicalRegion> logicalRegions;
+        std::vector<size_t> logicalCells;
+        bool singleLogicalRegion{};
     };
     std::vector<PreparedRoom> rooms;
     // Native client decorations (river graphics/sound anchors) do not become

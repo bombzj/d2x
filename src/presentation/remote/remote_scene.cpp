@@ -3,6 +3,7 @@
 #include "gameplay/monsters/movement_math.hpp"
 #include "presentation/scene_view.hpp"
 #include "client/remote_combat.hpp"
+#include "client/remote_ui_clients.hpp"
 #include "content/character/realm_portrait.hpp"
 #include "content/character/character_attributes.hpp"
 #include "content/monsters/monster_animation.hpp"
@@ -112,6 +113,7 @@ struct RemoteScene::Impl {
         std::optional<CastHandoff> castHandoff;
         bool running{};
         std::optional<int> objectSoundMode;
+        int lightRadius{13};
         uint64_t leapRevision{};bool leapFlying{};float leapLanding{-1};
         Vec riderOffset;
     };
@@ -2414,7 +2416,7 @@ struct RemoteScene::Impl {
         return unitClass(u) && u.mode ? shared.objectAnimation(*unitClass(u), *u.mode, artPalette) : nullptr;
     }
     RemoteSceneFrame draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
-                           SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
+                           SceneView &shared, const RemoteCombat &combat, const RemoteUiClients &clients, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
         RemoteSceneFrame intent;
         players.clear();
         monsters.clear();
@@ -2591,6 +2593,15 @@ struct RemoteScene::Impl {
         worldScene.level = binding.area.value(); worldScene.palette = binding.palette.value_or(0);
         worldScene.gameGeneration = v.gameGeneration; worldScene.areaGeneration = v.world.areaGeneration;
         worldScene.observer = camera;
+        const auto lightStat = [&](const auto &attributes, const char *name) -> int32_t {
+            if (!monsterText->nativeStats) return 0;
+            const auto stat = monsterText->nativeStats->names.find(name);
+            if (stat == monsterText->nativeStats->names.end() || stat->second > 255) return 0;
+            const auto value = attributes.find(uint8_t(stat->second));
+            return value == attributes.end() ? 0 : int32_t(value->second);
+        };
+        worldScene.observerLightColor = uint32_t(lightStat(v.world.playerAttributes, "item_lightcolor"));
+        if (playerId) if (const auto light=clients.light({0,*playerId})) worldScene.observerLightColor=light->color;
         worldScene.roomObserver = observer - Vec{float(origin.x), float(origin.y)};
         worldScene.terrainOrigin = {float(origin.x), float(origin.y)};
         worldScene.time = time; worldScene.elapsed = suspended ? 0.f : elapsed;
@@ -2695,6 +2706,19 @@ struct RemoteScene::Impl {
                 audio.audible = CheckCollisionPointRec(rv(screen(feet + Vec{.5f,.5f})),shared.worldViewport());
             }
             if (unitClass(u) && key.type == 1 && !onlineMonsterCorpse(u)) worldScene.monsters.push_back({*unitClass(u), feet + Vec{.5f, .5f}});
+            if (key.type == 0 && key.id != playerId) {
+                // 1.13c 192CE-192F5: other players own unshadowed type-1 lights.
+                // Public base stats plus the observed 9D equipment/state lists
+                // follow the same callback semantics as the controlled actor.
+                uint32_t color=uint32_t(lightStat(u.attributes,"item_lightcolor"));
+                if (const auto light=clients.light(key)) {
+                    const int64_t requested=13+int64_t(light->radiusModifier);
+                    if (requested>0) m.lightRadius=int(std::min<int64_t>(18,requested));
+                    color=light->color;
+                }
+                worldScene.playerLights.push_back({feet + Vec{.5f, .5f}, m.lightRadius,
+                    color});
+            }
             const auto receivedNow = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now().time_since_epoch()).count());
             const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
@@ -2868,7 +2892,8 @@ struct RemoteScene::Impl {
                 entry.shadow = visual->shadow; entry.orderFlag = visual->order; draw.push_back(entry);
             }
         }
-        auto addOverlay = [&](int id, OnlineUnitKey key, float age, bool loop) {
+        auto addOverlay = [&](int id, OnlineUnitKey key, float born, bool loop) {
+            const float age = time - born;
             if(age<0) return;
             const auto actor = v.world.units.find(key);
             const auto *visual = shared.overlayVisual(id);
@@ -2878,6 +2903,7 @@ struct RemoteScene::Impl {
                 displayPosition(actor->second, map, origin) - Vec{float(origin.x), float(origin.y)} + Vec{.5f, .5f};
             WorldDrawItem entry; entry.position = feet;
             entry.overlay = id; entry.age = age; entry.loop = loop;
+            entry.lightOwner = effectOwner(key); entry.lightStartedAt = born;
             entry.height = objectUnit ? 0 : 1;
             if (objectUnit)
                 if (const auto owner = std::find_if(draw.begin(), draw.end(),
@@ -2890,13 +2916,13 @@ struct RemoteScene::Impl {
             }
             draw.push_back(entry);
         };
-        for (const auto &effect : overlayVisuals) addOverlay(effect.id, effect.unit, time - effect.born, false);
+        for (const auto &effect : overlayVisuals) addOverlay(effect.id, effect.unit, effect.born, false);
         for (const auto &[key, unit] : v.world.units) {
             // A neutral shrine owns its icon/shimmer. Once the server starts
             // operating it, only the recipient's actual state owns those layers.
             if (key.type != 2 || !unitClass(unit) || unit.mode != 0 || !unit.objectInteractType) continue;
             for (const int id : shared.objectShrineOverlays(*unitClass(unit), *unit.objectInteractType))
-                if (id >= 0) addOverlay(id, key, time, true);
+                if (id >= 0) addOverlay(id, key, 0, true);
         }
         std::set<std::pair<OnlineUnitKey, uint8_t>> activeStates;
         for (const auto &[key, snapshot] : combat.states()) {
@@ -2933,20 +2959,20 @@ struct RemoteScene::Impl {
                         if(first==overlayNames.end() || last==overlayNames.end() || last->second<first->second) continue;
                         const int slots=int(last->second-first->second)+1,cap=std::min(limit,slots);
                         const int index=nativeMultiply(std::min(count,slots)-1,slots)/cap;
-                        if(index>=0 && index<slots) addOverlay(int(first->second)+index,key,time-born,true);
+                        if(index>=0 && index<slots) addOverlay(int(first->second)+index,key,born,true);
                     }
                     continue;
                 }
                 for (const auto field : {"overlay2","overlay1"}) {
                     const auto overlay = overlayNames.find(states.value(row->second,field));
-                    if (overlay != overlayNames.end()) addOverlay(int(overlay->second),key,time-born,true);
+                    if (overlay != overlayNames.end()) addOverlay(int(overlay->second),key,born,true);
                 }
                 const auto progressive=overlayNames.find(states.value(row->second,"pgsvoverlay"));
                 const auto statName=states.value(row->second,"stat");
                 if(progressive!=overlayNames.end() && !statName.empty()) {
                     const auto cost=monsterText->nativeStats->names.find(statName);int count{};
                     if(cost!=monsterText->nativeStats->names.end()) for(const auto &value:state.stats) if(value.id==cost->second && !value.parameter) count=int(value.value);
-                    if(count>0) addOverlay(int(progressive->second)+std::min(count,3)-1,key,time-born,true);
+                    if(count>0) addOverlay(int(progressive->second)+std::min(count,3)-1,key,born,true);
                 }
             }
         }
@@ -3052,8 +3078,8 @@ RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &displa
     : impl_(std::make_unique<Impl>(a, palette, display)) {}
 RemoteScene::~RemoteScene() = default;
 RemoteSceneFrame RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
-                                     SceneView &shared, const RemoteCombat &combat, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
-    return impl_->draw(v, m, s, shared, combat, uiConsumed, mouse, rightHand, paused);
+                                     SceneView &shared, const RemoteCombat &combat, const RemoteUiClients &clients, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
+    return impl_->draw(v, m, s, shared, combat, clients, uiConsumed, mouse, rightHand, paused);
 }
 void RemoteScene::drawTargetInfo(const OnlineView &view, const RemoteSceneFrame &frame, SceneView &shared,
                                  const RemoteCombat &combat, EntityId lockedTarget) const {

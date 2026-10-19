@@ -8,7 +8,7 @@
 #include "state.hpp"
 namespace d2x::server::reactions { class ItemTriggers; }
 namespace d2x::server::quests {
-enum class Action { Refresh, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar };
+enum class Action { Refresh, ViewLog, Acknowledge, ClaimReward, ClaimRespec, StaffUpdate, ReadJournal, ReadAncientAltar };
 struct Request { Action action; QuestId quest; std::optional<EntityId> npc; std::optional<uint32_t> message; std::optional<EntityId> item{}; };
 struct State {
   std::optional<uint64_t> controlRandom;

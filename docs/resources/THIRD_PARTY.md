@@ -60,7 +60,7 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | 人物／技能提示 | D2MOO D2Skills／SkillsTbls／Missile／MonsterTbls 核对描述公式与参数；本地原1.13c D2Client RVA316C0／32ABC核对75项描述程序，33340／33C80–33EA0核对选择器及树调用。固定DLL摘要、helper、输入限制与截图见[技能描述](../gameplay/skills/DESCRIPTIONS.md)；缺装备／支配／基础等级保留未知。女巫SkillSor／MissMode、亚马逊SkillAma／SequenceTbls／MissMode／PlayerPets／SCmd、死灵SkillNec／SUnitEvent、圣骑士SkillPal只作规则线索，不复制执行器 |
 | 玩家／佣兵属性 | D2MOO UNITS_GetDefense／UNITS_GetBlockRate、SKILLS_GetConcentrationDamageBonus、ACT5Q3_UpdateResistances、MonsterAI_SendMercStats及SUnitMsg状态编码；本地原1.13c D2Client RVA F5210／F52A0动作伤害／命中调度表。共享装备纯计算、原基础列表与最终显示的区别见[人物属性](../gameplay/characters/ATTRIBUTES.md)，佣兵有限边界见[佣兵](../gameplay/characters/HIRELINGS.md)；参考二进制不作为运行依赖 |
 | 声音 | MonsterTbls::LoadMonSoundsTxt；Diablerie MonSound／SoundSystem／SoundInfo／AudioManager核对25Hz延迟、原声组、Compound与武器音量；SoundSystem.OnLootFlipped及Item.dropSoundDelay核对起始item_flippy与指定帧落地音，Item的暗金／套装覆盖只作线索。实际字段与声音组读取当前MPQ Sounds／MonSounds／Weapons／Armor／Misc／UniqueItems／SetItems。OpenDiablo2 FsOff解释为推测，非零脚步相位仍暂缓 |
-| 光照／混色 | D2Environment、GAME_UpdateEnvironment、D2Gfx CmnSubtile及OpenD2／OpenDiablo2 PL2；本机1.13c D2Client的A8760／A9728定位整数距离／定点衰减，A8A40定位强度饱和累加与彩光贡献合成，A9A20定位房间底光回退，24920／A9100定位物件光遮挡。当前仍有已确认算法差异，3D后端彩光／Gamma及天气未完整核实；摘要、全部RVA与适用边界见[照明](../gameplay/world/LIGHTING.md#原113c静态定位与当前差异) |
+| 光照／混色 | D2Environment、GAME_UpdateEnvironment、D2Gfx CmnSubtile及OpenD2／OpenDiablo2 PL2；当前已接本机1.13c D2Client A8760／A9728的整数距离／定点衰减、A8A40的独立强度饱和累加与颜色合成、A8310／A8470／A9100／A9480的传播遮挡，以及A9A20普通房间底光、24920整数物件半径和189A0玩家光色。DT1 LightDirection、DED18／DEEF8墙脚六点、GDI／DDraw的32像素取光及来源先取光后混色已接；Client 79F20／7A340的逻辑区域前墙判定、500ms共享Pops过渡与D2gfx 9660的三档PL2透明墙已接，原表之外的方向明确拒绝；另已接原Stats基础光照属性、客户端装备／状态叠加及Overlay实例按25Hz计数变化单步推进；Objects.BlocksLight按Client 251AE／25572／25B0D控制绘制阴影，碰撞挡光只读0x22；地形阴影按GDI 60A0使用PL2 trans[0]。完整创建链交错、飞弹首帧、特殊环境、全部索引／图元分支及3D后端彩光／Gamma和天气仍未接齐；摘要、全部RVA与适用边界见[照明](../gameplay/world/LIGHTING.md#原113c静态定位与当前差异) |
 | HUD／手势 | OpenDiablo2 hud／globeWidget／mini_panel／skill_select_panel／quest_log／escape_menu；Diablerie PlayerController::FlushInput／Update、MouseSelection、EnemyBar／Loot。原UI消费按下直到松开，原图读取当前MPQ，参考不是完整D2Client窗口时序 |
 | 任务／对白 | Quests／D2QuestRecord、各幕Q0／Q1–6回调、PlrIntro／NpcMessage／SUnitNpc；私有／公共字和欢迎／初见／本局GUID反应分开。1.13c D2Common RVA 0x3D120（ordinal10778）只筛menu=0，D2Client RVA 0x4BA39用它选自动对白；menu=2由D2Common RVA 0x3D160（ordinal10109）筛选、D2Client RVA 0x49EC6生成话题。不能沿用D2MOO 1.10f的0-or-2筛选解释。本地A1Intro的初见为0、PlrIntro保存已介绍旗标，A1Q1的重复任务评论为2。原TBL首行a1npc SPEED去除仅用于对白，日志布局参考不作资格／奖励依据 |
 | 物品／城镇 | Items::SerializeItemCompact／Complete、D2Items原品质编号、SCmd9C／9D／3E／42／97／2A、PlrMsg16–29／60、ItemMode／SUnitMsg的DROPTOGROUND与普通地面同步、Units原DROPPING动画、PlrTrade／SUnitNpc；当前MPQ提供位宽／类型／布局。客户端只提交请求，不移植原定价／配方／库存事务 |
@@ -107,6 +107,8 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 ## 补充资料的边界
 
 当前MPQ的MonStats重复名称以编译`monstats.bin`交叉核对：734行、每行0x1A8，第617／723行的名称链接ID均为617，616行NextInClass也指向617；字符串使用首行，数值类别仍保持各自索引。源码据此保留重复行的独立属性／经验／掉落，原二进制与提取不纳入源码提交。
+
+MonStats基础攻击空值另以当前MPQ的TXT／BIN和同快照1.13c D2Common交叉核对：RVA `5C385–5C4A0`登记S1TH／S1MinD／S1MaxD及三难度字段，记录偏移206／242／248；`councilmember1`行345的三组WORD均为0。原版跨幕消息同时采自1.13c Host／D2X Join的真实传送点旅行；D2Client RVA `AC3D0`／`ADB50`／`ADFE0`／`AF640`及D2Common RVA `3CBE0`／`3C990`用于定点核对消费者，序列、故障和未覆盖边界见[原版互通](../modules/NETWORK.md#tcpip原版互通参考与缺口)。
 
 [Blizzard原手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20Manual.pdf)、[LoD手册](https://ftp.blizzard.com/pub/misc/Diablo%20II%20-%20Lord%20of%20Destruction.pdf)与Arreat Summit用于交叉核对操作、物品／药剂／技能用途；[D2R Data Guide](https://locbones.github.io/D2R_DataGuide/#missilestxt)及原数据字段指南只补函数／字段含义，不能把D2R时钟、参数或简化客户端行为当1.13c规范。
 

@@ -174,7 +174,10 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         const auto &levels=data.tables.at("monlvl");const auto levelRow=findSkillTableRow(levels,"Level",std::to_string(rule.level));
         const std::string suffix=rule.difficulty==0?"":rule.difficulty==1?"(N)":"(H)";
         const auto scale=[&](std::string field,std::string ratio) {
-            const int value=skillTableNumber(stats,record.sourceRow,field+suffix);
+            // MonStats S1 damage/to-hit are WORD fields. Empty TXT cells
+            // compile to zero (e.g. councilmember1's missile-only S1), while
+            // missing columns and malformed numbers remain invalid.
+            const int value=skillTableNumber(stats,record.sourceRow,field+suffix,SkillNumberPolicy::BlankIsZero);
             if(!rule.statGameType) ratio=ratio.substr(2);
             return stats.number(record.sourceRow,"noRatio").value_or(0)?value:nativePercentage(skillTableNumber(levels,levelRow,ratio+suffix),value,100);
         };

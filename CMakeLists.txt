@@ -439,6 +439,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/world/automap_assets.cp
   src/presentation/world/map_view.cpp src/presentation/world/map_controller.cpp src/presentation/world/object_hint.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/lighting_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/palette_blend_view.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/world/tile_visibility.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/audio/audio_emitters.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/projectile_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/client_missile_assets.cpp

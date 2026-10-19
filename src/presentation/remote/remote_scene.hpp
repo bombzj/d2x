@@ -12,6 +12,7 @@
 namespace d2x {
 class SceneView;
 class RemoteCombat;
+class RemoteUiClients;
 struct RemoteMapDisplayState {
     bool visible{}, large{true}, right{true};
     bool running{true}; // Session preference survives terrain/act renderer replacement.
@@ -31,7 +32,7 @@ class RemoteScene {
     RemoteScene(Archives &, int palette, RemoteMapDisplayState &);
     ~RemoteScene();
     RemoteSceneFrame frame(const OnlineView &, const Map &, const OnlineSceneView &,
-                            SceneView &, const RemoteCombat &, bool uiConsumed, Vec mouse, bool rightHand, bool paused);
+                            SceneView &, const RemoteCombat &, const RemoteUiClients &, bool uiConsumed, Vec mouse, bool rightHand, bool paused);
     // Called after the controller validates/releases/acquires this frame's gesture.
     void drawTargetInfo(const OnlineView &, const RemoteSceneFrame &, SceneView &, const RemoteCombat &, EntityId lockedTarget) const;
     int renderedUnits() const;

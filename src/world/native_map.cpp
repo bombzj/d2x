@@ -366,7 +366,19 @@ NativeMapSnapshot NativeMapGenerator::snapshot(int currentLevel, bool continuous
         const auto &room = tiles_.rooms().at(index);
         const auto &r = room.room;
         terrain.rooms.push_back({room.level, r.x - x, r.y - y, r.width, r.height,
-            r.preset, r.file, r.mapX - x, r.mapY - y, {}, r.flags});
+            r.preset, r.file, r.mapX - x, r.mapY - y, {}, r.flags, {}, {}, room.singleLogicalRegion});
+        auto &output = terrain.rooms.back();
+        output.logicalCells = room.logicalCells;
+        for (const auto &region : room.logicalRegions)
+            output.logicalRegions.push_back({region.index, r.x + r.width + 1 - x, r.y + r.height + 1 - y});
+        // The native wall predicate uses box[0], including border-only lists.
+        // Recover its un-clipped origin from the already materialized grid;
+        // box[1] in the population projection deliberately zeroes those lists.
+        for (size_t cell = 0; cell < room.logicalCells.size(); ++cell) {
+            auto &region = output.logicalRegions.at(room.logicalCells[cell]);
+            region.left = std::min(region.left, r.x - x + int(cell % size_t(r.width + 1)));
+            region.top = std::min(region.top, r.y - y + int(cell / size_t(r.width + 1)));
+        }
     }
     for (const auto index : rooms) {
         auto &output = terrain.rooms.at(roomIndices.at(index));

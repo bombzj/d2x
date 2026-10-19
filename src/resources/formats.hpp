@@ -77,6 +77,7 @@ struct Cof {
 };
 Cof decodeCof(const Bytes &data);
 struct Tile {
+    int lightDirection = 0; // Original DT1 light sampling direction; distinct from orientation.
     int orientation = 0, main = 0, sub = 0, rarity = 0, roofHeight = 0;
     uint16_t materialFlags = 0;
     bool animated() const { return (materialFlags & 0x100) != 0; }

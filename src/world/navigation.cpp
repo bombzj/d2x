@@ -99,6 +99,9 @@ bool clearSegment(Vec a, Vec b, int width, int height, Clear clear, bool blockCo
 }
 } // namespace
 void Grid::setObstacles(std::vector<Obstacle> next) {
+    // Client A8880 tests the native collision mask 0x22. Objects.BlocksLight
+    // controls a unit drawing flag; it never adds a collision footprint.
+    for (auto &obstacle : next) obstacle.blocksLight = (obstacle.mask & 0x22) != 0;
     if (next == obstacles) return;
     obstacles = std::move(next);
     ++obstacleRevision;

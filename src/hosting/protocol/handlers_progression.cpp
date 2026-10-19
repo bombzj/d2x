@@ -1,9 +1,11 @@
 #include "gameplay_dispatch.hpp"
+#include "gameplay/quest/catalog.hpp"
 
 namespace d2x::hosting::handlers {
-RequestResult QuestCompleted(GameplayContext &, net::protocol::Reader &in) {
-    in.u16(); in.finish();
-    return {RequestStatus::NotImplemented, CommandStatus::NotImplemented, "QuestCompleted"};
+RequestResult QuestCompleted(GameplayContext &context, net::protocol::Reader &in) {
+    const auto slot=in.u16(); in.finish();
+    if(slot>=nativeQuestStatusCount) return {RequestStatus::Rejected,CommandStatus::InvalidRequest};
+    return submitGameplay(context,server::quests::Request{server::quests::Action::ViewLog,QuestId::DenOfEvil,{},slot});
 }
 RequestResult SpendAttribute(GameplayContext &context, net::protocol::Reader &in) {
     const auto packed = in.u16(); in.finish();

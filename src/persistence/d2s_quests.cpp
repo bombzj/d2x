@@ -6,6 +6,7 @@
 #include "d2s_fixed_sections.hpp"
 #include "content/npc/npc_dialogue.hpp"
 #include "gameplay/character/record.hpp"
+#include "gameplay/quest/catalog.hpp"
 #include "gameplay/quest/den_of_evil.hpp"
 #include "gameplay/quest/burial_grounds.hpp"
 #include "gameplay/quest/search_for_cain.hpp"
@@ -49,6 +50,8 @@ unsigned questBits(const QuestRecord &quest, size_t index) {
 } // namespace
 void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+        for (size_t slot = 0; slot < nativeQuestStatusCount; ++slot)
+            player.questLogViewed[difficulty][slot] = (word(sections.quests, 10 + difficulty * 96 + slot * 2) & 0x1000u) != 0;
         player.cowKingKilled[difficulty] = (word(sections.quests, 10 + difficulty * 96 +
             questDefinition(QuestId::SearchForCain).nativeSlot * 2) & 0x400u) != 0;
         for (size_t act = 0; act < actCompletedSlots.size(); ++act)
@@ -151,6 +154,11 @@ void importD2sQuests(CharacterRecord &player, const D2sFixedSections &sections, 
 }
 void exportD2sQuests(const CharacterRecord &player, D2sFixedSections &sections, const NpcDialogues &dialogues) {
     for (size_t difficulty = 0; difficulty < 3; ++difficulty) {
+        for (size_t slot = 0; slot < nativeQuestStatusCount; ++slot) {
+            const auto at = 10 + difficulty * 96 + slot * 2;
+            putWord(sections.quests, at, (word(sections.quests, at) & ~0x1000u) |
+                (player.questLogViewed[difficulty][slot] ? 0x1000u : 0u));
+        }
         for (size_t act = 0; act < actCompletedSlots.size(); ++act) {
             const auto at = 10 + difficulty * 96 + actCompletedSlots[act] * 2;
             putWord(sections.quests, at, (word(sections.quests, at) & ~0x2001u) |

@@ -12,7 +12,7 @@
 #include "presentation/hud/trade_invite_view.hpp"
 #include "presentation/hud/party_view.hpp"
 #include "presentation/world/scene_geometry.hpp"
-#include "presentation/world/preset_pops.hpp"
+#include "presentation/world/tile_visibility.hpp"
 #include "presentation/world/world_draw_view.hpp"
 #include <cstdint>
 #include <map>
@@ -135,14 +135,14 @@ class SceneView {
     PartyView party_;
     bool incomingHostility_ = false;
     struct QuestCompletionAnimation {
-        enum class Phase { Idle, Pending, Playing };
+        enum class Phase { Idle, Pending, Playing, Acknowledge };
         Phase phase = Phase::Idle;
-        bool completed = false;
+        bool pending = false;
         float elapsed = 0;
     };
     std::array<QuestCompletionAnimation, size_t(QuestId::Count)> questAnimations_{};
     void resetQuestAnimations();
-    void queueQuestAnimation(QuestId quest, bool completed);
+    void queueQuestAnimation(QuestId quest, bool pending);
     void advanceQuestAnimations(float dt);
     struct GroundAnimation { uint64_t revision = 0; float age = 0; bool flipSoundConsumed = false, landSoundConsumed = false; };
     std::map<EntityId, GroundAnimation> groundAnimations_;
@@ -155,7 +155,7 @@ class SceneView {
     void createMissileImpactVisuals(int missileId, Vec position);
     void createIceShatter(Vec position, int size);
     void createBlizzardFall(int missileId, Vec position);
-    PresetPops worldPops_;
+    TileVisibility worldVisibility_;
     uint64_t worldGameGeneration_ = ~uint64_t{}, worldAreaGeneration_ = ~uint64_t{};
     struct LootLabel {
         ItemHandle item;
@@ -168,8 +168,9 @@ class SceneView {
     void drawGroundItem(EntityId item, bool highlighted) const;
     void drawLootLabels(Vec mouse) const;
     void drawSelectableSprite(const Sprite *image, Vec position, bool highlighted,
-                              Color tint = WHITE, Vector2 highlight = {2.f, 1.f}) const;
-    void drawWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
+                              Color tint = WHITE, Vector2 highlight = {2.f, 1.f},
+                              const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
+    PaletteBlendView &prepareWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
     void drawPanelFrame(bool right) const;
     void drawGameMenu() const;
@@ -266,7 +267,8 @@ class SceneView {
     void drawNativeIceShatter(Vec position, int size) { createIceShatter(position,size); }
     const SceneAssets::ProjectileVisual *projectileVisual(int id) { return assets_.ensureProjectile(id); }
     const SkillOverlayVisual *overlayVisual(int id) { return assets_.ensureOverlay(id); }
-    void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {},std::optional<int> nativeFrame={}) const;
+    void drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset = {},
+                     std::optional<int> nativeFrame={}, const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
     bool launchClientMissile(int id, Vec start, Vec target, int level, float delay = 0,
                              std::optional<float> remaining = {}, int pathIndex = -1,
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
@@ -287,7 +289,8 @@ class SceneView {
     void cancelPendingClientMissiles(EntityId owner) {
         std::erase_if(clientMissiles_, [&](const auto &value) { return value.flight && value.age < 0 && value.owner == owner; });
     }
-    void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1) const;
+    void drawSpellOverlay(int id, Vec position, float age, bool loop, int height = 1,
+                          const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
     void drawGroundLabels(Vec mouse) const { drawLootLabels(mouse); }
     void drawDeathNotice() const;
     void drawCorpseLabel(const std::string &label, Vec screenPosition) const;
@@ -309,7 +312,8 @@ class SceneView {
     }
     std::string actorSequenceMode(std::string_view name) const { return assets_.actorSequenceMode(name); }
     const Sprite *groundItemSprite(const InventoryItemView &) const;
-    void drawGroundItem(const InventoryItemView &, bool highlighted) const;
+    void drawGroundItem(const InventoryItemView &, bool highlighted,
+                        const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
     void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
     void refreshUi(float dt);
     void advanceWorldPresentation(float dt);

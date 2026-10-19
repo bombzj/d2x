@@ -1,6 +1,7 @@
 #pragma once
 #include "presentation/graphics/graphics.hpp"
 #include <array>
+#include <span>
 
 namespace d2x {
 // Original PL2 screen/rectangle blending and 32 intensity transforms share the palette.
@@ -8,11 +9,20 @@ namespace d2x {
 class PaletteBlendView {
     Shader shader_{};
     Shader lightingShader_{};
+    Shader litBlendShader_{};
+    Shader wallBlendShader_{};
+    std::array<int,14> lightingLocations_{};
+    std::array<int,5> litBlendLocations_{};
+    std::array<int,6> wallBlendLocations_{};
     Shader rectangleShader_{};
     Texture2D palette_{}, screenTable_{}, lightTable_{}, paletteIndices_{};
     Texture2D rectangleTable_{}, halfTable_{}, highlightTable_{}, socketTable_{}, quarterTable_{};
     std::array<Color, 256> colors_{};
     RenderTexture2D destination_{};
+    Texture2D worldLightMap_{};
+    Vec lightPlayer_{}, lightPlayerScreen_{}, lightOrigin_{};
+    float lightZoom_ = 1;
+    Color lightAmbient_{};
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
@@ -31,6 +41,11 @@ class PaletteBlendView {
     Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color) const;
-    void drawLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient) const;
+    void setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient);
+    // Empty samples: floor Gouraud field; one: unit anchor; six: native DT1 wall columns.
+    // Transform the source before alpha/additive composition, never the completed frame.
+    void drawLit(const Sprite *, Vec position, std::span<const Color> samples, Color tint = WHITE,
+                 Vector2 highlight = {1, 1}, bool screenBlend = false) const;
+    void drawWall(const Sprite *, Vec position, std::span<const Color> samples, uint8_t alpha) const;
 };
 } // namespace d2x

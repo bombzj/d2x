@@ -209,7 +209,7 @@ const std::vector<Sprite> &SceneAssets::worldTileSprites(const Map &map, int pal
             const auto key = std::pair{palette, tile};
             auto found = worldTileSprites_.find(key);
             if (found == worldTileSprites_.end())
-                found = worldTileSprites_.emplace(key, graphics.upload(tile->image)).first;
+                found = worldTileSprites_.emplace(key, graphics.upload(tile->image, true)).first;
             worldTiles_.push_back(found->second);
         }
     }

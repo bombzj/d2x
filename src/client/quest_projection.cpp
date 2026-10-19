@@ -18,11 +18,12 @@ QuestView projectQuestDisplay(const ClassicData &data, const QuestProjectionInpu
         entry.known=flags.has_value() || status.has_value() || facts.available.has_value();
         const bool missed=flags && (*flags&0x4000) && !(*flags&1);
         entry.completed=(flags && (*flags & 1)) || (!missed && status==13); // Owner facts only.
+        entry.completionPending=entry.completed && flags && !(*flags&0x1000);
         const bool closed=facts.available==false && (!status || !*status) && !(flags && (*flags&2));
         entry.unavailable=!entry.completed && (missed || status==12 || closed);
         entry.active=!entry.completed && !entry.unavailable && ((status && *status) || (flags && (*flags & 0x001E)));
         std::string key;
-        if (entry.completed) key="qstsComplete";
+        if (entry.completed) key=flags && !(*flags&0x2000) ? "qstsprevious" : "qstsComplete";
         else if (entry.unavailable) key="qstsThankYouComeAgain";
         else if (status && *status>0 && *status<12) {
             key=(def.id==QuestId::SiegeOnHarrogath ? "qsta" : "qstsa") +

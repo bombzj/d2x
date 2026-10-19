@@ -103,12 +103,13 @@ std::vector<Tile> decodeDt1(const Bytes &b) {
     std::vector<Tile> result;
     for (uint32_t i = 0; i < count; i++) {
         r.seek(offset + size_t(i) * 96);
-        r.skip(4);
+        const int lightDirection = r.i32();
         int roofHeight = r.i16();
         const auto materialFlags = r.u16();
         int h = r.i32(), w = r.i32();
         r.skip(4);
         Tile t;
+        t.lightDirection = lightDirection;
         t.roofHeight = roofHeight;
         t.materialFlags = materialFlags;
         t.orientation = r.u32();

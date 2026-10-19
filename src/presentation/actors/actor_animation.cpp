@@ -399,8 +399,9 @@ const ActorAnimation *ActorAnimationCatalog::object(Graphics &graphics, int pale
     if (const auto found = animations_.find(key); found != animations_.end())
         return found->second.ready() ? &found->second : nullptr;
     ActorAnimationRequest request; request.category = "objects"; request.mode = modes[size_t(mode)];
-    // The shared compositor already masks shadows using the original COF layers.
-    request.shadow = true;
+    // Client 251AE/25572/25B0D: BlocksLight[mode] clears the
+    // DRAWSHADOW bit (0x20). It is not a light-occluding collision box.
+    request.shadow = objects_.number(row->second,"BlocksLight" + suffix).value_or(0) == 0;
     request.appearance.token = lower(std::string(objects_.value(row->second, "Token")));
     request.appearance.weapon = "hth"; request.appearance.components.fill("lit");
     const auto base = "data/global/objects/" + request.appearance.token + "/";
