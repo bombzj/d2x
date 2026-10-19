@@ -287,7 +287,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             const auto &panels = sharedUi->ui();
             const ClientPreferences current{sharedClients->running(), panels.miniPanelOpen,
                 panels.automapLarge, panels.automapCenterWhenCleared,
-                panels.automapParty, panels.automapNames, panels.automapFade};
+                panels.automapParty, panels.automapNames, panels.automapFade, panels.audio};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
@@ -351,6 +351,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     };
     auto lastInputTime = std::chrono::steady_clock::now();
     auto chatInput = [&](FrameInput &input) {
+        sharedController->prepareTravelInput(input);
         sharedUi->updateChat(session.read().world.social,session.read().accountChat);
         sharedUi->updateParty(session.read().world.social, session.read().load.playerUnitId.value_or(UINT32_MAX), session.read().gameGeneration,town.read().town);
         sharedUi->updatePlayerTrade(session.read().world.playerTrade);
@@ -900,7 +901,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         profile.mark("client-content-ready");
                         sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
                         sharedUi = std::make_unique<SceneView>(archives,sharedClients->content(),sharedClients->actor(),
-                            sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map());
+                            sharedClients->inventory(),sharedClients->character(),sharedClients->quests(),sharedClients->npc(),sharedClients->map(),preferences.audio);
                         profile.mark("game-ui-ready");
                         sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
                             sharedClients->character(),sharedClients->npc(),sharedClients->map(),*sharedUi);
@@ -949,7 +950,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                             // not necessarily the native conversation revision.
                             if (panels.dialogue.empty() && !panels.shopOpen && !panels.hireListOpen) for (const auto &message : dialog.messages)
                                 if (!message.acknowledged && message.menu == 0 && !message.text.empty()) {
-                                    sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text);
+                                    sharedUi->openNpcDialogue(EntityId{(uint64_t{1} << 32) + dialog.source + 1},dialog.speaker,message.text,message.stringId);
                                     panels.dialogueTextTopic = message.stringId;
                                     break;
                                 }

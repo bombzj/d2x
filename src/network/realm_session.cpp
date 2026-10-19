@@ -2608,7 +2608,7 @@ bool RealmSession::use_waypoint(uint16_t destination, uint8_t waypointNumber, st
         out.u8(0x49); out.u32(*waypoint); out.u32(destination);
         p.sent(p.gs, out.release());
         p.finish_pickup(OnlineItemRequest::State::Interrupted);
-        p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
+        if (destination) p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.world.waypointSource.reset();
         p.view.world.waypointRequested.reset(); p.waypointDeadline = {};
         p.view.world.waypointActivation.reset();

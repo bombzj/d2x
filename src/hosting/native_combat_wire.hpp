@@ -1,8 +1,21 @@
 #pragma once
-#include "server/runtime/events.hpp"
+#include "core/id.hpp"
+#include "core/math.hpp"
 #include "network/protocol/wire.hpp"
+#include <map>
+#include <set>
+#include <vector>
 namespace d2x {
 struct ClassicData;
+struct MonsterSnapshot;
+struct StatValue;
+namespace server {
+struct MissileFact;
+struct StateFact;
+struct AttackFact;
+struct RepositionFact;
+struct HitFact;
+}
 Bytes nativeMissile(const server::MissileFact &,Vec origin);
 Bytes nativeState(const ClassicData &,const server::StateFact &);
 Bytes nativeStateSnapshot(const ClassicData &,EntityId,uint8_t,const std::set<int> &,

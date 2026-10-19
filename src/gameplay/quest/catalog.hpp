@@ -4,7 +4,6 @@
 #include <span>
 
 namespace d2x {
-inline constexpr unsigned nativeQuestStatusCount = 41;
 // Current 1.13c S2C 5E initialization order; distinct from journal/D2S order.
 inline constexpr std::array<unsigned,37> nativeQuestInitializationSlots{
     0,1,2,3,4,5,6,41,8,9,10,11,12,13,14,30,31,16,17,18,19,20,21,22,32,24,25,26,27,29,33,35,36,37,38,39,40};
@@ -48,6 +47,9 @@ inline constexpr std::array<QuestDefinition, size_t(QuestId::Count)> questDefini
 }};
 inline constexpr const QuestDefinition &questDefinition(QuestId id) {
     return questDefinitions.at(questIndex(id));
+}
+inline constexpr uint32_t questCompletionStage(QuestId quest) {
+    return questDefinition(quest).completedStage;
 }
 inline constexpr std::span<const QuestDefinition> questsForAct(int act) {
     const QuestDefinition *first = nullptr;

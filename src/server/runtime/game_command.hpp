@@ -1,4 +1,5 @@
 #pragma once
+#include "server/game_commands.hpp"
 #include "system_catalog.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/crafting/system.hpp"

@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "calculation.hpp"
 #include "stat_sources.hpp"
 #include "skill_refresh.hpp"

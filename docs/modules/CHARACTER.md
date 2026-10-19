@@ -18,6 +18,8 @@ grant-experience已接GameHost → progression → transactions → 原包输出
 
 Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共用`gameplay/character/respec`纯退款函数；清基础分配／技能并退款，清选择与热键，不把装备加成退成人物点数。资格消费、属性和技能由同一CharacterEdit提交。来源、slot41保存及资格边界见[第一幕任务](../gameplay/quests/ACT1.md)。
 
+宿主管理`reset-attributes`／`reset-skills`经GameHost → progression.resetPoints → CharacterEdit复用同一退款函数的独立属性／技能范围；Akara及Token仍默认整体退款。管理入口不消耗任务或物品资格；基础属性只退已分配值，技能退款清基础等级、双武器组选择／来源与16个快捷键，不退固有或装备加成。只接收存活、已入局且没有活动技能的角色；溢出、规则不足或事务背压明确拒绝，成功后重算装备与派生值并限制当前资源，不额外治疗。参数见[调试管道](../development/DEBUG_PIPE.md#嵌入宿主管理命令)。
+
 ## 入口与所有权
 
 | 入口 | 职责 |
@@ -30,7 +32,7 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 | [combat_display.cpp](../../src/content/character/combat_display.cpp) | 原包已观察装备／状态的公共只读战斗投影；玩家与佣兵复用装备贡献、需求、防御、格挡及武器纯函数 |
 | [skill_description.cpp](../../src/content/skills/skill_description.cpp) | 选择器／技能树共用 MPQ 描述程序；数据、公式及已知值边界见[描述层](../gameplay/skills/DESCRIPTIONS.md) |
 | [character.hpp](../../src/contracts/character.hpp)、[character_client.hpp](../../src/client/character_client.hpp) | 人物、技能树、技能菜单和 HUD 的值视图及语义意图 |
-| [record.hpp](../../src/gameplay/character/record.hpp)、[character_save.hpp](../../src/persistence/character_save.hpp) | 服务端持久人物值及D2S接口；不持有活世界或客户端会话 |
+| [record.hpp](../../src/gameplay/character/record.hpp)、[hireling_record.hpp](../../src/gameplay/character/hireling_record.hpp)、[character_save.hpp](../../src/persistence/character_save.hpp) | 服务端持久人物／佣兵值及D2S接口；佣兵记录可独立使用，不持有活世界或客户端会话 |
 
 技能资格元数据与只读判断在content/skills/skill_eligibility，人物投影与RemoteCombat共用；未收到基础等级不能按零授权学习，原reqstr／reqdex／reqvit／reqint门槛也使用已知属性。
 

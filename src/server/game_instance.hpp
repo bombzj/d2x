@@ -1,4 +1,5 @@
 #pragma once
+#include "server/game_messages.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/runtime/game_command.hpp"
@@ -8,6 +9,7 @@
 #include "server/runtime/diagnostics.hpp"
 #include <optional>
 
+namespace d2x { enum class PointRefund; }
 namespace d2x::server {
 struct GameDefinition {
     GameSettings settings;
@@ -121,6 +123,8 @@ class GameInstance {
     DomainResult<> missileHit(PlayerId,EntityId,uint32_t,DamageType,bool returnFire);
     DomainResult<> damageMonster(PlayerId,EntityId,std::optional<uint32_t> amount);
     DomainResult<> relocate(PlayerId,RegionId,std::optional<Vec>);
+    DomainResult<> unlockWaypoints(PlayerId,std::optional<RegionId>);
+    DomainResult<> resetPoints(PlayerId,PointRefund);
     DomainResult<EntityId> spawnMonster(PlayerId, const PreparedMonster &);
     DomainResult<EntityId> spawnObject(PlayerId,const objects::Admission &);
     std::optional<DiagnosticSnapshot> diagnostics(PlayerId, size_t limit, uint64_t since, uint64_t commandSince,

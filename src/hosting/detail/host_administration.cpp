@@ -9,6 +9,7 @@
 #include "persistence/d2s_inventory.hpp"
 #include "gameplay/loot/special.hpp"
 #include "core/random.hpp"
+#include "gameplay/character/respec.hpp"
 #include "content/npc/hireling_data.hpp"
 #include <charconv>
 #include <algorithm>
@@ -46,6 +47,7 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
         case AdminArgumentKind::Unit: return std::holds_alternative<AdminUnit>(request.arguments);
         case AdminArgumentKind::Travel: return std::holds_alternative<AdminTravel>(request.arguments);
         case AdminArgumentKind::Missile: return std::holds_alternative<AdminMissile>(request.arguments);
+        case AdminArgumentKind::Waypoints: return std::holds_alternative<AdminWaypoints>(request.arguments);
         }
         return false;
     }();
@@ -315,7 +317,18 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             if(!result) return {AdminStatus::Unavailable,"Area content is preparing, position is unavailable, or output capacity is blocked; retry after inspecting the host snapshot"};
             publishEvents();return {AdminStatus::Applied,"Host relocated the player through prepared native collision and original travel facts; no task or waypoint was granted"};
         }
-        case AdminOperation::UnlockWaypoints: return {AdminStatus::NotImplemented, "Waypoint administration is not implemented"};
+        case AdminOperation::UnlockWaypoints: {
+            const auto &unlock=std::get<AdminWaypoints>(request.arguments);
+            if(unlock.level.has_value()==unlock.all || (unlock.level && (*unlock.level<1 || *unlock.level>136)))
+                return {AdminStatus::InvalidArguments,"Supply exactly one of level (1..136) or all=true"};
+            if(peer.phase!=GamePhase::Entered) return {AdminStatus::Unavailable,"Enter the host game before unlocking waypoints"};
+            const auto result=host.unlockWaypoints(*binding,unlock.level?std::optional<RegionId>{RegionId(*unlock.level)}:std::nullopt);
+            if(result.status==server::DomainStatus::InvalidRequest)
+                return {AdminStatus::InvalidArguments,"The supplied MPQ area is not a valid waypoint destination"};
+            if(!result) return {AdminStatus::Unavailable,"Waypoint unlock rejected (dead player, unavailable rules or transaction capacity)"};
+            publishEvents();
+            return {AdminStatus::Applied,unlock.all?"All MPQ waypoints unlocked for the current difficulty":"Requested MPQ waypoint unlocked for the current difficulty"};
+        }
         case AdminOperation::GrantShrine:
         case AdminOperation::SpawnObject: {
             const auto &spawn=std::get<AdminSpawn>(request.arguments);int code=-1;
@@ -344,8 +357,15 @@ AdminResult NativeRealmService::administer(const AdminRequest &request) {
             const auto result=host.grantHireling(*binding,std::move(record));if(!result) return {AdminStatus::Unavailable,"Hireling replacement transaction rejected"};
             return {AdminStatus::Applied,"Hireling replacement queued; the previous hireling remains until the new birth commits"};
         }
-        case AdminOperation::ResetAttributes: return {AdminStatus::NotImplemented, "Attribute reset administration is not implemented"};
-        case AdminOperation::ResetSkills: return {AdminStatus::NotImplemented, "Skill reset administration is not implemented"};
+        case AdminOperation::ResetAttributes:
+        case AdminOperation::ResetSkills: {
+            if(peer.phase!=GamePhase::Entered) return {AdminStatus::Unavailable,"Enter the host game before resetting points"};
+            const bool attributes=request.operation==AdminOperation::ResetAttributes;
+            const auto result=host.resetPoints(*binding,attributes?PointRefund::Attributes:PointRefund::Skills);
+            if(!result) return {AdminStatus::Unavailable,"Point reset rejected (dead player, active skill, refund overflow or unavailable transaction capacity/rules)"};
+            publishEvents();publishPlayers();
+            return {AdminStatus::Applied,attributes?"Allocated base attribute points refunded; quest rewards were not consumed":"Allocated base skill points refunded and skill bindings cleared; quest rewards were not consumed"};
+        }
         }
     } catch (const std::invalid_argument &e) { return {AdminStatus::InvalidArguments,e.what()}; }
     catch (const std::exception &e) { return {AdminStatus::Failed, e.what()}; }

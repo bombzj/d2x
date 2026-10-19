@@ -64,7 +64,27 @@ Skills.skilldesc关联SkillDesc的IconCel／ListRow／ListPool及当前职业图
 
 原800borderframe、waygatebackground／icons、expwaygatetabs及Levels.Waypoint提供边框、九槽、标题／页签／原颜色。只有原0x63确认菜单及历史解锁位可旅行；请求未确认、关闭／迟到回复分别处理，不自行解锁。启动期间点击／ON动画的原版依据与时序缺口见[物件](../world/OBJECTS.md#自研传送点)。
 
-ESC先关闭面板／对白，无面板时开原退出菜单；Options只接已有Automap Options，其他设置页未实现。Save and Exit提交原保存退局，确认后返服务器选角，超时保存未知；不会本地写D2S或暂停世界。
+背包、人物、技能树、任务、佣兵、组队、消息日志、聊天、走跑、武器组及技能／腰带快捷键先退出传送点交互，再处理同次输入；普通字符输入也退出，Tab自动地图保留原版例外。列表外的左右键按下先关闭列表，再交给对应HUD／场景动作，列表内页签／目的地操作仍由列表消费；ESC只关闭列表。等待0x63期间的新键盘动作或点击也取消原请求，迟到菜单沿既有关闭路径处理。退出发送原0x49（源GUID、目的地0），清除客户端交互并刷新本帧上下文，关闭本身不增加移动节流时间，避免同次移动／交互因旧上下文或额外等待被拒绝。
+
+退出依据为本机同快照1.13c D2Client：RVA `AA380–AA3D0`构造9字节关闭包并防重复，`AAD50–AAEB8`处理字符输入并跳过Tab，`AA4E0–AA60E`核对列表外鼠标按下的关闭分支；服务端参数与取消语义核对D2MOO PlrMsg::Rcv0x49_TakeOrCloseWp。当前仅静态核对，完整原版实机输入及多人时序仍待验证。
+
+## ESC 菜单
+
+ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`统一加载英文原资源并维护绘制／命中几何，SceneController只消费选择、切换页面和提交已支持动作。主菜单为Options／Save and Exit Game／Return to Game；Options的Sound Options、Video Options、Automap Options和Configure Controls均可进入，保留Previous Menu／Cancel／Default／Accept。无对应设置后端的3D Sound／EAX／3D Bias、画面、按键编辑及Default以当前MPQ Sky PL2第5号灰色表显示，鼠标、Enter和方向键均不能激活；不再弹出自绘的未实现提示。按键页的Cancel／Accept只返回，不能据此宣称改键已实现。
+
+菜单标签固定读取`data/local/ui/eng/*.dc6`，使用原分片、底部原点和原像素尺寸，不随hudScale拉伸，也不受语言选择或TTF字体替代影响。3DSound原图实际文案为3D SOUND；大字Previous与设置页SPrevious使用各自原资源。普通菜单按`(H−80)/2−行数×50/2`定位，标签基线偏移39；设置页包含标题，行距45、基线偏移34，左右列锚点为W/2±230。五芒星原8帧、相反方向、50ms帧间隔，锚点为W/2±249，保留原帧偏移及底部原点。扩展窗口沿原居中公式延伸，不缩放菜单字形。
+
+按键页直接读取英文TBL和Latin FontInGameChat的DC6／TBL，原表62行含56功能及6个分隔空行，每屏15行、行距18；保留620×369原边框、三列、原textslid滚动条、底部三个按钮。滚轮、上下／PageUp／PageDown、Home／End及拖动滚动条可查看全部项目；列中报告当前d2x固定绑定，所有编辑行置灰。声音／画面页保留原标签、档位、滑条和骷髅滑块；无设置后端的控件按原菜单记录初值置灰展示，不能操作，也不把该初值当成后端已生效的设置。缺原图报错，不生成替代图形。
+
+Sound、Music与NPC Speech接入真实音频和客户端偏好。两条滑块均为0–100、每档5的21位置，原265像素行程；左右键每次一档、端点钳制，鼠标须从原滑条内按下，随后可拖出并钳制；Enter不改变滑块。Sound是总音量，影响已播放及后续效果音、循环飞弹、语音和音乐；Music仅额外衰减Sounds的Music Vol通道。按原整数顺序计算音量，移除旧固定0.45增益。NPC Speech按Audio Only／Text Only／Audio + Text循环，左右键反向／正向；前者隐藏字幕、语音结束沿既有对白确认路径结束，后两者分别禁止语音／同时显示播放。取消、切换对白和退局释放语音流。默认Sound=100、Music=50、NPC Speech=Audio + Text；启动先应用偏好再播放。
+
+`audio/scene_streams`按Levels.SoundEnv→SoundEnviron.Song读取环境音乐，按Sounds原WAV、Loop、Volume、Music Vol与25Hz Fade字段播放；原75帧最短切歌间隔、125帧更新下一Block恢复点。NPC语音优先用实际TBL stringId→a1–5npc原映射→Sounds.FileName，普通闲谈使用已解析的原文映射；歧义不借用其他NPC声音。WAV解码器与其借用的MPQ字节同寿命，不落地解压文件。当前`assets/mpq2`缺d2music／d2xmusic／d2speech／d2xtalk，缺成员仅记录一次诊断，保持无声，不生成替代音频；使用包含这些同版本原包的`--mpq`目录后才能听到相应资源。环境音乐之外的任务插曲、完整原版混音／字幕速度及流边界时序仍未认证。
+
+声音静态依据为同份1.13c D2Client的64400–64470（21档百分比）、6504A–65128（滑条命中／拖动）、64250–642D5（语音／字幕标志）、5D24C／5D26A／5D45D（Music、Master、Sounds.Volume整数联动）、456A0–45962（环境音乐及Block恢复）；D2Sound（MD5 `b07372c8e740cf04f45b8e2e63a01346`）9B30–9C26确认默认值及合法范围，9A40／9AA0／9AD0为三项保存入口。d2x保存到client-settings.json，不写原版注册表或角色D2S。完整音频操作与原版实机对照尚未执行。
+
+自动地图五项沿用当前已支持状态与偏好保存；大小切换、Fade四档与小图跳过Center保持原规则，支持鼠标／Enter及左右方向键。普通菜单上下导航环绕并跳过禁用行；设置页ESC关闭菜单，按键页ESC返回Options。Save and Exit提交原保存退局，确认后返服务器选角，超时保存未知；不在UI写D2S；单机／联机的暂停由app/frontend既有宿主及表现策略负责。
+
+布局与内容静态依据为本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）：菜单表RVA E2AC0／E3AC8／E5570／EA550／EEFE0，绘制65230–65574、命中64080、左右切换64D20／64E00及导航64EE0／64F50；按键表F8928（62条10字节记录）、布局11410、绘制12570–12DB8及按钮表F8B98。D2Win的字体名表RVA1C588第13项确认FontInGameChat。原DLL／资源仅只读，导出物不提交。当前仅静态核对，尚未进行原版实机交互或逐像素画面对照；全部菜单状态与扩展窗口仍需实际确认。
 
 ## 证据与限制
 
@@ -83,7 +103,7 @@ ESC先关闭面板／对白，无面板时开原退出菜单；Options只接已�
 | 佣兵／雇用、组队 | 原hireling／party面板、inventory原槽位／原字体；hireling_view、commerce_controller、party_view | 全职业／雇用列表与多人关系组合、完整按压及像素对照 |
 | 传送点 | waygatebackground／expwaygatetabs／waygateicons；waypoint_view | 原版逐像素布局及全幕／不可达状态组合 |
 | 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 实体键盘人工操作、全部窗口尺寸、精确原版布局及中文输入未完成 |
-| ESC／设置 | 原菜单标签与标记；exit_view、hud | 只接Automap Options；其余原设置页、完整原按压／导航仍缺实现 |
+| ESC／设置 | 英文原图／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图及Sound／Music／NPC Speech可修改；3D音效／画面／改键置灰；音乐语音需对应原包，实机按压、导航与逐像素对照未执行 |
 
 直接读取五个当前MPQ，确认minipanelbtn的真实帧身份、dialogbackground的210×158尺寸及inventory原表。金币文案／菜单参数另定点核对同快照D2Client RVA C31A8–C320D、C3212–C322F、C32CC–C32FC及C341B–C348F；保持原图与DLL只读。这些静态依据只裁定图集／原表及原版菜单参数，完整职业／窗口尺寸、多人／原服、音频、Linux及逐像素矩阵仍待核对。
 

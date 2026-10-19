@@ -72,11 +72,29 @@ JSON只在app/debug解析一次；宿主收到类型化操作与GameHandle／Pla
 | `grant-hireling` | code为当前MPQ Hireling原Id十进制字符串，level为1至主人等级；按原Id保留来源难度并选等级段、姓名与成长，原子替换旧佣兵和装备。仅宿主管理准备，不代替NPC雇佣验证 |
 | `monster-damage`、`monster-kill` | id为当前区域存活怪物；damage另需amount正整数生命点，kill扣除其剩余生命。走monsters正常伤害事实，后续固定步执行死亡、经验、掉落及任务统计，不直接改任务或客户端 |
 | `travel` | level（1–136），可选x／y为目的地局部subtile；本地宿主准备真实MPQ地图后按碰撞定位，等待内容时返回Unavailable，可检查server-snapshot后重试；通过原旅行事实同步，不授予任务或传送点。用于准备冒烟条件，不能当作正常通行资格认证 |
-| `unlock-waypoints`、`reset-attributes`、`reset-skills` | 无参数；类型化stub |
+| `unlock-waypoints` | 必须二选一：`level`为当前MPQ中带传送点的原区域ID（1–136），或`all:true`解锁完整目录。只修改所选角色当前难度的个人激活记录，重复调用保留已有记录；不要求目标地图已生成，不授予任务或改变物件模式。经人物事务提交，当前有有效传送菜单时发送原0x63刷新，否则下次正常打开菜单时显示；沿原D2S保存，命令本身不写盘 |
+| `reset-attributes` | 无玩法参数；退还已分配的四项基础属性点，保留技能分配。经progression／人物事务重算装备资格和派生值，生命／法力／体力限制到新上限，不补满资源；只允许存活、已入局且没有活动技能的角色 |
+| `reset-skills` | 无玩法参数；退还已分配的基础技能点，清除两套武器的技能选择、来源GUID和16个技能快捷键，保留属性分配；固有／物品授予技能仍由规则派生。资格同reset-attributes，两项命令均不消耗Akara次数或Token、不改任务资格；重复调用不重复发点，正常保存或save写入原D2S |
 
 暂停状态下用`travel`准备截图时，`applied`只说明人物旅行已提交，不能据此认定目的房间的物件恢复已经执行。恢复可能等待正常逻辑帧；先推进必要帧数，并检查目标玩家的`server-snapshot.objects`及客户端实际物件分配，再固定画面。原版与D2X须使用同一批已恢复物件，避免把准备时序造成的火把缺失误判为生成或光照差异。
 
-查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。stub只验证参数形状，尚未承诺对应资源或玩法资格。
+查询及修改命令可附hostSlot／hostGeneration／hostPlayer，取server-status；三个字段须同时指定；不匹配返回invalid-target。未提供时由应用绑定当前宿主角色。这些不是online.gameGeneration，不能互换。save／load不接受path覆盖，固定使用服务器持有租约的角色文件；其他角色加载使用局前入口。命令目录的implemented表示管理入口已接通，具体玩法资格、规则或事务容量仍可能拒绝。
+
+解锁火焰之河或当前难度全部传送点：
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command unlock-waypoints -Arguments @{ level=107 }
+.\scripts\Send-D2XCommand.ps1 -Command unlock-waypoints -Arguments @{ all=$true }
+```
+
+`level`与`all`不能混用；省略两项、`all:false`、非布尔all、未知字段或没有传送点的区域明确拒绝。需要立即持久化时另发`save`；正常保存退出也会沿原当前难度WS位保存，其他难度不变。
+
+单独重置属性或技能：
+
+```powershell
+.\scripts\Send-D2XCommand.ps1 -Command reset-attributes
+.\scripts\Send-D2XCommand.ps1 -Command reset-skills
+```
 
 item-spawn的affixes为非空数组，每项包含kind（prefix或suffix）、row（对应MagicPrefix／MagicSuffix去除Expansion分隔行后的零基原生记录号，不是合并后的原包ID），可选rolls数组。指定后替换随机词缀集合；magic每侧最多1条，rare每侧最多3条，总计最多6条。宿主校验当前MPQ可生成记录、物品类型／职业／等级／rare资格、互斥组及rolls长度／数值范围；不满足时整体拒绝、不落地。rolls按该行非空mod1至mod3顺序，省略时随机；非直接掷值程序只能提供原minimum（空值为0），技能等固定参数仍由原表决定。AutoMagic与StaffMods继续按生成器产生。seed固定本项目当前入口随机，尚不承诺与原版实例全局种子一一对应；这些条件准备不能作为原版自然掉落的依据。
 

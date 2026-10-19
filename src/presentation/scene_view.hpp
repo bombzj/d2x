@@ -1,27 +1,32 @@
 #pragma once
 #include "input.hpp"
+#include "presentation/audio/audio_settings.hpp"
 #include "client/character_client.hpp"
 #include "client/quest_client.hpp"
 #include "client/npc_client.hpp"
 #include "client/map_client.hpp"
 #include "presentation/inventory/inventory_panel.hpp"
-#include "presentation/world/lighting_view.hpp"
-#include "presentation/world/palette_blend_view.hpp"
 #include "scene_assets.hpp"
 #include "presentation/hud/chat_view.hpp"
 #include "presentation/hud/trade_invite_view.hpp"
 #include "presentation/hud/party_view.hpp"
 #include "presentation/world/scene_geometry.hpp"
 #include "presentation/world/tile_visibility.hpp"
-#include "presentation/world/world_draw_view.hpp"
+#include <array>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <algorithm>
 #include <span>
 #include <tuple>
 
 namespace d2x {
 class IActorClient;
+struct Grid;
+class LightingView;
+class PaletteBlendView;
+struct WorldDrawView;
+struct WorldDrawItem;
 enum class AutomapFade { No, Everything, Auto, Center };
 struct ViewState {
     InventoryUi inventory;
@@ -40,10 +45,15 @@ struct ViewState {
     bool chatInputOpen = false, messageLogOpen = false;
     bool playerTradeBlocking = false;
     bool playerTradeEditable = false;
-    int gameMenuPage = 0;
+    EscapeMenuPage gameMenuPage = EscapeMenuPage::Main;
     int gameMenuSelected = 2, gameMenuPressed = -1;
     float gameMenuTime = 0;
     Vec gameMenuMouse;
+    int gameMenuControlScroll = 0;
+    int gameMenuScrollPressed = -1;
+    bool gameMenuScrollDragging = false;
+    int gameMenuSliderDragging = -1;
+    AudioSettings audio;
     bool minimapRight = false;
     bool automapLarge = false;
     bool automapNames = true;
@@ -117,8 +127,8 @@ class SceneView {
     mutable HirelingListView hirelingListView_;
     SceneAssets assets_;
     int itemGroundPalette_ = -1;
-    LightingView lighting_;
-    PaletteBlendView paletteBlend_;
+    std::unique_ptr<LightingView> lighting_;
+    std::unique_ptr<PaletteBlendView> paletteBlend_;
     std::array<std::unique_ptr<PaletteBlendView>, 5> actPaletteBlends_;
     Shader highlightShader_{};
     int highlightTransform_ = -1;
@@ -237,15 +247,19 @@ class SceneView {
 
   public:
     Rectangle worldViewport() const;
-        Rectangle gameMenuItemBounds(int index) const;
-        int gameMenuAt(Vec mouse) const;
-        int gameMenuItemCount() const;
+    Rectangle gameMenuItemBounds(int index) const;
+    int gameMenuAt(Vec mouse) const;
+    int gameMenuItemCount() const;
+    bool gameMenuItemEnabled(int index) const;
+    bool adjustGameMenuSound(const FrameInput &);
+    void applyAudioSettings(const AudioSettings &);
+    void scrollGameMenu(const FrameInput &);
     Rectangle hirelingSlotBounds(size_t index) const;
     bool hirelingPortraitVisible() const;
     std::optional<int> miniPanelAt(Vec mouse) const;
     const ExitView *exitAt(Vec mouse) const;
     SceneView(Archives &, const ClassicData &, const IActorClient &, IInventoryClient &,
-              ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &);
+                ICharacterClient &, IQuestClient &, INpcClient &, IMapClient &, const AudioSettings & = {});
     void updateWorldAudio(float clock, std::span<const SoundActorView> actors, std::span<const PresentationSoundEvent> events) {
         assets_.sceneAudio.update(clock,actors,events);
     }
@@ -347,7 +361,8 @@ class SceneView {
     void advanceUi(float dt);
     void pauseWorldPresentation(bool paused) { assets_.audio.pauseEmitters(paused); }
     void notice(std::string text, bool error = false);
-    void openNpcDialogue(EntityId object, std::string speaker, std::string text);
+    void openNpcDialogue(EntityId object, std::string speaker, std::string text, std::optional<uint32_t> stringId = {});
+    bool npcSpeechFinished() const;
     void cancelNpcDialogue();
     void openNpcMenu(EntityId object, std::string speaker, bool firstIntroduction);
     bool startNpcTalk();

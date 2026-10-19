@@ -35,5 +35,7 @@ enum class QuestId : uint8_t {
 };
 inline constexpr size_t questIndex(QuestId quest) { return size_t(quest); }
 inline constexpr size_t questActCount = 5;
+// Native UPDATEQUESTLOG slots, independent of the implemented quest catalog.
+inline constexpr unsigned nativeQuestStatusCount = 41;
 
 } // namespace d2x

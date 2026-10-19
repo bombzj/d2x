@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "hud_layout.hpp"
 #include "classic_hud.hpp"
 #include "core/text.hpp"
@@ -13,7 +14,7 @@ void SceneView::drawHostilityWarning() const {
     if (!incomingHostility_ || worldViewport().x + worldViewport().width < W) return;
     const auto *image = assets_.hostileIcon.frame(0, 0);
     const int palette = std::clamp(mapView().palette, 0, 4);
-    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     if (!image || !blend) return;
     // D2Client 1.13c RVA 285C0: incoming flag 8, W-58, bottom baseline
     // 45 (115 with automap), original CelDraw mode 1 / TRANS50.
@@ -73,7 +74,7 @@ void SceneView::drawDurabilityWarning() const {
     }
     if (!visible) return;
     const int palette = std::clamp(mapView().palette, 0, 4);
-    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
     // Native bottom origin: W-60, baseline 110; automap adds 30 pixels,
     // and an incoming hostile relation adds another 43 while automap is open.

@@ -1,4 +1,7 @@
 #include "native_character_wire.hpp"
+#include "gameplay/character/record.hpp"
+#include "server/runtime/events.hpp"
+#include "server/systems/attributes/calculation.hpp"
 #include "content/classic_data.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "gameplay/stats/stat_list.hpp"

@@ -90,6 +90,14 @@ server::DomainResult<> GameHost::relocate(PlayerBinding binding,RegionId area,st
     auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
     auto result=slot->game->relocate(binding.player,area,position);if(result) publish(size_t(binding.game.slot));return result;
 }
+server::DomainResult<> GameHost::unlockWaypoints(PlayerBinding binding,std::optional<RegionId> destination) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->unlockWaypoints(binding.player,destination);if(result) publish(size_t(binding.game.slot));return result;
+}
+server::DomainResult<> GameHost::resetPoints(PlayerBinding binding,PointRefund refund) {
+    auto *slot=find(binding.game);if(!slot) return {server::DomainStatus::InvalidActor,{}};
+    auto result=slot->game->resetPoints(binding.player,refund);if(result) publish(size_t(binding.game.slot));return result;
+}
 std::optional<uint16_t> GameHost::npcQuestAlert(PlayerBinding binding,const server::NpcRule &npc,RegionId area) const {
     const auto *slot=find(binding.game);return slot?slot->game->npcQuestAlert(binding.player,npc,area):std::nullopt;
 }

@@ -1,4 +1,7 @@
 #include "lighting_view.hpp"
+#include "content/world/world_catalog.hpp"
+#include "palette_blend_view.hpp"
+#include "world/navigation.hpp"
 #include <algorithm>
 #include <bit>
 #include <cmath>

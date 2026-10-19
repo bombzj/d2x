@@ -1,138 +1,88 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
-int SceneView::gameMenuItemCount() const {
-    return view_.gameMenuPage == 2 ? 6 : view_.gameMenuPage == 1 ? 5 : 3;
+int SceneView::gameMenuItemCount() const { return assets_.escapeMenu.count(view_.gameMenuPage); }
+Rectangle SceneView::gameMenuItemBounds(int index) const { return assets_.escapeMenu.bounds(view_.gameMenuPage, index); }
+bool SceneView::gameMenuItemEnabled(int index) const { return assets_.escapeMenu.enabled(view_.gameMenuPage, index); }
+int SceneView::gameMenuAt(Vec mouse) const { return assets_.escapeMenu.hit(view_.gameMenuPage, mouse); }
+void SceneView::applyAudioSettings(const AudioSettings &settings) {
+    const bool changed = view_.audio != settings;
+    view_.audio = settings;
+    assets_.audio.setVolumes(settings.sound, settings.music);
+    assets_.streams.settings(settings);
+    // Native option value changes use Sounds 1 (cursor_pass), after applying
+    // the new master volume. Loading preferences is silent.
+    if (changed && view_.gameMenuOpen && view_.gameMenuPage == EscapeMenuPage::Sound)
+        assets_.sceneAudio.play("cursor_pass", 0);
 }
-Rectangle SceneView::gameMenuItemBounds(int index) const {
-    if (view_.gameMenuPage == 2)
-        return {130.f, 130.f + index * 65.f, W - 260.f, 46.f};
-    if (view_.gameMenuPage == 1)
-        return {180.f, 160.f + index * 70.f, W - 360.f, 48.f};
-    float width = 0, height = 0, totalHeight = 0, top = 0;
-    for (size_t row = 0; row < assets_.gameMenuLabels.size(); ++row) {
-        float rowWidth = 0, rowHeight = 0;
-        for (const auto &part : assets_.gameMenuLabels[row].frames) {
-            rowWidth += part.texture.width;
-            rowHeight = std::max(rowHeight, float(part.texture.height));
-        }
-        if (int(row) < index) top += rowHeight + 10;
-        if (int(row) == index) { width = rowWidth; height = rowHeight; }
-        totalHeight += rowHeight + (row + 1 < assets_.gameMenuLabels.size() ? 10 : 0);
+bool SceneView::adjustGameMenuSound(const FrameInput &input) {
+    if (view_.gameMenuPage != EscapeMenuPage::Sound) {
+        view_.gameMenuSliderDragging = -1;
+        return false;
     }
-    return {(W - width * hudScale()) * .5f,
-            (H - totalHeight * hudScale()) * .5f + top * hudScale(),
-            width * hudScale(), height * hudScale()};
+    bool consumed = false;
+    auto settings = view_.audio;
+    if (input.insideViewport && input.leftPressed) {
+        for (int row = 0; row < 2; ++row)
+            if (assets_.escapeMenu.sliderHit(row, input.mouse)) view_.gameMenuSliderDragging = row;
+    }
+    if (view_.gameMenuSliderDragging >= 0) {
+        view_.gameMenuSelected = view_.gameMenuSliderDragging;
+        consumed = true;
+        if (input.leftPressed || input.leftHeld || input.leftReleased) {
+            const int value = assets_.escapeMenu.sliderValue(input.mouse.x);
+            (view_.gameMenuSliderDragging == 0 ? settings.sound : settings.music) = value;
+        }
+        if (!input.leftHeld || input.leftReleased) view_.gameMenuSliderDragging = -1;
+    } else if (view_.gameMenuSelected < 2 && (input.menuLeft || input.menuRight)) {
+        auto &value = view_.gameMenuSelected == 0 ? settings.sound : settings.music;
+        value = std::clamp(value + (input.menuRight ? 5 : -5), 0, 100);
+        consumed = true;
+    }
+    if (settings != view_.audio) applyAudioSettings(settings);
+    return consumed;
 }
-int SceneView::gameMenuAt(Vec mouse) const {
-    for (int index = 0; index < gameMenuItemCount(); ++index)
-        if (CheckCollisionPointRec(rv(mouse), gameMenuItemBounds(index))) return index;
-    return -1;
+void SceneView::scrollGameMenu(const FrameInput &input) {
+    view_.gameMenuScrollPressed = -1;
+    if (view_.gameMenuPage != EscapeMenuPage::Controls) return;
+    const int limit = assets_.escapeMenu.controlScrollLimit();
+    const auto track = assets_.escapeMenu.controlTrack();
+    int delta = -int(input.wheel) + input.menuDelta + input.pageDelta * 14;
+    if (input.entryHome) view_.gameMenuControlScroll = 0;
+    if (input.entryEnd) view_.gameMenuControlScroll = limit;
+    const Rectangle up{track.x, track.y - 13, track.width, 13};
+    const Rectangle down{track.x, track.y + track.height, track.width, 13};
+    if (input.insideViewport && input.leftHeld) {
+        if (CheckCollisionPointRec(rv(input.mouse), up)) view_.gameMenuScrollPressed = 0;
+        else if (CheckCollisionPointRec(rv(input.mouse), down)) view_.gameMenuScrollPressed = 1;
+    }
+    if (input.insideViewport && input.leftPressed) {
+        if (CheckCollisionPointRec(rv(input.mouse), up)) --delta;
+        else if (CheckCollisionPointRec(rv(input.mouse), down)) ++delta;
+        else if (CheckCollisionPointRec(rv(input.mouse), track)) view_.gameMenuScrollDragging = true;
+    }
+    if (view_.gameMenuScrollDragging && input.leftHeld) {
+        const float height = float(assets_.escapeMenu.controlThumbHeight());
+        const auto fraction = std::clamp((input.mouse.y - track.y - height / 2) / (track.height - height), 0.f, 1.f);
+        view_.gameMenuControlScroll = int(std::round(fraction * limit));
+    } else view_.gameMenuControlScroll = std::clamp(view_.gameMenuControlScroll + delta, 0, limit);
+    if (!input.leftHeld || input.leftReleased) view_.gameMenuScrollDragging = false;
 }
 void SceneView::drawGameMenu() const {
     if (!view_.gameMenuOpen) return;
-    DrawRectangle(0, 0, W, H, {0, 0, 0, 100});
-    if (view_.gameMenuPage) {
-        auto size = [](const GpuAnimation &art) {
-            Vec result;
-            for (const auto &part : art.frames) {
-                result.x += part.texture.width;
-                result.y = std::max(result.y, float(part.texture.height));
-            }
-            return result;
-        };
-        auto label = [&](const GpuAnimation &art, Vec position, float scale, Color tint = WHITE) {
-            for (const auto &part : art.frames) {
-                DrawTexturePro(part.texture, {0, 0, float(part.texture.width), float(part.texture.height)},
-                    {position.x, position.y, part.texture.width * scale, part.texture.height * scale},
-                    {0, 0}, 0, tint);
-                position.x += part.texture.width * scale;
-            }
-        };
-        if (view_.gameMenuPage == 2) {
-            const auto dimensions = size(assets_.automapOptionsTitle);
-            const float scale = std::min(hudScale(), (W - 160.f) / dimensions.x);
-            label(assets_.automapOptionsTitle, {(W - dimensions.x * scale) * .5f, 42}, scale);
-        }
-        for (int index = 0; index < gameMenuItemCount(); ++index) {
-            const auto bounds = gameMenuItemBounds(index);
-            const auto &art = view_.gameMenuPage == 1 ? assets_.optionsMenuLabels[size_t(index)]
-                : index == 5 ? assets_.optionsMenuLabels[4] : assets_.automapOptionLabels[size_t(index)];
-            const auto dimensions = size(art);
-            const float available = view_.gameMenuPage == 2 && index < 5 ? bounds.width * .68f : bounds.width;
-            const float scale = std::min(hudScale(), std::min(available / dimensions.x, bounds.height / dimensions.y));
-            const bool centered = view_.gameMenuPage == 1 || index == 5;
-            label(art, {centered ? (W - dimensions.x * scale) * .5f : bounds.x,
-                    bounds.y + (bounds.height - dimensions.y * scale) * .5f}, scale);
-            if (view_.gameMenuPage == 2 && index < 5) {
-                const int value = index == 0 ? (view_.automapLarge ? 0 : 1)
-                    : index == 1 ? (view_.automapFade == AutomapFade::No ? 7
-                        : view_.automapFade == AutomapFade::Everything ? 8
-                        : view_.automapFade == AutomapFade::Center ? 9 : 6)
-                    : index == 2 ? (view_.automapCenterWhenCleared ? 5 : 4)
-                    : index == 3 ? (view_.automapParty ? 5 : 4) : (view_.automapNames ? 5 : 4);
-                const auto &valueArt = assets_.automapOptionValues[size_t(value)];
-                const auto valueSize = size(valueArt);
-                const float valueScale = std::min(hudScale(), std::min(bounds.width * .28f / valueSize.x,
-                                                                    bounds.height / valueSize.y));
-                label(valueArt, {bounds.x + bounds.width - valueSize.x * valueScale,
-                    bounds.y + (bounds.height - valueSize.y * valueScale) * .5f}, valueScale);
-            }
-        }
-        const auto selected = gameMenuItemBounds(view_.gameMenuSelected);
-        const auto &marker = assets_.gameMenuMarker;
-        const int frame = int(view_.gameMenuTime * marker.count) % marker.count;
-        for (bool right : {false, true}) {
-            const auto *image = marker.frame(0, right ? frame : marker.count - 1 - frame);
-            const float side = 46.f;
-            DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-                {right ? W - 82.f : 36.f, selected.y + (selected.height - side) * .5f, side, side},
-                {0, 0}, 0, WHITE);
-        }
-        if (view_.noticeError && view_.noticeTime > 0)
-            painter_.centered(view_.lootNotice, H - HUD - 30, 14, {245, 166, 135, 255});
-        return;
-    }
-    float widest = 0;
-    for (int index = 0; index < int(assets_.gameMenuLabels.size()); ++index) {
-        auto bounds = gameMenuItemBounds(index);
-        widest = std::max(widest, bounds.width);
-        for (const auto &part : assets_.gameMenuLabels[size_t(index)].frames) {
-            const auto &texture = part.texture;
-            DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
-                           {bounds.x, bounds.y, texture.width * hudScale(), texture.height * hudScale()},
-                           {0, 0}, 0, WHITE);
-            bounds.x += texture.width * hudScale();
-        }
-    }
-    const auto selected = gameMenuItemBounds(view_.gameMenuSelected);
-    const auto &marker = assets_.gameMenuMarker;
-    const int frame = int(view_.gameMenuTime * marker.count) % marker.count;
-    for (bool right : {false, true}) {
-        const auto *image = marker.frame(0, right ? frame : marker.count - 1 - frame);
-        const float side = 54 * hudScale();
-        const float left = right ? (W + widest) * .5f + 26 * hudScale()
-                                 : (W - widest) * .5f - 80 * hudScale();
-        DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
-                       {left, selected.y + (selected.height - side) * .5f, side, side},
-                       {0, 0}, 0, WHITE);
-    }
-    if (view_.noticeError && view_.noticeTime > 0) {
-        std::string line;
-        int top = H - HUD - 90;
-        for (char letter : view_.lootNotice) {
-            if (letter == '\n' || painter_.measure(line + letter, 14) > W - 80) {
-                painter_.centered(line, top, 14, {245, 166, 135, 255});
-                line.clear();
-                top += 17;
-                if (top > H - 20) break;
-            }
-            if (letter != '\n') line += letter;
-        }
-        if (!line.empty()) painter_.centered(line, top, 14, {245, 166, 135, 255});
-    }
+    const int palette = std::clamp(mapView().palette, 0, 4);
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
+    if (!blend) return;
+    blend->drawRectangle({0, 0, float(W), float(H)}, BLACK);
+    const std::array values{view_.automapLarge ? 0 : 1,
+        view_.automapFade == AutomapFade::No ? 0 : view_.automapFade == AutomapFade::Center ? 1 :
+        view_.automapFade == AutomapFade::Everything ? 2 : 3,
+        int(view_.automapCenterWhenCleared), int(view_.automapParty), int(view_.automapNames)};
+    assets_.escapeMenu.draw(view_.gameMenuPage, view_.gameMenuSelected, view_.gameMenuTime,
+                            values, view_.audio, view_.gameMenuControlScroll, view_.gameMenuScrollPressed, *blend);
 }
 void SceneView::drawHelp() const {
 
@@ -192,7 +142,7 @@ void SceneView::drawUi(Vec mouse) const {
     drawQuestNotice();
     if (view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput()) {
         const int palette = std::clamp(mapView().palette, 0, 4);
-        const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+        const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
         if (blend) party_.drawPortraits(15, *blend);
     }
     drawHirelingPortrait(mouse);

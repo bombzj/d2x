@@ -18,8 +18,9 @@ struct SoundBank::EmitterAudio {
         std::string soundId;
         unsigned channels = 0, frames = 0, loopBegin = 0, loopEnd = 0;
         unsigned fadeIn = 0, fadeOut = 0;
-        float volume = 1;
+        int volume = 255;
         bool deferInstance = false;
+        bool musicVolume = false;
     };
     struct Group {
         std::vector<Sample> samples;
@@ -38,6 +39,8 @@ struct SoundBank::EmitterAudio {
     AudioStream stream{};
     unsigned sampleRate = 0;
     bool paused = false;
+    int masterVolume = 100;
+    int musicVolume = 50;
     uint64_t random = 0x6963656f7262;
     size_t slot = 0;
     // raylib's callback has no user-data argument. Slots identify SoundBank
@@ -86,7 +89,7 @@ struct SoundBank::EmitterAudio {
         for (auto &[id, voice] : voices) {
             const auto &sample = *voice.sample;
             for (unsigned i = 0; i < count && !voice.finished; ++i) {
-                float gain = sample.volume * .45f; // Existing scene SFX level, before mixing/clamping.
+                float gain = originalSoundGain(sample.volume, masterVolume, sample.musicVolume ? musicVolume : 100);
                 if (sample.fadeIn && voice.played < sample.fadeIn)
                     gain *= float(voice.played) / sample.fadeIn;
                 if (voice.releasing) {
@@ -173,11 +176,12 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
         EmitterAudio::Sample sample;
         sample.soundId = soundId;
         sample.deferInstance = defer != 0;
+        sample.musicVolume = table.number(variant, "Music Vol").value_or(0) != 0;
         sample.channels = wave.channels;
         sample.frames = wave.frameCount;
         sample.loopBegin = loop->first;
         sample.loopEnd = loop->second;
-        sample.volume = table.number(variant, "Volume").value_or(255) / 255.f;
+        sample.volume = table.number(variant, "Volume").value_or(255);
         // Legacy reference SoundInfo/AudioManager use game frames (25 Hz).
         // D2R's audio-tick documentation cannot establish legacy fade units.
         sample.fadeIn = unsigned(uint64_t(std::max(0, table.number(variant, "Fade In").value_or(0))) * rate / 25);
@@ -191,6 +195,8 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
     }
     if (!emitters_) {
         emitters_ = std::make_shared<EmitterAudio>();
+        emitters_->masterVolume = volume_;
+        emitters_->musicVolume = musicVolume_;
         emitters_->open(rate);
     }
     if (emitters_->groups.contains(key))
@@ -199,6 +205,21 @@ void SoundBank::registerTravelGroup(Archives &archives, std::string key, const D
 }
 bool SoundBank::hasEmitterSound(const std::string &key) const {
     return emitters_ && emitters_->groups.contains(key);
+}
+void SoundBank::setVolumes(int sound, int music) {
+    sound = std::clamp(sound, 0, 100);
+    music = std::clamp(music, 0, 100);
+    if (volume_ == sound && musicVolume_ == music) return;
+    volume_ = sound;
+    musicVolume_ = music;
+    for (const auto &[key, group] : originalGroups_)
+        for (const auto &variant : group.sounds)
+            SetSoundVolume(variant.sound, originalSoundGain(variant.activeVolume, volume_, variant.musicVolume ? musicVolume_ : 100));
+    if (emitters_) {
+        std::lock_guard lock(emitters_->mutex);
+        emitters_->masterVolume = volume_;
+        emitters_->musicVolume = musicVolume_;
+    }
 }
 void SoundBank::syncEmitters(std::span<const SoundEmitter> live, uint64_t frame) {
     if (!emitters_) return;

@@ -420,6 +420,7 @@ add_library(d2x_presentation
   src/presentation/hud/skill_assets.cpp src/presentation/hud/hud_controls.cpp src/presentation/hud/skill_controller.cpp
   src/presentation/hud/classic_hud.cpp
   src/presentation/hud/chat_view.cpp
+  src/presentation/hud/escape_menu.cpp
   src/presentation/hud/trade_invite_view.cpp
   src/presentation/hud/party_view.cpp
   src/presentation/hud/skill_tree_view.cpp src/presentation/hud/quest_panel.cpp
@@ -441,6 +442,7 @@ target_sources(d2x_presentation PRIVATE src/presentation/world/lighting_view.cpp
 target_sources(d2x_presentation PRIVATE src/presentation/world/palette_blend_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/tile_visibility.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/audio/audio_emitters.cpp)
+target_sources(d2x_presentation PRIVATE src/presentation/audio/scene_streams.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/projectile_view.cpp)
 target_sources(d2x_presentation PRIVATE src/presentation/world/client_missile_assets.cpp
   src/presentation/world/client_missile_view.cpp)

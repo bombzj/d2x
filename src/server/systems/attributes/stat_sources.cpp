@@ -1,3 +1,4 @@
+#include "gameplay/character/persistent_character.hpp"
 #include "stat_sources.hpp"
 #include "gameplay/items/native_sources.hpp"
 #include "gameplay/stats/modifier_values.hpp"

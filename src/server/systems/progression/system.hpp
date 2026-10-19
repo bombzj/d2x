@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+namespace d2x { enum class PointRefund; }
 namespace d2x::server::progression {
 // Experience, level, allocated stats/skills and quest rewards; no client-side grants.
 using Intent = std::variant<AllocateAttribute, AllocateSkill>;
@@ -26,6 +27,7 @@ class System {
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
     DomainResult<> execute(const ActorContext &, const Request &);
+    DomainResult<> resetPoints(const ActorContext &,PointRefund); // Local host administration; no quest reward or item is consumed.
     DomainResult<> award(const Award &);
     StepStatus step(TickContext, FrameFacts &);
 };

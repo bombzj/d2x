@@ -1,9 +1,6 @@
 #pragma once
-#include "content/world/world_catalog.hpp"
 #include "core/math.hpp"
 #include "raylib.h"
-#include "palette_blend_view.hpp"
-#include "world/navigation.hpp"
 #include <array>
 #include <cstdint>
 #include <memory>
@@ -11,6 +8,9 @@
 #include <vector>
 
 namespace d2x {
+struct Grid;
+struct LevelRecord;
+class PaletteBlendView;
 struct SceneLight {
     Vec position;
     int radius = 0;

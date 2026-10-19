@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 
@@ -65,7 +66,7 @@ void SceneView::drawGroundItem(const InventoryItemView &item, bool highlighted,
     // D2Client 1.13c RVA 6CF9B: ground items use CelDraw 5, or 7 when
     // selected. Ethereal inventory TRANS50 is not applied to ground flippy.
     const int act = mapView().palette;
-    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    const auto *blend = act == 0 ? paletteBlend_.get() : actPaletteBlends_.at(size_t(act)).get();
     if (highlighted && blend)
         blend->drawHighlight(image, {p.x + image->x, p.y + image->y,
             float(image->texture.width), float(image->texture.height)});

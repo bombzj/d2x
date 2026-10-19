@@ -1,6 +1,5 @@
 #pragma once
 #include "gameplay/quest/id.hpp"
-#include "gameplay/quest/catalog.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -15,7 +14,4 @@ struct QuestRecord {
 using QuestBook = std::array<std::array<QuestRecord, size_t(QuestId::Count)>, 3>;
 using DifficultyQuests = std::array<QuestRecord, size_t(QuestId::Count)>;
 
-inline constexpr uint32_t questCompletionStage(QuestId quest) {
-    return questDefinition(quest).completedStage;
-}
 } // namespace d2x

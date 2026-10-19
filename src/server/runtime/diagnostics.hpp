@@ -1,4 +1,5 @@
 #pragma once
+#include "server/game_messages.hpp"
 #include "server/runtime/simulation.hpp"
 #include "server/runtime/events.hpp"
 #include "server/area_store.hpp"

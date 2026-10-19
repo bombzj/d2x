@@ -1,6 +1,6 @@
 # 代码结构与依赖
 
-更新：2026-10-16。源码入口以CMake为准；客户端和独立服务端分别构建／打包，实现范围见[基线](../../BASELINE.md)，原版依据和缺口见对应专题，功能顺序见[总计划](MULTIPLAYER.md)。各页按当前实现维护，不以自研冒烟划分完成等级。
+更新：2026-10-20。源码入口以CMake为准；客户端和独立服务端分别构建／打包，实现范围见[基线](../../BASELINE.md)，原版依据和缺口见对应专题，功能顺序见[总计划](MULTIPLAYER.md)。各页按当前实现维护，不以自研冒烟划分完成等级。
 
 ## Agent速览
 
@@ -40,7 +40,7 @@
 | client/remote_* | 两种服务端共用的世界／库存副本、地图、请求、预测与I*Client投影 |
 | content/character/combat_display、content/skills/description_*、skill_description | 原包已观察装备／状态及MPQ准备的只读数值、描述程序；复用gameplay纯计算，不持有权威运行态，未知输入不默认成功 |
 | presentation | 唯一RealmFrontend、SceneController、SceneView、RemoteScene及原资源／面板／动画／声音 |
-| server/game_messages | 仅宿主与内核使用的内部身份、命令和投影；不是网络协议或客户端契约 |
+| server/player_identity、game_commands、game_messages | 分别持内部身份、命令和快照；基础运行契约不包含完整快照，不是网络协议或客户端契约 |
 | server/game_instance、area_store、player_store、movement | 组合根、区域／玩家唯一所有权、入场值组装与移动执行；无MPQ／GPU／文件／socket |
 | server/runtime | 类型化命令、穷尽分派、系统组合／窄依赖、固定步顺序、只读规则和有界事件出口 |
 | server/systems/* | 独立领域State／Ports／操作；已执行范围与保留Scaffold分开，详见[内核子系统](../modules/SERVER_SYSTEMS.md) |

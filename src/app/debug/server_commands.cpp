@@ -56,6 +56,7 @@ std::string_view argumentName(AdminArgumentKind kind) {
     case AdminArgumentKind::Unit: return "unit";
     case AdminArgumentKind::Travel: return "level";
     case AdminArgumentKind::Missile: return "source/amount/missile";
+    case AdminArgumentKind::Waypoints: return "level or all=true";
     }
     throw std::logic_error("Unknown administration argument kind");
 }
@@ -63,6 +64,11 @@ Json commands() {
     Json result = Json::array();
     for (const auto &entry : adminCommands()) {
         result.push_back({{"command", entry.command}, {"implemented", entry.implemented}, {"argumentKind", argumentName(entry.arguments)}});
+        if(entry.operation==AdminOperation::UnlockWaypoints)
+            result.back()["waypoints"]={{"level","MPQ area ID 1..136 with a waypoint"},{"all","boolean true instead of level; unlocks the current difficulty only"}};
+        if(entry.operation==AdminOperation::ResetAttributes || entry.operation==AdminOperation::ResetSkills)
+            result.back()["reset"]={{"scope",entry.operation==AdminOperation::ResetAttributes?"allocated base attributes only":"base skill ranks, selections and hotkeys only"},
+                {"cost","no quest respec reward or token consumed; active skills must finish first"}};
         if(entry.operation==AdminOperation::SpawnItem) {
             result.back()["itemGeneration"]={{"seed","optional uint32"},{"ethereal","optional boolean true; forces original ethereal item behavior when allowed by the base and quality"},{"affixes",{{"kind","prefix or suffix"},{"row","zero-based original MagicPrefix/MagicSuffix TXT row"},{"rolls","optional values in nonempty mod1..mod3 order; original ranges required"}}},{"limits","magic: one per side; rare: three per side; no repeated group"}};
             auto &generation=result.back()["itemGeneration"];
@@ -187,7 +193,12 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
         if (request.contains("path")) throw std::invalid_argument("Host save/load uses the leased character file; path overrides are unsupported");
         AdminArguments args;
         switch (entry->arguments) {
-        case AdminArgumentKind::None: break;
+        case AdminArgumentKind::None:
+            if(entry->operation==AdminOperation::ResetAttributes || entry->operation==AdminOperation::ResetSkills)
+                for(auto field=request.begin();field!=request.end();++field)
+                    if(field.key()!="command" && field.key()!="hostSlot" && field.key()!="hostGeneration" && field.key()!="hostPlayer")
+                        throw std::invalid_argument("Point reset accepts only the optional host participant binding");
+            break;
         case AdminArgumentKind::Amount: args = AdminAmount{signedValue(request.at("amount"))}; break;
         case AdminArgumentKind::Step:
             args = AdminStep{uint32_t(request.contains("frames") ? unsignedValue(request.at("frames"), 250) : 1)}; break;
@@ -300,6 +311,25 @@ std::optional<std::string> serverDebugCommand(const Json &request, EmbeddedRealm
             if(request.contains("x")!=request.contains("y")) throw std::invalid_argument("Travel coordinates require both x and y");
             if(request.contains("x")) position=Vec{request.at("x").get<float>(),request.at("y").get<float>()};
             args=AdminTravel{int(unsignedValue(request.at("level"),INT32_MAX)),position};break;
+        }
+        case AdminArgumentKind::Waypoints: {
+            for(auto field=request.begin();field!=request.end();++field)
+                if(field.key()!="command" && field.key()!="level" && field.key()!="all" &&
+                    field.key()!="hostSlot" && field.key()!="hostGeneration" && field.key()!="hostPlayer")
+                    throw std::invalid_argument("Unknown unlock-waypoints field: "+field.key());
+            if(request.contains("level")==request.contains("all"))
+                throw std::invalid_argument("Supply exactly one of level or all=true");
+            AdminWaypoints waypoints;
+            if(request.contains("level")) {
+                const auto level=unsignedValue(request.at("level"),136);
+                if(!level) throw std::invalid_argument("Waypoint level must be 1..136");
+                waypoints.level=int(level);
+            } else {
+                if(!request.at("all").is_boolean() || !request.at("all").get<bool>())
+                    throw std::invalid_argument("all must be boolean true");
+                waypoints.all=true;
+            }
+            args=waypoints;break;
         }
         }
         const auto result = execute({entry->operation, target, std::move(args)});

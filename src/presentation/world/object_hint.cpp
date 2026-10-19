@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include <algorithm>
 
@@ -15,7 +16,7 @@ void SceneView::drawPlayerLabel(const std::string &label, Vec p, bool hostile) c
     const UiPainter name(hostile ? assets_.characterRedFont : assets_.font);
     const int width = name.measure(label, 16);
     const int palette = std::clamp(mapView().palette, 0, 4);
-    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
     // Player labels have a red translucent backing independently of relation;
     // only the lettering changes with the confirmed directed hostile flag.

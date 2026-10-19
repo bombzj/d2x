@@ -1,3 +1,4 @@
+#include "gameplay/quest/catalog.hpp"
 #include "crafting_content.hpp"
 #include "character_content.hpp"
 #include "item_content.hpp"

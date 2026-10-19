@@ -458,7 +458,14 @@ struct RemoteUiClients::Impl {
         bool waypointSource(EntityId source) const override {
             return o.session.read().world.waypointSource == npcGuid(source);
         }
-        void closeTravel() override { if (onlineInteractionMatches(o.context, o.session.read())) o.session.use_waypoint(0, 0, o.context); }
+        void closeTravel() override {
+            if (onlineInteractionMatches(o.context, o.session.read()) && o.session.use_waypoint(0, 0, o.context)) {
+                // Only our successful close advances this frame's interaction.
+                // The following click/shortcut must use the resulting context.
+                o.context = onlineIntentContext(o.session.read());
+                o.mapView.travelRequested = false;
+            }
+        }
         void submit(MapIntent intent) override {
             if (!onlineInteractionMatches(o.context, o.session.read())) { o.notice = "Travel interaction changed; select it again."; return; }
             std::visit([&](const auto &v) {

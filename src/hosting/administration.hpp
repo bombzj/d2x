@@ -27,7 +27,8 @@ struct AdminSpawn { std::string code; int level = 1; std::optional<Vec> position
 struct AdminMissile {uint64_t source{};uint32_t amount{};int missile{};};
 struct AdminUnit { uint64_t id{}; int64_t amount{}; };
 struct AdminTravel { int level{}; std::optional<Vec> position; };
-using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel, AdminMissile>;
+struct AdminWaypoints { std::optional<int> level; bool all{}; };
+using AdminArguments = std::variant<std::monostate, AdminAmount, AdminStep, AdminSpawn, AdminUnit, AdminTravel, AdminMissile, AdminWaypoints>;
 struct AdminRequest {
     AdminOperation operation;
     PlayerBinding target;
@@ -60,7 +61,7 @@ struct AdminResult {
     std::optional<std::vector<AdminPropertyCandidate>> propertyCandidates = {};
     bool applied() const { return status == AdminStatus::Applied; }
 };
-enum class AdminArgumentKind { None, Amount, Step, Spawn, Unit, Travel, Missile };
+enum class AdminArgumentKind { None, Amount, Step, Spawn, Unit, Travel, Missile, Waypoints };
 struct AdminDescriptor {
     AdminOperation operation;
     std::string_view command;

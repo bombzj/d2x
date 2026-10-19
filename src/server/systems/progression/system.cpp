@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "gameplay/character/respec.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/reactions/item_triggers.hpp"
@@ -60,6 +61,15 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     }, request.intent);
     if (status != DomainStatus::Applied) return {status, {}};
     return commit(ports_.transactions, *player, actor, std::move(record), refresh);
+}
+DomainResult<> System::resetPoints(const ActorContext &actor,PointRefund refund) {
+    const auto *player=ports_.players.find(actor.player);
+    if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || player->persistent.player.hp<=0)
+        return {DomainStatus::InvalidActor,{}};
+    if(!player->rules.character) return {DomainStatus::Unavailable,{}};
+    auto record=player->persistent.player;
+    if(!refundCharacterPoints(record,refund)) return {DomainStatus::Capacity,{}};
+    return commit(ports_.transactions,*player,actor,std::move(record),transactions::ResourceRefresh::Clamp);
 }
 DomainResult<CharacterRecord> addExperience(CharacterRecord record, const CharacterDefinition &definition, const CharacterRules &rules, uint64_t amount) {
     const auto &thresholds = rules.experience;

@@ -24,11 +24,11 @@ std::span<const AdminDescriptor> adminCommands() {
         {AdminOperation::DamageMonster, "monster-damage", AdminArgumentKind::Unit, true},
         {AdminOperation::KillMonster, "monster-kill", AdminArgumentKind::Unit, true},
         {AdminOperation::Travel, "travel", AdminArgumentKind::Travel, true},
-        {AdminOperation::UnlockWaypoints, "unlock-waypoints", AdminArgumentKind::None, false},
+        {AdminOperation::UnlockWaypoints, "unlock-waypoints", AdminArgumentKind::Waypoints, true},
         {AdminOperation::GrantShrine, "grant-shrine", AdminArgumentKind::Spawn, true},
         {AdminOperation::GrantHireling, "grant-hireling", AdminArgumentKind::Spawn, true},
-        {AdminOperation::ResetAttributes, "reset-attributes", AdminArgumentKind::None, false},
-        {AdminOperation::ResetSkills, "reset-skills", AdminArgumentKind::None, false},
+        {AdminOperation::ResetAttributes, "reset-attributes", AdminArgumentKind::None, true},
+        {AdminOperation::ResetSkills, "reset-skills", AdminArgumentKind::None, true},
     };
     return commands;
 }

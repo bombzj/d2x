@@ -66,6 +66,31 @@ DomainResult<> System::openWaypoint(const ActorContext &actor,EntityId id,bool m
     if(result) {state_.waypoints.swap(access);cancel(actor.player);if(menu) ++nextWaypointRevision_;}
     return result;
 }
+DomainResult<> System::unlockWaypoints(const ActorContext &actor,std::optional<RegionId> destination) {
+    const auto *p=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
+    if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 ||
+        !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};
+    if(!p->rules.character || p->rules.character->waypointIndices.empty()) return {DomainStatus::Unavailable,{}};
+    const auto &catalog=p->rules.character->waypointIndices;
+    if(destination && !catalog.contains(*destination)) return {DomainStatus::InvalidRequest,{}};
+    auto waypoints=p->persistent.waypoints;
+    for(const auto &[region,index]:catalog) {
+        if(destination && region!=*destination) continue;
+        if(!nativeWaypointIndex(index)) return {DomainStatus::InvalidRequest,{}};
+        waypoints.try_emplace(region,float(actor.tick)*TickContext::seconds);
+    }
+    if(waypoints==p->persistent.waypoints) return {DomainStatus::Applied,std::monostate{}};
+    transactions::CharacterEdit edit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};
+    edit.waypoints=std::move(waypoints);
+    const auto access=state_.waypoints.find(actor.player);
+    if(access!=state_.waypoints.end() && waypointAccess(actor,access->second.source)) {
+        WaypointFact fact{access->second.source,{}};
+        for(const auto &[region,time]:*edit.waypoints) { (void)time;fact.unlocked.push_back(region); }
+        edit.facts.emplace_back(std::move(fact));
+    }
+    auto plan=ports_.transactions.prepare(std::move(edit));if(!plan) return {plan.status,{}};
+    return ports_.transactions.commit(std::move(*plan.value));
+}
 DomainResult<> System::useSpecial(const ActorContext &actor,const Request &request,std::optional<int> remoteRange) {
     const auto *p=ports_.players.find(actor.player); const auto *area=ports_.areas.find(actor.area);
     if(!p || !p->entered || p->actor!=actor.actor || p->area!=actor.area || p->persistent.player.hp<=0 || !area || area->generation!=actor.areaGeneration) return {DomainStatus::InvalidActor,{}};

@@ -21,7 +21,6 @@
 #include "gameplay/skills/assassin_summon.hpp"
 #include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/necro_summon_spec.hpp"
-#include "gameplay/character/persistent_character.hpp"
 #include "gameplay/units/restoration.hpp"
 #include "gameplay/units/resources.hpp"
 #include "gameplay/effects/state.hpp"
@@ -36,11 +35,13 @@
 #include "world/native_path_step.hpp"
 #include <deque>
 #include <map>
+#include <memory>
 #include <functional>
 #include <set>
 #include <string>
 #include <string_view>
 #include <vector>
+namespace d2x { struct PersistentCharacter; struct MonsterSnapshot; }
 namespace d2x::server::effects {struct AuraUnitPublication;}
 
 namespace d2x::server {struct HydraRules;struct SkillRules;struct RoomUnitRegistration;struct NpcRule;struct RoomView;struct RoomRandomLoan;}

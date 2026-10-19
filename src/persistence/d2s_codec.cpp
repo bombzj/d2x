@@ -1,3 +1,4 @@
+#include "gameplay/quest/catalog.hpp"
 #include "save_codec.hpp"
 #include "d2s_header.hpp"
 #include "d2s_fixed_sections.hpp"

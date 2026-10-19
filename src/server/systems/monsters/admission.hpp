@@ -4,12 +4,13 @@
 #include "server/runtime/combat_rules.hpp"
 #include "gameplay/monsters/identity.hpp"
 #include "gameplay/monsters/kind.hpp"
-#include "gameplay/character/persistent_character.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include <optional>
+#include <memory>
 #include <set>
 #include <vector>
 
+namespace d2x { struct PersistentCharacter; }
 namespace d2x::server::monsters {
 struct Actor;
 struct ModifierPreparation {

@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include "core/text.hpp"
 #include <algorithm>
@@ -34,7 +35,7 @@ void SceneView::drawInventoryDrop(const InventoryDrop &drop, Rectangle surface) 
     auto bounds = GetCollisionRec(drop.bounds, surface);
     if (bounds.width <= 0 || bounds.height <= 0) return;
     const int act = mapView().palette;
-    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    const auto *blend = act == 0 ? paletteBlend_.get() : actPaletteBlends_.at(size_t(act)).get();
     if (!blend) return;
     // D2Client 1.13c RVA 0x8C6B0: green (0,128,0), forbidden red (128,0,0).
     // The actual palette index and resulting cell pixels come from the current Act PL2.
@@ -54,7 +55,7 @@ void SceneView::drawItemArt(const std::string &key, Rectangle bounds) const {
 void SceneView::drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const {
     if (!hovered && item.cellTone == InventoryCellTone::Unknown) return;
     const int act = mapView().palette;
-    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    const auto *blend = act == 0 ? paletteBlend_.get() : actPaletteBlends_.at(size_t(act)).get();
     if (!blend) return;
     const Color color = hovered ? Color{0, 128, 0, 255} :
         item.cellTone == InventoryCellTone::Usable ? Color{0, 0, 128, 255} : Color{128, 0, 0, 255};
@@ -67,7 +68,7 @@ void SceneView::drawItemIcon(const InventoryItemView &item, Rectangle bounds, bo
     const auto [cellWidth, cellHeight] = inventoryView_.itemCellSize;
     if (cellWidth < 1 || cellHeight < 1) return;
     const int act = mapView().palette;
-    const auto *blend = act == 0 ? &paletteBlend_ : actPaletteBlends_.at(size_t(act)).get();
+    const auto *blend = act == 0 ? paletteBlend_.get() : actPaletteBlends_.at(size_t(act)).get();
     // Equipment centers the occupied grid, rather than shrinking the DC6 to fit.
     const Vec origin{bounds.x + std::floor((bounds.width / scale - width * cellWidth) / 2) * scale,
                      bounds.y + std::floor((bounds.height / scale - height * cellHeight) / 2) * scale};

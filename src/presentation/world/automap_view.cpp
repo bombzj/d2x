@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include "core/text.hpp"
 #include <algorithm>
@@ -36,7 +37,7 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
         return Vec{float(int(pixel.x) / divisor), float(int(pixel.y) / divisor)} - origin + view_.automapOffset;
     };
     const int palette = std::clamp(mapView().palette, 0, 4);
-    const auto *blend = palette == 0 ? &paletteBlend_ : actPaletteBlends_[size_t(palette)].get();
+    const auto *blend = palette == 0 ? paletteBlend_.get() : actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
     // RVA 60346: Auto reads Unit.nAct, not its animation mode.
     const bool autoFade = mapView().act == 0 || mapView().act == 2;

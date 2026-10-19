@@ -37,6 +37,15 @@ DomainResult<> GameInstance::relocate(PlayerId id,RegionId area,std::optional<Ve
     if(result) systems_.skills.cancel(id,p->actor);
     return result;
 }
+DomainResult<> GameInstance::unlockWaypoints(PlayerId id,std::optional<RegionId> destination) {
+    const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
+    return systems_.travel.unlockWaypoints({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},destination);
+}
+DomainResult<> GameInstance::resetPoints(PlayerId id,PointRefund refund) {
+    const auto *p=players_.find(id);if(!p) return {DomainStatus::InvalidActor,{}};
+    if(systems_.skills.busy(p->actor,tick_)) return {DomainStatus::Conflict,{}};
+    return systems_.progression.resetPoints({id,p->actor,p->area,areas_.at(p->area).generation,0,tick_},refund);
+}
 std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t limit, uint64_t since,
     uint64_t commandSince, std::optional<Vec> destination) const {
     const auto *player = players_.find(id);

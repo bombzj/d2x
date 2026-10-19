@@ -67,14 +67,15 @@ bool SceneController::handleNpcMenu(const FrameInput &input) {
 bool SceneController::handleNpcDialogue(const FrameInput &input) {
     auto &ui = view_.ui();
     if (!ui.dialogue.empty()) {
-        if (ui.dialogueTextTopic && (input.escape || (input.insideViewport && input.leftPressed))) {
+        const bool finished = view_.npcSpeechFinished();
+        if (ui.dialogueTextTopic && (finished || input.escape || (input.insideViewport && input.leftPressed))) {
             npcClient_.submit(TalkToNpc{ui.dialogueObject, TalkToNpc::Action::Acknowledge, ui.dialogueTextTopic});
             view_.cancelNpcDialogue();
             const auto &conversation = npcClient_.read(ui.dialogueObject);
             if (conversation.valid && !conversation.scrollMessage) view_.openNpcMenu(ui.dialogueObject, conversation.speaker, false);
             return true;
         }
-        if (input.escape) {
+        if (input.escape || finished) {
             if (!view_.closeNpcDialogue()) npcClient_.submit(EndNpcConversation{ui.dialogueObject});
         } else {
             if (input.pageDelta)

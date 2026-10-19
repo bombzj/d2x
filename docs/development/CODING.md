@@ -15,6 +15,9 @@
 - 公共头只暴露必要契约，能前置声明就不包含完整系统定义；每个文件直接包含自己需要的类型，不能依赖偶然的传递包含。
 - 非模板、非必要内联的实现放入`.cpp`；私有复杂运行态放模块内部，确有依赖收益时才采用PImpl，不为所有小类型增加堆分配。
 - 改技能实现不应迫使无关模块重新编译；参考`skills/evaluation.cpp`和私有`skills/runtime.hpp`，模块外不包含后者。
+- 宿主身份、命令和快照分别使用`server/player_identity.hpp`、`server/game_commands.hpp`和`server/game_messages.hpp`，基础运行契约不包含完整快照。佣兵记录独立于角色聚合；任务持久状态只依赖身份／布局，目录映射和完成阶段计算留在`gameplay/quest/catalog.hpp`。
+- 按值持有角色聚合的玩家状态和领域事实仍需完整定义；这些消费者的必要重编不能用前置声明绕过。
+- `SceneView`只持有光照／调色器的独占句柄；具体渲染实现和`WorldDrawView`由使用它们的`.cpp`直接包含。不要通过公共场景头把世界渲染内部结构传播给全部HUD。
 - 跨领域使用显式窄Ports和类型化请求，不向玩法传入GameSystems、MPQ句柄、网络连接或UI对象。
 - 新增编译单元登记到现有CMake目标；依赖尽量使用PRIVATE，只有公共契约确实需要时才传播PUBLIC依赖，不用聚合头掩盖缺失包含。
 

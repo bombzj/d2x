@@ -1,3 +1,4 @@
+#include "presentation/world/world_draw_view.hpp"
 #include "remote_scene.hpp"
 #include "monster_effects.hpp"
 #include "gameplay/monsters/movement_math.hpp"

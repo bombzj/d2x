@@ -1,4 +1,6 @@
 #include "native_combat_wire.hpp"
+#include "server/game_messages.hpp"
+#include "server/runtime/events.hpp"
 #include "protocol/message_catalog.hpp"
 #include "content/classic_data.hpp"
 #include "network/protocol/bits.hpp"

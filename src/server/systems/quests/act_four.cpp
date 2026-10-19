@@ -1,3 +1,4 @@
+#include "gameplay/quest/catalog.hpp"
 #include "system.hpp"
 #include "detail.hpp"
 #include "server/player_store.hpp"

@@ -1,5 +1,9 @@
 #pragma once
-#include "server/game_messages.hpp"
+#include "core/id.hpp"
+#include "core/math.hpp"
+#include "server/player_identity.hpp"
+#include "world/identity.hpp"
+#include <compare>
 #include <cstdint>
 #include <optional>
 #include <utility>

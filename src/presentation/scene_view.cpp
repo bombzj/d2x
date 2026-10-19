@@ -1,6 +1,8 @@
 #include "client/actor_client.hpp"
 #include "content/classic_data.hpp"
 #include "scene_view.hpp"
+#include "presentation/world/lighting_view.hpp"
+#include "presentation/world/palette_blend_view.hpp"
 #include "core/random.hpp"
 #include <algorithm>
 #include <chrono>
@@ -60,11 +62,14 @@ void SceneView::drawPlayerTrade(Vec mouse) const {
     }
 }
 SceneView::SceneView(Archives &archives, const ClassicData &content, const IActorClient &actor,
-    IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map)
+    IInventoryClient &inventory, ICharacterClient &character, IQuestClient &quests, INpcClient &npc, IMapClient &map,
+    const AudioSettings &audio)
     : archives_(archives), actorClient_(actor), inventoryClient_(inventory), characterClient_(character), questClient_(quests),
-      npcClient_(npc), mapClient_(map), assets_(archives, content), paletteBlend_(archives),
+      npcClient_(npc), mapClient_(map), assets_(archives, content), lighting_(std::make_unique<LightingView>()),
+      paletteBlend_(std::make_unique<PaletteBlendView>(archives)),
       painter_(assets_.font), speechPainter_(assets_.speechFont), chat_(archives),
       originalMenu_(archives, assets_.font), tradeInvite_(archives, assets_.font, originalMenu_), party_(archives) {
+    applyAudioSettings(audio);
     highlightShader_=LoadShaderFromMemory(nullptr,highlightFragment);
     highlightTransform_=GetShaderLocation(highlightShader_,"highlightTransform");
     refreshUi(0);
@@ -190,6 +195,7 @@ void SceneView::notice(std::string text, bool error) {
     view_.noticeTime = 4;
 }
 void SceneView::advanceUi(float dt) {
+    assets_.streams.update(int(mapView().region), dt);
     view_.noticeTime = std::max(0.f, view_.noticeTime - dt);
     if (view_.gameMenuOpen) view_.gameMenuTime += dt;
     advanceNpcDialogue(dt);
@@ -230,7 +236,7 @@ void SceneView::refreshInteractions() {
     if (scene.revision != npcScene_.revision) npcScene_ = scene;
     refreshNpcView(view_.dialogueObject);
     if(npcView_.scrollMessage && npcView_.introduction && view_.dialogue.empty()) {
-        openNpcDialogue(npcView_.npc,npcView_.speaker,*npcView_.introduction);view_.dialogueTextTopic=npcView_.scrollMessage;
+        openNpcDialogue(npcView_.npc,npcView_.speaker,*npcView_.introduction,npcView_.scrollMessage);view_.dialogueTextTopic=npcView_.scrollMessage;
     }
 }
 void SceneView::refreshCharacterView() {

@@ -38,6 +38,7 @@ class SceneController {
     uint64_t gameGeneration_ = ~uint64_t{}, areaGeneration_ = ~uint64_t{};
     void cancelWorldGesture();
     bool temporaryRun_ = false;
+    void closeTravel();
     bool handleTravel(const FrameInput &input);
     void openGameMenu(Vec mouse);
     bool handleInventory(const FrameInput &input);
@@ -60,6 +61,7 @@ class SceneController {
   public:
     SceneController(IActorClient &, IInventoryClient &, ICharacterClient &, INpcClient &, IMapClient &, SceneView &);
     bool uiConsumed() const { return worldBlocked_ || inventoryClick_ || inventoryRight_ || pickupClick_ || skillGesture_ || releaseAfterLoad_; }
+    void prepareTravelInput(const FrameInput &input);
     bool handle(const FrameInput &input, float elapsed);
     void handleWorld(const FrameInput &, const WorldInputView &, float elapsed);
     void resetInput();

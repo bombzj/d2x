@@ -2,6 +2,7 @@
 #include "resources/archive.hpp"
 #include "resources/data_table.hpp"
 #include "core/id.hpp"
+#include "audio_settings.hpp"
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -23,7 +24,8 @@ class SoundBank {
         Sound sound;
         bool stopInstance = false;
         bool deferInstance = false;
-        float volume = 1;
+        bool musicVolume = false;
+        int volume = 255, activeVolume = 255;
     };
     struct OriginalSoundGroup {
         std::vector<OriginalSoundVariant> sounds;
@@ -33,6 +35,8 @@ class SoundBank {
     std::map<std::string, OriginalSoundGroup> originalGroups_;
     uint64_t groupRandom_ = 0;
     bool enabled = false;
+    int volume_ = 100;
+    int musicVolume_ = 50;
 
   public:
     SoundBank();
@@ -46,5 +50,6 @@ class SoundBank {
     void syncEmitters(std::span<const SoundEmitter> emitters, uint64_t frame);
     void pauseEmitters(bool paused);
     void resetEmitters();
+    void setVolumes(int sound, int music);
 };
 } // namespace d2x

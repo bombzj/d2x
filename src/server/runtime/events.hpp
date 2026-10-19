@@ -1,5 +1,6 @@
 #pragma once
 #include "contracts.hpp"
+#include "server/game_commands.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/items/operations.hpp"
 #include "gameplay/quest/id.hpp"

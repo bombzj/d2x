@@ -30,12 +30,14 @@ std::string fontText(std::string text) {
 }
 } // namespace
 
-void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text) {
+void SceneView::openNpcDialogue(EntityId object, std::string speaker, std::string text, std::optional<uint32_t> stringId) {
     cancelNpcDialogue();
     displayNpcDialogue(object, std::move(speaker), std::move(text));
+    assets_.streams.speak(view_.dialogue, stringId);
 }
 
 void SceneView::cancelNpcDialogue() {
+    assets_.streams.stopSpeech();
     view_.dialogue.clear();
     view_.dialogueTextTopic.reset();
     view_.dialogueLines.clear();
@@ -130,6 +132,7 @@ bool SceneView::showNextNpcGossip() {
 }
 
 void SceneView::drawNpcDialogue() const {
+    if (view_.audio.speech == NpcSpeechMode::AudioOnly) return;
     auto bounds = speechBounds();
     DrawRectangleRec(bounds, {0, 0, 0, 200});
     DrawRectangleLinesEx(bounds, 1, gold);
@@ -143,5 +146,8 @@ void SceneView::drawNpcDialogue() const {
         speechPainter_.label(view_.dialogueLines[index], int(bounds.x) + 16, int(y), int(12*classicPanelScale()), WHITE);
     }
     EndScissorMode();
+}
+bool SceneView::npcSpeechFinished() const {
+    return view_.audio.speech == NpcSpeechMode::AudioOnly && assets_.streams.speechFinished();
 }
 } // namespace d2x

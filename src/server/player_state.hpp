@@ -1,5 +1,5 @@
 #pragma once
-#include "server/game_messages.hpp"
+#include "server/game_commands.hpp"
 #include "server/systems/attributes/calculation.hpp"
 #include "gameplay/character/persistent_character.hpp"
 #include "world/native_path_step.hpp"

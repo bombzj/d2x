@@ -25,8 +25,8 @@
 | `patch_d2.mpq` | 与所选安装版本配套，覆盖基础／资料片内容 |
 | `d2char.mpq` | 完整基础角色动画，后续增加人物和装备外观需要 |
 | `d2sfx.mpq` | 原版效果音 |
-| `d2speech.mpq`、`d2xtalk.mpq` | 对话／语音阶段再准备 |
-| `d2music.mpq`、`d2xmusic.mpq` | 音乐阶段再准备 |
+| `d2speech.mpq`、`d2xtalk.mpq` | NPC Speech原语音；当前五包目录缺少，需要同版本原包 |
+| `d2music.mpq`、`d2xmusic.mpq` | 环境音乐原WAV；当前五包目录缺少，需要同版本原包 |
 | `d2video.mpq`、`d2xvideo.mpq` | 当前不需要过场视频，可不发送 |
 
 

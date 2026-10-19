@@ -1,5 +1,6 @@
 #pragma once
 #include "presentation/scene_view.hpp"
+#include "presentation/audio/audio_settings.hpp"
 namespace d2x {
 struct ClientPreferences {
     bool running = false;
@@ -7,6 +8,7 @@ struct ClientPreferences {
     bool automapLarge = false, automapCenterWhenCleared = true;
     bool automapParty = true, automapNames = true;
     AutomapFade automapFade = AutomapFade::Auto;
+    AudioSettings audio;
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();

@@ -1,3 +1,4 @@
+#include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include "presentation/npc/hireling_panel.hpp"
 #include "core/text.hpp"
@@ -45,7 +46,7 @@ bool SceneView::hirelingPortraitVisible() const {
 void SceneView::drawHirelingPortrait(Vec mouse) const {
     if (!view_.portraitsVisible || worldViewport().x!=0 || view_.capturesWorldInput()) return;
     const int palette=std::clamp(mapView().palette,0,4);
-    const auto *blend=palette==0?&paletteBlend_:actPaletteBlends_[size_t(palette)].get();
+    const auto *blend=palette==0?paletteBlend_.get():actPaletteBlends_[size_t(palette)].get();
     if (!blend) return;
     size_t column=party_.portraitCount();
     float x=15+float(column)*56;

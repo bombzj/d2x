@@ -1,5 +1,11 @@
 #pragma once
-#include "server/runtime/events.hpp"
 #include "core/bytes.hpp"
+#include "core/id.hpp"
 #include <optional>
-namespace d2x { struct ClassicData; Bytes nativeQuestInitialization(const server::QuestFact &); std::vector<Bytes> nativeQuestUpdate(const ClassicData &,const server::QuestFact &,std::optional<EntityId> npc = {}); }
+#include <vector>
+namespace d2x {
+struct ClassicData;
+namespace server { struct QuestFact; }
+Bytes nativeQuestInitialization(const server::QuestFact &);
+std::vector<Bytes> nativeQuestUpdate(const ClassicData &,const server::QuestFact &,std::optional<EntityId> npc = {});
+}

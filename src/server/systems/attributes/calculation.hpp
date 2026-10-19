@@ -1,7 +1,7 @@
 #pragma once
 #include "server/runtime/prepared_rules.hpp"
 #include "server/runtime/contracts.hpp"
-#include "gameplay/character/persistent_character.hpp"
+#include "gameplay/character/attributes.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/items/equipment_loadout.hpp"
 #include "gameplay/items/equipment_contributions.hpp"
@@ -16,6 +16,7 @@
 #include <functional>
 #include <span>
 #include <set>
+namespace d2x { struct PersistentCharacter; }
 namespace d2x::server::attributes {
 struct AuraSourceObservation {
     std::vector<ModifierStatSource> sources;

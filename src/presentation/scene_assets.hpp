@@ -1,5 +1,6 @@
 #pragma once
 #include "presentation/audio/scene_audio.hpp"
+#include "presentation/audio/scene_streams.hpp"
 #include "presentation/actors/actor_animation.hpp"
 #include "content/world/automap_data.hpp"
 #include "gameplay/items/state.hpp"
@@ -7,6 +8,7 @@
 #include "gameplay/quest/id.hpp"
 #include "presentation/world/missile_visual.hpp"
 #include "presentation/graphics/primitives.hpp"
+#include "presentation/hud/escape_menu.hpp"
 #include <set>
 #include <array>
 #include <memory>
@@ -61,6 +63,8 @@ class SceneAssets {
     ~SceneAssets();
     SoundBank audio;
     SceneAudio sceneAudio;
+    SceneStreams streams;
+    EscapeMenu escapeMenu;
     ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
@@ -145,12 +149,6 @@ class SceneAssets {
     std::array<GpuAnimation, size_t(QuestId::Count)> questIcons;
     std::array<Rectangle, size_t(QuestId::Count)> questFaces{};
     std::array<GpuAnimation, 7> tombSymbols;
-    std::array<GpuAnimation, 3> gameMenuLabels;
-    std::array<GpuAnimation, 5> optionsMenuLabels;
-    std::array<GpuAnimation, 5> automapOptionLabels;
-    GpuAnimation automapOptionsTitle;
-    std::array<GpuAnimation, 10> automapOptionValues;
-    GpuAnimation gameMenuMarker;
     GpuAnimation hirelingPanel, hirelingScroll, hirelingHead, hirelingArmor, hirelingWeapon;
     struct OverlayArt {
         GpuAnimation animation;

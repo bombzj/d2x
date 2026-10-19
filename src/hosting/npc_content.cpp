@@ -1,3 +1,4 @@
+#include "gameplay/quest/catalog.hpp"
 #include "npc_content.hpp"
 #include "content/monsters/monster_catalog.hpp"
 #include "content/monsters/monster_ai_data.hpp"

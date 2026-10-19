@@ -23,37 +23,72 @@ bool SceneController::handleMenu(const FrameInput &input) {
         auto resume = [&] {
             ui.gameMenuOpen = false;
             ui.gameMenuPressed = -1;
+            ui.gameMenuScrollDragging = false;
+            ui.gameMenuSliderDragging = -1;
             releaseAfterLoad_ = true;
         };
+        auto page = [&](EscapeMenuPage target, int selected = -1) {
+            ui.gameMenuPage = target;
+            ui.gameMenuSelected = selected < 0 ? view_.gameMenuItemCount() - 1 : selected;
+            ui.gameMenuPressed = -1;
+            ui.gameMenuScrollDragging = false;
+            ui.gameMenuSliderDragging = -1;
+            // Ignore the unchanged pointer when a page opens; the original
+            // initially selects Previous Menu rather than the row underneath.
+            ui.gameMenuMouse = input.mouse;
+        };
         if (input.escape) {
-            resume();
+            if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
+            else resume();
             return true;
         }
+        view_.scrollGameMenu(input);
         const int hovered = input.insideViewport ? view_.gameMenuAt(input.mouse) : -1;
         if ((input.mouse - ui.gameMenuMouse).length() > 0 || input.leftPressed) {
             if (hovered >= 0) ui.gameMenuSelected = hovered;
             ui.gameMenuMouse = input.mouse;
         }
-        if (input.menuDelta) {
-            ui.gameMenuSelected = std::clamp(ui.gameMenuSelected + input.menuDelta, 0, view_.gameMenuItemCount() - 1);
+        const int navigation = ui.gameMenuPage == EscapeMenuPage::Controls ? input.menuRight - input.menuLeft : input.menuDelta;
+        if (navigation) {
+            const int count = view_.gameMenuItemCount();
+            for (int attempt = 0; attempt < count; ++attempt) {
+                ui.gameMenuSelected = (ui.gameMenuSelected + (navigation > 0 ? 1 : -1) + count) % count;
+                if (view_.gameMenuItemEnabled(ui.gameMenuSelected)) break;
+            }
             ui.gameMenuPressed = -1;
+            ui.gameMenuSliderDragging = -1;
         }
-        int activated = input.enter ? ui.gameMenuSelected : -1;
+        if (view_.adjustGameMenuSound(input)) {
+            ui.gameMenuPressed = -1;
+            return true;
+        }
+        int activated = input.enter && view_.gameMenuItemEnabled(ui.gameMenuSelected) ? ui.gameMenuSelected : -1;
+        const bool settingArrow = ((ui.gameMenuPage == EscapeMenuPage::Automap && ui.gameMenuSelected < 5) ||
+                                  (ui.gameMenuPage == EscapeMenuPage::Sound && ui.gameMenuSelected == 5)) &&
+                                  (input.menuLeft || input.menuRight);
+        if (settingArrow) activated = ui.gameMenuSelected;
         if (input.leftPressed) ui.gameMenuPressed = hovered;
         if (input.leftReleased) {
             if (hovered >= 0 && hovered == ui.gameMenuPressed) activated = hovered;
             ui.gameMenuPressed = -1;
         } else if (!input.leftHeld) ui.gameMenuPressed = -1;
-        if (activated >= 0) {
-            if (ui.gameMenuPage == 0) {
-                if (activated == 0) { ui.gameMenuPage = 1; ui.gameMenuSelected = 4; }
+        if (activated >= 0 && view_.gameMenuItemEnabled(activated)) {
+            if (ui.gameMenuPage == EscapeMenuPage::Main) {
+                if (activated == 0) page(EscapeMenuPage::Options);
                 if (activated == 1) return false;
                 if (activated == 2) resume();
-            } else if (ui.gameMenuPage == 1) {
-                if (activated == 2) { ui.gameMenuPage = 2; ui.gameMenuSelected = 5; }
-                else if (activated == 4) { ui.gameMenuPage = 0; ui.gameMenuSelected = 0; }
-                else view_.notice("This options page is not implemented.", true);
-            } else {
+            } else if (ui.gameMenuPage == EscapeMenuPage::Options) {
+                switch (activated) {
+                case 0: page(EscapeMenuPage::Sound); break;
+                case 1: page(EscapeMenuPage::Video); break;
+                case 2: page(EscapeMenuPage::Automap); break;
+                case 3:
+                    ui.gameMenuControlScroll = 0;
+                    page(EscapeMenuPage::Controls, 0);
+                    break;
+                case 4: page(EscapeMenuPage::Main, 0); break;
+                }
+            } else if (ui.gameMenuPage == EscapeMenuPage::Automap) {
                 switch (activated) {
                 case 0:
                     ui.automapLarge = !ui.automapLarge;
@@ -62,6 +97,15 @@ bool SceneController::handleMenu(const FrameInput &input) {
                         ui.automapFade = AutomapFade::No;
                     break;
                 case 1:
+                    if (settingArrow && input.menuLeft) {
+                        switch (ui.automapFade) {
+                        case AutomapFade::No: ui.automapFade = AutomapFade::Auto; break;
+                        case AutomapFade::Auto: ui.automapFade = AutomapFade::Everything; break;
+                        case AutomapFade::Everything: ui.automapFade = ui.automapLarge ? AutomapFade::Center : AutomapFade::No; break;
+                        case AutomapFade::Center: ui.automapFade = AutomapFade::No; break;
+                        }
+                        break;
+                    }
                     switch (ui.automapFade) {
                     case AutomapFade::No: ui.automapFade = ui.automapLarge ? AutomapFade::Center : AutomapFade::Everything; break;
                     case AutomapFade::Center: ui.automapFade = AutomapFade::Everything; break;
@@ -72,9 +116,18 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 case 2: ui.automapCenterWhenCleared = !ui.automapCenterWhenCleared; break;
                 case 3: ui.automapParty = !ui.automapParty; break;
                 case 4: ui.automapNames = !ui.automapNames; break;
-                case 5: ui.gameMenuPage = 1; ui.gameMenuSelected = 2; break;
+                case 5: page(EscapeMenuPage::Options, 2); break;
                 }
+            } else if (ui.gameMenuPage == EscapeMenuPage::Sound) {
+                if (activated == 5) {
+                    auto settings = ui.audio;
+                    settings.speech = NpcSpeechMode((int(settings.speech) + (settingArrow && input.menuLeft ? 2 : 1)) % 3);
+                    view_.applyAudioSettings(settings);
+                } else if (activated == 6) page(EscapeMenuPage::Options, 0);
+                // Enter/clicking a slider's label does not advance its value.
             }
+            else if (ui.gameMenuPage == EscapeMenuPage::Video) page(EscapeMenuPage::Options, 1);
+            else if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
             ui.gameMenuPressed = -1;
         }
         return true;
@@ -233,7 +286,7 @@ bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
         } else if (ui.help)
             ui.help = false;
         else if (ui.travelMenu) {
-            mapClient_.closeTravel(); ui.travelMenu = false;
+            closeTravel();
         }
         else if (ui.inventory.goldDialog || ui.inventory.identify)
             ui.inventory.cancelGesture();
@@ -366,6 +419,9 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
         actorClient_.stopMoving();
         ui.skillPicker.reset(); ui.inventory.cancelGesture();
         ui.gameMenuPressed = -1;
+        ui.gameMenuScrollDragging = false;
+        ui.gameMenuScrollPressed = -1;
+        ui.gameMenuSliderDragging = -1;
         resetInput();
         return true;
     }
@@ -376,6 +432,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.leftPressed || (!input.leftHeld && !input.leftReleased)) inventoryClick_ = false;
     if (input.rightPressed || !input.rightHeld) inventoryRight_ = false;
     if (!input.leftHeld && !input.leftPressed) pickupClick_ = false;
+    prepareTravelInput(input);
     // Capture before handlers close panels or shift the world viewport.
     if ((input.leftPressed || input.rightPressed) &&
         (ui.blocksInput() || ui.skillPicker || ui.inventory.drag ||
@@ -393,7 +450,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     }
     if (ui.gameMenuOpen) return handleMenu(input);
     if (input.escape && mapClient_.read().travelRequested && !ui.travelMenu) {
-        mapClient_.closeTravel();
+        closeTravel();
         return true;
     }
     if (input.run) actorClient_.toggleRun();
@@ -464,10 +521,14 @@ void SceneController::openGameMenu(Vec mouse) {
     ui.characterPressed.reset(); ui.skillTreePressed.reset();
     ui.questPressed = -1;
     ui.gameMenuOpen = true;
-    ui.gameMenuPage = 0;
+    ui.gameMenuPage = EscapeMenuPage::Main;
     ui.gameMenuSelected = 2;
     ui.gameMenuPressed = -1;
     ui.gameMenuTime = 0;
+    ui.gameMenuControlScroll = 0;
+    ui.gameMenuScrollPressed = -1;
+    ui.gameMenuScrollDragging = false;
+    ui.gameMenuSliderDragging = -1;
     ui.gameMenuMouse = mouse;
     ui.showLoot = false;
     actorClient_.stopMoving();

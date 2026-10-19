@@ -16,13 +16,14 @@ void SoundBank::play(const std::string &name, uint64_t frame, float volume) {
         auto &sound = group->second;
         if (!enabled || sound.sounds.empty()) return;
         if (sound.lastStart && frame >= *sound.lastStart && frame - *sound.lastStart < sound.compound) return;
-        const auto &variant = sound.sounds[limitedRandom(groupRandom_, uint32_t(sound.sounds.size()))];
+        auto &variant = sound.sounds[limitedRandom(groupRandom_, uint32_t(sound.sounds.size()))];
         if (variant.deferInstance && IsSoundPlaying(variant.sound)) return;
         sound.lastStart = frame;
         // Stop Inst replaces the previous instance of the selected sound.
         // A request rejected by Compound must not interrupt that instance.
         if (variant.stopInstance) StopSound(variant.sound);
-        SetSoundVolume(variant.sound, volume >= 0 ? .45f * std::clamp(volume, 0.f, 1.f) : variant.volume);
+        variant.activeVolume = volume >= 0 ? int(255 * std::clamp(volume, 0.f, 1.f)) : variant.volume;
+        SetSoundVolume(variant.sound, originalSoundGain(variant.activeVolume, volume_, variant.musicVolume ? musicVolume_ : 100));
         PlaySound(variant.sound);
         return;
     }
@@ -67,8 +68,9 @@ void SoundBank::registerOriginalGroup(Archives &archives, std::string key, const
             UnloadWave(wave);
             if (!sound.stream.buffer) throw std::runtime_error("Original sound group could not be loaded");
             variants.push_back({sound, table.number(variant, "Stop Inst").value_or(0) != 0,
-                                      table.number(variant, "Defer Inst").value_or(0) != 0, .45f * *volume / 255.f});
-            SetSoundVolume(sound, .45f * *volume / 255.f);
+                                      table.number(variant, "Defer Inst").value_or(0) != 0,
+                                      table.number(variant, "Music Vol").value_or(0) != 0, *volume, *volume});
+            SetSoundVolume(sound, originalSoundGain(*volume, volume_, variants.back().musicVolume ? musicVolume_ : 100));
         }
         originalGroups_.emplace(std::move(key), OriginalSoundGroup{std::move(variants), unsigned(compound), {}});
     } catch (...) {

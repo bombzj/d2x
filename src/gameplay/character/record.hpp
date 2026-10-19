@@ -3,7 +3,7 @@
 #include "core/fixed.hpp"
 #include "gameplay/character/allocation.hpp"
 #include "gameplay/character/skill_choices.hpp"
-#include "gameplay/quest/catalog.hpp"
+#include "gameplay/character/hireling_record.hpp"
 #include "gameplay/quest/state.hpp"
 #include "gameplay/quest/prelude.hpp"
 #include <array>
@@ -13,17 +13,6 @@
 #include <string>
 
 namespace d2x {
-struct HirelingRecord {
-    int sourceRow = -1, classId = -1;
-    std::string nameKey;
-    int level = 0;
-    // Native D2S only stores death status. Decode supplies the same base-life
-    // marker as before; the session then derives equipped maximum life.
-    Fixed8 hp;
-    uint64_t experience = 0;
-    uint32_t seed = 0;
-};
-
 // Character-owned values transferred to/from persistence. No actions, effects,
 // positions, derived equipment stats or runtime random streams live here.
 struct CharacterRecord {

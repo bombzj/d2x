@@ -1,50 +1,24 @@
 #pragma once
 #include "core/id.hpp"
 #include "gameplay/character/attributes.hpp"
-#include "gameplay/character/record.hpp"
+#include "gameplay/character/hireling_record.hpp"
+#include "server/game_commands.hpp"
 #include "gameplay/combat/weapon_values.hpp"
 #include "gameplay/stats/stat_list.hpp"
 #include "core/math.hpp"
 #include "world/identity.hpp"
 #include "world/interaction_geometry.hpp"
-#include <compare>
 #include <cstdint>
 #include <array>
 #include <map>
 #include <set>
 #include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace d2x {
 // Internal authority/host values. These are not client messages or wire structs.
-struct GameHandle {
-    uint64_t slot{}, generation{};
-    auto operator<=>(const GameHandle &) const = default;
-};
-struct PlayerId {
-    uint64_t value{};
-    auto operator<=>(const PlayerId &) const = default;
-};
-// Issued by the host. Transports bind this to a connection, never trust a
-// player or game identity supplied in a command payload.
-struct PlayerBinding {
-    GameHandle game;
-    PlayerId player;
-};
-enum class MovementAction { Move, Stop, ToggleRunning, ApproachExit, ApproachCorpse, ApproachObject, ApproachNpc, Synchronize, ApproachItem };
-struct MotionTarget { EntityId id; uint8_t type{1}; };
-struct MovementCommand {
-    MovementAction action = MovementAction::Move;
-    Vec destination;
-    bool forceRun{};
-    EntityId exit{};
-    std::optional<MotionTarget> target{};
-    std::optional<InteractionTarget> arrival{};
-};
-enum class CommandStatus { Queued, Applied, NotImplemented, InvalidBinding, Stale, Paused, QueueFull, InvalidDestination, NoRoute, InvalidRequest, Unavailable, Conflict };
-struct CommandResult {
-    uint64_t sequence{};
-    CommandStatus status = CommandStatus::Stale;
-};
 struct PlayerSnapshot {
     struct Hover { std::string text; uint64_t revision{}; std::set<PlayerId> recipients; };
     std::optional<Hover> hover;

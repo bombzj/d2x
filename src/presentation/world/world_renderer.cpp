@@ -1,5 +1,9 @@
+#include "presentation/world/world_draw_view.hpp"
+#include "presentation/world/lighting_view.hpp"
+#include "presentation/world/palette_blend_view.hpp"
 #include "client/actor_client.hpp"
 #include "content/classic_data.hpp"
+#include "content/world/world_catalog.hpp"
 #include "world/region.hpp"
 #include "presentation/scene_view.hpp"
 #include "presentation/world/warp_visibility.hpp"
@@ -59,13 +63,13 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     const bool newGame = worldGameGeneration_ != scene.gameGeneration;
     if (newGame || worldAreaGeneration_ != scene.areaGeneration) {
         worldGameGeneration_ = scene.gameGeneration; worldAreaGeneration_ = scene.areaGeneration;
-        assets_.resetWorldTiles(); worldVisibility_.clear(); lighting_.resetSources();
-        if (newGame) lighting_.resetEnvironment();
+        assets_.resetWorldTiles(); worldVisibility_.clear(); lighting_->resetSources();
+        if (newGame) lighting_->resetEnvironment();
     }
     view_.camera = project(scene.observer);
-    if(scene.eclipse) lighting_.setEclipse(*scene.eclipse);
-    if(scene.cloakDuration) lighting_.beginCloak(*scene.cloakDuration,level.id);
-    lighting_.advance(scene.elapsed, level);
+    if(scene.eclipse) lighting_->setEclipse(*scene.eclipse);
+    if(scene.cloakDuration) lighting_->beginCloak(*scene.cloakDuration,level.id);
+    lighting_->advance(scene.elapsed, level);
     const auto &tiles = assets_.worldTileSprites(map, scene.palette);
     if (map.terrain.preparedRooms)
         worldVisibility_.update(map.terrain, scene.roomObserver,
@@ -197,7 +201,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 TileLightSamples samples;
                 if (entry.lightDirection == -2) { samples.values[0] = WHITE; samples.count = 1; }
                 else if (entry.lightDirection >= 0)
-                    samples = tileLights(lighting_, entry.feet, entry.lightDirection, entry.alternateLight);
+                    samples = tileLights(*lighting_, entry.feet, entry.lightDirection, entry.alternateLight);
                 if (entry.lightDirection == -2)
                     // GDI 60A0 -> helper+14: blended shadows use the
                     // original indexed tile and PL2 trans at alpha 192.
@@ -208,7 +212,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 continue;
             }
             const auto &item = *entry.item;
-            const auto light = lighting_.sample(item.position);
+            const auto light = lighting_->sample(item.position);
             const auto alert = std::find_if(scene.alerts.begin(), scene.alerts.end(),
                 [&](const auto &value) { return item.unit && value.unit == item.unit; });
             if (alert != scene.alerts.end()) drawNpcAlert(alert->unit, screen(alert->position), true);
@@ -268,18 +272,18 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
             const auto found = assets_.overlayLights.find(item.overlay);
             if (found == assets_.overlayLights.end()) continue;
             const auto &light = found->second;
-            const int radius = lighting_.overlayRadius(item.lightOwner.value,item.overlay,item.lightStartedAt,
+            const int radius = lighting_->overlayRadius(item.lightOwner.value,item.overlay,item.lightStartedAt,
                 light.initialRadius,light.radius);
             if (radius > 0) lights.push_back({item.position,radius,light.color});
         }
     }
-    lighting_.finishSources();
+    lighting_->finishSources();
     if (level.palette != 0 && !actPaletteBlends_.at(size_t(level.palette)))
         actPaletteBlends_[size_t(level.palette)] = std::make_unique<PaletteBlendView>(archives_, level.palette);
-    lighting_.prepare(scene.map->grid, level, scene.observer, actorClient_.controlledActor().lightRadius,
+    lighting_->prepare(scene.map->grid, level, scene.observer, actorClient_.controlledActor().lightRadius,
         sceneLightColor(scene.observerLightColor), lights, regions);
-    auto &palette = level.palette == 0 ? paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette));
-    lighting_.bind(palette, scene.observer, screen(scene.observer), view_.zoom);
+    auto &palette = level.palette == 0 ? *paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette));
+    lighting_->bind(palette, scene.observer, screen(scene.observer), view_.zoom);
     return palette;
 }
 void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset,
@@ -316,7 +320,7 @@ void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float 
     }
     if (visual.trans == 1) {
         if (lighting) lighting->drawLit(image, at, {&light,1},WHITE,{1,1},true);
-        else paletteBlend_.draw(image, at);
+        else paletteBlend_->draw(image, at);
         return;
     }
     if (translucent) {
@@ -338,7 +342,7 @@ void SceneView::drawSpellOverlay(int id, Vec position, float age, bool loop, int
     const int heightOffset = height < 0 ? 75 : overlay.visual.heights[std::clamp(height, 0, 3)];
     const Vec at = screen(position) + overlay.visual.offset + Vec{0, float(heightOffset)};
     if (lighting) lighting->drawLit(overlay.animation.frame(0, frame), at, {&light,1}, WHITE,{1,1},overlay.visual.trans == 3);
-    else if (overlay.visual.trans == 3) paletteBlend_.draw(overlay.animation.frame(0, frame), at);
+    else if (overlay.visual.trans == 3) paletteBlend_->draw(overlay.animation.frame(0, frame), at);
     else sprite(overlay.animation.frame(0, frame), at);
 }
 } // namespace d2x

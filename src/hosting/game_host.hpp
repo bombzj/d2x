@@ -6,6 +6,7 @@
 #include <vector>
 
 namespace d2x {
+enum class PointRefund;
 // No window, network, archive or storage dependencies. Call from one host
 // scheduler thread; a future transport posts commands onto that thread.
 class GameHost {
@@ -74,6 +75,8 @@ class GameHost {
     bool visiblePoint(PlayerBinding, RegionId, Vec) const;
     bool npcVisible(PlayerBinding,std::string_view code,RegionId area,int initFunction=0) const;
     server::DomainResult<> relocate(PlayerBinding,RegionId,std::optional<Vec>);
+    server::DomainResult<> unlockWaypoints(PlayerBinding,std::optional<RegionId>);
+    server::DomainResult<> resetPoints(PlayerBinding,PointRefund);
     std::optional<uint16_t> npcQuestAlert(PlayerBinding,const server::NpcRule &,RegionId) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;
     std::optional<NativeActEnvironment> environment(GameHandle,RegionId) const;

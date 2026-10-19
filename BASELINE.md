@@ -28,7 +28,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／独立伙伴施法及德鲁伊变形／召唤等已有执行入口 | 全技能与来源组合验收、完整双持与触发组合、完整PvP规则；[刺客进度](docs/gameplay/skills/ASSASSIN.md)、[技能](docs/gameplay/skills/README.md)、[战斗](docs/gameplay/combat/FACTIONS.md) |
 | 怪物／伙伴 | 第一、第二幕家族及第三至第五幕逐项程序已有接入，含NpcBarb、HellMeteor／投石机客户端程序、王座Baal波次／Diablo命令恢复及迷乱随机借用 | 完整NPC／MapAI、光环与修饰器重建仍有实现缺口；全局交错／逐随机及全难度组合尚未验收；钥匙／红门高级事件暂缓。范围见[怪物目录](docs/gameplay/monsters/README.md#当前实施范围)，具体覆盖见[逐项台账](docs/gameplay/monsters/ACT3.md)；[佣兵](docs/gameplay/characters/HIRELINGS.md) |
 | NPC／任务 | 城镇服务、五幕个人任务主流程、组队任务及奖励保存；原任务日志已阅回执及完成动画消费 | 复杂剧情、机关和特殊多人任务；[NPC／任务](docs/modules/NPC_QUEST.md)、[任务](docs/gameplay/quests/SYSTEM.md) |
-| 多人／表现 | 组队、聊天、交易、敌意及共享收益；物品提示、库存原调色／镶孔叠层／无形混色、自动地图大小／定位／平移及PL2 Fade；大面板原资源、M键消息日志、组队按钮、人物／技能按压及原表背包布局；包裹即时拿起、放置、原快捷键／使用、方块收纳、鉴定准备、堆叠与购买／金币输入已有实现，移除拆分及额外快速转移／右键装备，见[包裹界面](docs/gameplay/items/INVENTORY_UI.md#操作) | 完整像素／状态对齐、特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
+| 多人／表现 | 组队、聊天、交易、敌意及共享收益；物品提示、库存原调色／镶孔叠层／无形混色、自动地图大小／定位／平移及PL2 Fade；大面板原资源、M键消息日志、组队按钮、人物／技能按压及原表背包布局；英文ESC各级菜单、Sound／Music／NPC Speech设置与未支持设置置灰；包裹即时拿起、放置、原快捷键／使用、方块收纳、鉴定准备、堆叠与购买／金币输入已有实现，移除拆分及额外快速转移／右键装备，见[包裹界面](docs/gameplay/items/INVENTORY_UI.md#操作) | 完整像素／状态对齐、特殊任务事件、硬核权限、中文聊天与部分原版表现；[联网](docs/modules/NETWORK.md)、[UI](docs/gameplay/ui/CLASSIC_HUD.md)、[自动地图](docs/gameplay/world/AUTOMAP.md)、[物品提示](docs/gameplay/items/PRESENTATION.md#物品属性提示) |
 
 
 已接能力不代表全部组合或原版客户端兼容性完成；具体支持条件和未覆盖范围由对应专题维护。

@@ -10,7 +10,7 @@ namespace d2x {
 class ClassicStrings;
 struct NpcSpeech {
     std::string text;
-    std::string wave; // Original MPQ reference; playback is not implemented.
+    std::string wave; // Original MPQ reference; presentation owns optional voice playback.
     std::string quest, state; // SECTION:QUEST / QUEST / STATE from aNnpc.txt.
     int speed = 0;
     int act = 0;
