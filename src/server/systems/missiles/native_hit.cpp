@@ -326,7 +326,7 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
         if(count<=0) {const auto value=missileSkillFormula(plan,"calc4");if(!value) return 1;count=std::max(*value,1);}
         const auto point=unitPosition(missile,missile.guidance).value_or(missile.pathTarget);
         const auto &area=ports_.areas.at(missile.area);
-        auto random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(point.x+area.definition.origin.x)));
+        uint64_t random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(point.x+area.definition.origin.x)));
         const auto range=count/4;
         if(count<=1 || range<2) planNativeChild(plan,child,missile.position,point-missile.position);
         else for(int index=0;index<count;++index) {
@@ -502,7 +502,7 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
     case 58: {
         if(child<0) return 1;
         const auto &area=ports_.areas.at(missile.area);
-        auto random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(missile.position.x+area.definition.origin.x)));
+        uint64_t random=(plan.damageRolls->random&0xffffffff00000000ULL)|uint32_t(int32_t(std::floor(missile.position.x+area.definition.origin.x)));
         const auto extent=std::max(rule.hitParameters[0],1);const auto span=uint32_t(nativeAdd(nativeMultiply(2,extent),1));
         const auto x=nativeSubtract(int32_t(limitedRandom(random,span)),extent),y=nativeSubtract(int32_t(limitedRandom(random,span)),extent);
         plan.damageRolls->random=random;missile.random=random;
