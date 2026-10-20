@@ -132,7 +132,8 @@ DomainResult<> System::stormEvent(const FrameEvent &event,uint64_t tick) {
         pulse.rescheduled=true;
     }
     ports_.frameEvents.cancel(event.owner,FrameEventType::PeriodicSkills,event.customId);
-    if(pulse.next.handle()) ports_.frameEvents.publish(std::move(pulse.next));stormPulses_.erase(event.handle);
+    if(pulse.next.handle()) ports_.frameEvents.publish(std::move(pulse.next));
+    stormPulses_.erase(event.handle);
     return {DomainStatus::Applied,std::monostate{}};
 }
 }

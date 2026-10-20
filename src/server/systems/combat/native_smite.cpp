@@ -30,7 +30,8 @@ DomainStatus System::prepareNativeSmite(SpellImpact &impact,const PlayerState &p
     auto input=skills::formulaInput(player,draw);SkillFormulaValues values(catalog,input);
     const auto calculation=[&](std::string_view field) {
         const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,field);
-        if(!value) throw std::logic_error("Missing native Smite formula");return *value;
+        if(!value) throw std::logic_error("Missing native Smite formula");
+        return *value;
     };
     auto low=nativeShiftLeft(gear.smiteMinimum,8),high=nativeShiftLeft(gear.smiteMaximum,8);
     if(const auto *states=ports_.effects.unitEffects(player.actor);states && states->hasState(rules.holyShield.id,tick.tick)) {
@@ -44,7 +45,8 @@ DomainStatus System::prepareNativeSmite(SpellImpact &impact,const PlayerState &p
     // shield's own attribute/mastery bonuses, without critical or weapon ED.
     const auto flat=nativeShiftLeft(stat("item_normaldamage"),8);
     low=nativeAdd(low,flat);high=nativeAdd(high,flat);
-    if(low<1) low=256;if(high<=low) high=nativeAdd(low,256);
+    if(low<1) low=256;
+    if(high<=low) high=nativeAdd(low,256);
     int32_t mastery{};unsigned count{};
     const auto masteryStat=rules.stats->names.at("passive_mastery_melee_dmg");
     for(const auto &[key,value]:stats.values) if(key.id==masteryStat) {

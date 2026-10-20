@@ -19,7 +19,7 @@ struct PropertyProgramInput {
     int roll{}, parameter{}, minimum{}, maximum{};
     int characterLevel{}, itemLevel{-1};
     std::optional<PropertySkillLevels> skill;
-    std::span<const int32_t> operationRolls;
+    std::span<const int32_t> operationRolls{};
 };
 struct PropertyStat {
     std::string name;

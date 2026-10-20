@@ -14,7 +14,7 @@ struct EffectApplication {
     std::vector<RemovedCombatEffect> removed;
     bool accepted = true;
     bool reused = false;
-    std::vector<int> clearedStates;
+    std::vector<int> clearedStates{};
 };
 // Owned by the affected unit. No global player, resource, device, or save access.
 // Public views are immutable; callers consume removal records after mutation.

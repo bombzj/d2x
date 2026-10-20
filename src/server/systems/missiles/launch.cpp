@@ -210,7 +210,8 @@ std::vector<Missile> System::launch(const Spawn &r, uint64_t &random,uint64_t *o
         const auto path=blessedHammerPath(m.position);m.path.assign(path.begin(),path.end());
         const int bonus=nativeMultiplyDivide(ports_.effects.stateModifiers(p.actor,s.concentrationState,r.actor.tick).combat.damagePercent,s.concentrationFactor,100);
         if(m.nativeDamage) m.nativeDamage->data.magic=scaleMissileDamage(m.nativeDamage->data.magic,nativeAdd(100,bonus));
-        else m.damageRange=scaleMissileDamage(*m.damageRange,100+bonus);break;
+        else m.damageRange=scaleMissileDamage(*m.damageRange,100+bonus);
+        break;
     }
     case SkillBehavior::FistOfTheHeavens: {
         auto &missile=add(cell(r.target),{},s.missileId,s.heaven->delayFrames,0,Program::Heaven);

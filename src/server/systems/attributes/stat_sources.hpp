@@ -7,7 +7,7 @@ struct PassiveStatContribution {
     int skill{-1};
     CharacterModifiers modifiers;
     // Native passive callbacks SetStat directly, without ItemStatCost.ValShift.
-    std::optional<std::map<StatKey,int32_t>> nativeValues;
+    std::optional<std::map<StatKey,int32_t>> nativeValues{};
 };
 struct NativeAttributeSources {
     std::shared_ptr<const StatList> root;

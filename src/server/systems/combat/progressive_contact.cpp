@@ -85,7 +85,8 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
             auto input=caster->formulaInput(ports_.effects,tick.tick);SkillFormulaValues values(*rules.formulas,input);
             const auto formula=[&](std::string_view field) {
                 const auto value=values.calculation(FormulaDomain::Skill,charge.skill,charge.rank,field);
-                if(!value) throw std::logic_error("Unavailable native progressive release formula");return *value;
+                if(!value) throw std::logic_error("Unavailable native progressive release formula");
+                return *value;
             };
             if(step.function==38) {
                 // SrvDo038 drains the already allocated main contact before
@@ -187,7 +188,8 @@ DomainResult<bool> System::advanceProgressive(SpellImpact &impact,TickContext ti
             const auto &charge=execution.charge;
             const auto result=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},actor.area},
                 {SkillPulseFact{caster->id(),target.id(),uint8_t(caster->monster?1:0),uint8_t(target.player?0:1),actor.area,charge.skill,charge.rank,target.position(),uint8_t(charge.count),execution.clientSeed,0}}});
-            if(!result) return {result.status,{}};execution.phase=Phase::Remove;
+            if(!result) return {result.status,{}};
+            execution.phase=Phase::Remove;
         }
         if(execution.phase==Phase::Remove) {
             const auto result=ports_.effects.removeState(actor,execution.charge.state);if(!result) return {result.status,{}};

@@ -15,7 +15,8 @@
 #include "gameplay/skills/cast_spec.hpp"
 #include "gameplay/skills/aura_spec.hpp"
 #include "gameplay/items/property_program.hpp"
-#include "world/navigation.hpp"
+#include "core/math.hpp"
+#include "world/collision.hpp"
 #include <array>
 #include <cstdint>
 #include <map>
@@ -54,11 +55,11 @@ struct MonsterAttackRule {
     int submergeHoldFrame{-1}; // MonSeq clock point whose displayed frame is zero.
     uint8_t animationEvent{1};
     std::vector<int> animationEvents{};
-    std::vector<uint8_t> animationFlags;
+    std::vector<uint8_t> animationFlags{};
     bool useAttackRate{true};
     int animationStartFrame{};
-    std::shared_ptr<const StatList> modeStats;
-    MonsterModePhysical ownerPhysical;
+    std::shared_ptr<const StatList> modeStats{};
+    MonsterModePhysical ownerPhysical{};
     int infernoFrame{},infernoEndFrames{};
 };
 struct MonsterWebRule {CombatStateDefinition aura;};

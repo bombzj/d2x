@@ -581,7 +581,9 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
                 const RuleRandom draw=[&](int32_t low,int32_t high)->RuleNumber {return low>=high?low:nativeAdd(low,int32_t(limitedRandom(random,uint32_t(nativeAdd(nativeSubtract(high,low),1)))));};
                 auto input=formulaInput(*source,*sampled,draw);SkillFormulaValues values(*source->rule.formulas,input);
                 const auto formula=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,field);
-                    if(!value) throw std::logic_error("Missing native monster healing formula");return *value;};
+                    if(!value) throw std::logic_error("Missing native monster healing formula");
+                    return *value;
+                    };
                 if(bestow) {
                     const auto maximum=std::clamp(formula("calc2"),0,100),minimum=std::clamp(formula("calc1"),0,maximum);
                     pending.formulaValue=nativeAdd(minimum,int32_t(limitedRandom(random,uint32_t(maximum-minimum))));
@@ -697,6 +699,13 @@ StepStatus System::releaseMonsters(TickContext tick,EntityId only) {
             const auto born=ports_.missiles.commitNativeBirth(*prepared.value);
             specialResult={born.status,born?std::optional{std::monostate{}}:std::nullopt};break;
         }
+        // Dedicated actions do not use this generic release path.
+        case MonsterAttackRule::Action::Assassin:
+        case MonsterAttackRule::Action::Druid:
+        case MonsterAttackRule::Action::Inferno:
+        case MonsterAttackRule::Action::Whirlwind:
+        case MonsterAttackRule::Action::LeapAttack:
+            specialResult={DomainStatus::NotImplemented,{}};break;
         case MonsterAttackRule::Action::Spray:
         case MonsterAttackRule::Action::Trap:
         case MonsterAttackRule::Action::Firewall:

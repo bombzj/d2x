@@ -135,7 +135,7 @@ save-info只读输入，按相同codec和内容准入边界报告角色摘要；
 
 ## 客户端偏好、凭据与探索
 
-client-settings.json保存客户端走跑、底栏、地图和声音选项，原子替换由resources/atomic_file承担；不引入D2S编码。soundVolume／musicVolume为0–100且为5的整数倍，缺省100／50；npcSpeech为0=Audio Only、1=Text Only、2=Audio + Text，缺省2。旧偏好文件缺字段使用缺省，非法字段报告并回退；写失败保留待保存状态／旧文件并限频重试。
+client-settings.json保存客户端走跑、底栏、地图、声音和光照选项，原子替换由resources/atomic_file承担；不引入D2S编码。soundVolume／musicVolume为0–100且为5的整数倍，缺省100／50；npcSpeech为0=Audio Only、1=Text Only、2=Audio + Text，缺省2；lighting为布尔值，缺省true，false表示世界全亮。旧偏好文件缺字段使用缺省，非法字段报告并回退；写失败保留待保存状态／旧文件并限频重试。
 
 OnlineLoginMemory按配置路径隔离：Windows当前用户凭据管理器；Linux配置旁权限0600的.credentials.local，Linux实际运行未认证。密码不写连接JSON、只读会话、日志或角色D2S。
 

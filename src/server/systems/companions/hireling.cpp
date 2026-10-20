@@ -372,7 +372,8 @@ DomainResult<> System::drink(const ActorContext &actor,ItemHandle item,bool belt
     }
     transactions::InventoryEdit edit{actor,player->inventoryRevision,player->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),player->persistent.player.weaponSet};
     auto units=std::make_shared<effects::AuraUnitPublication>(ports_.effects.prepareDamageStates(std::move(recipient),statuses,actor.tick));
-    for(auto &fact:units->facts) edit.publicFacts.push_back(std::move(fact));units->facts.clear();
+    for(auto &fact:units->facts) edit.publicFacts.push_back(std::move(fact));
+    units->facts.clear();
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},std::move(units));if(!plan) return {plan.status,{}};
     return ports_.transactions.commit(std::move(*plan.value));
 }

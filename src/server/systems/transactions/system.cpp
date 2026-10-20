@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/skills/mana_payment.hpp"
 #include "gameplay/combat/life.hpp"
 #include "gameplay/rules/arithmetic.hpp"
@@ -264,12 +265,13 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
     if (characterEdit && characterEdit->revival) {
         const auto &revival = *characterEdit->revival; const auto *destination = ports_.areas.find(revival.area);
         if (player->persistent.player.hp > 0 || !destination || destination->generation != revival.generation || !destination->definition.town ||
-            !destination->definition.collision.walkable(revival.position, playerMovement)) return {DomainStatus::InvalidRequest, {}};
+            !ports_.spatial.navigationGrid(revival.area,player->actor).walkable(revival.position+Vec{.5f,.5f}, playerMovement)) return {DomainStatus::InvalidRequest, {}};
     }
     const auto &knockback=inventoryEdit?inventoryEdit->knockback:characterEdit->knockback;
     if(knockback) {
         const auto &point=*knockback;const auto *area=ports_.areas.find(point.area);
-        if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0 || !area->definition.collision.nativeMovementSegment(player->position,point.position,playerMovement)) return {DomainStatus::InvalidRequest,{}};
+        if(!area || point.area!=player->area || area->generation!=point.generation || player->persistent.player.hp<=0 ||
+            !ports_.spatial.navigationGrid(point.area,player->actor).nativeMovementSegment(player->position+Vec{.5f,.5f},point.position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::InvalidRequest,{}};
     }
     auto equipment = inventoryEdit && inventoryEdit->equipment ? inventoryEdit->equipment : characterEdit && characterEdit->equipment ? characterEdit->equipment : player->rules.equipment;
     if (inventoryEdit && std::any_of(equipment->items.begin(),equipment->items.end(),
@@ -387,7 +389,8 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
                     if(item!=next.persistent.inventory.items.end() && charged!=player->totals.chargedSkills.end()) {
                         ItemInstance::SavedStat *saved=nullptr;
                         const auto locate=[&](auto &list) {for(auto &stat:list) if(stat.id==rules.names.at("item_charged_skill") && stat.parameter==charged->layer) {
-                            if(saved) throw std::runtime_error("Ambiguous native aura charge source");saved=&stat;
+                            if(saved) throw std::runtime_error("Ambiguous native aura charge source");
+                            saved=&stat;
                         }};
                         locate(item->second.savedStats);locate(item->second.runewordStats);for(auto &list:item->second.savedSetStats) locate(list);
                         if(saved && (saved->value&255)>0 && (saved->value>>8)>0 && (saved->value>>8)<=255) {
@@ -652,6 +655,18 @@ DomainResult<> System::commit(Plan plan) {
         plan.expected[1].entity != player.actor || plan.expected[1].expected != request->character ||
         (request->award && request->award <= player.lastExperienceAward)) return {DomainStatus::Stale, {}};
     if (player.inventoryRevision == UINT64_MAX || player.characterRevision == UINT64_MAX) return {DomainStatus::Capacity, {}};
+    const auto *characterPlacement=std::get_if<CharacterEdit>(&plan.change);
+    const auto *inventoryPlacement=std::get_if<InventoryEdit>(&plan.change);
+    if(characterPlacement && characterPlacement->revival) {
+        const auto &point=*characterPlacement->revival;
+        const auto *area=ports_.areas.find(point.area);
+        if(!area || area->generation!=point.generation ||
+            !ports_.spatial.navigationGrid(point.area,player.actor).walkable(point.position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Conflict,{}};
+    }
+    const auto knockbackPlacement=characterPlacement?characterPlacement->knockback:
+        inventoryPlacement?inventoryPlacement->knockback:std::optional<PointTarget>{};
+    if(knockbackPlacement && !ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementSegment(
+        player.position+Vec{.5f,.5f},knockbackPlacement->position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Conflict,{}};
     std::set<PlayerId> auraOwners{player.player};
     for(const auto &peer:plan.auraPlayers) {
         const auto *change=std::get_if<CharacterEdit>(&peer.change);

@@ -22,7 +22,9 @@ DomainResult<> System::corpseExplosion(EntityId sourceId,EntityId corpseId,int s
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};const auto source=participants.find(sourceId);
     if(!source.id()) return {DomainStatus::InvalidActor,{}};
-    if(!retained) retained=std::make_shared<CorpseExplosionPulse>();auto &pulse=*retained;if(pulse.complete) return done();
+    if(!retained) retained=std::make_shared<CorpseExplosionPulse>();
+    auto &pulse=*retained;
+    if(pulse.complete) return done();
     const auto &rules=source.player?source.player->rules.skills->stats:source.monster->rule.stats;
     const auto &catalog=source.player?source.player->rules.skills->formulas:source.monster->rule.formulas;
     if(!rules || !catalog) return {DomainStatus::Unavailable,{}};

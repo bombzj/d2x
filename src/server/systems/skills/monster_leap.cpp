@@ -26,7 +26,8 @@ DomainResult<Vec> System::startMonsterLeap(const CastRequest &request) {
             {4,source->rule.level,source->rule.difficulty,source->rule.statGameType,source->admittedPlayerCount,
              source->alignment()==UnitAlignment::Evil,{},source->id,request.tick},random);
         const auto applied=ports_.monsters.attackProfile(source->id,start->attack.modeStats,source->combatRandom,random);
-        if(!applied) return {applied.status,{}};++start->stage;
+        if(!applied) return {applied.status,{}};
+        ++start->stage;
     }
     if(start->stage==1) {
         const auto contact=ports_.combat.monsterMelee(source->id,target,start->attack,start->occurrence,{request.tick});
@@ -39,15 +40,19 @@ DomainResult<Vec> System::startMonsterLeap(const CastRequest &request) {
     if(start->stage==2) {
         if(const auto point=ports_.monsters.targetPosition(target,source->area)) start->targetPosition=point->first;
         const auto landing=ports_.monsters.leapLanding(source->id,start->targetPosition*2.f-source->position);
-        if(!landing) return {DomainStatus::Unavailable,{}};start->landing=*landing;++start->stage;
+        if(!landing) return {DomainStatus::Unavailable,{}};
+        start->landing=*landing;
+        ++start->stage;
     }
     if(start->stage==3) {
         const auto changed=ports_.monsters.toggleAiState(source->id,source->rule.uninterruptableState,true,request.tick);
-        if(!changed) return {changed.status,{}};++start->stage;
+        if(!changed) return {changed.status,{}};
+        ++start->stage;
     }
     if(start->stage==4) {
         const auto changed=ports_.monsters.toggleAiState(source->id,source->rule.skillMoveState,true,request.tick);
-        if(!changed) return {changed.status,{}};++start->stage;
+        if(!changed) return {changed.status,{}};
+        ++start->stage;
     }
     return {DomainStatus::Applied,start->landing};
 }

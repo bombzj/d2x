@@ -587,7 +587,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                     const int x=effect.nativeParameters?int16_t(packed):int(effect.turnTarget.x),y=effect.nativeParameters?int16_t(uint32_t(packed)>>16):int(effect.turnTarget.y);
                     const bool clockwise=(rollRandom(effect.random)&1)!=0;
                     int nextX=(4*x+(clockwise?-y:y))/4,nextY=(4*y+(clockwise?x:-x))/4;
-                    if(!nextX) nextX=1;if(!nextY) nextY=1;
+                    if(!nextX) nextX=1;
+                    if(!nextY) nextY=1;
                     effect.turnTarget={float(nextX),float(nextY)};effect.velocity=effect.turnTarget.unit()*(float(effect.velocityFixed)*25.f/4096.f);
                     effect.nativeParameters=std::array<int32_t,2>{nativeNarrow(uint32_t(effect.random)),nativeNarrow(uint32_t(uint16_t(nextX))|(uint32_t(uint16_t(nextY))<<16))};
                 }

@@ -48,7 +48,8 @@ DomainResult<bool> System::redeemUnitCorpse(EntityId source,EntityId corpse,int 
     const auto region=owner.player?owner.player->area:owner.monster->area;
     const auto evaluate=[&](SkillFormulaInput input,std::string_view field) {
         SkillFormulaValues values(*catalog,input);const auto result=values.calculation(FormulaDomain::Skill,skill,rank,field);
-        if(!result) throw std::logic_error("Missing native Redemption formula");return *result;
+        if(!result) throw std::logic_error("Missing native Redemption formula");
+        return *result;
     };
     // Native callback draws the chance before evaluating Calc1. Nested Rand
     // calls share that actual unit's stream, and Calc3 observes the HP write.

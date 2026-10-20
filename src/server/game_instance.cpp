@@ -17,8 +17,10 @@ GameInstance::GameInstance(GameDefinition definition)
         systems_.quests.initializeControl();
     systems_.world.initialize();
     systems_.world.activateAct(definition.persistent.lastRegion);
-    systems_.world.activate(definition.persistent.lastRegion,areas_.at(definition.persistent.lastRegion).definition.spawn);
-    players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_));
+    const auto arrival=systems_.world.nativeActSpawnLocationEx(definition.persistent.lastRegion,0,2);
+    if(!arrival || !arrival->room) throw std::runtime_error("No native player entry position");
+    players_.admit({1}, std::move(definition.character), std::move(definition.persistent), areas_, rules_,tick_,childRandom(random_),
+        {*arrival->room,arrival->position},systems_.spatial,systems_.world);
     if(!systems_.transactions.initializeItemAuras({1},tick_))
         throw std::runtime_error("Unable to initialize admitted item auras");
     systems_.effects.registerPlayer(players_.find({1})->actor,tick_);
@@ -33,8 +35,10 @@ PlayerId GameInstance::admit(GameDefinition definition) {
         throw std::runtime_error("Invalid participant game settings or identity range");
     const PlayerId id{nextPlayer_};
     systems_.world.activateAct(definition.persistent.lastRegion);
-    systems_.world.activate(definition.persistent.lastRegion,areas_.at(definition.persistent.lastRegion).definition.spawn);
-    players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_));
+    const auto arrival=systems_.world.nativeActSpawnLocationEx(definition.persistent.lastRegion,0,2);
+    if(!arrival || !arrival->room) throw std::runtime_error("No native player entry position");
+    players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_),
+        {*arrival->room,arrival->position},systems_.spatial,systems_.world);
     if(!systems_.transactions.initializeItemAuras(id,tick_)) {
         areas_.removeRoomUnit(players_.find(id)->actor);
         players_.players_.erase(id);
@@ -48,12 +52,24 @@ PlayerId GameInstance::admit(GameDefinition definition) {
 bool GameInstance::enter(PlayerId id, bool active) {
     auto found = players_.players_.find(id);
     if (found == players_.players_.end()) return false;
-    if(found->second.entered==active) return true;
+    if(found->second.entered==active && found->second.collisionActive==active) return true;
+    std::optional<world::QuestPosition> arrival;
+    if(active && !found->second.collisionActive) {
+        systems_.world.activate(found->second.area,found->second.position+Vec{.5f,.5f});
+        arrival=systems_.world.nativePlayerPosition(found->second.area,found->second.position,found->second.actor);
+        if(!arrival) return false;
+    }
     if(active && !events_.publish({0,tick_,{}, {AudienceKind::Game,{},found->second.area},
         {PlayerMessageFact{2,found->second.persistent.player.name}}})) return false;
     if (!active && !systems_.trade.cancelFor(id,tick_)) return false;
     if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
+    found->second.collisionActive = active;
+    if(arrival) {
+        found->second.area=arrival->area;found->second.position=arrival->position;
+        found->second.pathStep.reset();
+        areas_.moveRoomUnit(found->second.actor,found->second.area,found->second.position);
+    }
     if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});
     systems_.world.changeClientRoom(id);
     if (!active) {

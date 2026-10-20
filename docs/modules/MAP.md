@@ -50,7 +50,7 @@ D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)�
 
 双方共享算法而不共享运行状态：宿主决定移动、目标和实际路径类型，自有客户端用原67／68已公开的参数生成表现路径。原环绕算法另由nativeMonsterCirclePath提供；特殊技能／击退不冒充普通Toward。[nativeAStarPath](../../src/world/navigation_astar.cpp)按D2MOO的200节点上限、正交2／斜向3代价、八邻接顺序、同分先插、已访问节点代价传播及78折点边界实现；不再用通用A*的全图搜索／任意直线简化代替原版路径。
 
-玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。玩家及普通非玩家动态路径执行共用[NativePathStep](../../src/world/native_path_step.cpp)：保存16.16定点位置，每个25Hz游戏帧从定点位置重算到下一折点的12位量化方向，单帧最多推进到一个折点，按Step.cpp实际进入的子格检查对应MPQ移动碰撞轮廓；碰撞后停在最后接受格的中心。客户端渲染帧只累积25Hz时间，浮点Vec仅为输出投影，不按渲染帧重算方向或用于DDA经过格扫描。世界／区域原点仅用于碰撞格转换，换房间平移保留定点位置，旅行发布背压回退同时恢复步进状态。128个方向值以数学公式独立推导，源码核对与D2MOO表逐项相同；依据为Step::PATH_GetDirectionVector／sub_6FDAB810／sub_6FDACEC0和PathMisc::D2Common_10226／PATH_ComputeVelocityAndDirectionVectorsToNextPoint。普通玩家路径按D2Common_10226保留剩余折点；房间物化／卸载和无关物件变化不重算途中路径。目标单位换格、显式新命令及原单位目标部分路径续算分别处理；实际新障碍由每步进入格的碰撞检测阻止。无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性使用同一跨区碰撞域中的原WallFollow 15／77步；部分AI查询及囚犯路线仍有独立用途的Grid::path调用。动态单位占位、目标单位碰撞占位临时撤销、门的专用目标偏移、完整移动速度修饰的客户端投影和原版完整房间内存回收尚不等价，不能据共享函数宣称所有种子逐帧一致。
+玩家权威移动、旅行后续路线和RemoteScene都调用nativePlayerPath（Straight 7，Toward 73步，18格内AStar回退）。玩家及普通非玩家动态路径执行共用[NativePathStep](../../src/world/native_path_step.cpp)：保存16.16定点位置，每个25Hz游戏帧从定点位置重算到下一折点的12位量化方向，单帧最多推进到一个折点，按Step.cpp实际进入的子格检查对应MPQ移动碰撞轮廓；碰撞后停在最后接受格的中心。客户端渲染帧只累积25Hz时间，浮点Vec仅为输出投影，不按渲染帧重算方向或用于DDA经过格扫描。世界／区域原点仅用于碰撞格转换，换房间平移保留定点位置，旅行发布背压回退同时恢复步进状态。128个方向值以数学公式独立推导，源码核对与D2MOO表逐项相同；依据为Step::PATH_GetDirectionVector／sub_6FDAB810／sub_6FDACEC0和PathMisc::D2Common_10226／PATH_ComputeVelocityAndDirectionVectorsToNextPoint。普通玩家路径按D2Common_10226保留剩余折点；房间物化／卸载和无关物件变化不重算途中路径。目标单位换格、显式新命令及原单位目标部分路径续算分别处理；实际新障碍由每步进入格的碰撞检测阻止。无路径的普通攻击／踢击返回不可用，不无限挂起。01／02与03／04明确区分走／跑，自动近战追击和拾取按PlrMsg使用Run，体力不足仍由权威降为走。5F可达性使用同一跨区碰撞域中的原WallFollow 15／77步；部分AI查询及囚犯路线仍有独立用途的Grid::path调用。普通单位实时占位与寻路时的目标脚印撤销已接入，具体范围见下节；门的专用目标偏移、完整移动速度修饰的客户端投影和原版完整房间内存回收尚不等价，不能据共享函数宣称所有种子逐帧一致。
 
 自然边界沿同一完整目标寻路，不再使用接近点／接缝扫描／人为跨界段。Grid::linkedNavigation临时借用已准备、步行相连区域的真实完整碰撞，通过整数原点转换调用同一nativePlayerPath；不复制或修改地形，也不跨越未准备区域或warp。玩家每步由NativePathStep检查进入格的公共movementClear，travel::walked按实际占用子格的RoomLayout归属提交换区事实，保留连续位置、剩余路径、目标GUID和交互接近点；事件背压回退该步、保留路径重试。碰撞版本仅参与显式命令去重；相邻区域的加载／卸载不自动重算已执行的路径。原依据为D2MOO Path.cpp目标房间准备、D2Collision::COLLISION_GetRoomBySubTileCoordinates和Step::PATH_RecacheRoomAtCoordIfNeeded。
 
@@ -60,9 +60,29 @@ D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)�
 
 普通非玩家权威及表现也接入NativePathStep；佣兵区域归属可随实际步行转换，保留剩余路径。远距主人移动历史、原100步参数及近处逻辑区限制统一见[佣兵](../gameplay/characters/HIRELINGS.md#原数据与执行入口)。敌对怪物跨级追击限制没有据此解除。
 
-客户端RemoteTown保留snapshot.collision的完整16位值，与宿主一致，不再只消费低8位；房间选择使用与人物子格中心相符的四舍五入坐标。NPC单位靠近支持同幕步行相连区域中的真实GUID／坐标，不因目标在相邻级别拒绝原02／04；交談仍按原距离6／8门槛复验。公共算法不等于所有原版路径已认证，完整动态单位占位、房间内存回收、怪物跨级追击及全种子／延迟组合仍有边界。
+客户端RemoteTown保留snapshot.collision的完整16位值，与宿主一致，不再只消费低8位；房间选择使用与人物子格中心相符的四舍五入坐标。NPC单位靠近支持同幕步行相连区域中的真实GUID／坐标，不因目标在相邻级别拒绝原02／04；交談仍按原距离6／8门槛复验。公共算法不等于所有原版路径已认证，动态占位的特殊重叠／历史位交错、房间内存回收、怪物跨级追击及全种子／延迟组合仍有边界。
 
-自然边界的区域归属与整数回包、子格中心必须使用同一坐标约定，避免提前换区后把路径起点落到源Grid之外。NPC在相邻级别的交谈仍须复验原距离及连通性，完整跨级追击和动态占位另待闭合。
+自然边界的区域归属与整数回包、子格中心必须使用同一坐标约定，避免提前换区后把路径起点落到源Grid之外。NPC在相邻级别的交谈仍须复验原距离及连通性，完整跨级追击和特殊占位交错另待闭合。
+
+### 单位占位与入场
+
+玩家准入不再复制固定`AreaDefinition.spawn`，而由`world::nativeActSpawnLocationEx`按当前MPQ房间／出生标记、区域随机、标记偏移(+3,+3)、size2／0x1c09及原扫描顺序选择落点。PlayerStore准入即保留碰撞资格，尚未完成客户端入场的后续角色也必须避让；离场解除资格，重新激活先复验空位。重入存档尸体另走原出生标记及size2／0x9c19／PosIncrement4，不再和活人复制同一坐标。没有空位明确失败，不退回固定出生点。
+
+`spatial::navigationGrid`为原Grid算法提供临时只读碰撞视图，读取玩家、怪物、NPC、佣兵／召唤物、地面物品及门户的当前领域状态。普通玩家SmallUnit为十字0x80加中心0x1000；普通怪物、宠物及Wraith分别沿已准备的Unit／Pet／NoPresence模式。服务器死亡后无deadCol的单位改写3×3尸体位，客户端尸体沿无presence的十字；行走掩码不阻挡尸体，宠物也不能统一当成普通实体墙。位置按定点步进对应的`floor(position+.5)`投影，跨级脚印按实际房间归属及幕坐标查询。
+
+玩家寻路排除自身与目标脚印，怪物只在原PathType具有0x800标志的1／7／15分支排除目标；实际进入子格时仅排除自身，目标仍参与阻挡。前一个单位提交移动、死亡、换区或离开后，下一个查询立即读取新状态，不等spatial的周期索引。移动不因其他单位换格重建尚未结束的路径，碰撞仍由NativePathStep逐格处理；旧骨墙几何旁路已由公共脚印替代。旅行、复活、传送及5F落点消费同一实时投影，换幕保留0x1c89／PosIncrement5，旅行和复活输出背压重试重新寻位；复活／击退事务提交还会复验动态碰撞。RemoteScene从公开单位位置、动作和当前MPQ构造同类视图，不读取服务端隐藏状态。
+
+依据为本地D2MOO `Clients::sub_6FC31EF0`、`D2Dungeon::DUNGEON_FindActSpawnLocationEx`、`Path::D2Common_10142`、`Step::sub_6FDAB810`及`SUnit::sub_6FCBDFE0`／`LEVEL_ChangeAct`。1.13c `D2Common` RVA359D0／35A2A／35A83确认玩家与怪物同走SetMaskWithPattern（读取动态路径+0x48并调用4BE90），与本地1.10f转录把玩家放在SetMaskWithSize分支不同；RVA361BD–361CE确认玩家0x80／0x1c09及Straight。DLL摘要见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。普通出生与走跑不能据此允许多个活人同格；特殊技能使用各自掩码，不增加统一的“禁止重叠”规则。当前仍用实时投影而非保存全部历史Set／Reset交错，强制位移造成重叠后的共享位清除、特殊模式切换、门的专用目标偏移及全种子／延迟下的原版双端行为仍未完整认证。
+
+### 走跑动画与路径结束
+
+RemoteScene的走跑判定取本帧路径推进后是否仍有路径，不再以最近200毫秒内的位置变化延长动画。25Hz两次推进之间保留走跑模式；到达、受阻或取消的同帧转为城内待机5／城外待机1，保留最后移动朝向。位置修正本身不触发走跑。脚步声消费同一状态，图形和帧数读取当前MPQ。
+
+本地显示模式与原协议动作分开：同一走／跑模式改目标不重置相位，走／跑／待机切换从各自动画起点开始，不再按全局渲染时间取循环帧。冻结暂停相位，技能、死亡及脚本序列仍沿自身动作时钟，骑乘锚点与所显示的动画使用同一相位。25Hz逐次累加原8.8动画帧，移动速度修正变化只影响后续推进，不回算已播放相位。
+
+`gameplay/actions/movement_timing.hpp`声明共用纯计算，实现在角色属性计算单元；服务端角色属性和客户端预测／动画共用原整数运算。人物走／跑动画基础速率为213／101，物品FRW使用150递减式，叠加普通velocitypercent、当前MPQ CharStats走跑比值的临时跑步加成，下限25；路径速度与动画速率分别按原8.8截断，动画上限32767。不能直接把AnimData速度当走跑速度。RemoteUiClients复用已有装备／护甲重量、状态和被动属性投影，材料未齐时只使用明确的基础走跑并报告修正不可用；他人的完整私人装备／被动修正仍不可视作已知。变身按当前MPQ States／MonStats／MonStats2及原模式回退选择速度与已准备的怪物动画速率；服务端普通步进也消费已准备的ShapeProfile、当帧真实状态和同一速度百分比，不继续使用人形基础速度。
+
+依据为D2MOO `PathMisc::D2Common_10226`在路径耗尽时立即ResetMovement并返回FALSE，`Units::UNITS_ChangeAnimMode`仅在模式变化时调用`UNITS_SetAnimStartFrame`。同快照1.13c D2Client RVA1C1AE读取原路径推进返回值，1C2F6–1C2FC分支在结束时进入1C47B–1C4AC，按城镇选择1／5并调用ChangeAnimMode；D2Common RVA33920／33938／33952／3395B确认模式比较及重置起点。静态依据与DLL摘要见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。本次未启动游戏，全部装备／变身、冻结与网络延迟组合的逐帧原客户端运行对照仍未完成。
 
 ### 到达与交互
 
@@ -86,7 +106,7 @@ SceneController 统一世界手势；RemoteScene 返回当帧命中／绘制输�
 
 自动地图只有 AutomapExploration／AutomapCatalog／SceneAssets／SceneView 一套揭示、标记、缓存和绘制；RemoteTown 适配原服活动区域。同局返回记忆保留；单机／TCP/IP沿本地角色租约basename，Realm沿客户端保存根目录／Realm／角色名，按实际seed从原版.map／.ma0–3恢复本人图元；旧D2X探索格式停用。细节见[自动地图](../gameplay/world/AUTOMAP.md)。
 
-自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。内容蓝图仍按区域保留，完整单位休眠时序及动态占位仍有缺口。
+自研宿主已接自然边界／UNIT_TILE换区、本人门户／传送点、普通物件交互、中立NPC与第一幕敌对人口，具体资格由travel／objects／npcs／population领域持有；客户端仍消费同一套原协议。人口身份与准入见[怪物模块](MONSTERS.md)，中立单位不可替换为敌人。内容蓝图仍按区域保留，完整单位休眠时序及特殊占位交错仍有缺口。
 
 generateArea的离线碰撞仅留在hosting内容描述中；实际RoomTerrainSession物化结果写入权威Grid.fullTerrainCollision，权威移动经共同movementMask消费完整16位值。既有未提供该字段的粗网格／原服显示仍沿原字节路径。内容交接不保留生成器Grid指针，避免销毁后悬空或跨实例借用。
 

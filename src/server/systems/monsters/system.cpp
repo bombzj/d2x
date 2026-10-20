@@ -16,6 +16,7 @@
 #include "gameplay/monsters/melee_decision.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/systems/combat/participants.hpp"
 #include <algorithm>
 #include <cmath>
@@ -34,7 +35,7 @@ DomainResult<std::vector<MonsterRule::BirthEquipment::Choice>> selectBirthEquipm
     return {DomainStatus::Applied,std::move(result)};
 }
 
-int movementPercent(const Actor &actor,uint64_t tick) {
+int movementPercent(const Actor &actor,uint64_t) {
     const int64_t value=int64_t(actor.velocityPercent)+actor.effectVelocity+actor.hirelingMovementPercent+
         (actor.necroPet?actor.necroPet->velocityPercent:0)+(actor.rule.enchantment?actor.rule.enchantment->velocityPercent:0);
     return int(std::clamp<int64_t>(value,25,INT16_MAX));
@@ -884,14 +885,17 @@ DomainResult<> System::requestMove(const MoveRequest &request) {
     if((pathType!=1 && pathType!=2 && pathType!=7 && pathType!=13 && pathType!=15) || !pathDistance)
         return {DomainStatus::InvalidRequest,{}};
     const Vec center{.5f,.5f};
+    auto pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,
+        !request.circleTurn && (pathType==1 || pathType==7 || pathType==15)?request.target:EntityId{});
     // A retained WallFollow path still needs its unit-target search bound.
-    auto route = request.circleTurn?area.definition.collision.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
-        area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,pathType==15 && bool(request.target));
+    auto route = request.circleTurn?pathGrid.nativeMonsterCirclePath(actor.position+center,request.destination.position+center,request.circleDistance,request.circleTurn,collision):
+        pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,pathType==15 && bool(request.target));
     if(route.empty() && !request.circleTurn && (pathType==2 || pathType==7 || pathType==13)) {
         // MonsterMode retries failed Toward paths with WallFollow. The
         // solver raises its search bound to 40 for a live unit target.
         pathType=15;
-        route=area.definition.collision.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target));
+        pathGrid=ports_.spatial.navigationGrid(actor.area,actor.id,request.target);
+        route=pathGrid.nativeUnitPath(actor.position+center,request.destination.position+center,pathType,pathDistance,collision,bool(request.target));
     }
     for(auto &point:route) point=point-center;
     if (route.empty()) return {DomainStatus::Unavailable, {}};
@@ -1247,10 +1251,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if(!result) {blocked=true;continue;}
         }
         if(actor.knockbackGoal && actor.life>0) {
-            const auto &grid=ports_.areas.at(actor.area).definition.collision;
+            const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
             const Vec delta=*actor.knockbackGoal-actor.position;
             const Vec next=actor.position+delta.unit()*std::min(delta.length(),25.f*TickContext::seconds);
-            if(grid.segment(actor.position,next,{},actor.rule.collision)) {actor.position=next;ports_.areas.moveRoomUnit(id,actor.area,actor.position);}
+            if(grid.segment(actor.position+Vec{.5f,.5f},next+Vec{.5f,.5f},{},actor.rule.collision)) {actor.position=next;ports_.areas.moveRoomUnit(id,actor.area,actor.position);}
             else actor.knockbackGoal=actor.position;
             ++actor.revision;
             if(tick.tick<actor.knockedUntil) continue;
@@ -1265,6 +1269,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
         if(!target) {stop(id);continue;}
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
+        const auto movementGrid=ports_.spatial.navigationGrid(actor.area,actor.id);
         auto arrived=[&](Vec position) {
             // Coordinate paths finish by consuming their last precise point,
             // not by an extra floating stopping radius.
@@ -1281,13 +1286,10 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             if (distance == 0) { actor.route.pop_front(); continue; }
             constexpr Vec center{.5f,.5f};
             const auto previousStep=actor.pathStep;
-            const auto step=actor.pathStep.advance(grid,actor.position+center,actor.route.front()+center,
+            const auto step=actor.pathStep.advance(movementGrid,actor.position+center,actor.route.front()+center,
                 remaining,(actor.airborne || actor.submerged)?MovementCollisionRule{0,1}:actor.rule.collision);
             const Vec next=step.position-center;
             const bool atGoal=arrived(next);
-            bool barrier=false;
-            if(!actor.airborne && !actor.submerged) for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==actor.area && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(actor.position,next,actor.rule.size,body.position,body.rule.size)) {barrier=true;break;}
-            if(barrier) {actor.route.clear();actor.moving=false;break;}
             const auto previous=actor.position;actor.position=next;
             if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;break;}
             ports_.areas.moveRoomUnit(id,actor.area,actor.position);

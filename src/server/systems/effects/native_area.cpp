@@ -10,7 +10,9 @@
 namespace d2x::server::effects {
 DomainResult<> System::nativeArea(const NativeAreaSpec &spec,uint64_t tick,std::shared_ptr<NativeAreaPulse> &retained) {
     const auto done=[] {return DomainResult<>{DomainStatus::Applied,std::monostate{}};};
-    if(!retained) retained=std::make_shared<NativeAreaPulse>();auto &pulse=*retained;if(pulse.complete) return done();
+    if(!retained) retained=std::make_shared<NativeAreaPulse>();
+    auto &pulse=*retained;
+    if(pulse.complete) return done();
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     if(!pulse.prepared) {
         pulse.spec=spec;pulse.spec.damage.knockback|=(spec.resultFlags&8)!=0;
@@ -49,7 +51,9 @@ DomainResult<> System::nativeArea(const NativeAreaSpec &spec,uint64_t tick,std::
                 impact.nativeSkill->directFunction=pulse.spec.directFunction;impact.nativeSkill->staticField=pulse.spec.staticField;
                 impact.areaDamage->rolled->value.reset();
             }
-            if(!impact.missileDamage) impact.missileDamage=std::make_shared<MissileDamageRollState>();impact.missileDamage->statRules=rules;impact.missileDamage->formulas=formulas;
+            if(!impact.missileDamage) impact.missileDamage=std::make_shared<MissileDamageRollState>();
+            impact.missileDamage->statRules=rules;
+            impact.missileDamage->formulas=formulas;
             impact.missileDamage->skill=pulse.spec.skill;impact.missileDamage->level=pulse.spec.rank;
             impact.monsterStates=source.player?MonsterHitStates{source.player->rules.skills->chilled,source.player->rules.skills->poisoned,{}}:source.monster->rule.hitStates;
             impact.missileDamage->uninterruptableState=source.player?source.player->rules.skills->uninterruptable.id:source.monster->rule.uninterruptableState;

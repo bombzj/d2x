@@ -2077,7 +2077,9 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
         Writer out;
         out.u8(run ? 0x04 : 0x02); out.u32(target.type); out.u32(target.id);
         p.sent(p.gs, out.release());
-        p.view.world.movementRequest = OnlineMovementRequest{{}, target, run, ++p.view.world.revision, target.type == 2};
+        // D2Client 1.13c keeps 02/04 as approach only. Marking an object
+        // as operated here starts the owner's predicted Kick before arrival.
+        p.view.world.movementRequest = OnlineMovementRequest{{}, target, run, ++p.view.world.revision};
         p.nextMovement = Clock::now() + std::chrono::milliseconds(100);
         p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {

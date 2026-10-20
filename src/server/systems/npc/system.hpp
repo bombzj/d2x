@@ -9,7 +9,7 @@
 namespace d2x::server::npc {
 using Intent = std::variant<TalkToNpc, EndNpcConversation>;
 struct Request { Intent intent; };
-struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; std::optional<uint16_t> pendingIntroduction; };
+struct Conversation { EntityId npc; RegionId area{}; uint64_t revision{}; std::optional<uint16_t> pendingMessage; bool quest{}; EntityId actor{}; uint64_t areaGeneration{}; QuestId questId=QuestId::DenOfEvil; std::optional<uint16_t> pendingIntroduction{}; };
 struct ServiceAccess { const AreaNpc *npc; const Conversation *conversation; };
 struct Escape {RegionId area;Vec destination;std::deque<Vec> route;bool escaped{};};
 struct HirelingSlot {uint16_t name{};uint32_t seed{};bool available{},hired{};};

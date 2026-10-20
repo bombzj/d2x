@@ -29,7 +29,7 @@ RetailPresetLevel buildRetailPresetLevel(Archives &archives, const WorldCatalog 
     const int file = direction < 0 ? selected : direction;
     if (file < 0 || size_t(file) >= preset->variants.size() || preset->variants[size_t(file)].empty())
         throw std::runtime_error("Native selected preset level file is absent from MPQ");
-    RetailPresetLevel result{placement, preset->id, file, {}, {}};
+    RetailPresetLevel result{placement, preset->id, file, {}, {}, {}};
     if (preset->width && preset->height) {
         result.placement.width = preset->width;
         result.placement.height = preset->height;

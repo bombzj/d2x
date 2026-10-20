@@ -132,7 +132,8 @@ DomainStatus System::drainWeaponMelee(Release &pending,const ActorContext &actor
             auto input=formulaInput(player);SkillFormulaValues values(*player.rules.skills->formulas,input);
             const auto calculation=[&](std::string_view field) {
                 const auto result=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
-                if(!result) throw std::logic_error("Missing native spear follow-up formula");return *result;
+                if(!result) throw std::logic_error("Missing native spear follow-up formula");
+                return *result;
             };
             const auto &row=player.rules.skills->formulas->skills.at(pending.skill.sourceId);
             const auto missile=ports_.missiles.nativeDefinition(row.reference("srvmissilea"));

@@ -64,7 +64,8 @@ bool SceneController::handleMenu(const FrameInput &input) {
         }
         int activated = input.enter && view_.gameMenuItemEnabled(ui.gameMenuSelected) ? ui.gameMenuSelected : -1;
         const bool settingArrow = ((ui.gameMenuPage == EscapeMenuPage::Automap && ui.gameMenuSelected < 5) ||
-                                  (ui.gameMenuPage == EscapeMenuPage::Sound && ui.gameMenuSelected == 5)) &&
+                                  (ui.gameMenuPage == EscapeMenuPage::Sound && ui.gameMenuSelected == 5) ||
+                                  (ui.gameMenuPage == EscapeMenuPage::Video && ui.gameMenuSelected == 1)) &&
                                   (input.menuLeft || input.menuRight);
         if (settingArrow) activated = ui.gameMenuSelected;
         if (input.leftPressed) ui.gameMenuPressed = hovered;
@@ -126,7 +127,10 @@ bool SceneController::handleMenu(const FrameInput &input) {
                 } else if (activated == 6) page(EscapeMenuPage::Options, 0);
                 // Enter/clicking a slider's label does not advance its value.
             }
-            else if (ui.gameMenuPage == EscapeMenuPage::Video) page(EscapeMenuPage::Options, 1);
+            else if (ui.gameMenuPage == EscapeMenuPage::Video) {
+                if (activated == 1) ui.lighting = !ui.lighting;
+                else if (activated == 6) page(EscapeMenuPage::Options, 1);
+            }
             else if (ui.gameMenuPage == EscapeMenuPage::Controls) page(EscapeMenuPage::Options, 3);
             ui.gameMenuPressed = -1;
         }

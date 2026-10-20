@@ -6,7 +6,7 @@
 #include <array>
 #include <optional>
 namespace d2x::server {
-struct ShrineRule { int code{}, argument0{}, argument1{}, duration{}, reset{}; CombatStateDefinition state; std::map<int,MonsterAttackRule> projectiles; MonsterHitStates hitStates; };
+struct ShrineRule { int code{}, argument0{}, argument1{}, duration{}, reset{}; CombatStateDefinition state; std::map<int,MonsterAttackRule> projectiles{}; MonsterHitStates hitStates{}; };
 struct ShrineGenerationEntry { int code{},effectClass{},minimumLevel{}; };
 struct ObjectGroupEntry { int definition{},probability{},density{}; };
 struct ObjectGenerationRule {

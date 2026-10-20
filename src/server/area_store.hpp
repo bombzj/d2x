@@ -34,7 +34,7 @@ struct RoomRandomLoan {RoomView room;uint64_t areaGeneration{},revision{},expect
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
 struct AreaBoundary { RegionId destination; int side{}, plane{}, start{}, end{}; };
-struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder; };
+struct AreaObject { EntityId id; int type{}; Vec position; ObjectRule rule; bool questSpawn{}; int preset{}; std::optional<size_t> presetOrder{}; };
 struct PortalRule {
     int definition{},range{},openingTicks{};
     int width{},height{};uint16_t collisionMask{};std::array<bool,8> collision{};
@@ -147,8 +147,8 @@ struct AreaState {
         std::array<EntityId,4> lastDead{};
         uint8_t deathIndex{};
     };
-    std::vector<RoomState> rooms;
-    std::vector<EntityId> unitHeads; // Native pUnitFirst, separate from room residency.
+    std::vector<RoomState> rooms{};
+    std::vector<EntityId> unitHeads{}; // Native pUnitFirst, separate from room residency.
 };
 struct RoomUnitEntry {
     uint8_t kind{};

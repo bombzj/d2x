@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "native_birth.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
@@ -696,7 +697,8 @@ DomainResult<> System::activateWeb(EntityId id,int skill,int rank,uint64_t tick)
     spec.source={CombatEffectSource::Skill,id,skill,rank};spec.stacking=EffectStacking::SkillLevel;
     spec.nativeState=true;spec.nativeValues.emplace();spec.registersUnitEvents=true;
     for(const auto binding:values.unitEvents(skill)) {if(binding.event<0) break;if(binding.function>0) spec.unitEvents.push_back(binding);}
-    if(*length>0) spec.duration=uint64_t(*length);spec.refreshPassivesOnRemoval=true;
+    if(*length>0) spec.duration=uint64_t(*length);
+    spec.refreshPassivesOnRemoval=true;
     update.statusWrites=values.passiveBuffStats(skill,rank,false);
     update.statusWrites.emplace_back(StatKey{actor.rule.stats->names.at("modifierlist_skill"),0},skill);
     update.statusWrites.emplace_back(StatKey{actor.rule.stats->names.at("modifierlist_level"),0},rank);
@@ -786,11 +788,10 @@ DomainResult<> System::slow(EntityId id,int state,int percent,uint64_t frames,ui
 }
 DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal,bool nativeFreePosition) {
     auto it=state_.actors.find(id);if(it==state_.actors.end() || it->second.life<=0) return {DomainStatus::InvalidActor,{}};
-    auto &m=it->second;const auto &grid=ports_.areas.at(m.area).definition.collision;
-    if(!grid.walkable(point,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
-       (!nativeFreePosition && !grid.segment(m.position,point,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
-    for(const auto &[key,other]:state_.actors) if(key!=id && other.area==m.area && other.life>0 && meleeDistance(point,m.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
-    for(const auto &[key,p]:ports_.players.all()) {(void)key;if(p.entered && p.area==m.area && p.persistent.player.hp>0 && meleeDistance(point,m.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
+    auto &m=it->second;const auto grid=ports_.spatial.navigationGrid(m.area,id);
+    const Vec center{.5f,.5f};
+    if(!grid.walkable(point+center,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
+       (!nativeFreePosition && !grid.segment(m.position+center,point+center,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
     // Native monster relocation is projected by 0x6D snapshot correction.
     (void)tick;stop(id);m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};

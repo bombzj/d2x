@@ -382,7 +382,8 @@ std::unique_ptr<System::Advance> System::advanceNative(const Missile &original) 
         const auto x=int32_t(int16_t(packed)),y=int32_t(int16_t(packed>>16));
         auto xPart=x,yPart=y;if(rollRandom(random)&1) xPart=-xPart;else yPart=-yPart;
         auto nextX=nativeAdd(yPart,nativeMultiply(4,x))/4,nextY=nativeAdd(xPart,nativeMultiply(4,y))/4;
-        if(!nextX) nextX=1;if(!nextY) nextY=1;
+        if(!nextX) nextX=1;
+        if(!nextY) nextY=1;
         missile.parameters={int32_t(uint32_t(random)),int32_t(uint32_t(uint16_t(nextX))|(uint32_t(nextY)<<16))};
         missile.random=random;plan.damageRolls->random=random;
         missile.turnTarget={float(nextX),float(nextY)};missile.velocity=missile.turnTarget.unit()*missile.velocity.length();missile.pathTarget=missile.position+missile.turnTarget;++missile.pathRevision;

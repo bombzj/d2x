@@ -38,10 +38,10 @@ struct SkillRelease {
     bool leaping{},landed{};
     bool whirlwind{};uint64_t nextWhirlHit{};size_t whirlHand{};
     size_t whirlwindAttackHand{};
-    std::optional<uint64_t> motionFrame;
+    std::optional<uint64_t> motionFrame{};
     bool motionFinished{};
-    std::optional<uint64_t> nativeMeleeOccurrence;
-    std::shared_ptr<combat::NativeSkillContact> nativeContact;
+    std::optional<uint64_t> nativeMeleeOccurrence{};
+    std::shared_ptr<combat::NativeSkillContact> nativeContact{};
     bool frenzyPrepared{};
     bool cancelled{};
     bool nativeCallbackStarted{};
@@ -50,14 +50,14 @@ struct SkillRelease {
     // SrvDo012/013 replan after a completed callback, from a game-frame anchor.
     int rewindRemaining{};
     int64_t animationAnchor{};
-    std::vector<uint8_t> animationEvents;
-    std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse;
-    std::shared_ptr<effects::MindBlastPulse> mindBlastPulse;
-    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
-    std::shared_ptr<effects::NativeAreaPulse> directSkill;
-    std::shared_ptr<skills::AssassinKickExecution> assassinKick;
-    std::shared_ptr<skills::DruidMeleeExecution> druidMelee;
-    std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee;
+    std::vector<uint8_t> animationEvents{};
+    std::shared_ptr<effects::BladeShieldPulse> bladeShieldPulse{};
+    std::shared_ptr<effects::MindBlastPulse> mindBlastPulse{};
+    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion{};
+    std::shared_ptr<effects::NativeAreaPulse> directSkill{};
+    std::shared_ptr<skills::AssassinKickExecution> assassinKick{};
+    std::shared_ptr<skills::DruidMeleeExecution> druidMelee{};
+    std::shared_ptr<skills::WeaponMeleeExecution> weaponMelee{};
 };
 struct MonsterRelease {
     MonsterCastRequest request;
@@ -69,25 +69,25 @@ struct MonsterRelease {
     std::vector<int> releaseFrames{};
     size_t nextRelease{};
     uint64_t started{};
-    std::shared_ptr<effects::MonsterCursePulse> curse;
-    std::shared_ptr<monsters::SkillChildrenExecution> children;
+    std::shared_ptr<effects::MonsterCursePulse> curse{};
+    std::shared_ptr<monsters::SkillChildrenExecution> children{};
     bool formulaPrepared{};
     bool releaseRankPrepared{};
     int32_t formulaValue{};
     int32_t formulaValue2{};
-    std::pair<uint64_t,uint64_t> formulaRandom;
+    std::pair<uint64_t,uint64_t> formulaRandom{};
     bool hitReleased{};
     uint64_t infernoUntil{};
     uint64_t infernoEndAt{};
-    std::optional<Vec> leapDestination;
-    std::optional<int> nestClass; // St49's captured fallback; valid MonStats.spawn takes priority.
-    MonsterSpawnParameters minionSpawn; // St62 captures class/mode before the release callback.
-    std::optional<MonsterTentacleExecution> tentacles;
-    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion;
-    std::shared_ptr<effects::NativeAreaPulse> mosquito;
-    std::shared_ptr<effects::NativeAreaPulse> directSkill;
+    std::optional<Vec> leapDestination{};
+    std::optional<int> nestClass{}; // St49's captured fallback; valid MonStats.spawn takes priority.
+    MonsterSpawnParameters minionSpawn{}; // St62 captures class/mode before the release callback.
+    std::optional<MonsterTentacleExecution> tentacles{};
+    std::shared_ptr<effects::CorpseExplosionPulse> corpseExplosion{};
+    std::shared_ptr<effects::NativeAreaPulse> mosquito{};
+    std::shared_ptr<effects::NativeAreaPulse> directSkill{};
     int mosquitoLoops{};
     bool nativeCallbackStarted{},cancelled{};
-    std::shared_ptr<SkillRelease> nativeSkill;
+    std::shared_ptr<SkillRelease> nativeSkill{};
 };
 }

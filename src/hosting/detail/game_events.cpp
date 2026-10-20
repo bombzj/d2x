@@ -173,6 +173,20 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
             if(peer.groundItems.erase(removed->item)) delta.push_back(encodeServerPacket(ServerMessage::RemoveUnit,[&](auto &out){out.u8(4);out.u32(uint32_t(removed->item.value));}));
         }
         else if (const auto *character = std::get_if<server::CharacterFact>(&fact)) delta = nativeCharacterDelta(*content, *character);
+        else if (const auto *death = std::get_if<server::DeathFact>(&fact)) {
+            if (death->victim != host.read(*binding)->actor.id) continue;
+            const auto stat = content->nativeStats->names.at("goldlost");
+            if (stat > UINT8_MAX) throw std::runtime_error("Death gold stat lacks native byte identity");
+            const auto value = death->goldLost;
+            const auto message = value < UINT8_MAX ? ServerMessage::AttributeByte :
+                value < UINT16_MAX ? ServerMessage::AttributeWord : ServerMessage::AttributeDword;
+            delta.push_back(encodeServerPacket(message, [&](auto &out) {
+                out.u8(uint8_t(stat));
+                if (value < UINT8_MAX) out.u8(uint8_t(value));
+                else if (value < UINT16_MAX) out.u16(uint16_t(value));
+                else out.u32(value);
+            }));
+        }
         else if(const auto *environment=std::get_if<server::EnvironmentFact>(&fact))
             delta.push_back(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
                 out.u32(uint32_t(environment->cycle));out.u32(uint32_t(environment->ticks));out.u8(environment->eclipse?1:0);

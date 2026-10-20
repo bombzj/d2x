@@ -27,14 +27,14 @@ struct Spawn {
     std::optional<transactions::Plan> cost{};
     EntityId guidedTarget{};
     bool deathTrigger{};
-    std::optional<RegionId> directArea;
-    EntityId sourceOwner; // Explicit native owner for children; emitter is presentation identity.
-    std::shared_ptr<const SkillRules> preparedRules;
+    std::optional<RegionId> directArea{};
+    EntityId sourceOwner{}; // Explicit native owner for children; emitter is presentation identity.
+    std::shared_ptr<const SkillRules> preparedRules{};
     std::array<int32_t,2> parameters{};
-    MissilePathInitialization pathInitialization;
-    std::optional<uint64_t> nativeMeleeOccurrence;
-    std::shared_ptr<const MissileHitDamage> nativeMeleeBase;
-    std::shared_ptr<combat::NativeSkillContact> nativeMeleeContact;
+    MissilePathInitialization pathInitialization{};
+    std::optional<uint64_t> nativeMeleeOccurrence{};
+    std::shared_ptr<const MissileHitDamage> nativeMeleeBase{};
+    std::shared_ptr<combat::NativeSkillContact> nativeMeleeContact{};
     bool nativeMeleeHeld{};
 };
 struct DirectContact {EntityId projectile;std::optional<uint64_t> occurrence;};
@@ -49,17 +49,17 @@ struct MonsterSpawn {
     std::vector<Vec> aims{};
     bool postMortem{};
     bool environment{};
-    std::vector<Vec> origins;
-    std::vector<float> speeds;
-    PlayerId playerSource;
+    std::vector<Vec> origins{};
+    std::vector<float> speeds{};
+    PlayerId playerSource{};
     int nativeSkill{-1};
     std::array<int32_t,2> parameters{};
     bool directConstructor{}; // Raw CreateMissileFromParams, without a monster attack wrapper.
     bool distanceCountdown{}; // Native constructor flag 0x400.
-    std::optional<int> startFrame; // Native constructor flag 0x200, including an explicit zero.
-    std::optional<int> totalFrames; // Native 0x8000 range override, applied before path initialization.
-    std::optional<EntityId> guidedTarget;
-    std::optional<int32_t> nativeVelocityRaw; // Constructor's 8.8 value before slow / 75% scaling.
+    std::optional<int> startFrame{}; // Native constructor flag 0x200, including an explicit zero.
+    std::optional<int> totalFrames{}; // Native 0x8000 range override, applied before path initialization.
+    std::optional<EntityId> guidedTarget{};
+    std::optional<int32_t> nativeVelocityRaw{}; // Constructor's 8.8 value before slow / 75% scaling.
 };
 struct MonsterLaunch { EntityId first; };
 struct NativeSpawn {
@@ -70,25 +70,25 @@ struct NativeSpawn {
     int definition{-1},skill{-1},rank{1};
     std::array<int32_t,2> parameters{};
     bool distanceCountdown{};
-    std::optional<int> startFrame;
+    std::optional<int> startFrame{};
     // SkillAss::sub_6FCF8330 calls InitLowSeed (high word 666) once, then
     // interleaves coordinate draws with each missile's native constructor.
-    std::optional<uint32_t> ownerLowSeed;
+    std::optional<uint32_t> ownerLowSeed{};
     int32_t scatterRadius{};
     int32_t minimumTargetDistanceSquared{};
-    std::optional<std::pair<uint64_t,uint64_t>> ownerSeedEdit;
+    std::optional<std::pair<uint64_t,uint64_t>> ownerSeedEdit{};
     enum class Initialization { None,ProgressiveCharged,ProgressiveSpiral,ChargedSkill,DiabWall } initialization{};
     uint32_t initialSeed{};
-    std::optional<int32_t> nativeVelocity;
-    std::optional<std::array<int32_t,2>> finalParameters;
-    std::optional<std::array<int32_t,2>> firstFinalParameters; // Post-wrapper edit of its returned missile only.
+    std::optional<int32_t> nativeVelocity{};
+    std::optional<std::array<int32_t,2>> finalParameters{};
+    std::optional<std::array<int32_t,2>> firstFinalParameters{}; // Post-wrapper edit of its returned missile only.
     int initializationIndex{};
-    std::optional<int> totalFrames;
-    std::optional<EntityId> storedOwner;
+    std::optional<int> totalFrames{};
+    std::optional<EntityId> storedOwner{};
     bool copyMonsterAttackBonus{}; // SKILLS_CreateMissile, as distinct from raw params.
     bool transient{}; // SrvDo029 owns a real temporary missile until its direct callback finishes.
-    std::optional<EntityId> guidedTarget;
-    std::optional<int> postCreationFrames; // SetTotal/Current after construction; preserve Activate.
+    std::optional<EntityId> guidedTarget{};
+    std::optional<int> postCreationFrames{}; // SetTotal/Current after construction; preserve Activate.
     bool velocityFixed{}; // Flag0x10: nativeVelocity already has eight fractional bits.
 };
 }

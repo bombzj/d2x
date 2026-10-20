@@ -1,23 +1,30 @@
 #pragma once
-#include "server/area_store.hpp"
-#include "server/player_state.hpp"
+#include "server/game_commands.hpp"
 #include "server/runtime/contracts.hpp"
 #include "gameplay/events/frame_queue.hpp"
+#include "world/collision.hpp"
 #include <map>
 #include <set>
 
+namespace d2x {struct Grid;}
 namespace d2x::server {
 class PlayerStore;
+class AreaStore;
+struct AreaState;
+struct PlayerState;
 namespace travel { class System; }
 namespace monsters { class System; }
 namespace effects { class System; }
 namespace items { class System; }
+namespace objects { class System; }
+namespace spatial { class System; }
 struct ActorContext;
 struct TickContext;
 inline constexpr uint32_t movementTimerHandler=0x4d4f5645;
-struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; effects::System &effects; const items::System &items; FrameEventQueue &frameEvents; };
+struct MovementPorts { PlayerStore &players; AreaStore &areas; travel::System &travel; const monsters::System &monsters; effects::System &effects; const items::System &items; const objects::System &objects; FrameEventQueue &frameEvents; const spatial::System &spatial; };
 class MovementSystem {
     const MovementPorts ports_;
+    CommandStatus apply(PlayerState &,const AreaState &,const MovementCommand &);
     std::map<PlayerId,uint64_t> skillSteps_;
     std::set<EntityId> admitted_;
   public:
@@ -29,6 +36,5 @@ class MovementSystem {
     DomainResult<> frameEvent(const FrameEvent &,TickContext);
     void suspend();
 };
-CommandStatus applyMovement(PlayerState &, const AreaState &, const MovementCommand &);
-void advanceMovement(PlayerState &, const AreaState &, float seconds);
+CommandStatus applyMovement(PlayerState &, const AreaState &, const MovementCommand &,const Grid &);
 } // namespace d2x::server

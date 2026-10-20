@@ -178,7 +178,9 @@ StepStatus System::baalFamily(EntityId id,TickContext tick,Controller &controlle
             if(!target.id) return idle();
             if(!teleportPrepared) {
                 const auto position=ports_.monsters.findBaalTeleportPosition(id,tick.tick,ports_.spatial.nativeCollisionSample());
-                if(!position) return {position.status,{}};point=*position.value;teleportPrepared=true;
+                if(!position) return {position.status,{}};
+                point=*position.value;
+                teleportPrepared=true;
             }
             return point?cast(4,{},*point):idle();
         }

@@ -42,13 +42,13 @@ struct MissileDamageRollState {
     std::shared_ptr<const MonsterTypeCatalog> monsterTypes;
     int lifeStealOverlay{-1},manaStealOverlay{-1};
     std::array<int,3> lifeStealDivisor{1,1,1},manaStealDivisor{1,1,1};
-    std::shared_ptr<const StatRuleCatalog> statRules;
-    std::shared_ptr<const SkillFormulaCatalog> formulas;
+    std::shared_ptr<const StatRuleCatalog> statRules{};
+    std::shared_ptr<const SkillFormulaCatalog> formulas{};
     int definition{},skill{},level{},programOverlay{-1};
     uint16_t serverDamageFunction{};
     MissileDamageElement element{};
     std::array<int32_t,2> damageParameters{};
-    std::optional<int32_t> targetParameterX;
+    std::optional<int32_t> targetParameterX{};
     bool getHit{},softHit{};
     uint8_t knockbackChance{};
     int uninterruptableState{-1};

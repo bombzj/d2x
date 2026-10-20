@@ -48,7 +48,7 @@ ClientPreferences loadClientPreferences() {
             NpcSpeechMode(integer("npcSpeech", 2, 2))};
         return {setting("running"), setting("miniPanelOpen"), large,
             setting("automapCenterWhenCleared", true),
-            setting("automapParty", true), setting("automapNames", true), fade, audio};
+            setting("automapParty", true), setting("automapNames", true), fade, audio, setting("lighting", true)};
     } catch (const nlohmann::json::exception &error) {
         std::cerr << "Invalid client settings: " << error.what() << '\n';
         return {};
@@ -64,7 +64,7 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
                 : preferences.automapFade == AutomapFade::Everything ? "everything"
                 : preferences.automapFade == AutomapFade::Center ? "center" : "auto"},
             {"soundVolume", preferences.audio.sound}, {"musicVolume", preferences.audio.music},
-            {"npcSpeech", int(preferences.audio.speech)}}.dump(2);
+            {"npcSpeech", int(preferences.audio.speech)}, {"lighting", preferences.lighting}}.dump(2);
         writeFileAtomically(preferencesPath,
             std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(text.data()), text.size()});
         return true;

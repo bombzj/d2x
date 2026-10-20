@@ -248,7 +248,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         const auto expected=caster->random();auto random=expected;
         const auto rate=evaluate(random,[&](SkillFormulaValues &values) {
             const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc3");
-            if(!value) throw std::logic_error("Missing native St32 mode attack-rate formula");return *value;
+            if(!value) throw std::logic_error("Missing native St32 mode attack-rate formula");
+            return *value;
         });
         const auto posted=ports_.effects.postModeRate(source.id(),execution.skill,execution.rank,rate,execution.modeRevision,tick.tick,{expected,random});
         if(!posted) return posted.status;
@@ -262,7 +263,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
         const auto expected=caster->random();auto random=expected;
         const auto stun=evaluate(random,[&](SkillFormulaValues &values) {
             const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,"calc2");
-            if(!value) throw std::logic_error("Missing native monster Smite stun formula");return *value;
+            if(!value) throw std::logic_error("Missing native monster Smite stun formula");
+            return *value;
         });
         const auto consumed=consume(expected,random);if(consumed!=DomainStatus::Applied) return consumed;
         impact.weapon->stunFrames=stun;impact.weapon->hitClass=0x65;execution.sourceDamage=128;execution.programPrefilled=true;
@@ -287,7 +289,8 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                 const auto toHit=smite || monsterSmite || (execution.monsterProgram && execution.monsterProgram->alwaysHit) ||
                     (startProgram && (attack.wearSkill.weapon->startFunction==6 || attack.wearSkill.weapon->startFunction==10))?0:evaluate(random,[&](SkillFormulaValues &values) {
                     const auto value=values.parameter(FormulaDomain::Skill,execution.skill,execution.rank,"toht");
-                    if(!value) throw std::logic_error("Missing native melee to-hit formula");return *value;
+                    if(!value) throw std::logic_error("Missing native melee to-hit formula");
+                    return *value;
                 });
                 attack.weapon.attackRatingPercent=nativeAdd(nativeSubtract(attack.weapon.attackRatingPercent,attack.wearSkill.weapon->attackRating),toHit);
             }
@@ -667,7 +670,9 @@ DomainStatus System::prepareNativeSkillContact(SpellImpact &impact,ParticipantVi
                     rollNativeSkillElement(damage,values,execution.skill,execution.rank,random);
                     if(program==DruidProgram::Hunger) {
                         const auto calculation=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,execution.skill,execution.rank,field);
-                            if(!value) throw std::logic_error("Missing native Hunger formula");return *value;};
+                            if(!value) throw std::logic_error("Missing native Hunger formula");
+                            return *value;
+                            };
                         damage.channels[0]=nativeAdd(damage.channels[0],nativePercentage(damage.channels[0],calculation("calc1"),100));
                         damage.lifeLeech=nativeAdd(damage.lifeLeech,calculation("calc2"));
                         damage.manaLeech=nativeAdd(damage.manaLeech,calculation("calc3"));

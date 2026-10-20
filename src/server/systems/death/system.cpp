@@ -50,10 +50,21 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         if (!prepared) { if (!isDeferred(prepared.status)) death->second.reviving = false; return {prepared.status, {}}; }
         return {DomainStatus::Applied, std::monostate{}};
     }
-    ports_.world.activate(townId, town->definition.spawn);
+    if(!death->second.revival) {
+        const auto spawn=ports_.world.nativeActSpawnLocationEx(townId,0,2);
+        if(!spawn) {death->second.reviving=false;return {DomainStatus::Unavailable,{}};}
+        death->second.revival=PointTarget{spawn->area,ports_.areas.at(spawn->area).generation,spawn->position};
+    }
+    const auto &requested=*death->second.revival;
+    if(ports_.areas.at(requested.area).generation!=requested.generation) {
+        death->second.revival.reset();death->second.reviving=false;return {DomainStatus::Stale,{}};
+    }
+    ports_.world.activate(requested.area,requested.position+Vec{.5f,.5f});
+    const auto arrival=ports_.world.nativePlayerPosition(requested.area,requested.position,actor.actor);
+    if(!arrival) return {DomainStatus::Unavailable,{}};
     auto record = player->persistent.player; record.hp = 1;
     transactions::CharacterEdit edit{actor, player->inventoryRevision, player->characterRevision, std::move(record), transactions::ResourceRefresh::LevelUp};
-    edit.revival = PointTarget{townId, town->generation, town->definition.spawn};
+    edit.revival = PointTarget{arrival->area,ports_.areas.at(arrival->area).generation,arrival->position};
     auto plan = ports_.transactions.prepare(std::move(edit));
     if (!plan) { if (isDeferred(plan.status)) return {DomainStatus::Applied, std::monostate{}}; death->second.reviving = false; return {plan.status, {}}; }
     const auto result = ports_.transactions.commit(std::move(*plan.value));

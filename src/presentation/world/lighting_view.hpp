@@ -61,6 +61,6 @@ class LightingView {
     void prepare(const Grid &grid, const LevelRecord &level, Vec player, int radius, Color playerColor,
                  std::span<const SceneLight> lights, std::span<const SceneLightRegion> regions);
     Color sample(Vec position) const;
-    void bind(PaletteBlendView &, Vec player, Vec playerScreen, float zoom) const;
+    void bind(PaletteBlendView &, Vec player, Vec playerScreen, float zoom, bool enabled = true) const;
 };
 } // namespace d2x

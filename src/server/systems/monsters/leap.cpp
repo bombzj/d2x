@@ -20,7 +20,8 @@ std::optional<Vec> System::leapAttackLanding(EntityId source,EntityId target,con
     auto destination=ports_.areas.roomAtPosition(actor->area,actor->position,landingX,landingY);
     if(!destination || ports_.areas.nativeCollisionMask(*destination,landingX,landingY,actor->rule.size,0x1c09,sample)) {
         const auto found=ports_.areas.nativeFreeCoordinates(*room,tx,ty,actor->rule.size,0x1c09,sample);
-        if(!found) return {};destination=found->room;
+        if(!found) return {};
+        destination=found->room;
         const auto point=found->position+ports_.areas.at(destination->area).definition.origin;
         landingX=int(point.x);landingY=int(point.y);
     }

@@ -96,7 +96,7 @@ EscapeMenu::EscapeMenu(Archives &archives)
     // Disabled controls retain the original records' initial presentation;
     // they are not writable settings or a claim about backend capabilities.
     pages_[4] = {{"resolution", {"640x480", "800x600"}},
-                 {"lightquality", {"low", "medium", "high"}, false, false, 2},
+                 {"lightquality", {"smalloff", "smallon"}, true, false, 1},
                  {"blendshadow", {"smalloff", "smallon"}, false, false, 1},
                  {"perspective", {"smalloff", "smallon"}}, {"gamma", {}, false, true, 0, 21, true},
                  {"contrast", {}, false, true, 50, 100, true}, {"sprevious", {}, true}};
@@ -248,7 +248,7 @@ void EscapeMenu::drawControls(int selected, int first, int scrollPressed, const 
     }
 }
 void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &audio,
-                      int controlScroll, int scrollPressed, const PaletteBlendView &blend) const {
+                      bool lighting, int controlScroll, int scrollPressed, const PaletteBlendView &blend) const {
     if (page == EscapeMenuPage::Controls) { drawControls(selected, controlScroll, scrollPressed, blend); return; }
     const bool large = page == EscapeMenuPage::Main || page == EscapeMenuPage::Options;
     const int rows = count(page), step = large ? 50 : 45;
@@ -273,6 +273,7 @@ void EscapeMenu::draw(EscapeMenuPage page, int selected, float elapsed, const st
             if (page == EscapeMenuPage::Sound && row == 5) value = int(audio.speech);
             if (page == EscapeMenuPage::Video && row == 0)
                 value = W == 800 && H == 600 ? 1 : entry.value;
+            if (page == EscapeMenuPage::Video && row == 1) value = int(lighting);
             if (value >= 0 && value < int(entry.values.size()))
                 image(entry.values[size_t(value)], center + 230, baseline, 2, entry.enabled);
         }

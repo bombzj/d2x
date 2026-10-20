@@ -93,7 +93,7 @@ SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteo
 
 原0x40 COLLIDE_MISSILE字段独立于DT1和物件栅格，AreaStore预分配后按原点／十字／方形Set／Reset位操作；普通Collision脚印随出生／移动／撤出更新，Do3／34静止点及Do5范围按实际程序写入。寻位与跨房间地形查询读取同一Grid入口，不用重叠计数替换原位语义。公共`native_spawn`保留边缘／内部扫描顺序、Manhattan优先级、首个同分及PosIncrement；`native_field`从当前MPQ的data/global/expfield.d2逐格追踪，保留11099不检查最终中心格的分支。ClassicData准备原256列方向表，AreaStore提供带房间游标的GetFreeCoordinates／GetFreeSpaceEx候选；size0的CheckMask仍检查中心格，与size0的SetMask无占位分开。world的GetFreeSpaceEx从实际调用者房间开始，保留(+2,+3)及原退路；永久门目的端接size3／0xBE11／PosIncrement5的原生寻位。
 
-spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，死亡后无deadCol的尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407）；没有把不同版本同号ordinal当成相同函数。
+spatial提供不依赖旧indexedTick的同步动态碰撞投影，读取真实玩家／怪物／NPC／伙伴、地面物品和门户。单位按原Unit／Pet／Wraith模式写入，服务端死亡后无deadCol的尸体使用3×3的0x8000位；客户端尸体使用SmallNoPresence十字，Revive有显式运行时模式；环境陷阱也从公共MPQ准备入口取得模式。原生飞弹接触只投影相邻房间单位链及所需掩码，避免逐弹复制全局单位。候选按原DRLG房间顺序、房间pUnitFirst顺序和独立尺寸配对表选择，先过模式掩码门控；屏障无单位目标时仍执行终止联系。已迁移Do的HandleMissileCollision阶段在其子体／状态／世界操作发布后才选择接触或执行到期Hit，并在后续背压时保留阶段。尺寸表及门控／屏障分支核对本地1.13c D2Game RVA3F320和D2Common ordinal10389（固定1.10f参考中的#10407）；没有把不同版本同号ordinal当成相同函数。
 
 items::createNativeGold提供原生落地金币入口，已由Do18的TowerGold操作经objects调用：调用方提供已寻位的精确坐标，当前MPQ区域等级由AreaMetadata保留；SUNIT两条出生种子分别用于单位基础属性与物品起始种子，数量使用单位随机流。候选、事实、ID和全局随机一起发布，重试不提前消费。objects/tower已准备控制Actor及towerchestspawner，TowerOpen仍经loot的ObjectSource准备；专用开箱语义、出生和跨阶段等待顺序尚须核对，不能据接通调用认定完整原程序。
 
@@ -149,7 +149,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | 目录 | 拥有的运行态／职责 | 操作边界 |
 | --- | --- | --- |
 | players | PlayerStore中的角色持久值、位置、移动状态和命令序号 | 入场组装；持久导出仍由GameHost交宿主存储 |
-| movement | 原有路线、走跑及碰撞执行，数据归PlayerStore | execute／step／suspend |
+| movement | 原生路线、走跑、实时单位碰撞及技能位移执行，数据归PlayerStore；spatial临时视图区分寻路时撤目标与步进时保留目标 | execute／step／suspend；入场／旅行／复活共用实时寻位，依据及未完成边界见[地图](MAP.md#单位占位与入场) |
 | world | 区域驻留、准备请求、原生出口／边界／物件身份；AreaStore唯一拥有碰撞 | 请求合并／过期结果拒绝／失败记录／可见邻区；不生成地图，Sleeping保留值不卸载 |
 | spatial | 按区域／网格重建的活玩家与活动非玩家候选索引 | query／step；稳定ID顺序、不移动实体；物件／弹体／物品尚未纳入 |
 | items | 世界物品，沿用ItemInstance／InventoryState | create／resolve；生成不等于提交或放入背包 |
@@ -341,7 +341,7 @@ PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／
 
 EventOutbox保存1024条已成功发布事实的紧凑环形历史；GameInstance保存512条命令接收／执行记录，诊断序号与原命令序号分开。读取不消费Outbox，不改变确认、容量、随机流或规则。结果有first／last／gap及截断数量，不能将有界历史当作完整审计日志。GameHost的调试暂停覆盖普通菜单／失焦策略，逐帧推进仍只通过原固定步；恢复自动策略会同步清理应暂停的活动意图。资源恢复走transactions，怪物生成走内容准备／population，不直接改客户端状态。调用方式见[调试管道](../development/DEBUG_PIPE.md)。
 
-原02／04中的type 5出口靠近交给MovementSystem，执行时复验当前区域、GUID及50格范围，路线终点为原出口的可行走到达点；靠近后既有客户端再提交13，Travel才换区。其他type的单位靠近仍明确NotImplemented。
+原02／04中的单位靠近交给MovementSystem，按单位类型复验当前身份及每轴50子格的请求范围。type 2物件查询objects运行态GUID，覆盖随机生成与休眠恢复，行进时复验目标是否仍存在；type 5出口的路线终点为原出口的可行走到达点。靠近与13操作分开，Travel只在收到实际出口操作后换区；物件操作及距离不足时的继续靠近见[地图物件](../gameplay/world/OBJECTS.md#碰撞与靠近)。
 
 宿主地图准备同时建立原房间范围索引及MPQ Populate标志，供人口与复制兴趣使用。原574–582物件预设回调标记不是Objects.txt实体；现由 hosting/object_content 准备真实物件，具体范围见世界物件基础。缺资源／规则计入 AreaMetadata.objectDeferred，不发送伪造物件。
 

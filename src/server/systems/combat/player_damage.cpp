@@ -59,8 +59,6 @@ DomainStatus System::resolvePlayerImpact(SpellImpact &impact,ParticipantView sou
 DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &target,TickContext tick) {
     auto &execution=*impact.playerContact;
     if(target.actor!=execution.target) return DomainStatus::Stale;
-    const Participants participants{ports_.players,ports_.monsters,ports_.social};const auto caster=participants.find(impact.source);
-    const bool melee=!execution.missile && !impact.reaction;
 
     if(!execution.defensePrepared) {
         const auto prepared=ports_.effects.preparePlayerReception(execution.victim,impact.source,execution.hit,execution.adjustment);
@@ -111,7 +109,6 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         reception.drain.mana=impact.missileContact->drain.manaField;
         reception.drain.stamina=impact.missileContact->drain.staminaField;
     }
-    const auto &rules=*target.rules.skills;
     if(!execution.damageCommitted) {
         // Held AllocCombat contacts do not reserve the defender's future
         // recovery seed. Earlier contacts and callbacks may have consumed it.
@@ -132,7 +129,8 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
         if(impact.nativeSkill->psychicHammer && !impact.nativeSkill->reactionPrepared) {
             auto hit=execution.hit;hit.knockback|=impact.knockback;
             const auto reaction=ports_.effects.nativeMeleeReaction(target.actor,impact.source,hit,execution.callbacks.total,tick.tick);
-            if(!reaction) return reaction.status;impact.nativeSkill->reactionPrepared=true;
+            if(!reaction) return reaction.status;
+            impact.nativeSkill->reactionPrepared=true;
         }
     }
     if(impact.nativeSkill && impact.nativeSkill->melee) {
@@ -140,7 +138,8 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
             const auto action=impact.nativeSkill->defense.block?
                 ports_.effects.block({target.player,target.actor,target.area,ports_.areas.at(target.area).generation,0,tick.tick}):
                 ports_.effects.nativeMeleeReaction(target.actor,impact.source,execution.hit,execution.callbacks.total,tick.tick);
-            if(!action) return action.status;impact.nativeSkill->actionComplete=true;
+            if(!action) return action.status;
+            impact.nativeSkill->actionComplete=true;
         }
     }
     if(impact.nativeSkill && impact.nativeSkill->progressive) {
@@ -148,10 +147,8 @@ DomainStatus System::finishPlayerContact(SpellImpact &impact,const PlayerState &
     }
     {const auto result=postNativeSkillCharge(impact,tick);if(result!=DomainStatus::Applied) return result;}
     const auto hitClass=execution.hitClass;
-    auto events=std::move(execution.itemEvents);const auto remainingLife=execution.remainingLife;
-    const auto extras=execution.extras;
-    const auto source=participants.find(impact.source);
-    const auto *owner=ports_.players.find(execution.attacker.player);
+    auto events=std::move(execution.itemEvents);
+
     if(execution.hostile && !impact.reaction) ports_.effects.triggerMonsterCurse(impact.source,tick.tick);
     if(!execution.nativeMissile) state_.hitClassCursor=hitClass;
     ports_.itemTriggers.commit(std::move(events),target.persistent.player.hp<=0);
@@ -163,7 +160,7 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
     auto &execution=*impact.monsterContact;
     if(target.id!=execution.target) return DomainStatus::Stale;
     const Participants participants{ports_.players,ports_.monsters,ports_.social};const auto caster=participants.find(impact.source);
-    const bool missile=!impact.melee && (!impact.weapon || impact.weapon->projectile),melee=!missile && !impact.reaction;
+    const bool missile=!impact.melee && (!impact.weapon || impact.weapon->projectile);
 
     if(!execution.receptionPrepared) {
         const bool directDrain=!execution.nativeMissile || (caster.monster && !caster.monster->hireling);
@@ -266,7 +263,8 @@ DomainStatus System::finishMonsterContact(SpellImpact &impact,const monsters::Ac
             ports_.monsters.block(execution.target,tick.tick):
             ports_.monsters.finishDamageAction(execution.target,impact.binding.credit,execution.callbacks.total,tick.tick,execution.hitClass,
                 impact.softHit,execution.getHit);
-        if(!action) return action.status;impact.nativeSkill->actionComplete=true;
+        if(!action) return action.status;
+        impact.nativeSkill->actionComplete=true;
     }
     if(!execution.monsterModifierComplete) {
         if(direct>0 && !(impact.type==DamageType::Poison && !impact.weapon)) {

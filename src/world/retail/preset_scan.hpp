@@ -1,7 +1,7 @@
 #pragma once
 #include "rooms.hpp"
 #include "resources/formats.hpp"
-#include "world/navigation.hpp"
+#include "world/room_layout.hpp"
 #include <tuple>
 
 namespace d2x {

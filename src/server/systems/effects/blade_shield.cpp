@@ -111,7 +111,8 @@ DomainResult<> System::bladeShieldEvent(const FrameEvent &event,uint64_t tick) {
             skillPeriodicFrame(nativeNarrow(uint32_t(tick)),*period)==-1,event.handler,event.customId,pulse->skill.rank,event.payload});
     }
     ports_.frameEvents.cancel(event.owner,FrameEventType::PeriodicSkills,event.customId);
-    if(next.handle()) ports_.frameEvents.publish(std::move(next));bladeShieldPulses_.erase(event.handle);
+    if(next.handle()) ports_.frameEvents.publish(std::move(next));
+    bladeShieldPulses_.erase(event.handle);
     return {DomainStatus::Applied,std::monostate{}};
 }
 }

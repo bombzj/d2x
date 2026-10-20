@@ -261,7 +261,8 @@ DomainResult<> System::unitSkill(EntityId id,const SkillCastSpec &skill,uint64_t
         publication.facts.emplace_back(StateFact{id,1,m->area,removed.effect.spec.state.id,false});
     if(spec.state.id>=0) publication.facts.emplace_back(StateFact{id,1,m->area,spec.state.id,true,stats});
     if(skill.castOverlayId>=0) publication.facts.emplace_back(OverlayFact{id,1,m->area,skill.castOverlayId});
-    if(spec.state.id>=0) unit.nativeStats[spec.state.id]=std::move(stats);resources.sample(unit.states);
+    if(spec.state.id>=0) unit.nativeStats[spec.state.id]=std::move(stats);
+    resources.sample(unit.states);
     auto life=resources.take();
     if(random) {life.random=*random;life.changed=true;}
     prepareUnitEffects(publication,id,unit,std::move(life),tick);

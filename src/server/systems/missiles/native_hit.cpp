@@ -493,7 +493,8 @@ std::optional<uint8_t> System::nativeHit(Advance &plan,EntityId target) const {
                 carrier.owner=target;carrier.parameters={owner.player?0:1,nativeNarrow(missile.owner.value)};
                 const auto index=plan.children.size()-1;auto build=std::move(plan.childBuilders.at(index));
                 plan.childBuilders[index]=[posted,build=std::move(build)](const Missile &parameters,Advance::ChildBuildContext &context)->std::optional<Missile> {
-                    if(!*posted) return {};return build(parameters,context);
+                    if(!*posted) return {};
+                    return build(parameters,context);
                 };
             }
         }

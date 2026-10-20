@@ -13,7 +13,7 @@ struct InventoryDrag {
     bool moved = false;
     bool pickedUp = false;
     bool onCursor = false;
-    std::optional<Vec> releasedAt;
+    std::optional<Vec> releasedAt{};
 };
 // Presentation only: keep the picked-up source hidden until native
 // cursor/placement facts arrive, without predicting a destination inventory.

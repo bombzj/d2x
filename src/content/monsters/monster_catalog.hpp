@@ -8,7 +8,7 @@
 #include "gameplay/monsters/ability_spec.hpp"
 #include "gameplay/skills/firewall_spec.hpp"
 #include "gameplay/loot/tower_reward.hpp"
-#include "world/navigation.hpp"
+#include "world/collision.hpp"
 #include "gameplay/effects/definition.hpp"
 #include "gameplay/monsters/collision_spec.hpp"
 #include <array>

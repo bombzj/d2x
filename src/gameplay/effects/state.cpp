@@ -161,7 +161,8 @@ std::vector<RemovedCombatEffect> CombatEffectSet::afterRemoval(const ActiveComba
         // the separately registered AIRESET; no BasicRemove/passive refresh.
         resetTargets(observe);
         if(effect.spec.nativeState) setNativeState(effect.spec.state.id,false);
-        if(observe) observe();return {};
+        if(observe) observe();
+        return {};
     }
     // sub_6FD0B250 restores the normal AI before BasicRemove's state,
     // velocity and passive callbacks, including staydeath states.
@@ -269,7 +270,7 @@ EffectApplication CombatEffectSet::apply(CombatEffectSpec spec, EffectFrame now,
                 }
             }
     if(storage_->nextHandle==std::numeric_limits<uint64_t>::max()) throw std::overflow_error("Combat effect handle exhausted");
-    ActiveCombatEffect effect{{storage_->nextHandle}, std::move(spec), now, {}};
+    ActiveCombatEffect effect{{storage_->nextHandle}, std::move(spec), now, {}, 0, {}};
     if (effect.spec.duration) effect.expiresAt = now + *effect.spec.duration;
     renewExpiration(effect,effect.spec,now);
     auto replaces = [&](const ActiveCombatEffect &existing) {
@@ -441,7 +442,8 @@ std::vector<int> CombatEffectSet::clearNonDeathStates(EffectUnitKind kind,const 
     }
     if(cleared.empty()) return cleared;
     detach();for(const int state:cleared) storage_->states.insert_or_assign(state,false);
-    if(observe) observe();return cleared;
+    if(observe) observe();
+    return cleared;
 }
 std::vector<RemovedCombatEffect> CombatEffectSet::onHit(const std::function<void()> &observe) {
     return erase([](const auto &effect) { return effect.spec.state.removeOnHit; }, EffectRemoval::Hit,observe);

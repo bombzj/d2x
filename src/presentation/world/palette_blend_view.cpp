@@ -371,15 +371,18 @@ void PaletteBlendView::drawRectangle(Rectangle bounds, Color color) const {
     EndShaderMode();
 }
 void PaletteBlendView::setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom,
-                                  Color ambient) {
+                                  Color ambient, bool fullBright) {
     worldLightMap_ = lightMap; lightPlayer_ = player; lightPlayerScreen_ = playerScreen;
     lightOrigin_ = origin; lightZoom_ = zoom; lightAmbient_ = ambient;
+    fullBright_ = fullBright;
 }
 void PaletteBlendView::drawWall(const Sprite *image, Vec position, std::span<const Color> samples, uint8_t alpha) const {
     if (!image || !image->texture.id || alpha < 64) return;
     if (alpha == 255) { drawLit(image,position,samples); return; }
     if (!image->indexedTexture.id || (samples.size() != 1 && samples.size() != 6))
         throw std::invalid_argument("Transparent wall requires original indices and native wall samples");
+    const Color fullLight = WHITE;
+    if (fullBright_) samples = {&fullLight, 1};
     const Rectangle bounds{float(int(position.x + image->x)),float(int(position.y + image->y)),
         float(image->texture.width),float(image->texture.height)};
     const int left = std::max(0,int(bounds.x)), top = std::max(0,int(bounds.y));
@@ -411,6 +414,10 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
     if (!image || !image->texture.id) return;
     if (!samples.empty() && samples.size() != 1 && samples.size() != 6)
         throw std::invalid_argument("World light samples must be floor, unit, or six wall columns");
+    // The user-facing Lighting Off option uses PL2's maximum intensity row.
+    // Keep original source indices, highlighting, alpha and screen blending.
+    const Color fullLight = WHITE;
+    if (fullBright_) samples = {&fullLight, 1};
     const auto packed = [](Color color) {
         return std::array<float,4>{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
     };

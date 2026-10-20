@@ -2,6 +2,8 @@
 
 世界光照由公共SceneView::drawWorld／LightingView／PL2消费，当前MPQ灯光定义由SceneAssets加载，原服模式与独立连续显示位置提供来源。已接原1.13c整数距离／定点衰减、独立强度与RGB的饱和合成、玩家和物件的传播遮挡。原0x53的tainted已接日蚀开关，完整昼夜时钟未同步；客户端环境推进不等价于原服时序。灯光网格在世界绘制前准备；地砖／墙体／单位分别取光后绘制和混色，文字、小地图和HUD不受世界光照影响。完整原版绘图顺序仍未移植。
 
+Video Options的Lighting Quality按用户要求改为On／Off，默认On；这属于d2x的开关语义，不对应原版High／Medium／Low三档质量。On沿用当前光照路径，Off在`PaletteBlendView::drawLit/drawWall`统一使用强度255（当前MPQ Shadows第31行恒等映射），覆盖地面、墙体、屋顶、单位、地面物品及特效，保留原索引、透明／Screen混色、物件阴影和墙体显隐。环境时钟、光源状态和光照网格继续更新，切回On直接使用当前状态。客户端偏好`lighting`为布尔值并默认true，不进入角色D2S；菜单仍用原英文DC6、字号及坐标。实际切换画面尚未运行确认。
+
 ## 数据入口
 
 - `WorldCatalog` 从当前MPQ的 `Levels.txt` 读取 `IsInside`、`LOSDraw`、`Intensity` 和RGB。普通房间RGB非零时直接使用表强度（包括0），全零才回退幕环境；不再用IsInside二选一。`SceneLightRegion`借用当前活动房间near列表的原边界和LevelRecord，在观察者底光上覆盖邻房间各自范围；原DS1可绘制重叠边不扩大碰撞房间。Cloak保留当前区域缓存底光对邻房间的作用。邪恶洞窟任务完成、第四幕特殊事件等环境覆盖仍未接齐。`NoPer`是透视控制。

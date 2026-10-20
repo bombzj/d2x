@@ -189,7 +189,8 @@ DomainStatus System::prepareMissileContact(SpellImpact &impact,ParticipantView s
                 if(!missile.targetParameterX) throw std::runtime_error("Rabies missile lacks native expiration parameter");
                 program.remainingPoison=nativeSubtract(*missile.targetParameterX,nativeNarrow(tick.tick));
                 const auto maximum=values.parameter(FormulaDomain::Skill,missile.skill,missile.level,"edln");
-                if(!maximum) throw std::runtime_error("Unavailable native Rabies length");program.maximumPoisonLength=*maximum;
+                if(!maximum) throw std::runtime_error("Unavailable native Rabies length");
+                program.maximumPoisonLength=*maximum;
             }
             program.ownerDamagePercent=owner->get({missile.statRules->names.at("damagepercent"),0});
             if(random!=expected) contact.damageFormulaSeed=std::pair{expected,random};
@@ -316,7 +317,8 @@ DomainStatus System::prepareContactProcedures(SpellImpact &impact,ParticipantVie
             const ActorContext actor{source.player->player,source.id(),source.player->area,sourceArea->generation,0,tick.tick};
             auto prepared=ports_.itemTriggers.prepare(actor,impact.weapon && !impact.suppressSourceEvents?std::initializer_list{ItemSkillEvent::Hit,ItemSkillEvent::Kill}:
                 std::initializer_list{ItemSkillEvent::Kill},target.id(),target.position());
-            if(!prepared) return prepared.status;events=std::move(*prepared.value);
+            if(!prepared) return prepared.status;
+            events=std::move(*prepared.value);
         }
         const auto result=source.monster?ports_.monsters.consumeRandom(source.id(),expected,random).status:
             ports_.transactions.consumeRandom({source.player->player,source.id(),source.player->area,

@@ -63,7 +63,7 @@ std::optional<System::ShootableTarget> System::acquireTarget(const monsters::Act
 std::optional<System::ShootableTarget> System::shootableTarget(const monsters::Actor &source,TickContext tick) {
     return acquireTarget(source,tick,true,true);
 }
-StepStatus System::step(TickContext tick, FrameFacts &) {
+StepStatus System::step(TickContext, FrameFacts &) {
     std::erase_if(state_.controllers, [&](const auto &entry) {
         const auto *actor=ports_.monsters.find(entry.first);return !actor || (!actor->alive() && entry.second.commands.empty());
     });
@@ -146,7 +146,7 @@ StepStatus System::think(EntityId id,TickContext tick) {
                 if(isDeferred(cast.status)) {blocked=true;controller.nextDecision=tick.tick+1;continue;}
                 controller.phase=1;ports_.monsters.submerge(id);controller.nextDecision=tick.tick+12;continue;
             }
-            if(monster.rule.ai.kind==MonsterAiKind::SandMaggot && monster.burrowed && monster.rule.skillIds[0]>=0) {
+            if(monster.rule.ai.kind==MonsterAiKind::SandMaggot && monster.burrowed) {
                 const auto skill=uint16_t(monster.rule.skillIds[0]);const auto definition=monster.rule.skillActions.find(skill);
                 if(definition!=monster.rule.skillActions.end()) {
                     const auto cast=requestAction(controller,{id,skill,PointTarget{monster.area,area.generation,monster.position},tick.tick,definition->second.nativeMode});

@@ -23,7 +23,7 @@
 #include "content/world/shrine_data.hpp"
 #include "content/npc/vendor_data.hpp"
 #include "resources/data_table.hpp"
-#include "world/navigation.hpp"
+#include "world/collision.hpp"
 #include "world/native_field.hpp"
 #include <array>
 #include <cstdint>

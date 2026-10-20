@@ -55,7 +55,8 @@ DomainStatus System::activateDruid(Release &pending,const ActorContext &actor,Ve
     auto input=caster->formulaInput(ports_.effects,actor.tick);SkillFormulaValues values(*rules.formulas,input);
     const auto formula=[&](std::string_view field) {
         const auto value=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
-        if(!value) throw std::runtime_error("Unavailable native druid formula");return *value;
+        if(!value) throw std::runtime_error("Unavailable native druid formula");
+        return *value;
     };
     if(program.program==DruidProgram::Arctic) {
         const NativeSkillSlot slot{pending.skill.sourceId,pending.skill.charge?pending.skill.charge->item.id:EntityId{}};

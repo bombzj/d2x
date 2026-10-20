@@ -14,7 +14,7 @@ namespace d2x { struct PersistentCharacter; }
 namespace d2x::server::monsters {
 struct Actor;
 struct ModifierPreparation {
-    struct Unit {EntityId id;uint64_t revision{};MonsterIdentity identity;int level{},nativeClass{};std::vector<int> modifiers;};
+    struct Unit {EntityId id;uint64_t revision{};MonsterIdentity identity;int level{},nativeClass{};std::vector<int> modifiers{};};
     uint64_t token{},tick{},generation{},expectedRandom{},nextRandom{};
     RegionId area;Unit leader;MonsterEnchantment selection;std::vector<Unit> minions;
     bool promoteMinions{};
@@ -48,7 +48,7 @@ struct Admission {
     std::vector<Vec> skillPositions{};
     uint64_t tick{};
     bool deadMode{};
-    EntityId minionOwner;
+    EntityId minionOwner{};
     bool ownsMinions{};
     bool transferMinions{};
     bool wanderTarget{};

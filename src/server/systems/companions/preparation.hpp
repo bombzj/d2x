@@ -17,9 +17,9 @@ struct Preparation {
     std::optional<EntityId> refresh{};
     std::optional<PersistentCharacter> ownerEquipment{};
     std::optional<std::pair<uint64_t,uint64_t>> birthRandom{};
-    std::optional<uint64_t> ownerRandom;
-    std::optional<std::map<int,MonsterComponentPalette>> componentPalettes;
-    std::map<int,int> effectiveRanks;
+    std::optional<uint64_t> ownerRandom{};
+    std::optional<std::map<int,MonsterComponentPalette>> componentPalettes{};
+    std::map<int,int> effectiveRanks{};
     uint64_t token{};
 };
 struct Prepared {
@@ -48,7 +48,7 @@ struct HirelingPreparation {
     int temporarySkillBonus{};
     uint64_t token{};
 };
-struct HirelingAction {int skill{},rank{},chance{},mode{},aiType{},state{-1},maximumRange{};std::optional<AuraDefinition> aura;};
+struct HirelingAction {int skill{},rank{},chance{},mode{},aiType{},state{-1},maximumRange{};std::optional<AuraDefinition> aura{};};
 struct PreparedHireling {
     HirelingPreparation source;
     std::string code;
@@ -72,7 +72,7 @@ struct HirelingListPreparation {
     uint64_t conversation{}, token{}, rosterRevision{};
     int seller{}, difficulty{}, level{};
     struct Entry {uint32_t slot{};uint16_t name{};uint32_t seed{};};
-    std::vector<Entry> entries;
+    std::vector<Entry> entries{};
 };
 struct HirelingCandidate {
     uint16_t name{};

@@ -66,7 +66,7 @@ std::optional<QuestPosition> System::nativeFreeSpace(RegionId region,Vec observe
     const auto found=ports_.areas.nativeFreeSpace(*room,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)),size,ports_.spatial.nativeCollisionSample());
     return found?std::optional<QuestPosition>{{found->room.area,found->position}}:std::nullopt;
 }
-std::optional<QuestPosition> System::nativeActSpawnLocationEx(RegionId region,int tile,int size) {
+std::optional<QuestPosition> System::nativeActSpawnLocationEx(RegionId region,int tile,int size,const AreaStore::CollisionSample &sample) {
     if(size<0 || size>3) return {};
     const auto point=nativeActSpawnLocation(region,tile);
     if(!point) return {};
@@ -75,7 +75,7 @@ std::optional<QuestPosition> System::nativeActSpawnLocationEx(RegionId region,in
     const auto room=ports_.areas.roomAtPosition(region,*point,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
     if(!room) return {};
     const auto free=ports_.areas.nativeFreeCoordinates(*room,nativeAdd(int32_t(std::floor(global.x)),3),
-        nativeAdd(int32_t(std::floor(global.y)),3),size,0x1c09,ports_.spatial.nativeCollisionSample());
+        nativeAdd(int32_t(std::floor(global.y)),3),size,0x1c09,sample?sample:ports_.spatial.nativeCollisionSample());
     return free?std::optional<QuestPosition>{{free->room.area,free->position,free->room}}:std::nullopt;
 }
 std::optional<QuestPosition> System::nativeDurielPortalPosition(RegionId region) {
@@ -87,6 +87,16 @@ std::optional<QuestPosition> System::nativeDurielPortalPosition(RegionId region)
     if(!room) return {};
     const auto free=ports_.areas.nativeFreeCoordinates(*room,int(global.x),int(global.y),2,0x1c09,ports_.spatial.nativeCollisionSample());
     return free?std::optional<QuestPosition>{{free->room.area,free->position}}:std::nullopt;
+}
+std::optional<QuestPosition> System::nativePlayerPosition(RegionId region,Vec position,EntityId self) const {
+    const auto &area=ports_.areas.at(region).definition;
+    const auto global=position+area.origin;
+    const int x=int(std::floor(global.x+.5f)),y=int(std::floor(global.y+.5f));
+    const auto room=ports_.areas.roomAtPosition(region,position+Vec{.5f,.5f},x,y);
+    if(!room) return {};
+    const auto free=ports_.areas.nativeFreeCoordinates(*room,x,y,2,playerMovement.mask,
+        ports_.spatial.nativeCollisionSample(playerMovement.mask,{},self));
+    return free?std::optional<QuestPosition>{{free->room.area,free->position,free->room}}:std::nullopt;
 }
 std::optional<QuestPosition> System::nativeWaypointPosition(RegionId region,bool changeAct) {
     const auto &area=ports_.areas.at(region).definition;

@@ -29,10 +29,10 @@ struct Companion { EntityId actor; PlayerId owner; Kind kind; std::optional<uint
     Vec assassinOrigin{},assassinTarget{};
     EntityId assassinMissile{},lastCorpse{};
     bool shadowInitialized{},nativePetMoving{};
-    std::shared_ptr<ShadowDecision> shadowDecision;
-    std::shared_ptr<DruidDecision> druidDecision;
-    std::optional<actions::MonsterCastRequest> pendingAction;
-    std::optional<AuraDefinition> pendingAura;
+    std::shared_ptr<ShadowDecision> shadowDecision{};
+    std::shared_ptr<DruidDecision> druidDecision{};
+    std::optional<actions::MonsterCastRequest> pendingAction{};
+    std::optional<AuraDefinition> pendingAura{};
     uint64_t observedAiThinkRevision{};
 };
 struct State { std::map<EntityId, Companion> companions; };

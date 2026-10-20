@@ -62,7 +62,8 @@ NativeBossTarget acquireNativeBossTarget(const NativeAiTargetPorts &ports,const 
 }
 std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts &ports,const PlayerState &source) {
     const auto &area=ports.areas.at(source.area);const auto *room=area.definition.activation.room(source.position);
-    if(!room) return {};const combat::Participants participants{ports.players,ports.monsters,ports.social};
+    if(!room) return {};
+    const combat::Participants participants{ports.players,ports.monsters,ports.social};
     std::optional<NativeAiTarget> primary,alternative;
     const auto index=size_t(room-area.definition.activation.rooms().data());
     for(const auto near:area.definition.roomNear.at(index)) for(const auto id:ports.areas.roomUnitOrder(near)) {
@@ -77,7 +78,7 @@ std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts
     if(alternative && (!primary || (alternative->distance<=5 && area.definition.collision.path(source.position,primary->position,true,{}).empty()))) return alternative;
     return primary;
 }
-std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext tick,bool missileRay,bool requireSight,int searchDistance,uint64_t *borrowedRandom) {
+std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext,bool missileRay,bool requireSight,int searchDistance,uint64_t *borrowedRandom) {
     const auto &area=ports_.areas.at(source.area);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     auto search=source;const bool confused=source.curseControl.ai==CurseAi::Confuse;

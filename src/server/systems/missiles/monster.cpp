@@ -151,7 +151,8 @@ DomainResult<std::shared_ptr<NativeBirthPublication>> System::prepareNativeBirth
             missile.id=EntityId{data->cursor+prefix+launched.size()};launched.push_back(std::move(missile));
         }
     }
-    if(!lead.transient) data->facts=visuals(launched);data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
+    if(!lead.transient) data->facts=visuals(launched);
+    data->facts.insert(data->facts.end(),extraFacts.begin(),extraFacts.end());
     for(auto &missile:launched) data->missiles.emplace(missile.id,std::move(missile));
     data->timers=prepareTimers(data->missiles,lead.transient);
     auto result=std::shared_ptr<NativeBirthPublication>{new NativeBirthPublication{std::move(data)}};
@@ -402,7 +403,10 @@ combat::SpellImpact System::enemyImpact(Advance &plan,std::vector<EntityId> unit
         hit.monsterHit.reset();hit.type=enemy.rule.element;hit.damage=enemy.hit.channels[size_t(hit.type)];hit.coldFrames=enemy.hit.coldFrames;hit.poisonFrames=enemy.hit.poisonFrames;
     }
     if(enemy.weapon) {
-        if(!plan.damageRolls) hit.monsterHit.reset();hit.weapon=enemy.weapon;hit.coldFrames=unsigned(std::max(0,enemy.weapon->coldFrames));hit.freeze=enemy.weapon->freeze;
+        if(!plan.damageRolls) hit.monsterHit.reset();
+        hit.weapon=enemy.weapon;
+        hit.coldFrames=unsigned(std::max(0,enemy.weapon->coldFrames));
+        hit.freeze=enemy.weapon->freeze;
     }
     hit.returnFire=enemy.rule.returnFire;hit.hitClass=uint8_t(enemy.rule.hitClass);hit.nextDelay=unsigned(enemy.rule.nextDelay);
     if(plan.damageRolls && enemy.rule.nextHit) hit.nativeNextHit=enemy.rule.nextHitState;

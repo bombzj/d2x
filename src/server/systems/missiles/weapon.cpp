@@ -29,7 +29,7 @@ void System::weaponImpact(Advance &plan,Vec at) const {
         const auto &fury=*skill.weapon->spear;const auto &area=ports_.areas.at(m.area);
         std::vector<MissileBurstTarget> candidates;
         for(const auto id:nearbyUnits(m)) {
-            const auto target=participants.find(id);const auto point=unitPosition(m,id);
+            const auto point=unitPosition(m,id);
             if(point && participants.canHarm(m.owner,id) && area.definition.collision.missileSegment(at,*point,{4,1})) candidates.push_back({id,*point});
         }
         for(const auto &target:missileBurstTargets(at,fury.targetRadius,fury.countBase,candidates))
@@ -96,13 +96,13 @@ System::Advance System::advanceWeapon(const Missile &original) const {
     if(m.skill.weapon->bow && m.skill.weapon->bow->guided) {
         const auto &bow=*m.skill.weapon->bow;
         if(m.guidance) {
-            const auto target=participants.find(m.guidance);
+
             if(unitPosition(m,m.guidance) && participants.canHarm(m.owner,m.guidance))
                 if(const auto heading=missileGuidedDirection(m.position,*unitPosition(m,m.guidance),m.lifetimeFrames-m.ageFrames,bow.retargetPeriod)) m.velocity=*heading*m.velocity.length();
         } else if(!m.guidanceSearched && m.ageFrames+1>=m.lifetimeFrames) {
             m.guidanceSearched=true;
             for(const auto id:nearbyUnits(m)) {
-                const auto target=participants.find(id);
+
                 const auto point=unitPosition(m,id);if(!point || !participants.canHarm(m.owner,id)) continue;
                 const int distance=missileDistance(m.position,*point);
                 if(distance<=bow.searchRadius && area.definition.collision.missileSegment(m.position,*point,{4,1}) && (!m.guidance || id<m.guidance)) m.guidance=id;
@@ -136,9 +136,8 @@ System::Advance System::advanceWeapon(const Missile &original) const {
 void System::continueMissileFlight(Advance &plan) const {
     auto &m=plan.next;auto &flight=*plan.collisionFlight;
     if(!flight.continueFlight) {plan.finished=true;return;}
-    const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     while(flight.next<flight.contacts.size()) {
-        const auto [fraction,id]=flight.contacts[flight.next++];const auto target=participants.find(id);
+        const auto [fraction,id]=flight.contacts[flight.next++];
         if(!id) {
             m.position=flight.end;
             if(!nativeHit(plan,{})) {if(flight.weapon) weaponImpact(plan,m.position);else if(m.enemy) throw std::logic_error("Unsupported native monster missile hit program");else projectileImpact(plan,{});}
@@ -164,11 +163,11 @@ void System::continueMissileFlight(Advance &plan) const {
         hit.returnFire=rule.returnFire;hit.hitClass=uint8_t(rule.hitClass);hit.nextDelay=uint64_t(std::max(0,rule.nextDelay));
         if(rule.nextHit) hit.nativeNextHit=rule.nextHitState;
         const auto &states=*m.rules;
-        const auto *owner=ports_.players.findActor(m.owner);
+
         hit.monsterStates.poison=states.poisoned;hit.monsterStates.cold=states.chilled;
         const auto modifiers=ports_.effects.combatModifiers(m.owner,m.executionTick);
         hit.coldPierce=modifiers.coldPierce;hit.poisonPierce=modifiers.poisonPierce;
-        
+
         hit.occurrence=(uint64_t(m.ageFrames)<<32)|m.weaponContacts.size();
         plan.addMissileContact(std::move(hit));return;
     }

@@ -15,7 +15,7 @@ TradeInviteView::TradeInviteView(Archives &archives, const ClassicFont &font, co
         const ClassicStrings strings(archives);
         agreeTo_ = strings.find("strTradeAgreeTo");
         waiting_ = strings.find("strWaitingForOtherPlayer");
-        accept_ = strings.find("strTradeAccept");
+        accept_ = strings.find("ok");
         cancel_ = strings.find("strUiMenu1");
         goldLabel_ = strings.find("strGoldLabel");
         goldQuestion_ = strings.find("strTradeGoldHowMuch");

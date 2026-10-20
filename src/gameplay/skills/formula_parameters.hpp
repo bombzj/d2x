@@ -53,16 +53,16 @@ struct SkillFormulaInput {
     const StatList *actor{};
     const StatSnapshot *stats{};
     // Mutable resources are borrowed at the call site, never cached in Totals.
-    std::map<StatKey,int32_t> currentResources;
+    std::map<StatKey,int32_t> currentResources{};
     int attackRatingClassFactor{};
-    RuleRandom random;
-    std::optional<SkillFormulaRanks> referenceRanks;
-    std::set<std::string,std::less<>> unavailableStats;
+    RuleRandom random{};
+    std::optional<SkillFormulaRanks> referenceRanks{};
+    std::set<std::string,std::less<>> unavailableStats{};
     const StatSnapshot *weaponStats{};
     bool twoHanded{};
     // Server adapters may sample mutable actor/weapon totals for this call.
     // Shared ownership keeps the pointers valid when the input is returned.
-    std::shared_ptr<const StatSnapshot> sampledStats,sampledWeaponStats;
+    std::shared_ptr<const StatSnapshot> sampledStats{},sampledWeaponStats{};
 };
 // Owned nonrandom inputs at one synchronous attribute callback. Later sources
 // must not change an immediate skill's inputs; periodic execution samples anew.

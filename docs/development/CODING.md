@@ -13,6 +13,7 @@
 ## 依赖与编译
 
 - 公共头只暴露必要契约，能前置声明就不包含完整系统定义；每个文件直接包含自己需要的类型，不能依赖偶然的传递包含。
+- 碰撞模式、掩码及尺寸规则只包含`world/collision.hpp`，房间布局值只包含`world/room_layout.hpp`；只有实际持有或调用Grid寻路的文件才包含`world/navigation.hpp`。临时动态碰撞视图复用Grid算法，不把寻路实现传播到内容表和规则头。
 - 非模板、非必要内联的实现放入`.cpp`；私有复杂运行态放模块内部，确有依赖收益时才采用PImpl，不为所有小类型增加堆分配。
 - 改技能实现不应迫使无关模块重新编译；参考`skills/evaluation.cpp`和私有`skills/runtime.hpp`，模块外不包含后者。
 - 宿主身份、命令和快照分别使用`server/player_identity.hpp`、`server/game_commands.hpp`和`server/game_messages.hpp`，基础运行契约不包含完整快照。佣兵记录独立于角色聚合；任务持久状态只依赖身份／布局，目录映射和完成阶段计算留在`gameplay/quest/catalog.hpp`。

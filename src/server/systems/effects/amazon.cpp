@@ -166,7 +166,7 @@ DomainResult<> System::amazonMagic(const ActorContext &actor,const SkillCastSpec
     transactions::CharacterEdit debit{actor,p->inventoryRevision,p->characterRevision,p->persistent.player};debit.player.mana-=skill.manaCost;debit.skillPayment=transactions::SkillManaPayment{skill.manaCost,skill.sourceId};debit.charge=skill.charge;
     const auto &rules=*p->rules.skills->stats;
     const auto &stat=rules.definitions.at(program.stat);
-    const auto primary=program.nativeStat?*program.nativeStat:StatValue{{program.stat,0},
+    const auto primary=program.nativeStat?*program.nativeStat:StatValue{{stat.id,0},
         nativeShiftLeft(program.defenseReduction?nativeSubtract(0,program.defenseReduction):program.slowPercent,stat.valueShift)};
     const auto preparePrimary=[&](CombatEffectSpec &effect) {
         effect.nativeValues.emplace();writeNativeBaseStat(*effect.nativeValues,rules,primary.key,primary.value);

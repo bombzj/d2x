@@ -11,7 +11,7 @@ struct WeaponAttackTiming {
     std::string mode;
     int frames{}, speed{}, actionFrame{}, startFrame{};
     bool sequence{};
-    std::vector<uint8_t> events;
+    std::vector<uint8_t> events{};
     int durationTicks() const;
     int actionTick() const;
 };

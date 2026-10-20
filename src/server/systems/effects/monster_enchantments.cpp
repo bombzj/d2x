@@ -41,7 +41,8 @@ DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,
         auto context=sourceInput?sourceInput->input(*emitter->rule.stats):skills::formulaInput(*emitter,*sampled);
         SkillFormulaValues formulas(*emitter->rule.formulas,context);
         const auto duration=formulas.calculation(FormulaDomain::Skill,a.skill,a.rank,"auralencalc");
-        if(!duration) return {DomainStatus::Unavailable,{}};length=*duration;
+        if(!duration) return {DomainStatus::Unavailable,{}};
+        length=*duration;
         program.state=a.state;program.rejectZeroPrimary=!unique;program.nativeValues.emplace();program.modifiers=a.modifiers;
         program.primaryStat=formulas.auraStatKey(a.skill,1);
         program.nativeWrites=formulas.auraStats(a.skill,a.rank,6,false,true);
@@ -96,7 +97,8 @@ DomainResult<> System::castMonsterCurse(EntityId source,const AuraDefinition &a,
     publishAuraUnits(*publication);return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::monsterCurse(EntityId source,int skill,int rank,Vec center,uint64_t tick,std::shared_ptr<MonsterCursePulse> &retained) {
-    if(!retained) retained=std::make_shared<MonsterCursePulse>();auto &pulse=*retained;
+    if(!retained) retained=std::make_shared<MonsterCursePulse>();
+    auto &pulse=*retained;
     if(pulse.complete) return {DomainStatus::Applied,std::monostate{}};
     const auto *unit=ports_.monsters.find(source);if(!unit || !unit->rule.stats || !unit->rule.formulas || !unit->rule.states) return {DomainStatus::InvalidActor,{}};
     if(!pulse.prepared) {
@@ -226,7 +228,7 @@ void System::triggerMonsterCurse(EntityId id,uint64_t tick) {
         nativeAuraCandidateRecipients({id,m->area,std::clamp(*range,1,40),3,false,origin,NativeAuraTargetMode::TargetRange}),0,tick};
     monsterCurses_.emplace_back(id,std::move(pending));
 }
-StepStatus System::advanceMonsterCurses(uint64_t tick) {
+StepStatus System::advanceMonsterCurses(uint64_t) {
     while(!monsterCurses_.empty()) {
         auto &[source,curse]=monsterCurses_.front();
         while(curse.next<curse.targets.size()) {
@@ -324,7 +326,8 @@ DomainResult<> System::executeMonsterModifier(EntityId id,int modifier,uint64_t 
         return nativeArea(execution.area->spec,tick,execution.area);
     }
     if(modifier==17) {
-        if(!unique) return done();auto &cycle=uniqueCycles_[id];
+        if(!unique) return done();
+        auto &cycle=uniqueCycles_[id];
         if(cycle.emissionPending) {
             const auto posted=ports_.monsters.lightningEmission(id,true,tick);if(posted) cycle.emissionPending=false;return posted;
         }
@@ -336,7 +339,8 @@ DomainResult<> System::executeMonsterModifier(EntityId id,int modifier,uint64_t 
         const auto posted=ports_.monsters.lightningEmission(id,true,tick);if(posted) cycle.emissionPending=false;return posted;
     }
     if(modifier==18) {
-        if(!unique) return done();const auto definition=ports_.missiles.nativeDefinition("coldunique");
+        if(!unique) return done();
+        const auto definition=ports_.missiles.nativeDefinition("coldunique");
         return definition?spawn(*definition,std::max(level/2,1),false,true):DomainResult<>{DomainStatus::Unavailable,{}};
     }
     if(modifier==10) {
@@ -392,7 +396,8 @@ DomainResult<> System::boneDeathEffect(EntityId id,uint64_t tick,ModifierExecuti
     if(!execution.missile) {
         const auto definition=ports_.missiles.nativeDefinition("monstercorpseexplode");if(!definition) return {DomainStatus::Unavailable,{}};
         const auto born=ports_.missiles.spawnNative({id,unit.area,area.generation,tick,unit.position,unit.position,*definition,0,1});
-        if(!born) return {born.status,{}};execution.missile=*born.value;
+        if(!born) return {born.status,{}};
+        execution.missile=*born.value;
     }
     if(!execution.damagePrepared) {
         const auto table=unit.rule.lifeTables.at(size_t(unit.rule.difficulty));if(!table) return {DomainStatus::Unavailable,{}};

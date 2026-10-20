@@ -41,10 +41,10 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
                     !archives.contains("data/global/chars/" + token + "/cof/" + key + ".cof")) continue;
                 // Native frame events: 1 = melee/skill, 2 = missile release.
                 if(mode=="gh" || mode=="bl")
-                    catalog.recoveryTimings.emplace(key,SkillCatalog::CastTiming{int(anim->frames),anim->speed,0});
+                    catalog.recoveryTimings.emplace(key,SkillCatalog::CastTiming{int(anim->frames),anim->speed,0,{}});
                 if(mode=="gh") continue;
                 if (mode == "bl" || (mode == "s1" && tree.classCode == "ama")) {
-                    catalog.attackTimings.emplace(key, SkillCatalog::CastTiming{int(anim->frames), anim->speed, 0});
+                    catalog.attackTimings.emplace(key, SkillCatalog::CastTiming{int(anim->frames), anim->speed, 0,{}});
                     continue;
                 }
                 if (const auto timing=prepareCastAnimationTiming(int(anim->frames),anim->speed,anim->frameFlags)) {

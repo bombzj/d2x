@@ -664,7 +664,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         }
         while(stage<3) {
             if(stage==0) {
-                struct PresetEntry {size_t order;const AreaNpc *npc{};const AreaObject *object{};std::optional<size_t> native;};
+                struct PresetEntry {size_t order;const AreaNpc *npc{};const AreaObject *object{};std::optional<size_t> native{};};
                 std::vector<PresetEntry> entries;
                 for(const auto &object:area.definition.objects)
                     if(area.definition.activation.room(object.position)==&bounds)

@@ -16,7 +16,7 @@ namespace d2x::server {struct PlayerState;}
 namespace d2x::server::transactions {
 // Local plan identities, never client retry tokens. No unbounded replay set.
 struct State { uint64_t next = 1, lastCommitted{}; };
-struct Ports { PlayerStore &players; AreaStore &areas; EventOutbox &events; items::System &items; actions::State &actions; effects::System &effects; uint64_t &random; };
+struct Ports { PlayerStore &players; AreaStore &areas; EventOutbox &events; items::System &items; actions::State &actions; effects::System &effects; uint64_t &random; const spatial::System &spatial; };
 class System {
     struct AuraPreparation;
     void prepareAuraRecipient(AuraPreparation &,const ActorContext &,const AuraDefinition &,const SkillAuraChange &,EntityId,int passiveState);

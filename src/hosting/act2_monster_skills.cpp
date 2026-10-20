@@ -132,7 +132,8 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
         }
         if(chain!=record.id) return false;
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));
-        if(!clock) return false;rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
+        if(!clock) return false;
+        rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
     }
     if(record.ai=="PutridDefiler") {
         rule.pregnantState=data.states.at("pregnant").definition.id;
@@ -159,7 +160,8 @@ bool prepareAct2MonsterSkills(Archives &archives,const ClassicData &data,const A
     }
     if(record.ai=="WillOWisp") {
         const auto clock=loadMonsterMotionTiming(animations,record.token,"s1",monsterModeWeapon(archives,record.token,"s1",record.baseWeapon));
-        if(!clock) return false;rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
+        if(!clock) return false;
+        rule.aiPoseTicks.emplace(8,monsterAnimationTicks({clock->frames,clock->speed}));
     }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const int bonus=data.tables.at("difficultylevels").number(size_t(rule.difficulty),"MonsterSkillBonus").value_or(0);

@@ -126,6 +126,7 @@ uint16_t Grid::objectMask(int x, int y, EntityId ignored) const {
     return mask;
 }
 uint16_t Grid::movementMask(int x, int y, EntityId ignored) const {
+    if(collisionSample) return collisionSample(x,y,ignored);
     if (!navigationSources.empty()) {
         for (const auto &source : navigationSources) {
             const auto &grid = *source.grid;
@@ -192,6 +193,9 @@ Grid Grid::linkedNavigation(Vec &origin) const {
     origin = {float(left), float(top)};
     for (auto &source : sources) { source.offsetX += left; source.offsetY += top; }
     view.navigationSources = std::move(sources);
+    if(collisionSample) view.collisionSample=[sample=collisionSample,left,top](int x,int y,EntityId ignored) {
+        return sample(x+left,y+top,ignored);
+    };
     return view;
 }
 bool Grid::navigationContains(Vec point) const {
@@ -481,7 +485,7 @@ bool Grid::lightSegment(Vec a, Vec b) const {
     return true;
 }
 Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
-    Bytes reachable(blocked.size());
+    Bytes reachable(size_t(width)*height);
     if (!walkable(origin, rule)) return reachable;
     std::vector<int> pending{int(origin.y) * width + int(origin.x)};
     reachable[size_t(pending.front())] = 1;
@@ -577,9 +581,10 @@ std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisio
         return out;
     }
     int start = int(from.y) * width + int(from.x), goal = int(to.y) * width + int(to.x);
-    std::vector<float> costs(blocked.size(), std::numeric_limits<float>::infinity());
-    std::vector<int> parents(blocked.size(), -1);
-    Bytes closed(blocked.size());
+    const auto cellCount=size_t(width)*height;
+    std::vector<float> costs(cellCount, std::numeric_limits<float>::infinity());
+    std::vector<int> parents(cellCount, -1);
+    Bytes closed(cellCount);
     using Entry = std::pair<float, int>;
     std::priority_queue<Entry, std::vector<Entry>, std::greater<Entry>> open;
     auto heuristic = [&](int id) {

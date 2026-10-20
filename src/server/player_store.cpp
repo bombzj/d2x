@@ -1,15 +1,19 @@
 #include "player_store.hpp"
 #include "area_store.hpp"
+#include "server/systems/spatial/system.hpp"
+#include "server/systems/world/system.hpp"
 #include "server/systems/inventory/eligibility.hpp"
 #include "gameplay/items/weapon_registration.hpp"
 #include "gameplay/items/inventory_order.hpp"
 #include <stdexcept>
 #include <algorithm>
 #include <utility>
+#include <cmath>
 
 namespace d2x::server {
 void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
-                        PersistentCharacter persistent, AreaStore &areas, const PreparedRules &rules,uint64_t tick,uint64_t unitSeed) {
+                        PersistentCharacter persistent, AreaStore &areas, const PreparedRules &rules,uint64_t tick,uint64_t unitSeed,
+                        RoomPoint arrival,const spatial::System &spatial,world::System &world) {
     if (!id.value || players_.contains(id))
         throw std::runtime_error("Invalid or duplicate admitted player");
     PlayerState player;
@@ -21,10 +25,30 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     player.player = id; player.actor = persistent.player.id;
     player.combatRandom=unitSeed;
     if (!player.actor) throw std::runtime_error("Game admission requires a character");
-    player.area = persistent.lastRegion;
-    player.position = areas.at(player.area).definition.spawn;
+    player.area = arrival.room.area;
+    player.position = arrival.position;
     player.persistent = std::move(persistent);
-    for (auto &corpse : player.persistent.corpses) { corpse.region = player.area; corpse.position = player.position; corpse.recoverableExperience = 0; }
+    // Clients::sub_6FC31EF0 -> Player::sub_6FC7BFC0 restores saved bodies
+    // through size 2 / 0x9c19 / increment 4, including earlier restored bodies.
+    const auto sample=spatial.nativeCollisionSample();
+    const auto origin=areas.at(player.area).definition.origin;
+    const int playerX=int(std::floor(player.position.x+origin.x+.5f)),playerY=int(std::floor(player.position.y+origin.y+.5f));
+    std::vector<Vec> restored;
+    for (auto &corpse : player.persistent.corpses) {
+        const auto collision=[&](RoomView room,int32_t x,int32_t y)->uint16_t {
+            uint16_t mask=sample(room,x,y);
+            if(player.persistent.player.hp>0) mask|=nativeCollisionFootprint(NativeCollisionPattern::SmallUnit,x-playerX,y-playerY,0x80);
+            for(const auto at:restored) if(std::abs(x-int(at.x))<=1 && std::abs(y-int(at.y))<=1) mask|=0x8000;
+            return mask;
+        };
+        const auto spawn=world.nativeActSpawnLocationEx(player.area,0,2,collision);
+        if(!spawn || !spawn->room) throw std::runtime_error("No native saved-corpse spawn room");
+        const auto global=spawn->position+areas.at(spawn->area).definition.origin;
+        const auto point=areas.nativeFreeCoordinates(*spawn->room,int(global.x),int(global.y),2,0x9c19,collision,{},0,false,50,4);
+        if(!point) throw std::runtime_error("No native saved-corpse entry position");
+        corpse.region=point->room.area;corpse.position=point->position;corpse.recoverableExperience=0;
+        restored.push_back(point->position+areas.at(point->room.area).definition.origin);
+    }
     player.definition = std::move(definition);
     player.rules = rules;
     if (player.definition.walkVelocity <= 0 || player.definition.runVelocity <= 0)
@@ -53,6 +77,7 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     record.mana = std::clamp(record.mana, Fixed8{}, player.totals.character.maxManaFixed);
     record.stamina = std::clamp(record.stamina, Fixed8{}, player.totals.character.maxStaminaFixed);
     auto room=areas.prepareRoomUnit(player.actor,0,player.area,player.position);
+    if(!room) throw std::runtime_error("Missing native player entry room");
     players_.emplace(id, std::move(player));
     areas.publishRoomUnit(*room);
 }

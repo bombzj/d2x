@@ -6,6 +6,10 @@
 
 原0x0D动作8／9、0x0E死亡／DEAD模式驱动Dying／Dead；生命整数0不能单独覆盖原服存活动作。真正死亡关闭玩法面板、终止未发送手势／队列，但网络与原服继续运行。共用原字体、职业DD，缺DD时停DT末帧。
 
+死亡提示直接读取当前MPQ本地化`youdiedhardcore.dc6`（普通／专家共用“You have died”标题）与`youdiedinst.dc6`，缺该语言图时回退原英文图；不把`youdiedsoftcore.dc6`的“You lost gold”当死亡标题。图块按原256像素拼接并应用PL2文字色1，基线分别为画面高度一半减94／减46，水平方向按原整数居中。损失行使用原font30与相同红色变换，保持48像素行距；不使用放大的普通字体、硬编码英文或额外全屏暗罩。
+
+普通人物仅在服务端`goldlost`大于0时显示TBL `Deathmessage`及原罚金；噩梦／地狱另显示`Deathmessnight`，即使本次未实际扣经验也按原难度条件显示。专家人物显示`Harddeathmessage`并跳过两类损失行。人物模式／难度来自原副本；未知资格或罚金不在UI猜测。自研death在死亡库存事务内捕获真实罚金，hosting按当前ItemStatCost的goldlost身份发送原1D／1E／1F，包含零值以覆盖上次死亡；不把掉落金币误算成罚金，不增加存档字段。
+
 死亡后ESC等待原服DEAD，再单次发0x41；收到原服存活位置／资源确认后回城，不在客户端补满资源。用户原版实测：ESC回城满血；死亡直接退出，或离开后服务端死亡，再次进入显示1血满蓝。当前HUD在原服存活动作及初始零整数生命采样时显示1血，副本仍保留原始0；蓝量直接读原服，客户端不补满。
 
 本人可见尸体以真实type0 GUID靠近并0x13取回。取回数量、库存、经验和0x8E归属解除由原服回包确认；`accepted`不是回收完成。不可用旧本地装备规则替代部分回收。
@@ -20,6 +24,10 @@
 
 自研宿主的伙伴联动以death::Transition.ready为同一权威DT结束点：调用companions::ownerDied后，四类佣兵写死亡位并开始自身DT，召唤物进入死亡／移除。复活与保存须等待companionsSettled，背压不提前清理或保存存活佣兵；怪物本身受伤或寿命到期仍可独立死亡。依据PlrModes::PLRMODE_StartXY_Dead → PlayerPets::D2GAME_KillPlayerPets／sub_6FC7CDC0，不能仅在玩家hp归零时立即杀伙伴。完整时序／背压组合仍待核对，详见[佣兵](HIRELINGS.md)。
 
+自研复活先经原出生标记及实时单位碰撞寻位，输出背压保留已选标记，重试时重新查空位；人物事务准备和提交都复验落点。重入存档尸体按原独立寻位恢复，不再和活人使用同一固定spawn。死亡撤出活人presence，服务器尸体使用3×3的0x8000位，普通行走掩码允许经过；入口、原版依据和特殊重叠／历史位操作限制见[地图](../../modules/MAP.md#单位占位与入场)。
+
 独立D2S工具保留原JM尸体段，编码支持最早非空尸体及物品位置；不提供产品恢复入口，详见[存档](../../modules/SAVES.md)。D2S没有客户端死亡动画、未完成施法或短时状态字段。
 
 本地D2MOO PlrModes尸体创建／回收与DT→DEAD、PlrMsg::sub_6FC828D0／Rcv0x41、PlayerPets死亡处理、ItemMode装备回收、Player::PLAYER_ApplyDeathPenalty与PlrSave2尸体段仅作原服规则／格式证据。客户端不移植损失结算。专家、多尸体、满背包部分回收和离开后死亡精确时序未完整认证；有限单人观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。
+
+死亡界面另只读核对本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA BEE60–BF0CE：DT／DD资格、标题／ESC原图、PL2色1、整数居中、48像素行距、175号goldlost与TBL5094–5096，以及普通／专家和难度分支；C3DAA在主要HUD之后调用。D2Win（MD5 `32b35919f174681bb2b80a582e5c19d0`）ordinal10138（RVA117A0）核对原图拼接与居中偏移，ordinal10184／10150（RVA12FE0／12FA0）及字体名表RVA1C588核对font2=Font30、原字宽与绘制基线。当前实现按该布局适应画布尺寸；完整职业动画／死亡音效、多语言、所有分辨率和原版逐帧表现仍待运行对照。

@@ -12,19 +12,19 @@ struct System::Advance {
     std::vector<Missile> children;
     std::vector<combat::SpellImpact> impacts;
     bool finished{};
-    std::vector<EntityId> curseTargets;
-    std::vector<EntityId> buffTargets;
+    std::vector<EntityId> curseTargets{};
+    std::vector<EntityId> buffTargets{};
     enum class OperationKind { Child,Impact,Curse,Buff,ContactPrelude,ContactContinue,SourceHeal,TargetManaDrain,SkillState,OwnerSeed,Resource,TargetBurst,Fear,BaalFx,CairnPortal,ReleaseRoom,Redemption,OrbMist,BoneSegment,MissileField,NativeCollision,LevelSpawn,TowerOpen,TowerGold,TowerSound,BaalWave };
     struct BaalWave {RegionId area;Vec position;int mappedPreset{};};
-    std::vector<BaalWave> baalWaves;
-    struct TowerGold {RegionId area;Vec observer,position;std::optional<GroundLocation> destination;bool resolved{};};
-    std::vector<TowerGold> towerGold;
+    std::vector<BaalWave> baalWaves{};
+    struct TowerGold {RegionId area;Vec observer,position;std::optional<GroundLocation> destination{};bool resolved{};};
+    std::vector<TowerGold> towerGold{};
     struct LevelSpawn {RegionId area;Vec observer,position;std::shared_ptr<monsters::NativeBirthPublication> publication;};
-    std::vector<LevelSpawn> levelSpawns;
+    std::vector<LevelSpawn> levelSpawns{};
     struct MissileField {RegionId area;Vec position;int size{};};
-    std::vector<MissileField> missileFields;
+    std::vector<MissileField> missileFields{};
     struct BoneSegment {EntityId root;RegionId area;Vec position;};
-    std::vector<BoneSegment> boneSegments;
+    std::vector<BoneSegment> boneSegments{};
     struct CollisionFlight {
         Vec start,end;
         std::vector<std::pair<float,EntityId>> contacts;
@@ -32,49 +32,49 @@ struct System::Advance {
         bool wall{},continueFlight{true},weapon{true},piercing{},piercePrepared{},forceRemove{};
         bool nativeExpired{};
     };
-    std::optional<CollisionFlight> collisionFlight;
+    std::optional<CollisionFlight> collisionFlight{};
     struct SourceHeal {EntityId owner;std::optional<int32_t> amount;};
-    std::vector<SourceHeal> sourceHeals;
+    std::vector<SourceHeal> sourceHeals{};
     struct TargetManaDrain {EntityId target;int percentage{};};
-    std::vector<TargetManaDrain> manaDrains;
+    std::vector<TargetManaDrain> manaDrains{};
     struct ResourceWrite {
         enum class Kind { Life,Mana } kind{};
         EntityId target;int32_t value{};int overlay{-1};
     };
-    std::vector<ResourceWrite> resources;
+    std::vector<ResourceWrite> resources{};
     struct TargetBurst {int definition{},range{},count{};uint32_t filter{};bool checkNoAura{};};
-    std::vector<TargetBurst> targetBursts;
-    std::vector<effects::NativeFear> fears;
+    std::vector<TargetBurst> targetBursts{};
+    std::vector<effects::NativeFear> fears{};
     struct Redemption {
         EntityId corpse;int skill{};bool skipChance{};
-        std::optional<bool> affected;
-        std::shared_ptr<effects::AuraUnitPublication> publication;
+        std::optional<bool> affected{};
+        std::shared_ptr<effects::AuraUnitPublication> publication{};
     };
-    std::vector<Redemption> redemptions;
+    std::vector<Redemption> redemptions{};
     struct SkillState {
         EntityId source,target;int skill{},rank{},minimumDuration{};
-        std::optional<int32_t> duration;
-        std::optional<std::pair<uint64_t,uint64_t>> random;
+        std::optional<int32_t> duration{};
+        std::optional<std::pair<uint64_t,uint64_t>> random{};
         bool seedCommitted{};
         effects::NativeSkillStateProcedure procedure{effects::NativeSkillStateProcedure::FingerMageSpider};
-        std::shared_ptr<bool> posted;
+        std::shared_ptr<bool> posted{};
     };
-    std::vector<SkillState> skillStates;
+    std::vector<SkillState> skillStates{};
     struct Operation {OperationKind kind;size_t index;};
-    std::vector<Operation> operations;
+    std::vector<Operation> operations{};
     size_t nextOperation{};
     bool started{},contactAccepted{};
-    std::shared_ptr<MissileDamageRollState> damageRolls;
+    std::shared_ptr<MissileDamageRollState> damageRolls{};
     struct OwnerSeedLoan {EntityId owner;uint64_t expected{},next{};};
-    std::vector<OwnerSeedLoan> formulaSeeds;
+    std::vector<OwnerSeedLoan> formulaSeeds{};
     struct OriginSeedLoan {std::shared_ptr<MissileDamageRollState> state;uint64_t expected{},next{};};
     struct ChildBuildContext {
         uint64_t &gameRandom;uint64_t tick;
-        std::optional<OwnerSeedLoan> ownerSeed;
-        std::optional<OriginSeedLoan> originSeed;
+        std::optional<OwnerSeedLoan> ownerSeed{};
+        std::optional<OriginSeedLoan> originSeed{};
     };
     using ChildBuilder=std::function<std::optional<Missile>(const Missile &,ChildBuildContext &)>;
-    std::map<size_t,ChildBuilder> childBuilders;
+    std::map<size_t,ChildBuilder> childBuilders{};
     struct ChildPublication {
         std::map<EntityId,Missile> insertion;
         std::vector<Admission> timers;
@@ -89,7 +89,7 @@ struct System::Advance {
         std::optional<EntityId> hitTarget;
         std::unique_ptr<Advance> immediate;
     };
-    std::optional<ChildPublication> childPublication;
+    std::optional<ChildPublication> childPublication{};
     void addChild(Missile value,ChildBuilder builder={}) {
         const auto index=children.size();
         if(builder) childBuilders.emplace(index,std::move(builder));

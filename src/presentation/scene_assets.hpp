@@ -68,7 +68,8 @@ class SceneAssets {
     ClassicFont font, speechFont, skillGreenFont, characterLabelFont, characterPointFont,
         characterCompactFont, characterRedFont, hirelingBlueFont, hirelingRedFont, skillLevelBlueFont, skillLevelCompactFont,
         skillLevelCompactBlueFont, skillLevelCompactRedFont;
-    ClassicFont automapPartyFont, automapNpcFont, automapOtherFont;
+    ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;
+    GpuAnimation deathTitle, deathInstruction;
     std::array<ClassicFont, 13> itemTextFonts; // Original PL2 text-color indices.
     std::map<std::string, std::string, std::less<>> characterLabels;
     std::array<std::string, 2> globeTextFormats;
@@ -76,7 +77,7 @@ class SceneAssets {
     struct SkillIcon {
         Sprite sprite;
         bool leftAllowed = false;
-        Sprite treeDisabled, treeHovered, pickerUnavailable, treePressed;
+        Sprite treeDisabled, treeHovered, pickerUnavailable, treePressed{};
     };
     std::map<int, SkillIcon> skillIcons;
     std::map<int, GpuAnimation> projectileAnimations;

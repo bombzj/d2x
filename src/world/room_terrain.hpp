@@ -1,5 +1,5 @@
 #pragma once
-#include "navigation.hpp"
+#include "room_layout.hpp"
 #include <array>
 #include <compare>
 #include <cstdint>

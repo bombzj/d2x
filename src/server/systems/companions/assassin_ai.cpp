@@ -45,7 +45,8 @@ StepStatus System::assassinStep(Companion &pet,TickContext tick) {
     const auto rankOf=[&](int skill) {const auto found=input.referenceRanks->effective.find(skill);return found==input.referenceRanks->effective.end()?0:found->second;};
     const auto calc=[&](std::string_view field) {
         const auto result=values.calculation(FormulaDomain::Skill,primary,rankOf(primary),field);
-        if(!result) throw std::logic_error("Missing native assassin pet AI calculation");return *result;
+        if(!result) throw std::logic_error("Missing native assassin pet AI calculation");
+        return *result;
     };
     const auto param=[&](size_t index){return program.parameters[index][size_t(body->rule.difficulty)];};
     if(program.ai==AssassinPetDefinition::Ai::BladeCreeper) {

@@ -100,6 +100,14 @@ struct RemoteUiClients::Impl {
         ActorView controlledActor() const override {
             ActorView v; v.id = o.characterView.actor; v.region = o.mapView.region;
             v.dead = o.characterView.dead; v.position = o.mapView.observer;
+            if (v.dead) {
+                const auto &online = o.session.read();
+                v.difficulty = online.load.difficulty;
+                for (const auto &character : online.characters)
+                    if (character.name == online.selectedCharacter) { v.hardcore = character.hardcore; break; }
+                if (const auto lost = o.stat("goldlost"); lost && *lost >= 0 && *lost <= UINT32_MAX)
+                    v.deathGoldLost = uint32_t(*lost);
+            }
             if (lightActor != v.id || lightGeneration != o.generation) {
                 lightActor = v.id; lightGeneration = o.generation; lightRadius = 13;
             }
@@ -1045,6 +1053,22 @@ struct RemoteUiClients::Impl {
         characterView.selectedSkillOwners[weaponSet*2]=w.leftSkill?w.leftSkill->owner:UINT32_MAX;
         characterView.selectedSkillOwners[weaponSet*2+1]=w.rightSkill?w.rightSkill->owner:UINT32_MAX;
     }
+    std::optional<MovementTiming> movement(OnlineUnitKey key,bool running) const {
+        const auto &online=session.read();const auto &world=online.world;
+        if(key.type!=0 || key.id!=online.load.playerUnitId || !world.playerBaseSkillsAssigned) return {};
+        const auto unit=world.units.find(key);
+        const auto strength=stat("strength"),dexterity=stat("dexterity"),level=stat("level");
+        if(unit==world.units.end() || !unit->second.classId || *unit->second.classId>=data.characters.size() ||
+            !strength || !dexterity || !level) return {};
+        const auto &definition=data.characters[*unit->second.classId];
+        const std::map<int,int> ranks(world.playerSkills.begin(),world.playerSkills.end());
+        const auto equipment=observedCombatEquipment(key,
+            {definition.code,int(*strength),int(*dexterity),int(*level),definition.blockFactor,std::min(world.weaponSet,1u)},
+            ranks,0,definition.toHitFactor-35);
+        if(!equipment || equipment->modifiers.fasterMoveVelocity<0) return {};
+        return playerMovementTiming(definition.walkVelocity,definition.runVelocity,
+            equipment->modifiers.fasterMoveVelocity,equipment->modifiers.velocityPercent,running);
+    }
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
         const auto *definition=data.items.find(native.code);
             ItemInstance item; item.id=itemId(native.id); item.revision=native.revision; item.definition=native.code; item.location=location;
@@ -1889,6 +1913,7 @@ std::optional<unsigned> RemoteUiClients::itemQuote(uint32_t item, OnlineItemActi
 }
 void RemoteUiClients::update(const OnlineSceneView &s, std::optional<Vec> position){impl_->update(s, position);}
 std::optional<UnitLightAttributes> RemoteUiClients::light(OnlineUnitKey key) const { return impl_->light(key); }
+std::optional<MovementTiming> RemoteUiClients::movement(OnlineUnitKey key,bool running) const { return impl_->movement(key,running); }
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}
 IInventoryClient &RemoteUiClients::inventory(){return impl_->inventory;}

@@ -166,7 +166,8 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             if(state.posted) *state.posted=bool(applied);
         } else if(operation.kind==Advance::OperationKind::TowerOpen) {
             const auto result=ports_.objects.openTowerChest(EntityId{uint32_t(operation.index)},tick.tick);
-            if(!result) return result.status;plan.started=true;
+            if(!result) return result.status;
+            plan.started=true;
         } else if(operation.kind==Advance::OperationKind::TowerGold) {
             auto &entry=plan.towerGold.at(operation.index);
             if(!entry.resolved) {
@@ -178,18 +179,21 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
             }
             if(entry.destination) {
                 const auto result=ports_.objects.towerGold(*entry.destination,tick.tick);
-                if(!result) return result.status;plan.started=true;
+                if(!result) return result.status;
+                plan.started=true;
             }
         } else if(operation.kind==Advance::OperationKind::TowerSound) {
             const auto object=ports_.objects.read().objects.find(EntityId{uint32_t(operation.index)});
             if(object!=ports_.objects.read().objects.end()) {
                 const auto result=ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},object->second.area},
                     {SoundFact{object->first,2,object->second.area,0x5c}}});
-                if(!result) return result.status;plan.started=true;
+                if(!result) return result.status;
+                plan.started=true;
             }
         } else if(operation.kind==Advance::OperationKind::OrbMist) {
             const auto result=ports_.objects.openOrbMist(EntityId{uint32_t(operation.index)},tick.tick);
-            if(!result) return result.status;plan.started=true;
+            if(!result) return result.status;
+            plan.started=true;
         } else if(operation.kind==Advance::OperationKind::Redemption) {
             auto &entry=plan.redemptions.at(operation.index);
             if(!entry.affected) {
@@ -199,7 +203,8 @@ DomainStatus System::commitAdvance(const Missile &missile, Advance &plan, TickCo
                 const auto chance=entry.skipChance?0:rollRandom(plan.damageRolls->random)%100;
                 const auto calculate=[&](std::string_view field) {
                     const auto value=missileSelfFormula(plan,field,entry.skill,1);
-                    if(!value) throw std::logic_error("Missing missile Redemption formula");return *value;
+                    if(!value) throw std::logic_error("Missing missile Redemption formula");
+                    return *value;
                 };
                 entry.affected=entry.skipChance || chance<uint32_t(calculate("calc1"));
                 if(*entry.affected) {

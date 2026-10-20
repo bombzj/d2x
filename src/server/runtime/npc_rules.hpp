@@ -2,7 +2,7 @@
 #include "core/id.hpp"
 #include "core/math.hpp"
 #include "gameplay/quest/id.hpp"
-#include "world/navigation.hpp"
+#include "world/collision.hpp"
 #include <map>
 #include <memory>
 #include <optional>
@@ -29,5 +29,5 @@ struct NpcRule {
 };
 // Placement and quest/service capability only. The nonplayer actor identified
 // by id exclusively owns position, resources, random seed and combat state.
-struct AreaNpc { EntityId id; Vec spawnPosition; NpcRule rule; std::optional<size_t> presetOrder; std::optional<Vec> sourceObjectPosition; int sourceObjectClass{-1}; };
+struct AreaNpc { EntityId id; Vec spawnPosition; NpcRule rule; std::optional<size_t> presetOrder{}; std::optional<Vec> sourceObjectPosition{}; int sourceObjectClass{-1}; };
 }

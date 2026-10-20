@@ -186,7 +186,10 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                     if(unit.monster && participants.auraAligned({nullptr,body},unit) && unit.monster->assassinPet && !unit.monster->assassinPet->definition->warp) {++traps;continue;}
                     if(!unit.damageable() || !participants.canHarm(body->id,id)) continue;
                     const auto at=point(unit);const int ownerSq=squared(owner->position+ports_.areas.at(owner->area).definition.origin-area.definition.origin,at);
-                    if(ownerSq<=100) ++closeOwner;if(ownerSq<ownerDistance) {ownerDistance=ownerSq;nearestOwner=id;}
+                    if(ownerSq<=100) ++closeOwner;
+                    if(ownerSq<ownerDistance) {ownerDistance=ownerSq;
+                    nearestOwner=id;
+                    }
                     const int selfSq=squared(body->position,at);if(selfSq>1024) continue;
                     ++within32;if(selfSq<=100) ++closeSelf;if(selfSq<selfDistance) {selfDistance=selfSq;nearestSelf=id;}
                     if(unit.player || unit.monster->rule.boss || unit.monster->rule.primeEvil || nativeUniqueMonster(unit.monster->identity.rank)) lastSpecial=id;
@@ -230,12 +233,18 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                 EntityId skillTarget=decision.target;const int ai=row.number("aitype"),count=charge(id);
                 const auto random=[&] {return draw(uint32_t(std::max(0,program.parameters[1][0])));};
                 if(ai==1 && (row.auraState<=0 || active.contains(row.auraState))) {
-                    if(selfDistance<=25) base-=6;base+=groupActive(row.auraState)?-10:10;skillTarget=body->id;value=base+random();
+                    if(selfDistance<=25) base-=6;
+                    base+=groupActive(row.auraState)?-10:10;
+                    skillTarget=body->id;
+                    value=base+random();
                 } else if(ai==2 && (row.auraState<=0 || !active.contains(row.auraState)) &&
                           (row.auraTargetState<=0 || !ports_.effects.unitStates(target.id(),tick.tick).contains(row.auraTargetState))) {
-                    if(selfDistance<=25) base-=10;value=base+random();
+                    if(selfDistance<=25) base-=10;
+                    value=base+random();
                 } else if(ai==3) {
-                    if(traps>5) base-=2*traps;if(selfDistance<=25) base-=7;if(within32<3) base-=10;
+                    if(traps>5) base-=2*traps;
+                    if(selfDistance<=25) base-=7;
+                    if(within32<3) base-=10;
                     value=base+random()+3*(within32-3);
                 } else if(ai==4 || ai==12) {
                     if(ai==12 && target.monster && target.monster->rule.drain<25) continue;
@@ -251,7 +260,9 @@ StepStatus System::shadowStep(Companion &pet,TickContext tick) {
                         const auto missile=catalog.missileIds.find(row.reference("srvmissilea"));
                         if(missile!=catalog.missileIds.end()) {const int range=catalog.missiles.at(missile->second).number("range")-1;if(distance>=range*range) continue;}
                     }
-                    if(selfDistance<=25) base-=5;if(distance<=25) base-=5;if(progressive) base-=5;
+                    if(selfDistance<=25) base-=5;
+                    if(distance<=25) base-=5;
+                    if(progressive) base-=5;
                     value=base+random()+(ai==11?3*within32:0);
                 } else if(ai==13) {
                     base+=program.parameters[0][1];base+=program.parameters[0][2]<=0 || progressive?chargeBonus:-5;

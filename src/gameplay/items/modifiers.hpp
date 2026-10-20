@@ -34,7 +34,7 @@ struct ItemStatDefinition {
 struct ResolvedItemStat {
     std::string name, effect;
     int value = 0, layer = 0, rawValue = 0;
-    std::optional<int32_t> nativeValue;
+    std::optional<int32_t> nativeValue{};
     bool replace = false;
 };
 } // namespace d2x

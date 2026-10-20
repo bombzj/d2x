@@ -20,7 +20,7 @@ NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &c
           [this](size_t room) {
               if (tiles_.rooms().at(room).loaded) ++terrainRevision_;
               tiles_.releaseRoom(room);
-          }}, side) {
+          }, {}}, side) {
     if (act < 0 || act > 4) throw std::runtime_error("Invalid native map act");
     if (difficulty < 0 || difficulty > 2) throw std::invalid_argument("Invalid native map difficulty");
 }

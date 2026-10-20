@@ -54,6 +54,7 @@ struct ViewState {
     bool gameMenuScrollDragging = false;
     int gameMenuSliderDragging = -1;
     AudioSettings audio;
+    bool lighting = true;
     bool minimapRight = false;
     bool automapLarge = false;
     bool automapNames = true;

@@ -4,6 +4,7 @@
 #include "server/systems/npc/system.hpp"
 #include "server/systems/inventory/system.hpp"
 #include "server/systems/trade/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
@@ -48,7 +49,8 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
         auto &player=ports_.players.players_.at(actor.player);
         const MovementCommand movement{MovementAction::Move,reported,player.runningNow};
         cancel(actor.player);
-        const auto moved=applyMovement(player,*source,movement);
+        const auto grid=ports_.spatial.navigationGrid(player.area,player.actor);
+        const auto moved=applyMovement(player,*source,movement,grid);
         if(moved!=CommandStatus::Applied) return correction();
         player.locomotionSequence=actor.sequence;
         return {DomainStatus::Applied,std::monostate{}};
@@ -72,8 +74,10 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     if (!destination || !ports_.areas.nearby(actor.area, found->position + Vec{.5f,.5f}, region, at + Vec{.5f,.5f})) return correction();
     // PlrMsg 5F uses the original 77-step wall-follow path in the same room
     // collision domain. Never search hand-picked seam entrances or warp nearby.
-    if (!destination->definition.collision.walkable(at + Vec{.5f,.5f}, playerMovement) ||
-        !exactPath(source->definition.collision, found->position, reported)) return correction();
+    const auto placementGrid=ports_.spatial.navigationGrid(region,actor.actor);
+    const auto sourceGrid=ports_.spatial.navigationGrid(actor.area,actor.actor);
+    if (!placementGrid.walkable(at + Vec{.5f,.5f}, playerMovement) ||
+        !exactPath(sourceGrid, found->position, reported)) return correction();
     const int state=found->rules.skills->syncWarped.id;
     if(state<0 || state>=255) return {DomainStatus::Unavailable,{}};
     auto next=previous==state_.synchronizations.end()?PositionSynchronization{}:previous->second;
@@ -89,7 +93,7 @@ DomainResult<> System::synchronize(const ActorContext &actor,Vec reported,bool u
     if(!found->route.empty()) {
         Vec goal=found->route.back()+source->definition.origin-destination->definition.origin;
         constexpr Vec center{.5f,.5f};
-        route=destination->definition.collision.nativePlayerPath(at+center,goal+center,playerMovement);
+        route=placementGrid.nativePlayerPath(at+center,goal+center,playerMovement);
         for(auto &point:route) point=point-center;
     }
     std::vector<EventBatch> events;

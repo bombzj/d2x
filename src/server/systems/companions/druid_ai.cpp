@@ -35,7 +35,8 @@ StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
         if(rank<=0 || definition==owner->rules.skills->definitions.end() || !definition->second.spec.summon ||
            definition->second.spec.summon->petType!=body->rule.petType) continue;
         const auto limit=values.calculation(FormulaDomain::Skill,id,rank,"petmax");
-        if(!limit) throw std::logic_error("Unavailable native druid pet capacity");maximum=std::max(maximum,std::max(*limit,1));
+        if(!limit) throw std::logic_error("Unavailable native druid pet capacity");
+        maximum=std::max(maximum,std::max(*limit,1));
     }
     // PlayerPets::sub_6FC7DF40 only changes capacity. Existing passive lists
     // remain the birth snapshot; changing equipment never rerolls summon HP.
@@ -44,10 +45,14 @@ StepStatus System::refreshDruid(Companion &pet,TickContext tick) {
         if(entry.owner==pet.owner && !entry.removeAt && candidate && candidate->alive() && candidate->rule.petType==body->rule.petType) ++active;
     }
     for(auto &[id,entry]:state_.companions) {
-        if(active<=size_t(maximum)) break;const auto *candidate=ports_.monsters.find(id);
+        if(active<=size_t(maximum)) break;
+        const auto *candidate=ports_.monsters.find(id);
         if(entry.owner!=pet.owner || entry.removeAt || !candidate || !candidate->alive() || candidate->rule.petType!=body->rule.petType) continue;
         const auto retired=ports_.monsters.retire(id,tick.tick);if(isDeferred(retired.status)) return StepStatus::Blocked;
-        if(!retired) continue;entry.removeAt=tick.tick+uint64_t(candidate->rule.deathTicks);entry.release=0;--active;
+        if(!retired) continue;
+        entry.removeAt=tick.tick+uint64_t(candidate->rule.deathTicks);
+        entry.release=0;
+        --active;
     }
     pet.effectiveRanks=owner->totals.skillRanks;return StepStatus::Complete;
 }
@@ -122,7 +127,8 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
             }
         } else if(!pet.druidAi[0]) {
             const auto retired=ports_.monsters.retire(body->id,tick.tick);if(isDeferred(retired.status)) return StepStatus::Blocked;
-            if(retired) pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);return StepStatus::Complete;
+            if(retired) pet.removeAt=tick.tick+uint64_t(body->rule.deathTicks);
+            return StepStatus::Complete;
         }
         if(ownerDistance>50) {if(!follow({},false,3)) idle(1);return StepStatus::Complete;}
         if(ownerDistance>28) {if(!follow({},false,0,velocity)) idle(1);return StepStatus::Complete;}
@@ -137,7 +143,8 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
         }
         const int average=(param(0)+param(1))/2;
         if(ownerDistance<param(1) || ownerDistance>param(0)) {
-            if(!aroundScaled(average) && !follow({},false,1)) idle(1);return StepStatus::Complete;
+            if(!aroundScaled(average) && !follow({},false,1)) idle(1);
+            return StepStatus::Complete;
         }
         if(!move(ownerPoint,owner->actor,pet.druidAi[2]?5:6,0,false,pet.druidAi[2]?1:-1)) {
             pet.druidAi[2]=!pet.druidAi[2];
@@ -154,7 +161,8 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
     if(wolf || kind==DruidPetDefinition::Ai::Bear) {
         const auto potential=ai::acquireNativeOwnerTarget({ports_.monsters,ports_.players,ports_.areas,ports_.social},*owner);
         const auto eligible=[&](combat::ParticipantView candidate) {
-            if(!candidate.id()) return false;const auto at=point(candidate);
+            if(!candidate.id()) return false;
+            const auto at=point(candidate);
             const int distance=unitCoordinateDistanceWithSize(int(body->position.x),int(body->position.y),int(at.x),int(at.y),body->rule.size);
             const int offset=distance<3?2:distance<11?3:distance<25?4:3;
             const int x=((int(body->position.x)>int(at.x))-(int(body->position.x)<int(at.x)))*offset;
@@ -199,7 +207,8 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
             const auto rank=input.referenceRanks->effective.find(program.skills[0]);
             if(rank!=input.referenceRanks->effective.end()) {
                 const auto range=values.calculation(FormulaDomain::Skill,program.skills[0],rank->second,"aurarangecalc");
-                if(!range) throw std::logic_error("Unavailable native vine corpse range");corpseRadius=std::clamp(*range,5,50);
+                if(!range) throw std::logic_error("Unavailable native vine corpse range");
+                corpseRadius=std::clamp(*range,5,50);
             }
         }
         auto corpseId=findDruidCorpse(ports_.areas,ports_.players,ports_.monsters,ports_.social,body->id,corpseRadius,tick.tick);
@@ -224,7 +233,8 @@ StepStatus System::druidStep(Companion &pet,TickContext tick) {
             }
         }
         if(ownerDistance>param(3) && owner->moving && follow({},false,0,owner->runningNow?60:0)) return StepStatus::Complete;
-        if(!follow(target.id(),combat)) idle(25);return StepStatus::Complete;
+        if(!follow(target.id(),combat)) idle(25);
+        return StepStatus::Complete;
     }
     if(wolf) {
         const int teleport=program.skills[kind==DruidPetDefinition::Ai::DireWolf?1:0];

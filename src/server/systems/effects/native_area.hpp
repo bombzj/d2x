@@ -10,11 +10,11 @@ namespace d2x::server::effects {
 struct NativeAreaSpec {
     EntityId source;RegionId area;Vec center;
     int radius{},skill{},rank{};uint32_t filter{},hitFlags{};uint16_t resultFlags{};
-    MissileHitDamage damage;
-    std::optional<std::vector<EntityId>> targets;
+    MissileHitDamage damage{};
+    std::optional<std::vector<EntityId>> targets{};
     int directFunction{};
-    std::optional<NativeStaticField> staticField;
-    std::shared_ptr<combat::SpellImpact> missileContact;
+    std::optional<NativeStaticField> staticField{};
+    std::shared_ptr<combat::SpellImpact> missileContact{};
     bool rollMissileDamage{},radialBarrier{};
 };
 struct NativeAreaPulse {

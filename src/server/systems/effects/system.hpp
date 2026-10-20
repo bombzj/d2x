@@ -112,23 +112,23 @@ struct UnitDamageStates {
     EntityId source;
     uint64_t chilledUntil{},frozenUntil{},stunnedUntil{};
     int64_t burn{};uint64_t burnFrames{};
-    std::optional<uint64_t> freezeThinkAt;
+    std::optional<uint64_t> freezeThinkAt{};
     bool curePoison{},cureCold{};
-    std::optional<PotionDefinition> potion;
-    std::optional<int32_t> potionRestoration;
-    std::optional<CombatEffectSpec> status;
-    std::vector<StatValue> statusWrites;
+    std::optional<PotionDefinition> potion{};
+    std::optional<int32_t> potionRestoration{};
+    std::optional<CombatEffectSpec> status{};
+    std::vector<StatValue> statusWrites{};
     bool clearStun{},poisonApplied{},woundApplied{},resetRegeneration{},contact{},deathDelay{};
-    std::vector<int> clearStateFlags;
+    std::vector<int> clearStateFlags{};
 };
 struct AuraTargetProgress {bool state{},accepted{},pulse{},post{};};
 enum class NativeAuraTargetMode { OwnerRange,TargetRange };
 struct NativeAuraTargetQuery {
     EntityId owner;RegionId area;int32_t radius{};uint32_t filter{};bool checkNoAura{};
-    std::optional<Vec> center; // Native global coordinates, distinct from ray origin.
+    std::optional<Vec> center{}; // Native global coordinates, distinct from ray origin.
     NativeAuraTargetMode mode{NativeAuraTargetMode::OwnerRange};
-    std::optional<uint64_t> tick; // Required by the native JUSTHIT finder flag.
-    std::optional<Vec> sourcePosition; // Global missile position; owner identity still resolves allegiance.
+    std::optional<uint64_t> tick{}; // Required by the native JUSTHIT finder flag.
+    std::optional<Vec> sourcePosition{}; // Global missile position; owner identity still resolves allegiance.
 };
 struct NativeStateRemovalExecution {EntityId unit;int skill{},rank{};};
 struct AuraUnitPublication {
@@ -168,7 +168,7 @@ struct UnitReceptionPlan {
 };
 // Prepared before inventory consumption, installed without allocation only after
 // the character transaction succeeds. No callback can observe half a drink.
-struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<std::pair<uint64_t,uint64_t>> unitRandom{}; std::vector<DomainFact> publicFacts; std::optional<ResourceMaximums> resourceBase; std::shared_ptr<AuraUnitPublication> units; bool staminaPotionSurplus{}; };
+struct PotionPlan { State next; CharacterRecord character; TransientAttributes transient; std::optional<std::pair<uint64_t,uint64_t>> unitRandom{}; std::vector<DomainFact> publicFacts{}; std::optional<ResourceMaximums> resourceBase{}; std::shared_ptr<AuraUnitPublication> units{}; bool staminaPotionSurplus{}; };
 struct WellRestoration { bool usesCharge{}; };
 struct Ports {
     const PlayerStore &players; const AreaStore &areas; skills::System &skills;
@@ -176,6 +176,7 @@ struct Ports {
     reactions::ItemTriggers &itemTriggers;
     actions::State &actions;
     FrameEventQueue &frameEvents;
+    const spatial::System &spatial;
 };
 class System {
     CharacterAttributes unitDefenses(EntityId,uint64_t) const;

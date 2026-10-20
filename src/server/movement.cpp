@@ -1,9 +1,16 @@
 #include "movement.hpp"
+#include "area_store.hpp"
 #include "player_store.hpp"
 #include "server/systems/travel/system.hpp"
 #include "server/systems/monsters/system.hpp"
 #include "server/systems/effects/system.hpp"
 #include "server/systems/items/system.hpp"
+#include "server/systems/objects/system.hpp"
+#include "server/systems/spatial/system.hpp"
+#include "server/systems/skills/shape.hpp"
+#include "gameplay/actions/movement_timing.hpp"
+#include "gameplay/actions/shape_timing.hpp"
+#include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include "runtime/contracts.hpp"
 #include "world/interaction_geometry.hpp"
@@ -15,6 +22,7 @@
 
 namespace d2x::server {
 namespace {
+void advanceMovement(PlayerState &,const AreaState &,float,const Grid &,const Grid &,const ShapeProfile *);
 bool nativeUnitRequestRange(Vec player, Vec target) {
     // PlrMsg 02/04 use sub_6FC83C60: native integer X/Y deltas <=50.
     // D2Common_10399 is the separate interaction/attack distance metric.
@@ -40,10 +48,11 @@ std::optional<std::pair<Vec, int>> npcPoint(const AreaStore &areas,const monster
             if (const auto point = movementPoint(areas, region, key, unit->position)) return std::pair{*point, npc.rule.size};
     return {};
 }
-bool barrierSegment(const monsters::System &monsters,RegionId area,Vec from,Vec to,int size) {
-    for(const auto &[id,body]:monsters.read().actors) {(void)id;if(body.area==area && body.life>0 && body.implementation==MonsterKind::BoneWall && missileUnitIntersection(from,to,size,body.position,body.rule.size)) return false;}
-    return true;
 }
+CommandStatus MovementSystem::apply(PlayerState &player,const AreaState &area,const MovementCommand &command) {
+    const auto target=command.target?command.target->id:command.exit;
+    const auto grid=ports_.spatial.navigationGrid(player.area,player.actor,target);
+    return applyMovement(player,area,command,grid);
 }
 DomainResult<bool> MovementSystem::leapStep(const ActorContext &actor,Vec target,float speed,std::optional<MovementCollisionRule> collision) {
     auto it=ports_.players.players_.find(actor.player);
@@ -53,7 +62,8 @@ DomainResult<bool> MovementSystem::leapStep(const ActorContext &actor,Vec target
     if(area.generation!=actor.areaGeneration || !std::isfinite(speed) || speed<=0) return {DomainStatus::Stale,{}};
     const Vec delta=target-p.position;
     const auto next=p.position+delta.unit()*std::min(delta.length(),speed*TickContext::seconds);
-    if(collision && !area.definition.collision.nativeMovementSegment(p.position,next,*collision)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    const auto grid=ports_.spatial.navigationGrid(p.area,p.actor);
+    if(collision && !grid.nativeMovementSegment(p.position+Vec{.5f,.5f},next+Vec{.5f,.5f},*collision)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
     p.route.clear();p.position=next;ports_.areas.moveRoomUnit(p.actor,p.area,p.position);
     p.look=delta.unit();p.moving=true;p.runningNow=false;skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-p.position).length()<.001f};
@@ -67,7 +77,8 @@ DomainResult<bool> MovementSystem::chargeStep(const ActorContext &actor,Vec targ
     const Vec delta=target-p.position;const float distance=delta.length();
     if(distance<=float(stopDistance)) {p.moving=false;return {DomainStatus::Applied,true};}
     const Vec next=p.position+delta.unit()*std::min(distance-float(stopDistance),speed*TickContext::seconds);
-    if(!area.definition.collision.nativeMovementSegment(p.position,next,playerMovement) || !barrierSegment(ports_.monsters,p.area,p.position,next,2)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
+    const auto grid=ports_.spatial.navigationGrid(p.area,p.actor);
+    if(!grid.nativeMovementSegment(p.position+Vec{.5f,.5f},next+Vec{.5f,.5f},playerMovement)) {p.moving=false;return {DomainStatus::Unavailable,{}};}
     p.route.clear();p.position=next;ports_.areas.moveRoomUnit(p.actor,p.area,p.position);p.look=delta.unit();p.moving=true;p.runningNow=true;
     skillSteps_[actor.player]=actor.tick;
     return {DomainStatus::Applied,(target-next).length()<=float(stopDistance)+.001f};
@@ -89,32 +100,45 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
         if(found==ports.items.read().world.items.end()) return CommandStatus::InvalidRequest;
         const auto *at=std::get_if<GroundLocation>(&found->second.location);
         if(!at || at->region!=actor.area || !nativeUnitRequestRange(player.position,at->position)) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,at->position,command.forceRun,{},MotionTarget{command.exit,4},
+        return apply(player,area,{MovementAction::Move,at->position,command.forceRun,{},MotionTarget{command.exit,4},
             InteractionTarget{command.exit,at->position,at->position,1,1,4,false,true}});
     }
     if(command.action==MovementAction::ApproachNpc) {
         if(const auto *target=ports.monsters.find(command.exit);target && target->alive()) {
             const auto point = movementPoint(ports.areas, actor.area, target->area, target->position);
             if (!point || !nativeUnitRequestRange(player.position,*point)) return CommandStatus::InvalidRequest;
-            return applyMovement(player,area,{MovementAction::Move,*point,command.forceRun,{},MotionTarget{target->id,1},
+            return apply(player,area,{MovementAction::Move,*point,command.forceRun,{},MotionTarget{target->id,1},
                 InteractionTarget{target->id,*point,*point,target->rule.size,target->rule.size,0.f,false,true,false}});
         }
         if (const auto npc = npcPoint(ports.areas,ports.monsters, actor.area, command.exit)) {
             if (!nativeUnitRequestRange(player.position,npc->first)) return CommandStatus::InvalidRequest;
-            return applyMovement(player,area,{MovementAction::Move,npc->first,command.forceRun,{},MotionTarget{command.exit,1},
+            return apply(player,area,{MovementAction::Move,npc->first,command.forceRun,{},MotionTarget{command.exit,1},
                 InteractionTarget{command.exit,npc->first,npc->first,npc->second,npc->second,0.f,false,true,false}});
         }
     }
     if(command.action==MovementAction::ApproachCorpse) if(const auto *target=ports.players.findActor(command.exit);target && target->entered && target->area==actor.area && target->actor!=actor.actor) {
         if(!nativeUnitRequestRange(player.position,target->position)) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0},
+        return apply(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0},
             InteractionTarget{target->actor,target->position,target->position,2,2,0.f,false,true,false}});
     }
-    if(command.action==MovementAction::ApproachObject) if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
-        if(!nativeUnitRequestRange(player.position,*position)) return CommandStatus::InvalidRequest;
-        return applyMovement(player,area,{MovementAction::Move,*position,command.forceRun,{},MotionTarget{command.exit,2}});
+    if(command.action==MovementAction::ApproachObject) {
+        if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
+            if(!nativeUnitRequestRange(player.position,*position)) return CommandStatus::InvalidRequest;
+            return apply(player,area,{MovementAction::Move,*position,command.forceRun,{},MotionTarget{command.exit,2}});
+        }
+        // PlrMsg 02/04 resolves the live UNIT_OBJECT GUID, including random
+        // objects and restored identities; AreaDefinition only describes presets.
+        const auto object=ports.objects.read().objects.find(command.exit);
+        if(object!=ports.objects.read().objects.end()) {
+            const auto &target=object->second;
+            const auto point=movementPoint(ports.areas,actor.area,target.area,target.position);
+            if(!point || !nativeUnitRequestRange(player.position,*point)) return CommandStatus::InvalidRequest;
+            return apply(player,area,{MovementAction::Move,*point,command.forceRun,{},MotionTarget{target.id,2},
+                InteractionTarget{target.id,*point,*point,target.rule.width,target.rule.height,float(target.rule.range),true}});
+        }
+        return CommandStatus::InvalidRequest;
     }
-    return applyMovement(player, area, command);
+    return apply(player, area, command);
 }
 void MovementSystem::step(TickContext tick) {
     for(const auto &[id,player]:ports_.players.all()) {
@@ -155,6 +179,15 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
             } else if(target.type==0 && target.id!=player.actor) {
                 dynamic=true;
                 if(const auto *unit=ports.players.findActor(target.id);unit && unit->entered && unit->area==player.area) position=unit->position;
+            } else if(target.type==2) {
+                dynamic=true;
+                position=ports.travel.portalPosition({player.player,player.actor,player.area,
+                    ports.areas.at(player.area).generation,player.locomotionSequence,tick.tick},target.id);
+                if(!position) {
+                    const auto object=ports.objects.read().objects.find(target.id);
+                    if(object!=ports.objects.read().objects.end())
+                        position=movementPoint(ports.areas,player.area,object->second.area,object->second.position);
+                }
             } else if(target.type==4) {
                 dynamic=true;
                 const auto found=ports.items.read().world.items.find(target.id);
@@ -164,7 +197,7 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
             if(dynamic && !position) {player.route.clear();player.movementTarget.reset();player.movementArrival.reset();}
             else if(position && (std::floor(position->x+.5f)!=std::floor(player.routeDestination.x+.5f) || std::floor(position->y+.5f)!=std::floor(player.routeDestination.y+.5f))) {
                 auto arrival=player.movementArrival;if(arrival) arrival->pos=arrival->accessPoint=*position;
-                applyMovement(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,arrival});
+                apply(player,ports.areas.at(player.area),{MovementAction::Move,*position,player.routeRunning,{},target,arrival});
             }
         }
         if(!player.route.empty() && player.pathStep.changedCell()) {
@@ -178,8 +211,10 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
         // entered-cell collision is checked by the native step itself.
         const auto previousRoute = player.route;
         const auto previousStep = player.pathStep;
-        advanceMovement(player, area, TickContext::seconds);
-        if(!barrierSegment(ports.monsters,player.area,from,player.position,2)) {player.position=from;player.route.clear();player.moving=false;}
+        const auto movementGrid=ports.spatial.navigationGrid(player.area,player.actor);
+        const auto pathGrid=ports.spatial.navigationGrid(player.area,player.actor,player.movementTarget?player.movementTarget->id:EntityId{});
+        const auto *shape=player.rules.skills?skills::activeShape(*player.rules.skills,ports.effects.unitStates(player.actor,tick.tick)):nullptr;
+        advanceMovement(player, area, TickContext::seconds,movementGrid,pathGrid,shape);
         const ActorContext actor{player.player, player.actor, player.area, area.generation, player.locomotionSequence, tick.tick};
         if (!ports.travel.walked(actor)) {
             player.position = from; player.route = previousRoute; player.pathStep = previousStep; player.moving = false;
@@ -206,7 +241,7 @@ void MovementSystem::suspend() {
         player.movementTarget.reset();player.movementArrival.reset();
     }
 }
-CommandStatus applyMovement(PlayerState &player, const AreaState &area, const MovementCommand &command) {
+CommandStatus applyMovement(PlayerState &player, const AreaState &area, const MovementCommand &command,const Grid &grid) {
     switch (command.action) {
     case MovementAction::Stop:
         player.route.clear(); player.moving = false; player.runningNow=false;
@@ -219,11 +254,9 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     case MovementAction::Move:
     case MovementAction::ApproachExit:
     case MovementAction::ApproachCorpse:
-    case MovementAction::ApproachObject:
     case MovementAction::ApproachNpc: break;
     default: return CommandStatus::Stale;
     }
-    const auto &grid = area.definition.collision;
     Vec target = command.destination;
     auto arrival=command.arrival;
     if (command.action == MovementAction::ApproachExit) {
@@ -238,18 +271,10 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
         if (corpse == corpses.end() || !nativeUnitRequestRange(player.position,corpse->position)) return CommandStatus::InvalidRequest;
         target = corpse->position;
     }
-    if (command.action == MovementAction::ApproachObject) {
-        const auto &objects = area.definition.objects;
-        const auto found = std::find_if(objects.begin(), objects.end(), [&](const auto &object) { return object.id == command.exit; });
-        if (found == objects.end() || !nativeUnitRequestRange(player.position,found->position)) return CommandStatus::InvalidRequest;
-        const auto &rule = found->rule;
-        arrival=InteractionTarget{found->id, found->position, found->position, rule.width, rule.height, float(rule.range), true};
-        target=found->position;
-    }
     constexpr Vec center{.5f,.5f};
     if (!grid.navigationContains(target + center)) return CommandStatus::InvalidDestination;
     if(arrival && interactionClear(grid,player.position,*arrival))
-        return applyMovement(player,area,{MovementAction::Stop,{},false});
+        return applyMovement(player,area,{MovementAction::Stop,{},false},grid);
     const bool sameTarget=(!command.target && !player.movementTarget) ||
         (command.target && player.movementTarget && command.target->id==player.movementTarget->id && command.target->type==player.movementTarget->type);
     const auto obstacleRevision = grid.navigationRevision();
@@ -261,7 +286,7 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     player.routeDestination=target;player.routeObstacles=obstacleRevision;
     // D2Common Straight is shared with prediction. Convert only at the grid
     // boundary; native packet coordinates name subtiles, not cell centers.
-    const uint8_t targetType=command.target?command.target->type:command.action==MovementAction::ApproachObject?2:
+    const uint8_t targetType=command.target?command.target->type:
         command.action==MovementAction::ApproachNpc?1:command.action==MovementAction::ApproachCorpse?0:255;
     auto route = grid.nativePlayerPath(player.position+center, target+center, playerMovement,targetType);
     for(auto &point:route) point=point-center;
@@ -277,17 +302,27 @@ CommandStatus applyMovement(PlayerState &player, const AreaState &area, const Mo
     if(command.exit) {
         if(command.action==MovementAction::ApproachExit) player.movementTarget=MotionTarget{command.exit,5};
         else if(command.action==MovementAction::ApproachCorpse) player.movementTarget=MotionTarget{command.exit,0};
-        else if(command.action==MovementAction::ApproachObject) player.movementTarget=MotionTarget{command.exit,2};
         else if(command.action==MovementAction::ApproachNpc) player.movementTarget=MotionTarget{command.exit,1};
     }
     player.routeRunning = command.forceRun;
     return CommandStatus::Applied;
 }
-void advanceMovement(PlayerState &player, const AreaState &area, float seconds) {
+namespace {
+void advanceMovement(PlayerState &player, const AreaState &area, float seconds,const Grid &grid,const Grid &pathGrid,const ShapeProfile *shape) {
     player.moving = false;
     if (!player.entered || player.persistent.player.hp <= 0) { player.route.clear(); return; }
     player.runningNow = player.routeRunning && (area.definition.town || player.persistent.player.stamina >= 1.f);
     float remaining = (player.runningNow ? player.totals.character.runSpeed : player.totals.character.walkSpeed) * seconds;
+    if(shape) {
+        const auto mode=shapeMonsterMode(player.runningNow?3:2,shape->enabledModes);
+        remaining=0;
+        if(mode==2 || mode==15) {
+            const auto faster=logicalStatValue(player.totals.nativeStats,*player.rules.character->stats,"item_fastermovevelocity");
+            const auto timing=playerMovementTiming(player.definition.walkVelocity,player.definition.runVelocity,
+                faster,player.totals.character.velocityPercent,mode==15);
+            remaining=float(nativeMovementTiming(shape->walkVelocity,0,timing.percentage).velocity)*25.f/4096.f*seconds;
+        }
+    }
     bool obstructed = false;
     while (remaining > 0 && !player.route.empty()) {
         if(player.movementArrival && interactionClear(area.definition.collision,player.position,*player.movementArrival)) {
@@ -295,7 +330,7 @@ void advanceMovement(PlayerState &player, const AreaState &area, float seconds) 
         }
         const Vec delta = player.route.front() - player.position;
         constexpr Vec center{.5f,.5f};
-        const auto step = player.pathStep.advance(area.definition.collision, player.position + center,
+        const auto step = player.pathStep.advance(grid, player.position + center,
             player.route.front() + center, remaining);
         player.look = delta.unit();
         player.moving = player.moving || step.travelled > 0;
@@ -309,9 +344,10 @@ void advanceMovement(PlayerState &player, const AreaState &area, float seconds) 
     if (!obstructed && player.moving && player.route.empty() &&
         player.movementTarget && player.movementArrival &&
         (player.movementArrival->nativeObject || player.movementArrival->nativeUnit)) {
-        player.route = nativeTargetPath(area.definition.collision, player.position, *player.movementArrival,
+        player.route = nativeTargetPath(pathGrid, player.position, *player.movementArrival,
             player.movementTarget->type);
         player.pathStep.reset();
     }
 }
+} // namespace
 } // namespace d2x::server

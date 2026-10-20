@@ -12,6 +12,7 @@
 #include <span>
 
 namespace d2x::server {struct RoomView;}
+namespace d2x {struct Grid;}
 
 namespace d2x::server::spatial {
 // Derived spatial index only; actor positions stay with their owner.
@@ -29,6 +30,8 @@ class System {
   std::map<RegionId,Region> regions_;
   std::map<EntityId,Location> locations_;
   void erase(EntityId, const Location &);
+  std::function<uint16_t(int,int32_t,int32_t)> nativeFootprints(uint16_t,
+      std::optional<std::span<const EntityId>>,EntityId,EntityId) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }
@@ -38,7 +41,8 @@ class System {
     // tick. A supplied unit span restricts actor footprints to that native room
     // chain. The returned sampler must not cross an authority publication.
     std::function<uint16_t(RoomView,int32_t,int32_t)> nativeCollisionSample(uint16_t mask=0xffff,
-        std::optional<std::span<const EntityId>> units={}) const;
+        std::optional<std::span<const EntityId>> units={},EntityId self={},EntityId target={}) const;
+    Grid navigationGrid(RegionId,EntityId self={},EntityId target={}) const;
     StepStatus step(TickContext, FrameFacts &);
 };
 }

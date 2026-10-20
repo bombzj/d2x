@@ -8,6 +8,10 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 交互几何核对D2MOO UNITS_IsObjectInInteractRange／D2Common_10399：原整数子格、对象矩形及外侧条带，OperateRange不当中心圆半径。接近点查询完整行走体积与原射线；范围预览不能证明原服操作成功。
 
+自研服务端的原02／04物件靠近按当前objects运行态GUID查找目标，不再查AreaDefinition预设列表；随机生成和休眠恢复后的木桶使用实际位置、尺寸及对象交互几何，保留每轴50子格的请求边界。行进期间复验目标，撤出或离开可达区域时取消旧路线。02／04只负责靠近，原13才请求操作；13距离不足时由objects绑定人物意图继续靠近，到达后复验并操作，木桶再经skills触发隐藏Kick。依据PlrMsg::Rcv0x02／Rcv0x04／sub_6FC828D0、PlrModes::sub_6FC7F780及ObjMode::OperateFunction05；当前修改仅作源码核对，远距离点击与逐帧衔接仍待运行对照。
+
+客户端02／04不设置movementRequest.interaction；物件路径仍按实际范围／碰撞停步，RemoteControl到达后提交13，只有该操作请求才进入本人木桶KK预测。type2靠近若标成操作，会在远处提前预测KK并以施放衔接中止本地路径。原1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA29E80／2AE30先核对物件范围及0x804交互碰撞，2AA40发送02／04并登记待交互；2B090复验后续行。2AC10的type2分支在2ACB3查隐藏技能1，2AD83尝试本地动作，2AD96才构造13。该依据区分靠近与操作，不代表当前所有物件动作及逐帧表现已认证。
+
 ## 原服适配
 
 RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。

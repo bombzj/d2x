@@ -17,7 +17,7 @@ struct SkillAuraChange {
     EntityId source;
     int skill{},rank{},state{-1},period{};
     bool immediate{};
-    std::shared_ptr<const SkillFormulaSnapshot> formula; // Callback point, never the final equipment total.
+    std::shared_ptr<const SkillFormulaSnapshot> formula{}; // Callback point, never the final equipment total.
 };
 // PeriodicStats custom ID is the source GUID, not (GUID, skill). Native
 // activation replaces all timers of that source and appends the new timer.

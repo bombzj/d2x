@@ -23,7 +23,7 @@ struct System::Runtime {
     std::map<EntityId,std::shared_ptr<MonsterLeapStart>> monsterLeapStarts;
     struct MonsterWhirlwindStart {uint64_t tick{};uint16_t skill{};Vec destination;unsigned stage{};};
     std::map<EntityId,MonsterWhirlwindStart> monsterWhirlwindStarts;
-    struct MonsterLeapAttackStart {uint64_t tick{};uint16_t skill{};Vec landing;unsigned stage{};};
+    struct MonsterLeapAttackStart {uint64_t tick{};uint16_t skill{};Vec landing{};unsigned stage{};};
     std::map<EntityId,MonsterLeapAttackStart> monsterLeapAttackStarts;
     std::map<FrameEventHandle,std::shared_ptr<DruidActiveExecution>> druidActive;
     struct MonsterMode {
@@ -40,7 +40,7 @@ struct System::Runtime {
         bool whirlwindStopped{},whirlwindRolled{},whirlwindHit{},whirlwindAlternate{};
         struct LeapAttack {
             Vec landing;uint16_t flags{0x1080};uint64_t endAt{};
-            std::optional<uint64_t> contact;std::optional<EntityId> target;
+            std::optional<uint64_t> contact{};std::optional<EntityId> target{};
             bool landed{},statesCleared{};
         };
         std::optional<LeapAttack> leapAttack;

@@ -13,7 +13,7 @@
 #include <vector>
 
 namespace d2x::server {
-struct DeathFact { uint64_t occurrence{}; EntityId victim, killer; RegionId area; };
+struct DeathFact { uint64_t occurrence{}; EntityId victim, killer; RegionId area; uint32_t goldLost{}; };
 struct AttackFact { EntityId actor, target; uint8_t actorType{}, targetType{}; RegionId area; Vec position, destination; uint64_t action{}; uint16_t skill{}; uint8_t rank{1}; bool forced{}; uint8_t monsterMode{4}; };
 // Native life scale: type 0 uses 100, type 1 uses raw 128. Monster 0C bit 7
 // carries the lightning-enchanted emission flag, independently of rank.
@@ -33,7 +33,7 @@ struct StateFact { EntityId actor; uint8_t type{}; RegionId area; int state{}; b
 struct SkillPulseFact { EntityId owner, target; uint8_t ownerType{}, targetType{1}; RegionId area; int skill{}, rank{}; Vec position; uint8_t parameter{};uint32_t argumentX{},argumentY{}; };
 struct SkillEndFact {EntityId actor;uint8_t type{};RegionId area;uint16_t skill{};};
 struct ItemSkillFact { EntityId owner,target; uint8_t targetType{1}; RegionId area; int skill{},rank{}; Vec position; uint16_t flags{}; };
-struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; EntityId missile; };
+struct MissileFact { EntityId owner; uint8_t ownerType{}; RegionId area; int definition{}, rank{}, frame{}; Vec position, destination; uint8_t pierce{}; EntityId missile{}; };
 struct ItemTargetingFact { EntityId source; int cursor{-1}; int skill{-1}; };
 struct ItemFact { TransactionId transaction; ItemChange change; };
 // Sparse immutable projection captured at commit. Encoding never consults a
@@ -43,7 +43,7 @@ struct InventoryFact {
     std::vector<ItemChange> changes;
     bool switchedWeapons{};
 };
-struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster; bool zooOnly{}; };
+struct QuestFact { PlayerId player; CharacterRecord record; int difficulty{}; unsigned remaining{}; std::array<int,5> stones{}; std::optional<uint16_t> tombOffset{}; std::optional<bool> eclipse{}; std::optional<uint8_t> staffStatus{}; std::optional<uint8_t> khalimStatus{}; unsigned rescued{}; std::array<uint16_t,48> gameFlags{}; std::array<bool,size_t(QuestId::Count)> unavailable{}, credited{}, entitled{}; bool fullStatus{}; std::optional<uint16_t> zooMonster{}; bool zooOnly{}; };
 struct AttributeFact { EntityId unit; uint64_t revision{}; };
 struct EnvironmentFact {int act{},cycle{},ticks{};bool eclipse{};};
 struct CharacterFact {

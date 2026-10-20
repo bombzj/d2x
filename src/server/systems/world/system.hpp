@@ -17,7 +17,7 @@ struct AreaLease { RegionId area; uint64_t generation{}; Residency residency; };
 struct PrepareArea { RegionId destination; uint64_t request{}; GameSettings settings; };
 struct PreparedArea { uint64_t request{}; AreaDefinition definition; };
 struct EnvironmentNotice {EnvironmentFact value;uint64_t revision{};};
-struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room;};
+struct QuestPosition {RegionId area;Vec position;std::optional<RoomView> room{};};
 struct State { std::map<RegionId, AreaLease> residency; std::vector<PrepareArea> preparation; };
 struct Ports {
     AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids;
@@ -68,7 +68,8 @@ class System {
     std::optional<QuestPosition> nativeFreeSpace(RegionId,Vec roomPosition,Vec requested,int size) const;
     std::optional<QuestPosition> nativeLinkPortalPosition(RegionId,bool durielOpening=false);
     std::optional<Vec> nativeActSpawnLocation(RegionId,int tile);
-    std::optional<QuestPosition> nativeActSpawnLocationEx(RegionId,int tile,int size);
+    std::optional<QuestPosition> nativeActSpawnLocationEx(RegionId,int tile,int size,const AreaStore::CollisionSample &sample={});
+    std::optional<QuestPosition> nativePlayerPosition(RegionId,Vec,EntityId self={}) const;
     std::optional<QuestPosition> nativeWaypointPosition(RegionId,bool changeAct);
     std::optional<QuestPosition> nativeDurielPortalPosition(RegionId);
     void retainControllerRoom(RegionId,Vec,bool retain);

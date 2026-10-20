@@ -47,12 +47,12 @@ struct StatRule {
     int32_t minimum{};
     bool hasMinimum{},keepZero{},damageRelated{};
     std::vector<StatOperation> operations;
-    std::optional<StatOperation> producer;
-    std::vector<uint16_t> targets;
-    std::vector<uint16_t> baseDependents; // Native ItemStatCost.unk0x5E, in stat-ID order.
-    std::array<StatItemEventBinding,2> itemEvents;
+    std::optional<StatOperation> producer{};
+    std::vector<uint16_t> targets{};
+    std::vector<uint16_t> baseDependents{}; // Native ItemStatCost.unk0x5E, in stat-ID order.
+    std::array<StatItemEventBinding,2> itemEvents{};
     bool direct{};
-    std::optional<uint16_t> maximumStat;
+    std::optional<uint16_t> maximumStat{};
 };
 struct StatRuleCatalog {
     std::map<uint16_t,StatRule> definitions;

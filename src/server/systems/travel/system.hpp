@@ -16,8 +16,8 @@ namespace d2x::server::travel {
 enum class Kind { Exit, Waypoint, Portal, Npc, SpecialPortal, QuestObject };
 enum class SpecialPortalKind { Cow, Pandemonium, Finale, Tristram, CainRescue, Andariel, ArcaneCanyon, Tyrael, ActFive, AnyaTemple, BaalExit, Shrine };
 struct Request { Kind kind; UnitTarget source; std::optional<RegionId> destination; };
-struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration; };
-struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom,townRoom; };
+struct Transition { RegionId from, to; uint64_t request{}, sourceGeneration{}, sequence{}; EntityId source; Vec approach, arrival; Kind kind=Kind::Exit; uint64_t npcConversation{}, waypointRevision{}; std::optional<uint64_t> arrivalGeneration{}; };
+struct Portal { PlayerId player; EntityId owner,fieldId,townId; std::string name; RegionId field,town; Vec fieldPosition,townPosition; PortalRule rule; uint64_t ready{},revision=1; bool opened{}; bool shared{};std::optional<RoomView> fieldRoom{},townRoom{}; };
 struct WaypointAccess { EntityId source; RegionId area; uint64_t generation{}, revision{}; };
 struct PositionSynchronization { uint64_t until{}; std::array<uint64_t,5> attempts{}; };
 struct State { std::map<PlayerId, Transition> transitions; std::map<PlayerId,Portal> portals; std::map<PlayerId,WaypointAccess> waypoints; std::map<EntityId,Portal> specialPortals; std::map<PlayerId,PositionSynchronization> synchronizations; };

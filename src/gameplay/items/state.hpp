@@ -86,7 +86,7 @@ struct ContainerSpec {
 struct ContainerState {
     EntityId id;
     ContainerSpec spec;
-    EntityId registeredWeapon; // Runtime native inventory GUID; absent from D2S.
+    EntityId registeredWeapon{}; // Runtime native inventory GUID; absent from D2S.
 };
 struct PlayerContainers {
     EntityId backpack, belt, stash, beltEquipment, equipment, cube, hirelingEquipment, cursor;

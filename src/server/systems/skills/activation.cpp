@@ -248,7 +248,9 @@ DomainStatus System::activateStaticField(Release &pending, const ActorContext &a
         };
         auto input=formulaInput(player,draw);SkillFormulaValues values(*player.rules.skills->formulas,input);
         const auto formula=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,field);
-            if(!value) throw std::logic_error("Missing native Static Field formula");return *value;};
+            if(!value) throw std::logic_error("Missing native Static Field formula");
+            return *value;
+            };
         NativeStaticField program;program.minimumDamage=formula("calc2");program.percent=formula("calc1");
         program.minimumPercent=player.rules.skills->staticMinimum.at(size_t(player.persistent.difficulty));
         const auto length=values.parameter(FormulaDomain::Skill,pending.skill.sourceId,pending.skill.rank,"edln");

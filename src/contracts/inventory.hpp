@@ -56,11 +56,11 @@ struct InventoryItemView {
     std::array<int, 2> colorTransform{};
     unsigned artFrame = 0;
     std::array<int, 2> iconCells{}; // Also supplied for read-only shop shelves.
-    std::vector<InventorySocketView> socketItems;
+    std::vector<InventorySocketView> socketItems{};
     bool socketContentsKnown = false;
     InventoryCellTone cellTone = InventoryCellTone::Unknown;
     std::array<int, 2> groundColorTransform{};
-    std::optional<InventoryStackView> stack;
+    std::optional<InventoryStackView> stack{};
     ItemHandle handle() const { return {id, revision}; }
 };
 struct InventoryContainerView {

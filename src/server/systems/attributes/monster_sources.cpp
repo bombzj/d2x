@@ -463,7 +463,8 @@ void refreshMonsterStatSources(monsters::Actor &unit,std::shared_ptr<const StatL
     }
     resources.refreshItemSkills(unit,{SkillStatRefreshKind::Passives,0},0);
     auto change=resources.take();unit.nativeStats=change.intrinsic;unit.life=change.life.raw();unit.maximumLife=change.maximum.raw();
-    if(change.poison) unit.poison=*change.poison;if(change.shatter) unit.shatterActive=*change.shatter;
+    if(change.poison) unit.poison=*change.poison;
+    if(change.shatter) unit.shatterActive=*change.shatter;
 }
 namespace {
 void assignSummonSkill(monsters::Actor &unit,MonsterResourceTrace &resources,std::map<int,int> &assigned,int id,int rank,
@@ -524,7 +525,8 @@ void assignMonsterSkill(monsters::Actor &unit,const CombatEffectSet &states,int 
     assignSummonSkill(unit,resources,assigned,skill,rank,sources);
     resources.refreshItemSkills(unit,{SkillStatRefreshKind::Passives,0},0);
     auto change=resources.take();unit.nativeStats=change.intrinsic;unit.life=change.life.raw();unit.maximumLife=change.maximum.raw();
-    if(change.poison) unit.poison=*change.poison;if(change.shatter) unit.shatterActive=*change.shatter;
+    if(change.poison) unit.poison=*change.poison;
+    if(change.shatter) unit.shatterActive=*change.shatter;
 }
 NativeUnitStats prepareSummonStatSources(monsters::Actor &unit,const SummonCastSpec &summon,std::span<const std::shared_ptr<const StatList>> equipment,std::optional<StatTimeContext> time) {
     return prepareSummonStatSources(unit,summon,equipment,time,0,{});

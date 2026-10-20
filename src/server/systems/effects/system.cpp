@@ -390,7 +390,8 @@ DomainResult<PotionPlan> System::heal(const ActorContext &actor) const {
             plan.units->facts.emplace_back(StateFact{m.id,1,m.area,state,false});
         };
         if(m.poison) appendRemoved(m.poison->damage.state);
-        if(m.chilledUntil) appendRemoved(m.rule.coldState);if(m.frozenUntil) appendRemoved(m.rule.frozenState.id);
+        if(m.chilledUntil) appendRemoved(m.rule.coldState);
+        if(m.frozenUntil) appendRemoved(m.rule.frozenState.id);
         // The coupled clear flag must accompany a changed reservation.
         life.changed=true;prepareUnitEffects(*plan.units,m.id,unit,std::move(life),actor.tick);
     }
@@ -458,7 +459,8 @@ DomainResult<WellRestoration> System::restoreWell(const ActorContext &actor,Fixe
         auto life=resources.take();life.cureColdPoison=true;life.changed=true;
         prepareUnitEffects(*unitPublication,id,unit,std::move(life),actor.tick);
         if(m.poison) appendRemoved(m.poison->damage.state);
-        if(m.chilledUntil) appendRemoved(m.rule.coldState);if(m.frozenUntil) appendRemoved(m.rule.frozenState.id);
+        if(m.chilledUntil) appendRemoved(m.rule.coldState);
+        if(m.frozenUntil) appendRemoved(m.rule.frozenState.id);
     }
     if(!used && unitPublication->units.empty()) return {DomainStatus::Applied,WellRestoration{false}};
     auto plan=ports_.transactions.prepare(std::move(edit),nullptr,{},std::move(unitPublication));if(!plan) return {plan.status,{}};
@@ -515,7 +517,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     std::erase_if(stormLast_,[&](const auto &entry){return !ports_.players.findActor(entry.first.first);});
     std::erase_if(stormPulses_,[&](const auto &entry){
         if(ports_.frameEvents.find(entry.first)) return false;
-        if(entry.second.projectile) ports_.missiles.removeTransient(entry.second.projectile);return true;
+        if(entry.second.projectile) ports_.missiles.removeTransient(entry.second.projectile);
+        return true;
     });
     std::erase_if(paladinCycles_,[&](const auto &entry){return !ports_.players.findActor(entry.first);});
     std::erase_if(unitAuraCycles_,[&](const auto &entry){return !ports_.monsters.find(entry.first);});

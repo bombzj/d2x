@@ -39,7 +39,8 @@ StepStatus System::zakarumZealotFamily(EntityId id,std::optional<UnitTarget> tar
     const PlayerState *player=target?ports_.players.findActor(target->id):nullptr;
     if(target && target->type==1) if(const auto *victim=ports_.monsters.find(target->id);victim && victim->owner) player=ports_.players.find(*victim->owner);
     if(player && area.definition.act==3 && player->persistent.player.quests.at(size_t(unit.rule.difficulty)).at(questIndex(QuestId::BlackenedTemple)).stage==4) {
-        if(!escape()) wander(6);return StepStatus::Complete;
+        if(!escape()) wander(6);
+        return StepStatus::Complete;
     }
     if(retaliating) {
         if(!controller.loop && unit.life*100/unit.maximumLife<params[2]) {

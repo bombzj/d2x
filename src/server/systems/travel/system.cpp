@@ -82,7 +82,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (distance > 50) return {DomainStatus::InvalidRequest, {}};
     std::deque<Vec> route;
     if (distance > 4) {
-        route = playerRoute(area->definition.collision,player->position,found->arrival);
+        route = playerRoute(ports_.spatial.navigationGrid(actor.area,actor.actor),player->position,found->arrival);
         if (route.empty()) return {DomainStatus::Unavailable, {}};
     }
     const auto prepared = ports_.world.requestArea(actor, found->destination);
@@ -214,7 +214,12 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 ((npc->rule.code=="warriv1" || npc->rule.code=="warriv2") && book.at(questIndex(QuestId::SistersToTheSlaughter)).stage<uint32_t(SlaughterStage::AndarielSlain)) ||
                 (npc->rule.code=="meshif1" && book.at(questIndex(QuestId::SevenTombs)).stage<uint32_t(TombsStage::PassageGranted)) ||
                 (npc->rule.code=="meshif2" && !player.persistent.player.completedActs.at(size_t(player.persistent.difficulty)).at(1))) {pending=state_.transitions.erase(pending);continue;}
-            arrival=destination->definition.spawn;
+            if(!transition.arrivalGeneration) {
+                const auto spawn=ports_.world.nativeActSpawnLocationEx(transition.to,0,2);
+                if(!spawn || spawn->area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+                transition.arrival=spawn->position;transition.arrivalGeneration=destination->generation;
+            }
+            arrival=transition.arrival;
         }
         std::optional<Vec> exitWalk;
         if(transition.kind==Kind::SpecialPortal && (!ports_.quests.allowsTravel(player.persistent.player,transition.from,transition.to) || std::none_of(state_.specialPortals.begin(),state_.specialPortals.end(),[&](const auto &entry){return entry.second.fieldId==transition.source || entry.second.townId==transition.source;}))) {pending=state_.transitions.erase(pending);continue;}
@@ -262,8 +267,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if(!marker) for(const auto &warp:destination->definition.exits) if(warp.destination==transition.from) {marker=warp.arrival;break;}
                 if(!marker) {pending=state_.transitions.erase(pending);continue;}
                 ports_.world.activate(transition.to,*marker);
-                const auto point=destination->definition.collision.nativeSpawn(*marker,50,playerMovement);
-                if(!point) {pending=state_.transitions.erase(pending);continue;}arrival=*point;
+                arrival=*marker;
             }
         }
         if (transition.kind==Kind::Exit) {
@@ -272,11 +276,21 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
                 if (back) { back = nullptr; break; } back = &exit;
             }
             if (!back) { pending = state_.transitions.erase(pending); continue; }
-            arrival = back->arrival; exitWalk = back->position + back->exitWalk;
+            arrival = back->arrival; exitWalk = back->exitWalk;
         }
-        if (!destination->definition.collision.walkable(arrival, playerMovement)) { pending = state_.transitions.erase(pending); continue; }
+        const auto global=arrival+targetDefinition.origin;
+        const auto room=ports_.areas.roomAtPosition(transition.to,arrival+Vec{.5f,.5f},
+            int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)));
+        if(!room) {pending=state_.transitions.erase(pending);continue;}
+        const bool changeAct=source->definition.act!=targetDefinition.act;
+        const uint16_t mask=changeAct?0x1c89:playerMovement.mask;
+        const auto free=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),
+            2,mask,ports_.spatial.nativeCollisionSample(mask,{},player.actor),{},0,false,50,changeAct?5:1);
+        if(!free || free->room.area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
+        arrival=free->position;
+        if(exitWalk) *exitWalk=*exitWalk+arrival;
         std::deque<Vec> route;
-        if (exitWalk) route = playerRoute(destination->definition.collision,arrival,*exitWalk);
+        if (exitWalk) route = playerRoute(ports_.spatial.navigationGrid(transition.to,player.actor),arrival,*exitWalk);
         EventBatch event{0, tick.tick, {}, {AudienceKind::Player, player.player, transition.to},
             {TravelFact{player.player, player.actor, transition.from, transition.to, destination->generation, arrival, false}}};
         if(transition.kind==Kind::Npc || (int(transition.from)==102 && int(transition.to)==103) || (int(transition.from)==103 && int(transition.to)==109) || (int(transition.from)==132 && int(transition.to)==109)) {
@@ -326,8 +340,9 @@ DomainResult<> System::relocate(const ActorContext &actor,RegionId target,std::o
     // Administrative relocation needs the same room collision lease as the
     // normal warp path before searching for an arrival cell.
     ports_.world.activate(target,desired);
-    const Vec at=area->definition.collision.nearest(desired,playerMovement);
-    if(!area->definition.collision.walkable(at,playerMovement) || (at-desired).length()>8) return {DomainStatus::Unavailable,{}};
+    const auto arrival=ports_.world.nativePlayerPosition(target,desired,actor.actor);
+    if(!arrival || arrival->area!=target || (arrival->position-desired).length()>8) return {DomainStatus::Unavailable,{}};
+    const Vec at=arrival->position;
     const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Player,actor.player,target},{TravelFact{actor.player,actor.actor,p->area,target,area->generation,at,false}}});
     if(!sent) return {sent.status,{}};
     ports_.npc.close(actor.player);ports_.inventory.close(actor.player);state_.waypoints.erase(actor.player);cancel(actor.player);

@@ -1,4 +1,5 @@
 #include "attributes.hpp"
+#include "gameplay/actions/movement_timing.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include "gameplay/stats/modifier_values.hpp"
@@ -8,6 +9,20 @@
 #include <stdexcept>
 
 namespace d2x {
+MovementTiming nativeMovementTiming(int baseVelocity,int baseAnimationRate,int percentage) {
+    percentage=std::max(25,percentage);
+    return {nativePercentage(nativeShiftLeft(baseVelocity,8),percentage,100),
+        std::clamp(nativePercentage(baseAnimationRate,percentage,100),0,32767),percentage};
+}
+MovementTiming playerMovementTiming(int walkVelocity,int runVelocity,
+    int fasterMoveVelocity,int velocityPercent,bool running) {
+    if(walkVelocity<=0 || runVelocity<=0 || fasterMoveVelocity<0)
+        throw std::runtime_error("Unsupported original movement inputs");
+    const int faster=fasterMoveVelocity?nativePercentage(fasterMoveVelocity,150,nativeAdd(fasterMoveVelocity,150)):0;
+    int percent=nativeAdd(nativeAdd(100,faster),velocityPercent);
+    if(running) percent=nativeAdd(percent,nativeAdd(nativePercentage(runVelocity,100,walkVelocity),-100));
+    return nativeMovementTiming(walkVelocity,running?101:213,percent);
+}
 int manaRecoveryPerFrame(int32_t maximumManaFixed, int denominator, int recoveryBonus) {
     auto frames = nativeMultiply(25, denominator);
     if (!frames) frames = 7500;
@@ -127,20 +142,13 @@ CharacterAttributes deriveCharacterAttributes(const CharacterDefinition &d, int 
                                         int64_t(1), int64_t(18)));
     // D2Common applies diminishing returns to item FRW, then adds the ordinary
     // velocity stat (including armor penalties and the run mode bonus).
-    if (m.fasterMoveVelocity < 0)
-        throw std::runtime_error("Negative item faster movement is unsupported");
-    const int64_t fasterMove = m.fasterMoveVelocity
-        ? int64_t(m.fasterMoveVelocity) * 150 / (int64_t(m.fasterMoveVelocity) + 150) : 0;
-    const int64_t movementPercent = 100 + fasterMove + m.velocityPercent;
     result.velocityPercent=m.velocityPercent;
-    const int64_t walkPercent = std::max<int64_t>(25, movementPercent);
-    const int64_t runBonus = int64_t(100) * d.runVelocity / d.walkVelocity - 100;
-    const int64_t runPercent = std::max<int64_t>(25, movementPercent + runBonus);
-    constexpr float velocityScale = 25.f / 16.f; // 8.8 path velocity, 25 game frames per second.
-    result.walkSpeed = float(d.walkVelocity) * velocityScale * float(walkPercent) / 100.f;
-    result.runSpeed = float(d.walkVelocity) * velocityScale * float(runPercent) / 100.f;
-    result.walkAnimationRate = 25.f * 213.f / 256.f * float(walkPercent) / 100.f;
-    result.runAnimationRate = 25.f * 101.f / 256.f * float(runPercent) / 100.f;
+    const auto walk=playerMovementTiming(d.walkVelocity,d.runVelocity,m.fasterMoveVelocity,m.velocityPercent,false);
+    const auto run=playerMovementTiming(d.walkVelocity,d.runVelocity,m.fasterMoveVelocity,m.velocityPercent,true);
+    result.walkSpeed = float(walk.velocity)*25.f/4096.f;
+    result.runSpeed = float(run.velocity)*25.f/4096.f;
+    result.walkAnimationRate = float(walk.animationRate)*25.f/256.f;
+    result.runAnimationRate = float(run.animationRate)*25.f/256.f;
     const auto torsoMultiplier = nativeAdd(m.torsoSpeed / 10, 1);
     auto drain = nativeMultiply(nativeMultiply(2, d.runDrain), torsoMultiplier);
     drain = nativeAdd(drain, nativeMultiplyDivide(drain, m.staminaDrainPercent, -100));

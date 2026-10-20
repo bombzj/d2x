@@ -55,6 +55,6 @@ class EscapeMenu {
     Rectangle controlTrack() const;
     int controlThumbHeight() const;
     void draw(EscapeMenuPage, int selected, float elapsed, const std::array<int, 5> &automap, const AudioSettings &,
-              int controlScroll, int scrollPressed, const PaletteBlendView &) const;
+              bool lighting, int controlScroll, int scrollPressed, const PaletteBlendView &) const;
 };
 } // namespace d2x

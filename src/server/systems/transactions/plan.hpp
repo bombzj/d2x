@@ -49,10 +49,10 @@ struct InventoryEdit {
     std::vector<DirectedFacts> directed{};
     bool playerTrade{};
     std::optional<std::optional<ItemInstance>> ironGolem{};
-    std::vector<ResourceMaximums> resourceMaximums;
-    std::optional<ResourceMaximums> resourceBase;
-    std::optional<UnitRandomEdit> random;
-    std::optional<SkillManaPayment> skillPayment;
+    std::vector<ResourceMaximums> resourceMaximums{};
+    std::optional<ResourceMaximums> resourceBase{};
+    std::optional<UnitRandomEdit> random{};
+    std::optional<SkillManaPayment> skillPayment{};
 };
 struct ItemAuraTimerCompletion {
     EntityId source;
@@ -74,15 +74,15 @@ struct CharacterEdit {
     std::optional<SkillCharge> charge{};
     std::shared_ptr<const EquipmentRules> equipment{};
     std::optional<std::optional<ItemInstance>> ironGolem{};
-    std::vector<ResourceMaximums> resourceMaximums;
+    std::vector<ResourceMaximums> resourceMaximums{};
     // Candidate resources may already include callback effects before a later
     // recovery pulse; this supplies their current cap for the final refresh.
-    std::optional<ResourceMaximums> resourceBase;
+    std::optional<ResourceMaximums> resourceBase{};
     bool refreshEquipment{}; // Native explicit UpdateInventoryItems boundary.
-    std::optional<ItemAuraTimerCompletion> itemAuraTimer;
-    std::optional<UnitRandomEdit> random;
+    std::optional<ItemAuraTimerCompletion> itemAuraTimer{};
+    std::optional<UnitRandomEdit> random{};
     bool cancelItemAuras{};
-    std::optional<SkillManaPayment> skillPayment;
+    std::optional<SkillManaPayment> skillPayment{};
 };
 using Change = std::variant<ItemTransfer, Reward, Exchange, InventoryEdit, CharacterEdit>;
 struct PreparedPlayer {
@@ -92,11 +92,11 @@ struct PreparedPlayer {
     bool switchedWeapons{}, inventoryChanged{};
 };
 struct Plan { TransactionId id; std::vector<RevisionGuard> expected; Change change; std::optional<PreparedPlayer> player;
-    std::shared_ptr<effects::PlayerEffectsPublication> effects;std::vector<Plan> auraPlayers;
-    std::shared_ptr<effects::AuraUnitPublication> auraUnits;bool auraRecipient{};std::optional<UnitRandomEdit> random;
-    std::shared_ptr<FrameEventPublication> periodicEvents;
-    std::shared_ptr<missiles::NativeBirthPublication> missileBirth;
-    std::shared_ptr<const RoomRandomLoan> roomRandom;
-    std::vector<std::shared_ptr<const RoomRandomLoan>> roomRandomLoans;
-    std::optional<UnitRandomEdit> gameRandom; };
+    std::shared_ptr<effects::PlayerEffectsPublication> effects{};std::vector<Plan> auraPlayers{};
+    std::shared_ptr<effects::AuraUnitPublication> auraUnits{};bool auraRecipient{};std::optional<UnitRandomEdit> random{};
+    std::shared_ptr<FrameEventPublication> periodicEvents{};
+    std::shared_ptr<missiles::NativeBirthPublication> missileBirth{};
+    std::shared_ptr<const RoomRandomLoan> roomRandom{};
+    std::vector<std::shared_ptr<const RoomRandomLoan>> roomRandomLoans{};
+    std::optional<UnitRandomEdit> gameRandom{}; };
 }

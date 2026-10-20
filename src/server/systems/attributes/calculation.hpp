@@ -23,9 +23,9 @@ struct AuraSourceObservation {
     std::set<int> states;
     std::shared_ptr<const CombatEffectSet> effects;
     std::optional<ResourceValues> resources; // A direct unit-resource write at this boundary.
-    std::vector<int> withdrawnPassiveStates; // BasicAura withdraws this separate cached list after metadata.
+    std::vector<int> withdrawnPassiveStates{}; // BasicAura withdraws this separate cached list after metadata.
     struct ItemWrite {EntityId item;StatValue stat;};
-    std::vector<ItemWrite> itemWrites; // A forced do program's ordered item SetBaseStat.
+    std::vector<ItemWrite> itemWrites{}; // A forced do program's ordered item SetBaseStat.
 };
 using AuraSourceObserver=std::function<void(AuraSourceObservation)>;
 using AuraSourceReader=std::function<SkillFormulaSnapshot()>;

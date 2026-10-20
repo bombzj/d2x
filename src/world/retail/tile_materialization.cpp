@@ -43,7 +43,8 @@ size_t RetailTileMaterializer::registerRoom(int level, const RetailRoom &room,
     if (failed_) throw std::runtime_error("Discard failed native tile session before registering rooms");
     if (!libraries || room.width <= 0 || room.height <= 0)
         throw std::runtime_error("Invalid native room tile inputs");
-    RetailTileRoom state{level, room, std::move(libraries), warpSlots};
+    RetailTileRoom state{.level=level,.room=room,.libraries=std::move(libraries),.warpSlots=warpSlots,
+        .logicalRegions={},.logicalCells={},.initialActiveRandom={}};
     std::set<int> uniqueWarps;
     for (int id : linkedWarpIds) {
         if (!uniqueWarps.insert(id).second)

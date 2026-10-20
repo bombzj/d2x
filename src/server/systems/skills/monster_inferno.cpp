@@ -45,7 +45,8 @@ DomainResult<bool> System::releaseMonsterInferno(MonsterRelease &pending,TickCon
     auto context=formulaInput(*unit,*sampled);SkillFormulaValues values(catalog,context);
     const auto calculate=[&](std::string_view field) {
         const auto result=values.calculation(FormulaDomain::Skill,skill,rank,field);
-        if(!result) throw std::logic_error("Missing native monster Inferno formula");return *result;
+        if(!result) throw std::logic_error("Missing native monster Inferno formula");
+        return *result;
     };
     const auto definition=ports_.missiles.nativeDefinition(row.reference("srvmissilea"));
     if(!definition) return {DomainStatus::Unavailable,{}};

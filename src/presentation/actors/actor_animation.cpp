@@ -53,14 +53,14 @@ float ActorAnimation::duration() const { return durationFrames ? float(*duration
 bool ActorAnimation::finished(float elapsed) const {
     return !cycle && holdFrame < 0 && fps > 0 && elapsed >= duration();
 }
-const Sprite *ActorAnimation::sample(float clock, float elapsed, Vec look) const {
-    return sampleFacing(clock, elapsed, direction(look, animation.directions));
+const Sprite *ActorAnimation::sample(float clock, float elapsed, Vec look,std::optional<float> preciseFrame) const {
+    return sampleFacing(clock, elapsed, direction(look, animation.directions),preciseFrame);
 }
-const Sprite *ActorAnimation::sampleFacing(float clock, float elapsed, int facing) const {
+const Sprite *ActorAnimation::sampleFacing(float clock, float elapsed, int facing,std::optional<float> preciseFrame) const {
     if (!ready()) return nullptr;
     // Avoid GPU frame()'s implicit wrapping for one-shot and static death poses.
     const double nativeTicks=std::floor(std::max(0.0,double(cycle?clock:elapsed))*25.0+1e-5);
-    const double advance = nativeTicks * std::max(0.f,fps) / 25.0;
+    const double advance = preciseFrame?std::max(0.f,*preciseFrame):nativeTicks * std::max(0.f,fps) / 25.0;
     const int index = holdFrame >= 0 ? int(std::min(advance, double(holdFrame))) : cycle ? int(std::fmod(advance, double(frameCount)))
         : int(std::min(advance, double(frameCount - 1)));
     return animation.frame(facing, start + index);
@@ -74,10 +74,10 @@ void ActorAnimationState::observe(std::optional<uint8_t> currentMode, uint64_t a
     if (frozen && !frozenAt) frozenAt = now;
     if (!frozen && frozenAt) { startedAt += now - *frozenAt; frozenAt.reset(); }
 }
-std::optional<Vec> ActorAnimation::riderAnchor(float clock,float elapsed,Vec look) const {
+std::optional<Vec> ActorAnimation::riderAnchor(float clock,float elapsed,Vec look,std::optional<float> preciseFrame) const {
     if(!ready() || animation.riderAnchors.size()!=animation.frames.size()) return {};
     const double ticks=std::floor(std::max(0.0,double(cycle?clock:elapsed))*25.0+1e-5);
-    const double advance=ticks*std::max(0.f,fps)/25.0;
+    const double advance=preciseFrame?std::max(0.f,*preciseFrame):ticks*std::max(0.f,fps)/25.0;
     const int frame=holdFrame>=0?int(std::min(advance,double(holdFrame))):cycle?int(std::fmod(advance,double(frameCount))):int(std::min(advance,double(frameCount-1)));
     const int facing=direction(look,animation.directions);
     return animation.riderAnchors[size_t(facing*animation.count+start+frame)];

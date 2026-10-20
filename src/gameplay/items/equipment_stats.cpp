@@ -91,7 +91,8 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         if (low < 0 || high > std::numeric_limits<int>::max())
             throw std::runtime_error("Equipment damage exceeds supported range");
         auto &weapon = result.weapons[count++];
-        weapon = {item->id, int(low), int(high), definition.equipment.isType("miss")};
+        weapon = {};
+        weapon.item=item->id;weapon.minimum=int(low);weapon.maximum=int(high);weapon.ranged=definition.equipment.isType("miss");
         weapon.meleeBaseMinimum = int(rawMinimum);
         weapon.meleeBaseMaximum = int(rawMaximum);
         weapon.damagePercent = int(bonus);

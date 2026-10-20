@@ -45,9 +45,9 @@ struct ActorAnimation {
     Vec offset;
     int order = 0;
     bool ready() const;
-    const Sprite *sample(float clock, float elapsed, Vec look) const;
-    const Sprite *sampleFacing(float clock, float elapsed, int facing) const;
-    std::optional<Vec> riderAnchor(float clock,float elapsed,Vec look) const;
+    const Sprite *sample(float clock, float elapsed, Vec look,std::optional<float> preciseFrame={}) const;
+    const Sprite *sampleFacing(float clock, float elapsed, int facing,std::optional<float> preciseFrame={}) const;
+    std::optional<Vec> riderAnchor(float clock,float elapsed,Vec look,std::optional<float> preciseFrame={}) const;
     bool finished(float elapsed) const;
     float duration() const;
 };

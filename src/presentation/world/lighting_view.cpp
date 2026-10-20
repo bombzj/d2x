@@ -352,7 +352,7 @@ Color LightingView::sample(Vec position) const {
     const int y = std::clamp(int(std::floor(position.y - origin_.y)), 0, maskSide - 1);
     return lightPixels_[size_t(y) * maskSide + x];
 }
-void LightingView::bind(PaletteBlendView &palette, Vec player, Vec playerScreen, float zoom) const {
-    palette.setLighting(lightMap_, player, playerScreen, origin_, zoom, ambient_);
+void LightingView::bind(PaletteBlendView &palette, Vec player, Vec playerScreen, float zoom, bool enabled) const {
+    palette.setLighting(lightMap_, player, playerScreen, origin_, zoom, ambient_, !enabled);
 }
 } // namespace d2x

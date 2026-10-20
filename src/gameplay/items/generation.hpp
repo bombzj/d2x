@@ -19,7 +19,7 @@ struct ItemAffixInstance {
     bool prefix = false;
     int32_t row = -1;
     std::vector<int32_t> propertyRolls;
-    std::vector<std::vector<int32_t>> operationRolls;
+    std::vector<std::vector<int32_t>> operationRolls{};
 };
 struct ItemGeneration {
     ItemQuality quality = ItemQuality::Normal;

@@ -271,7 +271,7 @@ NoDrop分布、同队光环／随从动态标记、八人竞争与背压、跨�
 
 当前MPQ的trade.dc6四帧、buysellbtn.dc6第16／17勾选帧及第10／11取消帧、800borderframe、font16／Sky、TBL用于完整左右面板；第12–15帧是左右箭头，不用于灰色勾选。绿色勾选保留原勾与边框，内区按当前Sky PL2绿色变换生成，原版专用变换尚未认证。用户提供接受后及放入手套／绿勾截图作为布局依据：左侧上方对方报价，下方本人报价，右侧本人库存；格子坐标／容量读取inventory.txt的Trade Page 1-2／2-2。点击本人Gold字段用原dialogbackground和strTradeGoldHowMuch打开数字报价，Enter提交／Esc取消编辑；该弹窗布局参考本地OpenDiablo2 MoveGoldPanel，尚未与原版交易金币弹窗截图认证。物品格底色及全部像素配对仍未认证。
 
-NPC服务／Talk菜单和发起／接收交易邀请共用OriginalMenu（presentation/graphics/original_menu.*）：当前MPQ boxpieces、font16／原TBL字宽及Sky PL2金色／蓝色变换；按用户Warriv／Akara／等待交易截图统一金色NPC标题、白色居中选项、蓝色悬停。收到交易邀请时使用当前MPQ的strTradeAgreeTo作为标题，标题和原有接受／取消选项共同参与菜单尺寸及布局；发起方等待菜单不显示该标题。无悬停时邀请选项保持白色，键盘导航可显示选中项。菜单边框与文字／命中区域共用，业务动作及资格由调用方处理；没有另画NPC边框或按字符数猜宽度。boxpieces底边帧的墨迹位于顶端，拼接按当前原图的九像素差与侧边偏移修正，消息日志也复用该边框入口。精确菜单锚点及原版完整状态仍待对照。
+NPC服务／Talk菜单和发起／接收交易邀请共用OriginalMenu（presentation/graphics/original_menu.*）：当前MPQ boxpieces、font16／原TBL字宽及Sky PL2金色／蓝色变换；按用户Warriv／Akara／等待交易截图统一金色NPC标题、白色居中选项、蓝色悬停。收到交易邀请时使用当前MPQ的strTradeAgreeTo作为标题，确认行读取TBL的ok（英文显示OK），取消行读取strUiMenu1，与用户原版交易邀请截图一致；标题和选项共同参与菜单尺寸及布局，发起方等待菜单不显示该标题。无悬停时邀请选项保持白色，键盘导航可显示选中项。菜单边框与文字／命中区域共用，业务动作及资格由调用方处理；没有另画NPC边框或按字符数猜宽度。boxpieces底边帧的墨迹位于顶端，拼接按当前原图的九像素差与侧边偏移修正，消息日志也复用该边框入口。精确菜单锚点及原版完整状态仍待对照。
 
 服务器实际本人报价为原INVPAGE_TRADE=2（位流page3）；对方报价是原服复制到本人库存的INVPAGE_EQUIP=1（位流page2）临时副本，独立只读容器，不能取出／交换／装备。原服action5／mode4／page2撤销临时副本时直接清理，不将副本当作真实Cursor（D2MOO PlrTrade::sub_6FC931D0与ItemMode::sub_6FC446B0）。本人背包↔报价使用既有Take／Place／Swap和原0x19／18／1F；拖拽、Shift快捷放入／取回及悬停共用库存投影。发送前核对游戏／区域／交互、物品revision与原格子尺寸／占用；同意另外绑定交易revision，物品增删／属性更新及金币回包使旧意图失效。待处理库存队列、光标物品、本人已勾选及未齐响应阻止再次同意或编辑。关闭只消费原服实际回包，不本地交换或修改保存格式。
 

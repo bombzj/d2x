@@ -87,7 +87,9 @@ DomainResult<bool> System::releaseDruidPet(MonsterRelease &pending,TickContext t
     }
     auto input=caster->formulaInput(ports_.effects,tick.tick);SkillFormulaValues values(*rules.formulas,input);
     const auto calc=[&](std::string_view field) {const auto value=values.calculation(FormulaDomain::Skill,pending.request.skill,pending.attack.rank,field);
-        if(!value) throw std::logic_error("Unavailable native druid pet formula");return *value;};
+        if(!value) throw std::logic_error("Unavailable native druid pet formula");
+        return *value;
+        };
     if(function==137) {
         if(!release.manaPaid) {
             const auto consumed=ports_.effects.prepareConsumedCorpse(unit.id,rules.formulas->corpseNoDrawState,tick.tick);if(!consumed) return {consumed.status,{}};

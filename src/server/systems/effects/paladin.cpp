@@ -628,7 +628,8 @@ DomainResult<> System::advanceAuraTarget(const ActorContext &actor,EntityId sour
         if(a.element>=0 && a.maximumDamage>0) {
             if(!progress.pulse) {
                 const auto result=queueAuraPulse(source,a,std::vector<EntityId>{id},occurrence,damage);
-                if(!result) return result;progress.pulse=true;
+                if(!result) return result;
+                progress.pulse=true;
             }
             if(ports_.combat.advanceAuraPulse(source,occurrence,{actor.tick})==StepStatus::Blocked) return {DomainStatus::Capacity,{}};
         }
@@ -1112,7 +1113,6 @@ DomainResult<> System::consumeAuraMana(const ActorContext &actor,const AuraDefin
     return result;
 }
 StepStatus System::advanceAuraCycle(const ActorContext &actor,const PlayerState &p,const AuraSkillSpec &spec,PaladinCycle &cycle,uint64_t tick) {
-    const auto key=actor.player;
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto &area=ports_.areas.at(p.area).definition;
     if(!cycle.pending) {

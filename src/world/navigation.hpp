@@ -1,50 +1,14 @@
 #pragma once
 #include "core/bytes.hpp"
 #include "world/collision.hpp"
+#include "world/room_layout.hpp"
 #include "core/math.hpp"
 #include "core/id.hpp"
 #include <deque>
+#include <functional>
 #include <optional>
 #include <vector>
 namespace d2x {
-struct RoomBounds {
-    int x, y, width, height;
-    bool populate;
-    bool checkLosDraw{true};
-};
-struct RoomPopulationRegion {
-    int index{},left{},top{},right{},bottom{};
-    bool node{};
-};
-struct NativeTileInfo {int index{},x{},y{};};
-struct RoomPopulationLayout {
-    struct Floor {int x{},y{};uint16_t material{};};
-    int x{},y{},width{},height{};
-    bool single{};
-    bool waypoint{},warp{};
-    size_t allocationOrder{};
-    std::optional<Vec> waypointTile;
-    std::vector<RoomPopulationRegion> regions;
-    std::vector<size_t> cells;
-    std::vector<Floor> floors;
-};
-// Immutable spatial room index. Activity is derived from the observer's room and
-// DRLG near-room list, following its same-level six-tile gap criterion.
-class RoomLayout {
-    int width_ = 0, height_ = 0;
-    std::vector<RoomBounds> rooms_;
-    std::vector<int> cells_;
-    int roomAt(Vec point) const;
-
-  public:
-    RoomLayout() = default;
-    RoomLayout(int width, int height, std::vector<RoomBounds> rooms);
-    // Ownership never falls back to a nearby room outside its footprint.
-    const std::vector<RoomBounds> &rooms() const { return rooms_; }
-    const RoomBounds *room(Vec point) const;
-    std::vector<const RoomBounds *> nearRooms(const RoomBounds &observer) const;
-    bool nearby(Vec observer, Vec point) const;
-};
 struct Grid {
     int width = 0, height = 0;
     Bytes blocked;
@@ -79,6 +43,9 @@ struct Grid {
     // imported terrain. Offsets convert a view cell to each owning grid.
     struct NavigationSource { const Grid *grid; int offsetX, offsetY; };
     std::vector<NavigationSource> navigationSources;
+    // Ephemeral collision view; owns no terrain and must not survive a unit
+    // publication. Coordinates remain local to this grid, including neighbours.
+    std::function<uint16_t(int,int,EntityId)> collisionSample;
     Grid() = default;
     Grid(int w, int h) : width(w), height(h), blocked(size_t(w) * h), lightBlocked(size_t(w) * h),
                          terrainCollision(size_t(w) * h), objectCollision(size_t(w) * h),

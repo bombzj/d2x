@@ -1,6 +1,8 @@
 #include "presentation/world/palette_blend_view.hpp"
 #include "presentation/scene_view.hpp"
 #include "quest_panel.hpp"
+#include "client/actor_client.hpp"
+#include "core/text.hpp"
 #include <algorithm>
 #include <cmath>
 namespace d2x {
@@ -82,7 +84,7 @@ void SceneView::drawGameMenu() const {
         view_.automapFade == AutomapFade::Everything ? 2 : 3,
         int(view_.automapCenterWhenCleared), int(view_.automapParty), int(view_.automapNames)};
     assets_.escapeMenu.draw(view_.gameMenuPage, view_.gameMenuSelected, view_.gameMenuTime,
-                            values, view_.audio, view_.gameMenuControlScroll, view_.gameMenuScrollPressed, *blend);
+                            values, view_.audio, view_.lighting, view_.gameMenuControlScroll, view_.gameMenuScrollPressed, *blend);
 }
 void SceneView::drawHelp() const {
 
@@ -127,8 +129,46 @@ void SceneView::drawEnemyBar(std::string_view title, std::optional<float> life,
 }
 void SceneView::drawDeathNotice() const {
     if (!characterView_.dead) return;
-    painter_.centered("YOU HAVE DIED", 250, 32, {187, 46, 30, 255});
-    painter_.centered("PRESS ESC TO CONTINUE", 300, 32, {187, 46, 30, 255});
+    const auto actor = actorClient_.controlledActor();
+    const auto nativeCell = [](const Sprite *image, int x, int baseline) {
+        if (image) DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
+            {float(x + image->x), float(baseline + image->y - image->texture.height),
+             float(image->texture.width), float(image->texture.height)}, {}, 0, WHITE);
+    };
+    const auto artwork = [&](const GpuAnimation &art, int baseline) {
+        int width = 0;
+        for (const auto &cell : art.frames) width += cell.texture.width;
+        int x = W / 2 - width / 2 - 1; // D2Win #10138's centered DC6 cells.
+        for (const auto &cell : art.frames) { nativeCell(&cell, x, baseline); x += 256; }
+    };
+    const auto text = [&](const std::string &line, int baseline) {
+        const auto codes = utf8Decode(line);
+        int width = 0;
+        for (const auto code : codes) width += assets_.deathFont.widthOf(code);
+        // D2Win #10150 reserves eight extra pixels and centers text in them.
+        int x = W / 2 - width / 2 + 4;
+        for (const auto code : codes) {
+            nativeCell(assets_.deathFont.glyphOf(code), x, baseline);
+            x += assets_.deathFont.widthOf(code);
+        }
+    };
+    // D2Client 1.13c BEE60: native baselines, no screen-sized dark overlay.
+    artwork(assets_.deathTitle, H / 2 - 94);
+    artwork(assets_.deathInstruction, H / 2 - 46);
+    int baseline = H / 2 - 46;
+    if (actor.hardcore == true) text(assets_.characterLabels.at("Harddeathmessage"), baseline + 48);
+    else if (actor.hardcore == false) {
+        if (actor.deathGoldLost && *actor.deathGoldLost) {
+            auto line = assets_.characterLabels.at("Deathmessage");
+            const auto amount = line.find("%d");
+            if (amount != std::string::npos) {
+                line.replace(amount, 2, std::to_string(*actor.deathGoldLost));
+                text(line, baseline += 48);
+            }
+        }
+        if (actor.difficulty && *actor.difficulty > 0)
+            text(assets_.characterLabels.at("Deathmessnight"), baseline + 48);
+    }
 }
 float SceneView::partyPortraitOffset() const {
     return view_.portraitsVisible && worldViewport().x == 0 && !view_.capturesWorldInput() ?
@@ -160,7 +200,6 @@ void SceneView::drawUi(Vec mouse) const {
     if (view_.shopOpen) drawNpcShop(mouse);
     drawInventory(mouse);
     drawBelt(mouse);
-    drawDeathNotice();
     if (view_.help)
         drawHelp();
     if (view_.travelMenu && view_.waypointSource)
@@ -177,6 +216,7 @@ void SceneView::drawUi(Vec mouse) const {
     if (deferredTooltip_.active && !view_.inventory.goldDialog && !view_.gameMenuOpen)
         drawItemText(deferredTooltip_.lines, deferredTooltip_.quality, deferredTooltip_.anchor,
                      deferredTooltip_.price, deferredTooltip_.priceLabel);
+    drawDeathNotice(); // Native C3DAA draws death notices after the main HUD.
     if (!itemCursor) {
         const Sprite *pointer = assets_.cursor.frame(0, 0);
         Vec hotspot = handCursorHotspot(pointer);

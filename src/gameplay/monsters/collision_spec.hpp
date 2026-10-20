@@ -1,5 +1,5 @@
 #pragma once
-#include "world/navigation.hpp"
+#include "world/collision.hpp"
 namespace d2x {
 // D2Common PATH_AllocDynamicPath: Wraith overrides flying, small monsters
 // use the small path pattern; flying/opendoors flags belong to MonStats.

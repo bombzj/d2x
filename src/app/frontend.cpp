@@ -287,7 +287,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             const auto &panels = sharedUi->ui();
             const ClientPreferences current{sharedClients->running(), panels.miniPanelOpen,
                 panels.automapLarge, panels.automapCenterWhenCleared,
-                panels.automapParty, panels.automapNames, panels.automapFade, panels.audio};
+                panels.automapParty, panels.automapNames, panels.automapFade, panels.audio, panels.lighting};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
@@ -913,6 +913,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.automapParty = preferences.automapParty;
                         initial.automapNames = preferences.automapNames;
                         initial.automapFade = preferences.automapFade;
+                        initial.lighting = preferences.lighting;
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);

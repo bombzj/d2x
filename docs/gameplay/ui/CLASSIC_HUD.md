@@ -70,7 +70,7 @@ Skills.skilldesc关联SkillDesc的IconCel／ListRow／ListPool及当前职业图
 
 ## ESC 菜单
 
-ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`统一加载英文原资源并维护绘制／命中几何，SceneController只消费选择、切换页面和提交已支持动作。主菜单为Options／Save and Exit Game／Return to Game；Options的Sound Options、Video Options、Automap Options和Configure Controls均可进入，保留Previous Menu／Cancel／Default／Accept。无对应设置后端的3D Sound／EAX／3D Bias、画面、按键编辑及Default以当前MPQ Sky PL2第5号灰色表显示，鼠标、Enter和方向键均不能激活；不再弹出自绘的未实现提示。按键页的Cancel／Accept只返回，不能据此宣称改键已实现。
+ESC先关闭面板／对白，无面板时打开游戏菜单。`hud/escape_menu`统一加载英文原资源并维护绘制／命中几何，SceneController只消费选择、切换页面和提交已支持动作。主菜单为Options／Save and Exit Game／Return to Game；Options的Sound Options、Video Options、Automap Options和Configure Controls均可进入，保留Previous Menu／Cancel／Default／Accept。无对应设置后端的3D Sound／EAX／3D Bias、其余画面设置、按键编辑及Default以当前MPQ Sky PL2第5号灰色表显示，鼠标、Enter和方向键均不能激活；不再弹出自绘的未实现提示。按键页的Cancel／Accept只返回，不能据此宣称改键已实现。
 
 菜单标签固定读取`data/local/ui/eng/*.dc6`，使用原分片、底部原点和原像素尺寸，不随hudScale拉伸，也不受语言选择或TTF字体替代影响。3DSound原图实际文案为3D SOUND；大字Previous与设置页SPrevious使用各自原资源。普通菜单按`(H−80)/2−行数×50/2`定位，标签基线偏移39；设置页包含标题，行距45、基线偏移34，左右列锚点为W/2±230。五芒星原8帧、相反方向、50ms帧间隔，锚点为W/2±249，保留原帧偏移及底部原点。扩展窗口沿原居中公式延伸，不缩放菜单字形。
 
@@ -81,6 +81,8 @@ Sound、Music与NPC Speech接入真实音频和客户端偏好。两条滑块均
 `audio/scene_streams`按Levels.SoundEnv→SoundEnviron.Song读取环境音乐，按Sounds原WAV、Loop、Volume、Music Vol与25Hz Fade字段播放；原75帧最短切歌间隔、125帧更新下一Block恢复点。NPC语音优先用实际TBL stringId→a1–5npc原映射→Sounds.FileName，普通闲谈使用已解析的原文映射；歧义不借用其他NPC声音。WAV解码器与其借用的MPQ字节同寿命，不落地解压文件。当前`assets/mpq2`缺d2music／d2xmusic／d2speech／d2xtalk，缺成员仅记录一次诊断，保持无声，不生成替代音频；使用包含这些同版本原包的`--mpq`目录后才能听到相应资源。环境音乐之外的任务插曲、完整原版混音／字幕速度及流边界时序仍未认证。
 
 声音静态依据为同份1.13c D2Client的64400–64470（21档百分比）、6504A–65128（滑条命中／拖动）、64250–642D5（语音／字幕标志）、5D24C／5D26A／5D45D（Music、Master、Sounds.Volume整数联动）、456A0–45962（环境音乐及Block恢复）；D2Sound（MD5 `b07372c8e740cf04f45b8e2e63a01346`）9B30–9C26确认默认值及合法范围，9A40／9AA0／9AD0为三项保存入口。d2x保存到client-settings.json，不写原版注册表或角色D2S。完整音频操作与原版实机对照尚未执行。
+
+Video Options的Lighting Quality沿原图位置显示On／Off并默认On；鼠标、Enter和左右键均切换，Off为世界全亮，切回On恢复当前光照。该开关按用户要求替代原版High／Medium／Low；具体绘制与保存边界见[场景照明](../world/LIGHTING.md)。其余未支持画面选项继续置灰。
 
 自动地图五项沿用当前已支持状态与偏好保存；大小切换、Fade四档与小图跳过Center保持原规则，支持鼠标／Enter及左右方向键。普通菜单上下导航环绕并跳过禁用行；设置页ESC关闭菜单，按键页ESC返回Options。Save and Exit提交原保存退局，确认后返服务器选角，超时保存未知；不在UI写D2S；单机／联机的暂停由app/frontend既有宿主及表现策略负责。
 
@@ -103,7 +105,7 @@ Sound、Music与NPC Speech接入真实音频和客户端偏好。两条滑块均
 | 佣兵／雇用、组队 | 原hireling／party面板、inventory原槽位／原字体；hireling_view、commerce_controller、party_view | 全职业／雇用列表与多人关系组合、完整按压及像素对照 |
 | 传送点 | waygatebackground／expwaygatetabs／waygateicons；waypoint_view | 原版逐像素布局及全幕／不可达状态组合 |
 | 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 实体键盘人工操作、全部窗口尺寸、精确原版布局及中文输入未完成 |
-| ESC／设置 | 英文原图／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图及Sound／Music／NPC Speech可修改；3D音效／画面／改键置灰；音乐语音需对应原包，实机按压、导航与逐像素对照未执行 |
+| ESC／设置 | 英文原图／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图、Sound／Music／NPC Speech及Lighting On／Off可修改；3D音效／其余画面／改键置灰；音乐语音需对应原包，实机按压、导航与逐像素对照未执行 |
 
 直接读取五个当前MPQ，确认minipanelbtn的真实帧身份、dialogbackground的210×158尺寸及inventory原表。金币文案／菜单参数另定点核对同快照D2Client RVA C31A8–C320D、C3212–C322F、C32CC–C32FC及C341B–C348F；保持原图与DLL只读。这些静态依据只裁定图集／原表及原版菜单参数，完整职业／窗口尺寸、多人／原服、音频、Linux及逐像素矩阵仍待核对。
 

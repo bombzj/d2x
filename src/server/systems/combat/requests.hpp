@@ -24,7 +24,7 @@ struct MonsterContactExecution;
 struct MissileContactExecution;
 struct ProgressiveContactExecution;
 struct WeaponBlockCursor {EntityId target;bool checked{},blocked{},reactionComplete{};};
-struct DirectDefenseCursor {EntityId target;bool accuracyPrepared{},hit{true},prepared{},reactionComplete{};NativeBlockOrDodge result;};
+struct DirectDefenseCursor {EntityId target;bool accuracyPrepared{},hit{true},prepared{},reactionComplete{};NativeBlockOrDodge result{};};
 enum class MissilePreludeResult { Ignore,Miss,Hit };
 enum class ImpactPhase { Contact, FollowUp };
 struct MissileAreaRoll {std::optional<MissileHitDamage> value;};
@@ -87,18 +87,18 @@ struct SpellImpact {
     uint64_t poisonFrames{};
     uint64_t stunFrames{};
     std::optional<MonsterHit> monsterHit{};
-    std::shared_ptr<MissileDamageRollState> missileDamage;
+    std::shared_ptr<MissileDamageRollState> missileDamage{};
     bool nativeDamageFlagsOnly{}; // Direct FillDamageParams -> SetDamageFlags, without collision callbacks/SrvDmg.
     bool nativeMissileFlags{}; // SetDamageFlags uses the real missile's flags and private seed.
     bool nativeDrainHeld{}; // AllocCombat has run; DrainItemDurability is a later action event.
-    std::optional<std::pair<size_t,MissileHitDamage>> missileRolled;
+    std::optional<std::pair<size_t,MissileHitDamage>> missileRolled{};
     // SrvHit area programs copy one GetDamageValue result to every target.
-    std::optional<MissileAreaDamage> areaDamage;
-    std::shared_ptr<NativeSkillContact> nativeSkill;
+    std::optional<MissileAreaDamage> areaDamage{};
+    std::shared_ptr<NativeSkillContact> nativeSkill{};
     int missileCriticalChance{};
     bool missileCriticalCommitted{};
-    std::shared_ptr<MissileContactExecution> missileContact;
-    std::optional<CombatStateDefinition> nativeNextHit;
+    std::shared_ptr<MissileContactExecution> missileContact{};
+    std::optional<CombatStateDefinition> nativeNextHit{};
     MonsterHitStates monsterStates{};
     int monsterRating{}, monsterLevel{};
     bool monsterToHit{};
@@ -107,7 +107,7 @@ struct SpellImpact {
     ImpactPhase phase = ImpactPhase::Contact;
     int64_t healing{}; bool undeadOnly{};
     bool allocatedMissile{},collideFriend{},healingContact{},healingComputed{},healingCommitted{};
-    std::shared_ptr<MissileDamageRollState> healingRolls;
+    std::shared_ptr<MissileDamageRollState> healingRolls{};
     int healingOverlay{-1};
     CombatSourceBinding binding{};
     int64_t lifeGain{}, manaGain{};
@@ -115,20 +115,20 @@ struct SpellImpact {
     EntityId meleeReactionTarget{};
     bool environment{}, directLife{};
     bool nativeObjectDamage{};
-    std::shared_ptr<effects::UnitReceptionPlan> environmentDefense;
+    std::shared_ptr<effects::UnitReceptionPlan> environmentDefense{};
     bool environmentDefenseCommitted{};
     bool synchronous{}; // A callback owns this contact until HP/follow-ups finish.
     bool nativeAura{}; // Target room may be in an adjacent level.
     bool retainDeadSource{}; // An entered native callback finishes its finder walk after source death.
     uint64_t environmentGeneration{};
     bool softHit{};
-    std::shared_ptr<PlayerContactExecution> playerContact;
-    std::shared_ptr<MonsterContactExecution> monsterContact;
+    std::shared_ptr<PlayerContactExecution> playerContact{};
+    std::shared_ptr<MonsterContactExecution> monsterContact{};
     bool melee{},damageScaled{},suppressSourceEvents{};
-    WeaponBlockCursor weaponBlock;
-    DirectDefenseCursor directDefense;
-    std::optional<size_t> missileEventTarget;
-    std::shared_ptr<effects::NativeContactBatch> missileEvents;
+    WeaponBlockCursor weaponBlock{};
+    DirectDefenseCursor directDefense{};
+    std::optional<size_t> missileEventTarget{};
+    std::shared_ptr<effects::NativeContactBatch> missileEvents{};
     int64_t currentDamage() const { return targetDamage.empty() ? damage : targetDamage.at(next); }
 };
 struct SpellPlan { std::list<SpellImpact> spells; size_t targets{}; };

@@ -151,7 +151,10 @@ StepStatus System::diabloFamily(EntityId id,TickContext tick,Controller &control
         case 5:
             if(ports_.effects.unitStates(id,tick.tick).contains(unit->rule.formulas->infernoState)) {
                 const auto cleared=ports_.monsters.toggleAiState(id,unit->rule.formulas->infernoState,false,tick.tick);
-                if(!cleared) return cleared;ai.phase=0;idle(2);return done();
+                if(!cleared) return cleared;
+                ai.phase=0;
+                idle(2);
+                return done();
             }
             if(!unit->rule.skillIds[0]) {ai.phase=0;idle(2);return done();}
             return cast(0,target);

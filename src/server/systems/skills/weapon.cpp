@@ -38,7 +38,8 @@ namespace {
 int volleyFormula(const PlayerState &player,const SkillCastSpec &skill,std::string_view field) {
     auto input=formulaInput(player);SkillFormulaValues values(*player.rules.skills->formulas,input);
     const auto value=values.calculation(FormulaDomain::Skill,skill.sourceId,skill.rank,field);
-    if(!value) throw std::logic_error("Missing native volley formula");return *value;
+    if(!value) throw std::logic_error("Missing native volley formula");
+    return *value;
 }
 std::vector<EntityId> volleyTargets(const Ports &ports,const ActorContext &actor,const PlayerState &player,const SkillCastSpec &skill) {
     const auto &program=*skill.weapon;

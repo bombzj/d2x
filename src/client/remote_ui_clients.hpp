@@ -7,6 +7,7 @@
 #include "client/map_client.hpp"
 #include "contracts/online_items.hpp"
 #include "core/math.hpp"
+#include "gameplay/actions/movement_timing.hpp"
 #include <memory>
 #include <cstddef>
 #include <cstdint>
@@ -47,5 +48,6 @@ class RemoteUiClients {
     RemoteUiNotice takeNotice();
     std::optional<unsigned> itemQuote(uint32_t item, OnlineItemAction action) const;
     std::optional<UnitLightAttributes> light(OnlineUnitKey) const;
+    std::optional<MovementTiming> movement(OnlineUnitKey,bool running) const;
 };
 }

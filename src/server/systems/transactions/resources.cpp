@@ -3,6 +3,7 @@
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
 #include "server/systems/actions/state.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/effects/state.hpp"
 #include <algorithm>
 #include <cmath>
@@ -54,7 +55,7 @@ DomainResult<> System::release(const ActorContext &actor, uint64_t expected, Fix
         if(!destination || relocation->generation!=destination->generation || !area->definition.teleportAllowed ||
             destination->definition.act!=area->definition.act ||
             !ports_.areas.loaded(relocation->area,relocation->position+Vec{.5f,.5f}) ||
-            !destination->definition.collision.walkable(relocation->position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Unavailable,{}};
+            !ports_.spatial.navigationGrid(relocation->area,player.actor).walkable(relocation->position+Vec{.5f,.5f},playerMovement)) return {DomainStatus::Unavailable,{}};
         if(relocation->area!=actor.area) {
             Vec origin;const auto navigation=area->definition.collision.linkedNavigation(origin);
             if(std::none_of(navigation.navigationSources.begin(),navigation.navigationSources.end(),

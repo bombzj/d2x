@@ -187,7 +187,7 @@ struct Actor {
     uint8_t aiPose{1}; uint64_t poseUntil{};
     int64_t aiRegenerationBonus{};
     std::set<int> aiStates;
-    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};std::optional<MovementCollisionRule> collision;};
+    struct SkillMotion {Vec destination;uint64_t until{},interruption{};float speed{};bool leap{};std::deque<Vec> route;EntityId target{};bool moveState{},leaperRecovery{},eventDriven{};std::optional<MovementCollisionRule> collision{};};
     std::optional<SkillMotion> skillMotion;
     struct SkillReservation {Vec position;uint16_t clearMask{0x100};};
     std::optional<SkillReservation> skillReservation;
@@ -273,7 +273,7 @@ struct State {
     // Scoped to the actual instance/area/class, including dynamically born units.
     ComponentPaletteState componentPalettes;
 };
-struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; };
+struct Ports { AreaStore &areas; const PlayerStore &players; EntityIds &ids; uint64_t &random; EventOutbox &events; const GameSettings &settings; effects::System &effects; const social::System &social; FrameEventQueue &frameEvents; std::shared_ptr<const SkillRules> skillPrograms; loot::System &loot; const spatial::System &spatial; };
 class System {
     friend class NativeBirthPublication;
     State state_;

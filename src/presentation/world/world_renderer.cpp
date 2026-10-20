@@ -283,7 +283,7 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
     lighting_->prepare(scene.map->grid, level, scene.observer, actorClient_.controlledActor().lightRadius,
         sceneLightColor(scene.observerLightColor), lights, regions);
     auto &palette = level.palette == 0 ? *paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette));
-    lighting_->bind(palette, scene.observer, screen(scene.observer), view_.zoom);
+    lighting_->bind(palette, scene.observer, screen(scene.observer), view_.zoom, view_.lighting);
     return palette;
 }
 void SceneView::drawMissile(int id, Vec position, Vec heading, float age, float remaining, Vec pixelOffset,

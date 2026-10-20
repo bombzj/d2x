@@ -288,7 +288,7 @@ void AreaStore::linkRoomUnit(EntityId id,RoomUnitEntry &entry) noexcept {
     if(head) roomUnits_.at(head).previous=id;
     head=id;
 }
-void AreaStore::unlinkRoomUnit(EntityId id,RoomUnitEntry &entry) noexcept {
+void AreaStore::unlinkRoomUnit(EntityId,RoomUnitEntry &entry) noexcept {
     if(!entry.room) return;
     if(entry.previous) roomUnits_.at(entry.previous).next=entry.next;
     else areas_.at(entry.room->first).unitHeads.at(entry.room->second)=entry.next;

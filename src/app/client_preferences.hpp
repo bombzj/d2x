@@ -9,6 +9,7 @@ struct ClientPreferences {
     bool automapParty = true, automapNames = true;
     AutomapFade automapFade = AutomapFade::Auto;
     AudioSettings audio;
+    bool lighting = true;
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();

@@ -2,6 +2,7 @@
 #include "core/id.hpp"
 #include "core/math.hpp"
 #include "gameplay/items/handle.hpp"
+#include <cstdint>
 #include <optional>
 #include <string>
 
@@ -20,6 +21,9 @@ struct ActorView {
     std::optional<int> actionFrame;
     float movementSpeed = 0;
     int lightRadius = 0;
+    std::optional<bool> hardcore;
+    std::optional<uint8_t> difficulty;
+    std::optional<uint32_t> deathGoldLost; // Original goldlost stat, never inferred from inventory changes.
 };
 
 struct ActorControlIntent {

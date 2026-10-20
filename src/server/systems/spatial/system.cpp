@@ -6,39 +6,44 @@
 #include "server/systems/travel/system.hpp"
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace d2x::server::spatial {
-std::function<uint16_t(RoomView,int32_t,int32_t)> System::nativeCollisionSample(uint16_t requestedMask,std::optional<std::span<const EntityId>> units) const {
+std::function<uint16_t(int,int32_t,int32_t)> System::nativeFootprints(uint16_t requestedMask,
+    std::optional<std::span<const EntityId>> units,EntityId self,EntityId target) const {
     using Cell=std::pair<int32_t,int32_t>;
-    std::map<RegionId,std::map<Cell,uint16_t>> masks;
+    std::map<int,std::map<Cell,uint16_t>> masks;
     const auto stamp=[&](RegionId region,Vec position,int32_t x,int32_t y,uint16_t mask) {
         mask&=requestedMask;if(!mask) return;
-        if(const auto room=ports_.areas.roomAtPosition(region,position,x,y)) masks[room->area][{x,y}]|=mask;
+        if(const auto room=ports_.areas.roomAtPosition(region,position+Vec{.5f,.5f},x,y))
+            masks[ports_.areas.at(room->area).definition.act][{x,y}]|=mask;
     };
     const auto footprint=[&](RegionId region,Vec position,NativeCollisionPattern pattern,uint16_t mask) {
         const auto *area=ports_.areas.find(region);if(!area) return;
-        const auto x=int32_t(std::floor(position.x+area->definition.origin.x)),y=int32_t(std::floor(position.y+area->definition.origin.y));
+        const auto x=int32_t(std::floor(position.x+area->definition.origin.x+.5f)),y=int32_t(std::floor(position.y+area->definition.origin.y+.5f));
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
             if(const auto value=nativeCollisionFootprint(pattern,dx,dy,mask)) stamp(region,position,x+dx,y+dy,value);
     };
     const auto rectangle=[&](RegionId region,Vec position,int width,int height,uint16_t mask) {
         mask&=requestedMask;
         const auto *area=ports_.areas.find(region);if(!area || !mask || width<=0 || height<=0) return;
-        const int x=int(std::floor(position.x+area->definition.origin.x))-(width>>1),y=int(std::floor(position.y+area->definition.origin.y))-(height>>1);
+        const int x=int(std::floor(position.x+area->definition.origin.x+.5f))-(width>>1),y=int(std::floor(position.y+area->definition.origin.y+.5f))-(height>>1);
         for(int dy=0;dy<height;++dy) for(int dx=0;dx<width;++dx) stamp(region,position,x+dx,y+dy,mask);
     };
     const auto playerFootprint=[&](const PlayerState &player) {
-        if(!player.entered) return;
-        if(player.persistent.player.hp>0) footprint(player.area,player.position,NativeCollisionPattern::SmallUnit,0x80);
-        else footprint(player.area,player.position,NativeCollisionPattern::SmallNoPresence,0x8000);
+        if(!player.collisionActive) return;
+        if(player.actor!=self && !(player.actor==target && player.persistent.player.hp>0)) {
+            if(player.persistent.player.hp>0) footprint(player.area,player.position,NativeCollisionPattern::SmallUnit,0x80);
+            else rectangle(player.area,player.position,3,3,0x8000);
+        }
         if(requestedMask&0x8000) for(const auto &corpse:player.persistent.corpses)
-            footprint(corpse.region,corpse.position,NativeCollisionPattern::SmallNoPresence,0x8000);
+            rectangle(corpse.region,corpse.position,3,3,0x8000);
     };
     const auto monsterFootprint=[&](const monsters::Actor &unit) {
-        if(!ports_.areas.loaded(unit.area,unit.position)) return;
+        if(unit.id==self || (unit.id==target && unit.alive()) || !ports_.areas.loaded(unit.area,unit.position+Vec{.5f,.5f})) return;
         if(unit.spawnReservation) footprint(unit.area,*unit.spawnReservation,NativeCollisionPattern::SmallUnit,0x100);
         if(unit.hatching) {rectangle(unit.area,unit.position,3,3,0x8000);return;}
-        if(!unit.alive() && !unit.rule.deadCollision) footprint(unit.area,unit.position,NativeCollisionPattern::SmallNoPresence,0x8000);
+        if(!unit.alive() && !unit.rule.deadCollision) rectangle(unit.area,unit.position,3,3,0x8000);
         else if(!unit.burrowed && !unit.airborne && !unit.submerged) footprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
     };
     if(units) {
@@ -53,25 +58,47 @@ std::function<uint16_t(RoomView,int32_t,int32_t)> System::nativeCollisionSample(
         for(const auto &[id,monster]:ports_.monsters.read().actors) {(void)id;monsterFootprint(monster);}
     }
     if(requestedMask&0x200) for(const auto &[id,item]:ports_.items.read().world.items) {
-        (void)id;if(const auto *ground=std::get_if<GroundLocation>(&item.location)) rectangle(ground->region,ground->position,1,1,0x200);
+        if(id==target) continue;
+        if(const auto *ground=std::get_if<GroundLocation>(&item.location)) rectangle(ground->region,ground->position,1,1,0x200);
     }
     const auto portal=[&](const travel::Portal &value) {
         const auto mode=value.opened?2:1;
         if(value.rule.collision[size_t(mode)]) {
-            rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
-            rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+            if(value.fieldId!=target) rectangle(value.field,value.fieldPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
+            if(value.townId!=target) rectangle(value.town,value.townPosition,value.rule.width,value.rule.height,value.rule.collisionMask);
         }
     };
     for(const auto &[id,value]:ports_.travel.read().portals) {(void)id;portal(value);}
     for(const auto &[id,value]:ports_.travel.read().specialPortals) {(void)id;portal(value);}
-    const auto *areas=&ports_.areas;
-    return [masks=std::move(masks),areas](RoomView room,int32_t x,int32_t y)->uint16_t {
-        const auto &area=areas->at(room.area).definition;
-        uint16_t result=area.collision.movementMask(x-int32_t(area.origin.x),y-int32_t(area.origin.y));
-        if(const auto region=masks.find(room.area);region!=masks.end())
-            if(const auto found=region->second.find({x,y});found!=region->second.end()) result|=found->second;
-        return result;
+    return [masks=std::move(masks)](int act,int32_t x,int32_t y)->uint16_t {
+        if(const auto region=masks.find(act);region!=masks.end())
+            if(const auto found=region->second.find({x,y});found!=region->second.end()) return found->second;
+        return 0;
     };
+}
+std::function<uint16_t(RoomView,int32_t,int32_t)> System::nativeCollisionSample(uint16_t mask,
+    std::optional<std::span<const EntityId>> units,EntityId self,EntityId target) const {
+    return [sample=nativeFootprints(mask,units,self,target),areas=&ports_.areas,target](RoomView room,int32_t x,int32_t y)->uint16_t {
+        const auto &area=areas->at(room.area).definition;
+        return area.collision.movementMask(x-int32_t(area.origin.x),y-int32_t(area.origin.y),target) | sample(area.act,x,y);
+    };
+}
+Grid System::navigationGrid(RegionId region,EntityId self,EntityId target) const {
+    const auto &area=ports_.areas.at(region).definition;
+    const auto *terrain=&area.collision;
+    Grid view;
+    view.width=terrain->width;view.height=terrain->height;
+    view.neighbours=terrain->neighbours;
+    view.obstacleRevision=terrain->obstacleRevision;
+    view.missileCollisionRevision=terrain->missileCollisionRevision;
+    Vec navigationOrigin;
+    auto navigation=terrain->linkedNavigation(navigationOrigin);
+    view.collisionSample=[sample=nativeFootprints(0xffff,{},self,target),navigation=std::move(navigation),navigationOrigin,origin=area.origin,act=area.act,target]
+        (int x,int y,EntityId ignored)->uint16_t {
+        return navigation.movementMask(x-int(navigationOrigin.x),y-int(navigationOrigin.y),ignored?ignored:target) |
+            sample(act,x+int(origin.x),y+int(origin.y));
+    };
+    return view;
 }
 namespace {
 constexpr float cellSize=16.f;

@@ -99,6 +99,10 @@ DomainResult<> System::settle(const ActorContext &actor) {
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.character = std::move(record); edit.corpses = std::move(corpses); edit.equipment = std::move(equipment);
+    // PlrMsg::sub_6FC820C0 sends the owner's actual GOLDLOST value with
+    // death mode. Capture the penalty in this transaction, including zero.
+    edit.facts.emplace_back(DeathFact{transition == state_.transitions.end() ? 0 : transition->second.occurrence,
+        actor.actor, {}, actor.area, uint32_t(penalty)});
     edit.publicFacts = std::move(drops);
     if(pvp) for(const auto &[id,recipient]:ports_.players.all()) if(recipient.entered)
         edit.directed.push_back({id,{PlayerMessageFact{6,player->persistent.player.name,message.other,0,0,message.characterClass}}});

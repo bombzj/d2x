@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/area_store.hpp"
 #include "server/player_store.hpp"
 #include "server/systems/combat/participants.hpp"
@@ -148,7 +149,8 @@ bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bo
     return other->alive() && other->life!=other->maximumLife;
 }
 DomainResult<> System::spawnSkillChildren(EntityId source,Vec target,int count,bool hatch,uint64_t tick,std::shared_ptr<SkillChildrenExecution> &retained) {
-    if(!retained) retained=std::make_shared<SkillChildrenExecution>();auto &execution=*retained;
+    if(!retained) retained=std::make_shared<SkillChildrenExecution>();
+    auto &execution=*retained;
     if(execution.complete) return {DomainStatus::Applied,std::monostate{}};
     auto found=state_.actors.find(source);
     if(found==state_.actors.end() || (!execution.published && !found->second.alive()) || !found->second.rule.nestChild) return {DomainStatus::InvalidActor,{}};
@@ -258,7 +260,8 @@ DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t unti
         const auto landing=leapLanding(source,target);if(!landing) return {DomainStatus::Unavailable,{}};
         target=*landing;
     } else if(!leap && !free(target)) return {DomainStatus::Unavailable,{}};
-    if(!leap && !grid.nativeMovementSegment(actor.position,target,actor.rule.collision)) return {DomainStatus::Unavailable,{}};
+    if(!leap && !ports_.spatial.navigationGrid(actor.area,actor.id).nativeMovementSegment(
+        actor.position+Vec{.5f,.5f},target+Vec{.5f,.5f},actor.rule.collision)) return {DomainStatus::Unavailable,{}};
     if(!actor.rule.formulas || !actor.rule.stats || actor.rule.nativeRunVelocity<=0) return {DomainStatus::Unavailable,{}};
     auto velocity=nativeShiftLeft(actor.rule.nativeRunVelocity,8);
     if(!leap) {
@@ -303,7 +306,8 @@ DomainResult<> System::settleDelayedDeath(EntityId id,uint64_t tick) {
 DomainResult<> System::startWhirlwindMotion(EntityId source,Vec target) {
     const auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const Vec center{.5f,.5f};
-    auto route=ports_.areas.at(actor.area).definition.collision.nativeUnitPath(actor.position+center,target+center,7,100,{0xc01,actor.rule.size});
+    const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
+    auto route=grid.nativeUnitPath(actor.position+center,target+center,7,100,{0xc01,actor.rule.size});
     if(route.empty()) return {DomainStatus::Unavailable,{}};
     for(auto &point:route) point=point-center;
     actor.skillReservation=Actor::SkillReservation{route.back()};
@@ -317,7 +321,8 @@ DomainResult<> System::startDiabloRun(EntityId source,Vec target,int32_t velocit
     const auto found=state_.actors.find(source);
     if(found==state_.actors.end() || !found->second.alive() || velocity<0) return {DomainStatus::InvalidActor,{}};
     auto &actor=found->second;const Vec center{.5f,.5f};
-    auto route=ports_.areas.at(actor.area).definition.collision.nativeUnitPath(actor.position+center,target+center,1,5,actor.rule.collision);
+    const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
+    auto route=grid.nativeUnitPath(actor.position+center,target+center,1,5,actor.rule.collision);
     for(auto &point:route) point=point-center;
     // St54 captured coordinates and cleared pTargetUnit. Do103 must not
     // pursue the target's new position, use ordinary run speed, or apply 75%.
@@ -358,7 +363,7 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
         }
         while(!motion.route.empty() && (motion.route.front()-actor.position).length()<.01f) motion.route.pop_front();
         if(tick<motion.until) {
-            const Vec center{.5f,.5f};const auto &grid=ports_.areas.at(actor.area).definition.collision;
+            const Vec center{.5f,.5f};const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
             const auto step=actor.pathStep.advance(grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
                 motion.speed*TickContext::seconds,motion.collision.value_or(motion.leap?MovementCollisionRule{0,1}:actor.rule.collision));
             actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);

@@ -179,13 +179,13 @@ System::Advance System::advance(const Missile &sourceMissile,TickContext tick) c
         if(m.ageFrames+1>=m.lifetimeFrames && !m.guidance && !m.guidanceSearched) {
             m.guidanceSearched=true;
             for(const auto id:nearbyUnits(m)) {
-                const auto target=participants.find(id);const auto point=unitPosition(m,id);
+                const auto point=unitPosition(m,id);
                 if(point && participants.canHarm(m.owner,id) && radius(m.position,*point,b.searchRadius) && area.definition.collision.missileSegment(m.position,*unitPosition(m,id),m.collision) && (!m.guidance || id<m.guidance)) m.guidance=id;
             }
             m.lifetimeFrames=m.ageFrames+std::max(1,int(std::lround(b.spiritLifetime*25.f)));m.expires=m.created+uint64_t(m.lifetimeFrames);
             if(m.guidance) m.velocity=(*unitPosition(m,m.guidance)-m.position).unit()*m.velocity.length();
         }
-        const auto target=participants.find(m.guidance);
+
         if(unitPosition(m,m.guidance) && participants.canHarm(m.owner,m.guidance) && (m.lifetimeFrames-m.ageFrames)%b.retargetPeriod==0) {
             const int distance=missileDistance(m.position,*unitPosition(m,m.guidance));
             if(distance>3 && distance<25) m.velocity=(*unitPosition(m,m.guidance)-m.position).unit()*m.velocity.length();
@@ -330,7 +330,7 @@ System::Advance System::advance(const Missile &sourceMissile,TickContext tick) c
                 if(m.program==Program::Arc && (m.skill.effect==SkillBehavior::ChainLightning || (m.skill.weapon && m.skill.weapon->spear && m.skill.weapon->spear->kind==SpearSkillSpec::Kind::Strike))) {
                     const Vec at=next;std::vector<uint64_t> eligible;
                     if(m.remainingHits>1) for(const auto candidate:nearbyUnits(m)) {
-                        const auto target=participants.find(candidate);const auto point=unitPosition(m,candidate);const auto tick=m.executionTick;
+                        const auto point=unitPosition(m,candidate);const auto tick=m.executionTick;
                         if(!point || !participants.canHarm(m.owner,candidate) || candidate==id || (!ports_.effects.missileHitAllowed(candidate,tick)) ||
                             !radius(at,*point,m.skill.arc->range) || !area.definition.collision.missileSegment(at,*point,{4,1})) continue;
                         eligible.push_back(candidate.value);
@@ -400,7 +400,7 @@ bool System::projectileImpact(Advance &plan,EntityId target) const {
         const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
         const auto &area=ports_.areas.at(m.area);std::vector<uint64_t> eligible;
         if(m.remainingHits>1) for(const auto id:nearbyUnits(m)) {
-            const auto recipient=participants.find(id);const auto point=unitPosition(m,id);
+            const auto point=unitPosition(m,id);
             if(point && participants.canHarm(m.owner,id) && id!=target && ports_.effects.missileHitAllowed(id,m.executionTick) &&
                 radius(m.position,*point,m.skill.arc->range) && area.definition.collision.missileSegment(m.position,*point,{4,1})) eligible.push_back(id.value);
         }

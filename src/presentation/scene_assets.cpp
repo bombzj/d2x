@@ -2,6 +2,7 @@
 #include "gameplay/quest/catalog.hpp"
 #include "content/classic_data.hpp"
 #include "content/string_table.hpp"
+#include "content/language.hpp"
 #include "content/skills/state_data.hpp"
 #include "world/region.hpp"
 #include "world/maze.hpp"
@@ -101,11 +102,29 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     loadClassicFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
     loadClassicFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
     loadClassicFont(uiGraphics_, archives, characterRedFont, "font16", 1);
+    loadClassicFont(uiGraphics_, archives, deathFont, "font30", 1);
     // Original red font RGB, blended through the active PL2 for player labels.
     const auto skyPalette = archives.read("data/global/palette/sky/pal.pl2");
     constexpr size_t redFontColor = 0x6B600 + 3;
     if (skyPalette.size() < redFontColor + 3) throw std::runtime_error("Original player name color is missing");
     playerNameBackground = {skyPalette[redFontColor], skyPalette[redFontColor + 1], skyPalette[redFontColor + 2], 255};
+    // Client BEE60 uses the same title for softcore and hardcore. D2Win
+    // #10138 draws the original tiled cells with PL2 text-color transform 1.
+    constexpr size_t fontShifts = 0x6B600 + 13 * 3;
+    if (skyPalette.size() < fontShifts + 2 * 256)
+        throw std::runtime_error("Original death artwork color transform is missing");
+    for (const auto &[name, target] : {std::pair{"youdiedhardcore", &deathTitle},
+            std::pair{"youdiedinst", &deathInstruction}}) {
+        auto path = "data/local/ui/" + languageOf(archives).directory + "/" + name + ".dc6";
+        if (!archives.contains(path)) path = "data/local/ui/eng/" + std::string(name) + ".dc6";
+        const auto *source = uiGraphics_.animation(path);
+        if (!source || source->frames.empty()) throw std::runtime_error("Original death artwork is missing: " + path);
+        target->directions = source->directions; target->count = source->framesPerDirection;
+        for (auto cell : source->frames) {
+            for (auto &pixel : cell.pixels) if (pixel) pixel = skyPalette[fontShifts + 256 + pixel];
+            target->frames.push_back(uiGraphics_.upload(cell));
+        }
+    }
     loadClassicFont(uiGraphics_, archives, skillLevelBlueFont, "font16", 3);
     itemTextFonts[0] = font;
     itemTextFonts[1] = characterRedFont;
@@ -125,7 +144,8 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
             "VerifyTransaction1", "VerifyTransaction2", "VerifyTransaction3", "VerifyTransaction5",
             "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
             "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
-            "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage"}) {
+            "minipanelparty", "minipanelquest", "minipanelmenubtn", "minipanelmessage",
+            "Deathmessage", "Deathmessnight", "Harddeathmessage"}) {
         const auto value = characterStrings.find(key);
         if (value.empty()) throw std::runtime_error(std::string("Original character label is missing: ") + key);
         characterLabels.emplace(key, value);

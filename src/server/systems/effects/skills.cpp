@@ -1,4 +1,5 @@
 #include "system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "server/systems/skills/shape.hpp"
 #include "gameplay/actions/shape_timing.hpp"
 #include "damage_absorption.hpp"
@@ -95,7 +96,7 @@ DomainResult<> System::missileReaction(EntityId target,EntityId source,bool getH
         const auto point=attacker.position()+ports_.areas.at(attackerArea).definition.origin-area.definition.origin;
         const auto destination=knockbackDestination(player.position,point,3);
         transactions::CharacterEdit edit{{player.player,target,player.area,area.generation,0,tick},player.inventoryRevision,player.characterRevision,player.persistent.player};
-        if(area.definition.collision.nativeMovementSegment(player.position,destination,playerMovement)) {
+        if(ports_.spatial.navigationGrid(player.area,player.actor).nativeMovementSegment(player.position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
             edit.knockback=PointTarget{player.area,area.generation,destination};fact.knockback=destination;
         }
         edit.publicFacts.emplace_back(fact);
@@ -284,7 +285,7 @@ DomainResult<> System::nativeMeleeReaction(EntityId target,EntityId source,const
                 const auto region=attacker.player?attacker.player->area:attacker.monster->area;
                 const auto point=attacker.position()+ports_.areas.at(region).definition.origin-area.definition.origin;
                 const auto destination=knockbackDestination(player->position,point,3);
-                if(area.definition.collision.nativeMovementSegment(player->position,destination,playerMovement)) {
+                if(ports_.spatial.navigationGrid(player->area,player->actor).nativeMovementSegment(player->position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
                     edit.knockback=PointTarget{player->area,area.generation,destination};fact.knockback=destination;
                 }
             }
@@ -421,7 +422,7 @@ DomainResult<ReceivedDamage> System::receiveMonster(const ActorContext &actor, E
     if(knockback && source) {
         const auto attacker=combat::Participants{ports_.players,ports_.monsters,ports_.social}.find(source);
         const auto &area=ports_.areas.at(actor.area);const Vec destination=knockbackDestination(p->position,attacker.position(),3);
-        if(area.definition.collision.nativeMovementSegment(p->position,destination,playerMovement)) {
+        if(ports_.spatial.navigationGrid(actor.area,p->actor).nativeMovementSegment(p->position+Vec{.5f,.5f},destination+Vec{.5f,.5f},playerMovement)) {
             edit.knockback=PointTarget{actor.area,area.generation,destination};
             for(auto &fact:edit.publicFacts) if(auto *damage=std::get_if<HitFact>(&fact)) damage->knockback=destination;
         }

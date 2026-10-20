@@ -23,6 +23,7 @@ class PaletteBlendView {
     Vec lightPlayer_{}, lightPlayerScreen_{}, lightOrigin_{};
     float lightZoom_ = 1;
     Color lightAmbient_{};
+    bool fullBright_ = false;
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
@@ -41,7 +42,8 @@ class PaletteBlendView {
     Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color) const;
-    void setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient);
+    void setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient,
+                     bool fullBright = false);
     // Empty samples: floor Gouraud field; one: unit anchor; six: native DT1 wall columns.
     // Transform the source before alpha/additive composition, never the completed frame.
     void drawLit(const Sprite *, Vec position, std::span<const Color> samples, Color tint = WHITE,
