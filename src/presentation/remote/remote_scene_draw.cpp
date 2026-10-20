@@ -564,7 +564,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
             if(states.number(row->second,"setfunc")==16) {
                 const auto stat=[&](std::string_view name) {const int id=monsterText->nativeStats->names.at(std::string(name));
-                    for(const auto &value:state.stats) if(value.id==id && !value.parameter) return int(value.value);return 0;};
+                    for(const auto &value:state.stats) if(value.id==id && !value.parameter) return int(value.value);
+                    return 0;};
                 const int count=stat("skill_frenzy"),skill=stat("modifierlist_skill"),rank=stat("modifierlist_level");
                 const int limit=skillCalculation(skill,rank,"calc2",key).value_or(0);
                 if(count>0 && limit>0) for(const auto fields:std::array{std::array{"overlay1","overlay2"},std::array{"overlay3","overlay4"}}) {

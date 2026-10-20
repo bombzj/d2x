@@ -126,6 +126,7 @@ struct RemoteUiClients::Impl {
     struct Quests final : IQuestClient {
         Impl &o; explicit Quests(Impl &owner) : o(owner) {}
         const QuestView &read() const override;
+        bool acknowledgeCompletion(QuestId) override;
     } quests{*this};
 
     struct Npc final : INpcClient {

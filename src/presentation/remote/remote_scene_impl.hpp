@@ -1,6 +1,7 @@
 #pragma once
 // Private implementation of RemoteScene; included only by remote_scene_*.cpp.
 #include "remote_scene.hpp"
+#include "presentation/world/world_draw_view.hpp"
 #include "monster_effects.hpp"
 #include "gameplay/monsters/movement_math.hpp"
 #include "presentation/scene_view.hpp"
