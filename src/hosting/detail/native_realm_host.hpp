@@ -32,6 +32,7 @@ struct NativeRealmHost {
     std::shared_ptr<const ItemCatalog> items;
     std::unique_ptr<RealmPortraitCatalog> portraits;
     GameHost host;
+    std::function<void(const PumpTiming &)> performanceObserver;
     LootContent lootContent;
     uint32_t nextGameIndex = 1;
     uint64_t nextDiagnosticConnection{};

@@ -7,6 +7,7 @@ struct AppOptions {
     std::string mpqSupplement; // assets/mpq packs mounted below the original archives
     std::string screenshot, pack, debugPipe, startupProfile;
     std::string gamePacketLog, hostPacketLog;
+    std::string headlessProfile;
     std::string onlineConfig = "online.local.json";
     std::string onlineCharacter, onlineCreateGame, onlineJoinGame;
     std::string onlinePlay;

@@ -93,7 +93,7 @@ inactive.cpp按SaveMonsters／ISRESURRECT／Restore决定节点保留，尸体�
 
 节点保留真实身份、阶级、姓名种子、词缀、NPC能力、home／技能坐标、主从关系、等级／经验／生命、节点8／9资格、共享组件参数、虫巢计数、CorpseState及自复活次数。恢复以同GUID重新初始化单位流、组件、属性和装备，复验实际休眠节点；NPC首次准入的既有ID则复验区域NPC定义；动态任务NPC复验区域questNpcs来源，新ID与装备、Actor共同发布，内容等待不提前追加NPC记录或消耗ID。正常／TYPE_OTHER使用-1／5搜索，MINION使用-1／4且不走普通坐标后备；二十次候选、飞行主碰撞豁免及跨房间归属沿公共空间查询处理。所有原寻位边界尚未完整认证。
 
-特殊恢复停在显式继续点：基础实体发布后复用异步修饰器准备，unique消费实际单位流后覆盖保存nameSeed，minion不掷姓名；最后恢复主从关系、经验、7500帧生命边界和尸体资格，再解除restorationPending。等待中的实体不对客户端可见且不可受击；继续点只保存源房间及ID，不复制另一份节点。每只恢复后返回同帧继续点重新采样碰撞，AI按新admissionRevision丢弃旧控制器。混沌避难所清场后丢弃休眠活非Diablo单位。
+特殊恢复停在显式继续点：基础实体发布后复用异步修饰器准备，unique消费实际单位流后覆盖保存nameSeed，minion不掷姓名；最后恢复主从关系、经验、7500帧生命边界和尸体资格，再解除restorationPending。等待中的实体不对客户端可见且不可受击；继续点只保存源房间及ID，不复制另一份节点。沿D2MOO `SUnitInactive::SUNITINACTIVE_RestoreInactiveUnits`的节点循环，每只完成后立即重新采样已发布碰撞，在同一逻辑帧继续下一只；不为刷新采样额外等待宿主轮询，真实修饰器／内容／容量背压仍保留继续点。无休眠节点的房间不构造恢复碰撞视图。AI按新admissionRevision丢弃旧控制器。混沌避难所清场后丢弃休眠活非Diablo单位。
 
 当前保存字段覆盖home／技能节点、SandMaggot计数、共享组件、王座Baal参数0的波次及普通Diablo非零command10坐标（[119至120项](ACT3.md#逐项接入)，后两项的完整卸载／恢复仍待核对）。原版不把整个Controller或卸载前单位种子写入休眠记录；重建沿SUNIT_InitSeed从game seed派生新私有种子，再执行组件／HP等初始化，不要求恢复后的单位流等于从未卸载。完整NPC命令／MapAI、全部光环二次初始化及逐修饰器链、原按类型GUID、跨类型顺序、地面物品位流仍未完成。死亡模式与HP的完整独立模型也未完成。源码接入不等于原版恢复或逐随机对齐，房间机制见[地图模块](../../modules/MAP.md)。
 

@@ -13,7 +13,10 @@ void RemoteUiClients::Impl::Character::submit(CharacterIntent c) {
                     request.owner=v.owner;request.hotkeySlot = uint8_t(v.index); request.skill = uint16_t(std::max(0,v.skill));
                     request.hand = v.right ? OnlineSkillHand::Right : OnlineSkillHand::Left;
                     request.context = o.context;
-                    if (o.combat.submit(request)) o.hotkeys[v.index] = SkillHotkey{v.skill,v.right,v.owner};
+                    if (o.combat.submit(request)) {
+                        o.hotkeys[v.index] = SkillHotkey{v.skill,v.right,v.owner};
+                        o.projectedSources.reset();
+                    }
                     else o.notice = o.combat.reason();
                     return;
                 } else if constexpr (std::is_same_v<T, AllocateAttribute>) {

@@ -7,16 +7,18 @@
 #include <algorithm>
 #include <cmath>
 #include <utility>
+#include <tuple>
 
 namespace d2x::server::spatial {
 std::function<uint16_t(int,int32_t,int32_t)> System::nativeFootprints(uint16_t requestedMask,
     std::optional<std::span<const EntityId>> units,EntityId self,EntityId target) const {
-    using Cell=std::pair<int32_t,int32_t>;
-    std::map<int,std::map<Cell,uint16_t>> masks;
+    using Cell=std::tuple<int,int32_t,int32_t>;
+    std::vector<std::pair<Cell,uint16_t>> masks;
+    masks.reserve(5*(units?units->size():ports_.players.all().size()+ports_.monsters.read().actors.size()));
     const auto stamp=[&](RegionId region,Vec position,int32_t x,int32_t y,uint16_t mask) {
         mask&=requestedMask;if(!mask) return;
         if(const auto room=ports_.areas.roomAtPosition(region,position+Vec{.5f,.5f},x,y))
-            masks[ports_.areas.at(room->area).definition.act][{x,y}]|=mask;
+            masks.emplace_back(Cell{ports_.areas.at(room->area).definition.act,x,y},mask);
     };
     const auto footprint=[&](RegionId region,Vec position,NativeCollisionPattern pattern,uint16_t mask) {
         const auto *area=ports_.areas.find(region);if(!area) return;
@@ -31,7 +33,9 @@ std::function<uint16_t(int,int32_t,int32_t)> System::nativeFootprints(uint16_t r
         for(int dy=0;dy<height;++dy) for(int dx=0;dx<width;++dx) stamp(region,position,x+dx,y+dy,mask);
     };
     const auto playerFootprint=[&](const PlayerState &player) {
-        if(!player.collisionActive) return;
+        // SmallUnit adds presence (0x1000) independently of its 0x80 mask.
+        // Corpses are separate 0x8000 rectangles, including retained bodies.
+        if(!(requestedMask&0x9080) || !player.collisionActive) return;
         if(player.actor!=self && !(player.actor==target && player.persistent.player.hp>0)) {
             if(player.persistent.player.hp>0) footprint(player.area,player.position,NativeCollisionPattern::SmallUnit,0x80);
             else rectangle(player.area,player.position,3,3,0x8000);
@@ -40,7 +44,9 @@ std::function<uint16_t(int,int32_t,int32_t)> System::nativeFootprints(uint16_t r
             rectangle(corpse.region,corpse.position,3,3,0x8000);
     };
     const auto monsterFootprint=[&](const monsters::Actor &unit) {
-        if(unit.id==self || (unit.id==target && unit.alive()) || !ports_.areas.loaded(unit.area,unit.position+Vec{.5f,.5f})) return;
+        // Unit/Pet presence, the 0x100 body/reservation, and corpse bits are
+        // the only possible contributions. Do not cull by body mask alone.
+        if(!(requestedMask&0xb100) || unit.id==self || (unit.id==target && unit.alive()) || !ports_.areas.loaded(unit.area,unit.position+Vec{.5f,.5f})) return;
         if(unit.spawnReservation) footprint(unit.area,*unit.spawnReservation,NativeCollisionPattern::SmallUnit,0x100);
         if(unit.hatching) {rectangle(unit.area,unit.position,3,3,0x8000);return;}
         if(!unit.alive() && !unit.rule.deadCollision) rectangle(unit.area,unit.position,3,3,0x8000);
@@ -70,10 +76,21 @@ std::function<uint16_t(int,int32_t,int32_t)> System::nativeFootprints(uint16_t r
     };
     for(const auto &[id,value]:ports_.travel.read().portals) {(void)id;portal(value);}
     for(const auto &[id,value]:ports_.travel.read().specialPortals) {(void)id;portal(value);}
+    // Sorting only completed footprint cells cannot change unit traversal,
+    // target exclusion, native masks or random consumption. Coalesce overlaps
+    // with the same OR as the former tree, without one allocation per cell.
+    std::sort(masks.begin(),masks.end(),[](const auto &a,const auto &b){return a.first<b.first;});
+    size_t count{};
+    for(const auto &entry:masks) {
+        if(count && masks[count-1].first==entry.first) masks[count-1].second|=entry.second;
+        else masks[count++]=entry;
+    }
+    masks.resize(count);
     return [masks=std::move(masks)](int act,int32_t x,int32_t y)->uint16_t {
-        if(const auto region=masks.find(act);region!=masks.end())
-            if(const auto found=region->second.find({x,y});found!=region->second.end()) return found->second;
-        return 0;
+        const Cell key{act,x,y};
+        const auto found=std::lower_bound(masks.begin(),masks.end(),key,
+            [](const auto &entry,const Cell &value){return entry.first<value;});
+        return found!=masks.end() && found->first==key?found->second:0;
     };
 }
 std::function<uint16_t(RoomView,int32_t,int32_t)> System::nativeCollisionSample(uint16_t mask,
@@ -150,10 +167,20 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     const auto insert=[&](RegionId area,Vec position,UnitRef unit,int size) {
         const int x=cell(position.x),y=cell(position.y);
         auto [location,fresh]=locations_.try_emplace(unit.id,Location{area,x,y,generation});
-        if(!fresh && (location->second.area!=area || location->second.x!=x || location->second.y!=y)) erase(unit.id,location->second);
-        location->second={area,x,y,generation};
+        auto &previous=location->second;
+        const bool moved=!fresh && (previous.area!=area || previous.x!=x || previous.y!=y);
+        if(moved) erase(unit.id,previous);
         auto &region=regions_[area];region.maximumSize=std::max(region.maximumSize,size);
-        region.cells[x][y].insert_or_assign(unit.id,Entry{unit,position});
+        if(fresh || moved) {
+            auto &entry=region.cells[x][y].insert_or_assign(unit.id,Entry{unit,position}).first->second;
+            previous={area,x,y,generation,&entry};
+        } else {
+            previous.generation=generation;
+            auto &entry=*previous.entry;
+            if(entry.unit.kind!=unit.kind || entry.unit.revision!=unit.revision ||
+                entry.position.x!=position.x || entry.position.y!=position.y)
+                entry={unit,position};
+        }
     };
     for(const auto &[id,player]:ports_.players.all())
         if(player.entered && player.persistent.player.hp>0) insert(player.area,player.position,{player.actor,UnitKind::Player,0},2);

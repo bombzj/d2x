@@ -23,7 +23,7 @@ struct Ports {
     AreaStore &areas; const PlayerStore &players; const GameSettings &settings; EntityIds &ids;
     const travel::System &travel; monsters::System &monsters; const missiles::System &missiles;
     const skills::System &skills; objects::System &objects; const loot::System &loot;
-    const spatial::System &spatial;
+    const spatial::System &spatial; const population::System &population;
 };
 class System {
     friend class travel::System;
@@ -78,6 +78,7 @@ class System {
     void fail(uint64_t request);
     std::vector<RegionId> visible(PlayerId) const;
     std::vector<RoomView> visibleRooms(PlayerId) const;
+    bool clientRoomsReady(PlayerId) const;
     bool visible(PlayerId, RegionId, Vec) const;
     void activate(RegionId, Vec); // Synchronous destination-room acquisition.
     void changeClientRoom(PlayerId); // Current entered player, including initial admission.

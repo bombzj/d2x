@@ -81,6 +81,10 @@ struct EmbeddedRealm::Impl {
 };
 EmbeddedRealm::EmbeddedRealm(Archives &archives, std::filesystem::path root) : impl_(std::make_unique<Impl>(archives, std::move(root))) {}
 EmbeddedRealm::~EmbeddedRealm() = default;
+void EmbeddedRealm::observePerformance(hosting::PerformanceObserver observer) {
+    impl_->host.host.observeSteps(std::move(observer.step));
+    impl_->host.performanceObserver=std::move(observer.pump);
+}
 std::string EmbeddedRealm::prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass) {
     return impl_->primary->connection->service.prepareStartup(load, save, characterClass);
 }

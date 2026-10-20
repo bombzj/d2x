@@ -409,6 +409,7 @@ add_library(d2x_presentation
 target_link_libraries(d2x_presentation PUBLIC d2x_client raylib PRIVATE d2x_content d2x_world d2x_remote_scene)
 
 add_executable(d2x
+  src/app/headless.cpp
   src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/frontend.cpp src/app/frontend_commands.cpp src/app/online_login_memory.cpp
   src/app/client_preferences.cpp src/app/crash_report.cpp src/app/debug/debug_pipe.cpp

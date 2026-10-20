@@ -218,7 +218,7 @@ NativeRealmService::PreparedGame NativeRealmService::prepareGame(PersistentChara
     auto prepared = prepareWalkingGame(archives, *content, std::move(saved), shared.items,std::move(settings));
     const auto staged = host.create(std::move(prepared.authority));
     try {
-        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged),host.environment(staged.game,RegionId(prepared.terrain.request.level)).value());
+        auto packets = nativeGameAdmission(*content, *host.exportCharacter(staged), prepared.terrain, *host.read(staged), host.area(staged.game, RegionId(prepared.terrain.request.level))->definition, *host.questProjection(staged),host.environment(staged.game,RegionId(prepared.terrain.request.level)).value(),host.objectSeed(staged.game).value());
         for (const auto &packet : packets) validateServerPacket(packet);
         host.pause(staged.game, true);
         shared.terrain[staged.game].emplace(RegionId(prepared.terrain.request.level), prepared.terrain);

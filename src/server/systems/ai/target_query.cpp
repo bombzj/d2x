@@ -8,7 +8,32 @@
 #include "gameplay/combat/geometry.hpp"
 #include "core/random.hpp"
 #include <algorithm>
+#include <map>
+#include <utility>
+#include <vector>
 namespace d2x::server::ai {
+namespace {
+struct NativeTargetLists {
+    using List=std::vector<std::pair<uint64_t,EntityId>>;
+    std::map<PlayerId,List> pets;
+    List wanderers,special;
+    explicit NativeTargetLists(const monsters::System &monsters) {
+        // One read-only query, no cross-callback cache. Keep PlayerPets'
+        // eligibility and Targets' reverse insertion order independently.
+        for(const auto &[id,unit]:monsters.read().actors) {
+            if(unit.owner && unit.petRegistrationOrder && !unit.inactivePet && !unit.conversion)
+                pets[*unit.owner].emplace_back(unit.petRegistrationOrder,id);
+            if(unit.wanderTargetOrder) wanderers.emplace_back(unit.wanderTargetOrder,id);
+            if(unit.specialTargetOrder) special.emplace_back(unit.specialTargetOrder,id);
+        }
+        const auto sort=[](List &list) {
+            std::sort(list.begin(),list.end(),[](const auto &a,const auto &b){return a.first>b.first;});
+        };
+        for(auto &[owner,list]:pets) {(void)owner;sort(list);}
+        sort(wanderers);sort(special);
+    }
+};
+}
 NativeBossTarget acquireNativeBossTarget(const NativeAiTargetPorts &ports,const monsters::Actor &source,
     const std::function<int(EntityId)> &score) {
     const auto &area=ports.areas.at(source.area);
@@ -81,16 +106,18 @@ std::optional<NativeAiTarget> acquireNativeOwnerTarget(const NativeAiTargetPorts
 std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &ports_,const monsters::Actor &source,TickContext,bool missileRay,bool requireSight,int searchDistance,uint64_t *borrowedRandom) {
     const auto &area=ports_.areas.at(source.area);
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
-    auto search=source;const bool confused=source.curseControl.ai==CurseAi::Confuse;
+    const bool confused=source.curseControl.ai==CurseAi::Confuse;
+    std::optional<monsters::Actor> search;
     if(confused) {
+        search.emplace(source);
         auto random=borrowedRandom?*borrowedRandom:source.combatRandom;
         const bool flip=(rollRandom(random)&1)!=0;
         const auto original=source.alignment();
         const auto alignment=original==UnitAlignment::Neutral?(flip?UnitAlignment::Good:UnitAlignment::Evil):
             flip?(original==UnitAlignment::Evil?UnitAlignment::Good:UnitAlignment::Evil):original;
-        if(!search.nativeStats || !search.rule.stats) return {};
-        search.nativeStats->values.values[{search.rule.stats->names.at("alignment"),0}]=int(alignment);
-        search.curseControl.ai=CurseAi::None;
+        if(!search->nativeStats || !search->rule.stats) return {};
+        search->nativeStats->values.values[{search->rule.stats->names.at("alignment"),0}]=int(alignment);
+        search->curseControl.ai=CurseAi::None;
         // AI callers already own a candidate seed for this callback. Keep
         // selector and decision draws in that same loan, rather than publishing
         // the selector behind the decision's expected seed.
@@ -122,7 +149,7 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
         const auto target=participants.find(id);if(!alive(target) || id==source.id || !target.damageable()) return;
         const auto region=target.player?target.player->area:target.monster->area;
         if(ports_.areas.at(region).definition.act!=area.definition.act) return;
-        if(!special && !wander && !participants.canHarm({nullptr,&search},target)) return;
+        if(!special && !wander && !participants.canHarm({nullptr,search?&*search:&source},target)) return;
         const auto point=position(target);
         const int distance=monsterAiDistance(point,nodeQuery?0:target.monster?target.size():0,source.position);
         if((!special && (nodeQuery?distance>=maximum:distance>maximum)) || !clearRay(point)) return;
@@ -133,25 +160,18 @@ std::optional<NativeAiTarget> acquireNativeAiTarget(const NativeAiTargetPorts &p
     if(nodeQuery) {
         // Targets::First reserves 0..7; UpdateSummonAI inserts immediately
         // after its player head, independently of PlayerPets' append order.
+        const NativeTargetLists targets(ports_.monsters);
         for(uint8_t slot=0;slot<8;++slot) for(const auto &[key,player]:ports_.players.all()) {
             (void)key;if(player.targetNodeIndex!=slot || !player.entered) continue;
             const auto &ownerArea=ports_.areas.at(player.area);
             if(ownerArea.definition.act!=area.definition.act || ownerArea.definition.town ||
                monsterAiDistance(position({&player,nullptr}),0,source.position)>=55) continue;
             consider(player.actor);
-            auto pets=ports_.monsters.pets(player.player);
-            std::sort(pets.begin(),pets.end(),[&](EntityId left,EntityId right) {
-                return ports_.monsters.find(left)->petRegistrationOrder>ports_.monsters.find(right)->petRegistrationOrder;
-            });
-            for(const auto id:pets) consider(id);
+            if(const auto pets=targets.pets.find(player.player);pets!=targets.pets.end())
+                for(const auto &[order,id]:pets->second) {(void)order;consider(id);}
         }
-        std::vector<EntityId> wanderers;
-        for(const auto &[id,unit]:ports_.monsters.read().actors) if(unit.wanderTargetOrder) wanderers.push_back(id);
-        std::sort(wanderers.begin(),wanderers.end(),[&](EntityId left,EntityId right) {
-            return ports_.monsters.find(left)->wanderTargetOrder>ports_.monsters.find(right)->wanderTargetOrder;
-        });
-        for(const auto id:wanderers) consider(id,false,true);
-        for(const auto id:ports_.monsters.specialTargets()) consider(id,true);
+        for(const auto &[order,id]:targets.wanderers) {(void)order;consider(id,false,true);}
+        for(const auto &[order,id]:targets.special) {(void)order;consider(id,true);}
     } else if(const auto *room=area.definition.activation.room(source.position)) {
         const auto current=RoomView{source.area,(int(area.definition.origin.x)+room->x)/5,(int(area.definition.origin.y)+room->y)/5};
         const auto visit=[&](RoomView view) {for(const auto id:ports_.areas.roomUnitOrder(view)) consider(id);};

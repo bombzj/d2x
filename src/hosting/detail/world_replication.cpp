@@ -40,8 +40,9 @@ void NativeRealmService::publishAreas(RegionId region) {
         sendGame(encodeServerPacket(ServerMessage::UnloadAct, [](auto &) {}));
         sendGame(encodeServerPacket(ServerMessage::LoadAct, [&](auto &out) {
             out.u8(uint8_t(destination.request.act)); out.u32(destination.request.seed);
-            out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(0);
+            out.u16(uint16_t(actTownLevels.at(size_t(destination.request.act)))); out.u32(host.objectSeed(binding->game).value());
         }));
+        peer.loadPending=true;
         const auto environment=host.environment(binding->game,region);
         if(!environment) throw net::protocol::ProtocolError("Loaded act lacks its native environment");
         sendGame(encodeServerPacket(ServerMessage::Environment,[&](auto &out) {
@@ -67,13 +68,15 @@ void NativeRealmService::publishAreas(RegionId region) {
     for (const auto &room : rooms) if (!peer.rooms.contains(room)) reveal(room);
     std::set<EntityId> warps;
     for (const auto next : desired) {
-        auto definition = host.area(binding->game, next)->definition;
-        std::erase_if(definition.exits, [&](const auto &exit) {
+        const auto *definition=host.areaMetadata(binding->game,next);
+        if(!definition) throw std::logic_error("Visible native area is missing");
+        auto exits=definition->exits;
+        std::erase_if(exits, [&](const auto &exit) {
             if (!host.visiblePoint(*binding, next, exit.position)) return true;
             warps.insert(exit.id);
             return peer.warps.contains(exit.id);
         });
-        for (auto &packet : nativeAreaWarps(areas.at(next), definition)) packets.push_back(std::move(packet));
+        for (auto &packet : nativeAreaWarps(areas.at(next), exits)) packets.push_back(std::move(packet));
     }
     for (const auto id : peer.warps) if (!warps.contains(id))
         packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(5); out.u32(uint32_t(id.value)); }));
@@ -92,8 +95,14 @@ void NativeRealmService::publishAreas(RegionId region) {
             out.u8(0);out.u32(uint32_t(view->actor.id.value));
             out.u16(uint16_t(std::lround(position.x)));out.u16(uint16_t(std::lround(position.y)));out.u8(1);
         }));
-        sendGame(encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}));
     }
+}
+void NativeRealmService::publishLoadComplete() {
+    if(!binding || peer.phase!=GamePhase::Entered || !peer.loadPending || leavePending || !host.clientLoadReady(*binding)) return;
+    // Initial admission and CHANGING_ACT both wait for D2Common_10073 after
+    // publishing rooms and the local player's assignment/reposition.
+    sendGame(encodeServerPacket(ServerMessage::LoadComplete,[](auto &) {}));
+    peer.loadPending=false;
 }
 void NativeRealmService::publishRoomRemovals() {
     const auto rooms = host.visibleRooms(*binding);
@@ -156,13 +165,21 @@ void NativeRealmService::publishCorpses() {
     std::map<EntityId, std::set<EntityId>> equipment;
     // A recovered GUID may already be projected as owned/private or public
     // equipment this cycle. Removing the former corpse copy must not erase it.
-    std::set<EntityId> retained;
-    if (const auto local = host.exportCharacter(*binding,false)) for (const auto &[id, item] : local->inventory.items) {
-        const auto *at = std::get_if<ContainerLocation>(&item.location);
-        if (at && local->inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse) retained.insert(id);
-    }
-    for (const auto player : host.visiblePlayers(*binding)) if (const auto visible = host.publicEquipment({binding->game, player}))
-        for (const auto &[id, item] : visible->inventory.items) { (void)item; retained.insert(id); }
+    std::optional<std::set<EntityId>> retained;
+    const auto retainedItem=[&](EntityId item) {
+        // Ownership is needed only for an actual former-corpse item removal.
+        // Keep this view local to the publication, including recovery/transfer.
+        if(!retained) {
+            retained.emplace();
+            if (const auto local = host.exportCharacter(*binding,false)) for (const auto &[id, value] : local->inventory.items) {
+                const auto *at = std::get_if<ContainerLocation>(&value.location);
+                if (at && local->inventory.containers.at(at->container).spec.kind != ContainerKind::Corpse) retained->insert(id);
+            }
+            for (const auto player : host.visiblePlayers(*binding)) if (const auto visible = host.publicEquipment({binding->game, player}))
+                for (const auto &[id, value] : visible->inventory.items) { (void)value; retained->insert(id); }
+        }
+        return retained->contains(item);
+    };
     for (const auto &view : host.visibleCorpses(*binding)) {
         const auto &corpse = view.corpse; next.emplace(corpse.id, view.revision);
         auto &current = equipment[corpse.id];
@@ -181,7 +198,7 @@ void NativeRealmService::publishCorpses() {
         if (old != peer.corpses.end()) packets.push_back(nativePlayerMotion(motion, origin));
     }
     for (const auto &[corpse, previous] : peer.corpseEquipment) for (const auto id : previous)
-        if ((!equipment.contains(corpse) || !equipment.at(corpse).contains(id)) && !retained.contains(id))
+        if ((!equipment.contains(corpse) || !equipment.at(corpse).contains(id)) && !retainedItem(id))
             packets.push_back(encodeServerPacket(ServerMessage::RemoveUnit, [&](auto &out) { out.u8(4); out.u32(uint32_t(id.value)); }));
     for (const auto &[id, revision] : peer.corpses) if (!next.contains(id)) {
         (void)revision;
@@ -227,11 +244,12 @@ namespace d2x::hosting {
 void NativeRealmService::publishNpcs() {
     // Identity, motion, HP and state/stat-list packets use publishMonsters.
     // This capability projection only owns per-observer quest alerts.
-    std::set<EntityId> visible;std::vector<Bytes> packets;
-    for(const auto &unit:host.visibleMonsters(*binding)) visible.insert(unit.id);
+    // All callers synchronize publishMonsters first in this publication.
+    // Reuse that recipient's exact membership, not another deep actor snapshot.
+    std::vector<Bytes> packets;
     for(const auto area:host.visibleAreas(*binding)) {
-        const auto view=host.area(binding->game,area);if(!view) continue;
-        for(const auto &npc:view->definition.npcs) if(visible.contains(npc.id)) {
+        const auto *view=host.areaMetadata(binding->game,area);if(!view) continue;
+        for(const auto &npc:view->npcs) if(peer.monsters.contains(npc.id)) {
             if(const auto message=host.npcQuestAlert(*binding,npc.rule,area)) {
                 if(!peer.npcQuestAlerts.contains(npc.id) || peer.npcQuestAlerts.at(npc.id)!=*message)
                     packets.push_back(encodeServerPacket(ServerMessage::QuestAlert,[&](auto &out){out.u8(1);out.u32(uint32_t(npc.id.value));}));
@@ -240,7 +258,7 @@ void NativeRealmService::publishNpcs() {
         }
     }
     if(!packets.empty()) sendGameBatch(std::move(packets));
-    std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !visible.contains(entry.first);});
+    std::erase_if(peer.npcQuestAlerts,[&](const auto &entry){return !peer.monsters.contains(entry.first);});
 }
 void NativeRealmService::publishShop() {
     const auto stock=host.shop(*binding); std::set<EntityId> next; std::vector<Bytes> packets;

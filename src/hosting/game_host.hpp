@@ -1,8 +1,11 @@
 #pragma once
 #include "gameplay/environment/time.hpp"
 #include "fixed_step_job.hpp"
+#include "performance.hpp"
 #include "server/game_instance.hpp"
 #include <memory>
+#include <functional>
+#include <utility>
 #include <vector>
 
 namespace d2x {
@@ -24,10 +27,13 @@ class GameHost {
     std::vector<Slot> slots_;
     uint64_t nextGeneration_ = 1;
     uint64_t nextStepSequence_ = 1;
+    std::function<void(const hosting::StepTiming &)> stepObserver_;
     Slot *find(GameHandle);
     const Slot *find(GameHandle) const;
     void publish(size_t slot);
+    void advanceStep(size_t slot);
   public:
+    void observeSteps(std::function<void(const hosting::StepTiming &)> observer) { stepObserver_=std::move(observer); }
     PlayerBinding create(server::GameDefinition);
     bool destroy(GameHandle);
     PlayerBinding admit(GameHandle, server::GameDefinition);
@@ -72,6 +78,8 @@ class GameHost {
     server::DomainResult<> installLoot(GameHandle, EntityId, server::items::PreparedBatch, std::string,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={});
     std::vector<RegionId> visibleAreas(PlayerBinding) const;
     std::vector<server::RoomView> visibleRooms(PlayerBinding) const;
+    bool clientLoadReady(PlayerBinding) const;
+    std::optional<uint32_t> objectSeed(GameHandle) const;
     bool visiblePoint(PlayerBinding, RegionId, Vec) const;
     bool npcVisible(PlayerBinding,std::string_view code,RegionId area,int initFunction=0) const;
     server::DomainResult<> relocate(PlayerBinding,RegionId,std::optional<Vec>);
@@ -79,6 +87,9 @@ class GameHost {
     server::DomainResult<> resetPoints(PlayerBinding,PointRefund);
     std::optional<uint16_t> npcQuestAlert(PlayerBinding,const server::NpcRule &,RegionId) const;
     std::optional<server::AreaView> area(GameHandle, RegionId) const;
+    // Synchronous read-only borrow. Do not retain across host mutations or
+    // instance retirement; value snapshots continue to use area().
+    const server::AreaMetadata *areaMetadata(GameHandle, RegionId) const;
     std::optional<NativeActEnvironment> environment(GameHandle,RegionId) const;
     std::optional<server::GameSettings> settings(GameHandle) const;
     uint64_t nextEntity(GameHandle) const;

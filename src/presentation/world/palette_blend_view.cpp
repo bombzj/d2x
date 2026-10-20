@@ -376,9 +376,20 @@ void PaletteBlendView::setLighting(Texture2D lightMap, Vec player, Vec playerScr
     lightOrigin_ = origin; lightZoom_ = zoom; lightAmbient_ = ambient;
     fullBright_ = fullBright;
 }
+PaletteBlendView::TerrainBatch::TerrainBatch(const PaletteBlendView &owner) : owner_(owner) {
+    if(owner_.terrainBatch_) throw std::logic_error("Nested terrain lighting batch");
+    owner_.terrainBatch_=true;
+}
+PaletteBlendView::TerrainBatch::~TerrainBatch() {
+    owner_.finishTerrainLighting();owner_.terrainBatch_=false;
+}
+void PaletteBlendView::finishTerrainLighting() const {
+    if(terrainShaderActive_) {EndShaderMode();terrainShaderActive_=false;}
+}
 void PaletteBlendView::drawWall(const Sprite *image, Vec position, std::span<const Color> samples, uint8_t alpha) const {
     if (!image || !image->texture.id || alpha < 64) return;
     if (alpha == 255) { drawLit(image,position,samples); return; }
+    finishTerrainLighting();
     if (!image->indexedTexture.id || (samples.size() != 1 && samples.size() != 6))
         throw std::invalid_argument("Transparent wall requires original indices and native wall samples");
     const Color fullLight = WHITE;
@@ -422,6 +433,7 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         return std::array<float,4>{color.r / 255.f, color.g / 255.f, color.b / 255.f, color.a / 255.f};
     };
     if (screenBlend) {
+        finishTerrainLighting();
         if (!image->indexedTexture.id || samples.size() != 1) return;
         const Rectangle bounds{float(int(position.x + image->x)), float(int(position.y + image->y)),
                                float(image->texture.width), float(image->texture.height)};
@@ -446,28 +458,44 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         EndShaderMode();
         return;
     }
-    BeginShaderMode(lightingShader_);
+    const bool batch=terrainBatch_ && image->layers.empty();
+    if(!batch) finishTerrainLighting();
+    const bool begin=!batch || !terrainShaderActive_;
+    if(begin) BeginShaderMode(lightingShader_);
     const auto set = [&](LightUniform uniform, const void *value, ShaderUniformDataType type) {
         SetShaderValue(lightingShader_, lightingLocations_[uniform], value, type);
     };
-    const float height = float(H);
-    set(LightScreenHeight, &height, SHADER_UNIFORM_FLOAT);
-    set(LightPlayerScreen, &lightPlayerScreen_, SHADER_UNIFORM_VEC2);
-    set(LightPlayerWorld, &lightPlayer_, SHADER_UNIFORM_VEC2);
-    set(LightOrigin, &lightOrigin_, SHADER_UNIFORM_VEC2);
-    set(LightZoom, &lightZoom_, SHADER_UNIFORM_FLOAT);
-    const auto ambient = packed(lightAmbient_);
-    set(LightAmbient, ambient.data(), SHADER_UNIFORM_VEC4);
+    if(begin) {
+        const float height = float(H);
+        set(LightScreenHeight, &height, SHADER_UNIFORM_FLOAT);
+        set(LightPlayerScreen, &lightPlayerScreen_, SHADER_UNIFORM_VEC2);
+        set(LightPlayerWorld, &lightPlayer_, SHADER_UNIFORM_VEC2);
+        set(LightOrigin, &lightOrigin_, SHADER_UNIFORM_VEC2);
+        set(LightZoom, &lightZoom_, SHADER_UNIFORM_FLOAT);
+        const auto ambient = packed(lightAmbient_);
+        set(LightAmbient, ambient.data(), SHADER_UNIFORM_VEC4);
+    }
     const int count = int(samples.size());
-    set(LightSampleCount, &count, SHADER_UNIFORM_INT);
-    set(LightHighlight, &highlight, SHADER_UNIFORM_VEC2);
     std::array<std::array<float,4>,6> lightSamples{};
     for (size_t i = 0; i < samples.size(); ++i) lightSamples[i] = packed(samples[i]);
-    SetShaderValueV(lightingShader_, lightingLocations_[LightSamples],
-                    lightSamples.data(), SHADER_UNIFORM_VEC4, 6);
     const bool indexed = image->indexedTexture.id && image->layers.empty();
     const int sourceIndexed = indexed ? 1 : 0;
-    set(LightIndexed, &sourceIndexed, SHADER_UNIFORM_INT);
+    const bool changed=begin || terrainSampleCount_!=count || terrainIndexed_!=sourceIndexed ||
+        terrainHighlight_.x!=highlight.x || terrainHighlight_.y!=highlight.y || terrainSamples_!=lightSamples;
+    if(changed) {
+        // Uniforms belong to a submitted batch, not individual queued quads.
+        // Flush before changing them so preceding walls retain their samples.
+        if(!begin) rlDrawRenderBatchActive();
+        set(LightSampleCount, &count, SHADER_UNIFORM_INT);
+        set(LightHighlight, &highlight, SHADER_UNIFORM_VEC2);
+        SetShaderValueV(lightingShader_, lightingLocations_[LightSamples],lightSamples.data(), SHADER_UNIFORM_VEC4, 6);
+        set(LightIndexed, &sourceIndexed, SHADER_UNIFORM_INT);
+        if(batch) {
+            terrainSampleCount_=count;terrainIndexed_=sourceIndexed;
+            terrainHighlight_=highlight;terrainSamples_=lightSamples;
+        }
+    }
+    if(batch) terrainShaderActive_=true;
     const auto bind = [&] {
         // Raylib exposes four extra sampler slots: source texture0 plus these four.
         for (const auto &[uniform, texture] : std::array<std::pair<LightUniform,Texture2D>,4>{{
@@ -476,6 +504,12 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
             SetShaderValueTexture(lightingShader_, lightingLocations_[uniform], texture);
     };
     if (image->layers.empty()) {
+        if(batch) {
+            // Capacity/texture switches may flush raylib's batch and clear its
+            // extra samplers. Perform them before registering those samplers.
+            rlCheckRenderBatchLimit(4);
+            rlSetTexture(indexed?image->indexedTexture.id:image->texture.id);
+        }
         bind();
         DrawTexture(indexed ? image->indexedTexture : image->texture,
                     int(position.x + image->x), int(position.y + image->y), tint);
@@ -488,7 +522,7 @@ void PaletteBlendView::drawLit(const Sprite *image, Vec position, std::span<cons
         DrawTexture(layer.texture, int(position.x + layer.x), int(position.y + layer.y), tint);
         EndBlendMode();
     }
-    EndShaderMode();
+    if(!batch) EndShaderMode();
 }
 void PaletteBlendView::draw(const Sprite *image, Vec position) const {
     if (!image) return;

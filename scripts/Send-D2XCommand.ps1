@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory = $true)]
     [ValidateSet(
         'status', 'pause', 'resume',
+        'headless-status', 'headless-start', 'headless-input',
         'server-status', 'server-protocol', 'server-commands', 'server-systems', 'server-snapshot', 'server-events',
         'server-pause', 'server-resume', 'server-auto-pause', 'server-cancel-step', 'refill-resources',
         'save', 'load', 'cancel-load', 'step',

@@ -1,9 +1,11 @@
 #include "system.hpp"
 #include "server/player_store.hpp"
 #include "server/area_store.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "core/random.hpp"
 #include <cmath>
 #include <algorithm>
+#include <tuple>
 namespace d2x::server::items {
 namespace {
 using GroundOccupancy = std::set<std::pair<int,int>>;
@@ -43,10 +45,32 @@ bool System::reachable(GroundLocation target, Vec from) const {
     const auto *area = ports_.areas.find(target.region);
     return area && area->definition.collision.collisionSegment(from, target.position, 0x0801);
 }
-std::optional<Vec> System::placement(GroundLocation origin, const InventoryState &world) const {
+std::optional<GroundLocation> System::placement(GroundLocation origin, const InventoryState &world) const {
     const auto *area = ports_.areas.find(origin.region);
     if (!area || !std::isfinite(origin.position.x) || !std::isfinite(origin.position.y)) return {};
-    return groundPlacement(area->definition.collision,origin.position,groundOccupancy(world,origin.region));
+    const auto global=origin.position+area->definition.origin;
+    const int32_t x=int32_t(std::floor(global.x+.5f)),y=int32_t(std::floor(global.y+.5f));
+    const auto room=ports_.areas.roomAtPosition(origin.region,origin.position+Vec{.5f,.5f},x,y);
+    if(!room) return {};
+    // Project item occupancy from the transaction draft, so split piles and
+    // spills reserve each previous landing cell before the next search.
+    std::set<std::tuple<int,int32_t,int32_t>> occupied;
+    for(const auto &[id,item]:world.items) {
+        (void)id;
+        const auto *at=std::get_if<GroundLocation>(&item.location);
+        const auto *owner=at?ports_.areas.find(at->region):nullptr;
+        if(!owner || owner->definition.act!=area->definition.act) continue;
+        const auto point=at->position+owner->definition.origin;
+        occupied.emplace(owner->definition.act,int32_t(std::floor(point.x+.5f)),int32_t(std::floor(point.y+.5f)));
+    }
+    // Spatial supplies live unit/pet/portal masks; items come from the draft.
+    const auto sample=ports_.spatial.nativeCollisionSample(0x3c01);
+    const auto position=ports_.areas.nativeFreeSpace(*room,x,y,1,[&](RoomView owner,int32_t column,int32_t row) {
+        auto mask=sample(owner,column,row);
+        if(occupied.contains({ports_.areas.at(owner.area).definition.act,column,row})) mask|=0x200;
+        return mask;
+    });
+    return position?std::optional<GroundLocation>{{position->room.area,position->position}}:std::nullopt;
 }
 DomainResult<State> System::prepare(PreparedBatch batch, GroundLocation origin) {
     if (!batch.equipment || batch.items.size() > 64 || state_.world.items.size() + batch.items.size() > 4096 || state_.revision == UINT64_MAX)

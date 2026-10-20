@@ -1,6 +1,7 @@
 #pragma once
 #include "network/byte_transport.hpp"
 #include "game_packet_observer.hpp"
+#include "performance.hpp"
 #include "administration.hpp"
 #include "server/runtime/diagnostics.hpp"
 #include <filesystem>
@@ -27,6 +28,7 @@ class EmbeddedRealm {
     std::string prepareStartup(const std::string &load, const std::string &save, const std::string &characterClass);
     void pump(double seconds, bool paused);
     void observeGamePackets(hosting::GamePacketObserver);
+    void observePerformance(hosting::PerformanceObserver);
     // Host administration, never a proprietary client protocol. Failure keeps
     // the instance and file lease available for a later retry.
     hosting::HostDiagnostics diagnostics() const;

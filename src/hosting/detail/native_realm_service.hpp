@@ -11,6 +11,9 @@
 #include "network/protocol/tcpip.hpp"
 #include <array>
 #include <functional>
+#include <memory>
+#include <optional>
+#include <vector>
 
 namespace d2x::hosting {
 // One peer protocol/session binding, independent of byte transport and UI.
@@ -57,6 +60,7 @@ struct NativeRealmService {
         uint64_t resourceCheckTick{};
         unsigned resourceInactivity{};
         bool pendingPlayerUpdate{};
+        bool loadPending{};
         RegionId resourceArea{};
         std::set<RegionId> areas;
         std::set<server::RoomView> rooms;
@@ -81,6 +85,14 @@ struct NativeRealmService {
         std::map<EntityId, std::set<int>> states;
         std::map<EntityId,uint64_t> hover;
     } peer;
+    // Only retained inside one NativeRealmHost publication scope. The shared
+    // snapshot identity also invalidates projections after failGame/enter.
+    struct MonsterProjection {
+        std::shared_ptr<const PlayerSnapshot> recipient;
+        std::vector<MonsterSnapshot> monsters;
+    };
+    bool retainMonsterProjection{};
+    std::optional<MonsterProjection> monsterProjection;
     struct PreparedGame {
         PlayerBinding binding;
         GeneratedArea terrain;
@@ -111,6 +123,7 @@ struct NativeRealmService {
     void publishItemSkills();
     void publishAreas(RegionId area);
     void publishRoomRemovals();
+    void publishLoadComplete();
     void changeArea(const server::TravelFact &);
     void initialize();
     void sendRealm(uint8_t, net::protocol::Writer);

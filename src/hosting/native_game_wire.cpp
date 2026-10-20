@@ -74,9 +74,9 @@ Bytes nativePlayerMotion(const PlayerSnapshot &view, Vec origin, bool targetVisi
     else { point(out, position); out.u8(0); out.u8(playerLifePercentage(int64_t(view.life*256),int64_t(view.attributes.maxLife)*256)); }
     return out.release();
 }
-std::vector<Bytes> nativeAreaWarps(const GeneratedArea &area, const server::AreaMetadata &definition) {
+std::vector<Bytes> nativeAreaWarps(const GeneratedArea &area, std::span<const server::AreaExit> exits) {
     std::vector<Bytes> result;
-    for (const auto &exit : definition.exits)
+    for (const auto &exit : exits)
         result.push_back(encodeServerPacket(ServerMessage::AssignWarp, [&](auto &out) {
             if (exit.warp < 0 || exit.warp > 255 || !exit.id) throw std::runtime_error("Invalid prepared native warp");
             out.u8(5); out.u32(uint32_t(exit.id.value)); out.u8(uint8_t(exit.warp)); point(out, exit.position + area.origin);
@@ -118,14 +118,14 @@ Bytes nativePlayerRoster(const ClassicData &data, const CharacterRecord &player)
     });
 }
 std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const PersistentCharacter &state,
-    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &, const server::QuestFact &quests,const NativeActEnvironment &environment) {
+    const GeneratedArea &area, const PlayerSnapshot &view, const server::AreaMetadata &, const server::QuestFact &quests,const NativeActEnvironment &environment,uint32_t objectSeed) {
     std::vector<Bytes> result;
     const auto &player = state.player;
     const auto found = std::find_if(data.characters.begin(), data.characters.end(), [&](const auto &c) { return c.name == player.characterClass; });
     if (found == data.characters.end()) throw std::runtime_error("Missing character rules");
     const auto classId = uint8_t(found - data.characters.begin());
     auto emit = [&](ServerMessage id, auto fill) { result.push_back(encodeServerPacket(id, fill)); };
-    emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(actTownLevels.at(size_t(area.request.act)))); out.u32(0); });
+    emit(ServerMessage::LoadAct, [&](auto &out) { out.u8(uint8_t(area.request.act)); out.u32(area.request.seed); out.u16(uint16_t(actTownLevels.at(size_t(area.request.act)))); out.u32(objectSeed); });
     // Actual visible rooms are inserted at enterEnvironment, after the
     // authoritative player's StreamRoomAtCoords / ChangeClientRoom.
     emit(ServerMessage::AssignPlayer, [&](auto &out) {
@@ -172,7 +172,8 @@ std::vector<Bytes> nativeGameAdmission(const ClassicData &data, const Persistent
     // Objects are assigned by publishObjects after the authority's original
     // init callback. Admission must not invent neutral-mode object baselines.
     // Warps use publishAreas' actual room visibility, like other world units.
-    emit(ServerMessage::LoadComplete, [](auto &) {});
+    // 04 is published by the live session only after the actual destination
+    // and its complete near list have finished initialization/restoration.
     return result;
 }
 }

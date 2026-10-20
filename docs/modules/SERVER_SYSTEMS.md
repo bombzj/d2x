@@ -89,6 +89,8 @@ SrvHit01／13及献祭箭／药瓶范围程序共用一次GetDamageValue，Meteo
 
 `NativeBirthPublication`在私有候选中保留飞弹节点、ID连续区间、世界／实际主人种子、房间节点、定时事件和原包事实；消息容量不足不先提交种子。`transactions::Plan::missileBirth`允许骨墙根段占用同一ID区间前缀，人物／实际Actor与飞弹候选经完整容量接受后共同发布；分组事务和次级接收者不能静默夹带该出生候选。怪物发射及NativeSpawn复用同一构造／发布流程。
 
+population在完成房间休眠恢复及三阶段人口后记录该活动房间的creationOrder；同一人口阶段保留到回访，不代表新建的活动房间已恢复。world的clientRoomsReady只读核对当前客户端归属、完整原近邻物化及每个近邻的人口就绪，经GameInstance／GameHost转交hosting延后发布初次／换幕04。检查不主动物化、生成、重掷或等待整区；03携带的物件种子只保存既有ObjectControl初始化low值，不修改任何随机流。原版门控和协议时点见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
+
 骨墙玩家路径由SrvDo60准备根段及两条原控制飞弹，Do13在前次PATH跨格时尝试原位置出生，成功才递减TargetY；根段已经死亡但GUID仍在时仍可生成。旧BoneGrowth队列已删除。墙段从各自出生帧安装MonStats.Skill1所指技能Param2期限及原S2出生动作，AI初次25帧、随后15帧检查；骨牢按原12个偏移保留首段和子列表关系。AIGENERAL所有者／子列表与玩家宠物归属分开持有，UMod15死亡候选按原顺序清除子所有者、处理子列表并切换实际怪物主人死亡模式，不以持续根死亡扫描代替。死亡状态／计时撤出共用effects，墙段DD保留真实Actor供仍活跃的Do13查找；未将死亡动画结束当成GUID立即消失。非玩家施放骨墙的公共召唤生产与完整尸体／房间退休顺序仍待后续闭合，新增源码尚未运行。
 
 原0x40 COLLIDE_MISSILE字段独立于DT1和物件栅格，AreaStore预分配后按原点／十字／方形Set／Reset位操作；普通Collision脚印随出生／移动／撤出更新，Do3／34静止点及Do5范围按实际程序写入。寻位与跨房间地形查询读取同一Grid入口，不用重叠计数替换原位语义。公共`native_spawn`保留边缘／内部扫描顺序、Manhattan优先级、首个同分及PosIncrement；`native_field`从当前MPQ的data/global/expfield.d2逐格追踪，保留11099不检查最终中心格的分支。ClassicData准备原256列方向表，AreaStore提供带房间游标的GetFreeCoordinates／GetFreeSpaceEx候选；size0的CheckMask仍检查中心格，与size0的SetMask无占位分开。world的GetFreeSpaceEx从实际调用者房间开始，保留(+2,+3)及原退路；永久门目的端接size3／0xBE11／PosIncrement5的原生寻位。
@@ -110,6 +112,8 @@ Hit39已接实际房间随机、Levels.mon／isSpawn选择、1.13c普通周界�
 原版依据入口为固定D2MOO的`D2Common/src/Units/Missile.cpp`、`D2Game/src/MISSILES/Missiles.cpp`／`MissMode.cpp`、`SKILLS/SkillAma.cpp`／`SkillPal.cpp`及`UNIT/SUnitDmg.cpp`，参数取当前MPQ。各程序、随机消费和全局顺序分别核对；已迁入的单个程序不能代表完整飞弹执行链。
 
 `missiles/rooms`现沿当前房间及原相邻房间数组查询单位，碰撞排序保留等距单位的房间链顺序。单帧几何使用原区域坐标，发布后统一转换弹体及保留路径到目标区域；创建按实际拥有者的当前房间查找，未找到时不消费创建种子。弹体准入／移动／退出接房间单位链，Town／SrcTown分别按当前MPQ判断。原73的ClientSend、真实拥有者、剩余帧和穿刺值进入统一编码与视野准入，后来进入视野的玩家也能同步当前弹体；协议没有飞弹GUID，不虚构RemoveUnit(3)。Holy Bolt治疗在HitByMissile后重新计算，使用弹体种子；HP和Overlay保留各自提交阶段，背压不重复治疗。BaalInferno的玩家法力撤出在普通伤害前作为有序操作执行。
+
+`missiles/motion::collisionContacts`沿D2MOO `MissMode::MISSMODE_HandleMissileCollision`先检查碰撞模式／激活门槛及PATH保存步；无接触步或未到激活期不准备单位候选。原碰撞掩码命中首个路径格后才执行只读单位资格／位置过滤，同一次调用内复用候选，仍按原相邻房间链顺序选首个重叠目标。不跨回调缓存候选或动态占位，不改变碰撞掩码、NextHit、接触／伤害顺序与种子消费。
 
 仍未完成的完整战斗边界包括：技能／物品事件的原全局顺序与队列2、直接攻击的全部种子及来源采样、其余职业／怪物专属飞弹程序及全部来源组合。TargetX／TargetY已成为创建参数及弹体拥有值，伤害程序读取真实参数；未初始化的原生零值只会取消Rabies毒，不再抛出缺参异常，德鲁伊的真实感染／传播生产端现已接入，具体边界见职业专题。跨区域及原生伤害状态已有实现；全部创建初始化、来源与组合仍缺同版本对照。
 
@@ -151,7 +155,7 @@ PersistentCharacter在PlayerStore中唯一持有，包含库存、人物记录�
 | players | PlayerStore中的角色持久值、位置、移动状态和命令序号 | 入场组装；持久导出仍由GameHost交宿主存储 |
 | movement | 原生路线、走跑、实时单位碰撞及技能位移执行，数据归PlayerStore；spatial临时视图区分寻路时撤目标与步进时保留目标 | execute／step／suspend；入场／旅行／复活共用实时寻位，依据及未完成边界见[地图](MAP.md#单位占位与入场) |
 | world | 区域驻留、准备请求、原生出口／边界／物件身份；AreaStore唯一拥有碰撞 | 请求合并／过期结果拒绝／失败记录／可见邻区；不生成地图，Sleeping保留值不卸载 |
-| spatial | 按区域／网格重建的活玩家与活动非玩家候选索引 | query／step；稳定ID顺序、不移动实体；物件／弹体／物品尚未纳入 |
+| spatial | 活玩家／活动非玩家网格索引及同步动态碰撞投影 | query／step；当前query尚无玩法调用，返回稳定ID顺序；脚印采样另按实时权威与原房间链派生，不读取该网格 |
 | items | 世界物品，沿用ItemInstance／InventoryState | create／resolve；生成不等于提交或放入背包 |
 | inventory | 容器访问、摆放／装备／数量规划 | execute已接移动／交换／装备／切组／合堆／入书；新增地面拾取／丢弃、金币丢弃、卷轴／书本鉴定、药水和仓库授权／关闭，库存仍归PlayerStore |
 | attributes | 纯派生计算与当前Totals只读查询 | calculate／evaluate；提交前同步求值，无dirty队列；已接支持的临时状态，完整被动仍待恢复 |
@@ -207,6 +211,8 @@ transactions的Plan含TransactionId、库存／人物双RevisionGuard、Inventor
 
 EventOutbox有256批／4096事实容量及有序累计确认。InventoryFact保留当次稀疏物品值，CharacterFact保留前后人物／Totals，TravelFact保留提交区域／位置，ChatFact保留提交时收件人。NativeRealmHost集中路由：库存／人物／换区仅本人，聊天仅已捕获的同局连接。每位接收者完整编码后一次提交字节队列；失败明确终止该连接、移出投影并保留可恢复存档租约，再确认已送达或明确退役的批，不向其他连接重复发送。Area受众按同实例可见区域及单位过滤；未实现事实明确拒绝。玩家／世界／怪物增量由独立player_replication／world_replication／monster_replication编码；只发别人穿戴外观，不发背包、Cursor、私人箱或人物属性。
 
+同一次`NativeRealmHost::advance`的事件前基线与常规状态发布，可按接收者复用`host.visibleMonsters`只读投影；仍分别执行原包编码、命中／状态增量和发送，不跳过第二次发布。投影只在推进与内容交接完成后的发布作用域存活，退出或异常时释放；实际`PlayerSnapshot`共享指针变化即重新派生，失败退局的`host.enter`会发布新指针。其他发布入口不保留投影，不按tick跨轮询缓存，避免未完成帧、换区、私有佣兵字段或可见目标变化造成过期结果。原包字段与先后依据仍由D2MOO `SCmd`／`MonsterMsg`对应编码维护，此复用不改变权威状态与随机消费。
+
 普通攻击／弓弩／左手动作／投掷药瓶统一进入skills.weapon与missiles／combat；隐藏Kick由普通桶OperateFn5调用skills.objectKick，左右键选择不变，objects／loot仍持有破坏和掉落；Unsummon由原程序入口执行，四项卷轴／书本由inventory和travel复用原事务。来源资格、释放复验、公共函数及限制见[通用十项](../gameplay/skills/GENERAL.md)。
 
 玩家武器吸取、压碎和撕裂沿同一combat接触阶段执行，纯值计算见[武器命中效果](../gameplay/combat/WEAPON_EFFECTS.md)。monsters持有伤口和生命；目标命中提交后保留待资源回补阶段，transactions将本人资源与区域原Overlay成组发布，后续反噬背压不会重复目标伤害或回补。replication从活怪物的wound投影原openwounds状态，包含首次可见、重新进入兴趣及背压等待，直到伤口事务真正清理；不能在持续快照中撤销刚发出的开启事实。
@@ -249,7 +255,18 @@ GreaterMummy辅助候选按原Fn022要求与施法者同阵营且目标非善方
 
 `combat/player_damage.cpp`接玩家目标：共享命中、跑动格挡、闪避、六通道、护盾／减伤／吸收、NextDelay和受击事务；玩家／佣兵／重生怪对玩家先乘17%，持续时长不乘。武器、范围、连锁、周期光环与伙伴候选包含敌对玩家，客户端按相同方向关系允许提交玩家目标。属性诅咒通过成组CharacterEdit原子扣蓝和更新接收者，AI诅咒不用于玩家。生命吸取／反伤／死亡边界由[武器与PvP](../gameplay/combat/WEAPON_EFFECTS.md#pvp伤害)和[玩家死亡](../gameplay/characters/PLAYER_DEATH.md)维护。
 
-近战队列使用稳定list节点，删除不搬移剩余请求；不改处理顺序或4096容量。空间索引按区域与16-subtile网格派生活单位候选，在AI前与怪物移动后同步；保留未跨桶单位的节点，只迁移跨桶／跨区成员并移除死亡／退役成员，按X、Y两层范围索引查询，避免反复清空容器与扫描无关Y桶。查询稳定按EntityId排序，武器及通用法术直线接触采用保守半径后执行原精确碰撞。只在该阶段位置稳定时使用索引，效果／战斗后的位置变化留到下个同步点；AI、范围爆炸、怪物弹体仍有遍历，不将此切片标为全场景空间优化。
+近战队列使用稳定list节点，删除不搬移剩余请求；不改处理顺序或4096容量。空间索引按区域与16-subtile网格派生活单位候选，在帧事件前、Actor阶段及移动后同步；保留未跨桶单位的节点并直接更新稳定条目，未变的位置／版本不重复写入，只迁移跨桶／跨区成员并移除死亡／退役成员。query按X、Y两层范围查询并稳定按EntityId排序；当前query／maximumSize尚无玩法消费者，不能将维护该网格视为飞弹已经使用细粒度空间索引。飞弹接触、原生范围收件人及普通房间型AI查找沿各自原房间链执行；恶方AI另保留Targets玩家槽／宠物登记链。脚印查询按请求掩码跳过不能贡献任何位的玩家／怪物，仍保留独立presence位、尸体、出生预留及自身／目标排除。D2MOO `D2Collision.cpp::COLLISION_SetMaskWithPattern／COLLISION_TryTeleportUnitCollisionMask`及`Path/Step.cpp`在移动当时更新碰撞；当前脚印视图同步现建，不跨权威提交缓存，也不能把网格的indexedTick相同当作本次回调状态未变。
+
+飞弹空间优化的当前取舍：有减少重复构造的方向，尚无细分计时证明可取得大幅收益，暂不将通用网格接入原生飞弹，也不迁移持久动态碰撞。D2MOO `MISSILES/MissMode.cpp::MISSMODE_HandleMissileCollision`先按PATH保存步读取碰撞格，仅非零格调用`Units/Units.cpp::D2Common_10407_Impl`，后者按相邻房间及pUnitFirst顺序返回首个重叠且通过回调的单位；版本映射见上方原生碰撞说明。`SKILLS/Skills.cpp::sub_6FD0FE80`的范围回调亦保留房间链；AI玩家槽／宠物插入次序见`GAME/Targets.cpp::D2GAME_TARGETS_First_6FC40170／D2GAME_UpdateSummonAI_6FC401F0`。不能用ID顺序、距离排序或最近目标替换上述次序。
+
+| 候选方向 | 收益判断与实施前置 |
+| --- | --- |
+| 原房间链加细格候选筛选 | 已有相邻房间粗筛，不是逐弹扫描全世界。细格只能保守剔除绝无重叠者，并恢复原房间／链序；必须覆盖同帧出生、移动、传送、死亡／复活和跨区域原点。现有网格只收活实体，不能直接承担尸体、出生预留及门户碰撞；尚无证据证明新增维护和排序后有大收益 |
+| 持久动态碰撞格 | 比逐次nativeFootprints枚举／投影／排序更接近原版，值得优先细分测量。须在所有占位变更及事务发布点同步维护，保留Unit／Pet／Wraith、尸体、预留、自己／目标排除、房间退役和原Set／Reset位语义；不能以整帧缓存或简单重叠计数替代。属于跨领域状态维护，暂不作为局部查询替换实施 |
+| 单次查询的路径包围盒／局部脚印 | 可研究只构造本次保存步实际读取的碰撞格，保留实时采样和原链；须验证尺寸、坐标取整、跨房间、预留与静态／动态掩码，先测构造成本占比；不能把整个missiles阶段耗时当作可消除的脚印成本 |
+| AI／范围效果 | 房间型查询已有原房间粗筛，Targets链重建是登记索引问题；范围命中还有同步属性／伤害回调。通用空间索引不能统一替换，未证明高收益则保留原调用链 |
+
+后续判断大幅收益须分别观测房间链枚举量、候选／精确判定量、脚印格数及构造耗时、PATH和Do／Hit／伤害事务耗时，再用相同负载复测CPU与长帧。当前按领域累计的missiles时间含嵌套命中／事务，spatial阶段时间只反映索引同步等本域调用；二者都不能单独给出空间查找的CPU占比。
 
 地面物品按items.State.revision缓存区域→GUID索引，发布只合并所需区域并按原GUID顺序返回；拾取、掉落、事务提交、消失和属性恢复后的revision使索引失效。批量掉落一次建立区域地面格占用集合，每次确定落点后更新集合，避免每个候选格反复扫描全部物品；落点环顺序、碰撞、容量、事务和身份分配时点保持原行为。
 
@@ -332,6 +349,8 @@ replication的宠物归属投影独立于房间兴趣；hosting按原13字节7A�
 新增玩法按“准备原表纯值 → 领域状态／请求／规则 → 事务与失败边界 → 原S2C投影 → 开放命令”接入。先完整实现依赖与输出，再更改Scaffold状态；不能只修改目录让半个事务进入执行队列。玩家离开、换区、死亡时涉及的对话／交易／同行者清理，应由相应领域入口组合，不恢复一个全能GameSession。
 
 named pipe的server-systems只读返回28项目录、phase、scope和lastStep。lastStep=null表示尚未执行或该系统没有固定步入口，不表示完成；未接领域正常显示not-implemented，已接切片以scope为准。server-status.command表示最近实际命令结果，替代原来仅描述移动的字段；server-protocol仍负责原包覆盖与计数。这些诊断只在宿主管理端，不参与客户端世界同步。
+
+`runtime/simulation`按领域累计当前逻辑帧的同步调用耗时，阻塞重试保留累计值；事件回调归属其原拥有领域，嵌套调用不另拆成可相加的CPU成本。`hosting/performance.hpp`提供可选同步观察者，分别观察完整权威步进与宿主推进／内容交接／事件发布／状态发布；回调不能修改宿主或执行IO。无观察者时不启用宿主分段时钟。无窗口入口的导出、重试合并及CPU口径见[运行指南](../development/BUILD_AND_RUN.md#无窗口协议客户端)。
 
 PersistentCharacter与D2S v96格式保持既有模型，库存位置／Cursor／固定武器组通过既有编码保存；校验与恢复边界由[存档](SAVES.md#文件与值边界)维护。事务身份／revision／Outbox运行态不写D2S；扩展持久值须显式定义恢复边界，不能静默迁移或把空运行态覆盖回完整存档。
 

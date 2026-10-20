@@ -6,6 +6,8 @@
 
 ## 唯一客户端链
 
+显式`--headless`诊断入口在app组装同一RealmSession，跳过全部表现／资源重建，可在单进程持有多个真实TCP会话。预先核对的D2S头部身份直接交给`connect_tcpip`省去本地MCP选角；原上传、握手、原包副本、心跳、施法／移动编码及保存退局保持共用。自动输入使用已学技能和明确坐标，服务端正常校验；不创建本地玩法或旁路权威状态。配置、资格限制及测量口径见[无窗口协议客户端](../development/BUILD_AND_RUN.md#无窗口协议客户端)。
+
 RealmFrontend与所有游戏页面都读取RealmSession的原协议副本。输入统一为SceneController → RemoteUiClients／RemoteControl／RemoteCombat／RemoteInventory → 原MCP／D2GS；回包统一为RemoteWorld／RemoteInventory／RemoteTown → RemoteUiClients／RemoteScene → SceneView。GameClients、IGameConnection、EmbeddedConnection、LocalGame、GameScene及单独的角色服务DTO已删除。
 
 IByteTransport提供原字节流，TcpStream与MemoryTransport实现相同connect／send／poll／close。内存队列有锁、有界，支持网络worker与宿主调度线程分离；重连清旧消息。客户端不引用GameHost、PersistentCharacter或存档路径，也不直接接收权威快照。自研宿主通过原1.13c包提供已实现行为，不新增客户端协议分支。
@@ -38,6 +40,8 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 | IMapClient | 原服当前位置／旅行回执及共同地图 → MapSceneView／TravelMenuView；地图交互、传送点和面板共用控制器 |
 
 端口与投影只包含显示值和必要目标；视图按版本复制，UI 不保留权威引用。OnlineIntentContext 与物品 handle 保留投影时的场景／物品版本；切区、关闭交互等变化取消旧意图。报价未知与 canRequestSale 提交资格分开，客户端不自算原服价格、费用、奖励或保存。
+
+RemoteUiClients按原协议副本／物品解码版本、游戏与区域代次、场景区域／原点／调色板／城镇属性、对白身份及本地走跑／热键变化重建人物、库存、交互和佣兵视图。显示位置、丢弃落点、命令泵送及物品反馈超时仍逐呈现帧更新；一次重建先更新人物和地图，再更新库存，最后投影交互／商店，不重复生成旧人物／库存的交互视图。该缓存只复用只读显示值，不跳过服务端请求、确认或资格校验；无关原包版本变化也允许保守失效。
 
 ## 共用显示入口
 

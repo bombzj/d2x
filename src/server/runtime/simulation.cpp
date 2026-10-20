@@ -11,7 +11,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     // owning system's state, never to this per-step scratch buffer.
     if(!frame_) {frame_=tick.tick;facts_={};for(auto &metric:metrics_) metric.nanoseconds=0;}
     else if(*frame_!=tick.tick) throw std::logic_error("Simulation resumed an unfinished frame with another timestamp");
-    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
+    if(systems.effects.finishNativeStateRemovals(tick.tick,{})==StepStatus::Blocked) return false;
     if(systems.monsters.finishModifiers(tick)!=StepStatus::Complete) return false;
     const auto run=[&](SystemId id,auto &&operation) {
         const auto started=std::chrono::steady_clock::now();
@@ -48,16 +48,15 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
             if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return false;
             if(!result && result.status!=DomainStatus::InvalidActor) throw std::logic_error("Native frame event has no implemented handler");
             completedNativeEvent_=event.handle.value;
-            if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
+            if(systems.effects.finishNativeStateRemovals(tick.tick,{})==StepStatus::Blocked) return false;
             completedNativeEvent_=0;
             return true;
         })) return false;
         phase_=Phase::Domains;
     }
     if(phase_==Phase::Domains) {
-    systems.social.step(tick);
-    steps_[size_t(SystemId::Social)] = StepStatus::Complete;
-    steps_[size_t(SystemId::World)] = systems.world.step(tick, facts_);
+    run(SystemId::Social,[&]{systems.social.step(tick);return StepStatus::Complete;});
+    run(SystemId::World,[&]{return systems.world.step(tick,facts_);});
     phase_=Phase::Population;
     }
     if(phase_==Phase::Population) {
@@ -66,7 +65,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     phase_=Phase::Actors;
     }
     if(phase_==Phase::Actors) {
-    steps_[size_t(SystemId::Attributes)] = systems.attributes.step(tick, facts_);
+    run(SystemId::Attributes,[&]{return systems.attributes.step(tick,facts_);});
     if(steps_[size_t(SystemId::Attributes)]==StepStatus::Blocked) return false;
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
     phase_=Phase::Companions;
@@ -83,10 +82,9 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     phase_=Phase::Movement;
     }
     if(phase_==Phase::Movement) {
-    systems.movement.step(tick);
-    steps_[size_t(SystemId::Movement)] = StepStatus::Complete;
-    steps_[size_t(SystemId::Inventory)] = systems.inventory.step(tick, facts_);
-    steps_[size_t(SystemId::Items)] = systems.items.step(tick, facts_);
+    run(SystemId::Movement,[&]{systems.movement.step(tick);return StepStatus::Complete;});
+    run(SystemId::Inventory,[&]{return systems.inventory.step(tick,facts_);});
+    run(SystemId::Items,[&]{return systems.items.step(tick,facts_);});
     run(SystemId::Spatial,[&]{return systems.spatial.step(tick,facts_);});
     phase_=Phase::Effects;
     }
@@ -101,29 +99,29 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
     phase_=Phase::StateRemovals;
     }
     if(phase_==Phase::StateRemovals) {
-    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
+    if(systems.effects.finishNativeStateRemovals(tick.tick,{})==StepStatus::Blocked) return false;
     phase_=Phase::Trade;
     }
     if(phase_==Phase::Trade) {
-    steps_[size_t(SystemId::Trade)] = systems.trade.step(tick);
+    run(SystemId::Trade,[&]{return systems.trade.step(tick);});
     if (steps_[size_t(SystemId::Trade)]==StepStatus::Blocked) return false;
     phase_=Phase::Tail;
     }
     if(phase_==Phase::Tail) {
-    steps_[size_t(SystemId::Death)] = systems.death.step(tick, facts_);
-    steps_[size_t(SystemId::Npc)] = systems.npc.step(tick, facts_);
-    steps_[size_t(SystemId::Merchant)] = systems.merchant.step(tick, facts_);
-    steps_[size_t(SystemId::Crafting)] = systems.crafting.step(tick, facts_);
+    run(SystemId::Death,[&]{return systems.death.step(tick,facts_);});
+    run(SystemId::Npc,[&]{return systems.npc.step(tick,facts_);});
+    run(SystemId::Merchant,[&]{return systems.merchant.step(tick,facts_);});
+    run(SystemId::Crafting,[&]{return systems.crafting.step(tick,facts_);});
     phase_=Phase::Objects;
     }
     if(phase_==Phase::Objects) {
-    steps_[size_t(SystemId::Objects)] = systems.objects.step(tick, facts_);
+    run(SystemId::Objects,[&]{return systems.objects.step(tick,facts_);});
     if(steps_[size_t(SystemId::Objects)]!=StepStatus::Complete) return false;
     if(systems.monsters.pendingModifiers()) return false;
     phase_=Phase::ObjectRemovals;
     }
     if(phase_==Phase::ObjectRemovals) {
-    if(systems.effects.finishNativeStateRemovals(tick.tick,systems.spatial.nativeCollisionSample())==StepStatus::Blocked) return false;
+    if(systems.effects.finishNativeStateRemovals(tick.tick,{})==StepStatus::Blocked) return false;
     phase_=Phase::Modifiers;
     }
     if(phase_==Phase::Modifiers) {
@@ -131,7 +129,7 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         phase_=Phase::Quests;
     }
     if(phase_==Phase::Quests) {
-    steps_[size_t(SystemId::Quests)] = systems.quests.step(tick, facts_);
+    run(SystemId::Quests,[&]{return systems.quests.step(tick,facts_);});
     phase_=Phase::Tower;
     }
     if(phase_==Phase::Tower) {
@@ -139,10 +137,10 @@ bool Simulation::step(TickContext tick, GameSystems &systems) {
         if(status!=StepStatus::Complete) {steps_[size_t(SystemId::Objects)]=status;return false;}
         phase_=Phase::Publication;
     }
-    steps_[size_t(SystemId::Loot)] = systems.loot.step(tick, facts_);
-    steps_[size_t(SystemId::Progression)] = systems.progression.step(tick, facts_);
-    steps_[size_t(SystemId::Travel)] = systems.travel.step(tick, facts_);
-    steps_[size_t(SystemId::Replication)] = systems.replication.step(tick, facts_);
+    run(SystemId::Loot,[&]{return systems.loot.step(tick,facts_);});
+    run(SystemId::Progression,[&]{return systems.progression.step(tick,facts_);});
+    run(SystemId::Travel,[&]{return systems.travel.step(tick,facts_);});
+    run(SystemId::Replication,[&]{return systems.replication.step(tick,facts_);});
     phase_=Phase::Environment;frame_.reset();return true;
 }
 }

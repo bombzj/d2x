@@ -25,7 +25,11 @@
 
 NativeRealmService是单个连接的生命周期编排，不是玩法容器。新增战斗／库存／任务逻辑放入server对应领域；包处理器只解码、提交领域命令和处理提交结果。不能把MPQ读取、存档编码、UI状态或每种技能实现放进GameInstance或这个编排对象。
 
+发布阶段保持每个接收者独立的单位名册和原包顺序：NPC任务提示在同轮`publishMonsters`后直接复用该接收者的怪物成员集合；怪物动作编码只有需要隐藏未知目标时才复制完整投影；尸体装备只有实际待移除旧GUID时才准备本轮人物／公开装备保留集合。出口／NPC发布通过`GameHost::areaMetadata`同步只读借用区域元数据，出口只复制待筛选的小列表，不为这些查询复制整区静态物件规则；借用不跨宿主变更或实例退役。集合不跨发布轮次缓存，尸体归属8E仍独立于可见性发布。原版接收者更新列表参考D2MOO `GAME/Clients.cpp::CLIENTS_RefreshUnitsUpdateList`，这些投影优化不改变原兴趣资格或事件前后发布时点。
+
 native_game_wire在本人新准入的0x59后发送原0xAA初始状态快照；monster_replication也为新进入视野的怪物／佣兵发送当前状态及数值列表。两者共用nativeStateSnapshot，即使无状态也包含0xFF终止；属性列表按当前ItemStatCost的Send Bits／Signed编码，容量不足明确拒绝。本人新准入不恢复临时属性列表，运行中变更走原A7／A8／A9；玩家光环及技能效果发布原数值列表，事件发送后同步观察缓存，避免后续空A7覆盖A9。目录的StateSnapshot已标实现，不表示运行中全状态重同步或所有他人状态组合已对齐。客户端对未收到／解码失败的状态仍保留未知，不为自研漏包默认零。原版依据与显示缺口见[人物属性](../gameplay/characters/ATTRIBUTES.md)和[技能描述](../gameplay/skills/DESCRIPTIONS.md)。
+
+03包含幕号、地图种子、城镇关卡及本局稳定的物件控制初始种子；04不在静态入局包中预制，单连接loadPending只在本人的完整原近邻列表及本次人口／恢复就绪、房间／本人定位已发布后完成一次，失败或退局不会补发完成。客户端收到04先校验幕和本人指派，将其作为有序地图事件交给MPQ消费者；前序07／定位即使因分帧准备尚未消费，也不能提前开放本地地图输入。05／03使旧区域代次及本地完成状态失效，同幕旅行不增加03／04。两端调用链和原版边界见[传送点](../gameplay/world/OBJECTS.md#自研传送点)及[原版互通](NETWORK.md#tcpip原版互通参考与缺口)。
 
 native_character_wire的四抗条目只发布安亚永久奖励，装备／状态／难度在共用客户端投影合成；佣兵原9E／9F／A0发布MonsterAI_SendMercStats对应的基础成长值及当前生命，装备和状态同样由原副本合成。不能把权威最终抗性或佣兵装备后总值再作为原基础列表发送。对应显示和验证边界归[人物属性](../gameplay/characters/ATTRIBUTES.md)及[佣兵](../gameplay/characters/HIRELINGS.md)。
 

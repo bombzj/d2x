@@ -22,6 +22,7 @@ struct CorpseView { PlayerCorpse corpse; PersistentCharacter equipment; uint64_t
 // Composition and ordering only; domain implementations live beside this class.
 class GameInstance {
     GameSettings settings_;
+    uint32_t objectSeed_{}; // Original dwObjSeed: the control stream's initial low word.
     AreaStore areas_;
     EntityIds entities_;
     uint64_t random_, tick_{}, revision_{1};
@@ -50,10 +51,12 @@ class GameInstance {
     bool enter(PlayerId, bool active = true);
     uint64_t nextEntity() const { return entities_.cursor(); }
     const GameSettings &settings() const { return settings_; }
+    uint32_t objectSeed() const { return objectSeed_; }
     const AreaState *area(RegionId id) const { return areas_.find(id); }
     std::optional<NativeActEnvironment> environment(RegionId id) const {return areas_.environment(id);}
     std::vector<RegionId> visibleAreas(PlayerId) const;
     std::vector<RoomView> visibleRooms(PlayerId id) const { return systems_.world.visibleRooms(id); }
+    bool clientLoadReady(PlayerId) const;
     bool visiblePoint(PlayerId id, RegionId region, Vec point) const { return systems_.world.visible(id, region, point); }
     bool npcVisible(PlayerId player,std::string_view code,RegionId area,int initFunction=0) const {
         const auto *p=players_.find(player);return p && systems_.quests.npcVisible(p->persistent.player,code,area,initFunction);
@@ -109,6 +112,7 @@ class GameInstance {
     auto beginLootPreparation(EntityId source) {return systems_.loot.beginPreparation(source);}
     DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={}) { return systems_.loot.install(source, {tick_}, std::move(batch), std::move(deferred),random,objectRandom); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
+    const SystemMetrics &stageMetrics() const { return simulation_.metrics(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }
     const std::vector<world::PrepareArea> &pendingAreas() const { return systems_.world.read().preparation; }

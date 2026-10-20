@@ -27,7 +27,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
         const auto position = ports_.items.placement({actor.area, player->position}, world.world);
         if (!position || item.revision == UINT64_MAX || world.world.items.size() >= 4096) return false;
         draft.edit.changes.push_back({id, item.revision + 1, ItemChangeKind::Removed, item.location, {}, 0});
-        item.location = GroundLocation{actor.area, *position}; ++item.revision;
+        item.location = *position; ++item.revision;
         drops.emplace_back(GroundDropFact{item});
         world.world.items.emplace(id, item); world.equipment.items.insert_or_assign(id, equipment->items.at(id));
         equipment->items.erase(id); draft.edit.inventory.items.erase(id); return true;
@@ -78,7 +78,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
             if (!position || !definition.maxStack || world.world.items.size() >= 4096) break;
             if (!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity, {}};
             ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = code;
-            item.quantity = std::min(dropGold, definition.maxStack); item.location = GroundLocation{actor.area, *position};
+            item.quantity = std::min(dropGold, definition.maxStack); item.location = *position;
             item.nativeSeed = uint32_t(item.id.value);
             drops.emplace_back(GroundDropFact{item});
             EquipmentValues values; values.levels.resize(player->rules.character->experience.size());

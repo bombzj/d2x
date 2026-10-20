@@ -5,6 +5,10 @@
 Single Player的online-status仍只读原协议OnlineView；server-status单独返回宿主诊断身份和tick，不能作为客户端世界同步旁路。ui-input沿现有32帧队列和SceneController，F11／Ctrl+F11与pipe save／load共用AdminRequest管理入口。单机ESC／失焦暂停权威；应用将显式调试暂停一并用于单机宿主，原服pause/resume仍只影响表现。入局／退局清旧UI帧。
 ## 启动与调用
 
+`--headless`使用同一管道的`headless-status`、`headless-start`和`quit`；房主另支持既有`server-*`及宿主管理命令，客端没有该能力。`headless-start`只允许所有本进程会话入局后启动一次，可传`delayMs=0..60000`（默认1000），或未来60秒内的整数`atUnixMs`供多个进程共用同一启动时刻；两者互斥。此模式不接受普通表现／UI命令，配置和统计口径见[无窗口协议客户端](BUILD_AND_RUN.md#无窗口协议客户端)。
+
+`headless-input`向本进程所有已就绪会话发送原协议输入：`action=stop`停止动作，`select-profile-skill`选择该角色配置中的第一个施法技能，`waypoint-open`需当前实际物件`unitId`，`waypoint-travel`需目标`level`与原表`waypointNumber`。可用未来60秒内的`atUnixMs`共同排期，每进程最多32项；排期返回queued只表示登记，立即输入的accepted也只表示客端提交，须另核对服务端位置／区域及收到的原包。首次交互可能仅激活传送点，应核对每个角色的`waypointSource`后再旅行。状态还提供当前act及原包分配的assignedLevels，后者不等同本人当前位置。
+
 ```powershell
 .\Play.cmd -PipeName d2x-debug
 # UI登录记忆后正常认证、选角及一次随机普通建房：
@@ -38,7 +42,7 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 刺客陷阱／影子的怪物记录另含可选 `assassin`：`parameters` 为实际AI参数，`nextDecision`、`expires`、`removeAt`、`lastCorpse`、`missile` 分别观察决策、期限、撤出、所选尸体与附属飞弹。数据只读复制伙伴运行态，不是第二份AI、客户端协议或修改单位的入口。活动单位可能仍在移动／动作中，不能仅以 `nextDecision` 小于当前帧判定阻塞；应一并查看固定步进度、实际动作／事件及队列。实现范围与原版依据见[刺客](../gameplay/skills/ASSASSIN.md)。
 
-当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间每步同步两次，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。新字段未运行认证，后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
+当前源码的`server-snapshot`增加`combatMetrics`与`spatial`。`combatMetrics.queueDepth`为完整近战等待数，`targetAttempts`为本步进入目标处理的次数（包括资格拒绝，不等于命中数）；`stages`按系统名输出本步`nanoseconds`、实例累计`calls`／`blocked`，覆盖空间、伙伴、AI、技能、怪物、弹体、效果和战斗。空间在帧事件前、Actor阶段和移动后同步，其耗时相加。`spatial`给出索引tick／generation、活单位数、本步查询数／被精筛候选数／返回数。快照查询不推进随机和玩法，计时仅观察，不参与调度；范围只含已接索引路径。后续同负载采样才能计算p50／p95／p99，不将单步耗时当作性能提升证明。
 
 `online-world.scene.monsters`返回当前已解析怪物的原classId、实际姓名／词缀和最终transform／randomTransform，复用显示姓名与调色路径；不是服务端真值或准入列表。跨进程探索保存只在本地单机／TCP/IP角色入口工作，规则与侧文件边界见[自动地图](../gameplay/world/AUTOMAP.md#跨进程探索保存)。
 

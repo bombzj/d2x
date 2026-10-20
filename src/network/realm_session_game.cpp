@@ -125,11 +125,16 @@ void RealmSession::Impl::handle_game(Packet packet) {
         if (*view.load.act > 4) throw ProtocolError("Invalid LoD act index");
         view.load.mapSeed = in.u32();
         view.load.townArea = in.u16();
-        // Preserve the secondary value without claiming cross-version DRLG semantics.
+        // Original 03 carries the immutable ObjectControl initial seed.
+        // Keep it separate from the map seed and from client DRLG state.
         view.load.secondarySeed = in.u32();
         in.finish();
         changed();
     } else if (packet.id == 0x04) {
+        in.finish();
+        if(!view.load.act || !view.load.mapSeed || !view.load.playerUnitId || !view.world.playerPosition ||
+            !view.world.units.contains({0,*view.load.playerUnitId}))
+            throw ProtocolError("Load complete preceded the act and local player assignment");
         view.load.serverLoadComplete = true;
         changed();
     } else if (packet.id == 0x05) {
@@ -151,7 +156,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
     }
     try {
         if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
-            packet.id != 0x04 && packet.id != 0x05 && packet.id != 0xAF)
+            packet.id != 0x05 && packet.id != 0xAF)
             apply_world_packet(view, packet);
     } catch (const ProtocolError &error) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);

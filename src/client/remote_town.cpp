@@ -59,6 +59,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         nativePlayerRoom_.reset();
         nativePlayerPosition_.reset();
         nativeSequence_ = 0;
+        nativeLoadComplete_ = false;
         nextObjectTransition_.reset();
         nativeErrors_.clear();
         nativeReason_.clear();
@@ -362,6 +363,16 @@ bool RemoteTown::updateNative(const OnlineView &v) {
                 nativePlayerRoom_.reset();
                 nativePlayerPosition_.reset();
                 break;
+            case OnlineMapEvent::Kind::LoadComplete: {
+                // Retail 1.13c Rcv04 (D2Client RVA ADFE0) requires the local
+                // player to be attached to a room. Consume the preceding map
+                // events first, including when reconstruction spans frames.
+                const auto room=nativePlayerPosition_?nativeMap_->clientRoom(nativePlayerPosition_->x,nativePlayerPosition_->y):std::nullopt;
+                if(!room || !nativeMap_->tiles().rooms().at(*room).loaded)
+                    throw std::runtime_error("Server load complete preceded the local player's active room");
+                selectRoom(*room);nativeLoadComplete_=true;
+                break;
+            }
             }
             nativeSequence_ = event.sequence;
             if (nativeSequence_ != world.mapEventSequence && std::chrono::steady_clock::now() >= deadline) {
@@ -382,7 +393,7 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         } else locatePlayerRoom();
         nativeTerrainDirty_ |= changed || nativeMap_->terrainRevision() != terrainRevision;
         if (!nativePlayerRoom_ || v.stage != OnlineStage::ProtocolReady ||
-            !v.load.serverLoadComplete || !world.playerPosition) return false;
+            !v.load.serverLoadComplete || !nativeLoadComplete_ || !world.playerPosition) return false;
         if (!nativeMap_->tiles().rooms().at(*nativePlayerRoom_).loaded) return false;
         const int level = nativeMap_->tiles().rooms().at(*nativePlayerRoom_).level;
         if (nativeTerrainDirty_ || !nativeTerrain_) {

@@ -99,7 +99,9 @@ MovementCollisionRule RemoteScene::Impl::movementRule(const OnlineUnit &u) const
 
 Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,OnlineUnitKey self,
                              std::optional<OnlineUnitKey> target) const {
-    std::map<std::pair<int,int>,uint16_t> occupied;
+    using Cell=std::pair<int,int>;
+    std::vector<std::pair<Cell,uint16_t>> occupied;
+    occupied.reserve(5*world().units.size());
     for(const auto &[key,unit]:world().units) {
         if(key.type>1 || key==self || !unit.position) continue;
         const bool dead=key.type==0?playerDead(unit):onlineMonsterCorpse(unit);
@@ -125,8 +127,15 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
         const auto point=localUnitPosition(key);if(!point) continue;
         const int x=int(std::floor(point->x+.5f)),y=int(std::floor(point->y+.5f));
         for(int dy=-1;dy<=1;++dy) for(int dx=-1;dx<=1;++dx)
-            occupied[{x+dx,y+dy}]|=nativeCollisionFootprint(pattern,dx,dy,mask);
+            if(const auto value=nativeCollisionFootprint(pattern,dx,dy,mask)) occupied.emplace_back(Cell{x+dx,y+dy},value);
     }
+    std::sort(occupied.begin(),occupied.end(),[](const auto &a,const auto &b){return a.first<b.first;});
+    size_t count{};
+    for(const auto &entry:occupied) {
+        if(count && occupied[count-1].first==entry.first) occupied[count-1].second|=entry.second;
+        else occupied[count++]=entry;
+    }
+    occupied.resize(count);
     Grid view;view.width=terrain.width;view.height=terrain.height;
     view.neighbours=terrain.neighbours;
     view.obstacleRevision=terrain.obstacleRevision;view.missileCollisionRevision=terrain.missileCollisionRevision;
@@ -134,8 +143,10 @@ Grid RemoteScene::Impl::navigationCollision(const Grid &terrain,Vec origin,Onlin
     Vec navigationOrigin;auto navigation=terrain.linkedNavigation(navigationOrigin);
     view.collisionSample=[navigation=std::move(navigation),navigationOrigin,origin,object,occupied=std::move(occupied)](int x,int y,EntityId ignored)->uint16_t {
         uint16_t mask=navigation.movementMask(x-int(navigationOrigin.x),y-int(navigationOrigin.y),ignored?ignored:object);
-        const auto found=occupied.find({x+int(origin.x),y+int(origin.y)});
-        return found==occupied.end()?mask:uint16_t(mask|found->second);
+        const Cell key{x+int(origin.x),y+int(origin.y)};
+        const auto found=std::lower_bound(occupied.begin(),occupied.end(),key,
+            [](const auto &entry,const Cell &value){return entry.first<value;});
+        return found==occupied.end() || found->first!=key?mask:uint16_t(mask|found->second);
     };
     return view;
 }

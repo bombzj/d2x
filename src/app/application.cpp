@@ -1,6 +1,7 @@
 #include "application.hpp"
 #include "frontend.hpp"
 #include "options.hpp"
+#include "headless.hpp"
 #include "startup_profile.hpp"
 #include "input.hpp"
 #include "content/language.hpp"
@@ -82,8 +83,10 @@ int runGame(int argc, char **argv) {
                      "Quick entry uses remembered credentials and the normal server handshake once.\n"
                      "--lang <eng|chi|deu|fra|esp|ita|jpn|kor|pol|rus or 0-9>: language override; else reads USE from MPQ\n"
                      "--hidden --frames N --screenshot <png> --pack <new.mpq>\n";
+        std::cout << "--headless <profile.json>: windowless host or native TCP clients; no scene/UI/audio.\n";
         return 0;
     }
+    if (!options.headlessProfile.empty()) return runHeadless(options);
     StartupProfile profile(options.startupProfile);
     Archives archives;
     // assets/mpq holds supplementary packs (PD2 language tables and fonts, demo

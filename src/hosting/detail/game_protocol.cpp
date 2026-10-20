@@ -105,6 +105,7 @@ void NativeRealmService::enterEnvironment(net::protocol::Reader &in) {
     }
     admission.clear();
     peer.phase = GamePhase::Entered;
+    peer.loadPending = true;
     peer.sequence = peer.sentRevision = peer.sentMovement = 0;
     peer.lastMotion.clear();
     peer.areas.insert(RegionId(terrain.request.level));

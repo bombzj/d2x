@@ -145,6 +145,10 @@ Init54现登记真实凯恩起始标记GUID及坐标，任务要求进城前不�
 | 目的地落点 | hosting提供实际关卡流、有序TileInfo、房间分配次序及Objects.SubClass64预设。server实时执行FindActSpawnLocationEx：城镇、Canyon、Arcane取tile13，其余取0；加3后按size2／0x1c09在活动碰撞寻位，跨幕另按0x1c89／步长5搜索，随后再次执行基础FindActSpawnLocation消费原调用的关卡流。背压保存落点和区域代次，不重掷；不再使用静态waypointSpawnAnchor作为运行落点 |
 | 跨幕与保存 | Warriv1向东旅行、第一幕完成位与鲁高因传送点激活在同一事务提交。0x63使用0x102＋112位并保留必开bit0；D2S当前难度的WS段按相同容量读写，其他难度及未知映射位保留。格式与校验边界见[存档](../../modules/SAVES.md) |
 
+服务端内容准备与客户端加载完成是两个边界。`NativeRealmHost::advance`先安装准备好的地形／权威区域，`travel::System::step`取得真实落点房间、复验碰撞并提交旅行，之后hosting才发布跨幕05／03、房间07和位置15；03是加载目标幕及种子的通知，04才是服务端加载完成。D2MOO `GAME/Level.cpp::LEVEL_ChangeAct`同样先LoadAct、FindActSpawnLocationEx及FreeCoordinates，再05／03；`GAME/Game.cpp::D2GAME_UpdateAllClients_6FC389C0`另以`D2Common_10073`等待当前房间的活动近邻列表完整且每个近邻已置人口初始化位，才发送04，房间休眠恢复也在客户端更新之前执行。
+
+初次入局与跨幕共用`publishLoadComplete`：world核对当前客户端归属及完整原近邻列表已物化，population按本次活动房间creationOrder确认预设／随机人口和休眠恢复已完成，常规房间／单位发布之后才发送一次04。已安装／可见的近邻子集不能冒充完整列表，上一轮房间的人口阶段也不能使本次恢复提前完成；不等待整幕／整区或无关内容队列清空。03的物件种子保存自该局ObjectControl初始化时的low值，初次／晚加入／跨幕一致，不以变化后的控制流或固定0代替，也不为发包另掷随机。客户端将04放入有序地图事件流，处理前序07／定位并确认本人房间已加载后才开放本地地图操作；协议已收04与本地资源已就绪分别检查。原1.13c的双端定点依据见[资料来源](../../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。客户端地图资源耗时不包含在服务端准备计时内。
+
 客户端只补原版启动通知的等待处理：中性传送点收到0x0E/mode1后结束激活等待，下一次点击才能正常请求菜单；若多人先后点击引起随后0x63到达，只在同一交互代次接受该真实菜单。关闭、移动、换区等代次失效后不重新打开。两种服务端共用此处理，没有自研协议或自行解锁。
 
 物件入场和进入视野统一由publishObjects使用权威初始化后的模式指派；nativeAreaWarps仅指派warp，不再从AreaMetadata发模式0的第二份物件。这样城镇InitFn17／mode2会以真实51模式首次送达，野外中性WP及开门／箱子／神坛也使用同一物件状态出口。旧WP模式1→2的ENDANIM仍静默衔接，不能用额外默认点亮补包掩盖入场基线错误。

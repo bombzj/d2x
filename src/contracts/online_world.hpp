@@ -155,7 +155,7 @@ struct OnlineEquippedItem {
     bool autoAffix{};
 };
 struct OnlineMapEvent {
-    enum class Kind { RevealRoom, HideRoom, PlayerPosition, RemovePlayer };
+    enum class Kind { RevealRoom, HideRoom, PlayerPosition, RemovePlayer, LoadComplete };
     uint64_t sequence{};
     Kind kind{};
     uint8_t level{}; // Only room events have a level; position never guesses one.

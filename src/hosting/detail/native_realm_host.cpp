@@ -35,8 +35,11 @@ void NativeRealmHost::retire(PlayerBinding binding) {
     std::erase_if(games, [&](const auto &entry) { return entry.second.handle == binding.game; });
 }
 void NativeRealmHost::advance(double seconds) {
+    using Clock=std::chrono::steady_clock;
+    const auto started=performanceObserver?Clock::now():Clock::time_point{};
     // Exactly one advance per scheduler call, regardless of connected clients.
     host.advance(seconds);
+    const auto simulated=performanceObserver?Clock::now():Clock::time_point{};
     // Resource preparation never occupies the simulation scheduler. Consume
     // only the oldest request per game so completion timing cannot reorder IDs.
     for (auto &[game, areas] : terrain) {
@@ -84,15 +87,34 @@ void NativeRealmHost::advance(double seconds) {
             }
         }
     }
-    for (const auto &[game, areas] : terrain) { (void)areas; publishEvents(game); }
-    for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
-        try {
-            const auto view = host.read(*peer->binding);
-            peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishMissiles(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
-            peer->publishRoomRemovals();
-        } catch (const std::exception &error) {
-            peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
+    const auto prepared=performanceObserver?Clock::now():Clock::time_point{};
+    Clock::time_point eventsPublished;
+    {
+        struct MonsterPublicationScope {
+            const std::set<NativeRealmService *> &peers;
+            explicit MonsterPublicationScope(const std::set<NativeRealmService *> &values):peers(values) {
+                for(auto *peer:peers) {peer->monsterProjection.reset();peer->retainMonsterProjection=true;}
+            }
+            ~MonsterPublicationScope() {
+                for(auto *peer:peers) {peer->retainMonsterProjection=false;peer->monsterProjection.reset();}
+            }
+        } projections{peers};
+        for (const auto &[game, areas] : terrain) { (void)areas; publishEvents(game); }
+        eventsPublished=performanceObserver?Clock::now():Clock::time_point{};
+        for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
+            try {
+                const auto view = host.read(*peer->binding);
+                peer->publishAreas(view->actor.region); peer->publishGroundItems(); peer->publishPlayers(); peer->publishMonsters(); peer->publishMissiles(); peer->publishCorpses(); peer->publishObjects(); peer->publishNpcs(); peer->publishShop(); peer->publishPortals(); peer->publishItemSkills(); peer->publishMotion();
+                peer->publishRoomRemovals(); peer->publishLoadComplete();
+            } catch (const std::exception &error) {
+                peer->failure = error.what(); peer->counters.lastFailure = error.what(); ++peer->counters.failures; peer->failGame();
+            }
         }
+    }
+    if(performanceObserver) {
+        const auto now=Clock::now();
+        const auto ns=[](auto duration){return uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(duration).count());};
+        performanceObserver({ns(simulated-started),ns(prepared-simulated),ns(eventsPublished-prepared),ns(now-eventsPublished)});
     }
     // Drain published facts before retrying save/leave. Frozen party rewards
     // may require another authoritative step after their content installation.

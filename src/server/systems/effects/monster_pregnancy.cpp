@@ -1,6 +1,7 @@
 #include "system.hpp"
 #include "attribute_projection.hpp"
 #include "server/systems/monsters/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "gameplay/skills/curse_spec.hpp"
 #include <stdexcept>
 
@@ -26,9 +27,14 @@ DomainResult<> System::monsterPregnancy(EntityId source,EntityId target,int skil
     publishAuraUnits(publication);return {DomainStatus::Applied,std::monostate{}};
 }
 StepStatus System::finishNativeStateRemovals(uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
+    if(nativeStateRemovals_.empty()) return StepStatus::Complete;
+    // Preserve the operation-local snapshot across this drain, including its
+    // backpressure behavior. Empty drains must not project the whole world.
+    const auto projected=collision?std::function<uint16_t(RoomView,int32_t,int32_t)>{}:ports_.spatial.nativeCollisionSample();
+    const auto &sample=collision?collision:projected;
     while(!nativeStateRemovals_.empty()) {
         const auto &operation=nativeStateRemovals_.front();
-        const auto result=ports_.monsters.spawnRemovedStateChild(operation.unit,operation.skill,operation.rank,tick,collision);
+        const auto result=ports_.monsters.spawnRemovedStateChild(operation.unit,operation.skill,operation.rank,tick,sample);
         if(isDeferred(result.status) || result.status==DomainStatus::Conflict || result.status==DomainStatus::Stale) return StepStatus::Blocked;
         if(!result && result.status!=DomainStatus::InvalidActor && result.status!=DomainStatus::Unavailable)
             throw std::logic_error("Missing native state removal child program");

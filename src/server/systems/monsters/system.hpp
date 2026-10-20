@@ -343,7 +343,7 @@ class System {
         NativeBirthBatch &,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision);
     void publishBirthComponents(NativeBirthBatch &) noexcept;
     DomainResult<> compressRoom(RegionId,size_t,uint64_t tick);
-    StepStatus restoreRoom(RegionId,size_t,uint64_t tick,const std::function<uint16_t(RoomView,int32_t,int32_t)> &,bool sanctumCleared);
+    StepStatus restoreRoom(RegionId,size_t,uint64_t tick,bool sanctumCleared);
     const State &read() const { return state_; }
     const GameSettings &gameSettings() const noexcept {return ports_.settings;}
     ActorPublication prepareActorPublication(std::map<EntityId,Actor>,size_t allocatedIds,std::span<const EntityId> restored={},

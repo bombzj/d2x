@@ -6,6 +6,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -50,7 +51,10 @@ class RealmSession {
                        Endpoint realm, std::string name, uint16_t gamePort = 4000);
     // Native TCP/IP: the caller owns the local save lease. Only opaque original
     // bytes enter networking; complete returned saves go back to that owner.
-    void connect_tcpip(Endpoint game, Bytes characterSave);
+    // An explicit local identity permits windowless callers to omit the local
+    // MCP character picker. Caller validates its save header; server validates
+    // the complete uploaded character. Existing picker callers omit it.
+    void connect_tcpip(Endpoint game, Bytes characterSave, std::optional<OnlineCharacter> localIdentity = {});
     std::vector<Bytes> take_tcpip_saves();
     ~RealmSession();
     RealmSession(const RealmSession &) = delete;

@@ -51,7 +51,14 @@ void NativeRealmService::publishMonsters() {
     for(const auto &[id,packet]:peer.pets) if(!pets.contains(id)) {auto removal=packet;removal[1]=0;packets.push_back(std::move(removal));}
     peer.pets=std::move(pets);
     peer.petVitals=std::move(petVitals);
-    for (const auto &monster : host.visibleMonsters(*binding)) {
+    std::vector<MonsterSnapshot> transient;
+    const std::vector<MonsterSnapshot> *monsters=&transient;
+    if(retainMonsterProjection) {
+        if(!monsterProjection || monsterProjection->recipient!=recipient)
+            monsterProjection=MonsterProjection{recipient,host.visibleMonsters(*binding)};
+        monsters=&monsterProjection->monsters;
+    } else transient=host.visibleMonsters(*binding);
+    for (const auto &monster : *monsters) {
         visible.insert(monster.id);
         const auto origin = shared.terrain.at(binding->game).at(monster.area).origin;
         auto [entry, fresh] = peer.monsters.try_emplace(monster.id);
@@ -134,13 +141,17 @@ void NativeRealmService::publishMonsters() {
         // their animations, including when only the UMod life flag changes.
         // A newly interested observer still needs the current reaction mode.
         if(!fresh && (monster.mode==3 || monster.mode==6)) continue;
-        auto projected=monster;
-        if(projected.movementTarget) {
-            const auto target=*projected.movementTarget;
-            const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):peer.monsters.contains(target.id);
-            if(!known) projected.movementTarget.reset();
-        }
-        auto motion = nativeMonsterMotion(projected, origin);
+        auto motion = [&] {
+            if(monster.movementTarget) {
+                const auto target=*monster.movementTarget;
+                const bool known=target.type==0?(recipient && recipient->actor.id==target.id) || std::any_of(peer.visible.begin(),peer.visible.end(),[&](const auto &p){return p.second.actor==target.id;}):peer.monsters.contains(target.id);
+                if(!known) {
+                    auto projected=monster;projected.movementTarget.reset();
+                    return nativeMonsterMotion(projected, origin);
+                }
+            }
+            return nativeMonsterMotion(monster, origin);
+        }();
         if (motion.empty()) entry->second.motion.clear();
         else if (fresh || motion != entry->second.motion) { packets.push_back(motion); entry->second.motion = std::move(motion); }
     }

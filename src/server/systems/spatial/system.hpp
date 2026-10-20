@@ -26,7 +26,9 @@ class System {
     const Ports ports_;
   struct Entry { UnitRef unit; Vec position; };
   struct Region { std::map<int,std::map<int,std::map<EntityId,Entry>>> cells; int maximumSize{}; };
-  struct Location { RegionId area; int x{}, y{}; uint64_t generation{}; };
+  // std::map keeps the bucket entry stable until this location is erased or
+  // moved. This pointer never escapes the derived index.
+  struct Location { RegionId area; int x{}, y{}; uint64_t generation{}; Entry *entry{}; };
   std::map<RegionId,Region> regions_;
   std::map<EntityId,Location> locations_;
   void erase(EntityId, const Location &);
@@ -34,6 +36,8 @@ class System {
       std::optional<std::span<const EntityId>>,EntityId,EntityId) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
+    System(const System &) = delete;
+    System &operator=(const System &) = delete;
     const State &read() const { return state_; }
     DomainResult<std::vector<UnitRef>> query(const Query &) const;
     int maximumSize(RegionId) const;

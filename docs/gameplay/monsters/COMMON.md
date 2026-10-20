@@ -43,6 +43,8 @@ PATH_SetStepNum保存steps−1，PathMisc.sub_6FD5DB70以D2Common_10399单位距
 
 server/ai.shootableTarget独立提供AiUtil回调6目标／距离：近房间、FullUnitSize距离≤48、可伤害资格和原missile barrier视线，Threat≤1另选。各家族只在原射击分支使用，不能覆盖主目标、接战判断、元素偏好及坐标技能落点；开始／释放仍复验来源、目标、区域、技能资格。完整强制目标／Vision缓存尚未实现。
 
+`server/systems/ai/target_query`的普通节点查询在本次只读调用内一次收集宠物、游荡及特殊目标名册，分别保持D2MOO `AI/AiUtil.cpp`的玩家0–7头节点、召唤物逆注册顺序与特殊链顺序；玩家头的区域／距离剪枝及严格距离比较不变。不缓存跨AI回调的资格或结果；仅迷乱需要修改临时阵营时复制Actor，普通查询直接读取来源，迷乱随机借用与发布仍在原位置。Boss的评分回调保留独立遍历，不把任意回调视为纯函数。
+
 ## 状态所有权与公共计算
 
 gameplay/monsters/decision提供动作纯值，melee／skirmish／ranged／shaman／special按族求值；server/ai/family_actions持目标、等待、标记和决策随机，只提交窄请求。monsters拥有实体、路线、状态、复活和巢出生；skills拥有动作／释放队列；missiles拥有EnemyProjectile快照和接触计划；combat／effects执行六通道、冷毒／资源及地面状态；death／loot／quests独立结算。复活和巢生单位不再次给XP／TC，巢子保留真实身份。

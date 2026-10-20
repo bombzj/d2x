@@ -14,6 +14,14 @@
 #include <iterator>
 #include <limits>
 namespace d2x::server::population {
+bool System::roomReady(RegionId region,size_t index) const {
+    const auto *area=ports_.areas.find(region);
+    if(!area || index>=area->rooms.size() || !area->rooms[index].loaded || !area->rooms[index].creationOrder) return false;
+    const auto found=state_.areas.find(region);
+    if(found==state_.areas.end() || found->second.generation!=area->generation) return false;
+    const auto ready=found->second.readyRoomCreations.find(index);
+    return ready!=found->second.readyRoomCreations.end() && ready->second==area->rooms[index].creationOrder;
+}
 Coverage System::coverage(RegionId region,std::optional<Neighborhood> neighborhood) const {
     const auto *area=ports_.areas.find(region);
     if(!area) return {1,0};
@@ -634,7 +642,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
     }
     for (const auto &[region,roomIndex] : loaded) {
         const auto &area=ports_.areas.at(region);
-        const auto monsters=ports_.monsters.restoreRoom(region,roomIndex,tick.tick,ports_.spatial.nativeCollisionSample(),ports_.quests.read().actFour.sanctumCleared);
+        const auto monsters=ports_.monsters.restoreRoom(region,roomIndex,tick.tick,ports_.quests.read().actFour.sanctumCleared);
         if(monsters!=StepStatus::Complete) return monsters;
         const auto restored=ports_.objects.restoreRoom(region,roomIndex,tick.tick);
         if(restored!=StepStatus::Complete) return restored;
@@ -722,6 +730,9 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             }
             ++stage;
         }
+        // A retained density stage is not enough after room retirement. Only
+        // this active-room creation has completed both restore and population.
+        population.readyRoomCreations.insert_or_assign(roomIndex,area.rooms.at(roomIndex).creationOrder);
     }
     state_.roomEpochs=epochs;
     return StepStatus::Complete;

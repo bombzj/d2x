@@ -79,6 +79,14 @@ std::vector<server::RoomView> GameHost::visibleRooms(PlayerBinding binding) cons
     const auto *slot = find(binding.game);
     return slot ? slot->game->visibleRooms(binding.player) : std::vector<server::RoomView>{};
 }
+bool GameHost::clientLoadReady(PlayerBinding binding) const {
+    const auto *slot=find(binding.game);
+    return slot && slot->game->clientLoadReady(binding.player);
+}
+std::optional<uint32_t> GameHost::objectSeed(GameHandle handle) const {
+    const auto *slot=find(handle);
+    return slot?std::optional{slot->game->objectSeed()}:std::nullopt;
+}
 bool GameHost::visiblePoint(PlayerBinding binding, RegionId area, Vec point) const {
     const auto *slot = find(binding.game);
     return slot && slot->game->visiblePoint(binding.player, area, point);
@@ -106,6 +114,11 @@ std::optional<server::AreaView> GameHost::area(GameHandle handle, RegionId id) c
     if (!area) return {};
     return server::AreaView{area->definition, area->generation, {}, 0};
 }
+const server::AreaMetadata *GameHost::areaMetadata(GameHandle handle, RegionId id) const {
+    const auto *slot=find(handle);
+    const auto *area=slot?slot->game->area(id):nullptr;
+    return area?&area->definition:nullptr;
+}
 std::optional<server::GameSettings> GameHost::settings(GameHandle handle) const {
     const auto *slot = find(handle); return slot ? std::optional{slot->game->settings()} : std::nullopt;
 }
@@ -132,6 +145,15 @@ bool GameHost::pause(GameHandle handle, bool paused) {
     }
     return true;
 }
+void GameHost::advanceStep(size_t index) {
+    auto &slot=slots_[index];
+    if(!stepObserver_) {slot.game->step();return;}
+    const auto before=slot.game->tick();
+    const auto started=std::chrono::steady_clock::now();
+    slot.game->step();
+    const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count();
+    stepObserver_({{index,slot.generation},before,slot.game->tick(),uint64_t(elapsed),slot.game->stageMetrics()});
+}
 void GameHost::advance(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0) return;
     for (size_t index = 0; index < slots_.size(); ++index) {
@@ -141,7 +163,7 @@ void GameHost::advance(double seconds) {
             if(!slot.debugPaused.value_or(slot.paused)) slot.fixedSteps->cancelled=true;
             else {
                 const auto before=slot.game->tick();
-                slot.game->step();
+                advanceStep(index);
                 slot.fixedSteps->blocked=slot.game->tick()==before;
                 if(!slot.fixedSteps->blocked) ++slot.fixedSteps->completed;
                 slot.accumulator=0;publish(index);
@@ -155,7 +177,7 @@ void GameHost::advance(double seconds) {
         bool changed = false;
         const auto started=std::chrono::steady_clock::now();
         for (int steps = 0; slot.accumulator >= .04 && steps < 8; ++steps) {
-            const auto before=slot.game->tick();slot.game->step();
+            const auto before=slot.game->tick();advanceStep(index);
             changed = true;
             // Backpressure retries the same native frame after publication.
             // Neither retries nor wall-clock budgets discard logical frames.

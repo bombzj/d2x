@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
+#include <optional>
 #include <rlgl.h>
 namespace d2x {
 namespace {
@@ -195,9 +196,11 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     auto &palette = prepareWorldLighting(scene, items);
     auto paint = [&](auto &entries) {
         std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.order < b.order; });
+        std::optional<PaletteBlendView::TerrainBatch> terrainBatch;
         for (const auto &entry : entries) {
             if (!entry.item) {
                 if (entry.tint.a == 0) continue;
+                if(!terrainBatch) terrainBatch.emplace(palette);
                 TileLightSamples samples;
                 if (entry.lightDirection == -2) { samples.values[0] = WHITE; samples.count = 1; }
                 else if (entry.lightDirection >= 0)
@@ -211,6 +214,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 else palette.drawLit(entry.image, entry.at, {samples.values.data(),samples.count}, entry.tint);
                 continue;
             }
+            terrainBatch.reset();
             const auto &item = *entry.item;
             const auto light = lighting_->sample(item.position);
             const auto alert = std::find_if(scene.alerts.begin(), scene.alerts.end(),

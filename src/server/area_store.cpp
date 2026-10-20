@@ -392,8 +392,14 @@ std::optional<RoomView> AreaStore::roomAtPosition(RegionId source,Vec observer,i
     // DUNGEON_GetRoomAtPosition checks the current room, then its authored
     // adjacent-room array; it never searches every room in the act.
     const RoomView current{source,(int(definition.origin.x)+origin->x)/5,(int(definition.origin.y)+origin->y)/5};
-    if(contains(current)) return current;
-    for(const auto view:definition.roomNear.at(size_t(origin-definition.activation.rooms().data())))
+    const auto index=size_t(origin-definition.activation.rooms().data());
+    const int left=int(definition.origin.x)+origin->x,top=int(definition.origin.y)+origin->y;
+    // The current RoomBounds is already resolved by RoomLayout's cell index.
+    // D2MOO DungeonTestRoomGame uses this same half-open bounds test directly;
+    // do not rediscover its anchor with a linear scan for every footprint cell.
+    if(!area->rooms.empty() && area->rooms.at(index).loaded &&
+       x>=left && x<left+origin->width && y>=top && y<top+origin->height) return current;
+    for(const auto view:definition.roomNear.at(index))
         if(contains(view)) return view;
     return {};
 }

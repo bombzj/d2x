@@ -6,6 +6,7 @@
 #include "server/systems/skills/system.hpp"
 #include "server/systems/objects/system.hpp"
 #include "server/systems/loot/system.hpp"
+#include "server/systems/population/system.hpp"
 #include "world/native_room_activation.hpp"
 #include "world/room_terrain.hpp"
 #include <algorithm>
@@ -30,6 +31,7 @@ struct System::RoomRuntime {
         std::unique_ptr<RoomTerrainSession> terrain;
         std::unique_ptr<NativeRoomActivation> activation;
         std::optional<uint64_t> advancedTick;
+        bool terrainDirty{true};
     };
     System &owner;
     std::vector<Room> rooms;
@@ -63,6 +65,7 @@ struct System::RoomRuntime {
     void release(size_t id) {
         const auto &room = rooms.at(id);
         terrain(id).release(room.key);
+        acts.at(size_t(room.act)).terrainDirty = true;
         if (room.index==SIZE_MAX) return;
         cells(room, [](Grid &grid, size_t cell) {
             grid.fullTerrainCollision[cell] = 0xffff;
@@ -81,6 +84,7 @@ struct System::RoomRuntime {
     void create(size_t id) {
         auto &room = rooms.at(id);
         terrain(id).create(room.key);
+        acts.at(size_t(room.act)).terrainDirty = true;
         if(owner.ports_.areas.roomCreationOrder_==UINT64_MAX) throw std::overflow_error("Native room creation order exhausted");
         room.creationOrder=++owner.ports_.areas.roomCreationOrder_;
     }
@@ -120,6 +124,7 @@ struct System::RoomRuntime {
             auto &act=acts.at(size_t(prepared->act()));
             if (!act.terrain) act.terrain=prepared->instantiate();
             else act.terrain->include(*prepared);
+            act.terrainDirty = true;
             for (const auto &link : prepared->rooms()) if (!anchors.contains({prepared->act(),link.id})) {
                 anchors.emplace(std::pair{prepared->act(),link.id},rooms.size());
                 Room room;room.key=link.id;room.area=RegionId(link.id.level);
@@ -177,7 +182,11 @@ struct System::RoomRuntime {
             if (room.index==SIZE_MAX) continue;
             auto &state = area(room.area).rooms.at(room.index);
             state.references = status.references; state.status = status.status;
-            if (status.active) {
+            // Reference/status publication keeps its original timing. Static
+            // terrain changes only on lifecycle/include or explicit tomb edits.
+            // Refresh the whole act after those operations: shared boundary
+            // tiles and active-near lists can also change in existing rooms.
+            if (status.active && (act.terrainDirty || !state.loaded)) {
                 std::vector<std::pair<int,int>> opened;
                 if (owner.openedTombs_.contains(room.area)) {
                     const auto &definition=area(room.area).definition;
@@ -192,6 +201,7 @@ struct System::RoomRuntime {
                 project(id,*sample);
             }
         }
+        for (auto &act : acts) act.terrainDirty = false;
     }
     void change(std::optional<size_t> previous,std::optional<size_t> next) {
         if (previous && next && rooms.at(*previous).act==rooms.at(*next).act)
@@ -266,7 +276,11 @@ struct System::RoomRuntime {
 System::System(Ports ports) : ports_(ports), rooms_(std::make_unique<RoomRuntime>(*this)) {}
 System::~System() = default;
 void System::invalidateRooms() { rooms_->dirty = true; }
-void System::refreshRoomTerrain() {rooms_->rebuild();rooms_->publish();}
+void System::refreshRoomTerrain() {
+    rooms_->rebuild();
+    for (auto &act : rooms_->acts) act.terrainDirty = true;
+    rooms_->publish();
+}
 void System::activate(RegionId region, Vec point) {
     activateAct(region);
     rooms_->rebuild();
@@ -329,6 +343,25 @@ void System::updateRooms(TickContext tick) {
         for (const auto near : room.near)
             if (!ports_.areas.find(rooms_->rooms.at(near).area)) request(rooms_->rooms.at(near).area);
     }
+}
+bool System::clientRoomsReady(PlayerId id) const {
+    if(rooms_->dirty) return false;
+    const auto *player=ports_.players.find(id);
+    if(!player || !player->entered) return false;
+    const auto current=rooms_->locate(player->area,player->position+Vec{.5f,.5f});
+    const auto registered=rooms_->clients.find(id);
+    if(!current || registered==rooms_->clients.end() || registered->second!=*current) return false;
+    const auto &near=rooms_->rooms.at(*current).near;
+    if(near.empty()) return false;
+    // D2Common_10073 requires the complete active near list, not just the
+    // currently installed/visible subset and not an entire generated level.
+    for(const auto adjacent:near) {
+        const auto &room=rooms_->rooms.at(adjacent);
+        const auto *area=ports_.areas.find(room.area);
+        if(!area || room.index==SIZE_MAX || room.index>=area->rooms.size() || !area->rooms[room.index].loaded) return false;
+        if(!ports_.population.roomReady(room.area,room.index)) return false;
+    }
+    return true;
 }
 bool System::visible(PlayerId id, RegionId region, Vec point) const {
     const auto *player = ports_.players.find(id);

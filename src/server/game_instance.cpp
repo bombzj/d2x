@@ -13,6 +13,7 @@ GameInstance::GameInstance(GameDefinition definition)
         if(!rules_.monsterRegions) throw std::runtime_error("Missing native monster region rules");
         systems_.population.initializeRegions(*rules_.monsterRegions);
         systems_.objects.initializeControl();
+        objectSeed_=uint32_t(systems_.objects.read().controlRandom.value());
         systems_.npc.initializeControl(random_);
         systems_.quests.initializeControl();
     systems_.world.initialize();
@@ -25,6 +26,9 @@ GameInstance::GameInstance(GameDefinition definition)
         throw std::runtime_error("Unable to initialize admitted item auras");
     systems_.effects.registerPlayer(players_.find({1})->actor,tick_);
     systems_.quests.initialize(players_.find({1})->persistent.player);
+}
+bool GameInstance::clientLoadReady(PlayerId id) const {
+    return systems_.world.clientRoomsReady(id);
 }
 PlayerId GameInstance::admit(GameDefinition definition) {
     if (players_.all().size() >= 8 || nextPlayer_ == UINT64_MAX)

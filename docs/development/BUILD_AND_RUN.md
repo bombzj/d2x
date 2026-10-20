@@ -67,6 +67,40 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 
+## 无窗口协议客户端
+
+现有`d2x.exe --headless <profile.json> --debug-pipe <独立名字>`可运行无窗口房主或一组原生TCP/IP客端，不初始化OpenGL、音频、UI、动画或客户端地图。`mode=host`读取`--mpq`，通过原内存MCP选角／建八人房，包含一个房主角色；`mode=clients`在一个进程中运行1–8个独立RealmSession，不读取MPQ。一个房主加七个客端即八个真实玩家，不增加房间容量或修改玩法规则。该显式诊断入口不替代普通客户端的地图／技能资格校验。
+
+配置路径相对profile目录；`output`必须是尚不存在的新目录，输入D2S只读，角色名必须不同。输入副本和原生退局返回字节保存在`output/saves`，不覆盖输入；客端核对返回D2S头部校验和／姓名／职业，完整角色由宿主现有解码器验证。房主沿原CharacterStore保存。先退出客端，再退出房主；等待正常结束，超时报告失败并保留隔离副本。
+
+```json
+{
+  "version": 1, "mode": "host", "address": "127.0.0.1", "port": 4000,
+  "output": "run-host", "durationSeconds": 60, "manualStart": true, "pollMs": 10,
+  "clients": [{
+    "save": "fixtures/SorceressA.d2s", "area": 3, "anchor": [5688, 5148],
+    "cycle": [
+      {"kind": "wait", "durationMs": 10000},
+      {"kind": "cast", "skill": 59, "offset": [5, 0], "durationMs": 20000, "intervalMs": 2000},
+      {"kind": "move", "offset": [8, 0], "durationMs": 3000, "intervalMs": 500},
+      {"kind": "move", "offset": [0, 0], "durationMs": 3000, "intervalMs": 500}
+    ]
+  }]
+}
+```
+
+客端配置使用`mode=clients`，相同地址／端口、另一个新`output`，并在`clients`内列出其余角色。每人可指定不同cycle；角色必须实际学会技能，示例59为当前原表暴风雪，仍须按使用的MPQ确认。`cast`以收到的当前位置加offset为目标；`move`以固定anchor加offset为目标，省略anchor则在开始动作时记录一次收到的位置；也可用`point:[全局x,y]`指定绝对目标。目标各轴距收到的位置不得超过50格。`area`只等待该level的原房间分配，原包不含房间尺寸，不能由此证明本人当前区域或路径可达；坐标须先从同种子真实地图核实。无地图客户端不生成路径或预测位置；障碍、施法间隔、法力、伤害和目标资格由原服务端决定。`wait`不发输入，移动和施法按cycle轮换；轮询卡顿不补发积压动作。
+
+默认等待`headless-start`，可先沿房主管道既有`travel`等管理命令准备区域，再向两进程发送`headless-start -Arguments @{delayMs=1000}`。需要同步时，先用`[DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()+3000`得到同一个未来时刻，向两进程传`@{atUnixMs=$startTime}`；不同时传delayMs。`manualStart=false`则本进程所有客户端入局两秒后开始。启动清零输入／位置／技能事件测量计数；duration从开始时刻计，不含选角／准备，网络字节与保存计数仍覆盖整次连接。`pollMs`为5–100ms，比较时须相同。房主pump推进内容、权威25Hz时钟和原包发布，轮询不是玩法tick；不同泵送频率不能直接比较。管理补资源等准备动作必须另记，不能当作正常战斗数据。
+
+`headless-status`返回各角色就绪、法力／生命、已提交施法／移动、实际收到的位置变化、技能事件及错误；提交数不等于服务端执行数，原服通常不回显本人全部技能。`samples.jsonl`每秒记录状态及房主pump窗口mean／p50／p95／p99／max，`summary.json`记录退出结果。pump计时不含该轮客户端快照、JSON和磁盘输出，但包含宿主准备、权威步进及发布；进程CPU仍包含一个房主会话，不等于纯内核CPU。比较时另记实际Actor／飞弹／事件、tick推进和执行结果，区分空转、实际施法和法力耗尽。`quit`沿原保存退局，不提供绘图／UI命令。
+
+持续施法需要足够法力。房主可显式配置`refillSeconds=1..3600`，从开始时刻起按间隔对已入局角色调用既有`RestoreResources`管理事务，恢复原最大生命／法力／耐力；默认0关闭，客端配置非零明确拒绝。它不取消服务端施法冷却或资源扣除规则，但会影响生存和资源轨迹，仅用于声明过的管理压测条件。`resourceRefill`单独记录应用／失败次数与耗时；耗时不计入hostPump，计入整进程CPU，比较时须保持相同间隔。
+
+`serialAdmission=true`使客端按配置顺序逐一等待前一个会话实际入局，再连接下一个，用于稳定人物准入顺序。房主的`resumeOnStart=true`在共同开始时刻调用既有恢复事务，便于暂停准备后同步启动；默认均关闭。周期输入按共同开始时刻及动作间隔对齐，错过的间隔不补发；`missedInputIntervals`与`maximumInputDelayMs`记录本地输入调度偏差。
+
+房主显式配置`detailedTiming=true`后，额外写出`ticks.tsv`和`host-phases.tsv`，每秒在pump之外刷新缓冲。前者记录每次`GameInstance::step`的开始／结束帧、完整调用耗时及领域纳秒计时；`before==after`是未完成重试，同帧的完整调用耗时应相加，领域耗时只取完成时的累计值，不能再累加重试行。领域按事件所属入口归类，飞弹事件中的同步伤害也计入missiles，不能把combat列当作全部伤害成本。后者拆分`GameHost::advance`、主线程内容交接、可靠事件发布和常规状态发布；异步区域准备worker、外层输入处理与日志开销不在这些分段内。纳秒值是经过时间而非线程CPU；进程CPU须另采样，并同时检查完成tick间隔，避免把低CPU的等待误认为流畅。
+
 双客户端从两个终端分别运行 `dist/current/Play.cmd -PipeName d2x-player-one` 和 `dist/current/Play.cmd -PipeName d2x-player-two`，在各自窗口登录不同账号并选择不同角色。第一位创建房间，第二位点击 Join、选择真实列表项查看详情后加入，或输入名称／密码直接加入。参考服可能不在列表展示密码房间或资格不符房间；原服决定加入结果。调试管道名必须不同，账号记忆仍按配置路径共享；第二个窗口修改记忆不会替换第一个窗口已登录的会话。
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](../modules/SAVES.md)，旧档不迁移。原资源只维护项目 `assets/mpq2` 一份，EXE 通过 `--mpq` 读取，不为本地打包抽取或复制 MPQ，也不生成精简资源包。原 MPQ 文件清单见 [MPQ 资源](../resources/MPQ.md)。

@@ -119,9 +119,28 @@ void RemoteUiClients::Impl::update(const OnlineSceneView &binding, std::optional
         if (areaGeneration!=session.read().world.areaGeneration) {
             areaGeneration=session.read().world.areaGeneration; transactions.clear(); waiting.reset(); waitingContext.reset();
         }
-        ++revision; projectInteractions(); projectCharacter(); projectInventory(); projectInteractions();
-        projectHirelingList();
-        projectHireling();
+        const auto &online=session.read();
+        const ProjectionKey sources{online.revision,items.read().revision,generation,areaGeneration,
+            binding.area,binding.palette,binding.origin,binding.town,run,
+            binding.npcConversation?std::optional{std::pair{binding.npcConversation->source,binding.npcConversation->revision}}:std::nullopt};
+        if(!projectedSources || *projectedSources!=sources) {
+            ++revision;
+            projectCharacter(); projectMap(); projectInventory(); projectInteractions();
+            projectHirelingList(); projectHireling();
+            projectedSources=sources;
+        } else {
+            // Prediction and timeouts still advance every presentation frame.
+            // Heavy character/item/NPC projections depend on replica versions,
+            // never on the camera's interpolated position or wall-clock cadence.
+            ++revision; projectMap();
+            const auto &w=online.world;
+            const std::optional<GroundLocation> drop=w.playerPosition?
+                std::optional{GroundLocation{mapView.region,mapView.observer}}:std::nullopt;
+            if(inventoryView.dropLocation!=drop) {
+                inventoryView.dropLocation=drop;inventoryView.revision=revision;
+            }
+            projectItemFeedback(inventoryView);
+        }
         if (characterView.dead) { transactions.clear(); waiting.reset(); waitingContext.reset(); }
         else pump();
     }

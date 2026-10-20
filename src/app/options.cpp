@@ -20,6 +20,7 @@ AppOptions parseOptions(int argc, char **argv) {
             return text;
         };
         if (arg == "--mpq") { options.mpq = value(); explicitMpq = true; }
+        else if (arg == "--headless") options.headlessProfile = value();
         else if (arg == "--online-config") options.onlineConfig = value();
         else if (arg == "--host-lan") options.hostLan = value();
         else if (arg == "--lan") options.lan = value();
@@ -55,6 +56,12 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
+    if (!options.headlessProfile.empty() && (!options.load.empty() || !options.save.empty() ||
+        !options.characterClass.empty() || !options.hostLan.empty() || !options.lan.empty() ||
+        !options.onlinePlay.empty() || !options.onlineCharacter.empty() || !options.onlineCreateGame.empty() ||
+        !options.onlineJoinGame.empty() || !options.screenshot.empty() || !options.pack.empty() ||
+        options.frameLimit || !options.gamePacketLog.empty() || !options.hostPacketLog.empty() || !options.startupProfile.empty()))
+        throw std::runtime_error("--headless uses its own profile; do not combine with graphical startup options");
     if (!options.hostLan.empty() && !options.lan.empty()) throw std::runtime_error("Choose either --host-lan or --lan");
     if ((!options.lan.empty() || !options.hostLan.empty()) && (!options.load.empty() || !options.save.empty() || !options.characterClass.empty()))
         throw std::runtime_error("TCP/IP selects local characters from --host-saves; do not combine with save startup");

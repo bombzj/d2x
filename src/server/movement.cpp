@@ -212,9 +212,9 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
         const auto previousRoute = player.route;
         const auto previousStep = player.pathStep;
         const auto movementGrid=ports.spatial.navigationGrid(player.area,player.actor);
-        const auto pathGrid=ports.spatial.navigationGrid(player.area,player.actor,player.movementTarget?player.movementTarget->id:EntityId{});
+        const auto pathGrid=player.movementTarget?std::optional{ports.spatial.navigationGrid(player.area,player.actor,player.movementTarget->id)}:std::nullopt;
         const auto *shape=player.rules.skills?skills::activeShape(*player.rules.skills,ports.effects.unitStates(player.actor,tick.tick)):nullptr;
-        advanceMovement(player, area, TickContext::seconds,movementGrid,pathGrid,shape);
+        advanceMovement(player, area, TickContext::seconds,movementGrid,pathGrid?*pathGrid:movementGrid,shape);
         const ActorContext actor{player.player, player.actor, player.area, area.generation, player.locomotionSequence, tick.tick};
         if (!ports.travel.walked(actor)) {
             player.position = from; player.route = previousRoute; player.pathStep = previousStep; player.moving = false;

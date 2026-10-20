@@ -344,6 +344,12 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
     Reader r(p.body);
     switch (p.id) {
+    case 0x04:
+        r.finish();
+        // Keep 04 in the ordered map stream. Its receipt does not imply that
+        // the MPQ-backed consumer has processed the preceding 07/15 yet.
+        mapEvent(w,OnlineMapEvent::Kind::LoadComplete);
+        break;
     case 0x07:
     case 0x08: {
         const auto anchor = point(r);

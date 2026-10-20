@@ -36,26 +36,35 @@ NativeMissileMotionResult System::moveMissile(Missile &missile) const {
     return result;
 }
 std::vector<std::pair<float,EntityId>> System::collisionContacts(const Missile &missile,Vec next) const {
-    // Barrier-only mode relies on PATH's flags and never enters unit search.
-    if(missile.nativeDamage && missile.nativeDamage->rule.collisionMode==6) return {};
+    // MISSMODE_HandleMissileCollision checks mode, activation and saved PATH
+    // steps before finding units. These gates and candidate filters are read-only.
+    const auto steps=missile.motion.steps();
+    const auto mask=missile.nativeDamage?nativeMissileContactMask(missile.nativeDamage->rule.collisionMode):uint16_t{};
+    if(steps.empty() || (missile.nativeDamage && (missile.nativeDamage->rule.collisionMode==6 ||
+        !mask || missile.currentFrame()>missile.nativeActivateFrame))) return {};
     const auto roomUnits=nearbyRoomUnits(missile,next);
     std::vector<EntityId> candidates;
-    for(const auto id:roomUnits) if(unitPosition(missile,id) && canCollide(missile,id)) candidates.push_back(id);
+    bool candidatesPrepared{};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
     const auto *area=ports_.areas.find(missile.area);if(!area) return {};
     const auto global=next+area->definition.origin;
     const auto room=ports_.areas.roomAtPosition(missile.area,missile.position,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
     if(!room) return {};
-    const auto mask=missile.nativeDamage?nativeMissileContactMask(missile.nativeDamage->rule.collisionMode):uint16_t{};
     const auto sample=mask?ports_.spatial.nativeCollisionSample(mask,std::span<const EntityId>{roomUnits}):AreaStore::CollisionSample{};
     size_t step{};
-    for(const auto cell:missile.motion.steps()) {
+    for(const auto cell:steps) {
         uint16_t collided{};
         if(missile.nativeDamage) {
-            if(!mask || missile.currentFrame()>missile.nativeActivateFrame) return {};
             collided=ports_.areas.nativeCollisionMask(*room,int32_t(std::floor(cell.x+area->definition.origin.x)),
                 int32_t(std::floor(cell.y+area->definition.origin.y)),missile.collision.size,mask,sample);
             if(!collided) {++step;continue;}
+        }
+        // As in the native mask gate, empty path cells need no unit predicates.
+        // Keep the original room-chain order and sample only within this call.
+        if(!candidatesPrepared) {
+            candidates.reserve(roomUnits.size());
+            for(const auto id:roomUnits) if(canCollide(missile,id) && unitPosition(missile,id)) candidates.push_back(id);
+            candidatesPrepared=true;
         }
         for(const auto id:candidates) {
             const auto target=participants.find(id);const auto position=unitPosition(missile,id);

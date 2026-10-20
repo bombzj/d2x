@@ -98,7 +98,7 @@ DomainResult<> System::dropGold(const ActorContext &actor, unsigned amount) {
         if (!position) return {DomainStatus::Conflict, {}};
         if(!ports_.items.identityCapacity(1)) return {DomainStatus::Capacity,{}};
         ItemInstance item; item.id = ports_.items.reserveIdentity(); item.definition = definition->code;
-        item.quantity = std::min(remaining, definition->maxStack); item.location = GroundLocation{actor.area, *position};
+        item.quantity = std::min(remaining, definition->maxStack); item.location = *position;
         item.nativeSeed = uint32_t(item.id.value);
         EquipmentValues values; values.levels.resize(player.rules.character->experience.size());
         drops.emplace_back(GroundDropFact{item});
@@ -157,7 +157,7 @@ DomainResult<> System::ground(const ActorContext &actor, const GroundTransfer &r
         if (source.location != ItemLocation{cursor}) return {DomainStatus::InvalidRequest, {}};
         const auto position = ports_.items.placement({player->area, player->position}, world.world);
         if (!position) return {DomainStatus::Conflict, {}};
-        auto dropped = source; ++dropped.revision; dropped.location = GroundLocation{player->area, *position};
+        auto dropped = source; ++dropped.revision; dropped.location = *position;
         world.world.items.emplace(source.id, std::move(dropped));
         world.equipment.items.insert_or_assign(source.id, equipment->items.at(source.id));
         world.equipment.includeSets(*equipment);
@@ -336,7 +336,7 @@ DomainResult<transactions::WorldEdit> prepareSpill(const PlayerState &player, co
     for (auto item : edit.spilled) {
         const auto position = items.placement({player.area, player.position}, world.world);
         if (!position || world.world.items.contains(item.id)) return {DomainStatus::Conflict, {}};
-        item.location = GroundLocation{player.area, *position};
+        item.location = *position;
         world.equipment.items.insert_or_assign(item.id, rules.items.at(item.id));
         world.world.items.emplace(item.id, std::move(item));
         rules.items.erase(item.id);

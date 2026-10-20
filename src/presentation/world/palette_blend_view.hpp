@@ -24,11 +24,26 @@ class PaletteBlendView {
     float lightZoom_ = 1;
     Color lightAmbient_{};
     bool fullBright_ = false;
+    mutable bool terrainBatch_{}, terrainShaderActive_{};
+    mutable int terrainSampleCount_{}, terrainIndexed_{};
+    mutable Vector2 terrainHighlight_{};
+    mutable std::array<std::array<float,4>,6> terrainSamples_{};
+    void finishTerrainLighting() const;
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
 
   public:
+    // Scope only consecutive terrain entries. End before units, unlit draws,
+    // background capture or any other consumer of the graphics state.
+    class TerrainBatch {
+        const PaletteBlendView &owner_;
+      public:
+        explicit TerrainBatch(const PaletteBlendView &);
+        ~TerrainBatch();
+        TerrainBatch(const TerrainBatch &) = delete;
+        TerrainBatch &operator=(const TerrainBatch &) = delete;
+    };
     explicit PaletteBlendView(Archives &archives, int act = 0);
     ~PaletteBlendView();
     PaletteBlendView(const PaletteBlendView &) = delete;

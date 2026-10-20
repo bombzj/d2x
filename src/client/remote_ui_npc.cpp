@@ -91,7 +91,7 @@ std::string RemoteUiClients::Impl::npcIdentity() const {
         for(size_t row=0;row<mon.rows().size();++row) if(mon.number(row,"hcIdx")==*unit->second.classId) return std::string(mon.value(row,"Id"));
         return {};
     }
-void RemoteUiClients::Impl::projectInteractions() {
+void RemoteUiClients::Impl::projectMap() {
         const auto &online=session.read(); const auto &w=online.world;
         mapView={}; mapView.revision=revision; mapView.actor=characterView.actor;
         mapView.travelRequested = w.waypointRequested.has_value();
@@ -101,6 +101,9 @@ void RemoteUiClients::Impl::projectInteractions() {
         if(scene && scene->origin && displayPosition)
             mapView.observer = *displayPosition - Vec{float(scene->origin->x), float(scene->origin->y)};
         if(scene) for(const auto &d:scene->waypoints) if(d.unlocked) mapView.waypointActs[d.act]=true;
+    }
+void RemoteUiClients::Impl::projectInteractions() {
+        const auto &online=session.read(); const auto &w=online.world;
         npcView={}; npcView.revision=revision; npcView.actor=characterView.actor;
         npcScene={}; npcScene.revision=revision;
         const auto &mon=data.tables.at("monstats"), &extra=data.tables.at("monstats2");

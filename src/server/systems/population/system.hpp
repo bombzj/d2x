@@ -38,7 +38,7 @@ struct Coverage {
     bool complete() const {return !pendingRooms && !deferred;}
 };
 struct Neighborhood {Vec center;float radius;};
-struct AreaPopulation { uint64_t generation{}; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::set<EntityId> admittedNpcs; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
+struct AreaPopulation { uint64_t generation{}; uint64_t validatedGeneration{}; std::map<size_t,uint8_t> roomStages; std::map<size_t,uint64_t> readyRoomCreations; std::set<EntityId> admittedNpcs; std::map<size_t,DensityRoom> density,presets; int processedRooms{},successfulRooms{},uniqueCount{}; std::set<EntityId> countedUniques; };
 struct QuestBirth {RegionId area;uint64_t generation{};std::string name;DensityRoom cursor;std::optional<Vec> position;};
 struct ObjectBirth {RegionId area;uint64_t generation{};EntityId source;Vec position;int definition{-1};DensityRoom cursor;bool elite{true};unsigned occurrence{};int retryAttempts{},finalRetryAttempts{},birthTicks{};};
 struct WanderRoom {
@@ -61,6 +61,7 @@ class System {
     void initializeRegions(const MonsterRegionRules &);
     const State &read() const { return state_; }
     Coverage coverage(RegionId,std::optional<Neighborhood> neighborhood={}) const;
+    bool roomReady(RegionId,size_t) const;
     DomainResult<> requestQuestBirth(RegionId,std::string_view,TickContext,std::optional<Vec> position={});
     DomainResult<> requestObjectBirth(RegionId,EntityId,Vec,TickContext,std::optional<int> definition={},unsigned occurrence=0,
       int retryAttempts=0,int finalRetryAttempts=0,int birthTicks=0);

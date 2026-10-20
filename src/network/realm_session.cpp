@@ -249,14 +249,17 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     p.snapshotDirty = true;
 }
 RealmSession::~RealmSession() = default;
-void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save) {
+void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
-    if (p.view.stage != OnlineStage::Lobby || !p.selected || !p.selected->characterClass)
+    if (localIdentity && (p.view.stage != OnlineStage::Idle || !character_name_valid(localIdentity->name) ||
+        !localIdentity->characterClass || *localIdentity->characterClass>6))
+        throw ProtocolError("Explicit TCP/IP identity requires an idle session and valid native character");
+    if (!localIdentity && (p.view.stage != OnlineStage::Lobby || !p.selected || !p.selected->characterClass))
         throw ProtocolError("TCP/IP needs a selected local character");
     if (!endpoint.port || save.empty() || save.size() >= tcpIpSaveLimit || !p.tcpIpSaves.empty())
         throw ProtocolError("Invalid TCP/IP endpoint or unconsumed character save");
-    auto selected = *p.selected;
+    auto selected = localIdentity ? std::move(*localIdentity) : *p.selected;
     p.shutdown(); p.directRealm.reset();
     p.selected = std::move(selected); p.view.selectedCharacter = p.selected->name;
     p.directTcpIp = true; p.tcpIpUpload = std::move(save);
