@@ -33,7 +33,7 @@ class GameHost {
     void publish(size_t slot);
     void advanceStep(size_t slot);
   public:
-    void observeSteps(std::function<void(const hosting::StepTiming &)> observer) { stepObserver_=std::move(observer); }
+    void observeSteps(std::function<void(const hosting::StepTiming &)> observer);
     PlayerBinding create(server::GameDefinition);
     bool destroy(GameHandle);
     PlayerBinding admit(GameHandle, server::GameDefinition);

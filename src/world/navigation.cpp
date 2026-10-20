@@ -103,6 +103,21 @@ void Grid::setObstacles(std::vector<Obstacle> next) {
     // controls a unit drawing flag; it never adds a collision footprint.
     for (auto &obstacle : next) obstacle.blocksLight = (obstacle.mask & 0x22) != 0;
     if (next == obstacles) return;
+    if(!nativeCollision.empty()) {
+        const auto changed=[](const auto &list,const Obstacle &value) {
+            return std::find(list.begin(),list.end(),value)==list.end();
+        };
+        const auto write=[&](const Obstacle &obstacle,bool occupied) {
+            for(int y=std::max(0,obstacle.y);y<std::min(height,obstacle.y+obstacle.height);++y)
+                for(int x=std::max(0,obstacle.x);x<std::min(width,obstacle.x+obstacle.width);++x) {
+                    auto &cell=nativeCollision[size_t(y)*width+x];const auto previous=cell;
+                    cell=occupied?uint16_t(cell|obstacle.mask):uint16_t(cell&~obstacle.mask);
+                    if(previous!=cell) ++nativeCollisionRevision;
+                }
+        };
+        for(const auto &old:obstacles) if(changed(next,old)) write(old,false);
+        for(const auto &value:next) if(changed(obstacles,value)) write(value,true);
+    }
     obstacles = std::move(next);
     ++obstacleRevision;
     std::fill(objectCollision.begin(), objectCollision.end(), 0);
@@ -193,10 +208,40 @@ Grid Grid::linkedNavigation(Vec &origin) const {
     origin = {float(left), float(top)};
     for (auto &source : sources) { source.offsetX += left; source.offsetY += top; }
     view.navigationSources = std::move(sources);
+    view.collisionQuery=collisionQuery;
     if(collisionSample) view.collisionSample=[sample=collisionSample,left,top](int x,int y,EntityId ignored) {
         return sample(x+left,y+top,ignored);
     };
     return view;
+}
+uint16_t Grid::nativeMovementMask(int x,int y,EntityId ignored) const {
+    const auto sample=[&](const Grid &grid,int column,int row) {
+        if(grid.nativeCollision.empty()) return grid.movementMask(column,row,ignored);
+        uint16_t value=grid.nativeCollision[size_t(row)*grid.width+column];
+        if(ignored) for(const auto &obstacle:grid.obstacles)
+            if(obstacle.id==ignored && column>=obstacle.x && row>=obstacle.y &&
+                column<obstacle.x+obstacle.width && row<obstacle.y+obstacle.height) value&=uint16_t(~obstacle.mask);
+        return value;
+    };
+    if(!navigationSources.empty()) {
+        for(const auto &source:navigationSources) {
+            const auto &grid=*source.grid;const int column=x+source.offsetX,row=y+source.offsetY;
+            if(column<0 || row<0 || column>=grid.width || row>=grid.height) continue;
+            if(!grid.fullTerrainCollision.empty() && grid.fullTerrainCollision[size_t(row)*grid.width+column]==0xffff) continue;
+            return sample(grid,column,row);
+        }
+        return 0xffff;
+    }
+    if(x>=0 && y>=0 && x<width && y<height &&
+        (fullTerrainCollision.empty() || fullTerrainCollision[size_t(y)*width+x]!=0xffff)) return sample(*this,x,y);
+    for(const auto &edge:neighbours) {
+        const int lateral=edge.side%2?y:x,normal=edge.side%2?x:y;
+        const bool outside=edge.side==1 || edge.side==2?normal<edge.plane:normal>=edge.plane;
+        if(!outside || lateral<edge.start || lateral>=edge.end) continue;
+        const int column=x+edge.offsetX,row=y+edge.offsetY;const auto &other=*edge.grid;
+        if(column>=0 && row>=0 && column<other.width && row<other.height) return sample(other,column,row);
+    }
+    return x>=0 && y>=0 && x<width && y<height?sample(*this,x,y):uint16_t(0xffff);
 }
 bool Grid::navigationContains(Vec point) const {
     if (!std::isfinite(point.x) || !std::isfinite(point.y)) return false;
@@ -228,6 +273,7 @@ bool Grid::movementClear(int x, int y, MovementCollisionRule rule, EntityId igno
         clear(x - 1, y + 1) && clear(x + 1, y + 1));
 }
 bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
         return view.segment(a - origin, b - origin, ignoredObject, rule);
@@ -237,12 +283,14 @@ bool Grid::segment(Vec a, Vec b, EntityId ignoredObject, MovementCollisionRule r
     }, rule.size <= 1);
 }
 bool Grid::nativeMovementSegment(Vec a, Vec b, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!walkable(a, rule) || !walkable(b, rule)) return false;
     const auto target = nativeMovementTarget(a, b, rule);
     return int(std::floor(target.x)) == int(std::floor(b.x)) &&
         int(std::floor(target.y)) == int(std::floor(b.y));
 }
 Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!walkable(a, rule) || !std::isfinite(b.x) || !std::isfinite(b.y) ||
         b.x < 0 || b.y < 0 || b.x >= width || b.y >= height) return a;
     int x = int(std::floor(a.x)), y = int(std::floor(a.y));
@@ -281,6 +329,7 @@ Vec Grid::nativeMovementTarget(Vec a, Vec b, MovementCollisionRule rule) const {
     return {float(endX) + .5f, float(endY) + .5f};
 }
 std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule rule, uint8_t targetType) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
         auto route = view.nativePlayerPath(from - origin, to - origin, rule, targetType);
@@ -294,6 +343,7 @@ std::deque<Vec> Grid::nativePlayerPath(Vec from, Vec to, MovementCollisionRule r
                   : std::deque<Vec>{};
 }
 std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t maxDistance, MovementCollisionRule rule, bool unitTarget, uint8_t targetTolerance) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
         auto route = view.nativeUnitPath(from - origin, to - origin, type, maxDistance, rule, unitTarget, targetTolerance);
@@ -361,6 +411,7 @@ std::deque<Vec> Grid::nativeUnitPath(Vec from, Vec to, uint8_t type, uint8_t max
     return toward;
 }
 std::deque<Vec> Grid::nativeMonsterCirclePath(Vec from,Vec target,int distance,int turn,MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     // D2MOO PathMisc sub_6FDAA720 / Path type 5 and 6 (MIT,
     // docs/licenses/D2MOO.txt): rotate native direction priorities by +/-2,
     // test each cell and stop on an obstructed or reversed direction.
@@ -395,6 +446,7 @@ std::deque<Vec> Grid::nativeMonsterCirclePath(Vec from,Vec target,int distance,i
     return route;
 }
 bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     // D2MOO COLLISION_CheckMaskWithSize: 0/1 point, 2 cross, 3 square.
     if (rule.size < 0 || rule.size > 3) return false;
     const auto clear = [&](int x, int y) {
@@ -412,6 +464,7 @@ bool Grid::missileSegment(Vec a, Vec b, MissileCollisionRule rule) const {
     }, false);
 }
 bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
         return view.collisionSegment(a - origin, b - origin, mask);
@@ -421,6 +474,7 @@ bool Grid::collisionSegment(Vec a, Vec b, uint16_t mask) const {
     }, false);
 }
 bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!neighbours.empty()) {
         Vec origin; const auto view = linkedNavigation(origin);
         return view.interactionSegment(a - origin, b - origin, targetSize, target);
@@ -468,6 +522,7 @@ bool Grid::interactionSegment(Vec a, Vec b, int targetSize, EntityId target) con
     return true;
 }
 bool Grid::lightSegment(Vec a, Vec b) const {
+    const CollisionQueryScope collisionScope{*this};
     auto delta = b - a;
     int steps = std::max(1, int(delta.length() * 5));
     const int targetX = int(std::floor(b.x)), targetY = int(std::floor(b.y));
@@ -485,6 +540,7 @@ bool Grid::lightSegment(Vec a, Vec b) const {
     return true;
 }
 Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     Bytes reachable(size_t(width)*height);
     if (!walkable(origin, rule)) return reachable;
     std::vector<int> pending{int(origin.y) * width + int(origin.x)};
@@ -508,6 +564,7 @@ Bytes Grid::reachableFrom(Vec origin, MovementCollisionRule rule) const {
     return reachable;
 }
 Vec Grid::nearest(Vec p, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     int px = std::clamp(int(p.x), 0, std::max(0, width - 1)),
         py = std::clamp(int(p.y), 0, std::max(0, height - 1));
     for (int radius = 0; radius < std::max(width, height); radius++)
@@ -518,12 +575,14 @@ Vec Grid::nearest(Vec p, MovementCollisionRule rule) const {
     return p;
 }
 std::optional<Vec> Grid::nativeSpawn(Vec p, int maxDistance, MovementCollisionRule rule) const {
+    const CollisionQueryScope collisionScope{*this};
     if (!std::isfinite(p.x) || !std::isfinite(p.y) || p.x < 0 || p.y < 0 ||
         p.x >= width || p.y >= height || maxDistance <= 0) return {};
     const auto result=nativeSpawnCoordinate(int(p.x),int(p.y),maxDistance,[&](int x,int y){return walkable(x,y,rule);});
     return result?std::optional<Vec>{Vec{float(result->first),float(result->second)}}:std::nullopt;
 }
 Vec Grid::inspectionArrival() const {
+    const CollisionQueryScope collisionScope{*this};
     Bytes visited(blocked.size());
     std::vector<int> component;
     size_t largest = 0;
@@ -569,6 +628,7 @@ Vec Grid::inspectionArrival() const {
     return result;
 }
 std::deque<Vec> Grid::path(Vec from, Vec to, bool allowPartial, MovementCollisionRule rule, bool nativeSegments) const {
+    const CollisionQueryScope collisionScope{*this};
     std::deque<Vec> out;
     if (!walkable(from, rule) || !std::isfinite(to.x) || !std::isfinite(to.y) ||
         to.x < 0 || to.y < 0 || to.x >= width || to.y >= height || (!allowPartial && !walkable(to, rule)))

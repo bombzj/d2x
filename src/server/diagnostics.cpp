@@ -270,9 +270,13 @@ std::optional<DiagnosticSnapshot> GameInstance::diagnostics(PlayerId id, size_t 
             result.path.push_back(point + area.definition.origin-center);
         }
         const int column=int(std::floor(player->position.x+.5f)), row=int(std::floor(player->position.y+.5f));
+        // Inspection reads committed bits without invoking the native path's
+        // Reset/Set scopes, which could restore overlapping presence bits.
+        Grid nativeView;
+        nativeView.collisionSample=[&grid](int x,int y,EntityId) {return grid.nativeMovementMask(x,y);};
         for(int y=row-24;y<=row+24;++y) for(int x=column-24;x<=column+24;++x)
             result.collision.push_back({x+int(area.definition.origin.x),y+int(area.definition.origin.y),
-                grid.movementMask(x,y),grid.objectMask(x,y),grid.movementClear(x,y,playerMovement)});
+                grid.nativeMovementMask(x,y),grid.objectMask(x,y),nativeView.movementClear(x,y,playerMovement)});
     }
     return result;
 }

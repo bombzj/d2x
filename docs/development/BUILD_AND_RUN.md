@@ -101,6 +101,21 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 房主显式配置`detailedTiming=true`后，额外写出`ticks.tsv`和`host-phases.tsv`，每秒在pump之外刷新缓冲。前者记录每次`GameInstance::step`的开始／结束帧、完整调用耗时及领域纳秒计时；`before==after`是未完成重试，同帧的完整调用耗时应相加，领域耗时只取完成时的累计值，不能再累加重试行。领域按事件所属入口归类，飞弹事件中的同步伤害也计入missiles，不能把combat列当作全部伤害成本。后者拆分`GameHost::advance`、主线程内容交接、可靠事件发布和常规状态发布；异步区域准备worker、外层输入处理与日志开销不在这些分段内。纳秒值是经过时间而非线程CPU；进程CPU须另采样，并同时检查完成tick间隔，避免把低CPU的等待误认为流畅。
 
+`ticks.tsv`末尾记录常驻碰撞格维护，仅在细分计时启用时读取时钟及更新计数。按每次step实际增量输出，阻塞重试行可以求和；初始化、准入及step之外的调用不在这些行内。经过时间已包含在完整调用及对应领域中，不重复相加。比较须注明是否启用计量，粗CPU可关闭细分计时。
+
+| 列 | 含义 |
+| --- | --- |
+| `nativeUpdateNs` | writeFootprint调用的经过时间，含单位／物品／门户格归属及写入；不含既有飞弹／技能直接位操作、逐格读取、候选链及精确命中 |
+| `nativeWrites` | 实际发生值变化的格写入次数，同值写入不计；回滚还原另由回滚次数观察 |
+| `nativeReads` | 采样器、导航及移动探测读取格的次数 |
+| `nativeMoveProbes` | 实际进入子格的移动探测次数，包含阻挡失败 |
+| `nativeRollbacks` | 移动事务回滚次数，含未产生格写入的提前退出 |
+| `nativeQueryScopes` | 寻路临时撤销／恢复作用域次数，非候选单位数量 |
+| `footprintNavigationBuilds` | 导航视图建立次数，当前不构造单位脚印 |
+| 其他`footprint*`列 | 旧版脚印构造计量保留兼容；常驻格实现中为零 |
+
+不能用周期spatial阶段耗时代替全部碰撞成本；碰撞维护在各领域实际发布点执行。原版语义及维护范围见[动态碰撞格](../modules/SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。
+
 双客户端从两个终端分别运行 `dist/current/Play.cmd -PipeName d2x-player-one` 和 `dist/current/Play.cmd -PipeName d2x-player-two`，在各自窗口登录不同账号并选择不同角色。第一位创建房间，第二位点击 Join、选择真实列表项查看详情后加入，或输入名称／密码直接加入。参考服可能不在列表展示密码房间或资格不符房间；原服决定加入结果。调试管道名必须不同，账号记忆仍按配置路径共享；第二个窗口修改记忆不会替换第一个窗口已登录的会话。
 
 如果编译机器不能访问 GitHub，CMake 可使用 `external/raylib` 和 `external/stormlib` 的固定版本源码；系统编译器、CMake 和开发库仍需安装。当前源码存档格式见[存档说明](../modules/SAVES.md)，旧档不迁移。原资源只维护项目 `assets/mpq2` 一份，EXE 通过 `--mpq` 读取，不为本地打包抽取或复制 MPQ，也不生成精简资源包。原 MPQ 文件清单见 [MPQ 资源](../resources/MPQ.md)。

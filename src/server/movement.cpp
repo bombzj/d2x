@@ -211,14 +211,16 @@ DomainResult<> MovementSystem::frameEvent(const FrameEvent &event,TickContext ti
         // entered-cell collision is checked by the native step itself.
         const auto previousRoute = player.route;
         const auto previousStep = player.pathStep;
-        const auto movementGrid=ports.spatial.navigationGrid(player.area,player.actor);
-        const auto pathGrid=player.movementTarget?std::optional{ports.spatial.navigationGrid(player.area,player.actor,player.movementTarget->id)}:std::nullopt;
+        AreaStore::CollisionMove collisionMove{ports.areas,player.actor,player.area};
+        const auto movementGrid=ports.spatial.movementGrid(player.area,collisionMove);
+        const auto pathGrid=ports.spatial.navigationGrid(player.area,player.actor,player.movementTarget?player.movementTarget->id:EntityId{});
         const auto *shape=player.rules.skills?skills::activeShape(*player.rules.skills,ports.effects.unitStates(player.actor,tick.tick)):nullptr;
-        advanceMovement(player, area, TickContext::seconds,movementGrid,pathGrid?*pathGrid:movementGrid,shape);
+        advanceMovement(player, area, TickContext::seconds,movementGrid,pathGrid,shape);
         const ActorContext actor{player.player, player.actor, player.area, area.generation, player.locomotionSequence, tick.tick};
         if (!ports.travel.walked(actor)) {
             player.position = from; player.route = previousRoute; player.pathStep = previousStep; player.moving = false;
-        }
+            collisionMove.rollback();
+        } else collisionMove.commit();
         ports.areas.moveRoomUnit(player.actor,player.area,player.position);
         if(player.moving) {
             const auto origin=ports.areas.at(player.area).definition.origin;

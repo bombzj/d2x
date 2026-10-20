@@ -398,6 +398,7 @@ DomainResult<> System::resurrect(EntityId source,EntityId corpse,uint64_t tick) 
     auto &actor=state_.actors.at(corpse);
     if(!ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{HitFact{corpse,1,actor.area,128,false,actor.position}}})) return {DomainStatus::Capacity,{}};
     actor.life=actor.maximumLife;actor.chilledUntil=actor.frozenUntil=0;actor.shatterActive=false;actor.corpse={};actor.poison.reset();
+    refreshCollision(actor);
     actor.riseUntil=actor.busyUntil=tick+uint64_t(actor.rule.resurrectionTicks);actor.riseMode=actor.rule.resurrectionMode;
     actor.neutralAt=actor.riseUntil;
     actor.killer={};actor.route.clear();actor.moving=actor.running=false;actor.movementTarget={};
@@ -457,6 +458,7 @@ DomainResult<> System::reserveNestSpawn(EntityId id,Vec position,bool active,uin
     if(unit.revision>UINT64_MAX-2) return {DomainStatus::Capacity,{}};
     const auto changed=toggleAiState(id,unit.rule.uninterruptableState,active,tick);if(!changed) return changed;
     if(active) unit.spawnReservation=position;else unit.spawnReservation.reset();
+    refreshCollision(unit);
     ++unit.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<EntityId> System::spawnNativeNestChild(EntityId id,Vec position,uint64_t tick,
@@ -793,7 +795,7 @@ DomainResult<> System::teleport(EntityId id,Vec point,uint64_t tick,int heal,boo
     if(!grid.walkable(point+center,{uint16_t(nativeFreePosition?0x1c09:0x3c01),m.rule.size}) ||
        (!nativeFreePosition && !grid.segment(m.position+center,point+center,{}, {0x0c01,1}))) return {DomainStatus::Unavailable,{}};
     // Native monster relocation is projected by 0x6D snapshot correction.
-    (void)tick;stop(id);m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
+    (void)tick;stop(id);m.position=point;ports_.areas.moveRoomUnit(id,m.area,m.position);refreshCollision(m);m.life=std::min(m.maximumLife,m.life+int64_t(std::max(0,heal))*256);++m.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 

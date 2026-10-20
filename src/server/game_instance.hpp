@@ -113,6 +113,8 @@ class GameInstance {
     DomainResult<> installLoot(EntityId source, items::PreparedBatch batch, std::string deferred,std::optional<uint64_t> random={},std::optional<uint64_t> objectRandom={}) { return systems_.loot.install(source, {tick_}, std::move(batch), std::move(deferred),random,objectRandom); }
     const SystemSteps &systemSteps() const { return simulation_.lastSteps(); }
     const SystemMetrics &stageMetrics() const { return simulation_.metrics(); }
+    void profileFootprints(bool enabled) { systems_.spatial.profileFootprints(enabled); }
+    const spatial::FootprintMetrics &footprintMetrics() const { return systems_.spatial.footprintMetrics(); }
     const std::deque<EventBatch> &pendingEvents() const { return events_.pending(); }
     bool acknowledgeEvents(uint64_t sequence) { return events_.acknowledge(sequence); }
     const std::vector<world::PrepareArea> &pendingAreas() const { return systems_.world.read().preparation; }

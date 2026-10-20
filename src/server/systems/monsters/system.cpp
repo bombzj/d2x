@@ -23,6 +23,15 @@
 
 #include "system_detail.hpp"
 namespace d2x::server::monsters {
+void System::refreshCollision(const Actor &unit) noexcept {
+    NativeFootprint body,reservation;
+    if(unit.hatching || (!unit.alive() && !unit.rule.deadCollision))
+        body=ports_.areas.rectangleFootprint(unit.area,unit.position,3,3,0x8000);
+    else if(!unit.burrowed && !unit.airborne && !unit.submerged)
+        body=ports_.areas.patternFootprint(unit.area,unit.position,unit.collisionPattern.value_or(unit.rule.collisionPattern),0x100);
+    if(unit.spawnReservation) reservation=ports_.areas.patternFootprint(unit.area,*unit.spawnReservation,NativeCollisionPattern::SmallUnit,0x100);
+    ports_.areas.setUnitCollision(unit.id,body,reservation,unit.alive());
+}
 DomainResult<std::vector<MonsterRule::BirthEquipment::Choice>> selectBirthEquipment(const MonsterRule &rule,uint64_t &random) {
     size_t first=0;
     while(first<rule.birthEquipment.size() && rule.birthEquipment[first].level>rule.level) ++first;
@@ -309,7 +318,7 @@ DomainResult<> System::moveNpc(EntityId id,RegionId region,Vec position,Vec dest
         ports_.areas.removeRoomUnit(id);state_.actors.erase(found);
     } else {
         actor.position=position;actor.movementGoal=destination;actor.moving=(destination-position).length()>.001f;
-        actor.pathType=1;actor.pathSteps=1;++actor.revision;ports_.areas.moveRoomUnit(id,region,position);
+        actor.pathType=1;actor.pathSteps=1;++actor.revision;ports_.areas.moveRoomUnit(id,region,position);refreshCollision(actor);
     }
     return {DomainStatus::Applied,std::monostate{}};
 }

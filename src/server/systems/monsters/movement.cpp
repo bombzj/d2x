@@ -223,7 +223,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
             const Vec delta=*actor.knockbackGoal-actor.position;
             const Vec next=actor.position+delta.unit()*std::min(delta.length(),25.f*TickContext::seconds);
-            if(grid.segment(actor.position+Vec{.5f,.5f},next+Vec{.5f,.5f},{},actor.rule.collision)) {actor.position=next;ports_.areas.moveRoomUnit(id,actor.area,actor.position);}
+            if(grid.segment(actor.position+Vec{.5f,.5f},next+Vec{.5f,.5f},{},actor.rule.collision)) {actor.position=next;ports_.areas.moveRoomUnit(id,actor.area,actor.position);refreshCollision(actor);}
             else actor.knockbackGoal=actor.position;
             ++actor.revision;
             if(tick.tick<actor.knockedUntil) continue;
@@ -238,7 +238,8 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
         const auto target=actor.movementTarget ? nativePathTarget(ports_.players,*this,actor.movementTarget,actor.area) : std::optional(std::pair{actor.movementGoal, 0});
         if(!target) {stop(id);continue;}
         const auto &grid=ports_.areas.at(actor.area).definition.collision;
-        const auto movementGrid=ports_.spatial.navigationGrid(actor.area,actor.id);
+        AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
+        const auto movementGrid=ports_.spatial.movementGrid(actor.area,collisionMove);
         auto arrived=[&](Vec position) {
             // Coordinate paths finish by consuming their last precise point,
             // not by an extra floating stopping radius.
@@ -260,8 +261,8 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             const Vec next=step.position-center;
             const bool atGoal=arrived(next);
             const auto previous=actor.position;actor.position=next;
-            if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;break;}
-            ports_.areas.moveRoomUnit(id,actor.area,actor.position);
+            if(!recacheHirelingRoom(actor)) {actor.position=previous;actor.pathStep=previousStep;collisionMove.rollback();break;}
+            ports_.areas.moveRoomUnit(id,actor.area,actor.position);refreshCollision(actor);
             actor.moving=actor.moving || step.travelled>0;++actor.revision;
             if(step.blocked) {actor.route.clear();break;}
             if (atGoal) { actor.route.clear(); break; }
@@ -269,6 +270,7 @@ StepStatus System::advanceMode(EntityId only,TickContext tick) {
             remaining-=step.travelled;actor.route.pop_front();
             if(step.travelled>0) break; // D2Common_10226: one nonzero path point per frame.
         }
+        collisionMove.commit();
         // Path exhaustion/collision returns FALSE from D2Common_10226 and
         // leaves WALK/RUN in this frame; do not publish a stale chase target.
         if(actor.route.empty()) {recordNativeMode(actor,1);actor.moving=false;actor.running=false;}

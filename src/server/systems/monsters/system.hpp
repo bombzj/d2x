@@ -300,6 +300,7 @@ class System {
     DomainResult<> prepareAdmissionEquipment(Actor &,uint64_t &random,uint64_t itemCursor,const std::set<size_t> *stagedUniques);
     void registerPet(Actor &) noexcept;
     void publishInitialAi(Actor &) noexcept;
+    void refreshCollision(const Actor &) noexcept;
     void prepareInitialTimers(Actor &,uint64_t) const;
     std::vector<FrameEventQueue::PreparedInsertion> prepareDeathSweep(Actor &,uint64_t tick) const;
     DomainResult<Actor> prepareDeathActor(EntityId,uint64_t tick) const;

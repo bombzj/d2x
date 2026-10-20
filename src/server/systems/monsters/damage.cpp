@@ -128,6 +128,7 @@ DomainResult<> System::damage(EntityId id, EntityId source, int64_t amount, uint
     if(status.deferAction && !life) actor.modeAlive=true;
     if(delayDeath) {actor.modeAlive=true;actor.delayedDeathSource=status.source?status.source:source;actor.killer=source;}
     else if(dead) {actor.modeAlive=false;actor.delayedDeathSource.reset();}
+    refreshCollision(actor);
     if(dead && actor.petRegistrationOrder) actor.inactivePet=true;
     ++actor.revision; if(amount>0 && !poisonOnly && !status.actionOnly) ++actor.damageOccurrence;
     actor.combatRandom=random;

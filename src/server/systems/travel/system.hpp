@@ -27,6 +27,7 @@ class System {
     State state_;
     const Ports ports_;
     uint64_t nextWaypointRevision_=1;
+    void writePortalCollision(const Portal &,bool) noexcept;
     struct NativeLinkPosition {RegionId area;uint64_t generation{};Vec position;std::optional<RoomView> room;};
     std::map<EntityId,NativeLinkPosition> nativeLinks_;
     const AreaObject *waypointAccess(const ActorContext &,EntityId,std::optional<uint64_t> revision = {}) const;
@@ -42,7 +43,7 @@ class System {
     DomainResult<SpecialPortalPlan> prepareSpecialPortal(const ActorContext &,SpecialPortalKind,uint64_t seed,std::optional<Vec> source = {});
     DomainResult<SpecialPortalPlan> prepareNativePermanentPortal(RegionId,Vec,int destination,uint64_t tick);
     DomainResult<> linkNativePortal(EntityId source,uint64_t tick);
-    void commitSpecialPortal(SpecialPortalPlan plan) noexcept {state_.specialPortals.swap(plan.next);}
+    void commitSpecialPortal(SpecialPortalPlan) noexcept;
     std::optional<Vec> portalPosition(const ActorContext &,EntityId) const;
     std::optional<std::pair<RegionId,Vec>> nativePortalPosition(EntityId) const;
     DomainResult<> useSpecial(const ActorContext &,const Request &,std::optional<int> remoteRange = {});
@@ -58,7 +59,7 @@ class System {
     DomainResult<> castTeleport(const ActorContext &, PointTarget, Fixed8 manaCost,std::optional<SkillCharge> charge = {},int skill=-1);
     DomainResult<> relocate(const ActorContext &,RegionId,std::optional<Vec>); // Local host administration, never a wire command.
     void cancel(PlayerId id) { state_.transitions.erase(id); }
-    void closePlayerPortal(PlayerId id) { state_.portals.erase(id); }
-    void closePortals(RegionId region) {std::erase_if(state_.portals,[&](const auto &entry){return entry.second.field==region;});std::erase_if(state_.specialPortals,[&](const auto &entry){return entry.second.field==region || entry.second.town==region;});}
+    void closePlayerPortal(PlayerId);
+    void closePortals(RegionId);
 };
 }

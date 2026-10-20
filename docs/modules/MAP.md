@@ -70,15 +70,15 @@ D2MOO在D2Common/Path/Path.cpp的公共分派表统一AStar(1)、Toward(2／13)�
 
 玩家准入不再复制固定`AreaDefinition.spawn`，而由`world::nativeActSpawnLocationEx`按当前MPQ房间／出生标记、区域随机、标记偏移(+3,+3)、size2／0x1c09及原扫描顺序选择落点。PlayerStore准入即保留碰撞资格，尚未完成客户端入场的后续角色也必须避让；离场解除资格，重新激活先复验空位。重入存档尸体另走原出生标记及size2／0x9c19／PosIncrement4，不再和活人复制同一坐标。没有空位明确失败，不退回固定出生点。
 
-`spatial::navigationGrid`为原Grid算法提供临时只读碰撞视图，读取玩家、怪物、NPC、佣兵／召唤物、地面物品及门户的当前领域状态。普通玩家SmallUnit为十字0x80加中心0x1000；普通怪物、宠物及Wraith分别沿已准备的Unit／Pet／NoPresence模式。服务器死亡后无deadCol的单位改写3×3尸体位，客户端尸体沿无presence的十字；行走掩码不阻挡尸体，宠物也不能统一当成普通实体墙。位置按定点步进对应的`floor(position+.5)`投影，跨级脚印按实际房间归属及幕坐标查询。
+`spatial::navigationGrid`为原Grid算法提供临时碰撞视图，直接读取AreaStore维护的常驻原生格；寻路作用域撤自身／有效目标并按原顺序恢复。身体、尸体、物品及门户由各自发布入口维护，实际移动每进入一个子格即更新，失败旅行发布按实际写入回滚。普通玩家SmallUnit为十字0x80加中心0x1000；普通怪物、宠物及Wraith分别沿已准备的Unit／Pet／NoPresence模式。服务器死亡后无deadCol的单位改写3×3尸体位，客户端尸体沿无presence的十字；行走掩码不阻挡尸体，宠物也不能统一当成普通实体墙。位置按定点步进对应的`floor(position+.5)`投影，跨级脚印按实际房间归属及幕坐标查询。
 
 `AreaStore::roomAtPosition`直接使用RoomLayout已解析的当前房间及loaded状态做半开边界判断，只有当前房间不接收该坐标时才按原roomNear顺序解析邻室；对应D2MOO `D2Dungeon.h::DUNGEON_GetRoomAtPosition／DungeonTestRoomGame`。该同步快路径不缓存跨提交的房间指针，不改变重叠脚印、跨级边界或未物化房间的拒绝规则。
 
-玩家寻路排除自身与目标脚印，怪物只在原PathType具有0x800标志的1／7／15分支排除目标；实际进入子格时仅排除自身，目标仍参与阻挡。前一个单位提交移动、死亡、换区或离开后，下一个查询立即读取新状态，不等spatial的周期索引。移动不因其他单位换格重建尚未结束的路径，碰撞仍由NativePathStep逐格处理；旧骨墙几何旁路已由公共脚印替代。旅行、复活、传送及5F落点消费同一实时投影，换幕保留0x1c89／PosIncrement5，旅行和复活输出背压重试重新寻位；复活／击退事务提交还会复验动态碰撞。RemoteScene从公开单位位置、动作和当前MPQ构造同类视图，不读取服务端隐藏状态。
+玩家寻路排除自身与目标脚印，怪物只在原PathType具有0x800标志的1／7／15分支排除目标；实际进入子格时仅排除自身，目标仍参与阻挡。前一个单位提交移动、死亡、换区或离开后，下一个查询立即读取新状态，不等spatial的周期索引。移动不因其他单位换格重建尚未结束的路径，碰撞仍由NativePathStep逐格处理；旧骨墙几何旁路已由公共脚印替代。服务端旅行、复活、传送及5F落点消费同一常驻碰撞格，换幕保留0x1c89／PosIncrement5，旅行和复活输出背压重试重新寻位；复活／击退事务提交还会复验动态碰撞。RemoteScene从公开单位位置、动作和当前MPQ构造同类视图，不读取服务端隐藏状态。
 
-依据为本地D2MOO `Clients::sub_6FC31EF0`、`D2Dungeon::DUNGEON_FindActSpawnLocationEx`、`Path::D2Common_10142`、`Step::sub_6FDAB810`及`SUnit::sub_6FCBDFE0`／`LEVEL_ChangeAct`。1.13c `D2Common` RVA359D0／35A2A／35A83确认玩家与怪物同走SetMaskWithPattern（读取动态路径+0x48并调用4BE90），与本地1.10f转录把玩家放在SetMaskWithSize分支不同；RVA361BD–361CE确认玩家0x80／0x1c09及Straight。DLL摘要见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。普通出生与走跑不能据此允许多个活人同格；特殊技能使用各自掩码，不增加统一的“禁止重叠”规则。当前仍用实时投影而非保存全部历史Set／Reset交错，强制位移造成重叠后的共享位清除、特殊模式切换、门的专用目标偏移及全种子／延迟下的原版双端行为仍未完整认证。
+依据为本地D2MOO `Clients::sub_6FC31EF0`、`D2Dungeon::DUNGEON_FindActSpawnLocationEx`、`Path::D2Common_10142`、`Step::sub_6FDAB810`及`SUnit::sub_6FCBDFE0`／`LEVEL_ChangeAct`。1.13c `D2Common` RVA359D0／35A2A／35A83确认玩家与怪物同走SetMaskWithPattern（读取动态路径+0x48并调用4BE90），与本地1.10f转录把玩家放在SetMaskWithSize分支不同；RVA361BD–361CE确认玩家0x80／0x1c09及Straight。DLL摘要见[资料来源](../resources/THIRD_PARTY.md#原版113c静态与开发对照证据)。普通出生与走跑不能据此允许多个活人同格；特殊技能使用各自掩码，不增加统一的“禁止重叠”规则。服务端保留实际Set／Reset历史，客户端从公开状态投影；强制位移重叠、特殊模式切换、门的专用目标偏移及全种子／延迟下的原版双端行为仍未完整认证。
 
-动态脚印在每次操作开始时读取实时领域状态；两端将已计算的格掩码收集到连续数组，按坐标排序并以位或合并重叠，代替逐格树节点分配。排序发生在脚印计算之后，不改变原单位处理顺序、跨房间归属、自身／目标排除及随机；无单位目标的玩家移动复用同一操作中的碰撞视图。状态移除子体队列为空时不构造碰撞样本，非空时保留原单次排空的采样与背压边界。
+客户端动态脚印从本次公开状态收集到连续数组，按坐标排序并以位或合并，不改变单位处理顺序和随机。服务端不再执行此逐次投影，按原发布点写常驻格，保留历史共享位清除、失败恢复及临时撤脚印的顺序；具体维护入口、回滚与计量范围见[动态碰撞格](SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。状态移除子体队列为空时不创建碰撞采样器，非空时沿原排空及背压边界读取当前格。
 
 ### 走跑动画与路径结束
 

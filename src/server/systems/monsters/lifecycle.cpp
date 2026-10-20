@@ -31,6 +31,7 @@ void System::maximumLife(EntityId id,int64_t value) {
     const bool callback=unit.life>0 && before>0;
     unit.life=resourceOnMaximumChange(Fixed8::fromRaw(nativeChecked(unit.life)),before,after).raw();
     unit.maximumLife=value;
+    refreshCollision(unit);
     if(callback && unit.nativeStats && unit.rule.stats && unit.rule.damageRegen) {
         auto root=std::make_shared<StatList>(*unit.nativeStats->sources);
         setNativeStat(*root,*unit.rule.stats,"hpregen",monsterRegenerationOnMaximumChange(after,unit.rule.damageRegen));
@@ -72,6 +73,7 @@ bool System::commitLife(LifeChange &&change) noexcept {
     if(change.changed) {
         const auto alignment=unit.alignment();
         unit.life=change.life.raw();unit.maximumLife=change.maximum.raw();unit.nativeStats=std::move(change.intrinsic);++unit.revision;
+        refreshCollision(unit);
         if(change.random) unit.combatRandom=change.random->second;
         if(unit.petRegistrationOrder && !unit.life && !unit.modeAlive) unit.inactivePet=true;
         if(change.cureColdPoison) {unit.poison.reset();unit.chilledUntil=unit.frozenUntil=0;unit.shatterActive=false;}

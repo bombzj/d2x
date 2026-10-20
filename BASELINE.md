@@ -23,7 +23,7 @@ D2X提供单机、TCP/IP和原服连接，共用一套客户端。自研宿主�
 | 领域 | 能力概况 | 主要缺口／专题入口 |
 | --- | --- | --- |
 | 连接／宿主 | 单机、TCP/IP、原服连接及独立游戏服务；显式无窗口原协议诊断入口可组装房主及多个真实客端 | 完整故障恢复；[联网](docs/modules/NETWORK.md)、[独立服务](docs/development/PVPGN_SERVER.md)、[无窗口入口](docs/development/BUILD_AND_RUN.md#无窗口协议客户端) |
-| 地图／世界 | 五幕地图生成及客户端房间重建；宿主按每幕逐房间物化，已核对原版瓦片／静态碰撞及房间调用链；连续跨区寻路、实时单位占位、多人出生／旅行／复活寻位、按路径结束切换走跑动画、探索缓存及常见环境物件 | 原版混合客户端及更广泛多人交错、完整单位随机／恢复、蓝图／休眠实体回收及特殊内容仍有缺口；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
+| 地图／世界 | 五幕地图生成及客户端房间重建；宿主按每幕逐房间物化，已核对原版瓦片／静态碰撞及房间调用链；连续跨区寻路、服务端原生常驻碰撞格及逐子格占位维护、多人出生／旅行／复活寻位、按路径结束切换走跑动画、探索缓存及常见环境物件 | 原版混合客户端及更广泛多人交错、完整单位随机／恢复、蓝图／休眠实体回收及特殊内容仍有缺口；[地图](docs/modules/MAP.md)、[物件](docs/gameplay/world/OBJECTS.md) |
 | 物品／成长 | 库存、装备、掉落、商店、合成、角色成长及死亡／尸体；掉落双流、冻结批次、逐操作属性及指定词缀已有实现 | 原版同帧出生／逐件落点时序、全来源／属性组合仍未精确认证，复杂争用、硬核与多尸体；[物品](docs/gameplay/items/README.md)、[人物](docs/modules/CHARACTER.md) |
 | 战斗／技能 | 普攻、法术、状态、武器效果及PvP；女巫、亚马逊、圣骑士、死灵、野蛮人技能；刺客蓄气／陷阱／独立伙伴施法及德鲁伊变形／召唤等已有执行入口 | 全技能与来源组合验收、完整双持与触发组合、完整PvP规则；[刺客进度](docs/gameplay/skills/ASSASSIN.md)、[技能](docs/gameplay/skills/README.md)、[战斗](docs/gameplay/combat/FACTIONS.md) |
 | 怪物／伙伴 | 第一、第二幕家族及第三至第五幕逐项程序已有接入，含NpcBarb、HellMeteor／投石机客户端程序、王座Baal波次／Diablo命令恢复及迷乱随机借用 | 完整NPC／MapAI、光环与修饰器重建仍有实现缺口；全局交错／逐随机及全难度组合尚未验收；钥匙／红门高级事件暂缓。范围见[怪物目录](docs/gameplay/monsters/README.md#当前实施范围)，具体覆盖见[逐项台账](docs/gameplay/monsters/ACT3.md)；[佣兵](docs/gameplay/characters/HIRELINGS.md) |

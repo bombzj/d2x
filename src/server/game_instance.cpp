@@ -44,6 +44,7 @@ PlayerId GameInstance::admit(GameDefinition definition) {
     players_.admit(id, std::move(definition.character), std::move(definition.persistent), areas_, definition.rules,tick_,childRandom(random_),
         {*arrival->room,arrival->position},systems_.spatial,systems_.world);
     if(!systems_.transactions.initializeItemAuras(id,tick_)) {
+        PlayerStore::publishCorpseCollision(areas_,players_.find(id)->persistent.corpses,{});
         areas_.removeRoomUnit(players_.find(id)->actor);
         players_.players_.erase(id);
         throw std::runtime_error("Unable to initialize admitted item auras");
@@ -69,12 +70,15 @@ bool GameInstance::enter(PlayerId id, bool active) {
     if (!active && !systems_.social.disconnect(id,tick_)) return false;
     found->second.entered = active;
     found->second.collisionActive = active;
+    if(active) PlayerStore::publishCorpseCollision(areas_,{},found->second.persistent.corpses);
+    else PlayerStore::publishCorpseCollision(areas_,found->second.persistent.corpses,{});
     if(arrival) {
         found->second.area=arrival->area;found->second.position=arrival->position;
         found->second.pathStep.reset();
         areas_.moveRoomUnit(found->second.actor,found->second.area,found->second.position);
     }
     if (active) systems_.world.activate(found->second.area, found->second.position + Vec{.5f, .5f});
+    players_.refreshCollision(id,areas_);
     systems_.world.changeClientRoom(id);
     if (!active) {
         std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
@@ -91,6 +95,7 @@ bool GameInstance::remove(PlayerId id) {
     std::erase_if(commands_, [&](const auto &pending) { return pending.player == id; });
     systems_.travel.cancel(id); systems_.skills.cancel(id, players_.find(id)->actor);
     systems_.frameEvents.cancelOwner({FrameEventUnit::Player,players_.find(id)->actor});
+    if(players_.find(id)->collisionActive) PlayerStore::publishCorpseCollision(areas_,players_.find(id)->persistent.corpses,{});
     areas_.removeRoomUnit(players_.find(id)->actor);players_.players_.erase(id); ++revision_;
     return true;
 }

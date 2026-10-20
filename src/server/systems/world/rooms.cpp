@@ -7,6 +7,7 @@
 #include "server/systems/objects/system.hpp"
 #include "server/systems/loot/system.hpp"
 #include "server/systems/population/system.hpp"
+#include "server/systems/spatial/system.hpp"
 #include "world/native_room_activation.hpp"
 #include "world/room_terrain.hpp"
 #include <algorithm>
@@ -74,6 +75,7 @@ struct System::RoomRuntime {
             if(cell<grid.missileCollision.size() && grid.missileCollision[cell]) {
                 grid.missileCollision[cell]=0;++grid.missileCollisionRevision;
             }
+            grid.nativeCollision.at(cell)=0xffff;++grid.nativeCollisionRevision;
         });
         auto &state = area(room.area);
         state.rooms.at(room.index).loaded = false;
@@ -98,6 +100,9 @@ struct System::RoomRuntime {
         size_t from{};bool changed{};
         cells(room,[&](Grid &grid,size_t cell) {
             const auto flags=sample.collision.at(from++);
+            const auto previous=grid.fullTerrainCollision[cell];
+            if(!active.loaded) grid.nativeCollision.at(cell)=flags|grid.objectCollision[cell]|grid.missileCollision[cell];
+            else if(previous!=flags) grid.nativeCollision.at(cell)=uint16_t((grid.nativeCollision.at(cell)&~previous)|flags);
             changed|=grid.fullTerrainCollision[cell]!=flags;
             grid.fullTerrainCollision[cell]=flags;grid.terrainCollision[cell]=uint8_t(flags);
             grid.blocked[cell]=(flags&0x09)!=0;grid.lightBlocked[cell]=(flags&0x22)!=0;
@@ -107,6 +112,12 @@ struct System::RoomRuntime {
             if (active.randomRevision!=UINT64_MAX) {
                 ++active.randomRevision;active.random=sample.initialActiveRandom;
             } else active.random.reset();
+            const RoomView view{room.area,(int(state.definition.origin.x)+room.bounds.x)/5,
+                (int(state.definition.origin.y)+room.bounds.y)/5};
+            owner.ports_.areas.rememberCollisionRoom([areas=&owner.ports_.areas,spatial=&owner.ports_.spatial,view] {
+                areas->restoreNativeRoomBase(view);spatial->restoreRoomFootprints(view);
+            });
+            owner.ports_.spatial.restoreRoomFootprints(view);
         }
         state.definition.populationRooms.at(room.index)=sample.population;
         if (changed) ++state.definition.collision.obstacleRevision;

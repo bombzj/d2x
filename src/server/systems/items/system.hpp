@@ -21,21 +21,14 @@ namespace d2x::server::items {
 struct CreateItem { std::string code; unsigned level{}; ItemGeneration generation; ItemLocation location; };
 struct PreparedBatch { std::vector<ItemInstance> items; std::shared_ptr<const EquipmentRules> equipment; std::set<size_t> limitedUniques; };
 struct Address { std::optional<PlayerId> character; ItemHandle item; };
-struct Ports { const PlayerStore &players; const AreaStore &areas; EntityIds &ids; uint64_t &random; const ItemCatalog *definitions; EventOutbox &events; FrameEventQueue &frameEvents; const spatial::System &spatial; };
+struct Ports { const PlayerStore &players; AreaStore &areas; EntityIds &ids; uint64_t &random; const ItemCatalog *definitions; EventOutbox &events; FrameEventQueue &frameEvents; const spatial::System &spatial; };
 class System {
     friend class transactions::System;
     friend class loot::System;
     struct GroundLifetime { uint64_t generation{}, expires{}; };
     std::map<EntityId,GroundLifetime> groundLifetimes_;
     std::map<EntityId,ItemRestorationClock> restoration_;
-    void commit(State next) noexcept {
-        std::erase_if(next.goldOwners,[&](const auto &entry){return !next.world.items.contains(entry.first);});
-        std::erase_if(groundLifetimes_,[&](const auto &entry){
-            const auto item=next.world.items.find(entry.first);
-            return item==next.world.items.end() || item->second.location!=state_.world.items.at(entry.first).location;
-        });
-        std::swap(state_, next);
-    }
+    void commit(State next) noexcept;
     State state_;
     mutable uint64_t groundIndexRevision_{};
     mutable std::map<RegionId,std::vector<EntityId>> groundByArea_;

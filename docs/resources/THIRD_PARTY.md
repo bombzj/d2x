@@ -73,6 +73,8 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 
 ## 原版1.13c静态与开发对照证据
 
+动态碰撞另核对本地D2MOO `Path/Path.cpp::PATH_SetUnitDeadCollision`、`PLAYER/PlrModes.cpp::D2GAME_CORPSE_Handler_6FC7FBD0`及`PlrMsg.cpp::D2GAME_PACKETCALLBACK_Rcv0x41_Resurrect_6FC87480`：服务器死亡增加3×3 CORPSE，不把原活人路径掩码替换为CORPSE；独立尸体与复活玩家是不同GUID。复活撤旧活人轮廓时不得清掉保留尸体位。常驻格实现范围和未认证组合见[内核碰撞](../modules/SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。
+
 03／04加载边界只读核对本机1.13c：`D2Game.dll` MD5 `978f6f74cd031bce6ecee602cd5988cc`、ImageBase `0x6fc20000`；`D2Common.dll` MD5 `ee1238806ef6d6d9801d12a09d128fe1`、ImageBase `0x6fd50000`；`D2Client.dll` MD5 `f5860c629d309b8fc1f96174babcf633`、ImageBase `0x6fab0000`。D2Game RVA `2DA8B`／`2DAE6`经导入stub `B306`调用D2Common ordinal11047／RVA `3BE90`，后者在`3BEB7–3BEC3`比较活动近邻数与DRLG原近邻数，在`3BEE0–3BEED`逐个检查Room1+0x34的位1；门控通过后`2DAA1`／`2DB0B`写一个字节并经`8A3E0`发送，`2DA0A`确定该字节为4。对应本地D2MOO的`D2Common_10073`及Game初次／CHANGING_ACT分支，不能套用1.10f同号ordinal。
 
 D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种子，调用`43F90`；`43FCF`经D2Common ordinal10951加载幕，`44039–44042`保存两个种子。05处理`ACB70`在`ACB7F`清完成标志、`ACB89`置加载标志；04处理`ADFE0`置完成标志并撤加载标志，`ADFFD–AE005`取得本地玩家房间，缺少玩家／房间进入`AE057`断言。此原版同步消费要求由当前客户端的有序地图事件中的04及本人房间检查承接，不能用网络收包先后越过本地异步准备。03尾部物件种子来源另参考D2MOO `OBJRGN_AllocObjectControl`返回的初始控制种子、`LEVEL_SynchronizeDayNightCycleWithClient`及`SCmd::D2GAME_PACKETS_SendPacket0x03_6FC3C810`；当前只保存既有初始化low值，不新增随机消费。原版实机传送点消息的房间／本人定位／04先后见[原版互通](../modules/NETWORK.md#tcpip原版互通参考与缺口)。DLL和反汇编不提交／分发；静态核对不能认证全部混合多人、复活、断线及本地资源加载表现。
@@ -80,6 +82,8 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 走跑结束另核对下述同快照D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`，ImageBase `0x6fab0000`）：RVA1C1AE经C3E2调用D2Common ordinal10342（RVA E230，D2MOO `PathMisc::D2Common_10226`），1C2F6–1C2FC消费路径结束标志；1C47B–1C493按城镇选择模式1／5，1C4A1–1C4AC调用ChangeAnimMode。Common ordinal11090／RVA33920在33938比较当前模式，变化时33952存新模式、3395B调用335F0重置动画起点；同模式分支不重置，与D2MOO `UNITS_ChangeAnimMode`／`UNITS_SetAnimStartFrame`一致。Common RVA2FB50–2FB5F另确认人物模式3返回101、其余走跑返回213；2FB40–2FB4F确认怪物按模式15读取原MonStats RunAnimSpeed，否则WalkAnimSpeed，与`UNITS_GetBaseAnimSpeed`一致。FRW150递减、25下限、CharStats跑步临时加成及动画／路径8.8整数缩放参考`UNITS_GetAnimStatBasePercentage`／`UNITS_CharacterStartRunningOrKnockback`／`UNITS_UpdateRunWalkAnimRateAndVelocity`。路径结束无额外200毫秒走跑延迟，实际显示入口及未运行边界见[地图](../modules/MAP.md#走跑动画与路径结束)。原DLL、反汇编与摘录留忽略目录，不修改、提交或分发。
 
 玩家动态占位另核对同一1.13c D2Common（MD5 `ee1238806ef6d6d9801d12a09d128fe1`，ImageBase `0x6fd50000`）：RVA359D0入口在359DF–359EC将type0／1共同送入35A2A，35A31读取DynamicPath+0x48的碰撞pattern，35A83调用4BE90按pattern写位；type2另走矩形。玩家与怪物同有presence，与本地1.10f D2MOO `PATH_AddCollisionFootprintForUnit`给玩家调用SetMaskWithSize的转录不同。RVA361BD–361CE确认玩家FootprintMask=0x80、MoveTestMask=0x1c09及Straight；RVA363D0–36406核对自身与0x800目标临时撤脚印，364B8–364CA按序恢复。实际入场、走跑、死亡与旅行入口及仍未认证的历史位交错见[地图](../modules/MAP.md#单位占位与入场)。原DLL只读，不修改、提交或分发。
+
+同快照的持久碰撞位补查：RVA4BB70按房间坐标定位16位格，4BBA0–4BBA2执行NOT／AND；Set入口4B930的4B960直接OR该格，均无重叠计数。ResetPattern入口4BCF0的4BD30–4BD3A对SmallUnit另清0x1000，4BD90–4BD9A对SmallPet另清0x2000；对应D2MOO `COLLISION_ResetMaskWithPattern`。1.13c RVA4D5C0的4D5D7调用4BCF0撤旧位，4D5F1调用4CE90检查新格，无碰撞在4D60D调用4BE90置新位，失败在4D62A恢复旧位；对应D2MOO `COLLISION_TrySetUnitCollisionMask`。这些证据确认状态随操作历史变化，不能把当前领域脚印的位或重建或简单贡献计数当成等价实现；迁移入口与保留边界见[动态碰撞格](../modules/SERVER_SYSTEMS.md#动态碰撞格的原版语义与迁移边界)。
 
 第三至第五幕怪物逐项接入使用同一1.13c D2Game只读快照（MD5 `978f6f74cd031bce6ecee602cd5988cc`）。AI表RVA `10E788`第27项指向`808A0`：ThornHulk剩余连击、普通攻击冷却、ENDANIM加aip5及移动失败标志7；SrvDo表RVA `1074A8`第109项指向`B6790`，经`B4520`伤害／Drain后调用`28E70`叠加Frenzy，栈数上限为技能等级。准入、当前实现及缺口由[第三幕台账](../gameplay/monsters/ACT3.md#逐项接入)维护。
 

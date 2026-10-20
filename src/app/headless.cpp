@@ -317,7 +317,10 @@ int runHeadless(const AppOptions &options) {
         stepsFile.exceptions(std::ios::badbit|std::ios::failbit);pumpsFile.exceptions(std::ios::badbit|std::ios::failbit);
         stepsFile<<"epochMs\tbefore\tafter\tnanoseconds";
         for(const auto &entry:server::systemCatalog()) stepsFile<<'\t'<<entry.name;
-        stepsFile<<'\n';pumpsFile<<"epochMs\tsimulationNs\tpreparationNs\teventsNs\tpublicationNs\n";
+        stepsFile<<"\tfootprintNs\tfootprintBuilds\tfootprintNavigationBuilds\tfootprintUnitChainBuilds\tfootprintActorFreeBuilds"
+            "\tfootprintActorVisits\tfootprintCellTests\tfootprintCells\tfootprintMergedCells"
+            "\tnativeUpdateNs\tnativeWrites\tnativeReads\tnativeMoveProbes\tnativeRollbacks\tnativeQueryScopes\n";
+        pumpsFile<<"epochMs\tsimulationNs\tpreparationNs\teventsNs\tpublicationNs\n";
         host->observePerformance({[&](const auto &value){stepTimings.push_back({epochMs(),value});},
             [&](const auto &value){detailedPumps.push_back({epochMs(),value});}});
     }
@@ -326,6 +329,12 @@ int runHeadless(const AppOptions &options) {
         for(const auto &entry:stepTimings) {
             stepsFile<<entry.epoch<<'\t'<<entry.value.before<<'\t'<<entry.value.after<<'\t'<<entry.value.nanoseconds;
             for(const auto &stage:entry.value.stages) stepsFile<<'\t'<<stage.nanoseconds;
+            const auto &footprints=entry.value.footprints;
+            stepsFile<<'\t'<<footprints.nanoseconds<<'\t'<<footprints.builds<<'\t'<<footprints.navigationBuilds
+                <<'\t'<<footprints.unitChainBuilds<<'\t'<<footprints.actorFreeBuilds<<'\t'<<footprints.actorVisits
+                <<'\t'<<footprints.cellTests<<'\t'<<footprints.cells<<'\t'<<footprints.mergedCells;
+            stepsFile<<'\t'<<footprints.nativeUpdateNs<<'\t'<<footprints.nativeWrites<<'\t'<<footprints.nativeReads
+                <<'\t'<<footprints.nativeMoveProbes<<'\t'<<footprints.nativeRollbacks<<'\t'<<footprints.nativeQueryScopes;
             stepsFile<<'\n';
         }
         for(const auto &entry:detailedPumps) pumpsFile<<entry.epoch<<'\t'<<entry.value.simulation<<'\t'<<entry.value.preparation<<'\t'<<entry.value.events<<'\t'<<entry.value.publication<<'\n';

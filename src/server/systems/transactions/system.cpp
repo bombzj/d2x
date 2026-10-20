@@ -797,6 +797,8 @@ DomainResult<> System::commit(Plan plan) {
         if(change.transient) std::swap(target.transient,*change.transient);
         if(change.equipment) target.rules.equipment=change.equipment;
         std::swap(target.persistent,peer.player->persistent);std::swap(target.totals,peer.player->totals);
+        ports_.players.refreshCollision(target.player,ports_.areas);
+        if(target.collisionActive) PlayerStore::publishCorpseCollision(ports_.areas,peer.player->persistent.corpses,target.persistent.corpses);
         if(peer.player->inventoryChanged) ++target.inventoryRevision;
         ++target.characterRevision;
         if(peer.effects) ports_.effects.publishPlayerEffects(*peer.effects);
@@ -812,12 +814,14 @@ DomainResult<> System::commit(Plan plan) {
     for(const auto &loan:plan.roomRandomLoans) ports_.areas.publishRoomRandom(*loan);
     ports_.actions.removeUsedSkills(player.actor,player.totals.clearedSkillUses);
     if (characterChange && characterChange->revival) {
-        player.area = characterChange->revival->area; player.position = characterChange->revival->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false;
+        player.area = characterChange->revival->area; player.position = characterChange->revival->position;ports_.players.refreshCollision(player.player,ports_.areas);ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route.clear(); player.moving = false;
     }
     const auto &knockback=edit?edit->knockback:characterChange->knockback;
     if(knockback && player.persistent.player.hp>0) {
-        player.position=knockback->position;ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
+        player.position=knockback->position;ports_.players.refreshCollision(player.player,ports_.areas);ports_.areas.moveRoomUnit(player.actor,player.area,player.position);player.route.clear();player.moving=false;player.runningNow=false;++player.locomotionSequence;
     }
+    ports_.players.refreshCollision(player.player,ports_.areas);
+    if(player.collisionActive) PlayerStore::publishCorpseCollision(ports_.areas,next.persistent.corpses,player.persistent.corpses);
     if (next.inventoryChanged) ++player.inventoryRevision;
     ++player.characterRevision;
     if (request->award) player.lastExperienceAward = request->award;
@@ -843,6 +847,7 @@ DomainResult<> System::damage(const ActorContext &actor, uint64_t expected, int6
     });
     if (!published) return {published.status, {}};
     player.persistent.player.hp = life; ++player.characterRevision;
+    ports_.players.refreshCollision(player.player,ports_.areas);
     player.totals.sourceRevision = player.characterRevision;
     if (life <= 0) { player.route.clear(); player.moving = false; }
     return {DomainStatus::Applied, std::monostate{}};

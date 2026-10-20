@@ -80,5 +80,24 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
     if(!room) throw std::runtime_error("Missing native player entry room");
     players_.emplace(id, std::move(player));
     areas.publishRoomUnit(*room);
+    refreshCollision(id,areas);
+    publishCorpseCollision(areas,{},players_.at(id).persistent.corpses);
+}
+void PlayerStore::refreshCollision(PlayerId id,AreaStore &areas) const noexcept {
+    const auto *player=find(id);if(!player) std::terminate();
+    NativeFootprint body;
+    if(player->collisionActive) body=player->persistent.player.hp>0?
+        areas.patternFootprint(player->area,player->position,NativeCollisionPattern::SmallUnit,0x80):
+        areas.rectangleFootprint(player->area,player->position,3,3,0x8000);
+    areas.setUnitCollision(player->actor,body,{},player->persistent.player.hp>0);
+}
+void PlayerStore::publishCorpseCollision(AreaStore &areas,std::span<const PlayerCorpse> before,std::span<const PlayerCorpse> after) noexcept {
+    const auto changed=[](const auto &list,const auto &corpse) {
+        return std::none_of(list.begin(),list.end(),[&](const auto &other) {
+            return corpse.id==other.id && corpse.region==other.region && corpse.position.x==other.position.x && corpse.position.y==other.position.y;
+        });
+    };
+    for(const auto &corpse:before) if(changed(after,corpse)) areas.writeFootprint(areas.rectangleFootprint(corpse.region,corpse.position,3,3,0x8000),false);
+    for(const auto &corpse:after) if(changed(before,corpse)) areas.writeFootprint(areas.rectangleFootprint(corpse.region,corpse.position,3,3,0x8000),true);
 }
 }

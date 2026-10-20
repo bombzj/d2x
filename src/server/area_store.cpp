@@ -220,6 +220,13 @@ void AreaStore::initializeUnitRooms(RegionId region) {
     if(area.unitHeads.empty()) area.unitHeads.resize(area.definition.activation.rooms().size());
     auto &grid=area.definition.collision;
     if(grid.missileCollision.empty()) grid.missileCollision.resize(size_t(grid.width)*grid.height);
+    if(grid.nativeCollision.empty()) {
+        grid.nativeCollision.resize(size_t(grid.width)*grid.height);
+        for(size_t cell=0;cell<grid.nativeCollision.size();++cell)
+            grid.nativeCollision[cell]=(grid.fullTerrainCollision.empty()?grid.terrainCollision[cell]:grid.fullTerrainCollision[cell]) |
+                grid.objectCollision[cell] | grid.missileCollision[cell] |
+                (grid.blocked[cell] && !(grid.terrainCollision[cell]&9)?1:0);
+    }
 }
 void AreaStore::setMissileMask(RegionId source,Vec position,int size,bool occupied) noexcept {
     if(size<1 || size>3) return;
@@ -238,6 +245,8 @@ void AreaStore::setMissileMask(RegionId source,Vec position,int size,bool occupi
         // Native Set/ResetMask are bit operations, not overlapping-unit counts.
         grid.missileCollision[index]=occupied?uint16_t(previous|0x40):uint16_t(previous&~0x40);
         if(previous!=grid.missileCollision[index]) ++grid.missileCollisionRevision;
+        const auto native=grid.nativeCollision[index];
+        writeNativeCell(room->area,index,occupied?uint16_t(native|0x40):uint16_t(native&~0x40));
     }
 }
 void AreaStore::setNativePatternMask(RegionId source,Vec position,NativeCollisionPattern pattern,uint16_t mask,bool occupied) noexcept {
@@ -255,6 +264,8 @@ void AreaStore::setNativePatternMask(RegionId source,Vec position,NativeCollisio
         const auto previous=grid.missileCollision[index];
         grid.missileCollision[index]=occupied?uint16_t(previous|bits):uint16_t(previous&~bits);
         if(previous!=grid.missileCollision[index]) ++grid.missileCollisionRevision;
+        const auto native=grid.nativeCollision[index];
+        writeNativeCell(room->area,index,occupied?uint16_t(native|bits):uint16_t(native&~bits));
     }
 }
 std::optional<std::pair<RegionId,size_t>> AreaStore::unitRoom(RegionId region,Vec point) const noexcept {
@@ -311,12 +322,19 @@ bool AreaStore::validateRoomUnit(const RoomUnitRegistration &prepared,EntityId i
 }
 void AreaStore::moveRoomUnit(EntityId id,RegionId region,Vec point) noexcept {
     const auto found=roomUnits_.find(id);if(found==roomUnits_.end()) std::terminate();
+    auto body=found->second.body;
+    if(body.mask) {
+        const auto global=point+at(region).definition.origin;
+        body.area=region;body.x=int32_t(std::floor(global.x+.5f));body.y=int32_t(std::floor(global.y+.5f));
+        setUnitCollision(id,body,found->second.reservation,found->second.collisionAlive);
+    }
     const auto room=unitRoom(region,point);auto &entry=found->second;
     if(room==entry.room) return;
     unlinkRoomUnit(id,entry);entry.room=room;linkRoomUnit(id,entry);
 }
 void AreaStore::removeRoomUnit(EntityId id) noexcept {
     const auto found=roomUnits_.find(id);if(found==roomUnits_.end()) return;
+    writeFootprint(found->second.body,false);writeFootprint(found->second.reservation,false);
     unlinkRoomUnit(id,found->second);roomUnits_.erase(found);
 }
 std::vector<EntityId> AreaStore::roomUnitOrder(RoomView view) const {

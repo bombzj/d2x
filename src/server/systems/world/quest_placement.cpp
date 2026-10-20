@@ -89,13 +89,14 @@ std::optional<QuestPosition> System::nativeDurielPortalPosition(RegionId region)
     return free?std::optional<QuestPosition>{{free->room.area,free->position}}:std::nullopt;
 }
 std::optional<QuestPosition> System::nativePlayerPosition(RegionId region,Vec position,EntityId self) const {
+    auto exclusion=ports_.areas.excludeCollision(self);
     const auto &area=ports_.areas.at(region).definition;
     const auto global=position+area.origin;
     const int x=int(std::floor(global.x+.5f)),y=int(std::floor(global.y+.5f));
     const auto room=ports_.areas.roomAtPosition(region,position+Vec{.5f,.5f},x,y);
     if(!room) return {};
     const auto free=ports_.areas.nativeFreeCoordinates(*room,x,y,2,playerMovement.mask,
-        ports_.spatial.nativeCollisionSample(playerMovement.mask,{},self));
+        ports_.spatial.nativeCollisionSample(playerMovement.mask));
     return free?std::optional<QuestPosition>{{free->room.area,free->position,free->room}}:std::nullopt;
 }
 std::optional<QuestPosition> System::nativeWaypointPosition(RegionId region,bool changeAct) {

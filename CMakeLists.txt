@@ -192,7 +192,7 @@ add_library(d2x_server
   src/server/runtime/events.cpp src/server/systems/world/system.cpp
   src/server/systems/world/quest_placement.cpp src/server/systems/quests/orb.cpp
   src/server/systems/effects/redemption.cpp src/server/systems/effects/damage_absorption.cpp
-  src/server/systems/world/rooms.cpp src/server/area_store.cpp
+  src/server/systems/world/rooms.cpp src/server/area_store.cpp src/server/native_collision.cpp
   src/server/systems/spatial/system.cpp src/server/systems/items/system.cpp
   src/server/systems/inventory/system.cpp src/server/systems/inventory/planning.cpp
   src/server/systems/inventory/placement.cpp src/server/systems/inventory/equipment.cpp

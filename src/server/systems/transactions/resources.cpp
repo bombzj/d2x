@@ -142,6 +142,7 @@ DomainResult<> System::resources(const ActorContext &actor, uint64_t expected, F
     if (!result) return {result.status, {}};
     if (changed) {
         player.persistent.player.hp = life; player.persistent.player.mana = mana; player.persistent.player.stamina = stamina;
+        ports_.players.refreshCollision(player.player,ports_.areas);
         ++player.characterRevision; player.totals.sourceRevision = player.characterRevision;
     }
     return {DomainStatus::Applied, std::monostate{}};

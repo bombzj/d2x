@@ -11,6 +11,42 @@
 #include <algorithm>
 #include <cmath>
 namespace d2x::server::travel {
+namespace {
+std::array<NativeFootprint,2> portalFootprints(const AreaStore &areas,const Portal &portal) {
+    if(!portal.rule.collision[size_t(portal.opened?2:1)]) return {};
+    return {areas.rectangleFootprint(portal.field,portal.fieldPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask),
+        areas.rectangleFootprint(portal.town,portal.townPosition,portal.rule.width,portal.rule.height,portal.rule.collisionMask)};
+}
+template<class Key>
+void publishPortalCollision(AreaStore &areas,const std::map<Key,Portal> &before,const std::map<Key,Portal> &after) {
+    const auto changed=[&](const auto &map,const auto &id,const auto &portal) {
+        const auto next=map.find(id);return next==map.end() || portalFootprints(areas,next->second)!=portalFootprints(areas,portal);
+    };
+    for(const auto &[id,portal]:before) if(changed(after,id,portal)) for(const auto &footprint:portalFootprints(areas,portal)) areas.writeFootprint(footprint,false);
+    for(const auto &[id,portal]:after) if(changed(before,id,portal)) for(const auto &footprint:portalFootprints(areas,portal)) areas.writeFootprint(footprint,true);
+}
+}
+void System::writePortalCollision(const Portal &portal,bool occupied) noexcept {
+    for(const auto &footprint:portalFootprints(ports_.areas,portal)) ports_.areas.writeFootprint(footprint,occupied);
+}
+void System::commitSpecialPortal(SpecialPortalPlan plan) noexcept {
+    publishPortalCollision(ports_.areas,state_.specialPortals,plan.next);state_.specialPortals.swap(plan.next);
+}
+void System::closePlayerPortal(PlayerId id) {
+    const auto found=state_.portals.find(id);if(found==state_.portals.end()) return;
+    writePortalCollision(found->second,false);state_.portals.erase(found);
+}
+void System::closePortals(RegionId region) {
+    const auto close=[&](const auto &entry) {
+        if(entry.second.field!=region && entry.second.town!=region) return false;
+        writePortalCollision(entry.second,false);return true;
+    };
+    std::erase_if(state_.portals,[&](const auto &entry) {
+        if(entry.second.field!=region) return false;writePortalCollision(entry.second,false);return true;
+    });
+    std::erase_if(state_.specialPortals,close);
+}
+
 std::optional<std::pair<RegionId,Vec>> System::nativePortalPosition(EntityId id) const {
     const auto endpoint=[&](const Portal &portal)->std::optional<std::pair<RegionId,Vec>> {
         if(id && id==portal.fieldId) return std::pair{portal.field,portal.fieldPosition};
@@ -67,7 +103,7 @@ DomainResult<> System::createPortal(const ActorContext &actor,std::optional<Item
     }
     transactions::InventoryEdit edit{actor,p->inventoryRevision,p->characterRevision,std::move(draft.edit.inventory),std::move(draft.edit.changes),p->persistent.player.weaponSet};
     auto plan=ports_.transactions.prepare(std::move(edit)); if(!plan) return {plan.status,{}};
-    const auto result=ports_.transactions.commit(std::move(*plan.value)); if(result) {state_.portals.swap(portals);ports_.quests.onTownPortal(actor.area);} return result;
+    const auto result=ports_.transactions.commit(std::move(*plan.value)); if(result) {publishPortalCollision(ports_.areas,state_.portals,portals);state_.portals.swap(portals);ports_.quests.onTownPortal(actor.area);} return result;
 }
 DomainResult<SpecialPortalPlan> System::prepareSpecialPortal(const ActorContext &actor,SpecialPortalKind kind,uint64_t seed,std::optional<Vec> source) {
     const auto *p=ports_.players.find(actor.player);const auto *origin=ports_.areas.find(actor.area);
@@ -160,7 +196,7 @@ DomainResult<> System::linkNativePortal(EntityId source,uint64_t tick) {
     const auto linked=ports_.objects.admit({object.definition,position->second.area,position->second.position,{},{},2,tick,position->second.room});
     if(!linked) return {linked.status,{}};
     if(*linked.value!=identity) throw std::logic_error("Unexpected native linked portal identity");
-    state_.specialPortals.swap(portals);
+    publishPortalCollision(ports_.areas,state_.specialPortals,portals);state_.specialPortals.swap(portals);
     nativeLinks_.erase(position);
     return {DomainStatus::Applied,std::monostate{}};
 }

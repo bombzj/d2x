@@ -33,6 +33,7 @@ PlayerBinding GameHost::create(server::GameDefinition definition) {
     if (nextGeneration_ == std::numeric_limits<uint64_t>::max())
         throw std::overflow_error("Game generation space exhausted");
     auto game = std::make_unique<server::GameInstance>(std::move(definition));
+    game->profileFootprints(bool(stepObserver_));
     size_t index = 0;
     while (index < slots_.size() && slots_[index].game) ++index;
     if (index == slots_.size()) {
@@ -145,14 +146,20 @@ bool GameHost::pause(GameHandle handle, bool paused) {
     }
     return true;
 }
+void GameHost::observeSteps(std::function<void(const hosting::StepTiming &)> observer) {
+    stepObserver_=std::move(observer);
+    for(auto &slot:slots_) if(slot.game) slot.game->profileFootprints(bool(stepObserver_));
+}
 void GameHost::advanceStep(size_t index) {
     auto &slot=slots_[index];
     if(!stepObserver_) {slot.game->step();return;}
     const auto before=slot.game->tick();
+    const auto footprints=slot.game->footprintMetrics();
     const auto started=std::chrono::steady_clock::now();
     slot.game->step();
     const auto elapsed=std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now()-started).count();
-    stepObserver_({{index,slot.generation},before,slot.game->tick(),uint64_t(elapsed),slot.game->stageMetrics()});
+    stepObserver_({{index,slot.generation},before,slot.game->tick(),uint64_t(elapsed),slot.game->stageMetrics(),
+        slot.game->footprintMetrics().since(footprints)});
 }
 void GameHost::advance(double seconds) {
     if (!std::isfinite(seconds) || seconds < 0) return;

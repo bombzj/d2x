@@ -316,8 +316,9 @@ void System::publishActors(ActorPublication &plan) noexcept {
         if(live!=state_.actors.end()) {
             if(live->second.alive() && !node.mapped().alive()) ports_.areas.recordMonsterDeath(node.key());
             live->second=std::move(node.mapped());
+            refreshCollision(live->second);
         }
-        else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);state_.actors.insert(std::move(node));}
+        else {ports_.areas.publishRoomUnit(*node.mapped().roomAdmission);const auto inserted=state_.actors.insert(std::move(node));refreshCollision(inserted.position->second);}
     }
     std::erase_if(birthEquipment_,[&](const auto &entry){return state_.actors.contains(entry.second.first.actor);});
     if(plan.uniquesNext) ports_.loot.commitUniques(std::move(*plan.uniquesNext));
@@ -397,7 +398,7 @@ DomainResult<> System::warpPet(EntityId id,const ActorContext &owner,Vec positio
     auto &pet=found->second;if(!area->definition.collision.walkable(position,pet.rule.collision)) return {DomainStatus::Unavailable,{}};
     for(const auto &[other,body]:state_.actors) if(other!=id && body.life>0 && body.area==owner.area && (body.position-position).length()<float((body.rule.size+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}};
     for(const auto &[playerId,player]:ports_.players.all()) { (void)playerId; if(player.entered && player.area==owner.area && player.persistent.player.hp>0 && (player.position-position).length()<float((2+pet.rule.size)/2)) return {DomainStatus::Unavailable,{}}; }
-    stop(id);pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
+    stop(id);pet.area=owner.area;pet.position=position;ports_.areas.moveRoomUnit(id,pet.area,pet.position);refreshCollision(pet);pet.busyUntil=owner.tick;pet.neutralAt.reset();pet.frozenUntil=pet.chilledUntil=0;++pet.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::stageRetirements(effects::AuraUnitPublication &publication,std::span<const EntityId> ids,uint64_t tick) const {
     for(const auto id:ids) {

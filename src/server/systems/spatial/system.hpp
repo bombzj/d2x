@@ -2,6 +2,8 @@
 #include "server/runtime/contracts.hpp"
 #include "server/runtime/ports.hpp"
 #include "server/runtime/events.hpp"
+#include "footprint_metrics.hpp"
+#include "server/area_store.hpp"
 
 #include <map>
 #include <set>
@@ -20,7 +22,7 @@ enum class UnitKind { Player, Monster, Object, Missile, Item };
 struct UnitRef { EntityId id; UnitKind kind; uint64_t revision{}; };
 struct Query { RegionId area; Vec center; float radius{}; };
 struct State { uint64_t indexedTick{}, generation{}; size_t indexedUnits{}; mutable uint64_t queries{}, candidates{}, returned{}; };
-struct Ports { const AreaStore &areas; const PlayerStore &players; const monsters::System &monsters; const objects::System &objects; const missiles::System &missiles; const items::System &items; const travel::System &travel; };
+struct Ports { AreaStore &areas; const PlayerStore &players; const monsters::System &monsters; const objects::System &objects; const missiles::System &missiles; const items::System &items; const travel::System &travel; };
 class System {
     State state_;
     const Ports ports_;
@@ -32,21 +34,22 @@ class System {
   std::map<RegionId,Region> regions_;
   std::map<EntityId,Location> locations_;
   void erase(EntityId, const Location &);
-  std::function<uint16_t(int,int32_t,int32_t)> nativeFootprints(uint16_t,
-      std::optional<std::span<const EntityId>>,EntityId,EntityId) const;
+  std::optional<NativeFootprint> targetFootprint(EntityId) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     System(const System &) = delete;
     System &operator=(const System &) = delete;
     const State &read() const { return state_; }
+    void profileFootprints(bool enabled) { ports_.areas.profileFootprints(enabled); }
+    const FootprintMetrics &footprintMetrics() const { return ports_.areas.footprintMetrics(); }
     DomainResult<std::vector<UnitRef>> query(const Query &) const;
     int maximumSize(RegionId) const;
-    // Fresh synchronous footprint projection, independent of the last indexed
-    // tick. A supplied unit span restricts actor footprints to that native room
-    // chain. The returned sampler must not cross an authority publication.
-    std::function<uint16_t(RoomView,int32_t,int32_t)> nativeCollisionSample(uint16_t mask=0xffff,
-        std::optional<std::span<const EntityId>> units={},EntityId self={},EntityId target={}) const;
+    // Reads the committed room grid at invocation, including earlier callbacks
+    // in this native frame. Unit selection still owns its original room chain.
+    std::function<uint16_t(RoomView,int32_t,int32_t)> nativeCollisionSample(uint16_t mask=0xffff) const;
     Grid navigationGrid(RegionId,EntityId self={},EntityId target={}) const;
+    Grid movementGrid(RegionId,AreaStore::CollisionMove &) const;
+    void restoreRoomFootprints(RoomView) const;
     StepStatus step(TickContext, FrameFacts &);
 };
 }

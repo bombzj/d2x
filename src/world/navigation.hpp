@@ -30,6 +30,10 @@ struct Grid {
     // and object rasterization, which may be rebuilt while missiles are alive.
     std::vector<uint16_t> missileCollision; // Mutable native Set/ResetMask writes, including skill reservations.
     uint64_t missileCollisionRevision{};
+    // Server room collision: original terrain, objects and committed unit bits.
+    // Static-only geometry queries above keep their existing mask domain.
+    std::vector<uint16_t> nativeCollision;
+    uint64_t nativeCollisionRevision{};
     Bytes objectLightBlocked;
     uint64_t obstacleRevision = 0;
     // Borrow only direct walking neighbours after region storage is complete.
@@ -46,6 +50,17 @@ struct Grid {
     // Ephemeral collision view; owns no terrain and must not survive a unit
     // publication. Coordinates remain local to this grid, including neighbours.
     std::function<uint16_t(int,int,EntityId)> collisionSample;
+    // A path query withdraws/reinstalls footprints once, including nested path
+    // helpers. Physical movement instead uses the transactional cell callback.
+    std::function<void(bool)> collisionQuery;
+    std::function<bool(int,int,int,int,MovementCollisionRule)> collisionStep;
+    struct CollisionQueryScope {
+        const Grid &grid;
+        explicit CollisionQueryScope(const Grid &value):grid(value) {if(grid.collisionQuery) grid.collisionQuery(true);}
+        ~CollisionQueryScope() {if(grid.collisionQuery) grid.collisionQuery(false);}
+        CollisionQueryScope(const CollisionQueryScope &)=delete;
+        CollisionQueryScope &operator=(const CollisionQueryScope &)=delete;
+    };
     Grid() = default;
     Grid(int w, int h) : width(w), height(h), blocked(size_t(w) * h), lightBlocked(size_t(w) * h),
                          terrainCollision(size_t(w) * h), objectCollision(size_t(w) * h),
@@ -53,6 +68,7 @@ struct Grid {
     void setObstacles(std::vector<Obstacle> next);
     uint16_t objectMask(int x, int y, EntityId ignored = {}) const;
     uint16_t movementMask(int x, int y, EntityId ignored = {}) const;
+    uint16_t nativeMovementMask(int x,int y,EntityId ignored={}) const;
     Grid linkedNavigation(Vec &origin) const;
     bool navigationContains(Vec point) const;
     uint64_t navigationRevision() const;

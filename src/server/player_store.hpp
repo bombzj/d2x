@@ -2,6 +2,7 @@
 #include "player_state.hpp"
 #include <cstdint>
 #include <map>
+#include <span>
 
 namespace d2x::server {
 class AreaStore;
@@ -23,6 +24,8 @@ class PlayerStore {
     void admit(PlayerId, CharacterDefinition, PersistentCharacter, AreaStore &, const PreparedRules &,uint64_t tick,uint64_t unitSeed,
         RoomPoint,const spatial::System &,world::System &);
   public:
+    void refreshCollision(PlayerId,AreaStore &) const noexcept;
+    static void publishCorpseCollision(AreaStore &,std::span<const PlayerCorpse>,std::span<const PlayerCorpse>) noexcept;
     const PlayerState *find(PlayerId id) const {
         const auto found = players_.find(id);
         return found == players_.end() ? nullptr : &found->second;

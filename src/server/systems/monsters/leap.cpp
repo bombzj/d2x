@@ -43,7 +43,7 @@ DomainResult<> System::startLeapAttackMotion(EntityId source) {
     auto &actor=found->second;
     actor.skillMotion=Actor::SkillMotion{actor.skillReservation->position,UINT64_MAX,actor.interruption,float(actor.rule.nativeRunVelocity)*25.f/16.f,true,{}};
     actor.skillMotion->eventDriven=true;actor.skillMotion->collision=MovementCollisionRule{0,actor.rule.size};
-    actor.collisionPattern=NativeCollisionPattern::None;actor.pathStep.reset();actor.movementTarget={};
+    actor.collisionPattern=NativeCollisionPattern::None;refreshCollision(actor);actor.pathStep.reset();actor.movementTarget={};
     actor.movementGoal=actor.skillReservation->position;actor.pathType=9;++actor.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }

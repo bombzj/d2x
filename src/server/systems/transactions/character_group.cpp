@@ -108,6 +108,8 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
                 if(edit.equipment) player.rules.equipment=std::move(edit.equipment);
                 if(plan.player->inventoryChanged) ++player.inventoryRevision;
                 std::swap(player.persistent,plan.player->persistent);std::swap(player.totals,plan.player->totals);++player.characterRevision;
+                ports_.players.refreshCollision(player.player,ports_.areas);
+                if(player.collisionActive) PlayerStore::publishCorpseCollision(ports_.areas,plan.player->persistent.corpses,player.persistent.corpses);
                 if(plan.effects) ports_.effects.publishPlayerEffects(*plan.effects);
                 if(plan.periodicEvents) ports_.effects.publishPeriodicEvents(*plan.periodicEvents);
                 if(player.persistent.player.hp<=0) ports_.effects.cancelPeriodicSkills({FrameEventUnit::Player,player.actor});

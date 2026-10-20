@@ -46,7 +46,7 @@ DomainResult<> System::impRiderEvent(const FrameEvent &event,uint64_t tick) {
     if(unit.area!=mount->area || unit.position.x!=mount->position.x || unit.position.y!=mount->position.y) {
         if(unit.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
         unit.area=mount->area;unit.position=mount->position;
-        ports_.areas.moveRoomUnit(unit.id,unit.area,unit.position);++unit.revision;
+        ports_.areas.moveRoomUnit(unit.id,unit.area,unit.position);refreshCollision(unit);++unit.revision;
     }
     (void)tick;return {DomainStatus::Applied,std::monostate{}};
 }
@@ -112,7 +112,7 @@ DomainResult<> System::impTeleport(EntityId id,EntityId target,Vec point,int ski
         if(!sent) return {sent.status,{}};
     }
     auto &unit=state_.actors.at(id);stop(id);unit.area=mount->area;unit.position=mount->position;
-    ports_.areas.moveRoomUnit(id,unit.area,unit.position);++unit.revision;
+    ports_.areas.moveRoomUnit(id,unit.area,unit.position);refreshCollision(unit);++unit.revision;
     if(attach) {
         auto &horse=state_.actors.at(target);setStoredOwner(horse,id);++horse.revision;
         setStoredOwner(unit,target);unit.aiStates.insert(unit.rule.attachedState);unit.targetFlagsDisabled=true;

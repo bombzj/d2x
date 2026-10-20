@@ -7,6 +7,23 @@
 #include <algorithm>
 #include <tuple>
 namespace d2x::server::items {
+void System::commit(State next) noexcept {
+        std::erase_if(next.goldOwners,[&](const auto &entry){return !next.world.items.contains(entry.first);});
+        std::erase_if(groundLifetimes_,[&](const auto &entry){
+            const auto item=next.world.items.find(entry.first);
+            return item==next.world.items.end() || item->second.location!=state_.world.items.at(entry.first).location;
+        });
+        const auto changed=[](const auto &items,EntityId id,const GroundLocation &at) {
+            const auto found=items.find(id);
+            return found==items.end() || found->second.location!=ItemLocation{at};
+        };
+        for(const auto &[id,item]:state_.world.items) if(const auto *at=std::get_if<GroundLocation>(&item.location))
+            if(changed(next.world.items,id,*at)) ports_.areas.writeFootprint(ports_.areas.rectangleFootprint(at->region,at->position,1,1,0x200),false);
+        for(const auto &[id,item]:next.world.items) if(const auto *at=std::get_if<GroundLocation>(&item.location))
+            if(changed(state_.world.items,id,*at)) ports_.areas.writeFootprint(ports_.areas.rectangleFootprint(at->region,at->position,1,1,0x200),true);
+        std::swap(state_, next);
+    }
+
 namespace {
 using GroundOccupancy = std::set<std::pair<int,int>>;
 GroundOccupancy groundOccupancy(const InventoryState &world, RegionId region) {
@@ -255,6 +272,7 @@ StepStatus System::step(TickContext tick,FrameFacts &) {
         if(!base || !ground || base->questTag) {++it;continue;}
         if(tick.tick<lifetime->second.expires) {++it;continue;}
         if(state_.revision==UINT64_MAX || !ports_.events.publish({0,tick.tick,{}, {AudienceKind::Area,{},ground->region},{GroundRemoveFact{item.id}}})) {blocked=true;++it;continue;}
+        if(const auto *at=std::get_if<GroundLocation>(&item.location)) ports_.areas.writeFootprint(ports_.areas.rectangleFootprint(at->region,at->position,1,1,0x200),false);
         groundLifetimes_.erase(item.id);clearRestoration(item.id);state_.goldOwners.erase(item.id);state_.equipment.items.erase(item.id);it=state_.world.items.erase(it);++state_.revision;
     }
     return blocked?StepStatus::Blocked:StepStatus::Complete;

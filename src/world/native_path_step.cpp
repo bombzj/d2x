@@ -64,7 +64,10 @@ NativePathStepResult NativePathStep::advance(const Grid &grid, Vec position, Vec
         sampleX += velocityX; sampleY += velocityY;
         const int nextColumn = int(sampleX >> 16), nextRow = int(sampleY >> 16);
         if (nextColumn == column && nextRow == row) continue;
-        if (!grid.movementClear(nextColumn - int(gridOrigin.x), nextRow - int(gridOrigin.y), rule)) {
+        const bool accepted=grid.collisionStep?
+            grid.collisionStep(column-int(gridOrigin.x),row-int(gridOrigin.y),nextColumn-int(gridOrigin.x),nextRow-int(gridOrigin.y),rule):
+            grid.movementClear(nextColumn-int(gridOrigin.x),nextRow-int(gridOrigin.y),rule);
+        if (!accepted) {
             // Native collision stops at the center of the last accepted cell.
             precisionX_ = int64_t(column) * precisionScale + precisionScale / 2;
             precisionY_ = int64_t(row) * precisionScale + precisionScale / 2;

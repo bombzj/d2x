@@ -152,9 +152,9 @@ DomainResult<> System::castTeleport(const ActorContext &actor,PointTarget target
 }
 StepStatus System::step(TickContext tick, FrameFacts &) {
     const auto synchronizationStatus=expireSynchronizations(tick);
-    std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered;});
+    std::erase_if(state_.portals,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);if(p && p->entered) return false;writePortalCollision(entry.second,false);return true;});
     std::erase_if(state_.waypoints,[&](const auto &entry){const auto *p=ports_.players.find(entry.first);return !p || !p->entered || p->area!=entry.second.area || p->persistent.player.hp<=0;});
-    for(auto &[owner,portal]:state_.portals) { (void)owner; if(!portal.opened && tick.tick>=portal.ready) {portal.opened=true;++portal.revision;} }
+    for(auto &[owner,portal]:state_.portals) { (void)owner; if(!portal.opened && tick.tick>=portal.ready) {writePortalCollision(portal,false);portal.opened=true;++portal.revision;writePortalCollision(portal,true);} }
     for (auto pending = state_.transitions.begin(); pending != state_.transitions.end();) {
         const auto found = ports_.players.players_.find(pending->first);
         auto &transition = pending->second;
@@ -284,8 +284,8 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
         if(!room) {pending=state_.transitions.erase(pending);continue;}
         const bool changeAct=source->definition.act!=targetDefinition.act;
         const uint16_t mask=changeAct?0x1c89:playerMovement.mask;
-        const auto free=ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),
-            2,mask,ports_.spatial.nativeCollisionSample(mask,{},player.actor),{},0,false,50,changeAct?5:1);
+        const auto free=[&] { auto exclusion=ports_.areas.excludeCollision(player.actor);return ports_.areas.nativeFreeCoordinates(*room,int(std::floor(global.x+.5f)),int(std::floor(global.y+.5f)),
+            2,mask,ports_.spatial.nativeCollisionSample(mask),{},0,false,50,changeAct?5:1); }();
         if(!free || free->room.area!=transition.to) {pending=state_.transitions.erase(pending);continue;}
         arrival=free->position;
         if(exitWalk) *exitWalk=*exitWalk+arrival;
@@ -319,7 +319,7 @@ StepStatus System::step(TickContext tick, FrameFacts &) {
             if(!plan || !ports_.transactions.commit(std::move(*plan.value))) {++pending;continue;}
         } else if (!ports_.events.publish(std::move(event))) { ++pending; continue; }
         ports_.npc.close(player.player); ports_.inventory.close(player.player); state_.waypoints.erase(player.player);
-        if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) state_.portals.erase(portal); }
+        if(transition.kind==Kind::Portal) { const auto portal=state_.portals.find(player.player); if(portal!=state_.portals.end() && portal->second.town==transition.from) {writePortalCollision(portal->second,false);state_.portals.erase(portal);} }
         player.area = transition.to; player.position = arrival;ports_.areas.moveRoomUnit(player.actor,player.area,player.position); player.route = std::move(route);
         player.pathStep.reset();
         player.routeRunning = player.running; player.moving = !player.route.empty();

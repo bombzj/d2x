@@ -10,6 +10,7 @@
 #include "gameplay/monsters/native_spawn.hpp"
 #include "gameplay/monsters/region_generation.hpp"
 #include "gameplay/environment/time.hpp"
+#include "server/systems/spatial/footprint_metrics.hpp"
 #include <map>
 #include <cstdint>
 #include <stdexcept>
@@ -30,6 +31,14 @@ struct RoomView {
     auto operator<=>(const RoomView &) const = default;
 };
 struct RoomPoint {RoomView room;Vec position;};
+struct NativeFootprint {
+    RegionId area{};
+    int32_t x{},y{}; // Global integer subtile, not an interpolated position.
+    NativeCollisionPattern pattern{};
+    uint16_t mask{};
+    int width{},height{}; // Nonzero dimensions select an original rectangle.
+    bool operator==(const NativeFootprint &) const = default;
+};
 struct RoomRandomLoan {RoomView room;uint64_t areaGeneration{},revision{},expected{},next{};};
 // Prepared collision values only. No Map, DT1, Archives or renderer handles.
 struct AreaExit { EntityId id; RegionId destination; int warp{}, slot{}; Vec position, arrival; bool requiresQuest{}; Vec exitWalk; };
@@ -154,6 +163,8 @@ struct RoomUnitEntry {
     uint8_t kind{};
     std::optional<std::pair<RegionId,size_t>> room;
     EntityId previous,next;
+    NativeFootprint body{},reservation{};
+    bool collisionAlive{};
 };
 class AreaStore;
 struct RoomUnitRegistration {
@@ -172,10 +183,59 @@ class AreaStore {
     std::array<std::optional<ActTime>,5> actTimes_;
     std::map<EntityId,RoomUnitEntry> roomUnits_;
     uint64_t roomCreationOrder_{};
+    bool profileFootprints_{};
+    mutable spatial::FootprintMetrics footprintMetrics_;
     std::optional<std::pair<RegionId,size_t>> unitRoom(RegionId,Vec) const noexcept;
     void unlinkRoomUnit(EntityId,RoomUnitEntry &) noexcept;
     void linkRoomUnit(EntityId,RoomUnitEntry &) noexcept;
+    void writeNativeCell(RegionId,size_t,uint16_t) noexcept;
   public:
+    void profileFootprints(bool enabled) {profileFootprints_=enabled;}
+    const spatial::FootprintMetrics &footprintMetrics() const {return footprintMetrics_;}
+    void observeCollisionNavigation() const {if(profileFootprints_) ++footprintMetrics_.navigationBuilds;}
+    void observeCollisionRead() const {if(profileFootprints_) ++footprintMetrics_.nativeReads;}
+    uint16_t sampleNativeCollision(RoomView,int32_t,int32_t,uint16_t) const;
+    class CollisionMove {
+        friend class AreaStore;
+        AreaStore &areas_;
+        EntityId unit_;
+        RegionId source_;
+        NativeFootprint before_;
+        struct Undo {RegionId area;size_t cell;uint16_t value;};
+        // Ten native saved steps, each resetting and setting a 3x3 footprint.
+        std::vector<Undo> undo_;
+        std::vector<std::function<void()>> roomRestorations_;
+        bool finished_{};
+      public:
+        CollisionMove(AreaStore &,EntityId,RegionId);
+        ~CollisionMove();
+        CollisionMove(const CollisionMove &)=delete;
+        CollisionMove &operator=(const CollisionMove &)=delete;
+        bool step(int32_t,int32_t,int32_t,int32_t,MovementCollisionRule);
+        void commit() noexcept;
+        void rollback() noexcept;
+    };
+    class CollisionExclusion {
+        AreaStore &areas_;
+        std::array<EntityId,2> units_;
+        std::array<std::array<NativeFootprint,2>,2> footprints_{};
+      public:
+        CollisionExclusion(AreaStore &,EntityId,EntityId);
+        ~CollisionExclusion();
+        CollisionExclusion(const CollisionExclusion &)=delete;
+        CollisionExclusion &operator=(const CollisionExclusion &)=delete;
+    };
+  private:
+    CollisionMove *collisionMove_{};
+  public:
+    NativeFootprint patternFootprint(RegionId,Vec,NativeCollisionPattern,uint16_t) const noexcept;
+    NativeFootprint rectangleFootprint(RegionId,Vec,int,int,uint16_t) const noexcept;
+    void writeFootprint(const NativeFootprint &,bool,std::optional<RoomView> onlyRoom={}) noexcept;
+    void setUnitCollision(EntityId,NativeFootprint,NativeFootprint reservation={},bool alive=true) noexcept;
+    void restoreUnitCollision(RoomView) noexcept;
+    void restoreNativeRoomBase(RoomView) noexcept;
+    void rememberCollisionRoom(std::function<void()>);
+    CollisionExclusion excludeCollision(EntityId self,EntityId target={}) {return {*this,self,target};}
     std::optional<StatTimeContext> statTime(RegionId) const;
     std::optional<NativeActEnvironment> environment(RegionId) const;
     uint64_t environmentRevision(int act) const;

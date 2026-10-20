@@ -42,7 +42,7 @@ DomainResult<> System::nativeTeleport(EntityId id,Vec point,uint64_t tick,const 
     const auto landing=ports_.areas.nativeFreeCoordinates(*room,x,y,unit.rule.size,0x1c09,collision);
     if(!landing) return {DomainStatus::Unavailable,{}};
     (void)tick;stop(id);unit.area=landing->room.area;unit.position=landing->position+Vec{.5f,.5f};
-    ports_.areas.moveRoomUnit(id,unit.area,unit.position);++unit.revision;
+    ports_.areas.moveRoomUnit(id,unit.area,unit.position);refreshCollision(unit);++unit.revision;
     return {DomainStatus::Applied,std::monostate{}};
 }
 bool System::canLand(EntityId source) const {
@@ -62,7 +62,7 @@ void System::monsterTargetable(EntityId id,bool enabled) {
 void System::submerge(EntityId id) {
     auto &actor=state_.actors.at(id);actor.submerged=actor.targetFlagsDisabled=true;
     actor.collisionPattern=NativeCollisionPattern::SmallNoPresence;
-    actor.aiPose=8;actor.holdPose=true;++actor.revision;
+    actor.aiPose=8;actor.holdPose=true;++actor.revision;refreshCollision(actor);
 }
 DomainResult<bool> System::restoreGroundPresence(EntityId source,const std::function<uint16_t(RoomView,int32_t,int32_t)> &collision) {
     const auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
@@ -77,7 +77,8 @@ DomainResult<bool> System::restoreGroundPresence(EntityId source,const std::func
     if(!landing) return {DomainStatus::Applied,false};
     actor.area=landing->room.area;actor.position=landing->position+Vec{.5f,.5f};actor.airborne=actor.submerged=false;
     actor.collisionPattern=NativeCollisionPattern::SmallUnit;
-    stop(source);return {DomainStatus::Applied,true};
+    stop(source);ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);refreshCollision(actor);
+    return {DomainStatus::Applied,true};
 }
 DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airborne,uint64_t tick,int aiWait,bool preserveMovement) {
     auto found=state_.actors.find(source);if(found==state_.actors.end() || !found->second.alive()) return {DomainStatus::InvalidActor,{}};
@@ -86,7 +87,7 @@ DomainResult<> System::aiPose(EntityId source,uint8_t mode,bool hold,bool airbor
     if(actor.airborne && !airborne && !canLand(source)) return {DomainStatus::Unavailable,{}};
     recordNativeMode(actor,mode);
     actor.aiPose=mode;actor.holdPose=hold;actor.airborne=airborne;actor.poseUntil=tick+uint64_t(mode==1?0:clock->second);
-    actor.targetFlagsDisabled=airborne;
+    actor.targetFlagsDisabled=airborne;refreshCollision(actor);
     if(!airborne) {if(!preserveMovement) stop(source);actor.busyUntil=std::max(actor.busyUntil,aiWait>0?tick+uint64_t(aiWait):actor.poseUntil);}
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
@@ -122,7 +123,7 @@ int System::nativeAiRegeneration(EntityId source,int eighths,int previousBonus,u
     return bonus;
 }
 void System::beginHatch(EntityId id) {
-    auto &actor=state_.actors.at(id);if(!actor.hatching) {actor.hatching=true;++actor.revision;}
+    auto &actor=state_.actors.at(id);if(!actor.hatching) {actor.hatching=true;++actor.revision;refreshCollision(actor);}
 }
 bool System::mummySupportTarget(EntityId source,EntityId target,uint64_t tick,bool dead,bool healthy) const {
     const auto *caster=find(source),*other=find(target);
@@ -244,7 +245,7 @@ DomainResult<> System::burrow(EntityId source,bool below,uint64_t tick) {
         for(const auto &[id,other]:state_.actors) if(id!=source && other.life>0 && !other.burrowed && !other.airborne && !other.submerged && !other.hatching && other.area==actor.area && meleeDistance(actor.position,actor.rule.size,other.position,other.rule.size)<=0) return {DomainStatus::Unavailable,{}};
         for(const auto &[id,p]:ports_.players.all()) {(void)id;if(p.entered && p.area==actor.area && p.persistent.player.hp>0 && meleeDistance(actor.position,actor.rule.size,p.position,2)<=0) return {DomainStatus::Unavailable,{}};}
     }
-    (void)tick;stop(source);actor.burrowed=below;
+    (void)tick;stop(source);actor.burrowed=below;refreshCollision(actor);
     ++actor.revision;return {DomainStatus::Applied,std::monostate{}};
 }
 DomainResult<> System::startSkillMotion(EntityId source,Vec target,uint64_t until,int skill,bool leap,uint64_t tick,EntityId victim) {
@@ -345,7 +346,7 @@ void System::stopScriptedMotion(EntityId source) {
         ports_.areas.setNativePatternMask(actor.area,actor.skillReservation->position,actor.rule.collisionPattern,actor.skillReservation->clearMask,false);
         actor.skillReservation.reset();++actor.revision;
     }
-    if(actor.skillMotion && actor.skillMotion->eventDriven && actor.skillMotion->leap) actor.collisionPattern.reset();
+    if(actor.skillMotion && actor.skillMotion->eventDriven && actor.skillMotion->leap) {actor.collisionPattern.reset();refreshCollision(actor);}
     if(!actor.skillMotion || !actor.skillMotion->eventDriven) return;
     actor.skillMotion.reset();actor.pathStep.reset();actor.moving=false;++actor.revision;
 }
@@ -363,16 +364,18 @@ bool System::advanceSkillMotion(Actor &actor,uint64_t tick) {
         }
         while(!motion.route.empty() && (motion.route.front()-actor.position).length()<.01f) motion.route.pop_front();
         if(tick<motion.until) {
-            const Vec center{.5f,.5f};const auto grid=ports_.spatial.navigationGrid(actor.area,actor.id);
+            AreaStore::CollisionMove collisionMove{ports_.areas,actor.id,actor.area};
+            const Vec center{.5f,.5f};const auto grid=ports_.spatial.movementGrid(actor.area,collisionMove);
             const auto step=actor.pathStep.advance(grid,actor.position+center,(motion.route.empty()?motion.destination:motion.route.front())+center,
                 motion.speed*TickContext::seconds,motion.collision.value_or(motion.leap?MovementCollisionRule{0,1}:actor.rule.collision));
-            actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);
+            actor.position=step.position-center;ports_.areas.moveRoomUnit(actor.id,actor.area,actor.position);refreshCollision(actor);
+            collisionMove.commit();
             actor.moving=step.travelled>0;++actor.revision;if(step.blocked) motion.until=tick;
         } else motion.until=tick;
         if((motion.destination-actor.position).length()>.01f && tick<motion.until) return true;
     }
     if(motion.moveState && actor.rule.skillMoveState>=0 && !ports_.events.publish({0,tick,{}, {AudienceKind::Area,{},actor.area},{StateFact{actor.id,1,actor.area,actor.rule.skillMoveState,false}}})) return true;
-    if(motion.leap && motion.eventDriven) {actor.collisionPattern.reset();actor.pathType=2;}
+    if(motion.leap && motion.eventDriven) {actor.collisionPattern.reset();actor.pathType=2;refreshCollision(actor);}
     actor.skillMotion.reset();++actor.revision;return false;
 }
 }

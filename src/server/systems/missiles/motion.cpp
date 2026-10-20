@@ -42,7 +42,7 @@ std::vector<std::pair<float,EntityId>> System::collisionContacts(const Missile &
     const auto mask=missile.nativeDamage?nativeMissileContactMask(missile.nativeDamage->rule.collisionMode):uint16_t{};
     if(steps.empty() || (missile.nativeDamage && (missile.nativeDamage->rule.collisionMode==6 ||
         !mask || missile.currentFrame()>missile.nativeActivateFrame))) return {};
-    const auto roomUnits=nearbyRoomUnits(missile,next);
+    std::vector<EntityId> roomUnits;
     std::vector<EntityId> candidates;
     bool candidatesPrepared{};
     const combat::Participants participants{ports_.players,ports_.monsters,ports_.social};
@@ -50,7 +50,7 @@ std::vector<std::pair<float,EntityId>> System::collisionContacts(const Missile &
     const auto global=next+area->definition.origin;
     const auto room=ports_.areas.roomAtPosition(missile.area,missile.position,int32_t(std::floor(global.x)),int32_t(std::floor(global.y)));
     if(!room) return {};
-    const auto sample=mask?ports_.spatial.nativeCollisionSample(mask,std::span<const EntityId>{roomUnits}):AreaStore::CollisionSample{};
+    const auto sample=mask?ports_.spatial.nativeCollisionSample(mask):AreaStore::CollisionSample{};
     size_t step{};
     for(const auto cell:steps) {
         uint16_t collided{};
@@ -62,6 +62,7 @@ std::vector<std::pair<float,EntityId>> System::collisionContacts(const Missile &
         // As in the native mask gate, empty path cells need no unit predicates.
         // Keep the original room-chain order and sample only within this call.
         if(!candidatesPrepared) {
+            roomUnits=nearbyRoomUnits(missile,next);
             candidates.reserve(roomUnits.size());
             for(const auto id:roomUnits) if(canCollide(missile,id) && unitPosition(missile,id)) candidates.push_back(id);
             candidatesPrepared=true;
