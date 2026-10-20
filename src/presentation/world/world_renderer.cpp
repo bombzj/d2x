@@ -71,7 +71,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
     if(scene.eclipse) lighting_->setEclipse(*scene.eclipse);
     if(scene.cloakDuration) lighting_->beginCloak(*scene.cloakDuration,level.id);
     lighting_->advance(scene.elapsed, level);
-    const auto &tiles = assets_.worldTileSprites(map, scene.palette);
+    assets_.prepareWorldTiles(map, scene.palette);
     if (map.terrain.preparedRooms)
         worldVisibility_.update(map.terrain, scene.roomObserver,
             int(scene.terrainOrigin.x) / 5, int(scene.terrainOrigin.y) / 5, scene.time);
@@ -94,11 +94,22 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             at.x + image.x + image.texture.width > viewport.x &&
             at.y + image.y + image.texture.height > viewport.y;
     };
+    auto visibleTile = [&](size_t index, Vec at) {
+        const auto &image = map.terrain.tiles.at(index)->image;
+        return image.width > 0 && image.height > 0 &&
+            at.x + image.x < viewport.x + viewport.width &&
+            at.y + image.y < viewport.y + viewport.height &&
+            at.x + image.x + image.width > viewport.x &&
+            at.y + image.y + image.height > viewport.y;
+    };
     auto addTile = [&](int index, int type, int x, int y, int pass, int layer, bool wall, Color tint,
                        bool alternateLight = false) {
-        if (index < 0 || size_t(index) >= tiles.size()) return;
+        if (index < 0 || size_t(index) >= map.terrain.tiles.size()) return;
         const Vec feet{x * 5.f, y * 5.f}, at = screen(feet);
-        const auto &image = tiles[size_t(index)];
+        // Original DT1 bounds equal the uploaded texture bounds. Cull before
+        // hashing/converting/uploading an image; never change tile selection.
+        if (!visibleTile(size_t(index), at)) return;
+        const auto &image = assets_.worldTileSprite(size_t(index));
         if (!visible(image, at)) return;
         Entry entry{sceneOrder(feet, pass, wall, layer), &image, at, tint};
         entry.feet = feet;
@@ -127,8 +138,9 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
                 worldVisibility_.alternateLight(index));
             // Discovery uses the visible original DT1 bounds, independent of
             // map visibility, lighting, fading and the selected warp's texture.
-            if (!shadow && tile.type != 15 && !(tile.flags & 8) &&
-                visible(tiles.at(size_t(tile.tile)), screen({tile.x * 5.f, tile.y * 5.f})))
+            const auto at = screen({tile.x * 5.f, tile.y * 5.f});
+            if (!shadow && tile.type != 15 && !(tile.flags & 8) && visibleTile(size_t(tile.tile), at) &&
+                visible(assets_.worldTileSprite(size_t(tile.tile)), at))
                 visibleCells.push_back(index);
         }
     } else {
@@ -194,6 +206,7 @@ std::vector<size_t> SceneView::drawWorld(const WorldDrawView &scene) {
             item.image, at, WHITE, &item});
     }
     auto &palette = prepareWorldLighting(scene, items);
+    const PaletteBlendView::TargetScope targetScope(palette);
     auto paint = [&](auto &entries) {
         std::stable_sort(entries.begin(), entries.end(), [](const Entry &a, const Entry &b) { return a.order < b.order; });
         std::optional<PaletteBlendView::TerrainBatch> terrainBatch;

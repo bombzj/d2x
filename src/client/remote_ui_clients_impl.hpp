@@ -54,6 +54,9 @@ struct RemoteUiClients::Impl {
     RemoteControl &control;
     std::shared_ptr<const ClassicData> sharedData;
     const ClassicData &data;
+    struct ObservedStat { uint8_t id; int shift; bool signedValue; };
+    // Exact original Stat text, first row wins even if its ID is invalid.
+    std::map<std::string, std::optional<ObservedStat>, std::less<>> observedStats;
     const OnlineSceneView *scene{};
     std::optional<Vec> displayPosition;
     OnlineIntentContext context;

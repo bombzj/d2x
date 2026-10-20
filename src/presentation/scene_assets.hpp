@@ -177,7 +177,8 @@ class SceneAssets {
     const std::vector<TownAutomapCell> &townAutomapSprites(int level, int variant, bool large) const;
     int automapNpcCel(std::string_view monsterClass) const { return automapCatalog_.npcCel(monsterClass); }
     const LevelRecord &worldLevel(int id) const;
-    const std::vector<Sprite> &worldTileSprites(const Map &, int palette) const;
+    void prepareWorldTiles(const Map &, int palette) const;
+    const Sprite &worldTileSprite(size_t index) const;
     void resetWorldTiles() {
         worldTileSources_.clear(); worldTiles_.clear(); worldTilePalette_ = -1;
         worldTileSprites_.clear(); worldTileLibraries_.clear();

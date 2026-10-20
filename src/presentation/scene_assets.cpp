@@ -219,22 +219,25 @@ void SceneAssets::loadWorldLightDefinitions() {
     }
 }
 const LevelRecord &SceneAssets::worldLevel(int id) const { return worldDefinitions_->level(id); }
-const std::vector<Sprite> &SceneAssets::worldTileSprites(const Map &map, int palette) const {
+void SceneAssets::prepareWorldTiles(const Map &map, int palette) const {
     if (worldTilePalette_ != palette || worldTileSources_ != map.terrain.tiles) {
         worldTileSources_ = map.terrain.tiles; worldTilePalette_ = palette;
-        worldTiles_.clear(); worldTiles_.reserve(worldTileSources_.size());
-        auto &graphics = graphicsForAct(palette);
+        worldTiles_.clear(); worldTiles_.resize(worldTileSources_.size());
         for (const auto &library : map.terrain.libraries)
             worldTileLibraries_.try_emplace(library.get(), library);
-        for (const auto *tile : worldTileSources_) {
-            const auto key = std::pair{palette, tile};
-            auto found = worldTileSprites_.find(key);
-            if (found == worldTileSprites_.end())
-                found = worldTileSprites_.emplace(key, graphics.upload(tile->image, true)).first;
-            worldTiles_.push_back(found->second);
-        }
     }
-    return worldTiles_;
+}
+const Sprite &SceneAssets::worldTileSprite(size_t index) const {
+    auto &sprite = worldTiles_.at(index);
+    if (!sprite.texture.id) {
+        const auto *tile = worldTileSources_.at(index);
+        const auto key = std::pair{worldTilePalette_, tile};
+        auto found = worldTileSprites_.find(key);
+        if (found == worldTileSprites_.end())
+            found = worldTileSprites_.emplace(key, graphicsForAct(worldTilePalette_).upload(tile->image, true)).first;
+        sprite = found->second;
+    }
+    return sprite;
 }
 void SceneAssets::loadIceShatter() {
     const auto &missiles=*missileDefinitions_;

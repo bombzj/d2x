@@ -2,7 +2,17 @@
 
 namespace d2x {
 RemoteUiClients::Impl::Impl(Archives &a, net::RealmSession &s, RemoteInventory &i, RemoteCombat &c, RemoteControl &r)
-        : session(s), items(i), combat(c), control(r), sharedData(sharedClassicData(a)), data(*sharedData) {}
+        : session(s), items(i), combat(c), control(r), sharedData(sharedClassicData(a)), data(*sharedData) {
+    const auto &costs = data.tables.at("itemstatcost");
+    for (size_t row = 0; row < costs.rows().size(); ++row) {
+        std::optional<ObservedStat> definition;
+        const auto id = costs.number(row, "ID");
+        if (id && *id >= 0 && *id <= 255)
+            definition = ObservedStat{uint8_t(*id), costs.number(row, "ValShift").value_or(0),
+                costs.number(row, "Signed").value_or(0) != 0};
+        observedStats.try_emplace(std::string(costs.value(row, "Stat")), definition);
+    }
+}
 const QuestView &RemoteUiClients::Impl::Quests::read() const { return o.questView; }
 bool RemoteUiClients::Impl::Quests::acknowledgeCompletion(QuestId quest) {
             return o.session.acknowledge_quest_log(uint16_t(questDefinition(quest).nativeSlot),o.context.gameGeneration);
@@ -36,17 +46,14 @@ void RemoteUiClients::Impl::MapClient::submit(MapIntent intent) {
             }, intent);
         }
 std::optional<double> RemoteUiClients::Impl::stat(std::string_view name) const {
-        const auto &costs = data.tables.at("itemstatcost");
-        for (size_t row = 0; row < costs.rows().size(); ++row) if (costs.value(row,"Stat") == name) {
-            const auto id = costs.number(row,"ID");
-            if (!id || *id < 0 || *id > 255) return {};
-            const auto it = session.read().world.playerAttributes.find(uint8_t(*id));
-            if (it == session.read().world.playerAttributes.end()) return {};
-            const int shift = costs.number(row,"ValShift").value_or(0);
-            const double value = costs.number(row,"Signed").value_or(0) ? double(int32_t(it->second)) : double(it->second);
-            return value / std::ldexp(1.,shift);
-        }
-        return {};
+        const auto found = observedStats.find(name);
+        if (found == observedStats.end() || !found->second) return {};
+        const auto &definition = *found->second;
+        const auto &attributes = session.read().world.playerAttributes;
+        const auto value = attributes.find(definition.id);
+        if (value == attributes.end()) return {};
+        const double observed = definition.signedValue ? double(int32_t(value->second)) : double(value->second);
+        return observed / std::ldexp(1., definition.shift);
     }
 void RemoteUiClients::Impl::queue(OnlineItemCommand c) {
         if (!c.context) c.context = context;

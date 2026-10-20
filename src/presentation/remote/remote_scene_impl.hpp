@@ -145,7 +145,11 @@ struct RemoteScene::Impl {
     RealmPortraitCatalog portraits;
     ClassicStrings strings;
     std::shared_ptr<const ClassicData> monsterText;
-    DataTable monstats, monstats2, charstats, skills, missiles, overlays, states, weapons, difficultyLevels, superuniques, objects;
+    const DataTable &monstats, &monstats2, &charstats, &skills, &missiles;
+    DataTable overlays, states;
+    const DataTable &weapons, &difficultyLevels;
+    DataTable superuniques;
+    const DataTable &objects;
     std::vector<size_t> characterRows;
     std::vector<PresentationSoundEvent> soundEvents;
     std::map<int, size_t> skillRows;

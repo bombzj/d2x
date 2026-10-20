@@ -1,6 +1,7 @@
 #pragma once
 #include "presentation/graphics/graphics.hpp"
 #include <array>
+#include <optional>
 #include <span>
 
 namespace d2x {
@@ -28,12 +29,24 @@ class PaletteBlendView {
     mutable int terrainSampleCount_{}, terrainIndexed_{};
     mutable Vector2 terrainHighlight_{};
     mutable std::array<std::array<float,4>,6> terrainSamples_{};
+    mutable std::optional<unsigned int> targetFramebuffer_;
     void finishTerrainLighting() const;
+    unsigned int targetFramebuffer() const;
     int destinationLocation_ = -1, paletteLocation_ = -1, tableLocation_ = -1, indicesLocation_ = -1, opaqueLocation_ = -1;
     void drawSprite(const Sprite *, Rectangle, Texture2D) const;
     int paletteIndex(Color) const;
 
   public:
+    // The caller keeps the render target bound throughout this scope. Each
+    // destination capture restores it before returning; no draws are reordered.
+    class TargetScope {
+        const PaletteBlendView &owner_;
+      public:
+        explicit TargetScope(const PaletteBlendView &);
+        ~TargetScope();
+        TargetScope(const TargetScope &) = delete;
+        TargetScope &operator=(const TargetScope &) = delete;
+    };
     // Scope only consecutive terrain entries. End before units, unlit draws,
     // background capture or any other consumer of the graphics state.
     class TerrainBatch {

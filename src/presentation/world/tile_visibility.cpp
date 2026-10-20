@@ -2,10 +2,9 @@
 #include "world/map_terrain.hpp"
 #include <algorithm>
 #include <cmath>
-#include <set>
 
 namespace d2x {
-void TileVisibility::clear() { tiles_.clear(); hiddenGroups_.clear(); draw_.clear(); }
+void TileVisibility::clear() { tiles_.clear(); hiddenGroups_.clear(); draw_.clear(); visit_ = 0; }
 void TileVisibility::transition(State &state, int from, int to, int64_t deadline) {
     state.from = from; state.to = to; state.deadline = deadline; state.flags |= 2;
 }
@@ -55,8 +54,10 @@ void TileVisibility::update(const MapTerrain &terrain, Vec position, int originX
     const auto selected = std::pair{ownParent,group};
     std::erase_if(hiddenGroups_, [&](const auto &entry) { return entry.first != selected; });
     const auto deadline = hiddenGroups_.try_emplace(selected, now + 500).first->second;
-    const std::set<size_t> near(own.near.begin(), own.near.end());
-    std::set<Key> retained;
+    if (++visit_ == 0) {
+        for (auto &[key, state] : tiles_) { (void)key; state.visit = 0; }
+        ++visit_;
+    }
     for (size_t i = 0; i < terrain.instances.size(); ++i) {
         const auto &tile = terrain.instances[i];
         if (!tile.wallArray || tile.removed) continue;
@@ -64,14 +65,15 @@ void TileVisibility::update(const MapTerrain &terrain, Vec position, int originX
         const auto *entry = terrain.tiles.at(size_t(tile.tile));
         const Key key{room.x + originX,room.y + originY,tile.x + originX,tile.y + originY,
             tile.type,entry->main,entry->sub,tile.flags & 0x1c000};
-        retained.insert(key);
         const auto [found,fresh] = tiles_.try_emplace(key);
         auto &state = found->second;
+        state.visit = visit_;
         if (fresh) state.hidden = (tile.flags & 8) != 0;
         // Common TogglePopsVisibility precedes the client foreground-wall
         // predicate. Both write the same transition fields in the original.
         bool applies = false, hidden = false;
-        if (near.contains(tile.room)) for (const auto &popup : terrain.data.roofPopups) {
+        if (std::find(own.near.begin(), own.near.end(), tile.room) != own.near.end())
+        for (const auto &popup : terrain.data.roofPopups) {
             if (popup.parentX != room.parentX || popup.parentY != room.parentY) continue;
             if (tile.x < popup.x - 1 || tile.y < popup.y - 1 ||
                 tile.x >= popup.x + popup.width + 1 || tile.y >= popup.y + popup.height + 1) continue;
@@ -106,6 +108,6 @@ void TileVisibility::update(const MapTerrain &terrain, Vec position, int originX
         draw_[i] = {state.hidden || (tile.flags & 0x400) ? uint8_t{0} : uint8_t(state.red),
                     (state.flags & 1) != 0};
     }
-    std::erase_if(tiles_, [&](const auto &entry) { return !retained.contains(entry.first); });
+    std::erase_if(tiles_, [&](const auto &entry) { return entry.second.visit != visit_; });
 }
 } // namespace d2x

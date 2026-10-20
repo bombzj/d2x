@@ -6,15 +6,15 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
     : archives(a), mapDisplay(display),
       artPalette(palette),
       portraits(a), strings(a), monsterText(sharedClassicData(a)),
-      monstats(a.read("data/global/excel/monstats.txt")),
-      monstats2(a.read("data/global/excel/monstats2.txt")), charstats(a.read("data/global/excel/charstats.txt")),
-      skills(a.read("data/global/excel/skills.txt")), missiles(a.read("data/global/excel/missiles.txt")),
+      monstats(monsterText->tables.at("monstats")),
+      monstats2(monsterText->tables.at("monstats2")), charstats(monsterText->tables.at("charstats")),
+      skills(monsterText->tables.at("skills")), missiles(monsterText->tables.at("missiles")),
       overlays(a.read("data/global/excel/overlay.txt")), states(a.read("data/global/excel/states.txt")),
-      weapons(a.read("data/global/excel/weapons.txt")),
-      difficultyLevels(a.read("data/global/excel/difficultylevels.txt")),
+      weapons(monsterText->tables.at("weapons")),
+      difficultyLevels(monsterText->tables.at("difficultylevels")),
       superuniques(a.read("data/global/excel/superuniques.txt")),
-      objects(a.read("data/global/excel/objects.txt")) {
-    const DataTable statCosts(a.read("data/global/excel/itemstatcost.txt"));
+      objects(monsterText->tables.at("objects")) {
+    const auto &statCosts = monsterText->tables.at("itemstatcost");
     for (size_t row = 0; row < statCosts.rows().size(); ++row) {
         if (statCosts.value(row,"Stat") == "skill_handofathena") slowMissileStat = statCosts.number(row,"ID").value_or(-1);
         if (statCosts.value(row,"Stat") == "damage_blood") damageBloodStat = statCosts.number(row,"ID").value_or(-1);

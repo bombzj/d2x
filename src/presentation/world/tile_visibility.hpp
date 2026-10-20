@@ -20,11 +20,13 @@ class TileVisibility {
         uint8_t flags{};
         bool hidden{};
         std::optional<bool> popHidden;
+        uint64_t visit{};
     };
     struct Draw { uint8_t alpha{255}; bool alternateLight{}; };
     std::map<Key,State> tiles_;
     std::map<std::pair<Parent,int>,int64_t> hiddenGroups_;
     std::vector<Draw> draw_;
+    uint64_t visit_{};
     static void advance(State &, int64_t now);
     static void transition(State &, int from, int to, int64_t deadline);
   public:

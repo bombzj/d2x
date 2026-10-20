@@ -1,6 +1,6 @@
 # 客户端契约与原协议基线
 
-更新：2026-10-11。原服与自研宿主共用完整客户端，只有连接选择不同。本文维护客户端职责、原协议入口及限制；原服输出参考见[联网模块](NETWORK.md#既有有限证据)，当前实现范围见[基线](../../BASELINE.md)。
+更新：2026-10-20。原服与自研宿主共用完整客户端，只有连接选择不同。本文维护客户端职责、原协议入口及限制；原服输出参考见[联网模块](NETWORK.md#既有有限证据)，当前实现范围见[基线](../../BASELINE.md)。
 
 技能客户端修改边界由[COMMON](../gameplay/skills/COMMON.md#技能迁入规范)维护；弓弩／箭袋及宠物投影的原版修复与死亡图未核实项见[亚马逊](../gameplay/skills/AMAZON.md#原版依据与客户端差异)。
 
@@ -43,6 +43,8 @@ app/debug/server_commands的参与者选择是宿主管理入口；network新增
 
 RemoteUiClients按原协议副本／物品解码版本、游戏与区域代次、场景区域／原点／调色板／城镇属性、对白身份及本地走跑／热键变化重建人物、库存、交互和佣兵视图。显示位置、丢弃落点、命令泵送及物品反馈超时仍逐呈现帧更新；一次重建先更新人物和地图，再更新库存，最后投影交互／商店，不重复生成旧人物／库存的交互视图。该缓存只复用只读显示值，不跳过服务端请求、确认或资格校验；无关原包版本变化也允许保守失效。
 
+本人属性显示只索引当前MPQ的`ItemStatCost.Stat／ID／ValShift／Signed`元数据，值仍逐次读取最新协议副本。索引保留精确名称匹配、重复名称首行优先、无效／超过255的ID及未收到值保持未知的边界；不缓存属性结果或写死编号。人物／库存／交互投影继续按原全局版本保守失效，未以缩小失效范围省略更新。
+
 ## 共用显示入口
 
 技能资格的 MPQ 导入、固有技能清单和学习／主动技能判断共用 skill_eligibility；怪物目标选择、按住锁定和发送前校验共用 RemoteCombat.monsterTargetEligible，表现中的死亡判断共用 onlineMonsterCorpse。协议适配仍核对场景代次、单位分配、选中 owner、范围和地图绑定。
@@ -54,6 +56,8 @@ RemoteUiClients按原协议副本／物品解码版本、游戏与区域代次�
 任务显示、通知与未知状态规则统一见[任务系统](../gameplay/quests/SYSTEM.md#原协议与客户端投影)，具体面板生命周期见[NPC／任务接口](NPC_QUEST.md)。任务资格、NPC服务和奖励由所连接服务端决定；客户端不从地图种子、公共旗标或旧执行器补推进。
 
 世界沿 WorldDrawView → SceneView.drawWorld，动画沿 ActorAnimationCatalog／ActorAnimationState；自动地图沿共同 AutomapCatalog／AutomapExploration → drawAutomap。删除无人使用的旧小地图状态／投影、IMapAssetSource 和旧资源预热，原服地图适配保留必要坐标／资源事实。声音沿 SoundCatalog → PresentationSoundEvent／SoundActorView／ItemDropSoundEvent → SceneAudio → SoundBank，不在两端解释 MonSounds；物品原表落地声音及25Hz触发帧同样只在公共配置入口读取。
+
+地形GPU纹理按原DT1图像边界与当前视口相交后才上传；瓦片选择、动画帧、显示排序和发现判断不变。发现仍核对基础瓦片的原边界及有效纹理，与当帧动画／高亮分开。按幕／DT1指针缓存并持有原库寿命，地图改变只重建索引，进入视口时同步准备所需原图，不预载屏外整套DT1。`RemoteScene`持有共享`ClassicData`并只读复用其中无条件准备的怪物、职业、技能、飞弹、武器、难度和物件表；状态／Overlay表仍保留独立读取，以维持公共技能准备失败时的既有显示边界。未改07／08消费、04生效门槛或地图随机；DCC解码与角色合成仍同步，首次技能／姿态及公共场景UI准备仍可能造成长帧，未引入异步图元或近似资源。
 
 Single Player的暂停策略由app/frontend在菜单输入处理后传入RemoteScene；单机宿主沿既有EmbeddedRealm.pump暂停，不增加协议消息。RemoteScene暂停移动预测、人物／怪物／物件动画、弹体与效果时钟，SceneView.advanceWorldPresentation同步冻结地面物品翻转及世界提示动画，世界声音流同步暂停。SceneView.refreshUi只推进菜单与面板UI；暂停期间及恢复首帧更新墙钟锚点但不增加世界时间，避免恢复追帧或将暂停识别成长帧加载而清除效果。共享房间／原服不因ESC菜单或失焦冻结世界表现。
 
