@@ -100,7 +100,7 @@ MonBow（339）／MonFireArrow（340）／MonExplodingArrow（342）：`cr_arche
 
 第五幕持矛罗格的Jab（10）读取自己的seq_crlancerjab及A1物理参数；MonPowerStrike（344）／MonIceSpear（347）沿公共St6起手分配、Do2事件结算，读取各自雷／冰伤和持续时间。Fn036按存在的技能槽依次抽取概率，冲近后清除强制攻击标记；本轮未专项实机核对。
 
-[monster_actions_content.cpp](../../../src/hosting/monster_actions_content.cpp)及[act2_monster_skills.cpp](../../../src/hosting/act2_monster_skills.cpp)按当前MonStats槽、Skills、Missiles、MonSeq及难度准备规则；[skills/monster_actions.cpp](../../../src/server/systems/skills/monster_actions.cpp)持开始／释放队列，monsters执行复活／出生／移动，missiles／effects执行弹体和效果。AI只提交窄请求，不另建技能执行器。精英所有权见[精英](../monsters/ELITES.md)与[首领](../monsters/BOSSES.md)。
+[monster_actions_content.cpp](../../../src/hosting/monster_actions_content.cpp)（含第二幕技能槽、MonSeq行时钟与固有光环）按当前MonStats槽、Skills、Missiles、MonSeq及难度准备规则；[skills/monster_actions.cpp](../../../src/server/systems/skills/monster_actions.cpp)持开始／释放队列，monsters执行复活／出生／移动，missiles／effects执行弹体和效果。AI只提交窄请求，不另建技能执行器。精英所有权见[精英](../monsters/ELITES.md)与[首领](../monsters/BOSSES.md)。
 
 已有公共方向／路径计算及原Clt／Srv差异沿[技能COMMON](COMMON.md)和[怪物COMMON](../monsters/COMMON.md)维护。怪物调用职业技能时链接职业页，怪物专用程序才在本页登记算法；与物件、任务死亡演出、伙伴能力的分类见[目录](README.md)。
 

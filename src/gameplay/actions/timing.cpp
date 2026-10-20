@@ -1,6 +1,7 @@
 #include "timing.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <limits>
 #include <stdexcept>
@@ -21,6 +22,9 @@ int monsterAnimationTicks(AnimationTiming timing, int startFrame) {
     if (timing.frames <= 0 || startFrame < 0 || startFrame >= timing.frames)
         throw std::invalid_argument("Unprepared monster animation frames");
     return std::max(2, animationFrameTicks(timing.frames - startFrame, timing.speed));
+}
+int animationSecondsTicks(float seconds) {
+    return std::max(1, int(std::ceil(seconds * 25.f)));
 }
 int effectiveFasterRate(int itemBonus) {
     if (itemBonus <= -120) throw std::invalid_argument("Animation bonus exceeds the native supported range");

@@ -6,6 +6,7 @@
 #include "content/monsters/monster_ai_data.hpp"
 #include "gameplay/skills/resolve.hpp"
 #include "gameplay/skills/spec.hpp"
+#include "gameplay/actions/timing.hpp"
 #include "core/random.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include <algorithm>
@@ -67,7 +68,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
         const auto timing=sequence?loadMonsterSequenceTiming(animations,sequences,mode,record->token,lower,weapon,event):loadMonsterActionTiming(animations,record->token,lower,weapon,event);
         const auto motion=!timing && missile.empty() && (lower=="s1" || lower=="s2")?loadMonsterMotionTiming(animations,record->token,lower,weapon):std::nullopt;
         if(!timing && !motion) return {};
-        server::MonsterAttackRule attack;attack.duration=std::max(1,int(std::ceil((timing?timing->duration:motion->duration)*25)));attack.release=timing?std::clamp(int(std::ceil(timing->impact*25)),1,attack.duration):attack.duration;attack.rank=uint8_t(rank);
+        server::MonsterAttackRule attack;attack.duration=animationSecondsTicks(timing?timing->duration:motion->duration);attack.release=timing?std::clamp(animationSecondsTicks(timing->impact),1,attack.duration):attack.duration;attack.rank=uint8_t(rank);
         attack.nativeMode=lower=="a2"?5:lower=="s1"?8:lower=="s2"?9:4;
         if(rule.trap==Trap::Soul) {
             attack.useAttackRate=lower=="a1" || lower=="a2";
@@ -108,7 +109,7 @@ std::optional<server::PreparedMonster> prepareEnvironmentMonster(Archives &archi
     if(rule.trap==Trap::Soul) for(const auto *mode:{"a2","s1","s2"}) {
         if(auto action=make(mode,{},rank)) {if(std::string_view(mode)!="a2") {action->minimum=action->maximum=0;}rule.attacks.emplace(action->nativeMode,*action);}
     }
-    const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));rule.deathTicks=death?std::max(1,int(std::ceil(death->duration*25))):1;
+    const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));rule.deathTicks=death?animationSecondsTicks(death->duration):1;
     if(record->killable) {
         rule.experience.resize(100);rule.experienceRatios.resize(100);
         for(int level=1;level<100;++level) {const auto xp=resolveMonsterExperience(data,catalog,world,{identity,RegionId(request.level),request.difficulty,level,{},request.ladderMonsterStats});if(!xp.deferred.empty()) {if(stats.number(record->sourceRow,"Exp"+suffix).value_or(0)!=0) return {};continue;}rule.experience[size_t(level)]=xp.amount;rule.experienceBase=xp.base;rule.experienceLevel=xp.monsterLevel;rule.experienceShift=xp.shift;rule.experienceRatios[size_t(level)]=xp.ratio;}

@@ -32,6 +32,9 @@ ItemInstance prepareSummonEquipment(const ClassicData &data,server::companions::
     prepared.equipmentRandom=random;++prepared.allocatedEquipment;return item;
 }
 namespace {
+int applyLifeModifiers(int base,int lifePercent,int flatLife) {
+    return std::max(1,int(int64_t(base)*(100+lifePercent)/100)+flatLife);
+}
 void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &data) {
     const auto &source=*prepared.source.material;const auto *original=data.items.find(source.definition);
     if(!original || !original->ironGolemMaterial || !source.identified) throw std::runtime_error("Invalid Iron Golem metal material");
@@ -60,7 +63,7 @@ void equipIronGolem(server::companions::Prepared &prepared,const ClassicData &da
     if(modifiers.combat.coldAbsorbPercent>0) attributes.coldResist-=summonResist;
     if(modifiers.combat.lightningAbsorbPercent>0) attributes.lightningResist-=summonResist;
     attributes.fireResist+=modifiers.fireResist;attributes.coldResist+=modifiers.coldResist;attributes.lightningResist+=modifiers.lightningResist;attributes.poisonResist+=modifiers.poisonResist;
-    attributes.maxLife=std::max(1,int(int64_t(attributes.maxLife)*(100+modifiers.combat.lifePercent)/100)+modifiers.maxLife);
+    attributes.maxLife=applyLifeModifiers(attributes.maxLife,modifiers.combat.lifePercent,modifiers.maxLife);
     modifiers.combat.lifePercent=0;mergeCombatModifiers(attributes.combat,modifiers.combat);
     if(gear.weapons[0].item) {prepared.weapon=gear.weapons[0];prepared.weapon.meleeBaseMinimum+=int(stats.minimumDamage*256.f);prepared.weapon.meleeBaseMaximum+=int(stats.maximumDamage*256.f);}
     for(const auto &stat:resolveItemStats(data,source,stats.level)) if(stat.effect=="item_slow") {auto pet=std::make_shared<NecroPetSpec>(*prepared.summon.necro);pet->slowPercent=stat.value;prepared.summon.necro=std::move(pet);}
@@ -101,8 +104,8 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
         if(!source.refresh && source.summon.kind!=MonsterKind::BoneWall) limitedRandom(result.random,1);
         result.summon.native->initialLife=result.summon.native->base.attributes.maxLifeFixed;
     }
-    if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
-    rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+    if(attack) {rule.attackTicks=animationSecondsTicks(attack->duration);rule.impactTick=std::clamp(animationSecondsTicks(attack->impact),1,rule.attackTicks);}
+    rule.deathTicks=animationSecondsTicks(death->duration);
     if(source.summon.kind==MonsterKind::BoneWall) {
         auto skillName=std::string(table.value(record->sourceRow,"Skill1"));
         for(auto &letter:skillName) letter=char(std::tolower(static_cast<unsigned char>(letter)));
@@ -111,7 +114,7 @@ server::companions::Prepared prepareNecro(const server::companions::Preparation 
         rule.summonLifeFrames=data.nativeFormulas->skills.at(aiSkill->second).number("param2");
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s2",monsterModeWeapon(archives,record->token,"s2",record->baseWeapon));
         if(!birth || rule.summonLifeFrames<=0) throw std::runtime_error("Missing original BoneWall birth/lifetime");
-        rule.summonBirthTicks=std::max(1,int(std::ceil(birth->duration*25)));
+        rule.summonBirthTicks=animationSecondsTicks(birth->duration);
     }
     if(attack) {
         auto &action=rule.attacks.emplace(4,server::MonsterAttackRule{0,0,0,rule.attackTicks,rule.impactTick,{}}).first->second;
@@ -206,7 +209,7 @@ server::companions::Prepared prepare(const server::companions::Preparation &sour
     for(const auto id:unidentified) equipment.inventory.items.at(id).identified=false;
     attributes.strength=improved.strength;attributes.dexterity=improved.dexterity;
     attributes.defense=gear.defense;
-    attributes.attackRating+=modifiers.attackRating;attributes.maxLife=std::max(1,attributes.maxLife*(100+modifiers.combat.lifePercent)/100+modifiers.maxLife);
+    attributes.attackRating+=modifiers.attackRating;attributes.maxLife=applyLifeModifiers(attributes.maxLife,modifiers.combat.lifePercent,modifiers.maxLife);
     attributes.fireResist+=modifiers.fireResist;attributes.coldResist+=modifiers.coldResist;attributes.lightningResist+=modifiers.lightningResist;attributes.poisonResist+=modifiers.poisonResist;
     modifiers.combat.lifePercent=modifiers.combat.defensePercent=modifiers.combat.damagePercent=0;
     mergeCombatModifiers(attributes.combat,modifiers.combat);

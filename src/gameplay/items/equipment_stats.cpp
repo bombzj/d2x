@@ -1,6 +1,7 @@
 #include "equipment_stats.hpp"
 #include "definitions.hpp"
 #include "state.hpp"
+#include "gameplay/items/quality.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/combat/unit_values.hpp"
 #include <algorithm>
@@ -74,8 +75,8 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
         int64_t baseHigh = *maximum;
         if (item->nativeFlags & 0x400000u) { baseLow = baseLow * 3 / 2; baseHigh = baseHigh * 3 / 2; }
         if (item->quality == ItemQuality::Inferior) {
-            baseLow = std::max<int64_t>(1, baseLow * 75 / 100);
-            baseHigh = std::max<int64_t>(2, baseHigh * 75 / 100);
+            baseLow = inferiorBaseValue<int64_t>(baseLow, 1);
+            baseHigh = inferiorBaseValue<int64_t>(baseHigh, 2);
         }
         baseLow = nativeAdd(nativeChecked(baseLow),nativeStatPercentage(nativeChecked(baseLow),own.enhancedMinimum));
         baseHigh = nativeAdd(nativeChecked(baseHigh),nativeStatPercentage(nativeChecked(baseHigh),own.enhancedMaximum));
@@ -158,8 +159,8 @@ EquipmentStats deriveEquipmentStats(const EquipmentLoadout &loadout,
             auto tmax = definition.base.throwMax;
             if (!tmin || !tmax || *tmin < 0 || *tmax < *tmin)
                 throw std::runtime_error("Unverified original throw damage: " + definition.code);
-            const auto rawLow = item->quality == ItemQuality::Inferior ? std::max(2, *tmin * 75 / 100) : *tmin;
-            const auto rawHigh = item->quality == ItemQuality::Inferior ? std::max(1, *tmax * 75 / 100) : *tmax;
+            const auto rawLow = item->quality == ItemQuality::Inferior ? inferiorBaseValue(*tmin, 2) : *tmin;
+            const auto rawHigh = item->quality == ItemQuality::Inferior ? inferiorBaseValue(*tmax, 1) : *tmax;
             const auto localLow = int64_t(rawLow) * (100 + own.enhancedMinimum) / 100 + own.minimum;
             const auto localHigh = int64_t(rawHigh) * (100 + own.enhancedMaximum) / 100 + own.maximum;
             const auto rawMinimum = std::max<int64_t>(0, localLow + combat.minimumDamage) * 256;

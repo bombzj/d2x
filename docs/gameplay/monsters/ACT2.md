@@ -65,7 +65,7 @@ MonPreset固定身份包括Radament、Bloodwitch the Wild、Fangskin、Beetlebur
 
 ## 技能、生命周期与原资源
 
-`hosting/act2_monster_skills.cpp`按MonStats最多8槽、Skills、Missiles、MonSeq、AnimData及难度加成准备纯值。MonSeq显示帧可倒放／重复、混用A1／A2；释放时钟按序列行累计，Jab保留多次命中事件。技能使用自己的伤害／命中快照，不把SQ当普通A1。SC维持施法时钟，移动技能另持目的地与中断代次。Charge使用Run基速、最低50%的原速度修正，跟踪目标位置，结束移动后复验额外近战范围及邻近新目标；接近时回落当前怪物自己的A2。原skill_move沿状态事实和快照同步，0x16位置更新保留施放身份，显示随移动阶段回绕／切入攻击段。
+`hosting/monster_actions_content.cpp`（含原第二幕技能准备）按MonStats最多8槽、Skills、Missiles、MonSeq、AnimData及难度加成准备纯值。MonSeq显示帧可倒放／重复、混用A1／A2；释放时钟按序列行累计，Jab保留多次命中事件。技能使用自己的伤害／命中快照，不把SQ当普通A1。SC维持施法时钟，移动技能另持目的地与中断代次。Charge使用Run基速、最低50%的原速度修正，跟踪目标位置，结束移动后复验额外近战范围及邻近新目标；接近时回落当前怪物自己的A2。原skill_move沿状态事实和快照同步，0x16位置更新保留施放身份，显示随移动阶段回绕／切入攻击段。
 
 `monsters/act2_skills.cpp`负责钻地、移动、出生及木乃伊支持目标；`skills/monster_actions.cpp`持释放队列；`missiles/monster.cpp`持冰尖柱爆炸／冻结、延迟陨石／地火及毒瓶子弹体。甲虫／虫后固有回调与精英词缀分开计时，本身光环与精英光环各自执行。客户端消费真实MonSeq、钻地末帧、甲虫闪电及虫后死亡毒云，不判伤害或生成战斗子怪。Vulture空中使用无碰撞移动、不可攻击／选择，S1沿原移动包持续显示，落地S2复验原碰撞及动态占位。BatDemon的S3／S4／S2使用各自AnimData时钟与原26／28动作包。蓝／红及其他颜色状态按States.colorpri选择当前幕PL2的colorshift，不自造RGB替身。
 

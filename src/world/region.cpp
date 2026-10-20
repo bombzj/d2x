@@ -222,6 +222,7 @@ std::vector<Region> loadRegions(Archives &archives, EntityIds &ids, const std::v
 void loadRegion(Archives &archives, EntityIds &ids, Region &region, TileLibraryCache &cache,
                 const MonsterCatalog &monsters, const WorldCatalog &catalog, uint32_t levelSeed) {
         if (region.loaded) return;
+        const auto presets = act1ObjectPresets();
         auto objectRows = decodeTable(archives.read("data/global/excel/objects.txt"));
         auto groupRows = decodeTable(archives.read("data/global/excel/objgroup.txt"));
         auto shrineRows = decodeTable(archives.read("data/global/excel/shrines.txt"));

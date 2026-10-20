@@ -4,6 +4,7 @@
 #include "content/monsters/monster_catalog.hpp"
 #include "gameplay/skills/druid_summon.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
+#include "gameplay/actions/timing.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "resources/anim_data.hpp"
 #include "resources/archive.hpp"
@@ -42,11 +43,11 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
     }
     const auto death=loadMonsterMotionTiming(animations,record->token,"dt",monsterModeWeapon(archives,record->token,"dt",record->baseWeapon));
     if(!death) throw std::runtime_error("Missing native druid pet death animation");
-    rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+    rule.deathTicks=animationSecondsTicks(death->duration);
     if(pet.summonMode=="S1" || pet.vine) {
         const auto birth=loadMonsterMotionTiming(animations,record->token,"s1",monsterModeWeapon(archives,record->token,"s1",record->baseWeapon));
         if(!birth) throw std::runtime_error("Missing native druid pet birth animation");
-        rule.spawnMode=8;rule.spawnTicks=std::max(1,int(std::ceil(birth->duration*25)));
+        rule.spawnMode=8;rule.spawnTicks=animationSecondsTicks(birth->duration);
     }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));
     const auto action=[&](int skill,std::string mode,bool ordinary) {
@@ -70,7 +71,7 @@ server::companions::Prepared prepareDruidSummon(const server::companions::Prepar
         if(!timing) throw std::runtime_error("Missing original druid pet action: "+mode);
         server::MonsterAttackRule value;value.action=server::MonsterAttackRule::Action::Druid;
         value.nativeMode=timing->sequenceFrames?14:display=="a1"?4:display=="a2"?5:display=="s1"?8:display=="s2"?9:display=="s3"?10:7;
-        value.duration=std::max(1,int(std::ceil(timing->duration*25)));value.release=std::clamp(int(std::ceil(timing->impact*25)),1,value.duration);
+        value.duration=animationSecondsTicks(timing->duration);value.release=std::clamp(animationSecondsTicks(timing->impact),1,value.duration);
         value.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
         value.animationAction=timing->actionFrame;value.animationSequence=timing->sequenceFrames>0;value.animationEvents=timing->eventFrames;
         value.animationFlags=timing->flags;

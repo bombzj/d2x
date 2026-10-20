@@ -7,6 +7,7 @@
 #include "content/items/item_properties.hpp"
 #include "content/skills/table_values.hpp"
 #include "gameplay/skills/assassin_summon.hpp"
+#include "gameplay/actions/timing.hpp"
 #include "gameplay/items/equipment_stats.hpp"
 #include "gameplay/items/equipment_contributions.hpp"
 #include "gameplay/items/native_sources.hpp"
@@ -129,16 +130,16 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
             if(!clock) throw std::runtime_error("Missing transformed shadow recovery animation");
             const AnimationTiming timing{clock->frames,clock->speed};
             (mode=="gh"?rule.hitRecoveryAnimation:rule.blockAnimation)=timing;
-            (mode=="gh"?rule.hitRecoveryTicks:rule.blockTicks)=std::max(1,int(std::ceil(clock->duration*25)));
+            (mode=="gh"?rule.hitRecoveryTicks:rule.blockTicks)=animationSecondsTicks(clock->duration);
         }
     } else if(!prepareMonsterLifecycle(archives,data,animations,*record,rule)) throw std::runtime_error("Missing original assassin pet lifecycle");
     const auto death=loadMonsterMotionTiming(animations,token,"dt",pet.warp?"hth":monsterModeWeapon(archives,token,"dt",weaponClass));
     if(!death) throw std::runtime_error("Missing original assassin pet death animation");
-    rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+    rule.deathTicks=animationSecondsTicks(death->duration);
     if(!pet.warp && pet.summonMode=="S1") {
         const auto birth=loadMonsterMotionTiming(animations,token,"s1",monsterModeWeapon(archives,token,"s1",weaponClass));
         if(!birth) throw std::runtime_error("Missing native sentry birth animation");
-        rule.spawnMode=8;rule.spawnTicks=std::max(1,int(std::ceil(birth->duration*25)));
+        rule.spawnMode=8;rule.spawnTicks=animationSecondsTicks(birth->duration);
     }
     const DataTable sequences(archives.read("data/global/excel/monseq.txt"));const auto &stats=data.tables.at("monstats");
     const auto prepareAction=[&](int skill,const std::string &mode) {
@@ -165,7 +166,7 @@ server::companions::Prepared prepareAssassinSummon(const server::companions::Pre
         if(!timing) throw std::runtime_error("Missing original assassin pet skill animation: "+mode);
         server::MonsterAttackRule action;action.action=server::MonsterAttackRule::Action::Assassin;
         action.nativeMode=timing->sequenceFrames?14:lower=="a1"?4:lower=="a2"?5:lower=="s1"?8:lower=="s2"?9:7;
-        action.duration=std::max(1,int(std::ceil(timing->duration*25)));action.release=std::clamp(int(std::ceil(timing->impact*25)),1,action.duration);
+        action.duration=animationSecondsTicks(timing->duration);action.release=std::clamp(animationSecondsTicks(timing->impact),1,action.duration);
         action.animation=AnimationTiming{timing->sequenceFrames?timing->sequenceFrames:timing->frames,timing->speed};
         action.animationAction=timing->actionFrame;action.animationSequence=timing->sequenceFrames>0;
         action.animationEvents=timing->eventFrames;action.casting=lower=="sc";

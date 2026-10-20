@@ -70,7 +70,7 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             const auto *timing=cache.monsters->hirelingAttackTiming(row->classId);
             const auto *death=cache.monsters->hirelingMotion(row->classId,"dt");
             if(!timing || !death) throw std::runtime_error("Missing original Rogue AnimData");
-            rule.attackTicks=std::max(1,int(std::ceil(timing->duration*25)));rule.impactTick=std::max(1,int(std::ceil(timing->impact*25)));rule.deathTicks=std::max(1,int(std::ceil(death->duration*25)));
+            rule.attackTicks=animationSecondsTicks(timing->duration);rule.impactTick=animationSecondsTicks(timing->impact);rule.deathTicks=animationSecondsTicks(death->duration);
             AnimDataTable animations(archives.read("data/global/animdata.d2"));
             if(!prepareMonsterLifecycle(archives,data,animations,*monster,rule)) throw std::runtime_error("Missing Rogue components/lifecycle");
             // Fn061 chooses a target only at distance <25. Hireable's empty

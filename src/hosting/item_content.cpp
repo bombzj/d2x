@@ -1,6 +1,7 @@
 #include "item_content.hpp"
 #include "content/items/item_properties.hpp"
 #include "content/items/item_quality.hpp"
+#include "gameplay/items/quality.hpp"
 #include <array>
 #include "content/items/cube_data.hpp"
 #include "gameplay/items/staffmods.hpp"
@@ -125,7 +126,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
         const auto minimum = definition->base.minDefense, maximum = definition->base.maxDefense;
         if (!minimum || !maximum || *minimum < 0 || *maximum < *minimum) throw std::runtime_error("Missing armor defense");
         item.defense = *minimum + int(limitedRandom(unitRandom, unsigned(*maximum - *minimum + 1)));
-        if (item.quality == ItemQuality::Inferior) item.defense = std::max(1, item.defense * 75 / 100);
+        if (item.quality == ItemQuality::Inferior) item.defense = inferiorBaseValue(item.defense, 1);
         const auto applyBase=[&](const auto &properties) {
             for(const auto &entry:properties) {
                 const auto program=std::find_if(data.properties.begin(),data.properties.end(),[&](const auto &record){return record.code==entry.code;});

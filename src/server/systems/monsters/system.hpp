@@ -500,4 +500,5 @@ class System {
     std::optional<std::pair<Vec,int>> targetPosition(EntityId,RegionId) const;
     std::optional<std::pair<Vec,int>> nativeTargetPosition(EntityId,RegionId) const;
 };
+int movementPercent(const Actor &actor, uint64_t tick);
 }

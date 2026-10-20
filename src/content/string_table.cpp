@@ -93,10 +93,21 @@ ClassicStrings::ClassicStrings(Archives &archives, const Language &language) {
             }
         }
     }
+    // Original monstats rows without a public name point at these keys; the
+    // shared value ("an evil force") is engine filler, never a display name.
+    for (const auto key : {"dummy", "Dummy", "not used", "unused", "Not used"})
+        if (const auto value = find(key); !value.empty()) { placeholder_ = value; break; }
 }
 std::string_view ClassicStrings::find(std::string_view key) const {
     auto found = entries_.find(key);
     return found == entries_.end() ? std::string_view{} : found->second;
+}
+std::string_view ClassicStrings::findDisplayName(std::string_view key) const {
+    const auto value = find(key);
+    return isPlaceholder(value) ? std::string_view{} : value;
+}
+bool ClassicStrings::isPlaceholder(std::string_view value) const {
+    return !placeholder_.empty() && value == placeholder_;
 }
 std::string_view ClassicStrings::find(int index) const {
     auto found = indexed_.find(index);

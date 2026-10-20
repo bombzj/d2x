@@ -136,8 +136,8 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     rule.defense = *profile->defense; rule.attackRating = profile->attack1Rating.value_or(0);
     rule.resistances = profile->resistances; rule.criticalChance = profile->criticalChance;
     rule.size = record->collisionSize; rule.meleeRange = record->meleeRange;
-    if(attack) {rule.attackTicks=std::max(1,int(std::ceil(attack->duration*25)));rule.impactTick=std::clamp(int(std::ceil(attack->impact*25)),1,rule.attackTicks);}
-    rule.deathTicks = std::max(1, int(std::ceil(death->duration * 25))); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
+    if(attack) {rule.attackTicks=animationSecondsTicks(attack->duration);rule.impactTick=std::clamp(animationSecondsTicks(attack->impact),1,rule.attackTicks);}
+    rule.deathTicks = animationSecondsTicks(death->duration); rule.decisionTicks = delay.value_or(0)>0?*delay:15;
     rule.nativeVelocity = *record->walkVelocity; rule.difficulty = request.difficulty; rule.collision = record->movementRule();
     rule.corpseExplosionPercent=data.tables.at("difficultylevels").number(size_t(request.difficulty),"MonsterCEDamagePercent").value_or(0);
     rule.boneDeathExplosion=record->base=="bonefetish1" && data.tables.at("monstats").number(record->sourceRow,"deathDmg").value_or(0)!=0;
@@ -165,7 +165,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if(record->resurrectionMode!="nu" && record->resurrectionMode!="xx" && !record->resurrectionMode.empty()) {
         const auto clock=loadMonsterMotionTiming(animations,record->token,record->resurrectionMode,monsterModeWeapon(archives,record->token,record->resurrectionMode,record->baseWeapon));
         if(!clock) return {};
-        rule.resurrectionTicks=std::max(1,int(std::ceil(clock->duration*25)));
+        rule.resurrectionTicks=animationSecondsTicks(clock->duration);
         constexpr std::array modes{"dt","nu","wl","gh","a1","a2","bl","sc",
             "s1","s2","s3","s4","dd","kb","sq","rn"};
         const auto mode=std::ranges::find(modes,record->resurrectionMode);
@@ -186,7 +186,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
     if (record->ai == "Fallen") {
         const auto shout = loadMonsterMotionTiming(animations, record->token, "s2", monsterModeWeapon(archives, record->token, "s2", record->baseWeapon));
         if (!shout) return {};
-        rule.attacks.emplace(9, server::MonsterAttackRule{0, 0, 0, std::max(1, int(std::ceil(shout->duration * 25))), 1, {}});
+        rule.attacks.emplace(9, server::MonsterAttackRule{0, 0, 0, animationSecondsTicks(shout->duration), 1, {}});
     }
     auto attacks = prepareMonsterAttacks(archives, data, animations, *record, *profile,request.difficulty,request.ladderMonsterStats);
     rule.attacks.merge(attacks);
@@ -232,7 +232,7 @@ std::optional<server::PreparedMonster> combatMonster(Archives &archives, const C
             if(!childRecord) return {};
             const auto rise=loadMonsterMotionTiming(animations,childRecord->token,"s1",monsterModeWeapon(archives,childRecord->token,"s1",childRecord->baseWeapon));
             if(!rise) return {};
-            rule.spawnTicks=std::max(1,int(std::ceil(rise->duration*25)));
+            rule.spawnTicks=animationSecondsTicks(rise->duration);
         }
     }
     if(rule.nativeAura) {
@@ -526,7 +526,7 @@ void prepareCombatPopulation(Archives &archives, const ClassicData &data, Prepar
             if(candidate.index!=populationRules.chestClass) continue;
             const auto birth=loadMonsterMotionTiming(animations,candidate.token,"s1",
                 monsterModeWeapon(archives,candidate.token,"s1",candidate.baseWeapon));
-            if(birth) populationRules.chestBirthTicks=std::max(1,int(std::ceil(birth->duration*25)));
+            if(birth) populationRules.chestBirthTicks=animationSecondsTicks(birth->duration);
             break;
         }
     }

@@ -8,6 +8,7 @@ struct AnimationTiming {
 
 int animationFrameTicks(int frame, int speed);
 int monsterAnimationTicks(AnimationTiming timing, int startFrame = 0);
+int animationSecondsTicks(float seconds);
 int effectiveFasterRate(int itemBonus);
 int effectiveCastSpeed(int animationSpeed, int fasterCast);
 int effectiveRecoverySpeed(int animationSpeed, int itemBonus, bool holyShield = false);

@@ -2,6 +2,7 @@
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
 #include "gameplay/items/state.hpp"
+#include "gameplay/items/quality.hpp"
 #include "gameplay/consumables/potions.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -207,8 +208,8 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             if (!low || !high) return;
             if (item.nativeFlags & 0x400000u) { low = *low * 3 / 2; high = *high * 3 / 2; }
             if (item.quality == ItemQuality::Inferior) {
-                low = std::max(thrown ? 2 : 1, *low * 75 / 100);
-                high = std::max(thrown ? 1 : 2, *high * 75 / 100);
+                low = inferiorBaseValue(*low, thrown ? 2 : 1);
+                high = inferiorBaseValue(*high, thrown ? 1 : 2);
             }
             const int minimum = std::max(1, *low * (100 + sum("item_mindamage_percent")) / 100 + sum("mindamage"));
             const int maximum = std::max(minimum + 1, *high * (100 + sum("item_maxdamage_percent")) / 100 + sum("maxdamage"));

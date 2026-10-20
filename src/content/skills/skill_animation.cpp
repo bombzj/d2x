@@ -2,6 +2,7 @@
 #include "skill_animation.hpp"
 #include "resources/anim_data.hpp"
 #include "content/monsters/monster_animation.hpp"
+#include "gameplay/actions/timing.hpp"
 #include "gameplay/skills/cast_timing.hpp"
 #include <cmath>
 #include <stdexcept>
@@ -70,12 +71,12 @@ void loadSkillAnimations(SkillCatalog &catalog, const DataTable &skills, const D
             if(!attack || !rise || !death || monsters.value(row,"AI")!="Hydra" || monsters.value(row,"Sk1mode")!="A1")
                 throw std::runtime_error("Missing original Hydra lifecycle animation");
             head.nativeClass=monsters.number(row,"hcIdx").value();
-            head.attackTicks=std::max(1,int(std::ceil(attack->duration*25.f)));
-            head.impactTick=std::max(1,int(std::ceil(attack->impact*25.f)));
+            head.attackTicks=animationSecondsTicks(attack->duration);
+            head.impactTick=animationSecondsTicks(attack->impact);
             head.attackAnimation={attack->frames,attack->speed};head.actionFrame=attack->actionFrame;
             head.animationFlags=attack->flags;
-            head.riseTicks=std::max(1,int(std::ceil(rise->duration*25.f)));
-            head.deathTicks=std::max(1,int(std::ceil(death->duration*25.f)));
+            head.riseTicks=animationSecondsTicks(rise->duration);
+            head.deathTicks=animationSecondsTicks(death->duration);
             for(size_t skill=0;skill<skills.rows().size();++skill) if(skills.value(skill,"skill")==monsters.value(row,"Skill1")) head.attackSkill=skills.number(skill,"Id").value_or(-1);
             if(head.attackSkill<=0) throw std::runtime_error("Missing Hydra missile skill identity");
             found=true;break;

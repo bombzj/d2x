@@ -175,8 +175,11 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
             if (width <= 0 || height <= 0) continue;
             const auto nameKey = monsters_.value(record->second, "NameStr");
             const auto name = strings_.find(nameKey);
+            // Placeholder rows keep the target clickable but carry no display
+            // name; only a genuinely missing key falls back to the raw key.
             view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Npc,
-                std::string(name.empty() ? nameKey : name), {}, width, height});
+                strings_.isPlaceholder(name) ? std::string{} : std::string(name.empty() ? nameKey : name),
+                {}, width, height});
             continue;
         }
         if (key.type == 5) {
@@ -655,7 +658,7 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         if (key.type == 2) cel = automap_.objectCel(*unit.classId);
         else if (const auto row = monsterRows_.find(*unit.classId); row != monsterRows_.end()) {
             cel = automap_.npcCel(monsters_.value(row->second, "Id"));
-            name = strings_.find(monsters_.value(row->second, "NameStr"));
+            name = strings_.findDisplayName(monsters_.value(row->second, "NameStr"));
         }
         if (key.type == 2 && seen && cel >= 0 && size_t(cel) < nativeAutomapCelCount_ &&
             cel <= INT16_MAX && v.load.secondarySeed) {
