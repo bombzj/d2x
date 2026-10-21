@@ -47,7 +47,7 @@ const ClassSkillTree *SkillCatalog::tree(std::string_view code) const {
 SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descriptions,
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
-                              const ClassicStrings &strings) {
+                              const ClassicStrings &strings, ContentPreparation preparation) {
     SkillCatalog catalog;
     catalog.currentLevelLabel = strings.find("StrSkill2");
     catalog.nextLevelLabel = strings.find("StrSkill1");
@@ -95,9 +95,16 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto id = skills.number(row, "Id");
         auto name = skills.value(row, "skill");
         auto description = descriptionsByKey.find(skills.value(row, "skilldesc"));
+        // A missing description cannot supply a visible node or its icon/layout.
+        if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end())
             throw std::runtime_error("Incomplete original class skill record");
         const auto source = description->second;
+        // PD2 keeps retired and placeholder class skills outside the visible tree.
+        if (preparation == ContentPreparation::RemoteDisplay &&
+            (descriptions.number(source, "SkillPage").value_or(0) == 0 ||
+             descriptions.number(source, "SkillRow").value_or(0) == 0 ||
+             descriptions.number(source, "SkillColumn").value_or(0) == 0)) continue;
         auto required = [&](const DataTable &table, size_t index, const char *field) {
             auto value = table.number(index, field);
             if (!value) throw std::runtime_error("Missing original skill field: " + std::string(field));
@@ -111,7 +118,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto detail = strings.find(descriptions.value(source, "str long"));
         if (!detail.empty()) entry.description = skillText(detail);
         entry.shortDescription = skillText(strings.find(descriptions.value(source, "str short")));
-        if (entry.passive && entry.classCode == "nec") {
+        if (preparation == ContentPreparation::OriginalRules && entry.passive && entry.classCode == "nec") {
             NecromancerPassiveSpec passive;
             bool known = true;
             if (name == "Skeleton Mastery") passive.kind = NecromancerPassiveSpec::Kind::SkeletonMastery;
@@ -154,6 +161,8 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto name = skills.value(row, "skill");
         if (!requestedCommon.contains(normalized(name))) continue;
         auto description = descriptionsByKey.find(skills.value(row, "skilldesc"));
+        // A missing description cannot supply a visible node or its icon/layout.
+        if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end()) continue;
         SkillRecord entry;
         static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row);
@@ -206,7 +215,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
             if (occupied[slot]) throw std::runtime_error("Duplicate original skill tree cell");
             occupied[slot] = true;
         }
-        if (count != 30) throw std::runtime_error("MPQ skill tree lacks thirty class skills");
+        if ((preparation == ContentPreparation::OriginalRules && count != 30) || count < 1) throw std::runtime_error("MPQ skill tree lacks thirty class skills");
     }
     return catalog;
 }

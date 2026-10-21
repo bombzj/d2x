@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Mpq='',
     [string]$OnlineConfig='',
     [string]$ClientProfile='',
@@ -15,8 +15,8 @@ param(
     [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
-if($ClientProfile -and ($Mpq -or $OnlineConfig -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame -or $HostPacketLog -or $GamePacketLog)){
-    throw '-ClientProfile owns its resource/service selection and currently supports the account lobby only.'
+if($ClientProfile -and ($Mpq -or $OnlineConfig -or $HostPacketLog)){
+    throw '-ClientProfile owns its resources and service selection; a local host is unavailable.'
 }
 if($OnlinePlay -and ($OnlineCharacter -or $OnlineCreateGame -or $OnlineJoinGame)){throw '-OnlinePlay cannot be combined with manual quick-entry options.'}
 if($OnlineCreateGame -and $OnlineJoinGame){throw 'Choose either -OnlineCreateGame or -OnlineJoinGame.'}
@@ -31,10 +31,8 @@ if($Diagnostic){
     $runName=(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)
     $diagnosticRoot=Join-Path $projectRoot "artifacts/diagnostics/$runName"
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
-    if(-not $ClientProfile){
-        $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
-        $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
-    }
+    $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
+    if(-not $ClientProfile){$HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'}
 }
 if($GamePacketLog){$GamePacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GamePacketLog)}
 if($HostPacketLog){$HostPacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostPacketLog)}
@@ -84,8 +82,8 @@ try{
         [ordered]@{
             executable=$exe; sha256=$binaryHash
             mpq=$Mpq; clientProfile=$ClientProfile; pipe=$PipeName; packets=$GamePacketLog
-            hostPackets=$HostPacketLog; packetDirection=$(if($ClientProfile){'none (account lobby counters only)'}else{'C2S+S2C'})
-            note=$(if($ClientProfile){'No authentication payloads are captured. Read packet IDs and counts through online-status.'}else{'Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'})
+            hostPackets=$HostPacketLog; packetDirection='C2S+S2C'
+            note=$(if($ClientProfile){'D2GS only; SID/MCP authentication payloads are excluded and game tickets are redacted.'}else{'Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'})
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'run.json') -Encoding utf8
         Write-Host "Diagnostic logs: $diagnosticRoot"
         # Windows PowerShell treats native stderr as ErrorRecords. Cache/resource

@@ -12,7 +12,7 @@
 
 namespace d2x {
 void loadPropertyData(ClassicData &data) {
-    if (data.profile != "lod-named-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && data.profile != "remote-display-txt-v1")
         return;
     auto properties = data.tables.find("properties");
     if (properties != data.tables.end()) {

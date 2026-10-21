@@ -84,6 +84,7 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::observedCombatEquip
     }
 std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const {
+        if (data.profile != "lod-named-txt-v1") return {};
         const auto &world=session.read().world;
         const auto unit=world.units.find(key),end=world.units.end();
         const auto observed=combat.states().find(key);

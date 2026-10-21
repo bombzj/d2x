@@ -19,5 +19,6 @@ std::string onlineDebugCommand(const std::string &, net::RealmSession &,
                                const std::function<void(std::vector<FrameInput>)> &input,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
                                const std::function<std::string(const std::string &)> &chatInput,
-                               const std::function<std::optional<std::string>(const nlohmann::json &)> &hostCommand);
+                               const std::function<std::optional<std::string>(const nlohmann::json &)> &hostCommand,
+                               const std::function<std::string()> &prepareGame);
 }

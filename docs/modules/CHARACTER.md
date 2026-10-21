@@ -42,7 +42,7 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 
 角色面板由[character_panel.cpp](../../src/presentation/hud/character_panel.cpp)消费同一CharacterView，使用当前MPQ invchar6、font6／font16／font8、原TBL strchr系列、level／levelsocket／skillpoints及buysellbtn关闭图。按用户原版截图恢复左右技能伤害／命中行、资源最大值／当前值分列、两行抗性与红色剩余属性点，去掉原版没有的额外属性行；经验加千位分隔，抗性数字不加百分号。资源格灰底属于原图，用户确认常驻，不按悬停绘制。标签／数值基线、加点位置、长姓名字体切换及资源／防御大数值切换核对原1.13c静态布局；字体使用原字形和TBL字宽，随侧栏统一适配。已知负抗性用原PL2红色；最终抗性与最大抗性输入已接共用装备／状态投影；增减属性颜色与封顶抗性金色暂未还原。完整像素仍待原版对照，布局入口及依据见[HUD](../gameplay/ui/CLASSIC_HUD.md#角色面板)。
 
-世界角色外观由RealmPortraitCatalog将原服装备身份与当前MPQ Armor／Weapons／ArmType解析为ActorAppearance，交给公共ActorAnimationCatalog合成。真实身体组件与未实现的装饰效果分开：魔法等品质、自动词缀、无形及符文之语不使整个人物不可绘制，equipmentEffectsKnown标记组件染色／无形透明缺口并由场景诊断报告；缺少真实组件或原COF／DCC仍明确不可用，不替换裸装。选角肖像的原染色字节仍要求已有支持，与世界装备组件可绘制性分开。
+世界角色外观由RealmPortraitCatalog将原服装备身份与当前MPQ Armor／Weapons／ArmType解析为ActorAppearance，交给公共ActorAnimationCatalog合成。真实身体组件与未实现的装饰效果分开：魔法等品质、自动词缀、无形及符文之语不使整个人物不可绘制，equipmentEffectsKnown标记组件染色／无形透明缺口并由场景诊断报告；缺少真实组件或原COF／DCC仍明确不可用，不替换裸装。选角肖像接受已知编码版本4／10／13；当前CN首次进场前的33字节版本4头像可按原图绘制，组件全FF时只表示无装备预览，不补造起始装备。非FF染色字节及全部PD2新增组件映射尚未支持，与世界装备组件可绘制性分开。
 
 技能标题、图标、页／行／列来自Skills／SkillDesc／TBL。选择器与技能树已接共用MPQ表驱动描述层，按原描述程序分别生成通用、当前等级、首次／下一等级及协同区；不依赖自研技能执行是否实现。原版分组／等级调用、公式、已知值、截图条件及缺口由[技能描述](../gameplay/skills/DESCRIPTIONS.md)唯一维护。
 

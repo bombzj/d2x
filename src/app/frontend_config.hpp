@@ -29,7 +29,7 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
         file >> json;
         if(profile == net::protocol::ClientProfile::Pd2CnNormal20261020)
             verifyClientProfileDefinition(path,profileDigest);
-        const auto port = json.value("accountPort", 6112), gamePort = json.value("gamePort", 4000);
+        const auto port = json.value("accountPort", 6112), gamePort = json.value("gamePort", profile == net::protocol::ClientProfile::Lod113c ? 4000 : 4001);
         if (port < 1 || port > 65535 || gamePort < 1 || gamePort > 65535)
             throw std::runtime_error("Invalid port");
         result.login.accountServer = {json.at("accountHost").get<std::string>(), uint16_t(port)};
@@ -42,6 +42,12 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
             if(json.value("version",0)!=1 || json.value("clientProfile",std::string{})!="pd2-cn-normal-20261020" ||
                json.value("authentication",std::string{})!="pd2-cn" || result.login.accountServer.host.empty())
                 throw std::runtime_error("Mismatched client profile");
+            if (json.contains("gameServer") && !json.at("gameServer").is_number_integer())
+                throw std::runtime_error("Invalid PD2 game server selection");
+            const auto gameServer = json.value("gameServer", 1);
+            if (gameServer < 1 || gameServer > 10) throw std::runtime_error("Invalid PD2 game server selection");
+            result.login.gameServer = uint8_t(gameServer);
+            result.login.lootAllocation = json.value("lootAllocation", true);
             auto pd2=std::filesystem::path(json.at("pd2Directory").get<std::string>());
             if(pd2.is_relative()) pd2=path.parent_path()/pd2;
             if(!std::filesystem::equivalent(pd2.parent_path(),directory))

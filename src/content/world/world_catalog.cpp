@@ -142,7 +142,8 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 for (int i = 0; i < 8; ++i) {
                     auto suffix = std::to_string(i);
                     record.visible[i] = number("Vis" + suffix);
-                    record.warps[i] = number("Warp" + suffix, -1);
+                    // Native TXT compilation stores an empty DWORD cell as zero.
+                    record.warps[i] = number("Warp" + suffix);
                     record.objectGroups[i] = number("ObjGrp" + suffix);
                     record.objectProbabilities[i] = number("ObjPrb" + suffix);
                 }

@@ -11,6 +11,8 @@
 
 namespace d2x {
 void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
+    // A remote display profile has not registered these client missile programs.
+    if (!content.nativeFormulas) return;
     for (const auto &[code, item] : content.items.entries())
         if (item.base.projectile) weaponMissiles.emplace(code, item.base.projectile->id);
     missileDefinitions_ = std::make_unique<DataTable>(content.tables.at("missiles"));

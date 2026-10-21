@@ -17,7 +17,9 @@ struct ClientCompatibility {
     RealmPasswordSource realmPasswordSource;
     uint32_t characterListRequest;
     size_t gameListExtensionBytes;
-    // Empty only after the corresponding complete path is implemented.
+    size_t gameCreationExtensionBytes; // Native GS selection and loot mode before the room strings.
+    // Admission request gates. Each ordered game consumer independently rejects
+    // unsupported payloads; an empty gate does not certify full gameplay.
     std::string_view authenticationBlocker, gameEntryBlocker;
     size_t (*serverPacketSize)(std::span<const uint8_t>);
     void (*validateClientPacket)(std::span<const uint8_t>);

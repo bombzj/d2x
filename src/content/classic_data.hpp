@@ -1,4 +1,5 @@
 #pragma once
+#include "content/content_preparation.hpp"
 #include "gameplay/combat/missile_effects.hpp"
 #include "gameplay/skills/aura_spec.hpp"
 #include "gameplay/items/definitions.hpp"
@@ -143,7 +144,7 @@ struct ClassicData {
     bool isPortalScroll(std::string_view code) const { return portalScrolls.contains(code); }
     bool isIdentifyScroll(std::string_view code) const { return identifyScrolls.contains(code); }
 };
-ClassicData loadClassicData(Archives &archives);
-std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives);
+ClassicData loadClassicData(Archives &archives, ContentPreparation = ContentPreparation::OriginalRules);
+std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives, ContentPreparation = ContentPreparation::OriginalRules);
 void loadLodTreasureData(ClassicData &data);
 } // namespace d2x

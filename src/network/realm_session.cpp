@@ -7,6 +7,7 @@ RealmSession::Impl::Impl(ClientProfile profile, bool retain)
     view.protocolProfile = compatibility.id;
     view.remoteLobbyOnly = profile == ClientProfile::Pd2CnNormal20261020;
     view.allowLadderSelection = view.remoteLobbyOnly;
+    view.gameEntryAvailable = compatibility.gameEntryBlocker.empty();
 }
 
 RealmSession::Impl::~Impl() {
@@ -63,6 +64,12 @@ void RealmSession::Impl::clear_credentials() {
 void RealmSession::Impl::clear_game() {
     gs.close();
     gameEndpoint.reset();
+    gameJoinFlags = 0;
+    pd2PlayerDataBlocks = {};
+    pd2PlayerUpdates = {};
+    pd2RosterCounters.clear();
+    pd2PlayerControl.reset(); pd2StashPage.reset();
+    pd2MonstersRemaining.reset();
     gamePackets.reset();
     worldPackets.clear();
     worldBytes = 0;
@@ -570,6 +577,10 @@ bool RealmSession::create_game(CreateGameOptions options) {
         out.u8(1);
         out.u8(options.levelDifference);
         out.u8(options.maximumPlayers);
+        if (p.compatibility.gameCreationExtensionBytes) {
+            if (!p.options.gameServer || p.options.gameServer > 10) throw ProtocolError("Invalid PD2 game server selection");
+            out.u8(p.options.gameServer); out.u8(p.options.lootAllocation ? 1 : 0);
+        }
         out.string(options.name, 15);
         out.string(options.password, 15);
         out.string(options.description, 31);

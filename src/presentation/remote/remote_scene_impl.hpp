@@ -219,7 +219,7 @@ struct RemoteScene::Impl {
     bool channelSkill(int id) const;
     std::optional<int32_t> skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count=0) const;
     bool playerDead(const OnlineUnit &u) const;
-    Impl(Archives &a, int palette, RemoteMapDisplayState &display);
+    Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation);
     const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared);
     const OnlineWorldView &world() const;
     std::optional<uint16_t> unitClass(const OnlineUnit &unit) const;

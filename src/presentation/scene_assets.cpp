@@ -173,7 +173,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     }
     loadNpcAlert(DataTable(archives.read("data/global/excel/overlay.txt")));
     loadUi(archives, content);
-    loadIceShatter();
+    if (content.nativeFormulas) loadIceShatter();
 }
 SceneAssets::~SceneAssets() = default;
 void SceneAssets::loadWorldLightDefinitions() {

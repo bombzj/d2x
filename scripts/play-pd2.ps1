@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Profile='',
     [string]$Pd2Directory='',
     [string]$AccountHost='',
@@ -34,7 +34,8 @@ if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
     [ordered]@{
         version=1; clientProfile='pd2-cn-normal-20261020'; authentication='pd2-cn'
         originalClientDirectory=(Split-Path -Parent $Pd2Directory); pd2Directory=$Pd2Directory
-        accountHost=$AccountHost; accountPort=6112; gamePort=4000; gateway=$Gateway
+        accountHost=$AccountHost; accountPort=6112; gamePort=4001; gateway=$Gateway
+        gameServer=1; lootAllocation=$true
     } | ConvertTo-Json | Set-Content -LiteralPath $Profile -Encoding utf8
 }elseif($Pd2Directory -or $AccountHost -or $Gateway){
     throw 'The profile already exists. Edit it or choose a new -Profile path to change its service/resources.'

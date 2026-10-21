@@ -72,7 +72,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
         deadline = Clock::now() + options.timeout;
         return;
     }
-    if (directTcpIp && packet.id == 0x00) {
+    if (packet.id == 0x00) {
         deadline = Clock::now() + options.timeout;
         return;
     }
@@ -98,6 +98,62 @@ void RealmSession::Impl::handle_game(Packet packet) {
         }
         return;
     }
+    if (view.remoteLobbyOnly && packet.id == 0xAD) {
+        // Core 0x38FA40 -> 0x2C3FE0 resolves BHSetMonstersRemaining(active, count).
+        Reader data(packet.body);
+        const auto active = data.u8(); const auto count = data.u32(); data.finish();
+        pd2MonstersRemaining = std::pair{active, count};
+        ++view.gameProtocol.unconsumed[packet.id];
+        changed();
+        return;
+    }
+    if (view.remoteLobbyOnly && (packet.id == 0x65 || packet.id == 0x66 || packet.id == 0x2D)) {
+        Reader data(packet.body);
+        if (packet.id == 0x65) {
+            // Retail D2Client RVA 0xAD890 updates a roster entry's 16-bit counter.
+            const auto player = data.u32(); const auto counter = data.u16();
+            if (!pd2RosterCounters.contains(player) && pd2RosterCounters.size() >= 256)
+                throw ProtocolError("PD2 roster counter limit exceeded");
+            pd2RosterCounters.insert_or_assign(player, counter);
+        } else if (packet.id == 0x66) {
+            // Core RVA 0x38FA00 replaces the local PlayerData +0x1AC value.
+            pd2PlayerControl = data.u32();
+        } else {
+            // Core RVA 0x38F680 selects an extended stash page; its UI is unavailable.
+            pd2StashPage = data.u32();
+        }
+        data.finish();
+        ++view.gameProtocol.unconsumed[packet.id];
+        changed();
+        return;
+    }
+    if (view.remoteLobbyOnly && packet.id == 0x2E) {
+        if (packet.body.size() != 17 || !view.load.playerUnitId || packet.body[0] > 4)
+            throw ProtocolError("Invalid PD2 local player-data update");
+        size_t index = packet.body[0];
+        if (index == 4) {
+            // Core RVA 0x38F72C selects one of sixteen extended hotkey records.
+            const auto slot = packet.body[2];
+            if (slot >= 16) throw ProtocolError("Invalid PD2 extended hotkey slot");
+            index += slot;
+        }
+        pd2PlayerUpdates[index] = std::move(packet.body);
+        ++view.gameProtocol.unconsumed[packet.id];
+        changed();
+        return;
+    }
+    if (view.remoteLobbyOnly && (packet.id == 0x85 || packet.id == 0x88)) {
+        const size_t index = packet.id == 0x85 ? 0 : 1;
+        const size_t expected = index == 0 ? 392 : 386;
+        if (packet.body.size() != expected || !view.load.playerUnitId)
+            throw ProtocolError("Invalid PD2 local player-data snapshot");
+        // Native handlers only replace fixed local PlayerData byte blocks;
+        // their UI semantics remain unavailable, without a response or world mutation.
+        pd2PlayerDataBlocks[index] = std::move(packet.body);
+        ++view.gameProtocol.unconsumed[packet.id];
+        changed();
+        return;
+    }
     Reader in(packet.body);
     if (packet.id == 0x01) {
         view.load.difficulty = in.u8();
@@ -107,10 +163,12 @@ void RealmSession::Impl::handle_game(Packet packet) {
         in.finish();
         if (*view.load.difficulty > 2 || expansion > 1 || ladder > 1)
             throw ProtocolError("Invalid game initialization flags or difficulty");
-        if (!expansion || ladder) {
-            fail(OnlineErrorKind::Unsupported, "Only non-Ladder LoD games are supported", packet.id);
+        if (!expansion || (ladder && !view.allowLadderSelection)) {
+            fail(OnlineErrorKind::Unsupported, "Game flags are unsupported by the selected client profile", packet.id);
             return;
         }
+        if (view.remoteLobbyOnly && (!selected || !selected->ladder || *selected->ladder != bool(ladder)))
+            throw ProtocolError("Game Ladder flag differs from the selected Realm character");
         changed();
     } else if (packet.id == 0x02 && !environmentSent) {
         if (directTcpIp && !tcpIpUploaded) {
@@ -161,7 +219,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
     try {
         if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
             packet.id != 0x05 && packet.id != 0xAF)
-            apply_world_packet(view, packet);
+            apply_world_packet(view, packet, compatibility.profile);
     } catch (const ProtocolError &error) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);
         return;
@@ -333,6 +391,7 @@ void RealmSession::Impl::pump_game() {
             if (gameEndpoint)
                 message += " (" + gameEndpoint->host + ":" + std::to_string(gameEndpoint->port) + ")";
             if (!event.error.empty()) message += ": " + event.error;
+            if (view.remoteLobbyOnly) message += " [MCP join flags " + std::to_string(gameJoinFlags) + "]";
             fail(OnlineErrorKind::Transport, std::move(message));
             return;
         }

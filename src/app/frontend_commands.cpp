@@ -117,6 +117,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         state.session.query_game(std::move(action.name));
         break;
     case FrontendCommand::JoinGame:
+        if (auto error = state.prepareGame(); !error.empty()) { state.notice = std::move(error); break; }
         state.session.join_game(std::move(action.name), std::move(action.password));
         break;
     case FrontendCommand::Register:
@@ -139,6 +140,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         state.localDifficulty = action.difficulty; state.localDifficultyChosen = true; state.page = FrontendPage::Loading;
         break;
     case FrontendCommand::CreateGame:
+        if (auto error = state.prepareGame(); !error.empty()) { state.notice = std::move(error); break; }
         state.session.create_game({std::move(action.name), std::move(action.password),
                              std::move(action.description), action.difficulty, state.localConnection && !state.lanConnection ? uint8_t(1) : action.maximumPlayers,
                              action.levelDifference});
@@ -150,6 +152,10 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         }
         break;
     case FrontendCommand::Back:
+        if (!state.embedded && state.page == FrontendPage::Login &&
+            (state.session.read().stage == OnlineStage::Idle || state.session.read().stage == OnlineStage::Cancelled)) {
+            state.quit = true; break;
+        }
         state.ui.clearTransientPasswords();
         state.notice.clear();
         if (state.page == FrontendPage::Difficulty) {

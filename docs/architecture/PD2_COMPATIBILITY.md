@@ -1,6 +1,6 @@
 # 原版与 PD2／CN 兼容分析
 
-更新：2026-10-21。本页维护初始化补丁、资源与协议差异的证据，以及D2X接入范围和后续适配边界。固定CN Normal／TCP目标已完成真实登录、既有角色选择和大厅；**不代表支持PD2游戏入场或完整联机兼容**。当前能力以[基线](../../BASELINE.md)、[联网模块](../modules/NETWORK.md)为准，整体实施顺序由[总计划](MULTIPLAYER.md)维护。目标DLL地址、长度表和版本化物品编码详见[CN Normal样本取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
+更新：2026-10-21。本页维护初始化补丁、资源与协议差异的证据，以及D2X接入范围和后续适配边界。固定CN Normal／TCP目标已完成真实登录、既有角色选择、大厅、建房入场及罗格营地原图显示；**只达到基础入场阶段，不代表完整联机兼容**。当前能力以[基线](../../BASELINE.md)、[联网模块](../modules/NETWORK.md)为准，整体实施顺序由[总计划](MULTIPLAYER.md)维护。目标DLL地址、长度表和版本化物品编码详见[CN Normal样本取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
 
 ## 结论与证据范围
 
@@ -10,20 +10,21 @@
 
 ### 当前代码接入范围
 
-分支为`pd2`，普通启动仍默认原版。正在将PD2入口迁到共用前端，宿主改为仅原版实例化，并准备按物品format选择S12／S13／当前属性列；这部分接线尚未构建或运行认证，游戏入场限制仍保留。当前交付边界为真实账号登录→Realm→选择既有角色→服务器大厅，已核对对应成功回复及原图页面；可返回选角、注销后重新登录。新账号注册未重测，游戏入场继续关闭。验证只覆盖本样本、当前CN服务与普通Ladder既有角色，不推广为所有模式、账号策略或跨平台一致。
+分支为`pd2`，普通启动默认原版。PD2已迁到共用frontend，宿主仅原版实例化；已核实当前CN服务的登录、既有Ladder角色选择、角色原图、大厅列表与返回选角；PD2登录默认选择服务器返回的第一个Realm，原版选择流程保留。建房编码补齐两字节后，MCP创建／加入均获成功回复，4000连接拒绝后按BH证据修正为4001，已收到首批角色／物品／房间同步。游戏握手、初始同步、本人／NPC／HUD及罗格营地原图已实际显示，正常退局返回选角。本阶段以基础城镇显示为界；移动、跨区及完整玩法未认证。新账号注册未重测，建角／删除和房间详情关闭。
 
 | 代码入口 | 已接入范围 | 尚未完成的边界 |
 | --- | --- | --- |
-| [启动绑定](../../src/app/client_setup.cpp)／[PlayPD2](../../PlayPD2.cmd) | --client-profile在挂载前解析pd2.local.json，核对核心、校验输入、版本包及五个目标MPQ的SHA-256；原目录与pd2目录明确绑定 | 仅本Normal样本；新更新、其他模式与未知摘要拒绝；不自动运行启动器或DLL |
-| [RealmSession](../../src/network/realm_session.hpp)／[账号大厅](../../src/app/account_lobby.cpp) | 构造时固定版本，重连／注销不改版；CN仅远端，禁止嵌入Realm与TCP/IP传档；大厅不创建世界、宿主或本地角色存储 | 无窗口PD2模式、角色创建／删除、游戏入场未开放 |
-| [账号摘要](../../src/network/protocol/auth.cpp) | CN 分支限定可打印 ASCII，在 BSHA1 前转小写；Realm 取票使用 `password` 的独立双层摘要 | 默认原配置保留现有 PvPGN 摘要契约；未将新规则全局应用于已有账号 |
-| [SID与认证](../../src/network/protocol/auth.cpp) | CN 0x51独立编码：两个SHA-256 hex、三个掩码WORD、MPQ来源计数2；实际挑战为logonType=0／ver-IX86-1.mpq，服务器接受0x51与0x3A，后续Realm取票成功 | 非MPQ key来源及附加证明组合不开放；新账号注册及未知校验模块仍须单独核实 |
-| [MPQ认证资源](../../src/network/protocol/native_auth_resource.cpp) | 原MPQ key／owner解码及校验尾在当前样本通过，生成的认证获当前服务接受；材料仅内存使用并清理 | 未与native发送证明逐字节比对，不推广全部输入／来源；异常停止认证，不输出真实key |
-| [MCP](../../src/network/realm_session_mcp.cpp) | CN请求8个角色，实际记录解出已知33字节头像、等级／职业和Ladder；0x07成功进入大厅；房间列表读两字节扩展，发NUL结尾filter并匹配角色Ladder状态 | 组件图像映射暂不渲染，创建／删除及房间详情关闭；其他头像版本／分页未认证 |
-| [D2gsStream](../../src/network/protocol/d2gs_stream.cpp) | 每实例固定分帧定义，复位不改版，发送按相同定义校验长度 | 已恢复的初始化长度表不代表完整协议；CN 建房、加入、票据连接及游戏消费均设入局阻塞，避免进入原版副本解码 |
-| [大厅诊断](../../src/app/account_lobby.cpp) | 独立d2x-pd2-debug管道；支持既有online-login／状态／选择／返回／注销、ui-input与截图；状态含挑战名称、SID／MCP的ID和计数、数值拒绝码 | 管道登录不记忆密码；不记录公式、token、密钥、证明或票据，不是认证抓包器；默认不自动登录 |
+| [启动绑定](../../src/app/client_setup.cpp)／[PlayPD2](../../PlayPD2.cmd) | 挂载前核对固定核心、认证输入和目标MPQ摘要；配置绑定原副本／pd2目录；不装载native DLL | 仅本Normal／TCP样本；未知关键文件拒绝，不自动更新或降级 |
+| [共用前端](../../src/app/frontend.cpp)／[RealmSession](../../src/network/realm_session.hpp) | 固定会话版本，共用Remote*；PD2不创建EmbeddedRealm、本地角色存储或TCP/IP传档 | 无窗口PD2、建角／删除和房间详情未开放 |
+| [认证](../../src/network/protocol/auth.cpp)／[MPQ资源](../../src/network/protocol/native_auth_resource.cpp) | CN ASCII小写BSHA1、独立Realm摘要、MPQ来源key／owner和0x51证明获当前服务接受；秘密仅内存使用 | 非MPQ来源、未知校验模块、D2X重新注册与native逐字节比对未完成 |
+| [MCP](../../src/network/realm_session_mcp.cpp) | 角色／Ladder、带filter列表和两字节列表扩展；建房追加GS／loot分配字节；创建和加入成功 | 已通过建房后入场／城镇显示及退局；公开Join已获票据并建立GS，完整Join场景组合另验 |
+| [角色原图](../../src/content/character/realm_portrait.cpp) | 已知版本4／10／13；当前CN版本4无装备预览已显示真实职业图像 | 非FF染色、新PD2全部装备组件未完成 |
+| [分帧](../../src/network/protocol/d2gs_stream.cpp)／[副本](../../src/client/remote_world.cpp) | 固定目标双向长度；按角色核对Ladder；允许连接与加载路径；未知CN世界消息明确报错 | 已收到初始同步，全部原包处理器、初始状态和Warden仍未认证；扩展物品storage不降级解释 |
+| [内容准备](../../src/content/classic_data.cpp) | 独立RemoteDisplay缓存与入场前准备，不准备原版宿主技能程序／掉落／合成或原版包裹几何；技能树按MPQ可见节点布局读取，零页／行／列的退役或占位技能及缺少SkillDesc的节点不补造位置／图标 | 不代表全部PD2客户端程序；库存面板暂不可用，资源准备失败在请求票据前报告 |
+| [物品](../../src/client/remote_inventory.cpp) | CN完整分支按format选择9／10位stat ID、S12／S13／当前Save列；原版保持原路径 | compact、全部增量／storage／分片及线上物品未验收；库存、战斗、NPC／物件交互请求关闭 |
+| [诊断](../../src/app/debug/online_commands.cpp) | 既有online-*、UI输入、截图、公开状态及包ID／计数；可请求建房／加入 | 不记录SID／MCP证明或票据；D2GS日志对0x68脱敏，不是完整认证抓包 |
 
-上述闭环已取得真实0x51／0x3A／0x3E及MCP 0x01／0x19／0x07成功回复，实际显示服务器公告；原CN客户端此前的D2GL崩溃未在D2X大厅复现。下一步优先补角色组件映射、注册／建角业务与拒绝语义，再接正确的物品、属性和地图消费者；长度表已登记不构成开放入场的条件。操作方法见[PlayPD2](../development/BUILD_AND_RUN.md#pd2-cn远端账号大厅)。
+当前原客户端大厅崩溃在D2GL同址复现；D2X不加载该模块，已独立显示基础城镇。下一步先恢复PD2物品／属性／仓库和客户端程序，再逐项核对移动、区域／地图及角色业务；未核实交互继续明确拒绝。操作方法见[PlayPD2](../development/BUILD_AND_RUN.md#pd2-cn远端账号大厅)。
 
 用户提出的“PD2 通过原版动态读取自己的 MPQ”在资源承载层有依据。需要分开确认：MPQ 容器能打开、成员格式能解码、数据定义能解释、对应客户端程序能执行。新增 DLL 可同时修改后两层，单独换表不能自动补出程序。
 
@@ -41,7 +42,7 @@
 
 ## 已取得的 CN 目标样本
 
-用户授权在原版的独立副本中运行启动器。目标文件位于副本的 `pd2` 子目录；启动器创建 `Game.exe` 子进程，游戏日志中的 Application Path 也指向该副本。本轮仅据此确认程序启动，不认证选角、入局或完整游玩。未由本分析操作目标服账号或采集线上报文。
+用户授权在原版的独立副本中运行启动器。目标文件位于副本的 `pd2` 子目录；启动器创建 `Game.exe` 子进程，游戏日志中的 Application Path 也指向该副本。本轮仅据此确认程序启动，不认证选角、入局或完整游玩。后续D2X已使用用户提供的联调账号核对账号大厅及MCP票据；未保存原始认证载荷，未完成游戏场景。
 
 配置快照为 `seasonMode=Normal`、`gamemode=bnet`、`udpMode=0`、`noUpdate=0`。界面另有单机、TCP／UDP(KCP)／UDP(QUIC)、直连／中转等选项；这些只能说明启动器提供相应入口，尚不能推出隧道内部报文格式或所有模式使用相同资源。主 `pd2data.mpq`／`ProjectDiablo.dll` 与各自 `.sn` 文件的大小、SHA-256 一致；`.ss` 文件不同。切换模式后必须重新核对配套文件，不能混用。
 
@@ -207,9 +208,9 @@ D2X [realm_session_mcp.cpp::handle_mcp](../../src/network/realm_session_mcp.cpp)
 | --- | --- | --- |
 | 常见 C2S 动作 | 官方 `BH/D2Helpers.cpp` 的 RunTo 仍发 `0x03`／5 字节，SetSkill 发 `0x3C`／9 字节，CastOnMap 发 `0x08` 或 `0x0F`／5 字节 | 适合作为复用候选；不证明全部出入包相同，也不证明核心不再加工这些消息 |
 | BNCS 认证与账号 | 当前 CN 核心改写 `0x51`，发送 SHA-256 十六进制证明和额外 WORD；D2X 已准备 CN 账号小写及独立 Realm 摘要，默认原配置保持现有行为；CN已接MPQ来源的独立证明编码，当前实际挑战与0x51／0x3A接受已核实 | 新模块、非MPQ来源及更多拒绝码仍待核实，不任改版本常量或全局改变原版账号语义，详见[最小闭环](../resources/PD2_CN_DLL_ANALYSIS.md#最小闭环认证注册选角与入局) |
-| MCP 选角／建房 | D2X 认识固定 33 字节原头像的版本 4／10／13，创建不设 Ladder，选角与 D2GS 环境检查都拒绝 Ladder；Normal 不证明非 Ladder | 原构造 `0x01／02／07／19／03／04` 已定位；实际回复、资格、聊天启动顺序与 CN 额外选项待确认，不能删除检查后宣称兼容 |
+| MCP 选角／建房 | D2X按固定33字节头像解析，原版拒绝Ladder；CN允许既有Ladder并与游戏标志核对，Normal不推导成非Ladder | 原构造 `0x01／02／07／19／03／04` 已定位；实际回复、资格、聊天启动顺序与 CN 额外选项待确认，不能删除检查后宣称兼容 |
 | D2GS 入局 | 当前原 D2Client `0x14A50` 的 `0x68` 为 37 字节、版本 13 和原资料片签名，与 D2X 骨架相符；主表未直接改写此构造区 | 候选复用；仍需完整运行时、顺序及拒绝样本，发送成功不等于初始加载完成 |
-| D2GS 分帧 | 已恢复目标运行时修改的双向长度表；D2X 仍按 `lod113c_packet_size` 切逻辑包 | 先引入构建对应的分帧与解码契约；压缩外框、变长路径及其他模块的附加改写还需核对 |
+| D2GS 分帧 | 已恢复目标运行时修改的双向长度表；D2X按会话固定的原版或CN长度表切逻辑包 | 先引入构建对应的分帧与解码契约；压缩外框、变长路径及其他模块的附加改写还需核对 |
 | Warden／加载器约定 | 官方 `D2Handlers.cpp::GamePacketRecv` 对 `0xAE` 按 `cGuardLoaded` 分支；D2X `protocol/lod113c.cpp` 明确不支持 Warden | 这不是完整挑战／响应实现；目标若要求未实现的认证，应明确报告不支持，不能以丢包冒充兼容 |
 | 中文／名称 | 汉服有中文输入改造；D2X `game_chat` 目前只接受 1–255 个可打印 ASCII 字节，入局名称也有原限制 | 字体、输入、编码、线上的字节限制分开确认，不按“能显示中文”推定 UTF-8／GBK |
 | 仓库／分配／其他扩展 | BH 核心导出及 `gs`／`lootAlloc` 表明客户端存在额外概念 | 确认请求、确认回包、容器身份、可见性和权限；StashExport 的存在不等于已获得在线共享仓库协议 |
@@ -219,8 +220,8 @@ D2X [realm_session_mcp.cpp::handle_mcp](../../src/network/realm_session_mcp.cpp)
 BH 的 `px9c` 结构与物品钩子能提供原 0x9C／0x9D 路径的定位线索，不能证明整个 packed 数据段与原版一致。当前 [RemoteInventory](../../src/client/remote_inventory.cpp) 具有以下已核实的原版假设：
 
 - 从物品位流读 32 位 flags、10 位 format、固定位置字段；部分名称按 7 位字符解码。
-- 属性 ID 固定 9 位，511 为终止符，只索引 ID 0–510；堆叠数量固定读 9 位。
-- 属性数值的 `Save Bits`、`Save Add`、`Save Param Bits` 来自当前 `ItemStatCost.txt`，这一部分已动态化。
+- 原版属性ID为9位／511终止；CN按format选择9位或10位／1023终止；堆叠数量仍读9位，当前表索引最大510。
+- 原版属性数值取当前ItemStatCost Save列；CN按完整物品format选S12／S13／当前列，保留`Save Adds S13`的实际拼写。
 - 连读属性组固定为 17／48／50／52 再读一个、54／57 再读两个；质量、词缀、镶孔、容器等也有各自编码与边界。
 
 本次从核心完整读入 RVA `0x382E40`、写出 `0x381AA0` 及选择器 `0x381680` 确认：物品内部 format<102 时 ID 为 9 位／511 终止，format≥102 时为 **10 位／1023 终止**。数值列另外选择：format≤102 用 S12，103 用 S13，之后通常用当前列；旧外层 dwVersion<93 还有原 1.09 分支。当前表的最大 ID 仍为 510，并没有阻止核心使用十位编码。
@@ -269,10 +270,10 @@ BH 的 `px9c` 结构与物品钩子能提供原 0x9C／0x9D 路径的定位线�
 
 - [application.cpp](../../src/app/application.cpp) 在进入 `runFrontend` 前创建 Archives、挂载补充包和主目录并选择语言；[frontend.cpp](../../src/app/frontend.cpp) 随后构造 RealmFrontend、RealmSession、EmbeddedRealm、RemoteInventory 等。版本选择必须前移到资源准备之前，并贯穿无窗口入口；仅修改 `LoginOptions` 会留下已经按另一套资源创建的对象。
 - [frontend_config.hpp](../../src/app/frontend_config.hpp) 原路径保留pvpgn／keys，CN仅接受显式pd2-cn和匹配的固定构建定义；从父目录原MPQ准备合法材料，从pd2目录读取认证文件，配置定义绑定启动时摘要，旧配置不会自动识别成CN。
-- [D2gsStream](../../src/network/protocol/d2gs_stream.cpp) 已改为持有固定 `ClientProfile` 并调用对应长度选择，SID／MCP 也消费同一会话定义；`reset()` 只清理流状态。入局与完整消息消费者仍有原版假设，因此 CN 保持显式阻塞。预认证 Realm／TCP/IP 入口也核对配置，不能靠仅在登录时设置标志覆盖全部入口。
-- [sharedClassicData](../../src/content/classic_data.cpp) 缓存属于传入的 Archives；`Archives::prepared<T>` 按类型保存，同一 Archives 不能同时表示两个内容 schema。[RemoteUiClients](../../src/client/remote_ui_clients.cpp)、[RemoteScene](../../src/presentation/remote/remote_scene.cpp) 及其他资源消费者会保留引用。为每个活动配置创建独立资源集合和消费者；不在原对象上追加 PD2 包后继续沿用旧定义。
+- [D2gsStream](../../src/network/protocol/d2gs_stream.cpp) 已改为持有固定 `ClientProfile` 并调用对应长度选择，SID／MCP 也消费同一会话定义；`reset()` 只清理流状态。CN已允许请求GS连接，但完整消息消费者仍有原版假设，未知消息与未支持交互明确拒绝；开放请求不代表游戏兼容认证。预认证 Realm／TCP/IP 入口也核对配置，不能靠仅在登录时设置标志覆盖全部入口。
+- [sharedClassicData](../../src/content/classic_data.cpp) 缓存属于传入的 Archives；`Archives::prepared<T>` 按类型保存，原版ClassicData和RemoteDisplay包装类型使用独立缓存，不能把原版宿主规则与远端显示准备混用。[RemoteUiClients](../../src/client/remote_ui_clients.cpp)、[RemoteScene](../../src/presentation/remote/remote_scene.cpp) 及其他资源消费者会保留引用。为每个活动配置创建独立资源集合和消费者；不在原对象上追加 PD2 包后继续沿用旧定义。
 - 网络解码、内容准备和表现可能都要扩展公共值的表达范围，例如新的 stat ID／存储身份；共享模型应能表示这些事实，原版限制继续在原版边界校验。UI 使用已归一化状态和从 MPQ 准备的布局，不直接判断品牌名来决定包偏移或属性位宽。
-- CN仅作远端客户端，由account_lobby组装账号／选角／大厅，不构造EmbeddedRealm；后续入局也不组装PD2本地宿主。原版Single Player／TCP/IP和v96保存范围按原契约保留。
+- CN仅作远端客户端，由frontend共用账号／选角／大厅和Remote*，不构造EmbeddedRealm或PD2本地宿主。原版Single Player／TCP/IP和v96保存范围按原契约保留。
 
 实现可先采用模块函数、只读表和少量必要策略，不需要把每个包都改成虚函数。分帧／MCP／item codec 等真实差异单独归属；相同的传输、会话生命周期、客户端副本及 UI 请求契约继续共用。客户端需要的技能／地图程序也由明确的内容与程序选择承接，不把协议配置变成第二套权威结算。
 
@@ -316,7 +317,7 @@ flowchart TD
 | `presentation`、客户端描述／动作 | 动态读取原图、布局和表，按证据增加新表现；UI 继续只读副本、提交命令 |
 | `hosting`、`server`、`persistence` | 本轮不扩展为 PD2 权威服务或 PD2 存档支持；原版存档／自研宿主语义保持独立 |
 
-`sharedClassicData` 当前被 `client/remote_ui_clients.cpp` 和 `presentation/remote/remote_scene.cpp` 使用，它不只是图形包：会准备广泛的技能／物品等规则，并检查原 Inventory 行名、网格范围等。因此“远端只用客户端”也可能在内容准备时遇到原版假设。后续应沿现有定义所有权收窄准备依赖，而非把全部严格校验关闭，或让客户端运行另一套宿主结算。
+`sharedClassicData`由RemoteUiClients和RemoteScene共用。OriginalRules保持原版完整准备与严格校验；RemoteDisplay使用独立缓存，不准备原版宿主技能、武器飞弹结算、碰撞规则、掉落、合成、镶孔生成、装备派生和原版包裹面板几何。保留可读取的显示表／属性定义，不把原版程序成功准备作为PD2能否显示基础场景的条件。PD2飞弹程序与技能运行公式未登记，不从原版生成本地弹体；依赖公式的显示返回未知。装备战斗派生返回不可用，不能因未准备镶孔／套装而显示假定数值。新增程序、镶孔派生与面板几何仍需逐项适配，库存／战斗／物件交互继续拒绝。
 
 ### 建议依赖顺序
 
@@ -335,7 +336,7 @@ flowchart TD
 
 应把两种目标分开：
 
-- **用 D2X 连接现有 PD2／CN Realm：** 可以在现有 BNCS／MCP／D2GS 客户端基础上分析和适配；可行范围取决于实际目标认证、协议及客户端程序。当前已完成CN账号大厅连接，游戏入场仍关闭。
+- **用 D2X 连接现有 PD2／CN Realm：** 可以在现有 BNCS／MCP／D2GS 客户端基础上分析和适配；可行范围取决于实际目标认证、协议及客户端程序。当前已完成CN账号大厅及MCP创建／加入成功回复，已实际显示罗格营地并正常退局，完整玩法未认证。
 - **自行部署具有 PD2 规则的 Realm：** PvPGN／D2CS／D2DBS 可以提供原体系的账号、大厅、房间与角色存取框架，但还需要 PD2 游戏服核心、规则、扩展协议和保存实现。原版 D2GS 外壳或把 MPQ 交给 D2X 宿主，不会自动获得这些能力。
 
 已找到公开 BH、启动器及安装脚本等部分；没有找到完整公开核心和可据此重建完整 PD2 战网的配套服务端源码／构建链。准确表述是“公开部分不足以重建完整 PD2”，不能把公开 DLL 下载等同于开源，也不能仅因没搜到就断言所有相关代码永远不公开。此前查到的 `weili0677/d2gs_113c` 是历史原版 D2GS 分支，其 2015 年提交不能证明它实现当前 PD2／CN。

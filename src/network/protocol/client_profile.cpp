@@ -9,13 +9,13 @@ size_t cn_server_packet_size(std::span<const uint8_t>);
 void validate_cn_client_packet(std::span<const uint8_t>);
 constexpr ClientCompatibility original{
     ClientProfile::Lod113c, "lod113c", AccountPasswordCase::Preserve,
-    RealmPasswordSource::AccountLogonProof, 1024, 0, {}, {},
+    RealmPasswordSource::AccountLogonProof, 1024, 0, 0, {}, {},
     lod113c_packet_size, validateClientPacket};
+// Core RVA 0x393E00 inserts GS and loot bytes before MCP 03 room strings.
 constexpr ClientCompatibility cnNormal{
     ClientProfile::Pd2CnNormal20261020, "pd2-cn-normal-20261020", AccountPasswordCase::LowerAscii,
-    RealmPasswordSource::FixedRealmPassword, 8, 2,
-    {},
-    "PD2 CN game entry is not implemented: initial item, stat and world decoders are incomplete",
+    RealmPasswordSource::FixedRealmPassword, 8, 2, 2,
+    {}, {},
     cn_server_packet_size, validate_cn_client_packet};
 
 // ProjectDiablo.dll RVA 0x368600; full target identity and limits are recorded in

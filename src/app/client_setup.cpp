@@ -23,7 +23,8 @@ constexpr std::pair<std::string_view, std::string_view> cnFiles[]{
     {"pd2data.mpq","6ce1d885dfcb16ac0ff7a183d56c56baeaad591d8779ce9e843e16dfc2756002"},
     {"pd2assets.mpq","70baa8e5334b38dd2c4e3cb8f6517eab0a1cc46e49f667e111af687f764b7ac7"},
     {"pd2maps.mpq","ad704b94aab4fa4142fb4fe37b38bd3fe7ae43a94c14518baf0d6cb0ca00d33a"},
-    {"pd2monchars.mpq","ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217"}};
+    {"pd2monchars.mpq","ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217"},
+    {"BH.dll","ee619246b8b63ea0cb3a5e84da5e63674867a87cd81cc7dbbf2d6ba8b0dd6a8c"}};
 std::string fileDigest(const std::filesystem::path &path) {
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Required client file is unavailable: " + path.filename().string());
@@ -92,9 +93,8 @@ void resolveClientSetup(AppOptions &options) {
     if (options.clientProfile.empty()) return;
     if (!options.headlessProfile.empty() || !options.hostLan.empty() || !options.lan.empty() ||
         !options.load.empty() || !options.save.empty() || !options.characterClass.empty() ||
-        !options.onlinePlay.empty() || !options.onlineCreateGame.empty() || !options.onlineJoinGame.empty() ||
-        !options.hostPacketLog.empty() || !options.gamePacketLog.empty() || !options.pack.empty())
-        throw std::runtime_error("PD2 CN currently supports the account/character lobby only");
+        !options.hostPacketLog.empty() || !options.pack.empty())
+        throw std::runtime_error("PD2 CN supports remote Battle.net only");
     options.clientProfileDigest=fileDigest(options.clientProfile);
     std::ifstream input(options.clientProfile);
     if (!input) throw std::runtime_error("Client profile is unavailable");

@@ -414,7 +414,7 @@ add_executable(d2x
   src/app/headless.cpp
   src/main.cpp src/app/application.cpp src/app/options.cpp src/app/input.cpp
   src/app/client_setup.cpp
-  src/app/account_login.cpp src/app/account_lobby.cpp
+  src/app/account_login.cpp
   src/app/frontend.cpp src/app/frontend_commands.cpp src/app/online_login_memory.cpp
   src/app/client_preferences.cpp src/app/crash_report.cpp src/app/debug/debug_pipe.cpp
   src/app/debug/ui_input.cpp src/app/debug/online_commands.cpp src/app/debug/server_commands.cpp

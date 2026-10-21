@@ -71,7 +71,10 @@ SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
         if (name.empty()) continue;
         bool found = false;
         for (size_t prerequisite = 0; prerequisite < table.rows().size(); ++prerequisite) {
-            if (table.value(prerequisite, "skill") != name) continue;
+            const auto candidate = table.value(prerequisite, "skill");
+            // TXT linkers resolve ASCII identifiers without regard to case.
+            if (candidate.size() != name.size() || !std::equal(candidate.begin(), candidate.end(), name.begin(),
+                [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); })) continue;
             const auto id = table.number(prerequisite, "Id");
             if (id && *id >= 0) { result.prerequisites.push_back(*id); found = true; }
             break;

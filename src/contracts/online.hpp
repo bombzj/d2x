@@ -91,7 +91,8 @@ struct OnlineVersionChallenge {
 struct OnlineView {
     // Build identity survives clear(): one RealmSession has one immutable profile.
     std::string protocolProfile{"lod113c"};
-    bool remoteLobbyOnly{}; // No local host, LAN, save or D2GS admission.
+    bool remoteLobbyOnly{}; // Remote client: no local host, LAN or character save operations.
+    bool gameEntryAvailable{true}; // Profile capability; independent of local host/character administration.
     bool allowLadderSelection{}; // Server-returned characters, independent of game admission.
     std::optional<OnlineVersionChallenge> versionChallenge;
     // Counts and IDs only: never packet payloads, credentials or native tickets.

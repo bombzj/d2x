@@ -804,7 +804,7 @@ struct RealmFrontend::Impl {
             tiles(lobbyPanel == LobbyPanel::Join ? "join" : "create", 418, 72, 2);
         text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
         const bool listing = v.stage == OnlineStage::ListingGames;
-        const bool canSubmit = !v.remoteLobbyOnly && v.stage == OnlineStage::Lobby && !gameName.empty();
+        const bool canSubmit = v.gameEntryAvailable && v.stage == OnlineStage::Lobby && !gameName.empty();
         if (lobbyPanel == LobbyPanel::Join) {
             bool doubleClickGame = false, clickedGame = false;
             if (!enabled || input.wheel || input.tab || input.backspace || input.entryDelete ||
@@ -900,8 +900,8 @@ struct RealmFrontend::Impl {
                 if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("gameButton", 599, 404, s(5151), !v.remoteLobbyOnly && !gameName.empty(), 1, 0, &lobbyText) ||
-                (enabled && !v.remoteLobbyOnly && !gameName.empty() && (input.enter || doubleClickGame))) {
+            if (button("gameButton", 599, 404, s(5151), v.gameEntryAvailable && !gameName.empty(), 1, 0, &lobbyText) ||
+                (enabled && v.gameEntryAvailable && !gameName.empty() && (input.enter || doubleClickGame))) {
                 lastClickedGame.clear();
                 emit(FrontendCommand::JoinGame);
                 intent.name = gameName;
@@ -980,7 +980,7 @@ struct RealmFrontend::Impl {
                 if (!line.empty()) drawLine();
             }
         }
-        if (button("tabs", 534, 449, s(5312), !v.remoteLobbyOnly, 1, 0, &lobbyText)) {
+        if (button("tabs", 534, 449, s(5312), v.gameEntryAvailable, 1, 0, &lobbyText)) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Create;
             if (listing) emit(FrontendCommand::CancelList);

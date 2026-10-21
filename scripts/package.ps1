@@ -1,4 +1,4 @@
-param([string]$OutputDirectory='',[switch]$Archive)
+﻿param([string]$OutputDirectory='',[switch]$Archive)
 $ErrorActionPreference='Stop'
 $script:copiedFiles=0
 $script:copiedBytes=0L
@@ -62,6 +62,8 @@ if(Test-Path -LiteralPath $pd2Profile){
     if($profile.authentication -eq 'pd2-cn' -and $profile.clientProfile -eq 'pd2-cn-normal-20261020'){
         $publicProfile=[ordered]@{}
         foreach($key in @('version','clientProfile','authentication','accountHost','accountPort','gamePort','gateway')){$publicProfile[$key]=$profile.$key}
+        $publicProfile.gameServer=if($null -ne $profile.gameServer){$profile.gameServer}else{1}
+        $publicProfile.lootAllocation=if($null -ne $profile.lootAllocation){$profile.lootAllocation}else{$true}
         foreach($key in @('originalClientDirectory','pd2Directory')){
             $value=[string]$profile.$key
             if(-not [IO.Path]::IsPathRooted($value)){$value=Join-Path $projectRoot $value}

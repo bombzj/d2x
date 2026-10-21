@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <condition_variable>
 #include <thread>
@@ -146,6 +147,13 @@ struct RealmSession::Impl {
     uint64_t combatSequence{};
     bool waitingChat{}, environmentSent{}, awaitingPong{}, registering{};
     std::optional<Endpoint> gameEndpoint;
+    // CN player-data snapshots copied by core handlers 0x38FAD0 / 0x38FB00.
+    std::array<Bytes, 2> pd2PlayerDataBlocks;
+    std::array<Bytes, 20> pd2PlayerUpdates;
+    std::map<uint32_t, uint16_t> pd2RosterCounters;
+    std::optional<uint32_t> pd2PlayerControl, pd2StashPage;
+    std::optional<std::pair<uint8_t, uint32_t>> pd2MonstersRemaining;
+    uint16_t gameJoinFlags{}; // Public MCP 04 reserved metadata; never a ticket.
     std::string listFilter;
 
     Bytes realmStartup;

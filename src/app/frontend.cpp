@@ -20,6 +20,7 @@
 #include "presentation/scene_view.hpp"
 #include "presentation/controller.hpp"
 #include "content/string_table.hpp"
+#include "content/classic_data.hpp"
 #include "content/language.hpp"
 #include "input.hpp"
 #include "network/realm_session.hpp"
@@ -30,6 +31,7 @@
 #include <rlgl.h>
 #include <array>
 #include <fstream>
+#include <functional>
 #include <mutex>
 #include <iostream>
 #include <deque>
@@ -352,6 +354,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     ClassicStrings strings(archives, lang);
     FrontendPage page = remoteOnly ? FrontendPage::Login : FrontendPage::Main;
     std::string notice, gateway = remoteOnly ? "" : "D2X-Local";
+    const std::function<std::string()> prepareGame = [&]() -> std::string {
+        if (!remoteOnly) return {};
+        try { sharedClassicData(archives, ContentPreparation::RemoteDisplay); return {}; }
+        catch (const std::exception &error) { return "PD2 scene resources are unavailable: " + std::string(error.what()); }
+    };
     uint64_t dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
     std::optional<uint64_t> worldNoticeSequence;
     uint64_t worldNoticeGeneration{};
@@ -550,7 +557,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                     return sharedClients->itemQuote(item, action);
                 }, submitChatInput, [&](const nlohmann::json &command) {
                     return serverDebugCommand(command, localConnection || lanListening ? embedded.get() : nullptr, administerLocal);
-                });
+                }, prepareGame);
             if (presentationPaused != wasPaused) {
                 debugInputs.clear();
                 if (sharedUi) sharedUi->pauseWorldPresentation(presentationPaused ||
@@ -673,7 +680,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (view.stage == OnlineStage::RealmSelection) {
             const auto match = std::find_if(view.realms.begin(), view.realms.end(),
                                             [&](const auto &r) { return r.name == gateway; });
-            if (!manualRealm && match != view.realms.end())
+            if (!manualRealm && remoteOnly && !view.realms.empty())
+                session.choose_realm(view.realms.front().name);
+            else if (!manualRealm && match != view.realms.end())
                 session.choose_realm(match->name);
             else {
                 manualRealm = true;
@@ -693,10 +702,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         }
         if (quickGame && view.stage == OnlineStage::Lobby) {
             quickGame = false;
-            const bool accepted = !options.onlineCreateGame.empty()
+            const auto preparationError = prepareGame();
+            const bool accepted = preparationError.empty() && (!options.onlineCreateGame.empty()
                 ? session.create_game({options.onlineCreateGame, {}, {}, 0, 8, 99})
-                : session.join_game(options.onlineJoinGame);
-            if (!accepted) notice = "Quick-entry game request was rejected; use the lobby to inspect or retry.";
+                : session.join_game(options.onlineJoinGame));
+            if (!accepted) notice = preparationError.empty() ? "Quick-entry game request was rejected; use the lobby to inspect or retry." : preparationError;
         }
         // Automatic commands above can change the stage in this same frame.
         view = session.read();
@@ -776,7 +786,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (showScene && !scene) {
             profile.mark("native-world-ready");
             try {
-                scene = std::make_unique<RemoteScene>(archives, town.read().palette.value_or(0), mapDisplay);
+                scene = std::make_unique<RemoteScene>(archives, town.read().palette.value_or(0), mapDisplay,
+                    remoteOnly ? ContentPreparation::RemoteDisplay : ContentPreparation::OriginalRules);
                 profile.mark("scene-assets-ready");
             } catch (const std::exception &e) {
                 sceneError = e.what();
@@ -1042,7 +1053,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                                        localConnection, enterLocalGame, lanConnection, lanListening,
                                        lanJoiningGame, tcpIpSaveFailed, quit, manualRealm, lanJoinAddress,
                                        reloadCharacter, notice, gateway, localDifficulty,
-                                       localDifficultyChosen, debugInputs, page, dismissedErrorSequence};
+                                       localDifficultyChosen, debugInputs, page, dismissedErrorSequence, prepareGame};
         dispatchFrontendCommand(dispatch, action);
     }
     syncPreferences(true);

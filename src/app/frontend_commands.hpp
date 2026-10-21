@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <deque>
 #include <filesystem>
+#include <functional>
 #include <string>
 
 namespace d2x {
@@ -39,6 +40,7 @@ struct FrontendDispatchState {
     std::deque<FrameInput> &debugInputs;
     FrontendPage &page;
     uint64_t &dismissedErrorSequence;
+    const std::function<std::string()> &prepareGame;
 };
 void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &action);
 } // namespace d2x

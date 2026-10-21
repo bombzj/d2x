@@ -70,7 +70,7 @@ int runGame(int argc, char **argv) {
         std::cout << "D2X: Single Player characters / original-server client\n"
                      "Single Player lists local D2S characters; F11 saves, Ctrl+F11 reloads in town.\n"
                      "--mpq <folder|archive> --online-config <file.json>\n"
-                     "--client-profile <file.json>: fixed PD2 CN client resources and account lobby.\n"
+                     "--client-profile <file.json>: fixed PD2 CN remote client resources and protocol.\n"
                      "--host-lan <IPv4 interface> --host-saves <folder>: shared MCP/D2GS host.\n"
                      "--lan <host IPv4>: connect directly to its native character lobby.\n"
                      "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4000.\n"

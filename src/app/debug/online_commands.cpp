@@ -363,6 +363,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     for (const auto &c : v.characters)
         result["characters"].push_back({{"name", c.name},
                                         {"expiration", c.expiration},
+                                        {"portrait", c.portrait},
                                         {"classId", optional(c.characterClass)},
                                         {"level", optional(c.level)},
                                         {"progression", optional(c.progression)},
@@ -424,7 +425,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                                const std::function<void(std::vector<FrameInput>)> &inputFrames,
                                const std::function<std::optional<unsigned>(uint32_t, OnlineItemAction)> &quote,
                                const std::function<std::string(const std::string &)> &chatInput,
-                               const std::function<std::optional<std::string>(const Json &)> &hostCommand) {
+                               const std::function<std::optional<std::string>(const Json &)> &hostCommand,
+                               const std::function<std::string()> &prepareGame) {
     Json request;
     Credentials secrets{request, {}};
     try {
@@ -790,6 +792,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted = session.list_games(text("filter", 15, false));
             mutation = true;
         } else if (command == "online-create-game") {
+            if (auto error = prepareGame(); !error.empty()) return Json{{"ok", false}, {"error", error}}.dump();
             net::CreateGameOptions options;
             options.name = text("name", 15);
             options.description = text("description", 31, false);
@@ -804,6 +807,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted = session.query_game(text("name", 15));
             mutation = true;
         } else if (command == "online-join-game") {
+            if (auto error = prepareGame(); !error.empty()) return Json{{"ok", false}, {"error", error}}.dump();
             auto name = text("name", 15);
             secrets.password = text("password", 15, false);
             accepted = session.join_game(std::move(name), std::move(secrets.password));

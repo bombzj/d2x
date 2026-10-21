@@ -20,8 +20,7 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
             if (auto id = table.number(row, column); id && *id >= 0 && *id <= UINT16_MAX) rows.emplace(uint16_t(*id), row);
     }
     const auto &states = tables_.at("states");
-    for (const auto &[id, row] : skills_)
-        skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row));
+
     for (size_t row = 0; row < states.rows().size(); ++row)
         if (auto id = states.number(row, "Id"); id && *id >= 0 && *id < 255) states_.emplace(uint8_t(*id), row);
     const auto &monsters = tables_.at("monstats");
@@ -57,6 +56,13 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
             for (const int id : loadInnateSkillIds(tables_.at("skills"), characters, character))
                 if (id <= UINT16_MAX) innate.insert(uint16_t(id));
         }
+    }
+    const bool remoteOnly = session_.read().remoteLobbyOnly;
+    for (const auto &[id, row] : skills_) {
+        const bool innate = std::any_of(innateSkills_.begin(), innateSkills_.end(),
+            [&](const auto &entry) { return entry.second.contains(id); });
+        if (remoteOnly && tables_.at("skills").value(row, "charclass").empty() && !innate) continue;
+        skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row));
     }
 }
 bool RemoteCombat::reject(std::string reason) { reason_ = std::move(reason); return false; }
@@ -215,7 +221,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
     const auto row=skills_.find(skill);if(row==skills_.end() || !unit.position) return false;
     const auto &table=tables_.at("skills");
     const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
-    if (skillMetadata_.at(skill).itemSkill) return false; // SrvDo113 searches inventory, not a hovered unit.
+    if (!skillMetadata_.contains(skill) || skillMetadata_.at(skill).itemSkill) return false; // SrvDo113 searches inventory, not a hovered unit.
     if(n("srvstfunc")==34 && n("srvdofunc")==72) return monsterTargetEligible(unit,true);
     if(n("srvstfunc")==33 && (n("srvdofunc")==69 || n("srvdofunc")==75)) {
         if(!monsterTargetEligible(unit,true)) return false;
@@ -320,6 +326,7 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
         }
         const auto row = skills_.find(command.skill);
         if (row == skills_.end()) return reject("Skill is absent from current MPQ");
+        if (!skillMetadata_.contains(command.skill)) return reject("Player skill metadata is not supported by this profile");
         const auto &metadata = skillMetadata_.at(command.skill);
         SkillEligibilityInput facts;
         facts.classCode = classCode(); facts.innate = innateSkill(command.skill);
@@ -417,6 +424,7 @@ void RemoteCombat::update() {
     catalog_.clear();
     const auto &skills = tables_.at("skills");
     for (const auto &[id, row] : skills_) {
+        if (!skillMetadata_.contains(id)) continue;
         const auto &metadata = skillMetadata_.at(id);
         const bool classSkill = !classCode().empty() && metadata.classCode == classCode();
         const bool innate = innateSkill(id);

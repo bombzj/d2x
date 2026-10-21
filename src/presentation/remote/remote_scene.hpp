@@ -1,4 +1,5 @@
 #pragma once
+#include "content/content_preparation.hpp"
 #include "contracts/online.hpp"
 #include "contracts/online_scene.hpp"
 #include "presentation/graphics/primitives.hpp"
@@ -29,7 +30,7 @@ class RemoteScene {
     std::unique_ptr<Impl> impl_;
 
   public:
-    RemoteScene(Archives &, int palette, RemoteMapDisplayState &);
+    RemoteScene(Archives &, int palette, RemoteMapDisplayState &, ContentPreparation = ContentPreparation::OriginalRules);
     ~RemoteScene();
     RemoteSceneFrame frame(const OnlineView &, const Map &, const OnlineSceneView &,
                             SceneView &, const RemoteCombat &, const RemoteUiClients &, bool uiConsumed, Vec mouse, bool rightHand, bool paused);

@@ -166,9 +166,12 @@ std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineUnit 
     return parts;
 }
 std::optional<RealmPortraitParts> RealmPortraitCatalog::decode(const OnlineCharacter &c) const {
-    if (!c.characterClass || *c.characterClass >= 7 || c.portrait.size() != 33 || c.portrait[0] != 0x8D ||
-        c.portrait[1] != 0x80)
-        return {};
+    if (!c.characterClass || *c.characterClass >= 7 || c.portrait.size() != 33 ||
+        !(c.portrait[0] & 0x80) || !(c.portrait[1] & 0x80)) return {};
+    const auto version = uint16_t((c.portrait[0] & 0x7F) | ((c.portrait[1] & 0x7F) << 7));
+    // Newly created MCP characters can still use version 4 with empty equipment.
+    // Component/color/class slots are shared with the saved version 10/13 layout.
+    if (version != 4 && version != 10 && version != 13) return {};
     // Component transforms require a separate per-layer palette consumer. Keep
     // unsupported previews absent rather than substituting unequipped art.
     for (size_t i = 14; i < 25; ++i)

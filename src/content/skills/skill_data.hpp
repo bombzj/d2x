@@ -1,4 +1,5 @@
 #pragma once
+#include "content/content_preparation.hpp"
 #include "gameplay/character/attributes.hpp"
 #include "content/skills/skill_metadata.hpp"
 #include <memory>
@@ -56,5 +57,5 @@ struct SkillCatalog {
 SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descriptions,
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
-                              const ClassicStrings &strings);
+                              const ClassicStrings &strings, ContentPreparation = ContentPreparation::OriginalRules);
 } // namespace d2x

@@ -2,7 +2,7 @@
 
 namespace d2x {
 RemoteUiClients::Impl::Impl(Archives &a, net::RealmSession &s, RemoteInventory &i, RemoteCombat &c, RemoteControl &r)
-        : session(s), items(i), combat(c), control(r), sharedData(sharedClassicData(a)), data(*sharedData) {
+        : session(s), items(i), combat(c), control(r), sharedData(sharedClassicData(a, s.read().remoteLobbyOnly ? ContentPreparation::RemoteDisplay : ContentPreparation::OriginalRules)), data(*sharedData) {
     const auto &costs = data.tables.at("itemstatcost");
     for (size_t row = 0; row < costs.rows().size(); ++row) {
         std::optional<ObservedStat> definition;

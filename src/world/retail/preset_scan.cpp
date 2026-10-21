@@ -10,18 +10,19 @@
 namespace d2x {
 namespace {
 using Linker = std::map<std::string, std::vector<int>, std::less<>>;
-int readLinker(const DataTable &table, const char *name, Linker &linker) {
+int readLinker(const DataTable &table, const char *name, Linker &linker, bool indexedByRow) {
     int count = 0;
     for (size_t row = 0; row < table.rows().size(); ++row) {
         const auto index = table.number(row, "hcIdx");
         if (!index) continue;
-        if (*index != count || table.value(row, name).empty())
+        if ((!indexedByRow && *index != count) || table.value(row, name).empty())
             throw std::runtime_error("Unsupported MPQ native monster linker ordering: " +
                 std::string(name) + " row=" + std::to_string(row) + " hcIdx=" + std::to_string(*index) +
                 " expected=" + std::to_string(count) + " identity=" + std::string(table.value(row, name)));
-        // hcIdx counts records, including duplicate text identities. Do not
-        // renumber later records or reject an unused duplicate in another act.
-        linker[std::string(table.value(row, name))].push_back(*index);
+        // MonStats' Id linker uses record order; hcIdx is not a compiled field.
+        // CN monstats.bin row 1198 has ID 1198 despite TXT hcIdx 1199.
+        // Preserve duplicate names so resolveLink still selects their first entry.
+        linker[std::string(table.value(row, name))].push_back(indexedByRow ? count : *index);
         ++count;
     }
     return count;
@@ -39,9 +40,9 @@ RetailPresetScan::RetailPresetScan(Archives &archives) {
         return DataTable(archives.read(std::string("data/global/excel/") + name + ".txt"));
     };
     Linker monsters, uniques, places;
-    monsterCount_ = readLinker(read("monstats"), "Id", monsters);
+    monsterCount_ = readLinker(read("monstats"), "Id", monsters, true);
     navi_ = resolveLink(monsters, "navi");
-    uniqueCount_ = readLinker(read("superuniques"), "Superunique", uniques);
+    uniqueCount_ = readLinker(read("superuniques"), "Superunique", uniques, false);
     const auto placeTable = read("monplace");
     for (size_t row = 0; row < placeTable.rows().size(); ++row) {
         const auto code = placeTable.value(row, "code");

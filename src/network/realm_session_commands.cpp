@@ -147,6 +147,10 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "Object interactions are unavailable for this client profile");
+        return false;
+    }
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     if (intent != OnlineObjectIntent::Operate && target.type != 2) {
         p.error(OnlineErrorKind::Input, "Stash and waypoint intents require an assigned object"); return false;
@@ -194,6 +198,10 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "NPC interactions are unavailable for this client profile");
+        return false;
+    }
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto found = p.view.world.units.find({1, serverUnitId});
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
@@ -388,6 +396,10 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "Item actions are unavailable for this client profile");
+        return false;
+    }
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, true)) return false;
     auto &world = p.view.world;
@@ -541,6 +553,10 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "Combat actions are unavailable for this client profile");
+        return false;
+    }
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, false)) return false;
     auto &world = p.view.world;

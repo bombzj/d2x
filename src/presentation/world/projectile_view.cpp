@@ -7,6 +7,7 @@ void SceneView::createIceShatter(Vec position, int size) {
     // Each original DCC already contains a complete burst of ice fragments.
     // Use one burst at the monster anchor, with an independent visual variant.
     const int id = assets_.iceShatterProjectiles[size_t(std::clamp(size - 1, 0, 2))];
+    if (id < 0) return; // No registered shatter program for this content profile.
     constexpr Vec directions[]{{0,1},{-1,0},{0,-1},{1,0}};
     const auto direction = directions[limitedRandom(projectileVisualRandom_, 4)];
     clientMissiles_.push_back({id, position, {}, 0, assets_.projectileVisuals.at(id).lifetime, direction});

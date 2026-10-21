@@ -336,14 +336,32 @@ void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t owne
     std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
 } // namespace
-void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
+void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile) {
     auto &w = v.world;
     const auto previousItems = w.itemRevision;
     ++v.revision;
     ++w.revision;
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
+    const bool pd2 = profile == protocol::ClientProfile::Pd2CnNormal20261020;
+    if (pd2 && p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19)
+        throw ProtocolError("PD2 extended item storage is not supported");
     Reader r(p.body);
     switch (p.id) {
+    case 0x48:
+        // D2MOO SCmd::D2GAME_SendPacket0x48 follows inventory publication.
+        // Inventory interaction is unavailable in the PD2 admission slice;
+        // retain this unconsumed notification in diagnostics, without an ACK.
+        r.take(10); r.finish();
+        ++w.ignoredPackets;
+        ++v.gameProtocol.unconsumed[p.id];
+        break;
+    case 0x7E:
+        // Retail D2Client RVA 0xAD240 opens a local scrolling text resource;
+        // it does not read this four-byte payload or alter world/admission state.
+        r.u32(); r.finish();
+        ++w.ignoredPackets;
+        ++v.gameProtocol.unconsumed[p.id];
+        break;
     case 0x04:
         r.finish();
         // Keep 04 in the ordered map stream. Its receipt does not imply that
@@ -1280,6 +1298,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p) {
         break;
     }
     default:
+        if (pd2) throw ProtocolError("Unimplemented PD2 world packet: " + std::to_string(p.id));
         ++w.ignoredPackets;
         ++v.gameProtocol.unconsumed[p.id];
         return;

@@ -23,6 +23,8 @@ struct LoginOptions {
     std::chrono::milliseconds heartbeat{5000};
     uint16_t gamePort{4000};
     uint8_t gameLocale{};
+    uint8_t gameServer{1}; // CN MCP creation extension; original profile sends neither field.
+    bool lootAllocation{true};
 };
 struct CreateGameOptions {
     std::string name, password, description;

@@ -6,7 +6,7 @@
 
 **一套客户端，两种权威来源。** Single Player／自研TCP/IP使用自研宿主，原服使用D2GS；入局共用D2GS请求与同一客户端副本。TCP/IP按原版直连游戏端口并交换本机角色字节，选角复用内部内存MCP；账号Realm路径继续使用远端MCP。单机是内存字节传输，断线不切换成本地权威。
 
-PD2配置仅作远端客户端。`app/account_lobby`组装既有RealmFrontend／RealmSession并停留在账号、选角和大厅，不创建EmbeddedRealm、本地角色存储或游戏世界；当前不开放PD2入局。固定构建、认证和资源边界见[PD2兼容设计](PD2_COMPATIBILITY.md#当前代码接入范围)。
+PD2配置仅作远端客户端。`app/frontend`共用RealmFrontend／RealmSession和Remote*，仅原版实例化EmbeddedRealm；PD2不创建本地角色存储或宿主。CN已核实登录、选角原图、大厅、建房后入场及罗格营地原图显示，可正常退回选角；其他区域与玩法尚未认证。远端显示内容准备与原版宿主规则准备分离，未实现的交互明确拒绝。固定构建、认证和资源边界见[PD2兼容设计](PD2_COMPATIBILITY.md#当前代码接入范围)。
 
 | 大模块（相对src/） | 放什么／不能放什么 |
 | --- | --- |

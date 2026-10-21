@@ -5,6 +5,10 @@
 
 namespace d2x {
 void SceneController::toggleInventory() {
+    if (view_.inventoryView().backpackLayout.cellSize <= 0) {
+        view_.notice("Inventory layout is unavailable for this client profile.", true);
+        return;
+    }
     auto &ui = view_.ui();
     if(ui.orificeObject && ui.inventory.open) {inventoryClient_.submitStaff(ui.orificeObject,{});ui.orificeObject={};ui.orificeItem.reset();}
     ui.skillPicker.reset();

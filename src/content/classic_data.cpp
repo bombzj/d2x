@@ -41,10 +41,16 @@
 #include <stdexcept>
 
 namespace d2x {
-std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives) {
-    return archives.prepared<ClassicData>([&] { return loadClassicData(archives); });
+std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives, ContentPreparation preparation) {
+    if (preparation == ContentPreparation::OriginalRules)
+        return archives.prepared<ClassicData>([&] { return loadClassicData(archives); });
+    struct RemoteDisplayData { std::shared_ptr<const ClassicData> value; };
+    return archives.prepared<RemoteDisplayData>([&] {
+        return RemoteDisplayData{std::make_shared<const ClassicData>(loadClassicData(archives, preparation))};
+    })->value;
 }
-ClassicData loadClassicData(Archives &archives) {
+ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) {
+    const bool originalRules = preparation == ContentPreparation::OriginalRules;
     const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;
     for (auto name : {"monumod", "monstats2", "monprop", "monequip", "bodylocs", "montype", "difficultylevels", "misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels", "hitclass", "pettype", "objects"})
@@ -238,9 +244,9 @@ ClassicData loadClassicData(Archives &archives) {
         if (std::any_of(item.inventoryIcons.begin(), item.inventoryIcons.end(),
                         [&](const auto &icon) { return !archives.contains(icon); }))
             item.artAvailable = false;
-    loadItemProjectiles(items, tables.at("missiles"), archives);
+    if (originalRules) loadItemProjectiles(items, tables.at("missiles"), archives);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
-                     "lod-named-txt-v1"};
+                     originalRules ? "lod-named-txt-v1" : "remote-display-txt-v1"};
     {
         const auto bytes=archives.read("data/global/expfield.d2");Reader reader(bytes);reader.skip(2);
         const auto height=reader.u32(),width=reader.u32();
@@ -254,61 +260,63 @@ ClassicData loadClassicData(Archives &archives) {
         data.nativeCollisionField=std::move(field);
     }
     const auto &inventory = data.tables.at("inventory");
-    const auto stashName = "Big Bank Page 1";
-    size_t stashRow = 0;
-    for (; stashRow < inventory.rows().size(); ++stashRow)
-        if (inventory.value(stashRow, "class") == stashName) break;
-    if (stashRow == inventory.rows().size())
-        throw std::runtime_error("MPQ inventory.txt lacks the original stash layout");
-    auto requiredGrid = [&](std::string_view field) {
-        auto value = inventory.number(stashRow, field);
-        if (!value) throw std::runtime_error("Invalid MPQ stash layout field: " + std::string(field));
-        return *value;
-    };
-    data.stashLayout = {requiredGrid("gridX"), requiredGrid("gridY"),
-                        requiredGrid("gridLeft"), requiredGrid("gridTop"),
-                        requiredGrid("gridBoxWidth"), true};
-    if (data.stashLayout.columns < 1 || data.stashLayout.rows < 1 ||
-        data.stashLayout.columns > 16 || data.stashLayout.rows > 16 ||
-        data.stashLayout.left < 0 || data.stashLayout.top < 0 ||
-        data.stashLayout.cellSize < 1 || data.stashLayout.cellSize != requiredGrid("gridBoxHeight") ||
-        data.stashLayout.left + data.stashLayout.columns * data.stashLayout.cellSize > 320 ||
-        data.stashLayout.top + data.stashLayout.rows * data.stashLayout.cellSize > 432)
-        throw std::runtime_error("Unsupported MPQ stash grid geometry");
-    {
-        size_t cubeRow = 0;
-        for (; cubeRow < inventory.rows().size(); ++cubeRow)
-            if (inventory.value(cubeRow, "class") == "Transmogrify Box Page 1") break;
-        if (cubeRow == inventory.rows().size())
-            throw std::runtime_error("MPQ inventory.txt lacks the cube layout");
-        auto cubeNumber = [&](std::string_view field) {
-            auto value = inventory.number(cubeRow, field);
-            if (!value) throw std::runtime_error("Invalid MPQ cube layout field: " + std::string(field));
+    if (originalRules) {
+        const auto stashName = "Big Bank Page 1";
+        size_t stashRow = 0;
+        for (; stashRow < inventory.rows().size(); ++stashRow)
+            if (inventory.value(stashRow, "class") == stashName) break;
+        if (stashRow == inventory.rows().size())
+            throw std::runtime_error("MPQ inventory.txt lacks the original stash layout");
+        auto requiredGrid = [&](std::string_view field) {
+            auto value = inventory.number(stashRow, field);
+            if (!value) throw std::runtime_error("Invalid MPQ stash layout field: " + std::string(field));
             return *value;
         };
-        data.cubeLayout = {cubeNumber("gridX"), cubeNumber("gridY"),
-                           cubeNumber("gridLeft"), cubeNumber("gridTop"),
-                           cubeNumber("gridBoxWidth"), true};
-        if (data.cubeLayout.columns < 1 || data.cubeLayout.rows < 1 ||
-            data.cubeLayout.cellSize != cubeNumber("gridBoxHeight") ||
-            data.cubeLayout.left < 0 || data.cubeLayout.top < 0 ||
-            data.cubeLayout.left + data.cubeLayout.columns * data.cubeLayout.cellSize > 320 ||
-            data.cubeLayout.top + data.cubeLayout.rows * data.cubeLayout.cellSize > 432)
-            throw std::runtime_error("Unsupported MPQ cube grid geometry");
-        const auto &misc = data.tables.at("misc");
-        for (size_t row = 0; row < misc.rows().size(); ++row)
-            if (misc.number(row, "pSpell") == 7 && misc.value(row, "type") == "ques") {
-                if (!data.cubeCode.empty()) throw std::runtime_error("Ambiguous original cube item");
-                data.cubeCode = std::string(misc.value(row, "code"));
-            }
-        if (data.cubeCode.empty() || !data.items.find(data.cubeCode))
-            throw std::runtime_error("MPQ lacks the original cube item");
+        data.stashLayout = {requiredGrid("gridX"), requiredGrid("gridY"),
+                            requiredGrid("gridLeft"), requiredGrid("gridTop"),
+                            requiredGrid("gridBoxWidth"), true};
+        if (data.stashLayout.columns < 1 || data.stashLayout.rows < 1 ||
+            data.stashLayout.columns > 16 || data.stashLayout.rows > 16 ||
+            data.stashLayout.left < 0 || data.stashLayout.top < 0 ||
+            data.stashLayout.cellSize < 1 || data.stashLayout.cellSize != requiredGrid("gridBoxHeight") ||
+            data.stashLayout.left + data.stashLayout.columns * data.stashLayout.cellSize > 320 ||
+            data.stashLayout.top + data.stashLayout.rows * data.stashLayout.cellSize > 432)
+            throw std::runtime_error("Unsupported MPQ stash grid geometry");
+        {
+            size_t cubeRow = 0;
+            for (; cubeRow < inventory.rows().size(); ++cubeRow)
+                if (inventory.value(cubeRow, "class") == "Transmogrify Box Page 1") break;
+            if (cubeRow == inventory.rows().size())
+                throw std::runtime_error("MPQ inventory.txt lacks the cube layout");
+            auto cubeNumber = [&](std::string_view field) {
+                auto value = inventory.number(cubeRow, field);
+                if (!value) throw std::runtime_error("Invalid MPQ cube layout field: " + std::string(field));
+                return *value;
+            };
+            data.cubeLayout = {cubeNumber("gridX"), cubeNumber("gridY"),
+                               cubeNumber("gridLeft"), cubeNumber("gridTop"),
+                               cubeNumber("gridBoxWidth"), true};
+            if (data.cubeLayout.columns < 1 || data.cubeLayout.rows < 1 ||
+                data.cubeLayout.cellSize != cubeNumber("gridBoxHeight") ||
+                data.cubeLayout.left < 0 || data.cubeLayout.top < 0 ||
+                data.cubeLayout.left + data.cubeLayout.columns * data.cubeLayout.cellSize > 320 ||
+                data.cubeLayout.top + data.cubeLayout.rows * data.cubeLayout.cellSize > 432)
+                throw std::runtime_error("Unsupported MPQ cube grid geometry");
+            const auto &misc = data.tables.at("misc");
+            for (size_t row = 0; row < misc.rows().size(); ++row)
+                if (misc.number(row, "pSpell") == 7 && misc.value(row, "type") == "ques") {
+                    if (!data.cubeCode.empty()) throw std::runtime_error("Ambiguous original cube item");
+                    data.cubeCode = std::string(misc.value(row, "code"));
+                }
+            if (data.cubeCode.empty() || !data.items.find(data.cubeCode))
+                throw std::runtime_error("MPQ lacks the original cube item");
+        }
     }
     // D2MOO MissMode.cpp's mode table. Unit bits are retained in the definition;
     // Grid supplies terrain/object flags, while combat resolves unit hits.
     const auto &missiles = data.tables.at("missiles");
     constexpr uint16_t collisionMasks[]{0, 0x0084, 0x0104, 0x0184, 0, 0x0104, 0x0004, 0x0040, 0x0185};
-    for (size_t row = 0; row < missiles.rows().size(); ++row) {
+    if (originalRules) for (size_t row = 0; row < missiles.rows().size(); ++row) {
         const auto id = missiles.number(row, "Id");
         if (!id) continue;
         const int mode = missiles.number(row, "CollideType").value_or(0);
@@ -322,7 +330,7 @@ ClassicData loadClassicData(Archives &archives) {
         data.missileReturnFire.emplace(*id, returnFire == 1);
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
-    for (const auto &character : data.characters) {
+    if (originalRules) for (const auto &character : data.characters) {
         size_t row = 0;
         for (; row < inventory.rows().size(); ++row)
             if (inventory.value(row, "class") == character.name + "2") break;
@@ -394,10 +402,10 @@ ClassicData loadClassicData(Archives &archives) {
                 data.hirelingNameIds.emplace(key, strings.index(key));
             }
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
-                                       data.tables.at("charstats"), data.characters, strings);
+                                       data.tables.at("charstats"), data.characters, strings, preparation);
         data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings,
             archives.read("data/global/excel/missiles.bin")));
-        loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), data.characters, archives);
+        if (originalRules) loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), data.characters, archives);
         data.playerDeath = loadPlayerDeathData(archives, data.characters, data.tables.at("difficultylevels"));
         data.shrines = loadShrines(data.tables.at("shrines"));
         const auto &stateTable=data.tables.emplace("states",DataTable(archives.read("data/global/excel/states.txt"))).first->second;
@@ -405,26 +413,29 @@ ClassicData loadClassicData(Archives &archives) {
         auto nativeStates=std::make_shared<CombatStateRules>();
         for(const auto &[name,state]:data.states) nativeStates->emplace(state.definition.id,state.definition);
         data.nativeStates=std::move(nativeStates);
-        loadAuraSkills(data);
-        loadMonsterEnchantmentResources(data, archives);
-        const auto &overlays = data.tables.emplace("overlay", DataTable(archives.read("data/global/excel/overlay.txt"))).first->second;
-        const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
-        loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
-                             overlays, sounds, data.states, archives);
-        loadNativeDefensiveBuffs(data.skills,data.tables.at("skills"),overlays,sounds,data.states,archives);
-        loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
-        loadAmazonBowSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
-        loadAmazonSpearSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
-        loadAmazonMagicSkills(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
-        loadAmazonSummons(data, overlays, sounds, archives);
-        loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
-        loadBarbarianSkills(data, archives);
-        loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
-        loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
-        loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
-            data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
-        loadRemainingNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
-            data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, data.tables.at("missiles"), data.states, archives, data);
+        data.tables.emplace("overlay", DataTable(archives.read("data/global/excel/overlay.txt")));
+        if (originalRules) {
+            loadAuraSkills(data);
+            loadMonsterEnchantmentResources(data, archives);
+            const auto &overlays = data.tables.at("overlay");
+            const DataTable sounds(archives.read("data/global/excel/sounds.txt"));
+            loadSorceressEffects(data.skills, data.tables.at("skills"), data.tables.at("missiles"),
+                                 overlays, sounds, data.states, archives);
+            loadNativeDefensiveBuffs(data.skills,data.tables.at("skills"),overlays,sounds,data.states,archives);
+            loadWeaponSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+            loadAmazonBowSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+            loadAmazonSpearSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), sounds, archives);
+            loadAmazonMagicSkills(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
+            loadAmazonSummons(data, overlays, sounds, archives);
+            loadPaladinSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
+            loadBarbarianSkills(data, archives);
+            loadNecromancerCurses(data.skills, data.tables.at("skills"), overlays, sounds, data.states, archives);
+            loadBoneSkills(data.skills, data.tables.at("skills"), data.tables.at("missiles"), overlays, sounds, data.states, archives);
+            loadNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
+                data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, archives);
+            loadRemainingNecromancerSummons(data.skills, data.tables.at("skills"), data.tables.at("monstats"),
+                data.tables.at("monstats2"), data.tables.at("monlvl"), sounds, data.tables.at("missiles"), data.states, archives, data);
+        }
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t row = 0; row < levels.rows().size(); ++row)
             if (auto id = levels.number(row, "Id"); id && *id > 0)
@@ -467,45 +478,49 @@ ClassicData loadClassicData(Archives &archives) {
     data.questContent = loadQuestContent(archives, data.npcDialogues, data.questStrings);
     {
         loadPropertyData(data);
-        loadSocketData(data, strings);
-        loadCubeData(data);
-        loadItemGrades(data);
-        loadSpecialItemData(data);
-        auto resolveSpecialArt = [&](SpecialItemRecord &record) {
-            const auto *base = data.items.find(record.code);
-            if (!base)
-                return;
-            const auto &icon = record.icon.empty() ? base->icon : record.icon;
-            const auto &ground = record.groundAnimation.empty() ? base->groundAnimation
-                                                                 : record.groundAnimation;
-            record.artAvailable = !icon.empty() && !ground.empty() &&
-                                  archives.contains(icon) && archives.contains(ground);
-        };
-        for (auto &record : data.uniqueItems) {
-            resolveSpecialArt(record);
-        }
-        for (auto &record : data.setItems) {
-            resolveSpecialArt(record);
-        }
-        prepareEquipmentSetData(data);
-        loadMagicAffixData(data);
-        loadLodTreasureData(data);
-        data.nativeStats=prepareNativeStatRules(data);
-        loadItemConsumables(data);
-        data.nativeFormulas=prepareSkillFormulaCatalog(data);
-        loadAssassinSkills(data, archives);
-        loadDruidSkills(data, archives);
-        data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));
-        const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
-        const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));
-        const auto &monsters=data.tables.at("monstats");
-        for(size_t row=0;row<monsters.rows().size();++row) if(const auto id=monsters.number(row,"hcIdx"))
-            for(int difficulty=0;difficulty<3;++difficulty) {
-                if(!data.nativeMonsterModes.emplace(std::pair{*id,difficulty},loadMonsterModeTable(monsters,row,difficulty,ratios)).second)
-                    throw std::runtime_error("Duplicate native monster mode table identity");
-                if(!data.nativeMonsterLives.emplace(std::pair{*id,difficulty},loadMonsterLifeTable(monsters,row,difficulty,lifeRatios)).second)
-                    throw std::runtime_error("Duplicate native monster life table identity");
+        if (originalRules) {
+            loadSocketData(data, strings);
+            loadCubeData(data);
+            loadItemGrades(data);
+            loadSpecialItemData(data);
+            auto resolveSpecialArt = [&](SpecialItemRecord &record) {
+                const auto *base = data.items.find(record.code);
+                if (!base)
+                    return;
+                const auto &icon = record.icon.empty() ? base->icon : record.icon;
+                const auto &ground = record.groundAnimation.empty() ? base->groundAnimation
+                                                                     : record.groundAnimation;
+                record.artAvailable = !icon.empty() && !ground.empty() &&
+                                      archives.contains(icon) && archives.contains(ground);
+            };
+            for (auto &record : data.uniqueItems) {
+                resolveSpecialArt(record);
             }
+            for (auto &record : data.setItems) {
+                resolveSpecialArt(record);
+            }
+            prepareEquipmentSetData(data);
+            loadMagicAffixData(data);
+            loadLodTreasureData(data);
+        }
+        data.nativeStats=prepareNativeStatRules(data);
+        if (originalRules) loadItemConsumables(data);
+        if (originalRules) data.nativeFormulas=prepareSkillFormulaCatalog(data);
+        if (originalRules) loadAssassinSkills(data, archives);
+        if (originalRules) loadDruidSkills(data, archives);
+        data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));
+        if (originalRules) {
+            const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
+            const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));
+            const auto &monsters=data.tables.at("monstats");
+            for(size_t row=0;row<monsters.rows().size();++row) if(const auto id=monsters.number(row,"hcIdx"))
+                for(int difficulty=0;difficulty<3;++difficulty) {
+                    if(!data.nativeMonsterModes.emplace(std::pair{*id,difficulty},loadMonsterModeTable(monsters,row,difficulty,ratios)).second)
+                        throw std::runtime_error("Duplicate native monster mode table identity");
+                    if(!data.nativeMonsterLives.emplace(std::pair{*id,difficulty},loadMonsterLifeTable(monsters,row,difficulty,lifeRatios)).second)
+                        throw std::runtime_error("Duplicate native monster life table identity");
+                }
+        }
         return data;
     }
 }

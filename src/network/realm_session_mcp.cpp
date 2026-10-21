@@ -95,7 +95,7 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
         if (in.u16() != pendingRequest)
             throw ProtocolError("MCP join-game request ID mismatch");
         const auto token = in.u16();
-        in.u16();
+        const auto joinFlags = in.u16();
         const auto host = ip_address(in);
         const auto hash = in.u32(), result = in.u32();
         in.finish();
@@ -110,6 +110,7 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
         if (host == "0.0.0.0")
             throw ProtocolError("Game server returned an invalid endpoint");
         clear_game();
+        gameJoinFlags = joinFlags;
         ticketToken = token;
         ticketHash = hash;
         erase_secret(gamePassword);

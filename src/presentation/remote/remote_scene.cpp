@@ -2,10 +2,10 @@
 
 namespace d2x {
 
-RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display)
+RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation preparation)
     : archives(a), mapDisplay(display),
       artPalette(palette),
-      portraits(a), strings(a), monsterText(sharedClassicData(a)),
+      portraits(a), strings(a), monsterText(sharedClassicData(a, preparation)),
       monstats(monsterText->tables.at("monstats")),
       monstats2(monsterText->tables.at("monstats2")), charstats(monsterText->tables.at("charstats")),
       skills(monsterText->tables.at("skills")), missiles(monsterText->tables.at("missiles")),
@@ -129,6 +129,7 @@ bool RemoteScene::Impl::channelSkill(int id) const {
 }
 
 std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count) const {
+    if (!monsterText->nativeFormulas) return {};
     std::map<int,int> base,effective;StatSnapshot observed;StatList actor;
     if(const auto unit=world().units.find(owner);unit!=world().units.end()) {
         for(const auto &[id,rank]:unit->second.baseSkills) base.emplace(id,rank);
@@ -207,8 +208,8 @@ std::optional<int> RemoteScene::Impl::castMeleeRange(const OnlineUnit &actor, co
     return reach;
 }
 
-RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &display)
-    : impl_(std::make_unique<Impl>(a, palette, display)) {}
+RemoteScene::RemoteScene(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation preparation)
+    : impl_(std::make_unique<Impl>(a, palette, display, preparation)) {}
 RemoteScene::~RemoteScene() = default;
 RemoteSceneFrame RemoteScene::frame(const OnlineView &v, const Map &m, const OnlineSceneView &s,
                                      SceneView &shared, const RemoteCombat &combat, const RemoteUiClients &clients, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
