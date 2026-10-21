@@ -29,6 +29,7 @@ struct LoginOptions {
 struct CreateGameOptions {
     std::string name, password, description;
     uint8_t difficulty{}, maximumPlayers{8}, levelDifference{99};
+    std::optional<uint8_t> gameServer{}; // CN only; omitted callers use the login preference.
 };
 struct CreateCharacterOptions {
     std::string name;

@@ -55,6 +55,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     Json result{{"stage", stageNames.at(size_t(v.stage))},
                 {"clientProfile", v.protocolProfile},
                 {"remoteClientOnly", v.remoteLobbyOnly},
+                {"maximumGameServer", v.maximumGameServer},
+                {"defaultGameServer", v.defaultGameServer},
                 {"revision", v.revision},
                 {"connectionGeneration", v.connectionGeneration},
                 {"gameGeneration", v.gameGeneration},
@@ -123,6 +125,13 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"requestedShared", v.world.requestedStashPage ? Json(v.world.requestedSharedStash) : Json(nullptr)},
         {"pageFlags", v.world.cnStashPageFlags}, {"playerFlags", v.world.cnStashPlayerFlags},
         {"initialized", v.world.stashInitialized}, {"synchronized", v.world.stashSynchronized}};
+    result["inventory"]["storage"]["materials"] = {{"available", v.world.cnMaterialsAvailable},
+        {"open", v.world.cnMaterialsOpen}, {"synchronized", v.world.cnMaterialsSynchronized}, {"counts", Json::array()}};
+    for (const auto &[code, amount] : v.world.cnMaterialCounts) {
+        std::string name;
+        for (unsigned i = 0; i < 4; ++i) if (const char c = char(code >> (i * 8)); c != ' ') name += c;
+        result["inventory"]["storage"]["materials"]["counts"].push_back({{"code", name}, {"quantity", amount}});
+    }
     const auto &heartbeat = v.gameHeartbeat;
     result["gameHeartbeat"] = {{"sent", heartbeat.sent}, {"received", heartbeat.received}, {"pending", heartbeat.pending},
         {"elapsedMilliseconds", heartbeat.elapsedMilliseconds}, {"lastPacketMilliseconds", heartbeat.lastPacketMilliseconds},
@@ -613,7 +622,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
                 "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
-                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store", "storage-page"};
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store", "storage-page", "storage-materials", "material-withdraw", "material-deposit"};
             const auto action = text("action", 32);
             const auto selected = std::find(names.begin(), names.end(), action);
             if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
@@ -628,7 +637,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 return uint32_t(n);
             };
             const bool hasItem = intent.action <= OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeOpen ||
-                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService || intent.action == OnlineItemAction::HirelingEquipment || intent.action == OnlineItemAction::BeltAuto || intent.action == OnlineItemAction::CubeStore;
+                intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService || intent.action == OnlineItemAction::HirelingEquipment || intent.action == OnlineItemAction::BeltAuto || intent.action == OnlineItemAction::CubeStore || intent.action == OnlineItemAction::MaterialDeposit;
             intent.item = id("itemId", hasItem);
             intent.amount = id("amount", intent.action == OnlineItemAction::GoldDeposit ||
                 intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop);
@@ -652,6 +661,15 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             intent.x = cell("x", 15); intent.y = cell("y", 15);
             intent.page = cell("page", intent.action == OnlineItemAction::StoragePage ? int(onlineCnStashPageLimit) : 4);
             intent.sharedStash = request.value("shared", false); intent.body = cell("body", 10);
+            if (request.contains("navigation")) {
+                constexpr std::array navigation{"previous-index", "next-index", "first", "last-nonempty", "previous-main-index", "next-main-index"};
+                const auto name = text("navigation", 32);
+                const auto at = std::find(navigation.begin(), navigation.end(), name);
+                if (at == navigation.end() || intent.action != OnlineItemAction::StoragePage)
+                    throw std::invalid_argument("Invalid CN stash navigation");
+                intent.stashNavigation = OnlineCnStashNavigation(int(OnlineCnStashNavigation::PreviousIndex) + (at - navigation.begin()));
+            }
+            if (intent.action == OnlineItemAction::MaterialWithdraw) intent.materialCode = text("code", 4);
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
             intent.gamble = request.value("gamble", false);
@@ -827,6 +845,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             options.difficulty = number("difficulty", 0, 0, 2);
             options.maximumPlayers = number("maximumPlayers", 4, 1, 8);
             options.levelDifference = number("levelDifference", 4, 0, 99);
+            if (request.contains("gameServer")) options.gameServer = number("gameServer", 1, 1, 255);
             secrets.password = text("password", 15, false);
             options.password = std::move(secrets.password);
             accepted = session.create_game(std::move(options));

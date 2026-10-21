@@ -453,13 +453,38 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Wait for the server stash-page confirmation"); return false;
     }
     if (command.action == OnlineItemAction::StoragePage && (!p.view.remoteLobbyOnly ||
-        !world.stashInitialized || (world.cnStashConfirmed && !world.stashSynchronized) ||
+        !world.stashInitialized || (world.cnStashConfirmed && !world.stashSynchronized &&
+            (command.page != 1 || command.sharedStash == world.sharedStash)) ||
         world.storage.kind != OnlineStorageKind::Stash ||
         (!world.cnStashConfirmed && (!command.sharedStash || command.page != 1 || world.stashPage != 1)) ||
         (world.cnStashPlayerFlags & 8) ||
-        !onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash) ||
+        !onlineCnStashOperation(world.stashPage, world.sharedStash, command) ||
         onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
         p.error(OnlineErrorKind::Input, "Stash-page selection is not available in this context"); return false;
+    }
+    if (command.action == OnlineItemAction::StorageMaterials || command.action == OnlineItemAction::MaterialWithdraw ||
+        command.action == OnlineItemAction::MaterialDeposit) {
+        if (!p.view.remoteLobbyOnly || world.storage.kind != OnlineStorageKind::Stash ||
+            !world.cnMaterialsAvailable || (command.action != OnlineItemAction::MaterialDeposit &&
+                onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
+            p.error(OnlineErrorKind::Input, "CN material context is unavailable"); return false;
+        }
+        if (command.action == OnlineItemAction::StorageMaterials) {
+            if (command.amount > 1 || bool(command.amount) == world.cnMaterialsOpen) return false;
+        } else if (command.action == OnlineItemAction::MaterialDeposit) {
+            const auto source = world.items.find(command.item);
+            if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || source == world.items.end() ||
+                !onlineCnMaterialKey(command.materialCode) ||
+                (!onlineCursorItem(source->second, p.view.load.playerUnitId) &&
+                 (!onlineBackpackItem(source->second, p.view.load.playerUnitId) ||
+                  onlineHasCursorItem(world.items, p.view.load.playerUnitId)))) return false;
+        } else {
+            const auto key = onlineCnMaterialKey(command.materialCode);
+            if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || !key ||
+                !world.cnMaterialCounts.contains(*key) || !world.cnMaterialCounts.at(*key) ||
+                (command.toCursor ? command.amount != 1 : (command.amount != 1 && command.amount != 5 &&
+                    command.amount != 20 && command.amount != 50))) return false;
+        }
     }
     if (world.playerTrade.active()) {
         const auto &trade = world.playerTrade;
@@ -485,8 +510,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Server item operation is unavailable or pending"); return false;
     }
     const bool hasItem = command.action <= OnlineItemAction::Identify || command.action == OnlineItemAction::CubeOpen ||
-        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService || command.action==OnlineItemAction::HirelingEquipment || command.action==OnlineItemAction::BeltAuto || command.action==OnlineItemAction::CubeStore;
+        command.action == OnlineItemAction::Buy || command.action == OnlineItemAction::Sell || command.action == OnlineItemAction::Repair || command.action==OnlineItemAction::QuestService || command.action==OnlineItemAction::HirelingEquipment || command.action==OnlineItemAction::BeltAuto || command.action==OnlineItemAction::CubeStore || command.action == OnlineItemAction::MaterialDeposit;
     const auto item = world.items.find(command.item);
+    if (p.view.remoteLobbyOnly && world.cnMaterialsOpen &&
+        ((hasItem && item != world.items.end() && item->second.mode == 0 && item->second.page == 5) ||
+         (command.action == OnlineItemAction::Place && command.page == 4))) {
+        p.error(OnlineErrorKind::Input, "Ordinary stash is hidden by the material page"); return false;
+    }
     if (hasItem && (item == world.items.end() ||
         command.itemRevision != item->second.revision)) {
         p.error(OnlineErrorKind::Input, "Item identity or revision is stale"); return false;
@@ -622,7 +652,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
         case OnlineItemAction::SwitchWeapons: out.u8(0x60); break;
         case OnlineItemAction::StoragePage: {
-            const auto operation = onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash);
+            const auto operation = onlineCnStashOperation(world.stashPage, world.sharedStash, command);
             if (!operation) return false;
             // mdll1 RVA 0x12AB0 -> 0x6A00, three bytes, WORD is little endian.
             out.u8(0x3A);
@@ -631,8 +661,33 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             case OnlineCnStashNavigation::Next: out.u16(0x1A); break;
             case OnlineCnStashNavigation::Personal: out.u16(0x1B); break;
             case OnlineCnStashNavigation::Shared: out.u16(0x1C); break;
+            case OnlineCnStashNavigation::PreviousIndex: out.u16(0x1D); break;
+            case OnlineCnStashNavigation::NextIndex: out.u16(0x1E); break;
+            case OnlineCnStashNavigation::First: out.u16(0x1F); break;
+            case OnlineCnStashNavigation::LastNonempty: out.u16(0x20); break;
+            case OnlineCnStashNavigation::PreviousMainIndex: out.u16(0x21); break;
+            case OnlineCnStashNavigation::NextMainIndex: out.u16(0x22); break;
             }
             break;
+        }
+        case OnlineItemAction::StorageMaterials:
+            out.u8(0x3A); out.u16(command.amount ? 0x3B : 0x3A); break;
+        case OnlineItemAction::MaterialWithdraw: {
+            // mdll1 RVA 0x19D10: byte stream in each 3A WORD's high byte,
+            // terminated by a zero high byte. Native left = cursor, right = bag.
+            auto code = command.materialCode; code.resize(4, ' ');
+            auto amount = std::to_string(command.amount);
+            amount.insert(0, 8 - amount.size(), '0');
+            const auto text = std::string(command.toCursor ? "00L" : "00R") + code + amount;
+            for (const auto byte : text) { out.u8(0x3A); out.u16(0x3C | uint16_t(uint8_t(byte)) << 8); }
+            out.u8(0x3A); out.u16(0x3C); break;
+        }
+        case OnlineItemAction::MaterialDeposit: {
+            // Native 0x260C0/0x1E670: empty string selects Cursor; a decimal
+            // GUID selects an owned backpack item. This is not a stash placement.
+            const auto text = item->second.mode == 4 ? std::string{} : std::to_string(command.item);
+            for (const auto byte : text) { out.u8(0x3A); out.u16(0x6C | uint16_t(uint8_t(byte)) << 8); }
+            out.u8(0x3A); out.u16(0x6C); break;
         }
         case OnlineItemAction::CubeOpen:
             // Keep the stash lease until the server opens a cube stored inside it.
@@ -672,7 +727,22 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5)) return false;
             out.u8(0x61);out.u16(command.body);break;
         }
-        p.sent(p.gs, out.release());
+        if (command.action == OnlineItemAction::MaterialWithdraw || command.action == OnlineItemAction::MaterialDeposit) {
+            const auto bytes = out.release();
+            // Each native control is independently length-checked and observed.
+            // The session mutex keeps this bounded byte stream contiguous.
+            for (size_t offset = 0; offset < bytes.size(); offset += 3)
+                p.sent(p.gs, {bytes[offset], bytes[offset + 1], bytes[offset + 2]});
+        } else p.sent(p.gs, out.release());
+        if (command.action == OnlineItemAction::StorageMaterials) {
+            // Native 0x11B60/0x27850 also changes the local view without an ACK.
+            world.cnMaterialsOpen = command.amount != 0;
+            world.cnStashPlayerFlags = (world.cnStashPlayerFlags & ~8u) | (command.amount ? 8u : 0);
+            world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::SentNoAck};
+            ++world.interactionGeneration; ++world.itemRevision;
+            p.nextItem = Clock::now() + std::chrono::milliseconds(100);
+            p.view.error.reset(); p.changed(); return true;
+        }
         if (command.action == OnlineItemAction::StoragePage) {
             world.requestedStashPage = command.page;
             world.requestedSharedStash = command.sharedStash;

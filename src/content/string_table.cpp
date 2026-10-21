@@ -77,6 +77,10 @@ std::string_view npcTblSpeech(std::string_view text) {
 ClassicStrings::ClassicStrings(Archives &archives)
     : ClassicStrings(archives, languageOf(archives)) {}
 
+ClassicStrings::ClassicStrings(const Bytes &table) {
+    merge(table, entries_, indexed_, indices_, 0);
+}
+
 ClassicStrings::ClassicStrings(Archives &archives, const Language &language) {
     const std::string dir = "data/local/lng/" + language.directory + "/";
     for (const auto &[name, base] : {std::pair{"string", 0}, {"expansionstring", 20000}, {"patchstring", 10000}}) {

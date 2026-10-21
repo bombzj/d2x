@@ -1,4 +1,5 @@
 #include "realm_session_impl.hpp"
+#include <charconv>
 
 namespace d2x {
 namespace net {
@@ -106,7 +107,8 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
     // mdll1 RVA 0xA650 / 0x1E060: a 36-byte custom record, not an item.
     Reader data(packet.body);
     const auto function = data.u8(), length = data.u8();
-    if (function != 0x18 && function != 0x1A) {
+    if (function != 0x18 && function != 0x19 && function != 0x1A && function != 0x27 &&
+        function != 0x29 && function != 0x2A) {
         // Other mdll controls have independent payloads/ownership. In
         // particular entry function 0x22 is not a selected stash page.
         ++view.gameProtocol.unconsumed[packet.id];
@@ -140,7 +142,8 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
             if (moved) world.stashPageName.clear();
             if (auto &request = world.itemRequest; request && request->state == OnlineItemRequest::State::Pending &&
                 request->command.action == OnlineItemAction::StoragePage) {
-                request->state = request->command.page == page && request->command.sharedStash == shared
+                request->state = (request->command.stashNavigation || request->command.page == page) &&
+                    request->command.sharedStash == shared
                     ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
             } else if (moved && request && request->state == OnlineItemRequest::State::Pending) {
                 request->state = OnlineItemRequest::State::Interrupted;
@@ -153,6 +156,61 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
         const auto end = std::find(payload.begin(), payload.end(), uint8_t{});
         if (end == payload.end()) throw ProtocolError("Unterminated CN stash page name");
         world.stashPageName.assign(payload.begin(), end);
+    } else if (function == 0x29) {
+        // mdll1 0x1E060 sets PlayerData+0x188. Native entry requests the
+        // material map with 3A/3D (0x14277); do it once after this capability.
+        world.cnMaterialsAvailable = true;
+        if (!world.cnMaterialsRequested) {
+            sent(gs, {0x3A, 0x3D, 0}); world.cnMaterialsRequested = true;
+        }
+    } else if (function == 0x19) {
+        // Server 0x1E670 sends this after all 98 absolute counter records.
+        // Function 19 also carries shared gold during other initialization.
+        // Require the complete fixed 98-code response before releasing access.
+        if (world.cnMaterialsRequested && world.cnMaterialCounts.size() == 98)
+            world.cnMaterialsSynchronized = true;
+    } else if (function == 0x27 || function == 0x2A) {
+        const auto end = std::find(payload.begin(), payload.end(), uint8_t{});
+        if (end == payload.end()) throw ProtocolError("Unterminated CN material counter");
+        const std::string text(payload.begin(), end);
+        const auto comma = text.find(',');
+        if (comma == std::string::npos) throw ProtocolError("Invalid CN material counter pair");
+        uint32_t key{}; int64_t amount{};
+        const auto first = std::from_chars(text.data(), text.data() + comma, key);
+        const auto second = std::from_chars(text.data() + comma + 1, text.data() + text.size(), amount);
+        if (first.ec != std::errc{} || first.ptr != text.data() + comma || second.ec != std::errc{} ||
+            second.ptr != text.data() + text.size() || amount < -int64_t(INT32_MAX) || amount > INT32_MAX)
+            throw ProtocolError("Invalid CN material counter number");
+        auto &quantity = world.cnMaterialCounts[key];
+        if (function == 0x2A) {
+            if (amount < 0) throw ProtocolError("Negative CN absolute material counter");
+            quantity = uint32_t(amount);
+        }
+        else {
+            // 0x260C0 sends negative deltas for deposits; 0x1E670 sends
+            // positive deltas for withdrawals. Never reinterpret as unsigned.
+            const auto updated = int64_t(quantity) - amount;
+            if (updated < 0 || updated > INT32_MAX) throw ProtocolError("CN material counter delta exceeds range");
+            quantity = uint32_t(updated);
+            auto &request = world.itemRequest;
+            if (request && request->state == OnlineItemRequest::State::Pending && amount < 0 &&
+                request->command.action == OnlineItemAction::MaterialDeposit &&
+                onlineCnMaterialKey(request->command.materialCode) == key) {
+                const auto source = world.items.find(request->command.item);
+                // Cursor deletion uses action 5 with ONCURSOR mode, which also
+                // occurs during ordinary taking. Only pair it with this native
+                // deposit's authoritative counter credit before removing it.
+                if (source != world.items.end() && source->second.action == 5 &&
+                    source->second.revision > request->command.itemRevision) world.items.erase(source);
+            }
+            if (request && request->state == OnlineItemRequest::State::Pending &&
+                ((request->command.action == OnlineItemAction::MaterialWithdraw && amount > 0) ||
+                 (request->command.action == OnlineItemAction::MaterialDeposit && amount < 0 &&
+                    !world.items.contains(request->command.item))) &&
+                onlineCnMaterialKey(request->command.materialCode) == key)
+                request->state = OnlineItemRequest::State::Updated;
+        }
+        ++world.itemRevision;
     } else {
         // Other CN control functions must never enter item/equipment decoding.
         ++view.gameProtocol.unconsumed[packet.id];
@@ -507,6 +565,17 @@ void RealmSession::Impl::handle_game(Packet packet) {
                 target->second.revision > command.targetRevision &&
                 onlineCursorItem(target->second, view.load.playerUnitId));
             switch (action) {
+            case OnlineItemAction::MaterialDeposit: {
+                const auto key = onlineCnMaterialKey(command.materialCode);
+                const bool credited = key && view.world.cnMaterialCounts.contains(*key) &&
+                    view.world.cnMaterialCounts.at(*key) > command.amount;
+                if (credited && source != view.world.items.end() && source->second.action == 5 &&
+                    source->second.revision > command.itemRevision) {
+                    view.world.items.erase(source); ++view.world.itemRevision;
+                    related = true;
+                } else related = credited && source == view.world.items.end();
+                break;
+            }
             case OnlineItemAction::Place:
                 related = assigned && source->second.positionKnown && source->second.mode == 0 &&
                     source->second.page == command.page + 1 && source->second.x == command.x && source->second.y == command.y;
@@ -792,11 +861,23 @@ void RealmSession::Impl::tick() {
     }
     if (view.world.requestedStashPage && now >= stashPageDeadline) {
         view.world.requestedStashPage.reset(); ++view.world.interactionGeneration;
-        view.world.stashSynchronized = false; ++view.world.itemRevision;
-        if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending &&
-            view.world.itemRequest->command.action == OnlineItemAction::StoragePage)
-            view.world.itemRequest->state = OnlineItemRequest::State::TimedOut;
-        error(OnlineErrorKind::Timeout, "No stash-page confirmation arrived; stash access is suspended until server resynchronization");
+        auto &request = view.world.itemRequest;
+        // C940/CAA0/C720/C840/C9F0/CBB0 return without a reply for an
+        // unchanged selection. They run synchronously in the native dispatcher.
+        // With later traffic on the ordered GS stream, retain the last confirmed
+        // page and report no ACK; never promote the requested/unknown page.
+        const bool unchanged = request && request->state == OnlineItemRequest::State::Pending &&
+            request->command.action == OnlineItemAction::StoragePage && request->command.stashNavigation &&
+            lastGameReceive > stashPageDeadline - options.timeout;
+        if (unchanged) request->state = OnlineItemRequest::State::SentNoAck;
+        else {
+            view.world.stashSynchronized = false;
+            if (request && request->state == OnlineItemRequest::State::Pending &&
+                request->command.action == OnlineItemAction::StoragePage)
+                request->state = OnlineItemRequest::State::TimedOut;
+            error(OnlineErrorKind::Timeout, "No stash-page confirmation arrived; stash access is suspended until server resynchronization");
+        }
+        ++view.world.itemRevision; changed();
     }
     auto &playerTrade = view.world.playerTrade;
     if (playerTrade.active() && (playerTrade.response == OnlinePlayerTrade::Response::GoldSent ||

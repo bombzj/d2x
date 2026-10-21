@@ -243,6 +243,8 @@ struct OnlineWorldView {
     bool sharedStash{}, cnStashConfirmed{};
     uint8_t coreStashPage = 1; // Independent ProjectDiablo 2D/2E state and ACK.
     uint32_t cnStashPageFlags{}, cnStashPlayerFlags{};
+    bool cnMaterialsAvailable{}, cnMaterialsOpen{}, cnMaterialsRequested{}, cnMaterialsSynchronized{};
+    std::map<uint32_t, uint32_t> cnMaterialCounts;
     std::string stashPageName;
     bool stashInitialized{}, stashSynchronized{};
     std::optional<uint32_t> requestedStashPage;
@@ -322,6 +324,8 @@ struct OnlineWorldView {
         sharedStash = cnStashConfirmed = requestedSharedStash = false;
         coreStashPage = 1;
         cnStashPageFlags = cnStashPlayerFlags = 0; stashPageName.clear();
+        cnMaterialsAvailable = cnMaterialsOpen = cnMaterialsRequested = cnMaterialsSynchronized = false;
+        cnMaterialCounts.clear();
         requestedStashPage.reset(); extendedStorage = {};
         shopRequested.reset();
         shopSource.reset();

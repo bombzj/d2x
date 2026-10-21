@@ -464,6 +464,8 @@ void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) 
         for(auto &frame:image.frames) frame.y-=frame.texture.height;
         itemGround.emplace(key,std::move(image));
     }
+    if (inventory.storageMaterialsOpen)
+        for (const auto &material : inventory.storageMaterials) loadIcon(material.artKey, {});
 }
 
 const GpuAnimation *SceneAssets::groundItemAnimation(const InventoryItemView &item) const {

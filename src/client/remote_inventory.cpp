@@ -1,4 +1,5 @@
 #include "remote_inventory.hpp"
+#include "content/pd2_stash.hpp"
 #include "gameplay/items/quality.hpp"
 #include "gameplay/items/equipment_rules.hpp"
 #include "network/protocol/bits.hpp"
@@ -403,11 +404,54 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     if (command.action == OnlineItemAction::StoragePage) {
         if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || view_.cursor ||
-            !world.stashInitialized || !world.stashSynchronized || world.requestedStashPage ||
+            !world.stashInitialized || (!world.stashSynchronized &&
+                (command.page != 1 || command.sharedStash == world.sharedStash)) || world.requestedStashPage ||
             (!world.cnStashConfirmed && (!command.sharedStash || command.page != 1 || world.stashPage != 1)) ||
             (world.cnStashPlayerFlags & 8) ||
-            !onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash))
+            !onlineCnStashOperation(world.stashPage, world.sharedStash, command))
             return reject("CN stash navigation requires a synchronized storage domain and an empty cursor");
+        return send();
+    }
+    if (command.action == OnlineItemAction::StorageMaterials || command.action == OnlineItemAction::MaterialWithdraw ||
+        command.action == OnlineItemAction::MaterialDeposit) {
+        if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || !world.cnMaterialsAvailable ||
+            world.requestedStashPage || (view_.cursor && command.action != OnlineItemAction::MaterialDeposit))
+            return reject("CN materials require an open stash, server capability and an empty cursor");
+        if (command.action == OnlineItemAction::StorageMaterials) {
+            if (command.amount > 1 || bool(command.amount) == world.cnMaterialsOpen)
+                return reject("Material page is already in the requested mode");
+        } else if (command.action == OnlineItemAction::MaterialDeposit) {
+            const auto source = world.items.find(command.item);
+            const auto detail = view_.items.find(command.item);
+            if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || source == world.items.end() ||
+                detail == view_.items.end() || !detail->second.decoded || detail->second.quality > 3 ||
+                detail->second.sockets || source->second.revision != command.itemRevision ||
+                !source->second.positionKnown || (view_.cursor && view_.cursor != command.item) ||
+                (!onlineCursorItem(source->second, online.load.playerUnitId) &&
+                 !onlineBackpackItem(source->second, online.load.playerUnitId)))
+                return reject("Material deposit requires a known normal item on the cursor or in the backpack");
+            auto code = source->second.code;
+            // 0x260C0 canonicalizes stacked rune/skull/gem forms to their
+            // four-byte base code with a trailing space.
+            if (code.starts_with("r0") || code.starts_with("r1") || code.starts_with("r2") ||
+                code.starts_with("r3") || code.starts_with("sk") || (code.starts_with("g") && code.ends_with('s')))
+                if (code.size() == 4) code.resize(3);
+            if (std::none_of(pd2CnMaterialSlots.begin(), pd2CnMaterialSlots.end(),
+                [&](const auto &s) { return s.code == code; })) return reject("Item is not in the native material catalog");
+            command.materialCode = code;
+            const auto key = onlineCnMaterialKey(code);
+            command.amount = key && world.cnMaterialCounts.contains(*key) ? world.cnMaterialCounts.at(*key) : 0;
+        } else {
+            const auto key = onlineCnMaterialKey(command.materialCode);
+            const auto slot = std::find_if(pd2CnMaterialSlots.begin(), pd2CnMaterialSlots.end(),
+                [&](const auto &s) { return s.code == command.materialCode; });
+            if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || !key ||
+                slot == pd2CnMaterialSlots.end() || !bases_.contains(command.materialCode) ||
+                !world.cnMaterialCounts.contains(*key) || !world.cnMaterialCounts.at(*key) ||
+                (command.toCursor ? command.amount != 1 : (command.amount != 1 && command.amount != 5 &&
+                    command.amount != 20 && command.amount != 50)))
+                return reject("Material withdrawal has no synchronized native counter or supported quantity");
+        }
         return send();
     }
     if (command.action == OnlineItemAction::SwitchWeapons || command.action == OnlineItemAction::StorageClose ||
@@ -439,6 +483,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     const auto found = world.items.find(command.item);
     if (found == world.items.end()) return reject("Item is not assigned in the current game");
     const auto &wire = found->second;
+    if (pd2Items && world.cnMaterialsOpen && ((wire.mode == 0 && wire.page == 5) ||
+        (command.action == OnlineItemAction::Place && command.page == 4)))
+        return reject("Ordinary stash items are unavailable while the material page is open");
     if (pd2Items && (!wire.positionKnown ||
         (wire.mode == 0 && wire.page == 5 && (!world.stashSynchronized || (wire.stashPage != world.stashPage || wire.sharedStash != world.sharedStash)))))
         return reject("Item position is not assigned in the active storage page");
@@ -707,7 +754,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::StorageClose: case OnlineItemAction::Transmute:
     case OnlineItemAction::GoldDeposit: case OnlineItemAction::GoldWithdraw: case OnlineItemAction::GoldDrop:
     case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
-    case OnlineItemAction::StoragePage:
+    case OnlineItemAction::StoragePage: case OnlineItemAction::StorageMaterials:
+    case OnlineItemAction::MaterialWithdraw: case OnlineItemAction::MaterialDeposit:
         return reject("Invalid item command branch");
     }
     if (command.action == OnlineItemAction::Equip && bodyItem(command.body)) {

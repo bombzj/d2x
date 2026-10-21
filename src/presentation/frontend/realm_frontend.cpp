@@ -8,10 +8,12 @@
 #include <cctype>
 #include <charconv>
 #include <iomanip>
+#include <filesystem>
 #include <map>
 #include <sstream>
 #include <stdexcept>
 #include <limits>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -96,6 +98,11 @@ struct RealmFrontend::Impl {
     bool hardcore{}, confirmHardcore{};
     std::string verifyPassword, characterName, deleteName;
     uint64_t lobbyGeneration{};
+    uint64_t serverConnection{std::numeric_limits<uint64_t>::max()};
+    uint8_t gameServer{1};
+    bool serverArtAttempted{};
+    std::vector<std::pair<uint8_t, std::string>> gameServers;
+    std::string gameServerTitle;
     Archives &archives;
     std::unique_ptr<RealmPortraitCatalog> portraitCatalog;
     std::unique_ptr<Graphics> characterGraphics;
@@ -225,6 +232,35 @@ struct RealmFrontend::Impl {
         if (value.empty())
             throw std::runtime_error("Missing original frontend string: " + std::to_string(id));
         return std::string(value);
+    }
+    bool prepareGameServers(uint8_t maximum) {
+        if (serverArtAttempted) return !gameServers.empty();
+        serverArtAttempted = true;
+        // The fixed CN core creates nine buttons. A tenth translation key is
+        // present in its resources, but does not establish another selectable GS.
+        const std::string path = "data/global/ui/bigmenu/gsselectbuttons.dc6";
+        if (!archives.contains(path)) return false;
+        // CN supplies its region names in a loose Chinese TBL. The MPQ's
+        // English table still names the official worldwide servers; never use
+        // those labels for the CN selector or overlay unrelated item/rule tables.
+        const auto labelsPath = archives.gameDirectory / "Data/local/Lng/Chi/PatchString.tbl";
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(labelsPath, error) ||
+            std::filesystem::file_size(labelsPath, error) > 2 * 1024 * 1024 || error) return false;
+        const ClassicStrings labels(readFile(labelsPath));
+        gameServerTitle = labels.find("GameServerTitle");
+        if (gameServerTitle.empty()) return false;
+        std::vector<std::pair<uint8_t, std::string>> choices;
+        for (unsigned id = 1; id <= maximum; ++id) {
+            const auto name = labels.find("CreateGameGS" + std::to_string(id));
+            if (name.empty()) return false;
+            choices.emplace_back(uint8_t(id), std::string(name));
+        }
+        auto buttons = lobbyControls.single(path);
+        if (buttons.count < 2 || !buttons.frame(0, 0) || !buttons.frame(0, 1)) return false;
+        art.emplace("gameServer", std::move(buttons));
+        gameServers = std::move(choices);
+        return true;
     }
     void image(const char *id, int x, int y, int frame = 0, Color tint = WHITE) {
         const auto *cel = art.at(id).frame(0, frame);
@@ -726,7 +762,8 @@ struct RealmFrontend::Impl {
                 tiles("highlight", x, y, 2);
             const auto &c = v.characters[size_t(i)];
             portrait(c, x + 36, y + 82);
-            label(c.name, x + 76, y + 14, playable(c, v.allowLadderSelection) ? WHITE : GRAY);
+            label(c.name, x + 76, y + 14, !playable(c, v.allowLadderSelection) ? GRAY
+                : c.hardcore.value_or(false) ? RED : WHITE);
             if (c.characterClass && *c.characterClass < classes.size() && c.level) {
                 auto line = s(5017);
                 auto replace = [&](const char *token, const std::string &value) {
@@ -742,10 +779,14 @@ struct RealmFrontend::Impl {
                 label(s(22731), x + 76, y + 42, GREEN);
             if (c.ladder.value_or(false))
                 label(s(5315), x + 76, y + 56, GRAY);
+            if (c.hardcore.value_or(false))
+                label(s(5016), x + 76, y + 70, c.dead.value_or(false) ? GRAY : RED);
         }
         if (enabled && clicked && !clickedCharacter) lastClickedCharacter = -1;
         if (!v.characters.empty())
-            title.inBox(v.characters[size_t(selected)].name, {34, 20, 564, 47}, 16, parchment);
+            title.inBox(v.characters[size_t(selected)].name, {34, 20, 564, 47}, 16,
+                !playable(v.characters[size_t(selected)], v.allowLadderSelection) ? GRAY :
+                v.characters[size_t(selected)].hardcore.value_or(false) ? RED : parchment);
         if (v.characters.size() > 8) {
             const auto indicator = std::to_string(page + 1) + "/" + std::to_string((v.characters.size() + 7) / 8);
             label(indicator, 37 + width * 2 + (27 - text.measure(indicator, 16)) / 2, 447, WHITE);
@@ -796,6 +837,10 @@ struct RealmFrontend::Impl {
     }
     void lobby(const OnlineView &v) {
         tiles("lobby", 0, 0, 4);
+        if (serverConnection != v.connectionGeneration) {
+            serverConnection = v.connectionGeneration;
+            gameServer = v.defaultGameServer;
+        }
         if (lobbyGeneration != v.gameGeneration) {
             lobbyGeneration = v.gameGeneration;
             difficulty = 0;
@@ -804,7 +849,9 @@ struct RealmFrontend::Impl {
             tiles(lobbyPanel == LobbyPanel::Join ? "join" : "create", 418, 72, 2);
         text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
         const bool listing = v.stage == OnlineStage::ListingGames;
-        const bool canSubmit = v.gameEntryAvailable && v.stage == OnlineStage::Lobby && !gameName.empty();
+        const bool serversReady = lobbyPanel != LobbyPanel::Create || !v.maximumGameServer ||
+            prepareGameServers(v.maximumGameServer);
+        const bool canSubmit = v.gameEntryAvailable && v.stage == OnlineStage::Lobby && !gameName.empty() && serversReady;
         if (lobbyPanel == LobbyPanel::Join) {
             bool doubleClickGame = false, clickedGame = false;
             if (!enabled || input.wheel || input.tab || input.backspace || input.entryDelete ||
@@ -914,8 +961,29 @@ struct RealmFrontend::Impl {
             field(gameName, {429, 135, 182, 26}, 0, 15, false, false);
             label(s(5256), 426, 169);
             field(gamePassword, {429, 189, 182, 26}, 1, 15, true, false);
-            label(s(5257), 426, 224);
-            field(description, {429, 243, 341, 26}, 2, 31, false, false);
+            if (v.maximumGameServer) {
+                const auto caption = s(5257);
+                int size = 16;
+                while (size > 8 && inputText.measure(caption, size) > 182) --size;
+                inputText.label(caption, 426, 224, size, parchment);
+            } else label(s(5257), 426, 224);
+            field(description, {429, 243, v.maximumGameServer ? 182.f : 341.f, 26}, 2, 31, false, false);
+            if (v.maximumGameServer) {
+                inputText.inBox(gameServerTitle, {648, 114, 120, 18}, 16, parchment);
+                if (serversReady) {
+                    const auto *normal = art.at("gameServer").frame(0, 0);
+                    for (size_t i = 0; i < gameServers.size(); ++i) {
+                        const auto &[id, name] = gameServers[i];
+                        const int y = 141 + int(i) * normal->texture.height;
+                        const Rectangle bounds{648, float(y), float(normal->texture.width), float(normal->texture.height)};
+                        if (enabled && clicked && CheckCollisionPointRec(mouse, bounds)) gameServer = id;
+                        image("gameServer", 648, y, gameServer == id ? 1 : 0);
+                        inputText.inBox(name, bounds, 12, BLACK);
+                    }
+                } else {
+                    wrap("CN server list resource unavailable", 648, 141, 120, false, 270, &inputText);
+                }
+            }
             label(s(5258), 436, 290);
             spinner(650, 283, players, 1, 8);
             image("check", 430, 324, restrictLevels ? 1 : 0);
@@ -954,6 +1022,7 @@ struct RealmFrontend::Impl {
                 intent.difficulty = uint8_t(difficulty);
                 intent.maximumPlayers = uint8_t(players);
                 intent.levelDifference = uint8_t(restrictLevels ? difference : 99);
+                if (v.maximumGameServer) intent.gameServer = gameServer;
             }
         } else {
             // Only server announcements populate the initial lobby panel.
@@ -1000,9 +1069,9 @@ struct RealmFrontend::Impl {
         tiles("leftButton", 19, 461, 3, 0, 3, GRAY);
         lobbyText.inBox(s(11126), {19, 461, 120, 20}, 16, BLACK);
         lobbyText.inBox(s(5308), {139, 461, 120, 20}, 16, BLACK);
-        label(v.selectedCharacter, 139, 511, WHITE);
         auto c = std::find_if(v.characters.begin(), v.characters.end(),
                               [&](const auto &entry) { return entry.name == v.selectedCharacter; });
+        label(v.selectedCharacter, 139, 511, c != v.characters.end() && c->hardcore.value_or(false) ? RED : WHITE);
         if (c != v.characters.end() && c->characterClass && *c->characterClass < classes.size() && c->level) {
             auto level = s(5017);
             const auto at = level.find("%d");

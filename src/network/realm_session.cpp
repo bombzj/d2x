@@ -8,6 +8,7 @@ RealmSession::Impl::Impl(ClientProfile profile, bool retain)
     view.remoteLobbyOnly = profile == ClientProfile::Pd2CnNormal20261020;
     view.allowLadderSelection = view.remoteLobbyOnly;
     view.gameEntryAvailable = compatibility.gameEntryBlocker.empty();
+    view.maximumGameServer = compatibility.maximumGameServer;
 }
 
 RealmSession::Impl::~Impl() {
@@ -360,7 +361,9 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
             options.originalClient.profile != p.compatibility.profile ||
             options.accountServer.host.empty() || options.timeout.count() <= 0 ||
             options.heartbeat.count() <= 0 || options.heartbeat >= options.timeout || !options.gamePort ||
-            !text_valid(options.countryCode, 3) || !text_valid(options.countryName, 64))
+            !text_valid(options.countryCode, 3) || !text_valid(options.countryName, 64) ||
+            (p.compatibility.maximumGameServer && (!options.gameServer ||
+                options.gameServer > p.compatibility.maximumGameServer)))
             throw ProtocolError("Invalid login options");
         if (createAccount && (!text_valid(options.account, 15) || options.account.size() < 2 ||
                               !text_valid(options.password, 15) || options.password.size() < 2))
@@ -368,6 +371,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
         p.accountHash = account_password_hash(p.compatibility.profile, options.password);
         erase_secret(options.password);
         p.options = std::move(options);
+        p.view.defaultGameServer = p.options.gameServer;
         std::random_device random;
         p.clientToken = uint32_t(random());
         if (!p.clientToken)
@@ -588,7 +592,10 @@ bool RealmSession::create_game(CreateGameOptions options) {
         erase_secret(options.password);
         return false;
     }
-    if (!text_valid(options.name, 15) || !text_valid(options.password, 15, true) ||
+    const auto gameServer = options.gameServer.value_or(p.options.gameServer);
+    if ((options.gameServer && !p.compatibility.maximumGameServer) ||
+        (p.compatibility.maximumGameServer && (!gameServer || gameServer > p.compatibility.maximumGameServer)) ||
+        !text_valid(options.name, 15) || !text_valid(options.password, 15, true) ||
         !text_valid(options.description, 31, true) || options.difficulty > 2 || !options.maximumPlayers ||
         options.maximumPlayers > 8 || options.levelDifference > 99) {
         erase_secret(options.password);
@@ -610,8 +617,7 @@ bool RealmSession::create_game(CreateGameOptions options) {
         out.u8(options.levelDifference);
         out.u8(options.maximumPlayers);
         if (p.compatibility.gameCreationExtensionBytes) {
-            if (!p.options.gameServer || p.options.gameServer > 10) throw ProtocolError("Invalid PD2 game server selection");
-            out.u8(p.options.gameServer); out.u8(p.options.lootAllocation ? 1 : 0);
+            out.u8(gameServer); out.u8(p.options.lootAllocation ? 1 : 0);
         }
         out.string(options.name, 15);
         out.string(options.password, 15);

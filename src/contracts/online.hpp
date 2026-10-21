@@ -112,6 +112,8 @@ struct OnlineView {
     bool remoteLobbyOnly{}; // Remote client: no local host, LAN or character save operations.
     bool gameEntryAvailable{true}; // Profile capability; independent of local host/character administration.
     bool allowLadderSelection{}; // Server-returned characters, independent of game admission.
+    uint8_t maximumGameServer{}; // Profile capability, zero for the original create-game panel.
+    uint8_t defaultGameServer{1}; // Non-secret login preference, refreshed for each account connection.
     std::optional<OnlineVersionChallenge> versionChallenge;
     // Counts and IDs only: never packet payloads, credentials or native tickets.
     OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
@@ -136,6 +138,7 @@ struct OnlineView {
     bool gameListComplete{};
 
     void clear() {
+        defaultGameServer = 1;
         versionChallenge.reset();
         sidProtocol = {};
         mcpProtocol = {};

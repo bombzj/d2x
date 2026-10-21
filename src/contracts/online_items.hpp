@@ -1,4 +1,5 @@
 #pragma once
+#include <string_view>
 #include "core/bytes.hpp"
 #include "contracts/online_context.hpp"
 #include <array>
@@ -48,13 +49,14 @@ enum class OnlineItemAction {
     Stack, Book, Socket, Identify, SwitchWeapons,
     CubeOpen, StorageClose, Transmute, GoldDeposit, GoldWithdraw, GoldDrop,
     TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService, HirelingEquipment,
-    BeltAuto, CubeStore, StoragePage
+    BeltAuto, CubeStore, StoragePage, StorageMaterials, MaterialWithdraw, MaterialDeposit
 };
 enum class OnlineStorageKind { None, Stash, Cube };
 // Fixed mdll1 sample: zero-based page IDs, limits at RVA 0x3D108/0x3D10C.
 // This bounds accepted metadata; it does not advertise the server's page count.
 inline constexpr uint32_t onlineCnStashPageLimit = 500;
-enum class OnlineCnStashNavigation { Previous, Next, Personal, Shared };
+enum class OnlineCnStashNavigation { Previous, Next, Personal, Shared, PreviousIndex, NextIndex,
+    First, LastNonempty, PreviousMainIndex, NextMainIndex };
 inline std::optional<OnlineCnStashNavigation> onlineCnStashCommand(uint32_t page, bool shared,
                                                                 uint32_t target, bool targetShared) {
     if (!page || page > onlineCnStashPageLimit || !target || target > onlineCnStashPageLimit) return {};
@@ -86,7 +88,9 @@ inline bool onlinePd2ItemAction(OnlineItemAction action) {
     case OnlineItemAction::Stack: case OnlineItemAction::Book: case OnlineItemAction::Identify:
     case OnlineItemAction::Socket: case OnlineItemAction::SwitchWeapons:
     case OnlineItemAction::CubeOpen: case OnlineItemAction::CubeStore:
-    case OnlineItemAction::StorageClose: case OnlineItemAction::StoragePage: return true;
+    case OnlineItemAction::StorageClose: case OnlineItemAction::StoragePage:
+    case OnlineItemAction::StorageMaterials: case OnlineItemAction::MaterialWithdraw:
+    case OnlineItemAction::MaterialDeposit: return true;
     default: return false;
     }
 }
@@ -112,6 +116,7 @@ inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem 
         onlineActiveEquipmentItem(item, player) || (onlineItemOwnedBy(item, player) && item.mode == 2);
     if (action == OnlineItemAction::Unequip) return onlineActiveEquipmentItem(item, player);
     if (action == OnlineItemAction::BeltAuto) return onlineBackpackItem(item, player);
+    if (action == OnlineItemAction::MaterialDeposit) return onlineBackpackItem(item, player) || onlineCursorItem(item, player);
     if (action == OnlineItemAction::Use || action == OnlineItemAction::Identify)
         return onlinePd2StoredItem(item, player, storage) || (onlineItemOwnedBy(item, player) && item.mode == 2);
     if (action == OnlineItemAction::CubeOpen) return onlinePd2StoredItem(item, player, storage);
@@ -136,6 +141,8 @@ struct OnlineItemCommand {
     uint8_t x{}, y{}, body{}, beltSlot{};
     uint32_t page{}; // Container page for items; one-based page for StoragePage.
     bool sharedStash{}; // StoragePage only; never a container/ownership flag.
+    std::optional<OnlineCnStashNavigation> stashNavigation;
+    std::string materialCode; // CN material counters have no item GUID.
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     uint32_t oppositeItem{}; // Local precondition only; native server selects this hand.
     uint64_t oppositeRevision{};
@@ -143,6 +150,33 @@ struct OnlineItemCommand {
     bool gamble{}, multibuy{};
     std::optional<OnlineIntentContext> context;
 };
+inline std::optional<OnlineCnStashNavigation> onlineCnStashOperation(uint32_t page, bool shared,
+                                                                    const OnlineItemCommand &command) {
+    if (!command.stashNavigation) return onlineCnStashCommand(page, shared, command.page, command.sharedStash);
+    if (command.page || command.sharedStash != shared || !page || page > onlineCnStashPageLimit) return {};
+    switch (*command.stashNavigation) {
+    case OnlineCnStashNavigation::PreviousIndex: case OnlineCnStashNavigation::PreviousMainIndex:
+    case OnlineCnStashNavigation::First:
+        if (page == 1) return {};
+        break;
+    case OnlineCnStashNavigation::NextIndex: case OnlineCnStashNavigation::NextMainIndex:
+        if (page == onlineCnStashPageLimit) return {};
+        break;
+    case OnlineCnStashNavigation::LastNonempty: break;
+    default: return {};
+    }
+    return command.stashNavigation;
+}
+inline std::optional<uint32_t> onlineCnMaterialKey(std::string_view code) {
+    if (code.size() < 3 || code.size() > 4) return {};
+    uint32_t key = 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        const char c = i < code.size() ? code[i] : ' ';
+        if (c != ' ' && !(c >= 'a' && c <= 'z') && !(c >= '0' && c <= '9')) return {};
+        key |= uint32_t(uint8_t(c)) << (i * 8);
+    }
+    return key;
+}
 struct OnlineItemRequest {
     enum class State { Pending, Updated, TimedOut, Interrupted, Rejected, SentNoAck };
     uint64_t sequence{};

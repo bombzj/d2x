@@ -45,7 +45,8 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path,
             if (json.contains("gameServer") && !json.at("gameServer").is_number_integer())
                 throw std::runtime_error("Invalid PD2 game server selection");
             const auto gameServer = json.value("gameServer", 1);
-            if (gameServer < 1 || gameServer > 10) throw std::runtime_error("Invalid PD2 game server selection");
+            if (gameServer < 1 || gameServer > net::protocol::clientCompatibility(profile).maximumGameServer)
+                throw std::runtime_error("Invalid PD2 game server selection (expected GS1-GS9)");
             result.login.gameServer = uint8_t(gameServer);
             result.login.lootAllocation = json.value("lootAllocation", true);
             auto pd2=std::filesystem::path(json.at("pd2Directory").get<std::string>());

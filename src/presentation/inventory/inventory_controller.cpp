@@ -87,6 +87,7 @@ bool SceneController::queueInventory(InventoryIntent command, EntityId source) {
 bool SceneController::handleInventory(const FrameInput &input) {
     auto &ui = view_.ui().inventory;
     const auto &inventory = view_.inventoryView();
+    if (!input.leftHeld || !input.focused) ui.storagePressedButton.reset();
     if (ui.goldDialog) {
         if (input.escape || input.rightPressed || (input.leftPressed && input.insideViewport &&
                                    CheckCollisionPointRec(rv(input.mouse), goldDialogButton(1)))) {
@@ -172,22 +173,69 @@ bool SceneController::handleInventory(const FrameInput &input) {
     }
     if (inventory.personalItemActionsOnly && ui.storage && view_.storageNavigationReady() &&
         input.insideViewport && input.leftPressed) {
-        for (unsigned button = 0; button < 3; ++button) {
-            if (!CheckCollisionPointRec(rv(input.mouse), storageNavigationButton(button))) continue;
+        for (unsigned button = 0; button < 6; ++button) {
+            if (button == 5 && !view_.storageMaterialsReady()) continue;
+            if (!CheckCollisionPointRec(rv(input.mouse), storageNavigationButton(button, inventory))) continue;
             inventoryClick_ = true;
+            ui.storagePressedButton = button;
             if (!ui.drag && !ui.pending && !inventory.storagePagePending) {
                 bool accepted = false;
                 if (button == 0) accepted = inventoryClient_.selectSharedStorage(!inventory.storageShared);
-                else if (inventory.storageCnConfirmed && (button != 1 || inventory.storagePage > 1))
-                    accepted = inventoryClient_.selectStoragePage(button == 1 ? inventory.storagePage - 1 : inventory.storagePage + 1);
+                else if (button == 5) accepted = inventoryClient_.selectStorageMaterials(!inventory.storageMaterialsOpen);
+                else if (inventory.storageCnConfirmed) {
+                    if (button == 1 || button == 4) {
+                        const auto nav = button == 1 ? (input.shift ? StorageNavigation::PreviousMainIndex : StorageNavigation::PreviousIndex) :
+                            (input.shift ? StorageNavigation::NextMainIndex : StorageNavigation::NextIndex);
+                        accepted = inventoryClient_.navigateStorage(nav);
+                    } else if (input.shift)
+                        accepted = inventoryClient_.navigateStorage(button == 2 ? StorageNavigation::First : StorageNavigation::LastNonempty);
+                    else if (button != 2 || inventory.storagePage > 1)
+                        accepted = inventoryClient_.selectStoragePage(button == 2 ? inventory.storagePage - 1 : inventory.storagePage + 1);
+                }
                 if (!accepted) view_.notice("Storage page is unavailable.", true);
             }
             return true;
         }
     }
+    if (inventory.storageMaterialsOpen && ui.storage && input.insideViewport &&
+        CheckCollisionPointRec(rv(input.mouse), storageBounds(inventory))) {
+        const bool releasingMaterial = input.leftReleased && ui.drag && ui.drag->moved;
+        const bool deferredMaterial = ui.drag && ui.drag->releasedAt && !ui.pending &&
+            CheckCollisionPointRec(rv(*ui.drag->releasedAt), storageBounds(inventory));
+        if ((input.leftPressed || releasingMaterial || deferredMaterial) && ui.drag) {
+            inventoryClick_ = true;
+            if (ui.pending && releasingMaterial) ui.drag->releasedAt = input.mouse;
+            else if (!ui.pending) {
+                ui.drag->releasedAt.reset();
+                if (const auto *cursor = inventory.cursorItem())
+                    if (!inventoryClient_.depositStorageMaterial(cursor->handle()))
+                        view_.notice("This item cannot be deposited in materials.", true);
+            }
+            return true;
+        }
+        if (input.leftPressed || input.rightPressed) {
+            inventoryClick_ = input.leftPressed || inventoryClick_;
+            inventoryRight_ = input.rightPressed || inventoryRight_;
+            if (!ui.drag && !ui.pending) for (const auto &material : inventory.storageMaterials) {
+                if (!CheckCollisionPointRec(rv(input.mouse), storageMaterialBounds(material))) continue;
+                if (!material.quantity) break;
+                // Ctrl+Shift targets the ground in native CN; keep it unavailable
+                // until explicit ground transfer support is added.
+                if (input.control && input.shift) {
+                    view_.notice("Material ground transfer is not available.", true); break;
+                }
+                unsigned amount = input.leftPressed ? 1 : input.shift ? 50 : input.control ? 5 : 1;
+                if (amount == 50 && material.code.starts_with("rv")) amount = 20;
+                if (!inventoryClient_.withdrawStorageMaterial(material.code, amount, input.leftPressed))
+                    view_.notice("Material withdrawal is unavailable or pending.", true);
+                break;
+            }
+        }
+        return true;
+    }
     if (inventory.personalItemActionsOnly && ui.storage && view_.storageNavigationReady() &&
         input.insideViewport && input.mouseWheel && CheckCollisionPointRec(rv(input.mouse), storageBounds(inventory))) {
-        if (!ui.drag && !ui.pending && !inventory.storagePagePending && inventory.storageCnConfirmed) {
+        if (!inventory.storageMaterialsOpen && !ui.drag && !ui.pending && !inventory.storagePagePending && inventory.storageCnConfirmed) {
             const auto page = inventory.storagePage;
             if (input.mouseWheel <= 0 || page > 1)
                 if (!inventoryClient_.selectStoragePage(input.mouseWheel > 0 ? page - 1 : page + 1))

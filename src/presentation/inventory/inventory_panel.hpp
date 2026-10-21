@@ -38,6 +38,7 @@ struct InventoryUi {
     std::optional<ItemHandle> identify;
     uint64_t targetingRevision{}, targetingGeneration{};
     std::optional<GoldDialog> goldDialog;
+    std::optional<unsigned> storagePressedButton;
     void syncCursor(const InventoryView &inventory, EntityId reserved = {});
     bool hidesItem(const InventoryItemView &item) const {
         return (drag && drag->item.id==item.id) ||
@@ -49,6 +50,7 @@ struct InventoryUi {
         else if (drag) drag->releasedAt.reset();
         identify.reset();
         goldDialog.reset();
+        storagePressedButton.reset();
     }
 };
 // Classic invchar.dc6's right panel, scaled from 320 x 432; grid data from inventory.txt.
@@ -136,13 +138,24 @@ inline Rectangle storageBounds(const InventoryView &inventory) {
     panel.height = inventory.storagePanelHeight * inventoryScale();
     return panel;
 }
-// Keep the original CN button art in the strip below the extended MPQ
-// panel. Window height includes D2X's HUD and is not a classic panel anchor.
-inline Rectangle storageNavigationButton(unsigned button) {
+// mdll1 0x10980-0x10D80: native baseline = panel bottom minus Y offset.
+// Five top buttons (shared, index-, page-, page+, index+), bottom materials.
+inline Rectangle storageNavigationButton(unsigned button, const InventoryView &inventory) {
     const auto p = classicPanelBounds(false);
-    constexpr std::array x{16, 128, 160};
-    return {p.x + x.at(button) * inventoryScale(), classicSideBounds(false).height - 32 * inventoryScale(),
+    constexpr std::array x{30, 75, 120, 165, 210, 15};
+    const auto grid = storageBounds(inventory);
+    const float y = button == 5 ? grid.y + (inventory.storagePanelHeight - 14) * inventoryScale() :
+        grid.y + (inventory.stashLayout.top - 34) * inventoryScale();
+    return {p.x + x.at(button) * inventoryScale(), y,
             32 * inventoryScale(), 32 * inventoryScale()};
+}
+inline Rectangle storageMaterialBounds(const InventoryMaterialView &item) {
+    const auto p = classicPanelBounds(false);
+    const auto scale = inventoryScale();
+    // 0x275E0/0x27600 and 0x27B80/0x27BA0; native DC6 baseline to top.
+    return {p.x + (item.x + 2) * scale,
+            p.y + (item.y - 1 - item.height * 29) * scale,
+            item.width * 29 * scale, item.height * 29 * scale};
 }
 inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),

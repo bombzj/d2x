@@ -11,6 +11,10 @@ class IInventoryClient {
     virtual void submit(InventoryIntent intent) = 0;
     virtual bool selectStoragePage(unsigned) { return false; }
     virtual bool selectSharedStorage(bool) { return false; }
+    virtual bool navigateStorage(StorageNavigation) { return false; }
+    virtual bool selectStorageMaterials(bool) { return false; }
+    virtual bool withdrawStorageMaterial(std::string_view, unsigned, bool) { return false; }
+    virtual bool depositStorageMaterial(ItemHandle) { return false; }
     virtual std::optional<Cell> beltSpace(std::string_view code) const = 0;
     virtual bool submitStaff(EntityId source,std::optional<ItemHandle> item) = 0;
 };

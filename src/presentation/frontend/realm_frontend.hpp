@@ -43,6 +43,7 @@ struct FrontendIntent {
     uint8_t difficulty{}, characterClass{};
     bool hardcore{};
     std::optional<std::string> editedAccount;
+    std::optional<uint8_t> gameServer;
 };
 // Original MPQ art and input only. The application owns authentication and sockets.
 enum class RealmPortraitSupport { Original113c, Unverified };

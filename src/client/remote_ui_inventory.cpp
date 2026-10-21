@@ -25,6 +25,41 @@ bool RemoteUiClients::Impl::Inventory::selectSharedStorage(bool shared) {
     o.context = onlineIntentContext(o.session.read());
     return true;
 }
+bool RemoteUiClients::Impl::Inventory::submitStorage(OnlineItemCommand command) {
+    if (!o.inventoryView.personalItemActionsOnly || o.inventoryView.readOnly || o.inventoryView.dead ||
+        !o.transactions.empty() || o.waiting || !onlineWorldMatches(o.context, o.session.read())) return false;
+    command.context = onlineIntentContext(o.session.read());
+    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    o.context = onlineIntentContext(o.session.read());
+    return true;
+}
+bool RemoteUiClients::Impl::Inventory::navigateStorage(StorageNavigation navigation) {
+    OnlineItemCommand command; command.action = OnlineItemAction::StoragePage;
+    command.sharedStash = o.inventoryView.storageShared;
+    switch (navigation) {
+    case StorageNavigation::PreviousIndex: command.stashNavigation = OnlineCnStashNavigation::PreviousIndex; break;
+    case StorageNavigation::NextIndex: command.stashNavigation = OnlineCnStashNavigation::NextIndex; break;
+    case StorageNavigation::First: command.stashNavigation = OnlineCnStashNavigation::First; break;
+    case StorageNavigation::LastNonempty: command.stashNavigation = OnlineCnStashNavigation::LastNonempty; break;
+    case StorageNavigation::PreviousMainIndex: command.stashNavigation = OnlineCnStashNavigation::PreviousMainIndex; break;
+    case StorageNavigation::NextMainIndex: command.stashNavigation = OnlineCnStashNavigation::NextMainIndex; break;
+    }
+    return submitStorage(std::move(command));
+}
+bool RemoteUiClients::Impl::Inventory::selectStorageMaterials(bool open) {
+    OnlineItemCommand command; command.action = OnlineItemAction::StorageMaterials; command.amount = open;
+    return submitStorage(std::move(command));
+}
+bool RemoteUiClients::Impl::Inventory::withdrawStorageMaterial(std::string_view code, unsigned amount, bool cursor) {
+    OnlineItemCommand command; command.action = OnlineItemAction::MaterialWithdraw;
+    command.materialCode = code; command.amount = amount; command.toCursor = cursor;
+    return submitStorage(std::move(command));
+}
+bool RemoteUiClients::Impl::Inventory::depositStorageMaterial(ItemHandle item) {
+    OnlineItemCommand command; command.action = OnlineItemAction::MaterialDeposit;
+    command.item = guid(item.id); command.itemRevision = item.revision;
+    return submitStorage(std::move(command));
+}
 
 bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional<ItemHandle> item) {
             if(source!=o.inventoryView.staffSource) return false;

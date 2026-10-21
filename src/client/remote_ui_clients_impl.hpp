@@ -121,7 +121,12 @@ struct RemoteUiClients::Impl {
         InventoryError preview(const InventoryIntent &intent) const override;
         void submit(InventoryIntent c) override;
         bool selectStoragePage(unsigned page) override;
+        bool submitStorage(OnlineItemCommand);
         bool selectSharedStorage(bool shared) override;
+        bool navigateStorage(StorageNavigation) override;
+        bool selectStorageMaterials(bool) override;
+        bool withdrawStorageMaterial(std::string_view, unsigned, bool) override;
+        bool depositStorageMaterial(ItemHandle) override;
         std::optional<Cell> beltSpace(std::string_view code) const override;
     } inventory{*this};
 

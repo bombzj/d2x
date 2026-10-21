@@ -143,7 +143,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         if (auto error = state.prepareGame(); !error.empty()) { state.notice = std::move(error); break; }
         state.session.create_game({std::move(action.name), std::move(action.password),
                              std::move(action.description), action.difficulty, state.localConnection && !state.lanConnection ? uint8_t(1) : action.maximumPlayers,
-                             action.levelDifference});
+                             action.levelDifference, action.gameServer});
         break;
     case FrontendCommand::LeaveGame:
         if (!state.session.leave_game()) {

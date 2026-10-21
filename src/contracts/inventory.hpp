@@ -73,6 +73,12 @@ struct InventoryLayoutView {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
     bool expansion = false;
 };
+enum class StorageNavigation { PreviousIndex, NextIndex, First, LastNonempty, PreviousMainIndex, NextMainIndex };
+struct InventoryMaterialView {
+    std::string code, name, artKey;
+    int x{}, y{}, width{}, height{};
+    uint32_t quantity{};
+};
 // A client-owned projection of inventory, authorized storage/shop and visible ground items.
 // It contains no authority references, rolled native properties or random state.
 struct InventoryView {
@@ -101,6 +107,8 @@ struct InventoryView {
     std::string storagePageName;
     bool storagePagePending = false;
     bool storagePagingAvailable = false;
+    bool storageMaterialsAvailable = false, storageMaterialsOpen = false;
+    std::vector<InventoryMaterialView> storageMaterials;
     std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
     InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;

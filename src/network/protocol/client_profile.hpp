@@ -18,6 +18,7 @@ struct ClientCompatibility {
     uint32_t characterListRequest;
     size_t gameListExtensionBytes;
     size_t gameCreationExtensionBytes; // Native GS selection and loot mode before the room strings.
+    uint8_t maximumGameServer; // Zero for profiles without a native server selector.
     // Admission request gates. Each ordered game consumer independently rejects
     // unsupported payloads; an empty gate does not certify full gameplay.
     std::string_view authenticationBlocker, gameEntryBlocker;

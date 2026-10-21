@@ -22,6 +22,7 @@ class ClassicStrings {
   public:
     explicit ClassicStrings(Archives &archives);
     explicit ClassicStrings(Archives &archives, const Language &language);
+    explicit ClassicStrings(const Bytes &table); // One native TBL, without archive or language fallback.
     std::string_view find(std::string_view key) const;
     std::string_view find(int index) const;
     std::string_view speech(int index) const; // Native NPC TBL SPEED line is metadata, not a subtitle.

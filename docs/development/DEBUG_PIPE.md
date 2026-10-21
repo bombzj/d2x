@@ -200,7 +200,7 @@ $spec.preview=$false
 | `online-select-realm` | name；只在 RealmSelection 接受；首次登录自动选择配置项；切换 Realm 或配置项不存在时等待显式选择 |
 | `online-select-character` | name；只在 CharacterSelection 接受，限定可玩的非 Ladder LoD 角色 |
 | `online-list-games` | 可选 filter（≤15）；Lobby／ListingGames 发起或替换真实列表请求，filter 为本地名称包含筛选，完成后返回 Lobby；无终止包时超时保留已收到列表，并标记不完整 |
-| `online-create-game` | name（≤15）、可选 password（≤15）／description（≤31）／maximumPlayers（1–8，默认4）／levelDifference（0–99，默认4）／difficulty（0普通／1噩梦／2地狱，默认0；按服务器角色进度解锁）；只在 Lobby 接受，成功自动取票入局 |
+| `online-create-game` | name（≤15）、可选 password（≤15）／description（≤31）／maximumPlayers（1–8，默认4）／levelDifference（0–99，默认4）／difficulty（0普通／1噩梦／2地狱，默认0；按服务器角色进度解锁）／gameServer（CN专用1–9，省略时用登录配置默认值，原版显式传入会拒绝）；只在 Lobby 接受，成功自动取票入局 |
 | `online-game-info` | name；Lobby／ListingGames 发原 MCP 0x06，online.gameInfo 返回 Pending／Ready／TimedOut、真实难度标志、人数上限、等级限制、说明与角色。独立请求编号／超时，迟到回复不替换新选择；无回复不推断房间已删除 |
 | `online-join-game` | name、可选 password；Lobby／ListingGames 接受，复验输入后退役未完成列表并调用原 MCP 取票接口；UI 同一入口，可按名字直接加入 |
 | `online-leave-game` | 创建／加入／连接游戏／握手阶段取消并重新取服务器角色列表；LoadingGame／ProtocolReady 请求原0x69保存退局；LeavingGame重复请求不重发，退局超时标记保存结果未知 |
@@ -211,6 +211,9 @@ $spec.preview=$false
 ## 诊断与异步含义
 
 `online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN候选的`storage-page`改为mdll1控制链：`page`为一基目标页（32位，固定样本元数据支持范围1–500，不代表线上总页数），`shared`为目标账号共享域。跨域仅允许目标首页，同域仅允许相邻页，分别发C2S 3A/1B、1C或19、1A；不发核心55，不为9D/function18补发5A。要求已初始化、同步、打开仓库且空Cursor；首次打开自动发送一次3A1B00，未确认时不把核心首屏视为个人仓库；若已是个人首页可无回包，仍允许切共享首页取得确认，之后须匹配域和页的9D确认。`online-snapshot`报告`shared`、`cnConfirmed`、`requestedShared`及两个原始flags，`online-items`每件物品增加`sharedStash`。不循环枚举、不自动重试；超时暂停仓库。已核实实际个人／共享切换和共享相邻翻页回包；已选中的首页在原模块中不重复回确认，不应靠重发取ACK；原版不开放此命令。
+
+CN仓库还支持`storage-page`的`navigation`字段：`previous-index`／`next-index`／`first`／`last-nonempty`／`previous-main-index`／`next-main-index`，此时不填page，shared须与当前域一致；结果页取9D/18。`storage-materials`用`amount=1/0`切材料页，不等待普通选页ACK。`material-withdraw`用`code`、`amount=1/5/20/50`及`toCursor`（Cursor仅1）；`material-deposit`用当前Cursor或本人背包的itemId／itemRevision。材料存取要求98项代码计数初始化完成，并等待真实计数／物品事实；状态在`inventory.storage.materials`，不伪造物品GUID。普通页、材料页、共享／个人域的权限独立。
+
 
 传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 

@@ -1,4 +1,5 @@
 #include "remote_ui_clients_impl.hpp"
+#include "content/pd2_stash.hpp"
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -475,9 +476,20 @@ void RemoteUiClients::Impl::projectInventory() {
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
         v.storagePanelTop = data.stashLayout.panelTop; v.storagePanelHeight = data.stashLayout.panelHeight;
         v.storagePage = w.stashPage; v.storagePagePending = w.requestedStashPage.has_value();
-        v.storageShared = w.sharedStash; v.storageCnConfirmed = w.cnStashConfirmed;
+        v.storageShared = w.sharedStash; v.storageCnConfirmed = w.cnStashConfirmed && w.stashSynchronized;
+        v.storageMaterialsAvailable = v.personalItemActionsOnly && w.cnMaterialsAvailable && w.cnMaterialsSynchronized;
+        v.storageMaterialsOpen = v.storageMaterialsAvailable && w.cnMaterialsOpen;
+        if (v.storageMaterialsAvailable) for (const auto &slot : pd2CnMaterialSlots) {
+            const auto *definition = data.items.find(slot.code);
+            if (!definition || definition->icon.empty()) continue;
+            const auto key = onlineCnMaterialKey(slot.code);
+            const auto count = key ? w.cnMaterialCounts.find(*key) : w.cnMaterialCounts.end();
+            v.storageMaterials.push_back({std::string(slot.code), definition->name, definition->icon,
+                slot.x, slot.y, definition->width, definition->height,
+                count == w.cnMaterialCounts.end() ? 0 : count->second});
+        }
         v.storagePagingAvailable = onlinePd2ItemAction(OnlineItemAction::StoragePage) && w.stashInitialized &&
-            (w.stashSynchronized || !w.cnStashConfirmed) && !w.requestedStashPage && !(w.cnStashPlayerFlags & 8);
+            !w.requestedStashPage && !(w.cnStashPlayerFlags & 8);
         if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
             const auto &table = data.tables.at("inventory");
             size_t peerRow = table.rows().size(), ownRow = peerRow;
@@ -518,7 +530,8 @@ void RemoteUiClients::Impl::projectInventory() {
         for(const auto &[id,native]:w.items) {
             if (v.personalItemActionsOnly && (native.flags & 0x40000000u)) continue; // Native preview inventory, not this player's items.
             if (v.personalItemActionsOnly && (!native.positionKnown ||
-                (native.mode == 0 && native.page == 5 && (!w.stashSynchronized || (native.stashPage != w.stashPage || native.sharedStash != w.sharedStash))))) continue;
+                (native.mode == 0 && native.page == 5 && (v.storageMaterialsOpen || !w.stashSynchronized ||
+                    native.stashPage != w.stashPage || native.sharedStash != w.sharedStash)))) continue;
             const bool ground=native.mode==3 || native.mode==5;
             const bool mercenary=w.hireling && native.ownerType==1 && native.owner==w.hireling->id && native.mode==1;
             if(!ground && !mercenary && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;
