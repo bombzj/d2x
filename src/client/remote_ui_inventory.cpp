@@ -4,10 +4,22 @@ namespace d2x {
 const InventoryView &RemoteUiClients::Impl::Inventory::read() const { return o.inventoryView; }
 bool RemoteUiClients::Impl::Inventory::selectStoragePage(unsigned page) {
     if (!onlinePd2ItemAction(OnlineItemAction::StoragePage) ||
-        !o.inventoryView.personalItemActionsOnly || o.inventoryView.readOnly || o.inventoryView.dead ||
-        !o.transactions.empty() || o.waiting || !onlineWorldMatches(o.context, o.session.read()) || page > 10) return false;
+        !o.inventoryView.personalItemActionsOnly || !o.inventoryView.storagePagingAvailable || o.inventoryView.readOnly || o.inventoryView.dead ||
+        !o.transactions.empty() || o.waiting || !onlineWorldMatches(o.context, o.session.read())) return false;
     OnlineItemCommand command;
-    command.action = OnlineItemAction::StoragePage; command.page = uint8_t(page);
+    command.action = OnlineItemAction::StoragePage; command.page = page;
+    command.sharedStash = o.inventoryView.storageShared;
+    command.context = onlineIntentContext(o.session.read());
+    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    o.context = onlineIntentContext(o.session.read());
+    return true;
+}
+bool RemoteUiClients::Impl::Inventory::selectSharedStorage(bool shared) {
+    if (!o.inventoryView.personalItemActionsOnly || !o.inventoryView.storagePagingAvailable ||
+        o.inventoryView.readOnly || o.inventoryView.dead || !o.transactions.empty() || o.waiting ||
+        !onlineWorldMatches(o.context, o.session.read())) return false;
+    OnlineItemCommand command;
+    command.action = OnlineItemAction::StoragePage; command.page = 1; command.sharedStash = shared;
     command.context = onlineIntentContext(o.session.read());
     if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
     o.context = onlineIntentContext(o.session.read());

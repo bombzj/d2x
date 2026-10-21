@@ -18,6 +18,7 @@ class RemoteInventory {
     const net::protocol::ClientProfile profile_;
     ClassicStrings strings_;
     OnlineInventoryView view_;
+    OnlineStashLayout stashLayout_;
     uint64_t sourceRevision_{~uint64_t{}}, generation_{~uint64_t{}};
     std::optional<uint32_t> player_;
     std::optional<uint16_t> playerClass_;
@@ -31,6 +32,7 @@ class RemoteInventory {
     explicit RemoteInventory(Archives &, net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
     void update(const OnlineView &);
     const OnlineInventoryView &read() const { return view_; }
+    OnlineStashLayout stashLayout() const { return stashLayout_; }
     const std::string &reason() const { return reason_; }
     bool submit(net::RealmSession &, OnlineItemCommand);
 };

@@ -1,8 +1,10 @@
 #pragma once
 #include "core/bytes.hpp"
+#include "contracts/online_social.hpp"
 #include "contracts/online_world.hpp"
 #include <cstdint>
 #include <array>
+#include <deque>
 #include <optional>
 #include <string>
 #include <vector>
@@ -92,6 +94,18 @@ struct OnlineGameHeartbeat {
     uint64_t sent{}, received{}, pending{};
     uint64_t elapsedMilliseconds{}, lastPacketMilliseconds{}, lastPingMilliseconds{}, lastPongMilliseconds{};
 };
+struct OnlinePd2Reports {
+    uint64_t ticksSent{}, tickEchoes{}, unmatchedEchoes{}, positionsSent{}, bhReportsSent{};
+    std::optional<uint32_t> lastTick, lastEcho, roundTripMilliseconds;
+    std::optional<OnlinePoint> lastPosition;
+};
+struct OnlineGameServerNotices {
+    // Up to eight native system messages, retaining language bytes rather than
+    // interpreting announcements as UTF-8 or protocol rejection codes.
+    // receivedMilliseconds is relative to game entry, as in gameHeartbeat.
+    std::deque<OnlineChatMessage> recent;
+    std::optional<uint64_t> removalAnnouncedMilliseconds;
+};
 struct OnlineView {
     // Build identity survives clear(): one RealmSession has one immutable profile.
     std::string protocolProfile{"lod113c"};
@@ -102,6 +116,8 @@ struct OnlineView {
     // Counts and IDs only: never packet payloads, credentials or native tickets.
     OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
     OnlineGameHeartbeat gameHeartbeat;
+    OnlinePd2Reports pd2Reports;
+    OnlineGameServerNotices gameServerNotices;
 
     uint64_t revision{}, connectionGeneration{}, gameGeneration{};
     OnlineStage stage{OnlineStage::Idle};
@@ -125,6 +141,8 @@ struct OnlineView {
         mcpProtocol = {};
         gameProtocol = {};
         gameHeartbeat = {};
+        pd2Reports = {};
+        gameServerNotices = {};
         revision = connectionGeneration = gameGeneration = 0;
         stage = OnlineStage::Idle;
         error.reset();

@@ -170,24 +170,40 @@ bool SceneController::handleInventory(const FrameInput &input) {
         }
         if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeBounds())) return true;
     }
-    if (inventory.personalItemActionsOnly && ui.storage && input.insideViewport && input.leftPressed) {
-        for (unsigned page = 1; page <= 10; ++page) {
-            if (!CheckCollisionPointRec(rv(input.mouse), storageTab(page))) continue;
+    if (inventory.personalItemActionsOnly && ui.storage && view_.storageNavigationReady() &&
+        input.insideViewport && input.leftPressed) {
+        for (unsigned button = 0; button < 3; ++button) {
+            if (!CheckCollisionPointRec(rv(input.mouse), storageNavigationButton(button))) continue;
             inventoryClick_ = true;
-            if (!ui.drag && !ui.pending && !inventory.storagePagePending && page != inventory.storagePage &&
-                !inventoryClient_.selectStoragePage(page)) view_.notice("Storage page is unavailable.", true);
+            if (!ui.drag && !ui.pending && !inventory.storagePagePending) {
+                bool accepted = false;
+                if (button == 0) accepted = inventoryClient_.selectSharedStorage(!inventory.storageShared);
+                else if (inventory.storageCnConfirmed && (button != 1 || inventory.storagePage > 1))
+                    accepted = inventoryClient_.selectStoragePage(button == 1 ? inventory.storagePage - 1 : inventory.storagePage + 1);
+                if (!accepted) view_.notice("Storage page is unavailable.", true);
+            }
             return true;
         }
     }
+    if (inventory.personalItemActionsOnly && ui.storage && view_.storageNavigationReady() &&
+        input.insideViewport && input.mouseWheel && CheckCollisionPointRec(rv(input.mouse), storageBounds(inventory))) {
+        if (!ui.drag && !ui.pending && !inventory.storagePagePending && inventory.storageCnConfirmed) {
+            const auto page = inventory.storagePage;
+            if (input.mouseWheel <= 0 || page > 1)
+                if (!inventoryClient_.selectStoragePage(input.mouseWheel > 0 ? page - 1 : page + 1))
+                    view_.notice("Storage page is unavailable.", true);
+        }
+        return true;
+    }
     EntityId backpack = view_.inventoryView().containers.backpack;
-    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
-        CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
+    if (!inventory.readOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
+        CheckCollisionPointRec(rv(input.mouse), inventoryClose(inventory))) {
         inventoryClick_ = true;
         toggleInventory();
         return true;
     }
-    if (!inventory.personalItemActionsOnly && ui.storage && input.insideViewport && input.leftPressed &&
-        CheckCollisionPointRec(rv(input.mouse), storageClose())) {
+    if (ui.storage && input.insideViewport && input.leftPressed &&
+        CheckCollisionPointRec(rv(input.mouse), storageClose(inventory))) {
         inventoryClick_ = true;
         toggleInventory();
         return true;

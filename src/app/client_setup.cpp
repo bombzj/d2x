@@ -6,7 +6,9 @@
 #include "resources/archive.hpp"
 #include <nlohmann/json.hpp>
 #include <array>
+#include <algorithm>
 #include <fstream>
+#include <iterator>
 #include <stdexcept>
 #include <string_view>
 #include <utility>
@@ -25,16 +27,34 @@ constexpr std::pair<std::string_view, std::string_view> cnFiles[]{
     {"pd2maps.mpq","ad704b94aab4fa4142fb4fe37b38bd3fe7ae43a94c14518baf0d6cb0ca00d33a"},
     {"pd2monchars.mpq","ae2abade85c5f393db5d8089cb4b6566b2cfed2adea0f573bc0f4220ef733217"},
     {"BH.dll","ee619246b8b63ea0cb3a5e84da5e63674867a87cd81cc7dbbf2d6ba8b0dd6a8c"}};
-std::string fileDigest(const std::filesystem::path &path) {
+bool supportedClientDigest(std::string_view name, std::string_view actual, std::string_view expected) {
+    // The October 21 Normal update retains the item, inventory and level tables.
+    // Register its exact resource identities alongside the verified report core.
+    constexpr std::pair<std::string_view, std::string_view> updatedFiles[]{
+        {"ProjectDiablo.dll","17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57"},
+        {"pd2data.mpq","cc42f5c71d61c9a38d5b948243ed2fe6a9a2bc0124fb3eaaff0f1943830e15cf"},
+        {"pd2assets.mpq","2ceb83ca8e9f482fa46a94cda95d2ab80f8415a0d2c1047a44f64d4a95cf56af"},
+        {"pd2maps.mpq","fb9e21ae5d797caa7ae8051ed15752a71a35ac317b44c8cdde3c443ad62b25eb"}};
+    return actual == expected || std::any_of(std::begin(updatedFiles), std::end(updatedFiles),
+        [name, actual](const auto &entry) { return entry.first == name && entry.second == actual; });
+}
+std::string fileDigest(const std::filesystem::path &path, uint32_t *crc32 = nullptr) {
     std::ifstream input(path, std::ios::binary);
     if (!input) throw std::runtime_error("Required client file is unavailable: " + path.filename().string());
     Sha256 hash;
+    uint32_t crc = 0xFFFFFFFFu;
     std::array<uint8_t, 65536> block{};
     while (input) {
         input.read(reinterpret_cast<char *>(block.data()), block.size());
         hash.append(std::span<const uint8_t>(block).first(size_t(input.gcount())));
+        if (crc32) for (const auto byte : std::span<const uint8_t>(block).first(size_t(input.gcount()))) {
+            crc ^= byte;
+            for (unsigned bit = 0; bit < 8; ++bit)
+                crc = (crc >> 1) ^ (0xEDB88320u & (0u - (crc & 1u)));
+        }
     }
     if (!input.eof()) throw std::runtime_error("Cannot read client file: " + path.filename().string());
+    if (crc32) *crc32 = crc ^ 0xFFFFFFFFu;
     return hexDigest(hash.finish());
 }
 std::filesystem::path profilePath(const nlohmann::json &json, const char *key,
@@ -46,7 +66,7 @@ std::filesystem::path profilePath(const nlohmann::json &json, const char *key,
 }
 void verifyPd2ClientFiles(const std::filesystem::path &root) {
     for (const auto &[name, expected] : cnFiles)
-        if (fileDigest(root/std::string(name)) != expected)
+        if (!supportedClientDigest(name, fileDigest(root/std::string(name)), expected))
             throw std::runtime_error("Unsupported PD2 CN build or changed client file: " + std::string(name));
 }
 void verifyPd2AuthenticationFiles(const std::filesystem::path &root) {
@@ -54,7 +74,7 @@ void verifyPd2AuthenticationFiles(const std::filesystem::path &root) {
     // CheckRevision inputs. Resource MPQs were verified before their handles
     // and frontend assets were created; do not hash them again on every login.
     for(const auto &[name,expected]:std::span(cnFiles).first(5))
-        if(fileDigest(root/std::string(name))!=expected)
+        if(!supportedClientDigest(name,fileDigest(root/std::string(name)),expected))
             throw std::runtime_error("PD2 CN authentication file changed; restart after restoring the selected build");
 }
 void verifyClientProfileDefinition(const std::filesystem::path &path, std::string_view digest) {
@@ -72,6 +92,12 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
         return decode_native_auth_resource(bytes);
     };
     try {
+        uint32_t bhCrc{};
+        const auto bh = std::find_if(std::begin(cnFiles), std::end(cnFiles),
+            [](const auto &entry) { return entry.first == "BH.dll"; });
+        if (bh == std::end(cnFiles) || fileDigest(pd2/"BH.dll", &bhCrc) != bh->second)
+            throw std::runtime_error("PD2 CN BH file changed; select the supported build before login");
+        auth.cnBhCrc32 = bhCrc;
         constexpr auto classicMember = "data/global/sfx/cursor/wavindx.wav";
         Archives sound;
         if(std::filesystem::is_regular_file(original/"d2sfx.mpq")) sound.mount(original/"d2sfx.mpq");

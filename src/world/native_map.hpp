@@ -3,6 +3,7 @@
 #include "retail/tile_materialization.hpp"
 #include "maze.hpp"
 #include "room_terrain.hpp"
+#include <functional>
 
 namespace d2x {
 struct NativeMapSnapshot {
@@ -39,6 +40,7 @@ class NativeMapGenerator {
     NativeRoomActivation activation_;
     bool failed_{};
     uint64_t terrainRevision_{};
+    std::function<void()> roomInitializedObserver_;
     const MapData &pattern(const std::string &);
     void ensureLevel(int);
     std::vector<size_t> near(size_t);
@@ -71,6 +73,8 @@ class NativeMapGenerator {
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }
     const auto &activation() const { return activation_; }
+    // Client-side room initialization notification; no transport or OS dependency.
+    void observeRoomInitialization(std::function<void()>);
     uint64_t terrainRevision() const { return terrainRevision_; }
     bool valid() const { return !failed_ && tiles_.valid() && activation_.valid(); }
 };

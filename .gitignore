@@ -17,6 +17,13 @@
 *.d2xsave.bak
 *.d2xsave.lock/
 *.log
+# Local network captures and crash dumps
+*.pcap
+*.pcapng
+*.etl
+*.dmp
+*.mdmp
+*.stackdump
 *.mpq
 *.MPQ
 

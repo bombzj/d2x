@@ -16,6 +16,8 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
 
+PD2 CN基础物件交互共用上述原请求，已删除早期只放行仓库的配置拒绝；传送点仍由0x63确认打开、按服务器已解锁记录发送0x49选择／关闭。距离、当前GUID、区域／交互代次和服务器确认校验保留，不因PD2跳过，也不本地解锁目的地。本次为源码修正，CN激活、菜单及跨区旅行仍待实服补验。
+
 传送点OperateFn23在mode1／2保留点击例外，启动后衔接ON动画／灯光，详见[联网实现](../../modules/NETWORK.md#本批源码修正)；共用模式投影也更新原MPQ对象碰撞，不改副本模式或解锁。
 
 祭坛表现源码补回公共绘制迁移时漏掉的未领取类型图／闪光层及物件COF阴影。真实Objects.SubClass／OperateFn识别祭坛，原服0x51的InteractType经既有shrineStateName映射到当前MPQ States.overlay1／2和Overlay DCC；只在原服mode0显示，mode1开始后移除，角色增益图仍只读原服状态。物件Overlay使用原静态落点及Height1，角色用Height2，secondary层先入队，两层各自按PreDraw排序；不使用物件X／Yoffset移动Overlay。

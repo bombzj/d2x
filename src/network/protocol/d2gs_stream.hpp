@@ -26,6 +26,14 @@ size_t lod113c_packet_size(std::span<const uint8_t> bytes);
 Bytes game_logon(uint32_t hash, uint16_t token, uint8_t characterClass,
     uint8_t locale, std::string_view characterName);
 Bytes game_ping(uint32_t elapsedMilliseconds, uint32_t latency);
+// Fixed CN BH subcommand 0: cosmetic auras and pd2_like disabled. The loot
+// preference is the same local setting used by CN room creation.
+Bytes game_options_pd2_cn(bool lootAllocation);
+Bytes game_tick_pd2_cn(uint32_t tick);
+Bytes game_position_pd2_cn(uint16_t x, uint16_t y);
+Bytes game_bh_report_pd2_cn(uint32_t fileCrc32);
+enum class AutomapReportPd2Cn : uint32_t { Initial = 2, ExcessiveCalls = 0 };
+Bytes automap_report_pd2_cn(AutomapReportPd2Cn);
 // Broadcast/whisper/overhead, printable ASCII / native language 0 until
 // localized chat encoding is verified. D2Net requires an
 // additional zero extension-length byte after the two terminated strings.

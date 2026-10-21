@@ -4,6 +4,7 @@
 #include <chrono>
 #include <iostream>
 #include <stdexcept>
+#include <utility>
 #include "world/interaction_geometry.hpp"
 #include "core/fingerprint.hpp"
 #include "content/world/object_mode.hpp"
@@ -18,12 +19,13 @@ void insertNativeCell(std::set<NativeAutomapCell> &cells, NativeAutomapCell cell
     cells.insert(cell);
 }
 }
-RemoteTown::RemoteTown(Archives &a)
+RemoteTown::RemoteTown(Archives &a, bool reportAutomapRoomsPd2)
     : archives_(a), libraries_(a), objects_(a.read("data/global/excel/objects.txt")),
       monsters_(a.read("data/global/excel/monstats.txt")),
       monsterSizes_(a.read("data/global/excel/monstats2.txt")),
       skills_(a.read("data/global/excel/skills.txt")), shrines_(a.read("data/global/excel/shrines.txt")),
-      petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a) {
+      petTypes_(a.read("data/global/excel/pettype.txt")), automap_(a), strings_(a),
+      reportAutomapRoomsPd2_(reportAutomapRoomsPd2) {
     nativeAutomapCelCount_ = decodeDc6(a.read("data/global/ui/automap/maximap.dc6")).frames.size();
     for (size_t row = 0; row < shrines_.rows().size(); ++row)
         if (auto code = shrines_.number(row, "Code")) shrineRows_.emplace(*code, row);
@@ -38,6 +40,7 @@ RemoteTown::RemoteTown(Archives &a)
         monsterSizeRows_.emplace(std::string(monsterSizes_.value(row, "Id")), row);
 }
 void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition) {
+    automapPlayerPresentPd2_ = v.load.playerUnitId && v.world.units.contains({0, *v.load.playerUnitId});
     std::optional<OnlinePoint> point;
     if (displayPosition && std::isfinite(displayPosition->x) && std::isfinite(displayPosition->y) &&
         displayPosition->x >= 0 && displayPosition->y >= 0 && displayPosition->x <= UINT16_MAX && displayPosition->y <= UINT16_MAX)
@@ -46,11 +49,13 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     displayPlayerPosition_ = point;
     if (gameGeneration_ != v.gameGeneration || areaGeneration_ != v.world.areaGeneration) {
         if (gameGeneration_ != v.gameGeneration) {
+            automapPositionPd2_ = {};
             explored_.clear(); discoveredCels_.clear(); discoveredTowns_.clear(); preparedTownAutomaps_.clear(); actSeeds_.clear();
             nativeAutomapCells_.clear();
         }
         gameGeneration_ = v.gameGeneration;
         areaGeneration_ = v.world.areaGeneration;
+        automapRoomCallbacksPd2_.clear();
         revision_ = ~uint64_t{};
         map_ = nullptr;
         nativeMap_.reset();
@@ -93,6 +98,9 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
                         view_.layoutReason = "Pure C++ placement awaiting server landmark comparison";
                         nativeMap_ = std::make_unique<NativeMapGenerator>(archives_, catalog,
                                 libraries_, *v.load.act, *v.load.mapSeed, v.load.difficulty.value_or(0));
+                        if (reportAutomapRoomsPd2_) nativeMap_->observeRoomInitialization([this] {
+                            if (automapPlayerPresentPd2_) record_automap_room_pd2();
+                        });
                     } catch (const std::exception &e) {
                         view_.layoutReason = e.what();
                         nativeReason_ = e.what();
@@ -552,6 +560,31 @@ void RemoteTown::rememberTile(const OnlineView &v, int levelId, int x, int y, in
         if (cel >= 0 && size_t(cel) < nativeAutomapCelCount_ && cel <= INT16_MAX)
             insertNativeCell(cells[wallArray ? 1 : 0], {uint16_t(cel), int16_t(px), int16_t(py)});
 }
+void RemoteTown::record_automap_room_pd2() {
+    automapRoomCallbacksPd2_.push_back(uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now().time_since_epoch()).count()));
+}
+void RemoteTown::refresh_automap_rooms_pd2(const OnlineView &v) {
+    if (!reportAutomapRoomsPd2_ || !nativeMap_ || !nativePlayerRoom_ || !v.load.playerUnitId) return;
+    const auto position = displayPlayerPosition_ ? displayPlayerPosition_ : v.world.playerPosition;
+    if (!position) return;
+    const int dx = std::abs(int(position->x) - automapPositionPd2_.x);
+    const int dy = std::abs(int(position->y) - automapPositionPd2_.y);
+    // D2Client RVA 0x62AF0: max(delta) + floor(min(delta)/2), threshold 80.
+    // This is a room-reveal refresh, independent of frame rate or move packets.
+    if (std::max(dx, dy) + std::min(dx, dy) / 2 < 80) return;
+    automapPositionPd2_ = *position;
+    const auto &rooms = nativeMap_->tiles().rooms();
+    const auto &current = rooms.at(*nativePlayerRoom_);
+    const auto layer = catalog_->level(current.level).automapLayer;
+    for (const auto index : current.activeNear) {
+        const auto &room = rooms.at(index);
+        if (room.loaded && catalog_->level(room.level).automapLayer == layer) record_automap_room_pd2();
+    }
+}
+std::vector<uint32_t> RemoteTown::take_automap_room_reveals_pd2() {
+    return std::exchange(automapRoomCallbacksPd2_, {});
+}
 void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t> indices) {
     if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||
         v.gameGeneration != gameGeneration_ || v.world.areaGeneration != areaGeneration_) return;
@@ -580,6 +613,7 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
             discoveredCels_[key].insert(cel);
     }
     explored_.reveal(scene, visible);
+    refresh_automap_rooms_pd2(v);
     updateAutomapView(v);
 }
 void RemoteTown::updateAutomapView(const OnlineView &v) {

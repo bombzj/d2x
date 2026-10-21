@@ -165,9 +165,16 @@ bool RemoteControl::townPortal() {
     }
     return reject("No available town-portal scroll or tome skill has been reported by the server");
 }
-void RemoteControl::tick(std::optional<Vec> displayOrigin) {
+void RemoteControl::tick(std::optional<Vec> displayOrigin, std::optional<Vec> pathPosition) {
     const auto &view = session_.read();
     const auto now = std::chrono::steady_clock::now();
+    if (view.remoteLobbyOnly && pathPosition && view.stage == OnlineStage::ProtocolReady &&
+        std::isfinite(pathPosition->x) && std::isfinite(pathPosition->y) &&
+        pathPosition->x >= 0 && pathPosition->y >= 0 &&
+        pathPosition->x <= UINT16_MAX && pathPosition->y <= UINT16_MAX) {
+        // Native DynamicPath+2/+6 are integer high words, not rounded targets.
+        session_.report_position_pd2({uint16_t(pathPosition->x), uint16_t(pathPosition->y)}, onlineIntentContext(view));
+    }
     if(displayOrigin && view.stage==OnlineStage::ProtocolReady && view.load.playerUnitId && !onlinePlayerDead(view.world)) {
         const auto found=view.world.units.find({0,*view.load.playerUnitId});
         if(found!=view.world.units.end() && found->second.position && found->second.pathVerificationRevision &&

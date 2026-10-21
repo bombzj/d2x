@@ -18,15 +18,19 @@
 #include <optional>
 #include <random>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <set>
 #include <chrono>
+#include <deque>
 
 namespace d2x {
 namespace net {
 using namespace protocol;
 using Clock = std::chrono::steady_clock;
 namespace realm_session_impl_detail {
+inline constexpr std::string_view administratorKickMessage =
+    "You were kicked out of the game by the administrator.";
 inline Bytes preauthenticatedRealmStartup() {
     Writer out;
     out.append(Bytes(64, 0)); // Cookie, status, native 8-byte and 48-byte chunks.
@@ -146,6 +150,12 @@ struct RealmSession::Impl {
     Clock::time_point respawnDeadline{};
     uint64_t combatSequence{};
     bool waitingChat{}, environmentSent{}, awaitingPong{}, registering{};
+    bool pd2GameOptionsSent{};
+    Clock::time_point pd2LastTick{}, pd2NextPosition{}, pd2NextBhReport{};
+    std::deque<std::pair<uint32_t, Clock::time_point>> pd2PendingTicks;
+    bool pd2StashInitializationSent{};
+    uint32_t pd2AutomapDeadline{}, pd2AutomapCalls{};
+    std::optional<uint32_t> pd2AutomapPlayer;
     std::optional<Endpoint> gameEndpoint;
     // CN player-data snapshots copied by core handlers 0x38FAD0 / 0x38FB00.
     std::array<Bytes, 2> pd2PlayerDataBlocks;
@@ -153,6 +163,8 @@ struct RealmSession::Impl {
     std::map<uint32_t, uint16_t> pd2RosterCounters;
     std::optional<uint32_t> pd2PlayerControl;
     Clock::time_point stashPageDeadline{};
+    OnlineStashLayout stashLayout;
+    bool identifyTargetPending{};
     std::optional<std::pair<uint8_t, uint32_t>> pd2MonstersRemaining;
     uint16_t gameJoinFlags{}; // Public MCP 04 reserved metadata; never a ticket.
     std::string listFilter;
@@ -197,8 +209,12 @@ struct RealmSession::Impl {
     void return_to_realm();
     void reset_area(bool preserveInitialPosition);
     void handle_game(Packet packet);
+    bool handle_stash_pd2(const Packet &packet);
+    void send_game_options_pd2();
     void send_game_heartbeat(Clock::time_point now);
     void service_game_heartbeat_pd2(Clock::time_point now);
+    void service_game_reports_pd2(Clock::time_point now);
+    bool handle_tick_echo_pd2(const Packet &packet);
     void pump_sid();
     void pump_mcp();
     void pump_game();

@@ -136,7 +136,13 @@ void RemoteUiClients::Impl::projectInteractions() {
                     npcView.talkEntries.push_back({title,{NpcMenuAction::TextTopic,{},m.stringId}});
                 }
             }
-            auto add=[&](std::string label,NpcMenuAction action) { npcView.services.push_back({std::move(label),{action,{}}}); };
+            auto add=[&](std::string label,NpcMenuAction action) {
+                // Basic conversation uses the shared native interaction path.
+                // CN service pricing and reward requests remain unprepared;
+                // do not offer actions that the session would reject.
+                if (online.remoteLobbyOnly && action != NpcMenuAction::Talk && action != NpcMenuAction::Cancel) return;
+                npcView.services.push_back({std::move(label),{action,{}}});
+            };
             auto menu=[&](std::string_view key,std::string fallback) {
                 if(const auto found=data.itemStrings.find(key);found!=data.itemStrings.end()) return found->second;
                 return fallback;

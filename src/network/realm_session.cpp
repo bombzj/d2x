@@ -68,7 +68,7 @@ void RealmSession::Impl::clear_game() {
     pd2PlayerDataBlocks = {};
     pd2PlayerUpdates = {};
     pd2RosterCounters.clear();
-    pd2PlayerControl.reset(); stashPageDeadline = {};
+    pd2PlayerControl.reset(); stashPageDeadline = {}; identifyTargetPending = false;
     pd2MonstersRemaining.reset();
     gamePackets.reset();
     worldPackets.clear();
@@ -84,6 +84,13 @@ void RealmSession::Impl::clear_game() {
     playerTradeDeadline = {};
     gameStarted = {}; nextHeartbeat = {}; lastPing = {}; lastGameReceive = {};
     view.gameHeartbeat = {};
+    view.pd2Reports = {};
+    pd2LastTick = {}; pd2NextPosition = {}; pd2NextBhReport = {}; pd2PendingTicks.clear();
+    view.gameServerNotices = {};
+    pd2GameOptionsSent = false;
+    pd2StashInitializationSent = false;
+    pd2AutomapDeadline = pd2AutomapCalls = 0;
+    pd2AutomapPlayer.reset();
     initializedNpc.reset(); portalRequest.reset();
     environmentSent = false;
     awaitingPong = false;
@@ -119,8 +126,24 @@ void RealmSession::Impl::error(OnlineErrorKind kind, std::string message, uint8_
 
 void RealmSession::Impl::fail(OnlineErrorKind kind, std::string message, uint8_t id, uint32_t code) {
     const auto heartbeat = view.gameHeartbeat;
+    const auto pd2Reports = view.pd2Reports;
+    auto serverNotices = std::move(view.gameServerNotices);
+    if (serverNotices.removalAnnouncedMilliseconds &&
+        (view.stage == OnlineStage::LoadingGame || view.stage == OnlineStage::ProtocolReady ||
+         view.stage == OnlineStage::LeavingGame) &&
+        (kind == OnlineErrorKind::Transport || kind == OnlineErrorKind::Timeout || kind == OnlineErrorKind::Server)) {
+        // The chat notice is evidence of announced removal, not a numeric
+        // rejection reason or proof of a particular anti-cheat decision.
+        message = "Game server announced removal: " + std::string(administratorKickMessage) +
+            " [at " + std::to_string(*serverNotices.removalAnnouncedMilliseconds) + " ms; " + message +
+            "; save completion unconfirmed]";
+        if (kind != OnlineErrorKind::Server) { id = 0x26; code = 0; }
+        kind = OnlineErrorKind::Server;
+    }
     shutdown();
     view.gameHeartbeat = heartbeat; // Preserve the terminal transport evidence for diagnostics.
+    view.pd2Reports = pd2Reports;
+    view.gameServerNotices = std::move(serverNotices);
     view.load = {};
     view.games.clear();
     view.selectedCharacter.clear();
@@ -275,6 +298,12 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     p.snapshotDirty = true;
 }
 RealmSession::~RealmSession() = default;
+void RealmSession::configure_stash(OnlineStashLayout layout) {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->view.stage != OnlineStage::Idle || !impl_->view.remoteLobbyOnly || !layout.valid())
+        throw ProtocolError("CN stash geometry must be prepared before connecting");
+    impl_->stashLayout = layout;
+}
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;

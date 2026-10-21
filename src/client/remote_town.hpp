@@ -49,6 +49,12 @@ class RemoteTown {
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
     std::optional<uint64_t> nextObjectTransition_;
+    bool reportAutomapRoomsPd2_{};
+    bool automapPlayerPresentPd2_{};
+    OnlinePoint automapPositionPd2_{};
+    std::vector<uint32_t> automapRoomCallbacksPd2_;
+    void refresh_automap_rooms_pd2(const OnlineView &);
+    void record_automap_room_pd2();
     bool updateNative(const OnlineView &);
     void updateMapTargets(const OnlineView &);
     void prepareTownAutomap(const OnlineView &);
@@ -56,7 +62,7 @@ class RemoteTown {
     void updateAutomapView(const OnlineView &);
 
   public:
-    explicit RemoteTown(Archives &a);
+    explicit RemoteTown(Archives &a, bool reportAutomapRoomsPd2 = false);
     void update(const OnlineView &, std::optional<Vec> displayPosition = {});
     const OnlineSceneView &read() const { return view_; }
     const Map *map() const { return map_; }
@@ -64,6 +70,7 @@ class RemoteTown {
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
+    std::vector<uint32_t> take_automap_room_reveals_pd2();
     AutomapDiscovery discovery() const;
     void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);
 };

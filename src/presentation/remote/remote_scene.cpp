@@ -266,6 +266,11 @@ std::optional<Vec> RemoteScene::playerDisplayPosition(const OnlineView &view) co
     return found->second.position + found->second.correction;
 }
 const std::vector<OnlinePlayerDisplay> &RemoteScene::players() const { return impl_->players; }
+std::optional<Vec> RemoteScene::playerPathPosition(const OnlineView &view) const {
+    // Reuse assignment/area/discontinuity checks, but exclude visual correction.
+    if (!playerDisplayPosition(view)) return {};
+    return impl_->motion.at({0, *impl_->playerId}).position;
+}
 std::vector<std::string> RemoteScene::effectLimitations() const {
     return {impl_->effectLimitations.begin(), impl_->effectLimitations.end()};
 }

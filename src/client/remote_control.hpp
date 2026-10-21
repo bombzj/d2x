@@ -46,7 +46,7 @@ class RemoteControl {
         approach_.reset();
     }
     void cancelMovement() { movement_.reset(); approach_.reset(); }
-    void tick(std::optional<Vec> displayOrigin = {});
+    void tick(std::optional<Vec> displayOrigin = {}, std::optional<Vec> pathPosition = {});
     const std::string &reason() const { return reason_; }
     std::optional<OnlineIntentContext> intentContext() const {
         if (approach_) return approach_->context;

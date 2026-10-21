@@ -117,11 +117,29 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     const auto &storage = v.world.storage;
     result["inventory"]["storage"] = {{"kind", storageNames.at(size_t(storage.kind))},
         {"source", optional(storage.source)}, {"requested", storageNames.at(size_t(storage.requested))},
-        {"requestedSource", optional(storage.requestedSource)}, {"revision", storage.revision}};
+        {"requestedSource", optional(storage.requestedSource)}, {"revision", storage.revision},
+        {"page", v.world.stashPage}, {"requestedPage", optional(v.world.requestedStashPage)},
+        {"shared", v.world.sharedStash}, {"cnConfirmed", v.world.cnStashConfirmed},
+        {"requestedShared", v.world.requestedStashPage ? Json(v.world.requestedSharedStash) : Json(nullptr)},
+        {"pageFlags", v.world.cnStashPageFlags}, {"playerFlags", v.world.cnStashPlayerFlags},
+        {"initialized", v.world.stashInitialized}, {"synchronized", v.world.stashSynchronized}};
     const auto &heartbeat = v.gameHeartbeat;
     result["gameHeartbeat"] = {{"sent", heartbeat.sent}, {"received", heartbeat.received}, {"pending", heartbeat.pending},
         {"elapsedMilliseconds", heartbeat.elapsedMilliseconds}, {"lastPacketMilliseconds", heartbeat.lastPacketMilliseconds},
         {"lastPingMilliseconds", heartbeat.lastPingMilliseconds}, {"lastPongMilliseconds", heartbeat.lastPongMilliseconds}};
+    result["gameServerNotices"] = {{"removalAnnouncedMilliseconds", optional(v.gameServerNotices.removalAnnouncedMilliseconds)},
+        {"recent", Json::array()}};
+    const auto &reports = v.pd2Reports;
+    result["pd2Reports"] = {{"ticksSent", reports.ticksSent}, {"tickEchoes", reports.tickEchoes},
+        {"unmatchedEchoes", reports.unmatchedEchoes}, {"positionsSent", reports.positionsSent},
+        {"bhReportsSent", reports.bhReportsSent}, {"lastTick", optional(reports.lastTick)},
+        {"lastEcho", optional(reports.lastEcho)}, {"roundTripMilliseconds", optional(reports.roundTripMilliseconds)},
+        {"lastPosition", reports.lastPosition ? Json{{"x", reports.lastPosition->x}, {"y", reports.lastPosition->y}} : Json(nullptr)}};
+    for (const auto &notice : v.gameServerNotices.recent)
+        result["gameServerNotices"]["recent"].push_back({{"sequence", notice.sequence},
+            {"elapsedMilliseconds", notice.receivedMilliseconds}, {"type", notice.type}, {"language", notice.language},
+            {"unitType", notice.unitType}, {"unitId", notice.unitId}, {"messageColor", notice.messageColor},
+            {"nameColor", notice.nameColor}, {"senderBytes", notice.name}, {"textBytes", notice.text}});
     result["inventory"]["storage"]["page"] = v.world.stashPage;
     result["inventory"]["storage"]["requestedPage"] = optional(v.world.requestedStashPage);
     result["inventory"]["externalStorage"] = {{"guildItems", v.world.extendedStorage.guildItems.size()},
@@ -143,7 +161,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             {"code", wire.code}, {"name", item.name}, {"artKey", item.artKey}, {"width", item.width}, {"height", item.height},
             {"ownerType", optional(wire.ownerType)}, {"owner", optional(wire.owner)}, {"mode", wire.mode},
             {"page", wire.page}, {"body", wire.body}, {"x", wire.x}, {"y", wire.y},
-            {"stashPage", wire.stashPage}, {"positionKnown", wire.positionKnown},
+            {"stashPage", wire.stashPage}, {"sharedStash", wire.sharedStash}, {"positionKnown", wire.positionKnown},
             {"groundPosition", wire.mode == 3 || wire.mode == 5 ? Json{{"x", wire.groundX}, {"y", wire.groundY}} : Json(nullptr)},
             {"action", wire.action}, {"flags", wire.flags}, {"format", item.format}, {"identified", item.identified},
             {"quality", item.quality}, {"level", item.level}, {"quantity", optional(item.quantity)},
@@ -632,7 +650,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             };
             intent.itemRevision = revision("itemRevision"); intent.targetRevision = revision("targetRevision");
             intent.x = cell("x", 15); intent.y = cell("y", 15);
-            intent.page = cell("page", intent.action == OnlineItemAction::StoragePage ? 10 : 4); intent.body = cell("body", 10);
+            intent.page = cell("page", intent.action == OnlineItemAction::StoragePage ? int(onlineCnStashPageLimit) : 4);
+            intent.sharedStash = request.value("shared", false); intent.body = cell("body", 10);
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
             intent.gamble = request.value("gamble", false);

@@ -88,6 +88,26 @@ inline Rectangle inventoryGoldButton() {
     return {p.x + 84 * inventoryScale(), p.y + 392 * inventoryScale(),
             20 * inventoryScale(), 18 * inventoryScale()};
 }
+inline Rectangle inventoryClose(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryClose();
+    const auto p = inventoryBounds(inventory);
+    return {p.x + 18 * inventoryScale(), p.y + (inventory.panelHeight - 4) * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
+}
+inline Rectangle inventoryGold(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryGold();
+    const auto p = inventoryBounds(inventory);
+    // CN invchar6 frames 4-7: the gold socket starts at (72,468),
+    // with the extended art's signed DC6 origin at Y=25.
+    return {p.x + 72 * inventoryScale(), p.y + (inventory.panelHeight + 1) * inventoryScale(),
+            116 * inventoryScale(), 20 * inventoryScale()};
+}
+inline Rectangle inventoryGoldButton(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return inventoryGoldButton();
+    const auto field = inventoryGold(inventory);
+    return {field.x + 2 * inventoryScale(), field.y + 2 * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
 inline Rectangle inventoryToggle() {
     return hudMenuButton();
 }
@@ -116,16 +136,23 @@ inline Rectangle storageBounds(const InventoryView &inventory) {
     panel.height = inventory.storagePanelHeight * inventoryScale();
     return panel;
 }
-// CN core RVA 0x2EC0A0: ten tabs, 29 px stride, drawn above the bank grid.
-inline Rectangle storageTab(unsigned page) {
+// Keep the original CN button art in the strip below the extended MPQ
+// panel. Window height includes D2X's HUD and is not a classic panel anchor.
+inline Rectangle storageNavigationButton(unsigned button) {
     const auto p = classicPanelBounds(false);
-    const unsigned index = page - 1;
-    return {p.x + (14 + 29 * index + (index > 7)) * inventoryScale(),
-            p.y - 36 * inventoryScale(), 30 * inventoryScale(), 22 * inventoryScale()};
+    constexpr std::array x{16, 128, 160};
+    return {p.x + x.at(button) * inventoryScale(), classicSideBounds(false).height - 32 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),
             31 * inventoryScale(), 34 * inventoryScale()};
+}
+inline Rectangle storageClose(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageClose();
+    const auto p = storageBounds(inventory);
+    return {p.x + 274 * inventoryScale(), p.y + (inventory.storagePanelHeight - 14) * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle cubeBounds() {
     return classicPanelBounds(false);
@@ -151,6 +178,19 @@ inline Rectangle storageGoldButton(bool expansion) {
     // Native stash button moves down 198 pixels in the classic layout.
     return {p.x + 75 * inventoryScale(),
             p.y + (expansion ? 23 : 221) * inventoryScale(),
+            20 * inventoryScale(), 18 * inventoryScale()};
+}
+inline Rectangle storageGold(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageGold(inventory.stashLayout.expansion);
+    const auto p = storageBounds(inventory);
+    // CN tradestash's two bottom fields are bank gold and the page name.
+    return {p.x + 72 * inventoryScale(), p.y + (inventory.storagePanelHeight - 18) * inventoryScale(),
+            176 * inventoryScale(), 20 * inventoryScale()};
+}
+inline Rectangle storageGoldButton(const InventoryView &inventory) {
+    if (!inventory.personalItemActionsOnly) return storageGoldButton(inventory.stashLayout.expansion);
+    const auto field = storageGold(inventory);
+    return {field.x + 2 * inventoryScale(), field.y + 2 * inventoryScale(),
             20 * inventoryScale(), 18 * inventoryScale()};
 }
 inline Rectangle goldDialogBounds() {

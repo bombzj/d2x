@@ -39,8 +39,13 @@ RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfil
         } else if (name == "Trade Page 2-2") {
             view_.tradeColumns = inventory.number(row, "gridX").value_or(0);
             view_.tradeRows = inventory.number(row, "gridY").value_or(0);
+        } else if (name == "LocalStashPagesSave2") {
+            stashLayout_.cacheColumns = unsigned(inventory.number(row, "gridX").value_or(0));
+            stashLayout_.cacheRows = unsigned(inventory.number(row, "gridY").value_or(0));
         }
     }
+    stashLayout_.columns = unsigned(view_.stashColumns);
+    stashLayout_.rows = unsigned(view_.stashRows);
 }
 int RemoteInventory::baseNumber(const OnlineItem &item, std::string_view column) const {
     const auto found = bases_.find(item.code);
@@ -398,8 +403,11 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     if (command.action == OnlineItemAction::StoragePage) {
         if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || view_.cursor ||
-            command.page < 1 || command.page > 10 || command.page == world.stashPage)
-            return reject("Stash-page selection requires an open CN personal stash and an empty cursor");
+            !world.stashInitialized || !world.stashSynchronized || world.requestedStashPage ||
+            (!world.cnStashConfirmed && (!command.sharedStash || command.page != 1 || world.stashPage != 1)) ||
+            (world.cnStashPlayerFlags & 8) ||
+            !onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash))
+            return reject("CN stash navigation requires a synchronized storage domain and an empty cursor");
         return send();
     }
     if (command.action == OnlineItemAction::SwitchWeapons || command.action == OnlineItemAction::StorageClose ||
@@ -432,12 +440,22 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (found == world.items.end()) return reject("Item is not assigned in the current game");
     const auto &wire = found->second;
     if (pd2Items && (!wire.positionKnown ||
-        (wire.mode == 0 && wire.page == 5 && wire.stashPage != world.stashPage)))
+        (wire.mode == 0 && wire.page == 5 && (!world.stashSynchronized || (wire.stashPage != world.stashPage || wire.sharedStash != world.sharedStash)))))
         return reject("Item position is not assigned in the active storage page");
     if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId, world.storage.kind))
         return reject("Item is outside the supported personal inventory context");
     const auto &decoded = view_.items.at(command.item);
     if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
+    auto validPositionPd2 = [&](const OnlineItem &item, const OnlineDecodedItem &data) {
+        if (!item.positionKnown) return false;
+        if (item.mode == 2) return item.x < view_.beltSlots && data.width == 1 && data.height == 1;
+        if (item.mode != 0) return true;
+        const int columns = item.page == 1 ? view_.columns : item.page == 4 ? view_.cubeColumns : view_.stashColumns;
+        const int rows = item.page == 1 ? view_.rows : item.page == 4 ? view_.cubeRows : view_.stashRows;
+        return (item.page == 1 || item.page == 4 || item.page == 5) && data.width > 0 && data.height > 0 &&
+            int(item.x) + data.width <= columns && int(item.y) + data.height <= rows;
+    };
+    if (pd2Items && !validPositionPd2(wire, decoded)) return reject("Item shape exceeds its assigned personal container");
     if (command.itemRevision && command.itemRevision != wire.revision) return reject("Stale item revision");
     command.itemRevision = wire.revision;
     auto owned = [&](const OnlineItem &item) { return onlineItemOwnedBy(item, online.load.playerUnitId); };
@@ -465,11 +483,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Target must be a different item belonging to this player");
         target = &entry->second; targetData = &view_.items.at(command.target);
         if (pd2Items && (!target->positionKnown ||
-            (target->mode == 0 && target->page == 5 && target->stashPage != world.stashPage)))
+            (target->mode == 0 && target->page == 5 && (!world.stashSynchronized || (target->stashPage != world.stashPage || target->sharedStash != world.sharedStash)))))
             return reject("Target position is not assigned in the active storage page");
         if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId, world.storage.kind))
             return reject("Target is outside the supported personal inventory context");
         if (!targetData->decoded || targetData->gamble) return reject("Target item data is unavailable");
+        if (pd2Items && !validPositionPd2(*target, *targetData)) return reject("Target shape exceeds its assigned personal container");
         if (command.targetRevision && command.targetRevision != target->revision) return reject("Stale target item revision");
         command.targetRevision = target->revision;
     }
@@ -479,12 +498,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if ((command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4) ||
             (command.page == 2 && world.playerTrade.phase != OnlinePlayerTrade::Phase::Open) ||
             (command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
-            (command.page == 4 && world.storage.kind != OnlineStorageKind::Stash) ||
+            (command.page == 4 && (world.storage.kind != OnlineStorageKind::Stash || (pd2Items && !world.stashSynchronized))) ||
             (world.storage.kind == OnlineStorageKind::Cube && world.storage.source == command.item) ||
             decoded.width < 1 || decoded.height < 1 || int(command.x) + decoded.width > columns || int(command.y) + decoded.height > rows) return false;
         for (const auto &[id, item] : world.items) {
             if (id == replaced || !owned(item) || item.mode != 0 || item.page != command.page + 1) continue;
-            if (pd2Items && item.page == 5 && item.stashPage != world.stashPage) continue;
+            if (pd2Items && item.page == 5 && (item.stashPage != world.stashPage || item.sharedStash != world.sharedStash)) continue;
             if (pd2Items && !item.positionKnown) return false;
             const auto &data = view_.items.at(id);
             if (!data.decoded || data.width < 1 || data.height < 1) return false;
@@ -634,10 +653,22 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::BeltAuto:
         if(!backpack(wire) || view_.cursor || !baseNumber(wire,"belt") || decoded.width!=1 || decoded.height!=1)
             return reject("Automatic belt placement requires a beltable backpack item and empty cursor");
+        if (pd2Items) {
+            std::vector<bool> occupied(size_t(view_.beltSlots), false);
+            for (const auto &[id, item] : world.items)
+                if (owned(item) && item.mode == 2 && item.x < occupied.size()) occupied[item.x] = true;
+            if (std::all_of(occupied.begin(), occupied.end(), [](bool value) { return value; }))
+                return reject("The server-reported belt is full");
+        }
         break;
     case OnlineItemAction::CubeStore:
         if((!cursor() && wire.mode!=3) || !owned(*target) || target->mode!=0 || (target->page!=1 && target->page!=5) || baseNumber(*target,"pSpell")!=7)
             return reject("Cube placement requires a cursor/ground item and this player's stored cube");
+        if (pd2Items && (decoded.width < 1 || decoded.height < 1 || decoded.width > view_.cubeColumns ||
+            decoded.height > view_.cubeRows || (wire.mode == 3 && (view_.cursor ||
+                nativeUnitDistance({float(world.playerPosition->x), float(world.playerPosition->y)}, 2,
+                    {float(wire.groundX), float(wire.groundY)}, 1) > 50))))
+            return reject("Cube item shape or ground pickup range is unavailable");
         break;
     case OnlineItemAction::CubeOpen:
         if (!accessible(wire) || view_.cursor || (!pd2Items && !isType(wire, "ques")) || baseNumber(wire, "pSpell") != 7)

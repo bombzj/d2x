@@ -27,7 +27,7 @@ Agent快速入口：[架构速览](architecture/OVERVIEW.md#agent速览) → [�
 | 独立控制台D2GS、PvPGN后端配置、启动／关闭与恢复 | [PvPGN服务端](development/PVPGN_SERVER.md) |
 | 内核子系统、状态所有权、命令／固定步／事务／可靠事件与空实现入口 | [内核子系统](modules/SERVER_SYSTEMS.md) |
 | 原版来源、固定版本与许可 | [资料来源](resources/THIRD_PARTY.md)、[MPQ](resources/MPQ.md)、[原许可](licenses) |
-| 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md) |
+| 原版与PD2／CN版本选择、发行方式、初始化及资源／协议差异 | [版本选择与兼容设计](architecture/PD2_COMPATIBILITY.md#版本选择与发布方式)、[CN样本DLL／位流取证](resources/PD2_CN_DLL_ANALYSIS.md)、[ProjectDiablo完整函数目录与概览](resources/pd2-core/README.md) |
 | 启动、构建、打包与已有诊断 | [开发指南](development/BUILD_AND_RUN.md)、[调试管道](development/DEBUG_PIPE.md)、[崩溃记录](development/CRASH_REPORTS.md) |
 | 原版人物数值对照的存档装配、覆盖矩阵与截图数据契约 | [对照存档计划](development/CHARACTER_REFERENCE_FIXTURES.md) |
 | 原版DLL地图对照与实机房间恢复排查 | [地图对照排查](development/MAP_PARITY.md) |

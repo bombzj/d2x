@@ -18,7 +18,8 @@ struct OnlineItem {
     // common renderer can finish its one-shot flippy without restarting it.
     uint64_t groundAnimationRevision{}, groundAnimationReceivedMilliseconds{};
     uint8_t action{}, component{}, mode{}, body{}, page{}, x{}, y{};
-    uint8_t stashPage{}; // CN personal-page identity; zero outside stash.
+    uint32_t stashPage{}; // One-based CN page within the personal/account storage domain.
+    bool sharedStash{};
     bool positionKnown = true; // A native grid rebuild can invalidate placement.
     uint16_t groundX{}, groundY{};
     std::optional<uint8_t> ownerType;
@@ -50,6 +51,29 @@ enum class OnlineItemAction {
     BeltAuto, CubeStore, StoragePage
 };
 enum class OnlineStorageKind { None, Stash, Cube };
+// Fixed mdll1 sample: zero-based page IDs, limits at RVA 0x3D108/0x3D10C.
+// This bounds accepted metadata; it does not advertise the server's page count.
+inline constexpr uint32_t onlineCnStashPageLimit = 500;
+enum class OnlineCnStashNavigation { Previous, Next, Personal, Shared };
+inline std::optional<OnlineCnStashNavigation> onlineCnStashCommand(uint32_t page, bool shared,
+                                                                uint32_t target, bool targetShared) {
+    if (!page || page > onlineCnStashPageLimit || !target || target > onlineCnStashPageLimit) return {};
+    if (shared != targetShared) {
+        if (target != 1) return {};
+        return targetShared ? OnlineCnStashNavigation::Shared : OnlineCnStashNavigation::Personal;
+    }
+    if (target + 1 == page) return OnlineCnStashNavigation::Previous;
+    if (target == page + 1) return OnlineCnStashNavigation::Next;
+    return {}; // Native navigation is relative; do not synthesize a direct page selector.
+}
+// Prepared from the selected MPQ Inventory rows; networking never reads tables.
+struct OnlineStashLayout {
+    unsigned columns{}, rows{}, cacheColumns{}, cacheRows{};
+    bool valid() const {
+        return columns && columns <= 16 && rows && rows <= 16 && cacheColumns <= 255 && cacheRows <= 255 &&
+            cacheColumns / columns > 1 && cacheRows / rows > 1;
+    }
+};
 // CN item requests share the native contract. Guild/preview inventories and
 // services remain separate from the player's currently authorized containers.
 inline bool onlinePd2ItemAction(OnlineItemAction action) {
@@ -62,9 +86,7 @@ inline bool onlinePd2ItemAction(OnlineItemAction action) {
     case OnlineItemAction::Stack: case OnlineItemAction::Book: case OnlineItemAction::Identify:
     case OnlineItemAction::Socket: case OnlineItemAction::SwitchWeapons:
     case OnlineItemAction::CubeOpen: case OnlineItemAction::CubeStore:
-    case OnlineItemAction::StorageClose: return true;
-    // 0x55 is encoded, but the current CN service has not confirmed 0x2D.
-    // Keep paging closed until permissions and the full reply chain are verified.
+    case OnlineItemAction::StorageClose: case OnlineItemAction::StoragePage: return true;
     default: return false;
     }
 }
@@ -85,6 +107,7 @@ inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem 
                                      OnlineStorageKind storage) {
     if (item.flags & (0x40000000u | 0x2000000u)) return false;
     if (action == OnlineItemAction::Pickup) return item.mode == 3;
+    if (action == OnlineItemAction::CubeStore && item.mode == 3) return true;
     if (action == OnlineItemAction::Take) return onlinePd2StoredItem(item, player, storage) ||
         onlineActiveEquipmentItem(item, player) || (onlineItemOwnedBy(item, player) && item.mode == 2);
     if (action == OnlineItemAction::Unequip) return onlineActiveEquipmentItem(item, player);
@@ -110,7 +133,9 @@ struct OnlineItemCommand {
     OnlineItemAction action{};
     uint32_t item{}, target{}, npc{}, amount{};
     uint64_t itemRevision{}, targetRevision{};
-    uint8_t x{}, y{}, page{}, body{}, beltSlot{};
+    uint8_t x{}, y{}, body{}, beltSlot{};
+    uint32_t page{}; // Container page for items; one-based page for StoragePage.
+    bool sharedStash{}; // StoragePage only; never a container/ownership flag.
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     uint32_t oppositeItem{}; // Local precondition only; native server selects this hand.
     uint64_t oppositeRevision{};

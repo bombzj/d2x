@@ -184,7 +184,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     std::string reloadCharacter;
     uint8_t localDifficulty{};
     bool localDifficultyChosen = false;
-    RemoteTown town(archives);
+    RemoteTown town(archives, options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020);
     std::shared_ptr<hosting::AutomapStore> automapStore;
     std::optional<std::pair<uint32_t, uint32_t>> automapSeeds;
     struct {bool present{};uint32_t value{};} savedAutomapLayer;
@@ -223,6 +223,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     auto hostFrame = std::chrono::steady_clock::now();
     RemoteControl control(town, session);
     RemoteInventory inventory(archives, options.protocolProfile);
+    if (options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+        session.configure_stash(inventory.stashLayout());
     RemoteCombat combat(archives, town, session, inventory);
     profile.mark("client-adapters-ready");
     ClientPreferences preferences = loadClientPreferences();
@@ -516,7 +518,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (focused && escape) control.cancelMovement();
         if (!focused || presentationPaused || (sharedUi && sharedUi->ui().blocksInput()))
             control.cancelMovement();
-        control.tick(scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
+        control.tick(scene ? scene->playerDisplayPosition(session.read()) : std::nullopt,
+            scene ? scene->playerPathPosition(session.read()) : std::nullopt);
         if (renderedArea != town.read().area) {
             // Walking into an adjacent level changes the binding, not the
             // actor's path. RemoteScene refreshes palette/origin each frame;
@@ -1045,6 +1048,9 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (quit || presentationPaused)
             continue;
         town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
+        const auto automapCallbacksPd2 = town.take_automap_room_reveals_pd2();
+        if (!automapCallbacksPd2.empty())
+            session.report_automap_rooms_pd2(automapCallbacksPd2, onlineIntentContext(session.read()));
         if (leaveGame) session.leave_game();
         if (action.editedAccount && !loginMemory.write(*action.editedAccount, {}))
             notice = "Unable to remember the edited account name.";

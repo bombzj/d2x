@@ -62,6 +62,59 @@ bool RealmSession::leave_game() {
         return false;
     }
 }
+bool RealmSession::report_automap_rooms_pd2(std::span<const uint32_t> callbacks, const OnlineIntentContext &context) {
+    std::lock_guard lock(impl_->mutex);
+    auto &p = *impl_;
+    if (p.compatibility.profile != ClientProfile::Pd2CnNormal20261020 || callbacks.empty()) return true;
+    if ((p.view.stage != OnlineStage::ProtocolReady && p.view.stage != OnlineStage::LoadingGame) ||
+        !onlineWorldMatches(context, p.view) ||
+        !p.view.load.playerUnitId || !p.view.world.units.contains({0, *p.view.load.playerUnitId})) return false;
+    if (p.pd2AutomapPlayer != p.view.load.playerUnitId) {
+        p.pd2AutomapPlayer = p.view.load.playerUnitId;
+        p.pd2AutomapDeadline = p.pd2AutomapCalls = 0;
+    }
+    try {
+        // ProjectDiablo 9c2b4d46 RVA 0x291D90, including the native strict
+        // unsigned deadline comparison. Report 2 describes initialization;
+        // it is never manufactured as a successful security check.
+        for (const uint32_t now : callbacks) {
+            if (!p.pd2AutomapCalls)
+                p.sent(p.gs, automap_report_pd2_cn(AutomapReportPd2Cn::Initial));
+            if (now > p.pd2AutomapDeadline) {
+                p.pd2AutomapCalls = 1;
+                p.pd2AutomapDeadline = now + 250;
+            }
+            if (++p.pd2AutomapCalls > 200) {
+                p.pd2AutomapCalls = 1;
+                p.sent(p.gs, automap_report_pd2_cn(AutomapReportPd2Cn::ExcessiveCalls));
+            }
+        }
+        p.snapshotDirty = true;
+        return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "Automap room report could not be queued"); return false;
+    }
+}
+bool RealmSession::report_position_pd2(OnlinePoint position, const OnlineIntentContext &context) {
+    std::lock_guard lock(impl_->mutex);
+    auto &p = *impl_;
+    if (p.compatibility.profile != ClientProfile::Pd2CnNormal20261020) return true;
+    if (p.view.stage != OnlineStage::ProtocolReady || !onlineWorldMatches(context, p.view) ||
+        !p.view.load.serverLoadComplete || !p.view.load.playerUnitId ||
+        !p.view.world.units.contains({0, *p.view.load.playerUnitId}) ||
+        p.view.gameServerNotices.removalAnnouncedMilliseconds) return false;
+    const auto now = Clock::now();
+    if (now < p.pd2NextPosition) return true;
+    try {
+        p.sent(p.gs, game_position_pd2_cn(position.x, position.y));
+        // Core 0x342AC0: 40 ms polling; 0x2E9ED0 reports every 30 polls.
+        p.pd2NextPosition = now + std::chrono::milliseconds(1200);
+        ++p.view.pd2Reports.positionsSent; p.view.pd2Reports.lastPosition = position;
+        p.changed(); p.snapshotDirty = true; return true;
+    } catch (const std::exception &) {
+        p.fail(OnlineErrorKind::Transport, "CN current-position report could not be queued"); return false;
+    }
+}
 bool RealmSession::update_position(OnlinePoint reported, uint64_t verificationRevision, const OnlineIntentContext &context) {
     std::lock_guard lock(impl_->mutex);
     auto &p=*impl_;
@@ -147,10 +200,6 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly && intent != OnlineObjectIntent::Stash) {
-        p.error(OnlineErrorKind::Unsupported, "Object interactions are unavailable for this client profile");
-        return false;
-    }
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     if (intent != OnlineObjectIntent::Operate && target.type != 2) {
         p.error(OnlineErrorKind::Input, "Stash and waypoint intents require an assigned object"); return false;
@@ -198,10 +247,6 @@ bool RealmSession::interact_npc(uint32_t serverUnitId, std::optional<OnlineInten
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
-        p.error(OnlineErrorKind::Unsupported, "NPC interactions are unavailable for this client profile");
-        return false;
-    }
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto found = p.view.world.units.find({1, serverUnitId});
     if (!p.view.load.serverLoadComplete || !p.view.world.playerPosition ||
@@ -408,8 +453,12 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.error(OnlineErrorKind::Input, "Wait for the server stash-page confirmation"); return false;
     }
     if (command.action == OnlineItemAction::StoragePage && (!p.view.remoteLobbyOnly ||
-        world.storage.kind != OnlineStorageKind::Stash || command.page < 1 || command.page > 10 ||
-        command.page == world.stashPage || onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
+        !world.stashInitialized || (world.cnStashConfirmed && !world.stashSynchronized) ||
+        world.storage.kind != OnlineStorageKind::Stash ||
+        (!world.cnStashConfirmed && (!command.sharedStash || command.page != 1 || world.stashPage != 1)) ||
+        (world.cnStashPlayerFlags & 8) ||
+        !onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash) ||
+        onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
         p.error(OnlineErrorKind::Input, "Stash-page selection is not available in this context"); return false;
     }
     if (world.playerTrade.active()) {
@@ -449,6 +498,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         }
     }
     if (hasItem && command.action != OnlineItemAction::Pickup && command.action != OnlineItemAction::Buy &&
+        !(p.view.remoteLobbyOnly && command.action == OnlineItemAction::CubeStore && item->second.mode == 3) &&
         (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId) &&
         !(command.action==OnlineItemAction::HirelingEquipment && world.hireling && item->second.ownerType==1 && item->second.owner==world.hireling->id)) {
         p.error(OnlineErrorKind::Input, "Item is not owned by this server player"); return false;
@@ -468,11 +518,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             command.action == OnlineItemAction::CubeStore;
         if (hasItem && (item == world.items.end() ||
             !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId, world.storage.kind) ||
-            !item->second.positionKnown || (item->second.mode == 0 && item->second.page == 5 && item->second.stashPage != world.stashPage) ||
+            !item->second.positionKnown || (item->second.mode == 0 && item->second.page == 5 &&
+                (!world.stashSynchronized || (item->second.stashPage != world.stashPage || item->second.sharedStash != world.sharedStash))) ||
             (needsTarget &&
                 (target == world.items.end() || !command.targetRevision || command.target == command.item ||
                     !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId, world.storage.kind) ||
-                    !target->second.positionKnown || (target->second.mode == 0 && target->second.page == 5 && target->second.stashPage != world.stashPage))))) {
+                    !target->second.positionKnown || (target->second.mode == 0 && target->second.page == 5 &&
+                        (!world.stashSynchronized || (target->second.stashPage != world.stashPage || target->second.sharedStash != world.sharedStash))))))) {
             p.error(OnlineErrorKind::Input, "Item is outside the supported personal inventory context"); return false;
         }
         if ((command.action == OnlineItemAction::Unequip ||
@@ -504,7 +556,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         }
         if (command.action == OnlineItemAction::Place &&
             ((command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
-             (command.page == 4 && world.storage.kind != OnlineStorageKind::Stash))) {
+             (command.page == 4 && (world.storage.kind != OnlineStorageKind::Stash || !world.stashSynchronized)))) {
             p.error(OnlineErrorKind::Input, "Destination container is not authorized by the server"); return false;
         }
     }
@@ -522,6 +574,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     }
     try {
         Writer out;
+        p.identifyTargetPending = false;
         const auto point = *world.playerPosition;
         const auto mode = item == world.items.end() ? 0 : item->second.mode;
         auto pair = [&](uint8_t opcode) { out.u8(opcode); out.u32(command.item); out.u32(command.target); };
@@ -559,11 +612,28 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
                 Writer prepare; prepare.u8(mode == 2 ? 0x26 : 0x20); prepare.u32(command.item);
                 if (mode == 2) { prepare.u32(0); prepare.u32(0); }
                 else { prepare.u32(point.x); prepare.u32(point.y); }
+                if (p.view.remoteLobbyOnly) {
+                    out.append(prepare.release());
+                    p.identifyTargetPending = true;
+                    break; // Wait for this source's 0x3F before sending the target.
+                }
                 p.sent(p.gs, prepare.release());
             }
             out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
         case OnlineItemAction::SwitchWeapons: out.u8(0x60); break;
-        case OnlineItemAction::StoragePage: out.u8(0x55); out.u8(command.page); break;
+        case OnlineItemAction::StoragePage: {
+            const auto operation = onlineCnStashCommand(world.stashPage, world.sharedStash, command.page, command.sharedStash);
+            if (!operation) return false;
+            // mdll1 RVA 0x12AB0 -> 0x6A00, three bytes, WORD is little endian.
+            out.u8(0x3A);
+            switch (*operation) {
+            case OnlineCnStashNavigation::Previous: out.u16(0x19); break;
+            case OnlineCnStashNavigation::Next: out.u16(0x1A); break;
+            case OnlineCnStashNavigation::Personal: out.u16(0x1B); break;
+            case OnlineCnStashNavigation::Shared: out.u16(0x1C); break;
+            }
+            break;
+        }
         case OnlineItemAction::CubeOpen:
             // Keep the stash lease until the server opens a cube stored inside it.
             if (world.storage.kind != OnlineStorageKind::Stash) p.close_interaction();
@@ -605,6 +675,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         p.sent(p.gs, out.release());
         if (command.action == OnlineItemAction::StoragePage) {
             world.requestedStashPage = command.page;
+            world.requestedSharedStash = command.sharedStash;
             ++world.interactionGeneration;
             p.stashPageDeadline = Clock::now() + p.options.timeout;
         }

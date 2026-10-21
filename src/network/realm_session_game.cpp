@@ -3,6 +3,22 @@
 namespace d2x {
 namespace net {
 
+void RealmSession::Impl::send_game_options_pd2() {
+    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || pd2GameOptionsSent ||
+        view.stage != OnlineStage::LoadingGame || !view.load.playerUnitId)
+        return;
+    const auto player = view.world.units.find({0, *view.load.playerUnitId});
+    if (player == view.world.units.end() || !player->second.classId || player->second.name.empty())
+        return;
+    if (!selected || player->second.name != selected->name || player->second.classId != selected->characterClass)
+        throw ProtocolError("Assigned game player differs from the selected Realm character");
+    // Native 0x59 allocates the player; 0x0B assigns GetPlayerUnit's pointer.
+    // BH's 100 ms poll reports on that first non-null pointer. Send once per
+    // connection at the equivalent assignment boundary, before gameplay requests.
+    sent(gs, game_options_pd2_cn(options.lootAllocation));
+    pd2GameOptionsSent = true;
+}
+
 void RealmSession::Impl::send_game_heartbeat(Clock::time_point now) {
     auto &heartbeat = view.gameHeartbeat;
     heartbeat.elapsedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count());
@@ -30,6 +46,51 @@ void RealmSession::Impl::service_game_heartbeat_pd2(Clock::time_point now) {
     send_game_heartbeat(now);
 }
 
+void RealmSession::Impl::service_game_reports_pd2(Clock::time_point now) {
+    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || !pd2GameOptionsSent ||
+        (view.stage != OnlineStage::LoadingGame && view.stage != OnlineStage::ProtocolReady) ||
+        !view.load.playerUnitId || view.gameServerNotices.removalAnnouncedMilliseconds) return;
+    if (!view.world.units.contains({0, *view.load.playerUnitId})) return;
+    // mdll1 0x13FB0: strict >1000 ms, with a fresh low-32-bit monotonic tick.
+    // Keep this independent of vanilla 6D/8F and never replay missed periods.
+    if (pd2LastTick == Clock::time_point{} || now - pd2LastTick > std::chrono::milliseconds(1000)) {
+        const auto tick = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+        sent(gs, game_tick_pd2_cn(tick));
+        pd2LastTick = now;
+        if (pd2PendingTicks.size() == 32) pd2PendingTicks.pop_front();
+        pd2PendingTicks.emplace_back(tick, now);
+        ++view.pd2Reports.ticksSent; view.pd2Reports.lastTick = tick; changed();
+    }
+    // Native BH sleeps 10 seconds between file checksum reports. The app
+    // computes this from the selected SHA-verified BH file during login setup.
+    if (pd2NextBhReport == Clock::time_point{}) pd2NextBhReport = now + std::chrono::seconds(10);
+    if (options.originalClient.cnBhCrc32 && now >= pd2NextBhReport) {
+        sent(gs, game_bh_report_pd2_cn(*options.originalClient.cnBhCrc32));
+        pd2NextBhReport = now + std::chrono::seconds(10);
+        ++view.pd2Reports.bhReportsSent; changed();
+    }
+}
+
+bool RealmSession::Impl::handle_tick_echo_pd2(const Packet &packet) {
+    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || packet.id != 0x9D ||
+        packet.body.empty() || packet.body[0] != 0x2C) return false;
+    if (packet.body.size() != 35 || packet.body[1] != 36)
+        throw ProtocolError("Invalid CN tick echo record size");
+    Reader in(packet.body); in.take(23);
+    const auto tick = in.u32(); in.take(8); in.finish(); // Full wire offset 0x18.
+    auto &reports = view.pd2Reports;
+    reports.lastEcho = tick;
+    const auto found = std::find_if(pd2PendingTicks.begin(), pd2PendingTicks.end(),
+        [tick](const auto &pending) { return pending.first == tick; });
+    if (found == pd2PendingTicks.end()) ++reports.unmatchedEchoes;
+    else {
+        reports.roundTripMilliseconds = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - found->second).count());
+        ++reports.tickEchoes;
+        pd2PendingTicks.erase(found);
+    }
+    changed(); return true;
+}
+
 void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
     auto &current = view.world.combatRequest;
     // Channel mouse-up cannot replace an outstanding learn/select/spend ACK.
@@ -38,6 +99,65 @@ void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
         current = std::move(request);
         combatDeadline = Clock::now() + options.timeout;
     }
+}
+
+bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
+    if (!view.remoteLobbyOnly || packet.id != 0x9D || packet.body.empty() || packet.body[0] < 0x18) return false;
+    // mdll1 RVA 0xA650 / 0x1E060: a 36-byte custom record, not an item.
+    Reader data(packet.body);
+    const auto function = data.u8(), length = data.u8();
+    if (function != 0x18 && function != 0x1A) {
+        // Other mdll controls have independent payloads/ownership. In
+        // particular entry function 0x22 is not a selected stash page.
+        ++view.gameProtocol.unconsumed[packet.id];
+        changed(); return true;
+    }
+    if (length != 36 || packet.body.size() != 35)
+        throw ProtocolError("Invalid CN stash control record size");
+    // A650 copies UnitAny+8 here (the native memory-pool pointer), not
+    // UnitAny+0x0C's GUID. The client handler does not dereference it.
+    data.take(13);
+    const auto payload = data.take(20); data.finish();
+    if (!view.load.playerUnitId) throw ProtocolError("CN stash control preceded player assignment");
+    auto &world = view.world;
+    if (function == 0x18) {
+        Reader fields(payload); fields.take(8);
+        const auto index = fields.u32(), flags = fields.u32(), playerFlags = fields.u32(); fields.finish();
+        if (index >= onlineCnStashPageLimit)
+            throw ProtocolError("CN stash page exceeds the fixed module's supported range");
+        const auto page = index + 1;
+        const bool shared = (flags & 1) != 0;
+        // Native bit 3 is an items-only swap: it updates the other cache,
+        // retaining the current selection. No client ACK is sent here.
+        if (flags & 8) {
+            world.stashSynchronized = false;
+            ++view.gameProtocol.unconsumed[packet.id];
+        } else {
+            const bool moved = !world.cnStashConfirmed || world.stashPage != page || world.sharedStash != shared;
+            world.stashPage = page; world.sharedStash = shared;
+            world.cnStashConfirmed = world.stashInitialized = world.stashSynchronized = true;
+            world.cnStashPageFlags = flags; world.cnStashPlayerFlags = playerFlags;
+            if (moved) world.stashPageName.clear();
+            if (auto &request = world.itemRequest; request && request->state == OnlineItemRequest::State::Pending &&
+                request->command.action == OnlineItemAction::StoragePage) {
+                request->state = request->command.page == page && request->command.sharedStash == shared
+                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
+            } else if (moved && request && request->state == OnlineItemRequest::State::Pending) {
+                request->state = OnlineItemRequest::State::Interrupted;
+            }
+            world.requestedStashPage.reset(); stashPageDeadline = {};
+        }
+        ++world.interactionGeneration; ++world.itemRevision;
+    } else if (function == 0x1A) {
+        // Native page names occupy at most 19 bytes plus NUL.
+        const auto end = std::find(payload.begin(), payload.end(), uint8_t{});
+        if (end == payload.end()) throw ProtocolError("Unterminated CN stash page name");
+        world.stashPageName.assign(payload.begin(), end);
+    } else {
+        // Other CN control functions must never enter item/equipment decoding.
+        ++view.gameProtocol.unconsumed[packet.id];
+    }
+    changed(); return true;
 }
 
 void RealmSession::Impl::handle_game(Packet packet) {
@@ -52,6 +172,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
         fail(OnlineErrorKind::Unsupported, std::string(compatibility.gameEntryBlocker), packet.id);
         return;
     }
+    if (handle_tick_echo_pd2(packet)) return;
     if (packet.id == 0xB4) {
         Reader in(packet.body); const auto code = in.u32(); in.finish();
         std::string message = "Game server rejected character admission (code " + std::to_string(code) + ")";
@@ -141,6 +262,7 @@ void RealmSession::Impl::handle_game(Packet packet) {
         changed();
         return;
     }
+    if (handle_stash_pd2(packet)) return;
     if (view.remoteLobbyOnly && (packet.id == 0x65 || packet.id == 0x66 || packet.id == 0x2D)) {
         Reader data(packet.body);
         if (packet.id == 0x65) {
@@ -158,13 +280,13 @@ void RealmSession::Impl::handle_game(Packet packet) {
             if (page > 10) throw ProtocolError("Unsupported PD2 special stash page");
             const auto selectedPage = uint8_t(page ? page : 1);
             data.finish();
-            if (view.world.stashPage != selectedPage) sent(gs, {0x5A}); // Core VA 1037E3ED: native page-confirmation ACK.
-            view.world.stashPage = selectedPage;
-            if (auto &request = view.world.itemRequest; request && request->state == OnlineItemRequest::State::Pending &&
-                request->command.action == OnlineItemAction::StoragePage)
-                request->state = request->command.page == view.world.stashPage
-                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
-            view.world.requestedStashPage.reset();
+            if (view.world.coreStashPage != selectedPage) sent(gs, {0x5A}); // Core VA 1037E3ED, never an ACK for mdll1.
+            view.world.coreStashPage = selectedPage;
+            if (!view.world.cnStashConfirmed && !view.world.requestedStashPage) {
+                view.world.stashPage = selectedPage; view.world.sharedStash = false;
+                view.world.stashInitialized = true;
+                view.world.stashSynchronized = false; // Core pages carry no CN personal/shared identity.
+            }
             ++view.world.interactionGeneration;
             ++view.world.itemRevision;
         }
@@ -178,7 +300,14 @@ void RealmSession::Impl::handle_game(Packet packet) {
             throw ProtocolError("Invalid PD2 local player-data update");
         size_t index = packet.body[0];
         if (!index) {
-            view.world.stashPage = 1; view.world.requestedStashPage.reset(); ++view.world.itemRevision;
+            view.world.coreStashPage = 1;
+            if (!view.world.cnStashConfirmed && !view.world.requestedStashPage) {
+                view.world.stashPage = 1; view.world.sharedStash = false;
+                view.world.stashInitialized = true;
+                view.world.stashSynchronized = false;
+            }
+            ++view.world.interactionGeneration;
+            ++view.world.itemRevision;
         }
         if (index == 4) {
             // Core RVA 0x38F72C selects one of sixteen extended hotkey records.
@@ -268,15 +397,63 @@ void RealmSession::Impl::handle_game(Packet packet) {
     try {
         if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
             packet.id != 0x05 && packet.id != 0xAF)
-            apply_world_packet(view, packet, compatibility.profile);
+            apply_world_packet(view, packet, compatibility.profile, stashLayout);
     } catch (const ProtocolError &error) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);
         return;
+    }
+    send_game_options_pd2();
+    if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x77 &&
+        view.world.storage.kind == OnlineStorageKind::Stash && !pd2StashInitializationSent) {
+        // Native stash draw RVA 0x10FFD sends 3A/1B once after entry 9D/23.
+        // Opening a core page does not establish the CN storage domain.
+        // A head already selected is a native no-op, so do not retry or
+        // manufacture a confirmation if this initialization gets no reply.
+        pd2StashInitializationSent = true;
+        if (!view.world.cnStashConfirmed || view.world.sharedStash || view.world.stashPage != 1)
+            view.world.stashSynchronized = false;
+        sent(gs, {0x3A, 0x1B, 0x00});
+    }
+    if (packet.id == 0x26 && !view.world.social.chat.empty()) {
+        const auto &message = view.world.social.chat.back();
+        // D2GS sends administrator announcements on the native system channel.
+        // Ordinary player chat and translated/paraphrased text are not removal signals.
+        if (message.type == 4 && message.language == 0 && message.unitType == 2 && message.unitId == 0) {
+            auto &notices = view.gameServerNotices;
+            notices.recent.push_back(message);
+            notices.recent.back().receivedMilliseconds = view.gameHeartbeat.elapsedMilliseconds;
+            if (notices.recent.size() > 8) notices.recent.pop_front();
+            if (!notices.removalAnnouncedMilliseconds && message.name.empty() &&
+                std::equal(message.text.begin(), message.text.end(),
+                           administratorKickMessage.begin(), administratorKickMessage.end()))
+                notices.removalAnnouncedMilliseconds = view.gameHeartbeat.elapsedMilliseconds;
+        }
     }
     if(packet.id==0x2A && view.world.hirelingService.result && *view.world.hirelingService.result>=7)
         error(OnlineErrorKind::Server,"Original hireling transaction was rejected",0x2A,*view.world.hirelingService.result);
     if (auto &request = view.world.itemRequest; request && request->state == OnlineItemRequest::State::Pending) {
         const auto action = request->command.action;
+        if (identifyTargetPending && action == OnlineItemAction::Identify && packet.id == 0x3F) {
+            const auto &command = request->command;
+            const auto source = view.world.items.find(command.item), target = view.world.items.find(command.target);
+            auto activePage = [&](const OnlineItem &item) {
+                return item.mode != 0 || item.page != 5 ||
+                    (view.world.stashSynchronized && item.stashPage == view.world.stashPage && item.sharedStash == view.world.sharedStash);
+            };
+            if (view.world.itemTargetingSource == command.item && source != view.world.items.end() &&
+                target != view.world.items.end() && target->second.revision == command.targetRevision &&
+                command.context && onlineInteractionMatches(*command.context, view) &&
+                onlinePd2ItemActionSource(action, source->second, view.load.playerUnitId, view.world.storage.kind) &&
+                onlinePd2ItemActionTarget(action, target->second, view.load.playerUnitId, view.world.storage.kind) &&
+                source->second.positionKnown && target->second.positionKnown && activePage(source->second) && activePage(target->second) &&
+                !onlinePlayerDead(view.world) && !onlineHasCursorItem(view.world.items, view.load.playerUnitId)) {
+                Writer identify; identify.u8(0x27); identify.u32(command.target); identify.u32(command.item);
+                sent(gs, identify.release()); identifyTargetPending = false;
+                itemDeadline = Clock::now() + options.timeout;
+            } else {
+                identifyTargetPending = false; request->state = OnlineItemRequest::State::Interrupted;
+            }
+        }
         const bool merchant = action == OnlineItemAction::Buy || action == OnlineItemAction::Sell ||
             action == OnlineItemAction::Repair || action == OnlineItemAction::RepairAll || action == OnlineItemAction::IdentifyAll;
         bool related = packet.id == 0x97 && action == OnlineItemAction::SwitchWeapons;
@@ -330,6 +507,42 @@ void RealmSession::Impl::handle_game(Packet packet) {
                 target->second.revision > command.targetRevision &&
                 onlineCursorItem(target->second, view.load.playerUnitId));
             switch (action) {
+            case OnlineItemAction::Place:
+                related = assigned && source->second.positionKnown && source->second.mode == 0 &&
+                    source->second.page == command.page + 1 && source->second.x == command.x && source->second.y == command.y;
+                break;
+            case OnlineItemAction::Swap:
+                related = assigned && source->second.positionKnown && source->second.mode == 0 &&
+                    source->second.page == command.page + 1 && source->second.x == command.x &&
+                    source->second.y == command.y && swappedCursor;
+                break;
+            case OnlineItemAction::Pickup:
+                related = assigned && (command.toCursor ? source->second.mode == 4 :
+                    (source->second.mode == 0 || source->second.mode == 2 || source->second.mode == 1));
+                break;
+            case OnlineItemAction::Drop:
+                related = source != view.world.items.end() && source->second.revision > command.itemRevision &&
+                    (source->second.mode == 3 || source->second.mode == 5);
+                break;
+            case OnlineItemAction::Identify:
+                related = !identifyTargetPending && target != view.world.items.end() &&
+                    target->second.revision > command.targetRevision && (target->second.flags & 0x10u);
+                break;
+            case OnlineItemAction::Book:
+                related = source == view.world.items.end() && target != view.world.items.end() &&
+                    target->second.revision > command.targetRevision;
+                break;
+            case OnlineItemAction::Socket:
+                related = source != view.world.items.end() && source->second.revision > command.itemRevision &&
+                    source->second.mode == 6 && source->second.ownerType == 4 && source->second.owner == command.target;
+                break;
+            case OnlineItemAction::Stack:
+                related = target != view.world.items.end() && target->second.revision > command.targetRevision &&
+                    (source == view.world.items.end() || source->second.revision > command.itemRevision);
+                break;
+            case OnlineItemAction::CubeStore:
+                related = assigned && source->second.positionKnown && source->second.mode == 0 && source->second.page == 4;
+                break;
             case OnlineItemAction::Take: case OnlineItemAction::Unequip:
                 related = assigned && source->second.mode == 4; break;
             case OnlineItemAction::Equip:
@@ -496,6 +709,10 @@ void RealmSession::Impl::close_interaction() {
         sent(gs, close.release());
     }
     world.storage = {}; storageDeadline = {};
+    if (world.requestedStashPage) {
+        world.requestedStashPage.reset(); world.stashSynchronized = false;
+        stashPageDeadline = {};
+    }
     world.shopRequested.reset(); world.shopSource.reset(); world.shopGamble = false;
     world.hirelingService = {};
     std::erase_if(world.items, [](const auto &entry) { return entry.second.action == 11; });
@@ -575,7 +792,11 @@ void RealmSession::Impl::tick() {
     }
     if (view.world.requestedStashPage && now >= stashPageDeadline) {
         view.world.requestedStashPage.reset(); ++view.world.interactionGeneration;
-        error(OnlineErrorKind::Timeout, "No stash-page confirmation arrived; current page is retained");
+        view.world.stashSynchronized = false; ++view.world.itemRevision;
+        if (view.world.itemRequest && view.world.itemRequest->state == OnlineItemRequest::State::Pending &&
+            view.world.itemRequest->command.action == OnlineItemAction::StoragePage)
+            view.world.itemRequest->state = OnlineItemRequest::State::TimedOut;
+        error(OnlineErrorKind::Timeout, "No stash-page confirmation arrived; stash access is suspended until server resynchronization");
     }
     auto &playerTrade = view.world.playerTrade;
     if (playerTrade.active() && (playerTrade.response == OnlinePlayerTrade::Response::GoldSent ||
@@ -630,6 +851,7 @@ void RealmSession::Impl::tick() {
             fail(OnlineErrorKind::Timeout, "Connection stage timed out");
         return;
     }
+    service_game_reports_pd2(now);
     if ((view.stage == OnlineStage::LoadingGame || view.stage == OnlineStage::ProtocolReady) &&
         now >= nextHeartbeat) {
         if (view.remoteLobbyOnly) { service_game_heartbeat_pd2(now); return; }

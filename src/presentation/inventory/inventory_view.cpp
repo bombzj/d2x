@@ -244,18 +244,19 @@ void SceneView::drawInventory(Vec mouse) const {
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == backpack)
             drawContainerGrid(grid, mouse);
-    if (!inventory.readOnly && !inventory.personalItemActionsOnly) {
-        const auto goldField = inventoryGold();
+    if (!inventory.readOnly) {
+        const auto goldField = inventoryGold(inventory);
         if (const auto *coin = assets_.goldCoin.frame(0, 0))
             DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                           inventoryGoldButton(),
-                           {0, 0}, 0, WHITE);
+                           inventoryGoldButton(inventory),
+                           {0, 0}, 0, inventory.personalItemActionsOnly ? GRAY : WHITE);
         if (const auto *close = assets_.questClose.frame(0, 10))
             DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
-                           inventoryClose(), {0, 0}, 0, WHITE);
-        painter_.label(std::to_string(inventoryView_.gold),
-                       int(goldField.x + 28 * inventoryScale()), int(goldField.y + 4 * inventoryScale()),
-                       int(16 * inventoryScale()), WHITE);
+                           inventoryClose(inventory), {0, 0}, 0, WHITE);
+        if (!inventory.personalItemActionsOnly || inventory.goldKnown)
+            painter_.label(std::to_string(inventoryView_.gold),
+                           int(goldField.x + 28 * inventoryScale()), int(goldField.y + 4 * inventoryScale()),
+                           int(16 * inventoryScale()), WHITE);
     }
     if (ui.identify)
         painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale()),

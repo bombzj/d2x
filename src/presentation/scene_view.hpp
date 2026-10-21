@@ -271,6 +271,7 @@ class SceneView {
     void updateParty(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town);
     PartyIntent handleParty(const FrameInput &input);
     bool partyReady() const { return party_.ready(); }
+    bool storageNavigationReady() const { return assets_.storageNavigation.frames.size() == 12; }
     float partyPortraitOffset() const;
     const std::string &partyReason() const { return party_.reason(); }
     ChatIntent handleChat(const FrameInput &input);

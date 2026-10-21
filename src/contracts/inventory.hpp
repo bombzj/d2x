@@ -90,12 +90,17 @@ struct InventoryView {
     unsigned bankGoldLimit = 0, groundGoldLimit = 0, walletLimit = 0;
     bool dead = false;
     bool goldKnown = false;
+    bool bankGoldKnown = false;
     bool readOnly = false;
     bool personalItemActionsOnly = false;
     int panelTop = 60, panelHeight = 432;
     int storagePanelTop = 60, storagePanelHeight = 432;
     unsigned storagePage = 1;
+    bool storageShared = false;
+    bool storageCnConfirmed = false;
+    std::string storagePageName;
     bool storagePagePending = false;
+    bool storagePagingAvailable = false;
     std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
     InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;

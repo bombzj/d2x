@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <limits>
 #include <cmath>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -23,6 +24,9 @@ NativeMapGenerator::NativeMapGenerator(Archives &archives, const WorldCatalog &c
           }, {}}, side) {
     if (act < 0 || act > 4) throw std::runtime_error("Invalid native map act");
     if (difficulty < 0 || difficulty > 2) throw std::invalid_argument("Invalid native map difficulty");
+}
+void NativeMapGenerator::observeRoomInitialization(std::function<void()> observer) {
+    roomInitializedObserver_ = std::move(observer);
 }
 const MapData &NativeMapGenerator::pattern(const std::string &path) {
     const auto key = normalize(path);
@@ -142,6 +146,7 @@ void NativeMapGenerator::create(size_t index) {
     std::erase_if(nearby, [&](size_t other) { return other != index && !tiles_.collision(other); });
     tiles_.activateCollision(index, nearby);
     ++terrainRevision_;
+    if (roomInitializedObserver_) roomInitializedObserver_();
 }
 size_t NativeMapGenerator::roomAt(int level, int x, int y) {
     ensureLevel(level);

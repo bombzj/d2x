@@ -289,8 +289,17 @@ void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
         v.world.shopSource = v.world.shopRequested;
     }
     item.revision = ++v.world.itemRevision;
-    if (pd2 && item.mode == 0 && item.page == 5)
+    if (pd2 && item.mode == 0 && item.page == 5) {
         item.stashPage = v.world.requestedStashPage.value_or(v.world.stashPage);
+        item.sharedStash = v.world.requestedStashPage ? v.world.requestedSharedStash : v.world.sharedStash;
+        // Before the control reply there is no authoritative page identity in
+        // an ordinary item packet. Require a placement refresh after selection.
+        if (v.world.requestedStashPage || !v.world.cnStashConfirmed || !v.world.stashSynchronized)
+            item.positionKnown = false;
+    }
+    // The compact network position has four-bit coordinates. Cached stash
+    // placements need the full-byte 0x2F update before they can be projected.
+    if (pd2 && item.mode == 0 && item.page == 6) item.positionKnown = false;
     if (item.mode == 6 && item.ownerType == 4) {
         const auto previous = v.world.items.find(item.id);
         item.socketAssignmentRevision = previous != v.world.items.end() && previous->second.mode == 6 &&
@@ -337,7 +346,7 @@ void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t owne
     for (const auto id : items) removeItem(world, id);
     std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
-bool applyStoragePacketPd2(OnlineView &v, const Packet &p) {
+bool applyStoragePacketPd2(OnlineView &v, const Packet &p, OnlineStashLayout layout) {
     auto &w = v.world;
     if (p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19) {
         Reader external(p.body);
@@ -382,28 +391,56 @@ bool applyStoragePacketPd2(OnlineView &v, const Packet &p) {
         // existing item. Ownership/page must already be established by 9C/9D.
         const auto id = r.u32();
         const auto page = r.u8();
-        const auto storageSelector = r.u8(); // Separate guild inventory, never personal ownership.
+        const auto destinationPage = r.u8(); // Only consumed by the native detach-to-page-6 branch.
         const auto x = r.u8(), y = r.u8();
         const auto rebuild = r.u8(); // Clear/rebuild target grid occupancy.
         const auto detach = r.u8();
         r.finish();
-        if (storageSelector) { ++v.gameProtocol.unconsumed[p.id]; break; }
-        if (rebuild && (page == 0 || page == 3 || page == 4))
+        (void)destinationPage; // Detached/special placements remain unavailable below.
+        if (rebuild && (page == 0 || page == 3 || page == 4 || page == 5))
             for (auto &[otherId, other] : w.items)
-                if (onlineItemOwnedBy(other, v.load.playerUnitId) && other.mode == 0 && other.page == page + 1 &&
-                    (page != 4 || other.stashPage == w.requestedStashPage.value_or(w.stashPage))) {
+                if (onlineItemOwnedBy(other, v.load.playerUnitId) && other.mode == 0 &&
+                    (page == 5 ? (other.page == 6 || (!w.cnStashConfirmed && !w.requestedStashPage &&
+                        other.page == 5 && other.stashPage != w.stashPage)) :
+                        other.page == page + 1 && (page != 4 ||
+                            (other.stashPage == w.requestedStashPage.value_or(w.stashPage) &&
+                             other.sharedStash == (w.requestedStashPage ? w.requestedSharedStash : w.sharedStash))))) {
                     other.positionKnown = false; other.revision = ++w.itemRevision;
                 }
         if (auto item = w.items.find(id); item != w.items.end() && onlineItemOwnedBy(item->second, v.load.playerUnitId)) {
-            if (detach || (page != 0 && page != 3 && page != 4) ||
-                item->second.mode != 0 || item->second.page != page + 1) {
+            auto &value = item->second;
+            const bool personalStash = (page == 4 || page == 5) && (value.page == 5 || value.page == 6);
+            if (detach || (page != 0 && page != 3 && !personalStash) ||
+                value.mode != 0 || (!personalStash && value.page != page + 1)) {
                 item->second.positionKnown = false; item->second.revision = ++w.itemRevision;
                 ++v.gameProtocol.unconsumed[p.id];
                 break;
             }
             item->second.x = x; item->second.y = y;
             item->second.positionKnown = true;
-            if (page == 4) item->second.stashPage = w.requestedStashPage.value_or(w.stashPage);
+            if (page == 4) {
+                value.page = 5;
+                value.stashPage = w.requestedStashPage.value_or(w.stashPage);
+                value.sharedStash = w.requestedStashPage ? w.requestedSharedStash : w.sharedStash;
+                if (w.requestedStashPage || !w.cnStashConfirmed || !w.stashSynchronized)
+                    value.positionKnown = false;
+            } else if (page == 5) {
+                // Core 37E480/37E530: normal pages occupy rectangles in
+                // LocalStashPagesSave; the final row/column is reserved.
+                if (w.cnStashConfirmed || w.requestedStashPage || !layout.valid() || x >= layout.cacheColumns || y >= layout.cacheRows) {
+                    value.positionKnown = false;
+                } else {
+                    const unsigned pagesPerColumn = layout.cacheRows / layout.rows - 1;
+                    const unsigned column = x / layout.columns, row = y / layout.rows;
+                    const unsigned index = column * pagesPerColumn + row;
+                    if (row >= pagesPerColumn || column >= layout.cacheColumns / layout.columns - 1 || index >= 10)
+                        value.positionKnown = false;
+                    else {
+                        value.page = 5; value.stashPage = index + 1; value.sharedStash = false;
+                        value.x = uint8_t(x % layout.columns); value.y = uint8_t(y % layout.rows);
+                    }
+                }
+            }
             item->second.revision = ++w.itemRevision;
             break;
         }
@@ -416,14 +453,14 @@ bool applyStoragePacketPd2(OnlineView &v, const Packet &p) {
     return true;
 }
 } // namespace
-void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile) {
+void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile, OnlineStashLayout layout) {
     auto &w = v.world;
     const auto previousItems = w.itemRevision;
     ++v.revision;
     ++w.revision;
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
     const bool pd2 = profile == protocol::ClientProfile::Pd2CnNormal20261020;
-    if (pd2 && applyStoragePacketPd2(v, p)) return;
+    if (pd2 && applyStoragePacketPd2(v, p, layout)) return;
     Reader r(p.body);
     switch (p.id) {
     case 0x47:

@@ -97,6 +97,11 @@ class RealmSession {
     bool move_to(OnlinePoint target, bool run = true, std::optional<OnlineIntentContext> context = {});
     // Native 5F reports a local path discrepancy; it is not a move/interaction.
     bool update_position(OnlinePoint, uint64_t verificationRevision, const OnlineIntentContext &);
+    // Current local path coordinates, excluding render smoothing and click destinations.
+    bool report_position_pd2(OnlinePoint, const OnlineIntentContext &);
+    // Actual automap room callbacks, with low 32 bits of steady-clock milliseconds.
+    // A consumed batch belongs to one published game/area; vanilla is a no-op.
+    bool report_automap_rooms_pd2(std::span<const uint32_t>, const OnlineIntentContext &);
     bool move_to_unit(OnlineUnitKey target, bool run = true, std::optional<OnlineIntentContext> context = {});
     // Uses an assigned server UNIT_TILE ID. Map warp classes/slots are not IDs.
     bool use_exit(uint32_t serverUnitId);
@@ -113,6 +118,8 @@ class RealmSession {
     // MPQ consumer checks the native location, ownership, shape and operation eligibility.
     // No optimistic inventory changes; the original protocol has no generic transaction ACK.
     bool submit_item(OnlineItemCommand command);
+    // Immutable resource geometry supplied before connecting the CN client.
+    void configure_stash(OnlineStashLayout);
     bool submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context = {});
     // Caller validates current MPQ skill and target eligibility. Cast/stop have
     // no generic native ACK; damage, resources and skills remain server-owned.

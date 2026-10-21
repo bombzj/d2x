@@ -111,6 +111,31 @@ Bytes game_logon(uint32_t hash, uint16_t token, uint8_t characterClass,
 Bytes game_ping(uint32_t elapsed, uint32_t latency) {
     Writer out; out.u8(0x6D); out.u32(elapsed); out.u32(latency); out.u32(0); return out.release();
 }
+Bytes game_options_pd2_cn(bool lootAllocation) {
+    // BH ee619246 RVA 0x107010 / 0x10716D: 13 bytes, subcommand 0,
+    // native unconditional report bit plus the local loot-allocation preference.
+    // 0x8000 is a format constant, not a claim that authentication/checks passed.
+    constexpr uint32_t cnReportFlag = 0x8000, lootAllocationFlag = 0x2000;
+    const auto flags = cnReportFlag | (lootAllocation ? lootAllocationFlag : 0);
+    Writer out; out.u8(0x5C); out.u32(0); out.u32(flags); out.u32(0); return out.release();
+}
+Bytes automap_report_pd2_cn(AutomapReportPd2Cn report) {
+    Writer out; out.u8(0x5B); out.u32(uint32_t(report)); return out.release();
+}
+Bytes game_tick_pd2_cn(uint32_t tick) {
+    Writer out; out.u8(0x5C); out.u32(0xFF00); out.u32(tick); out.u32(0); return out.release();
+}
+Bytes game_position_pd2_cn(uint16_t x, uint16_t y) {
+    Writer out; out.u8(0x5C); out.u32(4); out.u32(x); out.u32(y); return out.release();
+}
+Bytes game_bh_report_pd2_cn(uint32_t fileCrc32) {
+    constexpr char digits[] = "0123456789ABCDEF";
+    std::string text = ".cb ";
+    for (unsigned digit = 8; digit; --digit) text += digits[(fileCrc32 >> ((digit - 1) * 4)) & 15];
+    // BH 0x106A30 uses type/language FF/FF, unlike ordinary player chat.
+    Writer out; out.u8(0x15); out.u8(0xFF); out.u8(0xFF);
+    out.string(text, 12); out.u8(0); out.u8(0); return out.release();
+}
 Bytes game_chat(std::string_view text,std::string_view receiver,bool overhead) {
     if (text.empty() || text.size() > 255 ||
         !std::all_of(text.begin(), text.end(), [](unsigned char c) { return c >= 32 && c < 127; }))

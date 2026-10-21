@@ -10,7 +10,10 @@
 #include "scene_assets.hpp"
 #include "presentation/hud/waypoint_panel.hpp"
 #include "resources/data_table.hpp"
+#include "resources/archive.hpp"
+#include "resources/formats.hpp"
 #include <algorithm>
+#include <filesystem>
 #include <string_view>
 #include <utility>
 
@@ -370,8 +373,19 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
     storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
     if (content.profile == "remote-display-txt-v1") {
-        storageTabs = uiGraphics_.single("data/global/ui/panel/stashtabs.dc6");
-        if (storageTabs.frames.size() < 22) throw std::runtime_error("CN stash tab artwork is missing");
+        // mdll1 RVA 0x17AD0/0xA390 loads the CN bundle's original PlugY art.
+        auto bytes = archives.read("data/global/ui/plugy/stashbtns.dc6", false);
+        const auto loose = archives.gameDirectory / "PlugY" / "StashBtns.dc6";
+        if (bytes.empty() && std::filesystem::is_regular_file(loose)) bytes = readFile(loose);
+        if (!bytes.empty()) {
+            const auto animation = decodeDc6(bytes);
+            if (animation.directions != 1 || animation.framesPerDirection != 12 ||
+                std::any_of(animation.frames.begin(), animation.frames.end(), [](const auto &frame) {
+                    return frame.width != 32 || frame.height != 32;
+                })) throw std::runtime_error("Unsupported CN stash navigation artwork");
+            storageNavigation.directions = 1; storageNavigation.count = 12;
+            for (const auto &frame : animation.frames) storageNavigation.frames.push_back(uiGraphics_.upload(frame));
+        }
     }
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");

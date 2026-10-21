@@ -475,6 +475,9 @@ void RemoteUiClients::Impl::projectInventory() {
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
         v.storagePanelTop = data.stashLayout.panelTop; v.storagePanelHeight = data.stashLayout.panelHeight;
         v.storagePage = w.stashPage; v.storagePagePending = w.requestedStashPage.has_value();
+        v.storageShared = w.sharedStash; v.storageCnConfirmed = w.cnStashConfirmed;
+        v.storagePagingAvailable = onlinePd2ItemAction(OnlineItemAction::StoragePage) && w.stashInitialized &&
+            (w.stashSynchronized || !w.cnStashConfirmed) && !w.requestedStashPage && !(w.cnStashPlayerFlags & 8);
         if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
             const auto &table = data.tables.at("inventory");
             size_t peerRow = table.rows().size(), ownRow = peerRow;
@@ -504,6 +507,8 @@ void RemoteUiClients::Impl::projectInventory() {
         v.cubeCode=data.cubeCode; v.staffRecipeOutput=data.staffRecipe.output;
         v.weaponSet=w.weaponSet; v.gold=unsigned(stat("gold").value_or(0)); v.bankGold=unsigned(stat("goldbank").value_or(0));
         v.goldKnown = stat("gold").has_value();
+        v.bankGoldKnown = stat("goldbank").has_value();
+        v.storagePageName = w.stashPageName;
         v.walletLimit=unsigned(characterView.level)*10000; v.groundGoldLimit=v.walletLimit;
         v.bankGoldLimit=stashGoldLimit(unsigned(characterView.level));
         for (const auto &[code,def]:data.items.entries()) if(def.equipment.isType("gold")) { v.groundGoldLimit=def.maxStack; break; }
@@ -513,7 +518,7 @@ void RemoteUiClients::Impl::projectInventory() {
         for(const auto &[id,native]:w.items) {
             if (v.personalItemActionsOnly && (native.flags & 0x40000000u)) continue; // Native preview inventory, not this player's items.
             if (v.personalItemActionsOnly && (!native.positionKnown ||
-                (native.mode == 0 && native.page == 5 && native.stashPage != w.stashPage))) continue;
+                (native.mode == 0 && native.page == 5 && (!w.stashSynchronized || (native.stashPage != w.stashPage || native.sharedStash != w.sharedStash))))) continue;
             const bool ground=native.mode==3 || native.mode==5;
             const bool mercenary=w.hireling && native.ownerType==1 && native.owner==w.hireling->id && native.mode==1;
             if(!ground && !mercenary && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;

@@ -30,6 +30,10 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 应用层持有日志文件，network／宿主只有可选字节观察回调，默认关闭。已有文件拒绝覆盖，每文件达到64 MiB或写盘失败明确停止对应连接，不静默丢包。C2S68票据／令牌字段及C2S6C、S2CB3的角色字节置零，`redacted.offset/length`标明原字节范围；保留原长度／分片头，不把置零部分视为实际发包。BNCS／MCP认证内容不记录；未知长度导致不能分帧的TCP块也不在日志中。文件放忽略目录`artifacts/`，不提交。
 
+`online-status.gameServerNotices`保留最近八条原系统通道0x26消息，含相对入场`elapsedMilliseconds`、原字段及`senderBytes/textBytes`字节数组；中文可能为GBK，不能假定UTF-8。`removalAnnouncedMilliseconds`只标识首次完整匹配已知管理移除通知的时刻，不代表原因码或保存成功。故障后与`gameHeartbeat`一并保留；若先有移除通知、后有断流，终态错误优先显示服务器已通知移除并保留底层断流信息。下一局或显式退出清空，不能用上一局公告归因新连接。
+
+`online-status.online.pd2Reports`独立记录CN周期报告：`ticksSent/tickEchoes/unmatchedEchoes`对应5C/FF00及9D/2C回显，`positionsSent`对应5C/4，`bhReportsSent`对应特殊聊天通道的BH文件CRC。另有`lastTick/lastEcho/roundTripMilliseconds/lastPosition`；发送计数表示入队，只有匹配tick的回显才计确认，坐标／CRC没有已核实的独立ACK。异常断开后保留，下一局清空；原版不发送这些消息。它不包含认证材料，也不是全部反外挂检查通过标记。实现和待验限制见[周期报告](../resources/PD2_CN_DLL_ANALYSIS.md#原客户端抓包确认的周期上报与候选修复)。
+
 根目录`Play-Diagnostic.cmd`调用现有`play.ps1 -Diagnostic`：使用与Play相同的EXE、MPQ和角色目录，开启默认`d2x-debug`管道，每次创建独立`artifacts/diagnostics/<时间>-<随机标识>/`，保存`client-packets.jsonl`、`host-packets.jsonl`、`stdout.log`、`stderr.log`及含实际EXE路径／SHA256的`run.json`。该入口不构建、迁移角色或覆盖旧日志；Windows PowerShell原生stderr按诊断输出记录，不因非致命提示中断游戏。自选文件可用`play.ps1 -GamePacketLog <新文件> -HostPacketLog <另一新文件>`，不能与Diagnostic合用。宿主无游戏连接时宿主日志可为空；原服Join只产生客户端游戏消息。
 
 旧版`s2c.jsonl`只有S2C，不能补取过去的请求字段。问题出现后保持原局，读取`online-items`／`online-status`的最近请求及副本、`server-snapshot`的真实库存／Cursor和命令状态，另看`server-protocol`拒绝计数；与原消息顺序一起保存。最近物品请求另含x／y／page／body／equipVariant，避免混淆原InvPage与S2C的page=InvPage+1。默认Play不开启文件记录；超时只表示缺少关联确认，不能仅凭物品暂时不显示认定服务端已删除。
@@ -206,7 +210,7 @@ $spec.preview=$false
 
 ## 诊断与异步含义
 
-`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN个人仓库已准备`storage-page`编码（`page`=1–10，0x55 + BYTE页号，0x2D + DWORD确认后回0x5A），但当前CN实服未确认分页，发行门槛仍关闭；调试入口同样拒绝，不作为原版通用容器命令。
+`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN候选的`storage-page`改为mdll1控制链：`page`为一基目标页（32位，固定样本元数据支持范围1–500，不代表线上总页数），`shared`为目标账号共享域。跨域仅允许目标首页，同域仅允许相邻页，分别发C2S 3A/1B、1C或19、1A；不发核心55，不为9D/function18补发5A。要求已初始化、同步、打开仓库且空Cursor；首次打开自动发送一次3A1B00，未确认时不把核心首屏视为个人仓库；若已是个人首页可无回包，仍允许切共享首页取得确认，之后须匹配域和页的9D确认。`online-snapshot`报告`shared`、`cnConfirmed`、`requestedShared`及两个原始flags，`online-items`每件物品增加`sharedStash`。不循环枚举、不自动重试；超时暂停仓库。已核实实际个人／共享切换和共享相邻翻页回包；已选中的首页在原模块中不重复回确认，不应靠重发取ACK；原版不开放此命令。
 
 传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
@@ -260,7 +264,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 | identify-all | 无itemId；当前五幕凯恩交谈及空Cursor；任务资格／费用／效果由原服决定 |
 | quest-service | 本人Cursor itemId；真实Charsi／Larzuk／Anya交谈；复用原0x38 action0与0x58确认，服务器复验资格、一次性消耗及结果。取物到Cursor需先用take并等待位置更新 |
 
-`online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
+`online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision及CN page／requestedPage／initialized／synchronized；分页超时撤回仓库访问，不将旧页号视作已确认；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
 accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易消息见[联网参考](../modules/NETWORK.md#原服物件与交易观察)；全部物品交易、赌博／多买、佣兵装备仍待完整核对。
 

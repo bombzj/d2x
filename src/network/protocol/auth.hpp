@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -22,6 +23,7 @@ struct OriginalClientAuth {
     std::string classicKey, expansionKey, owner;
     ClientProfile profile{ClientProfile::Lod113c};
     bool nativeMpqKeys{}; // CN proof comparison/count semantics require this source.
+    std::optional<uint32_t> cnBhCrc32; // Actual SHA-verified BH file, not a fabricated check result.
 };
 struct KeyProof {
     uint32_t length{}, product{}, publicValue{};

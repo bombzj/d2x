@@ -239,8 +239,14 @@ struct OnlineWorldView {
     uint64_t itemTargetingRevision{};
     std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
-    uint8_t stashPage = 1;
-    std::optional<uint8_t> requestedStashPage;
+    uint32_t stashPage = 1;
+    bool sharedStash{}, cnStashConfirmed{};
+    uint8_t coreStashPage = 1; // Independent ProjectDiablo 2D/2E state and ACK.
+    uint32_t cnStashPageFlags{}, cnStashPlayerFlags{};
+    std::string stashPageName;
+    bool stashInitialized{}, stashSynchronized{};
+    std::optional<uint32_t> requestedStashPage;
+    bool requestedSharedStash{};
     struct ExtendedStorage {
         // Guild/preview material is never inserted into the player's items map.
         std::map<uint32_t, Bytes> guildItems;
@@ -312,7 +318,11 @@ struct OnlineWorldView {
         itemRevision = 0;
         itemRequest.reset();
         itemTargetingSource.reset();itemTargetingRevision=0;
-        storage = {}; stashPage = 1; requestedStashPage.reset(); extendedStorage = {};
+        storage = {}; stashPage = 1; stashInitialized = stashSynchronized = false;
+        sharedStash = cnStashConfirmed = requestedSharedStash = false;
+        coreStashPage = 1;
+        cnStashPageFlags = cnStashPlayerFlags = 0; stashPageName.clear();
+        requestedStashPage.reset(); extendedStorage = {};
         shopRequested.reset();
         shopSource.reset();
         shopGamble = false;
