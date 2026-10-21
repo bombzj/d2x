@@ -68,7 +68,7 @@ void RealmSession::Impl::clear_game() {
     pd2PlayerDataBlocks = {};
     pd2PlayerUpdates = {};
     pd2RosterCounters.clear();
-    pd2PlayerControl.reset(); pd2StashPage.reset();
+    pd2PlayerControl.reset(); stashPageDeadline = {};
     pd2MonstersRemaining.reset();
     gamePackets.reset();
     worldPackets.clear();
@@ -82,7 +82,8 @@ void RealmSession::Impl::clear_game() {
     nextCombat = {}; combatDeadline = {};
     storageDeadline = {}; npcDeadline = {}; respawnDeadline = {}; waypointDeadline = {};
     playerTradeDeadline = {};
-    gameStarted = {}; nextHeartbeat = {}; lastPing = {};
+    gameStarted = {}; nextHeartbeat = {}; lastPing = {}; lastGameReceive = {};
+    view.gameHeartbeat = {};
     initializedNpc.reset(); portalRequest.reset();
     environmentSent = false;
     awaitingPong = false;
@@ -117,7 +118,9 @@ void RealmSession::Impl::error(OnlineErrorKind kind, std::string message, uint8_
 }
 
 void RealmSession::Impl::fail(OnlineErrorKind kind, std::string message, uint8_t id, uint32_t code) {
+    const auto heartbeat = view.gameHeartbeat;
     shutdown();
+    view.gameHeartbeat = heartbeat; // Preserve the terminal transport evidence for diagnostics.
     view.load = {};
     view.games.clear();
     view.selectedCharacter.clear();

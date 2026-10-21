@@ -369,6 +369,10 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     waypointTitle = title->second;
     loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
     storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
+    if (content.profile == "remote-display-txt-v1") {
+        storageTabs = uiGraphics_.single("data/global/ui/panel/stashtabs.dc6");
+        if (storageTabs.frames.size() < 22) throw std::runtime_error("CN stash tab artwork is missing");
+    }
     if (storagePanel.frames.size() < 4)
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
     if (!content.cubeCode.empty()) {

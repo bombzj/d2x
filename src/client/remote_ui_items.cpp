@@ -462,8 +462,7 @@ void RemoteUiClients::Impl::projectInventory() {
             {owned.equipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1},{owned.beltEquipment,ContainerKind::BeltEquipment,1,1},
             {owned.cursor,ContainerKind::Cursor,1,1},{owned.hirelingEquipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1}})
             v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows,
-                v.readOnly || (v.personalItemActionsOnly && id != owned.backpack && id != owned.cursor &&
-                    id != owned.equipment && id != owned.beltEquipment && id != owned.belt)});
+                v.readOnly || (v.personalItemActionsOnly && id == owned.hirelingEquipment)});
         auto layout=[](const auto &x){return InventoryLayoutView{x.columns,x.rows,x.left,x.top,x.cellSize,x.expansion};};
         if (const auto playerLayout = data.playerInventoryLayouts.find(characterView.classCode);
             playerLayout != data.playerInventoryLayouts.end()) {
@@ -474,6 +473,8 @@ void RemoteUiClients::Impl::projectInventory() {
             v.panelHeight = playerLayout->second.height;
         }
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
+        v.storagePanelTop = data.stashLayout.panelTop; v.storagePanelHeight = data.stashLayout.panelHeight;
+        v.storagePage = w.stashPage; v.storagePagePending = w.requestedStashPage.has_value();
         if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
             const auto &table = data.tables.at("inventory");
             size_t peerRow = table.rows().size(), ownRow = peerRow;
@@ -511,6 +512,8 @@ void RemoteUiClients::Impl::projectInventory() {
         if(w.playerPosition) v.dropLocation=GroundLocation{mapView.region,mapView.observer};
         for(const auto &[id,native]:w.items) {
             if (v.personalItemActionsOnly && (native.flags & 0x40000000u)) continue; // Native preview inventory, not this player's items.
+            if (v.personalItemActionsOnly && (!native.positionKnown ||
+                (native.mode == 0 && native.page == 5 && native.stashPage != w.stashPage))) continue;
             const bool ground=native.mode==3 || native.mode==5;
             const bool mercenary=w.hireling && native.ownerType==1 && native.owner==w.hireling->id && native.mode==1;
             if(!ground && !mercenary && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;

@@ -239,6 +239,16 @@ struct OnlineWorldView {
     uint64_t itemTargetingRevision{};
     std::optional<uint32_t> itemTargetingSource; // Native 0x3F preparation, not identification success.
     OnlineStorageContext storage;
+    uint8_t stashPage = 1;
+    std::optional<uint8_t> requestedStashPage;
+    struct ExtendedStorage {
+        // Guild/preview material is never inserted into the player's items map.
+        std::map<uint32_t, Bytes> guildItems;
+        uint32_t fragmentTag{};
+        uint16_t fragmentTotal{};
+        Bytes fragment, showcase;
+        uint64_t revision{};
+    } extendedStorage;
     std::optional<uint32_t> shopRequested, shopSource;
     bool shopGamble{};
     std::optional<OnlineTradeResult> tradeResult;
@@ -302,7 +312,7 @@ struct OnlineWorldView {
         itemRevision = 0;
         itemRequest.reset();
         itemTargetingSource.reset();itemTargetingRevision=0;
-        storage = {};
+        storage = {}; stashPage = 1; requestedStashPage.reset(); extendedStorage = {};
         shopRequested.reset();
         shopSource.reset();
         shopGamble = false;

@@ -93,6 +93,9 @@ struct InventoryView {
     bool readOnly = false;
     bool personalItemActionsOnly = false;
     int panelTop = 60, panelHeight = 432;
+    int storagePanelTop = 60, storagePanelHeight = 432;
+    unsigned storagePage = 1;
+    bool storagePagePending = false;
     std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
     InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;

@@ -225,7 +225,7 @@ void equipment(OnlineView &v, const Packet &p) {
     v.world.equipment[id] = std::move(item);
 }
 void removeItem(OnlineWorldView &world, uint32_t id);
-void itemPacket(OnlineView &v, const Packet &p) {
+void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     if (v.world.playerTrade.phase == OnlinePlayerTrade::Phase::Open)
         v.world.playerTrade.revision = v.world.revision;
     Reader r(p.body);
@@ -289,6 +289,8 @@ void itemPacket(OnlineView &v, const Packet &p) {
         v.world.shopSource = v.world.shopRequested;
     }
     item.revision = ++v.world.itemRevision;
+    if (pd2 && item.mode == 0 && item.page == 5)
+        item.stashPage = v.world.requestedStashPage.value_or(v.world.stashPage);
     if (item.mode == 6 && item.ownerType == 4) {
         const auto previous = v.world.items.find(item.id);
         item.socketAssignmentRevision = previous != v.world.items.end() && previous->second.mode == 6 &&
@@ -335,6 +337,84 @@ void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t owne
     for (const auto id : items) removeItem(world, id);
     std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
+bool applyStoragePacketPd2(OnlineView &v, const Packet &p) {
+    auto &w = v.world;
+    if (p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19) {
+        Reader external(p.body);
+        const auto action = external.u8(), length = external.u8(); external.u8();
+        const auto id = external.u32();
+        if (length != p.body.size() + 1 || (action != 0x19 && action != 0x1A))
+            throw ProtocolError("Unsupported PD2 external inventory action");
+        auto &storage = w.extendedStorage;
+        if (action == 0x19) {
+            const auto payload = external.take(external.remaining());
+            if (payload.empty() || payload.size() > 244 || (!storage.guildItems.contains(id) && storage.guildItems.size() >= 8192))
+                throw ProtocolError("Invalid PD2 external inventory payload");
+            storage.guildItems[id] = Bytes(payload.begin(), payload.end());
+        } else storage.guildItems.erase(id);
+        ++storage.revision;
+        ++v.gameProtocol.unconsumed[p.id]; // Isolated guild inventory has no writable player projection.
+        return true;
+    }
+    Reader r(p.body);
+    switch (p.id) {
+    case 0x36: {
+        const auto tag = r.u32(); const auto offset = r.u16(), count = r.u16(), total = r.u16();
+        const auto bytes = r.take(400); r.finish();
+        auto &storage = w.extendedStorage;
+        if (count && total) {
+            if (count > 400 || total > 6400 || offset > total || count > total - offset)
+                throw ProtocolError("Invalid PD2 guild showcase fragment bounds");
+            if (!offset) { storage.fragment.clear(); storage.fragmentTag = tag; storage.fragmentTotal = total; }
+            if (total != storage.fragmentTotal || offset != storage.fragment.size())
+                throw ProtocolError("PD2 guild showcase fragment is not contiguous");
+            storage.fragment.insert(storage.fragment.end(), bytes.begin(), bytes.begin() + count);
+            if (storage.fragment.size() == total) {
+                storage.showcase = std::move(storage.fragment); storage.fragment = {}; storage.fragmentTotal = 0;
+                ++storage.revision;
+            }
+        }
+        ++v.gameProtocol.unconsumed[p.id]; // Raw showcase metadata grants no inventory ownership.
+        break;
+    }
+    case 0x2F: {
+        // Core RVA 0x38F790: the +10==0 branch writes coordinates of an
+        // existing item. Ownership/page must already be established by 9C/9D.
+        const auto id = r.u32();
+        const auto page = r.u8();
+        const auto storageSelector = r.u8(); // Separate guild inventory, never personal ownership.
+        const auto x = r.u8(), y = r.u8();
+        const auto rebuild = r.u8(); // Clear/rebuild target grid occupancy.
+        const auto detach = r.u8();
+        r.finish();
+        if (storageSelector) { ++v.gameProtocol.unconsumed[p.id]; break; }
+        if (rebuild && (page == 0 || page == 3 || page == 4))
+            for (auto &[otherId, other] : w.items)
+                if (onlineItemOwnedBy(other, v.load.playerUnitId) && other.mode == 0 && other.page == page + 1 &&
+                    (page != 4 || other.stashPage == w.requestedStashPage.value_or(w.stashPage))) {
+                    other.positionKnown = false; other.revision = ++w.itemRevision;
+                }
+        if (auto item = w.items.find(id); item != w.items.end() && onlineItemOwnedBy(item->second, v.load.playerUnitId)) {
+            if (detach || (page != 0 && page != 3 && page != 4) ||
+                item->second.mode != 0 || item->second.page != page + 1) {
+                item->second.positionKnown = false; item->second.revision = ++w.itemRevision;
+                ++v.gameProtocol.unconsumed[p.id];
+                break;
+            }
+            item->second.x = x; item->second.y = y;
+            item->second.positionKnown = true;
+            if (page == 4) item->second.stashPage = w.requestedStashPage.value_or(w.stashPage);
+            item->second.revision = ++w.itemRevision;
+            break;
+        }
+        ++w.ignoredPackets;
+        ++v.gameProtocol.unconsumed[p.id];
+        break;
+    }
+    default: return false;
+    }
+    return true;
+}
 } // namespace
 void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile) {
     auto &w = v.world;
@@ -343,33 +423,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
     ++w.revision;
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
     const bool pd2 = profile == protocol::ClientProfile::Pd2CnNormal20261020;
-    if (pd2 && p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19)
-        throw ProtocolError("PD2 extended item storage is not supported");
+    if (pd2 && applyStoragePacketPd2(v, p)) return;
     Reader r(p.body);
     switch (p.id) {
-    case 0x2F: {
-        if (!pd2) throw ProtocolError("Unexpected item relocation packet for original profile");
-        // Core RVA 0x38F790: the +10==0 branch writes coordinates of an
-        // existing item. Ownership/page must already be established by 9C/9D.
-        const auto id = r.u32();
-        const auto page = r.u8();
-        r.u8(); // Special-storage context selector.
-        const auto x = r.u8(), y = r.u8();
-        const auto rebuild = r.u8(); // Clear/rebuild target grid occupancy.
-        const auto detach = r.u8();
-        r.finish();
-        if (auto item = w.items.find(id); item != w.items.end() && onlineItemOwnedBy(item->second, v.load.playerUnitId)) {
-            if (detach || rebuild || (page != 0 && page != 3 && page != 4) ||
-                item->second.mode != 0 || item->second.page != page + 1)
-                throw ProtocolError("Unsupported PD2 item relocation destination");
-            item->second.x = x; item->second.y = y;
-            item->second.revision = ++w.itemRevision;
-            break;
-        }
-        ++w.ignoredPackets;
-        ++v.gameProtocol.unconsumed[p.id];
-        break;
-    }
     case 0x47:
     case 0x48: {
         // Retail D2Client RVA 0xAE2B0 / 0xAE260 both look up this unit
@@ -1274,6 +1330,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         const auto stat = uint16_t(bits.read(9));
         const auto value = variable();
         const auto parameter = uint16_t(bits.read(bits.read(1) ? 16 : 8));
+        // The original AE300 handler still reads nine bits in this CN build;
+        // full-item format selection does not apply to this standalone packet.
+        if (pd2 && (stat == 511 || bits.remaining() > 7 || bits.read(unsigned(bits.remaining())) != 0))
+            throw ProtocolError("Invalid PD2 incremental item stat or trailing data");
         if (auto found = w.items.find(id); found != w.items.end()) {
             found->second.statUpdates[{stat, parameter}] = {value, base};
             found->second.revision = ++w.itemRevision;
@@ -1297,7 +1357,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         break;
     case 0x9C:
     case 0x9D:
-        itemPacket(v, p);
+        itemPacket(v, p, pd2);
         equipment(v, p);
         break;
     case 0xAB: {

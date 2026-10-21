@@ -339,13 +339,39 @@ stat 参数先读、数值后读，数值减所选 add；客户端内部随后�
 
 原请求依据为本地D2MOO `PLAYER/PlrMsg.cpp`：Rcv0x1A／RVA0x85280穿戴（item GUID DWORD、body DWORD），0x1C／0x854B0卸装（body WORD），0x1D／0x85550同部位交换（item GUID DWORD、body DWORD）；0x23／0x85E70入带（item GUID DWORD、slot DWORD）、0x24／0x85F50取出（item GUID DWORD）、0x25／0x86040交换（source／target两个DWORD）和0x63／0x88F80自动入带（item GUID DWORD）。RVA限定原D2Game，包长含ID分别为9／3／9／9／5／9／5；不能将其当作CN服务器内部地址或完整规则源码。
 
-固定CN样本已登记的核心双向长度改写没有修改这些C2S长度，普通0x9C／9D action继续走原处理分支；这支持复用原请求形状，不单独证明全部CN资格规则相同。D2X只开放当前部位1–10及腰带的基础移物，MPQ ItemTypes／BodyLocs／Belts提供类型、部位、职业和容量检查；属性需求与装备是否生效仍由远端决定，缺少完整native资格时不生成已满足需求的底色或最终攻防。0x1B／1E需要腾挪另一只手的变体、0x60切组、使用、佣兵及扩展容器操作暂不开放。
+固定CN样本已登记的核心双向长度改写没有修改这些C2S长度，普通0x9C／9D action继续走原处理分支；这支持复用原请求形状，不单独证明全部CN资格规则相同。D2X只开放当前部位1–10及腰带的基础移物，MPQ ItemTypes／BodyLocs／Belts提供类型、部位、职业和容量检查；属性需求与装备是否生效仍由远端决定，缺少完整native资格时不生成已满足需求的底色或最终攻防。0x1B／1E腾挪另一只手的变体已接同一请求链，额外核对另一只手GUID／revision，双交换还检查背包空位；0x60切组已接原确认。佣兵仍关闭。使用／存储的当前边界见下文。
 
 RealmSession对CN拿取／卸装等待同GUID进入本人Cursor，对穿戴等待指定body，对腰带放置等待指定slot；交换还核对被换GUID进入本人Cursor及两侧revision均改变。0x47／48或仅相关属性刷新不代替上述位置确认；超时／拒绝保留实际Cursor，不重发请求或伪造本地成功。全部装备类型、扩大／缩小腰带、多件腾挪、属性增量和原客户端画面对照仍需覆盖。
 
 ### 扩展存储身份
 
 导出 `GetItemStorageType`（核心 RVA `0x34AFC0`）按 ItemData flags `0x40000000`、page=6、一个六项指针集合，以及扩展库存所有权，分别返回 1、2、4、3，否则 0。公开 BH 同值枚举命名为 preview、compendium、trophycase、guildvault。名称只辅助定位；每类获取／转移权限仍以目标请求和回包为准。D2X 不能将它们全部映射为普通 stash，也不能把展示物品变成可操作库存。
+
+### 独立增量、消耗品与个人存储
+
+以下地址均限定本页固定SHA-256样本。REA／Ghidra记录保存在不提交的`reference/pd2-cn-analysis/ghidra-inventory3`；反编译推断仍需真实回包验证。
+
+| 通道 | 静态证据及当前消费者 | 边界 |
+| --- | --- | --- |
+| S2C 0x3E | 原D2Client RVA `0xAE300`，VA `0x6FB5E363`仍push 9；D2MOO `SCmd.cpp::D2GAME_PACKETS_SendPacket0x3E_6FC3EC20`同样写9位stat ID。已登记主补丁未覆盖此宽度 | 与完整物品的10位路径分开；CN拒绝511及超过7位或非零的尾部，不由完整格式推导增量宽度 |
+| S2C 0xA8／A9 | 原客户端A8 VA `0x6FB5DD70`及A9 `0x6FB5DD30`；A8 VA `0x6FB5DDC6`为9位读，核心补丁RVA `0xADE07`改为348字节表步长 | 仍沿状态列表队列，不执行本地药效公式；全部PD2状态／战斗程序未认证 |
+| 药水／卷轴／书 | 当前Misc的pSpell／useable及ItemTypes限定普通使用；Book配对读Books，容量读当前Misc maxstack（当前书为80） | 放开pSpell 1／2卷轴／书、3／5／6／9指定药水类别；不开放未知程序、佣兵喂药和本地药效模拟 |
+| 普通堆叠／鉴定／镶孔 | 复用原请求，提交前重查双方身份、revision、位置、品质、类型及数量；堆叠只放开品质1–3、同fileIndex／保存属性／无孔／同无形标志 | 修改堆叠容量、复杂品质与未完整解释的属性组合保守拒绝；不由请求入队声明成功 |
+| 个人页选择 | 核心RVA `0x38F680` → `0x37E350`，C2S `0x55 + BYTE(一基页号)`：核心VA `0x102BF7F6–0x102BF807`明确写opcode55、页号BYTE和长度2；D2Game RVA `0xFA320`回调项改写为核心`0x392770`。S2C `0x2D + DWORD(页号)`确认；独立页请求期限 | 编码限制为前10页；当前实服未确认一次正常0x55请求，因此发行门槛关闭，不重试或枚举。收到新页0x2D后按核心VA `0x1037E3ED–0x1037E3F9`发单字节0x5A，服务器回调核心RVA `0x392890`清除PlayerData+0x1B8；0x2E/0只复位第一页，不能凭空补发确认 |
+| 原生页缓存 | RVA `0x37E130`将InvPage4移到5，`0x37E220`按目标页还原；`0x37E480／530`读取Inventory的BigBank和LocalStashPagesSave几何 | 当前10×15／127×127使缓存每列7页。D2X用独立stashPage标记区分已知正常页；未知缓存页或detach语义隐藏坐标并保留未消费诊断，不授予操作权限 |
+| 0x2F重排 | 已知个人格的rebuild先使旧位置失效，再逐GUID恢复；非个人selector单独计未消费 | 不猜批次结束、不自动恢复未报告物品，不把特殊容器混入个人格 |
+
+个人仓库与方块分别读取目标Inventory的Big Bank Page2和Transmogrify Box Page1几何，当前为10×15、4×4。仓库DC6有44帧，每4帧是一种存储类型，不能按页号选择不同背景；正常仓库固定前4帧。stashtabs.dc6原图和核心RVA `0x2EC0A0`提供前10页图形及29像素步距，页切换独立于原版玩法意图。方块通过当前表中唯一可用pSpell7物品识别，不要求原版ques类型；仍需服务端0x77打开／关闭上下文，未开放合成、金币、交易及公会写入。
+
+### 心跳与长时间驻留
+
+游戏心跳仍发原形状C2S0x6D（13字节），使用既有heartbeat间隔；S2C0x8F没有请求ID。旧实现等待Pong期间不再发下一次心跳，并把单个缺失回复直接判成连接失败。CN独立`service_game_heartbeat_pd2`持续发送，不因缺一次Pong停发；只有游戏通道在既有timeout内完全没有合法完整包才判超时。收到多次未确认请求后的Pong时，不猜对应请求或生成错误RTT。账号／Realm消息不延长游戏通道存活。原版保持单个待回复的原策略。
+
+`online.gameHeartbeat`提供计数和相对入局时刻，失败仍保留终态诊断；完整断流、远端关闭及协议错误仍分别终止，不伪造在线状态。此修正解决本地缺少Pong后停止续发的问题，不能单凭本机正常回包证明其他机器的具体故障来源；外机同版本仍需复测。
+
+### 公会存储与展示分片
+
+0x36不是个人仓库分页。核心RVA `0x34B2B0` → `0x3540A0`出现`guild/GuildShowcase.cpp`，与`0x34B600／0x34B640`的`GuildCommon.cpp`属于另一库存域。固定包长411字节，字段为tag DWORD、offset／count／total各WORD及400字节载荷，count≤400、total≤6400；native不读取tag作为身份。D2X只在连续、同总长、界内分片完成后原子保存showcase原文，绝不据此授予物品所有权。0x9C/action19–1A的原文按GUID放进独立guildItems，未当普通库存解码。权限、展示条目和所有公会请求尚未实现；`online-items`只给数量／字节数诊断。
 
 ## 原客户端大厅崩溃与端点线索
 

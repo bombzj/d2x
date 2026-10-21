@@ -88,6 +88,10 @@ struct OnlineVersionChallenge {
     uint32_t logonType{};
     std::string revisionModule; // Bounded public module name; no formula, token or proof.
 };
+struct OnlineGameHeartbeat {
+    uint64_t sent{}, received{}, pending{};
+    uint64_t elapsedMilliseconds{}, lastPacketMilliseconds{}, lastPingMilliseconds{}, lastPongMilliseconds{};
+};
 struct OnlineView {
     // Build identity survives clear(): one RealmSession has one immutable profile.
     std::string protocolProfile{"lod113c"};
@@ -97,6 +101,7 @@ struct OnlineView {
     std::optional<OnlineVersionChallenge> versionChallenge;
     // Counts and IDs only: never packet payloads, credentials or native tickets.
     OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
+    OnlineGameHeartbeat gameHeartbeat;
 
     uint64_t revision{}, connectionGeneration{}, gameGeneration{};
     OnlineStage stage{OnlineStage::Idle};
@@ -119,6 +124,7 @@ struct OnlineView {
         sidProtocol = {};
         mcpProtocol = {};
         gameProtocol = {};
+        gameHeartbeat = {};
         revision = connectionGeneration = gameGeneration = 0;
         stage = OnlineStage::Idle;
         error.reset();

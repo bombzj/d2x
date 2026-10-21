@@ -111,6 +111,18 @@ inline std::optional<Cell> beltCell(Vec mouse, int rows) {
 inline Rectangle storageBounds() {
     return classicPanelBounds(false);
 }
+inline Rectangle storageBounds(const InventoryView &inventory) {
+    auto panel = classicPanelBounds(false, float(inventory.storagePanelTop));
+    panel.height = inventory.storagePanelHeight * inventoryScale();
+    return panel;
+}
+// CN core RVA 0x2EC0A0: ten tabs, 29 px stride, drawn above the bank grid.
+inline Rectangle storageTab(unsigned page) {
+    const auto p = classicPanelBounds(false);
+    const unsigned index = page - 1;
+    return {p.x + (14 + 29 * index + (index > 7)) * inventoryScale(),
+            p.y - 36 * inventoryScale(), 30 * inventoryScale(), 22 * inventoryScale()};
+}
 inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),
             31 * inventoryScale(), 34 * inventoryScale()};

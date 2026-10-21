@@ -206,7 +206,7 @@ $spec.preview=$false
 
 ## 诊断与异步含义
 
-`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。
+`online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN个人仓库已准备`storage-page`编码（`page`=1–10，0x55 + BYTE页号，0x2D + DWORD确认后回0x5A），但当前CN实服未确认分页，发行门槛仍关闭；调试入口同样拒绝，不作为原版通用容器命令。
 
 传送点观察需区分首次激活与菜单：野外中性物件第一次`online-interact`只启动／激活，收到原0x0E后结束等待；第二次点击mode1／2才出现0x63菜单。城镇传送点初始mode2，可直接打开。`server-snapshot.area`及`areas`新增`waypointIndex`和可空`waypointAnchor`（全局subtile）；`waypoints`仍列本人当前难度激活区域，`objects`列真实模式，`travel`列待过渡。用于观察原流程，不授予激活权限；源码规则及未认证范围见[传送点](../gameplay/world/OBJECTS.md#自研传送点)。
 
@@ -223,6 +223,8 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 ## 联网物品操作
 
 `online-status` 附带 `characterUi`／`hirelingUi`，读取当前共享 UI 端口的实际数值（含伤害／命中与 unknownStats、佣兵 known），便于和页面截图核对。它们不读取服务端 Totals、不补私有字段、不改变人物；原包事实仍在 online 下，宿主权威对照使用 server-snapshot。
+
+`online-status`的`online.gameHeartbeat`给出游戏心跳sent／received／pending、相对入局的elapsedMilliseconds及最后packet／ping／pong时间，不含认证或消息载荷。CN心跳独立持续发送；缺少一次Pong不阻塞后续心跳或断开仍在收游戏数据的连接。真正断流仍按既有timeout失败，失败快照保留计数。
 
 先用online-items查询实际GUID、revision与decoded；mode为0存储、1装备、2腰带、3地面、4Cursor、5掉落过渡、6孔内。page是原InvPage+1：1背包、4方块、5箱子。本人所有权为ownerType=0且owner等于load.playerUnitId；孔内子项ownerType=4、owner为宿主物品GUID；货架ownerType=1且owner为当前NPC。online-ground也返回完整快照，请按mode=3筛选。
 

@@ -335,7 +335,7 @@ bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); 
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
     const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
-        (command.action == OnlineItemAction::Place && command.page != 0)))
+        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 3 && command.page != 4)))
         return reject("This client profile currently supports only personal inventory item movement");
     update(session.read());
     const auto &online = session.read();
@@ -343,6 +343,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (!onlineInteractionMatches(*command.context, online))
         return reject("Queued item intent belongs to a previous game, area or interaction");
     const auto &world = online.world;
+    if (pd2Items && world.requestedStashPage && command.action != OnlineItemAction::StorageClose)
+        return reject("Wait for the server stash-page confirmation");
     if (online.stage != OnlineStage::ProtocolReady || !online.load.serverLoadComplete ||
         !online.load.playerUnitId || !world.playerPosition || onlinePlayerDead(world))
         return reject("The server player is unavailable for item operations");
@@ -394,6 +396,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             if (command.action == OnlineItemAction::RepairAll) return send();
         }
     }
+    if (command.action == OnlineItemAction::StoragePage) {
+        if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || view_.cursor ||
+            command.page < 1 || command.page > 10 || command.page == world.stashPage)
+            return reject("Stash-page selection requires an open CN personal stash and an empty cursor");
+        return send();
+    }
     if (command.action == OnlineItemAction::SwitchWeapons || command.action == OnlineItemAction::StorageClose ||
         command.action == OnlineItemAction::Transmute || command.action == OnlineItemAction::GoldDeposit ||
         command.action == OnlineItemAction::GoldWithdraw || command.action == OnlineItemAction::GoldDrop) {
@@ -423,7 +431,10 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     const auto found = world.items.find(command.item);
     if (found == world.items.end()) return reject("Item is not assigned in the current game");
     const auto &wire = found->second;
-    if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId))
+    if (pd2Items && (!wire.positionKnown ||
+        (wire.mode == 0 && wire.page == 5 && wire.stashPage != world.stashPage)))
+        return reject("Item position is not assigned in the active storage page");
+    if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId, world.storage.kind))
         return reject("Item is outside the supported personal inventory context");
     const auto &decoded = view_.items.at(command.item);
     if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
@@ -453,7 +464,10 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (entry == world.items.end() || command.target == command.item || !owned(entry->second))
             return reject("Target must be a different item belonging to this player");
         target = &entry->second; targetData = &view_.items.at(command.target);
-        if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId))
+        if (pd2Items && (!target->positionKnown ||
+            (target->mode == 0 && target->page == 5 && target->stashPage != world.stashPage)))
+            return reject("Target position is not assigned in the active storage page");
+        if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId, world.storage.kind))
             return reject("Target is outside the supported personal inventory context");
         if (!targetData->decoded || targetData->gamble) return reject("Target item data is unavailable");
         if (command.targetRevision && command.targetRevision != target->revision) return reject("Stale target item revision");
@@ -470,6 +484,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             decoded.width < 1 || decoded.height < 1 || int(command.x) + decoded.width > columns || int(command.y) + decoded.height > rows) return false;
         for (const auto &[id, item] : world.items) {
             if (id == replaced || !owned(item) || item.mode != 0 || item.page != command.page + 1) continue;
+            if (pd2Items && item.page == 5 && item.stashPage != world.stashPage) continue;
+            if (pd2Items && !item.positionKnown) return false;
             const auto &data = view_.items.at(id);
             if (!data.decoded || data.width < 1 || data.height < 1) return false;
             if (command.x < item.x + data.width && command.x + decoded.width > item.x &&
@@ -554,6 +570,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (command.mercenary && wire.mode != 2) return reject("Native mercenary item use requires a belt item");
         if (baseNumber(wire, "pSpell") == 7)
             return reject("Cube UI context and transmutation are not connected yet");
+        if (pd2Items) {
+            const int spell = baseNumber(wire, "pSpell");
+            const bool scroll = (spell == 1 || spell == 2) && (isType(wire, "scro") || isType(wire, "book"));
+            const bool potion = (spell == 3 || spell == 5 || spell == 6 || spell == 9) &&
+                (isType(wire, "hpot") || isType(wire, "mpot") || isType(wire, "rpot") ||
+                    isType(wire, "apot") || isType(wire, "wpot") || isType(wire, "spot"));
+            if ((!scroll && !potion) || command.mercenary) return reject("Unsupported PD2 item-use program");
+        }
         break;
     case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:
         if (!cursor() || !baseNumber(wire, "belt")) return reject("Only an allowed cursor consumable can enter the belt");
@@ -571,6 +595,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::Stack:
         if (!owned(wire) || !(cursor() || accessible(wire)) || !(target->mode == 1 || accessible(*target)) ||
             wire.code != target->code || !baseNumber(wire, "stackable")) return reject("Stack requires compatible owned stackable items");
+        if (pd2Items) {
+            const auto maximum = baseNumber(*target, "maxstack");
+            if (!onlinePd2StackCompatible(wire, decoded, *target, *targetData) ||
+                maximum < 1 || maximum > 511 || *targetData->quantity >= unsigned(maximum))
+                return reject("PD2 stacking requires matching ordinary items and a known non-full target");
+        }
         break;
     case OnlineItemAction::Book: {
         if (!cursor() || !isType(wire, "scro") || !accessible(*target) || !isType(*target, "book"))
@@ -580,6 +610,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             pair |= books.value(row, "ScrollSpellCode") == wire.code && books.value(row, "BookSpellCode") == target->code;
         if (!pair) return reject("Current MPQ has no matching scroll and tome pair");
         if (!targetData->quantity) return reject("Target tome quantity is unknown");
+        if (pd2Items && (decoded.quality != 2 || targetData->quality != 2 ||
+            *targetData->quantity >= unsigned(baseNumber(*target, "maxstack"))))
+            return reject("Tome is full or outside the supported PD2 scroll/book context");
         break;
     }
     case OnlineItemAction::Socket:
@@ -607,7 +640,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Cube placement requires a cursor/ground item and this player's stored cube");
         break;
     case OnlineItemAction::CubeOpen:
-        if (!accessible(wire) || view_.cursor || !isType(wire, "ques") || baseNumber(wire, "pSpell") != 7)
+        if (!accessible(wire) || view_.cursor || (!pd2Items && !isType(wire, "ques")) || baseNumber(wire, "pSpell") != 7)
             return reject("Open cube requires this player's accessible original cube and empty cursor");
         break;
     case OnlineItemAction::Buy:
@@ -643,6 +676,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::StorageClose: case OnlineItemAction::Transmute:
     case OnlineItemAction::GoldDeposit: case OnlineItemAction::GoldWithdraw: case OnlineItemAction::GoldDrop:
     case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
+    case OnlineItemAction::StoragePage:
         return reject("Invalid item command branch");
     }
     if (command.action == OnlineItemAction::Equip && bodyItem(command.body)) {
@@ -653,12 +687,31 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         const std::string_view characterClass = playerClass_ && *playerClass_<characters_.size()?characters_[*playerClass_].code:std::string_view{};
         const auto incoming = equipmentDefinition(wire);
         if (opposite && !compatibleWeaponHands(incoming, equipmentDefinition(*opposite), characterClass)) {
-            if (pd2Items) return reject("Remove the opposite-hand item before changing this weapon combination");
             const bool twoHanded = requiresBothWeaponHands(incoming, characterClass);
             if (bodyItem(command.body) && !twoHanded)
                 return reject("The requested swap would leave incompatible items in both hands");
             command.equipVariant = bodyItem(command.body) ? 2 : 1;
             if (!command.targetRevision) { command.target = opposite->id; command.targetRevision = opposite->revision; }
+            if (pd2Items) {
+                const auto &other = view_.items.at(opposite->id);
+                if (!other.decoded) return reject("Opposite-hand item is not fully decoded");
+                command.oppositeItem = opposite->id; command.oppositeRevision = opposite->revision;
+                if (command.equipVariant == 2) {
+                    bool room = false;
+                    for (int y = 0; y + other.height <= view_.rows && !room; ++y)
+                        for (int x = 0; x + other.width <= view_.columns && !room; ++x) {
+                            bool free = other.width > 0 && other.height > 0;
+                            for (const auto &[id, item] : world.items) {
+                                if (!backpack(item)) continue;
+                                const auto &stored = view_.items.at(id);
+                                if (!item.positionKnown || !stored.decoded || (x < item.x + stored.width && x + other.width > item.x &&
+                                    y < item.y + stored.height && y + other.height > item.y)) { free = false; break; }
+                            }
+                            room = free;
+                        }
+                    if (!room) return reject("Make backpack room for the opposite-hand item before equipping");
+                }
+            }
         }
     }
     if (!session.submit_item(command)) return reject(online.error ? online.error->message : "Item command is rate limited");

@@ -71,7 +71,7 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 `PlayPD2.cmd`使用同一D2X程序和`scripts/play-pd2.ps1`，不会自动构建、安装／更新PD2或加载原DLL。先显式构建包含本功能的EXE；现有旧EXE不因新增脚本而获得兼容。默认普通`Play.cmd`仍为原版。
 
-首次启动指定隔离副本的pd2目录，脚本创建被Git忽略的`pd2.local.json`；端点可显式指定，否则取环境变量`D2X_PD2_ACCOUNT_HOST`或该目录`zylpd2.ip`首个IPv4候选。当前样本的首行162.14.106.45:6112已可完成账号流程；其他线路或更新后的文件行序须另核实，可用`-AccountHost`覆盖首次生成值。已有配置则直接编辑后重启。`gateway`为空时显示真实Realm列表供选择，不伪造Realm名称。
+首次启动指定隔离副本的pd2目录，脚本创建被Git忽略的`pd2.local.json`；端点可显式指定，否则取环境变量`D2X_PD2_ACCOUNT_HOST`或该目录`zylpd2.ip`首个IPv4候选。当前样本的首行162.14.106.45:6112已可完成账号流程；其他线路或更新后的文件行序须另核实，可用`-AccountHost`覆盖首次生成值。已有配置则直接编辑后重启。CN默认选择服务器返回的第一个Realm，直接显示角色列表；不伪造Realm名称。
 
 ```powershell
 .\PlayPD2.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2' -AccountHost '<CN账号服务器>'
@@ -85,7 +85,7 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2 CN。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。建角／删除、房间详情、PD2单机／局域网及无窗口模式关闭。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–10（默认1）、lootAllocation布尔值（默认true），只影响CN建房扩展；不是端口或传输选择，未确认10的全部业务含义。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
 
-默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。原版`Play-Diagnostic.cmd`语义保持原样。
+默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。游戏心跳问题可用`PlayPD2.cmd -Diagnostic`保留程序身份及游戏包记录，再取`online-status`的`gameHeartbeat`计数／时间及截图；只有游戏包完全断流才触发CN心跳超时。原版`Play-Diagnostic.cmd`语义保持原样。
 
 ## 无窗口协议客户端
 

@@ -144,6 +144,14 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
     return name;
 }
 void loadRemoteItemDisplayData(ClassicData &content, const ClassicStrings &strings) {
+    const auto &misc = content.tables.at("misc");
+    for (size_t row = 0; row < misc.rows().size(); ++row) {
+        const auto code = misc.value(row, "code");
+        const auto *item = content.items.find(code);
+        if (!item || !item->usable || !item->equipment.isType("scro")) continue;
+        if (misc.number(row, "pSpell") == 1) content.identifyScrolls.emplace(code);
+        if (misc.number(row, "pSpell") == 2) content.portalScrolls.emplace(code);
+    }
     for (const auto &[name, destination] : {
         std::pair{"uniqueitems", &content.uniqueItems}, std::pair{"setitems", &content.setItems}}) {
         const auto &table = content.tables.at(name);

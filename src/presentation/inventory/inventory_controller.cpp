@@ -170,6 +170,15 @@ bool SceneController::handleInventory(const FrameInput &input) {
         }
         if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeBounds())) return true;
     }
+    if (inventory.personalItemActionsOnly && ui.storage && input.insideViewport && input.leftPressed) {
+        for (unsigned page = 1; page <= 10; ++page) {
+            if (!CheckCollisionPointRec(rv(input.mouse), storageTab(page))) continue;
+            inventoryClick_ = true;
+            if (!ui.drag && !ui.pending && !inventory.storagePagePending && page != inventory.storagePage &&
+                !inventoryClient_.selectStoragePage(page)) view_.notice("Storage page is unavailable.", true);
+            return true;
+        }
+    }
     EntityId backpack = view_.inventoryView().containers.backpack;
     if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
@@ -177,7 +186,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         toggleInventory();
         return true;
     }
-    if (ui.storage && input.insideViewport && input.leftPressed &&
+    if (!inventory.personalItemActionsOnly && ui.storage && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), storageClose())) {
         inventoryClick_ = true;
         toggleInventory();
@@ -191,13 +200,13 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 inventoryClient_.submit(SwitchWeaponSet{});
             return true;
         }
-    if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
+    if (!inventory.personalItemActionsOnly && ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeClose())) {
         inventoryClick_ = true;
         toggleInventory();
         return true;
     }
-    if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
+    if (!inventory.personalItemActionsOnly && ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeTransmute())) {
         inventoryClick_ = true;
         inventoryClient_.submit(TransmuteCube{});

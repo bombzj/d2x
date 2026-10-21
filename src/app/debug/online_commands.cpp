@@ -118,6 +118,14 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
     result["inventory"]["storage"] = {{"kind", storageNames.at(size_t(storage.kind))},
         {"source", optional(storage.source)}, {"requested", storageNames.at(size_t(storage.requested))},
         {"requestedSource", optional(storage.requestedSource)}, {"revision", storage.revision}};
+    const auto &heartbeat = v.gameHeartbeat;
+    result["gameHeartbeat"] = {{"sent", heartbeat.sent}, {"received", heartbeat.received}, {"pending", heartbeat.pending},
+        {"elapsedMilliseconds", heartbeat.elapsedMilliseconds}, {"lastPacketMilliseconds", heartbeat.lastPacketMilliseconds},
+        {"lastPingMilliseconds", heartbeat.lastPingMilliseconds}, {"lastPongMilliseconds", heartbeat.lastPongMilliseconds}};
+    result["inventory"]["storage"]["page"] = v.world.stashPage;
+    result["inventory"]["storage"]["requestedPage"] = optional(v.world.requestedStashPage);
+    result["inventory"]["externalStorage"] = {{"guildItems", v.world.extendedStorage.guildItems.size()},
+        {"showcaseBytes", v.world.extendedStorage.showcase.size()}, {"revision", v.world.extendedStorage.revision}};
     result["inventory"]["shopRequested"] = optional(v.world.shopRequested);
     result["inventory"]["shopSource"] = optional(v.world.shopSource);
     result["inventory"]["tradeResult"] = nullptr;
@@ -135,6 +143,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             {"code", wire.code}, {"name", item.name}, {"artKey", item.artKey}, {"width", item.width}, {"height", item.height},
             {"ownerType", optional(wire.ownerType)}, {"owner", optional(wire.owner)}, {"mode", wire.mode},
             {"page", wire.page}, {"body", wire.body}, {"x", wire.x}, {"y", wire.y},
+            {"stashPage", wire.stashPage}, {"positionKnown", wire.positionKnown},
             {"groundPosition", wire.mode == 3 || wire.mode == 5 ? Json{{"x", wire.groundX}, {"y", wire.groundY}} : Json(nullptr)},
             {"action", wire.action}, {"flags", wire.flags}, {"format", item.format}, {"identified", item.identified},
             {"quality", item.quality}, {"level", item.level}, {"quantity", optional(item.quantity)},
@@ -586,7 +595,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
                 "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
-                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store"};
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store", "storage-page"};
             const auto action = text("action", 32);
             const auto selected = std::find(names.begin(), names.end(), action);
             if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
@@ -623,7 +632,7 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             };
             intent.itemRevision = revision("itemRevision"); intent.targetRevision = revision("targetRevision");
             intent.x = cell("x", 15); intent.y = cell("y", 15);
-            intent.page = cell("page", 4); intent.body = cell("body", 10);
+            intent.page = cell("page", intent.action == OnlineItemAction::StoragePage ? 10 : 4); intent.body = cell("body", 10);
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
             intent.gamble = request.value("gamble", false);

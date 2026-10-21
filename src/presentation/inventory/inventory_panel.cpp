@@ -58,7 +58,7 @@ std::vector<ContainerGrid> inventoryGrids(const InventoryView &inventory, const 
              inventory.backpackLayout.columns, inventory.backpackLayout.rows, inventoryCellSize(inventory)});
     }
     if (ui.storage && inventory.storage == ui.storage) {
-        auto p = storageBounds();
+        auto p = storageBounds(inventory);
         const auto &spec = *inventory.container(ui.storage);
         const auto &layout = inventory.stashLayout;
         grids.push_back({ui.storage,

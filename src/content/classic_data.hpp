@@ -48,6 +48,7 @@ struct ClassicMonsterData {
 struct StashLayout {
     int columns = 0, rows = 0, left = 0, top = 0, cellSize = 0;
     bool expansion = false;
+    int panelTop = 60, panelHeight = 432;
 };
 struct PlayerInventoryLayout {
     StashLayout grid;

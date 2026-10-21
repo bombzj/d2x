@@ -3,6 +3,33 @@
 namespace d2x {
 namespace net {
 
+void RealmSession::Impl::send_game_heartbeat(Clock::time_point now) {
+    auto &heartbeat = view.gameHeartbeat;
+    heartbeat.elapsedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count());
+    sent(gs, game_ping(uint32_t(heartbeat.elapsedMilliseconds), view.latencyMilliseconds.value_or(0)));
+    if (!awaitingPong) lastPing = now;
+    awaitingPong = true;
+    ++heartbeat.sent; ++heartbeat.pending;
+    heartbeat.lastPingMilliseconds = heartbeat.elapsedMilliseconds;
+    nextHeartbeat = now + options.heartbeat; changed();
+}
+
+void RealmSession::Impl::service_game_heartbeat_pd2(Clock::time_point now) {
+    // A pong carries no request ID. Missing that reply must not suppress future
+    // keepalives or disconnect a game that is still publishing valid GS packets.
+    auto &heartbeat = view.gameHeartbeat;
+    heartbeat.elapsedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count());
+    const auto silent = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastGameReceive);
+    if (awaitingPong && silent >= options.timeout) {
+        fail(OnlineErrorKind::Timeout, "Game heartbeat timed out: no game packets for " +
+            std::to_string(silent.count()) + " ms; ping/pong " + std::to_string(heartbeat.sent) + "/" +
+            std::to_string(heartbeat.received));
+        return;
+    }
+    if (awaitingPong && now - lastPing >= options.timeout) view.latencyMilliseconds.reset();
+    send_game_heartbeat(now);
+}
+
 void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
     auto &current = view.world.combatRequest;
     // Channel mouse-up cannot replace an outstanding learn/select/spend ACK.
@@ -15,6 +42,12 @@ void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
 
 void RealmSession::Impl::handle_game(Packet packet) {
     observed(view.gameProtocol, packet, 1);
+    lastGameReceive = Clock::now();
+    if (gameStarted != Clock::time_point{}) {
+        auto &heartbeat = view.gameHeartbeat;
+        heartbeat.elapsedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(lastGameReceive - gameStarted).count());
+        heartbeat.lastPacketMilliseconds = heartbeat.elapsedMilliseconds;
+    }
     if (!compatibility.gameEntryBlocker.empty()) {
         fail(OnlineErrorKind::Unsupported, std::string(compatibility.gameEntryBlocker), packet.id);
         return;
@@ -90,12 +123,13 @@ void RealmSession::Impl::handle_game(Packet packet) {
         return;
     }
     if (packet.id == 0x8F) {
-        if (awaitingPong) {
+        auto &heartbeat = view.gameHeartbeat;
+        ++heartbeat.received; heartbeat.lastPongMilliseconds = heartbeat.elapsedMilliseconds;
+        if (awaitingPong && heartbeat.pending == 1)
             view.latencyMilliseconds = uint32_t(
                 std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - lastPing).count());
-            awaitingPong = false;
-            changed();
-        }
+        else if (awaitingPong) view.latencyMilliseconds.reset(); // Uncorrelated replies cannot identify a ping.
+        awaitingPong = false; heartbeat.pending = 0; changed();
         return;
     }
     if (view.remoteLobbyOnly && packet.id == 0xAD) {
@@ -119,11 +153,23 @@ void RealmSession::Impl::handle_game(Packet packet) {
             // Core RVA 0x38FA00 replaces the local PlayerData +0x1AC value.
             pd2PlayerControl = data.u32();
         } else {
-            // Core RVA 0x38F680 selects an extended stash page; its UI is unavailable.
-            pd2StashPage = data.u32();
+            // Core 38F680 -> 37E350 confirms a one-based stash page.
+            const auto page = data.u32();
+            if (page > 10) throw ProtocolError("Unsupported PD2 special stash page");
+            const auto selectedPage = uint8_t(page ? page : 1);
+            data.finish();
+            if (view.world.stashPage != selectedPage) sent(gs, {0x5A}); // Core VA 1037E3ED: native page-confirmation ACK.
+            view.world.stashPage = selectedPage;
+            if (auto &request = view.world.itemRequest; request && request->state == OnlineItemRequest::State::Pending &&
+                request->command.action == OnlineItemAction::StoragePage)
+                request->state = request->command.page == view.world.stashPage
+                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
+            view.world.requestedStashPage.reset();
+            ++view.world.interactionGeneration;
+            ++view.world.itemRevision;
         }
         data.finish();
-        ++view.gameProtocol.unconsumed[packet.id];
+        if (packet.id != 0x2D) ++view.gameProtocol.unconsumed[packet.id];
         changed();
         return;
     }
@@ -131,6 +177,9 @@ void RealmSession::Impl::handle_game(Packet packet) {
         if (packet.body.size() != 17 || !view.load.playerUnitId || packet.body[0] > 4)
             throw ProtocolError("Invalid PD2 local player-data update");
         size_t index = packet.body[0];
+        if (!index) {
+            view.world.stashPage = 1; view.world.requestedStashPage.reset(); ++view.world.itemRevision;
+        }
         if (index == 4) {
             // Core RVA 0x38F72C selects one of sixteen extended hotkey records.
             const auto slot = packet.body[2];
@@ -284,7 +333,13 @@ void RealmSession::Impl::handle_game(Packet packet) {
             case OnlineItemAction::Take: case OnlineItemAction::Unequip:
                 related = assigned && source->second.mode == 4; break;
             case OnlineItemAction::Equip:
-                related = assigned && source->second.mode == 1 && source->second.body == command.body && swappedCursor; break;
+                related = assigned && source->second.mode == 1 && source->second.body == command.body && swappedCursor;
+                if (related && command.equipVariant == 2) {
+                    const auto opposite = view.world.items.find(command.oppositeItem);
+                    related = opposite != view.world.items.end() && opposite->second.revision > command.oppositeRevision &&
+                        onlineBackpackItem(opposite->second, view.load.playerUnitId);
+                }
+                break;
             case OnlineItemAction::BeltPlace:
                 related = assigned && source->second.mode == 2 && source->second.x == command.beltSlot; break;
             case OnlineItemAction::BeltSwap:
@@ -518,6 +573,10 @@ void RealmSession::Impl::tick() {
         close_interaction();
         error(OnlineErrorKind::Timeout, "No original stash or cube open confirmation arrived");
     }
+    if (view.world.requestedStashPage && now >= stashPageDeadline) {
+        view.world.requestedStashPage.reset(); ++view.world.interactionGeneration;
+        error(OnlineErrorKind::Timeout, "No stash-page confirmation arrived; current page is retained");
+    }
     auto &playerTrade = view.world.playerTrade;
     if (playerTrade.active() && (playerTrade.response == OnlinePlayerTrade::Response::GoldSent ||
         playerTrade.response == OnlinePlayerTrade::Response::ResetSent ||
@@ -573,18 +632,13 @@ void RealmSession::Impl::tick() {
     }
     if ((view.stage == OnlineStage::LoadingGame || view.stage == OnlineStage::ProtocolReady) &&
         now >= nextHeartbeat) {
+        if (view.remoteLobbyOnly) { service_game_heartbeat_pd2(now); return; }
         if (awaitingPong && now - lastPing >= options.timeout) {
             fail(OnlineErrorKind::Timeout, "Game heartbeat timed out");
             return;
         }
         // One outstanding ping: the 1.13c response is not a request-ID acknowledgement.
-        if (!awaitingPong) {
-            const auto elapsed =
-                std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count();
-            sent(gs, game_ping(uint32_t(elapsed), view.latencyMilliseconds.value_or(0)));
-            lastPing = now;
-            awaitingPong = true;
-        }
+        if (!awaitingPong) send_game_heartbeat(now);
         nextHeartbeat = now + options.heartbeat;
     }
 }

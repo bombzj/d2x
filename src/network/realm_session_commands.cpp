@@ -147,7 +147,7 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
+    if (p.view.remoteLobbyOnly && intent != OnlineObjectIntent::Stash) {
         p.error(OnlineErrorKind::Unsupported, "Object interactions are unavailable for this client profile");
         return false;
     }
@@ -397,13 +397,21 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (p.view.remoteLobbyOnly && (!onlinePd2ItemAction(command.action) ||
-        (command.action == OnlineItemAction::Place && command.page != 0))) {
+        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 3 && command.page != 4))) {
         p.error(OnlineErrorKind::Unsupported, "Item actions are unavailable for this client profile");
         return false;
     }
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, true)) return false;
     auto &world = p.view.world;
+    if (p.view.remoteLobbyOnly && world.requestedStashPage && command.action != OnlineItemAction::StorageClose) {
+        p.error(OnlineErrorKind::Input, "Wait for the server stash-page confirmation"); return false;
+    }
+    if (command.action == OnlineItemAction::StoragePage && (!p.view.remoteLobbyOnly ||
+        world.storage.kind != OnlineStorageKind::Stash || command.page < 1 || command.page > 10 ||
+        command.page == world.stashPage || onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
+        p.error(OnlineErrorKind::Input, "Stash-page selection is not available in this context"); return false;
+    }
     if (world.playerTrade.active()) {
         const auto &trade = world.playerTrade;
         const auto source = world.items.find(command.item);
@@ -448,14 +456,23 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     if (p.view.remoteLobbyOnly) {
         const auto target = world.items.find(command.target);
         if ((command.action == OnlineItemAction::Pickup || command.action == OnlineItemAction::Take ||
-             command.action == OnlineItemAction::Unequip || command.action == OnlineItemAction::BeltAuto) &&
+             command.action == OnlineItemAction::Unequip || command.action == OnlineItemAction::BeltAuto ||
+             command.action == OnlineItemAction::Use || command.action == OnlineItemAction::Identify ||
+             command.action == OnlineItemAction::CubeOpen || command.action == OnlineItemAction::SwitchWeapons) &&
             onlineHasCursorItem(world.items, p.view.load.playerUnitId)) {
             p.error(OnlineErrorKind::Input, "Clear the server cursor before taking another item"); return false;
         }
-        if (item == world.items.end() || !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId) ||
-            ((command.action == OnlineItemAction::Swap || command.action == OnlineItemAction::BeltSwap) &&
+        const bool needsTarget = command.action == OnlineItemAction::Swap || command.action == OnlineItemAction::BeltSwap ||
+            command.action == OnlineItemAction::Stack || command.action == OnlineItemAction::Book ||
+            command.action == OnlineItemAction::Socket || command.action == OnlineItemAction::Identify ||
+            command.action == OnlineItemAction::CubeStore;
+        if (hasItem && (item == world.items.end() ||
+            !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId, world.storage.kind) ||
+            !item->second.positionKnown || (item->second.mode == 0 && item->second.page == 5 && item->second.stashPage != world.stashPage) ||
+            (needsTarget &&
                 (target == world.items.end() || !command.targetRevision || command.target == command.item ||
-                    !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId)))) {
+                    !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId, world.storage.kind) ||
+                    !target->second.positionKnown || (target->second.mode == 0 && target->second.page == 5 && target->second.stashPage != world.stashPage))))) {
             p.error(OnlineErrorKind::Input, "Item is outside the supported personal inventory context"); return false;
         }
         if ((command.action == OnlineItemAction::Unequip ||
@@ -463,18 +480,32 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             p.error(OnlineErrorKind::Input, "Equipment slot changed before submission"); return false;
         }
         if (command.action == OnlineItemAction::Equip) {
-            if (command.body < 1 || command.body > 10 || command.equipVariant || (item->second.flags & 0x100u)) {
+            if (command.body < 1 || command.body > 10 || command.equipVariant > 2 || (item->second.flags & 0x100u)) {
                 p.error(OnlineErrorKind::Input, "Unsupported personal equipment destination or variant"); return false;
             }
             const OnlineItem *equipped = nullptr;
             for (const auto &[id, candidate] : world.items)
                 if (onlineActiveEquipmentItem(candidate, p.view.load.playerUnitId) && candidate.body == command.body)
                     equipped = &candidate;
-            if ((equipped && (command.target != equipped->id || command.targetRevision != equipped->revision ||
-                    !onlinePd2ItemActionTarget(command.action, *equipped, p.view.load.playerUnitId))) ||
-                (!equipped && command.targetRevision)) {
+            const auto opposite = world.items.find(command.oppositeItem);
+            if (command.equipVariant && (opposite == world.items.end() || !command.oppositeRevision ||
+                opposite->second.revision != command.oppositeRevision ||
+                !onlinePd2ItemActionTarget(command.action, opposite->second, p.view.load.playerUnitId, world.storage.kind) ||
+                (command.body != 4 && command.body != 5) || opposite->second.body != (command.body == 4 ? 5 : 4) ||
+                (command.equipVariant == 1 ? equipped != nullptr : equipped == nullptr))) {
+                p.error(OnlineErrorKind::Input, "Opposite-hand equipment changed before submission"); return false;
+            }
+            const auto *expected = command.equipVariant == 1 ? &opposite->second : equipped;
+            if ((expected && (command.target != expected->id || command.targetRevision != expected->revision ||
+                    !onlinePd2ItemActionTarget(command.action, *expected, p.view.load.playerUnitId, world.storage.kind))) ||
+                (!expected && command.targetRevision)) {
                 p.error(OnlineErrorKind::Input, "Equipped swap target changed before submission"); return false;
             }
+        }
+        if (command.action == OnlineItemAction::Place &&
+            ((command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
+             (command.page == 4 && world.storage.kind != OnlineStorageKind::Stash))) {
+            p.error(OnlineErrorKind::Input, "Destination container is not authorized by the server"); return false;
         }
     }
     if (command.action == OnlineItemAction::Buy &&
@@ -532,6 +563,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             }
             out.u8(0x27); out.u32(command.target); out.u32(command.item); break;
         case OnlineItemAction::SwitchWeapons: out.u8(0x60); break;
+        case OnlineItemAction::StoragePage: out.u8(0x55); out.u8(command.page); break;
         case OnlineItemAction::CubeOpen:
             // Keep the stash lease until the server opens a cube stored inside it.
             if (world.storage.kind != OnlineStorageKind::Stash) p.close_interaction();
@@ -571,6 +603,11 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             out.u8(0x61);out.u16(command.body);break;
         }
         p.sent(p.gs, out.release());
+        if (command.action == OnlineItemAction::StoragePage) {
+            world.requestedStashPage = command.page;
+            ++world.interactionGeneration;
+            p.stashPageDeadline = Clock::now() + p.options.timeout;
+        }
         world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::Pending};
         if (command.action == OnlineItemAction::Pickup) {
             world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1, true};

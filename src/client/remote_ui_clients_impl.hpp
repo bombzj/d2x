@@ -120,6 +120,7 @@ struct RemoteUiClients::Impl {
         bool submitStaff(EntityId source,std::optional<ItemHandle> item) override;
         InventoryError preview(const InventoryIntent &intent) const override;
         void submit(InventoryIntent c) override;
+        bool selectStoragePage(unsigned page) override;
         std::optional<Cell> beltSpace(std::string_view code) const override;
     } inventory{*this};
 

@@ -18,6 +18,8 @@ struct OnlineItem {
     // common renderer can finish its one-shot flippy without restarting it.
     uint64_t groundAnimationRevision{}, groundAnimationReceivedMilliseconds{};
     uint8_t action{}, component{}, mode{}, body{}, page{}, x{}, y{};
+    uint8_t stashPage{}; // CN personal-page identity; zero outside stash.
+    bool positionKnown = true; // A native grid rebuild can invalidate placement.
     uint16_t groundX{}, groundY{};
     std::optional<uint8_t> ownerType;
     std::optional<uint32_t> owner;
@@ -45,17 +47,24 @@ enum class OnlineItemAction {
     Stack, Book, Socket, Identify, SwitchWeapons,
     CubeOpen, StorageClose, Transmute, GoldDeposit, GoldWithdraw, GoldDrop,
     TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService, HirelingEquipment,
-    BeltAuto, CubeStore
+    BeltAuto, CubeStore, StoragePage
 };
-// CN personal inventory only. Services, extended storage, use and weapon-set
-// switching remain unavailable; original profiles retain their full contract.
+enum class OnlineStorageKind { None, Stash, Cube };
+// CN item requests share the native contract. Guild/preview inventories and
+// services remain separate from the player's currently authorized containers.
 inline bool onlinePd2ItemAction(OnlineItemAction action) {
     switch (action) {
     case OnlineItemAction::Pickup: case OnlineItemAction::Take: case OnlineItemAction::Place:
     case OnlineItemAction::Drop: case OnlineItemAction::Swap:
     case OnlineItemAction::Equip: case OnlineItemAction::Unequip:
     case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:
-    case OnlineItemAction::BeltAuto: return true;
+    case OnlineItemAction::BeltAuto: case OnlineItemAction::Use:
+    case OnlineItemAction::Stack: case OnlineItemAction::Book: case OnlineItemAction::Identify:
+    case OnlineItemAction::Socket: case OnlineItemAction::SwitchWeapons:
+    case OnlineItemAction::CubeOpen: case OnlineItemAction::CubeStore:
+    case OnlineItemAction::StorageClose: return true;
+    // 0x55 is encoded, but the current CN service has not confirmed 0x2D.
+    // Keep paging closed until permissions and the full reply chain are verified.
     default: return false;
     }
 }
@@ -66,20 +75,35 @@ inline bool onlineBackpackItem(const OnlineItem &item, std::optional<uint32_t> p
 inline bool onlineActiveEquipmentItem(const OnlineItem &item, std::optional<uint32_t> player) {
     return onlineItemOwnedBy(item, player) && item.mode == 1 && item.body >= 1 && item.body <= 10;
 }
-inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player) {
+inline bool onlinePd2StoredItem(const OnlineItem &item, std::optional<uint32_t> player, OnlineStorageKind storage) {
+    return onlineItemOwnedBy(item, player) && item.mode == 0 &&
+        !(item.flags & (0x40000000u | 0x2000000u)) &&
+        (item.page == 1 || (item.page == 5 && storage == OnlineStorageKind::Stash) ||
+            (item.page == 4 && storage == OnlineStorageKind::Cube));
+}
+inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player,
+                                     OnlineStorageKind storage) {
     if (item.flags & (0x40000000u | 0x2000000u)) return false;
     if (action == OnlineItemAction::Pickup) return item.mode == 3;
-    if (action == OnlineItemAction::Take) return onlineBackpackItem(item, player) ||
+    if (action == OnlineItemAction::Take) return onlinePd2StoredItem(item, player, storage) ||
         onlineActiveEquipmentItem(item, player) || (onlineItemOwnedBy(item, player) && item.mode == 2);
     if (action == OnlineItemAction::Unequip) return onlineActiveEquipmentItem(item, player);
     if (action == OnlineItemAction::BeltAuto) return onlineBackpackItem(item, player);
+    if (action == OnlineItemAction::Use || action == OnlineItemAction::Identify)
+        return onlinePd2StoredItem(item, player, storage) || (onlineItemOwnedBy(item, player) && item.mode == 2);
+    if (action == OnlineItemAction::CubeOpen) return onlinePd2StoredItem(item, player, storage);
+    if (action == OnlineItemAction::Stack && onlinePd2StoredItem(item, player, storage)) return true;
     return onlinePd2ItemAction(action) && onlineCursorItem(item, player);
 }
-inline bool onlinePd2ItemActionTarget(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player) {
+inline bool onlinePd2ItemActionTarget(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player,
+                                     OnlineStorageKind storage) {
     if (item.flags & (0x40000000u | 0x2000000u)) return false;
-    if (action == OnlineItemAction::Swap) return onlineBackpackItem(item, player);
+    if (action == OnlineItemAction::Swap || action == OnlineItemAction::Book || action == OnlineItemAction::CubeStore)
+        return onlinePd2StoredItem(item, player, storage);
     if (action == OnlineItemAction::BeltSwap) return onlineItemOwnedBy(item, player) && item.mode == 2;
     if (action == OnlineItemAction::Equip) return onlineActiveEquipmentItem(item, player);
+    if (action == OnlineItemAction::Stack || action == OnlineItemAction::Socket || action == OnlineItemAction::Identify)
+        return onlinePd2StoredItem(item, player, storage) || onlineActiveEquipmentItem(item, player);
     return false;
 }
 struct OnlineItemCommand {
@@ -88,6 +112,8 @@ struct OnlineItemCommand {
     uint64_t itemRevision{}, targetRevision{};
     uint8_t x{}, y{}, page{}, body{}, beltSlot{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
+    uint32_t oppositeItem{}; // Local precondition only; native server selects this hand.
+    uint64_t oppositeRevision{};
     bool toCursor{}, mercenary{};
     bool gamble{}, multibuy{};
     std::optional<OnlineIntentContext> context;
@@ -98,7 +124,6 @@ struct OnlineItemRequest {
     OnlineItemCommand command;
     State state{}; // Updated means a related server update, not guaranteed success.
 };
-enum class OnlineStorageKind { None, Stash, Cube };
 struct OnlineStorageContext {
     OnlineStorageKind kind{}, requested{};
     std::optional<uint32_t> source, requestedSource;
@@ -128,6 +153,18 @@ struct OnlineDecodedItem {
     std::vector<OnlineItemStat> stats, runewordStats, baseStats;
     std::array<std::vector<OnlineItemStat>, 5> setStats;
 };
+inline bool onlinePd2StackCompatible(const OnlineItem &sourceWire, const OnlineDecodedItem &source,
+                                     const OnlineItem &targetWire, const OnlineDecodedItem &target) {
+    if (sourceWire.code != targetWire.code || source.quality < 1 || source.quality > 3 ||
+        source.quality != target.quality || source.fileIndex != target.fileIndex || source.sockets || target.sockets ||
+        ((sourceWire.flags ^ targetWire.flags) & 0x400000u) || !source.quantity || !target.quantity ||
+        source.stats.size() != target.stats.size()) return false;
+    for (size_t i = 0; i < source.stats.size(); ++i) {
+        const auto &a = source.stats[i], &b = target.stats[i];
+        if (a.id != b.id || a.value != b.value || a.parameter != b.parameter) return false;
+    }
+    return true;
+}
 struct OnlineInventoryView {
     uint64_t revision{}, gameGeneration{};
     std::map<uint32_t, OnlineDecodedItem> items;

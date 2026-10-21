@@ -2,6 +2,18 @@
 
 namespace d2x {
 const InventoryView &RemoteUiClients::Impl::Inventory::read() const { return o.inventoryView; }
+bool RemoteUiClients::Impl::Inventory::selectStoragePage(unsigned page) {
+    if (!onlinePd2ItemAction(OnlineItemAction::StoragePage) ||
+        !o.inventoryView.personalItemActionsOnly || o.inventoryView.readOnly || o.inventoryView.dead ||
+        !o.transactions.empty() || o.waiting || !onlineWorldMatches(o.context, o.session.read()) || page > 10) return false;
+    OnlineItemCommand command;
+    command.action = OnlineItemAction::StoragePage; command.page = uint8_t(page);
+    command.context = onlineIntentContext(o.session.read());
+    if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
+    o.context = onlineIntentContext(o.session.read());
+    return true;
+}
+
 bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional<ItemHandle> item) {
             if(source!=o.inventoryView.staffSource) return false;
             if(item) {const auto *value=o.inventoryView.item(item->id);if(!value || value->revision!=item->revision || value->definition!=o.data.staffRecipe.output) return false;}
@@ -9,6 +21,8 @@ bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional
         }
 InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &intent) const {
             if (o.inventoryView.dead || o.inventoryView.readOnly) return InventoryError::AccessDenied;
+            if (o.inventoryView.storagePagePending && !std::holds_alternative<CloseStorage>(intent))
+                return InventoryError::AccessDenied;
             if (o.inventoryView.personalItemActionsOnly) {
                 const auto &view = o.inventoryView;
                 auto activeSlot = [&](EquipmentSlot slot) {
@@ -17,7 +31,9 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                 auto personalContainer = [&](EntityId container) {
                     return container == view.containers.backpack || container == view.containers.cursor ||
                         container == view.containers.belt || container == view.containers.beltEquipment ||
-                        container == view.containers.equipment;
+                        container == view.containers.equipment ||
+                        (container == view.containers.stash && o.session.read().world.storage.kind == OnlineStorageKind::Stash) ||
+                        (container == view.containers.cube && o.session.read().world.storage.kind == OnlineStorageKind::Cube);
                 };
                 auto sourceAllowed = [&](ItemHandle handle) {
                     const auto *item = view.item(handle.id);
@@ -34,7 +50,8 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                             if constexpr (std::is_same_v<std::decay_t<decltype(at)>, ContainerLocation>)
                                 return at.container != view.containers.equipment ||
                                     activeSlot(EquipmentSlot(at.cell.x));
-                            else return at.container == view.containers.backpack || at.container == view.containers.belt;
+                            else return at.container == view.containers.backpack || at.container == view.containers.belt ||
+                                at.container == view.containers.stash || at.container == view.containers.cube;
                         }
                     }, destination);
                 };
@@ -43,8 +60,9 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                     if constexpr (std::is_same_v<T, MoveItem>)
                         return sourceAllowed(command.item) && destinationAllowed(command.destination);
                     else if constexpr (std::is_same_v<T, TransferItem>)
-                        return sourceAllowed(command.item) && (command.destination == view.containers.backpack ||
-                            command.destination == view.containers.belt);
+                        return sourceAllowed(command.item) && personalContainer(command.destination) &&
+                            (command.destination == view.containers.backpack || command.destination == view.containers.belt ||
+                                command.destination == view.containers.stash || command.destination == view.containers.cube);
                     else if constexpr (std::is_same_v<T, EquipItem>)
                         return sourceAllowed(command.item) && (!command.slot ||
                             activeSlot(*command.slot)) &&
@@ -56,9 +74,21 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         const auto *target = view.item(command.second.id);
                         const auto *at = target ? std::get_if<ContainerLocation>(&target->location) : nullptr;
                         return sourceAllowed(command.first) && sourceAllowed(command.second) && at &&
-                            (at->container == view.containers.backpack || at->container == view.containers.belt) &&
+                            (at->container == view.containers.backpack || at->container == view.containers.belt ||
+                                at->container == view.containers.stash || at->container == view.containers.cube) &&
                             (!command.destination || command.destination->container == at->container);
                     }
+                    else if constexpr (std::is_same_v<T, UseItem>) return sourceAllowed(command.item);
+                    else if constexpr (std::is_same_v<T, MergeStacks>)
+                        return sourceAllowed(command.source) && sourceAllowed(command.target);
+                    else if constexpr (std::is_same_v<T, LoadBook>)
+                        return sourceAllowed(command.scroll) && sourceAllowed(command.book);
+                    else if constexpr (std::is_same_v<T, IdentifyItem>)
+                        return sourceAllowed(command.source) && sourceAllowed(command.target);
+                    else if constexpr (std::is_same_v<T, SocketItem>)
+                        return sourceAllowed(command.filler) && sourceAllowed(command.host);
+                    else if constexpr (std::is_same_v<T, UseBeltColumn>) return !command.hireling && command.column >= 0 && command.column < 4;
+                    else if constexpr (std::is_same_v<T, SwitchWeaponSet> || std::is_same_v<T, CloseStorage>) return true;
                     else return false;
                 }, intent);
                 if (!allowed) return InventoryError::AccessDenied;
@@ -151,6 +181,18 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                     const auto decoded=o.items.read().items.find(guid(target->id));
                     if (!base || native==o.session.read().world.items.end() || decoded==o.items.read().items.end())
                         return InventoryError::UnknownItem;
+                    if (o.inventoryView.personalItemActionsOnly) {
+                        const auto *source = o.inventoryView.item(c.source.id);
+                        if (!source || source->id == target->id) return InventoryError::UnknownItem;
+                        if (source->revision != c.source.revision || target->revision != c.target.revision) return InventoryError::SourceChanged;
+                        const auto &world = o.session.read().world; const auto &items = o.items.read().items;
+                        const auto sourceWire = world.items.find(guid(source->id));
+                        const auto sourceData = items.find(guid(source->id));
+                        if (sourceWire == world.items.end() || sourceData == items.end() ||
+                            !onlinePd2StackCompatible(sourceWire->second, sourceData->second, native->second, decoded->second) ||
+                            !base->maxStack || base->maxStack > 511) return InventoryError::IncompatibleStack;
+                        return *decoded->second.quantity >= base->maxStack ? InventoryError::StackFull : InventoryError::None;
+                    }
                     const auto instance=o.completeItem(native->second,decoded->second,target->location);
                     if (!instance) return InventoryError::InvalidRequest;
                     int64_t maximum=base->maxStack;

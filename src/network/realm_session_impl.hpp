@@ -131,7 +131,7 @@ struct RealmSession::Impl {
     std::function<void(uint64_t, const Packet &)> gamePacketObserver;
     std::function<void(uint64_t, std::span<const uint8_t>)> gameRequestObserver;
     size_t worldBytes{};
-    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, nextMovement{};
+    Clock::time_point deadline{}, gameStarted{}, nextHeartbeat{}, lastPing{}, lastGameReceive{}, nextMovement{};
     std::optional<uint32_t> initializedNpc;
     Clock::time_point npcDeadline{}, waypointDeadline{}, playerTradeDeadline{};
     struct PortalRequest {
@@ -151,7 +151,8 @@ struct RealmSession::Impl {
     std::array<Bytes, 2> pd2PlayerDataBlocks;
     std::array<Bytes, 20> pd2PlayerUpdates;
     std::map<uint32_t, uint16_t> pd2RosterCounters;
-    std::optional<uint32_t> pd2PlayerControl, pd2StashPage;
+    std::optional<uint32_t> pd2PlayerControl;
+    Clock::time_point stashPageDeadline{};
     std::optional<std::pair<uint8_t, uint32_t>> pd2MonstersRemaining;
     uint16_t gameJoinFlags{}; // Public MCP 04 reserved metadata; never a ticket.
     std::string listFilter;
@@ -196,6 +197,8 @@ struct RealmSession::Impl {
     void return_to_realm();
     void reset_area(bool preserveInitialPosition);
     void handle_game(Packet packet);
+    void send_game_heartbeat(Clock::time_point now);
+    void service_game_heartbeat_pd2(Clock::time_point now);
     void pump_sid();
     void pump_mcp();
     void pump_game();

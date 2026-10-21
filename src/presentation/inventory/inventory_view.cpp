@@ -170,6 +170,21 @@ void SceneView::drawItemTooltip(const InventoryItemView &item, Vec anchor,
                                 std::optional<unsigned> price, std::string_view priceLabel) const {
     drawItemText(item.tooltip, item.quality, anchor, price, priceLabel);
 }
+void SceneView::drawPanelTiles(const GpuAnimation &tiles, bool right, size_t first) const {
+    if (tiles.frames.size() < first + 4 || assets_.inventoryPanel.frames.size() < 4) return;
+    const auto art = classicPanelBounds(right);
+    const auto &upper = assets_.inventoryPanel.frames[0].texture;
+    const auto &lower = assets_.inventoryPanel.frames[2].texture;
+    for (int i = 0; i < 4; ++i) {
+        const auto &sprite = tiles.frames[first + i];
+        const auto &tile = sprite.texture;
+        const int baseline = upper.height + (i >= 2 ? lower.height : 0);
+        DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
+            {art.x + ((i % 2) * upper.width + sprite.x) * inventoryScale(),
+             art.y + (baseline - tile.height + sprite.y) * inventoryScale(),
+             tile.width * inventoryScale(), tile.height * inventoryScale()}, {0, 0}, 0, WHITE);
+    }
+}
 void SceneView::drawInventory(Vec mouse) const {
     const auto &ui = view_.inventory;
     if (!ui.open)
@@ -178,23 +193,7 @@ void SceneView::drawInventory(Vec mouse) const {
     EntityId backpack = inventoryView_.containers.backpack;
     auto panel = inventoryBounds(inventory);
     drawPanelFrame(true);
-    if (assets_.inventoryPanel.frames.size() >= 8)
-        for (int i = 0; i < 4; ++i) {
-            const auto &sprite = assets_.inventoryPanel.frames[4 + i];
-            const auto &tile = sprite.texture;
-            // Native DC6 tiles are bottom-anchored. The unchanged character
-            // half supplies the two row baselines; inventory art may be taller
-            // and carries its own signed offsets (CN: -35 / +35).
-            const auto art = classicPanelBounds(true);
-            const auto &upper = assets_.inventoryPanel.frames[0].texture;
-            const auto &lower = assets_.inventoryPanel.frames[2].texture;
-            const int baseline = upper.height + (i >= 2 ? lower.height : 0);
-            DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                           {art.x + ((i % 2) * upper.width + sprite.x) * inventoryScale(),
-                            art.y + (baseline - tile.height + sprite.y) * inventoryScale(), tile.width * inventoryScale(),
-                            tile.height * inventoryScale()},
-                           {0, 0}, 0, WHITE);
-        }
+    drawPanelTiles(assets_.inventoryPanel, true, 4);
     auto hoverCell = inventoryCell(inventory, mouse);
     EntityId hovered = hoverCell ? inventory.itemAt(backpack, *hoverCell) : EntityId{};
     const auto weaponSet = inventoryView_.weaponSet;

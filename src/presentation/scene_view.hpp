@@ -184,6 +184,7 @@ class SceneView {
     PaletteBlendView &prepareWorldLighting(const WorldDrawView &, std::span<const WorldDrawItem>);
     void drawNpcAlert(EntityId npc, Vec at, bool back) const;
     void drawPanelFrame(bool right) const;
+    void drawPanelTiles(const GpuAnimation &, bool right, size_t first = 0) const;
     void drawGameMenu() const;
     void drawNpcDialogue() const;
     void displayNpcDialogue(EntityId object, std::string speaker, std::string text);

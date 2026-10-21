@@ -136,7 +136,7 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             item.usable = number("useable").value_or(0) != 0;
             item.targetCursor = number("spellicon").value_or(-1);
             item.opensCube = family == ItemFamily::Misc &&
-                             value("type") == "ques" && number("pSpell") == 7;
+                             (originalRules ? value("type") == "ques" : item.usable) && number("pSpell") == 7;
             item.autoBelt = number("autobelt").value_or(0) != 0;
             item.ironGolemMaterial = (number("bitfield1").value_or(0)&2)!=0;
             item.imbueable = (number("bitfield1").value_or(0) & 1) != 0 &&
@@ -312,6 +312,40 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             if (data.cubeCode.empty() || !data.items.find(data.cubeCode))
                 throw std::runtime_error("MPQ lacks the original cube item");
         }
+    } else {
+        auto remoteGrid = [&](std::string_view name, bool stash) {
+            size_t row = 0;
+            for (; row < inventory.rows().size(); ++row) if (inventory.value(row, "class") == name) break;
+            if (row == inventory.rows().size()) throw std::runtime_error("Missing remote storage layout");
+            auto number = [&](std::string_view field) {
+                const auto value = inventory.number(row, field);
+                if (!value) throw std::runtime_error("Missing remote storage layout field: " + std::string(field));
+                return *value;
+            };
+            StashLayout layout{number("gridX"), number("gridY"), number("gridLeft"), number("gridTop"),
+                number("gridBoxWidth"), true};
+            if (stash) {
+                layout.panelTop = number("invTop"); layout.panelHeight = number("invBottom") - layout.panelTop;
+                layout.left -= number("invLeft"); layout.top -= layout.panelTop;
+            }
+            if (layout.columns < 1 || layout.columns > 16 || layout.rows < 1 || layout.rows > 16 ||
+                layout.left < 0 || layout.top < 0 || layout.cellSize < 1 || layout.cellSize != number("gridBoxHeight") ||
+                layout.left + layout.columns * layout.cellSize > 320 ||
+                layout.top + layout.rows * layout.cellSize > layout.panelHeight)
+                throw std::runtime_error("Unsupported remote storage layout");
+            return layout;
+        };
+        data.stashLayout = remoteGrid("Big Bank Page2", true);
+        // Cube grid coordinates in Page 1 are relative to the classic 60px
+        // art anchor; invTop describes its hit envelope, not the grid origin.
+        data.cubeLayout = remoteGrid("Transmogrify Box Page 1", false);
+        const auto &misc = data.tables.at("misc");
+        for (size_t row = 0; row < misc.rows().size(); ++row)
+            if (misc.number(row, "pSpell") == 7 && misc.number(row, "useable").value_or(0)) {
+                if (!data.cubeCode.empty()) throw std::runtime_error("Ambiguous remote cube program");
+                data.cubeCode = std::string(misc.value(row, "code"));
+            }
+        if (data.cubeCode.empty() || !data.items.find(data.cubeCode)) throw std::runtime_error("Remote cube item is unavailable");
     }
     // D2MOO MissMode.cpp's mode table. Unit bits are retained in the definition;
     // Grid supplies terrain/object flags, while combat resolves unit hits.

@@ -9,6 +9,7 @@ class IInventoryClient {
     virtual const InventoryView &read() const = 0;
     virtual InventoryError preview(const InventoryIntent &intent) const = 0;
     virtual void submit(InventoryIntent intent) = 0;
+    virtual bool selectStoragePage(unsigned) { return false; }
     virtual std::optional<Cell> beltSpace(std::string_view code) const = 0;
     virtual bool submitStaff(EntityId source,std::optional<ItemHandle> item) = 0;
 };
