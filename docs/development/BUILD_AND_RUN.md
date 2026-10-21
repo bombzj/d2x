@@ -67,7 +67,29 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 
+## PD2 CN远端账号大厅
+
+`PlayPD2.cmd`使用同一D2X程序和`scripts/play-pd2.ps1`，不会自动构建、安装／更新PD2或加载原DLL。先显式构建包含本功能的EXE；现有旧EXE不因新增脚本而获得兼容。默认普通`Play.cmd`仍为原版。
+
+首次启动指定隔离副本的pd2目录，脚本创建被Git忽略的`pd2.local.json`；端点可显式指定，否则取环境变量`D2X_PD2_ACCOUNT_HOST`或该目录`zylpd2.ip`首个IPv4候选。当前样本的首行162.14.106.45:6112已可完成账号流程；其他线路或更新后的文件行序须另核实，可用`-AccountHost`覆盖首次生成值。已有配置则直接编辑后重启。`gateway`为空时显示真实Realm列表供选择，不伪造Realm名称。
+
+```powershell
+.\PlayPD2.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2' -AccountHost '<CN账号服务器>'
+# 后续沿用本机配置：
+.\PlayPD2.cmd
+# 只选既有角色并停在大厅；需先在该配置的UI内记忆一次账号：
+.\PlayPD2.cmd -OnlineCharacter '<角色名>'
+```
+
+配置只保存`version=1`、`clientProfile=pd2-cn-normal-20261020`、`authentication=pd2-cn`、`originalClientDirectory`、`pd2Directory`、`accountHost/accountPort`、`gamePort`及`gateway`。原目录必须是pd2目录的父目录；相对路径按配置文件目录解析。账号密码在D2X界面输入，沿用每配置路径独立的Windows凭据管理器／Linux受限文件，不能写入启动命令、公开配置或文档。运行中修改配置定义会拒绝后续认证，需重启固定新服务与资源。
+
+EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2 CN。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。建角／删除、房间详情、建房／加入、游戏入场、PD2单机／局域网及无窗口模式均关闭，角色组件图像暂不渲染。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
+
+默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`只记录程序身份、输出和启动节点，不创建账号或游戏消息日志；原版`Play-Diagnostic.cmd`的D2GS记录语义保持原样。
+
 ## 无窗口协议客户端
+
+PD2不支持本节的宿主、TCP/IP传档或无窗口组合。
 
 现有`d2x.exe --headless <profile.json> --debug-pipe <独立名字>`可运行无窗口房主或一组原生TCP/IP客端，不初始化OpenGL、音频、UI、动画或客户端地图。`mode=host`读取`--mpq`，通过原内存MCP选角／建八人房，包含一个房主角色；`mode=clients`在一个进程中运行1–8个独立RealmSession，不读取MPQ。一个房主加七个客端即八个真实玩家，不增加房间容量或修改玩法规则。该显式诊断入口不替代普通客户端的地图／技能资格校验。
 
@@ -134,7 +156,9 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 `build.ps1` 默认只构建`d2x`及其依赖；独立服务端用`-Target d2x_pvpgn`，资源工具用`-Target d2x_assets`，需要全部目标时显式指定`-Target all`。公共头文件仍会使依赖它们的编译单元重新构建；Ninja增量不会因为只选客户端而跳过必要依赖。
 
-`package.ps1` 只复制已构建程序、两份运行脚本及说明／许可，覆盖更新同一目录，不复制 MPQ、不删除该目录的存档或截图、不运行程序。程序、脚本和文档按长度／SHA256比较，内容相同则跳过复制，并报告复制文件数、字节数与跳过数；连接配置也只在内容变化时更新。同步文档时移除源目录已不存在的说明文件，避免目录调整后留下过期文档。运行目录已有的`artifacts`、旧程序和用户文件不会进入复制清单，也不会被清理，因此整个目录占用不代表本次交付大小。未指定 `-Mpq` 时启动脚本先查运行目录本身和 EXE 同目录，再从运行目录向祖先目录寻找 `assets/mpq2`，因此包留在仓库内可直接双击；移到别处可把完整原 MPQ 放在 `d2x.exe` 旁边，或传实际原资源路径。`-Mpq/-OnlineConfig` 按调用时工作目录解析为绝对路径。程序工作目录为包根，客户端偏好与截图归包，角色持久化由原服处理。整个 `dist/` 忽略Git。示例路径按仓库根作为调用目录；例如从仓库根启动 `dist/current/Play.cmd -Mpq assets/mpq2`，不要把包目录当原资源相对根。
+需要可分发压缩包时，用`package.ps1 -OutputDirectory dist/<新的包名> -Archive`创建全新的包目录及同名ZIP；输出必须位于本项目dist内且尚不存在。压缩只针对这次新目录，避免将dist/current中已有的存档、凭据、截图和诊断文件带入；旧压缩包保留。原MPQ和PD2文件仍由使用者提供，复制的本机配置路径在其他机器上须重新选择。
+
+`package.ps1`复制已构建程序、Play／PlayPD2／诊断入口、运行脚本及说明／许可，默认更新dist/current，不复制MPQ、不删除该目录的存档或截图、不运行程序。PD2配置只按白名单复制路径、服务和版本字段，账号密码、key及凭据文件不进入打包清单。程序、脚本和文档按长度／SHA256比较，内容相同则跳过复制，并报告复制文件数、字节数与跳过数；连接配置也只在内容变化时更新。同步文档时移除源目录已不存在的说明文件，避免目录调整后留下过期文档。运行目录已有的`artifacts`、旧程序和用户文件不会进入复制清单，也不会被清理，因此整个目录占用不代表本次交付大小。未指定 `-Mpq` 时启动脚本先查运行目录本身和 EXE 同目录，再从运行目录向祖先目录寻找 `assets/mpq2`，因此包留在仓库内可直接双击；移到别处可把完整原 MPQ 放在 `d2x.exe` 旁边，或传实际原资源路径。`-Mpq/-OnlineConfig` 按调用时工作目录解析为绝对路径。程序工作目录为包根，客户端偏好与截图归包，角色持久化由原服处理。整个 `dist/` 忽略Git。示例路径按仓库根作为调用目录；例如从仓库根启动 `dist/current/Play.cmd -Mpq assets/mpq2`，不要把包目录当原资源相对根。
 
 依赖说明依据 [raylib 官方 Linux 构建文档](https://github.com/raysan5/raylib/wiki/Working-on-GNU-Linux)、[StormLib 官方源码](https://github.com/ladislav-zezula/StormLib) 及本项目固定版本的 CMake 配置。
 

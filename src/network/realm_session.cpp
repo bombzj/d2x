@@ -2,7 +2,11 @@
 
 namespace d2x::net {
 
-RealmSession::Impl::Impl(bool retain) : retainGamePackets(retain) {
+RealmSession::Impl::Impl(ClientProfile profile, bool retain)
+    : compatibility(clientCompatibility(profile)), retainGamePackets(retain), gamePackets(profile) {
+    view.protocolProfile = compatibility.id;
+    view.remoteLobbyOnly = profile == ClientProfile::Pd2CnNormal20261020;
+    view.allowLadderSelection = view.remoteLobbyOnly;
 }
 
 RealmSession::Impl::~Impl() {
@@ -45,8 +49,7 @@ void RealmSession::Impl::stage(OnlineStage value) {
 
 void RealmSession::Impl::clear_credentials() {
     erase_secret(options.password);
-    erase_secret(options.originalClient.classicKey);
-    erase_secret(options.originalClient.expansionKey);
+    erase_auth_secrets(options.originalClient);
     erase_secret(accountHash);
     erase_secret(loginHash);
     erase_secret(gamePassword);
@@ -122,6 +125,11 @@ bool RealmSession::Impl::require(OnlineStage value) {
     error(OnlineErrorKind::Input, "Operation is unavailable in the current connection stage");
     return false;
 }
+bool RealmSession::Impl::require_game_entry() {
+    if (compatibility.gameEntryBlocker.empty()) return true;
+    error(OnlineErrorKind::Unsupported, std::string(compatibility.gameEntryBlocker));
+    return false;
+}
 
 bool RealmSession::Impl::current_game(const OnlineView &published) const {
     return published.connectionGeneration == view.connectionGeneration &&
@@ -187,7 +195,7 @@ void RealmSession::Impl::observed(OnlineProtocolCounters &counters, const Packet
 }
 
 void RealmSession::Impl::sent(ByteStream &stream, Bytes bytes) {
-    if (&stream == &gs) validateClientPacket(bytes);
+    if (&stream == &gs) compatibility.validateClientPacket(bytes);
     const auto byteCount = bytes.size();
     const size_t idOffset = &stream == &gs ? 0 : &stream == &sid ? 1 : 2;
     const auto id = bytes.size() > idOffset ? std::optional<uint8_t>{bytes[idOffset]} : std::nullopt;
@@ -227,13 +235,21 @@ void RealmSession::Impl::expect(OnlineStage value) const {
         throw ProtocolError("Protocol reply arrived in an unexpected stage");
 }
 
-RealmSession::RealmSession(bool retainGamePackets) : impl_(std::make_unique<Impl>(retainGamePackets)) {
+RealmSession::RealmSession(bool retainGamePackets) : RealmSession(ClientProfile::Lod113c, retainGamePackets) {}
+RealmSession::RealmSession(ClientProfile profile, bool retainGamePackets)
+    : impl_(std::make_unique<Impl>(profile, retainGamePackets)) {
+    snapshot_ = impl_->view;
     impl_->start();
 }
 void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name, uint16_t gamePort) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
+    if (p.compatibility.profile != ClientProfile::Lod113c) {
+        p.snapshotDirty = true;
+        p.fail(OnlineErrorKind::Unsupported, "This client profile does not support preauthenticated or embedded Realms");
+        return;
+    }
     const auto connection = p.view.connectionGeneration + 1, game = p.view.gameGeneration + 1, revision = p.view.revision;
     p.shutdown(); p.view.clear(); p.view.connectionGeneration = connection; p.view.gameGeneration = game;
     p.view.revision = revision; p.requestCounter = 0; p.lastListRequest = 0;
@@ -252,6 +268,12 @@ RealmSession::~RealmSession() = default;
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
+    if (p.compatibility.profile != ClientProfile::Lod113c) {
+        erase_secret(save);
+        p.snapshotDirty = true;
+        p.fail(OnlineErrorKind::Unsupported, "This client profile does not support TCP/IP character transfer");
+        return;
+    }
     if (localIdentity && (p.view.stage != OnlineStage::Idle || !character_name_valid(localIdentity->name) ||
         !localIdentity->characterClass || *localIdentity->characterClass>6))
         throw ProtocolError("Explicit TCP/IP identity requires an idle session and valid native character");
@@ -296,6 +318,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
     p.registering = createAccount;
     try {
         if (!text_valid(options.account, 32) || !options.accountServer.port ||
+            options.originalClient.profile != p.compatibility.profile ||
             options.accountServer.host.empty() || options.timeout.count() <= 0 ||
             options.heartbeat.count() <= 0 || options.heartbeat >= options.timeout || !options.gamePort ||
             !text_valid(options.countryCode, 3) || !text_valid(options.countryName, 64))
@@ -303,7 +326,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
         if (createAccount && (!text_valid(options.account, 15) || options.account.size() < 2 ||
                               !text_valid(options.password, 15) || options.password.size() < 2))
             throw ProtocolError("Invalid account creation fields");
-        p.accountHash = password_hash(options.password);
+        p.accountHash = account_password_hash(p.compatibility.profile, options.password);
         erase_secret(options.password);
         p.options = std::move(options);
         std::random_device random;
@@ -314,8 +337,7 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
         p.stage(OnlineStage::ConnectingAccount);
     } catch (const std::exception &) {
         erase_secret(options.password);
-        erase_secret(options.originalClient.classicKey);
-        erase_secret(options.originalClient.expansionKey);
+        erase_auth_secrets(options.originalClient);
         p.fail(OnlineErrorKind::Input, "Login configuration could not be prepared");
     }
 }
@@ -354,6 +376,10 @@ bool RealmSession::create_character(CreateCharacterOptions options) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "PD2 CN character creation flags have not been verified; select an existing character");
+        return false;
+    }
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
     if (!character_name_valid(options.name) || options.characterClass > 6) {
@@ -380,6 +406,10 @@ bool RealmSession::delete_character(std::string name) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "Character deletion is unavailable in this PD2 CN lobby profile");
+        return false;
+    }
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
     if (!text_valid(name, 15) || std::none_of(p.view.characters.begin(), p.view.characters.end(),
@@ -409,9 +439,10 @@ bool RealmSession::select_character(std::string name) {
     auto found = std::find_if(p.view.characters.begin(), p.view.characters.end(),
                               [&](const auto &character) { return character.name == name; });
     if (found == p.view.characters.end() || !text_valid(name, 15) || !found->characterClass ||
-        !found->expansion.value_or(false) || found->ladder.value_or(true) ||
+        !found->expansion.value_or(false) || !found->ladder.has_value() ||
+        (found->ladder.value_or(true) && !p.view.allowLadderSelection) ||
         (found->hardcore.value_or(true) && found->dead.value_or(true))) {
-        p.error(OnlineErrorKind::Unsupported, "Select a known, playable, non-Ladder LoD character");
+        p.error(OnlineErrorKind::Unsupported, "Select a known, playable LoD character supported by this profile");
         return false;
     }
     try {
@@ -452,7 +483,9 @@ bool RealmSession::list_games(std::string filter) {
         Writer out;
         out.u16(p.request_id());
         out.u32(p.selected && p.selected->hardcore.value_or(false) ? 0x800 : 0);
-        p.listFilter = std::move(filter); // MCP filter is local: the reference server ignores extra bytes.
+        if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020)
+            out.string(filter, 15);
+        p.listFilter = std::move(filter); // Also filter locally; the reference PvPGN ignores wire filters.
         p.lastListRequest = p.pendingRequest;
         p.send_mcp(0x05, std::move(out));
         p.view.games.clear();
@@ -470,6 +503,10 @@ bool RealmSession::query_game(std::string name) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (p.view.remoteLobbyOnly) {
+        p.error(OnlineErrorKind::Unsupported, "PD2 CN game information decoding is not implemented");
+        return false;
+    }
     if (p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames)
         return p.require(OnlineStage::Lobby);
     if (!text_valid(name, 15)) {
@@ -505,6 +542,10 @@ bool RealmSession::create_game(CreateGameOptions options) {
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (!p.require(OnlineStage::Lobby)) {
+        erase_secret(options.password);
+        return false;
+    }
+    if (!p.require_game_entry()) {
         erase_secret(options.password);
         return false;
     }
@@ -551,6 +592,10 @@ bool RealmSession::join_game(std::string name, std::string password) {
     auto &p = *impl_;
     if (p.view.stage != OnlineStage::Lobby && p.view.stage != OnlineStage::ListingGames) {
         p.require(OnlineStage::Lobby);
+        erase_secret(password);
+        return false;
+    }
+    if (!p.require_game_entry()) {
         erase_secret(password);
         return false;
     }

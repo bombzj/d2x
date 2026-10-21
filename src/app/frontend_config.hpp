@@ -1,5 +1,6 @@
 #pragma once
 #include "network/realm_session.hpp"
+#include "app/client_setup.hpp"
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -12,15 +13,22 @@ struct OnlineConfiguration {
     net::LoginOptions login;
     std::string gateway;
 };
-inline OnlineConfiguration configuration(const std::filesystem::path &path) {
+inline OnlineConfiguration configuration(const std::filesystem::path &path,
+    net::protocol::ClientProfile profile = net::protocol::ClientProfile::Lod113c,
+    std::string_view profileDigest = {}) {
     // Keep keys out of argv, logs, views, saves and committed configuration.
     std::ifstream file(path);
     if (!file)
         throw std::runtime_error("Online login configuration is unavailable.");
     nlohmann::json json;
     OnlineConfiguration result;
+    std::string preparationError;
     try {
+        if(profile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+            verifyClientProfileDefinition(path,profileDigest);
         file >> json;
+        if(profile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+            verifyClientProfileDefinition(path,profileDigest);
         const auto port = json.value("accountPort", 6112), gamePort = json.value("gamePort", 4000);
         if (port < 1 || port > 65535 || gamePort < 1 || gamePort > 65535)
             throw std::runtime_error("Invalid port");
@@ -30,6 +38,20 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path) {
         auto directory = std::filesystem::path(json.at("originalClientDirectory").get<std::string>());
         if (directory.is_relative())
             directory = path.parent_path() / directory;
+        if (profile == net::protocol::ClientProfile::Pd2CnNormal20261020) {
+            if(json.value("version",0)!=1 || json.value("clientProfile",std::string{})!="pd2-cn-normal-20261020" ||
+               json.value("authentication",std::string{})!="pd2-cn" || result.login.accountServer.host.empty())
+                throw std::runtime_error("Mismatched client profile");
+            auto pd2=std::filesystem::path(json.at("pd2Directory").get<std::string>());
+            if(pd2.is_relative()) pd2=path.parent_path()/pd2;
+            if(!std::filesystem::equivalent(pd2.parent_path(),directory))
+                throw std::runtime_error("Mismatched client resource roots");
+            try {
+                verifyPd2AuthenticationFiles(pd2);
+                preparePd2Authentication(result.login.originalClient,pd2,directory);
+            } catch(const std::exception &error) {preparationError=error.what();throw;}
+            return result;
+        }
         constexpr std::array names{"Game.exe", "Bnclient.dll", "D2Client.dll"};
         for (size_t i = 0; i < names.size(); ++i) {
             result.login.originalClient.files[i] = directory / names[i];
@@ -57,9 +79,8 @@ inline OnlineConfiguration configuration(const std::filesystem::path &path) {
         for (auto key : {"classicKey", "expansionKey"})
             if (json.contains(key) && json[key].is_string())
                 net::protocol::erase_secret(json[key].get_ref<std::string &>());
-        net::protocol::erase_secret(result.login.originalClient.classicKey);
-        net::protocol::erase_secret(result.login.originalClient.expansionKey);
-        throw std::runtime_error("Online login configuration is incomplete or invalid.");
+        net::protocol::erase_auth_secrets(result.login.originalClient);
+        throw std::runtime_error(preparationError.empty() ? "Online login configuration is incomplete or invalid." : preparationError);
     }
 }
 } // namespace d2x

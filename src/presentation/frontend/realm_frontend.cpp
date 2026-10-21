@@ -45,8 +45,9 @@ ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 
     f.ready = true;
     return f;
 }
-bool playable(const OnlineCharacter &c) {
-    return c.characterClass && c.expansion.value_or(false) && !c.ladder.value_or(true) &&
+bool playable(const OnlineCharacter &c, bool allowLadder) {
+    return c.characterClass && c.expansion.value_or(false) && c.ladder.has_value() &&
+           (allowLadder || !*c.ladder) &&
            !(c.hardcore.value_or(true) && c.dead.value_or(true));
 }
 bool busy(OnlineStage s) {
@@ -96,7 +97,7 @@ struct RealmFrontend::Impl {
     std::string verifyPassword, characterName, deleteName;
     uint64_t lobbyGeneration{};
     Archives &archives;
-    RealmPortraitCatalog portraitCatalog;
+    std::unique_ptr<RealmPortraitCatalog> portraitCatalog;
     std::unique_ptr<Graphics> characterGraphics;
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
@@ -123,12 +124,12 @@ struct RealmFrontend::Impl {
     Vector2 mouse{};
     bool clicked{}, enabled{};
     FrontendIntent intent;
-    Impl(Archives &a)
+    Impl(Archives &a, RealmPortraitSupport portraitSupport)
         : sky(a, "data/global/palette/sky/pal.dat"), units(a, "data/global/palette/units/pal.dat"),
           lobbyControls(a, "data/global/palette/act1/pal.dat"),
           checkboxControls(a, "data/global/palette/fechar/pal.dat"),
           loadingArt(a, "data/global/palette/loading/pal.dat"),
-          archives(a), portraitCatalog(a), strings(a),
+          archives(a), strings(a),
           normal(font(units, a, "font16")), buttonFont(font(units, a, "fontexocet10")),
           inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
           lobbyFont(font(units, a, "fontridiculous")),
@@ -136,6 +137,8 @@ struct RealmFrontend::Impl {
           text(normal),
           buttonText(buttonFont), inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
           roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont) {
+        if(portraitSupport == RealmPortraitSupport::Original113c)
+            portraitCatalog=std::make_unique<RealmPortraitCatalog>(a);
         auto load = [&](Graphics &g, const char *id, const char *path) {
             auto value = g.single(std::string("data/global/ui/") + path + ".dc6");
             if (value.frames.empty())
@@ -342,10 +345,11 @@ struct RealmFrontend::Impl {
         }
     }
     void portrait(const OnlineCharacter &c, int x, int y) {
+        if(!portraitCatalog) return; // Do not interpret an unverified preview component schema.
         auto found = portraits.find(c.portrait);
         if (found == portraits.end()) {
             GpuAnimation animation;
-            if (const auto parts = portraitCatalog.decode(c)) {
+            if (const auto parts = portraitCatalog->decode(c)) {
                 std::array<const char *, 16> equipment;
                 for (size_t i = 0; i < 16; ++i)
                     equipment[i] = parts->components[i].c_str();
@@ -676,7 +680,7 @@ struct RealmFrontend::Impl {
             portraits.clear();
             characterGraphics = std::make_unique<Graphics>(archives);
             for (size_t i = 0; i < v.characters.size(); ++i)
-                if (playable(v.characters[i])) {
+                if (playable(v.characters[i], v.allowLadderSelection)) {
                     selected = int(i);
                     page = selected / 8;
                     break;
@@ -722,7 +726,7 @@ struct RealmFrontend::Impl {
                 tiles("highlight", x, y, 2);
             const auto &c = v.characters[size_t(i)];
             portrait(c, x + 36, y + 82);
-            label(c.name, x + 76, y + 14, playable(c) ? WHITE : GRAY);
+            label(c.name, x + 76, y + 14, playable(c, v.allowLadderSelection) ? WHITE : GRAY);
             if (c.characterClass && *c.characterClass < classes.size() && c.level) {
                 auto line = s(5017);
                 auto replace = [&](const char *token, const std::string &value) {
@@ -753,14 +757,14 @@ struct RealmFrontend::Impl {
                 value[at] = '\n';
             return value;
         };
-        if (button("tall", 34, 467, tallCaption(22743)))
+        if (button("tall", 34, 467, tallCaption(22743), !v.remoteLobbyOnly))
             emit(FrontendCommand::OpenCreateCharacter);
         button("tall", 234, 467, tallCaption(22742), false);
-        if (button("tall", 434, 467, tallCaption(22744), !v.characters.empty()))
+        if (button("tall", 434, 467, tallCaption(22744), !v.remoteLobbyOnly && !v.characters.empty()))
             deleteName = v.characters[size_t(selected)].name;
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
-        bool canSelect = !v.characters.empty() && playable(v.characters[size_t(selected)]);
+        bool canSelect = !v.characters.empty() && playable(v.characters[size_t(selected)], v.allowLadderSelection);
         if (button("medium", 628, 538, s(5102), canSelect) ||
             (enabled && canSelect && (input.enter || doubleClick))) {
             emit(FrontendCommand::SelectCharacter);
@@ -800,7 +804,7 @@ struct RealmFrontend::Impl {
             tiles(lobbyPanel == LobbyPanel::Join ? "join" : "create", 418, 72, 2);
         text.inBox(s(11123), {19, 72, 357, 20}, 16, Color{100, 100, 220, 255});
         const bool listing = v.stage == OnlineStage::ListingGames;
-        const bool canSubmit = v.stage == OnlineStage::Lobby && !gameName.empty();
+        const bool canSubmit = !v.remoteLobbyOnly && v.stage == OnlineStage::Lobby && !gameName.empty();
         if (lobbyPanel == LobbyPanel::Join) {
             bool doubleClickGame = false, clickedGame = false;
             if (!enabled || input.wheel || input.tab || input.backspace || input.entryDelete ||
@@ -831,7 +835,7 @@ struct RealmFrontend::Impl {
                     clickedGame = true;
                     gameName = game.name;
                     gameInfoOffset = 0;
-                    if (!doubleClickGame) {
+                    if (!doubleClickGame && !v.remoteLobbyOnly) {
                         emit(FrontendCommand::QueryGame);
                         intent.name = gameName;
                     }
@@ -896,8 +900,8 @@ struct RealmFrontend::Impl {
                 if (listing) emit(FrontendCommand::CancelList);
                 wipe(gamePassword);
             }
-            if (button("gameButton", 599, 404, s(5151), !gameName.empty(), 1, 0, &lobbyText) ||
-                (enabled && !gameName.empty() && (input.enter || doubleClickGame))) {
+            if (button("gameButton", 599, 404, s(5151), !v.remoteLobbyOnly && !gameName.empty(), 1, 0, &lobbyText) ||
+                (enabled && !v.remoteLobbyOnly && !gameName.empty() && (input.enter || doubleClickGame))) {
                 lastClickedGame.clear();
                 emit(FrontendCommand::JoinGame);
                 intent.name = gameName;
@@ -976,7 +980,7 @@ struct RealmFrontend::Impl {
                 if (!line.empty()) drawLine();
             }
         }
-        if (button("tabs", 534, 449, s(5312), true, 1, 0, &lobbyText)) {
+        if (button("tabs", 534, 449, s(5312), !v.remoteLobbyOnly, 1, 0, &lobbyText)) {
             lastClickedGame.clear();
             lobbyPanel = LobbyPanel::Create;
             if (listing) emit(FrontendCommand::CancelList);
@@ -1147,7 +1151,7 @@ struct RealmFrontend::Impl {
         return std::move(intent);
     }
 };
-RealmFrontend::RealmFrontend(Archives &a) : impl_(std::make_unique<Impl>(a)) {}
+RealmFrontend::RealmFrontend(Archives &a, RealmPortraitSupport support) : impl_(std::make_unique<Impl>(a, support)) {}
 RealmFrontend::~RealmFrontend() = default;
 FrontendIntent RealmFrontend::frame(FrontendPage p, const OnlineView &v, std::string_view gateway,
                                     std::string_view notice, Vector2 mouse, const FrameInput &input,

@@ -45,6 +45,8 @@ struct GamePacket {
 class RealmSession {
   public:
     explicit RealmSession(bool retainGamePackets = false);
+    // Fixed for this object's lifetime, including reconnects and stream resets.
+    explicit RealmSession(protocol::ClientProfile, bool retainGamePackets = false);
     // Preauthenticated Realm admission (embedded host today). Native MCP/D2GS
     // codecs, state reducer and all public gameplay commands remain unchanged.
     void connect_realm(std::unique_ptr<IByteTransport> mcp, std::unique_ptr<IByteTransport> game,

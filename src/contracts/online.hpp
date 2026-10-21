@@ -84,7 +84,16 @@ struct OnlineProtocolCounters {
     uint64_t receivedBytes{}, sentBytes{};
     std::optional<uint8_t> lastReceived;
 };
+struct OnlineVersionChallenge {
+    uint32_t logonType{};
+    std::string revisionModule; // Bounded public module name; no formula, token or proof.
+};
 struct OnlineView {
+    // Build identity survives clear(): one RealmSession has one immutable profile.
+    std::string protocolProfile{"lod113c"};
+    bool remoteLobbyOnly{}; // No local host, LAN, save or D2GS admission.
+    bool allowLadderSelection{}; // Server-returned characters, independent of game admission.
+    std::optional<OnlineVersionChallenge> versionChallenge;
     // Counts and IDs only: never packet payloads, credentials or native tickets.
     OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
 
@@ -105,6 +114,7 @@ struct OnlineView {
     bool gameListComplete{};
 
     void clear() {
+        versionChallenge.reset();
         sidProtocol = {};
         mcpProtocol = {};
         gameProtocol = {};

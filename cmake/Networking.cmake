@@ -46,9 +46,11 @@ if(WIN32)
 endif()
 add_library(d2x_d2gs_protocol
   src/network/protocol/wire.cpp src/network/protocol/auth.cpp
+  src/network/protocol/client_profile.cpp
+  src/network/protocol/native_auth_resource.cpp
   src/network/protocol/d2gs_stream.cpp src/network/protocol/lod113c.cpp
   src/network/protocol/huffman.cpp)
-target_link_libraries(d2x_d2gs_protocol PUBLIC d2x_core PRIVATE d2x_bncs_legacy)
+target_link_libraries(d2x_d2gs_protocol PUBLIC d2x_core PRIVATE d2x_bncs_legacy d2x_hash)
 add_library(d2x_remote_client src/network/realm_session.cpp src/network/realm_session_sid.cpp
   src/network/realm_session_mcp.cpp src/network/realm_session_game.cpp
   src/network/realm_session_social.cpp src/network/realm_session_commands.cpp

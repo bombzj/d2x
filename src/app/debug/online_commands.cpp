@@ -53,6 +53,8 @@ Json context(const std::optional<OnlineIntentContext> &c) {
 }
 Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInventoryView &inventory) {
     Json result{{"stage", stageNames.at(size_t(v.stage))},
+                {"clientProfile", v.protocolProfile},
+                {"remoteClientOnly", v.remoteLobbyOnly},
                 {"revision", v.revision},
                 {"connectionGeneration", v.connectionGeneration},
                 {"gameGeneration", v.gameGeneration},
@@ -62,6 +64,8 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
                 {"gameQueuePosition", optional(v.gameQueuePosition)},
                 {"gameListComplete", v.gameListComplete},
                 {"worldDisplayAvailable", scene.available}};
+    result["versionChallenge"] = v.versionChallenge ? Json{{"logonType", v.versionChallenge->logonType},
+        {"revisionModule", v.versionChallenge->revisionModule}} : Json(nullptr);
     auto protocol = [](const OnlineProtocolCounters &c) {
         Json packets = Json::array();
         for (size_t id = 0; id < c.received.size(); ++id)

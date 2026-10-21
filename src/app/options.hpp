@@ -1,4 +1,5 @@
 #pragma once
+#include "network/protocol/client_profile.hpp"
 #include <string>
 #include <cstdint>
 namespace d2x {
@@ -8,6 +9,8 @@ struct AppOptions {
     std::string screenshot, pack, debugPipe, startupProfile;
     std::string gamePacketLog, hostPacketLog;
     std::string headlessProfile;
+    std::string clientProfile, clientProfileDigest, pd2Directory;
+    net::protocol::ClientProfile protocolProfile{net::protocol::ClientProfile::Lod113c};
     std::string onlineConfig = "online.local.json";
     std::string onlineCharacter, onlineCreateGame, onlineJoinGame;
     std::string onlinePlay;

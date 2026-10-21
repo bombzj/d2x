@@ -15,7 +15,7 @@
 namespace d2x {
 // Mutable frontend state shared between the frame loop and command dispatch.
 struct FrontendDispatchState {
-    EmbeddedRealm &embedded;
+    EmbeddedRealm *embedded;
     net::RealmSession &session;
     RealmFrontend &ui;
     OnlineLoginMemory &loginMemory;

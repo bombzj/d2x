@@ -103,6 +103,10 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
             game_rejected(packet.id, result, "Game joining was rejected");
             return;
         }
+        if (!compatibility.gameEntryBlocker.empty()) {
+            fail(OnlineErrorKind::Unsupported, std::string(compatibility.gameEntryBlocker), packet.id);
+            return;
+        }
         if (host == "0.0.0.0")
             throw ProtocolError("Game server returned an invalid endpoint");
         clear_game();
@@ -132,6 +136,7 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
         game.index = in.u32();
         game.players = in.u8();
         game.flags = in.u32();
+        in.take(compatibility.gameListExtensionBytes);
         game.name = in.string(15);
         game.description = in.string(256);
         finish_zero_padding(in);
@@ -142,7 +147,9 @@ void RealmSession::Impl::handle_mcp(Packet packet) {
         }
         if (view.games.size() >= 256)
             throw ProtocolError("Game list limit exceeded");
-        if (!(game.flags & 0x00200000) &&
+        // PvPGN D2_GAMEFLAG_LADDER; match the selected server character.
+        // CN permits Ladder selection in the lobby, unlike the original path.
+        if (bool(game.flags & 0x00200000) == (selected && selected->ladder.value_or(false)) &&
             (listFilter.empty() || game.name.find(listFilter) != std::string::npos))
             view.games.push_back(std::move(game));
         changed();
@@ -209,7 +216,9 @@ bool RealmSession::Impl::choose_realm(std::string name) {
     }
     Writer out;
     out.u32(clientToken);
-    out.append(loginHash);
+    auto proof = realm_logon_hash(compatibility.profile, clientToken, serverToken, loginHash);
+    out.append(proof);
+    erase_secret(proof);
     out.string(name, 64);
     send_sid(0x3E, std::move(out));
     view.error.reset();

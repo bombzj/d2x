@@ -45,9 +45,10 @@ struct FrontendIntent {
     std::optional<std::string> editedAccount;
 };
 // Original MPQ art and input only. The application owns authentication and sockets.
+enum class RealmPortraitSupport { Original113c, Unverified };
 class RealmFrontend {
   public:
-    explicit RealmFrontend(Archives &);
+    explicit RealmFrontend(Archives &, RealmPortraitSupport = RealmPortraitSupport::Original113c);
     ~RealmFrontend();
     RealmFrontend(const RealmFrontend &) = delete;
     RealmFrontend &operator=(const RealmFrontend &) = delete;

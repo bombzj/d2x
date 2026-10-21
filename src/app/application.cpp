@@ -4,6 +4,7 @@
 #include "headless.hpp"
 #include "startup_profile.hpp"
 #include "input.hpp"
+#include "app/client_setup.hpp"
 #include "content/language.hpp"
 #include "presentation/graphics/graphics.hpp"
 #include "presentation/graphics/primitives.hpp"
@@ -64,11 +65,12 @@ class RenderTarget {
 };
 } // namespace
 int runGame(int argc, char **argv) {
-    const auto options = parseOptions(argc, argv);
+    auto options = parseOptions(argc, argv);
     if (options.help) {
         std::cout << "D2X: Single Player characters / original-server client\n"
                      "Single Player lists local D2S characters; F11 saves, Ctrl+F11 reloads in town.\n"
                      "--mpq <folder|archive> --online-config <file.json>\n"
+                     "--client-profile <file.json>: fixed PD2 CN client resources and account lobby.\n"
                      "--host-lan <IPv4 interface> --host-saves <folder>: shared MCP/D2GS host.\n"
                      "--lan <host IPv4>: connect directly to its native character lobby.\n"
                      "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4000.\n"
@@ -86,22 +88,20 @@ int runGame(int argc, char **argv) {
         std::cout << "--headless <profile.json>: windowless host or native TCP clients; no scene/UI/audio.\n";
         return 0;
     }
+    resolveClientSetup(options);
     if (!options.headlessProfile.empty()) return runHeadless(options);
     StartupProfile profile(options.startupProfile);
     Archives archives;
-    // assets/mpq holds supplementary packs (PD2 language tables and fonts, demo
-    // packs). They mount first: every original member still resolves to the
-    // original archive, these only fill paths the original set does not ship.
-    std::error_code equivalentError;
-    if (!options.mpqSupplement.empty() &&
-        !std::filesystem::equivalent(options.mpqSupplement, options.mpq, equivalentError))
-        archives.mountDirectory(options.mpqSupplement);
-    archives.mountDirectory(options.mpq);
+    // Original supplements retain their lower priority. An explicit PD2 profile
+    // supplies its own verified archive order before any consumer is created.
+    mountClientResources(archives, options);
     if (archives.names.empty())
         throw std::runtime_error("No MPQs found. Supply --mpq <Lord-of-Destruction-folder|archive>.");
     applyLanguage(archives, detectLanguage(options.language, archives));
     profile.mark("archives-ready");
     Platform platform(options.hidden);
+    if(options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
+        SetWindowTitle("D2X - PD2 CN");
     profile.mark("platform-ready");
     RenderTarget target;
     runFrontend(archives, target.handle, options, profile);

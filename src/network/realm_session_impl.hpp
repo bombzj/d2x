@@ -100,6 +100,7 @@ inline bool pending_stage(OnlineStage stage) {
 } // namespace realm_session_impl_detail
 using namespace realm_session_impl_detail;
 struct RealmSession::Impl {
+    const ClientCompatibility &compatibility;
     // Calls and background service are serialized. Nested native operations (for
     // example Hardcore respawn -> leave) reuse this same lock.
     std::recursive_mutex mutex;
@@ -149,7 +150,7 @@ struct RealmSession::Impl {
 
     Bytes realmStartup;
 
-    explicit Impl(bool retain);
+    explicit Impl(ClientProfile, bool retain);
     ~Impl();
     void service();
     void start();
@@ -162,6 +163,7 @@ struct RealmSession::Impl {
     void error(OnlineErrorKind kind, std::string message, uint8_t id = 0, uint32_t code = 0);
     void fail(OnlineErrorKind kind, std::string message, uint8_t id = 0, uint32_t code = 0);
     bool require(OnlineStage value);
+    bool require_game_entry();
     bool current_game(const OnlineView &published) const;
     bool require_game(const OnlineView &published);
     bool require_intent(const OnlineIntentContext &context, bool interaction);

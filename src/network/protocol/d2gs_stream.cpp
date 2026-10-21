@@ -65,7 +65,7 @@ bool D2gsStream::next(Packet &packet) {
             return true;
         }
         if (!logical_.empty()) {
-            const size_t length = lod113c_packet_size(logical_);
+            const size_t length = compatibility_.serverPacketSize(logical_);
             if (length && length <= logical_.size()) {
                 packet = {logical_[0], Bytes(logical_.begin() + 1, logical_.begin() + length)};
                 logical_.erase(logical_.begin(), logical_.begin() + length);

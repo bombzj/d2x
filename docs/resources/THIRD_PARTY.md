@@ -37,8 +37,19 @@ BNCSutil仅构建认证子集，作为可替换动态库；包内保留原许可
 | `reference/dgengine-core/` | `dd600ab` | DGEngine 的通用 2D 引擎组件；不提供 Diablo II 规则或面板布局 |
 | `reference/opendiablo2/` | `7f92c57` | 怪物 `TransLvl + 2`、COF 逐层轮廓阴影、默认 `ohand.dc6` 鼠标及 Units 调色板；另有角色／任务面板参考 |
 | `reference/diablerie/` | `9e42ef2` | COF Shadow／透明字段与半高斜投影交叉参考；MIT；参考附带表不替代当前 MPQ |
+| `reference/pd2-bh/` | `92e9d319f20113b5fbd382ad0fd3df9480116d04` | [PD2官方BH](https://github.com/Project-Diablo-2/BH)：原客户端钩子、MCP局部扩展、物品提示／过滤与PD2核心导出调用；AGPL-3.0；不是完整PD2核心或汉服源码 |
+| `reference/pd2-cn-bh/` | `68f7343342eed668190d464b7111849a6cc0ce89` | [历史BH-CN](https://github.com/weili0677/BH-CN)：2022-12-27的S6汉化分支，原MPQ辅助表读取、输入／物品及大厅改动；AGPL-3.0；不代表当前CN版本 |
+| `reference/pd2-cn-analysis/` | 目标SHA-256见[PD2兼容分析](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本) | CN样本的只读分析产物：输入／工具摘要、PE／LLVM、提取表、REA Evidence、静态主补丁及收发长度对照；地址与限制见[DLL取证](PD2_CN_DLL_ANALYSIS.md)，不是公开核心源码，不进入构建或源码提交 |
+| `reference/pd2-launcher/` | `48e8cb3b9a218618403b532d88b7f0221cd132f2` | [PD2官方启动器](https://github.com/Project-Diablo-2/PD2Launcher)：文件更新清单、校验和Game.exe启动参数；MIT；不提供游戏协议实现 |
+| `reference/pd2-installer/` | `5c0d6b293c975923afb8e5038bec28914618171b` | [PD2官方安装器](https://github.com/Project-Diablo-2/ProjectD2Installer)：ProjectD2目录与基础LoD安装依赖；未见仓库级许可证；仅作安装结构参考，不执行附带程序 |
+| `reference/rea/` | `052956af3416fa01d93837e54fdec3ad2739f6d1` | [REA正式上游](https://github.com/morluto/rea)，源码版本6.7.0，MIT；Ghidra适配、Evidence及跨构建函数匹配的纯文本节选，清单见`SOURCE_REFERENCE.json`；此目录不是可运行检出，另行安装的运行环境见下一行 |
+| `reference/rea-runtime/` | npm `rea-agents@6.7.0`，本地 package-lock；Ghidra 12.1.4 | 实际运行的stdio MCP／Windows Ghidra静态后端，使用Node24.19.0与现有JDK21.0.2；REA MIT、Ghidra Apache-2.0及各自依赖许可。官方Ghidra归档摘要与取证范围见[工具记录](PD2_CN_DLL_ANALYSIS.md#工具证据与复核入口)，不注册全局配置，不进入D2X构建或运行依赖 |
 
 四类主要参考分工：D2MOO核对原服／D2Common规则，OpenD2核对旧格式／协议与菜单，OpenDiablo2核对原图布局／字段，Diablerie交叉核对客户端动画／输入／声音。DGEngine及其core补充DCC／DS1／DT1与图形偏移证据。D2MOO没有完整D2Client，DGEngine偏Diablo I，简化客户端不认证经典版精确行为。
+
+PD2参考用于区分原版共用路径与有源码依据的局部扩展，不加入构建或运行依赖。初始化补丁入口、官方／历史CN的MCP布局分歧、MPQ辅助读取与全局挂载的区别、物品位流及D2X适配边界统一见[原版与PD2／CN兼容分析](../architecture/PD2_COMPATIBILITY.md)。所列公开仓库未提供完整ProjectDiablo.dll核心及PD2_EXT.dll实现，不足以据此重建完整PD2游戏服务；目标协议与资源须按配套版本核实。
+
+REA属于开发期分析工具，不进入D2X构建或玩法依赖。上述快照的`docs/windows-ghidra-p0.md`及`src/ghidra/GhidraProviderCapabilities.ts`支持Windows x64上的原生x86／x64 PE与DLL只读分析；本次已用固定npm版本实际查询核心、Storm、当前BH及原D2Client，并将有效Evidence与失败诊断分开。运行依赖与main文档须分开核对；npm6.7.0使用`--mcp`启动stdio，并不提供main文档中所有CLI形式。静态DLL导入使用不可变副本，不调用目标入口。`docs/native-function-matching.md`及`src/domain/native/functionMatching.ts`基于已有Evidence给出名称、完整函数字节或结构候选关系，不证明行为等价或恢复原始源码。用于PD2时先从公开BH／原D2MOO定位，再定点追查核心DLL的初始化补丁登记、收发包与物品位流入口；保留目标摘要、模块／RVA、调用关系和未知项。运行时改写须另追补丁目标，不能把磁盘原函数或客户端可见逻辑当作当前服务器完整实现。
 
 ## 当前代码的证据入口
 
@@ -118,6 +129,8 @@ D2Client的03处理RVA `ADB50`读取幕号、地图种子、城镇及尾部种�
 萨满另只读核对同一1.13c D2Game：AI表第65项RVA87BB0、SrvDo表第95项B6A60；死亡结束76040附近调用AFC50，以原GUID更改class并重新初始化。MPQ原表／动画提供当前资源，此处为静态依据；实际接入及缺口由[第三幕台账](../gameplay/monsters/ACT3.md#逐项接入)维护。
 
 ## 补充资料的边界
+
+PD2账号大厅的新增静态依据为固定CN核心`9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`与Bnclient `3631ca889dfa3cb149dd5b1722d3231851661b40514d4fbb4f00c529e76a56f5`：核心RVA1E7560／1E75C0／1E7620／1E76E0、3943E0、393F80、3947E0恢复分组／掩码、MPQ比较与0x51；Bnclient RVA158F0／15960／15E70／16070、12260／12390／125E0、16810／16EC0恢复认证资源解码。原资源、密钥和目标DLL不提交或分发，不执行native模块；算法范围、限制及当前源码状态见[DLL证据](PD2_CN_DLL_ANALYSIS.md#三个掩码与原认证资源)。新增SHA-256按[NIST FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)第4.2.2／5.1.1／6.2.2节实现，不表示经过NIST认证。
 
 当前MPQ的MonStats重复名称以编译`monstats.bin`交叉核对：734行、每行0x1A8，第617／723行的名称链接ID均为617，616行NextInClass也指向617；字符串使用首行，数值类别仍保持各自索引。源码据此保留重复行的独立属性／经验／掉落，原二进制与提取不纳入源码提交。
 

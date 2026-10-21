@@ -2,6 +2,8 @@
 
 更新：2026-10-19。本页维护原协议、客户端副本、原服参考及明确缺口；[基线](../../BASELINE.md)维护实现范围，[总计划](../architecture/MULTIPLAYER.md#21-统一状态口径)维护状态口径与功能顺序。原服与自研宿主共用RealmSession／Remote*客户端，传输为TCP或内存字节队列。原服常规施法不回送本人4C／4D，也不以73重复创建所列地面程序；具体技能、原服条件及边界见[女巫技能](../gameplay/skills/SORCERESS.md)。亚马逊30项、原Clt程序及7A／9D怪物装备已有接入，多重箭／导引箭／诱饵／女武神／闪电之怒的原服参考与缺口见[亚马逊](../gameplay/skills/AMAZON.md)。既有未消费包和引擎启动限制仍需核对，不宣称全协议或全技能已对齐，也不按构建／自研运行划分完成等级。
 
+PD2仅作远端客户端。PlayPD2／--client-profile在挂载前绑定固定CN构建、资源和认证文件，独立账号大厅不构造EmbeddedRealm或世界／库存／战斗消费者。当前CN服务已返回成功的版本认证、账号登录、Realm启动和选角回复，既有Ladder角色可进入服务器大厅、取房间列表并返回选角；列表按所选角色的Ladder状态筛选，不能沿用原路径的统一排除。CN证明采用合法原MPQ的key／owner来源及独立编码，原配置保留旧认证语义。新账号注册尚未重新联调；角色创建／删除、房间详情和游戏入场仍关闭，组件图像暂不渲染。范围见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)，算法、MPQ来源限制及原客户端大厅崩溃证据见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
+
 ## TCP/IP直连与自研宿主入口
 
 TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，不先连接BNCS／MCP。Host／Join各自从本机`--host-saves`目录选择角色；局前选角复用内存MCP和同一原图角色页，MCP不对远端监听。入局后的RealmSession／Remote*、协议副本和权威内核与Single Player／原服共用。
@@ -151,6 +153,8 @@ read() 借用客户端快照，有效至下一次 tick 或公共修改／随后 
 ## 协议消费边界（1.13c 当前源码）
 
 消息ID、长度、参数与预留状态统一维护在[消息速查](MESSAGES.md)。下表仅记录客户端消费范围和缺口，不作为第二份编码规范；不会以收发成功计为玩法成功。`online-status.protocol`按SID／MCP／game分别返回包ID、received／sent／unconsumed、协议逻辑字节数和lastReceived，不保存原始认证载荷。未知流长度立即失败；共享分帧位于network/protocol，客户端不依赖宿主实现目录，原服同样适用。
+
+`online-status.clientProfile`标识本会话固定的协议定义；`versionChallenge`为空或仅包含`logonType／revisionModule`，重试登录时清空，不包含公式／token／proof。`RealmSession(ClientProfile, retainGamePackets)`是底层版本入口，现有默认构造及GUI／无窗口组合继续使用原版。CN定义仅为固定2026-10-20 Normal样本的准备，不能凭该枚举认定资源匹配或允许实际入局。
 
 | 方向／包 | 长度／分帧 | 当前消费 | 字段／关键性与缺口 |
 | --- | --- | --- | --- |

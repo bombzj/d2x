@@ -1,5 +1,6 @@
 #include "network/protocol/auth.hpp"
 #include "network/protocol/wire.hpp"
+#include "core/sha256.hpp"
 #include <algorithm>
 #include <array>
 // BNCSutil's bsha1.h requires export macros from mutil.h first.
@@ -79,9 +80,12 @@ KeyProof key_proof(std::string_view key, uint32_t client, uint32_t server, bool 
 AuthProof prepare_auth(const AuthChallenge &challenge, uint32_t token, const OriginalClientAuth &config) {
     if (challenge.logonType != 0)
         throw ProtocolError("Unsupported account authentication type");
-    validate_formula(challenge.formula);
+    const bool cn = config.profile == ClientProfile::Pd2CnNormal20261020;
+    auto formula = challenge.formula;
+    if (cn) formula.resize(formula.find(':') == std::string::npos ? formula.size() : formula.find(':'));
+    validate_formula(formula);
     static const std::regex revision(R"(^IX86ver[0-7]\.mpq$)");
-    if (!std::regex_match(challenge.revisionFile, revision))
+    if (cn ? challenge.revisionFile != "ver-IX86-1.mpq" : !std::regex_match(challenge.revisionFile, revision))
         throw ProtocolError("Unsupported CheckRevision module");
     std::array<std::string, 3> files;
     std::array<const char *, 3> pointers{};
@@ -96,8 +100,8 @@ AuthProof prepare_auth(const AuthChallenge &challenge, uint32_t token, const Ori
     }
     const std::lock_guard lock(authMutex);
     unsigned long checksum{};
-    const int module = extractMPQNumber(challenge.revisionFile.c_str());
-    if (module < 0 || !checkRevision(challenge.formula.c_str(), pointers.data(), 3, module, &checksum))
+    const int module = cn ? 1 : extractMPQNumber(challenge.revisionFile.c_str());
+    if (module < 0 || !checkRevision(formula.c_str(), pointers.data(), 3, module, &checksum))
         throw ProtocolError("CheckRevision calculation failed");
     AuthProof result;
     std::array<char, 1024> information{};
@@ -108,11 +112,66 @@ AuthProof prepare_auth(const AuthChallenge &challenge, uint32_t token, const Ori
     result.executableHash = uint32_t(checksum);
     result.executableInfo = information.data();
     result.owner = config.owner;
-    if (config.submitKeys) {
+    if (cn) {
+        if (!config.submitKeys || !config.nativeMpqKeys || config.owner.empty() || config.owner.size()>64 ||
+            config.owner.find('\0')!=std::string::npos)
+            throw ProtocolError("PD2 CN requires native MPQ key and owner material");
+        // ProjectDiablo 0x1E76E0 / 0x3943E0: character groups share a word,
+        // each character has its own bit. No key or derived proof enters a view.
+        constexpr std::array<std::string_view,3> groups{"30PATGH2XR7W","6NOUI18VBYMJ","45QDLKZES9CF"};
+        constexpr std::array<std::array<uint16_t,12>,3> bits{{
+            {1,4,0x10,0x20,0x40,0x80,0x100,0x200,0x800,0x2000,0x4000,0x8000},
+            {2,4,0x10,0x20,0x40,0x100,0x200,0x800,0x1000,0x2000,0x4000,0x8000},
+            {1,2,4,8,0x20,0x40,0x80,0x200,0x400,0x800,0x2000,0x4000}}};
+        const std::array<std::string_view,2> keys{config.classicKey,config.expansionKey};
+        for(size_t i=0;i<keys.size();++i) {
+            const auto key=keys[i];
+            if(key.size()!=26 || std::any_of(key.begin(),key.end(),[](unsigned char c){return c<32 || c>=127;}))
+                throw ProtocolError("PD2 CN requires two 26-byte native keys");
+            result.cnKeyHashes[i]=sha256Hex({reinterpret_cast<const uint8_t *>(key.data()),key.size()});
+            for(const auto c:key) {
+                bool known=false;
+                for(size_t group=0;group<groups.size();++group)
+                    if(const auto at=groups[group].find(c);at!=std::string_view::npos) {
+                        result.cnKeyMasks[group]|=bits[group][at];known=true;break;
+                    }
+                if(!known) result.cnKeyMasks[2]|=0x8000;
+            }
+        }
+    } else if (config.submitKeys) {
         result.keys.push_back(key_proof(config.classicKey, token, challenge.serverToken, false));
         result.keys.push_back(key_proof(config.expansionKey, token, challenge.serverToken, true));
     }
     return result;
+}
+Bytes encode_auth_check(ClientProfile profile, uint32_t token, AuthProof &proof) {
+    struct Wipe { AuthProof &proof; ~Wipe(){
+        for(auto &hash:proof.cnKeyHashes) erase_secret(hash);
+        for(auto &key:proof.keys) erase_secret(key.hash);
+        erase_secret(proof.owner);
+    }} wipe{proof};
+    Writer out;
+    out.u32(token);out.u32(proof.executableVersion);out.u32(proof.executableHash);
+    if(profile==ClientProfile::Pd2CnNormal20261020) {
+        // MPQ key source: the native re-read compares equal to the active keys
+        // and owner, so no extra proof pair/count increment is emitted.
+        if(proof.cnKeyHashes[0].size()!=64 || proof.cnKeyHashes[1].size()!=64)
+            throw ProtocolError("Missing PD2 CN key proof");
+        out.u32(2);
+        for(auto mask:proof.cnKeyMasks) out.u16(mask);
+        out.u32(26);out.u32(26);
+        for(const auto &hash:proof.cnKeyHashes) out.string(hash,64);
+    } else {
+        out.u32(uint32_t(proof.keys.size()));out.u32(0);
+        for(const auto &key:proof.keys) {
+            out.u32(key.length);out.u32(key.product);out.u32(key.publicValue);out.u32(0);out.append(key.hash);
+        }
+    }
+    out.string(proof.executableInfo,1024);out.string(proof.owner,64);
+    return out.release();
+}
+void erase_auth_secrets(OriginalClientAuth &auth) {
+    erase_secret(auth.classicKey);erase_secret(auth.expansionKey);erase_secret(auth.owner);
 }
 Digest password_hash(std::string_view password) {
     if (password.empty() || password.size() > 128 || password.find('\0') != std::string_view::npos)
@@ -133,6 +192,27 @@ Digest logon_hash(uint32_t clientToken, uint32_t serverToken, const Digest &pass
     volatile uint8_t *secret = bytes.data();
     for (size_t i = 0; i < bytes.size(); ++i)
         secret[i] = 0;
+    return result;
+}
+Digest account_password_hash(ClientProfile profile, std::string_view password) {
+    if (clientCompatibility(profile).accountPasswordCase == AccountPasswordCase::Preserve)
+        return password_hash(password);
+    if (password.empty() || password.size() > 128 ||
+        std::any_of(password.begin(), password.end(), [](unsigned char c) { return c < 32 || c >= 127; }))
+        throw ProtocolError("PD2 CN account passwords currently require printable ASCII");
+    std::string normalized(password);
+    for (auto &c : normalized) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+    const auto result = password_hash(normalized);
+    erase_secret(normalized);
+    return result;
+}
+Digest realm_logon_hash(ClientProfile profile, uint32_t clientToken, uint32_t serverToken,
+                       const Digest &accountLogonProof) {
+    if (clientCompatibility(profile).realmPasswordSource == RealmPasswordSource::AccountLogonProof)
+        return accountLogonProof; // Preserve the existing PvPGN account contract.
+    auto fixedPasswordHash = password_hash("password");
+    const auto result = logon_hash(clientToken, serverToken, fixedPasswordHash);
+    erase_secret(fixedPasswordHash);
     return result;
 }
 void erase_secret(std::string &value) {

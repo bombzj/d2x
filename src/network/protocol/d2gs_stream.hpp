@@ -1,18 +1,22 @@
 #pragma once
 #include "network/protocol/wire.hpp"
+#include "network/protocol/client_profile.hpp"
 #include <cstddef>
 #include <span>
 
 namespace d2x::net::protocol {
-// One LoD 1.13c server stream. Negotiation is raw; later envelopes carry Huffman data.
+// One build's server stream. Negotiation is raw; later envelopes carry Huffman data.
 // next() returns complete logical packets including those sharing one envelope.
 class D2gsStream {
   public:
+    explicit D2gsStream(ClientProfile profile = ClientProfile::Lod113c)
+        : compatibility_(clientCompatibility(profile)) {}
     void append(std::span<const uint8_t> bytes);
     bool next(Packet &packet);
     void reset();
     bool empty() const { return wire_.empty() && logical_.empty(); }
   private:
+    const ClientCompatibility &compatibility_;
     enum class Mode { Negotiation, Raw, Huffman } mode_{Mode::Negotiation};
     Bytes wire_, logical_;
 };

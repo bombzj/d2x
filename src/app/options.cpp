@@ -11,6 +11,7 @@ namespace d2x {
 AppOptions parseOptions(int argc, char **argv) {
     AppOptions options;
     bool explicitMpq = false;
+    bool explicitOnlineConfig=false, explicitHostSaves=false, explicitPort=false;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         auto value = [&]() {
@@ -21,11 +22,13 @@ AppOptions parseOptions(int argc, char **argv) {
         };
         if (arg == "--mpq") { options.mpq = value(); explicitMpq = true; }
         else if (arg == "--headless") options.headlessProfile = value();
-        else if (arg == "--online-config") options.onlineConfig = value();
+        else if (arg == "--online-config") { options.onlineConfig = value(); explicitOnlineConfig=true; }
+        else if (arg == "--client-profile") options.clientProfile = value();
         else if (arg == "--host-lan") options.hostLan = value();
         else if (arg == "--lan") options.lan = value();
-        else if (arg == "--host-saves") options.hostSaves = value();
+        else if (arg == "--host-saves") { options.hostSaves = value(); explicitHostSaves=true; }
         else if (arg == "--realm-port" || arg == "--game-port") {
+            explicitPort=true;
             const auto text = value(); unsigned port{};
             const auto [end, error] = std::from_chars(text.data(), text.data() + text.size(), port);
             if (error != std::errc{} || end != text.data() + text.size() || !port || port > UINT16_MAX)
@@ -56,6 +59,8 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
+    if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig || explicitHostSaves || explicitPort))
+        throw std::runtime_error("--client-profile owns resources and service configuration; do not combine with MPQ, online, host or port overrides");
     if (!options.headlessProfile.empty() && (!options.load.empty() || !options.save.empty() ||
         !options.characterClass.empty() || !options.hostLan.empty() || !options.lan.empty() ||
         !options.onlinePlay.empty() || !options.onlineCharacter.empty() || !options.onlineCreateGame.empty() ||
@@ -82,7 +87,7 @@ AppOptions parseOptions(int argc, char **argv) {
         throw std::runtime_error("Choose either --online-create-game or --online-join-game");
     if ((!options.onlineCreateGame.empty() || !options.onlineJoinGame.empty()) && options.onlineCharacter.empty())
         throw std::runtime_error("Quick game entry requires --online-character");
-    if (!explicitMpq) {
+    if (!explicitMpq && options.clientProfile.empty()) {
         auto discover = [](const std::filesystem::path &path) -> std::string {
             if (std::filesystem::is_directory(path) &&
                 (std::filesystem::is_regular_file(path / "d2data.mpq") ||

@@ -10,7 +10,7 @@
 
 namespace d2x {
 using net::protocol::BitReader;
-RemoteInventory::RemoteInventory(Archives &archives) : strings_(archives) {
+RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfile profile) : profile_(profile), strings_(archives) {
     for (const char *name : {"weapons", "armor", "misc", "itemtypes", "itemstatcost", "inventory", "belts", "books", "charstats", "bodylocs", "npc", "monstats", "hireling"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     characters_=loadCharacterDefinitions(tables_.at("charstats"));
@@ -116,12 +116,23 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             }
             return value;
         };
+        const bool pd2 = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
+        // Core 0x382E40 selects S12 below format 103, S13 at 103, current
+        // Save columns above it. The external network serializer version is 96.
+        const std::string_view bitsColumn = pd2 && item.format < 103 ? "Save Bits S12"
+            : pd2 && item.format == 103 ? "Save Bits S13" : "Save Bits";
+        const std::string_view addColumn = pd2 && item.format < 103 ? "Save Add S12"
+            : pd2 && item.format == 103 ? "Save Adds S13" : "Save Add";
+        const std::string_view paramColumn = pd2 && item.format < 103 ? "Save Param Bits S12"
+            : pd2 && item.format == 103 ? "Save Param Bits S13" : "Save Param Bits";
+        const unsigned statIdBits = pd2 && item.format >= 102 ? 10 : 9;
+        const unsigned statTerminator = (1u << statIdBits) - 1;
         auto statValue = [&](unsigned id) -> int64_t {
             const auto row = statRows_.find(id);
             if (row == statRows_.end()) throw std::runtime_error("Unknown native item stat");
-            const auto width = cost.number(row->second, "Save Bits").value_or(0);
+            const auto width = cost.number(row->second, bitsColumn).value_or(0);
             if (width < 1 || width > 32) throw std::runtime_error("Invalid native item stat width");
-            return int64_t(bits.read(unsigned(width))) - cost.number(row->second, "Save Add").value_or(0);
+            return int64_t(bits.read(unsigned(width))) - cost.number(row->second, addColumn).value_or(0);
         };
         auto unsignedStat = [&](unsigned id) {
             const auto value = statValue(id);
@@ -176,7 +187,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                 if (flags & 0x800) {
                     const auto row = statRows_.find(194);
                     if (row == statRows_.end()) throw std::runtime_error("Socket count format is unavailable");
-                    const int width = cost.number(row->second, "Save Bits").value_or(0);
+                    const int width = cost.number(row->second, bitsColumn).value_or(0);
                     if (width < 1 || width > 8) throw std::runtime_error("Invalid native socket count width");
                     item.sockets = uint8_t(bits.read(unsigned(width))); // Native socket count has no Save Add.
                 }
@@ -184,13 +195,13 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                     const auto setMask = item.quality == 5 ? bits.read(5) : 0;
                     auto stats = [&](std::vector<OnlineItemStat> &out) {
                         for (unsigned count = 0; count < 512; ++count) {
-                            const auto id = bits.read(9); if (id == 511) return;
+                            const auto id = bits.read(statIdBits); if (id == statTerminator) return;
                             const unsigned extra = id == 17 || id == 48 || id == 50 || id == 52 ? 1
                                 : id == 54 || id == 57 ? 2 : 0;
                             for (unsigned n = 0; n <= extra; ++n) {
                                 const auto row = statRows_.find(id + n);
                                 if (row == statRows_.end()) throw std::runtime_error("Unknown native item property");
-                                const auto width = extra ? 0 : cost.number(row->second, "Save Param Bits").value_or(0);
+                                const auto width = extra ? 0 : cost.number(row->second, paramColumn).value_or(0);
                                 if (width < 0 || width > 32) throw std::runtime_error("Invalid native item parameter width");
                                 const auto parameter = bits.read(unsigned(width));
                                 out.push_back({uint16_t(id + n), statValue(id + n), parameter});

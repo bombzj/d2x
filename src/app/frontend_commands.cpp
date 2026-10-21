@@ -1,14 +1,22 @@
 #include "frontend_commands.hpp"
+#include "app/account_login.hpp"
 #include "network/local_addresses.hpp"
 #include <exception>
 #include <limits>
 
 namespace d2x {
 void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &action) {
+    // Remote profiles cannot construct or dispatch a local host, even through UI commands.
+    if (!state.embedded && (action.command == FrontendCommand::TcpIp ||
+        action.command == FrontendCommand::OpenJoinHost || action.command == FrontendCommand::JoinLan || action.command == FrontendCommand::HostLan ||
+        action.command == FrontendCommand::SinglePlayer)) {
+        state.notice = "This profile supports remote Battle.net only.";
+        return;
+    }
     switch (action.command) {
     case FrontendCommand::TcpIp:
         try {
-            state.embedded.close();
+            state.embedded->close();
             state.session.logout();
             state.localConnection = state.enterLocalGame = state.lanConnection = false;
             state.notice.clear(); state.page = FrontendPage::TcpIp;
@@ -30,13 +38,13 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         try {
             const bool hosting = action.command == FrontendCommand::HostLan;
             if (hosting && !state.lanListening) {
-                state.embedded.listen("0.0.0.0", state.options.gamePort);
+                state.embedded->listen("0.0.0.0", state.options.gamePort);
                 state.lanListening = true;
             }
             state.session.logout();
-            state.embedded.setTcpIpHost(hosting);
+            state.embedded->setTcpIpHost(hosting);
             state.lanJoinAddress.clear(); state.lanJoiningGame = false;
-            auto streams = state.embedded.connect(true);
+            auto streams = state.embedded->connect(true);
             state.session.connect_realm(std::move(streams.realm), std::move(streams.game),
                 {"127.0.0.1", state.options.realmPort}, hosting ? "TCP/IP Game" : "Single Player", state.options.gamePort);
             state.localConnection = true; state.enterLocalGame = false; state.localDifficulty = 0; state.localDifficultyChosen = false;
@@ -47,12 +55,12 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         break;
     case FrontendCommand::JoinLan:
         try {
-            state.embedded.close();
+            state.embedded->close();
             state.session.logout();
             state.localConnection = state.lanConnection = true; state.enterLocalGame = false; state.lanJoiningGame = false;
-            state.embedded.setTcpIpHost(false); state.lanJoinAddress = std::move(action.name);
+            state.embedded->setTcpIpHost(false); state.lanJoinAddress = std::move(action.name);
             state.reloadCharacter.clear(); state.debugInputs.clear(); state.notice.clear();
-            auto streams = state.embedded.connect();
+            auto streams = state.embedded->connect();
             state.session.connect_realm(std::move(streams.realm), std::move(streams.game),
                 {"127.0.0.1", state.options.realmPort}, "TCP/IP Game", state.options.gamePort);
             state.page = FrontendPage::Characters;
@@ -63,7 +71,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         state.ui.clearPassword();
         break;
     case FrontendCommand::Online:
-        try { state.embedded.close(); }
+        try { if (state.embedded) state.embedded->close(); }
         catch (const std::exception &e) { state.notice = e.what(); break; }
         state.localConnection = state.enterLocalGame = state.lanConnection = false;
         state.page = FrontendPage::Login;
@@ -77,7 +85,7 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         break;
     case FrontendCommand::ChangeRealm:
         if (state.localConnection || state.lanConnection) {
-            try { if (state.localConnection) state.embedded.close(); }
+            try { if (state.localConnection) state.embedded->close(); }
             catch (const std::exception &e) { state.notice = e.what(); break; }
             state.session.logout();
             state.page = state.lanConnection ? FrontendPage::TcpIp : FrontendPage::Main;
@@ -114,23 +122,11 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
     case FrontendCommand::Register:
     case FrontendCommand::Login:
         try {
-            auto config = configuration(state.configPath);
-            state.gateway = std::move(config.gateway);
-            const bool remembered = state.loginMemory.write(action.name, action.password);
-            state.ui.setLogin(action.name, action.password);
-            config.login.account = std::move(action.name);
-            config.login.password = std::move(action.password);
-            config.login.localeId = state.lang.localeId;
-            config.login.languageCode = state.lang.languageCode;
-            config.login.gameLocale = state.lang.gameLocale;
-            state.notice.clear();
             state.dismissedErrorSequence = std::numeric_limits<uint64_t>::max();
             state.manualRealm = false;
-            if (action.command == FrontendCommand::Register)
-                state.session.register_account(std::move(config.login));
-            else
-                state.session.login(std::move(config.login));
-            if (!remembered) state.notice = "Login submitted, but login information could not be remembered.";
+            submitAccountLogin(state.configPath, state.options.protocolProfile, state.lang,
+                               state.session, state.ui, state.loginMemory, action, state.gateway, state.notice,
+                               state.options.clientProfileDigest);
         } catch (const std::exception &e) {
             state.notice = e.what();
         }
@@ -182,11 +178,11 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         else if (state.session.read().stage == OnlineStage::Lobby)
             state.session.return_to_characters();
         else {
-            try { if (state.localConnection) state.embedded.close(); }
+            try { if (state.localConnection) state.embedded->close(); }
             catch (const std::exception &e) { state.notice = e.what(); break; }
             state.session.logout();
             state.page = state.lanConnection ? FrontendPage::TcpIp :
-                state.localConnection || state.page == FrontendPage::Login ? FrontendPage::Main : FrontendPage::Login;
+                state.embedded && (state.localConnection || state.page == FrontendPage::Login) ? FrontendPage::Main : FrontendPage::Login;
             state.localConnection = state.enterLocalGame = state.lanConnection = false;
         }
         break;

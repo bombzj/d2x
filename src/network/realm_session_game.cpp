@@ -15,6 +15,10 @@ void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
 
 void RealmSession::Impl::handle_game(Packet packet) {
     observed(view.gameProtocol, packet, 1);
+    if (!compatibility.gameEntryBlocker.empty()) {
+        fail(OnlineErrorKind::Unsupported, std::string(compatibility.gameEntryBlocker), packet.id);
+        return;
+    }
     if (packet.id == 0xB4) {
         Reader in(packet.body); const auto code = in.u32(); in.finish();
         std::string message = "Game server rejected character admission (code " + std::to_string(code) + ")";

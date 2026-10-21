@@ -9,6 +9,7 @@
 /saves/
 /client-settings.json
 /online.local.json
+/pd2.local.json
 *.credentials.local
 *.credentials.local.tmp
 /client-settings.json.lock/

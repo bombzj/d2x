@@ -20,7 +20,7 @@ void RealmSession::Impl::request_logon() {
 
 void RealmSession::Impl::request_characters() {
     Writer out;
-    out.u32(1024);
+    out.u32(compatibility.characterListRequest);
     send_mcp(0x19, std::move(out));
     stage(OnlineStage::ListingCharacters);
 }
@@ -71,29 +71,22 @@ void RealmSession::Impl::handle_sid(Packet packet) {
         challenge.formula = in.string(256);
         in.finish();
         serverToken = challenge.serverToken;
+        view.versionChallenge = OnlineVersionChallenge{challenge.logonType, challenge.revisionFile};
+        if (!compatibility.authenticationBlocker.empty()) {
+            fail(OnlineErrorKind::Unsupported, std::string(compatibility.authenticationBlocker), packet.id);
+            return;
+        }
         auto proof = prepare_auth(challenge, clientToken, options.originalClient);
         loginHash = logon_hash(clientToken, serverToken, accountHash);
         if (!registering)
             erase_secret(accountHash);
         erase_secret(options.originalClient.classicKey);
         erase_secret(options.originalClient.expansionKey);
-        Writer out;
-        out.u32(clientToken);
-        out.u32(proof.executableVersion);
-        out.u32(proof.executableHash);
-        out.u32(uint32_t(proof.keys.size()));
-        out.u32(0);
-        for (auto &key : proof.keys) {
-            out.u32(key.length);
-            out.u32(key.product);
-            out.u32(key.publicValue);
-            out.u32(0);
-            out.append(key.hash);
-            erase_secret(key.hash);
-        }
-        out.string(proof.executableInfo, 1024);
-        out.string(proof.owner, 64);
+        auto bytes = encode_auth_check(compatibility.profile, clientToken, proof);
+        struct Wipe { Bytes &bytes; ~Wipe(){erase_secret(bytes);} } wipe{bytes};
+        Writer out; out.append(bytes);
         send_sid(0x51, std::move(out));
+        erase_auth_secrets(options.originalClient);
         stage(OnlineStage::AuthenticatingVersion);
         break;
     }

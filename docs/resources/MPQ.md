@@ -2,6 +2,8 @@
 
 当前唯一运行目标是资料片，使用本机 `assets/mpq2` 的五个原始 MPQ。试玩／经典版旧资源保留，但不提供运行入口。原图、原表来自 MPQ，不提交资源或导出物。`assets/mpq` 只放补充包（如 `pd2-chinese.mpq` 的 chi 字符串与字形、试玩包）：每次启动最先挂载、优先级最低，只填补原版未提供的路径（原版 `expansionstring.tbl` 缺 chi 版、`data/local/font/chi/` 缺字形时由它补齐），同样不作为运行入口。
 
+PD2／CN独立MPQ、TXT／BIN差异及资源集合设计见[PD2兼容分析](../architecture/PD2_COMPATIBILITY.md)。当前Normal样本的核心打开顺序及Storm同优先级搜索已有[DLL证据](PD2_CN_DLL_ANALYSIS.md#mpq-搜索顺序)，loose／路径选择仍需分消费者核对；现有中文补充资源不等于完整PD2资源或协议兼容。
+
 ## 当前文件摘要
 
 | 原始文件 | 字节数 | SHA-256 |

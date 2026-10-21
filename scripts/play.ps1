@@ -1,6 +1,7 @@
 param(
     [string]$Mpq='',
     [string]$OnlineConfig='',
+    [string]$ClientProfile='',
     [string]$OnlineCharacter='',
     [string]$OnlinePlay='',
     [string]$OnlineCreateGame='',
@@ -8,25 +9,32 @@ param(
     [string]$GamePacketLog='',
     [string]$HostPacketLog='',
     [switch]$Diagnostic,
+    [switch]$Hidden,
     [string]$Lang='',
     [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='d2x-debug',
     [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
+if($ClientProfile -and ($Mpq -or $OnlineConfig -or $OnlinePlay -or $OnlineCreateGame -or $OnlineJoinGame -or $HostPacketLog -or $GamePacketLog)){
+    throw '-ClientProfile owns its resource/service selection and currently supports the account lobby only.'
+}
 if($OnlinePlay -and ($OnlineCharacter -or $OnlineCreateGame -or $OnlineJoinGame)){throw '-OnlinePlay cannot be combined with manual quick-entry options.'}
 if($OnlineCreateGame -and $OnlineJoinGame){throw 'Choose either -OnlineCreateGame or -OnlineJoinGame.'}
 if($Diagnostic -and ($GamePacketLog -or $HostPacketLog -or $NoDebugPipe)){throw '-Diagnostic requires its own packet logs and the debug pipe.'}
 if(($OnlineCreateGame -or $OnlineJoinGame) -and -not $OnlineCharacter){throw 'Quick entry requires -OnlineCharacter.'}
 if($Mpq){$Mpq=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Mpq)}
 if($OnlineConfig){$OnlineConfig=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OnlineConfig)}
+if($ClientProfile){$ClientProfile=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ClientProfile)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $diagnosticRoot=''
 if($Diagnostic){
     $runName=(Get-Date -Format 'yyyyMMdd-HHmmss')+'-'+[guid]::NewGuid().ToString('N').Substring(0,8)
     $diagnosticRoot=Join-Path $projectRoot "artifacts/diagnostics/$runName"
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
-    $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
-    $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
+    if(-not $ClientProfile){
+        $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
+        $HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'
+    }
 }
 if($GamePacketLog){$GamePacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GamePacketLog)}
 if($HostPacketLog){$HostPacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostPacketLog)}
@@ -36,12 +44,12 @@ if(-not (Test-Path -LiteralPath $exe)){$exe=Join-Path $projectRoot 'build/bin/Re
 if(-not (Test-Path -LiteralPath $exe)){
     throw 'D2X executable is missing. Build explicitly with scripts/build.ps1 before launching.'
 }
-if(-not $Mpq){
+if(-not $Mpq -and -not $ClientProfile){
     foreach($folder in @($projectRoot,(Split-Path -Parent $exe))){
         if(Test-Path -LiteralPath (Join-Path $folder 'd2data.mpq') -PathType Leaf){$Mpq=$folder;break}
     }
 }
-if(-not $Mpq){
+if(-not $Mpq -and -not $ClientProfile){
     $searchRoot=Get-Item -LiteralPath $projectRoot
     while($searchRoot){
         $fullSource=Join-Path $searchRoot.FullName 'assets/mpq2'
@@ -53,6 +61,8 @@ if(-not $Mpq){
 Push-Location $projectRoot
 try{
     $arguments=@()
+    if($Hidden){$arguments+='--hidden'}
+    if($ClientProfile){$arguments+=@('--client-profile',$ClientProfile)}
     if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
     if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
     if($OnlinePlay){$arguments+=@('--online-play',$OnlinePlay)}
@@ -73,9 +83,9 @@ try{
         finally{$digest.Dispose();$binaryStream.Dispose()}
         [ordered]@{
             executable=$exe; sha256=$binaryHash
-            mpq=$Mpq; pipe=$PipeName; packets=$GamePacketLog
-            hostPackets=$HostPacketLog; packetDirection='C2S+S2C'
-            note='Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'
+            mpq=$Mpq; clientProfile=$ClientProfile; pipe=$PipeName; packets=$GamePacketLog
+            hostPackets=$HostPacketLog; packetDirection=$(if($ClientProfile){'none (account lobby counters only)'}else{'C2S+S2C'})
+            note=$(if($ClientProfile){'No authentication payloads are captured. Read packet IDs and counts through online-status.'}else{'Protocol traces redact tickets and opaque save transfers; authoritative inventory remains available through the debug pipe.'})
         } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $diagnosticRoot 'run.json') -Encoding utf8
         Write-Host "Diagnostic logs: $diagnosticRoot"
         # Windows PowerShell treats native stderr as ErrorRecords. Cache/resource

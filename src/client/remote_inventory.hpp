@@ -15,6 +15,7 @@ class RemoteInventory {
     std::map<std::string, Base, std::less<>> bases_;
     std::map<std::string, size_t, std::less<>> typeRows_;
     std::map<unsigned, size_t> statRows_;
+    const net::protocol::ClientProfile profile_;
     ClassicStrings strings_;
     OnlineInventoryView view_;
     uint64_t sourceRevision_{~uint64_t{}}, generation_{~uint64_t{}};
@@ -27,7 +28,7 @@ class RemoteInventory {
     EquipmentDefinition equipmentDefinition(const OnlineItem &) const;
     bool reject(std::string);
   public:
-    explicit RemoteInventory(Archives &);
+    explicit RemoteInventory(Archives &, net::protocol::ClientProfile = net::protocol::ClientProfile::Lod113c);
     void update(const OnlineView &);
     const OnlineInventoryView &read() const { return view_; }
     const std::string &reason() const { return reason_; }
