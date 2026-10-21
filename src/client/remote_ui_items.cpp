@@ -15,7 +15,8 @@ ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const
             if(di.autoAffix) for(const auto &record:data.autoMagic) if(record.row==unsigned(di.autoAffix-1))
                 item.requiredLevel=std::max(item.requiredLevel,record.requiredLevel);
             item.sockets=di.sockets; item.runewordRow=-1;
-            for (const auto &word:data.runewords) if (word.stringId==di.runeword) item.runewordRow=word.row;
+            if (native.flags & 0x4000000u)
+                for (const auto &word:data.runewords) if (word.stringId > 0 && word.stringId==di.runeword) item.runewordRow=word.row;
             // Unidentified native special items omit their file index. Zero is
             // not evidence for the first UniqueItems/SetItems row.
             if(di.identified && (item.quality==ItemQuality::Set || item.quality==ItemQuality::Unique)) item.specialRow=di.fileIndex;
@@ -284,7 +285,7 @@ InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, c
                     }
                     projection.socketItems.push_back({std::move(art), inventoryColorTransform(data, data.items, child), child.nativeFlags});
                 }
-            if (complete && di.revision == native.revision)
+            if (data.profile == "lod-named-txt-v1" && complete && di.revision == native.revision)
                 projection.cellTone = display.requirementsMet && item.identified && !(native.flags & 0x4104u) &&
                     (!definition->bookCapacity || item.charges) ? InventoryCellTone::Usable : InventoryCellTone::Unusable;
             const auto &source = data.tables.at(definition->base.sourceTable);
@@ -452,6 +453,7 @@ void RemoteUiClients::Impl::projectItemFeedback(const InventoryView &current) {
 void RemoteUiClients::Impl::projectInventory() {
         const auto &online=session.read(); const auto &w=online.world; const auto &decoded=items.read();
         InventoryView v; v.revision=revision; v.gameGeneration=online.gameGeneration; v.areaGeneration=w.areaGeneration;
+        v.personalItemActionsOnly = online.remoteLobbyOnly;
         v.containers={containerId(1),containerId(2),containerId(3),containerId(4),containerId(5),containerId(6),containerId(7),containerId(8)};
         const auto &owned=v.containers;
         for (const auto &[id,kind,columns,rows]:std::vector<std::tuple<EntityId,ContainerKind,int,int>>{
@@ -459,13 +461,17 @@ void RemoteUiClients::Impl::projectInventory() {
             {owned.stash,ContainerKind::Stash,decoded.stashColumns,decoded.stashRows},{owned.cube,ContainerKind::Cube,decoded.cubeColumns,decoded.cubeRows},
             {owned.equipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1},{owned.beltEquipment,ContainerKind::BeltEquipment,1,1},
             {owned.cursor,ContainerKind::Cursor,1,1},{owned.hirelingEquipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1}})
-            v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows});
+            v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows,
+                v.readOnly || (v.personalItemActionsOnly && id != owned.backpack && id != owned.cursor &&
+                    id != owned.equipment && id != owned.beltEquipment && id != owned.belt)});
         auto layout=[](const auto &x){return InventoryLayoutView{x.columns,x.rows,x.left,x.top,x.cellSize,x.expansion};};
         if (const auto playerLayout = data.playerInventoryLayouts.find(characterView.classCode);
             playerLayout != data.playerInventoryLayouts.end()) {
             v.backpackLayout = layout(playerLayout->second.grid);
             v.equipmentSlots = playerLayout->second.slots;
             v.itemCellSize = {v.backpackLayout.cellSize, v.backpackLayout.cellSize};
+            v.panelTop = playerLayout->second.top;
+            v.panelHeight = playerLayout->second.height;
         }
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
         if (w.playerTrade.phase == OnlinePlayerTrade::Phase::Open) {
@@ -504,6 +510,7 @@ void RemoteUiClients::Impl::projectInventory() {
         if(w.storage.kind==OnlineStorageKind::Stash) v.storage=owned.stash;
         if(w.playerPosition) v.dropLocation=GroundLocation{mapView.region,mapView.observer};
         for(const auto &[id,native]:w.items) {
+            if (v.personalItemActionsOnly && (native.flags & 0x40000000u)) continue; // Native preview inventory, not this player's items.
             const bool ground=native.mode==3 || native.mode==5;
             const bool mercenary=w.hireling && native.ownerType==1 && native.owner==w.hireling->id && native.mode==1;
             if(!ground && !mercenary && (native.ownerType!=0 || native.owner!=online.load.playerUnitId)) continue;
@@ -525,6 +532,14 @@ void RemoteUiClients::Impl::projectInventory() {
             else if(native.mode==0 && ((native.page==3 && v.ownTrade) || (native.page==2 && v.peerTrade)))
                 location=ContainerLocation{native.page==3?v.ownTrade:v.peerTrade,{native.x,native.y}};
             else continue;
+            if (const auto *at = std::get_if<ContainerLocation>(&location)) {
+                const auto *container = v.container(at->container);
+                if (!container) continue;
+                const bool grid = container->kind == ContainerKind::Backpack ||
+                    container->kind == ContainerKind::Stash || container->kind == ContainerKind::Cube;
+                if (grid && (di.width < 1 || di.height < 1 || at->cell.x < 0 || at->cell.y < 0 ||
+                    at->cell.x + di.width > container->columns || at->cell.y + di.height > container->rows)) continue;
+            }
             InventoryDefinitionView def; def.targetCursor=definition->targetCursor; def.code=native.code; def.name=definition->name; def.bookScroll=definition->bookScroll;
             def.width=di.width; def.height=di.height; def.beltRows=definition->beltRows; def.maxStack=definition->maxStack; def.bookCapacity=definition->bookCapacity;
             def.beltAllowed=definition->beltAllowed; def.opensCube=definition->opensCube; def.twoHanded=definition->equipment.twoHanded;
@@ -537,7 +552,7 @@ void RemoteUiClients::Impl::projectInventory() {
             v.definitions.emplace(native.code,std::move(def));
             auto projection=projectItem(native,di,location);
             if (ground) {
-                projection.groundPickupAllowed = native.mode == 3;
+                projection.groundPickupAllowed = !v.readOnly && native.mode == 3;
                 projection.groundAnimationRevision = native.groundAnimationRevision;
                 const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::steady_clock::now().time_since_epoch()).count());

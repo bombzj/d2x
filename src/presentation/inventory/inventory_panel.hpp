@@ -60,8 +60,13 @@ inline Rectangle orificeButton(bool confirm) {const auto p=orificeBounds();retur
 inline Rectangle inventoryBounds() {
     return classicPanelBounds(true);
 }
+inline Rectangle inventoryBounds(const InventoryView &inventory) {
+    auto panel = classicPanelBounds(true, float(inventory.panelTop));
+    panel.height = inventory.panelHeight * inventoryScale();
+    return panel;
+}
 inline Rectangle inventoryGrid(const InventoryView &inventory) {
-    auto p = inventoryBounds();
+    auto p = inventoryBounds(inventory);
     const auto &layout = inventory.backpackLayout;
     return {p.x + layout.left * inventoryScale(), p.y + layout.top * inventoryScale(),
             layout.columns * inventoryCellSize(inventory), layout.rows * inventoryCellSize(inventory)};

@@ -1,6 +1,6 @@
 # 原物品协议、图形与反馈
 
-更新：2026-10-18。本页唯一维护原位流／公开信息、原图、声音及客户端反馈限制；权威规则按[物品目录](README.md)归档，存档归[SAVES](../../modules/SAVES.md)。两种服务端共用一套客户端，原请求参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)。
+更新：2026-10-21。本页唯一维护原位流／公开信息、原图、声音及客户端反馈限制；权威规则按[物品目录](README.md)归档，存档归[SAVES](../../modules/SAVES.md)。两种服务端共用一套客户端，原请求参数见[命令](../../development/DEBUG_PIPE.md#联网物品操作)。
 
 ## 原包与成功条件
 
@@ -41,6 +41,10 @@ RemoteInventory消费9C／9D、0A、3E、2A、58、77、97；UI预览位置、Cu
 拖放等待期间的原格隐藏与Cursor恢复统一由[包裹手势](INVENTORY_UI.md#操作)维护，不预测目标库存或用Updated代替服务端安置。
 
 ## 库存物品图形
+
+PD2沿相同只读投影显示装备、背包、腰带及地面物品。RemoteDisplay的loadRemoteItemDisplayData只准备服务器索引所需的暗金／套装／词缀／劣质名称和特殊图形、符文之语名称，不套原版spawnable／enabled／lvl生成过滤，不准备掉落、配方或随机属性。未鉴定物品继续省略未下发的特殊索引；镶孔子项保留原所有权及指派顺序。CN preview标志和扩展storage不会当作普通库存。完整网络分支、compact独立列与拒绝条件见[PD2位流](../../resources/PD2_CN_DLL_ANALYSIS.md#完整物品位流版本与字段)，面板及受限移物操作见[包裹界面](INVENTORY_UI.md#pd2只读显示)。
+
+PD2提示只描述已解码的名称、数量、耐久及已支持的原表属性描述，不借用原版程序推导最终攻防／装备资格、激活套装层。符文之语附加列表按服务器值保留；镶孔修饰未齐全时明确提示。属性描述函数覆盖、腐化／旧格式混合、全部特殊图及地面落地表现仍待目标会话对照；本项代码接通不代表完整物品兼容。
 
 共同入口为`content/items/item_appearance.cpp`、`client/remote_ui_clients.cpp`、`presentation/scene_assets.cpp`及`presentation/inventory/inventory_view.cpp`。只读投影携带原图、占格、颜色变换和按原指派顺序排列的孔内图形，不增加玩法状态或存档字段。图标按当前幕调色板缓存，使用当前MPQ DC6的原尺寸／偏移，撤出额外4像素边距、自造菱形占位图、格子描边及数量角标；装备栏按占格居中及原部位偏移，资料片副武器组保留原手槽(+4,-4)偏移，Cursor按DC6尺寸居中。金币按原100／500／5000阈值选择帧，阈值是客户端程序常量。
 

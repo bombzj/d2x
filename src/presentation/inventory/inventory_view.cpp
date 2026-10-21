@@ -176,14 +176,22 @@ void SceneView::drawInventory(Vec mouse) const {
         return;
     const auto &inventory = inventoryView_;
     EntityId backpack = inventoryView_.containers.backpack;
-    auto panel = inventoryBounds();
+    auto panel = inventoryBounds(inventory);
     drawPanelFrame(true);
     if (assets_.inventoryPanel.frames.size() >= 8)
         for (int i = 0; i < 4; ++i) {
-            const auto &tile = assets_.inventoryPanel.frames[4 + i].texture;
+            const auto &sprite = assets_.inventoryPanel.frames[4 + i];
+            const auto &tile = sprite.texture;
+            // Native DC6 tiles are bottom-anchored. The unchanged character
+            // half supplies the two row baselines; inventory art may be taller
+            // and carries its own signed offsets (CN: -35 / +35).
+            const auto art = classicPanelBounds(true);
+            const auto &upper = assets_.inventoryPanel.frames[0].texture;
+            const auto &lower = assets_.inventoryPanel.frames[2].texture;
+            const int baseline = upper.height + (i >= 2 ? lower.height : 0);
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
-                           {panel.x + (i % 2) * 256 * inventoryScale(),
-                            panel.y + (i / 2) * 256 * inventoryScale(), tile.width * inventoryScale(),
+                           {art.x + ((i % 2) * upper.width + sprite.x) * inventoryScale(),
+                            art.y + (baseline - tile.height + sprite.y) * inventoryScale(), tile.width * inventoryScale(),
                             tile.height * inventoryScale()},
                            {0, 0}, 0, WHITE);
         }
@@ -193,7 +201,7 @@ void SceneView::drawInventory(Vec mouse) const {
     const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
     const auto drop = overShop ? InventoryDrop{} :
         inventoryDropAt(mouse);
-    if (inventoryView_.stashLayout.expansion && weaponSet == 1)
+    if (!inventory.readOnly && !inventory.personalItemActionsOnly && inventoryView_.stashLayout.expansion && weaponSet == 1)
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
@@ -237,17 +245,19 @@ void SceneView::drawInventory(Vec mouse) const {
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == backpack)
             drawContainerGrid(grid, mouse);
-    const auto goldField = inventoryGold();
-    if (const auto *coin = assets_.goldCoin.frame(0, 0))
-        DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
-                       inventoryGoldButton(),
-                       {0, 0}, 0, WHITE);
-    if (const auto *close = assets_.questClose.frame(0, 10))
-        DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
-                       inventoryClose(), {0, 0}, 0, WHITE);
-    painter_.label(std::to_string(inventoryView_.gold),
-                   int(goldField.x + 28 * inventoryScale()), int(goldField.y + 4 * inventoryScale()),
-                   int(16 * inventoryScale()), WHITE);
+    if (!inventory.readOnly && !inventory.personalItemActionsOnly) {
+        const auto goldField = inventoryGold();
+        if (const auto *coin = assets_.goldCoin.frame(0, 0))
+            DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
+                           inventoryGoldButton(),
+                           {0, 0}, 0, WHITE);
+        if (const auto *close = assets_.questClose.frame(0, 10))
+            DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
+                           inventoryClose(), {0, 0}, 0, WHITE);
+        painter_.label(std::to_string(inventoryView_.gold),
+                       int(goldField.x + 28 * inventoryScale()), int(goldField.y + 4 * inventoryScale()),
+                       int(16 * inventoryScale()), WHITE);
+    }
     if (ui.identify)
         painter_.label("SELECT AN UNIDENTIFIED ITEM", int(panel.x + 24 * inventoryScale()),
                        int(panel.y + 364 * inventoryScale()), 12, gold);

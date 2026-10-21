@@ -22,6 +22,7 @@ class BitReader {
 
   public:
     explicit BitReader(std::span<const uint8_t> bytes) : bytes_(bytes) {}
+    size_t remaining() const { return bytes_.size() * 8 - cursor_; }
     uint32_t read(unsigned count) {
         if (count > 32 || count > bytes_.size() * 8 - cursor_)
             throw ProtocolError("Truncated packed game data");

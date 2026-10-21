@@ -19,6 +19,7 @@
 #include "content/skills/skill_animation.hpp"
 #include "content/items/item_consumables.hpp"
 #include "content/items/item_grades.hpp"
+#include "content/items/item_display.hpp"
 #include "content/items/special_items.hpp"
 #include "content/skills/sorceress_data.hpp"
 #include "content/skills/defensive_buff_data.hpp"
@@ -330,26 +331,32 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
         data.missileReturnFire.emplace(*id, returnFire == 1);
     }
     data.characters = loadCharacterDefinitions(data.tables.at("charstats"));
-    if (originalRules) for (const auto &character : data.characters) {
+    for (const auto &character : data.characters) {
         size_t row = 0;
         for (; row < inventory.rows().size(); ++row)
             if (inventory.value(row, "class") == character.name + "2") break;
         if (row == inventory.rows().size())
-            throw std::runtime_error("Missing original 800px inventory layout: " + character.name);
+            throw std::runtime_error("Missing 800px player inventory layout: " + character.name);
         const auto number = [&](const std::string &field) {
             const auto value = inventory.number(row, field);
-            if (!value) throw std::runtime_error("Missing original player inventory field: " + field);
+            if (!value) throw std::runtime_error("Missing player inventory field: " + field);
             return *value;
         };
         const int left = number("invLeft"), top = number("invTop");
         PlayerInventoryLayout layout;
+        if (!originalRules) {
+            layout.top = top;
+            layout.height = number("invBottom") - top;
+            if (number("invRight") - left != 320 || top < 0 || layout.height < 1 || top + layout.height > 558)
+                throw std::runtime_error("Unsupported remote player inventory panel: " + character.name);
+        }
         layout.grid = {number("gridX"), number("gridY"), number("gridLeft") - left,
             number("gridTop") - top, number("gridBoxWidth"), true};
         const auto &grid = layout.grid;
         if (grid.columns < 1 || grid.columns > 16 || grid.rows < 1 || grid.rows > 16 ||
             grid.cellSize < 1 || grid.cellSize != number("gridBoxHeight") || grid.left < 0 || grid.top < 0 ||
-            grid.left + grid.columns * grid.cellSize > 320 || grid.top + grid.rows * grid.cellSize > 432)
-            throw std::runtime_error("Unsupported original player inventory grid: " + character.name);
+            grid.left + grid.columns * grid.cellSize > 320 || grid.top + grid.rows * grid.cellSize > layout.height)
+            throw std::runtime_error("Unsupported player inventory grid: " + character.name);
         constexpr const char *slots[]{"head", "neck", "torso", "rArm", "lArm",
             "rHand", "lHand", "belt", "feet", "gloves", "rArm", "lArm"};
         static_assert(std::size(slots) == size_t(EquipmentSlot::Count));
@@ -358,10 +365,10 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             auto &box = layout.slots[slot];
             box = {number(prefix + "Left") - left, number(prefix + "Top") - top,
                 number(prefix + "Right") - left, number(prefix + "Bottom") - top};
-            if (box[0] < 0 || box[1] < 0 || box[2] > 320 || box[3] > 432 ||
+            if (box[0] < 0 || box[1] < 0 || box[2] > 320 || box[3] > layout.height ||
                 box[2] <= box[0] || box[3] <= box[1] ||
                 box[2] - box[0] != number(prefix + "Width") || box[3] - box[1] != number(prefix + "Height"))
-                throw std::runtime_error("Unsupported original player inventory slot: " + character.name + "/" + prefix);
+                throw std::runtime_error("Unsupported player inventory slot: " + character.name + "/" + prefix);
         }
         data.playerInventoryLayouts.emplace(character.code, std::move(layout));
     }
@@ -502,7 +509,7 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             prepareEquipmentSetData(data);
             loadMagicAffixData(data);
             loadLodTreasureData(data);
-        }
+        } else loadRemoteItemDisplayData(data, strings);
         data.nativeStats=prepareNativeStatRules(data);
         if (originalRules) loadItemConsumables(data);
         if (originalRules) data.nativeFormulas=prepareSkillFormulaCatalog(data);

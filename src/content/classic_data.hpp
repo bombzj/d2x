@@ -51,6 +51,7 @@ struct StashLayout {
 };
 struct PlayerInventoryLayout {
     StashLayout grid;
+    int top = 60, height = 432;
     // Panel-local left, top, right, bottom, indexed by EquipmentSlot.
     std::array<std::array<int, 4>, size_t(EquipmentSlot::Count)> slots{};
 };

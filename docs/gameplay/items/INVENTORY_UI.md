@@ -1,6 +1,6 @@
 # 包裹界面
 
-更新：2026-10-19。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
+更新：2026-10-21。本页只维护面板／手势及等待语义；权威移动与容量见[INVENTORY](INVENTORY.md)，装备资格见[EQUIPMENT](EQUIPMENT.md)，原图／反馈见[PRESENTATION](PRESENTATION.md)。
 
 I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提供原石框和I／II武器标签；格子、部位、物品图及说明按原表读取。面板只消费InventoryView和提交意图，不访问可写库存或会话。
 
@@ -13,6 +13,16 @@ I／底栏按钮打开公共包裹，当前MPQ invchar6.dc6／invchar6Tab.dc6提
 金币输入改用当前MPQ dialogbackground的210×158原图、buysellbtn的确认／取消帧及strDropGoldHowMuch／strBankGoldDeposit／strBankGoldWithdraw文案，仓库上限读取GoldMax格式。预填金额初始全选；数字替换选区，左右箭头／Home／End与Shift移动选区，Ctrl+A全选，Backspace删除前字、Delete删除后字，鼠标定位／拖选。选择底色按D2Win EditBox的MixRGB(0x40,0x40,0x40)，光标为250ms闪烁的下划线；Escape／右键只取消弹窗，输入不穿透到下面的操作。完整本地化排版仍待核对；全部大面板的原版对照边界见[经典UI](../ui/CLASSIC_HUD.md#主要面板对照边界)。
 
 商店贸易初始选择Misc（原D2Client 1.13c RVA9C213传入页3），不使用异步到达的部分货架内容选择默认页。原invPage 1／2／3／4分别投影为Armor／Weapons／Weapons第二页／Misc，标签取当前MPQ TBL的strBSArmor／strBSWeapons／strBSMisc；赌博沿独立页。
+
+## PD2只读显示
+
+固定CN配置的RemoteDisplay也准备七职业Inventory布局，按invTop／invBottom校验自身面板高度，投影panelTop／panelHeight、backpackLayout和equipmentSlots。当前表的职业行均为invTop=32、invBottom=492、10×8格；背包相对坐标(15,217)，格距29。原版仍保留60／432的布局边界，不因PD2放宽原版约束。
+
+invchar6右半四帧按左半原图提供的行基线、各帧尺寸及有符号x／y偏移绘制；CN右下帧高246、y=35，与原版176高不同，不能继续按固定256像素顶边拼接。装备、格子命中及物品原图共用目标表投影；具体资源摘要见[DLL与位流证据](../../resources/PD2_CN_DLL_ANALYSIS.md#远端显示准备的当前边界)。当前已显示初始法杖、底部两行卷轴与腰带药水，原客户端逐像素及全部分辨率对照尚未完成。
+
+PD2 InventoryView标记personalItemActionsOnly：开放本人背包、Cursor、地面、当前装备及腰带的移物，位置与GUID／revision由原回包确认。穿脱及同部位换装沿用目标MPQ的类型／部位／职业检查；最终属性需求和装备生效由服务器决定，不用原版派生值假定CN资格。需要自动移除另一只手的0x1B／1E组合先拒绝，提示先手动卸下；备用组及切组尚未开放。腰带允许取出、指定格放置、交换和Shift自动入带，容量由当前Belts表及已指派腰带准备，不启用药水使用。
+
+stash／cube、交易和佣兵操作保持关闭；使用、合并、鉴定、镶孔、切组及NPC服务继续拒绝。UI预览和意图、RemoteInventory及RealmSession均复验来源、目标、当前部位与revision；不能通过原包入口绕过界面限制，不产生本地库存成功。CN拿取／卸装须等本人Cursor，穿戴须等指定部位，腰带安置须等指定格；换装／腰带交换还须等被换物品进入Cursor，相关属性或0x47／48刷新不单独确认完成。I／原底栏可开关，ESC可关闭。旧原版位置的金币／关闭按钮及切组覆盖图暂不绘制和命中，待核实CN布局后补齐。原版操作按下节原有流程保留。
 
 ## 操作
 

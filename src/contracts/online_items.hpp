@@ -47,6 +47,41 @@ enum class OnlineItemAction {
     TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService, HirelingEquipment,
     BeltAuto, CubeStore
 };
+// CN personal inventory only. Services, extended storage, use and weapon-set
+// switching remain unavailable; original profiles retain their full contract.
+inline bool onlinePd2ItemAction(OnlineItemAction action) {
+    switch (action) {
+    case OnlineItemAction::Pickup: case OnlineItemAction::Take: case OnlineItemAction::Place:
+    case OnlineItemAction::Drop: case OnlineItemAction::Swap:
+    case OnlineItemAction::Equip: case OnlineItemAction::Unequip:
+    case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:
+    case OnlineItemAction::BeltAuto: return true;
+    default: return false;
+    }
+}
+inline bool onlineBackpackItem(const OnlineItem &item, std::optional<uint32_t> player) {
+    return onlineItemOwnedBy(item, player) && item.mode == 0 && item.page == 1 &&
+        !(item.flags & (0x40000000u | 0x2000000u));
+}
+inline bool onlineActiveEquipmentItem(const OnlineItem &item, std::optional<uint32_t> player) {
+    return onlineItemOwnedBy(item, player) && item.mode == 1 && item.body >= 1 && item.body <= 10;
+}
+inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player) {
+    if (item.flags & (0x40000000u | 0x2000000u)) return false;
+    if (action == OnlineItemAction::Pickup) return item.mode == 3;
+    if (action == OnlineItemAction::Take) return onlineBackpackItem(item, player) ||
+        onlineActiveEquipmentItem(item, player) || (onlineItemOwnedBy(item, player) && item.mode == 2);
+    if (action == OnlineItemAction::Unequip) return onlineActiveEquipmentItem(item, player);
+    if (action == OnlineItemAction::BeltAuto) return onlineBackpackItem(item, player);
+    return onlinePd2ItemAction(action) && onlineCursorItem(item, player);
+}
+inline bool onlinePd2ItemActionTarget(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player) {
+    if (item.flags & (0x40000000u | 0x2000000u)) return false;
+    if (action == OnlineItemAction::Swap) return onlineBackpackItem(item, player);
+    if (action == OnlineItemAction::BeltSwap) return onlineItemOwnedBy(item, player) && item.mode == 2;
+    if (action == OnlineItemAction::Equip) return onlineActiveEquipmentItem(item, player);
+    return false;
+}
 struct OnlineItemCommand {
     OnlineItemAction action{};
     uint32_t item{}, target{}, npc{}, amount{};

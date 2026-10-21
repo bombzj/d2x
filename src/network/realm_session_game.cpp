@@ -268,6 +268,32 @@ void RealmSession::Impl::handle_game(Packet packet) {
             (request->command.targetRevision && *id == request->command.target));
         if ((packet.id == 0x9C || packet.id == 0x9D || packet.id == 0x0A || packet.id == 0x42 || packet.id == 0x3E) &&
             action == OnlineItemAction::Transmute) related = true;
+        if (view.remoteLobbyOnly && related) {
+            // An equipment/property refresh is not placement confirmation.
+            // Swaps can publish either side first; wait for both assigned modes.
+            const auto &command = request->command;
+            const auto source = view.world.items.find(command.item);
+            const bool assigned = source != view.world.items.end() &&
+                onlineItemOwnedBy(source->second, view.load.playerUnitId) &&
+                source->second.revision > command.itemRevision;
+            const auto target = view.world.items.find(command.target);
+            const bool swappedCursor = !command.targetRevision || (target != view.world.items.end() &&
+                target->second.revision > command.targetRevision &&
+                onlineCursorItem(target->second, view.load.playerUnitId));
+            switch (action) {
+            case OnlineItemAction::Take: case OnlineItemAction::Unequip:
+                related = assigned && source->second.mode == 4; break;
+            case OnlineItemAction::Equip:
+                related = assigned && source->second.mode == 1 && source->second.body == command.body && swappedCursor; break;
+            case OnlineItemAction::BeltPlace:
+                related = assigned && source->second.mode == 2 && source->second.x == command.beltSlot; break;
+            case OnlineItemAction::BeltSwap:
+                related = assigned && source->second.mode == 2 && source->second.x == command.beltSlot && swappedCursor; break;
+            case OnlineItemAction::BeltAuto:
+                related = assigned && source->second.mode == 2; break;
+            default: break;
+            }
+        }
         // Merchant 0x2A is the explicit result; preliminary item packets are not its ACK.
         if (merchant && packet.id != 0x2A) related = false;
         if (related && request->state == OnlineItemRequest::State::Pending) {

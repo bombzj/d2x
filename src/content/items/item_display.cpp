@@ -1,6 +1,7 @@
 #include "content/items/item_display.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/string_table.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/items/quality.hpp"
 #include "gameplay/consumables/potions.hpp"
@@ -142,6 +143,62 @@ static std::string baseDisplayItemName(const ClassicData &content, const ItemCat
         return nameFormat(itemText(content, "GemmedNormalName"), {itemText(content, "Gemmed"), name});
     return name;
 }
+void loadRemoteItemDisplayData(ClassicData &content, const ClassicStrings &strings) {
+    for (const auto &[name, destination] : {
+        std::pair{"uniqueitems", &content.uniqueItems}, std::pair{"setitems", &content.setItems}}) {
+        const auto &table = content.tables.at(name);
+        const bool unique = std::string_view(name) == "uniqueitems";
+        for (size_t row = 0; row < table.rows().size(); ++row) {
+            const auto key = table.value(row, "index"), code = table.value(row, unique ? "code" : "item");
+            if (key.empty() || key == "Expansion" || code.empty() || !content.items.find(code)) continue;
+            SpecialItemRecord record;
+            record.row = row; record.name = key; record.code = code;
+            record.set = table.value(row, "set");
+            record.setAddFunction = table.number(row, "add func").value_or(0);
+            record.requiredLevel = table.number(row, "lvl req").value_or(0);
+            if (const auto icon = table.value(row, "invfile"); !icon.empty())
+                record.icon = "data/global/items/" + std::string(icon) + ".dc6";
+            if (const auto ground = table.value(row, "flippyfile"); !ground.empty())
+                record.groundAnimation = "data/global/items/" + std::string(ground) + ".dc6";
+            destination->push_back(std::move(record));
+        }
+    }
+    for (const auto &[name, destination] : {
+        std::pair{"magicprefix", &content.magicPrefixes}, std::pair{"magicsuffix", &content.magicSuffixes},
+        std::pair{"automagic", &content.autoMagic}}) {
+        const auto &table = content.tables.at(name);
+        for (size_t row = 0; row < table.rows().size(); ++row) {
+            const auto key = table.value(row, "Name");
+            if (key.empty() || key == "Expansion") continue;
+            MagicAffixRecord record;
+            record.row = row; record.name = key;
+            record.requiredLevel = std::max(table.number(row, "levelreq").value_or(0), table.number(row, "classlevelreq").value_or(0));
+            destination->push_back(std::move(record));
+        }
+    }
+    for (const auto &[name, destination] : {
+        std::pair{"rareprefix", &content.rarePrefixes}, std::pair{"raresuffix", &content.rareSuffixes}}) {
+        const auto &table = content.tables.at(name);
+        for (size_t row = 0; row < table.rows().size(); ++row)
+            if (const auto key = table.value(row, "name"); !key.empty()) {
+                RareNameRecord record;
+                record.row = row; record.name = key; destination->push_back(std::move(record));
+            }
+    }
+    const auto &grades = content.tables.at("lowqualityitems");
+    for (size_t row = 0; row < grades.rows().size(); ++row)
+        if (const auto key = grades.value(row, "Name"); !key.empty()) {
+            QualityGradeRecord record;
+            record.row = row; record.name = key; content.inferiorGrades.push_back(std::move(record));
+        }
+    const auto &runes = content.tables.at("runes");
+    for (size_t row = 0; row < runes.rows().size(); ++row)
+        if (const auto key = runes.value(row, "Name"); !key.empty()) {
+            RunewordRecord record;
+            record.row = int(row); record.stringId = strings.index(key); record.name = strings.find(key);
+            content.runewords.push_back(std::move(record));
+        }
+}
 std::string displayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item) {
     auto name = baseDisplayItemName(content, catalog, item);
     return item.personalizedName.empty() ? name : item.personalizedName + "'s " + name;
@@ -172,6 +229,33 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         if (!label.empty()) display.tooltip.push_back({label + " " + value, ItemTextTone::Normal,
             improved ? label.size() + 1 : std::string::npos});
     };
+    if (content.profile == "remote-display-txt-v1") {
+        // Only assigned values: original combat/requirements programs do not
+        // establish PD2 totals. Unselected set layers remain separate.
+        if (display.name != definition.name && item.runewordRow < 0) line(definition.name, ItemTextTone::Name);
+        if (item.nativeMaxDurability)
+            baseLine("ItemStats1d", std::to_string(item.durability) + " / " + std::to_string(context.maximumDurability));
+        if (definition.maxStack > 1 || definition.bookCapacity)
+            baseLine("ItemStats1i", std::to_string(item.quantity));
+        if (!item.identified) line(itemText(content, "ItemStats1b"), ItemTextTone::Error);
+        else {
+            ItemInstance assigned = item;
+            assigned.socketedItems.clear();
+            assigned.savedStats.insert(assigned.savedStats.end(), item.runewordStats.begin(), item.runewordStats.end());
+            for (auto &text : describeItemStats(content, resolveOwnItemStats(content, assigned, context.level), context.characterClass))
+                line(std::move(text), ItemTextTone::Property);
+        }
+        if (!item.socketedItems.empty()) line("Socket modifiers are not fully supported for this client profile.", ItemTextTone::Error);
+        if ((item.nativeFlags & 0x400000u) || item.sockets) {
+            auto footer = item.nativeFlags & 0x400000u ? itemText(content, "itemEthereal") : std::string{};
+            if (item.sockets) {
+                if (!footer.empty()) footer += ", ";
+                footer += itemText(content, "Socketable") + " (" + std::to_string(item.sockets) + ")";
+            }
+            line(std::move(footer), ItemTextTone::Property);
+        }
+        return display;
+    }
     if (item.definition == "toa")
         if (const auto text = content.itemStrings.find("toa"); text != content.itemStrings.end())
             if (const auto separator = text->second.rfind('\n'); separator != std::string::npos)

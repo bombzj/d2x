@@ -9,6 +9,9 @@ namespace d2x {
 struct ClassicData;
 class ItemCatalog;
 struct ItemInstance;
+class ClassicStrings;
+// Server-indexed names/art only; no generation eligibility or property rolls.
+void loadRemoteItemDisplayData(ClassicData &content, const ClassicStrings &strings);
 struct ItemDisplayContext {
     int level = 1, strength = 0, dexterity = 0;
     unsigned maximumDurability = 0;

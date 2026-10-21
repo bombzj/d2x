@@ -171,7 +171,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         if(input.insideViewport && CheckCollisionPointRec(rv(input.mouse),orificeBounds())) return true;
     }
     EntityId backpack = view_.inventoryView().containers.backpack;
-    if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
+    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), inventoryClose())) {
         inventoryClick_ = true;
         toggleInventory();
@@ -183,7 +183,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         toggleInventory();
         return true;
     }
-    if (ui.open && !ui.playerTradeOpen && !ui.drag && !ui.goldDialog && input.insideViewport &&
+    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && !ui.drag && !ui.goldDialog && input.insideViewport &&
         input.leftPressed && inventory.stashLayout.expansion)
         if (auto set = weaponTabAt(input.mouse)) {
             inventoryClick_ = true;
@@ -205,7 +205,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
     }
     bool bankField = ui.storage && CheckCollisionPointRec(
             rv(input.mouse), storageGoldButton(inventory.stashLayout.expansion));
-    if (ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
+    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
         !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGoldButton()) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;

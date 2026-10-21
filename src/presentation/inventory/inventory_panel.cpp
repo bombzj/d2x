@@ -10,7 +10,7 @@ Rectangle equipmentBounds(const InventoryView &inventory, EquipmentSlot slot) {
     if (size_t(slot) >= inventory.equipmentSlots.size())
         return {};
     const auto &box = inventory.equipmentSlots[size_t(slot)];
-    auto panel = inventoryBounds();
+    auto panel = inventoryBounds(inventory);
     return {panel.x + box[0] * inventoryScale(), panel.y + box[1] * inventoryScale(),
             (box[2] - box[0]) * inventoryScale(), (box[3] - box[1]) * inventoryScale()};
 }

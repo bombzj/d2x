@@ -396,7 +396,8 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
+    if (p.view.remoteLobbyOnly && (!onlinePd2ItemAction(command.action) ||
+        (command.action == OnlineItemAction::Place && command.page != 0))) {
         p.error(OnlineErrorKind::Unsupported, "Item actions are unavailable for this client profile");
         return false;
     }
@@ -443,6 +444,38 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         (item->second.ownerType != 0 || item->second.owner != p.view.load.playerUnitId) &&
         !(command.action==OnlineItemAction::HirelingEquipment && world.hireling && item->second.ownerType==1 && item->second.owner==world.hireling->id)) {
         p.error(OnlineErrorKind::Input, "Item is not owned by this server player"); return false;
+    }
+    if (p.view.remoteLobbyOnly) {
+        const auto target = world.items.find(command.target);
+        if ((command.action == OnlineItemAction::Pickup || command.action == OnlineItemAction::Take ||
+             command.action == OnlineItemAction::Unequip || command.action == OnlineItemAction::BeltAuto) &&
+            onlineHasCursorItem(world.items, p.view.load.playerUnitId)) {
+            p.error(OnlineErrorKind::Input, "Clear the server cursor before taking another item"); return false;
+        }
+        if (item == world.items.end() || !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId) ||
+            ((command.action == OnlineItemAction::Swap || command.action == OnlineItemAction::BeltSwap) &&
+                (target == world.items.end() || !command.targetRevision || command.target == command.item ||
+                    !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId)))) {
+            p.error(OnlineErrorKind::Input, "Item is outside the supported personal inventory context"); return false;
+        }
+        if ((command.action == OnlineItemAction::Unequip ||
+             (command.action == OnlineItemAction::Take && item->second.mode == 1)) && command.body != item->second.body) {
+            p.error(OnlineErrorKind::Input, "Equipment slot changed before submission"); return false;
+        }
+        if (command.action == OnlineItemAction::Equip) {
+            if (command.body < 1 || command.body > 10 || command.equipVariant || (item->second.flags & 0x100u)) {
+                p.error(OnlineErrorKind::Input, "Unsupported personal equipment destination or variant"); return false;
+            }
+            const OnlineItem *equipped = nullptr;
+            for (const auto &[id, candidate] : world.items)
+                if (onlineActiveEquipmentItem(candidate, p.view.load.playerUnitId) && candidate.body == command.body)
+                    equipped = &candidate;
+            if ((equipped && (command.target != equipped->id || command.targetRevision != equipped->revision ||
+                    !onlinePd2ItemActionTarget(command.action, *equipped, p.view.load.playerUnitId))) ||
+                (!equipped && command.targetRevision)) {
+                p.error(OnlineErrorKind::Input, "Equipped swap target changed before submission"); return false;
+            }
+        }
     }
     if (command.action == OnlineItemAction::Buy &&
         (world.npcRequested != command.npc || world.shopSource != command.npc || world.shopGamble != command.gamble ||

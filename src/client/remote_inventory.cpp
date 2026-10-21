@@ -23,7 +23,10 @@ RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfil
     for (size_t row = 0; row < types.rows().size(); ++row)
         if (auto code = types.value(row, "Code"); !code.empty()) typeRows_.emplace(std::string(code), row);
     for (size_t row = 0; row < stats.rows().size(); ++row)
-        if (auto id = stats.number(row, "ID"); id && *id >= 0 && *id < 511) statRows_.emplace(unsigned(*id), row);
+        if (auto id = stats.number(row, "ID"); id && *id >= 0 &&
+            *id < (profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020 ? 1023 : 511))
+            if (!statRows_.emplace(unsigned(*id), row).second)
+                throw std::runtime_error("Duplicate native item stat ID");
     const auto &inventory = tables_.at("inventory");
     for (size_t row = 0; row < inventory.rows().size(); ++row) {
         const auto name = inventory.value(row, "class");
@@ -118,20 +121,23 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
         };
         const bool pd2 = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
         // Core 0x382E40 selects S12 below format 103, S13 at 103, current
-        // Save columns above it. The external network serializer version is 96.
-        const std::string_view bitsColumn = pd2 && item.format < 103 ? "Save Bits S12"
-            : pd2 && item.format == 103 ? "Save Bits S13" : "Save Bits";
-        const std::string_view addColumn = pd2 && item.format < 103 ? "Save Add S12"
-            : pd2 && item.format == 103 ? "Save Adds S13" : "Save Add";
-        const std::string_view paramColumn = pd2 && item.format < 103 ? "Save Param Bits S12"
-            : pd2 && item.format == 103 ? "Save Param Bits S13" : "Save Param Bits";
+        // Save columns above it. Compact remains the original D2Common reader
+        // (RVA 0x2C0C0), using current columns. Outer network version is 96.
+        const std::string_view bitsColumn = pd2 && !item.compact && item.format < 103 ? "Save Bits S12"
+            : pd2 && !item.compact && item.format == 103 ? "Save Bits S13" : "Save Bits";
+        const std::string_view addColumn = pd2 && !item.compact && item.format < 103 ? "Save Add S12"
+            : pd2 && !item.compact && item.format == 103 ? "Save Adds S13" : "Save Add";
+        const std::string_view paramColumn = pd2 && !item.compact && item.format < 103 ? "Save Param Bits S12"
+            : pd2 && !item.compact && item.format == 103 ? "Save Param Bits S13" : "Save Param Bits";
+        for (const auto column : {bitsColumn, addColumn, paramColumn})
+            if (!cost.has(column)) throw std::runtime_error("Missing native item encoding column: " + std::string(column));
         const unsigned statIdBits = pd2 && item.format >= 102 ? 10 : 9;
         const unsigned statTerminator = (1u << statIdBits) - 1;
         auto statValue = [&](unsigned id) -> int64_t {
             const auto row = statRows_.find(id);
             if (row == statRows_.end()) throw std::runtime_error("Unknown native item stat");
             const auto width = cost.number(row->second, bitsColumn).value_or(0);
-            if (width < 1 || width > 32) throw std::runtime_error("Invalid native item stat width");
+            if (width < (pd2 ? 0 : 1) || width > 32) throw std::runtime_error("Invalid native item stat width");
             return int64_t(bits.read(unsigned(width))) - cost.number(row->second, addColumn).value_or(0);
         };
         auto unsignedStat = [&](unsigned id) {
@@ -157,8 +163,11 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                 switch (item.quality) {
                 case 1: case 3: item.fileIndex = uint16_t(bits.read(3)); break;
                 case 2:
-                    if (isType(wire, "char") && item.identified)
-                        (bits.read(1) ? item.prefixes[0] : item.suffixes[0]) = uint16_t(bits.read(11));
+                    if (isType(wire, "char") && item.identified) {
+                        const bool prefix = bits.read(1) != 0;
+                        const auto affix = uint16_t(bits.read(11));
+                        (prefix ? item.prefixes[0] : item.suffixes[0]) = affix;
+                    }
                     if (isType(wire, "body") && !isType(wire, "play")) item.fileIndex = uint16_t(bits.read(10));
                     if (isType(wire, "book") || isType(wire, "scro")) item.book = uint16_t(bits.read(5));
                     break;
@@ -194,8 +203,11 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                 if (item.identified) {
                     const auto setMask = item.quality == 5 ? bits.read(5) : 0;
                     auto stats = [&](std::vector<OnlineItemStat> &out) {
-                        for (unsigned count = 0; count < 512; ++count) {
+                        std::optional<unsigned> previous;
+                        for (unsigned count = 0; count <= statTerminator; ++count) {
                             const auto id = bits.read(statIdBits); if (id == statTerminator) return;
+                            if (id == 0 && previous == 0) throw std::runtime_error("Repeated zero native item property");
+                            previous = id;
                             const unsigned extra = id == 17 || id == 48 || id == 50 || id == 52 ? 1
                                 : id == 54 || id == 57 ? 2 : 0;
                             for (unsigned n = 0; n <= extra; ++n) {
@@ -215,6 +227,10 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
                 }
             }
         }
+        // A network item has no JM, seed or server-only realm trailer. Refuse
+        // unknown CN tails instead of presenting a partially decoded item.
+        if (pd2 && (bits.remaining() > 7 || bits.read(unsigned(bits.remaining())) != 0))
+            throw std::runtime_error("Unsupported trailing PD2 item data");
         if (item.hasGraphic) {
             const auto type = typeRows_.find(table.value(base->second.row, "type"));
             if (type != typeRows_.end()) {
@@ -311,9 +327,16 @@ void RemoteInventory::update(const OnlineView &online) {
             if (index >= 0 && size_t(index) < belts.rows().size()) view_.beltSlots = belts.number(size_t(index), "numboxes").value_or(4);
         }
     }
+    if (profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020 &&
+        (view_.beltSlots < 4 || view_.beltSlots > 16 || view_.beltSlots % 4))
+        throw std::runtime_error("Unsupported PD2 belt capacity for native four-bit slots");
 }
 bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); return false; }
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
+    const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
+    if (pd2Items && (!onlinePd2ItemAction(command.action) ||
+        (command.action == OnlineItemAction::Place && command.page != 0)))
+        return reject("This client profile currently supports only personal inventory item movement");
     update(session.read());
     const auto &online = session.read();
     if (!command.context) command.context = onlineIntentContext(online);
@@ -400,6 +423,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     const auto found = world.items.find(command.item);
     if (found == world.items.end()) return reject("Item is not assigned in the current game");
     const auto &wire = found->second;
+    if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId))
+        return reject("Item is outside the supported personal inventory context");
     const auto &decoded = view_.items.at(command.item);
     if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
     if (command.itemRevision && command.itemRevision != wire.revision) return reject("Stale item revision");
@@ -428,6 +453,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (entry == world.items.end() || command.target == command.item || !owned(entry->second))
             return reject("Target must be a different item belonging to this player");
         target = &entry->second; targetData = &view_.items.at(command.target);
+        if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId))
+            return reject("Target is outside the supported personal inventory context");
         if (!targetData->decoded || targetData->gamble) return reject("Target item data is unavailable");
         if (command.targetRevision && command.targetRevision != target->revision) return reject("Stale target item revision");
         command.targetRevision = target->revision;
@@ -508,6 +535,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         const auto code = locations.value(command.body, "Code");
         if (code.empty() || (types.value(type->second, "BodyLoc1") != code && types.value(type->second, "BodyLoc2") != code))
             return reject("MPQ item type does not fit that body slot");
+        if (pd2Items && (command.equipVariant || (wire.flags & 0x100u)))
+            return reject("Unsupported equipment variant or broken item");
         break; // Attribute and hand combinations are finally validated by the original server.
     }
     case OnlineItemAction::Unequip:
@@ -528,6 +557,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         break;
     case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:
         if (!cursor() || !baseNumber(wire, "belt")) return reject("Only an allowed cursor consumable can enter the belt");
+        if (pd2Items && (decoded.width != 1 || decoded.height != 1))
+            return reject("Only one-cell consumables can enter the belt");
         if (target) {
             if (target->mode != 2) return reject("Belt swap target is not in this player's belt");
             command.beltSlot = target->x;
@@ -622,6 +653,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         const std::string_view characterClass = playerClass_ && *playerClass_<characters_.size()?characters_[*playerClass_].code:std::string_view{};
         const auto incoming = equipmentDefinition(wire);
         if (opposite && !compatibleWeaponHands(incoming, equipmentDefinition(*opposite), characterClass)) {
+            if (pd2Items) return reject("Remove the opposite-hand item before changing this weapon combination");
             const bool twoHanded = requiresBothWeaponHands(incoming, characterClass);
             if (bodyItem(command.body) && !twoHanded)
                 return reject("The requested swap would leave incompatible items in both hands");

@@ -8,7 +8,61 @@ bool RemoteUiClients::Impl::Inventory::submitStaff(EntityId source,std::optional
             return o.session.submit_staff(uint32_t(source.value-1),item?std::optional{guid(item->id)}:std::nullopt,o.context);
         }
 InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &intent) const {
-            if (o.inventoryView.dead) return InventoryError::AccessDenied;
+            if (o.inventoryView.dead || o.inventoryView.readOnly) return InventoryError::AccessDenied;
+            if (o.inventoryView.personalItemActionsOnly) {
+                const auto &view = o.inventoryView;
+                auto activeSlot = [&](EquipmentSlot slot) {
+                    return size_t(slot) < size_t(EquipmentSlot::Count) && weaponSlotActive(slot, view.weaponSet);
+                };
+                auto personalContainer = [&](EntityId container) {
+                    return container == view.containers.backpack || container == view.containers.cursor ||
+                        container == view.containers.belt || container == view.containers.beltEquipment ||
+                        container == view.containers.equipment;
+                };
+                auto sourceAllowed = [&](ItemHandle handle) {
+                    const auto *item = view.item(handle.id);
+                    const auto *at = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;
+                    return at && personalContainer(at->container) &&
+                        (at->container != view.containers.equipment ||
+                            activeSlot(EquipmentSlot(at->cell.x)));
+                };
+                auto destinationAllowed = [&](const ItemDestination &destination) {
+                    return std::visit([&](const auto &at) {
+                        if constexpr (std::is_same_v<std::decay_t<decltype(at)>, GroundLocation>) return true;
+                        else {
+                            if (!personalContainer(at.container)) return false;
+                            if constexpr (std::is_same_v<std::decay_t<decltype(at)>, ContainerLocation>)
+                                return at.container != view.containers.equipment ||
+                                    activeSlot(EquipmentSlot(at.cell.x));
+                            else return at.container == view.containers.backpack || at.container == view.containers.belt;
+                        }
+                    }, destination);
+                };
+                const bool allowed = std::visit([&](const auto &command) {
+                    using T = std::decay_t<decltype(command)>;
+                    if constexpr (std::is_same_v<T, MoveItem>)
+                        return sourceAllowed(command.item) && destinationAllowed(command.destination);
+                    else if constexpr (std::is_same_v<T, TransferItem>)
+                        return sourceAllowed(command.item) && (command.destination == view.containers.backpack ||
+                            command.destination == view.containers.belt);
+                    else if constexpr (std::is_same_v<T, EquipItem>)
+                        return sourceAllowed(command.item) && (!command.slot ||
+                            activeSlot(*command.slot)) &&
+                            (!command.destination || destinationAllowed(*command.destination));
+                    else if constexpr (std::is_same_v<T, EquipBelt>)
+                        return sourceAllowed(command.item) &&
+                            (!command.destination || destinationAllowed(*command.destination));
+                    else if constexpr (std::is_same_v<T, SwapItems>) {
+                        const auto *target = view.item(command.second.id);
+                        const auto *at = target ? std::get_if<ContainerLocation>(&target->location) : nullptr;
+                        return sourceAllowed(command.first) && sourceAllowed(command.second) && at &&
+                            (at->container == view.containers.backpack || at->container == view.containers.belt) &&
+                            (!command.destination || command.destination->container == at->container);
+                    }
+                    else return false;
+                }, intent);
+                if (!allowed) return InventoryError::AccessDenied;
+            }
             return std::visit([&](const auto &c) {
                 using T = std::decay_t<decltype(c)>;
                 if (o.inventoryView.ownTrade) {
@@ -45,15 +99,25 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         }
                     }
                 }
-                if constexpr (std::is_same_v<T, EquipItem>) {
+                if constexpr (std::is_same_v<T, EquipItem> || std::is_same_v<T, EquipBelt>) {
                     const auto *item=o.inventoryView.item(c.item.id);
                     if(!item) return InventoryError::UnknownItem;
                     if(item->revision!=c.item.revision) return InventoryError::SourceChanged;
-                    if(!c.slot) return InventoryError::None;
+                    std::optional<EquipmentSlot> slot;
+                    if constexpr (std::is_same_v<T, EquipItem>) slot = c.slot;
+                    else {
+                        // Preserve the original path; CN explicitly validates
+                        // the belt item before showing a writable target.
+                        if (!o.inventoryView.personalItemActionsOnly) return InventoryError::None;
+                        const auto *at = std::get_if<ContainerLocation>(&item->location);
+                        if (at && at->container == o.inventoryView.containers.beltEquipment) return InventoryError::None;
+                        slot = EquipmentSlot::Belt;
+                    }
+                    if(!slot) return InventoryError::None;
                     const auto *definition=o.data.items.find(item->definition);
                     if(!definition) return InventoryError::UnknownDefinition;
                     if(!item->identified) return InventoryError::Unidentified;
-                    if(!definition->equipment.known || !definition->equipment.fits(*c.slot))
+                    if(!definition->equipment.known || !definition->equipment.fits(*slot))
                         return InventoryError::UnsupportedEquipment;
                     const auto &required=definition->equipment.requiredClass;
                     if(!required.empty() && required!=o.characterView.classCode) return InventoryError::WrongClass;
@@ -233,6 +297,10 @@ void RemoteUiClients::Impl::compositeTake(OnlineItemCommand next) {
         queue(std::move(take)); queue(std::move(next)); pump();
     }
 void RemoteUiClients::Impl::inventoryCommand(InventoryIntent intent) {
+        if (inventoryView.readOnly) { notice = "Item interactions are unavailable for this client profile."; return; }
+        if (inventoryView.personalItemActionsOnly && inventory.preview(intent) != InventoryError::None) {
+            notice = "Only personal inventory item movement is available for this client profile."; return;
+        }
         std::visit([&](const auto &v) {
             using T = std::decay_t<decltype(v)>;
             const auto &owned = inventoryView.containers;

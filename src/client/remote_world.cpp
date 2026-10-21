@@ -347,14 +347,47 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         throw ProtocolError("PD2 extended item storage is not supported");
     Reader r(p.body);
     switch (p.id) {
-    case 0x48:
-        // D2MOO SCmd::D2GAME_SendPacket0x48 follows inventory publication.
-        // Inventory interaction is unavailable in the PD2 admission slice;
-        // retain this unconsumed notification in diagnostics, without an ACK.
-        r.take(10); r.finish();
+    case 0x2F: {
+        if (!pd2) throw ProtocolError("Unexpected item relocation packet for original profile");
+        // Core RVA 0x38F790: the +10==0 branch writes coordinates of an
+        // existing item. Ownership/page must already be established by 9C/9D.
+        const auto id = r.u32();
+        const auto page = r.u8();
+        r.u8(); // Special-storage context selector.
+        const auto x = r.u8(), y = r.u8();
+        const auto rebuild = r.u8(); // Clear/rebuild target grid occupancy.
+        const auto detach = r.u8();
+        r.finish();
+        if (auto item = w.items.find(id); item != w.items.end() && onlineItemOwnedBy(item->second, v.load.playerUnitId)) {
+            if (detach || rebuild || (page != 0 && page != 3 && page != 4) ||
+                item->second.mode != 0 || item->second.page != page + 1)
+                throw ProtocolError("Unsupported PD2 item relocation destination");
+            item->second.x = x; item->second.y = y;
+            item->second.revision = ++w.itemRevision;
+            break;
+        }
         ++w.ignoredPackets;
         ++v.gameProtocol.unconsumed[p.id];
         break;
+    }
+    case 0x47:
+    case 0x48: {
+        // Retail D2Client RVA 0xAE2B0 / 0xAE260 both look up this unit
+        // and call 0x82FE0 to refresh equipment eligibility. Neither sends ACK.
+        // D2MOO SCmd emits these notifications after inventory publication.
+        const auto type = r.u8();
+        r.u8();
+        const auto id = r.u32();
+        r.u32(); r.finish();
+        if (const auto owner = w.units.find({type, id}); owner != w.units.end()) {
+            ++owner->second.appearanceRevision;
+            ++w.itemRevision;
+        }
+        // Full native eligibility recomputation is not implemented for CN.
+        ++w.ignoredPackets;
+        ++v.gameProtocol.unconsumed[p.id];
+        break;
+    }
     case 0x7E:
         // Retail D2Client RVA 0xAD240 opens a local scrolling text resource;
         // it does not read this four-byte payload or alter world/admission state.
