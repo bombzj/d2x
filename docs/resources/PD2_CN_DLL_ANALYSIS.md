@@ -468,7 +468,7 @@ RealmSession对CN拿取／卸装等待同GUID进入本人Cursor，对穿戴等�
 | 原生页缓存 | RVA `0x37E130`将InvPage4移到5，`0x37E220`按目标页还原；`0x37E480／530`读取Inventory的BigBank和LocalStashPagesSave几何 | 当前10×15／127×127使缓存每列7页。D2X从目标MPQ准备四个几何值，按cacheY／rows与cacheX／columns恢复前10页的独立stashPage及页内坐标；完整位流的四位位置不能替代0x2F的整字节缓存坐标。未知缓存页或detach语义隐藏坐标并保留未消费诊断，不授予操作权限 |
 | 0x2F重排 | 已知个人格的rebuild先使旧位置失效，再逐GUID恢复；按已建立的本人所有权处理；+6是detach分支的目标InvPage，不能解释成公会选择器 | 不猜批次结束、不自动恢复未报告物品，不把特殊容器混入个人格 |
 
-个人仓库与方块分别读取目标Inventory的Big Bank Page2和Transmogrify Box Page1几何，当前为10×15、4×4。仓库DC6有44帧，每4帧是一种存储类型，不能按页号选择不同背景；正常仓库固定前4帧。stashtabs.dc6原图和核心RVA `0x2EC0A0`提供前10页图形及29像素步距，仅属核心普通页证据；当前CN改用下节mdll1控制和原StashBtns图形。方块通过当前表中唯一可用pSpell7物品识别，不要求原版ques类型；仍需服务端0x77打开／关闭上下文；现已接原方块合成、个人金币与已确认玩家交易的受限请求，共享金币与公会写入仍关闭。
+个人仓库与方块分别读取目标Inventory的Big Bank Page2和Transmogrify Box Page1几何，当前为10×15、4×4。仓库DC6有44帧，每4帧是一种存储类型，不能按页号选择不同背景；正常仓库固定前4帧。stashtabs.dc6原图和核心RVA `0x2EC0A0`提供前10页图形及29像素步距，仅属核心普通页证据；当前CN改用下节mdll1控制和原StashBtns图形。方块通过当前表中唯一可用pSpell7物品识别，不要求原版ques类型；仍需服务端0x77打开／关闭上下文；现已接原方块合成、个人金币与已确认玩家交易的受限请求，共享金币转账与公会写入仍关闭，共享余额仅同步显示。
 
 ### 个人与账号共享仓库的范围
 
