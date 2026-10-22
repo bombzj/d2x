@@ -2,7 +2,7 @@
 
 更新：2026-10-19。本页维护原协议、客户端副本、原服参考及明确缺口；[基线](../../BASELINE.md)维护实现范围，[总计划](../architecture/MULTIPLAYER.md#21-统一状态口径)维护状态口径与功能顺序。原服与自研宿主共用RealmSession／Remote*客户端，传输为TCP或内存字节队列。原服常规施法不回送本人4C／4D，也不以73重复创建所列地面程序；具体技能、原服条件及边界见[女巫技能](../gameplay/skills/SORCERESS.md)。亚马逊30项、原Clt程序及7A／9D怪物装备已有接入，多重箭／导引箭／诱饵／女武神／闪电之怒的原服参考与缺口见[亚马逊](../gameplay/skills/AMAZON.md)。既有未消费包和引擎启动限制仍需核对，不宣称全协议或全技能已对齐，也不按构建／自研运行划分完成等级。
 
-PD2仅作远端客户端。PlayPD2／--client-profile在挂载前绑定固定CN构建、资源和认证文件，由共用frontend组合RealmSession和Remote*，不实例化EmbeddedRealm或本地角色存储。当前CN服务已接受版本认证、账号登录、Realm启动和既有Ladder角色选择，可显示角色原图、进入大厅、取列表并返回选角；列表与游戏环境按角色Ladder状态核对。CN建房在原字段后追加GS／lootAllocation两字节；已获MCP建房和加入成功回复，按BH证据改用4001后，已完成游戏握手／初始同步并实际显示罗格营地、本人、NPC和HUD，正常退局返回选角；其他区域和完整玩法未认证。CN证明采用合法原MPQ的key／owner来源及独立编码，原配置保留旧认证语义。新账号注册尚未重新联调；建角／删除和房间详情关闭，PD2库存、战斗及NPC／物件交互请求明确拒绝，未知世界消息报告不支持。范围见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)，算法、MPQ来源限制及原客户端大厅崩溃证据见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
+PD2仅作远端客户端。PlayPD2／--client-profile在挂载前绑定固定CN构建、资源和认证文件，由共用frontend组合RealmSession和Remote*，不实例化EmbeddedRealm或本地角色存储。当前CN服务已接受版本认证、账号登录、Realm启动和既有Ladder角色选择，可显示角色原图、进入大厅、取列表并返回选角；列表与游戏环境按角色Ladder状态核对。CN建房在原字段后追加GS／lootAllocation两字节；已获MCP建房和加入成功回复，按BH证据改用4001后，已完成游戏握手／初始同步并实际显示罗格营地、本人、NPC和HUD，正常退局返回选角；其他区域和完整玩法未认证。CN证明采用合法原MPQ的key／owner来源及独立编码，原配置保留旧认证语义。新账号注册尚未重新联调；建角／删除和房间详情关闭，PD2库存、城镇交互及基础战斗输入按当前确认的来源／上下文开放，属性加点等未接入操作继续拒绝，未知世界消息报告不支持。范围见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)，算法、MPQ来源限制及原客户端大厅崩溃证据见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
 
 ## TCP/IP直连与自研宿主入口
 

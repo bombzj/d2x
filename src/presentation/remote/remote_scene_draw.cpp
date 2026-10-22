@@ -74,6 +74,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         return unit==v.world.units.end() || !onlineMonsterCorpse(unit->second);
     });
     observeEffects(v, shared, combat, binding.town,map.grid,{float(binding.origin->x),float(binding.origin->y)});
+    intent.input.castInputBusy = localCast && !channelSkill(localCast->command.skill) &&
+        (localCast->started < 0 || time < localCast->started + localCast->duration);
     // Decode the real death art when a boss is first visible, before its
     // timed callback. A cold child DCC must not interrupt the native program.
     for(const auto &[key,unit]:v.world.units) {

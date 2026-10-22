@@ -65,6 +65,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         nativePlayerPosition_.reset();
         nativeSequence_ = 0;
         nativeLoadComplete_ = false;
+        nextNativeUpdateMilliseconds_ = 0;
         nextObjectTransition_.reset();
         nativeErrors_.clear();
         nativeReason_.clear();
@@ -115,7 +116,8 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count());
     const bool pendingNative = nativeMap_ && nativeReason_.empty() &&
-        (nativeTerrainDirty_ || nativeSequence_ != v.world.mapEventSequence);
+        (nativeTerrainDirty_ || nativeSequence_ != v.world.mapEventSequence ||
+         (nativeLoadComplete_ && now >= nextNativeUpdateMilliseconds_));
     if (revision_ == v.revision && !observerChanged && !pendingNative &&
         (!nextObjectTransition_ || now < *nextObjectTransition_))
         return;
@@ -389,6 +391,12 @@ bool RemoteTown::updateNative(const OnlineView &v) {
         }
         if (!deferred && nativeSequence_ != world.mapEventSequence)
             throw std::runtime_error("Native map event tail is unavailable; rejoin the game");
+        const auto now = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+        if (!deferred && nativeLoadComplete_ && now >= nextNativeUpdateMilliseconds_) {
+            nativeMap_->updateClient();
+            nextNativeUpdateMilliseconds_ = now + 40;
+        }
         if (displayPlayerPosition_ && world.playerPosition) {
             if (const auto room = nativeMap_->clientRoom(displayPlayerPosition_->x, displayPlayerPosition_->y)) {
                 const auto &prepared = nativeMap_->tiles().rooms().at(*room);

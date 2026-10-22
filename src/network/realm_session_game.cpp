@@ -378,6 +378,20 @@ void RealmSession::Impl::handle_game(Packet packet) {
         changed();
         return;
     }
+    if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x83) {
+        // Core 38FA50: five WORDs, one BYTE and a DWORD feed the local
+        // effect-timer list. This is neither a damage result nor an ACK.
+        Reader timer(packet.body);
+        const auto id = timer.u16();
+        for (unsigned field = 0; field < 4; ++field) timer.u16();
+        timer.u8(); timer.u32(); timer.finish();
+        if (!pd2EffectTimers.contains(id) && pd2EffectTimers.size() >= 256)
+            pd2EffectTimers.erase(pd2EffectTimers.begin());
+        pd2EffectTimers[id] = std::move(packet.body);
+        ++view.gameProtocol.unconsumed[packet.id]; // Timer UI is not projected yet.
+        changed();
+        return;
+    }
     if (view.remoteLobbyOnly && (packet.id == 0x85 || packet.id == 0x88)) {
         const size_t index = packet.id == 0x85 ? 0 : 1;
         const size_t expected = index == 0 ? 392 : 386;

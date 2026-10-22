@@ -175,8 +175,8 @@ $spec.preview=$false
 | `online-cast` | hand；坐标x／y或真实unitId／unitType（默认1）二选一。stationary默认false；单位目标false允许原服靠近，true原地请求。repeat默认false，true发原Hold包一次，调用方负责继续提交／停止，不创建客户端循环。各轴≤50、活动地图及MPQ城镇限制，单位目标按MPQ资格区分PvE敌怪／尸体、Enchant友方、Unsummon本人7A／PetType许可的召唤物及Telekinesis物件／物品；自施技能用本人坐标 |
 | `online-attack` | 同cast目标及stationary／repeat，固定左手；先选择MPQ Attack技能并等确认。伤害、追击与命中由原服处理 |
 | `online-stop-skill` | 发原0x12停止地狱火状态；停止重复提交Hold请求由调用方负责。这不是全部技能的通用撤销包 |
-| `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B，等待基础技能等级增加；原服无通用失败包，超时结果未知，不自动重试 |
-| `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加 |
+| `online-learn-skill` | skillId；检查职业、已学前置、等级、属性、MPQ最大等级和原服可用点。原0x3B；固定CN配置追加数量BYTE=1，等待基础技能等级增加；原服无通用失败包，超时结果未知，不自动重试 |
+| `online-spend-attribute` | statId：0力量／1精力／2敏捷／3体力；count：1–100，默认1，需有足够原服属性点。原0x3A打包count-1于高字节，等待对应绝对属性增加；固定CN配置仍关闭此操作 |
 | `online-move` | x、y为服务端全局subtile整数（0–65535），run默认true；ProtocolReady、角色存活、目标属于已加载原地图且各轴距本人采样≤50时接受。直接发原0x01／0x03目标，至少间隔100ms，不切18格短段等待回包；可达点／障碍由原服处理。accepted表示命令已发送，不表示已到达；鼠标使用同帧显示坐标作投影范围提示，原服仍按真实位置校验50格范围 |
 | `online-move-to-unit` | unitId、unitType（默认2，支持1／2／5）、run（默认true）；限定当前scene.mapTargets真实单位及各轴50-subtile范围，直接发原0x02／0x04跟随真实GUID，不发交谈 |
 | `online-use-exit` | unitId为online-world返回的真实type5单位ID，要求原生地图可用／角色存活；发送0x13交互，不接受用LvlWarp类型编号替代单位ID |

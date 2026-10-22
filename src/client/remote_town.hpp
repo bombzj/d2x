@@ -44,6 +44,7 @@ class RemoteTown {
     std::optional<OnlinePoint> displayPlayerPosition_;
     uint64_t nativeSequence_{};
     bool nativeLoadComplete_{};
+    uint64_t nextNativeUpdateMilliseconds_{};
     std::string nativeReason_;
     std::map<int, std::string> nativeErrors_;
     OnlineSceneView view_;

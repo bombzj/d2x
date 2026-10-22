@@ -160,6 +160,8 @@ struct RealmSession::Impl {
     // CN player-data snapshots copied by core handlers 0x38FAD0 / 0x38FB00.
     std::array<Bytes, 2> pd2PlayerDataBlocks;
     std::array<Bytes, 20> pd2PlayerUpdates;
+    // Core 0x83 updates the local timed-effect display, not unit health.
+    std::map<uint16_t, Bytes> pd2EffectTimers;
     std::map<uint32_t, uint16_t> pd2RosterCounters;
     std::optional<uint32_t> pd2PlayerControl;
     Clock::time_point stashPageDeadline{};

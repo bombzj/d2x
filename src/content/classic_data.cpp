@@ -351,13 +351,15 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
     // Grid supplies terrain/object flags, while combat resolves unit hits.
     const auto &missiles = data.tables.at("missiles");
     constexpr uint16_t collisionMasks[]{0, 0x0084, 0x0104, 0x0184, 0, 0x0104, 0x0004, 0x0040, 0x0185};
-    if (originalRules) for (size_t row = 0; row < missiles.rows().size(); ++row) {
+    for (size_t row = 0; row < missiles.rows().size(); ++row) {
         const auto id = missiles.number(row, "Id");
         if (!id) continue;
         const int mode = missiles.number(row, "CollideType").value_or(0);
         const int size = missiles.number(row, "Size").value_or(0);
-        if (mode < 0 || mode >= int(std::size(collisionMasks)) || size < 0 || size > 3)
+        if (mode < 0 || mode >= int(std::size(collisionMasks)) || size < 0 || size > 3) {
+            if (!originalRules) continue; // Unknown remote geometry has no local client program.
             throw std::runtime_error("Unsupported original missile collision: " + std::to_string(*id));
+        }
         data.missileCollisions.emplace(*id, MissileCollisionRule{collisionMasks[mode], size});
         const int returnFire = missiles.number(row, "ReturnFire").value_or(0);
         if (returnFire != 0 && returnFire != 1)

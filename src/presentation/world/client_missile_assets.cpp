@@ -1,18 +1,20 @@
 #include "gameplay/skills/spec.hpp"
 #include "presentation/scene_assets.hpp"
 #include "content/classic_data.hpp"
+#include "content/skills/description_data.hpp"
 #include "gameplay/skills/behavior.hpp"
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/formula_parameters.hpp"
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <string_view>
 
 namespace d2x {
 void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
-    // A remote display profile has not registered these client missile programs.
-    if (!content.nativeFormulas) return;
+    // Client callbacks need display inputs, not the self-hosted combat catalog.
+    if (!content.nativeFormulas && !content.skills.descriptions) return;
     for (const auto &[code, item] : content.items.entries())
         if (item.base.projectile) weaponMissiles.emplace(code, item.base.projectile->id);
     missileDefinitions_ = std::make_unique<DataTable>(content.tables.at("missiles"));
@@ -27,6 +29,12 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         return found == names.end() ? -1 : found->second;
     };
     for (const auto &[id, row] : missileRows_) {
+        const auto callback = [&](std::string_view field) {
+            if (content.nativeFormulas) return content.nativeFormulas->missiles.at(id).number(field);
+            auto name = std::string(table.value(row, "Missile"));
+            for (auto &letter : name) letter = char(std::tolower(static_cast<unsigned char>(letter)));
+            return content.skills.descriptions->missiles.at(name).number(field).value_or(0);
+        };
         auto number = [&](std::string_view field) { return table.number(row, field).value_or(0); };
         ProjectileVisual visual;
         visual.fps = float(table.number(row, "animrate").value_or(1024)) * 25.f / 1024.f;
@@ -40,9 +48,10 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
             visual.lifetime = float(visual.frames) / visual.fps;
         if (visual.trans) translucentProjectiles.insert(id);
         projectileVisuals.emplace(id, visual);
+        if (!content.missileCollisions.contains(id)) continue;
         ClientMissileProgram program;
         program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
-        program.function = content.nativeFormulas->missiles.at(id).number("pcltdofunc");
+        program.function = callback("pcltdofunc");
         program.localBlood = number("LocalBlood") != 0;
         program.clientSend=number("ClientSend")!=0;
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
@@ -67,7 +76,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
             if(record.spell->weapon && record.spell->weapon->spear && record.spell->weapon->spear->kind==SpearSkillSpec::Kind::Strike) program.chain=record.spell->arc;
         }
         // Retail *16 is WORD 64952, outside the callback table; it is not 16.
-        program.hitFunction = content.nativeFormulas->missiles.at(id).number("pclthitfunc");
+        program.hitFunction = callback("pclthitfunc");
         program.velocity = number("Vel"); program.velocityPerLevel = number("VelLev");
         program.acceleration = number("Accel"); program.maximumVelocity = number("MaxVel") << 8;
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");

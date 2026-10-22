@@ -205,6 +205,13 @@ void NativeMapGenerator::changeClientRoom(std::optional<size_t> previous, std::o
     activation_.changeClientRoom(previous, next);
     failed_ = false;
 }
+void NativeMapGenerator::updateClient() {
+    if (!valid() || side_ != NativeRoomActivation::Side::Client)
+        throw std::runtime_error("Client DRLG update requires a valid client map");
+    failed_ = true;
+    activation_.updateDrlg();
+    failed_ = false;
+}
 NativeMapSnapshot NativeMapGenerator::completeLevel(int level) {
     std::set<int> component{level};
     bool changed = true;

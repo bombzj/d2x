@@ -593,7 +593,8 @@ void SceneController::handleWorld(const FrameInput &input, const WorldInputView 
             nextMove_ = inputTime_;
         }
     }
-    if ((gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast) && inputTime_ >= nextCast_) {
+    if ((gesture_ == Gesture::LeftCast || gesture_ == Gesture::RightCast) && inputTime_ >= nextCast_ &&
+        (!repeated_ || !world.castInputBusy)) {
         nextCast_ = inputTime_ + .12f;
         ActorControlIntent intent; intent.action = ActorControlIntent::Action::Cast;
         intent.right = gesture_ == Gesture::RightCast;

@@ -68,6 +68,7 @@ void RealmSession::Impl::clear_game() {
     gameJoinFlags = 0;
     pd2PlayerDataBlocks = {};
     pd2PlayerUpdates = {};
+    pd2EffectTimers.clear();
     pd2RosterCounters.clear();
     pd2PlayerControl.reset(); stashPageDeadline = {}; identifyTargetPending = false;
     pd2MonstersRemaining.reset();

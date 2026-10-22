@@ -788,14 +788,14 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
-        p.error(OnlineErrorKind::Unsupported, "Combat actions are unavailable for this client profile");
+    using Action = OnlineCombatCommand::Action;
+    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && command.action == Action::SpendAttribute) {
+        p.error(OnlineErrorKind::Unsupported, "PD2 attribute input shares CN controls and is not supported yet");
         return false;
     }
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, false)) return false;
     auto &world = p.view.world;
-    using Action = OnlineCombatCommand::Action;
     if (world.playerTrade.active() && command.action != Action::Stop) {
         p.error(OnlineErrorKind::Input, "Close the server player trade before submitting combat input"); return false;
     }
@@ -825,7 +825,10 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         out.u32(command.owner); break;
     case Action::LearnSkill:
         request.before = world.playerBaseSkills.contains(command.skill) ? world.playerBaseSkills.at(command.skill) : 0;
-        out.u8(0x3B); out.u16(command.skill); break;
+        out.u8(0x3B); out.u16(command.skill);
+        // CN adds an explicit point count; one intent still allocates one point.
+        if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) out.u8(1);
+        break;
     case Action::SpendAttribute:
         if (command.attribute > 3 || !command.count || command.count > 100) {
             p.error(OnlineErrorKind::Input, "Invalid native attribute request"); return false;

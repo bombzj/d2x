@@ -63,6 +63,7 @@ class NativeMapGenerator {
     // or generate distant levels from a coordinate supplied by the caller.
     std::optional<size_t> clientRoom(int subtileX, int subtileY) const;
     void changeClientRoom(std::optional<size_t> previous, std::optional<size_t> next);
+    void updateClient(); // One native 25 Hz DRLG prefetch step; no new sight roots.
     NativeMapSnapshot snapshot(int currentLevel, bool continuous = true) const;
     // Offline consumers use the same room lifecycle and DT1 selection.
     NativeMapSnapshot completeLevel(int level);
