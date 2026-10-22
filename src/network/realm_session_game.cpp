@@ -664,13 +664,18 @@ void RealmSession::Impl::handle_game(Packet packet) {
             confirmed = type == 0 && owner == view.load.playerUnitId &&
                 bool(left) == (command.hand == OnlineSkillHand::Left) &&
                 selectedSkill && *selectedSkill == OnlineSkillSelection{command.skill, command.owner};
-        } else if (command.action == OnlineCombatCommand::Action::LearnSkill && packet.id == 0x21) {
+        } else if (command.action == OnlineCombatCommand::Action::LearnSkill &&
+                   (packet.id == 0x21 || packet.id == 0x1D || packet.id == 0x1E || packet.id == 0x1F)) {
             const auto skill = view.world.playerBaseSkills.find(command.skill);
-            confirmed = skill != view.world.playerBaseSkills.end() && skill->second > request->before;
+            const auto points = view.world.playerAttributes.find(5);
+            confirmed = skill != view.world.playerBaseSkills.end() && skill->second > request->before &&
+                points != view.world.playerAttributes.end() && request->beforePoints > points->second;
         } else if (command.action == OnlineCombatCommand::Action::SpendAttribute &&
                    (packet.id == 0x1D || packet.id == 0x1E || packet.id == 0x1F)) {
             const auto stat = view.world.playerAttributes.find(command.attribute);
-            confirmed = stat != view.world.playerAttributes.end() && stat->second >= request->before + command.count;
+            const auto points = view.world.playerAttributes.find(4);
+            confirmed = stat != view.world.playerAttributes.end() && uint64_t(stat->second) >= uint64_t(request->before) + command.count &&
+                points != view.world.playerAttributes.end() && uint64_t(points->second) + command.count <= request->beforePoints;
         }
         if (confirmed) request->state = OnlineCombatRequest::State::Confirmed;
         else if (!view.world.playerPosition || onlinePlayerDead(view.world))

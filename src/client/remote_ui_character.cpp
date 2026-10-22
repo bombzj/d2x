@@ -72,7 +72,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
             const auto instance = completeItem(equipped, equipment->second, SocketLocation{{}, 0});
             if (!instance) return {};
             for (const auto &bonus : resolveItemStats(data, *instance, level))
-                if (bonus.name == name) total += bonus.value;
+                if (bonus.effect == name && !bonus.layer) total += bonus.value;
             if (equipped.mode == 1 && instance->identified && instance->quality == ItemQuality::Set) {
                 const auto record = std::find_if(data.setItems.begin(), data.setItems.end(),
                     [&](const auto &entry) { return int32_t(entry.row) == instance->specialRow; });
@@ -118,7 +118,7 @@ std::optional<int> RemoteUiClients::Impl::calculateKnownEquipmentStat(std::strin
                 const auto &property = bonus.property;
                 if (property.directRoll && property.minimum != property.maximum) return {};
                 for (const auto &value : resolvePropertyStats(data, property, property.minimum.value_or(0), level, int(piece.level)))
-                    if (value.name == name) total += value.value;
+                    if (value.effect == name && !value.layer) total += value.value;
             }
         }
         if (total<INT32_MIN || total>INT32_MAX) return {};
@@ -166,6 +166,21 @@ std::optional<MovementTiming> RemoteUiClients::Impl::movement(OnlineUnitKey key,
         if(unit==world.units.end() || !unit->second.classId || *unit->second.classId>=data.characters.size() ||
             !strength || !dexterity || !level) return {};
         const auto &definition=data.characters[*unit->second.classId];
+        if (data.profile == "remote-display-txt-v1") {
+            const auto faster = knownSelfStat("item_fastermovevelocity",int(*level));
+            const auto velocity = knownSelfStat("velocitypercent",int(*level));
+            if (!faster || !velocity || *faster < 0) return {};
+            int64_t adjusted=*velocity;
+            for (const auto &[id,item]:world.items) {
+                (void)id;
+                if (item.ownerType!=key.type || item.owner!=key.id || item.mode!=1 || item.body<1 || item.body>10 || (item.flags&0x4100u)) continue;
+                const auto *base=data.items.find(item.code);
+                if (!base) return {};
+                if (base->family==ItemFamily::Armor) adjusted-=base->base.speed.value_or(0);
+            }
+            if (adjusted<INT32_MIN || adjusted>INT32_MAX) return {};
+            return playerMovementTiming(definition.walkVelocity,definition.runVelocity,*faster,int(adjusted),running);
+        }
         const std::map<int,int> ranks(world.playerSkills.begin(),world.playerSkills.end());
         const auto equipment=observedCombatEquipment(key,
             {definition.code,int(*strength),int(*dexterity),int(*level),definition.blockFactor,std::min(world.weaponSet,1u)},
@@ -197,6 +212,39 @@ std::optional<int> RemoteUiClients::Impl::knownSelfEquipmentStat(std::string_vie
             return int(value);
         }
         return {};
+    }
+std::optional<int> RemoteUiClients::Impl::knownSelfStat(std::string_view name,int level) const {
+        if (const auto native=stat(name)) return int(*native);
+        const auto &online=session.read(); const auto &world=online.world;
+        const auto equipment=knownSelfEquipmentStat(name,level);
+        if (!equipment || !world.playerBaseSkillsAssigned || !online.load.playerUnitId || !data.skills.descriptions) return {};
+        const auto observed=combat.states().find({0,*online.load.playerUnitId});
+        if (observed==combat.states().end() || !observed->second.decoded) return {};
+        const auto statId=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &entry){return entry.name==name;});
+        if (statId==data.itemStats.end() || !statId->id) return {};
+        const auto &catalog=*data.skills.descriptions;
+        std::set<int> accounted;
+        if (const auto passives=catalog.passives.find(name);passives!=catalog.passives.end())
+            for (const auto &passive:passives->second) {
+                if (passive.state.empty()) continue;
+                const auto state=data.states.find(passive.state);
+                if (state==data.states.end()) return {};
+                const auto list=observed->second.states.find(state->second.definition.id);
+                if (list!=observed->second.states.end() && std::any_of(list->second.stats.begin(),list->second.stats.end(),
+                    [&](const auto &entry){return entry.id==*statId->id && !entry.parameter;})) accounted.insert(passive.skill);
+            }
+        const std::map<int,int> base(world.playerBaseSkills.begin(),world.playerBaseSkills.end());
+        const std::map<int,int> ranks(world.playerSkills.begin(),world.playerSkills.end());
+        std::map<std::string,double,std::less<>> attributes;
+        for (const auto &[key,definition]:observedStats) {
+            (void)definition;
+            if (const auto value=stat(key)) attributes.emplace(key,*value);
+        }
+        SkillDescriptionInput input{0,{},base,ranks,attributes}; input.baseRanksComplete=true;
+        const auto passive=projectDescriptionPassiveStat(catalog,input,name,accounted);
+        if (!passive) return {};
+        const int64_t total=int64_t(*equipment)+*passive;
+        return total>=INT32_MIN && total<=INT32_MAX?std::optional{int(total)}:std::nullopt;
     }
 void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input) const {
         const auto &online = session.read();
@@ -296,39 +344,9 @@ void RemoteUiClients::Impl::projectCharacter() {
                 break;
             }
         }
-        if (const auto level=stat("level"); level && online.load.playerUnitId && data.skills.descriptions) {
-            const auto &catalog=*data.skills.descriptions;
-            const auto unit=w.units.find({0,*online.load.playerUnitId});
-            const auto states=combat.states().find({0,*online.load.playerUnitId});
-            // Native mastery IDs exceed the single-byte attribute packet.
-            // Reconstruct the same read-only stat lists as D2Common: observed
-            // equipment + observed states + Skills.passivecalc. If a passive
-            // already carries that stat in its native state, count it once.
-            for (const auto *name:{"passive_fire_mastery","passive_ltng_mastery","passive_cold_mastery","passive_pois_mastery"}) {
-                if (const auto native=stat(name)) { input.stats.insert_or_assign(name,*native); continue; }
-                const auto equipmentAndStates=knownSelfEquipmentStat(name,int(*level));
-                if (!equipmentAndStates || !input.baseRanksAssigned || unit==w.units.end() || states==combat.states().end()) continue;
-                const auto statId=std::find_if(data.itemStats.begin(),data.itemStats.end(),[&](const auto &record){return record.name==name;});
-                if (statId==data.itemStats.end() || !statId->id) continue;
-                std::set<int> accounted;
-                bool known=true;
-                if (const auto passives=catalog.passives.find(name);passives!=catalog.passives.end())
-                    for (const auto &passive:passives->second) {
-                        const auto passiveState=data.states.find(passive.state);
-                        if (passiveState==data.states.end()) { known=false; break; }
-                        const auto observed=states->second.states.find(passiveState->second.definition.id);
-                        if (observed!=states->second.states.end() && std::any_of(observed->second.stats.begin(),observed->second.stats.end(),
-                            [&](const auto &entry){return entry.id==*statId->id && !entry.parameter;})) accounted.insert(passive.skill);
-                    }
-                if (!known) continue;
-                SkillDescriptionInput description{0,{},input.baseRanks,input.effectiveRanks,input.stats};
-                description.baseRanksComplete=input.baseRanksAssigned;
-                const auto passive=projectDescriptionPassiveStat(catalog,description,name,accounted);
-                if (!passive) continue;
-                const int64_t total=int64_t(*equipmentAndStates)+*passive;
-                if (total>=INT32_MIN && total<=INT32_MAX) input.stats.insert_or_assign(name,double(total));
-            }
-        }
+        if (const auto level=stat("level"))
+            for (const auto *name:{"passive_fire_mastery","passive_ltng_mastery","passive_cold_mastery","passive_pois_mastery"})
+                if (const auto value=knownSelfStat(name,int(*level))) input.stats.insert_or_assign(name,double(*value));
         const auto knownMastery=[&](std::string_view name)->std::optional<int> {
             const auto found=input.stats.find(name);
             return found==input.stats.end()?std::nullopt:std::optional{int(found->second)};

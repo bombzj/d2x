@@ -31,6 +31,11 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     const auto found = assets_.clientMissilePrograms.find(id);
     if (found == assets_.clientMissilePrograms.end()) return false;
     const auto &program = found->second;
+    if (program.function>=69 && program.rules!=ClientMissileProgram::Rules::Pd2Cn) return false;
+    // CN replaces these contact programs. Do not display the retail
+    // fallback while their target/path inputs are still unsupported.
+    if (program.rules==ClientMissileProgram::Rules::Pd2Cn &&
+        (program.hitFunction==5 || program.hitFunction==6 || program.hitFunction==66 || program.hitFunction==67)) return false;
     const auto *capabilities = findClientMissileCapabilities(program.function);
     if (!capabilities || (program.function == 2 && !program.localBlood)) return false;
     if (program.function==9)
@@ -230,6 +235,17 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
         return &pending.back();
     };
     auto impact = [&](ClientMissile &effect, const ClientMissileProgram &program, float overshoot,bool unitContact=false,bool largeMonster=false) {
+        if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.hitFunction==65) {
+            if (!effect.owner) return true;
+            emit(program.hitChildren[0],effect.pos,{},effect,overshoot);
+            if (program.hitChildren[1]>=0) {
+                const int count=program.hitParameters[0];
+                const int rays=count<=0 || count>64?64:count;
+                for (int direction=0;direction<64;direction+=64/rays)
+                    emit(program.hitChildren[1],effect.pos,missileRingDirection(direction),effect,overshoot);
+            }
+            return true;
+        }
         if(program.hitFunction==48) {
             if(!effect.owner) return true;
             emit(program.hitChildren[0],effect.pos,{},effect,overshoot);
@@ -478,8 +494,30 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             const int frame = effect.frame;
             const int elapsedFrames=effect.elapsedFrames();
             const float childAge = std::max(0.f, effect.age - float(frame) / 25.f);
+            bool lightningTrail=true;
+            if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.function==8) {
+                const int base=program.parameters[1]<1?100:std::min(program.parameters[1],100);
+                const auto chance=uint32_t(nativeAdd(base,program.parameters[2]>0?nativeMultiply(program.parameters[2],effect.nativeCurrentFrames)/4:0));
+                lightningTrail=rollRandom(effect.random)%100<chance;
+            }
             if (!frame) assets_.sceneAudio.playRegistered("missile-release:" + std::to_string(effect.missileId), uint64_t(view_.animationTime * 25.f));
             switch (program.function) {
+            case 70: {
+                if (program.rules!=ClientMissileProgram::Rules::Pd2Cn) break;
+                const auto owner=std::find_if(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;});
+                if (owner==targets.end()) break;
+                if (unitCoordinateDistance(int(effect.pos.x),int(effect.pos.y),int(owner->position.x),int(owner->position.y))<2) {
+                    finished=true; break;
+                }
+                effect.velocity=(owner->position-effect.pos).unit()*effect.velocity.length();
+                break;
+            }
+            case 71:
+                if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.parameters[0]>0 &&
+                    effect.nativeCurrentFrames%program.parameters[0]==0 && effect.owner &&
+                    std::any_of(targets.begin(),targets.end(),[&](const auto &target){return target.id==effect.owner;}))
+                    for (const auto child:program.children) emit(child,effect.pos,{},effect,childAge);
+                break;
             case 56: {
                 size_t count{};
                 while(count<program.children.size() && program.children[count]>=0 && program.parameters[count+1]>0) ++count;
@@ -800,7 +838,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                     fraction = at; finished = true; wall = false; break;
                 }
             }
-            if (program.function == 8 || program.function == 18) {
+            if ((program.function == 8 && lightningTrail) || program.function == 18) {
                 const int loops = std::clamp(program.parameters[0], 1, 32);
                 for (int i = 0; i < loops; ++i)
                     emit(program.children[0], start + (next - start) * (fraction * float(i) / loops), {}, effect,
@@ -819,6 +857,9 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
                 effect.nativeSequenceFrame=advanceMissileAnimation(effect.nativeSequenceFrame,effect.nativeCurrentFrames,animation);
             } else effect.nativeSequenceFrame=advanceMissileAnimation(effect.nativeSequenceFrame,effect.nativeCurrentFrames,program.animation);
             effect.setCurrentFrame(nativeSubtract(effect.nativeCurrentFrames,1));
+            if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.function==69 &&
+                effect.nativeCurrentFrames==effect.nativeTotalFrames-1 && effect.owner)
+                emit(program.children[0],effect.pos,{},effect,childAge);
             if (wall) {
                 impact(effect, program, std::max(0.f, childAge - 1.f / 25.f));
                 finished = true;

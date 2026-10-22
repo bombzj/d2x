@@ -255,7 +255,9 @@ InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, c
                         equippedSets.push_back(piece.specialRow);
                 }
             }
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,online.world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode,equippedSets,equipmentKnown});
+            const bool itemEquipped=native.ownerType==0 && native.owner==online.load.playerUnitId && native.mode==1 &&
+                native.body>=1 && native.body<=10 && !(native.flags&0x4100u);
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,online.world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode,equippedSets,equipmentKnown,itemEquipped});
             if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {

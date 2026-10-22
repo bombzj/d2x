@@ -5,6 +5,7 @@
 #include "core/random.hpp"
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <map>
 #include <stdexcept>
 
@@ -13,10 +14,18 @@ namespace {
 PropertyRange property(const ClassicData &content, const DataTable &table, size_t row,
     const std::string &code, const std::string &param, const std::string &min, const std::string &max) {
     PropertyRange result{std::string(table.value(row, code)), std::string(table.value(row, param)),
-        table.number(row, min), table.number(row, max), isDirectPropertyRoll(content, table.value(row, code))};
-    if (!result.code.empty() && std::none_of(content.properties.begin(), content.properties.end(),
-        [&](const auto &entry) { return entry.code == result.code; }))
-        throw std::runtime_error("Unknown socket property: " + result.code);
+        table.number(row, min), table.number(row, max), false};
+    if (!result.code.empty()) {
+        // Native TXT links are case-insensitive (PD2 Gems: Deep-Wounds).
+        const auto definition = std::find_if(content.properties.begin(), content.properties.end(),
+            [&](const auto &entry) {
+                return entry.code.size() == result.code.size() && std::equal(entry.code.begin(), entry.code.end(),
+                    result.code.begin(), [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); });
+            });
+        if (definition == content.properties.end()) throw std::runtime_error("Unknown socket property: " + result.code);
+        result.code = definition->code;
+        result.directRoll = isDirectPropertyRoll(content, result.code);
+    }
     return result;
 }
 int roll(const PropertyRange &property, uint64_t &random) {
@@ -38,7 +47,7 @@ std::vector<ItemInstance::SavedStat> saved(const ClassicData &content, const std
     return result;
 }
 }
-void loadSocketData(ClassicData &content, const ClassicStrings &strings) {
+void loadSocketGemData(ClassicData &content) {
     const auto &gems = content.tables.at("gems");
     for (auto key : {"code", "weaponMod1Code", "helmMod1Code", "shieldMod1Code"})
         if (!gems.has(key)) throw std::runtime_error("Gems lacks original field: " + std::string(key));
@@ -59,6 +68,9 @@ void loadSocketData(ClassicData &content, const ClassicStrings &strings) {
         if (!content.socketGems.emplace(std::string(code), std::move(record)).second)
             throw std::runtime_error("Duplicate gem/rune base: " + std::string(code));
     }
+}
+void loadSocketData(ClassicData &content, const ClassicStrings &strings) {
+    loadSocketGemData(content);
     const auto &runes = content.tables.at("runes");
     for (auto key : {"Name", "complete", "server", "Rune1", "itype1", "etype1"})
         if (!runes.has(key)) throw std::runtime_error("Runes lacks original field: " + std::string(key));

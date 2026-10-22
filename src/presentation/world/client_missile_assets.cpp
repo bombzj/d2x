@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <set>
 #include <string_view>
 
 namespace d2x {
@@ -28,6 +29,13 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         const auto found = names.find(table.value(row, field));
         return found == names.end() ? -1 : found->second;
     };
+    std::set<int> hammerMissiles;
+    if (content.profile=="remote-display-txt-v1") {
+        const auto &skills=content.tables.at("skills");
+        for (size_t row=0;row<skills.rows().size();++row)
+            if (skills.number(row,"cltdofunc")==35)
+                if (const auto missile=names.find(skills.value(row,"cltmissilea"));missile!=names.end()) hammerMissiles.insert(missile->second);
+    }
     for (const auto &[id, row] : missileRows_) {
         const auto callback = [&](std::string_view field) {
             if (content.nativeFormulas) return content.nativeFormulas->missiles.at(id).number(field);
@@ -50,8 +58,11 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         projectileVisuals.emplace(id, visual);
         if (!content.missileCollisions.contains(id)) continue;
         ClientMissileProgram program;
+        if (content.profile=="remote-display-txt-v1") program.rules=ClientMissileProgram::Rules::Pd2Cn;
         program.animation={number("animrate"),number("AnimLen"),number("SubStart"),number("SubStop"),number("LoopAnim")!=0,number("SubLoop")!=0};
         program.function = callback("pcltdofunc");
+        // Skill CltDo35 supplies the hammer path even without host rules.
+        program.blessedHammer=hammerMissiles.contains(id);
         program.localBlood = number("LocalBlood") != 0;
         program.clientSend=number("ClientSend")!=0;
         program.deathFlame=table.value(row,"Missile")=="andycolumnfire";
@@ -82,6 +93,9 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");
         if (const auto collision = content.missileCollisions.find(id); collision != content.missileCollisions.end())
             program.collision = collision->second;
+        // CN CltDo72 -> D2Common ordinal11164 sets path +0x50 to 0x100:
+        // the move-test collision mask, independently of the hammer path.
+        if (program.rules==ClientMissileProgram::Rules::Pd2Cn && program.function==72) program.collision.mask=0x100;
         program.collide = number("ClientCol") != 0;program.returnFire=number("ReturnFire")!=0;
         program.canSlow=number("CanSlow")!=0;
         // CltDo2 creates throwing potions with the original distance-limited flag.

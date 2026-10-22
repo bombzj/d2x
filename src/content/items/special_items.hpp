@@ -3,4 +3,5 @@
 
 namespace d2x {
 void loadSpecialItemData(ClassicData &data);
+void loadSetItemBonuses(const ClassicData &, const DataTable &, size_t row, SpecialItemRecord &);
 } // namespace d2x

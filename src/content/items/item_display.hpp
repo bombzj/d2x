@@ -19,6 +19,7 @@ struct ItemDisplayContext {
     std::string_view characterClass;
     std::span<const int32_t> equippedSetRows;
     bool equipmentKnown = false;
+    bool itemEquipped = false;
 };
 std::string displayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item);
 ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog &catalog,

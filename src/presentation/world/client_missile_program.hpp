@@ -40,6 +40,10 @@ inline constexpr std::array clientMissileCapabilities{
     ClientMissileCapabilities{56, true, false, false},
     ClientMissileCapabilities{58, false, false, false},
     ClientMissileCapabilities{60, false, false, false},
+    ClientMissileCapabilities{69, false, true, true},
+    ClientMissileCapabilities{70, false, false, false},
+    ClientMissileCapabilities{71, false, false, true},
+    ClientMissileCapabilities{72, false, false, false},
 };
 constexpr const ClientMissileCapabilities *findClientMissileCapabilities(int function) {
     for (const auto &program : clientMissileCapabilities)

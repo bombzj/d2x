@@ -4,6 +4,51 @@
 #include <stdexcept>
 
 namespace d2x {
+void loadSetItemBonuses(const ClassicData &data, const DataTable &table, size_t row, SpecialItemRecord &record) {
+    const auto setDefinitions = data.tables.find("sets");
+    if (setDefinitions == data.tables.end()) throw std::runtime_error("Missing set bonus definitions");
+    for (int tier = 1; tier <= 5; ++tier)
+        for (auto half : {"a", "b"}) {
+            auto suffix = std::to_string(tier) + half;
+            auto property = table.value(row, "aprop" + suffix);
+            if (!property.empty())
+                record.setBonuses.push_back({std::to_string(tier + 1) + " pieces",
+                                             {std::string(property),
+                                              std::string(table.value(row, "apar" + suffix)),
+                                              table.number(row, "amin" + suffix),
+                                              table.number(row, "amax" + suffix),
+                                              isDirectPropertyRoll(data, property)}, tier + 1, true});
+        }
+    for (size_t setRow = 0; setRow < setDefinitions->second.rows().size(); ++setRow) {
+        if (setDefinitions->second.value(setRow, "index") != record.set)
+            continue;
+        const auto &setTable = setDefinitions->second;
+        for (int pieces = 2; pieces <= 5; ++pieces)
+            for (auto half : {"a", "b"}) {
+                auto suffix = std::to_string(pieces) + half;
+                auto property = setTable.value(setRow, "PCode" + suffix);
+                if (!property.empty())
+                    record.setBonuses.push_back({std::to_string(pieces) + " pieces",
+                                                 {std::string(property),
+                                                  std::string(setTable.value(setRow, "PParam" + suffix)),
+                                                  setTable.number(setRow, "PMin" + suffix),
+                                                  setTable.number(setRow, "PMax" + suffix),
+                                                  isDirectPropertyRoll(data, property)}, pieces, false});
+            }
+        for (int slot = 1; slot <= 8; ++slot) {
+            auto suffix = std::to_string(slot);
+            auto property = setTable.value(setRow, "FCode" + suffix);
+            if (!property.empty())
+                record.setBonuses.push_back({"Full set",
+                                             {std::string(property),
+                                              std::string(setTable.value(setRow, "FParam" + suffix)),
+                                              setTable.number(setRow, "FMin" + suffix),
+                                              setTable.number(setRow, "FMax" + suffix),
+                                              isDirectPropertyRoll(data, property)}, 0, false});
+        }
+        break;
+    }
+}
 void loadSpecialItemData(ClassicData &data) {
     if (data.profile != "lod-named-txt-v1")
         return;
@@ -89,47 +134,7 @@ void loadSpecialItemData(ClassicData &data) {
                 record.set = table.value(row, "set");
                 record.setAddFunction = table.number(row, "add func").value_or(0);
                 record.cowOnly = !cowSet.empty() && record.set == cowSet;
-                for (int tier = 1; tier <= 5; ++tier)
-                    for (auto half : {"a", "b"}) {
-                        auto suffix = std::to_string(tier) + half;
-                        auto property = table.value(row, "aprop" + suffix);
-                        if (!property.empty())
-                            record.setBonuses.push_back({std::to_string(tier + 1) + " pieces",
-                                                         {std::string(property),
-                                                          std::string(table.value(row, "apar" + suffix)),
-                                                          table.number(row, "amin" + suffix),
-                                                          table.number(row, "amax" + suffix),
-                                                          isDirectPropertyRoll(data, property)}, tier + 1, true});
-                    }
-                for (size_t setRow = 0; setRow < setDefinitions->second.rows().size(); ++setRow) {
-                    if (setDefinitions->second.value(setRow, "index") != record.set)
-                        continue;
-                    const auto &setTable = setDefinitions->second;
-                    for (int pieces = 2; pieces <= 5; ++pieces)
-                        for (auto half : {"a", "b"}) {
-                            auto suffix = std::to_string(pieces) + half;
-                            auto property = setTable.value(setRow, "PCode" + suffix);
-                            if (!property.empty())
-                                record.setBonuses.push_back({std::to_string(pieces) + " pieces",
-                                                             {std::string(property),
-                                                              std::string(setTable.value(setRow, "PParam" + suffix)),
-                                                              setTable.number(setRow, "PMin" + suffix),
-                                                              setTable.number(setRow, "PMax" + suffix),
-                                                              isDirectPropertyRoll(data, property)}, pieces, false});
-                        }
-                    for (int slot = 1; slot <= 8; ++slot) {
-                        auto suffix = std::to_string(slot);
-                        auto property = setTable.value(setRow, "FCode" + suffix);
-                        if (!property.empty())
-                            record.setBonuses.push_back({"Full set",
-                                                         {std::string(property),
-                                                          std::string(setTable.value(setRow, "FParam" + suffix)),
-                                                          setTable.number(setRow, "FMin" + suffix),
-                                                          setTable.number(setRow, "FMax" + suffix),
-                                                          isDirectPropertyRoll(data, property)}, 0, false});
-                    }
-                    break;
-                }
+                loadSetItemBonuses(data, table, row, record);
             }
             destination.push_back(std::move(record));
         }

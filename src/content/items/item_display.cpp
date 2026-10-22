@@ -1,6 +1,7 @@
 #include "content/items/item_display.hpp"
 #include "content/classic_data.hpp"
 #include "content/items/item_properties.hpp"
+#include "content/items/special_items.hpp"
 #include "content/string_table.hpp"
 #include "gameplay/items/state.hpp"
 #include "gameplay/items/quality.hpp"
@@ -163,6 +164,7 @@ void loadRemoteItemDisplayData(ClassicData &content, const ClassicStrings &strin
             record.row = row; record.name = key; record.code = code;
             record.set = table.value(row, "set");
             record.setAddFunction = table.number(row, "add func").value_or(0);
+            if (!unique) loadSetItemBonuses(content, table, row, record);
             record.requiredLevel = table.number(row, "lvl req").value_or(0);
             if (const auto icon = table.value(row, "invfile"); !icon.empty())
                 record.icon = "data/global/items/" + std::string(icon) + ".dc6";
@@ -211,6 +213,26 @@ std::string displayItemName(const ClassicData &content, const ItemCatalog &catal
     auto name = baseDisplayItemName(content, catalog, item);
     return item.personalizedName.empty() ? name : item.personalizedName + "'s " + name;
 }
+static std::vector<ResolvedItemStat> activeSetItemStats(const ClassicData &content, const ItemInstance &item, const ItemDisplayContext &context) {
+    std::vector<ResolvedItemStat> activeSetStats;
+    if (item.identified && item.quality == ItemQuality::Set && context.equipmentKnown && context.itemEquipped &&
+        std::find(context.equippedSetRows.begin(), context.equippedSetRows.end(), item.specialRow) != context.equippedSetRows.end())
+        if (const auto *record = specialItem(content, item)) {
+            std::vector<int32_t> members, worn;
+            for (const auto &piece : content.setItems) if (piece.set == record->set) {
+                members.push_back(int32_t(piece.row));
+                if (std::find(context.equippedSetRows.begin(), context.equippedSetRows.end(), int32_t(piece.row)) != context.equippedSetRows.end())
+                    worn.push_back(int32_t(piece.row));
+            }
+            const auto active = activeSetItemLayers(record->setAddFunction, item.specialRow, members, worn);
+            ItemInstance layerItem;
+            layerItem.nativeProperties = true;
+            for (size_t layer = 0; layer < active.size(); ++layer)
+                if (active[layer]) layerItem.savedStats.insert(layerItem.savedStats.end(), item.savedSetStats[layer].begin(), item.savedSetStats[layer].end());
+            activeSetStats = resolveOwnItemStats(content, layerItem, context.level);
+        }
+    return activeSetStats;
+}
 ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog &catalog,
                                  const ItemInstance &item, const ItemDisplayContext &context) {
     const auto &definition = *catalog.find(item.definition);
@@ -238,8 +260,8 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             improved ? label.size() + 1 : std::string::npos});
     };
     if (content.profile == "remote-display-txt-v1") {
-        // Only assigned values: original combat/requirements programs do not
-        // establish PD2 totals. Unselected set layers remain separate.
+        // Assigned lists and deterministic socket properties only. Original
+        // combat/requirements programs do not establish PD2 totals.
         if (display.name != definition.name && item.runewordRow < 0) line(definition.name, ItemTextTone::Name);
         if (item.nativeMaxDurability)
             baseLine("ItemStats1d", std::to_string(item.durability) + " / " + std::to_string(context.maximumDurability));
@@ -247,13 +269,12 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             baseLine("ItemStats1i", std::to_string(item.quantity));
         if (!item.identified) line(itemText(content, "ItemStats1b"), ItemTextTone::Error);
         else {
-            ItemInstance assigned = item;
-            assigned.socketedItems.clear();
-            assigned.savedStats.insert(assigned.savedStats.end(), item.runewordStats.begin(), item.runewordStats.end());
-            for (auto &text : describeItemStats(content, resolveOwnItemStats(content, assigned, context.level), context.characterClass))
+            auto stats = resolveItemStats(content, item, context.level);
+            const auto activeSetStats = activeSetItemStats(content, item, context);
+            stats.insert(stats.end(),activeSetStats.begin(),activeSetStats.end());
+            for (auto &text : describeItemStats(content, stats, context.characterClass))
                 line(std::move(text), ItemTextTone::Property);
         }
-        if (!item.socketedItems.empty()) line("Socket modifiers are not fully supported for this client profile.", ItemTextTone::Error);
         if ((item.nativeFlags & 0x400000u) || item.sockets) {
             auto footer = item.nativeFlags & 0x400000u ? itemText(content, "itemEthereal") : std::string{};
             if (item.sockets) {
@@ -272,23 +293,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
         if ((item.quality == ItemQuality::Unique || item.quality == ItemQuality::Set ||
              (item.quality == ItemQuality::Rare || item.quality == ItemQuality::Crafted || item.quality == ItemQuality::Tempered)) && item.identified) line(definition.name, ItemTextTone::Name);
         auto stats = resolveItemStats(content, item, context.level);
-        std::vector<ResolvedItemStat> activeSetStats;
-        if (item.identified && item.quality == ItemQuality::Set && context.equipmentKnown &&
-            std::find(context.equippedSetRows.begin(), context.equippedSetRows.end(), item.specialRow) != context.equippedSetRows.end())
-            if (const auto *record = specialItem(content, item)) {
-                std::vector<int32_t> members, worn;
-                for (const auto &piece : content.setItems) if (piece.set == record->set) {
-                    members.push_back(int32_t(piece.row));
-                    if (std::find(context.equippedSetRows.begin(), context.equippedSetRows.end(), int32_t(piece.row)) != context.equippedSetRows.end())
-                        worn.push_back(int32_t(piece.row));
-                }
-                const auto active = activeSetItemLayers(record->setAddFunction, item.specialRow, members, worn);
-                ItemInstance layerItem;
-                layerItem.nativeProperties = true;
-                for (size_t layer = 0; layer < active.size(); ++layer)
-                    if (active[layer]) layerItem.savedStats.insert(layerItem.savedStats.end(), item.savedSetStats[layer].begin(), item.savedSetStats[layer].end());
-                activeSetStats = resolveOwnItemStats(content, layerItem, context.level);
-            }
+        const auto activeSetStats = activeSetItemStats(content, item, context);
         auto sum = [&](const char *name) {
             int result = 0;
             for (const auto &stat : stats) if (stat.effect == name) result += stat.value;

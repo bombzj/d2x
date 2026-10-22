@@ -548,7 +548,10 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             prepareEquipmentSetData(data);
             loadMagicAffixData(data);
             loadLodTreasureData(data);
-        } else loadRemoteItemDisplayData(data, strings);
+        } else {
+            loadRemoteItemDisplayData(data, strings);
+            loadSocketGemData(data);
+        }
         data.nativeStats=prepareNativeStatRules(data);
         if (originalRules) loadItemConsumables(data);
         if (originalRules) data.nativeFormulas=prepareSkillFormulaCatalog(data);

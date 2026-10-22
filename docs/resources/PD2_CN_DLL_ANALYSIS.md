@@ -545,9 +545,11 @@ BH摘要为`ee619246b8b63ea0cb3a5e84da5e63674867a87cd81cc7dbbf2d6ba8b0dd6a8c`，
 
 ## 远端显示准备的当前边界
 
-CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoid及若干旧武器掌握的SkillRow为0，占位技能的页／行／列为0。Blade Dance（ID380）的`blade dance`按大小写无关链接能找到`Blade Dance`，其页3／行0／列0表示隐藏，而非描述缺失。RemoteDisplay保留有等级的隐藏技能作为服务器／物品授予身份，不生成树节点、不允许分点；无等级占位行略过。原版30节点校验保留。怪物MonWeaken引用的`Amplify Damage`也不等于本表中的MonAmplifyDamage，不能用大小写归一化修复这个不同名字。RemoteCombat准备玩家及CharStats通用动作资格；选择、快捷键、施放和单点学习已开放，不再按技能ID设置白名单。仍保留MPQ资格、实际等级／充能来源、目标、上下文和频率校验；属性加点暂缓。
+CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoid及若干旧武器掌握的SkillRow为0，占位技能的页／行／列为0。Blade Dance（ID380）的`blade dance`按大小写无关链接能找到`Blade Dance`，其页3／行0／列0表示隐藏，而非描述缺失。RemoteDisplay保留有等级的隐藏技能作为服务器／物品授予身份，不生成树节点、不允许分点；无等级占位行略过。原版30节点校验保留。怪物MonWeaken引用的`Amplify Damage`也不等于本表中的MonAmplifyDamage，不能用大小写归一化修复这个不同名字。RemoteCombat准备玩家及CharStats通用动作资格；选择、快捷键、施放和单点学习已开放，不再按技能ID设置白名单。仍保留MPQ资格、实际等级／充能来源、目标、上下文和频率校验；属性加点按下文CN控制分界开放。
 
 ### 角色技能树与客户端程序
+
+属性分配的 CN 边界来自固定 mdll1（SHA-256 `6d6b8bf38e1a47a172b18715b5d4d89542332b4f61264efc3e61602e9d43e90a`）：RVA `0x1E670` 对低字节先减 `0x10`，范围外返回0；`0x20520–0x20540` 在返回0时继续原属性分派，提取低字节 stat 和高字节 count−1。因此属性0–3不属于仓库控制；`0x12AB0 → 0x6A00` 的三字节构造也没有改变普通3A布局。D2X开放1–100点的原请求，发送前要求属性及 statpts 已知且余点足够，仍由服务端裁决并等待绝对属性增加与余点减少；不开放0x10以上的任意控制码。原数量语义另见D2MOO `D2GAME_PACKETCALLBACK_Rcv0x3A_AddStatPoint_6FC86E80`。
 
 2026-10-22 对当前 pd2data 的 Skills（610 条／BIN 步长 0x23C）、SkillDesc（262 条／0x120）进行只读解析。职业技能的 ID、描述及三项前置技能链接、maxlvl、reqlevel、四项属性需求、CltSt／CltDo 及描述的页／行／列／ListRow／ListPool／IconCel 与 BIN 对应字段一致。前置链接位于0x17E／0x180／0x182，为有符号 WORD；180条非空引用均对应，空引用为-1。Skills 偏移分别为 0、0x194、0x12C、0x174–0x17C、0xF2／0xF4；SkillDesc 的链接序号为 WORD 0，六项布局为字节 2–7。ListRow 的 -1 对应 0xFF。同时对上职业技能的法力字段（0x184／0x186／0x188／0x18A／0x18C）、HitShift（0x1A4）与 EMin／EMax（0x1E0／0x1E4），保留起手／基础／递增法力的有符号 WORD。运行时在 RemoteDisplay 导入前执行相同字段校验；不据此声称 TXT 公式与编译表达式已经全部逐条对齐。女巫三系截图及两个新增技能的英文 TBL／提示对应见[技能描述](../gameplay/skills/DESCRIPTIONS.md#pd2-cn-的技能树与显示边界)。
 
@@ -562,11 +564,27 @@ CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoi
 | 101 | 0x3A6CE0／0x3A91A0 | Desecrate 在单位目标或瞄准位置以 A 请求8条方向；B、C 均有效时依次在同处生成两者 |
 | 102 | 0x3A6E10／0x3A92D0 | Poison Dagger 必须有单位目标，在该位置以 A 请求6条方向 |
 | 103 | 0x3A6EA0／0x3A9360 | 空 CltDo 返回成功；不从这个入口另造光环弹体，继续消费服务器状态 |
+| 105 | 0x3A6F30／0x3A93F0 | 在施法者位置创建 Skills.SrvMissileA（+0x48）；不误用CltMissileA |
+| 113 | 0x3A7890／0x3A9D50 | CltMissileA 与 CltCalc1（+0x114）形成本人中心环，数量非正时不生成 |
+| 116 | 0x3A7E60／0x3AA320 | 必须有真实单位目标及路径；正ID的CltMissile优先，否则取A，目标指针与坐标传入创建链 |
 | 117 | 0x3A7F60／0x3AA420 | Lightning Bolt／Fury 取正 ID 的 CltMissile，空缺时取 A，经原 A1540 目标发射链；保留非零目标坐标及100子格距离门槛 |
 
 环形 helper 旧版 0x369AF0／更新版 0x36BBC0 使用64项原整数方向，数量为0或大于64时取64，否则步进为整数 `64/count`，不是浮点均分圆周。因此请求6实际生成7条。数量、弹体与半径继续来自当前 MPQ／公式；显示公式走公共只读目录，不准备自研宿主的 PD2 规则。以上发射入口尚未完成全部施放／像素验收，弹体自身的 CltDo／CltHit 仍可能未支持，不能将发射入口接入等同于完整技能完成。
 
-旧版另定位到 CltDo83／94、97／98、104–116、118／119 的替换，其中包含跳跃、双投、搜尸、充能、喷流、冲锋和分裂投掷。专用生命周期、目标选择、随机状态与子弹体程序未全部恢复；未接入编号明确记录表现限制，不落回同号原版程序。Fire Claws／Firestorm 的 helper 0x36B9A0 将帧数限至77，消费原单位种子并设 ChargedBolt 路径；没有该种子事实时不自行拟造轨迹。
+CltDo83／94、97／98、104／106–112／114–115／118–119 的专用生命周期、目标选择、随机状态与子弹体程序未全部恢复；未接入编号明确记录表现限制，不落回同号原版程序。其中111（旧0x3A7390）喷流读取Calc1与Calc3，消费全局视觉随机，含40%分支、离散横向偏移及原当前帧调整，不能作为原版Inferno程序复用；97／112／114还读原技能运行标志和路径阶段。Fire Claws／Firestorm 的 helper 0x36B9A0 将帧数限至77，消费原单位种子并设 ChargedBolt 路径；没有该种子事实时不自行拟造轨迹。
+
+客户端飞弹程序表另有独立替换，不能由技能发射入口推定子弹体完成。以下旧／新RVA均对上上述两份核心，只有已恢复的显示语义进入SceneAssets／ClientMissileView；不结算命中或状态。
+
+| 飞弹回调 | 旧／新RVA | 当前显示行为 |
+| --- | --- | --- |
+| CltDo8 | 0x3A18C0／0x3A3C40 | CltParam2小于1取100、大于100截100；CltParam3为正时加其乘CurrentFrame再除4。每回调抽一次百分比，选择原闪电尾迹或普通移动；视觉随机流不宣称与原全局随机轨迹一致 |
+| CltDo69 | 0x3A1960／0x3A3CE0 | 先普通推进，CurrentFrame等于TotalFrames−1时，在父弹体推进后位置生成CltSubMissile1，继承已知等级 |
+| CltDo70 | 0x3A1A50／0x3A3DD0 | 返回物追踪原主人，距离小于2时结束；缺主人时继续原移动，不选其他单位替代 |
+| CltDo71 | 0x3A1AB0／0x3A3E30 | 主人有效时按CurrentFrame对CltParam1取模，同处顺序创建三个有效CltSubMissile；非正周期不生成 |
+| CltDo72 | 0x3A1B90／0x3A3F10 | 设置路径移动检测mask=0x100后普通推进。旧0x30A200包装器的1.13c目标为D2Common ordinal11164／RVA348B0（MD5 ee1238806ef6d6d9801d12a09d128fe1），写路径+0x50；不是螺旋轨迹算法。锤子轨迹仍由Skills.CltDo35独立准备 |
+| CltHit65 | 0x3A2120／0x3A44A0 | 命中位置创建CltHitSubMissile1，再以cHitPar1的整数64方向步进创建CltHitSubMissile2环；需要真实主人，等级由父弹体继承，通用技能身份的完整传递仍待补 |
+
+CltHit5／6（旧0x3A1C50／0x3A1DC0，新0x3A3FD0／0x3A4140）还依赖原路径碰撞查询、分裂次数、反射方向及帧重设；66／67涉及范围目标和目标单位绑定，尚未完成；这些回调的弹体明确拒绝本地重建并报告表现限制，不沿用原版同号命中效果。不能把能收到73当作这些程序已完成。
 
 技能伤害显示还存在独立修改：旧核心 0x39D5F0→0x3A9C30 从当前 SkillDesc +0x18（ddam calc1）求值后加到原伤害；0x39D550→0x3A9B80 修改武器伤害百分比及支配组合。尚未接入这两条完整输入链，不能因当前描述行编号都在1–75范围内而声称全部提示数值一致。1级角色的树页与未学提示可核对布局／文案；这些截图不能替代高等级施放、装备及伤害公式的证据。
 
@@ -574,7 +592,7 @@ CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoi
 
 `pd2assets.mpq`的`data/global/ui/panel/invchar6.dc6`为304845字节，SHA-256 `1476addbad8ede3560a7409dc3979834ba7b96908ac29ee54b65c1cac44fac83`。8帧左半保持256／176高的两行，右半第4／5帧高256、y=-35，第6／7帧高246、y=35，宽仍为256／64。D2X改以左半行基线和各帧真实高／有符号偏移拼右半图，同时用TXT绝对invTop投影装备与格子；不能将表面板460高误当作DC6总高度。初始法杖、药水与卷轴已经显示，全部图形和原客户端逐像素对照仍未完成。
 
-Gems的Um Rune使用`Deep-Wounds`，Properties中为`deep-wounds`；后续须核对native表链接及完整镶孔属性，当前不准备PD2镶孔生成／派生，不据此生成属性。物品只读元数据与原始属性描述由独立显示准备加载；完整战斗／镶孔／套装组合仍未认证。
+RemoteDisplay独立准备Gems的武器／头盔护甲／盾牌属性元数据，不开启镶孔或符文之语的本地生成。当前Um Rune的第二项武器属性为`Deep-Wounds`，Properties的`deep-wounds`使用func1=1、stat1=deep_wounds；按原表大小写无关链接规范化后读取固定120，不能因大小写略过。孔内原服务器列表优先，未提供列表时只接受已核实的固定表值；需要随机roll但服务器未指派的值继续未知。远端套装同时准备SetItems的aprop条件层与Sets的部分／全套定义，激活层读取实际装备身份和原保存列表，未知随机奖励不取范围下限冒充实值。完整战斗／镶孔／套装组合仍未认证。
 
 
 ### 地图准备中的TXT与BIN语义

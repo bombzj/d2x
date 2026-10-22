@@ -36,6 +36,8 @@ Akara每难度免费重置使用原slot41资格及0x38 parameter0，与Token共�
 
 技能资格元数据与只读判断在content/skills/skill_eligibility，人物投影与RemoteCombat共用；未收到基础等级不能按零授权学习，原reqstr／reqdex／reqvit／reqint门槛也使用已知属性。
 
+CN属性0–3与扩展3A控制从0x10开始的分界已核实，普通属性分配不再整体禁用。属性加点与单点学习记录提交前余点，只有目标属性／基础技能增加且余点减少才确认；两类更新允许任意到达顺序。未知值、拒绝与超时不补成本地成功。RemoteDisplay的本人走跑与元素支配共用knownSelfStat，读取完整装备、状态和当前Skills被动，避免重复计算已携带数值的被动；装备按级属性按effect而非原始属性名归并。
+
 原 0x94 全量技能清单（含空清单）区分未学习与未收到；0x21分别维护基础／加成等级。0x23维护左右键选择和 owner，0x7B恢复绑定。基础技能、已学前置、等级上限及属性门槛按原表交给 evaluateSkillEligibility；未知基础等级、点数或必需属性不授权学习。Attack／CharStats.Skill 1–10 由同一个导入函数确认，不要求原0x94再次列出；0x3A／3B请求等待原服属性／基础等级变化，超时结果未知。
 
 ## 显示边界

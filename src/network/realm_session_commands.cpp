@@ -789,10 +789,6 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     using Action = OnlineCombatCommand::Action;
-    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && command.action == Action::SpendAttribute) {
-        p.error(OnlineErrorKind::Unsupported, "PD2 attribute input shares CN controls and is not supported yet");
-        return false;
-    }
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, false)) return false;
     auto &world = p.view.world;
@@ -824,7 +820,11 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         out.u8(0x3C); out.u32(uint32_t(command.skill) | (command.hand == OnlineSkillHand::Left ? 0x80000000u : 0));
         out.u32(command.owner); break;
     case Action::LearnSkill:
+        if (!world.playerBaseSkillsAssigned || !world.playerAttributes.contains(5) || !world.playerAttributes.at(5)) {
+            p.error(OnlineErrorKind::Input, "Server skill ranks or available points are unknown or insufficient"); return false;
+        }
         request.before = world.playerBaseSkills.contains(command.skill) ? world.playerBaseSkills.at(command.skill) : 0;
+        request.beforePoints = world.playerAttributes.at(5);
         out.u8(0x3B); out.u16(command.skill);
         // CN adds an explicit point count; one intent still allocates one point.
         if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) out.u8(1);
@@ -833,7 +833,14 @@ bool RealmSession::submit_combat(OnlineCombatCommand command) {
         if (command.attribute > 3 || !command.count || command.count > 100) {
             p.error(OnlineErrorKind::Input, "Invalid native attribute request"); return false;
         }
-        request.before = world.playerAttributes.contains(command.attribute) ? world.playerAttributes.at(command.attribute) : 0;
+        if (!world.playerAttributes.contains(command.attribute) || !world.playerAttributes.contains(4) ||
+            world.playerAttributes.at(4) < command.count) {
+            p.error(OnlineErrorKind::Input, "Server attribute values or available points are unknown or insufficient"); return false;
+        }
+        // CN mdll1 RVA 20520 delegates low-byte 0..3 to the original
+        // stat handler; its custom controls start at 0x10, not at zero.
+        request.before = world.playerAttributes.at(command.attribute);
+        request.beforePoints = world.playerAttributes.at(4);
         out.u8(0x3A); out.u16(uint16_t(command.attribute) | uint16_t((command.count - 1) << 8)); break;
     case Action::Cast: {
         if (command.point.has_value() == command.target.has_value()) {

@@ -30,6 +30,7 @@ struct ClientMissileInitialization {
 };
 // MPQ client programs only. No damage, chance-to-hit or status application.
 struct ClientMissileProgram {
+    enum class Rules { Original, Pd2Cn } rules{};
     int function{}, hitFunction{}, velocity{}, velocityPerLevel{}, acceleration{}, maximumVelocity{};
     int frames{}, framesPerLevel{}, explosion{-1};
     MissileAnimationRule animation;

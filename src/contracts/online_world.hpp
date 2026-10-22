@@ -65,6 +65,7 @@ struct OnlineCombatRequest {
     OnlineCombatCommand command;
     State state{State::Pending};
     uint32_t before{};
+    uint32_t beforePoints{};
 };
 struct OnlineCombatEvent {
     enum class Kind { Skill, Hit, Action, Overlay, Missile, Sound };

@@ -180,6 +180,7 @@ struct RemoteUiClients::Impl {
     std::optional<UnitLightAttributes> light(OnlineUnitKey key) const;
     std::optional<MovementTiming> movement(OnlineUnitKey key,bool running) const;
     std::optional<int> knownSelfEquipmentStat(std::string_view name,int level) const;
+    std::optional<int> knownSelfStat(std::string_view name,int level) const;
     void projectSkillUseFacts(CharacterProjectionInput &input) const;
     void projectCharacter();
     ItemInstance itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const;
