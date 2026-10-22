@@ -4,6 +4,8 @@
 
 PD2／CN独立MPQ、TXT／BIN差异及资源集合设计见[PD2兼容分析](../architecture/PD2_COMPATIBILITY.md)。当前Normal样本的核心打开顺序及Storm同优先级搜索已有[DLL证据](PD2_CN_DLL_ANALYSIS.md#mpq-搜索顺序)，loose／路径选择仍需分消费者核对；现有中文补充资源不等于完整PD2资源或协议兼容。
 
+D2X 自己另有散装成员入口 `Archives::mountLooseDirectory`：PD2 CN 副本把中文字符串表、字形和菜单图放在散装 `Data/local`（无对应 MPQ 成员），启动时登记为 `data/local` 前缀下的成员，`read`／`contains`／`list` 先查散装再查已挂载 MPQ，并与 MPQ 成员共用同一读取缓存和 `used` 记录。该入口只覆盖登记的根目录前缀，不改变 StormLib 在 MPQ 之间的搜索顺序；原版 profile 不登记任何散装根，行为不变。
+
 ## 当前文件摘要
 
 | 原始文件 | 字节数 | SHA-256 |

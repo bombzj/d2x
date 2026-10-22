@@ -34,4 +34,7 @@ Language detectLanguage(std::string_view override, const std::string &archivesPa
 // ClassicStrings and protocol consumer shares one choice.
 void applyLanguage(Archives &archives, const Language &language);
 Language languageOf(const Archives &archives);
+// data/local/ui/<language>/<name>.dc6 when the selected language ships that
+// image, otherwise the original English one.
+std::string localUiArtPath(const Archives &archives, std::string_view name);
 } // namespace d2x

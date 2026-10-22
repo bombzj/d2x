@@ -141,6 +141,9 @@ void resolveClientSetup(AppOptions &options) {
     options.mpq = original.string();
     options.pd2Directory = pd2.string();
     options.mpqSupplement.clear();
+    // The CN client ships Data/local/Lng/Chi, Font/Chi and UI/Chi; without an
+    // explicit override a PD2 profile reads Chinese tables and interface art.
+    if (options.language.empty()) options.language = "chi";
     options.onlineConfig = std::filesystem::absolute(options.clientProfile).string();
 }
 void mountClientResources(Archives &archives, const AppOptions &options) {
@@ -158,5 +161,8 @@ void mountClientResources(Archives &archives, const AppOptions &options) {
     for (const auto *name : {"patch_d2.mpq", "pd2data.mpq", "pd2assets.mpq", "pd2maps.mpq", "pd2monchars.mpq"})
         archives.mount(pd2/name);
     archives.gameDirectory = pd2;
+    // Chinese tables, fonts and menu art are loose files in the CN client and
+    // have no archive to mount; they win over every archive for their paths.
+    archives.mountLooseDirectory(pd2/"Data"/"local", "data/local");
 }
 } // namespace d2x

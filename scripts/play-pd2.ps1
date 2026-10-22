@@ -4,7 +4,8 @@
     [string]$AccountHost='',
     [string]$Gateway='',
     [string]$OnlineCharacter='',
-    [string]$Lang='eng',
+    # Empty keeps the client profile default: the CN client's Chinese resources.
+    [string]$Lang='',
     [switch]$Diagnostic,
     [switch]$Hidden,
     [switch]$NoDebugPipe

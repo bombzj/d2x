@@ -192,7 +192,7 @@ $spec.preview=$false
 | `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
-| `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
+| `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false，旗标0x04）、ladder（默认false，旗标0x40）；CharacterSelection 接受，资料片固定0x20，专家级／天梯按请求提交，服务器生成初始数据后刷新列表；自研服务端只接受0x20／0x24，含0x40的请求被拒绝 |
 | `online-delete-character` | name 和完全相同的 confirmName；CharacterSelection 接受，必须来自当前列表；不可撤销，成功刷新列表 |
 | `online-return-realms` | CharacterSelection 关闭 MCP 并重新取 Realm 列表；保持 RealmSelection 等待显式选择 |
 | `online-cancel-list` | ListingGames 取消等待并返回 Lobby，不关闭 MCP，列表完成标记为 false |

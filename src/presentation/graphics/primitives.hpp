@@ -67,6 +67,10 @@ bool parseClassicFontTable(std::string_view tbl, ClassicFont &font);
 // instead of the DC6 loader.
 void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
                      std::string_view name, int color = 0);
+// Sky PL2 stores its thirteen font text colours as three bytes each just before
+// the index transforms. The outline-font backend tints with this RGB, so a
+// colored ClassicFont needs it alongside the DC6 transform.
+Color pl2FontColor(const Bytes &palette, int color);
 // Rasterizes one decoded DC6 glyph frame into a GPU sprite. Kept separate from
 // text layout so a TTF backend can supply glyphs without DC6 source frames.
 Sprite rasterizeGlyph(Graphics &graphics, const IndexedFrame &frame, const ClassicFont &font);

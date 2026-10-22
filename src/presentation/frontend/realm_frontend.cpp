@@ -24,27 +24,9 @@ void wipe(std::string &s) {
 }
 ClassicFont font(Graphics &g, Archives &a, const std::string &name, int color = 0) {
     ClassicFont f;
-    const auto base = "data/local/font/" + a.languageFontDirectory + "/" + name;
-    setTtfSearchDirectory(a.gameDirectory.string());
-    const auto *source = g.animation(base + ".dc6");
-    if (!source) throw std::runtime_error("Missing original frontend font");
-    f.graphics = &g;
-    f.source = source;
-    if (color) {
-        constexpr size_t shifts = 0x6B600 + 13 * 3;
-        const auto palette = a.read("data/global/palette/sky/pal.pl2");
-        if (color < 0 || color >= 13 || palette.size() < shifts + 13 * 256)
-            throw std::runtime_error("Missing original frontend font color transforms");
-        for (size_t i = 0; i < f.transform.size(); ++i)
-            f.transform[i] = palette[shifts + size_t(color) * 256 + i];
-        f.transformed = true;
-    }
-    const auto table = a.read(base + ".tbl");
-    if (source->frames.empty() ||
-        !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(table.data()), table.size()), f))
-        throw std::runtime_error("Missing original frontend font");
-    collectFontCodepoints(f.codes);
-    f.ready = true;
+    // One loader sets both the DC6 index transform and the PL2 text colour the
+    // outline-font backend tints with; a second one would drop the colour.
+    loadClassicFont(g, a, f, name, color);
     return f;
 }
 bool playable(const OnlineCharacter &c, bool allowLadder) {
@@ -96,6 +78,7 @@ struct RealmFrontend::Impl {
     enum class LobbyPanel { Notice, Create, Join };
     LobbyPanel lobbyPanel{LobbyPanel::Notice};
     bool hardcore{}, confirmHardcore{};
+    bool ladder{}, confirmLadder{};
     std::string verifyPassword, characterName, deleteName;
     uint64_t lobbyGeneration{};
     uint64_t serverConnection{std::numeric_limits<uint64_t>::max()};
@@ -572,7 +555,7 @@ struct RealmFrontend::Impl {
             intent.name = v.realms[size_t(realmSelected)].name;
         }
     }
-    void creation() {
+    void creation(const OnlineView &v) {
         // Same native expansion hero positions and animation timing as the offline selector.
         constexpr std::array folders{"amazon",  "assassin",  "necromancer", "barbarian",
                                      "paladin", "sorceress", "druid"};
@@ -691,6 +674,18 @@ struct RealmFrontend::Impl {
             else
                 confirmHardcore = true;
         }
+        // Ladder is declared at creation only in the remote CN lobby, matching
+        // the native "ladder character" confirm (string 10928) and MCP 0x40.
+        if (v.remoteLobbyOnly) {
+            image("check", 318, 570, ladder ? 1 : 0);
+            label(s(10927), 339, 570);
+            if (enabled && clicked && CheckCollisionPointRec(mouse, {318, 570, 20, 20})) {
+                if (ladder)
+                    ladder = false;
+                else
+                    confirmLadder = true;
+            }
+        }
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
         const bool valid = hero >= 0 && !characterName.empty();
@@ -699,6 +694,7 @@ struct RealmFrontend::Impl {
             intent.name = characterName;
             intent.characterClass = uint8_t(ids[size_t(hero)]);
             intent.hardcore = hardcore;
+            intent.ladder = ladder;
         }
     }
     void characters(const OnlineView &v, bool allowRealmSelection) {
@@ -795,13 +791,19 @@ struct RealmFrontend::Impl {
             if (c.ladder.value_or(false))
                 label(s(5315), x + 76, y + 56, GRAY);
             if (c.hardcore.value_or(false))
-                label(s(5016), x + 76, y + 70, c.dead.value_or(false) ? GRAY : RED);
+                label(s(5016), x + 76, y + 70, RED);
         }
         if (enabled && clicked && !clickedCharacter) lastClickedCharacter = -1;
-        if (!v.characters.empty())
-            title.inBox(v.characters[size_t(selected)].name, {34, 20, 564, 47}, 16,
-                !playable(v.characters[size_t(selected)], v.allowLadderSelection) ? GRAY :
-                v.characters[size_t(selected)].hardcore.value_or(false) ? RED : parchment);
+        if (!v.characters.empty()) {
+            const auto &chosen = v.characters[size_t(selected)];
+            // Death does not tint a name: the headline follows the certified slot
+            // rule (hardcore ? red : parchment). Only other unselectable states,
+            // such as a ladder character without permission, stay grey.
+            const bool deadHardcore = chosen.hardcore.value_or(false) && chosen.dead.value_or(false);
+            title.inBox(chosen.name, {34, 20, 564, 47}, 16,
+                !deadHardcore && !playable(chosen, v.allowLadderSelection) ? GRAY :
+                chosen.hardcore.value_or(false) ? RED : parchment);
+        }
         if (v.characters.size() > 8) {
             const auto indicator = std::to_string(page + 1) + "/" + std::to_string((v.characters.size() + 7) / 8);
             label(indicator, 37 + width * 2 + (27 - text.measure(indicator, 16)) / 2, 447, WHITE);
@@ -813,10 +815,10 @@ struct RealmFrontend::Impl {
                 value[at] = '\n';
             return value;
         };
-        if (button("tall", 34, 467, tallCaption(22743), !v.remoteLobbyOnly))
+        if (button("tall", 34, 467, tallCaption(22743)))
             emit(FrontendCommand::OpenCreateCharacter);
         button("tall", 234, 467, tallCaption(22742), false);
-        if (button("tall", 434, 467, tallCaption(22744), !v.remoteLobbyOnly && !v.characters.empty()))
+        if (button("tall", 434, 467, tallCaption(22744), !v.characters.empty()))
             deleteName = v.characters[size_t(selected)].name;
         if (button("medium", 34, 538, s(5101)))
             emit(FrontendCommand::Back);
@@ -1118,11 +1120,13 @@ struct RealmFrontend::Impl {
             focus = 0;
             deleteName.clear();
             confirmHardcore = false;
+            confirmLadder = false;
             lastClickedCharacter = -1;
             lastClickedGame.clear();
             if (current == FrontendPage::CreateCharacter) {
                 characterName.clear();
                 hardcore = false;
+                ladder = false;
             }
             if (current == FrontendPage::JoinHost) {
                 replaceHostAddress = true;
@@ -1140,7 +1144,7 @@ struct RealmFrontend::Impl {
             }
             previous = current;
         }
-        bool confirmation = !deleteName.empty() || confirmHardcore;
+        bool confirmation = !deleteName.empty() || confirmHardcore || confirmLadder;
         // The Loading page plays the original door animation and covers the whole
         // connection with it; connection progress is not a modal there. Errors and
         // confirmations still interrupt, and Escape leaves the game.
@@ -1163,7 +1167,7 @@ struct RealmFrontend::Impl {
         else if (current == FrontendPage::Realms)
             realms(v);
         else if (current == FrontendPage::CreateCharacter)
-            creation();
+            creation(v);
         else if (current == FrontendPage::Characters)
             characters(v, allowRealmSelection);
         else if (current == FrontendPage::Difficulty) {
@@ -1194,6 +1198,7 @@ struct RealmFrontend::Impl {
             std::string message = !notice.empty()       ? std::string(notice)
                                   : !deleteName.empty() ? s(5163) + "\n" + deleteName
                                   : confirmHardcore     ? s(5303)
+                                  : confirmLadder       ? s(10928)
                                                         : s(5243);
             if (v.gameQueuePosition && notice.empty() && !confirmation)
                 message += "\nQueue: " + std::to_string(*v.gameQueuePosition);
@@ -1205,13 +1210,17 @@ struct RealmFrontend::Impl {
                         emit(FrontendCommand::DeleteCharacter);
                         intent.name = std::move(deleteName);
                         deleteName.clear();
-                    } else
+                    } else if (confirmLadder)
+                        ladder = true;
+                    else
                         hardcore = true;
                     confirmHardcore = false;
+                    confirmLadder = false;
                 }
                 if (button("medium", 450, 411, s(5103)) || input.escape) {
                     deleteName.clear();
                     confirmHardcore = false;
+                    confirmLadder = false;
                 }
             } else if (button("medium", 330, 411, notice.empty() ? s(5103) : s(5102)) ||
                        input.enter || input.escape)

@@ -34,7 +34,8 @@ struct CreateGameOptions {
 struct CreateCharacterOptions {
     std::string name;
     uint8_t characterClass{};
-    bool hardcore{}; // LoD, non-Ladder only. Server initializes all character data.
+    bool hardcore{}; // MCP 0x04. Server initializes all character data.
+    bool ladder{};   // MCP 0x40; the connected Realm decides ladder eligibility.
 };
 struct GamePacket {
     uint64_t gameGeneration{};

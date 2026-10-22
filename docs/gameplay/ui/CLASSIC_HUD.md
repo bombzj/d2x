@@ -105,7 +105,7 @@ Video Options的Lighting Quality沿原图位置显示On／Off并默认On；鼠�
 | 佣兵／雇用、组队 | 原hireling／party面板、inventory原槽位／原字体；hireling_view、commerce_controller、party_view | 全职业／雇用列表与多人关系组合、完整按压及像素对照 |
 | 传送点 | waygatebackground／expwaygatetabs／waygateicons；waypoint_view | 原版逐像素布局及全幕／不可达状态组合 |
 | 消息日志／聊天 | boxpieces／textslid、strMsgLog／strClose、原字体；chat_view、app/input | 实体键盘人工操作、全部窗口尺寸、精确原版布局及中文输入未完成 |
-| ESC／设置 | 英文原图／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图、Sound／Music／NPC Speech及Lighting On／Off可修改；3D音效／其余画面／改键置灰；音乐语音需对应原包，实机按压、导航与逐像素对照未执行 |
+| ESC／设置 | 按所选语言的菜单原图、缺图回退英文／Latin FontInGameChat／PL2；escape_menu、hud、controller | 自动地图、Sound／Music／NPC Speech及Lighting On／Off可修改；3D音效／其余画面／改键置灰；音乐语音需对应原包，实机按压、导航与逐像素对照未执行 |
 
 直接读取五个当前MPQ，确认minipanelbtn的真实帧身份、dialogbackground的210×158尺寸及inventory原表。金币文案／菜单参数另定点核对同快照D2Client RVA C31A8–C320D、C3212–C322F、C32CC–C32FC及C341B–C348F；保持原图与DLL只读。这些静态依据只裁定图集／原表及原版菜单参数，完整职业／窗口尺寸、多人／原服、音频、Linux及逐像素矩阵仍待核对。
 

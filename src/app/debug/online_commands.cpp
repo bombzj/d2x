@@ -825,8 +825,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted = session.select_character(text("name", 15));
             mutation = true;
         } else if (command == "online-create-character") {
-            accepted = session.create_character(
-                {text("name", 15), number("classId", 0, 0, 6), request.value("hardcore", false)});
+            accepted = session.create_character({text("name", 15), number("classId", 0, 0, 6),
+                request.value("hardcore", false), request.value("ladder", false)});
             mutation = true;
         } else if (command == "online-delete-character") {
             auto name = text("name", 15);
