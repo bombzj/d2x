@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+namespace d2x::server { struct PlayerState; }
 namespace d2x::server::death {
 // Death occurrences, resurrection and corpse recovery; no duplicated persistent corpse items.
 enum class Action { Resurrect, RecoverCorpse };
@@ -24,6 +25,7 @@ class System {
     State state_;
     const Ports ports_;
   StepStatus advanceRewards(TickContext);
+  const PlayerState *corpseOwner(const ActorContext &, EntityId) const;
   public:
     explicit System(Ports ports) : ports_(ports) {}
     const State &read() const { return state_; }

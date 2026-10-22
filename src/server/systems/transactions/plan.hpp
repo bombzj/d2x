@@ -48,6 +48,7 @@ struct InventoryEdit {
     std::optional<SkillCharge> charge{};
     std::vector<DirectedFacts> directed{};
     bool playerTrade{};
+    std::optional<EntityId> lootedCorpse{}; // Paired owner/recipient inventory transaction.
     std::optional<std::optional<ItemInstance>> ironGolem{};
     std::vector<ResourceMaximums> resourceMaximums{};
     std::optional<ResourceMaximums> resourceBase{};

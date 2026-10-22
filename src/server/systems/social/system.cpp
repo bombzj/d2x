@@ -13,16 +13,26 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         const auto relation=state_.relations.find({from,to}); return relation==state_.relations.end()?0:relation->second.flags;
     };
     const auto blocked=[&](PlayerId receiver) {return bool((flags(receiver,actor.player)&4) || (flags(actor.player,receiver)&2));};
-    if(request.action==Action::Ignore || request.action==Action::Squelch) {
+    if(request.action==Action::Ignore || request.action==Action::Squelch || request.action==Action::AllowLoot) {
         const auto *peer=request.target?ports_.players.find(*request.target):nullptr;
         if(!peer || !peer->entered || peer==player) return {DomainStatus::InvalidRequest,{}};
+        if(request.action==Action::AllowLoot && (!player->persistent.player.hardcore || player->persistent.player.hp<=0 || !peer->persistent.player.hardcore))
+            return {DomainStatus::InvalidActor,{}};
         auto relations=state_.relations;
         std::erase_if(relations,[&](const auto &entry){return !ports_.players.find(entry.first.first) || !ports_.players.find(entry.first.second);});
-        auto &relation=relations[{actor.player,peer->player}]; const uint16_t bit=request.action==Action::Ignore?2:4;
+        auto &relation=relations[{actor.player,peer->player}]; const uint16_t bit=request.action==Action::AllowLoot?1:request.action==Action::Ignore?2:4;
         if(relation.revision==UINT64_MAX) return {DomainStatus::Capacity,{}};
         relation.flags=request.enabled?uint16_t(relation.flags|bit):uint16_t(relation.flags&~bit);++relation.revision;
-        const auto sent=ports_.events.publish({0,actor.tick,{}, {AudienceKind::Game,{},actor.area},
-            {ChatRelationFact{actor.actor,peer->actor,relation.flags,flags(peer->player,actor.player),uint16_t(player->persistent.player.level),uint16_t(peer->persistent.player.level)}}});
+        std::vector<DomainFact> facts{ChatRelationFact{actor.actor,peer->actor,relation.flags,flags(peer->player,actor.player),uint16_t(player->persistent.player.level),uint16_t(peer->persistent.player.level)}};
+        std::vector<EventBatch> batches;
+        batches.push_back({0,actor.tick,{}, {AudienceKind::Game,{},actor.area},std::move(facts)});
+        if(request.action==Action::AllowLoot) {
+            const auto &code=player->definition.code;
+            const bool female=code=="ama" || code=="sor" || code=="ass";
+            PlayerMessageFact notice{7}; notice.value=uint32_t(actor.actor.value); notice.parameter=uint8_t(request.enabled?(female?2:1):(female?11:10));
+            batches.push_back({0,actor.tick,{}, {AudienceKind::Player,peer->player,peer->area},{std::move(notice)}});
+        }
+        const auto sent=ports_.events.publishGroup(std::move(batches));
         if(!sent) return {sent.status,{}};
         state_.relations.swap(relations); return {DomainStatus::Applied,std::monostate{}};
     }

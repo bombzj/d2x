@@ -22,7 +22,7 @@ class CharacterStore {
     CharacterStore(std::filesystem::path root, const ClassicData &);
     CharacterRosterView list(bool includeQuick = false, std::string_view fileName = {});
     void install(std::string fileName, const PersistentCharacter &);
-    void create(std::string name, unsigned characterClass, uint32_t seed);
+    void create(std::string name, unsigned characterClass, uint32_t seed, bool hardcore = false);
     void erase(uint64_t revision, uint64_t id);
     std::unique_ptr<Lease> acquire(uint64_t revision, uint64_t id);
     PersistentCharacter load(Lease &);

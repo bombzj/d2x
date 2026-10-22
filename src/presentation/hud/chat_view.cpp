@@ -39,7 +39,7 @@ ChatView::ChatView(Archives &archives)
         slider_ = graphics_.single("data/global/ui/menu/textslid.dc6");
         const ClassicStrings strings(archives);
         title_ = strings.find("strMsgLog"); close_ = strings.find("strClose");
-        for(size_t action=3;action<=9;++action) partyNotices_[action]=strings.find("Party"+std::to_string(action));
+        for(size_t action=1;action<=11;++action) partyNotices_[action]=strings.find("Party"+std::to_string(action));
         hostileTimeout_=strings.find("strHostileTimeout");
         notListening_=strings.find("sysmsg12");
         slainBy_=strings.find("sysmsg7");
@@ -203,12 +203,15 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
             const auto glyphs=plain(hostileTimeout_,notice.color<13?notice.color:0);
             messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});continue;
         }
-        if(notice.type!=7 || notice.parameter<3 || notice.parameter>9 || notice.color>=13) continue;
+        if(notice.type!=7 || notice.parameter<1 || notice.parameter>11 || notice.color>=13) continue;
         auto name=notice.playerName;
         if(name.empty()) if(const auto p=social.players.find(notice.value);p!=social.players.end()) name=p->second.name;
         const auto &format=partyNotices_[notice.parameter];
         if(name.empty() || format.empty()) {++unavailable_;continue;}
-        const auto glyphs=plain(notice.parameter==8?format+name:name+format,notice.color);
+        auto message=format;
+        if (const auto placeholder=message.find("%s"); placeholder!=std::string::npos) message.replace(placeholder,2,name);
+        else message=notice.parameter==8?message+name:name+message;
+        const auto glyphs=plain(message,notice.color);
         messages_.push_back({notice.sequence*2,notice.receivedMilliseconds,glyphs,wrap(glyphs,body().width)});
     }
     std::sort(messages_.begin(),messages_.end(),[](const auto &a,const auto &b){

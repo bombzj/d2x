@@ -160,12 +160,12 @@ $spec.preview=$false
 | `online-chat-input` | message经过与游戏UI相同的通用分流，支持/nopickup、/players、房间／头顶／私聊和BNCS命令。模式错误明确拒绝；accepted只代表本地执行或传输入队，远端结果查看accountChat及world.social。scene.noPickup显示本机开关；server-snapshot.virtualPlayers和怪物admittedPlayers／experienceBase提供人数观察 |
 | `online-send-chat` | message为1–255字节可打印ASCII且不全为空格；可选receiver为15字节内角色名，发送原0x15私聊；可选overhead=true发送原0x14且receiver须为空。accepted只代表入队，消息取真实0x26及chatSequence，不插本地回显／自动重试。普通广播、私聊、头顶原包与屏蔽由共享服务端social执行；中文编码、表情与BNCS频道暂缓。头顶消息值为world.social.hover，图形气泡未新增 |
 | `online-party-action` | unitId为当前名册真实GUID，action为invite／cancel／accept／leave（leave目标为本人）；可选gameGeneration复验本局。与P界面共用RealmSession.party_action，只发送原5E；accepted不修改名册／队号，真实结果读取75／8B／8D。 |
-| `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore或squelch，enabled布尔值；原5D/action2或3。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；不实现敌意或队伍 |
+| `online-chat-relation` | unitId为当前名册另一玩家GUID，action为ignore／squelch／loot／hostile，enabled布尔值；原5D/action2／3／1／4。真实关系等75／8C；忽略者阻止自己的话到达目标，squelch者屏蔽目标发来的消息，沿原PlrMsg方向条件；loot只接受存活HC，用于授予／撤销本人尸体许可；hostile仍受原等级／城镇规则约束，队伍使用online-party-action |
 | `online-trade-respond` | accept布尔值、revision为当前world.playerTrade.revision；true接受邀请（button3），false拒绝／取消（button2）。accepted仅表示发送；真实身份等0x78，完成等0x77/13。 |
 | `online-trade-offer` | action为agree／revoke／gold，revision绑定当前交易，gold另需amount 0–INT32_MAX；原button4／7／8。world.playerTrade返回ownGold／peerGold、ownAgreed（请求已发）／peerAgreed、agreementLocked及response；最终交换只由服务端确认，自研权威边界见[玩家交易](../gameplay/items/PLAYER_TRADE.md)。 |
 | `online-world` | 可选fromX／fromY／x／y及radius（0–24）只读当前客户端原生路径和碰撞窗口，返回navigation；不移动角色或改碰撞。只读同一快照：world.units／rooms／equipment／attributes、本人全局 subtile 坐标与当前生命／法力／体力；scene 含原 DS1、原点、候选／地标、碰撞／显示／移动可用性、本人是否绘制与缺外观数量；当前源码units增加nativeMode、direction、actionSkill／actionSkillLevel，区分实际模式、原路径面对方向及当前技能动作 |
 | `online-resurrect` | 无参数；要求原服报告死亡。等待DEAD后发送原0x41，重复请求去重；world.respawnRequest记录WaitingForDeath／Sent／Confirmed／TimedOut及sent，确认前不恢复本地资源。Hardcore执行退局 |
-| `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
+| `online-recover-corpse` | unitId为world.corpses及scene.mapTargets中本人或已授权HC的真实可见尸体GUID，自动type0；先按共同路径靠近，再原0x13请求取回。以服务端库存／装备与尸体回包确认，accepted不表示回收完成 |
 | `online-items` / `online-ground` | 只读同一完整快照；online.inventory.items含地面和各所有者物品，依mode／owner筛选，不请求服务器刷新；尺寸、数量、耐久、词缀、孔内所有者、decoded／reason及revision见下文 |
 | `online-item-action` | action和真实itemId，可选itemRevision／targetRevision；配对动作还需targetId。28种原物品／城镇请求及格子／部位参数见[联网物品操作](#联网物品操作)，accepted仅入队 |
 | `online-item-quote` | action=buy／sell／repair／repair-all；前三者需本局itemId，可选itemRevision。返回known及price，缺数据为null；复用UI报价，不发送询价包或推进待发库存操作。赌博购买报价取当前真实货架模式 |

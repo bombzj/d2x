@@ -118,6 +118,19 @@ void NativeRealmHost::advance(double seconds) {
     }
     // Drain published facts before retrying save/leave. Frozen party rewards
     // may require another authoritative step after their content installation.
+    for (auto *peer : peers) if (peer->binding && peer->peer.phase == GamePhase::Entered) {
+        const auto view = host.read(*peer->binding);
+        if (view && view->life <= 0 && view->deadSettled &&
+            peer->hardcoreDeathSavedRevision != view->characterRevision) {
+            const auto saved = host.exportCharacter(*peer->binding);
+            if (saved && saved->player.hardcoreDead) {
+                try { peer->checkpoint(); }
+                catch (const std::exception &error) {
+                    if (peer->counters.lastFailure != error.what()) {peer->counters.lastFailure=error.what();++peer->counters.failures;}
+                }
+            }
+        }
+    }
     for(auto *peer:peers) if(peer->leavePending && peer->peer.phase==GamePhase::Entered) {
         try {peer->finishPendingLeave();}
         catch(const std::exception &error) {

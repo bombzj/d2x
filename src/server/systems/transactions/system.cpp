@@ -264,7 +264,7 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
         characterEdit && characterEdit->transient ? *characterEdit->transient : player->transient;
     if (characterEdit && characterEdit->revival) {
         const auto &revival = *characterEdit->revival; const auto *destination = ports_.areas.find(revival.area);
-        if (player->persistent.player.hp > 0 || !destination || destination->generation != revival.generation || !destination->definition.town ||
+        if (player->persistent.player.hardcore || player->persistent.player.hp > 0 || !destination || destination->generation != revival.generation || !destination->definition.town ||
             !ports_.spatial.navigationGrid(revival.area,player->actor).walkable(revival.position+Vec{.5f,.5f}, playerMovement)) return {DomainStatus::InvalidRequest, {}};
     }
     const auto &knockback=inventoryEdit?inventoryEdit->knockback:characterEdit->knockback;
@@ -298,6 +298,9 @@ DomainResult<Plan> System::prepareCandidate(Change change,const PlayerState *can
         if(characterEdit->ironGolem) next.persistent.ironGolem=*characterEdit->ironGolem;
     }
     if (next.persistent.player.id != player->actor) return {DomainStatus::InvalidActor, {}};
+    if (next.persistent.player.hardcore != player->persistent.player.hardcore ||
+        (player->persistent.player.hardcoreDead && (!next.persistent.player.hardcoreDead || next.persistent.player.hp > 0)))
+        return {DomainStatus::InvalidRequest, {}};
     const auto charge=inventoryEdit?inventoryEdit->charge:characterEdit->charge;
     const auto payment=inventoryEdit?inventoryEdit->skillPayment:characterEdit->skillPayment;
     bool consumeBloodMana=false;

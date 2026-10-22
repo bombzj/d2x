@@ -320,6 +320,7 @@ int main(int argc, char **argv) {
             for(const auto &[id,item]:snapshot.inventory.items) { (void)id;countIdentity(countIdentity,item); }
             if(snapshot.ironGolem) countIdentity(countIdentity,*snapshot.ironGolem);
             std::cout << "Save format=D2S-v96 name=" << snapshot.player.name
+                      << " hardcore=" << snapshot.player.hardcore << " permanentlyDead=" << snapshot.player.hardcoreDead
                       << " lastRegion=" << int(snapshot.lastRegion)
                       << " gold=" << snapshot.player.gold
                       << " level=" << snapshot.player.level

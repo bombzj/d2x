@@ -54,9 +54,15 @@ void NativeRealmService::checkpoint() {
     if (!binding) return;
     const auto saved = host.exportCharacter(*binding);
     if (!saved) throw std::runtime_error("Character storage binding expired or character settlement pending");
-    if (externalSave) { externalSave(*saved); return; }
-    if (!lease) throw std::runtime_error("Character storage binding expired");
-    store->save(*lease, *saved);
+    if (externalSave) externalSave(*saved);
+    else {
+        if (!lease) throw std::runtime_error("Character storage binding expired");
+        store->save(*lease, *saved);
+    }
+    if (saved->player.hardcoreDead) {
+        hardcoreDeathSavedRevision = host.read(*binding)->characterRevision;
+        discardReload();
+    }
 }
 void NativeRealmService::discardReload() {
     if (reload) { shared.terrain.erase(reload->game.binding.game); host.destroy(reload->game.binding.game); }
@@ -80,6 +86,7 @@ void NativeRealmService::close(bool save, bool keepReload) {
     if (binding) shared.retire(*binding);
     binding.reset(); lease.reset(); selected.reset();
     leavePending=false;
+    hardcoreDeathSavedRevision.reset();
     peer = {}; ticket = false;
     admission.clear(); terrain = {};
     gameName.clear(); gamePassword.clear();
@@ -202,6 +209,11 @@ void NativeRealmService::prepareReload() {
     if (!binding || !lease || peer.phase != GamePhase::Entered)
         throw std::runtime_error("No loaded character to reload");
     if (reload) throw std::runtime_error("A character reload is already pending");
+    const auto live = host.read(*binding);
+    if (live && live->life <= 0) {
+        const auto record = host.exportCharacter(*binding, false);
+        if (!record || record->player.hardcore) throw std::runtime_error("Cannot reload a dead hardcore character");
+    }
     if (const auto *room = shared.find(binding->game); room && room->capacity != 1)
         throw std::runtime_error("Reload is available only in a private one-player instance");
     auto saved = store->load(*lease);

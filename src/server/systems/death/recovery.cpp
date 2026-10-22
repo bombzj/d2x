@@ -4,20 +4,54 @@
 #include "server/systems/inventory/planning.hpp"
 #include "server/systems/transactions/system.hpp"
 #include "server/systems/progression/system.hpp"
+#include "server/systems/social/system.hpp"
+#include "gameplay/items/inventory_order.hpp"
 #include "gameplay/combat/geometry.hpp"
 #include <algorithm>
 #include <array>
 namespace d2x::server::death {
+const PlayerState *System::corpseOwner(const ActorContext &actor, EntityId target) const {
+    for (const auto &[id, owner] : ports_.players.all()) {
+        if (!owner.entered) continue;
+        const auto transition = state_.transitions.find(owner.actor);
+        if (id != actor.player && (!owner.persistent.player.hardcoreDead ||
+            !(ports_.social.flags(id, actor.player) & 1) || transition == state_.transitions.end() ||
+            !transition->second.companionsSettled || actor.tick < transition->second.ready)) continue;
+        if (std::any_of(owner.persistent.corpses.begin(), owner.persistent.corpses.end(),
+            [&](const auto &corpse) { return corpse.id == target && corpse.owner == owner.actor && corpse.region == actor.area; })) return &owner;
+    }
+    return nullptr;
+}
 DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
     const auto *player = ports_.players.find(actor.player);
     const auto *area = ports_.areas.find(actor.area);
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-    auto corpses = player->persistent.corpses;
+    const auto *owner = corpseOwner(actor, target);
+    if (!owner) return {DomainStatus::InvalidRequest, {}};
+    const bool foreign = owner != player;
+    if (foreign && (!player->persistent.player.hardcore || owner->area != actor.area)) return {DomainStatus::InvalidRequest, {}};
+    auto corpses = owner->persistent.corpses;
     auto found = std::find_if(corpses.begin(), corpses.end(), [&](const auto &corpse) { return corpse.id == target; });
-    if (found == corpses.end() || found->owner != actor.actor || found->region != actor.area ||
+    if (found == corpses.end() || found->region != actor.area ||
         meleeDistance(player->position, 2, found->position, 2) > 8 || !ports_.areas.at(actor.area).definition.collision.collisionSegment(player->position, found->position, 0x0801)) return {DomainStatus::InvalidRequest, {}};
     auto equipment = std::make_shared<EquipmentRules>(*player->rules.equipment);
-    inventory::detail::Draft draft(*player, *player->rules.items, *equipment, *player->rules.character);
+    auto input = *player;
+    if (foreign) {
+        auto storage = owner->persistent.inventory.containers.at(found->items);
+        storage.spec.owner = actor.actor;
+        input.persistent.inventory.containers.emplace(storage.id, storage);
+        for (const auto id : inventoryItemOrder(owner->persistent.inventory)) {
+            const auto &item = owner->persistent.inventory.items.at(id);
+            const auto *at = std::get_if<ContainerLocation>(&item.location);
+            if (!at || at->container != found->items) continue;
+            input.persistent.inventory.items.emplace(id, item);
+            input.persistent.inventory.itemOrder.push_back(id);
+            equipment->items.emplace(id, owner->rules.equipment->items.at(id));
+        }
+        equipment->includeSets(*owner->rules.equipment);
+        input.rules.equipment = equipment;
+    }
+    inventory::detail::Draft draft(input, *player->rules.items, *equipment, *player->rules.character);
     const ContainerLocation cursor{draft.containers().cursor, {}};
     if (draft.at(cursor)) return {DomainStatus::Conflict, {}};
     const auto storage = found->items;
@@ -52,7 +86,7 @@ DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
             }
             for (const auto choice : choices) {
                 if (draft.equipped(choice)) continue;
-                inventory::detail::Draft trial(*player, *player->rules.items, *player->rules.equipment, *player->rules.character);
+                inventory::detail::Draft trial(input, *player->rules.items, *equipment, *player->rules.character);
                 trial.edit = draft.edit; trial.edit.changes.clear();
                 auto &item = trial.edit.inventory.items.at(id); const auto original = item.location;
                 item.location = cursor;
@@ -92,7 +126,7 @@ DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
         }
     }
     auto record = player->persistent.player;
-    const auto experience = found->recoverableExperience;
+    const auto experience = foreign ? 0 : found->recoverableExperience;
     if (experience) {
         auto reward = progression::addExperience(record, player->definition, *player->rules.character, experience);
         if (reward) record = std::move(*reward.value);
@@ -106,6 +140,40 @@ DomainResult<> System::recover(const ActorContext &actor, EntityId target) {
     else if (draft.edit.changes.empty() && !experience) return {DomainStatus::Conflict, {}};
     // Keep the old corpse container in the immutable delta, since its source
     // locations still need encoding after the authoritative container is removed.
+    if (foreign) {
+        auto source = owner->persistent.inventory;
+        std::vector<ItemChange> removed;
+        for (auto &change : draft.edit.changes) {
+            const auto original = source.items.find(change.item);
+            if (original == source.items.end()) {
+                if (player->persistent.inventory.items.contains(change.item)) continue;
+                return {DomainStatus::InvalidRequest, {}};
+            }
+            removed.push_back({change.item, change.revision, ItemChangeKind::Removed, original->second.location, {}, 0});
+            source.items.erase(original);
+            change.kind = ItemChangeKind::Created; change.before = {};
+        }
+        if (removed.empty()) return {DomainStatus::Conflict, {}};
+        for (auto item = draft.edit.inventory.items.begin(); item != draft.edit.inventory.items.end();) {
+            const auto *at = std::get_if<ContainerLocation>(&item->second.location);
+            if (at && at->container == storage) item = draft.edit.inventory.items.erase(item);
+            else ++item;
+        }
+        draft.edit.inventory.containers.erase(storage);
+        if (empty) source.containers.erase(storage);
+        const ActorContext sourceActor{owner->player, owner->actor, owner->area, actor.areaGeneration, 0, actor.tick};
+        transactions::InventoryEdit take{actor, player->inventoryRevision, player->characterRevision,
+            std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
+        take.equipment = std::move(equipment); take.lootedCorpse = target;
+        transactions::InventoryEdit give{sourceActor, owner->inventoryRevision, owner->characterRevision,
+            std::move(source), std::move(removed), owner->persistent.player.weaponSet};
+        give.corpses = std::move(corpses); give.lootedCorpse = target;
+        std::vector<transactions::Change> changes; changes.emplace_back(std::move(take)); changes.emplace_back(std::move(give));
+        auto plans = ports_.transactions.prepareGroup(std::move(changes));
+        if (!plans) return {plans.status,{}};
+        auto committed=ports_.transactions.commitInventories(std::move(*plans.value));
+        return committed;
+    }
     transactions::InventoryEdit edit{actor, player->inventoryRevision, player->characterRevision,
         std::move(draft.edit.inventory), std::move(draft.edit.changes), record.weaponSet};
     edit.resources = record.level > player->persistent.player.level ? transactions::ResourceRefresh::LevelUp : transactions::ResourceRefresh::Clamp;

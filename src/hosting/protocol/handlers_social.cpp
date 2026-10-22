@@ -3,13 +3,13 @@
 namespace d2x::hosting::handlers {
 RequestResult PlayerRelation(GameplayContext &context, net::protocol::Reader &in) {
     const auto action=in.u8(),enabled=in.u8(); const auto target=in.u32(); in.finish();
-    if(action>=2 && action<=4) {
+    if(action>=1 && action<=4) {
         const uint8_t mask=uint8_t(1u<<(action-1));
         if(enabled!=0 && enabled!=1 && enabled!=mask) return {RequestStatus::Rejected};
         for (const auto id : context.host.participants(context.player.game)) {
             const auto view=context.host.read({context.player.game,id});
             if(view && view->actor.id==EntityId{target}) {
-                server::social::Request request{action==2?server::social::Action::Ignore:action==3?server::social::Action::Squelch:server::social::Action::Hostility,id,{}};
+                server::social::Request request{action==1?server::social::Action::AllowLoot:action==2?server::social::Action::Ignore:action==3?server::social::Action::Squelch:server::social::Action::Hostility,id,{}};
                 request.enabled=enabled!=0; return submitGameplay(context,std::move(request));
             }
         }

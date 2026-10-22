@@ -105,6 +105,10 @@ PersistentCharacter CharacterStore::load(Lease &lease) {
     return decodeSave(bytes, content_);
 }
 void CharacterStore::save(Lease &lease, const PersistentCharacter &character) {
+    const auto original = decodeSave(lease.expected, content_);
+    if (character.player.name != original.player.name || character.player.characterClass != original.player.characterClass ||
+        character.player.hardcore != original.player.hardcore || (original.player.hardcoreDead && !character.player.hardcoreDead))
+        throw std::runtime_error("Character identity or permanent death changed; save was refused");
     auto bytes = encodeSave(character, content_);
     decodeSave(bytes, content_); // Existing codec's validation before atomic replacement.
     if (readBytes(lease.path) != lease.expected) throw std::runtime_error("Character save changed outside this host; overwrite was refused");
@@ -114,13 +118,14 @@ void CharacterStore::save(Lease &lease, const PersistentCharacter &character) {
 void CharacterStore::saveBytes(Lease &lease, Bytes bytes) {
     const auto returned = decodeSave(bytes, content_);
     const auto original = decodeSave(lease.expected, content_);
-    if (returned.player.name != original.player.name || returned.player.characterClass != original.player.characterClass)
+    if (returned.player.name != original.player.name || returned.player.characterClass != original.player.characterClass ||
+        returned.player.hardcore != original.player.hardcore || (original.player.hardcoreDead && !returned.player.hardcoreDead))
         throw std::runtime_error("TCP/IP returned a different character; local save was not replaced");
     if (readBytes(lease.path) != lease.expected) throw std::runtime_error("Character changed outside TCP/IP; overwrite was refused");
     writeFileAtomically(lease.path, bytes, true);
     lease.expected = std::move(bytes);
 }
-void CharacterStore::create(std::string name, unsigned characterClass, uint32_t seed) {
+void CharacterStore::create(std::string name, unsigned characterClass, uint32_t seed, bool hardcore) {
     if (!validCharacterName(name) || folded(name) == "quick") throw std::runtime_error("Use 1-15 letters, digits or hyphens; quick is reserved");
     // Windows device names must be rejected on every platform for portable saves.
     const auto key = folded(name);
@@ -138,7 +143,7 @@ void CharacterStore::create(std::string name, unsigned characterClass, uint32_t 
         try { saved = decodeSave(readBytes(entry.path()), content_); } catch (const std::exception &) {}
         if (saved && folded(saved->player.name) == key) throw std::runtime_error("A saved character already uses this name");
     }
-    auto bytes = encodeSave(createCharacter(content_, std::move(name), characterClass, seed), content_);
+    auto bytes = encodeSave(createCharacter(content_, std::move(name), characterClass, seed, hardcore), content_);
     decodeSave(bytes, content_);
     if (std::filesystem::exists(path)) throw std::runtime_error("Character file appeared during creation");
     writeFileAtomically(path, bytes, false);

@@ -18,7 +18,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 依据：本地D2MOO的CCmd系统消息、Game的JOINLIST／OPENCHAR／保存回传及D2PacketDef布局用于解释流程；包号／长度以当前1.13c DLL为准：D2Client RVA 0x14630发6A，0x14D90发6C（partSize+7，含忽略的尾字节）；D2Game RVA 0x2BA73发B2／53字节，0x2D1E2发B3／partSize+7，0x8C4B0发B4／5字节入局错误，0x2E3CE同样回送角色加载错误。D2Net长度表0xA900的B4项为5，当前目录补齐该项；RealmSession立即停止入局并保留u32原错误码，TCP/IP预检码6／15／16分别指游戏／姓名资格、满员、版本不符（D2Game RVA 0xCAD60实际检查版本13）。D2Net的实际端口为4000。参考代码不加入源码或替代MPQ内容规则。
 
-局前资源仍为当前MPQ的TCPIPscreen、3WideButtonBlank、PopUpOkCancel2、CancelButtonBlank和textbox2，文字TBL 5116–5124；难度选择复用PopUpLarge、MediumButton及TBL 5156–5154，不声称该弹窗布局已逐像素对照原版。七职业／资料片角色、原存档支持范围及硬核／Ladder拒绝不变；原版互通的观察条件及缺口见下节。
+局前资源仍为当前MPQ的TCPIPscreen、3WideButtonBlank、PopUpOkCancel2、CancelButtonBlank和textbox2，文字TBL 5116–5124；难度选择复用PopUpLarge、MediumButton及TBL 5156–5154，不声称该弹窗布局已逐像素对照原版。七职业／资料片角色沿原存档支持范围，支持普通／HC并隔离房间，死亡HC及Ladder仍拒绝入场；原版互通的观察条件及缺口见下节。
 
 ## TCP/IP原版互通参考与缺口
 
@@ -249,7 +249,7 @@ Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Es
 
 ### 组队邀请客户端
 
-`presentation/hud/party_view.*`只读原名册，P／底栏Party Screen开关左侧面板，Esc／原关闭按钮关闭。原图来自当前MPQ的menu/party、partybuttons、partyboxes、partybar及panel/buysellbtn；font8、职业名、Level、Invite／cancel／Accept／Leave／Yourparty及Levels.LevelName读原字体、PL2与TBL。本人姓名单列顶部，其余最多七名他人不依赖空间可见性；本地原1.13c D2Client的Party.cpp与用户2026-10-10截图核对38像素行距、按partyId分组及原分隔条。相同且非FFFF的本人／对方partyId显示绿色姓名／职业／等级、“In your party”及原0x7F区域。顶部Leave提交本人GUID。左侧Hostile及右侧Ignore／Squelch提交原5D/action4／2／3；Ignore阻止对方听见自己，Squelch屏蔽对方发来的聊天。图标与提示取MPQ，Hostile原帧4／6、Ignore0／2、Squelch8／10，按下取相邻帧；只在75／8C确认后改变状态。Hostile要求城镇内、双方基础等级至少9，禁用提示取原TBL；当前partyboxes.dc6为18帧，红色禁用直接使用原16／17帧，不额外生成调色替身。敌意行的姓名／职业／等级使用Sky PL2原红色font8，优先于同队绿色，邀请按钮与本人标题保持各自原字体。硬核尸体许可未接，其他关系行色仍未完整实现。
+`presentation/hud/party_view.*`只读原名册，P／底栏Party Screen开关左侧面板，Esc／原关闭按钮关闭。原图来自当前MPQ的menu/party、partybuttons、partyboxes、partybar及panel/buysellbtn；font8、职业名、Level、Invite／cancel／Accept／Leave／Yourparty及Levels.LevelName读原字体、PL2与TBL。本人姓名单列顶部，其余最多七名他人不依赖空间可见性；本地原1.13c D2Client的Party.cpp与用户2026-10-10截图核对38像素行距、按partyId分组及原分隔条。相同且非FFFF的本人／对方partyId显示绿色姓名／职业／等级、“In your party”及原0x7F区域。顶部Leave提交本人GUID。左侧Hostile及右侧Ignore／Squelch提交原5D/action4／2／3；Ignore阻止对方听见自己，Squelch屏蔽对方发来的聊天。图标与提示取MPQ，Hostile原帧4／6、Ignore0／2、Squelch8／10，按下取相邻帧；只在75／8C确认后改变状态。Hostile要求城镇内、双方基础等级至少9，禁用提示取原TBL；当前partyboxes.dc6为18帧，红色禁用直接使用原16／17帧，不额外生成调色替身。敌意行的姓名／职业／等级使用Sky PL2原红色font8，优先于同队绿色，邀请按钮与本人标题保持各自原字体。HC增加原5D/action1尸体许可，按钮取原12–15帧与strParty11–14，存活时可授予／撤销，75／8C确认后改变状态；其他关系行色仍未完整实现。
 
 D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／PlayerLeftParty`及`PlayerList::sub_6FCBAA20`核对相对状态：0提供Invite、2提供Accept、4提供Cancel，同队不再提供邀请按钮。RealmSession.party_action发送原六字节0x5E＋action6／7／8／9＋目标GUID；发送前复验ProtocolReady、连接／游戏代次、真实名册身份、当前邀请状态或本人非FFFF队伍ID。鼠标同项按下／释放匹配GUID、动作和本局代次；失焦、模态输入、重入清除按下状态。发送不改按钮／partyId，入队、离队及Cancel都等真实75／8B／8D；无自动接受、重试或本地成功消息。
 
@@ -263,7 +263,7 @@ D2MOO `PartyScreen::ReceivedInvitation／InvitationCancelled／Command8／Player
 
 自研服务端的`server/systems/social/party.cpp`唯一维护实例内队伍和有向邀请；原5E动作6–9经连接绑定解析真实GUID后提交权威命令。接受须有来自目标的有效邀请且本人尚未入队；新组从原ID3开始，加入已有组复用ID，清理不能继续接受的邀请；离队／断线撤销邀请，余一人解散。邀请不受空间距离限制，仍要求同局真实参与者。75／8B投影观察者相对状态及关系，8D同步本人和他人队号；7F玩家分支只向同队他人发送生命百分比／区域，宠物分支只向主人发送，90发送远处公开全局位置，不创建空间单位／揭示房间，晚加入与重新入局从当前权威投影恢复。关系更新保留队伍ID，不以聊天屏蔽重置组队。
 
-同队回城门在接受交互与目的地准备完成时复验队伍资格，队友穿门不关闭主人的门；只有主人从城镇返回野外才关门。death按同区域、活人、距死亡怪物80格以内筛队员，沿SUnitDmg的原89/256额外经验及等级比例分配原始经验，再套每位队员MPQ经验比例和装备加成，背压重试不重复发奖；loot的NoDrop人数系数采用同区域存活队员数，仍受怪物准入人数上限。友方圣骑士光环按原MPQ滤镜、半径和碰撞作用于同队玩家／随从。任务按各事件冻结资格和共享范围，规则及缺口见[任务系统](../gameplay/quests/SYSTEM.md#资格准备与提交)。硬核尸体loot权限、耳朵战利品、完整房间邻接／特殊任务事件及其余技能的组队例外仍未完成。
+同队回城门在接受交互与目的地准备完成时复验队伍资格，队友穿门不关闭主人的门；只有主人从城镇返回野外才关门。death按同区域、活人、距死亡怪物80格以内筛队员，沿SUnitDmg的原89/256额外经验及等级比例分配原始经验，再套每位队员MPQ经验比例和装备加成，背压重试不重复发奖；loot的NoDrop人数系数采用同区域存活队员数，仍受怪物准入人数上限。友方圣骑士光环按原MPQ滤镜、半径和碰撞作用于同队玩家／随从。任务按各事件冻结资格和共享范围，规则及缺口见[任务系统](../gameplay/quests/SYSTEM.md#资格准备与提交)。HC尸体loot权限及原通知已接，规则与保存见[玩家死亡](../gameplay/characters/PLAYER_DEATH.md#hardcore永久死亡与尸体许可)；耳朵战利品、完整房间邻接／特殊任务事件及其余技能的组队例外仍未完成。
 
 服务端敌意由social唯一持有，开启时双向设置位8并传播给目标队伍中等级合格成员；关闭只清除发起者到目标的方向。开启关闭本人的回城门，同队时退出队伍；同一对象重新开启需60秒，发起者回城门／传送点菜单分别有5／10秒限制，沿原真实时间而非暂停的游戏帧计时。75为接收者到行玩家的关系，8C包含所有已入场玩家对，晚加入也补齐。伤害与技能取攻击者方向，非队友不会自动成为敌人；PvP结算范围见[武器与PvP](../gameplay/combat/WEAPON_EFFECTS.md#pvp伤害)。
 

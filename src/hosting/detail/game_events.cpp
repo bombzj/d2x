@@ -228,7 +228,7 @@ void NativeRealmService::receiveEvent(const server::EventBatch &batch) {
                 value=uint32_t(character-content->characters.begin());
             }
             delta.push_back(encodeServerPacket(ServerMessage::Reserved5A,[&](auto &out){
-                out.u8(message->type);out.u8(message->type==2 || message->type==3 || message->type==6?4:0);out.u32(value);out.u8(message->parameter); std::array<uint8_t,32> names{};
+                out.u8(message->type);out.u8(message->type==7?(message->parameter<=2?4:9):message->type==2 || message->type==3 || message->type==6?4:0);out.u32(value);out.u8(message->parameter); std::array<uint8_t,32> names{};
                 if(message->name.size()>15 || message->other.size()>15) throw std::logic_error("Invalid player message name");
                 std::copy(message->name.begin(),message->name.end(),names.begin());
                 std::copy(message->other.begin(),message->other.end(),names.begin()+16);out.append(names);

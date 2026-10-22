@@ -26,7 +26,7 @@ void NativeRealmService::logon(net::protocol::Reader &in) {
             throw AdmissionFailure(6,"Character name is already admitted or reserved");
         selectedName = name; tcpIpClass = characterClass; gameName = room->name; gameDifficulty = unsigned(room->settings.difficulty);
         peer.phase = GamePhase::LoggedOn;
-        Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(0); out.u8(1); out.u8(0);
+        Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(room->hardcore?0x800u:0u); out.u8(1); out.u8(0);
         sendGame(out.release()); sendGame({0}); sendGame({2});
         return;
     }
@@ -34,7 +34,7 @@ void NativeRealmService::logon(net::protocol::Reader &in) {
         name != selectedName || characterClass >= content->characters.size() || content->characters[characterClass].name != selected->player.characterClass)
         throw ProtocolError("D2GS ticket or character mismatch");
     ticket = false; peer.phase = GamePhase::LoggedOn;
-    Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u16(0); out.u16(0); out.u8(1); out.u8(0); sendGame(out.release()); sendGame({2});
+    Writer out; out.u8(1); out.u8(uint8_t(gameDifficulty)); out.u32(selected->player.hardcore?0x800u:0u); out.u8(1); out.u8(0); sendGame(out.release()); sendGame({2});
 
 }
 void NativeRealmService::queryTcpIpGames(net::protocol::Reader &in) {
@@ -70,7 +70,7 @@ void NativeRealmService::uploadCharacter(net::protocol::Reader &in) {
         for (auto &[key, candidate] : shared.games) { (void)key; if (candidate.tcpIp && candidate.name == gameName) room = &candidate; }
         if (!room) throw ProtocolError("TCP/IP host game has ended");
         if(!(header.flags&0x20)) throw AdmissionFailure(23,"Expansion character required");
-        if((header.flags&0x44)==0x44) throw AdmissionFailure(21,"Hardcore character is dead");
+        if((header.flags&0x0C)==0x0C) throw AdmissionFailure(21,"Hardcore character is dead");
         if(room->hardcore!=bool(header.flags&4)) throw AdmissionFailure(room->hardcore?19:20,"Character hardcore mode does not match game");
         auto folded = [](std::string value) { for (auto &c : value) if (c >= 'A' && c <= 'Z') c += 'a' - 'A'; return value; };
         for (auto *other : shared.peers) if (other != this && other->binding && other->binding->game == room->handle && folded(other->selectedName) == folded(selectedName))
@@ -119,6 +119,12 @@ void NativeRealmService::saveAndLeave(net::protocol::Reader &in) {
 }
 void NativeRealmService::finishPendingLeave() {
     if(!leavePending || !binding) return;
+    // A prepared live checkpoint must never bypass a subsequent HC death.
+    // Wait for its ordinary settlement and persist it before releasing the lease.
+    if (reload && selected && selected->player.hardcore) {
+        const auto live = host.read(*binding);
+        if (!live || live->life <= 0) discardReload();
+    }
     const bool preparedReload = reload.has_value();
     if(!preparedReload) {
         if(!host.prepareSave(*binding) || !host.exportCharacter(*binding)) return;

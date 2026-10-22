@@ -10,7 +10,8 @@ bool RealmSession::player_relation(uint32_t player,OnlineRelationAction action,b
     if(!p.require(OnlineStage::ProtocolReady) || snapshot_.connectionGeneration!=p.view.connectionGeneration ||
         snapshot_.gameGeneration!=p.view.gameGeneration || gameGeneration!=p.view.gameGeneration || !p.view.load.playerUnitId || player==p.view.load.playerUnitId ||
         !p.view.world.social.players.contains(player) || !p.view.world.social.players.at(player).listed ||
-        (action!=OnlineRelationAction::Ignore && action!=OnlineRelationAction::Squelch && action!=OnlineRelationAction::Hostile)) return false;
+        (action!=OnlineRelationAction::AllowLoot && action!=OnlineRelationAction::Ignore && action!=OnlineRelationAction::Squelch && action!=OnlineRelationAction::Hostile)) return false;
+    if(action==OnlineRelationAction::AllowLoot && (!p.selected || !p.selected->hardcore.value_or(false) || p.view.world.deathPhase!=OnlineDeathPhase::Alive)) return false;
     if(action==OnlineRelationAction::Hostile) {
         const auto self=p.view.world.social.players.find(*p.view.load.playerUnitId);
         const auto &target=p.view.world.social.players.at(player);

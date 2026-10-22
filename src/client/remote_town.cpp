@@ -162,7 +162,7 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         if (x < 0 || y < 0 || x >= view_.width || y >= view_.height) continue;
         if (key.type == 0) {
             const auto owner = v.world.corpseOwners.find(key.id);
-            if (owner != v.world.corpseOwners.end() && owner->second == v.load.playerUnitId) {
+            if (v.load.playerUnitId && onlineCanLootCorpse(v.world, *v.load.playerUnitId, key.id)) {
                 const auto label = strings_.find("corpse");
                 view_.mapTargets.push_back({key, *unit.position, OnlineMapInteraction::Corpse,
                     unit.name + " " + std::string(label), {}, playerMovement.size, playerMovement.size});

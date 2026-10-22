@@ -25,10 +25,10 @@ class PartyView {
     std::map<uint16_t, std::string> areas_;
     std::vector<OnlineRosterPlayer> players_;
     std::map<std::pair<uint32_t,uint32_t>,uint16_t> relations_;
-    std::array<std::array<std::string,2>,3> relationTips_;
+    std::array<std::array<std::string,2>,4> relationTips_;
     std::string townTip_,levelTip_,tooltip_;
     Vec tooltipAt_{};
-    bool town_{};
+    bool town_{}, hardcore_{};
     uint32_t self_{UINT32_MAX};
     uint64_t game_{};
     std::optional<uint16_t> ownParty_, ownLevel_;
@@ -41,7 +41,7 @@ class PartyView {
               float width = 0, bool right = false) const;
   public:
     PartyView(Archives &);
-    bool update(const OnlineSocialView &, uint32_t self, uint64_t game, bool town);
+    bool update(const OnlineSocialView &, uint32_t self, uint64_t game, bool town, bool hardcore);
     PartyIntent handle(const FrameInput &, bool &open);
     void draw(std::string_view ownName) const;
     void drawPortraits(float x, const PaletteBlendView &) const;

@@ -116,6 +116,7 @@ void exportMerc(D2sHeader &header, const CharacterRecord &player, const ClassicD
 }
 void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &content) {
     const auto &player = snapshot.player;
+    require(!player.hardcoreDead || (player.hardcore && player.hp <= 0), "invalid permanent death state");
     const auto &definition = characterDefinition(content, player.characterClass);
     require(snapshot.corpses.size() <= 1, "single-player corpse count");
     for (const auto &corpse : snapshot.corpses) {
@@ -170,13 +171,15 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     auto header = readD2sHeader(bytes);
     // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
     // retain this flag after resurrection; its corpse is the JM section.
-    require(!(header.flags & (4 | 0x40)), "hardcore or ladder character unsupported");
+    require(!(header.flags & 0x40), "ladder character unsupported");
     auto sections = readD2sFixedSections(bytes);
     CharacterSaveData snapshot;
     initializeD2sInventory(snapshot, content);
     auto &player = snapshot.player;
     player.name = header.name; player.characterClass = classes[header.characterClass]; player.level = header.level;
     player.weaponSet = header.weaponSet;
+    player.hardcore = (header.flags & 4) != 0;
+    player.hardcoreDead = player.hardcore && (header.flags & 8) != 0;
     player.nativeSaveSections.assign(reinterpret_cast<const char *>(bytes.data()), fixedEnd);
     snapshot.mapSeed = header.mapSeed;
     snapshot.difficulty = header.difficulty;
@@ -201,6 +204,8 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     require(values[6] <= INT32_MAX && values[7] <= INT32_MAX && values[8] <= INT32_MAX && values[9] <= INT32_MAX && values[10] <= INT32_MAX && values[11] <= INT32_MAX,
         "resource exceeds native signed fixed-point range");
     player.hp = Fixed8::fromRaw(int32_t(values[6]));
+    // DEAD is authoritative for HC, including native files retaining nonzero HP.
+    if (player.hardcoreDead) player.hp = {};
     player.mana = Fixed8::fromRaw(int32_t(values[8]));
     player.stamina = Fixed8::fromRaw(int32_t(values[10]));
     player.experience = uint64_t(values[13]); player.gold = unsigned(values[14]); player.bankGold = unsigned(values[15]);
@@ -300,6 +305,8 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         std::copy_n(original.begin(), d2sHeaderSize, bytes.begin());
         sections = readD2sFixedSections(original);
         header.flags = dword(original, 0x24);
+        require(bool(header.flags & 4) == player.hardcore, "hardcore identity changed");
+        require(!(player.hardcore && (header.flags & 8)) || player.hardcoreDead, "permanent death cannot be cleared");
         header.created = dword(original, 0x2C);
         header.mercSeed = dword(original, 0xB3);
         for (size_t index = 0; index < 16; ++index) {
@@ -321,6 +328,8 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         sections.introductions[0] = 1; sections.introductions[1] = 0x77; sections.introductions[2] = 52;
         header.hotkeys.fill(UINT32_MAX); header.appearance.fill(0xFF); header.colors.fill(0xFF);
     }
+    header.flags = (header.flags & ~4u) | (player.hardcore ? 4u : 0u);
+    if (player.hardcore) header.flags = (header.flags & ~8u) | (player.hardcoreDead ? 8u : 0u);
     header.name = player.name; header.characterClass = uint8_t(found - classes.begin());
     header.weaponSet = player.weaponSet; header.level = uint8_t(player.level);
     header.mapSeed = snapshot.mapSeed; header.difficulty = uint8_t(snapshot.difficulty);

@@ -14,6 +14,7 @@ namespace d2x::server {
 struct GameSettings {
     uint32_t mapSeed{};int difficulty{};bool singlePlayer=true;unsigned virtualPlayers{1};
     uint8_t nativeGameType{1};bool ladder{};
+    bool hardcore{};
     bool ladderMonsterStats() const {return nativeGameType!=0 || ladder;}
 };
 // Kernel results are not wire replies. A scaffold never manufactures a value.

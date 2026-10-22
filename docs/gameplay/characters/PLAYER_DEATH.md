@@ -18,9 +18,17 @@
 
 致命伤提交时保存实际玩家归功、名字及职业，death转换捕获后不再依赖击杀者仍在线。玩家及其受控单位击杀另一玩家不扣经验，按`PLAYER_ApplyDeathPenalty`只掉落`min(level,20)% ×（携带金币＋银行金币）`的惩罚额；携带不足时从银行补足，其余携带金币保留。金币与尸体转移使用同一库存／世界事务，地面无法容纳的金币不丢失，重试不重复结算。
 
-同一死亡事务向已入场玩家发送5A/type6、color4、两段姓名及原击杀者职业编号；D2X使用当前MPQ的sysmsg7显示“was slain by”。生命与DT／DEAD仍沿已有玩家模式回包，客户端不凭通知自行死亡。耳朵战利品、专家死亡／尸体loot许可及完整PvP保存组合未扩展；完整金币／经验惩罚组合仍缺原版对照。
+同一死亡事务向已入场玩家发送5A/type6、color4、两段姓名及原击杀者职业编号；D2X使用当前MPQ的sysmsg7显示“was slain by”。生命与DT／DEAD仍沿已有玩家模式回包，客户端不凭通知自行死亡。耳朵战利品及完整PvP保存组合未扩展；完整金币／经验惩罚组合仍缺原版对照。
 
-## 编码与原版依据
+## Hardcore永久死亡与尸体许可
+
+Single Player、TCP/IP及独立PvPGN服务支持资料片非Ladder HC创建／入局；普通与HC角色不能混入同一实例，上传存档与D2DBS加载均校验模式。D2S读取死亡HC用于名册和删除，不准入玩法；death的死亡库存事务写永久死亡，原0x41及重载拒绝复活。DT结束并完成伙伴／人物结算后，hosting自动保存死亡角色；后续尸体物品变化按人物revision再次保存，失败保留实例、租约及错误供重试。TCP/IP保存沿原B3回传，客户端验证HC身份及永久死亡不可清除。进程崩溃发生在死亡结算或保存确认之前的恢复保证仍受既有存储边界限制。
+
+HC存活时可通过Party面板原partyboxes的12–15帧和TBL strParty11–14授予／撤销单向尸体许可，提交原5D/action1，以75／8C确认。死亡后不能更改许可；许可不依赖同队，断开后按现有关系生命周期清除。其他存活HC只能回收当前在线且死亡已结算主人的授权尸体，不能访问背包、仓库或佣兵装备；部分回收保留剩余原件，双方库存、尸体与装备规则由同一事务组提交，不复制物品或返还他人经验。客户端接近／点击共用授权判断，最终资格由death复验。死亡卡片使用MPQ charselectboxgrey并禁用进入；完整幽灵绘制及全部称号仍需原客户端表现依据。
+
+依据本地D2MOO `GAME/Clients.h`（CLIENTSAVEFLAG_HARDCORE=4、DEAD=8）、`PLAYER/PlrSave.cpp`（HARDCORE且DEAD拒绝，普通／HC实例隔离）、`PLAYER/PlrModes.cpp::PLRMODE_StartXY_Dead`（HC死亡写档）、`sub_6FC80440`（owner→looter权限与仅本人经验返还）、`PLAYER/PartyScreen.cpp::PARTYSCREEN_ToggleLootability`（HC资格、flag1、原75及5A通知）。当前MPQ提供按钮和原TBL提示；这些原版规则依据不等同于原版混合客户端／全职业／背压组合验收。
+
+## 通用死亡编码与原版依据
 
 自研宿主的伙伴联动以death::Transition.ready为同一权威DT结束点：调用companions::ownerDied后，四类佣兵写死亡位并开始自身DT，召唤物进入死亡／移除。复活与保存须等待companionsSettled，背压不提前清理或保存存活佣兵；怪物本身受伤或寿命到期仍可独立死亡。依据PlrModes::PLRMODE_StartXY_Dead → PlayerPets::D2GAME_KillPlayerPets／sub_6FC7CDC0，不能仅在玩家hp归零时立即杀伙伴。完整时序／背压组合仍待核对，详见[佣兵](HIRELINGS.md)。
 
@@ -28,6 +36,6 @@
 
 独立D2S工具保留原JM尸体段，编码支持最早非空尸体及物品位置；不提供产品恢复入口，详见[存档](../../modules/SAVES.md)。D2S没有客户端死亡动画、未完成施法或短时状态字段。
 
-本地D2MOO PlrModes尸体创建／回收与DT→DEAD、PlrMsg::sub_6FC828D0／Rcv0x41、PlayerPets死亡处理、ItemMode装备回收、Player::PLAYER_ApplyDeathPenalty与PlrSave2尸体段仅作原服规则／格式证据。客户端不移植损失结算。专家、多尸体、满背包部分回收和离开后死亡精确时序未完整认证；有限单人观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。
+本地D2MOO PlrModes尸体创建／回收与DT→DEAD、PlrMsg::sub_6FC828D0／Rcv0x41、PlayerPets死亡处理、ItemMode装备回收、Player::PLAYER_ApplyDeathPenalty与PlrSave2尸体段仅作原服规则／格式证据。客户端不移植损失结算。专家／普通、多尸体、满背包部分回收和离开后死亡精确时序未完整认证；有限单人观察见[联网记录](../../modules/NETWORK.md#既有有限证据)。
 
 死亡界面另只读核对本机1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）RVA BEE60–BF0CE：DT／DD资格、标题／ESC原图、PL2色1、整数居中、48像素行距、175号goldlost与TBL5094–5096，以及普通／专家和难度分支；C3DAA在主要HUD之后调用。D2Win（MD5 `32b35919f174681bb2b80a582e5c19d0`）ordinal10138（RVA117A0）核对原图拼接与居中偏移，ordinal10184／10150（RVA12FE0／12FA0）及字体名表RVA1C588核对font2=Font30、原字宽与绘制基线。当前实现按该布局适应画布尺寸；完整职业动画／死亡音效、多语言、所有分辨率和原版逐帧表现仍待运行对照。

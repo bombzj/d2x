@@ -49,6 +49,7 @@ DomainResult<> System::settle(const ActorContext &actor) {
     }
     draft.edit.inventory.containers.at(draft.containers().belt).spec.rows = 1;
     auto record = player->persistent.player;
+    if (record.hardcore) record.hardcoreDead = true;
     const auto transition=state_.transitions.find(actor.actor);
     const auto message=transition==state_.transitions.end()?PlayerMessageFact{}:transition->second.message;
     const bool pvp=!message.other.empty();

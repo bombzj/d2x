@@ -376,6 +376,13 @@ inline bool onlineMonsterCorpse(const OnlineUnit &unit) {
     // unit below one hit point can report zero; only DT/DD modes prove death.
     return unit.key.type == 1 && (unit.mode == 0 || unit.mode == 12);
 }
+inline bool onlineCanLootCorpse(const OnlineWorldView &world, uint32_t player, uint32_t corpse) {
+    const auto owner = world.corpseOwners.find(corpse);
+    if (owner == world.corpseOwners.end()) return false;
+    if (owner->second == player) return true;
+    const auto permission = world.social.relationships.find({owner->second, player});
+    return permission != world.social.relationships.end() && (permission->second & 1) != 0;
+}
 inline bool onlinePlayerDead(const OnlineWorldView &world) {
     if (world.deathPhase != OnlineDeathPhase::Unknown)
         return world.deathPhase == OnlineDeathPhase::Dying || world.deathPhase == OnlineDeathPhase::Dead;

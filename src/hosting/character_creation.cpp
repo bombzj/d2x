@@ -11,12 +11,13 @@ bool validCharacterName(std::string_view name) {
         return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
     });
 }
-PersistentCharacter createCharacter(const ClassicData &content, std::string name, unsigned index, uint32_t seed) {
+PersistentCharacter createCharacter(const ClassicData &content, std::string name, unsigned index, uint32_t seed, bool hardcore) {
     if (!validCharacterName(name) || index >= content.characters.size())
         throw std::runtime_error("Invalid character name or class");
     PersistentCharacter result;
     const auto &definition = content.characters[index];
     result.player.name = std::move(name);
+    result.player.hardcore = hardcore;
     result.player.characterClass = definition.name;
     result.mapSeed = seed;
     const auto attributes = deriveCharacterAttributes(definition, 1, {});

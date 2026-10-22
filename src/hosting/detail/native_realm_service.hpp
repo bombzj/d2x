@@ -106,6 +106,7 @@ struct NativeRealmService {
     };
     std::optional<ReloadCandidate> reload;
     bool leavePending{};
+    std::optional<uint64_t> hardcoreDeathSavedRevision;
     HostDiagnostics counters;
 
     NativeRealmService(NativeRealmHost &, RealmOutput, GameOutput);

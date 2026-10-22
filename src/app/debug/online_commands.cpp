@@ -532,10 +532,11 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted=session.party_action(id.get<uint32_t>(),action=="invite"?A::Invite:action=="cancel"?A::Cancel:action=="accept"?A::Accept:A::Leave,request.value("gameGeneration",session.read().gameGeneration));mutation=true;
         } else if (command == "online-chat-relation") {
             const auto action=text("action",16);
-            if((action!="ignore" && action!="squelch") || !request.at("enabled").is_boolean()) throw std::invalid_argument("Chat relation requires ignore/squelch and boolean enabled");
+            if((action!="ignore" && action!="squelch" && action!="loot" && action!="hostile") || !request.at("enabled").is_boolean()) throw std::invalid_argument("Relation requires ignore/squelch/loot/hostile and boolean enabled");
             const auto &id=request.at("unitId");
             if(!id.is_number_integer() || id.get<int64_t>()<0 || id.get<uint64_t>()>UINT32_MAX) throw std::invalid_argument("Chat target is outside the native GUID range");
-            accepted=session.chat_relation(id.get<uint32_t>(),action=="squelch",request.at("enabled").get<bool>());mutation=true;
+            const auto relation=action=="loot"?OnlineRelationAction::AllowLoot:action=="hostile"?OnlineRelationAction::Hostile:action=="squelch"?OnlineRelationAction::Squelch:OnlineRelationAction::Ignore;
+            accepted=session.player_relation(id.get<uint32_t>(),relation,request.at("enabled").get<bool>(),session.read().gameGeneration);mutation=true;
         } else if (command == "online-trade-respond") {
             if (!request.at("accept").is_boolean() || !request.at("revision").is_number_unsigned())
                 throw std::invalid_argument("Trade response needs a boolean accept and current unsigned revision");

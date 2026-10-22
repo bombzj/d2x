@@ -19,6 +19,7 @@ struct CharacterRecord {
     EntityId id; // Snapshot owner binding; regenerated on import, not a D2S field.
     std::string name = "Hero", characterClass = "Barbarian";
     std::string nativeSaveSections;
+    bool hardcore{}, hardcoreDead{}; // Native HC/DEAD identity; death survives leaving the game.
     Fixed8 hp, mana, stamina;
     unsigned weaponSet = 0, gold = 0, bankGold = 0;
     std::array<std::set<std::string>, 3> npcIntroductions;

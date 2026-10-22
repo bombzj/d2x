@@ -167,6 +167,8 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
 server::GameDefinition prepareJoiningCharacter(const ClassicData &content, PersistentCharacter saved,
     server::GameSettings settings, RegionId town, uint64_t nextEntity, std::shared_ptr<const ItemCatalog> items) {
     server::GameDefinition result;
+    if (saved.player.hardcoreDead || (saved.player.hardcore && saved.player.hp <= 0)) throw std::runtime_error("Hardcore character is dead");
+    if (saved.player.hardcore != settings.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
     const auto character = std::find_if(content.characters.begin(), content.characters.end(), [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
     saved.difficulty = settings.difficulty; saved.mapSeed = settings.mapSeed; saved.lastRegion = town;
@@ -179,6 +181,8 @@ server::GameDefinition prepareJoiningCharacter(const ClassicData &content, Persi
 }
 WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &content, PersistentCharacter saved, std::shared_ptr<const ItemCatalog> items,std::optional<server::GameSettings> settings) {
     WalkingGameContent result;
+    if (saved.player.hardcoreDead || (saved.player.hardcore && saved.player.hp <= 0)) throw std::runtime_error("Hardcore character is dead");
+    if (settings && settings->hardcore != saved.player.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
     const auto character = std::find_if(content.characters.begin(), content.characters.end(),
         [&](const auto &entry) { return entry.name == saved.player.characterClass; });
     if (character == content.characters.end()) throw std::runtime_error("MPQ lacks the selected character");
@@ -189,6 +193,7 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     saved.lastRegion = RegionId(town.id);
     saved.player.hp = std::max(Fixed8(1), saved.player.hp);
     result.authority.settings = settings.value_or(server::GameSettings{saved.mapSeed,saved.difficulty});
+    result.authority.settings.hardcore = saved.player.hardcore;
     result.authority.character = *character;
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);

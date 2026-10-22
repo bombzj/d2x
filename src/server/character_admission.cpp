@@ -5,6 +5,8 @@
 
 namespace d2x::server {
 PersistentCharacter admitCharacter(PersistentCharacter state, uint64_t nextEntity) {
+    if (state.player.hardcoreDead || (state.player.hardcore && state.player.hp <= 0))
+        throw std::runtime_error("Hardcore character is dead");
     state.inventory.itemOrder=inventoryItemOrder(state.inventory);
     EntityIds ids(nextEntity);
     std::map<EntityId, EntityId> mapping;

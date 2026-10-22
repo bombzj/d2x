@@ -87,6 +87,7 @@ std::span<const SubmessageDescriptor> submessages() {
         {ClientMessage::UiAction, 4, "AgreeTrade", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::UiAction, 7, "ResetTrade", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::UiAction, 8, "OfferTradeGold", MessageDomain::Social, MessageSupport::Implemented},
+        {ClientMessage::PlayerRelation, 1, "AllowCorpseLoot", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::PlayerRelation, 2, "IgnoreChat", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::PlayerRelation, 3, "SquelchChat", MessageDomain::Social, MessageSupport::Implemented},
         {ClientMessage::PlayerRelation, 4, "Hostility", MessageDomain::Social, MessageSupport::Implemented},

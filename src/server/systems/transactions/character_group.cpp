@@ -30,12 +30,45 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
     if(!unitContext && !leadInventory && !leadCharacter) return {DomainStatus::InvalidRequest,{}};
     const auto &lead=unitContext?*unitContext:leadInventory?leadInventory->actor:leadCharacter->actor;
     const auto region=lead.area;const auto generation=lead.areaGeneration,tick=lead.tick;
+    if (leadInventory && leadInventory->lootedCorpse) {
+        std::vector<const InventoryEdit *> transfers;
+        std::map<PlayerId,const PreparedPlayer *> preparedTransfers;
+        for (const auto &plan : plans) if (!plan.auraRecipient) {
+            const auto *edit = std::get_if<InventoryEdit>(&plan.change);
+            if (!edit || !plan.player || edit->lootedCorpse != leadInventory->lootedCorpse || edit->character || edit->playerTrade)
+                return {DomainStatus::InvalidRequest,{}};
+            transfers.push_back(edit);
+            preparedTransfers.emplace(edit->actor.player,&*plan.player);
+        }
+        if (!inventories || transfers.size()!=2) return {DomainStatus::InvalidRequest,{}};
+        const auto *take=transfers[0]->corpses?transfers[1]:transfers[0], *give=transfers[0]->corpses?transfers[0]:transfers[1];
+        const auto &taken=*preparedTransfers.at(take->actor.player), &given=*preparedTransfers.at(give->actor.player);
+        const auto *receiver=ports_.players.find(take->actor.player), *owner=ports_.players.find(give->actor.player);
+        if (!receiver || !owner || !receiver->persistent.player.hardcore || receiver->persistent.player.hp<=0 ||
+            !owner->persistent.player.hardcoreDead || !give->corpses || take->corpses || given.changes.empty() ||
+            size_t(std::count_if(taken.changes.begin(),taken.changes.end(),[](const auto &change){return change.kind==ItemChangeKind::Created;}))!=given.changes.size())
+            return {DomainStatus::InvalidRequest,{}};
+        const auto body=std::find_if(owner->persistent.corpses.begin(),owner->persistent.corpses.end(),
+            [&](const auto &corpse){return corpse.id==*give->lootedCorpse && corpse.region==region;});
+        if (body==owner->persistent.corpses.end()) return {DomainStatus::Stale,{}};
+        for (const auto &change : taken.changes) {
+            if (change.kind!=ItemChangeKind::Created) {
+                if (!receiver->persistent.inventory.items.contains(change.item)) return {DomainStatus::InvalidRequest,{}};
+                continue;
+            }
+            const auto item=owner->persistent.inventory.items.find(change.item);
+            const auto *at=item==owner->persistent.inventory.items.end()?nullptr:std::get_if<ContainerLocation>(&item->second.location);
+            if (!at || at->container!=body->items || change.kind!=ItemChangeKind::Created || receiver->persistent.inventory.items.contains(change.item) ||
+                std::none_of(given.changes.begin(),given.changes.end(),[&](const auto &removed){return removed.item==change.item && removed.kind==ItemChangeKind::Removed;}) ||
+                given.persistent.inventory.items.contains(change.item) || !taken.persistent.inventory.items.contains(change.item)) return {DomainStatus::InvalidRequest,{}};
+        }
+    }
     for(const auto &plan:plans) {
         if(!plan.auraPlayers.empty() || !plan.player || plan.missileBirth || plan.roomRandom || !plan.roomRandomLoans.empty() || plan.gameRandom) return {DomainStatus::InvalidRequest,{}};
         const auto *inventory=std::get_if<InventoryEdit>(&plan.change);
         const auto *character=std::get_if<CharacterEdit>(&plan.change);
         if(!inventory && !character) return {DomainStatus::InvalidRequest,{}};
-        if(inventory && (!inventories || inventory->world || inventory->corpses || inventory->charge || inventory->knockback)) return {DomainStatus::InvalidRequest,{}};
+        if(inventory && (!inventories || inventory->world || (inventory->corpses && !inventory->lootedCorpse) || inventory->charge || inventory->knockback)) return {DomainStatus::InvalidRequest,{}};
         if(character && (character->revival || character->knockback || character->waypoints || character->experienceAward)) return {DomainStatus::InvalidRequest,{}};
         if(inventory) ++inventoryOwners;
         if(inventories && character && !plan.auraRecipient) return {DomainStatus::InvalidRequest,{}};
@@ -49,7 +82,8 @@ DomainResult<> System::commitGroup(std::vector<Plan> plans,std::optional<WorldEd
         if(tick!=actor.tick || (!plan.auraRecipient && (region!=actor.area || generation!=actor.areaGeneration))) return {DomainStatus::InvalidRequest,{}};
         const auto *player=ports_.players.find(actor.player);const auto *area=ports_.areas.find(actor.area);
         if(!player || !player->entered || player->actor!=actor.actor || player->area!=actor.area || !area ||
-            (player->persistent.player.hp<=0 && (!world || inventory || character->player.hp!=player->persistent.player.hp || character->charge || character->transient))) return {DomainStatus::InvalidActor,{}};
+            (player->persistent.player.hp<=0 && !(inventory && inventory->lootedCorpse && player->persistent.player.hardcoreDead) &&
+                (!world || inventory || character->player.hp!=player->persistent.player.hp || character->charge || character->transient))) return {DomainStatus::InvalidActor,{}};
         if(player->inventoryRevision!=expectedInventory || player->characterRevision!=expectedCharacter ||
             plan.expected.size()!=2 || plan.expected[0].entity!=player->actor || plan.expected[0].expected!=player->inventoryRevision ||
             plan.expected[1].entity!=player->actor || plan.expected[1].expected!=player->characterRevision ||

@@ -24,6 +24,8 @@ void issueTicket(NativeRealmService &peer) {
 }
 void NativeRealmService::admitExternal(PersistentCharacter saved, HostedGame &room, uint32_t ticketHash, uint16_t gameId) {
     if (binding || !externalSave || !gameId) throw ProtocolError("Invalid external admission");
+    if (saved.player.hardcoreDead) throw AdmissionFailure(21,"Hardcore character is dead");
+    if (saved.player.hardcore != room.hardcore) throw AdmissionFailure(room.hardcore?19:20,"Character hardcore mode does not match game");
     selectedName = saved.player.name;
     selected = saved;
     gameDifficulty = unsigned(room.settings.difficulty);
@@ -71,7 +73,9 @@ void NativeRealmService::createGame(net::protocol::Reader &in) {
             throw std::runtime_error("A TCP/IP host can expose only one game");
         room.flags = flags; room.capacity = players; room.levelDifference = levelDifference;
         room.creatorLevel = uint8_t(selected->player.level); room.hardcore = bool(find(selectedName).nativeStatus & 4);
+        if (room.hardcore) room.flags |= 0x800;
         room.settings = {selected->mapSeed, int(gameDifficulty), !multiplayerEndpoint && players == 1};
+        room.settings.hardcore = room.hardcore;
         room.settings.nativeGameType=room.tcpIp?2:1;
         eligible(find(selectedName), room);
         PreparedGame prepared;
@@ -134,6 +138,7 @@ void NativeRealmService::listGames(net::protocol::Reader &in) {
     const auto request = in.u16(); in.u32(); in.finish();
     for (const auto &[key, room] : shared.games) {
         (void)key;
+        if (!selected || room.hardcore != selected->player.hardcore) continue;
         Writer out; out.u16(request); out.u32(room.index); out.u8(uint8_t(host.participants(room.handle).size()));
         out.u32(room.flags); out.string(room.name); out.string(room.description); sendRealm(5, std::move(out));
     }

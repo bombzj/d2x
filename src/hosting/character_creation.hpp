@@ -5,6 +5,6 @@
 namespace d2x {
 struct ClassicData;
 bool validCharacterName(std::string_view);
-PersistentCharacter createCharacter(const ClassicData &, std::string name, unsigned characterClass, uint32_t seed);
+PersistentCharacter createCharacter(const ClassicData &, std::string name, unsigned characterClass, uint32_t seed, bool hardcore = false);
 ActorAppearance characterAppearance(const ClassicData &, const PersistentCharacter &);
 } // namespace d2x

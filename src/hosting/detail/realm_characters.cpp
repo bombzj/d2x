@@ -38,8 +38,8 @@ void NativeRealmService::listCharacters(net::protocol::Reader &in) {
 void NativeRealmService::createCharacter(net::protocol::Reader &in) {
     const auto characterClass = in.u16(); in.u16(); const auto flags = in.u16(); const auto name = in.string(15); in.finish();
     try {
-        if (binding || flags != 0x20) throw std::runtime_error("Only non-hardcore expansion saves are supported");
-        store->create(name, characterClass, uint32_t(std::random_device{}())); result(2, 0);
+        if (binding || (flags != 0x20 && flags != 0x24)) throw std::runtime_error("Only non-ladder expansion saves are supported");
+        store->create(name, characterClass, uint32_t(std::random_device{}()), (flags & 4) != 0); result(2, 0);
     } catch (const std::exception &e) { failure = e.what(); result(2, 0x16); }
 }
 void NativeRealmService::deleteCharacter(net::protocol::Reader &in) {
@@ -57,6 +57,7 @@ void NativeRealmService::selectCharacter(net::protocol::Reader &in) {
         if (!entry.playable) throw std::runtime_error(entry.problem);
         auto nextLease = store->acquire(roster.revision, entry.id);
         auto saved = store->load(*nextLease);
+        if (saved.player.hardcoreDead) throw std::runtime_error("Hardcore character is dead");
         lease = std::move(nextLease); selected = std::move(saved); selectedName = name;
         result(7, 0);
     } catch (const std::exception &e) { failure = e.what(); result(7, 0x46); }

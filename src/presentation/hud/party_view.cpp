@@ -53,9 +53,10 @@ PartyView::PartyView(Archives &archives)
         level_ = strings.find("Level");
         leave_ = strings.find("Leave"); inParty_ = strings.find("Yourparty"); otherParty_ = strings.find("Inparty");
         const auto lines=[&](const char *first,const char *second) {return std::string(strings.find(first))+"\n"+std::string(strings.find(second));};
-        relationTips_[0]={lines("strParty17","strParty18"),lines("strParty15","strParty16")};
-        relationTips_[1]={std::string(strings.find("strParty19")),std::string(strings.find("strParty22"))};
-        relationTips_[2]={lines("strParty7","strParty8"),lines("strParty9","strParty10")};
+        relationTips_[0]={lines("strParty11","strParty12"),lines("strParty13","strParty14")};
+        relationTips_[1]={lines("strParty17","strParty18"),lines("strParty15","strParty16")};
+        relationTips_[2]={std::string(strings.find("strParty19")),std::string(strings.find("strParty22"))};
+        relationTips_[3]={lines("strParty7","strParty8"),lines("strParty9","strParty10")};
         townTip_=strings.find("strParty25");levelTip_=lines("StrParty26","StrParty27");
         const DataTable levels(archives.read("data/global/excel/levels.txt"));
         for (size_t i = 0; i < levels.rows().size(); ++i)
@@ -95,11 +96,11 @@ PartyView::PartyView(Archives &archives)
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }
 }
-bool PartyView::update(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town) {
+bool PartyView::update(const OnlineSocialView &social, uint32_t self, uint64_t game, bool town, bool hardcore) {
     const bool changed = self != self_ || game != game_;
     if (changed) { pressed_.reset(); closePressed_ = false; }
     self_ = self; game_ = game;
-    town_=town;relations_=social.relationships;
+    town_=town;hardcore_=hardcore;relations_=social.relationships;
     const auto previousParty = ownParty_;
     players_.clear(); ownParty_.reset(); ownLevel_.reset();
     if (const auto own = social.players.find(self); own != social.players.end()) {
@@ -133,7 +134,7 @@ uint16_t PartyView::flags(uint32_t player) const {
     return entry==players_.end()?0:entry->relationshipFlags.value_or(0);
 }
 Rectangle PartyView::relationBounds(size_t row,OnlineRelationAction action) const {
-    return partyRect(action==OnlineRelationAction::Hostile?92:action==OnlineRelationAction::Ignore?345:365,
+    return partyRect(action==OnlineRelationAction::AllowLoot?325:action==OnlineRelationAction::Hostile?92:action==OnlineRelationAction::Ignore?345:365,
         (action==OnlineRelationAction::Hostile?140:136)+38*float(row),20,20);
 }
 PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
@@ -156,13 +157,14 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
                 CheckCollisionPointRec(rv(input.mouse), buttonBounds(i)))
                 hovered = PartyIntent{true, players_[i].id, game_, action};
     if(inside && ready_) for(size_t i=0;i<players_.size();++i)
-        for(const auto action:{OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+        for(const auto action:{OnlineRelationAction::AllowLoot,OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+            if(action==OnlineRelationAction::AllowLoot && !hardcore_) continue;
             const auto bounds=relationBounds(i,action);
             if(!CheckCollisionPointRec(rv(input.mouse),bounds)) continue;
             const auto &player=players_[i];const bool enabled=(flags(player.id)&onlineRelationMask(action))==0;
             const bool level=ownLevel_ && *ownLevel_>=9 && player.level && *player.level>=9;
             tooltip_=action==OnlineRelationAction::Hostile && !level?levelTip_:action==OnlineRelationAction::Hostile && !town_?townTip_:
-                relationTips_[size_t(uint8_t(action)-2)][enabled?0:1];
+                relationTips_[size_t(uint8_t(action)-1)][enabled?0:1];
             tooltipAt_={bounds.x/classicPanelScale()+10,bounds.y/classicPanelScale()-5};
             if(action!=OnlineRelationAction::Hostile || (town_ && level)) hovered=PartyIntent{true,player.id,game_,{},action,enabled};
         }
@@ -212,9 +214,10 @@ void PartyView::draw(std::string_view ownName) const {
         text(font, p.name, 116, 152 + offset);
         const auto cls = p.characterClass && *p.characterClass < classes_.size() ? classes_[*p.characterClass] : "?";
         text(font, cls.empty() ? "?" : cls, 116, 166 + offset);
-        for(const auto action:{OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+        for(const auto action:{OnlineRelationAction::AllowLoot,OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
+            if(action==OnlineRelationAction::AllowLoot && !hardcore_) continue;
             const bool down=pressed_ && pressed_->player==p.id && pressed_->relation==action;
-            const int base=action==OnlineRelationAction::Hostile?4:action==OnlineRelationAction::Ignore?0:8;
+            const int base=action==OnlineRelationAction::AllowLoot?12:action==OnlineRelationAction::Hostile?4:action==OnlineRelationAction::Ignore?0:8;
             const bool disabled=action==OnlineRelationAction::Hostile && (!town_ || !p.level || *p.level<9 || !ownLevel_ || *ownLevel_<9);
             const int frame=disabled?16+int(down):base+((flags(p.id)&onlineRelationMask(action))?2:0)+int(down);
             const auto bounds=relationBounds(i,action);

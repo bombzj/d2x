@@ -21,8 +21,10 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
     if (!player || !player->entered || player->actor != actor.actor || player->area != actor.area || !area || area->generation != actor.areaGeneration) return {DomainStatus::InvalidActor, {}};
     if (request.action == Action::RecoverCorpse) {
         if (!request.corpse || player->persistent.player.hp <= 0) return {DomainStatus::InvalidActor, {}};
-        const auto &corpses = player->persistent.corpses;
-        const auto found = std::find_if(corpses.begin(), corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse->id && corpse.owner == actor.actor && corpse.region == actor.area; });
+        const auto *owner = corpseOwner(actor, request.corpse->id);
+        if (!owner) return {DomainStatus::InvalidRequest, {}};
+        const auto &corpses = owner->persistent.corpses;
+        const auto found = std::find_if(corpses.begin(), corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse->id && corpse.region == actor.area; });
         if (found == corpses.end() || meleeDistance(player->position, 2, found->position, 2) > 50) return {DomainStatus::InvalidRequest, {}};
         ports_.skills.cancel(actor.player, actor.actor);
         if (meleeDistance(player->position, 2, found->position, 2) <= 8) {
@@ -35,6 +37,7 @@ DomainResult<> System::execute(const ActorContext &actor, const Request &request
         state_.recoveries.insert_or_assign(actor.player, Recovery{actor, found->id, player->locomotionSequence});
         return {DomainStatus::Applied, std::monostate{}};
     }
+    if (player->persistent.player.hardcore) return {DomainStatus::InvalidRequest, {}};
     const auto death = state_.transitions.find(actor.actor);
     if (player->persistent.player.hp > 0 || death == state_.transitions.end() || !death->second.finalized || actor.tick < death->second.ready) return {DomainStatus::Conflict, {}};
     if (!death->second.companionsSettled) {
@@ -79,8 +82,10 @@ void System::advanceRecovery(TickContext tick) {
         const auto *player = ports_.players.find(pending->first);
         const auto *area = ports_.areas.find(request.actor.area);
         if (!player || !player->entered || player->actor != request.actor.actor || player->persistent.player.hp <= 0 || player->area != request.actor.area || !area || area->generation != request.actor.areaGeneration || player->locomotionSequence != request.locomotion) { pending = state_.recoveries.erase(pending); continue; }
-        const auto found = std::find_if(player->persistent.corpses.begin(), player->persistent.corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse; });
-        if (found == player->persistent.corpses.end()) { pending = state_.recoveries.erase(pending); continue; }
+        const auto *owner = corpseOwner(request.actor, request.corpse);
+        if (!owner) { pending = state_.recoveries.erase(pending); continue; }
+        const auto found = std::find_if(owner->persistent.corpses.begin(), owner->persistent.corpses.end(), [&](const auto &corpse) { return corpse.id == request.corpse; });
+        if (found == owner->persistent.corpses.end()) { pending = state_.recoveries.erase(pending); continue; }
         const bool reached = meleeDistance(player->position, 2, found->position, 2) <= 8;
         if (!reached && !player->route.empty()) { ++pending; continue; }
         if (reached) {

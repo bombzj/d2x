@@ -4,11 +4,11 @@ namespace d2x {
 ActorView RemoteUiClients::Impl::Actor::controlledActor() const {
             ActorView v; v.id = o.characterView.actor; v.region = o.mapView.region;
             v.dead = o.characterView.dead; v.position = o.mapView.observer;
+            const auto &online = o.session.read();
+            for (const auto &character : online.characters)
+                if (character.name == online.selectedCharacter) { v.hardcore = character.hardcore; break; }
             if (v.dead) {
-                const auto &online = o.session.read();
                 v.difficulty = online.load.difficulty;
-                for (const auto &character : online.characters)
-                    if (character.name == online.selectedCharacter) { v.hardcore = character.hardcore; break; }
                 if (const auto lost = o.stat("goldlost"); lost && *lost >= 0 && *lost <= UINT32_MAX)
                     v.deathGoldLost = uint32_t(*lost);
             }

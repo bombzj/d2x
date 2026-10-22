@@ -10,6 +10,7 @@ GameInstance::GameInstance(GameDefinition definition)
       entities_(definition.persistent.nextEntityId), random_(initialRandom(settings_.mapSeed)),
       rules_(std::move(definition.rules)),
       systems_(players_, areas_, entities_, random_, events_, rules_, settings_) {
+    if (definition.persistent.player.hardcore != settings_.hardcore) throw std::runtime_error("Character hardcore mode does not match game");
         if(!rules_.monsterRegions) throw std::runtime_error("Missing native monster region rules");
         systems_.population.initializeRegions(*rules_.monsterRegions);
         systems_.objects.initializeControl();
@@ -34,6 +35,7 @@ PlayerId GameInstance::admit(GameDefinition definition) {
     if (players_.all().size() >= 8 || nextPlayer_ == UINT64_MAX)
         throw std::runtime_error("Game participant capacity exhausted");
     if (definition.settings.mapSeed != settings_.mapSeed ||
+        definition.persistent.player.hardcore != settings_.hardcore || definition.settings.hardcore != settings_.hardcore ||
         definition.settings.difficulty != settings_.difficulty || definition.persistent.player.id.value < entities_.cursor() ||
         definition.persistent.nextEntityId <= definition.persistent.player.id.value || definition.persistent.nextEntityId > UINT32_MAX)
         throw std::runtime_error("Invalid participant game settings or identity range");

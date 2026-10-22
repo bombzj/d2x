@@ -170,8 +170,8 @@ bool RealmSession::move_to_unit(OnlineUnitKey target, bool run, std::optional<On
     auto &p = *impl_;
     if (!p.require_navigation(context.value_or(onlineIntentContext(snapshot_)))) return false;
     const auto found = p.view.world.units.find(target);
-    const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
-        p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
+    const bool corpse = target.type == 0 && p.view.load.playerUnitId &&
+        onlineCanLootCorpse(p.view.world, *p.view.load.playerUnitId, target.id);
     const bool tradePeer = target.type == 0 && target.id != p.view.load.playerUnitId &&
         !p.view.world.corpseOwners.contains(target.id) && found != p.view.world.units.end() &&
         found->second.mode != 0 && found->second.mode != 17;
@@ -205,8 +205,8 @@ bool RealmSession::interact_map_unit(OnlineUnitKey target, OnlineObjectIntent in
         p.error(OnlineErrorKind::Input, "Stash and waypoint intents require an assigned object"); return false;
     }
     const auto found = p.view.world.units.find(target);
-    const bool corpse = target.type == 0 && p.view.world.corpseOwners.contains(target.id) &&
-        p.view.world.corpseOwners.at(target.id) == p.view.load.playerUnitId;
+    const bool corpse = target.type == 0 && p.view.load.playerUnitId &&
+        onlineCanLootCorpse(p.view.world, *p.view.load.playerUnitId, target.id);
     const bool tradePeer = target.type == 0 && target.id != p.view.load.playerUnitId &&
         !p.view.world.corpseOwners.contains(target.id) && found != p.view.world.units.end() &&
         found->second.mode != 0 && found->second.mode != 17;

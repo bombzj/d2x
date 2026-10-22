@@ -121,6 +121,16 @@ CommandStatus MovementSystem::execute(const ActorContext &actor, const MovementC
         return apply(player,area,{MovementAction::Move,target->position,command.forceRun,{},MotionTarget{target->actor,0},
             InteractionTarget{target->actor,target->position,target->position,2,2,0.f,false,true,false}});
     }
+    if(command.action==MovementAction::ApproachCorpse) {
+        // Approach has no inventory authority; death::recover separately checks
+        // the owner's directed permission when interacting with the body.
+        for (const auto &[id, owner] : ports.players.all()) for (const auto &corpse : owner.persistent.corpses) {
+            if (corpse.id != command.exit || corpse.region != actor.area) continue;
+            if (!nativeUnitRequestRange(player.position,corpse.position)) return CommandStatus::InvalidRequest;
+            return apply(player,area,{MovementAction::Move,corpse.position,command.forceRun,{},MotionTarget{corpse.id,0},
+                InteractionTarget{corpse.id,corpse.position,corpse.position,2,2,0.f,false,true,false}});
+        }
+    }
     if(command.action==MovementAction::ApproachObject) {
         if(const auto position=ports.travel.portalPosition(actor,command.exit)) {
             if(!nativeUnitRequestRange(player.position,*position)) return CommandStatus::InvalidRequest;

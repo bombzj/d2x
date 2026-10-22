@@ -155,6 +155,7 @@ struct RealmFrontend::Impl {
         load(sky, "main", "FrontEnd/gameselectscreenEXP");
         load(sky, "characters", "CharSelect/characterselectscreenEXP");
         load(sky, "highlight", "CharSelect/charselectbox");
+        load(sky, "deadHighlight", "CharSelect/charselectboxgrey");
         load(units, "realms", "FrontEnd/realmbckg");
         load(units, "join", "bigmenu/joingamebckg");
         for (auto [id, path] : {std::pair{"fireL", "FrontEnd/D2LogoFireLeft"},
@@ -758,9 +759,9 @@ struct RealmFrontend::Impl {
                 selected = i;
                 lastClickedCharacter = i; lastCharacterClick = now; clickedCharacter = true;
             }
-            if (selected == i)
-                tiles("highlight", x, y, 2);
             const auto &c = v.characters[size_t(i)];
+            if (selected == i)
+                tiles(c.hardcore.value_or(false) && c.dead.value_or(false) ? "deadHighlight" : "highlight", x, y, 2);
             portrait(c, x + 36, y + 82);
             label(c.name, x + 76, y + 14, !playable(c, v.allowLadderSelection) ? GRAY
                 : c.hardcore.value_or(false) ? RED : WHITE);

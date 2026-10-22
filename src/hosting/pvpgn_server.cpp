@@ -116,12 +116,14 @@ struct PvpgnServer::Impl {
             auto name = in.string(15), password = in.string(15), description = in.string(31);
             in.string(15); in.string(15); in.string(63); in.finish();
             uint32_t result = 1, id = 0;
-            if (authenticated && !stopping && !ladder && expansion == 1 && !hardcore && difficulty <= 2 &&
+            if (authenticated && !stopping && !ladder && expansion == 1 && hardcore <= 1 && difficulty <= 2 &&
                 !name.empty() && host.games.size() < options.maximumGames && nextGame <= UINT16_MAX && !host.games.contains(folded(name))) {
                 hosting::HostedGame room; room.index = nextGame++; id = room.index;
                 room.name = std::move(name); room.password = std::move(password); room.description = std::move(description);
                 room.capacity = 8; room.levelDifference = 99; room.flags = 4u | uint32_t(difficulty) << 12;
                 room.settings = {uint32_t(std::random_device{}()), int(difficulty), false,1,0,bool(ladder)};
+                room.hardcore = hardcore != 0; room.settings.hardcore = room.hardcore;
+                if (room.hardcore) room.flags |= 0x800;
                 host.games.emplace(folded(room.name), std::move(room)); result = 0;
                 announcedGames.insert(id);
                 log("D2CS game reserved: " + std::to_string(id));
@@ -295,11 +297,11 @@ struct PvpgnServer::Impl {
             const auto marker = registration.u16(), registeredClass = registration.u16();
             net::protocol::Reader summary(std::span<const uint8_t>(peer.portrait).subspan(176));
             const auto experience = summary.u32(), mode = summary.u32(), level = summary.u32(), summaryClass = summary.u32();
-            if (folded(registeredName) != folded(name) || status != 0x21 || marker != 0x82 ||
+            if (folded(registeredName) != folded(name) || (status != 0x21 && status != 0x25) || marker != 0x82 ||
                 registeredClass != characterClass || characterClass > 6 || experience || level != 1 ||
-                (mode & ~1u) != 0x20 || summaryClass != characterClass)
+                (mode & ~1u) != (status & ~1u) || summaryClass != characterClass)
                 throw ProtocolError("Invalid PvPGN new-character registration");
-            saved = createCharacter(*host.content, registeredName, characterClass, uint32_t(std::random_device{}()));
+            saved = createCharacter(*host.content, registeredName, characterClass, uint32_t(std::random_device{}()), (status & 4) != 0);
             bytes = encodeSave(saved, *host.content);
             log("PvPGN new character initialized from MPQ: " + peer.name);
         } else {
@@ -310,10 +312,11 @@ struct PvpgnServer::Impl {
         if (folded(saved.player.name) != folded(name) || header.characterClass != characterClass)
             throw ProtocolError("D2DBS character identity mismatch");
         if(!(header.flags&0x20)) throw hosting::AdmissionFailure(23,"Expansion character required");
-        if((header.flags&0x44)==0x44) throw hosting::AdmissionFailure(21,"Hardcore character is dead");
-        if(header.flags&4) throw hosting::AdmissionFailure(20,"Hardcore character cannot join a softcore game");
+        if((header.flags&0x0C)==0x0C) throw hosting::AdmissionFailure(21,"Hardcore character is dead");
         auto room = std::find_if(host.games.begin(), host.games.end(), [&](const auto &entry) { return entry.second.index == game; });
         if (room == host.games.end()) throw ProtocolError("D2CS game expired during load");
+        if (saved.player.hardcore != room->second.hardcore)
+            throw hosting::AdmissionFailure(room->second.hardcore?19:20,"Character hardcore mode does not match game");
         const auto progression = (header.flags >> 8) & 31;
         if (unsigned(room->second.settings.difficulty) > (progression >= 10 ? 2u : progression >= 5 ? 1u : 0u))
             throw hosting::AdmissionFailure(room->second.settings.difficulty==1?17:18,"Character has not unlocked the requested difficulty");

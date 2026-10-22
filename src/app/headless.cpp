@@ -96,7 +96,8 @@ struct Agent {
         }
         for(auto &bytes:session.take_tcpip_saves()) {
             const auto returned=readD2sHeader(bytes);
-            if(returned.name!=header.name || returned.characterClass!=header.characterClass)
+            if(returned.name!=header.name || returned.characterClass!=header.characterClass || (returned.flags&4)!=(header.flags&4) ||
+                ((header.flags&0x0c)==0x0c && (returned.flags&0x0c)!=0x0c))
                 throw std::runtime_error("TCP/IP returned another character; retained output was not replaced");
             writeFileAtomically(destination,bytes,true); ++saves;
         }
@@ -273,6 +274,8 @@ int runHeadless(const AppOptions &options) {
     const auto connectClient=[&](Agent &agent) {
         OnlineCharacter identity;identity.name=agent.header.name;identity.characterClass=agent.header.characterClass;
         identity.level=agent.header.level;
+        identity.expansion=(agent.header.flags&0x20)!=0; identity.hardcore=(agent.header.flags&4)!=0;
+        identity.dead=(agent.header.flags&8)!=0; identity.ladder=(agent.header.flags&0x40)!=0;
         agent.session.connect_tcpip({address,uint16_t(port)},agent.input,std::move(identity));agent.connected=true;
     };
     const bool serialAdmission=profile.value("serialAdmission",false);

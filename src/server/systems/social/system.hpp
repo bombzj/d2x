@@ -11,7 +11,7 @@
 
 namespace d2x::server::social {
 // Player relationships, party membership and chat routing; no wire encoding.
-enum class Action { Chat, Invite, CancelInvite, Accept, LeaveParty, Hostility, Ignore, Squelch };
+enum class Action { Chat, Invite, CancelInvite, Accept, LeaveParty, Hostility, Ignore, Squelch, AllowLoot };
 struct Request { Action action; std::optional<PlayerId> target; std::string text; std::string receiver{}; bool overhead{}; uint8_t language{}; bool enabled{}; };
 struct Relation { bool hostile{}; uint64_t revision{}; uint16_t flags{}; uint64_t hostileAfter{}; };
 struct Hover { std::string text; uint64_t expires{},revision{}; };

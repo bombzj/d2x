@@ -16,6 +16,8 @@ void PlayerStore::admit(PlayerId id, CharacterDefinition definition,
                         RoomPoint arrival,const spatial::System &spatial,world::System &world) {
     if (!id.value || players_.contains(id))
         throw std::runtime_error("Invalid or duplicate admitted player");
+    if (persistent.player.hardcoreDead || (persistent.player.hardcore && persistent.player.hp <= 0))
+        throw std::runtime_error("Hardcore character is dead");
     PlayerState player;
     for(uint8_t slot=0;slot<8;++slot)
         if(std::none_of(players_.begin(),players_.end(),[&](const auto &entry) {return entry.second.targetNodeIndex==slot;})) {
