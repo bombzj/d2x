@@ -90,7 +90,10 @@ RealmPortraitCatalog::RealmPortraitCatalog(Archives &a) {
                 continue;
             if (gfx.empty())
                 continue;
-            if (std::any_of(codes_.begin(), codes_.end(), [&](const auto &e) { return e.code == gfx; }))
+            // Native initialization searches only the contiguous prefix. Slots
+            // reserved beyond `next` do not join that search until the prefix
+            // reaches them; scanning the whole array shifts later wire IDs.
+            if (std::any_of(codes_.begin(), codes_.begin() + next, [&](const auto &e) { return e.code == gfx; }))
                 continue;
             size_t slot = next;
             while (slot < codes_.size() && (!codes_[slot].code.empty() || (reserved[slot] == 'W' && weapon) ||

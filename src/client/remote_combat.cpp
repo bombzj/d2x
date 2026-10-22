@@ -11,7 +11,7 @@
 namespace d2x {
 RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSession &session, RemoteInventory &inventory)
     : scene_(scene), inventory_(inventory), session_(session) {
-    for (const char *name : {"skills", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems", "weapons", "armor"})
+    for (const char *name : {"skills", "skilldesc", "missiles", "playerclass", "charstats", "monstats", "monstats2", "pettype", "states", "itemstatcost", "setitems", "weapons", "armor"})
         tables_.emplace(name, DataTable(archives.read("data/global/excel/" + std::string(name) + ".txt")));
     for (const auto &[name, column] : {std::pair{"skills", "Id"}, {"itemstatcost", "ID"}}) {
         const auto &table = tables_.at(name);
@@ -62,7 +62,7 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
         const bool innate = std::any_of(innateSkills_.begin(), innateSkills_.end(),
             [&](const auto &entry) { return entry.second.contains(id); });
         if (remoteOnly && tables_.at("skills").value(row, "charclass").empty() && !innate) continue;
-        skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row));
+        skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row, &tables_.at("skilldesc")));
     }
 }
 bool RemoteCombat::reject(std::string reason) { reason_ = std::move(reason); return false; }

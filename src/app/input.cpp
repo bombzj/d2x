@@ -93,7 +93,8 @@ FrameInput pollInput(const Viewport &viewport) {
         const auto plain = !input.control && !input.alt;
         input.inventory = plain && (IsKeyPressed(KEY_I) || IsKeyPressed(KEY_B));
         input.character = plain && IsKeyPressed(KEY_A);
-        input.skillTree = plain && IsKeyPressed(KEY_S);
+        input.skillTree = plain && IsKeyPressed(KEY_T);
+        input.skillPicker = plain && IsKeyPressed(KEY_S);
         input.quests = plain && IsKeyPressed(KEY_Q);
         input.hireling = plain && IsKeyPressed(KEY_O);
         input.party = plain && IsKeyPressed(KEY_P);

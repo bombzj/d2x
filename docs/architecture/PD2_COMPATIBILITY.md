@@ -20,7 +20,7 @@
 | [共用前端](../../src/app/frontend.cpp)／[RealmSession](../../src/network/realm_session.hpp) | 固定会话版本，共用Remote*；PD2不创建EmbeddedRealm、本地角色存储或TCP/IP传档 | 无窗口PD2、建角／删除和房间详情未开放 |
 | [认证](../../src/network/protocol/auth.cpp)／[MPQ资源](../../src/network/protocol/native_auth_resource.cpp) | CN ASCII小写BSHA1、独立Realm摘要、MPQ来源key／owner和0x51证明获当前服务接受；秘密仅内存使用 | 非MPQ来源、未知校验模块、D2X重新注册与native逐字节比对未完成 |
 | [MCP](../../src/network/realm_session_mcp.cpp) | 角色／Ladder、带filter列表和两字节列表扩展；建房追加GS／loot分配字节；创建和加入成功 | 已通过建房后入场／城镇显示及退局；公开Join已获票据并建立GS，完整Join场景组合另验 |
-| [角色原图](../../src/content/character/realm_portrait.cpp) | 已知版本4／10／13；当前CN版本4无装备预览已显示真实职业图像 | 非FF染色、新PD2全部装备组件未完成 |
+| [角色原图](../../src/content/character/realm_portrait.cpp) | 已知版本4／10／13；按原连续前缀规则构造组件编号，支持当前CN无装备及基础装备的职业预览 | 非FF染色、新PD2全部装备组件未完成 |
 | [分帧](../../src/network/protocol/d2gs_stream.cpp)／[副本](../../src/client/remote_world.cpp) | 固定目标双向长度；按角色核对Ladder；允许连接与加载路径；未知CN世界消息明确报错 | 已收到初始同步，全部原包处理器、初始状态和Warden仍未认证；扩展物品storage不降级解释 |
 | [内容准备](../../src/content/classic_data.cpp) | 独立RemoteDisplay缓存与入场前准备，不准备原版宿主技能程序／掉落／合成；职业背包／装备及仓库／方块几何读取目标Inventory表；准备名称／特殊原图及消耗品元数据 | 已接初始装备、10×8背包、腰带、10×15个人仓库和4×4方块原图；全部图形／分辨率及像素对照、交易与公会界面未完成 |
 | [物品](../../src/client/remote_inventory.cpp) | CN完整分支按format选择9／10位stat ID及S12／S13／当前Save列；compact按独立原入口使用当前列；独立0x3E九位增量及严格尾位检查；个人移物／消耗品／存储请求与公会数据隔离 | 初始法杖、药水、卷轴及丢地／拾回已接通；指定消耗品、装书／鉴定／普通堆叠、切组与个人仓库／方块已接受限请求；全部品质／旧格式、复杂双手／增量／存储缓存未认证；公会写入与共享金币仍关闭；个人金币、方块合成、佣兵及本人交易容器已沿确认上下文开放，实测边界见城镇分项 |
@@ -383,7 +383,7 @@ flowchart TD
 | `presentation`、客户端描述／动作 | 动态读取原图、布局和表，按证据增加新表现；UI 继续只读副本、提交命令 |
 | `hosting`、`server`、`persistence` | 本轮不扩展为 PD2 权威服务或 PD2 存档支持；原版存档／自研宿主语义保持独立 |
 
-`sharedClassicData`由RemoteUiClients和RemoteScene共用。OriginalRules保持原版完整准备与严格校验；RemoteDisplay使用独立缓存，不准备原版宿主技能、武器飞弹结算、碰撞规则、掉落、合成、镶孔生成和装备派生。职业背包／装备和个人仓库／方块几何及物品显示元数据单独准备，容器访问仍须服务器确认。PD2飞弹程序与技能运行公式未登记，不从原版生成本地弹体；依赖公式的显示返回未知。装备战斗派生返回不可用，不能因未准备镶孔／套装而显示假定数值。新增程序、镶孔派生、特殊存储权限和页缓存仍需逐项适配；只开放上文列出的个人物品及存储动作，其他物品、战斗和服务继续拒绝。
+`sharedClassicData`由RemoteUiClients和RemoteScene共用。OriginalRules保持原版完整准备与严格校验；RemoteDisplay使用独立缓存，不准备原版宿主技能、武器飞弹结算、碰撞规则、掉落、合成、镶孔生成和装备派生。职业背包／装备和个人仓库／方块几何及物品显示元数据单独准备，容器访问仍须服务器确认。技能树与资格按当前 Skills／SkillDesc 导入，并核对 TXT/BIN 身份、布局、需求及客户端程序编号；隐藏技能保留授予身份但不可分点。场景接只读显示公式和已核实的 CltDo8／100–103／117，未支持的 PD2 程序与缺少输入的公式仍明确暂缓；完整发射、子弹体和提示数值尚未认证，详见[技能证据](../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。装备战斗派生返回不可用，不能因未准备镶孔／套装而显示假定数值。新增程序、镶孔派生、特殊存储权限和页缓存仍需逐项适配；只开放上文列出的个人物品及存储动作，其他物品、战斗和服务继续拒绝。
 
 ### 建议依赖顺序
 

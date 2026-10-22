@@ -1,6 +1,7 @@
 #include "skill_data.hpp"
 #include "skill_eligibility.hpp"
 #include "gameplay/skills/necro_passive_spec.hpp"
+#include "resources/formats.hpp"
 #include <algorithm>
 #include <cctype>
 #include <iterator>
@@ -44,6 +45,80 @@ const ClassSkillTree *SkillCatalog::tree(std::string_view code) const {
         [code](const auto &entry) { return entry.classCode == code; });
     return found == classes.end() ? nullptr : &*found;
 }
+void validateSkillDisplayTables(const DataTable &skills, const DataTable &descriptions,
+                               std::span<const uint8_t> skillRecords, std::span<const uint8_t> descriptionRecords) {
+    // CN retains D2SkillsTxt 0x23C and D2SkillDescTxt 0x120. This validates
+    // identities/layout/requirements and display scalars, not equivalence of
+    // compiled expressions.
+    constexpr size_t skillSize = 0x23C, descriptionSize = 0x120;
+    Reader skillBin(skillRecords), descriptionBin(descriptionRecords);
+    if (skillBin.u32() != skills.rows().size() || descriptionBin.u32() != descriptions.rows().size() ||
+        skillRecords.size() != 4 + skills.rows().size()*skillSize ||
+        descriptionRecords.size() != 4 + descriptions.rows().size()*descriptionSize)
+        throw std::runtime_error("Skill display BIN/TXT layout mismatch");
+    std::map<std::string,size_t,std::less<>> descriptionRows;
+    constexpr std::array fields{"SkillPage","SkillRow","SkillColumn","ListRow","ListPool","IconCel"};
+    for (size_t row = 0; row < descriptions.rows().size(); ++row) {
+        if (!descriptionRows.emplace(normalized(descriptions.value(row,"skilldesc")),row).second)
+            throw std::runtime_error("Duplicate SkillDesc linker identity");
+        descriptionBin.seek(4 + row*descriptionSize);
+        if (descriptionBin.u16() != row) throw std::runtime_error("SkillDesc BIN/TXT identity mismatch");
+        for (const auto field : fields) {
+            const int value = descriptions.number(row,field).value_or(0);
+            if (value < -1 || value > 255 || descriptionBin.u8() != uint8_t(value))
+                throw std::runtime_error("SkillDesc BIN/TXT field mismatch: " + std::string(field));
+        }
+    }
+    std::map<std::string,int,std::less<>> skillIds;
+    for (size_t row = 0; row < skills.rows().size(); ++row)
+        if (const auto id = skills.number(row,"Id"); id && *id >= 0)
+            skillIds.emplace(normalized(skills.value(row,"skill")),*id);
+    for (size_t row = 0; row < skills.rows().size(); ++row) {
+        if (skills.value(row,"charclass").empty()) continue;
+        const size_t start = 4 + row*skillSize;
+        skillBin.seek(start);
+        if (skills.number(row,"Id") != skillBin.u16())
+            throw std::runtime_error("Class skill BIN/TXT identity mismatch");
+        skillBin.seek(start + 0x194);
+        const auto description = descriptionRows.find(normalized(skills.value(row,"skilldesc")));
+        if (description == descriptionRows.end() || description->second != skillBin.u16())
+            throw std::runtime_error("Class skill BIN/TXT description link mismatch");
+        skillBin.seek(start + 0x17E);
+        for (const auto field : {"reqskill1","reqskill2","reqskill3"}) {
+            int expected = -1;
+            if (const auto name = skills.value(row,field); !name.empty()) {
+                const auto prerequisite = skillIds.find(normalized(name));
+                if (prerequisite == skillIds.end())
+                    throw std::runtime_error("Unknown class skill prerequisite: " + std::string(name));
+                expected = prerequisite->second;
+            }
+            if (skillBin.i16() != expected)
+                throw std::runtime_error("Class skill BIN/TXT prerequisite mismatch: " + std::string(field));
+        }
+        for (const auto &[field, offset] : {std::pair{"maxlvl",0x12C}, {"reqlevel",0x174},
+             {"reqstr",0x176}, {"reqdex",0x178}, {"reqint",0x17A}, {"reqvit",0x17C},
+             {"cltstfunc",0xF2}, {"cltdofunc",0xF4}, {"minmana",0x186}}) {
+            skillBin.seek(start + size_t(offset));
+            if (skills.number(row,field).value_or(0) != skillBin.u16())
+                throw std::runtime_error("Class skill BIN/TXT field mismatch: " + std::string(field));
+        }
+        for (const auto &[field, offset] : {std::pair{"startmana",0x184}, {"mana",0x18A}, {"lvlmana",0x18C}}) {
+            skillBin.seek(start + size_t(offset));
+            if (skills.number(row,field).value_or(0) != skillBin.i16())
+                throw std::runtime_error("Class skill BIN/TXT field mismatch: " + std::string(field));
+        }
+        for (const auto &[field, offset] : {std::pair{"manashift",0x188}, {"HitShift",0x1A4}}) {
+            skillBin.seek(start + size_t(offset));
+            if (skills.number(row,field).value_or(0) != skillBin.u8())
+                throw std::runtime_error("Class skill BIN/TXT field mismatch: " + std::string(field));
+        }
+        for (const auto &[field, offset] : {std::pair{"EMin",0x1E0}, {"EMax",0x1E4}}) {
+            skillBin.seek(start + size_t(offset));
+            if (skills.number(row,field).value_or(0) != skillBin.i32())
+                throw std::runtime_error("Class skill BIN/TXT field mismatch: " + std::string(field));
+        }
+    }
+}
 SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descriptions,
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
@@ -86,7 +161,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
     std::map<std::string, size_t, std::less<>> descriptionsByKey;
     for (size_t row = 0; row < descriptions.rows().size(); ++row)
         if (auto key = descriptions.value(row, "skilldesc"); !key.empty())
-            if (!descriptionsByKey.emplace(std::string(key), row).second)
+            if (!descriptionsByKey.emplace(normalized(key), row).second)
                 throw std::runtime_error("Duplicate original SkillDesc key");
     std::map<std::string, int, std::less<>> idsByName;
     for (size_t row = 0; row < skills.rows().size(); ++row) {
@@ -94,24 +169,22 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         if (!catalog.tree(classCode)) continue;
         auto id = skills.number(row, "Id");
         auto name = skills.value(row, "skill");
-        auto description = descriptionsByKey.find(skills.value(row, "skilldesc"));
+        auto description = descriptionsByKey.find(normalized(skills.value(row, "skilldesc")));
         // A missing description cannot supply a visible node or its icon/layout.
         if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end())
             throw std::runtime_error("Incomplete original class skill record");
         const auto source = description->second;
-        // PD2 keeps retired and placeholder class skills outside the visible tree.
-        if (preparation == ContentPreparation::RemoteDisplay &&
-            (descriptions.number(source, "SkillPage").value_or(0) == 0 ||
-             descriptions.number(source, "SkillRow").value_or(0) == 0 ||
-             descriptions.number(source, "SkillColumn").value_or(0) == 0)) continue;
+        // Keep real hidden skills for server/item grants and descriptions. Empty
+        // placeholder rows have no ranks and must not become player choices.
+        if (preparation == ContentPreparation::RemoteDisplay && skills.number(row, "maxlvl").value_or(0) < 1) continue;
         auto required = [&](const DataTable &table, size_t index, const char *field) {
             auto value = table.number(index, field);
             if (!value) throw std::runtime_error("Missing original skill field: " + std::string(field));
             return *value;
         };
         SkillRecord entry;
-        static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row);
+        static_cast<SkillMetadata &>(entry) = loadSkillEligibilityMetadata(skills, row, &descriptions);
         entry.name = name;
         auto display = strings.find(descriptions.value(source, "str name"));
         if (!display.empty()) entry.name = display;
@@ -139,8 +212,10 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         entry.listPool = descriptions.number(source, "ListPool").value_or(0);
         entry.requiredLevel = required(skills, row, "reqlevel");
         entry.maximumRank = required(skills, row, "maxlvl");
-        if (entry.page < 1 || entry.page > 3 || entry.row < 1 || entry.row > 6 ||
-            entry.column < 1 || entry.column > 3 || entry.iconCell < 0 ||
+        const bool hidden = preparation == ContentPreparation::RemoteDisplay &&
+            entry.page >= 0 && entry.page <= 3 && entry.row >= 0 && entry.row <= 6 &&
+            entry.column >= 0 && entry.column <= 3 && (!entry.page || !entry.row || !entry.column);
+        if ((!entry.hasTreeNode() && !hidden) || entry.iconCell < 0 ||
             entry.requiredLevel < 1 || entry.maximumRank < 1)
             throw std::runtime_error("Invalid original class skill layout");
         if (!catalog.skills.emplace(entry.id, std::move(entry)).second ||
@@ -160,7 +235,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto id = skills.number(row, "Id");
         auto name = skills.value(row, "skill");
         if (!requestedCommon.contains(normalized(name))) continue;
-        auto description = descriptionsByKey.find(skills.value(row, "skilldesc"));
+        auto description = descriptionsByKey.find(normalized(skills.value(row, "skilldesc")));
         // A missing description cannot supply a visible node or its icon/layout.
         if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;
         if (!id || *id < 0 || name.empty() || description == descriptionsByKey.end()) continue;
@@ -200,22 +275,29 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         auto id = skills.number(row, "Id");
         if (!id || !catalog.find(*id)) continue;
         auto &entry = catalog.skills.at(*id);
-        if (entry.classCode.empty()) continue;
+        // Retired hidden skills can retain placeholder prerequisites. Only
+        // visible learnable nodes require their prerequisites in the catalog.
+        if (entry.classCode.empty() || !entry.hasTreeNode()) continue;
         for (const int required : entry.prerequisites)
             if (!catalog.find(required) || catalog.skills.at(required).classCode != entry.classCode)
                 throw std::runtime_error("Invalid original skill prerequisite for " + entry.sourceName);
     }
     for (const auto &tree : catalog.classes) {
         int count = 0;
+        std::array<int, 3> pageCounts{};
         std::array<bool, 54> occupied{};
         for (const auto &[id, entry] : catalog.skills) {
-            if (entry.classCode != tree.classCode) continue;
+            if (entry.classCode != tree.classCode || !entry.hasTreeNode()) continue;
             ++count;
+            ++pageCounts[size_t(entry.page - 1)];
             const int slot = (entry.page - 1) * 18 + (entry.row - 1) * 3 + entry.column - 1;
             if (occupied[slot]) throw std::runtime_error("Duplicate original skill tree cell");
             occupied[slot] = true;
         }
-        if ((preparation == ContentPreparation::OriginalRules && count != 30) || count < 1) throw std::runtime_error("MPQ skill tree lacks thirty class skills");
+        if (preparation == ContentPreparation::OriginalRules && count != 30)
+            throw std::runtime_error("MPQ skill tree lacks thirty class skills");
+        if (std::any_of(pageCounts.begin(),pageCounts.end(),[](int nodes) { return nodes == 0; }))
+            throw std::runtime_error("MPQ skill tree has an empty class page: " + tree.classCode);
     }
     return catalog;
 }

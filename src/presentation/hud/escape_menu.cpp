@@ -137,7 +137,7 @@ EscapeMenu::EscapeMenu(Archives &archives)
     binding("CfgCharacter", "A"); binding("CfgInventory", "I", "B"); binding("CfgParty", "P");
     binding("Cfghireling", "O"); binding("CfgMessageLog", "M"); binding("CfgQuestLog", "Q");
     binding("CfgHelp", label("KeyControl") + "+F1"); separator();
-    binding("CfgSkillTree", "S"); binding("CfgSkillPick");
+    binding("CfgSkillTree", "T"); binding("CfgSkillPick", "S");
     for (int slot = 1; slot <= 16; ++slot)
         binding("CfgSkill" + std::to_string(slot), slot <= 8 ? "F" + std::to_string(slot) : "");
     binding("Cfgskillup"); binding("Cfgskilldown"); separator();

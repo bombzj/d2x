@@ -19,5 +19,8 @@ struct SkillMetadata : SkillEquipmentRule {
     // Native paired hand groups, not a per-skill weapon/shield switch.
     bool itemSkill = false; // Scroll/Book SrvDo113; availability requires native quantity.
     std::string animationMode;
+    bool hasTreeNode() const {
+        return page >= 1 && page <= 3 && row >= 1 && row <= 6 && column >= 1 && column <= 3;
+    }
 };
 } // namespace d2x

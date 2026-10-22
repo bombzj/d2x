@@ -26,7 +26,7 @@ RemoteUiClients从已解码且revision一致的原物品副本投影整数 `当�
 
 UI消费的按下归UI直到释放，关闭面板或改变视口不会把同次按住转成世界动作。普通面板热区与世界分流，面板、ESC及失焦不暂停原服／网络；显式测试pause另见[调试入口](../../development/DEBUG_PIPE.md)。
 
-物理键在`app/input.cpp`换算成FrameInput语义位，与调试管道`ui-input`的键名一致：I／A／S开背包／人物面板／技能树，Q任务日志，O佣兵，P组队，M消息日志，Enter聊天，1–4用腰带、B展开腰带，F1–F8选鼠标技能（悬停时为绑定），R走跑切换，Tab自动地图、V换侧、Home居中，F12地图名字、Ctrl+F12截图，Ctrl+F1本面板，按住Alt显示地面物品名，W武器组切换。Ctrl组合保留原有调试键；GetCharPressed提供可打印ASCII及金币数字，非ASCII聊天仍明确拒绝，不据此宣称中文输入完成。方向键、Home／End、Delete编辑输入，PageUp／PageDown及滚轮提供日志翻页／滚动；完整实体键盘、窗口尺寸及组合输入仍待核对。
+物理键在`app/input.cpp`换算成FrameInput语义位，与调试管道`ui-input`的键名一致：I／A／T开背包／人物面板／技能树，S切换右键技能选择菜单，Q任务日志，O佣兵，P组队，M消息日志，Enter聊天，1–4用腰带、B展开腰带，F1–F8选鼠标技能（悬停时为绑定），R走跑切换，Tab自动地图、V换侧、Home居中，F12地图名字、Ctrl+F12截图，Ctrl+F1本面板，按住Alt显示地面物品名，W武器组切换。Ctrl组合保留原有调试键；GetCharPressed提供可打印ASCII及金币数字，非ASCII聊天仍明确拒绝，不据此宣称中文输入完成。方向键、Home／End、Delete编辑输入，PageUp／PageDown及滚轮提供日志翻页／滚动；完整实体键盘、窗口尺寸及组合输入仍待核对。
 
 ## 进入游戏的开门动画
 

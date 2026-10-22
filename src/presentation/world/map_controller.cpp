@@ -16,7 +16,7 @@ void SceneController::prepareTravelInput(const FrameInput &input) {
     if (!input.focused || input.escape || (!ui.travelMenu && !mapClient_.read().travelRequested)) return;
     // D2Client 1.13c AAD50 closes on character input, except Tab. Semantic
     // shortcuts also cover injected input without a physical character event.
-    const bool keyboard = input.inventory || input.character || input.skillTree || input.quests ||
+    const bool keyboard = input.inventory || input.character || input.skillTree || input.skillPicker || input.quests ||
         input.hireling || input.party || input.togglePortraits || input.messageLog || input.chat || input.enter ||
         input.help || input.run || input.weaponSwap || input.expandBelt || input.backspace ||
         !input.entryText.empty() || !input.text.empty() || input.entryUnsupported ||

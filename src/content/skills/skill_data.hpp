@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -58,4 +59,7 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
                               const DataTable &characterStats,
                               const std::vector<CharacterDefinition> &characters,
                               const ClassicStrings &strings, ContentPreparation = ContentPreparation::OriginalRules);
+// Fixed CN BIN layouts; reject stale TXT identities, links, layout and display scalars.
+void validateSkillDisplayTables(const DataTable &skills, const DataTable &descriptions,
+                               std::span<const uint8_t> skillRecords, std::span<const uint8_t> descriptionRecords);
 } // namespace d2x

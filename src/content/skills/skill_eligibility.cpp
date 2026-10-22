@@ -33,11 +33,26 @@ std::vector<int> loadInnateSkillIds(const DataTable &skills, const DataTable &ch
     }
     return result;
 }
-SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row) {
+SkillMetadata loadSkillEligibilityMetadata(const DataTable &table, size_t row, const DataTable *descriptions) {
     SkillMetadata result;
     result.id = table.number(row, "Id").value_or(-1);
     result.classCode = table.value(row, "charclass");
     result.sourceName = table.value(row, "skill");
+    if (descriptions) {
+        const auto key = table.value(row, "skilldesc");
+        for (size_t description = 0; description < descriptions->rows().size(); ++description) {
+            const auto candidate = descriptions->value(description, "skilldesc");
+            if (key.empty() || candidate.size() != key.size() || !std::equal(candidate.begin(), candidate.end(), key.begin(),
+                [](unsigned char a, unsigned char b) { return std::tolower(a) == std::tolower(b); })) continue;
+            result.page = descriptions->number(description, "SkillPage").value_or(0);
+            result.row = descriptions->number(description, "SkillRow").value_or(0);
+            result.column = descriptions->number(description, "SkillColumn").value_or(0);
+            result.iconCell = descriptions->number(description, "IconCel").value_or(-1);
+            result.listRow = descriptions->number(description, "ListRow").value_or(-1);
+            result.listPool = descriptions->number(description, "ListPool").value_or(0);
+            break;
+        }
+    }
     result.requiredLevel = table.number(row, "reqlevel").value_or(0);
     result.maximumRank = table.number(row, "maxlvl").value_or(0);
     constexpr std::array fields{"reqstr", "reqdex", "reqvit", "reqint"};
@@ -92,7 +107,7 @@ SkillEligibility evaluateSkillEligibility(const SkillMetadata &skill, const Skil
     result.pickerEnabled = result.available && !skill.passive && !input.dead && input.equipmentReady.value_or(true);
     result.usableNow = result.pickerEnabled && (!input.town || skill.allowedInTown);
     if (input.mana && input.requiredMana) result.usableNow &= *input.mana >= *input.requiredMana;
-    result.canAllocate = !skill.classCode.empty() && skill.classCode == input.classCode &&
+    result.canAllocate = skill.hasTreeNode() && !skill.classCode.empty() && skill.classCode == input.classCode &&
         input.baseRank && *input.baseRank >= 0 && *input.baseRank < skill.maximumRank &&
         input.skillPoints && *input.skillPoints > 0 && input.level &&
         int64_t(*input.level) >= int64_t(skill.requiredLevel) + *input.baseRank;

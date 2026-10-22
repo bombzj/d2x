@@ -1,6 +1,6 @@
 # PD2 CN Normal 样本：DLL 与位流证据
 
-更新：2026-10-21。目标是[兼容设计](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)固定 SHA-256 的独立副本，配置为 Normal／bnet／TCP。同份核心同时含客户端和D2Game服务端补丁，按执行路径区分；账号大厅章节补充同样本的实际收发与界面证据。据用户转述GM，线上使用本地这批模块，后续以此为工作前提继续追查；尚未逐项比对服务端实际加载清单／配置与摘要，全部消息和持续游戏兼容仍未认证。不能推广到 `.ss`、其他赛季或其他 CN 发布。
+更新：2026-10-22。目标是[兼容设计](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)固定 SHA-256 的独立副本，配置为 Normal／bnet／TCP。同份核心同时含客户端和D2Game服务端补丁，按执行路径区分；账号大厅章节补充同样本的实际收发与界面证据。据用户转述GM，线上使用本地这批模块，后续以此为工作前提继续追查；尚未逐项比对服务端实际加载清单／配置与摘要，全部消息和持续游戏兼容仍未认证。不能推广到 `.ss`、其他赛季或其他 CN 发布。
 
 地址统一使用所属模块的 RVA；ProjectDiablo.dll／BH.dll 的静态 ImageBase 均为 `0x10000000`，不能把反编译器里的 VA 直接当 RVA。本文描述恢复出的条件与字段，不分发核心源码。D2MOO 用于理解原调用链；其旧版本函数序号不直接套到实际 1.13c。
 
@@ -545,7 +545,30 @@ BH摘要为`ee619246b8b63ea0cb3a5e84da5e63674867a87cd81cc7dbbf2d6ba8b0dd6a8c`，
 
 ## 远端显示准备的当前边界
 
-CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoid及若干旧武器掌握的SkillRow为0，占位技能的页／行／列为0；Blade Dance（ID380）引用的`blade dance`在当前SkillDesc.txt中不存在。RemoteDisplay不为这些记录生成节点或图标，原版30节点校验保留；没有认证全部PD2技能树和描述。怪物MonWeaken引用的`Amplify Damage`也不等于本表中的MonAmplifyDamage，不能用大小写归一化修复这个不同名字。RemoteCombat准备玩家及CharStats通用动作资格；选择、快捷键、施放和单点学习已开放，不再按技能ID设置白名单。仍保留MPQ资格、实际等级／充能来源、目标、上下文和频率校验；属性加点暂缓。
+CN Skills保留每职业33条charclass记录，但并非33个可见节点：Avoid及若干旧武器掌握的SkillRow为0，占位技能的页／行／列为0。Blade Dance（ID380）的`blade dance`按大小写无关链接能找到`Blade Dance`，其页3／行0／列0表示隐藏，而非描述缺失。RemoteDisplay保留有等级的隐藏技能作为服务器／物品授予身份，不生成树节点、不允许分点；无等级占位行略过。原版30节点校验保留。怪物MonWeaken引用的`Amplify Damage`也不等于本表中的MonAmplifyDamage，不能用大小写归一化修复这个不同名字。RemoteCombat准备玩家及CharStats通用动作资格；选择、快捷键、施放和单点学习已开放，不再按技能ID设置白名单。仍保留MPQ资格、实际等级／充能来源、目标、上下文和频率校验；属性加点暂缓。
+
+### 角色技能树与客户端程序
+
+2026-10-22 对当前 pd2data 的 Skills（610 条／BIN 步长 0x23C）、SkillDesc（262 条／0x120）进行只读解析。职业技能的 ID、描述及三项前置技能链接、maxlvl、reqlevel、四项属性需求、CltSt／CltDo 及描述的页／行／列／ListRow／ListPool／IconCel 与 BIN 对应字段一致。前置链接位于0x17E／0x180／0x182，为有符号 WORD；180条非空引用均对应，空引用为-1。Skills 偏移分别为 0、0x194、0x12C、0x174–0x17C、0xF2／0xF4；SkillDesc 的链接序号为 WORD 0，六项布局为字节 2–7。ListRow 的 -1 对应 0xFF。同时对上职业技能的法力字段（0x184／0x186／0x188／0x18A／0x18C）、HitShift（0x1A4）与 EMin／EMax（0x1E0／0x1E4），保留起手／基础／递增法力的有符号 WORD。运行时在 RemoteDisplay 导入前执行相同字段校验；不据此声称 TXT 公式与编译表达式已经全部逐条对齐。女巫三系截图及两个新增技能的英文 TBL／提示对应见[技能描述](../gameplay/skills/DESCRIPTIONS.md#pd2-cn-的技能树与显示边界)。
+
+按页／行／列有效且 maxlvl 大于零统计，可见节点为 ama 29、bar 29、ass 31、dru 31、nec／pal／sor 各33。Avoid、Sword／Mace／Spear Mastery、Shattering Arrow 和 Blade Dance 为有等级的隐藏记录。原 DC6 图标仍按当前包读取，布局与技能参数不硬编码为原版30节点。
+
+以下 RVA 的旧版／更新版分别对应 SHA-256 `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`／`17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`。旧版表写入入口为核心 0x3681A0，目标 D2Client CltDo 表 RVA 0xDEA48，槽位按编号乘4定位；见[程序表](pd2-core/PROGRAM_TABLES.md)。本批同时读更新版对应函数反汇编，未执行核心 DLL。
+
+| CltDo | 旧版／更新版 RVA | 已恢复的输入与显示行为 |
+| --- | --- | --- |
+| 8 | 0x3A65C0／0x3A8A80 | Mind Blast 在目标处生成 CltMissileA，子弹体取 B；基础半径 AuraRangeCalc，加本单位 AuraState 列表中 `max(AuraStat1,1)-1` 乘 Calc1。缺少状态／属性事实时暂缓，不借累计属性猜充能 |
+| 100 | 0x3A6C30／0x3A90F0 | Combustion 以本人为圆心，A 为弹体、Calc2 为环形数量。堆栈副本中的字段对应 Skills +0x13C，不能误读为 Calc1 |
+| 101 | 0x3A6CE0／0x3A91A0 | Desecrate 在单位目标或瞄准位置以 A 请求8条方向；B、C 均有效时依次在同处生成两者 |
+| 102 | 0x3A6E10／0x3A92D0 | Poison Dagger 必须有单位目标，在该位置以 A 请求6条方向 |
+| 103 | 0x3A6EA0／0x3A9360 | 空 CltDo 返回成功；不从这个入口另造光环弹体，继续消费服务器状态 |
+| 117 | 0x3A7F60／0x3AA420 | Lightning Bolt／Fury 取正 ID 的 CltMissile，空缺时取 A，经原 A1540 目标发射链；保留非零目标坐标及100子格距离门槛 |
+
+环形 helper 旧版 0x369AF0／更新版 0x36BBC0 使用64项原整数方向，数量为0或大于64时取64，否则步进为整数 `64/count`，不是浮点均分圆周。因此请求6实际生成7条。数量、弹体与半径继续来自当前 MPQ／公式；显示公式走公共只读目录，不准备自研宿主的 PD2 规则。以上发射入口尚未完成全部施放／像素验收，弹体自身的 CltDo／CltHit 仍可能未支持，不能将发射入口接入等同于完整技能完成。
+
+旧版另定位到 CltDo83／94、97／98、104–116、118／119 的替换，其中包含跳跃、双投、搜尸、充能、喷流、冲锋和分裂投掷。专用生命周期、目标选择、随机状态与子弹体程序未全部恢复；未接入编号明确记录表现限制，不落回同号原版程序。Fire Claws／Firestorm 的 helper 0x36B9A0 将帧数限至77，消费原单位种子并设 ChargedBolt 路径；没有该种子事实时不自行拟造轨迹。
+
+技能伤害显示还存在独立修改：旧核心 0x39D5F0→0x3A9C30 从当前 SkillDesc +0x18（ddam calc1）求值后加到原伤害；0x39D550→0x3A9B80 修改武器伤害百分比及支配组合。尚未接入这两条完整输入链，不能因当前描述行编号都在1–75范围内而声称全部提示数值一致。1级角色的树页与未学提示可核对布局／文案；这些截图不能替代高等级施放、装备及伤害公式的证据。
 
 远端显示不准备原版武器／投掷药剂宿主程序，不把负stash坐标截成0。职业背包／装备几何已单独从目标Inventory表准备：七职业800px行均为invTop=32、invBottom=492、gridX/Y=10/8、gridLeft/Top=415/249、格距29；相对320宽面板的格子起点为(15,217)。原版仍保留既有布局校验。扩展容器及受限操作的当前范围由兼容设计维护。
 

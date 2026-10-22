@@ -12,6 +12,7 @@ struct FrameInput {
     bool insideViewport = false;
     bool leftPressed = false, leftHeld = false, leftReleased = false, rightHeld = false, rightPressed = false, rightReleased = false;
     bool inventory = false, character = false, skillTree = false, quests = false, shift = false, control = false, enter = false, focused = true;
+    bool skillPicker = false;
     int quantityDelta = 0, pageDelta = 0, menuDelta = 0;
     std::string text;
     std::string entryText;

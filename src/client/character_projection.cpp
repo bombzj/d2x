@@ -129,7 +129,8 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         const int effective = effectiveRank(id);
         if (entry.classCode != view.classCode && !entry.classCode.empty() && effective <= 0) continue;
         CharacterSkillView skill;
-        skill.id = id; skill.page = entry.page; skill.row = entry.row; skill.column = entry.column;
+        skill.id = id; skill.page = entry.hasTreeNode() ? entry.page : 0;
+        skill.row = entry.row; skill.column = entry.column;
         skill.listRow = entry.listRow; skill.listPool = entry.listPool; skill.iconCell = entry.iconCell;
         skill.classCode = entry.classCode; skill.name = entry.name;
         skill.baseRankKnown = baseKnown(id); skill.effectiveRankKnown = effectiveKnown(id);
@@ -242,7 +243,12 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
             stat(input, "level") && stat(input, "newskills");
         for (size_t i = 0; i < entry.requiredAttributes.size(); ++i)
             if (entry.requiredAttributes[i] > 0 && !eligibilityInput.attributes[i]) treeRequirementsKnown = false;
-        skill.treeTooltipUnavailable = treeRequirementsKnown && !skill.canAllocate && !(noSkillPoints && effective > 0);
+        // A known level failure is sufficient even when the server has not
+        // reported the remaining point count; that count stays unknown.
+        const bool levelRequirementFailed = skill.baseRankKnown && eligibilityInput.level &&
+            int64_t(*eligibilityInput.level) < int64_t(entry.requiredLevel) + skill.baseRank;
+        skill.treeTooltipUnavailable = (treeRequirementsKnown || levelRequirementFailed) &&
+            !skill.canAllocate && !(noSkillPoints && effective > 0);
         if (data.skills.descriptions) {
             // Native normal tree 34056-3409C prepends StrSkill119 when no
             // class skill has been learned. It precedes the item-grant notice

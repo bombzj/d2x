@@ -94,9 +94,9 @@ void SceneView::drawHelp() const {
     painter_.centered("Diablo II online controls", 178, 12);
     const char *lines[] = {"Left click / hold          Move / Attack / Talk / Pick up",
                            "Hold Alt                   Show ground item names",
-                           "I / A / S                  Inventory / Character / Skills",
+                           "I / A / T                  Inventory / Character / Skills",
                            "Arrow keys                 Pan automap",
-                           "Right click                Cast; click slot to choose",
+                           "Right click / S            Cast / Open skill selection",
                            "1 through 4 / ~            Drink belt potion / Expand belt",
                            "Hover skill, F1-F8         Bind selected mouse skill",
                            "F1 through F8              Select bound mouse skill",

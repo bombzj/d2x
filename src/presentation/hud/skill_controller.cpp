@@ -17,6 +17,18 @@ bool SceneController::handleSkills(const FrameInput &input) {
             return true;
         skillGesture_ = false;
     }
+    if (input.skillPicker) {
+        if (ui.skillPicker) ui.skillPicker.reset();
+        else {
+            ui.skillPicker = true; // Keyboard shortcut opens the right-hand skills.
+            ui.skillTreeOpen = false;
+            ui.inventory.beltExpanded = false;
+            actorClient_.stopMoving();
+        }
+        cancelWorldGesture();
+        releaseAfterLoad_ = input.leftHeld || input.rightHeld;
+        return true;
+    }
     // In the open picker, F1-F8 bind the hovered icon. Otherwise they select
     // the saved skill for its original mouse button without casting it.
     const auto &hotkeys = view_.characterView().skillHotkeys;

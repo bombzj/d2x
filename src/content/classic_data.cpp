@@ -444,6 +444,9 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
                 data.hirelingStrings.emplace(key, value);
                 data.hirelingNameIds.emplace(key, strings.index(key));
             }
+        if (!originalRules)
+            validateSkillDisplayTables(data.tables.at("skills"), data.tables.at("skilldesc"),
+                archives.read("data/global/excel/skills.bin"), archives.read("data/global/excel/skilldesc.bin"));
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
                                        data.tables.at("charstats"), data.characters, strings, preparation);
         data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings,

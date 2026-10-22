@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "content/skills/description_values.hpp"
 
 namespace d2x {
 
@@ -129,13 +130,52 @@ bool RemoteScene::Impl::channelSkill(int id) const {
 }
 
 std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count) const {
-    if (!monsterText->nativeFormulas) return {};
     std::map<int,int> base,effective;StatSnapshot observed;StatList actor;
     if(const auto unit=world().units.find(owner);unit!=world().units.end()) {
         for(const auto &[id,rank]:unit->second.baseSkills) base.emplace(id,rank);
         for(const auto &[id,rank]:unit->second.skills) effective.emplace(id,rank);
     }
     effective.insert_or_assign(skill,level);
+    if (!monsterText->nativeFormulas) {
+        // Remote display uses the current MPQ expressions without preparing
+        // self-hosted execution rules or inventing unobserved unit attributes.
+        if (!monsterText->skills.descriptions) return {};
+        const auto &catalog = *monsterText->skills.descriptions;
+        const auto source = catalog.skills.find(skill);
+        if (source == catalog.skills.end()) return {};
+        const auto formula = source->second.formulas.find(field);
+        if (formula == source->second.formulas.end()) return {};
+        std::map<std::string,double,std::less<>> stats;
+        bool baseComplete = false;
+        if (const auto unit = world().units.find(owner); unit != world().units.end()) {
+            baseComplete = unit->second.baseSkillsAssigned;
+            for (const auto &definition : monsterText->itemStats) {
+                if (!definition.id || *definition.id < 0 || *definition.id > UINT8_MAX ||
+                    definition.valueShift < 0 || definition.valueShift > 15) continue;
+                std::optional<double> observedValue;
+                const auto id = uint8_t(*definition.id);
+                if (owner.type == 0 && playerId && owner.id == *playerId) {
+                    if (const auto value = world().playerAttributes.find(id); value != world().playerAttributes.end()) {
+                        const bool signedValue = monsterText->tables.at("itemstatcost").number(definition.row,"Signed").value_or(0) != 0;
+                        observedValue = signedValue ? double(int32_t(value->second)) : double(value->second);
+                    }
+                } else if (const auto value = unit->second.attributes.find(id); value != unit->second.attributes.end())
+                    observedValue = double(value->second);
+                if (observedValue)
+                    stats.emplace(definition.name, *observedValue / double(1 << definition.valueShift));
+            }
+        }
+        if (count > 0) {
+            const auto stat = source->second.reference("aurastat1");
+            const auto shift = catalog.statShifts.find(stat);
+            if (shift != catalog.statShifts.end() && shift->second >= 0 && shift->second <= 15)
+                stats.insert_or_assign(std::string(stat), double(count) / double(1 << shift->second));
+        }
+        SkillDescriptionInput input{skill,level,base,effective,stats};
+        input.baseRanksComplete = baseComplete;
+        SkillDescriptionValues values(catalog,input,source->second);
+        return values.formula(formula->second);
+    }
     const auto &catalog=*monsterText->nativeFormulas;SkillFormulaInput input{base,effective};
     input.statRules=monsterText->nativeStats.get();input.stats=&observed;input.actor=&actor;
     input.referenceRanks=prepareSkillFormulaRanks(base,effective,{}, {},catalog.maximumSkillRank);

@@ -11,7 +11,8 @@
 namespace d2x {
 class DataTable;
 // One MPQ importer for UI metadata and protocol eligibility. No execution data.
-SkillMetadata loadSkillEligibilityMetadata(const DataTable &, std::size_t row);
+SkillMetadata loadSkillEligibilityMetadata(const DataTable &, std::size_t row,
+                                          const DataTable *descriptions = nullptr);
 // Attack plus CharStats.Skill 1..10; native 0x94 may omit these actions.
 std::vector<int> loadInnateSkillIds(const DataTable &skills, const DataTable &characterStats, std::size_t row);
 // Prepared current hand facts. An absent optional is unknown; present=false

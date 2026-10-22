@@ -379,6 +379,74 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
         }
         const int function = skills.number(row->second, "cltdofunc").value_or(0);
+        if (v.protocolProfile == "pd2-cn-normal-20261020") {
+            // Fixed CN CltDo table: these callbacks replace native code, not
+            // skill identities. Details and both DLL versions are in PD2_CN_DLL_ANALYSIS.
+            if (function == 103) return; // Aura visuals arrive through unit states.
+            if (function == 100 || function == 101 || function == 102 || function == 117) {
+                if (!castAnimation || castAnimation->releaseTime < 0) return;
+                auto target = event.point;
+                if (event.target) {
+                    if (const auto position = targetPosition(*event.target)) target = position;
+                    else if (function == 102) return;
+                }
+                if ((function == 101 || function == 102 || function == 117) && !target) return;
+                if (function == 102 && !event.target) return;
+                const int level = std::max(1, int(event.level.value_or(1)));
+                const Vec origin = presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+                const Vec destination = target ? Vec{float(target->x)+.5f,float(target->y)+.5f} : origin;
+                const auto missileFor = [&](std::string_view field) {
+                    return missileNames.find(skills.value(row->second,field));
+                };
+                auto missile = missileFor(function == 117 ? "cltmissile" : "cltmissilea");
+                if (function == 117 && (missile == missileNames.end() || missiles.number(missile->second,"Id").value_or(0) <= 0))
+                    missile = missileFor("cltmissilea");
+                if (missile == missileNames.end()) {
+                    effectLimitations.insert("PD2 skill missile missing: " + std::to_string(*event.skill));
+                    return;
+                }
+                if (function == 117) {
+                    if (missiles.number(missile->second,"Id").value_or(0) <= 0 || !target->x || !target->y) return;
+                    const int dx = nativeSubtract(int(target->x),int(actor.position->x));
+                    const int dy = nativeSubtract(int(target->y),int(actor.position->y));
+                    if (nativeAdd(nativeMultiply(dx,dx),nativeMultiply(dy,dy)) > 10000) return;
+                }
+                const auto count = function == 100 ? skillCalculation(*event.skill,level,"calc2",event.source) :
+                    std::optional<int32_t>{function == 101 ? 8 : 6};
+                if (function != 117 && (!count || *count < 0)) {
+                    effectLimitations.insert("PD2 skill ring count unresolved: " + std::to_string(*event.skill));
+                    return;
+                }
+                shared.cancelPendingClientMissiles(effectOwner(event.source));
+                missileCastRevisions[event.source] = source->second.actionRevision;
+                const float release = castAnimation->releaseTime-age;
+                if (function == 117) {
+                    launch(missile->second,origin,destination,level,release,{},event.source);
+                } else {
+                    // CN helper 369AF0 / 36BBC0 advances by integer 64/count.
+                    // Six requests therefore emit seven rays; do not resample
+                    // a floating-point six-sided circle or round the step.
+                    const int rays = *count == 0 || *count > 64 ? 64 : *count;
+                    const Vec center = function == 100 ? origin : destination;
+                    for (int direction = 0; direction < 64; direction += 64/rays)
+                        launch(missile->second,center,center+missileRingDirection(direction),level,release,{},event.source,
+                            -1,0,ClientMissileSource::Program);
+                    if (function == 101) {
+                        const auto second = missileFor("cltmissileb"), third = missileFor("cltmissilec");
+                        if (second != missileNames.end() && third != missileNames.end()) {
+                            launch(second->second,center,center,level,release,{},event.source);
+                            launch(third->second,center,center,level,release,{},event.source);
+                        } else effectLimitations.insert("PD2 skill secondary missile missing: " + std::to_string(*event.skill));
+                    }
+                }
+                return;
+            }
+            if (function == 83 || function == 94 || function == 97 || function == 98 ||
+                (function >= 104 && function <= 119)) {
+                effectLimitations.insert("PD2 skill client program unavailable: " + std::to_string(function));
+                return;
+            }
+        }
         if(function==73) {
             // Clt73 samples the caster's position at its action callback,
             // after any authoritative placement/correction has arrived.
@@ -462,7 +530,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // Retail CltDo28 creates its center at the aimed point (RVA 73DF0
         // -> A1540 -> AFF10), including ClientSend missiles. The flag
         // permits native visibility synchronization; it is not a cast gate.
-        if (function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
+        const bool pd2MindBlast = function == 8 && v.protocolProfile == "pd2-cn-normal-20261020";
+        if (!pd2MindBlast && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
         auto target = event.point;
         if (!target && event.target) target=targetPosition(*event.target);
         if (!target && (function == 25 || function==55)) target = actor.position; // Nova has no required target.
@@ -577,6 +646,32 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             const auto child=missileNames.find(skills.value(row->second,"cltmissileb"));
             initialization.streamMissile=child==missileNames.end()?-1:missiles.number(child->second,"Id").value_or(-1);
             initialization.streamRange=skillCalculation(*event.skill,level,"aurarangecalc",event.source);
+            if (pd2MindBlast) {
+                // CN CltDo8 extends the base radius by the observed charge
+                // state's AuraStat1, rather than the actor's cumulative stat.
+                const auto snapshot = combat.states().find(event.source);
+                if (snapshot == combat.states().end() || !snapshot->second.decoded || !initialization.streamRange) {
+                    effectLimitations.insert("PD2 skill radius/state unresolved: " + std::to_string(*event.skill));
+                    return;
+                }
+                for (const auto &[state, record] : snapshot->second.states) {
+                    (void)state;
+                    if (record.name != skills.value(row->second,"aurastate")) continue;
+                    const auto stat = std::find_if(monsterText->itemStats.begin(),monsterText->itemStats.end(),
+                        [&](const auto &entry) { return entry.name == skills.value(row->second,"aurastat1"); });
+                    const auto increment = skillCalculation(*event.skill,level,"calc1",event.source);
+                    if (stat == monsterText->itemStats.end() || !stat->id || !increment) {
+                        effectLimitations.insert("PD2 skill charge radius unresolved: " + std::to_string(*event.skill));
+                        return;
+                    }
+                    int count = 0;
+                    for (const auto &value : record.stats)
+                        if (value.id == *stat->id && !value.parameter) count = int(value.value);
+                    initialization.streamRange = nativeAdd(*initialization.streamRange,
+                        nativeMultiply(std::max(count,1)-1,*increment));
+                    break;
+                }
+            }
             launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source,
                 -1,0,ClientMissileSource::Cast,{},0,initialization);
         }
