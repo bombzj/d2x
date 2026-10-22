@@ -126,6 +126,8 @@ struct RemoteUiClients::Impl {
         bool navigateStorage(StorageNavigation) override;
         bool selectStorageMaterials(bool) override;
         bool withdrawStorageMaterial(std::string_view, unsigned, bool) override;
+        bool storeMaterialInCube(std::string_view, unsigned) override;
+        bool upgradeStorageMaterial(std::string_view, unsigned) override;
         bool depositStorageMaterial(ItemHandle) override;
         std::optional<Cell> beltSpace(std::string_view code) const override;
     } inventory{*this};

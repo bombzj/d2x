@@ -188,6 +188,15 @@ std::optional<unsigned> RemoteUiClients::Impl::itemQuote(uint32_t id, OnlineItem
         } else if (world.shopSource != world.npcRequested || native.ownerType != 1 ||
             native.owner != world.shopSource || native.action != 11 || native.mode != 0) return {};
         if (!repair && (native.flags & 0x20000u)) return 1;
+        // Core 0x383060: Gheed in levels 137..210 uses a fixed million
+        // with the same clamped reduced-price stat. Town gambling falls through.
+        if (detail.gamble && online.remoteLobbyOnly && npcIdentity() == "gheed" &&
+            scene && scene->area && *scene->area >= 137 && *scene->area <= 210) {
+            const auto reduced = stat("item_reducedprices");
+            const auto known = reduced ? std::optional<int>(int(*reduced)) : knownEquipmentStat("item_reducedprices", characterView.level);
+            if (!known) return {};
+            return unsigned(1000000 - 1000000 * int64_t(std::clamp(*known, 0, 99)) / 100);
+        }
         if (detail.gamble && !detail.format) return itemGamblePrice(data, native.code, 0, detail.format, 0);
         std::optional<int64_t> bodyCost;
         std::vector<int> factors;
@@ -218,8 +227,11 @@ std::optional<unsigned> RemoteUiClients::Impl::itemQuote(uint32_t id, OnlineItem
         if (definition->family != ItemFamily::Misc && (!detail.maxDurability || (*detail.maxDurability && !detail.durability))) return {};
         const auto item = completeItem(native, detail, SocketLocation{{}, 0});
         if (!item) return {};
-        return itemTradePrice(data, *item, vendor->second, repair, factors, reduce, sale, *online.load.difficulty, detail.autoAffix, bodyCost, repairFactors,
+        const auto price = itemTradePrice(data, *item, vendor->second, repair, factors, reduce, sale, *online.load.difficulty, detail.autoAffix, bodyCost, repairFactors,
             definition->bookCapacity ? std::optional<unsigned>(detail.book) : std::nullopt);
+        // Current core RVA 0x2E8140 (old 0x2E6490): cap each repair
+        // after quest and equipment discounts. Original quotes retain no cap.
+        return price && online.remoteLobbyOnly && repair ? std::min(*price, 250000u) : price;
     }
 InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
             const auto *definition=data.items.find(native.code);
@@ -463,7 +475,7 @@ void RemoteUiClients::Impl::projectInventory() {
             {owned.equipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1},{owned.beltEquipment,ContainerKind::BeltEquipment,1,1},
             {owned.cursor,ContainerKind::Cursor,1,1},{owned.hirelingEquipment,ContainerKind::Equipment,int(EquipmentSlot::Count),1}})
             v.containerViews.emplace(id,InventoryContainerView{id,kind,columns,rows,
-                v.readOnly || (v.personalItemActionsOnly && id == owned.hirelingEquipment)});
+                v.readOnly});
         auto layout=[](const auto &x){return InventoryLayoutView{x.columns,x.rows,x.left,x.top,x.cellSize,x.expansion};};
         if (const auto playerLayout = data.playerInventoryLayouts.find(characterView.classCode);
             playerLayout != data.playerInventoryLayouts.end()) {
@@ -486,7 +498,17 @@ void RemoteUiClients::Impl::projectInventory() {
             const auto count = key ? w.cnMaterialCounts.find(*key) : w.cnMaterialCounts.end();
             v.storageMaterials.push_back({std::string(slot.code), definition->name, definition->icon,
                 slot.x, slot.y, definition->width, definition->height,
-                count == w.cnMaterialCounts.end() ? 0 : count->second});
+                count == w.cnMaterialCounts.end() ? 0 : count->second, {}, 0, false});
+            const auto lower = onlineCnMaterialUpgradeSource(slot.code);
+            const auto source = lower ? lower : onlineCnMaterialUpgradeResult(slot.code) ? std::optional<std::string>(std::string(slot.code)) : std::nullopt;
+            if (source) {
+                const auto sourceKey = onlineCnMaterialKey(*source);
+                if (sourceKey && w.cnMaterialCounts.contains(*sourceKey)) {
+                    v.storageMaterials.back().upgradeSource = *source;
+                    v.storageMaterials.back().upgradeQuantity = w.cnMaterialCounts.at(*sourceKey);
+                    v.storageMaterials.back().upgradeOnLeft = lower.has_value();
+                }
+            }
         }
         v.storagePagingAvailable = onlinePd2ItemAction(OnlineItemAction::StoragePage) && w.stashInitialized &&
             !w.requestedStashPage && !(w.cnStashPlayerFlags & 8);
@@ -540,7 +562,8 @@ void RemoteUiClients::Impl::projectInventory() {
             const auto &di=d->second; ItemLocation location;
             if(ground && scene && scene->origin) location=GroundLocation{mapView.region,
                 {float(int(native.groundX)-scene->origin->x),float(int(native.groundY)-scene->origin->y)}};
-            else if(mercenary && (native.body==1 || native.body==3 || native.body==4 || native.body==5)) location=ContainerLocation{owned.hirelingEquipment,{int(native.body)-1,0}};
+            else if(mercenary && (native.body==1 || native.body==3 || native.body==4 || native.body==5 ||
+                (online.remoteLobbyOnly && native.body>=8 && native.body<=10))) location=ContainerLocation{owned.hirelingEquipment,{int(native.body)-1,0}};
             else if(native.mode==4) location=ContainerLocation{owned.cursor,{}};
             else if(native.mode==2) location=ContainerLocation{owned.belt,{native.x%4,native.x/4}};
             else if(native.mode==1 && native.body>=1 && native.body<=12) {

@@ -48,6 +48,12 @@ Fn061按25格以内视线选敌，跟随门槛24、移动主人16、远距归位
 
 佣兵面板使用当前MPQ的npcinv、800borderframe、buysellbtn和原物品图；装备格取Inventory.Hireling。文字按原font6标题／font8数值及基线绘制，抗性使用TBL两行标题；生命居中，经验／属性数值右对齐。装备或冰甲／光环提升防御时显示原蓝色字体，负抗性显示原红色字体。关闭按钮按底图凹槽定位，绘制与点击共用边界。双手武器只画实际右手槽，空左手不重复武器或绘制盾牌轮廓；铁狼盾牌显示真实左手装备。原Hireling.Mode用于佣兵技能动画，MonStats的Jab序列优先；没有专用palshift的Hireable使用原组件像素。
 
+## PD2 CN远端客户端
+
+固定CN配置读取当前Inventory.Hireling的头／甲／左右手／腰带／鞋／手套七格，图形与命中共用原表；原版仅要求原四格，缺少额外格时保留缺省标记，不补造布局。服务器佣兵装备body8–10与原body1／3／4／5分别投影，61请求复验真实活佣兵、本人Cursor或当前佣兵物品；移除左手保留真实body5，不再误发右手。腰带26／光标61/body0喂药沿原资格与服务器消耗事实。
+
+雇佣36／复活62沿固定核心回调委托原D2Game，不创建本地佣兵；费用、候选、任务资格与回包仍须实服确认。当前仅1级角色，用户安排准备角色后再测雇佣、复活、七槽换装、喂药及保存，本轮不宣称这些组合已实测。
+
 ## 召唤物与佣兵头像
 
 当前源码从MPQ PetType的icontype、drawhp、name、baseicon及mclass1–4／micon1–4准备头像规则，TBL提供名称与佣兵提示，Hireables DC6提供原图。入口为[pet_portrait_data](../../../src/content/npc/pet_portrait_data.cpp)、[pet_projection](../../../src/client/pet_projection.cpp)和[pet_portraits](../../../src/presentation/hud/pet_portraits.cpp)；原服、单机与TCP/IP共用同一消费者。

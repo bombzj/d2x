@@ -3,6 +3,7 @@
 #include "core/bytes.hpp"
 #include "contracts/online_context.hpp"
 #include <array>
+#include <algorithm>
 #include <map>
 #include <optional>
 #include <string>
@@ -77,7 +78,7 @@ struct OnlineStashLayout {
     }
 };
 // CN item requests share the native contract. Guild/preview inventories and
-// services remain separate from the player's currently authorized containers.
+// transactions remain separate from browsing and authorized player containers.
 inline bool onlinePd2ItemAction(OnlineItemAction action) {
     switch (action) {
     case OnlineItemAction::Pickup: case OnlineItemAction::Take: case OnlineItemAction::Place:
@@ -90,7 +91,11 @@ inline bool onlinePd2ItemAction(OnlineItemAction action) {
     case OnlineItemAction::CubeOpen: case OnlineItemAction::CubeStore:
     case OnlineItemAction::StorageClose: case OnlineItemAction::StoragePage:
     case OnlineItemAction::StorageMaterials: case OnlineItemAction::MaterialWithdraw:
-    case OnlineItemAction::MaterialDeposit: return true;
+    case OnlineItemAction::MaterialDeposit: case OnlineItemAction::TradeOpen:
+    case OnlineItemAction::Buy: case OnlineItemAction::Sell: case OnlineItemAction::Repair:
+    case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
+    case OnlineItemAction::Transmute: case OnlineItemAction::GoldDeposit: case OnlineItemAction::GoldWithdraw:
+    case OnlineItemAction::GoldDrop: case OnlineItemAction::HirelingEquipment: return true;
     default: return false;
     }
 }
@@ -101,38 +106,64 @@ inline bool onlineBackpackItem(const OnlineItem &item, std::optional<uint32_t> p
 inline bool onlineActiveEquipmentItem(const OnlineItem &item, std::optional<uint32_t> player) {
     return onlineItemOwnedBy(item, player) && item.mode == 1 && item.body >= 1 && item.body <= 10;
 }
-inline bool onlinePd2StoredItem(const OnlineItem &item, std::optional<uint32_t> player, OnlineStorageKind storage) {
+inline bool onlinePd2StoredItem(const OnlineItem &item, std::optional<uint32_t> player, OnlineStorageKind storage, bool trading = false) {
     return onlineItemOwnedBy(item, player) && item.mode == 0 &&
         !(item.flags & (0x40000000u | 0x2000000u)) &&
-        (item.page == 1 || (item.page == 5 && storage == OnlineStorageKind::Stash) ||
+        (item.page == 1 || (item.page == 3 && trading) || (item.page == 5 && storage == OnlineStorageKind::Stash) ||
             (item.page == 4 && storage == OnlineStorageKind::Cube));
 }
 inline bool onlinePd2ItemActionSource(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player,
-                                     OnlineStorageKind storage) {
-    if (item.flags & (0x40000000u | 0x2000000u)) return false;
+                                     OnlineStorageKind storage, bool trading = false) {
+    if (item.flags & 0x40000000u) return false;
+    if (action == OnlineItemAction::Buy)
+        return item.ownerType == 1 && item.action == 11 && item.mode == 0 && item.page >= 1 && item.page <= 4;
+    if (item.flags & 0x2000000u) return false;
+    if (action == OnlineItemAction::Sell)
+        return onlineItemOwnedBy(item, player) && (onlineBackpackItem(item, player) || item.mode == 1 || item.mode == 4);
+    if (action == OnlineItemAction::Repair)
+        return onlineItemOwnedBy(item, player) && (onlineBackpackItem(item, player) || item.mode == 1);
+    if (action == OnlineItemAction::HirelingEquipment)
+        return (item.ownerType == 1 && item.mode == 1) || onlineCursorItem(item, player);
     if (action == OnlineItemAction::Pickup) return item.mode == 3;
     if (action == OnlineItemAction::CubeStore && item.mode == 3) return true;
-    if (action == OnlineItemAction::Take) return onlinePd2StoredItem(item, player, storage) ||
+    if (action == OnlineItemAction::Take) return onlinePd2StoredItem(item, player, storage, trading) ||
         onlineActiveEquipmentItem(item, player) || (onlineItemOwnedBy(item, player) && item.mode == 2);
     if (action == OnlineItemAction::Unequip) return onlineActiveEquipmentItem(item, player);
     if (action == OnlineItemAction::BeltAuto) return onlineBackpackItem(item, player);
     if (action == OnlineItemAction::MaterialDeposit) return onlineBackpackItem(item, player) || onlineCursorItem(item, player);
     if (action == OnlineItemAction::Use || action == OnlineItemAction::Identify)
-        return onlinePd2StoredItem(item, player, storage) || (onlineItemOwnedBy(item, player) && item.mode == 2);
-    if (action == OnlineItemAction::CubeOpen) return onlinePd2StoredItem(item, player, storage);
-    if (action == OnlineItemAction::Stack && onlinePd2StoredItem(item, player, storage)) return true;
+        return onlinePd2StoredItem(item, player, storage, trading) || (onlineItemOwnedBy(item, player) && item.mode == 2);
+    if (action == OnlineItemAction::CubeOpen) return onlinePd2StoredItem(item, player, storage, trading);
+    if (action == OnlineItemAction::Stack && onlinePd2StoredItem(item, player, storage, trading)) return true;
     return onlinePd2ItemAction(action) && onlineCursorItem(item, player);
 }
 inline bool onlinePd2ItemActionTarget(OnlineItemAction action, const OnlineItem &item, std::optional<uint32_t> player,
-                                     OnlineStorageKind storage) {
+                                     OnlineStorageKind storage, bool trading = false) {
     if (item.flags & (0x40000000u | 0x2000000u)) return false;
     if (action == OnlineItemAction::Swap || action == OnlineItemAction::Book || action == OnlineItemAction::CubeStore)
-        return onlinePd2StoredItem(item, player, storage);
+        return onlinePd2StoredItem(item, player, storage, trading);
     if (action == OnlineItemAction::BeltSwap) return onlineItemOwnedBy(item, player) && item.mode == 2;
     if (action == OnlineItemAction::Equip) return onlineActiveEquipmentItem(item, player);
     if (action == OnlineItemAction::Stack || action == OnlineItemAction::Socket || action == OnlineItemAction::Identify)
-        return onlinePd2StoredItem(item, player, storage) || onlineActiveEquipmentItem(item, player);
+        return onlinePd2StoredItem(item, player, storage, trading) || onlineActiveEquipmentItem(item, player);
     return false;
+}
+enum class OnlineCnMaterialOperation { Withdraw, Cube, Upgrade };
+// mdll1 0x26900 / 0x26A60: only these native catalog pairs convert.
+inline std::optional<std::string> onlineCnMaterialUpgradeResult(std::string_view source) {
+    if (source == "rvs") return "rvl";
+    if (source == "skl") return "skz";
+    if (source == "gzv") return "gpv";
+    if (source.size() == 3 && source.starts_with("gl") && source[2] != 'v')
+        return std::string("gp") + source[2];
+    return {};
+}
+inline std::optional<std::string> onlineCnMaterialUpgradeSource(std::string_view result) {
+    if (result == "rvl") return "rvs";
+    if (result == "skz") return "skl";
+    if (result == "gpv") return "gzv";
+    if (result.size() == 3 && result.starts_with("gp")) return std::string("gl") + result[2];
+    return {};
 }
 struct OnlineItemCommand {
     OnlineItemAction action{};
@@ -143,6 +174,7 @@ struct OnlineItemCommand {
     bool sharedStash{}; // StoragePage only; never a container/ownership flag.
     std::optional<OnlineCnStashNavigation> stashNavigation;
     std::string materialCode; // CN material counters have no item GUID.
+    OnlineCnMaterialOperation materialOperation{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     uint32_t oppositeItem{}; // Local precondition only; native server selects this hand.
     uint64_t oppositeRevision{};
@@ -150,6 +182,24 @@ struct OnlineItemCommand {
     bool gamble{}, multibuy{};
     std::optional<OnlineIntentContext> context;
 };
+inline std::optional<uint32_t> onlineCnMaterialKey(std::string_view code);
+inline bool onlineCnMaterialWithdrawalValid(const OnlineItemCommand &command, const std::map<uint32_t, uint32_t> &counts) {
+    const auto key = onlineCnMaterialKey(command.materialCode);
+    if (!key || !counts.contains(*key) || !counts.at(*key)) return false;
+    if (command.materialOperation == OnlineCnMaterialOperation::Upgrade) {
+        const auto result = onlineCnMaterialUpgradeResult(command.materialCode);
+        const auto resultKey = result ? onlineCnMaterialKey(*result) : std::nullopt;
+        if (command.toCursor || !resultKey || !counts.contains(*resultKey) || counts.at(*key) < 3 ||
+            (command.amount != 3 && command.amount != 15 && command.amount != 150)) return false;
+        // Native 0x1E670 rejects reaching this bound for conversions.
+        return uint64_t(counts.at(*resultKey)) + std::min(command.amount, counts.at(*key)) / 3 < 99999999;
+    }
+    if (command.materialOperation != OnlineCnMaterialOperation::Withdraw &&
+        command.materialOperation != OnlineCnMaterialOperation::Cube) return false;
+    if (command.materialOperation == OnlineCnMaterialOperation::Cube && command.toCursor) return false;
+    return command.toCursor ? command.amount == 1 :
+        command.amount == 1 || command.amount == 5 || command.amount == 20 || command.amount == 50;
+}
 inline std::optional<OnlineCnStashNavigation> onlineCnStashOperation(uint32_t page, bool shared,
                                                                     const OnlineItemCommand &command) {
     if (!command.stashNavigation) return onlineCnStashCommand(page, shared, command.page, command.sharedStash);

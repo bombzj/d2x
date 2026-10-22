@@ -41,7 +41,9 @@ void SceneView::drawStorage(Vec mouse) const {
         if (const auto *coin = assets_.goldCoin.frame(0, 0))
             DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
                            storageGoldButton(inventoryView_),
-                           {0, 0}, 0, inventoryView_.personalItemActionsOnly ? GRAY : WHITE);
+                           {0, 0}, 0, !inventoryView_.readOnly && (!inventoryView_.personalItemActionsOnly ||
+                               (inventoryView_.goldKnown && inventoryView_.bankGoldKnown &&
+                                inventoryView_.storagePagingAvailable && !inventoryView_.storagePagePending)) ? WHITE : GRAY);
         if (!inventoryView_.personalItemActionsOnly || inventoryView_.bankGoldKnown)
             painter_.label(bankGold,
                            int(goldField.x + (goldField.width - painter_.measure(bankGold, textSize)) / 2),
@@ -58,6 +60,18 @@ void SceneView::drawStorage(Vec mouse) const {
                  icon->texture.width * scale, icon->texture.height * scale}, {}, 0,
                 material.quantity ? WHITE : Color{70,70,70,255});
         }
+        if (!material.upgradeSource.empty() && storageMaterialUpgradeReady()) {
+            const auto hit = storageMaterialUpgradeBounds(material);
+            const auto *arrow = assets_.storageMaterialUpgrade.frame(0, 0);
+            const float scale = inventoryScale();
+            DrawTexturePro(arrow->texture, {0, 0, float(arrow->texture.width), float(arrow->texture.height)},
+                {hit.x - (material.upgradeOnLeft ? 5 : 0) * scale,
+                 bounds.y + (material.height * 29 + 1 - arrow->texture.height) * scale,
+                 arrow->texture.width * scale, arrow->texture.height * scale}, {}, 0,
+                material.upgradeQuantity >= 3 ? WHITE : GRAY);
+            if (CheckCollisionPointRec(rv(mouse), hit))
+                drawItemText({{"Convert 3:1 (Ctrl: 15; Shift: 150)"}}, ItemQuality::Normal, {mouse.x + 170, mouse.y}, {}, {});
+        }
         if (material.quantity) {
             const auto quantity = material.quantity < 10000 ? std::to_string(material.quantity) :
                 std::to_string(std::min(99u, material.quantity / 1000)) + "k+";
@@ -66,7 +80,7 @@ void SceneView::drawStorage(Vec mouse) const {
         }
         if (CheckCollisionPointRec(rv(mouse), bounds))
             drawItemText({{material.name}, {"Quantity: " + std::to_string(material.quantity)},
-                {"Left: cursor; right: auto store"}, {"Ctrl+right: 5; Shift+right: 50"}},
+                {"Left: cursor; right: auto store"}, {"Ctrl+right: 5; Shift+right: 50; Ctrl+Shift: cube"}},
                 ItemQuality::Normal, {mouse.x + 170, mouse.y}, {}, {});
     }
     for (const auto &grid : inventoryGrids(inventoryView_, ui)) {

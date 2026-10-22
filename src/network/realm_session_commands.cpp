@@ -442,7 +442,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     impl_->snapshotDirty = true;
     auto &p = *impl_;
     if (p.view.remoteLobbyOnly && (!onlinePd2ItemAction(command.action) ||
-        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 3 && command.page != 4))) {
+        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4))) {
         p.error(OnlineErrorKind::Unsupported, "Item actions are unavailable for this client profile");
         return false;
     }
@@ -451,6 +451,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     auto &world = p.view.world;
     if (p.view.remoteLobbyOnly && world.requestedStashPage && command.action != OnlineItemAction::StorageClose) {
         p.error(OnlineErrorKind::Input, "Wait for the server stash-page confirmation"); return false;
+    }
+    if (p.view.remoteLobbyOnly && command.action == OnlineItemAction::TradeOpen &&
+        (!command.npc || !world.npcConversation || world.npcConversation->type != 1 ||
+         world.npcConversation->source != command.npc || world.npcRequested != command.npc ||
+         !world.units.contains({1, command.npc}) || onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
+        p.error(OnlineErrorKind::Input, "PD2 shop browsing requires a confirmed NPC conversation and an empty cursor");
+        return false;
     }
     if (command.action == OnlineItemAction::StoragePage && (!p.view.remoteLobbyOnly ||
         !world.stashInitialized || (world.cnStashConfirmed && !world.stashSynchronized &&
@@ -479,11 +486,15 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
                  (!onlineBackpackItem(source->second, p.view.load.playerUnitId) ||
                   onlineHasCursorItem(world.items, p.view.load.playerUnitId)))) return false;
         } else {
+            if (command.materialOperation == OnlineCnMaterialOperation::Cube) {
+                const auto cube = world.items.find(command.target);
+                if (cube == world.items.end() || !command.targetRevision || cube->second.revision != command.targetRevision ||
+                    !onlinePd2StoredItem(cube->second, p.view.load.playerUnitId, world.storage.kind) ||
+                    !cube->second.positionKnown) return false;
+            }
             const auto key = onlineCnMaterialKey(command.materialCode);
             if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || !key ||
-                !world.cnMaterialCounts.contains(*key) || !world.cnMaterialCounts.at(*key) ||
-                (command.toCursor ? command.amount != 1 : (command.amount != 1 && command.amount != 5 &&
-                    command.amount != 20 && command.amount != 50))) return false;
+                !onlineCnMaterialWithdrawalValid(command, world.cnMaterialCounts)) return false;
         }
     }
     if (world.playerTrade.active()) {
@@ -547,12 +558,12 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             command.action == OnlineItemAction::Socket || command.action == OnlineItemAction::Identify ||
             command.action == OnlineItemAction::CubeStore;
         if (hasItem && (item == world.items.end() ||
-            !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId, world.storage.kind) ||
+            !onlinePd2ItemActionSource(command.action, item->second, p.view.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open) ||
             !item->second.positionKnown || (item->second.mode == 0 && item->second.page == 5 &&
                 (!world.stashSynchronized || (item->second.stashPage != world.stashPage || item->second.sharedStash != world.sharedStash))) ||
             (needsTarget &&
                 (target == world.items.end() || !command.targetRevision || command.target == command.item ||
-                    !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId, world.storage.kind) ||
+                    !onlinePd2ItemActionTarget(command.action, target->second, p.view.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open) ||
                     !target->second.positionKnown || (target->second.mode == 0 && target->second.page == 5 &&
                         (!world.stashSynchronized || (target->second.stashPage != world.stashPage || target->second.sharedStash != world.sharedStash))))))) {
             p.error(OnlineErrorKind::Input, "Item is outside the supported personal inventory context"); return false;
@@ -572,23 +583,30 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             const auto opposite = world.items.find(command.oppositeItem);
             if (command.equipVariant && (opposite == world.items.end() || !command.oppositeRevision ||
                 opposite->second.revision != command.oppositeRevision ||
-                !onlinePd2ItemActionTarget(command.action, opposite->second, p.view.load.playerUnitId, world.storage.kind) ||
+                !onlinePd2ItemActionTarget(command.action, opposite->second, p.view.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open) ||
                 (command.body != 4 && command.body != 5) || opposite->second.body != (command.body == 4 ? 5 : 4) ||
                 (command.equipVariant == 1 ? equipped != nullptr : equipped == nullptr))) {
                 p.error(OnlineErrorKind::Input, "Opposite-hand equipment changed before submission"); return false;
             }
             const auto *expected = command.equipVariant == 1 ? &opposite->second : equipped;
             if ((expected && (command.target != expected->id || command.targetRevision != expected->revision ||
-                    !onlinePd2ItemActionTarget(command.action, *expected, p.view.load.playerUnitId, world.storage.kind))) ||
+                    !onlinePd2ItemActionTarget(command.action, *expected, p.view.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open))) ||
                 (!expected && command.targetRevision)) {
                 p.error(OnlineErrorKind::Input, "Equipped swap target changed before submission"); return false;
             }
         }
         if (command.action == OnlineItemAction::Place &&
-            ((command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
+            ((command.page == 2 && (world.playerTrade.phase != OnlinePlayerTrade::Phase::Open ||
+                world.playerTrade.ownAgreed || world.playerTrade.response != OnlinePlayerTrade::Response::None)) ||
+             (command.page == 3 && world.storage.kind != OnlineStorageKind::Cube) ||
              (command.page == 4 && (world.storage.kind != OnlineStorageKind::Stash || !world.stashSynchronized)))) {
             p.error(OnlineErrorKind::Input, "Destination container is not authorized by the server"); return false;
         }
+    }
+    if (p.view.remoteLobbyOnly && (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw) &&
+        (world.storage.kind != OnlineStorageKind::Stash || !world.cnStashConfirmed || !world.stashSynchronized ||
+            world.sharedStash || world.cnMaterialsOpen || onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
+        p.error(OnlineErrorKind::Input, "Personal stash gold context changed before submission"); return false;
     }
     if (command.action == OnlineItemAction::Buy &&
         (world.npcRequested != command.npc || world.shopSource != command.npc || world.shopGamble != command.gamble ||
@@ -678,7 +696,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             auto code = command.materialCode; code.resize(4, ' ');
             auto amount = std::to_string(command.amount);
             amount.insert(0, 8 - amount.size(), '0');
-            const auto text = std::string(command.toCursor ? "00L" : "00R") + code + amount;
+            const auto prefix = command.materialOperation == OnlineCnMaterialOperation::Upgrade ? "UPL" :
+                command.materialOperation == OnlineCnMaterialOperation::Cube ? "CSR" : command.toCursor ? "00L" : "00R";
+            const auto text = std::string(prefix) + code + amount;
             for (const auto byte : text) { out.u8(0x3A); out.u16(0x3C | uint16_t(uint8_t(byte)) << 8); }
             out.u8(0x3A); out.u16(0x3C); break;
         }
@@ -724,7 +744,11 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         case OnlineItemAction::IdentifyAll: out.u8(0x34); out.u32(command.npc); break;
         case OnlineItemAction::QuestService: out.u8(0x38);out.u32(0);out.u32(command.npc);out.u32(command.item);break;
         case OnlineItemAction::HirelingEquipment:
-            if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5)) return false;
+            if(!world.hireling || world.deadHirelingName ||
+                (command.mercenary ? command.body != 0 || !world.pets.contains(world.hireling->id) ||
+                    !onlineCursorItem(item->second, p.view.load.playerUnitId) :
+                    command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5 &&
+                    !(p.view.remoteLobbyOnly && command.body>=8 && command.body<=10))) return false;
             out.u8(0x61);out.u16(command.body);break;
         }
         if (command.action == OnlineItemAction::MaterialWithdraw || command.action == OnlineItemAction::MaterialDeposit) {

@@ -218,15 +218,19 @@ bool SceneController::handleInventory(const FrameInput &input) {
             inventoryRight_ = input.rightPressed || inventoryRight_;
             if (!ui.drag && !ui.pending) for (const auto &material : inventory.storageMaterials) {
                 if (!CheckCollisionPointRec(rv(input.mouse), storageMaterialBounds(material))) continue;
-                if (!material.quantity) break;
-                // Ctrl+Shift targets the ground in native CN; keep it unavailable
-                // until explicit ground transfer support is added.
-                if (input.control && input.shift) {
-                    view_.notice("Material ground transfer is not available.", true); break;
+                if (input.leftPressed && !material.upgradeSource.empty() && view_.storageMaterialUpgradeReady() &&
+                    CheckCollisionPointRec(rv(input.mouse), storageMaterialUpgradeBounds(material))) {
+                    const auto amount = input.control && !input.shift ? 15u : input.shift && !input.control ? 150u : 3u;
+                    if (!inventoryClient_.upgradeStorageMaterial(material.upgradeSource, amount))
+                        view_.notice("Material conversion is unavailable or pending.", true);
+                    break;
                 }
+                if (!material.quantity) break;
                 unsigned amount = input.leftPressed ? 1 : input.shift ? 50 : input.control ? 5 : 1;
                 if (amount == 50 && material.code.starts_with("rv")) amount = 20;
-                if (!inventoryClient_.withdrawStorageMaterial(material.code, amount, input.leftPressed))
+                const bool accepted = input.control && input.shift ? inventoryClient_.storeMaterialInCube(material.code, amount) :
+                    inventoryClient_.withdrawStorageMaterial(material.code, amount, input.leftPressed);
+                if (!accepted)
                     view_.notice("Material withdrawal is unavailable or pending.", true);
                 break;
             }
@@ -256,7 +260,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
         toggleInventory();
         return true;
     }
-    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && !ui.drag && !ui.goldDialog && input.insideViewport &&
+    if (!inventory.readOnly && ui.open && !ui.playerTradeOpen && !ui.drag && !ui.goldDialog && input.insideViewport &&
         input.leftPressed && inventory.stashLayout.expansion)
         if (auto set = weaponTabAt(input.mouse)) {
             inventoryClick_ = true;
@@ -264,29 +268,35 @@ bool SceneController::handleInventory(const FrameInput &input) {
                 inventoryClient_.submit(SwitchWeaponSet{});
             return true;
         }
-    if (!inventory.personalItemActionsOnly && ui.cubeOpen && input.insideViewport && input.leftPressed &&
+    if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeClose())) {
         inventoryClick_ = true;
         toggleInventory();
         return true;
     }
-    if (!inventory.personalItemActionsOnly && ui.cubeOpen && input.insideViewport && input.leftPressed &&
+    if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeTransmute())) {
         inventoryClick_ = true;
         inventoryClient_.submit(TransmuteCube{});
         return true;
     }
     bool bankField = ui.storage && CheckCollisionPointRec(
-            rv(input.mouse), storageGoldButton(inventory.stashLayout.expansion));
-    if (!inventory.readOnly && !inventory.personalItemActionsOnly && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
-        !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGoldButton()) || bankField)) {
+            rv(input.mouse), storageGoldButton(inventory));
+    const bool goldActions = !inventory.personalItemActionsOnly || (inventory.goldKnown &&
+        (!ui.storage || (inventory.storageCnConfirmed && !inventory.storageShared &&
+            !inventory.storageMaterialsOpen && inventory.storagePagingAvailable && !inventory.storagePagePending)));
+    if (!inventory.readOnly && goldActions && ui.open && !ui.playerTradeOpen && input.insideViewport && input.leftPressed && !ui.pending &&
+        !ui.drag && (CheckCollisionPointRec(rv(input.mouse), inventoryGoldButton(inventory)) || bankField)) {
         GoldAction action = bankField ? GoldAction::Withdraw :
                             ui.storage ? GoldAction::Deposit : GoldAction::Drop;
         const auto &player = inventory;
+        // CN may omit an initial zero bank stat. A deposit is bounded by the
+        // known wallet; the server checks unknown destination capacity.
         unsigned maximum = action == GoldAction::Withdraw
-            ? std::min(player.bankGold, inventory.walletLimit - player.gold)
+            ? (player.bankGoldKnown ? std::min(player.bankGold, (inventory.walletLimit > player.gold ? inventory.walletLimit - player.gold : 0)) : 0)
             : action == GoldAction::Deposit
-                ? std::min(player.gold, inventory.bankGoldLimit - player.bankGold)
+                ? (inventory.personalItemActionsOnly && !player.bankGoldKnown ? player.gold :
+                    std::min(player.gold, (inventory.bankGoldLimit > player.bankGold ? inventory.bankGoldLimit - player.bankGold : 0)))
                 : std::min(player.gold, inventory.groundGoldLimit);
         if (!maximum)
             view_.notice("No gold can be transferred here.", true);

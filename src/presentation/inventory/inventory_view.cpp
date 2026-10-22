@@ -200,7 +200,7 @@ void SceneView::drawInventory(Vec mouse) const {
     const bool overShop = view_.shopOpen && CheckCollisionPointRec(rv(mouse), classicSideBounds(false));
     const auto drop = overShop ? InventoryDrop{} :
         inventoryDropAt(mouse);
-    if (!inventory.readOnly && !inventory.personalItemActionsOnly && inventoryView_.stashLayout.expansion && weaponSet == 1)
+    if (!inventory.readOnly && inventoryView_.stashLayout.expansion && weaponSet == 1)
         for (int hand = 0; hand < 2; ++hand) {
             const auto &tile = assets_.weaponTabs.frames[size_t(hand)].texture;
             DrawTexturePro(tile, {0, 0, float(tile.width), float(tile.height)},
@@ -249,7 +249,7 @@ void SceneView::drawInventory(Vec mouse) const {
         if (const auto *coin = assets_.goldCoin.frame(0, 0))
             DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
                            inventoryGoldButton(inventory),
-                           {0, 0}, 0, inventory.personalItemActionsOnly ? GRAY : WHITE);
+                           {0, 0}, 0, !inventory.readOnly && (!inventory.personalItemActionsOnly || inventory.goldKnown) ? WHITE : GRAY);
         if (const auto *close = assets_.questClose.frame(0, 10))
             DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
                            inventoryClose(inventory), {0, 0}, 0, WHITE);

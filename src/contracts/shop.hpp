@@ -24,7 +24,8 @@ struct ShopView {
     uint64_t revision = 0;
     EntityId actor, npc;
     bool gamble = false, available = false, repairAvailable = false;
-    bool pricesKnown = false;
+    bool pricesKnown = false, sellModeAvailable = false;
+    int gridTop = 62; // Native shop geometry; independent of the player backpack.
     unsigned bankGold = 0;
     std::optional<unsigned> repairAllPrice;
     std::array<std::string, 4> tabLabels;

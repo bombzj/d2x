@@ -157,6 +157,12 @@ inline Rectangle storageMaterialBounds(const InventoryMaterialView &item) {
             p.y + (item.y - 1 - item.height * 29) * scale,
             item.width * 29 * scale, item.height * 29 * scale};
 }
+inline Rectangle storageMaterialUpgradeBounds(const InventoryMaterialView &item) {
+    auto bounds = storageMaterialBounds(item);
+    bounds.x += (item.upgradeOnLeft ? 0 : 24) * inventoryScale();
+    bounds.width = 5 * inventoryScale();
+    return bounds;
+}
 inline Rectangle storageClose() {
     return {storageBounds().x + 274 * inventoryScale(), storageBounds().y + 384 * inventoryScale(),
             31 * inventoryScale(), 34 * inventoryScale()};

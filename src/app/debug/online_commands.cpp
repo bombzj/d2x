@@ -670,7 +670,13 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                     throw std::invalid_argument("Invalid CN stash navigation");
                 intent.stashNavigation = OnlineCnStashNavigation(int(OnlineCnStashNavigation::PreviousIndex) + (at - navigation.begin()));
             }
-            if (intent.action == OnlineItemAction::MaterialWithdraw) intent.materialCode = text("code", 4);
+            if (intent.action == OnlineItemAction::MaterialWithdraw) {
+                intent.materialCode = text("code", 4);
+                const auto operation = request.value("materialOperation", std::string("withdraw"));
+                if (operation == "cube") intent.materialOperation = OnlineCnMaterialOperation::Cube;
+                else if (operation == "upgrade") intent.materialOperation = OnlineCnMaterialOperation::Upgrade;
+                else if (operation != "withdraw") throw std::invalid_argument("Unknown material operation");
+            }
             intent.beltSlot = cell("beltSlot", 15);
             intent.toCursor = request.value("toCursor", false); intent.mercenary = request.value("mercenary", false);
             intent.gamble = request.value("gamble", false);

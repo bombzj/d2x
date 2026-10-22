@@ -57,7 +57,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
         if (input.escape) {
             if (ui.inventory.identify || ui.inventory.goldDialog)
                 ui.inventory.cancelGesture();
-            else if (ui.shopRepair) ui.shopRepair = false;
+            else if (ui.shopRepair || ui.shopSell) ui.shopRepair = ui.shopSell = false;
             else if (ui.shopConfirm)
                 ui.shopConfirm.reset();
             else {
@@ -111,7 +111,7 @@ bool SceneController::handleNpcShop(const FrameInput &input) {
                        (inventorySurface(ui.inventory, input.mouse) ||
                         CheckCollisionPointRec(rv(input.mouse), beltBounds(
                             view_.inventoryView().container(view_.inventoryView().containers.belt)->rows)))) {
-                if (input.control && input.leftPressed && !ui.shopRepair) {
+                if ((input.control || ui.shopSell) && input.leftPressed && !ui.shopRepair) {
                     if (const auto *item = repairItemAt(); item &&
                         npcClient_.canRequestSale(ui.dialogueObject,item->handle())) {
                         ui.shopSalePending = item->handle();
@@ -201,9 +201,9 @@ bool SceneController::handleHirelingPanel(const FrameInput &input) {
         }
         if (ui.inventory.drag) return handleInventory(input);
         if (!ui.inventory.pending && input.leftPressed) {
-            constexpr EquipmentSlot order[] = {EquipmentSlot::Head, EquipmentSlot::Torso,
-                                               EquipmentSlot::RightHand, EquipmentSlot::RightHand};
-            for (size_t index = 0; index < 4; ++index) {
+            const auto &order = hirelingEquipmentOrder;
+            for (size_t index = 0; index < order.size(); ++index) {
+                if (view_.inventoryView().hirelingSlots[index][0] < 0) continue;
                 if (!CheckCollisionPointRec(rv(input.mouse), view_.hirelingSlotBounds(index))) continue;
                 auto slots = view_.inventoryView().containers; slots.equipment = slots.hirelingEquipment;
                 const auto id = view_.inventoryView().equipped(slots, order[index]);

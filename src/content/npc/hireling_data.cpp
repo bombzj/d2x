@@ -83,15 +83,19 @@ std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table, 
 }
 HirelingLayout loadHirelingLayout(const DataTable &table) {
     HirelingLayout layout;
+    for (auto &box : layout.slots) box.fill(-1);
     for (size_t row = 0; row < table.rows().size(); ++row) {
         if (table.value(row, "class") != "Hireling") continue;
         size_t index = 0;
-        for (auto slot : {"head", "torso", "rArm", "lArm"}) {
+        for (auto slot : {"head", "torso", "rArm", "lArm", "belt", "feet", "gloves"}) {
             auto &box = layout.slots[index++];
             size_t coordinate = 0;
             for (auto edge : {"Left", "Top", "Right", "Bottom"}) {
                 auto value = table.number(row, std::string(slot) + edge);
-                if (!value || *value < 0) throw std::runtime_error("Missing original hireling slot");
+                if (!value || *value < 0) {
+                    if (index <= 4) throw std::runtime_error("Missing original hireling slot");
+                    box.fill(-1); break; // Original resources omit the extra PD2 slots.
+                }
                 box[coordinate++] = *value;
             }
         }

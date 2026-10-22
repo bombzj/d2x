@@ -14,6 +14,8 @@ class IInventoryClient {
     virtual bool navigateStorage(StorageNavigation) { return false; }
     virtual bool selectStorageMaterials(bool) { return false; }
     virtual bool withdrawStorageMaterial(std::string_view, unsigned, bool) { return false; }
+    virtual bool storeMaterialInCube(std::string_view, unsigned) { return false; }
+    virtual bool upgradeStorageMaterial(std::string_view, unsigned) { return false; }
     virtual bool depositStorageMaterial(ItemHandle) { return false; }
     virtual std::optional<Cell> beltSpace(std::string_view code) const = 0;
     virtual bool submitStaff(EntityId source,std::optional<ItemHandle> item) = 0;

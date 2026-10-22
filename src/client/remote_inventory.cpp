@@ -341,8 +341,8 @@ bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); 
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
     const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
-        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 3 && command.page != 4)))
-        return reject("This client profile currently supports only personal inventory item movement");
+        (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4)))
+        return reject("This item operation is unavailable for the selected client profile");
     update(session.read());
     const auto &online = session.read();
     if (!command.context) command.context = onlineIntentContext(online);
@@ -442,14 +442,20 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             const auto key = onlineCnMaterialKey(code);
             command.amount = key && world.cnMaterialCounts.contains(*key) ? world.cnMaterialCounts.at(*key) : 0;
         } else {
+            if (command.materialOperation == OnlineCnMaterialOperation::Cube) {
+                const auto cube = std::find_if(world.items.begin(), world.items.end(), [&](const auto &entry) {
+                    return onlinePd2StoredItem(entry.second, online.load.playerUnitId, world.storage.kind) &&
+                        entry.second.positionKnown && baseNumber(entry.second, "pSpell") == 7;
+                });
+                if (cube == world.items.end()) return reject("An accessible owned cube is required before transferring materials into it");
+                command.target = cube->first; command.targetRevision = cube->second.revision;
+            }
             const auto key = onlineCnMaterialKey(command.materialCode);
             const auto slot = std::find_if(pd2CnMaterialSlots.begin(), pd2CnMaterialSlots.end(),
                 [&](const auto &s) { return s.code == command.materialCode; });
             if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || !key ||
                 slot == pd2CnMaterialSlots.end() || !bases_.contains(command.materialCode) ||
-                !world.cnMaterialCounts.contains(*key) || !world.cnMaterialCounts.at(*key) ||
-                (command.toCursor ? command.amount != 1 : (command.amount != 1 && command.amount != 5 &&
-                    command.amount != 20 && command.amount != 50)))
+                !onlineCnMaterialWithdrawalValid(command, world.cnMaterialCounts))
                 return reject("Material withdrawal has no synchronized native counter or supported quantity");
         }
         return send();
@@ -473,6 +479,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw ||
             command.action == OnlineItemAction::GoldDrop) {
             if (!command.amount || command.amount > INT32_MAX) return reject("Gold amount must be a positive original signed DWORD");
+            if (pd2Items && command.action != OnlineItemAction::GoldDrop &&
+                (!world.cnStashConfirmed || !world.stashSynchronized || world.sharedStash || world.cnMaterialsOpen))
+                return reject("Gold transfer requires the confirmed personal stash; shared gold uses a different protocol");
             if (command.action != OnlineItemAction::GoldDrop && world.storage.kind != OnlineStorageKind::Stash)
                 return reject("Gold transfer requires a server-opened stash");
             const auto balance = world.playerAttributes.find(command.action == OnlineItemAction::GoldWithdraw ? 15 : 14);
@@ -489,7 +498,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (pd2Items && (!wire.positionKnown ||
         (wire.mode == 0 && wire.page == 5 && (!world.stashSynchronized || (wire.stashPage != world.stashPage || wire.sharedStash != world.sharedStash)))))
         return reject("Item position is not assigned in the active storage page");
-    if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId, world.storage.kind))
+    if (pd2Items && !onlinePd2ItemActionSource(command.action, wire, online.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open))
         return reject("Item is outside the supported personal inventory context");
     const auto &decoded = view_.items.at(command.item);
     if (!decoded.decoded || (decoded.gamble && (command.action != OnlineItemAction::Buy || !command.gamble))) return reject("Item data cannot be operated: " + decoded.reason);
@@ -497,12 +506,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (!item.positionKnown) return false;
         if (item.mode == 2) return item.x < view_.beltSlots && data.width == 1 && data.height == 1;
         if (item.mode != 0) return true;
-        const int columns = item.page == 1 ? view_.columns : item.page == 4 ? view_.cubeColumns : view_.stashColumns;
-        const int rows = item.page == 1 ? view_.rows : item.page == 4 ? view_.cubeRows : view_.stashRows;
-        return (item.page == 1 || item.page == 4 || item.page == 5) && data.width > 0 && data.height > 0 &&
+        const int columns = item.page == 1 ? view_.columns : item.page == 3 ? view_.tradeColumns : item.page == 4 ? view_.cubeColumns : view_.stashColumns;
+        const int rows = item.page == 1 ? view_.rows : item.page == 3 ? view_.tradeRows : item.page == 4 ? view_.cubeRows : view_.stashRows;
+        return (item.page == 1 || item.page == 3 || item.page == 4 || item.page == 5) && data.width > 0 && data.height > 0 &&
             int(item.x) + data.width <= columns && int(item.y) + data.height <= rows;
     };
-    if (pd2Items && !validPositionPd2(wire, decoded)) return reject("Item shape exceeds its assigned personal container");
+    if (pd2Items && command.action != OnlineItemAction::Buy && !validPositionPd2(wire, decoded)) return reject("Item shape exceeds its assigned personal container");
     if (command.itemRevision && command.itemRevision != wire.revision) return reject("Stale item revision");
     command.itemRevision = wire.revision;
     auto owned = [&](const OnlineItem &item) { return onlineItemOwnedBy(item, online.load.playerUnitId); };
@@ -532,7 +541,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (pd2Items && (!target->positionKnown ||
             (target->mode == 0 && target->page == 5 && (!world.stashSynchronized || (target->stashPage != world.stashPage || target->sharedStash != world.sharedStash)))))
             return reject("Target position is not assigned in the active storage page");
-        if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId, world.storage.kind))
+        if (pd2Items && !onlinePd2ItemActionTarget(command.action, *target, online.load.playerUnitId, world.storage.kind, world.playerTrade.phase == OnlinePlayerTrade::Phase::Open))
             return reject("Target is outside the supported personal inventory context");
         if (!targetData->decoded || targetData->gamble) return reject("Target item data is unavailable");
         if (pd2Items && !validPositionPd2(*target, *targetData)) return reject("Target shape exceeds its assigned personal container");
@@ -574,7 +583,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
                 return reject("Hireling portrait requires an eligible cursor potion");
             break;
         }
-        if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5))
+        if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5 &&
+            !(pd2Items && command.body>=8 && command.body<=10)))
             return reject("No living hireling or invalid equipment slot");
         const auto &hirelings=tables_.at("hireling");
         std::optional<size_t> row;
@@ -585,7 +595,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             const bool weapon=isType(wire,primary) || (!secondary.empty() && isType(wire,secondary));
             const bool shield=hirelings.number(*row,"Act")==3 && isType(wire,"shld");
             if(!decoded.identified || (decoded.maxDurability && *decoded.maxDurability && decoded.durability==0) ||
-                !(isType(wire,"helm") || isType(wire,"tors") || weapon || shield) ||
+                !(isType(wire,"helm") || isType(wire,"tors") || weapon || shield ||
+                    (pd2Items && ((command.body==8 && isType(wire,"belt")) ||
+                        (command.body==9 && isType(wire,"boot")) || (command.body==10 && isType(wire,"glov"))))) ||
                 (hirelings.number(*row,"Act")==3 && weapon && !shield && baseNumber(wire,"2handed"))) return reject("Item is not eligible hireling equipment");
         } else if(view_.cursor || wire.ownerType!=1 || wire.owner!=world.hireling->id || wire.mode!=1 || wire.body!=command.body)
             return reject("Hireling equipment is no longer assigned");
@@ -642,7 +654,9 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             const bool potion = (spell == 3 || spell == 5 || spell == 6 || spell == 9) &&
                 (isType(wire, "hpot") || isType(wire, "mpot") || isType(wire, "rpot") ||
                     isType(wire, "apot") || isType(wire, "wpot") || isType(wire, "spot"));
-            if ((!scroll && !potion) || command.mercenary) return reject("Unsupported PD2 item-use program");
+            if (!scroll && !potion) return reject("Unsupported PD2 item-use program");
+            if (command.mercenary && (!world.hireling || world.deadHirelingName || !world.pets.contains(world.hireling->id)))
+                return reject("No living server hireling can receive this potion");
         }
         break;
     case OnlineItemAction::BeltPlace: case OnlineItemAction::BeltSwap:

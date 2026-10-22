@@ -80,7 +80,7 @@ struct ViewState {
     int questUpdated = -1;
     bool showLoot = false, shopOpen = false, npcMenu = false;
     bool shopGamble = false;
-    bool shopRepair = false;
+    bool shopRepair = false, shopSell = false;
     bool npcTopics = false;
     int shopPage = 0;
     int shopCategory = 0;
@@ -272,6 +272,7 @@ class SceneView {
     PartyIntent handleParty(const FrameInput &input);
     bool partyReady() const { return party_.ready(); }
     bool storageNavigationReady() const { return assets_.storageNavigation.frames.size() == 12; }
+    bool storageMaterialUpgradeReady() const { return assets_.storageMaterialUpgrade.frames.size() >= 2; }
     bool storageMaterialsReady() const { return assets_.storagePanel.frames.size() >= 8 && assets_.vendorButtons.frames.size() >= 32; }
     float partyPortraitOffset() const;
     const std::string &partyReason() const { return party_.reason(); }

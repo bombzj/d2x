@@ -9,6 +9,8 @@
 #include <vector>
 
 namespace d2x {
+inline constexpr std::array hirelingEquipmentOrder{EquipmentSlot::Head, EquipmentSlot::Torso,
+    EquipmentSlot::RightHand, EquipmentSlot::LeftHand, EquipmentSlot::Belt, EquipmentSlot::Feet, EquipmentSlot::Gloves};
 struct InventoryDefinitionView {
     bool socketFiller = false, twoHanded = false;
     int targetCursor = -1;
@@ -78,6 +80,9 @@ struct InventoryMaterialView {
     std::string code, name, artKey;
     int x{}, y{}, width{}, height{};
     uint32_t quantity{};
+    std::string upgradeSource;
+    uint32_t upgradeQuantity{};
+    bool upgradeOnLeft{};
 };
 // A client-owned projection of inventory, authorized storage/shop and visible ground items.
 // It contains no authority references, rolled native properties or random state.
@@ -113,7 +118,7 @@ struct InventoryView {
     InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
     InventoryLayoutView ownTradeLayout, peerTradeLayout;
     EntityId ownTrade, peerTrade;
-    std::array<std::array<int, 4>, 4> hirelingSlots{};
+    std::array<std::array<int, 4>, 7> hirelingSlots{};
     std::array<std::array<int, 4>, size_t(EquipmentSlot::Count)> equipmentSlots{};
     std::string cubeCode, staffRecipeOutput;
     std::optional<GroundLocation> dropLocation;

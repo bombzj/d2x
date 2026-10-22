@@ -137,10 +137,6 @@ void RemoteUiClients::Impl::projectInteractions() {
                 }
             }
             auto add=[&](std::string label,NpcMenuAction action) {
-                // Basic conversation uses the shared native interaction path.
-                // CN service pricing and reward requests remain unprepared;
-                // do not offer actions that the session would reject.
-                if (online.remoteLobbyOnly && action != NpcMenuAction::Talk && action != NpcMenuAction::Cancel) return;
                 npcView.services.push_back({std::move(label),{action,{}}});
             };
             auto menu=[&](std::string_view key,std::string fallback) {
@@ -208,6 +204,8 @@ void RemoteUiClients::Impl::projectInteractions() {
         questView=projectQuestDisplay(data,questInput);
         shopView={}; shopView.revision=revision; shopView.actor=characterView.actor; shopView.npc=npcView.npc;
         shopView.bankGold=inventoryView.bankGold; shopView.pricesKnown=false;
+        shopView.gridTop = online.remoteLobbyOnly ? 42 : 62;
+        shopView.sellModeAvailable = online.remoteLobbyOnly && !w.shopGamble;
         shopView.tabLabels={data.itemStrings.at("strBSArmor"),data.itemStrings.at("strBSWeapons"),
             data.itemStrings.at("strBSWeapons"),data.itemStrings.at("strBSMisc")};
         const auto identity=npcIdentity();
@@ -216,6 +214,7 @@ void RemoteUiClients::Impl::projectInteractions() {
         shopView.repairAvailable=!w.shopGamble && (identity=="charsi" || identity=="fara" || identity=="hratli" || identity=="halbu" || identity=="larzuk");
         if(w.shopSource) for(const auto &[id,native]:w.items) {
             if(native.ownerType!=1 || native.owner!=w.shopSource || native.action!=11) continue;
+            if(online.remoteLobbyOnly && (!native.positionKnown || (native.flags & 0x40000000u))) continue;
             auto d=items.read().items.find(id); const auto *def=data.items.find(native.code);
             if(d==items.read().items.end() || !d->second.decoded || !def) continue;
             const auto &item=d->second;

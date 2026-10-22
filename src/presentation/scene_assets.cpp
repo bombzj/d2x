@@ -373,6 +373,8 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
     loadWaypointFonts(uiGraphics_, archives, font, waypointFonts);
     storagePanel = uiGraphics_.single("data/global/ui/panel/tradestash.dc6");
     if (content.profile == "remote-display-txt-v1") {
+        const std::string upgradeArt = "data/global/ui/panel/stashmats_transmute_btn.dc6";
+        if (!archives.read(upgradeArt, false).empty()) storageMaterialUpgrade = uiGraphics_.single(upgradeArt);
         // mdll1 RVA 0x17AD0/0xA390 loads the CN bundle's original PlugY art.
         auto bytes = archives.read("data/global/ui/plugy/stashbtns.dc6", false);
         const auto loose = archives.gameDirectory / "PlugY" / "StashBtns.dc6";

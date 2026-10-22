@@ -55,6 +55,16 @@ bool RemoteUiClients::Impl::Inventory::withdrawStorageMaterial(std::string_view 
     command.materialCode = code; command.amount = amount; command.toCursor = cursor;
     return submitStorage(std::move(command));
 }
+bool RemoteUiClients::Impl::Inventory::storeMaterialInCube(std::string_view code, unsigned amount) {
+    OnlineItemCommand command; command.action = OnlineItemAction::MaterialWithdraw;
+    command.materialCode = code; command.amount = amount; command.materialOperation = OnlineCnMaterialOperation::Cube;
+    return submitStorage(std::move(command));
+}
+bool RemoteUiClients::Impl::Inventory::upgradeStorageMaterial(std::string_view code, unsigned amount) {
+    OnlineItemCommand command; command.action = OnlineItemAction::MaterialWithdraw;
+    command.materialCode = code; command.amount = amount; command.materialOperation = OnlineCnMaterialOperation::Upgrade;
+    return submitStorage(std::move(command));
+}
 bool RemoteUiClients::Impl::Inventory::depositStorageMaterial(ItemHandle item) {
     OnlineItemCommand command; command.action = OnlineItemAction::MaterialDeposit;
     command.item = guid(item.id); command.itemRevision = item.revision;
@@ -80,7 +90,8 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         container == view.containers.belt || container == view.containers.beltEquipment ||
                         container == view.containers.equipment ||
                         (container == view.containers.stash && o.session.read().world.storage.kind == OnlineStorageKind::Stash) ||
-                        (container == view.containers.cube && o.session.read().world.storage.kind == OnlineStorageKind::Cube);
+                        (container == view.containers.cube && o.session.read().world.storage.kind == OnlineStorageKind::Cube) ||
+                        (container == view.ownTrade && o.session.read().world.playerTrade.phase == OnlinePlayerTrade::Phase::Open);
                 };
                 auto sourceAllowed = [&](ItemHandle handle) {
                     const auto *item = view.item(handle.id);
@@ -134,7 +145,18 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         return sourceAllowed(command.source) && sourceAllowed(command.target);
                     else if constexpr (std::is_same_v<T, SocketItem>)
                         return sourceAllowed(command.filler) && sourceAllowed(command.host);
-                    else if constexpr (std::is_same_v<T, UseBeltColumn>) return !command.hireling && command.column >= 0 && command.column < 4;
+                    else if constexpr (std::is_same_v<T, EquipHirelingItem>) {
+                        const auto *item = view.item(command.item.id);
+                        const auto *at = item ? std::get_if<ContainerLocation>(&item->location) : nullptr;
+                        return at && (sourceAllowed(command.item) || at->container == view.containers.hirelingEquipment);
+                    }
+                    else if constexpr (std::is_same_v<T, UseHirelingPotion>) return sourceAllowed(command.item);
+                    else if constexpr (std::is_same_v<T, UseBeltColumn>) return command.column >= 0 && command.column < 4;
+                    else if constexpr (std::is_same_v<T, TransmuteCube>) return o.session.read().world.storage.kind == OnlineStorageKind::Cube;
+                    else if constexpr (std::is_same_v<T, GoldTransaction>)
+                        return command.amount && (command.action == GoldAction::Drop ? view.goldKnown :
+                            view.goldKnown && (command.action == GoldAction::Deposit || view.bankGoldKnown) && view.storageCnConfirmed && !view.storageShared &&
+                            !view.storageMaterialsOpen && view.storagePagingAvailable && !view.storagePagePending);
                     else if constexpr (std::is_same_v<T, SwitchWeaponSet> || std::is_same_v<T, CloseStorage>) return true;
                     else return false;
                 }, intent);
@@ -215,7 +237,9 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         const auto &equipment=definition->equipment;
                         if((definition->maxDurability && !item->durability) || equipment.isType("ques")) return InventoryError::RestrictedItem;
                         const bool shield=row->act==3 && *c.slot==EquipmentSlot::LeftHand && equipment.isType("shld");
-                        if(!equipment.fits(*c.slot) || (!shield && *c.slot!=EquipmentSlot::Head && *c.slot!=EquipmentSlot::Torso && *c.slot!=EquipmentSlot::RightHand)) return InventoryError::UnsupportedEquipment;
+                        const bool extraSlot = o.inventoryView.personalItemActionsOnly &&
+                            (*c.slot==EquipmentSlot::Belt || *c.slot==EquipmentSlot::Feet || *c.slot==EquipmentSlot::Gloves);
+                        if(!equipment.fits(*c.slot) || (!shield && !extraSlot && *c.slot!=EquipmentSlot::Head && *c.slot!=EquipmentSlot::Torso && *c.slot!=EquipmentSlot::RightHand)) return InventoryError::UnsupportedEquipment;
                         if(*c.slot==EquipmentSlot::RightHand && ((!equipment.isType(row->weaponType1) && (row->weaponType2.empty() || !equipment.isType(row->weaponType2))) || (row->act==3 && equipment.twoHanded))) return InventoryError::UnsupportedEquipment;
                     }
                     return InventoryError::None;

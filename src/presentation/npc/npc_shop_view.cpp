@@ -13,9 +13,9 @@ float scale() { return inventoryScale(); }
 Rectangle panelBounds() {
     return storageBounds();
 }
-Rectangle shopGrid(float cellSize) {
+Rectangle shopGrid(const ShopView &shop, float cellSize) {
     auto panel = panelBounds();
-    return {panel.x + 14 * scale(), panel.y + 62 * scale(),
+    return {panel.x + 14 * scale(), panel.y + shop.gridTop * scale(),
             10 * cellSize, 10 * cellSize};
 }
 Rectangle tabBounds(int index) {
@@ -56,7 +56,7 @@ std::vector<Placement> placements(const ShopView &shop, int category, float cell
     if (!shop.available) return result;
     std::array<bool, 100> occupied{};
     int page = 0;
-    auto grid = shopGrid(cellSize);
+    auto grid = shopGrid(shop, cellSize);
     for (const auto &offer : shop.offers) {
         const auto *item = &offer;
         if (!shop.gamble && (category==1 || category==2 ? offer.storePage!=1 && offer.storePage!=2 : offer.storePage!=category))
@@ -113,7 +113,7 @@ bool SceneView::openNpcShop(bool gamble) {
     view_.npcMenu = false;
     view_.shopOpen = true;
     view_.shopGamble = gamble;
-    view_.shopRepair = false;
+    view_.shopRepair = view_.shopSell = false;
     view_.shopPage = 0;
     view_.shopConfirm.reset();
     view_.shopSalePending.reset();
@@ -128,7 +128,7 @@ bool SceneView::openNpcShop(bool gamble) {
 }
 void SceneView::closeNpcShop() {
     view_.shopOpen = false;
-    view_.shopRepair = false;
+    view_.shopRepair = view_.shopSell = false;
     view_.npcMenu = false;
     view_.shopConfirm.reset();
     view_.shopSalePending.reset();
@@ -136,10 +136,10 @@ void SceneView::closeNpcShop() {
     view_.inventory.open = false;
 }
 bool SceneView::npcShopDropAt(Vec mouse) const {
-    return view_.shopOpen && CheckCollisionPointRec(rv(mouse), shopGrid(inventoryCellSize(inventoryView_)));
+    return view_.shopOpen && CheckCollisionPointRec(rv(mouse), shopGrid(shopView(), inventoryCellSize(inventoryView_)));
 }
 bool SceneView::npcShopRepairAllAt(Vec mouse) const {
-    return view_.shopOpen && !view_.shopGamble && !view_.shopConfirm && shopView().repairAvailable &&
+    return view_.shopOpen && !view_.shopGamble && !view_.shopConfirm && !shopView().sellModeAvailable && shopView().repairAvailable &&
         assets_.vendorButtons.count > 18 &&
         CheckCollisionPointRec(rv(mouse), shopButton(1));
 }
@@ -179,11 +179,15 @@ std::optional<uint32_t> SceneView::clickNpcShop(Vec mouse, bool directBuy) {
         return {};
     }
     if (CheckCollisionPointRec(rv(mouse), shopButton(0))) {
-        view_.shopRepair = false;
+        view_.shopRepair = view_.shopSell = false;
+        return {};
+    }
+    if (!view_.shopGamble && shopView().sellModeAvailable && CheckCollisionPointRec(rv(mouse), shopButton(1))) {
+        view_.shopSell = !view_.shopSell; view_.shopRepair = false;
         return {};
     }
     if (!view_.shopGamble && CheckCollisionPointRec(rv(mouse), shopButton(2))) {
-        if (shopView().repairAvailable) view_.shopRepair = !view_.shopRepair;
+        if (shopView().repairAvailable) { view_.shopRepair = !view_.shopRepair; view_.shopSell = false; }
         return {};
     }
     for (int index = 0; !view_.shopGamble && index < 4; ++index)
@@ -256,21 +260,21 @@ void SceneView::drawNpcShop(Vec mouse) const {
     painter_.label(assets_.characterLabels.at("stash"), int(panel.x + 20 * scale()), int(panel.y + 362 * scale()), 13, WHITE);
     painter_.label(stashGold, int(panel.x + 199 * scale()) - painter_.measure(stashGold, 13),
                    int(panel.y + 362 * scale()), 13, WHITE);
-    const int buttonFrames[] = {2, 18, 6, 10};
+    const int buttonFrames[] = {2, shop.sellModeAvailable ? 4 : 18, 6, 10};
     const bool repairAvailable = shop.repairAvailable;
     for (int index = 0; index < 4; ++index) {
-        if ((index == 1 || index == 2) && !repairAvailable) continue;
-        if (index == 1 && assets_.vendorButtons.count <= 18) continue;
+        if ((index == 1 && !shop.sellModeAvailable && !repairAvailable) || (index == 2 && !repairAvailable)) continue;
+        if (index == 1 && !shop.sellModeAvailable && assets_.vendorButtons.count <= 18) continue;
         auto sprite = assets_.vendorButtons.frame(0, buttonFrames[index]);
         if (!sprite) continue;
         const auto &texture = sprite->texture;
         DrawTexturePro(texture, {0, 0, float(texture.width), float(texture.height)},
                        shopButton(index), {0, 0}, 0,
                        WHITE);
-        if (index == 2 && view_.shopRepair) DrawRectangleLinesEx(shopButton(index), 1, gold);
+        if ((index == 2 && view_.shopRepair) || (index == 1 && view_.shopSell)) DrawRectangleLinesEx(shopButton(index), 1, gold);
         if (index == 2 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
             painter_.label(assets_.characterLabels.at("NPCRepairItems"), int(shopButton(index).x), int(shopButton(index).y - 20), 12, WHITE);
-        if (index == 1 && CheckCollisionPointRec(rv(mouse), shopButton(index)))
+        if (index == 1 && !shop.sellModeAvailable && CheckCollisionPointRec(rv(mouse), shopButton(index)))
             deferTooltip({{"Repair All",ItemTextTone::Normal}}, ItemQuality::Normal, {panel.x + panel.width, panel.y + 384 * scale()}, shop.repairAllPrice, assets_.characterLabels.at("Cost"));
     }
     if (maximumPage(items) > (view_.shopCategory == 1 || view_.shopCategory == 2 ? 1 : 0)) {

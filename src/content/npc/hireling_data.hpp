@@ -38,8 +38,8 @@ struct HirelingOffer {
     uint32_t seed = 0;
 };
 struct HirelingLayout {
-    // Head, torso, right arm, left arm; original Hireling row, panel-local pixels.
-    std::array<std::array<int, 4>, 4> slots{};
+    // Head, torso, right/left arm, belt, feet, gloves. Absent MPQ slots stay -1.
+    std::array<std::array<int, 4>, 7> slots{};
 };
 std::vector<HirelingDefinition> loadHirelingDefinitions(const DataTable &table, const DataTable &skills);
 HirelingLayout loadHirelingLayout(const DataTable &table);
