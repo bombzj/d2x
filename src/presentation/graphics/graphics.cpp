@@ -270,6 +270,12 @@ GpuAnimation Graphics::composite(const std::string &type, const std::string &tok
             if (splitLayers) flushSegment();
             recolor(merged);
             auto frame = upload(merged);
+            if(mode=="dt" || mode=="dd") for(const auto &[component,animation]:parts) {
+                (void)animation;
+                const auto *part=get(component);
+                if(part && part->width>0 && part->height>0)
+                    frame.corpseComponentBounds.push_back({float(part->x),float(part->y),float(part->width),float(part->height)});
+            }
             frame.layers = std::move(layers);
             const auto shadow = upload(projectShadow(shadowMask));
             frame.shadowTexture = shadow.texture;

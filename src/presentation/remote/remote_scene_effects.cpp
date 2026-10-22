@@ -238,7 +238,18 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         const auto row = skillRows.find(*event.skill);
         const auto source = v.world.units.find(event.source);
         if (row == skillRows.end() || source == v.world.units.end() || !source->second.position) return;
-        if(auto channel=channels.find(event.source);channel!=channels.end() && channel->second.skillRow==row->second) {
+        const bool triggered = event.packet == 0x99 || event.packet == 0x9A;
+        // Effect-only notifications need no actor animation. A data-only
+        // proc such as Skeleton Splash has no client program or visuals.
+        if(triggered && !skills.number(row->second,"cltstfunc").value_or(0) &&
+            !skills.number(row->second,"cltdofunc").value_or(0) &&
+            skills.number(row->second,"ItemCltEffect").value_or(0)<=1 &&
+            skills.value(row->second,"cltmissile").empty() &&
+            skills.value(row->second,"stsound").empty() && skills.value(row->second,"dosound").empty() &&
+            skills.value(row->second,"castoverlay").empty() &&
+            skills.value(row->second,"tgtsound").empty() && skills.value(row->second,"tgtoverlay").empty() &&
+            skills.value(row->second,"itemcastsound").empty() && skills.value(row->second,"itemcastoverlay").empty()) return;
+        if(auto channel=channels.find(event.source);!triggered && channel!=channels.end() && channel->second.skillRow==row->second) {
             auto target=event.point;
             if(!target && event.target) target=targetPosition(*event.target);
             if(target) {channel->second.destination=*target;channel->second.target=event.target;channel->second.revision=source->second.actionRevision;}
@@ -246,9 +257,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         }
         auto actor = source->second; actor.actionSkill = event.skill;actor.actionSkillLevel=event.level;
         const auto *castAnimation = actor.key.type == 0 ? character(actor, false, town, shared) : monster(actor, false, shared);
-        if (!castAnimation || castAnimation->animation.frames.empty())
+        if (!triggered && (!castAnimation || castAnimation->animation.frames.empty()))
             effectLimitations.insert("Skill animation unavailable: " + std::string(skills.value(row->second, "skill")));
-        if (actor.key.type == 1) {
+        if (actor.key.type == 1 && !triggered) {
             // MonsterMsg sends a skill notification instead of an action packet
             // whenever the monster has a used skill, including ordinary Attack.
             auto action = event;
@@ -1047,7 +1058,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         } else if (event.kind == OnlineCombatEvent::Kind::Skill && event.skill &&
                    (event.packet == 0x4C || event.packet == 0x4D || event.packet == 0x99 || event.packet == 0x9A)) {
             // Forced owner synchronization replaces the local pose, without duplicating its effects.
-            const bool own = playerId && event.source == OnlineUnitKey{0, *playerId};
+            const bool own = (event.packet == 0x4C || event.packet == 0x4D) &&
+                playerId && event.source == OnlineUnitKey{0, *playerId};
             const bool alreadyDisplayed = own && localCast && localCast->started >= 0 &&
                 localCast->command.skill == *event.skill && time < localCast->started + localCast->duration;
             if (!alreadyDisplayed) skillEffect(event);

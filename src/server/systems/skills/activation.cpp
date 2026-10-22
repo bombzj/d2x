@@ -189,7 +189,7 @@ DomainStatus System::activateGrimWard(Release &pending,const ActorContext &actor
 }
 DomainStatus System::activateCorpse(Release &pending,const ActorContext &actor,Vec center) {
     if(pending.skill.effect==SkillBehavior::PoisonExplosion) {
-        if(!ports_.monsters.consumableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
+        if(!ports_.monsters.usableCorpse(pending.unit,actor.area,actor.tick)) return DomainStatus::Unavailable;
         const auto result=ports_.missiles.spawn({actor,pending.skill,pending.collision,center,false,actor.actor,0,center});
         if(result) ports_.monsters.consumeCorpse(pending.unit);
         return result.status;

@@ -8,6 +8,7 @@
 #include "gameplay/combat/life.hpp"
 #include "gameplay/stats/modifier_values.hpp"
 #include "gameplay/skills/aura_resolve.hpp"
+#include "gameplay/skills/targeting.hpp"
 #include "gameplay/combat/reception.hpp"
 #include "gameplay/rules/arithmetic.hpp"
 #include "gameplay/rules/event_frame.hpp"
@@ -296,7 +297,8 @@ bool System::nativeUsableCorpse(EntityId id,uint64_t tick) const {
 bool System::usableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     const auto *dead=find(id);
     return dead && dead->area==area && !dead->owner && selectableCorpse(id,tick) &&
-        (!revive || (dead->rule.revivable && dead->rule.switchAi && dead->identity.rank==MonsterRank::Normal && !dead->rule.boss && !dead->rule.primeEvil));
+        (!revive || (dead->rule.revivable && skillAiControlAllowed(dead->identity.rank,dead->rule.switchAi,dead->rule.boss) &&
+            !ports_.effects.unitStates(id,tick).contains(dead->rule.uninterruptableState)));
 }
 bool System::consumableCorpse(EntityId id,RegionId area,uint64_t tick,bool revive) const {
     return usableCorpse(id,area,tick,revive) && find(id)->rule.nativeVelocity!=0;

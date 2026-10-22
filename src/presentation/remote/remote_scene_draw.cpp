@@ -1,6 +1,21 @@
 #include "remote_scene_impl.hpp"
 
 namespace d2x {
+namespace {
+bool corpseSpriteHit(const Sprite &image,Vec position,Vec mouse) {
+    // Retail D2Client A6730/A6C90: select each original component frame
+    // with twelve pixels on each side and a minimum extent of 32.
+    for(auto bounds:image.corpseComponentBounds) {
+        bounds.x-=12;bounds.y-=12;bounds.width+=24;bounds.height+=24;
+        if(bounds.width<32) {const int grow=(32-int(bounds.width))/2;bounds.x-=grow;bounds.width+=2*grow;}
+        if(bounds.height<32) {const int grow=(32-int(bounds.height))/2;bounds.y-=grow;bounds.height+=2*grow;}
+        bounds.x+=position.x;bounds.y+=position.y;
+        if(mouse.x>=bounds.x && mouse.x<=bounds.x+bounds.width &&
+           mouse.y>=bounds.y && mouse.y<=bounds.y+bounds.height) return true;
+    }
+    return false;
+}
+}
 
 RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,
                        SceneView &shared, const RemoteCombat &combat, const RemoteUiClients &clients, bool uiConsumed, Vec mouse, bool rightHand, bool paused) {
@@ -473,7 +488,9 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             const float distance = (p - mouse).length();
             if (distance < targetDistance) { targetDistance = distance; selectedTarget = key; hasSelectedTarget=true; }
         }
-        if (!surface && (key.type == 0 || key.type == 1 || key.type == 2) && spriteHit(image, p, mouse)) {
+        const bool corpse=key.type==1 && onlineMonsterCorpse(u);
+        const bool combatHit=corpse?corpseSpriteHit(*image,p,mouse):spriteHit(image,p,mouse);
+        if (!surface && (key.type == 0 || key.type == 1 || key.type == 2) && combatHit) {
             const float distance = (p - mouse).length();
             if (combat.monsterTargetEligible(u, false) && distance < monsterDistance) {
                 monsterDistance = distance;
@@ -483,11 +500,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if (selected && combat.skillTargetEligible(u,selected->skill)) {
                 if (distance<combatDistance) { combatDistance=distance; combatTarget=key; }
             }
-            // A right-hand corpse skill exposes its targets before the button
-            // is pressed. Keep this hover separate from the active hand's cast
-            // target so a normal left click cannot cast at a corpse.
-            if (onlineMonsterCorpse(u) && v.world.rightSkill &&
-                combat.skillTargetEligible(u,v.world.rightSkill->skill) && distance<corpseDistance) {
+            // Native SelectProc checks both selected hands for hover. Only
+            // the active hand supplies the actual cast target above.
+            const bool selectedCorpse=corpse &&
+                ((v.world.rightSkill && combat.skillTargetEligible(u,v.world.rightSkill->skill)) ||
+                 (v.world.leftSkill && combat.skillTargetEligible(u,v.world.leftSkill->skill)));
+            if (selectedCorpse && distance<corpseDistance) {
                 corpseDistance=distance; hoveredCorpse=key;
             }
         }
@@ -633,13 +651,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
             break;
         }
-    if (hoveredCorpse && !surface && !groundTarget && !hasSelectedTarget) {
-        const auto drawn = std::find_if(draw.begin(),draw.end(),
-            [&](const auto &entry) { return entry.unit==effectOwner(*hoveredCorpse); });
-        if (drawn!=draw.end())
-            shared.drawCorpseLabel(monsterCaption(v.world.units.at(*hoveredCorpse)).first,
-                screen(drawn->position)+drawn->pixelOffset);
-    }
+    if (hoveredCorpse && !surface && !groundTarget && !hasSelectedTarget)
+        intent.hoveredMonster=effectOwner(*hoveredCorpse);
     shared.drawGroundLabels(mouse);
     if (hoveredPlayer && !hasSelectedTarget && (!combatTarget || combatTarget->type==0) && !groundTarget) {
         const auto actor = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) {

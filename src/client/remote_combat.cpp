@@ -3,6 +3,8 @@
 #include "item_skill_sources.hpp"
 #include "content/skills/skill_eligibility.hpp"
 #include "network/protocol/bits.hpp"
+#include "network/protocol/client_profile.hpp"
+#include "gameplay/units/distance.hpp"
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
@@ -205,23 +207,25 @@ RemoteCombat::MonsterDisposition RemoteCombat::monsterDisposition(const OnlineUn
 }
 bool RemoteCombat::monsterTargetEligible(const OnlineUnit &unit, bool targetCorpse) const {
     if(unit.key.type!=1) return false;
-    if(!targetCorpse) if(const auto snapshot=unitStates_.find(unit.key);snapshot!=unitStates_.end() && snapshot->second.decoded)
+    // Corpse selectors do not consult live-unit alignment or killable.
+    if(targetCorpse) return corpseSelectable(unit);
+    if(const auto snapshot=unitStates_.find(unit.key);snapshot!=unitStates_.end() && snapshot->second.decoded)
         for(const auto &[id,state]:snapshot->second.states) {(void)id;if(state.name=="attached") return false;}
-    if(!targetCorpse && unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
+    if(unit.nativeMode && unit.mode==8 && !unit.actionSkill) {
         const auto found=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
         if(found!=monsters_.end()) {
             const auto ai=tables_.at("monstats").value(found->second,"AI");
             if(ai=="Vulture" || ai=="SandMaggot" || ai=="FrogDemon") return false;
         }
     }
-    return hostile(unit) && onlineMonsterCorpse(unit) == targetCorpse &&
-        (!targetCorpse || corpseSelectable(unit));
+    return hostile(unit) && !onlineMonsterCorpse(unit);
 }
 bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) const {
     const auto row=skills_.find(skill);if(row==skills_.end() || !unit.position) return false;
     const auto &table=tables_.at("skills");
     const auto n=[&](std::string_view column) {return table.number(row->second,column).value_or(0);};
     if (!skillMetadata_.contains(skill) || skillMetadata_.at(skill).itemSkill) return false; // SrvDo113 searches inventory, not a hovered unit.
+    if(n("TargetCorpse")) return corpseTargetEligible(unit,n("SelectProc"));
     if(n("srvstfunc")==34 && n("srvdofunc")==72) return monsterTargetEligible(unit,true);
     if(n("srvstfunc")==33 && (n("srvdofunc")==69 || n("srvdofunc")==75)) {
         if(!monsterTargetEligible(unit,true)) return false;
@@ -276,6 +280,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineUnit &unit,uint16_t skill) co
 bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) const {
     const auto row = skills_.find(skill);
     if(item.mode==3 && row!=skills_.end() && tables_.at("skills").number(row->second,"srvstfunc")==20 && tables_.at("skills").number(row->second,"srvdofunc")==57) {
+        if(!(item.flags & 0x10u)) return false;
         for(const auto name:{"weapons","armor"}) {const auto &table=tables_.at(name);for(size_t i=0;i<table.rows().size();++i) if(table.value(i,"code")==item.code) return (table.number(i,"bitfield1").value_or(0)&2)!=0;}
         return false;
     }
@@ -285,7 +290,7 @@ bool RemoteCombat::skillTargetEligible(const OnlineItem &item, uint16_t skill) c
 }
 bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
     const auto monster=monsters_.find(monsterClass(unit).value_or(UINT16_MAX));
-    if (unit.key.type!=1 || monster==monsters_.end()) return false;
+    if (unit.key.type!=1 || unit.mode!=12 || monster==monsters_.end()) return false;
     const auto &extras=tables_.at("monstats2");
     const auto identity=tables_.at("monstats").value(monster->second,"MonStatsEx");
     bool selectable=false;
@@ -302,6 +307,37 @@ bool RemoteCombat::corpseSelectable(const OnlineUnit &unit) const {
         }
     }
     return true;
+}
+bool RemoteCombat::corpseTargetEligible(const OnlineUnit &unit,int selection) const {
+    if(!corpseSelectable(unit)) return false;
+    const auto monster=monsters_.find(*monsterClass(unit));
+    const auto &monstats=tables_.at("monstats");
+    const auto &extras=tables_.at("monstats2");
+    const auto identity=monstats.value(monster->second,"MonStatsEx");
+    const auto extraNumber=[&](std::string_view field) {
+        for(size_t row=0;row<extras.rows().size();++row)
+            if(extras.value(row,"Id")==identity) return extras.number(row,field).value_or(0);
+        return 0;
+    };
+    // D2Client SelectProc table: 1/5=corpse, 2=consumable, 3=revive,
+    // 4/6=soft corpse. Read the current MPQ so PD2's archer uses the
+    // same selector as its skeleton and mage, without retail skill IDs.
+    switch(selection) {
+    case 1: case 5: return true;
+    case 2: return monstats.number(monster->second,"Velocity").value_or(0)!=0;
+    case 3: {
+        if(!monstats.number(monster->second,"Velocity").value_or(0) || !extraNumber("mWL") ||
+           !monstats.number(monster->second,"switchai").value_or(0) || monstats.number(monster->second,"boss").value_or(0)) return false;
+        const auto appearance=unitOwners_.find(unit.key);
+        // Native UNIQUE/SUPERUNIQUE flags are wire rank bits 1/2.
+        // Champions also carry UNIQUE; do not reinterpret the wire mask.
+        if(appearance==unitOwners_.end() || !appearance->second.decoded || (appearance->second.rank & 6u)) return false;
+        // Retail SelectProc3 excludes the SandLeaper base class.
+        return monstats.value(monster->second,"BaseId")!="sandleaper1";
+    }
+    case 4: case 6: return extraNumber("soft")!=0;
+    default: return false;
+    }
 }
 bool RemoteCombat::submit(OnlineCombatCommand command) {
     command.interaction.reset();
@@ -373,6 +409,29 @@ bool RemoteCombat::submit(OnlineCombatCommand command) {
                 if (!binding.nativeMapReady || !binding.movementAvailable || !world.playerPosition || !eligibility.usableNow)
                     return reject("Skill cannot be cast in the current loaded area");
                 if (command.point.has_value() == command.target.has_value()) return reject("Specify exactly one point or unit target");
+                if(command.point && tables_.at("skills").number(row->second,"TargetCorpse").value_or(0) &&
+                   tables_.at("skills").number(row->second,"SearchEnemyNear").value_or(0)) {
+                    // Retail D2Client 51650: circle radius 9, then strictly
+                    // nearest UNITS_GetDistanceToCoordinates below 10.
+                    // PD2 CN patches the initial best distance at 517EF to 7.
+                    const auto center=*command.point;
+                    int nearest=session_.read().protocolProfile==net::protocol::clientCompatibility(
+                        net::protocol::ClientProfile::Pd2CnNormal20261020).id?7:10;
+                    for(const auto key:scene_.nearbyUnits(session_.read(),center,9)) {
+                        const auto &candidate=world.units.at(key);
+                        if(!skillTargetEligible(candidate,command.skill)) continue;
+                        const auto position=*candidate.position;
+                        const int distance=unitCoordinateDistance(center.x,center.y,position.x,position.y);
+                        if(distance<nearest) {nearest=distance;command.target=key;}
+                    }
+                    if(command.target) command.point.reset();
+                }
+                if (tables_.at("skills").number(row->second,"TargetCorpse").value_or(0) && !command.target)
+                    return reject("This skill requires a selectable corpse");
+                if (tables_.at("skills").number(row->second,"srvstfunc")==20 &&
+                    tables_.at("skills").number(row->second,"srvdofunc")==57 &&
+                    (!command.target || command.target->type!=4))
+                    return reject("Iron Golem requires an identified metal item on the ground");
                 if (metadata.itemSkill && tables_.at("skills").value(row->second, "range") == "none") {
                     // SrvDo113 invokes pSpell at the player's position. A pointer
                     // over the map edge must not prevent a self item action.
@@ -454,6 +513,7 @@ void RemoteCombat::update() {
                     if (bits.read(1)) for (const auto width : componentBits_.at(unit.classId.value())) bits.read(width);
                     if (bits.read(1)) {
                         const auto rank = bits.read(5);
+                        owner.rank = rank;
                         if (rank & 4) bits.read(16);
                         unsigned modifiers = 0;
                         while (bits.read(8)) if (++modifiers > 9) throw std::runtime_error("Too many NPC modifiers");

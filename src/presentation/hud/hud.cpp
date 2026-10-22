@@ -111,6 +111,23 @@ void SceneView::drawHelp() const {
         painter_.label(lines[i], W / 2 - 194, 216 + i * 23, 12,
                        i < 4 ? parchment : Color{150, 148, 132, 255});
 }
+void SceneView::drawMonsterCorpseName(const std::string &name) const {
+    // Retail D2Client C0986–C0B66: red Font16 at baseline 32, then skip
+    // the life bar and modifiers. Keep the original font palette.
+    const auto &font=assets_.characterRedFont;
+    const auto codes=utf8Decode(name);
+    int width=0;
+    for(const auto code:codes) width+=font.widthOf(code);
+    const auto viewport=worldViewport();
+    int x=int(viewport.x+viewport.width/2)-width/2;
+    for(const auto code:codes) {
+        if(const auto *image=font.glyphOf(code))
+            DrawTexturePro(image->texture,{0,0,float(image->texture.width),float(image->texture.height)},
+                {float(x+image->x),float(32+image->y-image->texture.height),
+                 float(image->texture.width),float(image->texture.height)},{},0,WHITE);
+        x+=font.widthOf(code);
+    }
+}
 void SceneView::drawEnemyBar(std::string_view title, std::optional<float> life,
                               std::string_view description, Color color) const {
     const std::string name(title), details(description);

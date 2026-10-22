@@ -1,5 +1,6 @@
 #include "remote_scene_impl.hpp"
 #include "content/skills/description_values.hpp"
+#include "content/language.hpp"
 
 namespace d2x {
 
@@ -265,12 +266,26 @@ void RemoteScene::drawTargetInfo(const OnlineView &view, const RemoteSceneFrame 
     const auto target = lockedTarget ? lockedTarget : frame.hoveredMonster;
     if (!target || ((target.value - 1) >> 32) != 1) return;
     const auto found = view.world.units.find({1, uint32_t(target.value - 1)});
-    if (found == view.world.units.end() || !combat.monsterTargetEligible(found->second, false)) return;
+    if (found == view.world.units.end()) return;
     const auto &unit = found->second;
+    const bool corpse=onlineMonsterCorpse(unit);
+    if(corpse) {
+        const auto selectable=[&](const auto &selected) {return selected && combat.skillTargetEligible(unit,selected->skill);};
+        if(!selectable(view.world.leftSkill) && !selectable(view.world.rightSkill)) return;
+    } else if(!combat.monsterTargetEligible(unit,false)) return;
     const auto row = impl_->monsterRows.find(combat.monsterClass(unit).value_or(UINT16_MAX));
     if (row == impl_->monsterRows.end()) return;
     auto [name, description] = impl_->monsterCaption(unit);
     if (name.empty()) return;
+    if(corpse) {
+        const auto suffix=impl_->strings.find("corpse");
+        if(suffix.empty()) return;
+        name+=" ";
+        if(languageOf(impl_->archives).id==LanguageId::English) name+=suffix;
+        else {name+="(";name+=suffix;name+=")";}
+        shared.drawMonsterCorpseName(name);
+        return;
+    }
     Color titleColor = impl_->monstats.number(row->second, "boss").value_or(0) ? Color{199,179,119,255} : WHITE;
     if (const auto identity = impl_->monsterIdentities.find(unit.key); identity != impl_->monsterIdentities.end()) {
         if (identity->second.champion) titleColor = {105,105,255,255};

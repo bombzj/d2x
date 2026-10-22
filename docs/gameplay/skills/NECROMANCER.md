@@ -1,6 +1,6 @@
 # 死灵法师技能
 
-更新：2026-10-16。自研服务端已接入66–95共30项技能（27项主动、3项被动）。本页维护当前实现、原版依据与缺口；规则来自当前MPQ，master的纯求值与D2MOO作为执行线索，旧单机会话执行器没有迁回客户端。
+更新：2026-10-22。自研服务端已接入66–95共30项技能（27项主动、3项被动）。本页维护当前实现、原版依据与缺口；规则来自当前MPQ，master的纯求值与D2MOO作为执行线索，旧单机会话执行器没有迁回客户端。
 
 骷髅支配、石魔支配及召唤抵抗的提示与实际召唤共用`evaluateNecromancerPassive`，法师元素长度、降低抵抗递减、范围与AI资格复用[公共函数](COMMON.md#公共函数抽取)。参数在content从当前MPQ准备，客户端被动提示不再逐次查表。完整技能组合仍待原版对齐，存档校验以[SAVES](../../modules/SAVES.md)为准。
 
@@ -21,11 +21,23 @@
 
 ## 状态、归属与保存
 
+PD2骷髅战士攻击后的`Skeleton Splash`（当前Skills ID393、srvdofunc163、monanim=xx、无客户端程序／飞弹／音效／覆盖图）是触发效果，不是新的施法动作。已有CN收包记录中，骷髅先收到0x6C／action10攻击，约0.46–0.51秒后收到0x99／skill393，再约0.25–0.31秒收到0x6D待机。旧客户端副本把0x99覆盖为actionSkill并清mode，导致表现查找不存在的SK／xx动画、整只骷髅停止绘制直到待机。现仅0x4C／0x4D切换技能动作；0x99／0x9A保留当前模式、目标、朝向与动作时间，通知仍进入效果事件队列，不打断本人施法预测；无客户端表现的表行不请求动画。原版也走相同协议语义，不按PD2技能ID补帧或替换资源。
+
+依据为D2MOO `SkillItem::SKILLITEM_CastSkillOnTarget/OnPosition`→`SUnitMsg::sub_6FCC60D0/sub_6FCC6150`的0x99／0x9A触发通知；固定1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）包表RVA DDE60中，两者直接进入AF0F0／AF090→C9030，临时设置效果目标并在返回前恢复；0x4C／0x4D则由AF1D0／AF160进入动作分派2A750。此修正定位于错误动作覆盖；全部触发技能的ItemCheckStart、ItemCltEffect及独立效果时序仍待完整对齐。尚未构建或运行验证。
+
 actions持有动作与待释放队列，skills解释并推进技能程序，companions拥有伙伴／上限／寿命，monsters拥有实体／AI准备值／生命，effects拥有诅咒与接触反应，transactions提交人物／库存／地面材料，combat持有伤害和来源复验。资源不足、目标消失、尸体已消费、非金属／未鉴定材料、缺原资源均明确拒绝，不自造参数或召唤替身。
 
 骷髅／法师／石魔及重生单位已有路线时，`companions/necroStep`不重选目标或重启追击／跟随，归位和固有光环仍先处理。重生单位的主人跟随使用现有`nativePetMoving`运行标记，路线执行期间不再同时调用原怪物家族AI覆盖它；家族自身的移动仍由`ai::System`推进，跟随结束或归位后交回家族决策。依据为本地D2MOO Fn067_NecroPet、PetMove及MonsterMode的WL／RN结束回调；此处只修正路线继续与两个AI入口的交接，完整Fn067目标／命令和全重生家族仍待对齐，不改变D2S。
 
-死灵消耗尸体通过monsters.consumableCorpse复验，区别于寻物等使用的尸体选择入口：除现有死亡完成、区域、不可选／已搜索及奖励保护外，要求MPQ准备的MonStats原速度非零。依据D2COMMON_11017_CheckUnitIfConsumeable及SkillNec的起手／释放调用；重生另保留revive、AI、rank与首领约束。尚未完整映射原DEATH／DEAD模式和全部Udead状态掩码，完整尸体资格仍待对齐。
+骷髅／法师／重生在skills/casting起手、发布动作之前通过monsters.consumableCorpse复验，释放时再次检查：除现有死亡完成、区域、不可选／已搜索及奖励保护外，要求MPQ准备的MonStats原速度非零。重生另检查revive、AI切换、首领／精英和uninterruptable状态，普通随从不因Minion身份被拒绝。尸爆／毒爆使用普通usableCorpse入口，不附加速度条件；铁魔起手要求明确选中已鉴定金属材料。依据D2COMMON_11017_CheckUnitIfConsumeable、D2COMMON_11021及SkillNec的SrvSt15／17／20／21和释放调用。服务端尚未完整映射原DEATH／DEAD模式、附着单位及全部Udead状态掩码，完整尸体资格仍待对齐。
+
+客户端RemoteCombat按当前MPQ的TargetCorpse／SelectProc选择尸体：1／5普通尸体，2要求原速度非零，3附加AI／精英与SandLeaper基类限制，4／6要求soft。尸体必须已进入DEAD（12），读取corpseSel与States的不可选／隐藏／udead条件，不使用活体敌对阵营／killable作为尸体资格。PD2骷髅、法师和弓箭手由各自表行进入同一SelectProc2，不写死原版技能ID。直接点中的合格尸体保留为目标；点击空地时，TargetCorpse且SearchEnemyNear启用的技能先按落点搜索附近尸体，找到后把坐标请求转为真实单位请求；只有找不到目标时才在本地预测动作前拒绝。
+
+原版附近搜索有两层距离：UNITFINDS先收集距落点平方距离≤81的候选，随后以UNITS_GetDistanceToCoordinates的`max(abs(dx),abs(dy))+min(abs(dx),abs(dy))/2`整数距离取严格小于10的最近者。它不要求鼠标命中尸体图像，也不以角色坐标为搜索圆心。房间范围从角色当前房间开始，搜索触及边界时遍历原activeNear；同距离不替换先遇到的候选。RemoteTown保留观察到的单位入房次序（头插，房内移动不重排），并按原活动邻房列表提供候选，不用GUID大小选择最近距离的平局。副本更新之间未观察到的跨房往返仍无法重建原客户端房间链时序。
+
+证据为固定1.13c D2Client RVA51C9C–51CC2读取SearchEnemyNear并调用51650，5170E–517D0准备TargetCorpse查询与半径9，517EB–51846以初值10严格比较最近距离；D2Common ordinal10591／10052／10080分别对应RVA12030／12720／7F5E0，默认候选测试位于124E0；D2MOO的SkillsTbls、UNITFINDS_TestUnit、UNITFINDS_FindAllMatchingUnitsInNeighboredRooms及UNITROOM_AddUnitToRoomEx提供字段／遍历依据。当前PD2 CN ProjectDiablo.dll（MD5 `828ae42e54913ee016a751c8dcd4d48e`）补丁记录RVA49FBDC将D2Client RVA517EF的初值改为7，保留半径9；51CBA调用由3A1150→2EF990包装，排除157／159／166后回调原51650，死灵尸体技能继续走原搜索。客户端仅对匹配`pd2-cn-normal-20261020`配置采用严格小于7的门槛，不把PD2范围带入原版。
+
+尸体鼠标命中按原DT／DD组件帧边界各外扩12像素，并按原整数算法补足32像素范围；悬停检查左右两个已选技能，实际施法仍使用当前手。名称使用原Font16红色字形，在可见世界视口顶部基线32居中，追加当前语言TBL的corpse后缀（非英文加括号），不显示生命条或词缀。依据固定1.13c D2Client.dll（MD5 `f5860c629d309b8fc1f96174babcf633`）SelectProc表RVADE838、A6070／A6250、A6730／A6C90及C0850–C0B66；请求距离保留PlrMsg::sub_6FC83C60的每轴50 subtile边界，不把鼠标像素范围当成游戏作用半径。该选择／起手修正尚未构建或实服验证，PD2实际召唤数量与范围仍由远端权威裁定。
 
 公共curseStateDuration现供死灵、亚马逊状态和祭坛使用：先算nativePercentage(期限,抗性,100)，再从原期限中减去；仅当前States.curse启用抗性拒绝，负抗性不钳零，零期限不强行变成一帧。怪物抗性从当前原始属性来源查询，缺原始来源的旧生产端保留显式适配。AI难度除法仍在原调用端先执行。依据D2MOO Skills::sub_6FD10EC0，完整原事件排序仍未闭合。
 

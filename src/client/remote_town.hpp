@@ -47,6 +47,9 @@ class RemoteTown {
     uint64_t nextNativeUpdateMilliseconds_{};
     std::string nativeReason_;
     std::map<int, std::string> nativeErrors_;
+    struct UnitRoomEntry { size_t room{}; uint64_t assignment{}, entered{}; };
+    std::map<OnlineUnitKey,UnitRoomEntry> unitRooms_;
+    void updateUnitRooms(const OnlineView &);
     OnlineSceneView view_;
     uint64_t gameGeneration_{~uint64_t{}}, areaGeneration_{~uint64_t{}}, revision_{~uint64_t{}};
     std::optional<uint64_t> nextObjectTransition_;
@@ -68,6 +71,8 @@ class RemoteTown {
     const OnlineSceneView &read() const { return view_; }
     const Map *map() const { return map_; }
     bool permits(const OnlineView &, OnlinePoint target) const;
+    // Native player-room / active-neighbor order, then room-unit prepend order.
+    std::vector<OnlineUnitKey> nearbyUnits(const OnlineView &, OnlinePoint center, int radius) const;
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);

@@ -334,6 +334,7 @@ class SceneView {
     void drawGroundItem(const InventoryItemView &, bool highlighted,
                         const PaletteBlendView *lighting = nullptr, Color light = WHITE) const;
     void drawEnemyBar(std::string_view title, std::optional<float> life, std::string_view description = {}, Color color = WHITE) const;
+    void drawMonsterCorpseName(const std::string &) const;
     void refreshUi(float dt);
     void advanceWorldPresentation(float dt);
     ~SceneView();

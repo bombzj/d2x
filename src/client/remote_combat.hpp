@@ -38,7 +38,7 @@ class RemoteCombat {
     std::vector<OnlineCombatSkillView> catalog_;
     std::map<OnlineUnitKey, OnlineCombatUnitStates> unitStates_;
     std::map<OnlineUnitKey,std::pair<uint64_t,uint16_t>> changedClasses_;
-    struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; };
+    struct Ownership { uint64_t revision{}; bool decoded{}; std::optional<uint32_t> player; unsigned rank{}; };
     std::map<OnlineUnitKey, Ownership> unitOwners_;
     std::map<uint16_t, std::array<unsigned, 16>> componentBits_;
     uint64_t game_{~uint64_t{}}, area_{~uint64_t{}};
@@ -53,6 +53,7 @@ class RemoteCombat {
     bool sameParty(uint32_t, uint32_t) const;
     bool hostilePlayers(uint32_t, uint32_t) const;
     bool allied(const OnlineUnit &) const;
+    bool corpseTargetEligible(const OnlineUnit &, int selection) const;
   public:
     RemoteCombat(Archives &, RemoteTown &, net::RealmSession &, RemoteInventory &);
     bool submit(OnlineCombatCommand);

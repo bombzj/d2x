@@ -62,6 +62,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
         nativeTerrain_.reset();
         nativeTerrainDirty_ = true;
         nativePlayerRoom_.reset();
+        unitRooms_.clear();
         nativePlayerPosition_.reset();
         nativeSequence_ = 0;
         nativeLoadComplete_ = false;
@@ -136,6 +137,7 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     view_.npcConversation.reset();
     view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear(); view_.automap = {};
     if (updateNative(v)) {
+        updateUnitRooms(v);
         updateMapTargets(v);
         try {
             prepareTownAutomap(v);
@@ -150,6 +152,51 @@ void RemoteTown::update(const OnlineView &v, std::optional<Vec> displayPosition)
     view_.reason = nativeReason_.empty() ? "Waiting for native room assignments and player position" : nativeReason_;
     view_.nativeMapReason = view_.reason;
     for (const auto &[level, reason] : nativeErrors_) view_.mapErrors[level] = reason;
+}
+void RemoteTown::updateUnitRooms(const OnlineView &v) {
+    std::erase_if(unitRooms_,[&](const auto &entry) {return !v.world.units.contains(entry.first);});
+    for(const auto &[key,unit]:v.world.units) {
+        const auto room=unit.position?nativeMap_->clientRoom(unit.position->x,unit.position->y):std::nullopt;
+        if(!room || !nativeMap_->tiles().rooms().at(*room).loaded) {unitRooms_.erase(key);continue;}
+        const auto found=unitRooms_.find(key);
+        if(found==unitRooms_.end() || found->second.room!=*room || found->second.assignment!=unit.assignmentRevision)
+            unitRooms_[key]={*room,unit.assignmentRevision,std::max(unit.assignmentRevision,unit.positionRevision)};
+    }
+}
+std::vector<OnlineUnitKey> RemoteTown::nearbyUnits(const OnlineView &v,OnlinePoint center,int radius) const {
+    std::vector<OnlineUnitKey> result;
+    if(!view_.nativeMapReady || !nativeMap_ || !v.world.playerPosition || radius<0 ||
+       gameGeneration_!=v.gameGeneration || areaGeneration_!=v.world.areaGeneration) return result;
+    const auto player=v.world.playerPosition;
+    const auto root=nativeMap_->clientRoom(player->x,player->y);
+    if(!root) return result;
+    const auto &rooms=nativeMap_->tiles().rooms();
+    const auto &bounds=rooms.at(*root).room;
+    std::vector<size_t> search{*root};
+    // UNITFINDS_FindAllMatchingUnitsInNeighboredRooms uses the player's
+    // room unless the query reaches its boundary, then its activeNear list.
+    if(int(center.x)-radius<=bounds.x*5 || int(center.y)-radius<=bounds.y*5 ||
+       int(center.x)+radius>=(bounds.x+bounds.width)*5 || int(center.y)+radius>=(bounds.y+bounds.height)*5)
+        search=rooms.at(*root).activeNear;
+    for(const auto room:search) {
+        if(!rooms.at(room).loaded || catalog_->level(rooms.at(room).level).town) continue;
+        std::vector<OnlineUnitKey> members;
+        for(const auto &[key,entry]:unitRooms_) {
+            if(entry.room!=room) continue;
+            const auto found=v.world.units.find(key);
+            if(found==v.world.units.end() || !found->second.position) continue;
+            const auto point=*found->second.position;
+            const int64_t dx=int(point.x)-int(center.x),dy=int(point.y)-int(center.y);
+            if(dx*dx+dy*dy<=int64_t(radius)*radius) members.push_back(key);
+        }
+        // UNITROOM_AddUnitToRoomEx prepends. Movement inside the same room
+        // leaves its order intact; reassignment or a room crossing reinserts.
+        std::stable_sort(members.begin(),members.end(),[&](auto a,auto b) {
+            return unitRooms_.at(a).entered>unitRooms_.at(b).entered;
+        });
+        result.insert(result.end(),members.begin(),members.end());
+    }
+    return result;
 }
 void RemoteTown::updateMapTargets(const OnlineView &v) {
     nextObjectTransition_.reset();

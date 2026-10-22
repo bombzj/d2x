@@ -31,7 +31,11 @@ OnlineUnit &unit(OnlineWorldView &w, OnlineUnitKey k) {
 }
 void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
     if (event.kind == OnlineCombatEvent::Kind::Skill &&
-        (event.packet == 0x4C || event.packet == 0x4D || event.packet == 0x99 || event.packet == 0x9A)) {
+        (event.packet == 0x4C || event.packet == 0x4D)) {
+        // Retail 0x99/0x9A invoke an item-effect skill without changing mode,
+        // target or animation epoch. In particular PD2 Skeleton Splash has
+        // monanim=xx; replacing the attack with it hides the actor until NU.
+        // Keep those notifications in combatEvents for their client effects.
         // ObjMode also sends 0x4D for shrine operation: the apparent skill
         // is the activating player's GUID and level is the shrine type.
         // Only players and monsters carry skill actions. Objects retain

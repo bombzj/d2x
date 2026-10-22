@@ -9,6 +9,7 @@
 #include "gameplay/skills/bow_spec.hpp"
 #include "gameplay/skills/spear_spec.hpp"
 #include "gameplay/skills/bone_spec.hpp"
+#include "gameplay/skills/necro_summon_spec.hpp"
 #include "gameplay/skills/assassin_spec.hpp"
 #include "gameplay/skills/assassin_sequence.hpp"
 #include "gameplay/skills/leap_spec.hpp"
@@ -44,9 +45,10 @@ std::optional<Vec> System::unitPosition(const ActorContext &actor,UnitTarget uni
         if(target.player && target.aliveIn(actor.area) && (skill==SkillBehavior::Enchant || skill==SkillBehavior::HolyBolt || participants.canHarm(actor.actor,unit.id))) return target.position();
     } else if(unit.type==1) {
         const auto *m=ports_.monsters.find(unit.id);
-        const bool consumes=skill==SkillBehavior::RaiseSkeleton || skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion;
+        const bool consumes=skill==SkillBehavior::RaiseSkeleton;
         if((consumes?ports_.monsters.consumableCorpse(unit.id,actor.area,actor.tick):
-            (skill==SkillBehavior::FindPotion || skill==SkillBehavior::FindItem || skill==SkillBehavior::GrimWard) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick)) &&
+            (skill==SkillBehavior::CorpseExplosion || skill==SkillBehavior::PoisonExplosion ||
+             skill==SkillBehavior::FindPotion || skill==SkillBehavior::FindItem || skill==SkillBehavior::GrimWard) && ports_.monsters.usableCorpse(unit.id,actor.area,actor.tick)) &&
             ((skill!=SkillBehavior::FindPotion && skill!=SkillBehavior::GrimWard) || m->rule.softCorpse)) return m->position;
         const bool enemy=m && combat::Participants{ports_.players,ports_.monsters,ports_.social}.canHarm(actor.actor,m->id);
         if(m && m->area==actor.area && m->alive() && (skill==SkillBehavior::HolyBolt ? enemy || bool(m->owner) : skill==SkillBehavior::Enchant ? true : skill==SkillBehavior::Unsummon ? m->owner==actor.player : enemy)) return m->position;
@@ -145,6 +147,18 @@ DomainResult<> System::cast(const ActorContext &actor,const Request &request,int
     const bool objectKick=definition.spec.effect==SkillBehavior::Kick && type==2;
     if(area.definition.town && !definition.allowedInTown && !objectKick) return {DomainStatus::Unavailable,{}};
     auto skill=evaluate(p,selected,effectiveRank);
+    // SkillNec SrvSt15/21 must succeed before publishing an action or
+    // queuing its release. The release still rechecks corpse ownership/state.
+    if(skill.summon && skill.summon->corpse) {
+        const bool revive=skill.summon->necro && skill.summon->necro->kind==NecroSummonKind::Revive;
+        if(type!=1 || !ports_.monsters.consumableCorpse(unit,actor.area,actor.tick,revive))
+            return {DomainStatus::Unavailable,{}};
+    }
+    if(skill.summon && skill.summon->necro && skill.summon->necro->kind==NecroSummonKind::Iron)
+        if(type!=4 || !unit || !ports_.inventory.ironGolemMaterial(actor,target.position,unit))
+            return {DomainStatus::Unavailable,{}};
+    if(skill.effect==SkillBehavior::CorpseExplosion || skill.effect==SkillBehavior::PoisonExplosion)
+        if(type!=1 || !ports_.monsters.usableCorpse(unit,actor.area,actor.tick)) return {DomainStatus::Unavailable,{}};
     if(skill.leap) {
         Vec landing=target.position;
         const int distance=missileDistance(p.position,landing);

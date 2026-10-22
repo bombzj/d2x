@@ -21,6 +21,8 @@ struct Sprite {
     std::vector<SpriteLayer> layers;
     // Original DCC/DC6 indices for PL2 blending; zero remains transparent.
     Texture2D indexedTexture{};
+    // Original component frame rectangles retained for DT/DD selection.
+    std::vector<Rectangle> corpseComponentBounds;
 };
 struct GpuAnimation {
     int directions = 0, count = 0;
