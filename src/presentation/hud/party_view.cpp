@@ -4,6 +4,7 @@
 #include "core/text.hpp"
 #include "resources/data_table.hpp"
 #include "presentation/world/palette_blend_view.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
@@ -37,6 +38,7 @@ void loadPartyFont(Archives &archives, Graphics &graphics, ClassicFont &font,
         for (size_t i = 0; i < font.transform.size(); ++i)
             font.transform[i] = pl2[shift + i];
         font.transformed = true;
+        font.textColor = pl2FontColor(pl2, int(color));
     }
     if (original->frames.empty() ||
         !parseClassicFontTable(std::string_view(reinterpret_cast<const char *>(tbl.data()), tbl.size()), font))

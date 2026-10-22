@@ -164,6 +164,11 @@ bool parseClassicFontTable(std::string_view tbl, ClassicFont &font) {
     }
     return true;
 }
+Color pl2FontColor(const Bytes &palette, int color) {
+    const size_t rgb = 0x6B600 + size_t(color) * 3;
+    if (color < 0 || color >= 13 || palette.size() < rgb + 3) return WHITE;
+    return {palette[rgb], palette[rgb + 1], palette[rgb + 2], 255};
+}
 void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
                      std::string_view name, int color) {
     const auto path = "data/local/font/" + archives.languageFontDirectory + "/" + std::string(name);
@@ -183,8 +188,7 @@ void loadClassicFont(Graphics &graphics, Archives &archives, ClassicFont &font,
         for (size_t i = 0; i < font.transform.size(); ++i)
             font.transform[i] = palette[fontShifts + size_t(color) * 256 + i];
         font.transformed = true;
-        const size_t rgb = 0x6B600 + size_t(color) * 3;
-        font.textColor = {palette[rgb], palette[rgb + 1], palette[rgb + 2], 255};
+        font.textColor = pl2FontColor(palette, color);
     }
     auto tbl = archives.read(path + ".tbl", false);
     if (original->frames.empty() ||

@@ -2,7 +2,7 @@
 
 更新：2026-10-22。本页维护原协议、客户端副本、原服参考及明确缺口；[基线](../../BASELINE.md)维护实现范围，[总计划](../architecture/MULTIPLAYER.md#21-统一状态口径)维护状态口径与功能顺序。原服与自研宿主共用RealmSession／Remote*客户端，传输为TCP或内存字节队列。原服常规施法不回送本人4C／4D，也不以73重复创建所列地面程序；具体技能、原服条件及边界见[女巫技能](../gameplay/skills/SORCERESS.md)。亚马逊30项、原Clt程序及7A／9D怪物装备已有接入，多重箭／导引箭／诱饵／女武神／闪电之怒的原服参考与缺口见[亚马逊](../gameplay/skills/AMAZON.md)。既有未消费包和引擎启动限制仍需核对，不宣称全协议或全技能已对齐，也不按构建／自研运行划分完成等级。
 
-PD2仅作远端客户端。PlayPD2／--client-profile在挂载前绑定固定CN构建、资源和认证文件，由共用frontend组合RealmSession和Remote*，不实例化EmbeddedRealm或本地角色存储。当前CN服务已接受版本认证、账号登录、Realm启动和既有Ladder角色选择，可显示角色原图、进入大厅、取列表并返回选角；列表与游戏环境按角色Ladder状态核对。CN建房在原字段后追加GS／lootAllocation两字节；已获MCP建房和加入成功回复，按BH证据改用4001后，已完成游戏握手／初始同步并实际显示罗格营地、本人、NPC和HUD，正常退局返回选角；已核对营地与鲜血荒地往返，其他区域和持续战斗未认证。CN证明采用合法原MPQ的key／owner来源及独立编码，原配置保留旧认证语义。新账号注册尚未重新联调；建角／删除和房间详情关闭，PD2库存、城镇交互及基础战斗输入按当前确认的来源／上下文开放；属性加点已按CN控制分界开放，学习和属性分配均等待目标值增加与余点减少。未接入操作继续拒绝，未知世界消息报告不支持。范围见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)，算法、MPQ来源限制及原客户端大厅崩溃证据见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
+PD2仅作远端客户端。PlayPD2／--client-profile在挂载前绑定固定CN构建、资源和认证文件，由共用frontend组合RealmSession和Remote*，不实例化EmbeddedRealm或本地角色存储。当前CN服务已接受版本认证、账号登录、Realm启动和既有Ladder角色选择，可显示角色原图、进入大厅、取列表并返回选角；列表与游戏环境按角色Ladder状态核对。CN建房在原字段后追加GS／lootAllocation两字节；已获MCP建房和加入成功回复，按BH证据改用4001后，已完成游戏握手／初始同步并实际显示罗格营地、本人、NPC和HUD，正常退局返回选角；已核对营地与鲜血荒地往返，其他区域和持续战斗未认证。CN证明采用合法原MPQ的key／owner来源及独立编码，原配置保留旧认证语义。新账号注册尚未重新联调；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码开放、成败以该服务回复为准，房间详情仍关闭，PD2库存、城镇交互及基础战斗输入按当前确认的来源／上下文开放；属性加点已按CN控制分界开放，学习和属性分配均等待目标值增加与余点减少。未接入操作继续拒绝，未知世界消息报告不支持。范围见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)，算法、MPQ来源限制及原客户端大厅崩溃证据见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md)。
 
 ## TCP/IP直连与自研宿主入口
 
@@ -62,11 +62,11 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 本人移动不应依赖每步S2C坐标。`publishMotion`沿Game外层10／20帧资源检查条件，PlrMsg计四次检查而非四帧；资源变化沿18／95／96，平稳移动经过四次资源检查再按坐标差决定是否发96。客户端自动地图、房间裁剪、界面投影和相邻步行地图切换使用已有逐帧碰撞路径，服务器坐标保留为权威校验。原版回包频率及对照条件见[连续移动](../gameplay/world/AUTOMAP.md#原版host下的连续移动)。
 
-角色名 2–15 字符，首字符英文字母，其余英文字母、连字符或下划线；classId 为 0 Amazon、1 Sorceress、2 Necromancer、3 Paladin、4 Barbarian、5 Druid、6 Assassin。初始属性、装备和 D2S 由原服生成；客户端仅提交 MCP 0x02 的职业／状态与名字。删角用 MCP 0x0A，command 要求 confirmName 完全匹配。注册账号／密码为 2–15 可打印 ASCII 字符，更细名字限制由服务器拒绝码说明。
+角色名 2–15 字符，首字符英文字母，其余英文字母、连字符或下划线；classId 为 0 Amazon、1 Sorceress、2 Necromancer、3 Paladin、4 Barbarian、5 Druid、6 Assassin。初始属性、装备和 D2S 由原服生成；客户端仅提交 MCP 0x02 的职业／状态与名字：资料片固定0x20，专家级加0x04、天梯加0x40，资格由所连Realm裁定（原版旗标见[DLL取证](../resources/PD2_CN_DLL_ANALYSIS.md#最小闭环认证注册选角与入局)）。删角用 MCP 0x0A，command 要求 confirmName 完全匹配。注册账号／密码为 2–15 可打印 ASCII 字符，更细名字限制由服务器拒绝码说明。
 
 肖像仅绘制已保存 native 1.13c、无组件染色且原 COF／DCC 完整的外观；legacy 新角、染色或未核实组合保留真实身份，肖像暂不绘制。建角使用当前 MPQ 七职业前端动画。
 
-选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用。槽位角色名颜色经原D2Launch CharSel反汇编认证：名字经D2Win!10022写入，颜色参数=hardcore?1:4，绘制路径把4归一化为0，死亡位不参与颜色且原版该字段无灰色；RealmFrontend据此用当前MPQ font16的PL2文字色1渲染HC名字、其余白色，可选性仍由既有playable门控（realm_frontend.cpp）。死亡位另经原D2Launch认证写入肖像格子控件flags的0x10位（hardcore写0x20，经D2Win!10194），原版据此把死亡HC角色肖像画成半透明幽灵；RealmFrontend在portrait里对dead角色以半透明alpha绘制该槽位肖像（realm_frontend.cpp:407），颜色与幽灵都不进可选性判定。选中角色大名字、Ladder／描述行颜色及其余文字效果仍待原版对照。
+选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用。槽位角色名颜色经原D2Launch CharSel反汇编认证：名字经D2Win!10022写入，颜色参数=hardcore?1:4，绘制路径把4归一化为0，死亡位不参与颜色且原版该字段无灰色；RealmFrontend据此用当前MPQ font16的PL2文字色1渲染HC名字、其余白色，可选性仍由既有playable门控（realm_frontend.cpp）。死亡位另经原D2Launch认证写入肖像格子控件flags的0x10位（hardcore写0x20，经D2Win!10194），原版据此把死亡HC角色肖像画成半透明幽灵；RealmFrontend在portrait里对dead角色以半透明alpha绘制该槽位肖像（realm_frontend.cpp:407），颜色与幽灵都不进可选性判定。选中角色大名字与槽位同规则（hardcore红、死亡位不参与），仅无权限的Ladder等其他不可选状态显示灰色；Ladder／描述行颜色及其余文字效果仍待原版对照。
 
 创建／加入／握手超时同样重新获取服务器角色列表，不自动重发建房或加入。加载超时先请求原保存退局；退局等待超时后关闭旧游戏连接并重新取角色列表，错误明确标记保存结果未知。协议损坏、账号连接失败等仍结束会话，失败提示关闭后回登录页。创建／加入／握手取消和其余恢复分支尚未逐项核对原服行为。
 
@@ -246,6 +246,8 @@ Enter打开底部输入，再次Enter提交普通广播；空白Enter关闭，Es
 `online-social`／`online-chat`是完整只读快照别名，均返回world.social；操作仍以服务端回包为准。以上包尚未逐包运行验证，JS参考中的错误长度／位宽不采用（例如0x7F区域按原包16位），不将参考表纳入源码。
 
 ## 联机游玩表现与输入
+
+右手选择尸体技能时，怪物尸体的悬停轮廓和名称按该技能的当前MPQ目标资格显示，不要求先按住右键；悬停与实际按键目标分开，普通左键仍按左手技能和交互决定行为。右键施放保留真实怪物GUID／type=1请求，消耗尸体、扣蓝和召唤物均由服务器确认。箱子、木桶等仍从当前Objects的OperateFn／Selectable及原TARGETABLE标志准备交互；Draw=0的隐形机关控制器不生成可点击替身，开启箱子触发的陷阱仍由服务端执行。PD2专用陷阱的全部效果与实服尸体组合尚未认证。
 
 ### 组队邀请客户端
 

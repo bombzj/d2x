@@ -98,6 +98,7 @@ struct ClassicData {
     std::array<int, 3> hirelingBossDamagePercent{};
     StashLayout stashLayout;
     StashLayout cubeLayout;
+    std::array<int, 2> cubeCloseOffset{275, 383};
     std::map<std::string, PlayerInventoryLayout, std::less<>> playerInventoryLayouts;
     std::string cubeCode;
     StaffRecipeContent staffRecipe;

@@ -339,6 +339,8 @@ void RemoteInventory::update(const OnlineView &online) {
 }
 bool RemoteInventory::reject(std::string reason) { reason_ = std::move(reason); return false; }
 bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand command) {
+    if (command.action == OnlineItemAction::StorageRename)
+        return reject("Stash rename is unavailable on the current CN service; no request was sent");
     const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
         (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4)))
@@ -402,6 +404,15 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             if (command.action == OnlineItemAction::RepairAll) return send();
         }
     }
+    if (command.action == OnlineItemAction::StorageIndex) {
+        if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || view_.cursor ||
+            !world.cnStashConfirmed || !world.stashSynchronized || world.cnMaterialsOpen ||
+            command.page != world.stashPage || command.sharedStash != world.sharedStash ||
+            (world.cnStashPlayerFlags & 8) || (world.cnStashPageFlags & 8) ||
+            (command.action == OnlineItemAction::StorageIndex && command.amount > 2))
+            return reject("Stash metadata requires a confirmed page, an empty cursor and a supported name/index");
+        return send();
+    }
     if (command.action == OnlineItemAction::StoragePage) {
         if (!pd2Items || world.storage.kind != OnlineStorageKind::Stash || view_.cursor ||
             !world.stashInitialized || (!world.stashSynchronized &&
@@ -430,17 +441,13 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
                 (!onlineCursorItem(source->second, online.load.playerUnitId) &&
                  !onlineBackpackItem(source->second, online.load.playerUnitId)))
                 return reject("Material deposit requires a known normal item on the cursor or in the backpack");
-            auto code = source->second.code;
-            // 0x260C0 canonicalizes stacked rune/skull/gem forms to their
-            // four-byte base code with a trailing space.
-            if (code.starts_with("r0") || code.starts_with("r1") || code.starts_with("r2") ||
-                code.starts_with("r3") || code.starts_with("sk") || (code.starts_with("g") && code.ends_with('s')))
-                if (code.size() == 4) code.resize(3);
+            const auto code = pd2CnMaterialCode(source->second.code);
             if (std::none_of(pd2CnMaterialSlots.begin(), pd2CnMaterialSlots.end(),
                 [&](const auto &s) { return s.code == code; })) return reject("Item is not in the native material catalog");
             command.materialCode = code;
             const auto key = onlineCnMaterialKey(code);
-            command.amount = key && world.cnMaterialCounts.contains(*key) ? world.cnMaterialCounts.at(*key) : 0;
+            if (!key || !world.cnMaterialCounts.contains(*key)) return reject("Material deposit requires its server-reported counter");
+            command.amount = world.cnMaterialCounts.at(*key);
         } else {
             if (command.materialOperation == OnlineCnMaterialOperation::Cube) {
                 const auto cube = std::find_if(world.items.begin(), world.items.end(), [&](const auto &entry) {
@@ -471,6 +478,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (view_.cursor || world.townPortalPending) return reject("Clear the cursor and pending portal before switching weapons");
         if (command.action == OnlineItemAction::Transmute) {
             if (world.storage.kind != OnlineStorageKind::Cube) return reject("Wait for a server-opened cube");
+            const auto host = world.storage.source ? world.items.find(*world.storage.source) : world.items.end();
+            if (host == world.items.end() || !host->second.positionKnown || baseNumber(host->second, "pSpell") != 7 ||
+                !onlineItemOwnedBy(host->second, online.load.playerUnitId) || host->second.mode != 0 ||
+                (host->second.flags & (0x40000000u | 0x2000000u)) ||
+                (host->second.page != 1 && host->second.page != 5) ||
+                (pd2Items && host->second.page == 5 && (!world.stashSynchronized ||
+                    host->second.stashPage != world.stashPage || host->second.sharedStash != world.sharedStash)))
+                return reject("The server-opened cube is no longer accessible");
             if (std::none_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
                 return entry.second.ownerType == 0 && entry.second.owner == online.load.playerUnitId &&
                     entry.second.mode == 0 && entry.second.page == 4;
@@ -647,14 +662,21 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Use requires a usable item in an accessible owned container or belt");
         if (command.mercenary && wire.mode != 2) return reject("Native mercenary item use requires a belt item");
         if (baseNumber(wire, "pSpell") == 7)
-            return reject("Cube UI context and transmutation are not connected yet");
+            return reject("Use the cube-open operation for an accessible cube");
         if (pd2Items) {
             const int spell = baseNumber(wire, "pSpell");
             const bool scroll = (spell == 1 || spell == 2) && (isType(wire, "scro") || isType(wire, "book"));
             const bool potion = (spell == 3 || spell == 5 || spell == 6 || spell == 9) &&
                 (isType(wire, "hpot") || isType(wire, "mpot") || isType(wire, "rpot") ||
                     isType(wire, "apot") || isType(wire, "wpot") || isType(wire, "spot"));
-            if (!scroll && !potion) return reject("Unsupported PD2 item-use program");
+            const bool herb = spell == 9 && isType(wire, "herb");
+            const bool elixir = spell == 8 && isType(wire, "elix");
+            // CN core 37E7F0/37FB80: these two code identities grant the
+            // MPQ missiletype skill. Identify acts on the inventory, not 3F.
+            command.reusableUse = spell == 13 && isType(wire, "ubru") &&
+                (wire.code == "rid" || wire.code == "rtp") && baseNumber(wire, "missiletype") > 0;
+            if (!scroll && !potion && !herb && !elixir && !command.reusableUse) return reject("Unsupported PD2 item-use program");
+            if (command.mercenary && !potion) return reject("This item-use program is not a hireling potion");
             if (command.mercenary && (!world.hireling || world.deadHirelingName || !world.pets.contains(world.hireling->id)))
                 return reject("No living server hireling can receive this potion");
         }
@@ -770,6 +792,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     case OnlineItemAction::TradeOpen: case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
     case OnlineItemAction::StoragePage: case OnlineItemAction::StorageMaterials:
     case OnlineItemAction::MaterialWithdraw: case OnlineItemAction::MaterialDeposit:
+    case OnlineItemAction::StorageRename: case OnlineItemAction::StorageIndex:
         return reject("Invalid item command branch");
     }
     if (command.action == OnlineItemAction::Equip && bodyItem(command.body)) {

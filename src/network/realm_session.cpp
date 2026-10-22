@@ -420,10 +420,6 @@ bool RealmSession::create_character(CreateCharacterOptions options) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
-        p.error(OnlineErrorKind::Unsupported, "PD2 CN character creation flags have not been verified; select an existing character");
-        return false;
-    }
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
     if (!character_name_valid(options.name) || options.characterClass > 6) {
@@ -435,7 +431,10 @@ bool RealmSession::create_character(CreateCharacterOptions options) {
         Writer out;
         out.u16(options.characterClass);
         out.u16(0);
-        out.u16(0x20 | (options.hardcore ? 0x04 : 0));
+        // Expansion (0x20) with optional hardcore (0x04) and ladder (0x40): the
+        // original encoding. The connected Realm alone decides whether this
+        // account may create such a character.
+        out.u16(0x20 | (options.hardcore ? 0x04 : 0) | (options.ladder ? 0x40 : 0));
         out.string(options.name, 15);
         p.view.error.reset();
         p.send_mcp(0x02, std::move(out));
@@ -450,10 +449,6 @@ bool RealmSession::delete_character(std::string name) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
-    if (p.view.remoteLobbyOnly) {
-        p.error(OnlineErrorKind::Unsupported, "Character deletion is unavailable in this PD2 CN lobby profile");
-        return false;
-    }
     if (!p.require(OnlineStage::CharacterSelection))
         return false;
     if (!text_valid(name, 15) || std::none_of(p.view.characters.begin(), p.view.characters.end(),
@@ -465,6 +460,8 @@ bool RealmSession::delete_character(std::string name) {
         Writer out;
         out.u16(0);
         out.string(name, 15);
+        // MCP 0x0A: one reserved uint16 then the 15-byte name. As with character
+        // creation, the connected Realm alone decides whether to honour it.
         p.view.error.reset();
         p.send_mcp(0x0A, std::move(out));
         p.stage(OnlineStage::DeletingCharacter);

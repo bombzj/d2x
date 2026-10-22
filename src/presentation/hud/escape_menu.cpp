@@ -2,6 +2,7 @@
 #include "content/language.hpp"
 #include "content/string_table.hpp"
 #include "presentation/world/palette_blend_view.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 #include <stdexcept>
 #include <utility>
@@ -29,7 +30,8 @@ EscapeMenu::EscapeMenu(Archives &archives)
     const auto shifts = archives.read("data/global/palette/sky/pal.pl2");
     if (shifts.size() < fontShifts + 13 * 256)
         throw std::runtime_error("Original Escape menu grey transform is missing");
-    // Labels are pre-rendered English lettering, not text to resize or translate.
+    // Labels are pre-rendered lettering: the selected language's artwork when it
+    // ships one, otherwise the original English image.
     for (const auto *name : {"options", "exit", "returntogame", "soundoptions", "videooptions",
             "automapoptions", "cfgoptions", "previous", "sprevious", "sound", "music", "3dsound",
             "eax", "3dbias", "npcspeech", "resolution", "lightquality", "blendshadow", "perspective",
@@ -37,10 +39,10 @@ EscapeMenu::EscapeMenu(Archives &archives)
             "automappartynames", "smalloff", "smallon", "smallno", "smallyes", "full", "mini", "auto",
             "center", "everything", "low", "medium", "high", "audioonly", "textonly", "audiotext",
             "640x480", "800x600"}) {
-        const auto path = "data/local/ui/eng/" + std::string(name) + ".dc6";
+        const auto path = localUiArtPath(archives, name);
         const auto *source = graphics_.animation(path);
         if (!source || source->frames.empty())
-            throw std::runtime_error("Original English Escape menu artwork is missing: " + path);
+            throw std::runtime_error("Original Escape menu artwork is missing: " + path);
         Art entry;
         entry.normal = graphics_.single(path);
         entry.disabled.directions = source->directions;
@@ -115,6 +117,7 @@ EscapeMenu::EscapeMenu(Archives &archives)
             for (size_t pixel = 0; pixel < 256; ++pixel)
                 font.transform[pixel] = shifts[fontShifts + size_t(colors[index]) * 256 + pixel];
             font.transformed = true;
+            font.textColor = pl2FontColor(shifts, colors[index]);
         }
         font.ready = true;
     }

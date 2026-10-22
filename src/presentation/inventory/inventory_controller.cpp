@@ -181,7 +181,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
             if (!ui.drag && !ui.pending && !inventory.storagePagePending) {
                 bool accepted = false;
                 if (button == 0) accepted = inventoryClient_.selectSharedStorage(!inventory.storageShared);
-                else if (button == 5) accepted = inventoryClient_.selectStorageMaterials(!inventory.storageMaterialsOpen);
+                else if (button == 5) accepted = input.control ? inventoryClient_.depositAllStorageMaterials() :
+                    inventoryClient_.selectStorageMaterials(!inventory.storageMaterialsOpen);
                 else if (inventory.storageCnConfirmed) {
                     if (button == 1 || button == 4) {
                         const auto nav = button == 1 ? (input.shift ? StorageNavigation::PreviousMainIndex : StorageNavigation::PreviousIndex) :
@@ -196,6 +197,16 @@ bool SceneController::handleInventory(const FrameInput &input) {
             }
             return true;
         }
+    }
+    if (inventory.personalItemActionsOnly && inventory.storageCnConfirmed && !inventory.storageMaterialsOpen &&
+        ui.storage && !ui.drag && !ui.pending && !inventory.storagePagePending && !inventory.readOnly &&
+        input.insideViewport && input.leftPressed && CheckCollisionPointRec(rv(input.mouse), storageNameField(inventory))) {
+        inventoryClick_ = true;
+        if (input.shift) {
+            view_.notice("Stash rename is unavailable on the current CN service.", true);
+        } else if (!inventoryClient_.markStorageIndex((inventory.storageIndex + 1) % 3))
+            view_.notice("Stash page marking is unavailable or pending.", true);
+        return true;
     }
     if (inventory.storageMaterialsOpen && ui.storage && input.insideViewport &&
         CheckCollisionPointRec(rv(input.mouse), storageBounds(inventory))) {
@@ -269,7 +280,7 @@ bool SceneController::handleInventory(const FrameInput &input) {
             return true;
         }
     if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
-        CheckCollisionPointRec(rv(input.mouse), cubeClose())) {
+        CheckCollisionPointRec(rv(input.mouse), cubeClose(inventory))) {
         inventoryClick_ = true;
         toggleInventory();
         return true;
@@ -277,7 +288,8 @@ bool SceneController::handleInventory(const FrameInput &input) {
     if (ui.cubeOpen && input.insideViewport && input.leftPressed &&
         CheckCollisionPointRec(rv(input.mouse), cubeTransmute())) {
         inventoryClick_ = true;
-        inventoryClient_.submit(TransmuteCube{});
+        if (!ui.drag && !ui.pending && !inventory.readOnly && !inventory.itemOperationPending)
+            inventoryClient_.submit(TransmuteCube{});
         return true;
     }
     bool bankField = ui.storage && CheckCollisionPointRec(

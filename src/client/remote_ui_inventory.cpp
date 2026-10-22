@@ -1,4 +1,5 @@
 #include "remote_ui_clients_impl.hpp"
+#include "content/pd2_stash.hpp"
 
 namespace d2x {
 const InventoryView &RemoteUiClients::Impl::Inventory::read() const { return o.inventoryView; }
@@ -28,6 +29,8 @@ bool RemoteUiClients::Impl::Inventory::selectSharedStorage(bool shared) {
 bool RemoteUiClients::Impl::Inventory::submitStorage(OnlineItemCommand command) {
     if (!o.inventoryView.personalItemActionsOnly || o.inventoryView.readOnly || o.inventoryView.dead ||
         !o.transactions.empty() || o.waiting || !onlineWorldMatches(o.context, o.session.read())) return false;
+    if (command.action == OnlineItemAction::StorageIndex &&
+        !onlineInteractionMatches(o.context, o.session.read())) return false;
     command.context = onlineIntentContext(o.session.read());
     if (!o.items.submit(o.session, command)) { o.notice = o.items.reason(); return false; }
     o.context = onlineIntentContext(o.session.read());
@@ -68,6 +71,37 @@ bool RemoteUiClients::Impl::Inventory::upgradeStorageMaterial(std::string_view c
 bool RemoteUiClients::Impl::Inventory::depositStorageMaterial(ItemHandle item) {
     OnlineItemCommand command; command.action = OnlineItemAction::MaterialDeposit;
     command.item = guid(item.id); command.itemRevision = item.revision;
+    return submitStorage(std::move(command));
+}
+bool RemoteUiClients::Impl::Inventory::depositAllStorageMaterials() {
+    const auto &online = o.session.read(); const auto &world = online.world;
+    if (!o.inventoryView.personalItemActionsOnly || o.inventoryView.readOnly || o.inventoryView.dead ||
+        !o.inventoryView.storageMaterialsOpen || !world.cnMaterialsSynchronized ||
+        world.storage.kind != OnlineStorageKind::Stash || world.requestedStashPage ||
+        o.items.read().cursor || o.waiting || !o.transactions.empty() ||
+        (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
+        !onlineInteractionMatches(o.context, online)) return false;
+    const auto context = onlineIntentContext(online);
+    for (const auto &[id, native] : world.items) {
+        if (!onlineBackpackItem(native, online.load.playerUnitId) || !native.positionKnown) continue;
+        const auto decoded = o.items.read().items.find(id);
+        if (decoded == o.items.read().items.end() || !decoded->second.decoded ||
+            decoded->second.revision != native.revision || decoded->second.quality > 3 || decoded->second.sockets) continue;
+        const auto code = pd2CnMaterialCode(native.code);
+        if (std::none_of(pd2CnMaterialSlots.begin(), pd2CnMaterialSlots.end(),
+            [&](const auto &slot) { return slot.code == code; })) continue;
+        OnlineItemCommand command; command.action = OnlineItemAction::MaterialDeposit;
+        command.item = id; command.itemRevision = native.revision; command.context = context;
+        o.queue(std::move(command));
+    }
+    if (o.transactions.empty()) { o.notice = "No supported backpack materials are available."; return false; }
+    o.pump();
+    return o.waiting.has_value() || !o.transactions.empty();
+}
+bool RemoteUiClients::Impl::Inventory::markStorageIndex(unsigned kind) {
+    OnlineItemCommand command; command.action = OnlineItemAction::StorageIndex;
+    command.amount = kind;
+    command.page = o.inventoryView.storagePage; command.sharedStash = o.inventoryView.storageShared;
     return submitStorage(std::move(command));
 }
 

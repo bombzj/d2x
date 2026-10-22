@@ -11,16 +11,16 @@ void SceneView::drawStorage(Vec mouse) const {
     const bool materials = inventoryView_.storageMaterialsOpen && storageMaterialsReady();
     drawPanelTiles(assets_.storagePanel, false, materials ? 4 : 0);
     if (inventoryView_.personalItemActionsOnly && storageNavigationReady()) {
-        const bool ready = inventoryView_.storagePagingAvailable && !inventoryView_.storagePagePending;
+        const bool ready = inventoryView_.storagePagingAvailable && !inventoryView_.storagePagePending && !inventoryView_.itemOperationPending;
         constexpr std::array frames{4u, 8u, 0u, 2u, 10u};
         constexpr std::array labels{"Personal / shared stash", "Previous index (Shift: main index)",
             "Previous page (Shift: first)", "Next page (Shift: last nonempty)",
-            "Next index (Shift: main index)", "Shared materials"};
+            "Next index (Shift: main index)", "Shared materials (Ctrl when open: deposit backpack materials)"};
         for (unsigned button = 0; button < 6; ++button) {
             if (button == 5 && !storageMaterialsReady()) continue;
             unsigned frame = button == 5 ? (materials ? 30 : 28) :
                 (button == 0 && inventoryView_.storageShared ? 6 : frames.at(button));
-            const bool available = button == 5 ? inventoryView_.storageMaterialsAvailable && !inventoryView_.storagePagePending :
+            const bool available = button == 5 ? inventoryView_.storageMaterialsAvailable && !inventoryView_.storagePagePending && !inventoryView_.itemOperationPending :
                 ready && (button == 0 || (inventoryView_.storageCnConfirmed &&
                     ((button != 1 && button != 2) || inventoryView_.storagePage > 1)));
             if (available && ui.storagePressedButton == button) ++frame;
@@ -34,17 +34,20 @@ void SceneView::drawStorage(Vec mouse) const {
         }
     }
     auto goldField = storageGold(inventoryView_);
-    auto bankGold = std::to_string(inventoryView_.bankGold);
+    const bool sharedGold = inventoryView_.personalItemActionsOnly &&
+        (materials || (inventoryView_.storageCnConfirmed && inventoryView_.storageShared));
+    const bool balanceKnown = sharedGold ? inventoryView_.storageSharedGold.has_value() : inventoryView_.bankGoldKnown;
+    auto bankGold = std::to_string(sharedGold ? inventoryView_.storageSharedGold.value_or(0) : inventoryView_.bankGold);
     const int textSize = int(16 * inventoryScale());
     if (!inventoryView_.personalItemActionsOnly ||
-        (inventoryView_.storageCnConfirmed && !inventoryView_.storageShared && !materials)) {
+        inventoryView_.storageCnConfirmed || materials) {
         if (const auto *coin = assets_.goldCoin.frame(0, 0))
             DrawTexturePro(coin->texture, {0, 0, float(coin->texture.width), float(coin->texture.height)},
                            storageGoldButton(inventoryView_),
                            {0, 0}, 0, !inventoryView_.readOnly && (!inventoryView_.personalItemActionsOnly ||
-                               (inventoryView_.goldKnown && inventoryView_.bankGoldKnown &&
+                               (!sharedGold && inventoryView_.goldKnown && inventoryView_.bankGoldKnown &&
                                 inventoryView_.storagePagingAvailable && !inventoryView_.storagePagePending)) ? WHITE : GRAY);
-        if (!inventoryView_.personalItemActionsOnly || inventoryView_.bankGoldKnown)
+        if (!inventoryView_.personalItemActionsOnly || balanceKnown)
             painter_.label(bankGold,
                            int(goldField.x + (goldField.width - painter_.measure(bankGold, textSize)) / 2),
                            int(goldField.y + 5 * inventoryScale()), textSize, WHITE);
@@ -107,6 +110,9 @@ void SceneView::drawStorage(Vec mouse) const {
         painter_.label(name,
                        int(goldField.x + 4 * inventoryScale()), int(goldField.y + 21 * inventoryScale()),
                        textSize, WHITE);
+        if (!materials && inventoryView_.storageCnConfirmed && CheckCollisionPointRec(rv(mouse), storageNameField(inventoryView_)))
+            drawItemText({{inventoryView_.storageIndex == 2 ? "Main index" : inventoryView_.storageIndex == 1 ? "Index" : "Normal page"},
+                {"Click: cycle page index"}}, ItemQuality::Normal, {mouse.x + 170, mouse.y}, {}, {});
     }
     if (const auto *close = assets_.questClose.frame(0, 10))
         DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},

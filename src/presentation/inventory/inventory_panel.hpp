@@ -176,15 +176,16 @@ inline Rectangle storageClose(const InventoryView &inventory) {
 inline Rectangle cubeBounds() {
     return classicPanelBounds(false);
 }
-inline Rectangle cubeClose() {
+inline Rectangle cubeClose(const InventoryView &inventory) {
     auto p = cubeBounds();
-    return {p.x + 272 * inventoryScale(), p.y + 383 * inventoryScale(),
+    return {p.x + inventory.cubeCloseOffset[0] * inventoryScale(), p.y + inventory.cubeCloseOffset[1] * inventoryScale(),
             32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle cubeTransmute() {
     auto p = cubeBounds();
-    return {p.x + 109 * inventoryScale(), p.y + 297 * inventoryScale(),
-            102 * inventoryScale(), 35 * inventoryScale()};
+    // D2Client RVA 99657/99678: miniconvert at X=144, baseline=292.
+    return {p.x + 144 * inventoryScale(), p.y + 260 * inventoryScale(),
+            32 * inventoryScale(), 32 * inventoryScale()};
 }
 inline Rectangle storageGold(bool expansion) {
     auto p = storageBounds();
@@ -211,6 +212,12 @@ inline Rectangle storageGoldButton(const InventoryView &inventory) {
     const auto field = storageGold(inventory);
     return {field.x + 2 * inventoryScale(), field.y + 2 * inventoryScale(),
             20 * inventoryScale(), 18 * inventoryScale()};
+}
+inline Rectangle storageNameField(const InventoryView &inventory) {
+    auto bounds = storageGold(inventory);
+    bounds.y += 21 * inventoryScale();
+    bounds.height = 20 * inventoryScale();
+    return bounds;
 }
 inline Rectangle goldDialogBounds() {
     // Retail gold menu starts at (215,140) in 640x480, centered when the

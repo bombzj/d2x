@@ -25,7 +25,12 @@ class Archives {
     mutable std::map<std::type_index, std::shared_ptr<const void>> prepared_;
     mutable std::map<std::string, Bytes, std::less<>> readCache_;
     mutable size_t cacheBytes_{};
+    // Loose members addressed as <prefix>/<path relative to root>, normalized.
+    // They win over mounted archives, so a client's own Data folder supplies its
+    // language tables, fonts and interface art as shipped.
+    std::map<std::string, std::filesystem::path, std::less<>> loose_;
     Fingerprint mountIdentity_;
+    void retain(const std::string &name, const Bytes &value) const;
 
   public:
     std::vector<std::string> names;
@@ -48,6 +53,11 @@ class Archives {
     uint64_t mountIdentity() const { return mountIdentity_.value(); }
     const auto &mountedPaths() const { return mountedPaths_; }
     void mountDirectory(const std::filesystem::path &path);
+    // Adds every regular file below root as <prefix>/<relative path>. The PD2 CN
+    // client ships its Chinese tables, fonts and menu art as loose files under
+    // Data/local instead of inside an archive; a missing or empty root is a hard
+    // error rather than a silent loss of the profile's resources.
+    void mountLooseDirectory(const std::filesystem::path &root, std::string_view prefix);
     Bytes read(const std::string &name, bool required = true) const;
     template<class T, class Loader> std::shared_ptr<const T> prepared(Loader &&loader) const {
         const auto key = std::type_index(typeid(T));

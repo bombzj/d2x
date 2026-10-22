@@ -1,4 +1,5 @@
 #include "presentation/scene_view.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include "classic_panel.hpp"
 #include "waypoint_panel.hpp"
 #include <algorithm>
@@ -132,6 +133,7 @@ void loadWaypointFonts(Graphics &graphics, Archives &archives, const ClassicFont
         for (size_t i = 0; i < font.transform.size(); ++i)
             font.transform[i] = palette[shifts + colors[index] * 256 + i];
         font.transformed = true;
+        font.textColor = pl2FontColor(palette, colors[index]);
     }
 }
 } // namespace d2x

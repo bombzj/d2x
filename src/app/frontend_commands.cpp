@@ -102,7 +102,8 @@ void dispatchFrontendCommand(FrontendDispatchState &state, FrontendIntent &actio
         }
         break;
     case FrontendCommand::CreateCharacter:
-        state.session.create_character({std::move(action.name), action.characterClass, action.hardcore});
+        state.session.create_character(
+            {std::move(action.name), action.characterClass, action.hardcore, action.ladder});
         break;
     case FrontendCommand::DeleteCharacter:
         state.session.delete_character(std::move(action.name));

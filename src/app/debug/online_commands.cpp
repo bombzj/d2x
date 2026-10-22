@@ -124,6 +124,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"shared", v.world.sharedStash}, {"cnConfirmed", v.world.cnStashConfirmed},
         {"requestedShared", v.world.requestedStashPage ? Json(v.world.requestedSharedStash) : Json(nullptr)},
         {"pageFlags", v.world.cnStashPageFlags}, {"playerFlags", v.world.cnStashPlayerFlags},
+        {"pageName", v.world.stashPageName}, {"sharedGold", optional(v.world.cnSharedGold)},
         {"initialized", v.world.stashInitialized}, {"synchronized", v.world.stashSynchronized}};
     result["inventory"]["storage"]["materials"] = {{"available", v.world.cnMaterialsAvailable},
         {"open", v.world.cnMaterialsOpen}, {"synchronized", v.world.cnMaterialsSynchronized}, {"counts", Json::array()}};
@@ -193,6 +194,7 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
             {"action", int(request.command.action)}, {"itemId", request.command.item}, {"targetId", request.command.target},
             {"x", request.command.x}, {"y", request.command.y}, {"page", request.command.page},
             {"body", request.command.body}, {"equipVariant", request.command.equipVariant},
+            {"cubeIngredients", request.cubeIngredients.size()},
             {"context", context(request.command.context)}};
     }
     result["scene"]["palette"] = optional(scene.palette);
@@ -623,12 +625,14 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             constexpr std::array names{"pickup", "take", "place", "drop", "equip", "unequip", "swap", "use",
                 "belt-place", "belt-swap", "stack", "book", "socket", "identify", "switch-weapons",
                 "cube-open", "storage-close", "transmute", "gold-deposit", "gold-withdraw", "gold-drop",
-                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store", "storage-page", "storage-materials", "material-withdraw", "material-deposit"};
+                "trade-open", "buy", "sell", "repair", "repair-all", "identify-all", "quest-service", "hireling-equipment", "belt-auto", "cube-store", "storage-page", "storage-materials", "material-withdraw", "material-deposit", "storage-rename", "storage-index"};
             const auto action = text("action", 32);
             const auto selected = std::find(names.begin(), names.end(), action);
             if (selected == names.end()) throw std::invalid_argument("Unknown online item action");
             OnlineItemCommand intent;
             intent.action = OnlineItemAction(selected - names.begin());
+            if (intent.action == OnlineItemAction::StorageRename)
+                throw std::invalid_argument("Stash rename is unavailable on the current CN service; no request was sent");
             auto id = [&](const char *field, bool required) {
                 if (!required && !request.contains(field)) return uint32_t{};
                 const auto &value = request.at(field);
@@ -641,7 +645,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
                 intent.action == OnlineItemAction::Buy || intent.action == OnlineItemAction::Sell || intent.action == OnlineItemAction::Repair || intent.action == OnlineItemAction::QuestService || intent.action == OnlineItemAction::HirelingEquipment || intent.action == OnlineItemAction::BeltAuto || intent.action == OnlineItemAction::CubeStore || intent.action == OnlineItemAction::MaterialDeposit;
             intent.item = id("itemId", hasItem);
             intent.amount = id("amount", intent.action == OnlineItemAction::GoldDeposit ||
-                intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop);
+                intent.action == OnlineItemAction::GoldWithdraw || intent.action == OnlineItemAction::GoldDrop ||
+                intent.action == OnlineItemAction::StorageIndex);
             const bool pair = intent.action == OnlineItemAction::Swap || intent.action == OnlineItemAction::BeltSwap ||
                 intent.action == OnlineItemAction::Stack || intent.action == OnlineItemAction::Book ||
                 intent.action == OnlineItemAction::Socket || intent.action == OnlineItemAction::Identify || intent.action == OnlineItemAction::CubeStore;
@@ -660,8 +665,15 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             };
             intent.itemRevision = revision("itemRevision"); intent.targetRevision = revision("targetRevision");
             intent.x = cell("x", 15); intent.y = cell("y", 15);
-            intent.page = cell("page", intent.action == OnlineItemAction::StoragePage ? int(onlineCnStashPageLimit) : 4);
+            const bool stashMetadata = intent.action == OnlineItemAction::StorageIndex;
+            intent.page = id("page", false);
+            if (intent.page > (intent.action == OnlineItemAction::StoragePage || stashMetadata ? onlineCnStashPageLimit : 4u))
+                throw std::invalid_argument("Item page exceeds the current protocol range");
             intent.sharedStash = request.value("shared", false); intent.body = cell("body", 10);
+            if (stashMetadata) {
+                if (!request.contains("page")) intent.page = session.read().world.stashPage;
+                if (!request.contains("shared")) intent.sharedStash = session.read().world.sharedStash;
+            }
             if (request.contains("navigation")) {
                 constexpr std::array navigation{"previous-index", "next-index", "first", "last-nonempty", "previous-main-index", "next-main-index"};
                 const auto name = text("navigation", 32);
@@ -825,8 +837,8 @@ std::string onlineDebugCommand(const std::string &input, net::RealmSession &sess
             accepted = session.select_character(text("name", 15));
             mutation = true;
         } else if (command == "online-create-character") {
-            accepted = session.create_character(
-                {text("name", 15), number("classId", 0, 0, 6), request.value("hardcore", false)});
+            accepted = session.create_character({text("name", 15), number("classId", 0, 0, 6),
+                request.value("hardcore", false), request.value("ladder", false)});
             mutation = true;
         } else if (command == "online-delete-character") {
             auto name = text("name", 15);

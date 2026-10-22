@@ -192,7 +192,7 @@ $spec.preview=$false
 | `online-automap` | 可选visible／large布尔值，visible省略时开关、large省略时保留；只改变显示。scene.automap返回大小／显示、stamps／towns数量及当前连续层revealedCells |
 | `online-login` | 必填 account、password；原版文件／认证模式／端口读取 `--online-config` 私有配置，只在 Idle／Failed／Cancelled 接受；自动选择配置中的 Realm |
 | `online-register` | account、password（各2–15）；配置和允许阶段同登录，注册成功自动登录；服务端拒绝码在 error 中 |
-| `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false）；CharacterSelection 接受，固定资料片／非 Ladder，服务器生成初始数据后刷新列表 |
+| `online-create-character` | name（1–15个ASCII字母／数字／连字符／下划线；最终资格由服务端判断，自研暂不接受下划线）、classId（0–6，默认0）、hardcore（默认false，旗标0x04）、ladder（默认false，旗标0x40）；CharacterSelection 接受，资料片固定0x20，专家级／天梯按请求提交，服务器生成初始数据后刷新列表；自研服务端只接受0x20／0x24，含0x40的请求被拒绝 |
 | `online-delete-character` | name 和完全相同的 confirmName；CharacterSelection 接受，必须来自当前列表；不可撤销，成功刷新列表 |
 | `online-return-realms` | CharacterSelection 关闭 MCP 并重新取 Realm 列表；保持 RealmSelection 等待显式选择 |
 | `online-cancel-list` | ListingGames 取消等待并返回 Lobby，不关闭 MCP，列表完成标记为 false |
@@ -209,6 +209,10 @@ $spec.preview=$false
 | `screenshot` / `quit` | 联网截图使用 path 参数；quit 立即返回 accepted，应用在 LoadingGame／ProtocolReady 先正常退局，等响应／关闭或期限后注销退出；不是保存成功回执 |
 
 ## 诊断与异步含义
+
+`online-item-action`的`storage-index`要求`amount=0/1/2`表示普通／索引／主索引；页号与域绑定当前确认页，不能修改其他页。要求空Cursor、普通仓库已同步且无其他待办，等待9D/18的flags确认；超时不重试。`storage-rename`及聊天`/rp`明确拒绝且不发包：当前服务清空页名后发生断流，兼容性尚未闭合。`inventory.storage`提供只读`pageName`及可空`sharedGold`，个人goldbank与该共享余额分开。
+
+合成请求保存提交时方块材料的GUID／revision，仅相关材料变化或新方块物品更新结束等待；`Updated`仍只表示相关服务端更新，不表示完整配方或全部产物已经验收。普通金币请求按提交前余额及金额核对已知双方变化，材料升级核对双方计数，可按任意顺序收包。固定CN的无限书使用记为`SentNoAck`，不等待不会发生的源物品消耗，也不将发送当作成功鉴定／开门。
 
 `online-item-action`新增`belt-auto`（本人背包`itemId`，原0x63）及`cube-store`（Cursor／地面`itemId`、本人已存方块`targetId`，原0x2A），复用现有身份／revision与请求等待。两者只发送原请求，不生成材料或授予方块合成资格。CN候选的`storage-page`改为mdll1控制链：`page`为一基目标页（32位，固定样本元数据支持范围1–500，不代表线上总页数），`shared`为目标账号共享域。跨域仅允许目标首页，同域仅允许相邻页，分别发C2S 3A/1B、1C或19、1A；不发核心55，不为9D/function18补发5A。要求已初始化、同步、打开仓库且空Cursor；首次打开自动发送一次3A1B00，未确认时不把核心首屏视为个人仓库；若已是个人首页可无回包，仍允许切共享首页取得确认，之后须匹配域和页的9D确认。`online-snapshot`报告`shared`、`cnConfirmed`、`requestedShared`及两个原始flags，`online-items`每件物品增加`sharedStash`。不循环枚举、不自动重试；超时暂停仓库。已核实实际个人／共享切换和共享相邻翻页回包；已选中的首页在原模块中不重复回确认，不应靠重发取ACK；原版不开放此命令。
 
@@ -269,7 +273,7 @@ scene.players 按实际已指派玩家返回 id／name／classId、local、visib
 
 `online.inventory`含revision、gameGeneration、columns／rows、stashColumns／stashRows、cubeColumns／cubeRows、beltSlots、cursor、weaponSet、items和request。storage列kind／requested／source／requestedSource／revision及CN page／requestedPage／initialized／synchronized；分页超时撤回仓库访问，不将旧页号视作已确认；shopRequested／shopSource绑定货架；tradeResult列原result／flags／itemId／gold／revision。物品含基础name／artKey、品质／词缀、位置／所有者、数量／耐久、防御／金币、孔数及统计列表；0x3E baseStats保留服务器单位。未知／截断数据decoded=false并给出reason，不允许操作。
 
-accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck为存储关闭已发送。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易消息见[联网参考](../modules/NETWORK.md#原服物件与交易观察)；全部物品交易、赌博／多买、佣兵装备仍待完整核对。
+accepted仅表示请求已排队。request.sequence区分连续操作；Pending等待相关回包，Updated需再查位置／数量／余额；TimedOut结果未知，Interrupted为死亡／换幕／退局，Rejected为NPC明确失败（原码在tradeResult／online.error），SentNoAck表示存储关闭或已核实无限书等没有独立ACK的请求已发送，不代表执行成功。买卖／维修／批量鉴定等待0x2A；初步物品变化不提前结束请求。待请求结束后再提交下一项，不自动重发；storage-close例外允许取消。拾取／合成应同时核对所有权、原材料、产物及world.attributes，不能把地面消失或Updated直接当成功。箱子先从scene.mapTargets查询interaction=stash的真实单位，再用online-interact；商店先用online-npc-interact并等npcConversation。公共背包／货架及玩家交易UI已接，原服药水／金币交易消息见[联网参考](../modules/NETWORK.md#原服物件与交易观察)；全部物品交易、赌博／多买、佣兵装备仍待完整核对。
 
 ```powershell
 # 查看原服物品；返回全部物品，按 mode／owner 筛选

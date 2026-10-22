@@ -152,6 +152,15 @@ Language languageOf(const Archives &archives) {
     return lang;
 }
 
+std::string localUiArtPath(const Archives &archives, std::string_view name) {
+    const auto directory = languageOf(archives).directory;
+    if (directory != "eng") {
+        std::string translated = "data/local/ui/" + directory + "/" + std::string(name) + ".dc6";
+        if (archives.contains(translated)) return translated;
+    }
+    return "data/local/ui/eng/" + std::string(name) + ".dc6";
+}
+
 Language detectLanguage(std::string_view override, const std::string &archivesPathHint) {
     LanguageId id = LanguageId::English;
     if (!override.empty()) id = idFromOverride(override);

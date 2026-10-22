@@ -488,9 +488,14 @@ void RemoteUiClients::Impl::projectInventory() {
             v.panelHeight = playerLayout->second.height;
         }
         v.stashLayout=layout(data.stashLayout); v.cubeLayout=layout(data.cubeLayout); v.hirelingSlots=data.hirelingLayout.slots;
+        v.cubeCloseOffset = data.cubeCloseOffset;
         v.storagePanelTop = data.stashLayout.panelTop; v.storagePanelHeight = data.stashLayout.panelHeight;
         v.storagePage = w.stashPage; v.storagePagePending = w.requestedStashPage.has_value();
         v.storageShared = w.sharedStash; v.storageCnConfirmed = w.cnStashConfirmed && w.stashSynchronized;
+        v.storageIndex = (w.cnStashPageFlags & 4) ? 2 : (w.cnStashPageFlags & 2) ? 1 : 0;
+        v.storageSharedGold = w.cnSharedGold;
+        if (w.itemRequest && w.itemRequest->state == OnlineItemRequest::State::Pending &&
+            w.itemRequest->command.action == OnlineItemAction::StorageIndex) v.storagePagePending = true;
         v.storageMaterialsAvailable = v.personalItemActionsOnly && w.cnMaterialsAvailable && w.cnMaterialsSynchronized;
         v.storageMaterialsOpen = v.storageMaterialsAvailable && w.cnMaterialsOpen;
         if (v.storageMaterialsAvailable) for (const auto &slot : pd2CnMaterialSlots) {

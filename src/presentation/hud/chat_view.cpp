@@ -2,10 +2,12 @@
 #include "content/string_table.hpp"
 #include "core/text.hpp"
 #include "hud_layout.hpp"
+#include "presentation/graphics/primitives.hpp"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <stdexcept>
+#include <utility>
 
 namespace d2x {
 namespace {
@@ -61,6 +63,7 @@ const ClassicFont &ChatView::font(int kind, int color) const {
         for (size_t i = 0; i < cache.transform.size(); ++i)
             cache.transform[i] = palette_[fontShifts + size_t(color) * 256 + i];
         cache.transformed = true;
+        cache.textColor = pl2FontColor(palette_, color);
         cache.ready = true;
     }
     return cache;

@@ -441,6 +441,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if (command.action == OnlineItemAction::StorageRename) {
+        p.error(OnlineErrorKind::Unsupported, "Stash rename is unavailable on the current CN service"); return false;
+    }
     if (p.view.remoteLobbyOnly && (!onlinePd2ItemAction(command.action) ||
         (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4))) {
         p.error(OnlineErrorKind::Unsupported, "Item actions are unavailable for this client profile");
@@ -449,6 +452,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     if (!command.context) command.context = onlineIntentContext(snapshot_);
     if (!p.require_intent(*command.context, true)) return false;
     auto &world = p.view.world;
+    if (command.reusableUse && (p.compatibility.profile != ClientProfile::Pd2CnNormal20261020 || command.action != OnlineItemAction::Use)) {
+        p.error(OnlineErrorKind::Input, "Reusable item-use metadata does not match this profile and action"); return false;
+    }
     if (p.view.remoteLobbyOnly && world.requestedStashPage && command.action != OnlineItemAction::StorageClose) {
         p.error(OnlineErrorKind::Input, "Wait for the server stash-page confirmation"); return false;
     }
@@ -458,6 +464,40 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
          !world.units.contains({1, command.npc}) || onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
         p.error(OnlineErrorKind::Input, "PD2 shop browsing requires a confirmed NPC conversation and an empty cursor");
         return false;
+    }
+    if (command.action == OnlineItemAction::StorageIndex) {
+        if (p.compatibility.profile != ClientProfile::Pd2CnNormal20261020 ||
+            world.storage.kind != OnlineStorageKind::Stash || !world.cnStashConfirmed ||
+            !world.stashSynchronized || world.cnMaterialsOpen || (world.cnStashPlayerFlags & 8) ||
+            (world.cnStashPageFlags & 8) || command.page != world.stashPage || command.sharedStash != world.sharedStash ||
+            onlineHasCursorItem(world.items, p.view.load.playerUnitId) ||
+            (command.action == OnlineItemAction::StorageIndex && command.amount > 2)) {
+            p.error(OnlineErrorKind::Input, "Stash metadata context changed before submission"); return false;
+        }
+    }
+    if (command.action == OnlineItemAction::Transmute) {
+        const auto host = world.storage.source ? world.items.find(*world.storage.source) : world.items.end();
+        if (world.storage.kind != OnlineStorageKind::Cube || host == world.items.end() ||
+            !onlineItemOwnedBy(host->second, p.view.load.playerUnitId) || !host->second.positionKnown ||
+            host->second.mode != 0 || (host->second.page != 1 && host->second.page != 5) ||
+            (host->second.flags & (0x40000000u | 0x2000000u)) ||
+            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && host->second.page == 5 && (!world.stashSynchronized ||
+                host->second.stashPage != world.stashPage || host->second.sharedStash != world.sharedStash)) ||
+            onlineHasCursorItem(world.items, p.view.load.playerUnitId) ||
+            std::none_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
+                return onlineItemOwnedBy(entry.second, p.view.load.playerUnitId) && entry.second.mode == 0 && entry.second.page == 4;
+            })) {
+            p.error(OnlineErrorKind::Input, "Transmutation requires the accessible server-opened cube and ingredients"); return false;
+        }
+    }
+    if (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw ||
+        command.action == OnlineItemAction::GoldDrop) {
+        const auto balance = world.playerAttributes.find(command.action == OnlineItemAction::GoldWithdraw ? 15 : 14);
+        if (!command.amount || command.amount > INT32_MAX || balance == world.playerAttributes.end() || balance->second < command.amount ||
+            onlineHasCursorItem(world.items, p.view.load.playerUnitId) ||
+            (command.action != OnlineItemAction::GoldDrop && world.storage.kind != OnlineStorageKind::Stash)) {
+            p.error(OnlineErrorKind::Input, "Gold transfer requires a known balance and the current storage context"); return false;
+        }
     }
     if (command.action == OnlineItemAction::StoragePage && (!p.view.remoteLobbyOnly ||
         !world.stashInitialized || (world.cnStashConfirmed && !world.stashSynchronized &&
@@ -688,6 +728,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             }
             break;
         }
+        case OnlineItemAction::StorageRename: return false;
+        case OnlineItemAction::StorageIndex:
+            out.u8(0x3A); out.u16(command.amount == 2 ? 0x2B : command.amount == 1 ? 0x2A : 0x2C); break;
         case OnlineItemAction::StorageMaterials:
             out.u8(0x3A); out.u16(command.amount ? 0x3B : 0x3A); break;
         case OnlineItemAction::MaterialWithdraw: {
@@ -773,11 +816,32 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             ++world.interactionGeneration;
             p.stashPageDeadline = Clock::now() + p.options.timeout;
         }
-        world.itemRequest = OnlineItemRequest{++p.itemSequence, command, OnlineItemRequest::State::Pending};
+        world.itemRequest = OnlineItemRequest{++p.itemSequence, command,
+            command.reusableUse ? OnlineItemRequest::State::SentNoAck : OnlineItemRequest::State::Pending};
+        if (command.action == OnlineItemAction::GoldDeposit || command.action == OnlineItemAction::GoldWithdraw ||
+            command.action == OnlineItemAction::GoldDrop) {
+            if (const auto before = world.playerAttributes.find(14); before != world.playerAttributes.end())
+                world.itemRequest->beforeGold = before->second;
+            if (const auto before = world.playerAttributes.find(15); before != world.playerAttributes.end())
+                world.itemRequest->beforeBankGold = before->second;
+        }
+        if (command.action == OnlineItemAction::MaterialWithdraw && command.materialOperation == OnlineCnMaterialOperation::Upgrade) {
+            const auto input = onlineCnMaterialKey(command.materialCode);
+            const auto output = onlineCnMaterialUpgradeResult(command.materialCode);
+            const auto result = output ? onlineCnMaterialKey(*output) : std::nullopt;
+            if (input && result) {
+                world.itemRequest->materialCounts.emplace(*input, world.cnMaterialCounts.at(*input));
+                world.itemRequest->materialCounts.emplace(*result, world.cnMaterialCounts.at(*result));
+            }
+        }
+        if (command.action == OnlineItemAction::Transmute)
+            for (const auto &[id, ingredient] : world.items)
+                if (onlineItemOwnedBy(ingredient, p.view.load.playerUnitId) && ingredient.mode == 0 && ingredient.page == 4)
+                    world.itemRequest->cubeIngredients.emplace(id, ingredient.revision);
         if (command.action == OnlineItemAction::Pickup) {
             world.movementRequest = OnlineMovementRequest{{}, OnlineUnitKey{4, command.item}, true, world.revision + 1, true};
         }
-        p.itemDeadline = Clock::now() + p.options.timeout;
+        p.itemDeadline = command.reusableUse ? Clock::time_point{} : Clock::now() + p.options.timeout;
         p.nextItem = Clock::now() + std::chrono::milliseconds(100);
         ++world.revision; p.view.error.reset(); p.changed(); return true;
     } catch (const std::exception &) {

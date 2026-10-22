@@ -1,8 +1,17 @@
 #pragma once
 #include <array>
+#include <string>
 #include <string_view>
 
 namespace d2x {
+inline std::string pd2CnMaterialCode(std::string_view source) {
+    std::string code(source);
+    // mdll1 260C0 canonicalizes the stacked rune/skull/gem forms.
+    if (code.size() == 4 && (code.starts_with("r0") || code.starts_with("r1") ||
+        code.starts_with("r2") || code.starts_with("r3") || code.starts_with("sk") ||
+        (code.starts_with("g") && code.ends_with('s')))) code.resize(3);
+    return code;
+}
 // mdll1 SHA-256 6d6b8bf3...e90a, RVA 0x23190. Program layout, not item rules.
 // Names, dimensions and artwork are resolved from the selected MPQ tables.
 struct Pd2CnMaterialSlot { std::string_view code; int x, y; };

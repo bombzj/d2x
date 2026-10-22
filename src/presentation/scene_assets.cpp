@@ -118,8 +118,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
         throw std::runtime_error("Original death artwork color transform is missing");
     for (const auto &[name, target] : {std::pair{"youdiedhardcore", &deathTitle},
             std::pair{"youdiedinst", &deathInstruction}}) {
-        auto path = "data/local/ui/" + languageOf(archives).directory + "/" + name + ".dc6";
-        if (!archives.contains(path)) path = "data/local/ui/eng/" + std::string(name) + ".dc6";
+        const auto path = localUiArtPath(archives, name);
         const auto *source = uiGraphics_.animation(path);
         if (!source || source->frames.empty()) throw std::runtime_error("Original death artwork is missing: " + path);
         target->directions = source->directions; target->count = source->framesPerDirection;
@@ -393,7 +392,8 @@ void SceneAssets::loadUi(Archives &archives, const ClassicData &content) {
         throw std::runtime_error("Original stash panel artwork is missing from the mounted MPQ");
     if (!content.cubeCode.empty()) {
         cubePanel = graphics_.single("data/global/ui/panel/supertransmogrifier.dc6");
-        if (cubePanel.frames.size() < 4)
+        cubeTransmuteButton = graphics_.single("data/global/ui/panel/miniconvert.dc6");
+        if (cubePanel.frames.size() < 4 || cubeTransmuteButton.frames.size() < 2)
             throw std::runtime_error("Original cube panel artwork is missing from the mounted MPQ");
     }
     orificePanel=graphics_.single("data/global/ui/menu/horadricback.dc6");

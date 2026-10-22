@@ -104,11 +104,14 @@ struct InventoryView {
     bool bankGoldKnown = false;
     bool readOnly = false;
     bool personalItemActionsOnly = false;
+    bool itemOperationPending = false;
     int panelTop = 60, panelHeight = 432;
     int storagePanelTop = 60, storagePanelHeight = 432;
     unsigned storagePage = 1;
     bool storageShared = false;
     bool storageCnConfirmed = false;
+    unsigned storageIndex = 0;
+    std::optional<uint32_t> storageSharedGold;
     std::string storagePageName;
     bool storagePagePending = false;
     bool storagePagingAvailable = false;
@@ -116,6 +119,7 @@ struct InventoryView {
     std::vector<InventoryMaterialView> storageMaterials;
     std::array<int, 2> itemCellSize{}; // Inventory.txt gridBoxWidth/Height.
     InventoryLayoutView backpackLayout, stashLayout, cubeLayout;
+    std::array<int, 2> cubeCloseOffset{275, 383};
     InventoryLayoutView ownTradeLayout, peerTradeLayout;
     EntityId ownTrade, peerTrade;
     std::array<std::array<int, 4>, 7> hirelingSlots{};

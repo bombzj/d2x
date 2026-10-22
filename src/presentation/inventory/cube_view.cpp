@@ -20,6 +20,14 @@ void SceneView::drawCube(Vec mouse) const {
     if (!ui.cubeOpen || !ui.open || !inventoryView_.containers.cube) return;
     drawPanelFrame(false);
     drawPanelTiles(assets_.cubePanel, false);
+    const bool available = !inventoryView_.readOnly && !inventoryView_.itemOperationPending && !ui.drag && !ui.pending;
+    const bool pressed = available && CheckCollisionPointRec(rv(mouse), cubeTransmute()) && IsMouseButtonDown(MOUSE_BUTTON_LEFT);
+    if (const auto *image = assets_.cubeTransmuteButton.frame(0, pressed ? 1 : 0))
+        DrawTexturePro(image->texture, {0, 0, float(image->texture.width), float(image->texture.height)},
+            cubeTransmute(), {}, 0, available ? WHITE : GRAY);
+    if (const auto *close = assets_.questClose.frame(0, 10))
+        DrawTexturePro(close->texture, {0, 0, float(close->texture.width), float(close->texture.height)},
+            cubeClose(inventoryView_), {}, 0, WHITE);
     for (const auto &grid : inventoryGrids(inventoryView_, ui))
         if (grid.container == inventoryView_.containers.cube) {
             drawContainerGrid(grid, mouse);

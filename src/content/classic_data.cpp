@@ -339,6 +339,9 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
         // Cube grid coordinates in Page 1 are relative to the classic 60px
         // art anchor; invTop describes its hit envelope, not the grid origin.
         data.cubeLayout = remoteGrid("Transmogrify Box Page 1", false);
+        // Fixed CN core patches D2Client 9963C/99648: close baseline +44,
+        // X=273. The cube grid retains its MPQ-relative art anchor.
+        data.cubeCloseOffset = {273, 427};
         const auto &misc = data.tables.at("misc");
         for (size_t row = 0; row < misc.rows().size(); ++row)
             if (misc.number(row, "pSpell") == 7 && misc.number(row, "useable").value_or(0)) {

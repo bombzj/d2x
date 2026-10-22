@@ -79,8 +79,10 @@ void RemoteUiClients::Impl::pump() {
             if (status == OnlineItemRequest::State::Rejected || status == OnlineItemRequest::State::TimedOut || status == OnlineItemRequest::State::Interrupted) {
                 notice = "Server item request rejected, timed out or interrupted."; transactions.clear();
             }
-            // Multi-step operations continue only after the server actually assigns the cursor.
-            if (!transactions.empty() && (!items.read().cursor || *items.read().cursor != transactions.front().item)) {
+            // Cursor combinations require assignment before their next step.
+            // Bulk materials instead await each deposit's counter and removal.
+            if (!transactions.empty() && transactions.front().action != OnlineItemAction::MaterialDeposit &&
+                (!items.read().cursor || *items.read().cursor != transactions.front().item)) {
                 if (status == OnlineItemRequest::State::Updated && std::chrono::steady_clock::now() < waitingUntil) return;
                 notice = "Server did not assign the requested cursor item."; transactions.clear();
             }
@@ -150,6 +152,13 @@ void RemoteUiClients::Impl::update(const OnlineSceneView &binding, std::optional
         }
         if (characterView.dead) { transactions.clear(); waiting.reset(); waitingContext.reset(); }
         else pump();
+        const auto &request = session.read().world.itemRequest;
+        const bool itemPending = waiting.has_value() || !transactions.empty() ||
+            (request && request->state == OnlineItemRequest::State::Pending);
+        if (inventoryView.itemOperationPending != itemPending) {
+            inventoryView.itemOperationPending = itemPending;
+            inventoryView.revision = revision;
+        }
     }
 RemoteUiClients::RemoteUiClients(Archives &a,net::RealmSession &s,RemoteInventory &i,RemoteCombat &c,RemoteControl &r,bool running):impl_(std::make_unique<Impl>(a,s,i,c,r)){impl_->run=running;}
 RemoteUiClients::~RemoteUiClients()=default;

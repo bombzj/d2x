@@ -154,9 +154,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     std::optional<size_t> selectedExit;
     OnlineUnitKey selectedTarget{};
     bool hasSelectedTarget=false;
-    std::optional<OnlineUnitKey> combatTarget, hoveredPlayer;
+    std::optional<OnlineUnitKey> combatTarget, hoveredPlayer, hoveredCorpse;
     float monsterDistance = std::numeric_limits<float>::max();
     float playerDistance = std::numeric_limits<float>::max();
+    float corpseDistance = std::numeric_limits<float>::max();
     if (!menu && !waypointOpen && !hudSurface(mouse)) for (size_t i = 0; i < map.terrain.exits.size(); ++i) {
         const auto &exit = map.terrain.exits[i];
         const bool assigned = std::any_of(v.world.units.begin(), v.world.units.end(), [&](const auto &entry) {
@@ -482,6 +483,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if (selected && combat.skillTargetEligible(u,selected->skill)) {
                 if (distance<combatDistance) { combatDistance=distance; combatTarget=key; }
             }
+            // A right-hand corpse skill exposes its targets before the button
+            // is pressed. Keep this hover separate from the active hand's cast
+            // target so a normal left click cannot cast at a corpse.
+            if (onlineMonsterCorpse(u) && v.world.rightSkill &&
+                combat.skillTargetEligible(u,v.world.rightSkill->skill) && distance<corpseDistance) {
+                corpseDistance=distance; hoveredCorpse=key;
+            }
         }
         ++rendered;
         if (key.type == 0 && v.load.playerUnitId == key.id)
@@ -597,10 +605,12 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     // earlier overlapping monster candidate must not turn an NPC click
     // into an attack. Resolve before drawing any selection effects.
     if (combatTarget) hasSelectedTarget=false;
+    if (hasSelectedTarget || (combatTarget && !onlineMonsterCorpse(v.world.units.at(*combatTarget)))) hoveredCorpse.reset();
     for (auto &item : draw)
         item.highlighted = !surface && !groundTarget && item.unit &&
             ((hasSelectedTarget && item.unit == effectOwner(selectedTarget)) ||
              (hoveredPlayer && item.unit == effectOwner(*hoveredPlayer)) ||
+             (hoveredCorpse && item.unit == effectOwner(*hoveredCorpse)) ||
              (combatTarget && item.unit == effectOwner(*combatTarget)));
     for (const auto &key : v.world.questAlerts) {
         const auto found = motion.find(key);
@@ -623,6 +633,13 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             }
             break;
         }
+    if (hoveredCorpse && !surface && !groundTarget && !hasSelectedTarget) {
+        const auto drawn = std::find_if(draw.begin(),draw.end(),
+            [&](const auto &entry) { return entry.unit==effectOwner(*hoveredCorpse); });
+        if (drawn!=draw.end())
+            shared.drawCorpseLabel(monsterCaption(v.world.units.at(*hoveredCorpse)).first,
+                screen(drawn->position)+drawn->pixelOffset);
+    }
     shared.drawGroundLabels(mouse);
     if (hoveredPlayer && !hasSelectedTarget && (!combatTarget || combatTarget->type==0) && !groundTarget) {
         const auto actor = std::find_if(draw.begin(), draw.end(), [&](const auto &entry) {

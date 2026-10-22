@@ -42,6 +42,7 @@ struct FrontendIntent {
     uint8_t maximumPlayers{8}, levelDifference{99};
     uint8_t difficulty{}, characterClass{};
     bool hardcore{};
+    bool ladder{};
     std::optional<std::string> editedAccount;
     std::optional<uint8_t> gameServer;
 };

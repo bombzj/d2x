@@ -145,6 +145,12 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
                 request->state = (request->command.stashNavigation || request->command.page == page) &&
                     request->command.sharedStash == shared
                     ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
+            } else if (request && request->state == OnlineItemRequest::State::Pending &&
+                       request->command.action == OnlineItemAction::StorageIndex) {
+                const auto &command = request->command;
+                const unsigned expected = (command.amount ? 2u : 0u) | (command.amount == 2 ? 4u : 0u);
+                request->state = command.page == page && command.sharedStash == shared && (flags & 6u) == expected
+                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
             } else if (moved && request && request->state == OnlineItemRequest::State::Pending) {
                 request->state = OnlineItemRequest::State::Interrupted;
             }
@@ -164,6 +170,8 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
             sent(gs, {0x3A, 0x3D, 0}); world.cnMaterialsRequested = true;
         }
     } else if (function == 0x19) {
+        Reader fields(payload); fields.take(8);
+        world.cnSharedGold = fields.u32(); // mdll1 1DFD0 reads packet +0x18.
         // Server 0x1E670 sends this after all 98 absolute counter records.
         // Function 19 also carries shared gold during other initialization.
         // Require the complete fixed 98-code response before releasing access.
@@ -204,9 +212,25 @@ bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
                     source->second.revision > request->command.itemRevision) world.items.erase(source);
             }
             if (request && request->state == OnlineItemRequest::State::Pending &&
+                request->command.action == OnlineItemAction::MaterialWithdraw &&
+                request->command.materialOperation == OnlineCnMaterialOperation::Upgrade) {
+                const auto input = onlineCnMaterialKey(request->command.materialCode);
+                const auto output = onlineCnMaterialUpgradeResult(request->command.materialCode);
+                const auto result = output ? onlineCnMaterialKey(*output) : std::nullopt;
+                if (input && result && request->materialCounts.contains(*input) && request->materialCounts.contains(*result) &&
+                    world.cnMaterialCounts.contains(*input) && world.cnMaterialCounts.contains(*result)) {
+                    const auto before = request->materialCounts.at(*input);
+                    const auto converted = std::min(request->command.amount, before) / 3;
+                    if (uint64_t(world.cnMaterialCounts.at(*input)) + 3u * converted == before &&
+                        uint64_t(request->materialCounts.at(*result)) + converted == world.cnMaterialCounts.at(*result))
+                        request->state = OnlineItemRequest::State::Updated;
+                }
+            }
+            if (request && request->state == OnlineItemRequest::State::Pending &&
                 ((request->command.action == OnlineItemAction::MaterialWithdraw && amount > 0) ||
                  (request->command.action == OnlineItemAction::MaterialDeposit && amount < 0 &&
                     !world.items.contains(request->command.item))) &&
+                request->command.materialOperation != OnlineCnMaterialOperation::Upgrade &&
                 onlineCnMaterialKey(request->command.materialCode) == key)
                 request->state = OnlineItemRequest::State::Updated;
         }
@@ -536,8 +560,21 @@ void RealmSession::Impl::handle_game(Packet packet) {
         related |= packet.id == 0x9C && action == OnlineItemAction::TradeOpen && view.world.shopSource == request->command.npc;
         if ((packet.id == 0x1D || packet.id == 0x1E || packet.id == 0x1F) && !packet.body.empty()) {
             const auto stat = packet.body.front();
-            related |= (stat == 14 || stat == 15) && (action == OnlineItemAction::GoldDeposit ||
-                action == OnlineItemAction::GoldWithdraw || action == OnlineItemAction::GoldDrop);
+            if ((stat == 14 || stat == 15) && (action == OnlineItemAction::GoldDeposit ||
+                action == OnlineItemAction::GoldWithdraw || action == OnlineItemAction::GoldDrop)) {
+                const auto gold = view.world.playerAttributes.find(14);
+                const auto bank = view.world.playerAttributes.find(15);
+                const auto amount = request->command.amount;
+                if (action == OnlineItemAction::GoldWithdraw)
+                    related = request->beforeBankGold && bank != view.world.playerAttributes.end() &&
+                        uint64_t(bank->second) + amount == *request->beforeBankGold &&
+                        (!request->beforeGold || (gold != view.world.playerAttributes.end() &&
+                            uint64_t(*request->beforeGold) + amount == gold->second));
+                else related = request->beforeGold && gold != view.world.playerAttributes.end() &&
+                    uint64_t(gold->second) + amount == *request->beforeGold &&
+                    (action == OnlineItemAction::GoldDrop || !request->beforeBankGold ||
+                        (bank != view.world.playerAttributes.end() && uint64_t(*request->beforeBankGold) + amount == bank->second));
+            }
         }
         if (packet.id == 0x2A && merchant && view.world.tradeResult) {
             request->state = view.world.tradeResult->result >= 7 ? OnlineItemRequest::State::Rejected : OnlineItemRequest::State::Updated;
@@ -565,7 +602,16 @@ void RealmSession::Impl::handle_game(Packet packet) {
         related |= action!=OnlineItemAction::QuestService && id && ((request->command.itemRevision && *id == request->command.item) ||
             (request->command.targetRevision && *id == request->command.target));
         if ((packet.id == 0x9C || packet.id == 0x9D || packet.id == 0x0A || packet.id == 0x42 || packet.id == 0x3E) &&
-            action == OnlineItemAction::Transmute) related = true;
+            action == OnlineItemAction::Transmute) {
+            // An unrelated backpack or equipment refresh is not a cube result.
+            for (const auto &[ingredient, revision] : request->cubeIngredients) {
+                const auto current = view.world.items.find(ingredient);
+                if (current == view.world.items.end() || current->second.revision > revision) { related = true; break; }
+            }
+            if (!related) for (const auto &[item, current] : view.world.items)
+                if (!request->cubeIngredients.contains(item) && onlineItemOwnedBy(current, view.load.playerUnitId) &&
+                    current.mode == 0 && current.page == 4) { related = true; break; }
+        }
         if (view.remoteLobbyOnly && related) {
             // An equipment/property refresh is not placement confirmation.
             // Swaps can publish either side first; wait for both assigned modes.

@@ -50,7 +50,8 @@ enum class OnlineItemAction {
     Stack, Book, Socket, Identify, SwitchWeapons,
     CubeOpen, StorageClose, Transmute, GoldDeposit, GoldWithdraw, GoldDrop,
     TradeOpen, Buy, Sell, Repair, RepairAll, IdentifyAll, QuestService, HirelingEquipment,
-    BeltAuto, CubeStore, StoragePage, StorageMaterials, MaterialWithdraw, MaterialDeposit
+    BeltAuto, CubeStore, StoragePage, StorageMaterials, MaterialWithdraw, MaterialDeposit,
+    StorageRename, StorageIndex
 };
 enum class OnlineStorageKind { None, Stash, Cube };
 // Fixed mdll1 sample: zero-based page IDs, limits at RVA 0x3D108/0x3D10C.
@@ -91,6 +92,7 @@ inline bool onlinePd2ItemAction(OnlineItemAction action) {
     case OnlineItemAction::CubeOpen: case OnlineItemAction::CubeStore:
     case OnlineItemAction::StorageClose: case OnlineItemAction::StoragePage:
     case OnlineItemAction::StorageMaterials: case OnlineItemAction::MaterialWithdraw:
+    case OnlineItemAction::StorageRename: case OnlineItemAction::StorageIndex:
     case OnlineItemAction::MaterialDeposit: case OnlineItemAction::TradeOpen:
     case OnlineItemAction::Buy: case OnlineItemAction::Sell: case OnlineItemAction::Repair:
     case OnlineItemAction::RepairAll: case OnlineItemAction::IdentifyAll: case OnlineItemAction::QuestService:
@@ -171,7 +173,7 @@ struct OnlineItemCommand {
     uint64_t itemRevision{}, targetRevision{};
     uint8_t x{}, y{}, body{}, beltSlot{};
     uint32_t page{}; // Container page for items; one-based page for StoragePage.
-    bool sharedStash{}; // StoragePage only; never a container/ownership flag.
+    bool sharedStash{}; // Stash navigation/metadata domain, never item ownership.
     std::optional<OnlineCnStashNavigation> stashNavigation;
     std::string materialCode; // CN material counters have no item GUID.
     OnlineCnMaterialOperation materialOperation{};
@@ -180,6 +182,7 @@ struct OnlineItemCommand {
     uint64_t oppositeRevision{};
     bool toCursor{}, mercenary{};
     bool gamble{}, multibuy{};
+    bool reusableUse{}; // Prepared CN program13: source is not consumed; no generic use ACK.
     std::optional<OnlineIntentContext> context;
 };
 inline std::optional<uint32_t> onlineCnMaterialKey(std::string_view code);
@@ -232,6 +235,9 @@ struct OnlineItemRequest {
     uint64_t sequence{};
     OnlineItemCommand command;
     State state{}; // Updated means a related server update, not guaranteed success.
+    std::map<uint32_t, uint64_t> cubeIngredients{};
+    std::optional<uint32_t> beforeGold{}, beforeBankGold{};
+    std::map<uint32_t, uint32_t> materialCounts{};
 };
 struct OnlineStorageContext {
     OnlineStorageKind kind{}, requested{};

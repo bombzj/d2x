@@ -40,6 +40,7 @@ OriginalMenu::OriginalMenu(Archives &archives, const ClassicFont &font)
             for (size_t i = 0; i < target->transform.size(); ++i)
                 target->transform[i] = palette[shifts+size_t(color)*256+i];
             target->transformed = true;
+            target->textColor = pl2FontColor(palette, color);
         }
         ready_ = true;
     } catch (const std::exception &error) { reason_ = error.what(); }

@@ -3,6 +3,7 @@
 #include "presentation/graphics/primitives.hpp"
 #include "presentation/input.hpp"
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace d2x {

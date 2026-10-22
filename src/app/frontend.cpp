@@ -285,6 +285,10 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     std::deque<FrameInput> debugInputs;
     auto submitChatInput=[&](const std::string &text) -> std::string {
         if(session.read().stage!=OnlineStage::ProtocolReady) return "Enter a game before submitting a command.";
+        if (sharedClients && sharedClients->inventory().read().personalItemActionsOnly &&
+            (text == "/rp" || text.starts_with("/rp "))) {
+            return "Stash rename is unavailable on the current CN service; no request was sent.";
+        }
         const auto command=net::parseChatCommand(text);
         if(command.route==net::ChatRoute::Invalid) return command.error;
         if(command.route==net::ChatRoute::NoPickup) {
