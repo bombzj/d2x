@@ -108,8 +108,9 @@ struct RealmFrontend::Impl {
     std::unique_ptr<Graphics> characterGraphics;
     std::map<Bytes, GpuAnimation, PortraitKeyLess> portraits;
     ClassicStrings strings;
-    ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont;
-    UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip;
+    ClassicFont normal, buttonFont, inputFont, titleFont, lobbyFont, roomGoldFont, roomGrayFont, lanTitleFont, lanTipFont,
+        hardcoreRedFont;
+    UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip, hardcoreRedText;
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
     std::string account, password, gameName, gamePassword, description;
@@ -141,9 +142,11 @@ struct RealmFrontend::Impl {
           inputFont(font(units, a, "fontformal11")), titleFont(font(units, a, "font30")),
           lobbyFont(font(units, a, "fontridiculous")),
           roomGoldFont(font(units, a, "font8", 4)), roomGrayFont(font(units, a, "font8", 5)),
+          hardcoreRedFont(font(units, a, "font16", 1)),
           text(normal),
           buttonText(buttonFont), inputText(inputFont), title(titleFont), lobbyText(lobbyFont),
-          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont) {
+          roomGoldText(roomGoldFont, 0), roomGrayText(roomGrayFont, 0), lanTitle(lanTitleFont), lanTip(lanTipFont),
+          hardcoreRedText(hardcoreRedFont) {
         if(portraitSupport == RealmPortraitSupport::Original113c)
             portraitCatalog=std::make_unique<RealmPortraitCatalog>(a);
         auto load = [&](Graphics &g, const char *id, const char *path) {
@@ -397,8 +400,15 @@ struct RealmFrontend::Impl {
             }
             found = portraits.emplace(c.portrait, std::move(animation)).first;
         }
-        if (const auto *cel = found->second.frame(0, int(GetTime() * 25)))
-            sprite(cel, {float(x), float(y)});
+        if (const auto *cel = found->second.frame(0, int(GetTime() * 25))) {
+            // D2Launch CharSel writes cell flag 0x10 (dead) on the portrait
+            // control (D2Win!10194); dead Hardcore characters draw as a
+            // translucent ghost. The dead flag does not affect the name color.
+            if (c.dead.value_or(false))
+                sprite(cel, {float(x), float(y)}, {255, 255, 255, 150});
+            else
+                sprite(cel, {float(x), float(y)});
+        }
     }
     void main(std::string_view gateway) {
         tiles("main", 0, 0, 4);
@@ -763,8 +773,12 @@ struct RealmFrontend::Impl {
             if (selected == i)
                 tiles(c.hardcore.value_or(false) && c.dead.value_or(false) ? "deadHighlight" : "highlight", x, y, 2);
             portrait(c, x + 36, y + 82);
-            label(c.name, x + 76, y + 14, !playable(c, v.allowLadderSelection) ? GRAY
-                : c.hardcore.value_or(false) ? RED : WHITE);
+            // D2Launch CharSel sets the slot name color to D2Win PL2 text color
+            // hardcore ? 1 : 4 (4 draws as 0); the dead flag does not affect it.
+            if (c.hardcore.value_or(false))
+                hardcoreRedText.label(c.name, x + 76, y + 14, 16, WHITE);
+            else
+                label(c.name, x + 76, y + 14, WHITE);
             if (c.characterClass && *c.characterClass < classes.size() && c.level) {
                 auto line = s(5017);
                 auto replace = [&](const char *token, const std::string &value) {

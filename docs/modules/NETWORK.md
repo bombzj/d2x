@@ -52,7 +52,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 | --- | --- |
 | 登录／注册 | 原 MPQ 图形、字体和文案；校验两次密码一致，SID 0x3D 成功后自动 SID 0x3A 登录；提交后记忆账号密码，下次进入登录页可直接Login；修改用户名立即清空当前和已记忆的密码；拒绝／超时后保留输入以便修改 |
 | Realm | 原版首次自动选择匹配的配置项，未找到则显示列表；PD2 CN默认选返回的第一个Realm，直接显示角色；Change Realm重新取列表和票据 |
-| 角色 | 服务器列表分页；七职业创建、资料片固定开启、非 Ladder；Hardcore 先显示原警告；删除先确认，成功刷新；死亡专家与未知状态角色不能进入；存活HC名称与Hardcore标签为红色，死亡HC名称／标签置灰，状态来自已解析的服务器预览。仅原服显示右上角Realm控件，Single Player及LAN Host／Join露出原MPQ角色页背景 |
+| 角色 | 服务器列表分页；七职业创建、资料片固定开启、非 Ladder；Hardcore 先显示原警告；删除先确认，成功刷新；死亡专家与未知状态角色不能进入；存活HC名称与Hardcore标签为红色，死亡HC名称仍为红色、标签置灰，状态来自已解析的服务器预览。仅原服显示右上角Realm控件，Single Player及LAN Host／Join露出原MPQ角色页背景 |
 | 大厅 | 默认原黑色公告区域，Create／Join 才切换表单，Cancel／表单 ESC 返回公告；SID 0x0A 后提交 0x0C 初始频道请求，0x0F 的 info／error 只读公告最多保留32条；不伪造服务器 MOTD，不提供频道聊天操作 |
 | Create | 名称／密码／说明、人数 1–8（默认8）、等级差 0–99；等级限制默认关闭，关闭时提交99，手动开启沿当前等级差；普通／噩梦／地狱依据服务器 native 进度解锁；成功自动取票加入；CN另显示CN副本原中文TBL的GS1–GS9原按钮列表，初选取配置默认值，本次选择随建房提交，原版表单不显示该列表 |
 | Join | 点击 Join 请求真实房间列表，查询期间逐条显示名称／人数；选中通过 MCP 0x06 查询详情。同一房间可双击加入，右侧按原版截图显示经过时间、等级范围、金色姓名及灰色等级／职业，玩家列表可滚轮翻阅。再次点击 Join 可替换进行中的列表查询；可取消或按名／密码加入，网络复验输入后退役未完成列表。详情独立超时，迟到回复不覆盖新选择、不阻塞加入 |
@@ -66,7 +66,7 @@ TCP/IP Game现在使用原版直连D2GS生命周期，默认只有4000端口，�
 
 肖像仅绘制已保存 native 1.13c、无组件染色且原 COF／DCC 完整的外观；legacy 新角、染色或未核实组合保留真实身份，肖像暂不绘制。建角使用当前 MPQ 七职业前端动画。
 
-选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用，文字效果和完整交互仍待原版对照。
+选角产品页只走RealmFrontend；旧app/character_frontend未编译／调用，保留作功能参考，不维护第二条本地选角执行链。沿旧选择器和OpenDiablo2 character_select核对双击同一角色1.25秒进入、滚轮／PageUp／PageDown翻页和两列四行布局；卡片步距读取当前MPQ charselectbox的两段总宽及原高度（当前272×92），标签及肖像位置对齐原布局。翻页使用既有MPQ numberarrows及页码；完整原Scrollbar仍未还原。Realm空白底图的标题／名称没有烘焙文字；Current Realm、Realm名称及Change Realm按钮统一使用已有原font16。字体字宽来自当前MPQ，角色列表、选择、创建和删除仍由MCP原协议驱动；Ladder／经典角色转换仍不可用。槽位角色名颜色经原D2Launch CharSel反汇编认证：名字经D2Win!10022写入，颜色参数=hardcore?1:4，绘制路径把4归一化为0，死亡位不参与颜色且原版该字段无灰色；RealmFrontend据此用当前MPQ font16的PL2文字色1渲染HC名字、其余白色，可选性仍由既有playable门控（realm_frontend.cpp）。死亡位另经原D2Launch认证写入肖像格子控件flags的0x10位（hardcore写0x20，经D2Win!10194），原版据此把死亡HC角色肖像画成半透明幽灵；RealmFrontend在portrait里对dead角色以半透明alpha绘制该槽位肖像（realm_frontend.cpp:407），颜色与幽灵都不进可选性判定。选中角色大名字、Ladder／描述行颜色及其余文字效果仍待原版对照。
 
 创建／加入／握手超时同样重新获取服务器角色列表，不自动重发建房或加入。加载超时先请求原保存退局；退局等待超时后关闭旧游戏连接并重新取角色列表，错误明确标记保存结果未知。协议损坏、账号连接失败等仍结束会话，失败提示关闭后回登录页。创建／加入／握手取消和其余恢复分支尚未逐项核对原服行为。
 
