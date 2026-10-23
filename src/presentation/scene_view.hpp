@@ -241,6 +241,9 @@ class SceneView {
     }
     std::optional<unsigned> inventoryVendorPrice(ItemHandle item) const;
     static size_t itemTextFontIndex(ItemQuality, ItemTextTone);
+    // Draws one tooltip/label line, honouring 0xFF 'c' colour escapes with the
+    // original PL2 item-text fonts; defaultFont covers uncoloured runs.
+    void drawColoredItemText(const std::string &text, size_t defaultFont, Rectangle bounds, int fontSize) const;
     void itemButton(Rectangle bounds, const char *label, Color color) const;
     void drawItemIcon(const InventoryItemView &item, Rectangle bounds, bool showSockets = false, float pixelScale = 0) const;
     void drawItemBackground(const InventoryItemView &item, Rectangle bounds, bool hovered) const;

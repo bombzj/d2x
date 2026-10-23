@@ -136,13 +136,16 @@ void ChatView::update(const OnlineSocialView &social, const OnlineSocialView &ac
         if(battleNet && message.type==4) glyphs=plain("[Battle.net] ",4);
         uint8_t color = message.messageColor;
         bool decoded = true;
+        const auto raw = std::string_view(reinterpret_cast<const char *>(message.text.data()), message.text.size());
         for (size_t index = 0; index < message.text.size();) {
-            const auto character = uint8_t(message.text[index]);
-            // Native text color escapes, also used by local d2bs Print evidence.
-            if (character == 0xFF && index + 2 < message.text.size() && message.text[index + 1] == 'c' &&
-                message.text[index + 2] >= '0' && message.text[index + 2] <= '9') {
-                color = uint8_t(message.text[index + 2] - '0'); index += 3; continue;
+            // Native text color escapes (raw 0xFF or TBL UTF-8 ÿ), also used by local d2bs Print evidence.
+            int escapeColor = -2;
+            if (const size_t used = d2ColorEscape(raw, index, escapeColor)) {
+                if (escapeColor >= 0) color = uint8_t(escapeColor);
+                index += used;
+                continue;
             }
+            const auto character = uint8_t(message.text[index]);
             if (character == '\r') { ++index; continue; }
             size_t length = 1;
             uint32_t code = character;

@@ -264,7 +264,8 @@ void SceneView::drawInventory(Vec mouse) const {
     if (!ui.drag) {
         if (auto item = inventory.item(hovered); item && !ui.hidesItem(*item))
             drawItemTooltip(*item, {mouse.x + 170, mouse.y},
-                inventoryVendorPrice(item->handle()), view_.shopOpen ? (view_.shopRepair ? "COST" : "SELL VALUE") : "");
+                inventoryVendorPrice(item->handle()),
+                view_.shopOpen ? assets_.characterLabels.at(view_.shopRepair ? "Cost" : "Sell") : "");
     }
     if (ui.goldDialog) {
         const auto dialog = goldDialogBounds();

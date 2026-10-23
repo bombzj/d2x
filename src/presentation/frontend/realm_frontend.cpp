@@ -96,6 +96,7 @@ struct RealmFrontend::Impl {
     UiPainter text, buttonText, inputText, title, lobbyText, roomGoldText, roomGrayText, lanTitle, lanTip, hardcoreRedText;
     std::map<std::string, GpuAnimation> art;
     std::vector<std::string> classes;
+    std::vector<std::string> classNames;
     std::string account, password, gameName, gamePassword, description;
     std::string lanAddresses, hostAddress = "127.0.0.1";
     bool replaceHostAddress{}, lanArtReady{};
@@ -165,8 +166,7 @@ struct RealmFrontend::Impl {
             load(units, id, path);
         // clickbox's unchecked/checked frames use the original Fechar palette.
         load(checkboxControls, "check", "FrontEnd/clickbox");
-        for (auto [id, path] : {std::pair{"createButton", "bigmenu/creategamebutton"},
-                                {"gameButton", "bigmenu/gamebuttonblank"},
+        for (auto [id, path] : {std::pair{"gameButton", "bigmenu/gamebuttonblank"},
                                 {"cancel", "bigmenu/cancelbuttonblank"},
                                 {"tabs", "bigmenu/chatrighttopbuttons"},
                                 {"chatButton", "bigmenu/chatrightbuttons"},
@@ -195,8 +195,12 @@ struct RealmFrontend::Impl {
         DataTable stats(a.read("data/global/excel/charstats.txt"));
         for (size_t i = 0; i < stats.rows().size(); ++i) {
             auto name = stats.value(i, "class");
-            if (!name.empty() && name != "Expansion")
+            if (!name.empty() && name != "Expansion") {
                 classes.emplace_back(name);
+                // Class keys in string tables match charstats; display the localized name.
+                const auto localized = strings.find(name);
+                classNames.emplace_back(localized.empty() ? name : std::string(localized));
+            }
         }
         DataTable experience(a.read("data/global/excel/experience.txt"));
         for (size_t i = 0; i < experience.rows().size(); ++i) {
@@ -603,7 +607,7 @@ struct RealmFrontend::Impl {
         tiles("creation", 0, 0, 4);
         title.inBox(s(5127), {0, 17, 800, 36}, 16, parchment);
         if (hero >= 0) {
-            centered(classes[size_t(ids[size_t(hero)])], 65);
+            centered(classNames[size_t(ids[size_t(hero)])], 65);
             wrap(s(descriptions[size_t(hero)]), 255, 104, 290, true);
         }
         for (size_t i = 0; i < heroes.size(); ++i) {
@@ -783,7 +787,7 @@ struct RealmFrontend::Impl {
                         line.replace(pos, 2, value);
                 };
                 replace("%d", std::to_string(*c.level));
-                line += " " + classes[*c.characterClass];
+                line += " " + classNames[*c.characterClass];
                 label(line, x + 76, y + 28, WHITE);
             }
             if (c.expansion.value_or(false))
@@ -948,7 +952,7 @@ struct RealmFrontend::Impl {
                         auto playerLevel = s(5017);
                         const auto at = playerLevel.find("%d");
                         if (at != std::string::npos) playerLevel.replace(at, 2, std::to_string(player.level));
-                        const auto characterClass = player.characterClass < classes.size() ? classes[player.characterClass] : "?";
+                        const auto characterClass = player.characterClass < classNames.size() ? classNames[player.characterClass] : "?";
                         detailLine(roomGrayText, playerLevel + " " + characterClass, y + 18);
                     }
                 } else wrap(info.state == OnlineGameInfo::State::Pending ? "Retrieving room details..."
@@ -1028,8 +1032,7 @@ struct RealmFrontend::Impl {
                 wipe(gamePassword);
                 description.clear();
             }
-            // The original create-game control already contains its caption.
-            if (button("createButton", 599, 404, "", canSubmit) ||
+            if (button("gameButton", 599, 404, s(5150), canSubmit) ||
                 (enabled && input.enter && canSubmit)) {
                 emit(FrontendCommand::CreateGame);
                 intent.name = gameName;
@@ -1089,12 +1092,12 @@ struct RealmFrontend::Impl {
         auto c = std::find_if(v.characters.begin(), v.characters.end(),
                               [&](const auto &entry) { return entry.name == v.selectedCharacter; });
         label(v.selectedCharacter, 139, 511, c != v.characters.end() && c->hardcore.value_or(false) ? RED : WHITE);
-        if (c != v.characters.end() && c->characterClass && *c->characterClass < classes.size() && c->level) {
+        if (c != v.characters.end() && c->characterClass && *c->characterClass < classNames.size() && c->level) {
             auto level = s(5017);
             const auto at = level.find("%d");
             if (at != std::string::npos)
                 level.replace(at, 2, std::to_string(*c->level));
-            label(level + " " + classes[*c->characterClass], 139, 531, WHITE);
+            label(level + " " + classNames[*c->characterClass], 139, 531, WHITE);
         }
         if (c != v.characters.end() && characterGraphics)
             portrait(*c, 66, 586);

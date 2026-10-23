@@ -39,4 +39,69 @@ inline std::vector<uint32_t> utf8Decode(std::string_view text) {
     }
     return out;
 }
+// Diablo II embeds text colours as 'c' + code after a ÿ prefix. TBL files use
+// the UTF-8 form C3 BF 'c' <code>; network/d2bs text uses the raw 0xFF form.
+// Codes 0-9 are digits, 10-15 use ":;<=>?", and PD2 tables also use '/' as
+// white/reset. Returns the consumed byte length (0 = no escape); colour -1
+// means "unknown code, keep the current colour".
+inline size_t d2ColorEscape(std::string_view text, size_t index, int &color) {
+    size_t i = index;
+    if (i < text.size() && uint8_t(text[i]) == 0xFF) ++i;
+    else if (index + 1 < text.size() && uint8_t(text[index]) == 0xC3 && uint8_t(text[index + 1]) == 0xBF)
+        i = index + 2;
+    else return 0;
+    if (i >= text.size() || text[i] != 'c') return 0;
+    ++i;
+    color = -1;
+    if (i < text.size()) {
+        const auto code = uint8_t(text[i++]);
+        if (code >= '0' && code <= '9') color = code - '0';
+        else switch (code) {
+        case ':': color = 10; break;
+        case ';': color = 11; break;
+        case '<': color = 12; break;
+        case '=': color = 13; break;
+        case '>': color = 14; break;
+        case '?': color = 15; break;
+        case '/': color = 0; break;
+        default: break;
+        }
+    }
+    return i - index;
+}
+inline bool hasD2ColorEscape(std::string_view text) {
+    int color = -1;
+    for (size_t i = 0; i < text.size(); ++i)
+        if (d2ColorEscape(text, i, color)) return true;
+    return false;
+}
+inline std::string stripD2ColorCodes(std::string_view text) {
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size();) {
+        int color = -1;
+        if (const size_t used = d2ColorEscape(text, i, color)) { i += used; continue; }
+        out.push_back(text[i++]);
+    }
+    return out;
+}
+struct D2ColorRun {
+    std::string text;
+    int color = -1; // -1 keeps the caller-supplied default.
+};
+inline std::vector<D2ColorRun> parseD2ColorRuns(std::string_view text) {
+    std::vector<D2ColorRun> runs;
+    int color = -1;
+    for (size_t i = 0; i < text.size();) {
+        int code = -2;
+        if (const size_t used = d2ColorEscape(text, i, code)) {
+            if (code >= 0) color = code;
+            i += used;
+            continue;
+        }
+        if (runs.empty() || runs.back().color != color) runs.push_back({"", color});
+        runs.back().text.push_back(text[i++]);
+    }
+    return runs;
+}
 } // namespace d2x

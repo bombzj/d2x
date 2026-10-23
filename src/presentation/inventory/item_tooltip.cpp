@@ -33,9 +33,45 @@ void SceneView::itemButton(Rectangle bounds, const char *label, Color color) con
     painter_.label(label, int(bounds.x + (bounds.width - painter_.measure(label, 12)) / 2),
                    int(bounds.y + (bounds.height - 12) / 2), 12, color);
 }
+void SceneView::drawColoredItemText(const std::string &text, size_t defaultFont, Rectangle bounds,
+                                    int fontSize) const {
+    const auto runs = parseD2ColorRuns(text);
+    const std::string visible = stripD2ColorCodes(text);
+    const auto &base = assets_.itemTextFonts[defaultFont];
+    const UiPainter basePainter(base);
+    const int width = basePainter.measure(visible, fontSize);
+    float top = 0, bottom = float(fontSize);
+    bool found = false;
+    if (!ttfTextReady())
+        for (uint32_t ch : utf8Decode(visible)) {
+            const auto *glyph = base.glyphOf(ch);
+            if (!glyph || ch == ' ' || !glyph->hitHeight) continue;
+            const float start = (glyph->hitY - glyph->y) * fontSize / 16.f;
+            const float end = start + glyph->hitHeight * fontSize / 16.f;
+            top = found ? std::min(top, start) : start;
+            bottom = found ? std::max(bottom, end) : end;
+            found = true;
+        }
+    float x = bounds.x + (bounds.width - width) / 2;
+    const float y = bounds.y + (bounds.height - (bottom - top)) / 2 - top;
+    for (const auto &run : runs) {
+        size_t index = defaultFont;
+        if (run.color >= 0 && run.color < int(assets_.itemTextFonts.size()) && assets_.itemTextFonts[run.color].ready)
+            index = size_t(run.color);
+        const UiPainter painter(assets_.itemTextFonts[index]);
+        painter.label(run.text, int(x), int(y), fontSize, WHITE);
+        x += painter.measure(run.text, fontSize);
+    }
+}
 void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality quality, Vec anchor,
                               std::optional<unsigned> price, std::string_view priceLabel) const {
-    if (!priceLabel.empty()) lines.insert(lines.begin(), {std::string(priceLabel) + ": " + (price ? std::to_string(*price) : "?"), ItemTextTone::Normal});
+    if (!priceLabel.empty()) {
+        // Table entries such as chi "Sell" already end with a colon.
+        auto caption = std::string(priceLabel);
+        while (!caption.empty() && (caption.back() == ' ' || caption.back() == '\t')) caption.pop_back();
+        if (caption.empty() || (caption.back() != ':' && caption.back() != '：')) caption += ": ";
+        lines.insert(lines.begin(), {std::move(caption) + (price ? std::to_string(*price) : "?"), ItemTextTone::Normal});
+    }
     std::vector<std::string> text;
     std::vector<ItemTextLine> rows;
     for (const auto &line : lines) {
@@ -65,7 +101,7 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
         widths.assign(columns, 0);
         for (size_t index = 0; index < text.size(); ++index)
             widths[index / rowsPerColumn] = std::max(widths[index / rowsPerColumn],
-                painter_.measure(text[index], fontSize) + 24);
+                painter_.measure(stripD2ColorCodes(text[index]), fontSize) + 24);
         width = 0;
         for (int size : widths) width += size;
         if (width <= W - 16 || fontSize == 1) break;
@@ -81,8 +117,14 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
     for (size_t column = 0; column < columns; ++column) {
         for (size_t row = 0; row < rowsPerColumn && column * rowsPerColumn + row < text.size(); ++row) {
             size_t i = column * rowsPerColumn + row;
-            const UiPainter painter(assets_.itemTextFonts[itemTextFontIndex(quality, rows[i].tone)]);
+            const size_t toneFont = itemTextFontIndex(quality, rows[i].tone);
             const Rectangle bounds{float(columnX), box.y + 9 + float(row * rowHeight), float(widths[column]), float(rowHeight)};
+            // Inline colour escapes win over the tone/property split below.
+            if (hasD2ColorEscape(text[i])) {
+                drawColoredItemText(text[i], toneFont, bounds, fontSize);
+                continue;
+            }
+            const UiPainter painter(assets_.itemTextFonts[toneFont]);
             if (rows[i].propertyOffset == std::string::npos || rows[i].propertyOffset >= text[i].size())
                 painter.inBox(text[i], bounds, fontSize, WHITE);
             else {

@@ -430,8 +430,14 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
         const DataTable hireDescriptions(archives.read("data/global/excel/hiredesc.txt"));
         for (size_t row = 0; row < hireDescriptions.rows().size(); ++row) {
             const auto code = hireDescriptions.value(row, "Code");
-            const auto label = hireDescriptions.value(row, "Hireling Description");
-            if (!code.empty()) data.hirelingDescriptions.emplace(code, label);
+            if (code.empty()) continue;
+            // PD2 language tables localize mercenary archetypes as MercDesc<Code>;
+            // hiredesc keeps the English original as the fallback. Two PD2 keys
+            // ("def"/"off") carry a trailing space in the table.
+            auto label = strings.find("MercDesc" + std::string(code));
+            if (label.empty()) label = strings.find("MercDesc" + std::string(code) + " ");
+            if (label.empty()) label = hireDescriptions.value(row, "Hireling Description");
+            data.hirelingDescriptions.emplace(code, label);
         }
         for (const auto &[key, value] : strings.entries())
             if ((key.size() >= 7 && key.starts_with("qstsa") && key[5] >= '1' && key[5] <= '5' && key[6] == 'q') || key.starts_with("qsta5q1") || key == "newquestlog" ||

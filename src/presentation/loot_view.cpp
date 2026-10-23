@@ -1,4 +1,5 @@
 #include "presentation/world/palette_blend_view.hpp"
+#include "core/text.hpp"
 #include "scene_view.hpp"
 #include <algorithm>
 
@@ -85,8 +86,8 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         if (item.definition == "gld")
             text = std::to_string(item.quantity) + " " + text;
         int fontSize = 16;
-        while (fontSize > 1 && painter_.measure(text, fontSize) > W - 16) --fontSize;
-        float width = float(std::min(W - 8, painter_.measure(text, fontSize) + 8));
+        while (fontSize > 1 && painter_.measure(stripD2ColorCodes(text), fontSize) > W - 16) --fontSize;
+        float width = float(std::min(W - 8, painter_.measure(stripD2ColorCodes(text), fontSize) + 8));
         Rectangle box{std::clamp(ground.x - width / 2, 4.f, W - width - 4), ground.y - 30, width, 22};
         bool placed = false;
         // Alternate rows above and below the drop; drawing and clicking use this same layout.
@@ -143,9 +144,9 @@ void SceneView::drawLootLabels(Vec mouse) const {
         DrawRectangleRec(label.bounds, hot || selected ? Color{47, 47, 47, 235}
                                                          : Color{0, 0, 0, 218});
         int fontSize = 16;
-        while (fontSize > 1 && painter_.measure(label.text, fontSize) > label.bounds.width - 8) --fontSize;
-        const UiPainter namePainter(assets_.itemTextFonts[label.fontIndex]);
-        namePainter.inBox(label.text, label.bounds, fontSize, WHITE);
+        while (fontSize > 1 && painter_.measure(stripD2ColorCodes(label.text), fontSize) > label.bounds.width - 8)
+            --fontSize;
+        drawColoredItemText(label.text, label.fontIndex, label.bounds, fontSize);
     }
 }
 } // namespace d2x

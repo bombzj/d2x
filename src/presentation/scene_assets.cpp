@@ -132,7 +132,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     itemTextFonts[1] = characterRedFont;
     itemTextFonts[2] = skillGreenFont;
     itemTextFonts[3] = skillLevelBlueFont;
-    for (int color : {4, 5, 8, 9})
+    for (int color = 4; color < 13; ++color)
         loadClassicFont(uiGraphics_, archives, itemTextFonts[size_t(color)], "font16", color);
     loadClassicFont(uiGraphics_, archives, skillLevelCompactFont, "fontformal10");
     loadClassicFont(uiGraphics_, archives, skillLevelCompactBlueFont, "fontformal10", 3);
@@ -142,7 +142,7 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
             "strchrvit", "strchreng", "strchrskm", "strchrrat", "strchrdef", "strchrstm",
             "strchrlif", "strchrman", "strchrfir", "strchrcol", "strchrlit", "strchrpos",
             "strchrstat", "strchrrema", "StrSklTree1", "StrSklTree2", "StrSklTree3",
-            "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash",
+            "Level", "StrSkill42", "cost", "ItemDesc1s", "NPCRepairItems", "Cost", "stash", "Sell",
             "VerifyTransaction1", "VerifyTransaction2", "VerifyTransaction3", "VerifyTransaction5",
             "strDropGoldHowMuch", "strBankGoldDeposit", "strBankGoldWithdraw", "GoldMax",
             "minipanelchar", "minipanelinv", "minipaneltree", "minipanelautomap",
