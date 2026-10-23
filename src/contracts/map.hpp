@@ -14,19 +14,28 @@ struct AutomapStamp { int x = 0, y = 0, cel = -1; };
 // Positions share the observer's world coordinate space; rendering has no
 // dependency on either local authority or server packet coordinates.
 struct AutomapDrawView {
-    enum class UnitMark { None, Npc, Party, OtherPlayer, Corpse, OwnPet, PartyPet, Stash, BluePortal, RedPortal };
+    enum class UnitMark { None, Npc, Party, OtherPlayer, Corpse, OwnPet, PartyPet, Stash, BluePortal, RedPortal, Monster, Quest, Chest };
     struct Stamp { Vec position; int cel = -1; };
     struct Town { int level = 0, variant = 0; Vec center; };
     struct Marker {
         Vec position; int cel = -1; std::string name; bool npc = false, showName = false;
         UnitMark unitMark = UnitMark::None;
         std::optional<std::pair<uint8_t, uint32_t>> unit{};
+        // Palette byte for Monster marks (BH "Monster Color" per-rank).
+        uint8_t markColor = 0;
+        // BH automap text above Monster marks: pairs of PL2 text-color digit
+        // and glyph ("7i" physical immunity, "3m" mana burn, ...).
+        std::string markResist, markEnchant;
     };
     Vec observer;
     bool observerVisible{true};
     std::vector<Stamp> stamps;
     std::vector<Town> towns;
     std::vector<Marker> markers;
+    // BH path lines from the player's own automap dot: waypoint 0, exit 1,
+    // quest point 2. World coordinates, like every other automap entry.
+    struct PathLine { Vec position; uint8_t kind; };
+    std::vector<PathLine> pathLines;
 };
 struct MapRect { int x = 0, y = 0, width = 0, height = 0; };
 struct MapMarkerView {

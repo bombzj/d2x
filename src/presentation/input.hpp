@@ -34,6 +34,7 @@ struct FrameInput {
     bool debugNpc = false, debugWaypoint = false, debugLoadout = false, debugHitpoints = false, debugMenu = false, debugSkillTree = false, debugExperience = false, debugMap = false, debugCombat = false, debugSkills = false, debugCharacter = false, debugItem = false, debugPet = false, debugOnline = false, debugHost = false, debugQuit = false, capture = false;
     bool save = false, load = false, reload = false;
     bool expandBelt = false, weaponSwap = false;
+    bool bhSettings = false;
     std::array<bool, 4> belt{};
     std::array<bool, hotbarSlots> skills{};
 };

@@ -679,6 +679,13 @@ void RemoteTown::revealVisibleTiles(const OnlineView &v, std::span<const size_t>
     refresh_automap_rooms_pd2(v);
     updateAutomapView(v);
 }
+void RemoteTown::revealAllTiles(const OnlineView &v) {
+    if (!view_.nativeMapReady || !map_ || !v.load.mapSeed || !v.load.act ||
+        v.gameGeneration != gameGeneration_ || v.world.areaGeneration != areaGeneration_) return;
+    std::vector<size_t> all(map_->terrain.instances.size());
+    for (size_t i = 0; i < all.size(); ++i) all[i] = i;
+    revealVisibleTiles(v, all);
+}
 void RemoteTown::updateAutomapView(const OnlineView &v) {
     view_.automapStamps.clear(); view_.automapTowns.clear(); view_.automapRevealedCells.clear(); view_.automap = {};
     if (!nativeMap_ || !view_.area || !v.load.mapSeed || !v.load.act) return;

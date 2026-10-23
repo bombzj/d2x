@@ -68,6 +68,8 @@ class PaletteBlendView {
     void drawSocket(const Sprite *image, Rectangle bounds) const;
     void drawHighlight(const Sprite *image, Rectangle bounds) const;
     Color paletteColor(Color rgb) const { return colors_[size_t(paletteIndex(rgb))]; }
+    // Original palette byte -> RGB, for BH hooks that draw with palette indices.
+    Color paletteByte(uint8_t index) const { return colors_[index]; }
     // Native DrawBox mode 0: trans[2][destination][color], with palette RGB lookup.
     void drawRectangle(Rectangle bounds, Color color) const;
     void setLighting(Texture2D lightMap, Vec player, Vec playerScreen, Vec origin, float zoom, Color ambient,

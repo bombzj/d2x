@@ -15,6 +15,7 @@ class SceneController {
     bool handleDeath(const FrameInput &);
     bool handlePanels(const FrameInput &, float);
     bool handleMenu(const FrameInput &);
+    bool handleBhSettings(const FrameInput &);
     IActorClient &actorClient_;
     IInventoryClient &inventoryClient_;
     ICharacterClient &characterClient_;

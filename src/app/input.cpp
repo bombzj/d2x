@@ -107,6 +107,7 @@ FrameInput pollInput(const Viewport &viewport) {
         input.automapNames = plain && IsKeyPressed(KEY_F12);
         input.screenshot = input.control && IsKeyPressed(KEY_F12);
         input.help = input.control && IsKeyPressed(KEY_F1);
+        input.bhSettings = input.control && IsKeyPressed(KEY_Z);
         input.showLoot = input.alt;
         for (int i = 0; i < int(input.belt.size()); ++i)
             input.belt[size_t(i)] = plain && IsKeyPressed(KEY_ONE + i);

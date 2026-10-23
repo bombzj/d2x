@@ -666,6 +666,74 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     // checked position drives camera, visibility, effects and automap each
     // frame; packet coordinates remain the authority/acknowledgement state.
     automap.observer = observer;
+    if (playerId && shared.ui().bhShowPathLine) {
+        // BH path guidance on the automap: lines from the player's own dot
+        // to waypoints, next-scene exits and quest points (0x8A hints).
+        for (const auto &target : binding.mapTargets)
+            if (target.interaction == OnlineMapInteraction::Waypoint ||
+                target.interaction == OnlineMapInteraction::Exit)
+                automap.pathLines.push_back({{float(target.position.x), float(target.position.y)},
+                    target.interaction == OnlineMapInteraction::Waypoint ? uint8_t(0) : uint8_t(1)});
+        for (const auto &key : v.world.questAlerts) {
+            const auto unit = v.world.units.find(key);
+            if (unit == v.world.units.end() || !unit->second.position) continue;
+            const Vec position{float(unit->second.position->x), float(unit->second.position->y)};
+            automap.pathLines.push_back({position, uint8_t(2)});
+            automap.markers.push_back({position, -1, {}, false, false,
+                AutomapDrawView::UnitMark::Quest, std::pair{key.type, key.id}});
+        }
+    }
+    if (shared.ui().bhShowChests) {
+        // BH Show Chests: unopened selectable containers (IsObjectChest
+        // OperateFn list) get a 3x3 palette-white box on the automap.
+        constexpr std::array<int, 12> chestOps{{1, 3, 4, 5, 7, 14, 19, 20, 33, 48, 51, 68}};
+        for (const auto &[key, unit] : v.world.units) {
+            const auto cls = unitClass(unit);
+            if (key.type != 2 || !unit.position || !cls || unit.mode != 0) continue;
+            const auto row = objectRows.find(int(*cls));
+            if (row == objectRows.end()) continue;
+            if (!objects.number(row->second, "Selectable0").value_or(0)) continue;
+            const auto operate = objects.number(row->second, "OperateFn");
+            if (!operate || std::find(chestOps.begin(), chestOps.end(), *operate) == chestOps.end()) continue;
+            automap.markers.push_back({{float(unit.position->x), float(unit.position->y)}, -1, {}, false,
+                false, AutomapDrawView::UnitMark::Chest, std::pair{key.type, key.id}});
+        }
+    }
+    if (shared.ui().bhShowMonsters) {
+        // BH Maphack::OnAutomapDraw draws a Crosshook per live monster of the
+        // loaded rooms; IsValidMonster (D2Helpers.cpp) drops corpses, quest
+        // triggers and named placeholder units.
+        std::set<std::pair<uint8_t, uint32_t>> drawn;
+        for (const auto &marker : binding.automap.markers)
+            if (marker.unit) drawn.insert(*marker.unit);
+        constexpr std::array<uint16_t, 30> hidden{{227, 283, 326, 327, 328, 329, 330, 410, 411, 412,
+            413, 414, 415, 416, 366, 406, 351, 352, 353, 266, 408, 516, 517, 518, 519, 522, 523, 543,
+            543, 545}};
+        for (const auto &[key, unit] : v.world.units) {
+            const auto cls = unitClass(unit);
+            if (key.type != 1 || !unit.position || !cls || onlineMonsterCorpse(unit) ||
+                unit.mode == 0 || unit.mode == 12) continue;
+            if (drawn.contains({key.type, key.id}) || v.world.pets.contains(key.id)) continue;
+            if (std::find(hidden.begin(), hidden.end(), *cls) != hidden.end()) continue;
+            if ((*cls == 608 && unit.mode == 8) ||
+                ((*cls == 68 || *cls == 258 || *cls == 261) && unit.mode == 14)) continue;
+            if (unit.name == "an evil force" || unit.name == "dummy" || unit.name == "Maggot") continue;
+            if (const auto row = monsterRows.find(*cls); row != monsterRows.end() &&
+                monstats.number(row->second, "npc").value_or(0)) continue;
+            decodeMonsterIdentity(unit);
+            // BH "Monster Color" defaults, overridden by rank like Maphack.cpp.
+            uint8_t color = 0x5B;
+            if (const auto identity = monsterIdentities.find(key); identity != monsterIdentities.end()) {
+                if (identity->second.unique || identity->second.superUnique) color = 0x84;
+                if (identity->second.champion) color = 0x91;
+                if (identity->second.minion) color = 0x60;
+            }
+            automap.markers.push_back({{float(unit.position->x), float(unit.position->y)}, -1, {}, false,
+                false, AutomapDrawView::UnitMark::Monster, std::pair{key.type, key.id}, color,
+                shared.ui().bhShowResistances ? monsterAutomapResist(unit) : std::string{},
+                shared.ui().bhShowEnchantments ? monsterAutomapEnchant(unit) : std::string{}});
+        }
+    }
     for (auto &marker : automap.markers) if (marker.unit) {
         const OnlineUnitKey key{marker.unit->first, marker.unit->second};
         const auto unit = v.world.units.find(key);

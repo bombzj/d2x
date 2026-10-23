@@ -106,6 +106,22 @@ struct ViewState {
     std::string lootNotice;
     float noticeTime = 0;
     bool noticeError = false;
+    // BH/D2Hackmap display features.
+    bool bhRevealMap = false;
+    bool bhAlwaysShowLoot = false;
+    bool bhShowAreaName = false;
+    bool bhShowXpText = false;
+    bool bhShowBeltStatus = false;
+    bool bhForceLightRadius = false;
+    bool bhShowPathLine = false;
+    bool bhShowResistances = false;
+    bool bhShowMonsters = false;
+    bool bhShowEnchantments = false;
+    bool bhShowChests = false;
+    bool bhAutomapOnJoin = false;
+    // BH settings overlay (Ctrl+Z).
+    bool bhSettingsOpen = false;
+    int bhSettingsSelected = 0;
     bool capturesWorldInput(bool includePlayerTrade = true) const { return (includePlayerTrade && playerTradeBlocking) || chatInputOpen || messageLogOpen || gameMenuOpen || help || npcMenu || shopOpen || hireListOpen || !dialogue.empty(); }
     bool blocksInput() const { return capturesWorldInput() || travelMenu; }
 };
@@ -202,6 +218,8 @@ class SceneView {
     void drawQuestNotice() const;
     void drawHelp() const;
     void drawExitHint(Vec mouse) const;
+    void drawBhOverlay() const;
+    void drawBhSettings() const;
     void drawInventory(Vec mouse) const;
     void drawCharacter(Vec mouse) const;
     void drawHireling(Vec mouse) const;

@@ -10,6 +10,19 @@ struct ClientPreferences {
     AutomapFade automapFade = AutomapFade::Auto;
     AudioSettings audio;
     bool lighting = true;
+    // BH/D2Hackmap display features.
+    bool bhRevealMap = false;
+    bool bhAlwaysShowLoot = false;
+    bool bhShowAreaName = false;
+    bool bhShowXpText = false;
+    bool bhShowBeltStatus = false;
+    bool bhForceLightRadius = false;
+    bool bhShowPathLine = false;
+    bool bhShowResistances = false;
+    bool bhShowMonsters = false;
+    bool bhShowEnchantments = false;
+    bool bhShowChests = false;
+    bool bhAutomapOnJoin = false;
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();

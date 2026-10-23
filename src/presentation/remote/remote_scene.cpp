@@ -23,6 +23,8 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
     }
     for (size_t row=0; row<superuniques.rows().size(); ++row)
         if (const auto id=superuniques.number(row,"hcIdx")) superUniqueRows.emplace(*id,row);
+    for (size_t row = 0; row < objects.rows().size(); ++row)
+        if (const auto id = objects.number(row, "Id")) objectRows.emplace(*id, row);
     for (const auto &character:loadCharacterDefinitions(charstats)) characterRows.push_back(character.sourceRow);
     for (size_t row = 0; row < skills.rows().size(); ++row)
         if (auto id = skills.number(row, "Id")) skillRows.emplace(*id, row);
@@ -275,7 +277,7 @@ void RemoteScene::drawTargetInfo(const OnlineView &view, const RemoteSceneFrame 
     } else if(!combat.monsterTargetEligible(unit,false)) return;
     const auto row = impl_->monsterRows.find(combat.monsterClass(unit).value_or(UINT16_MAX));
     if (row == impl_->monsterRows.end()) return;
-    auto [name, description] = impl_->monsterCaption(unit);
+    auto [name, description] = impl_->monsterCaption(unit, shared.ui().bhShowResistances);
     if (name.empty()) return;
     if(corpse) {
         const auto suffix=impl_->strings.find("corpse");

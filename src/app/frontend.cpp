@@ -241,7 +241,11 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             const auto &panels = sharedUi->ui();
             const ClientPreferences current{sharedClients->running(), panels.miniPanelOpen,
                 panels.automapLarge, panels.automapCenterWhenCleared,
-                panels.automapParty, panels.automapNames, panels.automapFade, panels.audio, panels.lighting};
+                panels.automapParty, panels.automapNames, panels.automapFade, panels.audio, panels.lighting,
+                panels.bhRevealMap, panels.bhAlwaysShowLoot, panels.bhShowAreaName,
+                panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
+                panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
+                panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
@@ -258,6 +262,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t sceneGeneration = ~uint64_t{};
     uint64_t inputAreaGeneration = ~uint64_t{};
     bool noPickup=false;
+    uint64_t lastRevealAllGeneration = ~uint64_t{};
     auto sceneStatus = [&] {
         town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         auto status = town.read();
@@ -874,7 +879,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         sharedController = std::make_unique<SceneController>(sharedClients->actor(),sharedClients->inventory(),
                             sharedClients->character(),sharedClients->npc(),sharedClients->map(),*sharedUi);
                         auto &initial = sharedUi->ui();
-                        initial.automap = mapDisplay.visible;
+                        initial.automap = mapDisplay.visible || preferences.bhAutomapOnJoin;
                         initial.miniPanelOpen = preferences.miniPanelOpen;
                         initial.automapLarge = preferences.automapLarge;
                         initial.automapCenterWhenCleared = preferences.automapCenterWhenCleared;
@@ -882,6 +887,18 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.automapNames = preferences.automapNames;
                         initial.automapFade = preferences.automapFade;
                         initial.lighting = preferences.lighting;
+                        initial.bhRevealMap = preferences.bhRevealMap;
+                        initial.bhAlwaysShowLoot = preferences.bhAlwaysShowLoot;
+                        initial.bhShowAreaName = preferences.bhShowAreaName;
+                        initial.bhShowXpText = preferences.bhShowXpText;
+                        initial.bhShowBeltStatus = preferences.bhShowBeltStatus;
+                        initial.bhForceLightRadius = preferences.bhForceLightRadius;
+                        initial.bhShowPathLine = preferences.bhShowPathLine;
+                        initial.bhShowResistances = preferences.bhShowResistances;
+                        initial.bhShowMonsters = preferences.bhShowMonsters;
+                        initial.bhShowEnchantments = preferences.bhShowEnchantments;
+                        initial.bhShowChests = preferences.bhShowChests;
+                        initial.bhAutomapOnJoin = preferences.bhAutomapOnJoin;
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
@@ -1052,6 +1069,15 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (quit || presentationPaused)
             continue;
         town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
+        // BH reveal_map: once per area generation, mark every tile as explored.
+        if (sharedUi && sharedUi->ui().bhRevealMap) {
+            const auto generation = session.read().gameGeneration * 0x100000000ULL +
+                session.read().world.areaGeneration;
+            if (generation != lastRevealAllGeneration) {
+                lastRevealAllGeneration = generation;
+                town.revealAllTiles(session.read());
+            }
+        }
         const auto automapCallbacksPd2 = town.take_automap_room_reveals_pd2();
         if (!automapCallbacksPd2.empty())
             session.report_automap_rooms_pd2(automapCallbacksPd2, onlineIntentContext(session.read()));

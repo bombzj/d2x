@@ -107,7 +107,7 @@ std::vector<SceneView::LootLabel> SceneView::lootLabels(Vec mouse) const {
         const auto tone = item.tooltip.empty() ? ItemTextTone::Name : item.tooltip.front().tone;
         LootLabel label{item.handle(), std::move(text), box, ground, itemTextFontIndex(item.quality, tone)};
         layout.push_back(label);
-        if (view_.showLoot || id == inventoryView_.pickupTarget ||
+        if (view_.showLoot || view_.bhAlwaysShowLoot || id == inventoryView_.pickupTarget ||
             CheckCollisionPointRec(rv(mouse), box) || CheckCollisionPointRec(rv(mouse), ([&] { const auto at=screen(staticUnitPosition(location->position)); const auto *image=groundItemSprite(item);
                 return image?Rectangle{at.x+image->x-5,at.y+image->y-5,float(image->texture.width+10),float(image->texture.height+10)}:Rectangle{}; }())))
             visible.push_back(std::move(label));

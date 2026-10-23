@@ -297,7 +297,12 @@ PaletteBlendView &SceneView::prepareWorldLighting(const WorldDrawView &scene, st
     lighting_->finishSources();
     if (level.palette != 0 && !actPaletteBlends_.at(size_t(level.palette)))
         actPaletteBlends_[size_t(level.palette)] = std::make_unique<PaletteBlendView>(archives_, level.palette);
-    lighting_->prepare(scene.map->grid, level, scene.observer, actorClient_.controlledActor().lightRadius,
+    // BH force_light_radius: cap at the native maximum of 18 instead of the
+    // character's current lightRadius stat.
+    const int lightRadius = view_.bhForceLightRadius
+        ? std::max(actorClient_.controlledActor().lightRadius, 18)
+        : actorClient_.controlledActor().lightRadius;
+    lighting_->prepare(scene.map->grid, level, scene.observer, lightRadius,
         sceneLightColor(scene.observerLightColor), lights, regions);
     auto &palette = level.palette == 0 ? *paletteBlend_ : *actPaletteBlends_.at(size_t(level.palette));
     lighting_->bind(palette, scene.observer, screen(scene.observer), view_.zoom, view_.lighting);

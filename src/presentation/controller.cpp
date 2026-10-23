@@ -138,6 +138,39 @@ bool SceneController::handleMenu(const FrameInput &input) {
     }
     return true;
 }
+bool SceneController::handleBhSettings(const FrameInput &input) {
+    auto &ui = view_.ui();
+    if (input.bhSettings && !ui.chatInputOpen && !ui.gameMenuOpen) {
+        ui.bhSettingsOpen = !ui.bhSettingsOpen;
+        ui.bhSettingsSelected = 0;
+        if (ui.bhSettingsOpen) cancelWorldGesture();
+        return true;
+    }
+    if (!ui.bhSettingsOpen) return false;
+    constexpr int options = 12;
+    if (input.escape) { ui.bhSettingsOpen = false; return true; }
+    const int navigation = input.menuDelta;
+    if (navigation)
+        ui.bhSettingsSelected = (ui.bhSettingsSelected + navigation + options) % options;
+    if (input.menuSelect || input.enter || input.leftPressed) {
+        switch (ui.bhSettingsSelected) {
+        case 0: ui.bhRevealMap = !ui.bhRevealMap; break;
+        case 1: ui.bhAlwaysShowLoot = !ui.bhAlwaysShowLoot; break;
+        case 2: ui.bhShowAreaName = !ui.bhShowAreaName; break;
+        case 3: ui.bhShowXpText = !ui.bhShowXpText; break;
+        case 4: ui.bhShowBeltStatus = !ui.bhShowBeltStatus; break;
+        case 5: ui.bhForceLightRadius = !ui.bhForceLightRadius; break;
+        case 6: ui.bhShowPathLine = !ui.bhShowPathLine; break;
+        case 7: ui.bhShowResistances = !ui.bhShowResistances; break;
+        case 8: ui.bhShowMonsters = !ui.bhShowMonsters; break;
+        case 9: ui.bhShowEnchantments = !ui.bhShowEnchantments; break;
+        case 10: ui.bhShowChests = !ui.bhShowChests; break;
+        case 11: ui.bhAutomapOnJoin = !ui.bhAutomapOnJoin; break;
+        }
+        return true;
+    }
+    return true;
+}
 bool SceneController::handlePanels(const FrameInput &input, float elapsed) {
     auto &ui = view_.ui();
     if (!ui.characterOpen || ui.blocksInput() || ui.inventory.goldDialog) ui.characterPressed.reset();
@@ -437,6 +470,7 @@ bool SceneController::handle(const FrameInput &input, float elapsed) {
     if (input.rightPressed || !input.rightHeld) inventoryRight_ = false;
     if (!input.leftHeld && !input.leftPressed) pickupClick_ = false;
     prepareTravelInput(input);
+    if (handleBhSettings(input)) return true;
     // Capture before handlers close panels or shift the world viewport.
     if ((input.leftPressed || input.rightPressed) &&
         (ui.blocksInput() || ui.skillPicker || ui.inventory.drag ||

@@ -76,6 +76,8 @@ class RemoteTown {
     bool permitsInteraction(const OnlineView &, OnlineUnitKey target) const;
     bool interactionReady(const OnlineView &, OnlineUnitKey target, std::optional<Vec> displayOrigin = {}, bool approaching = false) const;
     void revealVisibleTiles(const OnlineView &, std::span<const size_t> instanceIndices);
+    // BH reveal_map: marks every terrain instance in the current area as seen.
+    void revealAllTiles(const OnlineView &);
     std::vector<uint32_t> take_automap_room_reveals_pd2();
     AutomapDiscovery discovery() const;
     void restoreDiscovery(const AutomapDiscovery &, const OnlineView &);

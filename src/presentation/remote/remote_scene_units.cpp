@@ -145,7 +145,45 @@ std::string RemoteScene::Impl::monsterSkillMode(size_t monster, uint16_t skill) 
     return lower(std::string(skills.value(row->second,"monanim")));
 }
 
-std::pair<std::string,std::string> RemoteScene::Impl::monsterCaption(const OnlineUnit &unit) const {
+std::string RemoteScene::Impl::monsterAutomapResist(const OnlineUnit &unit) const {
+    // BH OnAutomapDraw immunity line: PL2 text-color digit plus letter,
+    // immune at 100+, resistant at the 99 threshold (PD2 show_monster_resistance).
+    const auto row = monsterRows.find(unitClass(unit).value_or(UINT16_MAX));
+    if (row == monsterRows.end()) return {};
+    const std::string suffix = worldDifficulty==1?"(N)":worldDifficulty==2?"(H)":"";
+    const auto res = [&](const char *field) {
+        return monstats.number(row->second, std::string(field) + suffix).value_or(0);
+    };
+    constexpr std::array<std::pair<const char *, char>, 6> fields{
+        {{"ResDm", '7'}, {"ResMa", '8'}, {"ResFi", '1'}, {"ResLi", '9'}, {"ResCo", '3'}, {"ResPo", '2'}}};
+    std::string text;
+    for (const auto &[field, code] : fields) {
+        const int value = res(field);
+        if (value >= 100) { text.push_back(code); text.push_back('i'); }
+        else if (value >= 99) { text.push_back(code); text.push_back('r'); }
+    }
+    return text;
+}
+
+std::string RemoteScene::Impl::monsterAutomapEnchant(const OnlineUnit &unit) const {
+    // BH "Monster Enchantments": boss-only letters using the native ENCH ids
+    // (25 mana burn, 9 fire, 17 lightning, 18 cold).
+    const auto identity = monsterIdentities.find(unit.key);
+    if (identity == monsterIdentities.end()) return {};
+    if (!identity->second.unique && !identity->second.superUnique) return {};
+    const auto has = [&](uint8_t id) {
+        return std::find(identity->second.modifiers.begin(), identity->second.modifiers.end(), id) !=
+            identity->second.modifiers.end();
+    };
+    std::string text;
+    if (has(25)) text += "3m";
+    if (has(9)) text += "1e";
+    if (has(17)) text += "9e";
+    if (has(18)) text += "3e";
+    return text;
+}
+
+std::pair<std::string,std::string> RemoteScene::Impl::monsterCaption(const OnlineUnit &unit, bool includeResistances) const {
     const auto row=monsterRows.find(unitClass(unit).value_or(UINT16_MAX));
     if(row==monsterRows.end()) return {};
     // Nameless placeholder rows resolve empty and produce no caption;
@@ -169,7 +207,96 @@ std::pair<std::string,std::string> RemoteScene::Impl::monsterCaption(const Onlin
             description=monsterModifierDescription(*monsterText,publicIdentity,&modifiers);
         } else return {};
     }
+    // BH monster_resistances: append base resistances from MonStats with the
+    // difficulty suffix, matching monster_difficulty_combat.cpp.
+    if (includeResistances) {
+        const std::string suffix = worldDifficulty==1?"(N)":worldDifficulty==2?"(H)":"";
+        const auto res = [&](const char *field) {
+            return monstats.number(row->second, std::string(field) + suffix).value_or(0);
+        };
+        const int rd = res("ResDm"), rm = res("ResMa"), rf = res("ResFi"),
+                  rl = res("ResLi"), rc = res("ResCo"), rp = res("ResPo");
+        auto append = [&](std::string &target, const char *label, int value) {
+            if (value == 0) return;
+            if (!target.empty()) target += ' ';
+            target += label;
+            target += std::to_string(value);
+        };
+        append(description, "Ph:", rd);
+        append(description, "Ma:", rm);
+        append(description, "Fi:", rf);
+        append(description, "Li:", rl);
+        append(description, "Co:", rc);
+        append(description, "Po:", rp);
+    }
     return {std::move(name),std::move(description)};
+}
+
+std::optional<std::pair<uint8_t, RemoteScene::Impl::MonsterIdentity>>
+RemoteScene::Impl::readMonsterAppearance(const OnlineUnit &u, size_t extraRow, RealmPortraitParts &parts) const {
+    try {
+        net::protocol::BitReader bits(u.appearanceBits);
+        const auto mode = uint8_t(bits.read(4));
+        const bool components = bits.read(1) != 0;
+        for (size_t c = 0; c < parts.components.size(); ++c) {
+            auto values = variants(monstats2.value(extraRow, std::string(componentCodes[c]) + "v"));
+            const auto selected =
+                components
+                    ? bits.read(values.size() >= 3 ? std::bit_width(unsigned(values.size() - 1)) : 1)
+                    : 0;
+            if (!monstats2.number(extraRow, componentCodes[c]).value_or(0)) {
+                parts.components[c] = "nil";
+                continue;
+            }
+            // MonStats2CompositLinker leaves an empty variant list at count zero;
+            // D2Common_11069 returns no component code for it. Warriv/Charsi
+            // enable S1 but leave S1v empty: omit that layer, not the whole NPC.
+            if (values.empty()) {
+                if (selected) return std::nullopt;
+                parts.components[c] = "nil";
+                continue;
+            }
+            if (selected >= values.size())
+                return std::nullopt;
+            parts.components[c] = values[selected];
+        }
+        // SCmd::sub_6FC3FC80: rank/mercenary flags do not invalidate the components.
+        // Fixed superuniques use the original identity/name/difficulty palette.
+        MonsterIdentity identity;
+        if (bits.read(1)) {
+            identity.champion=bits.read(1)!=0; identity.unique=bits.read(1)!=0;
+            const bool superUnique = bits.read(1) != 0;
+            identity.minion=bits.read(1)!=0; identity.ghostly=bits.read(1)!=0;
+            if (superUnique) identity.superUnique=uint16_t(bits.read(16));
+            bool terminated = false;
+            for (int i = 0; i < 9; ++i) {
+                const auto modifier=uint8_t(bits.read(8));
+                if (!modifier) { terminated=true; break; }
+                identity.modifiers.push_back(modifier);
+            }
+            if (!terminated && bits.read(8) != 0) return std::nullopt;
+            identity.nameSeed=uint16_t(bits.read(16));
+            if (bits.read(1)) bits.read(32);
+        }
+        return std::pair{mode, std::move(identity)};
+    } catch (const net::protocol::ProtocolError &) {
+        return std::nullopt;
+    }
+}
+
+void RemoteScene::Impl::decodeMonsterIdentity(const OnlineUnit &u) {
+    // Appearance decoding otherwise runs only for drawn monsters; the BH
+    // automap needs the rank flags of every known unit in the area.
+    if (monsterIdentities.contains(u.key)) return;
+    const auto cls = unitClass(u);
+    if (!cls) return;
+    const auto row = monsterRows.find(*cls);
+    if (row == monsterRows.end()) return;
+    const auto extra = monsterExtra.find(monstats.value(row->second, "MonStatsEx"));
+    if (extra == monsterExtra.end()) return;
+    RealmPortraitParts parts;
+    if (const auto appearance = readMonsterAppearance(u, extra->second, parts))
+        monsterIdentities[u.key] = appearance->second;
 }
 
 const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bool moving, SceneView &shared) {
@@ -220,51 +347,12 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::monster(const OnlineUnit &u, bo
     parts.token = lower(std::string(monstats.value(row->second, "Code")));
     if (parts.token.empty())
         return nullptr;
+    const auto appearance = readMonsterAppearance(u, e, parts);
+    if (!appearance) return nullptr;
+    const auto mode = appearance->first;
+    const auto &identity = appearance->second;
+    monsterIdentities[u.key]=identity;
     try {
-        net::protocol::BitReader bits(u.appearanceBits);
-        const auto mode = bits.read(4);
-        const bool components = bits.read(1) != 0;
-        for (size_t c = 0; c < parts.components.size(); ++c) {
-            auto values = variants(monstats2.value(e, std::string(componentCodes[c]) + "v"));
-            const auto selected =
-                components
-                    ? bits.read(values.size() >= 3 ? std::bit_width(unsigned(values.size() - 1)) : 1)
-                    : 0;
-            if (!monstats2.number(e, componentCodes[c]).value_or(0)) {
-                parts.components[c] = "nil";
-                continue;
-            }
-            // MonStats2CompositLinker leaves an empty variant list at count zero;
-            // D2Common_11069 returns no component code for it. Warriv/Charsi
-            // enable S1 but leave S1v empty: omit that layer, not the whole NPC.
-            if (values.empty()) {
-                if (selected) return nullptr;
-                parts.components[c] = "nil";
-                continue;
-            }
-            if (selected >= values.size())
-                return nullptr;
-            parts.components[c] = values[selected];
-        }
-        // SCmd::sub_6FC3FC80: rank/mercenary flags do not invalidate the components.
-        // Fixed superuniques use the original identity/name/difficulty palette.
-        MonsterIdentity identity;
-        if (bits.read(1)) {
-            identity.champion=bits.read(1)!=0; identity.unique=bits.read(1)!=0;
-            const bool superUnique = bits.read(1) != 0;
-            identity.minion=bits.read(1)!=0; identity.ghostly=bits.read(1)!=0;
-            if (superUnique) identity.superUnique=uint16_t(bits.read(16));
-            bool terminated = false;
-            for (int i = 0; i < 9; ++i) {
-                const auto modifier=uint8_t(bits.read(8));
-                if (!modifier) { terminated=true; break; }
-                identity.modifiers.push_back(modifier);
-            }
-            if (!terminated && bits.read(8) != 0) return nullptr;
-            identity.nameSeed=uint16_t(bits.read(16));
-            if (bits.read(1)) bits.read(32);
-        }
-        monsterIdentities[u.key]=identity;
         int palette=monstats.number(row->second,"TransLvl").value_or(0);
         bool randomPalette=false;
         // D2Client 1.13c A7A5A / 539E0: native transform numbers include

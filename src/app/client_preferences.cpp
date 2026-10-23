@@ -48,7 +48,11 @@ ClientPreferences loadClientPreferences() {
             NpcSpeechMode(integer("npcSpeech", 2, 2))};
         return {setting("running"), setting("miniPanelOpen"), large,
             setting("automapCenterWhenCleared", true),
-            setting("automapParty", true), setting("automapNames", true), fade, audio, setting("lighting", true)};
+            setting("automapParty", true), setting("automapNames", true), fade, audio, setting("lighting", true),
+            setting("bhRevealMap"), setting("bhAlwaysShowLoot"), setting("bhShowAreaName"),
+            setting("bhShowXpText"), setting("bhShowBeltStatus"), setting("bhForceLightRadius"),
+            setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
+            setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin")};
     } catch (const nlohmann::json::exception &error) {
         std::cerr << "Invalid client settings: " << error.what() << '\n';
         return {};
@@ -64,7 +68,15 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
                 : preferences.automapFade == AutomapFade::Everything ? "everything"
                 : preferences.automapFade == AutomapFade::Center ? "center" : "auto"},
             {"soundVolume", preferences.audio.sound}, {"musicVolume", preferences.audio.music},
-            {"npcSpeech", int(preferences.audio.speech)}, {"lighting", preferences.lighting}}.dump(2);
+            {"npcSpeech", int(preferences.audio.speech)}, {"lighting", preferences.lighting},
+            {"bhRevealMap", preferences.bhRevealMap}, {"bhAlwaysShowLoot", preferences.bhAlwaysShowLoot},
+            {"bhShowAreaName", preferences.bhShowAreaName}, {"bhShowXpText", preferences.bhShowXpText},
+            {"bhShowBeltStatus", preferences.bhShowBeltStatus}, {"bhForceLightRadius", preferences.bhForceLightRadius},
+            {"bhShowPathLine", preferences.bhShowPathLine}, {"bhShowResistances", preferences.bhShowResistances},
+            {"bhShowMonsters", preferences.bhShowMonsters},
+            {"bhShowEnchantments", preferences.bhShowEnchantments},
+            {"bhShowChests", preferences.bhShowChests},
+            {"bhAutomapOnJoin", preferences.bhAutomapOnJoin}}.dump(2);
         writeFileAtomically(preferencesPath,
             std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(text.data()), text.size()});
         return true;

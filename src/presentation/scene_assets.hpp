@@ -71,6 +71,7 @@ class SceneAssets {
     ClassicFont automapPartyFont, automapNpcFont, automapOtherFont, deathFont;
     GpuAnimation deathTitle, deathInstruction;
     std::array<ClassicFont, 13> itemTextFonts; // Original PL2 text-color indices.
+    std::array<ClassicFont, 13> automapTextFonts; // font6 with the same colors; BH automap monster text.
     std::map<std::string, std::string, std::less<>> characterLabels;
     std::array<std::string, 2> globeTextFormats;
     Color playerNameBackground{};

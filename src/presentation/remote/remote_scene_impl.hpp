@@ -202,6 +202,7 @@ struct RemoteScene::Impl {
     std::set<OnlineUnitKey> deathCallbacks, preparedDeaths;
     RemoteMonsterEffects monsterEffects;
     std::map<int,size_t> superUniqueRows;
+    std::map<int,size_t> objectRows; // objects.txt Id -> row (BH Show Chests).
     std::map<OnlineUnitKey, Motion> motion;
     uint64_t gameGeneration{~uint64_t{}}, areaGeneration{~uint64_t{}};
     float time{};
@@ -221,6 +222,10 @@ struct RemoteScene::Impl {
     bool playerDead(const OnlineUnit &u) const;
     Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation);
     const Art *character(const OnlineUnit &u, bool moving, bool town, SceneView &shared);
+    // appearanceBits -> native mode plus SCmd rank block; nullopt when rejected.
+    std::optional<std::pair<uint8_t, MonsterIdentity>> readMonsterAppearance(const OnlineUnit &u,
+        size_t extraRow, RealmPortraitParts &parts) const;
+    void decodeMonsterIdentity(const OnlineUnit &u);
     const OnlineWorldView &world() const;
     std::optional<uint16_t> unitClass(const OnlineUnit &unit) const;
     std::optional<OnlinePoint> targetPosition(OnlineUnitKey key) const;
@@ -247,7 +252,9 @@ struct RemoteScene::Impl {
     bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision);
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin,const RemoteUiClients &clients);
     std::string monsterSkillMode(size_t monster, uint16_t skill) const;
-    std::pair<std::string,std::string> monsterCaption(const OnlineUnit &unit) const;
+    std::pair<std::string,std::string> monsterCaption(const OnlineUnit &unit, bool includeResistances = false) const;
+    std::string monsterAutomapResist(const OnlineUnit &unit) const;
+    std::string monsterAutomapEnchant(const OnlineUnit &unit) const;
     const Art *monster(const OnlineUnit &u, bool moving, SceneView &shared);
     const Art *object(const OnlineUnit &u, SceneView &shared);
     RemoteSceneFrame draw(const OnlineView &v, const Map &map, const OnlineSceneView &binding,

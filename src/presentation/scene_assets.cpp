@@ -104,6 +104,9 @@ SceneAssets::SceneAssets(Archives &archives, const ClassicData &content)
     loadClassicFont(uiGraphics_, archives, automapPartyFont, "font6", 2);
     loadClassicFont(uiGraphics_, archives, automapNpcFont, "font6", 4);
     loadClassicFont(uiGraphics_, archives, automapOtherFont, "font6", 1);
+    automapTextFonts[0] = characterLabelFont;
+    for (int color = 1; color < 13; ++color)
+        loadClassicFont(uiGraphics_, archives, automapTextFonts[size_t(color)], "font6", color);
     loadClassicFont(uiGraphics_, archives, characterRedFont, "font16", 1);
     loadClassicFont(uiGraphics_, archives, deathFont, "font30", 1);
     // Original red font RGB, blended through the active PL2 for player labels.
