@@ -724,6 +724,12 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             view_.automapTowns.push_back(town);
     }
     if (v.world.playerPosition) view_.automap.observer = {float(v.world.playerPosition->x), float(v.world.playerPosition->y)};
+    // BH LK Chest Lines: endpoints for every Lower Kurast (level 79) superchest
+    // preset (Objects.txt 160), independent of exploration.
+    if (view_.area && *view_.area == 79 && nativeMap_)
+        for (const auto &preset : nativeMap_->levelPresetObjects(79))
+            if (preset[0] == 160)
+                view_.automap.lkChestLines.push_back({float(preset[1]), float(preset[2])});
     view_.automap.observerVisible=!onlinePlayerDead(v.world);
     for (const auto &[key, groups] : nativeAutomapCells_) {
         const auto &[seed, layer, objectSeed] = key;

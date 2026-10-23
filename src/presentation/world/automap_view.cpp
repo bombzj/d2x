@@ -110,6 +110,16 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
         }
         uiScissor(0, 0, float(W), float(H));
     }
+    if (view_.bhShowLkChestLines && !map.lkChestLines.empty()) {
+        // CN BH "LK Chest Lines": player dot to each Lower Kurast superchest
+        // preset, palette color 105 (CN default), same clip as the path lines.
+        uiScissor(area.x, area.y, area.width, area.height);
+        const auto from = onMap(map.observer);
+        const Color color = blend->paletteByte(105);
+        for (const auto &target : map.lkChestLines)
+            DrawLineV(rv(from), rv(onMap(target)), color);
+        uiScissor(0, 0, float(W), float(H));
+    }
     for (const auto &marker : map.markers) {
         using Mark = AutomapDrawView::UnitMark;
         if ((marker.unitMark == Mark::Party || marker.unitMark == Mark::PartyPet) && !view_.automapParty) continue;
@@ -148,7 +158,7 @@ void SceneView::drawAutomap(const AutomapDrawView &map) {
                     x += font.widthOf(uint8_t(text[i]));
                 }
             };
-            markText(marker.markEnchant, 16);
+            markText(marker.markEnchant, 22);
             markText(marker.markResist, 10);
             break;
         }

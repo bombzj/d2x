@@ -100,6 +100,22 @@ const std::vector<NativeTileInfo> &NativeMapGenerator::levelTileInfo(int id) con
     if(level.outdoor) return level.outdoor->tileInfo;
     return level.preset?level.preset->tileInfo:level.maze->tileInfo;
 }
+std::vector<std::array<int, 3>> NativeMapGenerator::levelPresetObjects(int level) const {
+    std::vector<std::array<int, 3>> result;
+    const auto found = levels_.find(level);
+    if (found == levels_.end()) return result;
+    const auto add = [&](const std::vector<RetailPresetUnit> &units) {
+        for (const auto &entry : units)
+            if (entry.unit.type == 2 && entry.unit.nativeIdentity)
+                result.push_back({entry.unit.id, entry.unit.x, entry.unit.y});
+    };
+    if (found->second.outdoor)
+        for (const auto &[key, units] : found->second.outdoor->presetUnits) { (void)key; add(units); }
+    else if (found->second.preset) add(found->second.preset->units);
+    else if (found->second.maze)
+        for (const auto &[key, units] : found->second.maze->presetUnits) { (void)key; add(units); }
+    return result;
+}
 std::vector<size_t> NativeMapGenerator::near(size_t index) {
     const auto &room = tiles_.rooms().at(index);
     if (!room.near.empty()) return room.near;

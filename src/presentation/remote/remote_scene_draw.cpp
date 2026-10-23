@@ -713,7 +713,11 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             const auto cls = unitClass(unit);
             if (key.type != 1 || !unit.position || !cls || onlineMonsterCorpse(unit) ||
                 unit.mode == 0 || unit.mode == 12) continue;
-            if (drawn.contains({key.type, key.id}) || v.world.pets.contains(key.id)) continue;
+            if (drawn.contains({key.type, key.id})) continue;
+            // Own pets keep the RemoteTown pet marks; foreign summons are
+            // monsters too and get the BH cross.
+            const auto pet = v.world.pets.find(key.id);
+            if (pet != v.world.pets.end() && playerId && pet->second.owner == *playerId) continue;
             if (std::find(hidden.begin(), hidden.end(), *cls) != hidden.end()) continue;
             if ((*cls == 608 && unit.mode == 8) ||
                 ((*cls == 68 || *cls == 258 || *cls == 261) && unit.mode == 14)) continue;

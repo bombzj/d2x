@@ -3,6 +3,7 @@
 #include "retail/tile_materialization.hpp"
 #include "maze.hpp"
 #include "room_terrain.hpp"
+#include <array>
 #include <functional>
 
 namespace d2x {
@@ -70,6 +71,9 @@ class NativeMapGenerator {
     MapRecipe recipe(int level);
     uint64_t levelRandom(int level) const;
     const std::vector<NativeTileInfo> &levelTileInfo(int level) const;
+    // BH LK Chest Lines: resolved preset object classes (Objects.txt Id) with
+    // global subtile coordinates; empty until the level is allocated.
+    std::vector<std::array<int, 3>> levelPresetObjects(int level) const;
     bool waypointObject(int id) const {return identities_.waypointObject(id);}
     const auto &layout() const { return layout_; }
     const auto &tiles() const { return tiles_; }

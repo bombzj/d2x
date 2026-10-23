@@ -147,7 +147,7 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
         return true;
     }
     if (!ui.bhSettingsOpen) return false;
-    constexpr int options = 12;
+    constexpr int options = 13;
     if (input.escape) { ui.bhSettingsOpen = false; return true; }
     const int navigation = input.menuDelta;
     if (navigation)
@@ -166,6 +166,7 @@ bool SceneController::handleBhSettings(const FrameInput &input) {
         case 9: ui.bhShowEnchantments = !ui.bhShowEnchantments; break;
         case 10: ui.bhShowChests = !ui.bhShowChests; break;
         case 11: ui.bhAutomapOnJoin = !ui.bhAutomapOnJoin; break;
+        case 12: ui.bhShowLkChestLines = !ui.bhShowLkChestLines; break;
         }
         return true;
     }

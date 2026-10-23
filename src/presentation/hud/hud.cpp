@@ -259,7 +259,7 @@ void SceneView::drawBhSettings() const {
     if (!view_.bhSettingsOpen) return;
     DrawRectangle(0, 0, W, H, {0, 0, 0, 140});
     const int width = 340;
-    const int rows = 13;
+    const int rows = 14;
     const int rowHeight = 24;
     const int panelHeight = 44 + rows * rowHeight;
     const Rectangle panel{float((W - width) / 2), float((H - panelHeight) / 2), float(width), float(panelHeight)};
@@ -281,6 +281,7 @@ void SceneView::drawBhSettings() const {
         {"Monster Enchantments", view_.bhShowEnchantments},
         {"Show Chests", view_.bhShowChests},
         {"Automap On Join", view_.bhAutomapOnJoin},
+        {"LK Chest Lines", view_.bhShowLkChestLines},
     };
     const int x = int(panel.x) + 20;
     int y = int(panel.y) + 44;

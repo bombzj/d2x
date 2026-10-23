@@ -52,7 +52,7 @@ ClientPreferences loadClientPreferences() {
             setting("bhRevealMap"), setting("bhAlwaysShowLoot"), setting("bhShowAreaName"),
             setting("bhShowXpText"), setting("bhShowBeltStatus"), setting("bhForceLightRadius"),
             setting("bhShowPathLine"), setting("bhShowResistances"), setting("bhShowMonsters"),
-            setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin")};
+            setting("bhShowEnchantments"), setting("bhShowChests"), setting("bhAutomapOnJoin"), setting("bhShowLkChestLines")};
     } catch (const nlohmann::json::exception &error) {
         std::cerr << "Invalid client settings: " << error.what() << '\n';
         return {};
@@ -76,7 +76,8 @@ bool saveClientPreferences(const ClientPreferences &preferences) {
             {"bhShowMonsters", preferences.bhShowMonsters},
             {"bhShowEnchantments", preferences.bhShowEnchantments},
             {"bhShowChests", preferences.bhShowChests},
-            {"bhAutomapOnJoin", preferences.bhAutomapOnJoin}}.dump(2);
+            {"bhAutomapOnJoin", preferences.bhAutomapOnJoin},
+            {"bhShowLkChestLines", preferences.bhShowLkChestLines}}.dump(2);
         writeFileAtomically(preferencesPath,
             std::span<const uint8_t>{reinterpret_cast<const uint8_t *>(text.data()), text.size()});
         return true;

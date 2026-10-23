@@ -245,7 +245,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                 panels.bhRevealMap, panels.bhAlwaysShowLoot, panels.bhShowAreaName,
                 panels.bhShowXpText, panels.bhShowBeltStatus, panels.bhForceLightRadius,
                 panels.bhShowPathLine, panels.bhShowResistances, panels.bhShowMonsters,
-                panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin};
+                panels.bhShowEnchantments, panels.bhShowChests, panels.bhAutomapOnJoin, panels.bhShowLkChestLines};
             if (current != preferences) { preferences = current; preferencesDirty = true; }
         }
         if (!preferencesDirty || (!force && GetTime() < preferencesRetryAt)) return;
@@ -263,6 +263,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     uint64_t inputAreaGeneration = ~uint64_t{};
     bool noPickup=false;
     uint64_t lastRevealAllGeneration = ~uint64_t{};
+    bool lastRevealAllShown = false;
     auto sceneStatus = [&] {
         town.update(session.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
         auto status = town.read();
@@ -899,6 +900,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
                         initial.bhShowEnchantments = preferences.bhShowEnchantments;
                         initial.bhShowChests = preferences.bhShowChests;
                         initial.bhAutomapOnJoin = preferences.bhAutomapOnJoin;
+                        initial.bhShowLkChestLines = preferences.bhShowLkChestLines;
                         sharedController->resetInput();
                     }
                     sharedClients->update(town.read(), scene ? scene->playerDisplayPosition(session.read()) : std::nullopt);
@@ -1069,15 +1071,18 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         if (quit || presentationPaused)
             continue;
         town.revealVisibleTiles(session.read(), worldFrame.visibleMapTiles);
-        // BH reveal_map: once per area generation, mark every tile as explored.
-        if (sharedUi && sharedUi->ui().bhRevealMap) {
+        // BH reveal_map: every tile when entering an area, and again as soon
+        // as the toggle turns on within the same area.
+        const bool revealAll = sharedUi && sharedUi->ui().bhRevealMap;
+        if (revealAll) {
             const auto generation = session.read().gameGeneration * 0x100000000ULL +
                 session.read().world.areaGeneration;
-            if (generation != lastRevealAllGeneration) {
+            if (generation != lastRevealAllGeneration || !lastRevealAllShown) {
                 lastRevealAllGeneration = generation;
                 town.revealAllTiles(session.read());
             }
         }
+        lastRevealAllShown = revealAll;
         const auto automapCallbacksPd2 = town.take_automap_room_reveals_pd2();
         if (!automapCallbacksPd2.empty())
             session.report_automap_rooms_pd2(automapCallbacksPd2, onlineIntentContext(session.read()));

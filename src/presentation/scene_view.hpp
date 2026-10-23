@@ -119,6 +119,7 @@ struct ViewState {
     bool bhShowEnchantments = false;
     bool bhShowChests = false;
     bool bhAutomapOnJoin = false;
+    bool bhShowLkChestLines = false;
     // BH settings overlay (Ctrl+Z).
     bool bhSettingsOpen = false;
     int bhSettingsSelected = 0;

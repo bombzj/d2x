@@ -23,6 +23,7 @@ struct ClientPreferences {
     bool bhShowEnchantments = false;
     bool bhShowChests = false;
     bool bhAutomapOnJoin = false;
+    bool bhShowLkChestLines = false;
     bool operator==(const ClientPreferences &) const = default;
 };
 ClientPreferences loadClientPreferences();
