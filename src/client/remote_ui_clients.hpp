@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <map>
 
 namespace d2x {
 class Archives;
@@ -35,6 +36,7 @@ class RemoteUiClients {
     ~RemoteUiClients();
     void update(const OnlineSceneView &, std::optional<Vec> displayPosition = {});
     const ClassicData &content() const;
+    const std::map<std::string,double,std::less<>> &skillFormulaStats() const;
     IActorClient &actor();
     IInventoryClient &inventory();
     ICharacterClient &character();
@@ -49,5 +51,6 @@ class RemoteUiClients {
     std::optional<unsigned> itemQuote(uint32_t item, OnlineItemAction action) const;
     std::optional<UnitLightAttributes> light(OnlineUnitKey) const;
     std::optional<MovementTiming> movement(OnlineUnitKey,bool running) const;
+    std::optional<KnownAttackTiming> attackTiming() const;
 };
 }

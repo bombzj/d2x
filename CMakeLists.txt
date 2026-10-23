@@ -406,6 +406,7 @@ add_library(d2x_presentation
   src/presentation/npc/inventory_interactions.cpp src/presentation/frontend/realm_frontend.cpp
   src/presentation/remote/remote_scene.cpp src/presentation/remote/remote_scene_units.cpp
   src/presentation/remote/remote_scene_effects.cpp
+  src/presentation/remote/remote_scene_pd2.cpp
   src/presentation/remote/remote_scene_movement.cpp
   src/presentation/remote/remote_scene_draw.cpp src/presentation/remote/monster_effects.cpp
 )

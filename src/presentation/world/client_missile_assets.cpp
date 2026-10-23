@@ -91,6 +91,7 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.velocity = number("Vel"); program.velocityPerLevel = number("VelLev");
         program.acceleration = number("Accel"); program.maximumVelocity = number("MaxVel") << 8;
         program.frames = number("Range"); program.framesPerLevel = number("LevRange");
+        program.sourceTownFrames = number("CltSrcTown");
         if (const auto collision = content.missileCollisions.find(id); collision != content.missileCollisions.end())
             program.collision = collision->second;
         // CN CltDo72 -> D2Common ordinal11164 sets path +0x50 to 0x100:
@@ -108,10 +109,17 @@ void SceneAssets::loadProjectileDefinitions(const ClassicData &content) {
         program.serverTurnPeriod=number("Param1");
         for (size_t i = 0; i < program.hitParameters.size(); ++i) {
             program.hitParameters[i] = number("cHitPar" + std::to_string(i + 1));
+            program.serverHitParameters[i] = number("HitPar" + std::to_string(i + 1));
             program.children[i] = linked(row, "CltSubMissile" + std::to_string(i + 1));
         }
         for (size_t i = 0; i < program.hitChildren.size(); ++i)
             program.hitChildren[i] = linked(row, "CltHitSubMissile" + std::to_string(i + 1));
+        // D2Client BB070 reads Missiles +0x88 (SHitCalc1), then falls back
+        // to the parent range. PD2 Blaze supplies a constant fire duration.
+        if(program.rules==ClientMissileProgram::Rules::Pd2Cn && program.hitFunction==12)
+            program.hitDuration=table.number(row,"SHitCalc1");
+        if(program.rules==ClientMissileProgram::Rules::Pd2Cn && program.hitFunction==67)
+            program.hitHeight=table.number(row,"CHitCalc1");
         // Retail CltHit46 deliberately reads the server HitSubMissile slot.
         if(program.hitFunction==46) program.hitChildren[0]=linked(row,"HitSubMissile1");
         if(program.hitFunction==36) {

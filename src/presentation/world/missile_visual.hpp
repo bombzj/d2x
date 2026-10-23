@@ -26,6 +26,7 @@ struct ClientMissileInitialization {
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
     std::optional<int> activationDelay;
     std::optional<int> impactCount; // Catapult calc4 fallback, prepared from the cast skill.
+    std::optional<int> chainHits,chainRadius;
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
     std::optional<bool> suppressLight; // Native creation flag0x4000; absent when pairing a plain 73.
 };
@@ -39,14 +40,18 @@ struct ClientMissileProgram {
     bool collide{}, killOnContact{}, explodeOnExpiry{};
     std::array<int, 5> parameters{};
     std::array<int, 3> hitParameters{}, children{-1,-1,-1};
+    std::array<int, 3> serverHitParameters{}; // CN CltHit6 reads HitPar1-3.
     std::array<int, 4> hitChildren{-1,-1,-1,-1};
     bool childServerSent{}, returnFire{};
     bool clientSend{};
     int serverTurnPeriod{};
+    int sourceTownFrames{}; // Missiles.CltSrcTown: cap when the actual owner is in town.
     bool canSlow{}, groundThrow{};
     int guidedRadius{};
     std::array<int,2> poisonVelocity{};
     int loopFrames{}, immolationRadius{};
+    std::optional<int> hitDuration;
+    std::optional<int> hitHeight;
     int boulderRocks{-1}; // Shared native Hit50/52 helper uses its code-defined rock class.
     int hellMeteorRadius{}; // CltHit36 reads Param1, independently of cHitPar1.
     std::optional<BlizzardSpec> blizzard;
@@ -86,7 +91,7 @@ struct ClientMissileVisual {
     EntityId owner;
     bool hostile{};
     int pierce{};
-    int remainingHits{};
+    int remainingHits{},chainRadius{};
     int slowPercent{};
     EntityId guidance{};bool guidanceSearched{};
     // Pair reconstruction and 73 once without merging independent creations.

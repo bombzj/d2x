@@ -6,6 +6,10 @@
 
 身体需求由公共loadout／contributions／requirements计算，不重复维护力量／敏捷公式。未鉴定、损坏、非活动手部不贡献，护符只在背包生效；普通交换、双手冲突、装备与两组武器切换已有权威执行。属性／需求变化同步重新校验装备，装备资格与人物总值同笔提交。
 
+武器speed空单元格按原ItemsTbls的DWORD零初始化读取，不表示速度未知。当前PD2 weapons.bin为319行、步长0x1A8，2hs行33的+D8为0；非空但无效的数字仍保持未知。
+
+职业专属资格仅取基础物品主ItemTypes行的Class，不沿Equiv1／Equiv2继承；类型祖先仍供武器／技能匹配。依据D2MOO `ITEMS_CheckRequirements`直接读取`ITEMS_GetItemTypeFromItemId`对应行。PD2的knif可继承asm用于类型匹配，但不因此把普通匕首／飞刀限制为刺客专属；远端穿脱与宿主内容准备共用此边界。
+
 人物资格通过同步候选回调采样保留的原始物品／套装、缓存被动及临时来源，保留参数层、等级和幕时段的原op运算。`updateEquipmentActivation`按原库存护符补投、bodyloc1–10禁用、反复启用及最后套装刷新执行；原首轮要求ITEMS_IsCharmUsable，只补投背包可用护符，身体装备不抢先按库存顺序投递。候选保留旧有效来源，因此需求检查可读取已投递装备的自身支撑。BROKEN与NOEQUIP分别维护，不能从未活动直接推断NOEQUIP。库存变化、幕通知和需求属性变化触发装备刷新；普通状态采样不无条件重投所有套装，完整装备组合仍待原版对齐。
 
 套装候选掩码按当前活动组实际装备位置与BROKEN／NOEQUIP读取，不以已投递来源集合代替。撤出本件前先撤出该套装的单位全局列表；补投先刷新全局列表再合并本件及条件层，最后逐体位重投套装。候选保留单位六个ITEMSET槽，全局同套属性指令合并为同一原始列表；公共equipmentSetContributions亦用于类型化投影。固定1.13c D2Common ordinal10600／RVA2C910确认UpdateSets的掩码与撤出分支，RVA2C630处理全局列表；ItemMods RVA45F90中部分奖励取min(count,full−1)，全套分支仍比较原count，不采用D2MOO将count本身截断的重建笔误。

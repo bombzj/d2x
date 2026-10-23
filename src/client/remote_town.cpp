@@ -285,7 +285,13 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         const bool selectable=unit.mode && *unit.mode<8 &&
             (number("Selectable"+std::to_string(mode))!=0 ||
              (operation==23 && (mode==1 || mode==2)));
-        if (!selectable || (operation!=23 && unit.objectTargetable==false)) continue;
+        // Blue portals are created in neutral mode with TARGETABLE clear;
+        // opening them does not set that flag. Their current MPQ mode and
+        // destination identify the operation; ObjMode15 checks the owner,
+        // party and quest permission on the server.
+        const bool townPortal=operation==15 && *unit.classId==59 && unit.portalDestination &&
+            (mode==1 || mode==2);
+        if (!selectable || (operation!=23 && !townPortal && unit.objectTargetable==false)) continue;
         std::optional<OnlineMapInteraction> interaction;
         switch (operation) {
         case 8: case 16: case 18: case 29: case 61: case 66: case 71:
@@ -758,11 +764,11 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
                 // Original corpse inventory/owner admission identifies one's body;
                 // another player's corpse is not a public purple marker.
                 if(corpse->second==v.load.playerUnitId)
-                    view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,unit.name,false,true,Mark::Corpse,std::pair{key.type,key.id}});
+                    view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,unit.name,false,true,Mark::Corpse,std::pair{key.type,key.id},0,{},{}});
             } else if(key.id!=v.load.playerUnitId && unit.mode!=(unit.nativeMode?0:8) && unit.mode!=(unit.nativeMode?17:9)) {
                 const auto roster=v.world.social.players.find(key.id);
                 const auto &name=roster==v.world.social.players.end()?unit.name:roster->second.name;
-                view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,name,false,true,inParty(key.id)?Mark::Party:Mark::OtherPlayer,std::pair{key.type,key.id}});
+                view_.automap.markers.push_back({{float(unit.position->x),float(unit.position->y)},-1,name,false,true,inParty(key.id)?Mark::Party:Mark::OtherPlayer,std::pair{key.type,key.id},0,{},{}});
                 drawnPlayers.insert(key.id);
             }
             continue;
@@ -823,7 +829,7 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
         // the static MPQ cell artwork, rather than nearby NPC/pet/portal marks.
         if ((seen && cel >= 0) || mark != Mark::None)
             view_.automap.markers.push_back({{float(unit.position->x), float(unit.position->y)},
-                mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark,std::pair{key.type,key.id}});
+                mark == Mark::None ? cel : -1, name, mark==Mark::Npc, showName || mark==Mark::Npc, mark,std::pair{key.type,key.id},0,{},{}});
     }
     if (self == v.world.social.players.end() || !self->second.partyId || *self->second.partyId == UINT16_MAX) return;
     for (const auto &[id, p] : v.world.social.players) {
@@ -833,7 +839,7 @@ void RemoteTown::updateAutomapView(const OnlineView &v) {
             position = Vec{float(unit->second.position->x), float(unit->second.position->y)};
         else if (p.area && component.contains(*p.area) && p.positionX && p.positionY)
             position = Vec{float(*p.positionX), float(*p.positionY)};
-        if (position) view_.automap.markers.push_back({*position, -1, p.name, false, true, AutomapDrawView::UnitMark::Party});
+        if (position) view_.automap.markers.push_back({*position, -1, p.name, false, true, AutomapDrawView::UnitMark::Party,{},0,{},{}});
     }
 }
 AutomapDiscovery RemoteTown::discovery() const {

@@ -32,7 +32,10 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     combatBinding = &combat;
     playerId = v.load.playerUnitId;
     worldDifficulty=v.load.difficulty.value_or(0);
+    pd2=v.protocolProfile=="pd2-cn-normal-20261020";
+    uiClients=&clients;
     artPalette = binding.palette.value_or(0);
+    if(gameGeneration!=v.gameGeneration) pd2VisualSeeds.clear();
     if (gameGeneration != v.gameGeneration || areaGeneration != v.world.areaGeneration) {
         gameGeneration = v.gameGeneration;
         areaGeneration = v.world.areaGeneration;
@@ -59,15 +62,20 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     wasPaused = paused;
     shared.pauseWorldPresentation(paused);
     time += elapsed;
-    // Long window/loading waits are presentation discontinuities. Restore the
-    // latest replica and persistent states, never replay accumulated casts/audio.
+    // Long window/loading waits skip stale queued casts and audio.
+    // Assigned actors and active missiles retain their own lifecycles.
     const bool suspended = elapsed > .25f;
     if (suspended) {
-        // Loading a newly revealed room can take longer than one frame.
-        // It is not a server teleport or a release of a held movement gesture.
-        std::erase_if(motion,[&](const auto &entry) { return entry.first.type!=0 || entry.first.id!=playerId; });
-        shared.clearClientMissiles(true);
+        // Monster point paths (67) carry endpoints, not current positions.
+        // Clearing motion here would restart them at a stale 68/6D sample
+        // every time a boundary room loads. Assignment, removal and native
+        // position updates below still own invalidation and reconciliation.
+        for(auto &[key,phase]:motion) {(void)key;phase.pd2PlayerLeap.reset();phase.pd2PlayerCharge.reset();}
         monsterEffects.clear();
+        for (const auto &[key, revision] : missileCastRevisions) {
+            (void)revision;
+            shared.cancelPendingClientMissiles(effectOwner(key));
+        }
         missileCastRevisions.clear(); channels.clear(); ownerMissiles.clear(); blazeTrails.clear(); overlayVisuals.clear(); localCast.reset();
         soundEvents.clear();
         const auto beforeGap=combatSequence;
@@ -115,6 +123,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         }
     }
     std::erase_if(blazeTrails,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
+    std::erase_if(pd2VisualSeeds,[&](const auto &entry) { return !v.world.units.contains(entry.first); });
     const auto origin = *binding.origin;
     std::vector<ClientMissileTarget> missileTargets;
     for (const auto &[key, unit] : v.world.units) {
@@ -143,8 +152,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     if(elapsed>0 && !suspended) emitDruidStates(v,shared,combat,binding.town);
     if (elapsed > 0 && !suspended)
         emitWoundBlood(v,shared,combat,map.grid,{float(origin.x),float(origin.y)});
-    shared.advanceClientMissiles(suspended ? 0.f : elapsed, map.grid,
-        {float(origin.x), float(origin.y)}, missileTargets,binding.town);
+    shared.advanceClientMissiles(suspended ? 0.f : elapsed, map,
+        {float(origin.x), float(origin.y)}, missileTargets);
     clientMissiles.clear();
     for (const auto &missile : shared.clientMissiles())
         clientMissiles.push_back({missile.missileId, missile.pos, missile.age, missile.duration - missile.age});
@@ -330,13 +339,19 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
         const float age = u.actionReceivedMilliseconds && receivedNow >= u.actionReceivedMilliseconds
             ? float(receivedNow - u.actionReceivedMilliseconds) / 1000.f : 0.f;
         m.animation.observe(u.mode, u.actionRevision, time, age, frozen);
-        if((key.type==0 && (u.actionSkill==132 || u.actionSkill==143)) || (key.type==1 && (u.actionSkill==107 || u.actionSkill==352))) {
-            if(m.leapRevision!=u.actionRevision) {m.leapRevision=u.actionRevision;m.leapFlying=false;m.leapLanding=-1;}
+        const bool localLeap=key.type==0 && key.id==playerId && localCast && localCast->started>=0 &&
+            (localCast->command.skill==132 || localCast->command.skill==143);
+        if(localLeap || (key.type==0 && (u.actionSkill==132 || u.actionSkill==143)) || (key.type==1 && (u.actionSkill==107 || u.actionSkill==352))) {
+            const auto revision=localLeap?localCast->revision:u.actionRevision;
+            if(m.leapRevision!=revision) {m.leapRevision=revision;m.leapFlying=false;m.leapLanding=-1;}
             bool flying=false;
-            if(const auto snapshot=combat.states().find(key);snapshot!=combat.states().end() && snapshot->second.decoded)
+            bool known=false;
+            if(const auto snapshot=combat.states().find(key);snapshot!=combat.states().end() && snapshot->second.decoded && snapshot->second.sequence==u.stateSequence) {
+                known=true;
                 for(const auto &[state,record]:snapshot->second.states) {(void)record;if(const auto row=stateRows.find(state);row!=stateRows.end() && states.value(row->second,"state")=="skill_move") flying=true;}
-            if(flying) m.leapFlying=true;
-            else if(m.leapFlying && m.leapLanding<0) m.leapLanding=time;
+            }
+            if(known && flying) m.leapFlying=true;
+            else if(known && m.leapFlying && m.leapLanding<0 && !m.pd2PlayerLeap) m.leapLanding=time;
             if(m.leapLanding>=0) m.animation.startedAt=m.leapLanding;
         } else {m.leapFlying=false;m.leapLanding=-1;}
         if(const auto channel=channels.find(key);channel!=channels.end() && u.actionSkill==41 && u.mode==21)
@@ -346,20 +361,26 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             if(look.length()>.001f) m.look=look;
         }
         if (m.route.empty() && !walking(u) && u.destinationUnit) {
-            const auto target = v.world.units.find(*u.destinationUnit);
-            if (target != v.world.units.end() && target->second.position) {
-                const auto look=local(*target->second.position)-feet;
+            if (const auto target = localUnitPosition(*u.destinationUnit)) {
+                const auto look=*target-Vec{float(origin.x),float(origin.y)}-feet;
                 if(look.length()>.001f) m.look=look;
             }
         }
         const bool moving = !frozen && m.pathMoving;
         if (key.type == 0) {
-            std::optional<int> blaze;
+            std::optional<MovementFire> blaze;
+            int blazeLevel=1;
             if (!binding.town && !playerDead(u))
                 if (const auto snapshot=combat.states().find(key);snapshot!=combat.states().end() && snapshot->second.decoded)
                     for (const auto &[state,record]:snapshot->second.states) {
-                        (void)record;
-                        if (const auto missile=movementFireMissiles.find(state);missile!=movementFireMissiles.end()) blaze=missile->second;
+                        if (const auto missile=movementFireMissiles.find(state);missile!=movementFireMissiles.end()) {
+                            if(missile->second.pd2Only && !pd2) continue;
+                            blaze=missile->second;
+                            const auto rank=monsterText->nativeStats->names.find("modifierlist_level");
+                            if(rank!=monsterText->nativeStats->names.end())
+                                for(const auto &stat:record.stats) if(stat.id==rank->second && !stat.parameter && stat.value>0)
+                                    blazeLevel=int(std::min<int64_t>(stat.value,INT32_MAX));
+                        }
                     }
             if (!blaze) blazeTrails.erase(key);
             else {
@@ -368,7 +389,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
                 const auto [trail,inserted]=blazeTrails.try_emplace(key,BlazeTrail{cell,u.positionDiscontinuity});
                 if (!inserted && moving && trail->second.discontinuity==u.positionDiscontinuity && trail->second.cell!=cell) {
                     const Vec center{float(cell.x)+.5f,float(cell.y)+.5f};
-                    if (*blaze<0 || !shared.launchClientMissile(*blaze,center,center,1,0,{},-1,effectOwner(key),false,0,ClientMissileSource::Cast))
+                    if (blaze->missile<0 || !shared.launchClientMissile(blaze->missile,center,center,blazeLevel,0,{},-1,effectOwner(key),false,0,ClientMissileSource::Cast))
                         effectLimitations.insert("Blaze client fire unavailable");
                 }
                 trail->second={cell,u.positionDiscontinuity};
@@ -399,6 +420,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             time < localCast->started + localCast->duration) {
             displayed.actionSkill = localCast->command.skill;
             m.animation.startedAt = localCast->started;
+            if(m.pd2PlayerCharge && m.pd2PlayerCharge->attackAt>=0) m.animation.startedAt=m.pd2PlayerCharge->attackAt;
             if(m.leapLanding>=0 && (displayed.actionSkill==132 || displayed.actionSkill==143)) m.animation.startedAt=m.leapLanding;
             auto target = localCast->command.point;
             if (localCast->command.target) target=targetPosition(*localCast->command.target);
@@ -471,7 +493,8 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             : m.scriptedSequence && !completedAction?visual->sample(runClock,runClock,m.look)
             : visual->sample(animationClock, animationElapsed, m.look,m.animationFrame());
           const auto p = screen(feet) + visual->offset+m.riderOffset+
-              (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{});
+              (m.scriptedSequence && m.scriptedSequence->leapGraphics?m.scriptedSequence->leapGraphics->offset():Vec{})+
+              (m.pd2PlayerLeap?m.pd2PlayerLeap->graphics.offset():Vec{});
         if (player) player->reason = "Outside viewport";
         if (!image || !visible(*image, p))
             continue;
@@ -680,7 +703,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             const Vec position{float(unit->second.position->x), float(unit->second.position->y)};
             automap.pathLines.push_back({position, uint8_t(2)});
             automap.markers.push_back({position, -1, {}, false, false,
-                AutomapDrawView::UnitMark::Quest, std::pair{key.type, key.id}});
+                AutomapDrawView::UnitMark::Quest, std::pair{key.type, key.id}, 0, {}, {}});
         }
     }
     if (shared.ui().bhShowChests) {
@@ -696,7 +719,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
             const auto operate = objects.number(row->second, "OperateFn");
             if (!operate || std::find(chestOps.begin(), chestOps.end(), *operate) == chestOps.end()) continue;
             automap.markers.push_back({{float(unit.position->x), float(unit.position->y)}, -1, {}, false,
-                false, AutomapDrawView::UnitMark::Chest, std::pair{key.type, key.id}});
+                false, AutomapDrawView::UnitMark::Chest, std::pair{key.type, key.id}, 0, {}, {}});
         }
     }
     if (shared.ui().bhShowMonsters) {

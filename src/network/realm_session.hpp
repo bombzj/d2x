@@ -122,6 +122,8 @@ class RealmSession {
     bool submit_item(OnlineItemCommand command);
     // Immutable resource geometry supplied before connecting the CN client.
     void configure_stash(OnlineStashLayout);
+    // Current MPQ identity for SKILLS_InitSkillList's empty player hand slots.
+    void configure_player_default_skill(uint16_t skill);
     bool submit_staff(uint32_t source,std::optional<uint32_t> item,std::optional<OnlineIntentContext> context = {});
     // Caller validates current MPQ skill and target eligibility. Cast/stop have
     // no generic native ACK; damage, resources and skills remain server-owned.

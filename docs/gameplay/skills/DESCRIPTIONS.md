@@ -68,6 +68,7 @@ Combustion 的 TXT 与 BIN 均为 HitShift7、EMin24／EMax56，即未加成首�
 | Raise Skeletal Mage | `extra_skele_mage`、`grims_extra_skele_mage`，法师数量 |
 | Raise Skeleton Archer | `extra_skele_archer`，弓手数量 |
 | Bone Spear | `extra_bonespears`，附加骨矛数量 |
+| Holy Bolt | `extra_holybolts`，附加圣光弹数量 |
 | Revive | `extra_revives`，重生数量 |
 | Corpse Explosion | `corpseexplosionradius`，半径附加值 |
 | Energy Shield | `es_efficiency`，效率修正；同时修复子表达式双引号的词法处理 |

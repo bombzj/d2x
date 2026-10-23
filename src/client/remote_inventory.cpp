@@ -76,18 +76,13 @@ EquipmentDefinition RemoteInventory::equipmentDefinition(const OnlineItem &item)
     result.oneOrTwoHanded = baseNumber(item, "1or2handed") != 0;
     result.shoots = types.value(type->second, "Shoots");
     result.quiver = types.value(type->second, "Quiver");
+    result.requiredClass = types.value(type->second, "Class");
     std::set<std::string, std::less<>> visited;
     std::function<void(std::string_view)> inherit = [&](std::string_view code) {
         if (code.empty() || !visited.emplace(code).second) return;
         result.types.emplace_back(code);
         const auto row = typeRows_.find(code);
         if (row == typeRows_.end()) return;
-        const auto required=types.value(row->second,"Class");
-        if(!required.empty()) {
-            if(!result.requiredClass.empty() && result.requiredClass!=required)
-                throw std::runtime_error("Conflicting MPQ equipment classes");
-            result.requiredClass=required;
-        }
         inherit(types.value(row->second, "Equiv1"));
         inherit(types.value(row->second, "Equiv2"));
     };

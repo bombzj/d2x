@@ -14,6 +14,8 @@ Objects／ObjGroup／Levels／Shrines及原DS1、COF／DCC提供身份、尺寸�
 
 ## 原服适配
 
+蓝色回城门按当前Objects.Selectable模式及已收到目的地区域开放交互。ObjMode15在服务端检查主人、队伍及任务资格；不能因为创建时中立模式留下的TARGETABLE清位而隐藏已经打开的门。此例外仅用于OperateFn15、原class59和mode1／2且目的地已知的蓝门，不放宽其他物件的目标资格。依据D2MOO `OBJECTS_InitObject`初始Selectable检查及`D2GAME_CreatePortalObject_6FD13DF0`／`OBJECTS_OperateFunction15_Portal`。
+
 RemoteTown从真实物件／目标和原Selectable／TARGETABLE投影资格；SceneController提交靠近／0x13。神坛InteractType结合Shrines.Code与TBL ShrId显示真实名称，不本地授予效果。开箱状态取0x0E，掉落取真实物品通知，传送点取0x63及原服旅行位置；0x77属于玩家交易，不能当开箱回执。
 
 PD2 CN基础物件交互共用上述原请求，已删除早期只放行仓库的配置拒绝；传送点仍由0x63确认打开、按服务器已解锁记录发送0x49选择／关闭。距离、当前GUID、区域／交互代次和服务器确认校验保留，不因PD2跳过，也不本地解锁目的地。本次为源码修正，CN激活、菜单及跨区旅行仍待实服补验。

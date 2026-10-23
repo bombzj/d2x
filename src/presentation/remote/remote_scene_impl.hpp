@@ -91,6 +91,21 @@ struct RemoteScene::Impl {
         Vec direction;
     };
     struct Motion {
+        struct Pd2PlayerLeap {
+            uint64_t revision{};
+            Vec position,destination;
+            float velocity{},nextTick{};
+            NativePathStep path;
+            ClientMissileGraphics graphics;
+        };
+        std::optional<Pd2PlayerLeap> pd2PlayerLeap;
+        struct Pd2PlayerCharge {
+            uint64_t revision{};
+            float nextTick{},attackAt{-1};
+            int attackSpeed{};
+            bool confirmed{};
+        };
+        std::optional<Pd2PlayerCharge> pd2PlayerCharge;
         struct ScriptedSequence {
             MonsterAnimationCursor animation;
             uint8_t event{};
@@ -155,7 +170,8 @@ struct RemoteScene::Impl {
     std::map<int, size_t> skillRows;
     std::map<int, size_t> missileRows, stateRows;
     std::map<int,int> missileSkills;
-    std::map<uint8_t,int> movementFireMissiles;
+    struct MovementFire { int skill{}, missile{-1}; bool pd2Only{}; };
+    std::map<int,MovementFire> movementFireMissiles;
     std::map<int,int> druidStateSkills;
     int vineVisualSkill{-1};
     struct StateParticles {uint64_t frame{UINT64_MAX},random{};uint64_t elapsed{};Vec position{};};
@@ -185,6 +201,8 @@ struct RemoteScene::Impl {
     std::optional<LocalCast> localCast;
     struct Channel {size_t skillRow{},missileRow{};int level{};float next{},started{};uint64_t revision{};OnlinePoint destination;std::optional<OnlineUnitKey> target;uint64_t random{};std::optional<float> until{};float releaseAt{};};
     std::map<OnlineUnitKey,Channel> channels;
+    struct Pd2VisualSeed { uint64_t random{}; uint32_t path{}; };
+    std::map<OnlineUnitKey,Pd2VisualSeed> pd2VisualSeeds;
     struct OwnerMissile {size_t missileRow{};uint16_t skill{};int level{};float due{};uint64_t assignment{},revision{},discontinuity{};};
     std::map<OnlineUnitKey,OwnerMissile> ownerMissiles;
     struct BlazeTrail { OnlinePoint cell; uint64_t discontinuity{}; };
@@ -208,6 +226,8 @@ struct RemoteScene::Impl {
     float time{};
     std::chrono::steady_clock::time_point lastFrame{};
     bool wasPaused{};
+    bool pd2{};
+    const RemoteUiClients *uiClients{};
     int rendered{}, unavailable{};
     bool playerDisplayed{};
     std::vector<OnlinePlayerDisplay> players;
@@ -218,6 +238,10 @@ struct RemoteScene::Impl {
     uint8_t worldDifficulty{};
 
     bool channelSkill(int id) const;
+    void emitPd2Stream(Channel &channel,OnlineUnitKey owner,Vec start,Vec target,
+                       SceneView &shared,const RemoteCombat &combat);
+    uint32_t nextPd2PathSeed(OnlineUnitKey owner);
+    std::optional<size_t> pd2ThrownMissile(size_t skillRow,int weaponMissile,bool split) const;
     std::optional<int32_t> skillCalculation(int skill,int level,std::string_view field,OnlineUnitKey owner,int count=0) const;
     bool playerDead(const OnlineUnit &u) const;
     Impl(Archives &a, int palette, RemoteMapDisplayState &display, ContentPreparation);
@@ -238,6 +262,8 @@ struct RemoteScene::Impl {
     void emitDruidStates(const OnlineView &view,SceneView &shared,const RemoteCombat &combat,bool town);
     void emitWoundBlood(const OnlineView &view, SceneView &shared, const RemoteCombat &combat,
                        const Grid &grid, Vec origin);
+    void emitUnitBlood(const OnlineUnit &unit, int count, float delay, OnlineUnitKey effectSource,
+                       SceneView &shared, const Grid &grid, Vec origin);
     void observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin);
     bool walking(const OnlineUnit &u) const;
     float movementSpeed(const OnlineUnit &u) const;
@@ -250,6 +276,8 @@ struct RemoteScene::Impl {
     void plan(Motion &m, Vec goal, const Map &map, Vec origin, MovementCollisionRule rule, float speed,
               const OnlineUnit &unit, std::optional<OnlineUnitKey> target={});
     bool displayScriptedSequence(const OnlineUnit &u,Motion &m,const Map &map,Vec origin,MovementCollisionRule collision);
+    bool displayPd2PlayerLeap(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
+    bool displayPd2PlayerCharge(const OnlineUnit &u,Motion &m,const Map &map,Vec origin);
     Vec displayPosition(const OnlineUnit &u, const Map &map, OnlinePoint mapOrigin,const RemoteUiClients &clients);
     std::string monsterSkillMode(size_t monster, uint16_t skill) const;
     std::pair<std::string,std::string> monsterCaption(const OnlineUnit &unit, bool includeResistances = false) const;

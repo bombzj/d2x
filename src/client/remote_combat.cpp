@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <bit>
 #include <cstdlib>
+#include <optional>
 #include <stdexcept>
 
 namespace d2x {
@@ -69,6 +70,14 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
         if (remoteOnly && skills.value(row, "charclass").empty() && !innate && !itemSkill) continue;
         skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row, &tables_.at("skilldesc")));
     }
+    std::optional<uint16_t> defaultSkill;
+    for (const auto &[id, metadata] : skillMetadata_)
+        if (metadata.basicAction == BasicSkillAction::Attack) {
+            if (defaultSkill) throw std::runtime_error("Current MPQ has duplicate basic attack identities");
+            defaultSkill = id;
+        }
+    if (!defaultSkill) throw std::runtime_error("Current MPQ has no basic attack identity");
+    session_.configure_player_default_skill(*defaultSkill);
 }
 bool RemoteCombat::reject(std::string reason) { reason_ = std::move(reason); return false; }
 std::string_view RemoteCombat::classCode() const {

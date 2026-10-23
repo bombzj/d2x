@@ -56,6 +56,8 @@
 
 本地1.13c D2Client静态补证：Inferno CltDo24经RVA74D50／74930选择两种火图；Blizzard CltMissile13格点生成与序列导入证据见参考设计。Fire Wall CltDo26经74770生成两侧maker及中心火；Meteor／Blizzard CltDo28经73DF0→A1540→AFF10在目标点创建中心弹体，这些Clt程序不以ClientSend阻止本地创建。
 
+客户端Meteor落地火继承原弹体拥有者，按当前Missiles.CltSrcTown及拥有者房间对应的Levels.Town缩短剩余寿命；当前PD2的meteorfire／firesmallmeteor／firemediummeteor为12帧（约0.48秒），数值从MPQ准备。观察者进入城镇或房间加载长帧不再整批删除已有弹体；HellMeteor落点的城镇限制也取实际落点房间。未知拥有者／房间不推断城镇身份。CltSrcTown是客户端显示规则，服务端SrcTown另行裁决伤害弹体；静态地面图像目前只接剩余寿命上限，完整原动画收尾与实机回归仍待核对。原生入口证据见[核心分析](../../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
+
 ### 领域和原包行为
 
 `actions`持有玩家／怪物待释放动作，`skills`解释施放、冷却、释放及射流；`missiles`持有权威飞行／子弹，`combat/spell_damage`处理逐目标伤害／NextDelay，`effects`持有装甲反击、吸收及周期，`companions`持有Hydra归属／期限／AI，单位属性／生命／模式仍归monsters。Hydra不再由伙伴另发AttackFact及玩家发射请求，改为请求337怪物技能，沿相同动作／释放入口发射。心灵传动复用inventory／objects／travel各自资格和事务；客户端开仓库／传送点等待原77／63，地面目标来自原物品副本，失败拾取音效为原2C的0x13。
@@ -84,6 +86,8 @@ hosting独立prepareHydraRules从当前MPQ准备三头／三难度基础、初�
 - 充能、装备触发、武器通用限制由[库存](../../modules/INVENTORY.md)及[GENERAL](GENERAL.md)维护；保存字段与校验边界由[SAVES](../../modules/SAVES.md)维护。晚入视野和客户端权限沿COMMON，不以本页30项入口扩张其他职业或宣称完整原版对齐。
 
 ## 原服代表技能与发包收敛
+
+PD2的Blaze和Inferno是独立差异：当前Blaze状态未填原版setfunc3，RemoteScene在匹配配置按Skills的aura关联恢复移动留火；根弹体命中后的火焰按SHitCalc1决定寿命。Inferno的CltDo111不走原版24，Calc1／Calc3控制当前帧与宽度，使用已恢复的PD2视觉随机／整数扇形链。两者已在本地原生PD2服务观察到移动火焰与喷流；不代表原客户端逐像素、伤害／耗蓝及全部等级已认证。当前本地原生服务还核对了冷／火焰附魔、两种寒冰护甲、雷云风暴与能量护盾的原生状态；传送到指定坐标及返回，静态力场两次降低同一目标生命、霜之新星119及新星90命中／击杀，Hydra351／Lesser Hydra738的原生头部和火墙68／69、陨石103及后续弹体链均有事实。各伤害组合与PvP仍待覆盖。核心版本、RVA和剩余限制见[核心分析](../../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
 
 本机1.13c D2GS／PvPGN参考栈（本地RElesgoe适配构建），D2X客户端使用普通难度99级、30项基础等级1的SkillTestSor，角色来自D2DBS，未上传自研D2S。服务端消息与状态可作为所列原服行为参考；画面由D2X重建，不等于原版客户端画面，适配参考栈也不代表全部纯原版规则。
 

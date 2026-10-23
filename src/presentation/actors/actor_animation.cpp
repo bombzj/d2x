@@ -229,7 +229,8 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         std::map<std::string_view,const ActorAnimation *> modes;
         for(const auto &sample:sequence) if(!modes.contains(sample.mode)) {
             baseRequest.mode=sample.mode;const auto *animation=resolve(graphics,palette,baseRequest);
-            if(!animation) return {};modes.emplace(sample.mode,animation);
+            if(!animation) return {};
+            modes.emplace(sample.mode,animation);
         }
         const auto *first=modes.at(sequence.front().mode);result=*first;result.start=0;
         result.animation.frames.clear();result.animation.count=int(sequence.size());result.frameCount=result.animation.count;
@@ -276,7 +277,7 @@ ActorAnimation ActorAnimationCatalog::sequence(Graphics &graphics, int palette, 
         baseRequest.mode="a1";const auto *attack=resolve(graphics,palette,baseRequest);
         if(!attack || attack->animation.count<13) return {};
         constexpr int attackFrames[]{1,4,5,6,8,10,12};
-        const int speed=request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256;
+        const int speed=request.animationRate.value_or(request.attackTiming?effectiveAttackSpeed(256,request.attackTiming->itemIAS,request.attackTiming->weaponSpeed,request.attackTiming->skillRate):256);
         result=*attack;result.animation.frames.clear();result.animation.count=7;result.frameCount=7;result.start=0;result.fps=float(speed)*25.f/256.f;result.durationFrames=std::max(1,(7*256+speed-1)/speed);result.releaseTime=float(std::max(1,(3*256+speed-1)/speed))/25.f;result.cycle=false;
         for(int facing=0;facing<attack->animation.directions;++facing) {
             for(const int frame:attackFrames) result.animation.frames.push_back(*attack->animation.frame(facing,frame));

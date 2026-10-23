@@ -39,6 +39,8 @@ const RemoteScene::Impl::Art *RemoteScene::Impl::character(const OnlineUnit &u, 
             // class, and samples the original SC frames with a release at step 7.
             const auto sequence=skills.number(row->second,"seqnum").value_or(-1);
             if(sequence==4 && moving) {request.mode="rn";return shared.actorAnimation(request,artPalette);}
+            if(pd2 && sequence==4) if(const auto &charge=motion[u.key].pd2PlayerCharge;charge && charge->attackAt>=0)
+                request.animationRate=charge->attackSpeed;
             if((sequence==12 && skills.value(row->second,"seqtrans")!="SC") ||
                (sequence==6 && skills.value(row->second,"seqtrans")!="SQ") || (sequence!=12 && sequence!=6 && sequence!=18 && sequence!=1 && sequence!=8 && sequence!=4 && sequence!=13 && sequence!=14 && sequence!=11 && sequence!=15 && sequence!=10 && sequence!=16 && sequence!=21 && sequence!=23)) return nullptr;
             if(sequence==13 || sequence==14) request.sequenceLanding=motion[u.key].leapLanding>=0;
@@ -135,8 +137,11 @@ std::string RemoteScene::Impl::monsterSkillMode(size_t monster, uint16_t skill) 
     if(monstats.value(monster,"AI")=="Imp" && skills.number(row->second,"cltdofunc")==71) return "sc";
     // D2Common SKILLS_GetSeqNumFromSkill resolves the owning monster's slot,
     // not Skills.seqnum. The same Nest skill has different crow/Blood Raven sequences.
+    // Native NAMETOWORD links are case-insensitive: current MonStats BIN
+    // infernosentry +170 is skill 311 despite "Mon"/"mon" in the TXT names.
+    const auto name=lower(std::string(skills.value(row->second,"skill")));
     for (int slot=1; slot<=8; ++slot)
-        if (monstats.value(monster,"Skill"+std::to_string(slot))==skills.value(row->second,"skill"))
+        if (lower(std::string(monstats.value(monster,"Skill"+std::to_string(slot))))==name)
             return lower(std::string(monstats.value(monster,"Sk"+std::to_string(slot)+"mode")));
     // Hireling skills use Hireling.ModeN; their player Skills.monanim is
     // intentionally "xx". MonStats still takes precedence for Jab's sequence.

@@ -178,6 +178,9 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             base.magicLevel = number("magic lvl");
             base.cost = number("cost");
             base.speed = number("speed");
+            // ItemsTbls' DWORD field at D8 retains its zero initialization
+            // for an empty weapon speed cell (including PD2's 2hs row).
+            if(family==ItemFamily::Weapon && value("speed").empty()) base.speed=0;
             base.rangeAdder = number("rangeadder").value_or(0);
             base.strengthBonus = number("strbonus");
             base.dexterityBonus = number("dexbonus");

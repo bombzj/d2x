@@ -23,6 +23,7 @@
 namespace d2x {
 class IActorClient;
 struct Grid;
+struct Map;
 class LightingView;
 class PaletteBlendView;
 struct WorldDrawView;
@@ -315,10 +316,9 @@ class SceneView {
                              EntityId owner = {}, bool hostile = false, int pierce = 0,
                                ClientMissileSource source = ClientMissileSource::Program,int slowPercent = 0,EntityId guidedTarget = {},int velocityBonus = 0,
                                ClientMissileInitialization initialization = {});
-    void advanceClientMissiles(float dt, const Grid &, Vec origin, std::span<const ClientMissileTarget>,bool town);
-    void clearClientMissiles(bool retainDeathPrograms = false) {
-        if(retainDeathPrograms) std::erase_if(clientMissiles_,[](const auto &effect){return !effect.deathProgram;});
-        else clientMissiles_.clear();
+    void advanceClientMissiles(float dt, const Map &, Vec origin, std::span<const ClientMissileTarget>);
+    void clearClientMissiles() {
+        clientMissiles_.clear();
         assets_.sceneAudio.reset();
     }
     const auto &clientMissiles() const { return clientMissiles_; }

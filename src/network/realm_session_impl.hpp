@@ -161,6 +161,7 @@ struct RealmSession::Impl {
     std::optional<uint32_t> pd2PlayerControl;
     Clock::time_point stashPageDeadline{};
     OnlineStashLayout stashLayout;
+    std::optional<uint16_t> playerDefaultSkill;
     bool identifyTargetPending{};
     uint16_t gameJoinFlags{}; // Public MCP 04 reserved metadata; never a ticket.
     std::string listFilter;

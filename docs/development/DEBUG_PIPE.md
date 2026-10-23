@@ -233,6 +233,8 @@ world.mapEventSequence／First／Count与scene.nativeMapReason定位地图缺口
 
 world.dead／deathPhase／respawnRequest／corpses描述死亡、回城请求及尸体归属；resources／repositioned组合用于回城确认。scene.effectLimitations只列遇到的未支持客户端程序，空数组不表示全技能认证。network包计数／unconsumed按SID／MCP／game诊断，不回显密码／key／票据或原认证包。
 
+world.quests.npcIntroductionReports按零基幕号返回最后收到的0x91原报告（12个WORD，未收到为null，65535为空项而非清除指令），换局清空，未联动对白或任务奖励。world.ignoredPackets及protocol.game.packets[].unconsumed统计已完整分帧但尚未消费的消息；这类消息不再因缺少客户端消费者而中断PD2会话，未知包长和损坏消息仍按协议错误处理。
+
 scene.players 按实际已指派玩家返回 id／name／classId、local、visible、moving、dead、显示 position 及不可见 reason。visible 只表示本帧原图进入视口，名册存在不表示可见；位置不写回副本或授权操作。world.units.attributes 保留原 1.13c 0x20 的玩家公开属性，不能当作本人的私有属性／库存。
 
 ## 联网物品操作

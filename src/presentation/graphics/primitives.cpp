@@ -145,7 +145,7 @@ bool parseClassicFontTable(std::string_view tbl, ClassicFont &font) {
     for (size_t i = 0; i < count; ++i) {
         const uint8_t *r = bytes + 12 + i * 14;
         records.push_back({uint32_t(r[0]) | (uint32_t(r[1]) << 8),
-                           uint16_t(r[8]) | (uint16_t(r[9]) << 8), r[3]});
+                           uint16_t(uint16_t(r[8]) | (uint16_t(r[9]) << 8)), r[3]});
     }
     std::stable_sort(records.begin(), records.end(),
                      [](const Record &a, const Record &b) { return a.code < b.code; });

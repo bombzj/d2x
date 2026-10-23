@@ -157,7 +157,7 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
             if (auto action = onlinePartyAction(players_[i]); action &&
                 !(ownParty_ && *ownParty_ != UINT16_MAX && players_[i].partyId == ownParty_) &&
                 CheckCollisionPointRec(rv(input.mouse), buttonBounds(i)))
-                hovered = PartyIntent{true, players_[i].id, game_, action};
+                hovered = PartyIntent{true, players_[i].id, game_, action, {}, false};
     if(inside && ready_) for(size_t i=0;i<players_.size();++i)
         for(const auto action:{OnlineRelationAction::AllowLoot,OnlineRelationAction::Hostile,OnlineRelationAction::Ignore,OnlineRelationAction::Squelch}) {
             if(action==OnlineRelationAction::AllowLoot && !hardcore_) continue;
@@ -172,7 +172,7 @@ PartyIntent PartyView::handle(const FrameInput &input, bool &open) {
         }
     if (inside && ready_ && ownParty_ && *ownParty_ != UINT16_MAX &&
         CheckCollisionPointRec(rv(input.mouse), partyRect(307, 80, 53, 20)))
-        hovered = PartyIntent{true, self_, game_, OnlinePartyAction::Leave};
+        hovered = PartyIntent{true, self_, game_, OnlinePartyAction::Leave, {}, false};
     const bool close = inside && CheckCollisionPointRec(rv(input.mouse), partyRect(358, 455, 32, 32));
     if (input.leftPressed) { pressed_ = hovered; closePressed_ = close; }
     if (input.leftReleased) {
@@ -248,7 +248,8 @@ void PartyView::draw(std::string_view ownName) const {
         while(start<tooltip_.size()) {
             const auto end=tooltip_.find('\n',start);auto line=std::string_view(tooltip_).substr(start,end==std::string::npos?end:end-start);
             float measured=0;for(uint32_t c:utf8Decode(line)) measured+=font_.widthOf(c);width=std::max(width,measured);lines.push_back(line);
-            if(end==std::string::npos) break;start=end+1;
+            if(end==std::string::npos) break;
+            start=end+1;
         }
         const float x=std::clamp(tooltipAt_.x-width/2,82.f,std::max(82.f,396-width)),y=tooltipAt_.y-float(lines.size())*14;
         DrawRectangleRec(partyRect(x-3,y-2,width+6,float(lines.size())*14+4),BLACK);

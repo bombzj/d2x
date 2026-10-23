@@ -12,10 +12,10 @@ FrameInput pollInput(const Viewport &viewport) {
     input.mouse = {mouse.x, mouse.y};
     input.insideViewport = IsMouseButtonPressed(MOUSE_BUTTON_LEFT) ||
                            IsMouseButtonPressed(MOUSE_BUTTON_RIGHT) ||
-                           input.mouse.x >= viewport.offset.x &&
+                           (input.mouse.x >= viewport.offset.x &&
                            input.mouse.y >= viewport.offset.y &&
                            input.mouse.x < viewport.offset.x + W * viewport.scale &&
-                           input.mouse.y < viewport.offset.y + H * viewport.scale;
+                           input.mouse.y < viewport.offset.y + H * viewport.scale);
     if (input.insideViewport) {
         input.mouse = (Vec{mouse.x, mouse.y} - viewport.offset) * (1 / viewport.scale);
         input.leftPressed = IsMouseButtonPressed(MOUSE_BUTTON_LEFT);

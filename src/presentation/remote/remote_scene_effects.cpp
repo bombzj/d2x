@@ -1,4 +1,5 @@
 #include "remote_scene_impl.hpp"
+#include "gameplay/units/direction.hpp"
 
 namespace d2x {
 
@@ -95,7 +96,6 @@ void RemoteScene::Impl::emitWoundBlood(const OnlineView &view, SceneView &shared
     // Retail state callback 85 (RVA C9000) owns one shared client timer.
     // Strict frame > next, then next = frame + 5; never replay missed ticks.
     const auto frame = uint64_t(double(time) * 25.0);
-    std::set<OnlineUnitKey> active;
     for (const auto &[key, snapshot] : combat.states()) {
         const auto found = view.world.units.find(key);
         if (!snapshot.decoded || found == view.world.units.end() || key.type != 1) continue;
@@ -106,23 +106,8 @@ void RemoteScene::Impl::emitWoundBlood(const OnlineView &view, SceneView &shared
             return row != stateRows.end() && states.number(row->second,"cltactivefunc") == 85;
         });
         if (!bleeding) continue;
-        active.insert(key);
         if (frame <= nextWoundBloodFrame) continue;
         nextWoundBloodFrame = frame + 5;
-        // Client seeds are not transmitted. Keep this cosmetic stream
-        // separate from combat, stable through a refresh of the same state.
-        auto &random = woundBloodRandom.try_emplace(key, initialRandom(key.id)).first->second;
-        if (unit.mode == 3 && limitedRandom(random,3) != 0) continue;
-        const auto monster = monsterRows.find(*unitClass(unit));
-        if (monster == monsterRows.end()) continue;
-        const auto extra = monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));
-        if (extra == monsterExtra.end()) continue;
-        // The native MonStats2 byte 0x11D is Bleed, not localBlood (0x11C).
-        const int blood = monstats2.number(extra->second,"Bleed").value_or(0);
-        if (!blood) continue;
-        if (blood < 0 || blood > int(bloodMissiles.size() / 2)) {
-            effectLimitations.insert("Open Wounds blood type " + std::to_string(blood)); continue;
-        }
         int64_t observedCount = 0;
         for (const auto &[id, state] : snapshot.states) {
             (void)id;
@@ -133,25 +118,45 @@ void RemoteScene::Impl::emitWoundBlood(const OnlineView &view, SceneView &shared
         // Native helper defaults to one; only published damage_blood can
         // override it. Do not infer hidden monster stat lists.
         const int count = int(std::clamp<int64_t>(observedCount ? observedCount : 1,0,2048));
-        constexpr std::array<Vec, 8> offsets{{{0,2},{-1,1},{-2,0},{-1,-1},{0,-2},{1,-1},{2,0},{1,1}}};
-        const Vec center{float(unit.position->x) + .5f, float(unit.position->y) + .5f};
-        for (int particle = 0; particle < count; ++particle) {
-            const bool moving = (unit.mode == 2 || unit.mode == 15) && unit.direction.has_value();
-            const int first = moving ? (int(*unit.direction / 8) + int(limitedRandom(random,7)) - 3) & 7
-                                     : int(limitedRandom(random,8));
-            // RVA 4C500 checks seven candidate points against WALL only.
-            for (int candidate = 0; candidate < 7; ++candidate) {
-                const auto target = center + offsets[size_t((first + candidate) & 7)];
-                if (!grid.walkable(target - origin, {1,1})) continue;
-                const int missile = bloodMissiles[limitedRandom(random,uint32_t(blood * 2))];
-                // Native B0450 creates at the unit, aimed at the free point.
-                if (missile < 0 || !shared.launchClientMissile(missile,center,target,1,0,{},-1,effectOwner(key)))
-                    effectLimitations.insert("Open Wounds blood missile " + std::to_string(missile));
-                break;
-            }
+        emitUnitBlood(unit,count,0,key,shared,grid,origin);
+    }
+    std::erase_if(woundBloodRandom,[&](const auto &entry) { return !view.world.units.contains(entry.first); });
+}
+
+void RemoteScene::Impl::emitUnitBlood(const OnlineUnit &unit, int count, float delay, OnlineUnitKey effectSource,
+                                    SceneView &shared, const Grid &grid, Vec origin) {
+    if (!unit.position || !unitClass(unit)) return;
+    // Native client unit seeds are not transmitted. This cosmetic stream
+    // never drives authoritative hits, corpse consumption or drops.
+    auto &random = woundBloodRandom.try_emplace(unit.key, initialRandom(unit.key.id)).first->second;
+    if (unit.mode == 3 && limitedRandom(random,3) != 0) return;
+    const auto monster = monsterRows.find(*unitClass(unit));
+    if (monster == monsterRows.end()) return;
+    const auto extra = monsterExtra.find(monstats.value(monster->second,"MonStatsEx"));
+    if (extra == monsterExtra.end()) return;
+    const int blood = monstats2.number(extra->second,"Bleed").value_or(0);
+    if (!blood) return;
+    if (blood < 0 || blood > int(bloodMissiles.size() / 2)) {
+        effectLimitations.insert("Unit blood type " + std::to_string(blood)); return;
+    }
+    constexpr std::array<Vec, 8> offsets{{{0,2},{-1,1},{-2,0},{-1,-1},{0,-2},{1,-1},{2,0},{1,1}}};
+    const Vec center{float(unit.position->x) + .5f, float(unit.position->y) + .5f};
+    for (int particle = 0; particle < count; ++particle) {
+        const bool moving = (unit.mode == 2 || unit.mode == 15) && unit.direction.has_value();
+        const int first = moving ? (int(*unit.direction / 8) + int(limitedRandom(random,7)) - 3) & 7
+                                 : int(limitedRandom(random,8));
+        // Native 4C500 checks seven candidates against WALL; B0450 creates
+        // at the unit, aimed at the free point. effectSource owns cancellation
+        // of delayed cast visuals; the corpse supplies position and random.
+        for (int candidate = 0; candidate < 7; ++candidate) {
+            const auto target = center + offsets[size_t((first + candidate) & 7)];
+            if (!grid.walkable(target - origin, {1,1})) continue;
+            const int missile = bloodMissiles[limitedRandom(random,uint32_t(blood * 2))];
+            if (missile < 0 || !shared.launchClientMissile(missile,center,target,1,delay,{},-1,effectOwner(effectSource)))
+                effectLimitations.insert("Unit blood missile " + std::to_string(missile));
+            break;
         }
     }
-    std::erase_if(woundBloodRandom,[&](const auto &entry) { return !active.contains(entry.first); });
 }
 
 void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, const RemoteCombat &combat, bool town,const Grid &collision,Vec worldOrigin) {
@@ -391,10 +396,61 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 launch(departure->second,start,start,event.level.value_or(1),-age,{},event.source);
         }
         const int function = skills.number(row->second, "cltdofunc").value_or(0);
+        if(function==34) {
+            // Retail CltDo34 / RVA 2B530 emits one blood missile opposite
+            // the facing, with a three-slot spread and CltCalc1 variants.
+            if(!castAnimation || castAnimation->releaseTime<0) return;
+            const auto base=missileNames.find(skills.value(row->second,"cltmissilea"));
+            if(base==missileNames.end()) return;
+            const auto variants=skillCalculation(*event.skill,event.level.value_or(1),"cltcalc1",event.source);
+            if(!variants) {effectLimitations.insert("Sacrifice blood variants unresolved");return;}
+            auto &random=woundBloodRandom.try_emplace(event.source,initialRandom(event.source.id)).first->second;
+            auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);
+            const int facing=actor.direction?*actor.direction/8:target?
+                nativeDirectionVector(int64_t(target->x)-actor.position->x,int64_t(target->y)-actor.position->y).index/8:
+                int(limitedRandom(random,8));
+            const int direction=(facing+4+int(limitedRandom(random,3))-1)&7;
+            constexpr std::array<Vec,8> offsets{{{0,2},{-1,1},{-2,0},{-1,-1},{0,-2},{1,-1},{2,0},{1,1}}};
+            const int missile=missiles.number(base->second,"Id").value_or(-1)+
+                (*variants>0?int(limitedRandom(random,uint32_t(*variants))):0);
+            const auto selected=missileRows.find(missile);if(selected==missileRows.end()) return;
+            const Vec start{float(actor.position->x)+.5f,float(actor.position->y)+.5f};
+            shared.cancelPendingClientMissiles(effectOwner(event.source));
+            missileCastRevisions[event.source]=source->second.actionRevision;
+            launch(selected->second,start,start+offsets[size_t(direction)],event.level.value_or(1),
+                castAnimation->releaseTime-age,{},event.source);
+            return;
+        }
+        const bool pd2CorpseSearch=pd2 && function==104 && (*event.skill==131 || *event.skill==142);
+        if(function==38 || function==40 || pd2CorpseSearch) {
+            // CN 3A6EB0 delegates these two skills to retail 38/40. Both
+            // invoke 4C500 on the actual corpse with an initial count of 5.
+            if(!event.target || !castAnimation || castAnimation->releaseTime<0) return;
+            const auto corpse=v.world.units.find(*event.target);
+            if(corpse==v.world.units.end() || !onlineMonsterCorpse(corpse->second)) return;
+            int64_t count=0;
+            const auto snapshot=combat.states().find(*event.target);
+            if(snapshot!=combat.states().end() && snapshot->second.decoded &&
+               snapshot->second.sequence==corpse->second.stateSequence)
+                for(const auto &[id,state]:snapshot->second.states) {
+                    (void)id;
+                    for(const auto &stat:state.stats)
+                        if(stat.id==damageBloodStat && !stat.parameter) count+=std::clamp<int64_t>(stat.value,-2048,2048);
+                }
+            shared.cancelPendingClientMissiles(effectOwner(event.source));
+            missileCastRevisions[event.source]=source->second.actionRevision;
+            emitUnitBlood(corpse->second,int(std::clamp<int64_t>(count?count:5,0,2048)),
+                castAnimation->releaseTime-age,event.source,shared,collision,worldOrigin);
+            return;
+        }
         if (v.protocolProfile == "pd2-cn-normal-20261020") {
             // Fixed CN CltDo table: these callbacks replace native code, not
             // skill identities. Details and both DLL versions are in PD2_CN_DLL_ANALYSIS.
             if (function == 103) return; // Aura visuals arrive through unit states.
+            if (function == 97 && actor.key.type==0 && actor.key.id==playerId)
+                return; // Controlled player flight is advanced by displayPd2PlayerLeap.
+            if (function == 112 && actor.key.type==0 && actor.key.id==playerId)
+                return; // Controlled player path/attack phases are advanced separately.
             if (function == 105) {
                 // Core 3A6F30 reads Skills.SrvMissileA, not CltMissileA.
                 const auto missile = missileNames.find(skills.value(row->second,"srvmissilea"));
@@ -403,6 +459,94 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 shared.cancelPendingClientMissiles(effectOwner(event.source));
                 missileCastRevisions[event.source] = source->second.actionRevision;
                 launch(missile->second,at,at,event.level.value_or(1),castAnimation->releaseTime-age,{},event.source);
+                return;
+            }
+            if(function==98) {
+                if(!castAnimation || castAnimation->releaseTimes.size()!=2) return;
+                auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);
+                if(!target) return;
+                const int rank=std::max(1,int(event.level.value_or(1)));
+                const auto hits=skillCalculation(*event.skill,rank,"calc2",event.source);
+                const auto radius=skillCalculation(*event.skill,rank,"aurarangecalc",event.source);
+                if(!hits || !radius) {
+                    effectLimitations.insert("PD2 double throw chain inputs unavailable");return;
+                }
+                shared.cancelPendingClientMissiles(effectOwner(event.source));
+                missileCastRevisions[event.source]=source->second.actionRevision;
+                const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+                const Vec end{float(target->x)+.5f,float(target->y)+.5f};
+                for(int hand=0;hand<2;++hand) for(const auto &[id,item]:v.world.items) {
+                    (void)id;
+                    if(item.ownerType!=event.source.type || item.owner!=event.source.id ||
+                       item.mode!=1 || item.body!=4+hand || (item.flags&0x4100u)) continue;
+                    const auto weapon=shared.weaponMissile(item.code);if(!weapon) continue;
+                    const auto missile=pd2ThrownMissile(row->second,*weapon,false);if(!missile) continue;
+                    ClientMissileInitialization init;init.chainHits=std::max(0,*hits);
+                    init.chainRadius=std::max(1,missiles.number(*missile,"cHitPar1").value_or(0)>0?
+                        missiles.number(*missile,"cHitPar1").value():*radius);
+                    launch(*missile,start,end,rank,castAnimation->releaseTimes[size_t(hand)]-age,{},
+                        event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                }
+                return;
+            }
+            if(function==118) {
+                if(!castAnimation || castAnimation->releaseTime<0) return;
+                auto target=event.point;if(!target && event.target) target=targetPosition(*event.target);
+                if(!target) return;
+                std::optional<int> weaponMissile;
+                for(const int body:{4,5}) {
+                    for(const auto &[id,item]:v.world.items) {
+                        (void)id;
+                        if(item.ownerType!=event.source.type || item.owner!=event.source.id ||
+                           item.mode!=1 || item.body!=body || (item.flags&0x4100u)) continue;
+                        weaponMissile=shared.weaponMissile(item.code);
+                        if(weaponMissile) break;
+                    }
+                    if(weaponMissile) break;
+                }
+                if(!weaponMissile) return;
+                const auto missile=pd2ThrownMissile(row->second,*weaponMissile,true);
+                const int rank=std::max(1,int(event.level.value_or(1)));
+                const auto count=skillCalculation(*event.skill,rank,"calc1",event.source);
+                if(!missile || !count || *count<=0 || *count>512) {
+                    effectLimitations.insert("PD2 split throw inputs unavailable: "+std::to_string(*event.skill));
+                    return;
+                }
+                const Vec start=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+                const auto layout=pd2MissileFanLayout(start,{float(target->x)+.5f,float(target->y)+.5f},*count);
+                shared.cancelPendingClientMissiles(effectOwner(event.source));
+                missileCastRevisions[event.source]=source->second.actionRevision;
+                ClientMissileInitialization init;init.activationDelay=1; // creation flags 0x10820, +0x44=1
+                for(int index=0;index<*count;++index)
+                    launch(*missile,start,layout.first+layout.step*float(index),rank,
+                        castAnimation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                return;
+            }
+            if(function==110 || function==119) {
+                if(!castAnimation || castAnimation->releaseTime<0) return;
+                auto target=event.point;
+                if(event.target) target=targetPosition(*event.target);
+                if(!target || (function==110 && !event.target)) return;
+                const auto missile=missileNames.find(skills.value(row->second,"cltmissilea"));
+                const int rank=std::max(1,int(event.level.value_or(1)));
+                const auto count=skillCalculation(*event.skill,rank,function==110?"calc2":"calc1",event.source);
+                if(missile==missileNames.end() || !count || *count<0 || *count>512) {
+                    effectLimitations.insert("PD2 firestorm inputs unavailable: "+std::to_string(*event.skill));
+                    return;
+                }
+                const Vec origin=presentationOrigin.value_or(Vec{float(actor.position->x)+.5f,float(actor.position->y)+.5f});
+                const Vec destination{float(target->x)+.5f,float(target->y)+.5f};
+                shared.cancelPendingClientMissiles(effectOwner(event.source));
+                missileCastRevisions[event.source]=source->second.actionRevision;
+                for(int index=0;index<*count;++index) {
+                    // CN 36B9A0 clamps the path to 77 frames, refreshes the
+                    // owner's local seed, then prepares ChargedBolt path 10.
+                    ClientMissileInitialization init;
+                    init.path=ClientMissileInitialization::Path::Charged;
+                    init.seed=nextPd2PathSeed(event.source);
+                    launch(missile->second,origin,destination,rank,castAnimation->releaseTime-age,{},
+                        event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+                }
                 return;
             }
             if (function == 100 || function == 101 || function == 102 || function == 113 || function == 116 || function == 117) {
@@ -469,7 +613,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 return;
             }
             if (function == 83 || function == 94 || function == 97 || function == 98 ||
-                (function >= 104 && function <= 119)) {
+                (function >= 104 && function <= 119 && function!=111)) {
                 effectLimitations.insert("PD2 skill client program unavailable: " + std::to_string(function));
                 return;
             }
@@ -558,7 +702,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         // -> A1540 -> AFF10), including ClientSend missiles. The flag
         // permits native visibility synchronization; it is not a cast gate.
         const bool pd2MindBlast = function == 8 && v.protocolProfile == "pd2-cn-normal-20261020";
-        if (!pd2MindBlast && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
+        // Retail CltDo6 (RVA 413A0) creates the owner's Blade Fury
+        // missile directly; ClientSend does not suppress that callback.
+        const bool bladeFury = function == 6 && skills.value(row->second,"charclass") == "ass";
+        if (!pd2MindBlast && !bladeFury && function != 26 && function != 28 && function!=55 && function!=58 && function!=70 && function!=76 && missiles.number(missile->second, "ClientSend").value_or(0)) return;
         auto target = event.point;
         if (!target && event.target) target=targetPosition(*event.target);
         if (!target && (function == 25 || function==55)) target = actor.position; // Nova has no required target.
@@ -573,7 +720,7 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         auto emit = [&](Vec destination, int index = -1) {
             launch(missile->second, start, destination, level, animation->releaseTime-age, {}, event.source, index);
         };
-        if((function==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) || function==54 || function==56 || function==71 || function==77 || (function==6 && skills.value(row->second,"charclass")=="ass")) {
+        if(channelSkill(*event.skill) || function==54 || function==56 || function==71 || function==77) {
             channels[event.source]={row->second,missile->second,level,time+(function==54?1.f/25.f:animation->releaseTime)-age,time-age,source->second.actionRevision,*target,event.target,initialRandom(source->second.key.id)};
             channels[event.source].releaseAt=time+animation->releaseTime-age;
             if(function==77) channels[event.source].until=time-age+float(std::max(1,skillCalculation(*event.skill,level,"calc2",event.source).value_or(1)))/25.f;
@@ -610,6 +757,18 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 if(dx*dx+dy*dy>=4)
                     emit({float(x)+.5f,float(y)+.5f});
             }
+        }
+        else if(function==19 && event.target) {
+            // Retail CltDo19 / RVA15AB0 starts Charged Strike at the
+            // struck unit and aims at 2*target-caster. B23B60 receives
+            // each zero-based bolt index, matching chargedBoltPath.
+            const auto count=skillCalculation(*event.skill,level,"calc1",event.source);
+            if(!count || *count<0 || *count>512) {
+                effectLimitations.insert("Charged Strike bolt count unavailable");
+                return;
+            }
+            for(int index=0;index<*count;++index)
+                launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
         }
         else if(function==7 && skills.value(row->second,"charclass")=="ass")
             launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
@@ -710,16 +869,33 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         else if(function==22 && event.target) {
             // Retail CltDo22 RVA15660: origin is the struck unit; Calc1
             // searches a GUID successor, Calc2 carries the full hop count.
-            const auto radius=skills.number(row->second,"calc1").value_or(0);
+            const auto radius=skillCalculation(*event.skill,level,"calc1",event.source).value_or(0);
             std::vector<uint64_t> eligible;
-            for(const auto &[key,u]:v.world.units) if(key.type==1 && key!=*event.target && u.position && combat.hostileSource(u) && !onlineMonsterCorpse(u)) {
+            // A283 searches from the caster, so the struck unit is itself a
+            // candidate. Callback RVA A09F0 keeps it as the GUID-wrap fallback
+            // when no successor exists (including a single-target nova).
+            for(const auto &[key,u]:v.world.units) if(key.type==1 && u.position && combat.hostileSource(u) && !onlineMonsterCorpse(u)) {
                 const Vec at{float(u.position->x)+.5f,float(u.position->y)+.5f};
                 const Vec d{std::floor(at.x)-std::floor(end.x),std::floor(at.y)-std::floor(end.y)};
                 if(d.x*d.x+d.y*d.y<=float(radius*radius) && collision.missileSegment(end-worldOrigin,at-worldOrigin,{4,1})) eligible.push_back(key.id);
             }
-            const auto id=missileChainSuccessor(event.target->id,eligible);
-            if(const auto u=v.world.units.find({1,uint32_t(id)});id && u!=v.world.units.end() && u->second.position)
-                launch(missile->second,end,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,animation->releaseTime-age,{},event.source);
+            auto id=missileChainSuccessor(event.target->id,eligible);
+            // Other chain programs exclude their struck unit. This native
+            // initial selector alone can wrap to it when it is the only one.
+            if(!id && std::find(eligible.begin(),eligible.end(),event.target->id)!=eligible.end()) id=event.target->id;
+            if(const auto u=v.world.units.find({1,uint32_t(id)});id && u!=v.world.units.end() && u->second.position) {
+                ClientMissileInitialization init;
+                if(pd2) {
+                    const auto hits=skillCalculation(*event.skill,level,"calc2",event.source);
+                    const auto range=skillCalculation(*event.skill,level,"aurarangecalc",event.source);
+                    if(!hits || !range) {effectLimitations.insert("Lightning Strike chain inputs unavailable");return;}
+                    init.chainHits=std::max(0,*hits);
+                    const int fixedRadius=missiles.number(missile->second,"cHitPar1").value_or(0);
+                    init.chainRadius=std::max(1,fixedRadius>0?fixedRadius:*range);
+                }
+                launch(missile->second,end,{float(u->second.position->x)+.5f,float(u->second.position->y)+.5f},level,
+                    animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
+            }
         }
         else if(function==20) {
             std::vector<uint64_t> targets;
@@ -736,15 +912,20 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 previous=id;
             }
         }
-        else if(function==19 && skills.value(row->second,"calc1")=="par1+lvl/par2") {
-            const auto count=skills.number(row->second,"Param1").value_or(0)+level/std::max(1,skills.number(row->second,"Param2").value_or(0));
-            // Retail CltDo19 RVA15AB0: origin=target, aim=2*target-owner.
-            for(int index=0;index<count && index<256;++index) launch(missile->second,end,end*2.f-start,level,animation->releaseTime-age,{},event.source,index);
-        }
         else if(function==79 && skills.number(row->second,"cltstfunc")==51) {
             // Retail CltSt51 retains the corpse coordinates; CltDo79
             // constructs cltmissilea there at the action frame.
             launch(missile->second,end,end,level,animation->releaseTime-age,{},event.source);
+        }
+        else if(pd2 && function==27 && missiles.number(missile->second,"pCltHitFunc")==16) {
+            // Retail CltDo27 / RVA73E80 stores Calc1 as the hit counter.
+            const auto hits=skillCalculation(*event.skill,level,"calc1",event.source);
+            const auto radius=skillCalculation(*event.skill,level,"aurarangecalc",event.source);
+            if(!hits || !radius) {effectLimitations.insert("PD2 chain inputs unavailable: "+std::to_string(*event.skill));return;}
+            ClientMissileInitialization init;init.chainHits=std::max(0,*hits);
+            const int fixedRadius=missiles.number(missile->second,"cHitPar1").value_or(0);
+            init.chainRadius=std::max(1,fixedRadius>0?fixedRadius:*radius);
+            launch(missile->second,start,end,level,animation->releaseTime-age,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
         }
         else if (!function || function == 1 || function == 2 || function==27 || function==35 || function==95 ||
             (function == 29 && missiles.number(missile->second, "pCltDoFunc") == 19)) emit(end);
@@ -1163,9 +1344,13 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
             request->state == OnlineCombatRequest::State::SentNoAck && source != v.world.units.end()) {
             // PlrMsg::sub_6FC81D20 normally omits skill packets for the owner.
             // Repeated hold requests must not restart an animation before its release frame.
-            if (!localCast || localCast->started < 0 || time >= localCast->started + localCast->duration)
+            const bool continuedHold=localCast && request->command.repeat &&
+                localCast->command.skill==request->command.skill && localCast->command.hand==request->command.hand;
+            if (!continuedHold || localCast->started < 0 || time >= localCast->started + localCast->duration) {
                 localCast = LocalCast{request->command, source->second.actionRevision, time,
                     -1, 0, request->revision};
+                auto &phase=motion[source->first];phase.leapRevision=0;phase.leapFlying=false;phase.leapLanding=-1;phase.pd2PlayerCharge.reset();
+            }
         } else if(request->command.action==OnlineCombatCommand::Action::Stop) {
             // Native Rcv0x12 only clears STATE_INFERNO. Mouse-up ends a
             // held gesture, not a normal cast that has yet to release.
@@ -1189,11 +1374,30 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         const bool interrupted = u.actionRevision != localCast->authorityRevision &&
             (u.actionSkill || (u.nativeMode ? (u.mode == 0 || u.mode == 4 || u.mode == 17 || u.mode == 19)
                 : (u.mode == 6 || u.mode == 8 || u.mode == 9 || u.mode == 18 || u.mode == 20)));
+        // A rejected owner leap has no 4C reply and never enters skill_move.
+        // Apply the existing prediction budget to that unconfirmed hold too;
+        // an observed flight still ends through its authoritative state change.
+        const bool unconfirmedLeap = localCast->started >= 0 &&
+            (localCast->command.skill == 132 || localCast->command.skill == 143) &&
+            !motion[u.key].leapFlying && motion[u.key].leapLanding < 0;
+        const auto pendingRow=skillRows.find(localCast->command.skill);
+        const bool charge=pd2 && pendingRow!=skillRows.end() && skills.number(pendingRow->second,"cltdofunc")==112;
+        const auto &chargePhase=motion[u.key].pd2PlayerCharge;
+        const bool unconfirmedCharge=charge && localCast->started>=0 && (!chargePhase || !chargePhase->confirmed);
         if (!u.position || onlinePlayerDead(v.world) || interrupted ||
              (v.world.movementRequest && v.world.movementRequest->revision > localCast->revision) ||
-            (localCast->started < 0 && time - localCast->requested > 15.f)) {
+            ((localCast->started < 0 || unconfirmedLeap || unconfirmedCharge) && time - localCast->requested > 15.f)) {
             if (playerId) shared.cancelPendingClientMissiles(effectOwner({0, *playerId}));
             localCast.reset();
+        }
+        else if(localCast->started>=0 && motion[u.key].leapLanding>=0) {
+            const auto row=skillRows.find(localCast->command.skill);
+            const int sequence=row==skillRows.end()?-1:skills.number(row->second,"seqnum").value_or(-1);
+            if(sequence==13 || sequence==14) {
+                auto actor=u;actor.actionSkill=localCast->command.skill;
+                if(const auto *visual=character(actor,false,town,shared);visual && visual->holdFrame<0)
+                    localCast->duration=motion[u.key].leapLanding-localCast->started+visual->duration();
+            }
         }
         else if (localCast->started < 0) {
             const auto row = skillRows.find(localCast->command.skill);
@@ -1223,6 +1427,15 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 if (!visual || visual->fps <= 0) localCast.reset();
                 else {
                     localCast->started = time; localCast->duration = visual->holdFrame>=0?std::numeric_limits<float>::infinity():visual->duration();
+                    if(charge && localCast->command.target && targetSize>0) {
+                        auto melee=localCast->command;melee.skill=0;melee.stationary=false;
+                        const auto reach=castMeleeRange(u,melee);
+                        const auto &display=motion[u.key];
+                        const auto feet=display.last?display.position+display.correction:Vec{float(u.position->x),float(u.position->y)};
+                        const auto victim=localUnitPosition(*localCast->command.target);
+                        if(reach && victim && !playerMeleeReach(collision,feet-worldOrigin,*victim-worldOrigin,targetSize,*reach+targetMotionBonus))
+                            localCast->duration=std::numeric_limits<float>::infinity();
+                    }
                     motion[u.key].animation.startedAt = time;
                     OnlineCombatEvent event; event.source = u.key; event.skill = actor.actionSkill;
                     event.point = target; event.target = localCast->command.target;
@@ -1270,6 +1483,10 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
         const Vec start=Vec{float(owner->second.position->x)+.5f,float(owner->second.position->y)+.5f};
         const Vec end{float(channel.destination.x)+.5f,float(channel.destination.y)+.5f};
         const int channelFunction=skills.number(channel.skillRow,"cltdofunc").value_or(0);
+        if(v.protocolProfile=="pd2-cn-normal-20261020" && channelFunction==111) {
+            emitPd2Stream(channel,it->first,start,end,shared,combat);
+            ++it;continue;
+        }
         const bool imp=channelFunction==71,diablo=channelFunction==56,arctic=channelFunction==54;
         const auto beamRange=skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"calc1",it->first).value_or(0);
         const int frames=std::max(1,(diablo || arctic)?std::clamp(beamRange>0?beamRange:missiles.number(channel.missileRow,"Param2").value_or(0)+channel.level-1,1,255):
@@ -1298,6 +1515,14 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     if(const auto pose=motion.find(it->first);pose!=motion.end()) height-=int(pose->second.riderOffset.y);
                     ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(height,11);
                     graphics.velocity[2]=nativeShiftLeft(-2*height/frames,11);init.graphics=graphics;init.totalFrames=frames;
+                }
+                if(channelFunction==77) {
+                    // Retail C5BA0 resets the created Inferno Sentry
+                    // graphics, writes CltCalc1 through C7E30, then sets 20.
+                    const auto height=skillCalculation(skills.number(channel.skillRow,"Id").value_or(0),channel.level,"cltcalc1",it->first);
+                    if(!height) {effectLimitations.insert("Inferno Sentry graphics offset unresolved");break;}
+                    ClientMissileGraphics graphics;graphics.position[2]=nativeShiftLeft(*height,11);graphics.flags=0x20;
+                    init.graphics=graphics;
                 }
                 launch(variant,start,end,channel.level,channel.next-time,fury?std::optional<float>{}:std::optional<float>{float(frames)/25.f},it->first,-1,0,ClientMissileSource::Cast,{},velocity,init);
             }

@@ -4,6 +4,8 @@
 
 骷髅支配、石魔支配及召唤抵抗的提示与实际召唤共用`evaluateNecromancerPassive`，法师元素长度、降低抵抗递减、范围与AI资格复用[公共函数](COMMON.md#公共函数抽取)。参数在content从当前MPQ准备，客户端被动提示不再逐次查表。完整技能组合仍待原版对齐，存档校验以[SAVES](../../modules/SAVES.md)为准。
 
+PD2本地原服已用真实匕首核对Poison Dagger的poison_strike状态、714毒弹及后续目标死亡；当前技能使用SrvDo164／CltDo102，不按原版名称猜测毒伤过程。Weaken／Attract已收到目标状态，Bone Prison观察到八段原骨墙单位，Bone Wall另观察到五段class344；金属短剑成功成为Iron Golem材料，Dark Pact消除已有Amplify Damage并造成目标死亡。Blood Warp已核对二十子格位移、客户端末端坐标和生命368→336。当前States的skel_mastery／golem_mastery带nosend，不能以网络未收到被动状态认定失效；69／79的召唤数值贡献尚未独立测量。完整数值、目标资格与组合仍待覆盖。
+
 ## 30项职责核对
 
 | 技能ID／名称 | 权威执行与客户端入口 |
@@ -21,9 +23,11 @@
 
 ## 状态、归属与保存
 
+召唤物攻击朝向与其他非玩家单位共用客户端路径：0x6B／0x6C动作包的方向字节在原`MonsterMsg::sub_6FC65C70`普通攻击分支中保持0，不是有效固定朝向；仅DEATH／DEAD取`PATH_GetDirection`，GH同位置字节为生命／触发标志。客户端按该语义保留可用朝向，普通攻击面向原包指定的目标，并使用目标已有的连续显示位置，不能让占位0覆盖它。此修正共用于原版与PD2；两种配置的实机朝向回归仍待核对。
+
 PD2骷髅战士攻击后的`Skeleton Splash`（当前Skills ID393、srvdofunc163、monanim=xx、无客户端程序／飞弹／音效／覆盖图）是触发效果，不是新的施法动作。已有CN收包记录中，骷髅先收到0x6C／action10攻击，约0.46–0.51秒后收到0x99／skill393，再约0.25–0.31秒收到0x6D待机。旧客户端副本把0x99覆盖为actionSkill并清mode，导致表现查找不存在的SK／xx动画、整只骷髅停止绘制直到待机。现仅0x4C／0x4D切换技能动作；0x99／0x9A保留当前模式、目标、朝向与动作时间，通知仍进入效果事件队列，不打断本人施法预测；无客户端表现的表行不请求动画。原版也走相同协议语义，不按PD2技能ID补帧或替换资源。
 
-依据为D2MOO `SkillItem::SKILLITEM_CastSkillOnTarget/OnPosition`→`SUnitMsg::sub_6FCC60D0/sub_6FCC6150`的0x99／0x9A触发通知；固定1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）包表RVA DDE60中，两者直接进入AF0F0／AF090→C9030，临时设置效果目标并在返回前恢复；0x4C／0x4D则由AF1D0／AF160进入动作分派2A750。此修正定位于错误动作覆盖；全部触发技能的ItemCheckStart、ItemCltEffect及独立效果时序仍待完整对齐。尚未构建或运行验证。
+依据为D2MOO `SkillItem::SKILLITEM_CastSkillOnTarget/OnPosition`→`SUnitMsg::sub_6FCC60D0/sub_6FCC6150`的0x99／0x9A触发通知；固定1.13c D2Client（MD5 `f5860c629d309b8fc1f96174babcf633`）包表RVA DDE60中，两者直接进入AF0F0／AF090→C9030，临时设置效果目标并在返回前恢复；0x4C／0x4D则由AF1D0／AF160进入动作分派2A750。此修正定位于错误动作覆盖；本地原生PD2服务已捕获骷髅攻击后的0x99／393并核对动作与绘制保留。全部触发技能的ItemCheckStart、ItemCltEffect及独立效果时序仍待完整对齐，该结果不代表CN公网长期认证。
 
 actions持有动作与待释放队列，skills解释并推进技能程序，companions拥有伙伴／上限／寿命，monsters拥有实体／AI准备值／生命，effects拥有诅咒与接触反应，transactions提交人物／库存／地面材料，combat持有伤害和来源复验。资源不足、目标消失、尸体已消费、非金属／未鉴定材料、缺原资源均明确拒绝，不自造参数或召唤替身。
 
@@ -37,7 +41,7 @@ actions持有动作与待释放队列，skills解释并推进技能程序，comp
 
 证据为固定1.13c D2Client RVA51C9C–51CC2读取SearchEnemyNear并调用51650，5170E–517D0准备TargetCorpse查询与半径9，517EB–51846以初值10严格比较最近距离；D2Common ordinal10591／10052／10080分别对应RVA12030／12720／7F5E0，默认候选测试位于124E0；D2MOO的SkillsTbls、UNITFINDS_TestUnit、UNITFINDS_FindAllMatchingUnitsInNeighboredRooms及UNITROOM_AddUnitToRoomEx提供字段／遍历依据。当前PD2 CN ProjectDiablo.dll（MD5 `828ae42e54913ee016a751c8dcd4d48e`）补丁记录RVA49FBDC将D2Client RVA517EF的初值改为7，保留半径9；51CBA调用由3A1150→2EF990包装，排除157／159／166后回调原51650，死灵尸体技能继续走原搜索。客户端仅对匹配`pd2-cn-normal-20261020`配置采用严格小于7的门槛，不把PD2范围带入原版。
 
-尸体鼠标命中按原DT／DD组件帧边界各外扩12像素，并按原整数算法补足32像素范围；悬停检查左右两个已选技能，实际施法仍使用当前手。名称使用原Font16红色字形，在可见世界视口顶部基线32居中，追加当前语言TBL的corpse后缀（非英文加括号），不显示生命条或词缀。依据固定1.13c D2Client.dll（MD5 `f5860c629d309b8fc1f96174babcf633`）SelectProc表RVADE838、A6070／A6250、A6730／A6C90及C0850–C0B66；请求距离保留PlrMsg::sub_6FC83C60的每轴50 subtile边界，不把鼠标像素范围当成游戏作用半径。该选择／起手修正尚未构建或实服验证，PD2实际召唤数量与范围仍由远端权威裁定。
+尸体鼠标命中按原DT／DD组件帧边界各外扩12像素，并按原整数算法补足32像素范围；悬停检查左右两个已选技能，实际施法仍使用当前手。名称使用原Font16红色字形，在可见世界视口顶部基线32居中，追加当前语言TBL的corpse后缀（非英文加括号），不显示生命条或词缀。依据固定1.13c D2Client.dll（MD5 `f5860c629d309b8fc1f96174babcf633`）SelectProc表RVADE838、A6070／A6250、A6730／A6C90及C0850–C0B66；请求距离保留PlrMsg::sub_6FC83C60的每轴50 subtile边界，不把鼠标像素范围当成游戏作用半径。本地原生PD2服务已用真实击杀尸体核对战士／法师／弓箭手、重生和尸爆，实际召唤数量与范围仍由远端权威裁定；Desecrate隐藏且带udead的尸体不据此放宽资格。
 
 公共curseStateDuration现供死灵、亚马逊状态和祭坛使用：先算nativePercentage(期限,抗性,100)，再从原期限中减去；仅当前States.curse启用抗性拒绝，负抗性不钳零，零期限不强行变成一帧。怪物抗性从当前原始属性来源查询，缺原始来源的旧生产端保留显式适配。AI难度除法仍在原调用端先执行。依据D2MOO Skills::sub_6FD10EC0，完整原事件排序仍未闭合。
 

@@ -43,6 +43,10 @@ void loadEquipmentDefinitions(std::vector<ItemDefinition> &items, const DataTabl
             }
         equipment.shoots = types.value(row, "Shoots");
         equipment.quiver = types.value(row, "Quiver");
+        // ITEMS_CheckRequirements reads the primary ItemTypes row.
+        // PD2's general knives also inherit Assassin Mastery for skills;
+        // that ancestry must not make the item Assassin-only.
+        equipment.requiredClass = types.value(row, "Class");
         item.autoStack = types.number(row, "AutoStack").value_or(0) != 0;
         equipment.throwable = types.number(row, "Throwable").value_or(0) != 0;
         equipment.repairable = types.number(row, "Repair").value_or(0) != 0;
@@ -54,12 +58,6 @@ void loadEquipmentDefinitions(std::vector<ItemDefinition> &items, const DataTabl
             if (type == rows.end() || !visiting.emplace(code).second)
                 throw std::runtime_error("Invalid ItemTypes inheritance: " + std::string(code));
             equipment.types.emplace_back(code);
-            auto character = types.value(type->second, "Class");
-            if (!character.empty()) {
-                if (!equipment.requiredClass.empty() && equipment.requiredClass != character)
-                    throw std::runtime_error("Conflicting equipment class: " + item.code);
-                equipment.requiredClass = character;
-            }
             inherit(types.value(type->second, "Equiv1"));
             inherit(types.value(type->second, "Equiv2"));
             visiting.erase(std::string(code));

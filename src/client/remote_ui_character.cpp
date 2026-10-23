@@ -362,9 +362,9 @@ void RemoteUiClients::Impl::projectCharacter() {
             if (const auto level=stat("level"))
                 for (const auto *name:{"joustreduction","joustreduction_leorics","joustreduction_zeraes",
                     "gustreduction","blood_warp_life_reduction","extra_cold_arrows","extra_skele_war",
-                    "extra_skele_mage","grims_extra_skele_mage","extra_skele_archer","extra_bonespears",
+                    "extra_skele_mage","grims_extra_skele_mage","extra_skele_archer","extra_bonespears","extra_holybolts",
                     "extra_revives","corpseexplosionradius","es_efficiency","eaglehorn_raven","passive_mag_mastery",
-                    "max_curses"})
+                    "max_curses","pvp_disable","item_leap_speed","velocitypercent"})
                     if (const auto value=knownSelfStat(name,int(*level))) input.stats.insert_or_assign(name,double(*value));
         const auto knownMastery=[&](std::string_view name)->std::optional<int> {
             const auto found=input.stats.find(name);
@@ -405,6 +405,7 @@ void RemoteUiClients::Impl::projectCharacter() {
         if(input.combatEquipment && stat("vitality") && stat("energy") && stat("maxhp") && stat("maxmana") && stat("maxstamina"))
             for(const auto *name:{"statpts","newskills","experience"}) input.stats.try_emplace(name,0);
         characterView = projectCharacterDisplay(data, input);
+        skillFormulaStats=std::move(input.stats);
         characterView.selectedSkillOwners[weaponSet*2]=w.leftSkill?w.leftSkill->owner:UINT32_MAX;
         characterView.selectedSkillOwners[weaponSet*2+1]=w.rightSkill?w.rightSkill->owner:UINT32_MAX;
     }

@@ -388,13 +388,12 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
         m.castRevision = localCast->revision;
         m.position = displayed; m.correction = {}; m.correctionLeft = 0;
         m.route.clear(); m.goal.reset(); m.pathMoving = false;
-    } else if (u.key.type == 1 && onlineMonsterCorpse(u) && m.actionRevision != u.actionRevision &&
+    } else if (u.key.type == 1 && !walking(u) && m.actionRevision != u.actionRevision &&
                m.positionRevision == u.positionRevision) {
-        // DEATH's target-only action stops the path without supplying a
-        // current position. Retain continuous feet until DEAD (0x69/9) or
-        // another native position sample arrives, rather than rolling back
-        // to the last walking sample. Fresh corpse coordinates still use
-        // the normal position correction below.
+        // Target-only monster actions (including 4C/4D skills and DEATH)
+        // stop the path without supplying a current position. Keep the
+        // continuous feet instead of returning to the last native sample.
+        // Fresh position samples, including DEAD, still reconcile below.
         m.position = m.position + m.correction;
         m.correction = {}; m.correctionLeft = 0; m.pathMoving = false;
     } else if ((m.positionRevision != u.positionRevision && *m.last != *u.position &&
@@ -436,6 +435,11 @@ Vec RemoteScene::Impl::displayPosition(const OnlineUnit &u, const Map &map, Onli
     // Keep the old native walking destination from restarting motion after
     // the owner starts a cast (the server normally omits its skill packet).
     if (m.castHandoff) activeRequest = false;
+    if(pd2 && (displayPd2PlayerLeap(u,m,map,origin) || displayPd2PlayerCharge(u,m,map,origin))) {
+        m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;
+        m.requestRevision=request?request->revision:0;
+        return m.position+m.correction;
+    }
     if(displayScriptedSequence(u,m,map,origin,rule)) {
         m.pathMoving=m.scriptedSequence && m.scriptedSequence->moving;
         m.actionRevision=u.actionRevision;m.last=u.position;m.positionRevision=u.positionRevision;m.discontinuity=u.positionDiscontinuity;

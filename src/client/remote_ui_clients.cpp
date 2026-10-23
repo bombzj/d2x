@@ -171,6 +171,8 @@ void RemoteUiClients::update(const OnlineSceneView &s, std::optional<Vec> positi
 std::optional<UnitLightAttributes> RemoteUiClients::light(OnlineUnitKey key) const { return impl_->light(key); }
 std::optional<MovementTiming> RemoteUiClients::movement(OnlineUnitKey key,bool running) const { return impl_->movement(key,running); }
 const ClassicData &RemoteUiClients::content()const{return impl_->data;}
+const std::map<std::string,double,std::less<>> &RemoteUiClients::skillFormulaStats() const {return impl_->skillFormulaStats;}
+std::optional<KnownAttackTiming> RemoteUiClients::attackTiming() const {return impl_->characterView.attackTiming;}
 IActorClient &RemoteUiClients::actor(){return impl_->actor;}
 IInventoryClient &RemoteUiClients::inventory(){return impl_->inventory;}
 ICharacterClient &RemoteUiClients::character(){return impl_->character;}

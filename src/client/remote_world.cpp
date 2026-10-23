@@ -43,6 +43,8 @@ void combatEvent(OnlineWorldView &w, OnlineCombatEvent event) {
         if (event.source.type > 1) return;
         auto &actor = unit(w, event.source);
         actor.actionSkill = event.skill; actor.actionSkillLevel = event.level;
+        if (actor.key.type == 1 && event.skill && event.level)
+            actor.skills.insert_or_assign(*event.skill, *event.level);
         actor.actionRevision = w.revision; actor.actionReceivedMilliseconds = receivedMilliseconds();
         actor.destination = event.point; actor.destinationUnit = event.target;
         actor.direction.reset(); actor.nativeMode = false;
@@ -376,10 +378,16 @@ bool applyStoragePacketPd2(OnlineView &v, const Packet &p, const OnlineStashLayo
     auto &w = v.world;
     if (p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19) {
         Reader external(p.body);
-        const auto action = external.u8(), length = external.u8(); external.u8();
+        const auto action = external.u8(), length = external.u8();
+        if (length != p.body.size() + 1)
+            throw ProtocolError("Invalid PD2 external inventory length");
+        if (action != 0x19 && action != 0x1A) {
+            // A framed extension with an unknown action must not be decoded
+            // as a normal item or interrupt unrelated gameplay.
+            ++w.ignoredPackets; ++v.gameProtocol.unconsumed[p.id]; return true;
+        }
+        external.u8();
         const auto id = external.u32();
-        if (length != p.body.size() + 1 || (action != 0x19 && action != 0x1A))
-            throw ProtocolError("Unsupported PD2 external inventory action");
         auto &storage = w.extendedStorage;
         if (action == 0x19) {
             const auto payload = external.take(external.remaining());
@@ -479,7 +487,8 @@ bool applyStoragePacketPd2(OnlineView &v, const Packet &p, const OnlineStashLayo
     return true;
 }
 } // namespace
-void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile, const OnlineStashLayout &layout) {
+void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile, const OnlineStashLayout &layout,
+                        std::optional<uint16_t> playerDefaultSkill) {
     auto &w = v.world;
     const auto previousItems = w.itemRevision;
     ++v.revision;
@@ -517,6 +526,42 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         ++w.ignoredPackets;
         ++v.gameProtocol.unconsumed[p.id];
         break;
+    case 0x7D: {
+        const auto owner = key(r); const auto itemId = r.u32();
+        const auto flag = r.u32(), enabled = r.u32(); r.finish();
+        // InvMode -> SCmd::sub_6FC3EFC0; retail AE1F0 -> 84DF0.
+        // BROKEN toggles its bit; REPAIRED clears BROKEN rather than
+        // installing the transient server-side REPAIRED notification bit.
+        if (flag != 0x100 && flag != 0x200) {
+            ++w.ignoredPackets; ++v.gameProtocol.unconsumed[p.id]; break;
+        }
+        const auto actor = w.units.find(owner);
+        if (actor == w.units.end()) break;
+        const auto updatedFlags = [&](uint32_t flags) {
+            return flag == 0x100 && enabled ? flags | 0x100u : flags & ~0x100u;
+        };
+        bool changed = false;
+        const auto item = w.items.find(itemId);
+        const bool ownedItem = item != w.items.end() && item->second.ownerType == owner.type &&
+            item->second.owner == owner.id;
+        if (ownedItem) {
+            const auto flags = updatedFlags(item->second.flags);
+            changed = flags != item->second.flags;
+            item->second.flags = flags;
+        }
+        if (const auto equipment = w.equipment.find(itemId); equipment != w.equipment.end() &&
+            equipment->second.ownerType == owner.type && equipment->second.owner == owner.id) {
+            const auto flags = updatedFlags(equipment->second.flags);
+            changed |= flags != equipment->second.flags;
+            equipment->second.flags = flags;
+        }
+        if (changed) {
+            ++w.itemRevision;
+            if (ownedItem) item->second.revision = w.itemRevision;
+            ++actor->second.appearanceRevision;
+        }
+        break;
+    }
     case 0x04:
         r.finish();
         // Keep 04 in the ordered map stream. Its receipt does not imply that
@@ -823,6 +868,23 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         else w.itemTargetingSource = source;
         break;
     }
+    case 0x7C: {
+        const auto target = key(r); r.finish();
+        if (target.type > 5) throw ProtocolError("Invalid item spell completion unit type");
+        // Retail AD2A0 -> 81AA0 removes the named unit's uninterruptable
+        // stat list (state 54). ItemMode/SkillItem send this for both a
+        // completed scroll and a failed pSpell; it is not item consumption
+        // or an acknowledgement that a portal was created.
+        if (auto found = w.units.find(target); found != w.units.end()) {
+            OnlineStateMessage message;
+            message.kind = OnlineStateMessage::Kind::Disable;
+            message.state = 54;
+            stateMessage(found->second, std::move(message));
+        }
+        // Item stat lists have no unit-state projection here. Their quantity,
+        // removal and targeting cursor still follow 22/9C/9D/3F respectively.
+        break;
+    }
     case 0x28: case 0x29: {
         uint8_t kind = 6;
         uint32_t source=0;
@@ -845,6 +907,21 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         std::array<uint8_t,37> availability;
         for(auto &value:availability) value=r.u8();
         r.finish(); w.quests.availability=availability; w.quests.revision=w.revision;
+        break;
+    }
+    case 0x91: {
+        const auto act = r.u8();
+        std::array<uint16_t,12> introductions;
+        for (auto &npc : introductions) npc = r.u16();
+        r.finish();
+        // QUESTS_UpdateNPCIntros: NPC class IDs or FFFF, not quest rewards.
+        // Keep the report for the MPQ-backed dialogue consumer; the native
+        // client only sets listed intro flags and never clears absent slots.
+        if (act >= w.quests.npcIntroductionReports.size()) {
+            ++w.ignoredPackets; ++v.gameProtocol.unconsumed[p.id]; break;
+        }
+        w.quests.npcIntroductionReports[act] = introductions;
+        w.quests.revision = w.revision;
         break;
     }
     case 0x5F:
@@ -915,6 +992,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         const auto skill = r.u16(); const auto owner = r.u32(); r.finish();
         if (target.type == 0) {
             auto &entry = unit(w, target);
+            if (owner != UINT32_MAX && v.load.playerUnitId == target.id) {
+                // Native active-skill assignment leaves the old hand intact
+                // when no skill node matches its item owner. Fresh characters
+                // can receive zeroed saved-slot owners after a valid start skill.
+                // A real item GUID 0 remains eligible when actually assigned.
+                // Other players' private item sources are not observable here.
+                const auto source = w.items.find(owner);
+                if (source == w.items.end() || source->second.ownerType != 0 ||
+                    source->second.owner != target.id || source->second.mode != 1) break;
+            }
             (left ? entry.leftSkill : entry.rightSkill) = OnlineSkillSelection{skill, owner};
             if (v.load.playerUnitId == target.id)
                 (left ? w.leftSkill : w.rightSkill) = OnlineSkillSelection{skill, owner};
@@ -1174,6 +1261,17 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         u.classId = r.u8();
         if (*u.classId >= 7) throw ProtocolError("Invalid assigned player class");
         u.name = name(r);
+        // SKILLS_InitSkillList installs Attack in empty hand slots before
+        // the server's saved/equipment selections arrive. Identity is prepared
+        // from this client's MPQ; do not guess a class's starting spell.
+        if (playerDefaultSkill) {
+            if (!u.leftSkill) u.leftSkill = OnlineSkillSelection{*playerDefaultSkill, UINT32_MAX};
+            if (!u.rightSkill) u.rightSkill = OnlineSkillSelection{*playerDefaultSkill, UINT32_MAX};
+            if (v.load.playerUnitId == u.key.id) {
+                w.leftSkill = u.leftSkill;
+                w.rightSkill = u.rightSkill;
+            }
+        }
         u.assignmentRevision = w.revision;
         // SUNITMSG_FirstFn assigns an empty player inventory before sending
         // its equipped items. An empty equipment stream is a valid naked
@@ -1292,6 +1390,9 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             u.destinationUnit = key(r); u.destination.reset(); event.target = u.destinationUnit;
             event.direction = r.u8();
         }
+        // MonsterMsg supplies path facing only for DEATH/DEAD. Other
+        // actions leave this byte zero (GH's HP was consumed above).
+        if (u.wireAction != 8 && u.wireAction != 9) event.direction.reset();
         u.direction = event.direction;
         r.finish(); combatEvent(w, std::move(event));
         break;
@@ -1302,14 +1403,15 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         monsterAction(w, u, r.u8());
         OnlineCombatEvent event; event.packet = p.id; event.kind = OnlineCombatEvent::Kind::Action;
         event.source = u.key; event.action = u.wireAction;
+        // MonsterMsg leaves the direction byte zero for these targeted
+        // actions. Facing comes from the target, not that placeholder.
         if (p.id == 0x6B) {
-            u.destination = point(r); u.destinationUnit.reset(); event.direction = r.u8(); u.hitClass = r.u8();
+            u.destination = point(r); u.destinationUnit.reset(); r.u8(); u.hitClass = r.u8();
             event.point = u.destination; event.hitClass = u.hitClass;
         } else {
-            u.destinationUnit = key(r); u.destination.reset(); event.direction = r.u8(); event.target = u.destinationUnit;
+            u.destinationUnit = key(r); u.destination.reset(); r.u8(); event.target = u.destinationUnit;
         }
         position(v, u, point(r));
-        u.direction = event.direction;
         r.finish(); combatEvent(w, std::move(event));
         break;
     }
@@ -1458,7 +1560,10 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         break;
     }
     default:
-        if (pd2) throw ProtocolError("Unimplemented PD2 world packet: " + std::to_string(p.id));
+        // D2gsStream has already delimited this packet with the selected
+        // profile's verified length. Missing world/UI semantics must not
+        // disconnect a live game; keep diagnostics until a consumer exists.
+        // Unknown framing and malformed handled messages still fail earlier.
         ++w.ignoredPackets;
         ++v.gameProtocol.unconsumed[p.id];
         return;

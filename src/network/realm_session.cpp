@@ -313,6 +313,12 @@ void RealmSession::configure_stash(OnlineStashLayout layout) {
             if (slot < -1 || slot >= 196) throw ProtocolError("PD2 core counter mapping exceeds snapshot bounds");
     impl_->stashLayout = layout;
 }
+void RealmSession::configure_player_default_skill(uint16_t skill) {
+    std::lock_guard lock(impl_->mutex);
+    if (impl_->view.stage != OnlineStage::Idle)
+        throw ProtocolError("Player default skill must be prepared before connecting");
+    impl_->playerDefaultSkill = skill;
+}
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;

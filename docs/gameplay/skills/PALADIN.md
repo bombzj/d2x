@@ -2,6 +2,8 @@
 
 更新：2026-10-10。自研服务端接入当前MPQ的96–125共30项职业技能：10项战斗技能、20项光环。Single Player、LAN及独立PvPGN服务端使用同一内核；客户端提交原技能包，读取权威结果。本页维护当前实现、原版依据与明确缺口，入口齐备不代表全参数已对齐。
 
+PD2远端Holy Bolt的Calc1还读取extra_holybolts，客户端发射与描述共用本人已核实的装备／状态／被动属性投影，不能从缺少8位属性包推断为零。本地原生PD2服务已核对基础等级1的扣蓝与missile55、真实双手剑上的holysword状态、Sacrifice／Smite／Zeal／Vengeance击杀及Joust位移／伤害。Sacrifice共用原CltDo34血迹入口；本地原服已逐项观察20种光环的基础状态，双客户端组队核对Holy Light将队友生命150恢复至188；当前holylightdelay的CltHit66子体为FFFF，原程序直接返回成功，该无子体分支已接。有效子体的区域回调、额外弹数装备及完整治疗／伤害组合仍待覆盖。Charge虽有原服击杀事实，其替换CltDo112路径表现尚未恢复，不能据此认证位移显示。当前PD2范围见[技能目录](README.md#pd2远端技能范围)，版本与入口见[核心分析](../../resources/PD2_CN_DLL_ANALYSIS.md#角色技能树与客户端程序)。
+
 ## 逐项执行入口
 
 Zeal、Vengeance、Smite、Sacrifice、Charge及Conversion均接原生联系。Sacrifice反噬在目标Drain之前；Conversion成功直接转换／撤出联系，失败才Drain；Charge移除固定超时及手写命中延迟。Smite保留盾伤预填、HitFlags2及仅补成功位。逐程序依据、版本差异和限制见[内核对照](../../modules/SERVER_SYSTEMS.md#旧近战链与随机迁移)。

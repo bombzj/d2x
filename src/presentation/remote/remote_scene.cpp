@@ -48,9 +48,9 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
         for(const auto &[skill,row]:skillRows) if(skills.value(row,"aurastate")==states.value(stateRow,"state"))
             druidStateSkills.emplace(state,skill);
     for (const auto &[state,stateRow]:stateRows) {
-        if (states.number(stateRow,"setfunc")!=3) continue;
+        const bool pd2Blaze=states.number(stateRow,"setfunc")!=3 && states.value(stateRow,"state")=="blaze";
+        if (states.number(stateRow,"setfunc")!=3 && !pd2Blaze) continue;
         for (const auto &[skill,row]:skillRows) {
-            (void)skill;
             if (skills.number(row,"srvdofunc")!=23 ||
                 skills.value(row,"aurastate")!=states.value(stateRow,"state")) continue;
             const auto missile=missileNames.find(skills.value(row,"cltmissilea"));
@@ -58,8 +58,8 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
             // The state packet need not expose rank. Only accept the native
             // rank-independent client fire definition, never guess its TTL.
             const int id=missiles.number(missile->second,"Id").value_or(-1);
-            movementFireMissiles.emplace(uint8_t(state),
-                missiles.number(missile->second,"LevRange").value_or(0)==0 ? id : -1);
+            movementFireMissiles.emplace(state,MovementFire{skill,
+                missiles.number(missile->second,"LevRange").value_or(0)==0 ? id : -1,pd2Blaze});
         }
     }
     for (size_t row = 0; row < monstats.rows().size(); ++row)
@@ -128,7 +128,9 @@ RemoteScene::Impl::Impl(Archives &a, int palette, RemoteMapDisplayState &display
 
 bool RemoteScene::Impl::channelSkill(int id) const {
     const auto row = skillRows.find(id);
-    return row != skillRows.end() && ((skills.number(row->second,"cltdofunc")==24 && (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) ||
+    return row != skillRows.end() && (((skills.number(row->second,"cltdofunc")==24 ||
+        (pd2 && skills.number(row->second,"cltdofunc")==111)) &&
+        (skills.number(row->second,"seqnum")==6 || skills.number(row->second,"seqnum")==18)) ||
         (skills.number(row->second,"cltdofunc")==6 && skills.value(row->second,"charclass")=="ass"));
 }
 
@@ -137,6 +139,16 @@ std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,s
     if(const auto unit=world().units.find(owner);unit!=world().units.end()) {
         for(const auto &[id,rank]:unit->second.baseSkills) base.emplace(id,rank);
         for(const auto &[id,rank]:unit->second.skills) effective.emplace(id,rank);
+        // Retail A1CF0 installs a remote monster's announced skill rank,
+        // capped by Skills.maxlvl (17B0 defaults to 20). Excess is a bonus.
+        // Keep unrelated base ranks unknown; a cast only supplies this skill.
+        if(owner.type==1 && unit->second.skills.contains(skill) && !base.contains(skill)) {
+            const auto row=skillRows.find(skill);
+            if(row!=skillRows.end()) {
+                const int maximum=skills.number(row->second,"maxlvl").value_or(0);
+                base.emplace(skill,std::clamp(level,0,maximum>0?maximum:20));
+            }
+        }
     }
     effective.insert_or_assign(skill,level);
     if (!monsterText->nativeFormulas) {
@@ -149,6 +161,10 @@ std::optional<int32_t> RemoteScene::Impl::skillCalculation(int skill,int level,s
         const auto formula = source->second.formulas.find(field);
         if (formula == source->second.formulas.end()) return {};
         std::map<std::string,double,std::less<>> stats;
+        // Reuse the character projection's complete equipment/state/passive
+        // facts. High PD2 stat IDs do not arrive in byte-sized attribute packets.
+        if(pd2 && uiClients && owner.type==0 && playerId && owner.id==*playerId)
+            stats=uiClients->skillFormulaStats();
         bool baseComplete = false;
         if (const auto unit = world().units.find(owner); unit != world().units.end()) {
             baseComplete = unit->second.baseSkillsAssigned;

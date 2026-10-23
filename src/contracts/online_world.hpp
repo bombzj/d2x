@@ -37,6 +37,9 @@ struct OnlineSkillHotkey {
 struct OnlineQuestState {
     std::optional<std::array<uint16_t, 48>> playerFlags, gameFlags;
     std::optional<std::array<uint8_t,37>> availability; // Native 5E initialization-table order.
+    // Latest 0x91 report per zero-based act. FFFF is an absent entry,
+    // not a request to clear an already introduced NPC.
+    std::array<std::optional<std::array<uint16_t,12>>,5> npcIntroductionReports;
     std::array<std::optional<uint8_t>, 41> statuses;
     std::map<uint8_t, std::array<uint16_t, 3>> updates; // Quest number -> flags, status, progress (0x5D).
     std::optional<uint16_t> denRemaining, rescuedBarbsRemaining, staffTombOffset;
@@ -355,6 +358,7 @@ struct OnlineWorldView {
         quests.playerFlags.reset();
         quests.gameFlags.reset();
         quests.availability.reset();
+        quests.npcIntroductionReports = {};
         playerPortalFlags.reset();
         for (auto &status : quests.statuses) status.reset();
         quests.updates.clear();

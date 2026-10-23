@@ -226,12 +226,19 @@ void RealmSession::Impl::handle_game(Packet packet) {
     try {
         if (packet.id != 0x01 && packet.id != 0x02 && packet.id != 0x03 &&
             packet.id != 0x05 && packet.id != 0xAF)
-            apply_world_packet(view, packet, compatibility.profile, stashLayout);
+            apply_world_packet(view, packet, compatibility.profile, stashLayout, playerDefaultSkill);
     } catch (const ProtocolError &error) {
         fail(OnlineErrorKind::Protocol, error.what(), packet.id);
         return;
     }
     send_game_options_pd2();
+    if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x9C &&
+        !packet.body.empty() && packet.body[0] >= 0x19) {
+        // External/guild inventory actions were isolated by the world reducer.
+        // They have no normal item header or player-item transaction ACK.
+        changed();
+        return;
+    }
     if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x77 &&
         view.world.storage.kind == OnlineStorageKind::Stash && !pd2StashInitializationSent) {
         // Native stash draw RVA 0x10FFD sends 3A/1B once after entry 9D/23.

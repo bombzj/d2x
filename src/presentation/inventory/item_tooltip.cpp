@@ -69,7 +69,7 @@ void SceneView::drawItemText(std::vector<ItemTextLine> lines, ItemQuality qualit
         // Table entries such as chi "Sell" already end with a colon.
         auto caption = std::string(priceLabel);
         while (!caption.empty() && (caption.back() == ' ' || caption.back() == '\t')) caption.pop_back();
-        if (caption.empty() || (caption.back() != ':' && caption.back() != '：')) caption += ": ";
+        if (!caption.ends_with(':') && !caption.ends_with("：")) caption += ": ";
         lines.insert(lines.begin(), {std::move(caption) + (price ? std::to_string(*price) : "?"), ItemTextTone::Normal});
     }
     std::vector<std::string> text;
