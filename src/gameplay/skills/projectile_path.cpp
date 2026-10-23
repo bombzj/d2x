@@ -120,6 +120,25 @@ std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing
     }
     return result;
 }
+MissileFanLayout pd2MissileFanLayout(Vec origin, Vec target, int count) {
+    int deltaX = nativeSubtract(int(origin.x),int(target.x));
+    int deltaY = nativeSubtract(int(origin.y),int(target.y));
+    int squared = nativeAdd(nativeMultiply(deltaX,deltaX),nativeMultiply(deltaY,deltaY));
+    if (squared < 4) {
+        deltaX = nativeMultiply(deltaX,4);
+        deltaY = squared;
+        squared = nativeAdd(nativeMultiply(deltaX,deltaX),nativeMultiply(deltaY,deltaY));
+    }
+    int sideX = squared < 16 ? nativeMultiply(deltaY,2) : deltaY;
+    int sideY = nativeSubtract(0,squared < 16 ? nativeMultiply(deltaX,2) : deltaX);
+    while (nativeAdd(nativeMultiply(sideX,sideX),nativeMultiply(sideY,sideY)) > 3) {
+        sideX /= 2;
+        sideY /= 2;
+    }
+    return {{float(nativeSubtract(int(target.x),nativeMultiply(sideX,count)/2))+.5f,
+             float(nativeSubtract(int(target.y),nativeMultiply(sideY,count)/2))+.5f},
+            {float(sideX),float(sideY)}};
+}
 std::vector<Vec> chargedBoltPath(Vec origin,Vec target,int distance,uint64_t &seed) {
     int deltaX = int(target.x) - int(origin.x), deltaY = int(target.y) - int(origin.y);
     const int absX = std::abs(deltaX), absY = std::abs(deltaY);

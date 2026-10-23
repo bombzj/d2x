@@ -5,6 +5,7 @@
 #include "content/character/combat_display.hpp"
 #include <map>
 #include <optional>
+#include <set>
 
 namespace d2x {
 struct ClassicData;
@@ -29,6 +30,12 @@ struct CharacterProjectionInput {
     std::array<std::optional<SkillHandEquipment>, 2> handEquipment;
     struct ResourceStates { bool bloodMana = false, inferno = false; };
     std::optional<ResourceStates> resourceStates;
+    struct ShapeStates {
+        bool restricted = false;
+        bool disguised = false;
+        std::set<std::string, std::less<>> active;
+    };
+    std::optional<ShapeStates> shapeStates;
     std::optional<int> chargedSkill; // This recursion projects a native item owner, not a learned cast.
     std::optional<int> fireMastery, lightningMastery, coldDamagePercent;
     std::optional<unsigned> difficulty;

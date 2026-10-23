@@ -73,6 +73,8 @@ inline std::optional<OnlineCnStashNavigation> onlineCnStashCommand(uint32_t page
 // Prepared from the selected MPQ Inventory rows; networking never reads tables.
 struct OnlineStashLayout {
     unsigned columns{}, rows{}, cacheColumns{}, cacheRows{};
+    std::vector<uint32_t> materialKeys;
+    std::vector<int16_t> coreCounterSlotsLegacy, coreCounterSlotsCurrent;
     bool valid() const {
         return columns && columns <= 16 && rows && rows <= 16 && cacheColumns <= 255 && cacheRows <= 255 &&
             cacheColumns / columns > 1 && cacheRows / rows > 1;
@@ -176,6 +178,7 @@ struct OnlineItemCommand {
     bool sharedStash{}; // Stash navigation/metadata domain, never item ownership.
     std::optional<OnlineCnStashNavigation> stashNavigation;
     std::string materialCode; // CN material counters have no item GUID.
+    std::string materialItemCode;
     OnlineCnMaterialOperation materialOperation{};
     uint8_t equipVariant{}; // MPQ adapter selects normal / remove opposite / double swap.
     uint32_t oppositeItem{}; // Local precondition only; native server selects this hand.
@@ -238,6 +241,7 @@ struct OnlineItemRequest {
     std::map<uint32_t, uint64_t> cubeIngredients{};
     std::optional<uint32_t> beforeGold{}, beforeBankGold{};
     std::map<uint32_t, uint32_t> materialCounts{};
+    std::map<uint32_t, uint64_t> materialItems{};
 };
 struct OnlineStorageContext {
     OnlineStorageKind kind{}, requested{};
@@ -270,15 +274,16 @@ struct OnlineDecodedItem {
 };
 inline bool onlinePd2StackCompatible(const OnlineItem &sourceWire, const OnlineDecodedItem &source,
                                      const OnlineItem &targetWire, const OnlineDecodedItem &target) {
-    if (sourceWire.code != targetWire.code || source.quality < 1 || source.quality > 3 ||
+    if (!source.decoded || !target.decoded || source.id != sourceWire.id || target.id != targetWire.id ||
+        source.revision != sourceWire.revision || target.revision != targetWire.revision ||
+        sourceWire.code != targetWire.code || source.quality < 1 || source.quality > 3 ||
         source.quality != target.quality || source.fileIndex != target.fileIndex || source.sockets || target.sockets ||
         ((sourceWire.flags ^ targetWire.flags) & 0x400000u) || !source.quantity || !target.quantity ||
-        source.stats.size() != target.stats.size()) return false;
-    for (size_t i = 0; i < source.stats.size(); ++i) {
-        const auto &a = source.stats[i], &b = target.stats[i];
-        if (a.id != b.id || a.value != b.value || a.parameter != b.parameter) return false;
-    }
-    return true;
+        !*source.quantity || source.stats.size() != target.stats.size()) return false;
+    return std::is_permutation(source.stats.begin(), source.stats.end(), target.stats.begin(), target.stats.end(),
+        [](const OnlineItemStat &left, const OnlineItemStat &right) {
+            return left.id == right.id && left.parameter == right.parameter && left.value == right.value;
+        });
 }
 struct OnlineInventoryView {
     uint64_t revision{}, gameGeneration{};

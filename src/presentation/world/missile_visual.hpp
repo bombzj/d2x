@@ -24,6 +24,7 @@ struct ClientMissileInitialization {
     std::optional<std::array<int32_t,2>> parameters;
     std::optional<int> streamMissile,streamRange,streamPeriod;
     std::optional<int> totalFrames,hiddenUntilCurrentFrame;
+    std::optional<int> activationDelay;
     std::optional<int> impactCount; // Catapult calc4 fallback, prepared from the cast skill.
     std::optional<int32_t> velocityRaw; // Native flag0x10, before slow and 75% scaling.
     std::optional<bool> suppressLight; // Native creation flag0x4000; absent when pairing a plain 73.
@@ -73,6 +74,7 @@ struct ClientMissileVisual {
     std::optional<int> animationRate;
     bool suppressLight{};
     std::optional<int> hiddenUntilCurrentFrame;
+    std::optional<int> activateAtCurrentFrame;
     int elapsedFrames() const { return nativeSubtract(nativeTotalFrames,nativeCurrentFrames); }
     void setCurrentFrame(int frames) { nativeCurrentFrames=nativeMissileFrameCount(frames); }
     Vec turnTarget;

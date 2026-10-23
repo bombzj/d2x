@@ -218,7 +218,7 @@ bool RealmSession::Impl::choose_realm(std::string name) {
     Writer out;
     out.u32(clientToken);
     auto proof = realm_logon_hash(compatibility.profile, clientToken, serverToken, loginHash);
-    out.append(proof);
+    for (const auto byte : proof) out.u8(byte);
     erase_secret(proof);
     out.string(name, 64);
     send_sid(0x3E, std::move(out));

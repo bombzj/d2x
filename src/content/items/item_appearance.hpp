@@ -2,11 +2,15 @@
 #include "gameplay/items/definitions.hpp"
 #include "resources/data_table.hpp"
 #include <array>
+#include <string>
+#include <string_view>
 
 namespace d2x {
 struct ClassicData;
 class ItemCatalog;
 struct ItemInstance;
+std::string_view pd2ItemEditionText(int fileIndex);
+std::string pd2ItemInventoryArt(const ClassicData &, const ItemInstance &);
 // D2Common inventory palette group and Colors.txt row; {0,0} means no shift.
 std::array<int, 2> inventoryColorTransform(const ClassicData &, const ItemCatalog &, const ItemInstance &);
 // Ground flippy uses Transform/chrtransform, separately from InvTrans/invtransform.

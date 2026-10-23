@@ -3,6 +3,7 @@
 #include "gameplay/loot/special.hpp"
 #include "content/classic_data.hpp"
 #include <span>
+#include <optional>
 #include <string_view>
 
 namespace d2x {
@@ -22,5 +23,6 @@ std::vector<ResolvedItemStat> resolveOwnItemStats(const ClassicData &data,
 std::vector<std::string> describeItemStats(const ClassicData &data,
     const ItemInstance &item, int characterLevel, std::string_view characterClass = {});
 std::vector<std::string> describeItemStats(const ClassicData &data,
-    std::span<const ResolvedItemStat> stats, std::string_view characterClass = {});
+    std::span<const ResolvedItemStat> stats, std::string_view characterClass = {}, int itemFileIndex = -1,
+    std::optional<int> ownerMissingHp = {});
 } // namespace d2x

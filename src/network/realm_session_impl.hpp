@@ -157,17 +157,11 @@ struct RealmSession::Impl {
     uint32_t pd2AutomapDeadline{}, pd2AutomapCalls{};
     std::optional<uint32_t> pd2AutomapPlayer;
     std::optional<Endpoint> gameEndpoint;
-    // CN player-data snapshots copied by core handlers 0x38FAD0 / 0x38FB00.
-    std::array<Bytes, 2> pd2PlayerDataBlocks;
-    std::array<Bytes, 20> pd2PlayerUpdates;
-    // Core 0x83 updates the local timed-effect display, not unit health.
-    std::map<uint16_t, Bytes> pd2EffectTimers;
     std::map<uint32_t, uint16_t> pd2RosterCounters;
     std::optional<uint32_t> pd2PlayerControl;
     Clock::time_point stashPageDeadline{};
     OnlineStashLayout stashLayout;
     bool identifyTargetPending{};
-    std::optional<std::pair<uint8_t, uint32_t>> pd2MonstersRemaining;
     uint16_t gameJoinFlags{}; // Public MCP 04 reserved metadata; never a ticket.
     std::string listFilter;
 
@@ -211,7 +205,9 @@ struct RealmSession::Impl {
     void return_to_realm();
     void reset_area(bool preserveInitialPosition);
     void handle_game(Packet packet);
+    bool handle_player_state_pd2(const Packet &packet);
     bool handle_stash_pd2(const Packet &packet);
+    bool material_withdrawal_updated_pd2() const;
     void send_game_options_pd2();
     void send_game_heartbeat(Clock::time_point now);
     void service_game_heartbeat_pd2(Clock::time_point now);

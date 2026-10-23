@@ -44,6 +44,8 @@ Vec missileDiagonalTurn(Vec target);
 // Native Fire Wall places makers perpendicular to the integer caster/aim ray.
 Vec missileWallDirection(Vec caster, Vec target);
 std::vector<Vec> missileFanTargets(Vec origin, Vec target, int count, Vec facing);
+struct MissileFanLayout { Vec first, step; };
+MissileFanLayout pd2MissileFanLayout(Vec origin, Vec target, int count);
 // Native GUID order: next larger eligible GUID, then wrap to the smallest.
 uint64_t missileChainSuccessor(uint64_t hit, std::span<const uint64_t> eligible);
 // Blizzard uses independent client/server random streams but the same seeded

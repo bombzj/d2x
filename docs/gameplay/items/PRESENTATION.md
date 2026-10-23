@@ -70,6 +70,24 @@ PD2提示只描述已解码的名称、数量、耐久及已支持的原表属�
 
 物品提示尚缺原版截图作完整像素对照。神圣之盾等临时技能对盾面板的额外数值、全部双持／变身动画选择、随机套装奖励和特殊任务／耳朵说明仍待核对。
 
+### PD2属性差异的接入边界
+
+物品交互及属性描述中的MonStats身份已按版本区分：固定PD2使用编译记录顺序匹配服务器classId和descfunc23的怪物参数，原版保留既有hcIdx匹配。入口为RemoteInventory的NPC服务身份查询和describeItemStats的怪物类型文案；沿用[TXT／BIN身份依据](../../resources/PD2_CN_DLL_ANALYSIS.md#地图准备中的txt与bin语义)，不因TXT hcIdx缺号误选商店／任务NPC或词缀名称。仅静态核对，未运行验证。
+
+当前目标表的腐化（corrupted）、亵渎（desecrated）用descfunc3，deep_wounds用1，地图词缀大量使用6–9；这些编号已有公共描述路径，不能仅因属性新增就推断需要新算法。item_shiny_appearance的descfunc30文案已接：以真实物品记录索引查核心23项配置，读取当前TBL的StrAnniversaryEdition／StrSpecialEdition，按原属性优先级排序；无配置不输出猜测文本。两版索引逐项相同，证据见[特殊文本选择](../../resources/pd2-core/ITEM_FUNCTION_REVIEW.md#2ecfa0特殊文本选择)。22种静态特殊版库存原图已接：已鉴定暗金且服务器属性270／参数0为正时，在普通暗金图标之后选择核心配置的原图；文案与图名共用item_appearance中的配置，当前pd2assets.mpq包含全部22张DC6。未匹配、未鉴定及原版不覆盖；地面动画保持原路径。Ormus动态选择及特殊调色见下文，实际画面对照仍未完成；BH腐化星号受范围显示设置／Ctrl限制，不作为默认核心属性标签移植。
+
+已接lifedrain_percentcap（当前表ID488）的显示变换：普通属性计算值先取`100 - value`，再按目标ItemStatCost的descfunc7、descval2和原TBL文案生成提示；不改网络值、StatList或战斗计算。依据为旧核心SHA-256 `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`的D2Client调用位移54B3B／54E65→39E760→2ED0C0，及更新核心SHA-256 `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`的2EED70：均比较ID0x1E8后用100减原计算返回值。实现限定remote-display-txt-v1及目标属性名称，原版路径不变；尚未构建或实物截图核对。
+
+Phasing SelfAura的专用物品提示已接：固定核心要求属性191、技能参数605且值为1，使用当前TBL的`StrPhasingStatDesc`，而不是普通等级灵气格式；其他技能／等级和原版保留公共路径，缺专用字符串时保留普通描述。依据为旧核心39E720→2ECFA0及更新核心2EEC50，均比较BF／25D／1；更新版字符串RVA449DE0为该文本键。605是目标核心特判的技能身份，不用本地化技能名称匹配；不改变灵气执行或物品属性。只完成静态核对，未构建或运行验证。
+
+Ormus动态库存原图已接：魔法属性列表的首条107单技能按参数排序确定，从当前Skills读取EType，闪电／冰冷分别选择invormus_l_se／invormus_c_se，其余有效技能选择invormus_f_se；缺单技能、参数0或无效表记录保留普通图。三张DC6均在当前pd2assets.mpq。原生列表来源及两版分支见上述逐函数证据，实际画面对照仍未完成。
+
+特殊调色已接：命中特殊版时库存保留原图色，不叠普通暗金染色；地面按核心配置，Ormus按火／雷／冰使用颜色8／13／5。核心库存颜色FFFFFFFF低五位为31，但原D2CMP对>=21返回空调色指针，不能当作DAT第31行。染料属性transform_dye（477）在未命中特殊版时覆盖普通染色，正值1–21对应颜色0–20，其他正值取0；组来自当前基础表，原版保持不变。原生定位及资源边界见[调色证据](../../resources/pd2-core/ITEM_FUNCTION_REVIEW.md#2f9580特殊版与染料调色)，实际画面对照仍未完成。
+
+ID489显示已接可选主人上下文：只在明确归属且收到主人属性184时，按原32位乘法回绕和有符号上限40计算，不从生命值猜missing_hp；未知事实保留原值，地面／下落物品不借残留owner。它不修改属性或战斗效果。主人属性同步覆盖及腐化装饰仍待核对，不能据此宣称全部PD2物品完成。外观和动态属性修改已编译核对，未做游戏内验证。
+
+充能恢复item_replenish_charges（422）在当前表为descfunc3／descval0，已有通用路径直接输出ModStrRepCharge1。当前英文patchstring.tbl记录2156为完整文本“Replenish 1 Charge in 3 Seconds”，不含格式占位符；记录2157的ModStrRepCharge2为“Charges per 100 seconds (do math)”，不是该程序必须追加的后缀。不另造按数值计算的恢复提示，也不修改服务器恢复计时；其他语言的实际文字和显示仍待对照。此前将此项列为必需专用格式缺口的判断已撤回。
+
 ## 限制
 
 - 原特殊名称、全部说明函数、染色／逐组件透明、孔位叠层及组合提示尚有缺口；库存无形图标的PL2变换仍待原版逐像素对照。

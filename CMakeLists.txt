@@ -73,6 +73,7 @@ add_library(d2x_items
 target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 
 add_library(d2x_content
+  src/content/pd2_core_counters.cpp
   src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp
   src/content/monsters/monster_catalog.cpp src/content/skills/description_formula.cpp
   src/content/skills/description_data.cpp src/content/skills/formula_data.cpp

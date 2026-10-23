@@ -171,6 +171,24 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
         // point-allocation eligibility. AURA exits before equipment/mana checks.
         skill.pickerTooltipUnavailable = !entry.inGame || !skill.available || entry.passive || view.dead;
         if (!entry.aura) {
+            if (data.skills.descriptions && input.shapeStates) {
+                const auto source = data.skills.descriptions->skills.find(id);
+                if (source != data.skills.descriptions->skills.end()) {
+                    const auto restriction = source->second.number("restrict");
+                    if (restriction == 0 && input.shapeStates->restricted)
+                        skill.pickerTooltipUnavailable = true;
+                    else if (restriction == 2) {
+                        bool allowed = false;
+                        if (input.shapeStates->restricted)
+                            for (const auto field : {"state1", "state2", "state3"}) {
+                                const auto state = source->second.reference(field);
+                                if (state.empty()) break;
+                                if (input.shapeStates->active.contains(state)) { allowed = true; break; }
+                            }
+                        if (!allowed) skill.pickerTooltipUnavailable = true;
+                    }
+                }
+            }
             if (!skill.pickerEnabled) skill.pickerTooltipUnavailable = true;
             if (const auto ready = skillEquipmentReady(entry, input.handEquipment); ready && !*ready)
                 skill.pickerTooltipUnavailable = true;
@@ -185,10 +203,8 @@ CharacterView projectCharacterDisplay(const ClassicData &data, const CharacterPr
                     const auto resource = input.resourceStates->bloodMana ?
                         (input.life ? std::optional<double>{*input.life} : stat(input, "hitpoints")) :
                         (eligibilityInput.mana ? std::optional<double>{*eligibilityInput.mana} : std::nullopt);
-                    // Native use-state checks the raw cost without MinMana;
-                    // item-owned charges bypass it. SrvDo116's transformed
-                    // exception needs a shape snapshot not projected here.
-                    if (input.chargedSkill != id && entry.serverDoFunction != 116)
+                    if (input.chargedSkill != id && (entry.serverDoFunction != 116 || input.resourceStates->bloodMana ||
+                        (input.shapeStates && !input.shapeStates->disguised)))
                         if (const auto required = values.mana(false); required && resource && *resource * 256 < *required)
                             skill.pickerTooltipUnavailable = true;
                     if (!input.resourceStates->inferno && eligibilityInput.mana && *eligibilityInput.mana < entry.startMana)

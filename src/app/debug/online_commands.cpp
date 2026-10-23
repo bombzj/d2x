@@ -145,6 +145,48 @@ Json snapshot(const OnlineView &v, const OnlineSceneView &scene, const OnlineInv
         {"bhReportsSent", reports.bhReportsSent}, {"lastTick", optional(reports.lastTick)},
         {"lastEcho", optional(reports.lastEcho)}, {"roundTripMilliseconds", optional(reports.roundTripMilliseconds)},
         {"lastPosition", reports.lastPosition ? Json{{"x", reports.lastPosition->x}, {"y", reports.lastPosition->y}} : Json(nullptr)}};
+    const auto &pd2 = v.pd2State;
+    auto &extensions = result["pd2State"];
+    extensions = {{"revision", pd2.revision}, {"mapInfoIndex", optional(pd2.mapInfoIndex)},
+        {"appearancePermissions", optional(pd2.appearancePermissions)}, {"lootAllocation", optional(pd2.lootAllocation)},
+        {"defaultPlayerValue", optional(pd2.defaultPlayerValue)}, {"playerValues", Json::array()},
+        {"hotkeys", Json::array()}, {"effectReports", Json::array()},
+        {"monstersRemaining", pd2.monstersRemaining ? Json{{"active", pd2.monstersRemaining->first},
+            {"count", pd2.monstersRemaining->second}} : Json(nullptr)}};
+    extensions["mapAttributes"] = nullptr;
+    if (const auto &report = pd2.mapAttributes; report) {
+        auto &output = extensions["mapAttributes"];
+        output = {{"headerFirst", report->headerFirst}, {"headerSecond", report->headerSecond},
+            {"area", report->area}, {"quality", report->quality}, {"itemIndex", report->itemIndex},
+            {"attributes", Json::array()}};
+        for (const auto &attribute : report->attributes)
+            output["attributes"].push_back({{"stat", attribute.stat}, {"parameter", attribute.parameter},
+                {"value", attribute.value}});
+    }
+    extensions["coreMaterials"] = {{"snapshotKnown", pd2.materialSnapshot.has_value()},
+        {"snapshotCounts", optional(pd2.materialSnapshot)}, {"snapshots", pd2.materialSnapshots},
+        {"updates", pd2.materialUpdates}, {"mappingAvailable", pd2.materialMappingAvailable},
+        {"knownSlots", Json::array()}, {"unmappedUpdates", Json::array()}};
+    for (uint16_t slot = 0; slot < 196; ++slot)
+        if (const auto count = pd2.materialCount(slot))
+            extensions["coreMaterials"]["knownSlots"].push_back({{"slot", slot}, {"count", *count}});
+    for (const auto &[type, count] : pd2.unmappedMaterialUpdates)
+        extensions["coreMaterials"]["unmappedUpdates"].push_back({{"type", type}, {"count", count}});
+    extensions["discovery"] = {{"snapshotKnown", pd2.discoverySnapshotKnown}, {"snapshots", pd2.discoverySnapshots},
+        {"updates", pd2.discoveryUpdates}, {"uniqueIndices", Json::array()}, {"setIndices", Json::array()}};
+    for (uint16_t index = 0; index < 2048; ++index)
+        if (pd2.discovered(7, index).value_or(false)) extensions["discovery"]["uniqueIndices"].push_back(index);
+    for (uint16_t index = 0; index < 1024; ++index)
+        if (pd2.discovered(5, index).value_or(false)) extensions["discovery"]["setIndices"].push_back(index);
+    for (const auto &[index, value] : pd2.playerValues)
+        extensions["playerValues"].push_back({{"index", index}, {"value", value}});
+    for (size_t slot = 0; slot < pd2.hotkeys.size(); ++slot)
+        if (const auto &binding = pd2.hotkeys[slot]; binding)
+            extensions["hotkeys"].push_back({{"slot", slot}, {"skill", binding->skill},
+                {"auxiliary", binding->auxiliary}, {"itemOwner", binding->itemOwner}});
+    for (const auto &[id, effect] : pd2.effectTimers)
+        extensions["effectReports"].push_back({{"id", id}, {"parameters", effect.parameters},
+            {"flags", effect.flags}, {"value", effect.value}});
     for (const auto &notice : v.gameServerNotices.recent)
         result["gameServerNotices"]["recent"].push_back({{"sequence", notice.sequence},
             {"elapsedMilliseconds", notice.receivedMilliseconds}, {"type", notice.type}, {"language", notice.language},

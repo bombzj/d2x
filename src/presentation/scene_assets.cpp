@@ -432,7 +432,10 @@ void SceneAssets::loadInventoryArt(const InventoryView &inventory, int palette) 
                 if (bytes.size() < 21 * 256) throw std::runtime_error("Original item palette transform is truncated");
                 found = itemTransforms_.emplace(transform[0], std::move(bytes)).first;
             }
-            shift = found->second.data() + transform[1] * 256;
+            const size_t offset = size_t(transform[1]) * 256;
+            if (found->second.size() < offset + 256)
+                throw std::runtime_error("Selected item palette transform is truncated");
+            shift = found->second.data() + offset;
         }
         GpuAnimation image;
         image.directions = source->directions;

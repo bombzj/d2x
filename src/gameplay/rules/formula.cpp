@@ -31,7 +31,8 @@ class Parser {
     size_t position_{};
     unsigned depth_{};
     void whitespace() {
-        while (position_ < source_.size() && std::isspace(static_cast<unsigned char>(source_[position_]))) ++position_;
+        while (position_ < source_.size() &&
+               (std::isspace(static_cast<unsigned char>(source_[position_])) || source_[position_] == '"')) ++position_;
     }
     bool consume(std::string_view token) {
         whitespace();

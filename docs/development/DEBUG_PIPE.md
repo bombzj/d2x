@@ -38,6 +38,10 @@ Single Player的online-status仍只读原协议OnlineView；server-status单独�
 
 旧版`s2c.jsonl`只有S2C，不能补取过去的请求字段。问题出现后保持原局，读取`online-items`／`online-status`的最近请求及副本、`server-snapshot`的真实库存／Cursor和命令状态，另看`server-protocol`拒绝计数；与原消息顺序一起保存。最近物品请求另含x／y／page／body／equipVariant，避免混淆原InvPage与S2C的page=InvPage+1。默认Play不开启文件记录；超时只表示缺少关联确认，不能仅凭物品暂时不显示认定服务端已删除。
 
+`online-status.online.pd2State`返回CN扩展副本：`discovery`含全量是否已知、收包计数和已发现暗金／套装索引；全量未知时未列出项不代表未发现。`coreMaterials.mappingAvailable`表示已核验核心版本且已准备索引映射；`knownSlots`列出已知槽及计数，增量先于全量时不补造其余零值；`snapshotCounts`为全量及后续增量合并结果，`unmappedUpdates`仅在版本／准备缺失时保留原类型报告。它不等于CN共享材料计数，也不授予存取能力。`effectReports`是83原字段与本人A9移除后的报告，不是已还原计时器；`hotkeys`只保存16槽服务器绑定。另有84编号／默认值、地图索引、外观资格、分配与剩余怪物。换区保留、退局清空，无新增写入命令或认证材料。
+
+`pd2State.mapAttributes`为最近一次55地图属性广播，含两个未命名头字段、区域、品质、物品记录索引及最多24条`stat/parameter/value`；未收到时为null。它不是地图布局、种子或本人的使用回执，不能用其判断地图已打开。原属性合并与文字展示仍待接入。
+
 ## 嵌入宿主管理命令
 
 `server-snapshot.animationTiming`只读返回当前武器类下的基础动作帧数、起始帧、8.8速度、结束及事件tick，另有`recoveryUntil`／`lastBlockTick`用于观察玩家恢复锁。普通动作与序列的结束帧算法不同，字段不替代特殊序列调度；规则见[动画帧时钟与恢复](../gameplay/skills/COMMON.md#动画帧时钟与恢复)。

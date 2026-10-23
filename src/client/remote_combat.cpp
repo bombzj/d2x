@@ -63,7 +63,10 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
     for (const auto &[id, row] : skills_) {
         const bool innate = std::any_of(innateSkills_.begin(), innateSkills_.end(),
             [&](const auto &entry) { return entry.second.contains(id); });
-        if (remoteOnly && tables_.at("skills").value(row, "charclass").empty() && !innate) continue;
+        const auto &skills = tables_.at("skills");
+        const bool itemSkill = skills.number(row, "srvdofunc") == 113 && skills.number(row, "scroll") == 1 &&
+            skills.number(row, "InGame") == 1;
+        if (remoteOnly && skills.value(row, "charclass").empty() && !innate && !itemSkill) continue;
         skillMetadata_.emplace(id, loadSkillEligibilityMetadata(tables_.at("skills"), row, &tables_.at("skilldesc")));
     }
 }
@@ -488,7 +491,9 @@ void RemoteCombat::update() {
         const bool classSkill = !classCode().empty() && metadata.classCode == classCode();
         const bool innate = innateSkill(id);
         const auto level = world.playerSkills.find(id);
-        if (!classSkill && !innate && (level == world.playerSkills.end() || !level->second)) continue;
+        const auto quantity = world.itemSkillQuantities.find(id);
+        const bool itemAvailable = metadata.itemSkill && quantity != world.itemSkillQuantities.end() && quantity->second;
+        if (!classSkill && !innate && !itemAvailable && (level == world.playerSkills.end() || !level->second)) continue;
         OnlineCombatSkillView entry; entry.id = id; entry.name = std::string(skills.value(row, "skill"));
         if (const auto it = world.playerBaseSkills.find(id); it != world.playerBaseSkills.end()) entry.base = it->second;
         if (const auto it = world.playerBonusSkills.find(id); it != world.playerBonusSkills.end()) entry.bonus = it->second;

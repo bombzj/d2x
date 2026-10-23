@@ -8,6 +8,7 @@ namespace d2x::net::protocol {
 // A fixed source build's dialect. The application must bind and verify its
 // resource/authentication files before exposing it as a playable profile.
 enum class ClientProfile { Lod113c, Pd2CnNormal20261020 };
+enum class Pd2CoreBuild { Normal20261020, Normal20261021 };
 enum class AccountPasswordCase { Preserve, LowerAscii };
 enum class RealmPasswordSource { AccountLogonProof, FixedRealmPassword };
 struct ClientCompatibility {

@@ -2,11 +2,14 @@
 #include "core/bytes.hpp"
 #include "contracts/online_social.hpp"
 #include "contracts/online_world.hpp"
+#include "contracts/online_pd2_state.hpp"
 #include <cstdint>
 #include <array>
 #include <deque>
+#include <map>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace d2x {
@@ -119,6 +122,7 @@ struct OnlineView {
     OnlineProtocolCounters sidProtocol, mcpProtocol, gameProtocol;
     OnlineGameHeartbeat gameHeartbeat;
     OnlinePd2Reports pd2Reports;
+    OnlinePd2State pd2State;
     OnlineGameServerNotices gameServerNotices;
 
     uint64_t revision{}, connectionGeneration{}, gameGeneration{};
@@ -145,6 +149,7 @@ struct OnlineView {
         gameProtocol = {};
         gameHeartbeat = {};
         pd2Reports = {};
+        pd2State = {};
         gameServerNotices = {};
         revision = connectionGeneration = gameGeneration = 0;
         stage = OnlineStage::Idle;

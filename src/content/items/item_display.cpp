@@ -272,7 +272,7 @@ ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog 
             auto stats = resolveItemStats(content, item, context.level);
             const auto activeSetStats = activeSetItemStats(content, item, context);
             stats.insert(stats.end(),activeSetStats.begin(),activeSetStats.end());
-            for (auto &text : describeItemStats(content, stats, context.characterClass))
+            for (auto &text : describeItemStats(content, stats, context.characterClass, item.specialRow, context.ownerMissingHp))
                 line(std::move(text), ItemTextTone::Property);
         }
         if ((item.nativeFlags & 0x400000u) || item.sockets) {

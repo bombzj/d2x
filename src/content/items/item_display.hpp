@@ -2,6 +2,7 @@
 #include "gameplay/items/display.hpp"
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string_view>
 
@@ -20,6 +21,7 @@ struct ItemDisplayContext {
     std::span<const int32_t> equippedSetRows;
     bool equipmentKnown = false;
     bool itemEquipped = false;
+    std::optional<int> ownerMissingHp;
 };
 std::string displayItemName(const ClassicData &content, const ItemCatalog &catalog, const ItemInstance &item);
 ItemDisplay describeInventoryItem(const ClassicData &content, const ItemCatalog &catalog,

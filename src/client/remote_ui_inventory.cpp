@@ -295,14 +295,17 @@ InventoryError RemoteUiClients::Impl::Inventory::preview(const InventoryIntent &
                         const auto sourceData = items.find(guid(source->id));
                         if (sourceWire == world.items.end() || sourceData == items.end() ||
                             !onlinePd2StackCompatible(sourceWire->second, sourceData->second, native->second, decoded->second) ||
-                            !base->maxStack || base->maxStack > 511) return InventoryError::IncompatibleStack;
-                        return *decoded->second.quantity >= base->maxStack ? InventoryError::StackFull : InventoryError::None;
+                            !base->maxStack) return InventoryError::IncompatibleStack;
                     }
                     const auto instance=o.completeItem(native->second,decoded->second,target->location);
                     if (!instance) return InventoryError::InvalidRequest;
                     int64_t maximum=base->maxStack;
                     for (const auto &stat : resolveItemStats(o.data,*instance,o.characterView.level))
                         if (!stat.layer && (stat.effect.empty()?stat.name:stat.effect)=="item_extra_stack") maximum+=stat.value;
+                    if (o.inventoryView.personalItemActionsOnly) {
+                        maximum = std::min(maximum, int64_t{511});
+                        if (maximum < 1) return InventoryError::IncompatibleStack;
+                    }
                     // A full target has no native mutation/ACK. Keep the cursor
                     // usable instead of waiting for a response that cannot arrive.
                     return maximum>0 && target->quantity>=uint64_t(maximum)

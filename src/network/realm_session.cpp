@@ -1,4 +1,5 @@
 #include "realm_session_impl.hpp"
+#include <set>
 
 namespace d2x::net {
 
@@ -66,12 +67,9 @@ void RealmSession::Impl::clear_game() {
     gs.close();
     gameEndpoint.reset();
     gameJoinFlags = 0;
-    pd2PlayerDataBlocks = {};
-    pd2PlayerUpdates = {};
-    pd2EffectTimers.clear();
+    view.pd2State = {};
     pd2RosterCounters.clear();
     pd2PlayerControl.reset(); stashPageDeadline = {}; identifyTargetPending = false;
-    pd2MonstersRemaining.reset();
     gamePackets.reset();
     worldPackets.clear();
     worldBytes = 0;
@@ -304,6 +302,15 @@ void RealmSession::configure_stash(OnlineStashLayout layout) {
     std::lock_guard lock(impl_->mutex);
     if (impl_->view.stage != OnlineStage::Idle || !impl_->view.remoteLobbyOnly || !layout.valid())
         throw ProtocolError("CN stash geometry must be prepared before connecting");
+    if (layout.materialKeys.empty() || layout.materialKeys.size() > 256 ||
+        std::set<uint32_t>(layout.materialKeys.begin(), layout.materialKeys.end()).size() != layout.materialKeys.size())
+        throw ProtocolError("CN material identities must be prepared without duplicates");
+    if (layout.coreCounterSlotsLegacy.empty() || layout.coreCounterSlotsLegacy.size() > UINT16_MAX ||
+        layout.coreCounterSlotsLegacy.size() != layout.coreCounterSlotsCurrent.size())
+        throw ProtocolError("PD2 core counter mappings must be prepared for both supported builds");
+    for (const auto *slots : {&layout.coreCounterSlotsLegacy, &layout.coreCounterSlotsCurrent})
+        for (const auto slot : *slots)
+            if (slot < -1 || slot >= 196) throw ProtocolError("PD2 core counter mapping exceeds snapshot bounds");
     impl_->stashLayout = layout;
 }
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {

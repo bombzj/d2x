@@ -1,9 +1,12 @@
 #include "item_properties.hpp"
+#include "item_appearance.hpp"
 #include "gameplay/items/state.hpp"
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <initializer_list>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
@@ -32,9 +35,9 @@ std::string format(std::string_view pattern, std::initializer_list<std::string> 
 } // namespace
 
 std::vector<std::string> describeItemStats(const ClassicData &data, const ItemInstance &item, int level, std::string_view characterClass) {
-    return describeItemStats(data, resolveItemStats(data, item, level), characterClass);
+    return describeItemStats(data, resolveItemStats(data, item, level), characterClass, item.specialRow);
 }
-std::vector<std::string> describeItemStats(const ClassicData &data, std::span<const ResolvedItemStat> stats, std::string_view characterClass) {
+std::vector<std::string> describeItemStats(const ClassicData &data, std::span<const ResolvedItemStat> stats, std::string_view characterClass, int itemFileIndex, std::optional<int> ownerMissingHp) {
     using Key = std::pair<std::string, int>;
     std::map<Key, int> sums;
     std::set<Key> present, consumed;
@@ -165,7 +168,8 @@ std::vector<std::string> describeItemStats(const ClassicData &data, std::span<co
             const auto &monsters = data.tables.at("monstats");
             bool found = false;
             for (size_t row = 0; row < monsters.rows().size(); ++row)
-                if (monsters.number(row, "hcIdx") == layer) {
+                if (data.profile == "remote-display-txt-v1" ? layer >= 0 && row == size_t(layer)
+                    : monsters.number(row, "hcIdx") == layer) {
                     const auto name = text(monsters.value(row, "NameStr"));
                     if (name.empty()) return {};
                     description += " " + name; found = true; break;
@@ -189,6 +193,19 @@ std::vector<std::string> describeItemStats(const ClassicData &data, std::span<co
         for (const auto &[key, number] : sums) {
             if (key.first != stat.name || !present.contains(key) || consumed.contains(key) || !stat.descriptionFunction) continue;
             if (!number && stat.operationBase != "level") continue;
+            if (data.profile == "remote-display-txt-v1" && stat.descriptionFunction == 30) {
+                if (stat.id == 270) {
+                    append(stat, format(text(pd2ItemEditionText(itemFileIndex)), {std::to_string(number)}));
+                }
+                continue;
+            }
+            if (data.profile == "remote-display-txt-v1" && stat.id == 191 && key.second == 605 && number == 1) {
+                const auto description = text("StrPhasingStatDesc");
+                if (!description.empty()) {
+                    append(stat, format(description, {std::to_string(number)}));
+                    continue;
+                }
+            }
             const int group = costs.number(stat.row, "dgrp").value_or(0);
             std::vector<Key> members;
             bool equal = group != 0 && key.second == 0;
@@ -211,7 +228,17 @@ std::vector<std::string> describeItemStats(const ClassicData &data, std::span<co
                     continue;
                 }
             }
-            append(stat, describe(key.second, number, stat.descriptionFunction, stat.descriptionValue, stat.positive, stat.negative, stat.suffix));
+            int displayNumber = number;
+            if (data.profile == "remote-display-txt-v1" && stat.id == 489 && ownerMissingHp) {
+                const uint32_t product = uint32_t(number) * uint32_t(*ownerMissingHp);
+                displayNumber = std::min(int32_t{40}, std::bit_cast<int32_t>(product));
+            }
+            if (data.profile == "remote-display-txt-v1" && stat.name == "lifedrain_percentcap") {
+                const int64_t complement = int64_t{100} - number;
+                if (complement < std::numeric_limits<int>::min() || complement > std::numeric_limits<int>::max()) continue;
+                displayNumber = int(complement);
+            }
+            append(stat, describe(key.second, displayNumber, stat.descriptionFunction, stat.descriptionValue, stat.positive, stat.negative, stat.suffix));
         }
     std::stable_sort(descriptions.begin(), descriptions.end(), [](const auto &left, const auto &right) {
         return left.priority != right.priority ? left.priority > right.priority : left.id < right.id;

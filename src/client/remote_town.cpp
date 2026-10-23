@@ -321,8 +321,11 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
         const auto target = std::find_if(view_.mapTargets.begin(), view_.mapTargets.end(),
             [&](const auto &entry) { return entry.unit == OnlineUnitKey{conversation.type, conversation.source}; });
         if (target != view_.mapTargets.end()) {
-            OnlineNpcDialogView dialog{conversation.source, conversation.revision, target->position,
-                std::string(strings_.find(target->name)), {}, {}};
+            OnlineNpcDialogView dialog{};
+            dialog.source = conversation.source;
+            dialog.revision = conversation.revision;
+            dialog.position = target->position;
+            dialog.speaker = strings_.find(target->name);
             dialog.type=conversation.type;
             for (const auto &message : conversation.messages)
                 dialog.messages.push_back({message.stringId, message.menu,
@@ -349,7 +352,12 @@ void RemoteTown::updateMapTargets(const OnlineView &v) {
     for (size_t row = 0; row < skills_.rows().size(); ++row) {
         // MPQ identifies the native portal item skills; their IDs are not hardcoded.
         if (skills_.value(row, "skill") != "Scroll of Townportal" &&
-            skills_.value(row, "skill") != "Book of Townportal") continue;
+            skills_.value(row, "skill") != "Book of Townportal" &&
+            !(v.protocolProfile == "pd2-cn-normal-20261020" &&
+                skills_.value(row, "skill") == "Book of Unlimited Townportal" &&
+                skills_.number(row, "InGame").value_or(0) == 1 &&
+                skills_.number(row, "srvdofunc").value_or(0) == 113 &&
+                skills_.number(row, "scroll").value_or(0) == 1)) continue;
         const auto id = skills_.number(row, "Id");
         if (id && *id >= 0 && *id <= UINT16_MAX) view_.townPortalSkills.push_back(uint16_t(*id));
     }

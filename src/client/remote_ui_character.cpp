@@ -279,6 +279,17 @@ void RemoteUiClients::Impl::projectSkillUseFacts(CharacterProjectionInput &input
             }
         }
         const auto observed = combat.states().find(key);
+        if (actor->second.stateSequence && observed != combat.states().end() && observed->second.decoded &&
+            observed->second.sequence == actor->second.stateSequence) {
+            CharacterProjectionInput::ShapeStates shape;
+            for (const auto &[name, state] : data.states) {
+                if (!observed->second.states.contains(state.definition.id)) continue;
+                shape.active.insert(name);
+                shape.restricted |= state.restrictSkills;
+                shape.disguised |= state.disguise;
+            }
+            if (shape.active.size() == observed->second.states.size()) input.shapeStates = std::move(shape);
+        }
         const auto bloodMana = data.states.find("blood_mana"), inferno = data.states.find("inferno");
         if (actor->second.stateSequence && observed != combat.states().end() && observed->second.decoded &&
             observed->second.sequence == actor->second.stateSequence && bloodMana != data.states.end() && inferno != data.states.end())
@@ -347,6 +358,14 @@ void RemoteUiClients::Impl::projectCharacter() {
         if (const auto level=stat("level"))
             for (const auto *name:{"passive_fire_mastery","passive_ltng_mastery","passive_cold_mastery","passive_pois_mastery"})
                 if (const auto value=knownSelfStat(name,int(*level))) input.stats.insert_or_assign(name,double(*value));
+        if (data.profile == "remote-display-txt-v1")
+            if (const auto level=stat("level"))
+                for (const auto *name:{"joustreduction","joustreduction_leorics","joustreduction_zeraes",
+                    "gustreduction","blood_warp_life_reduction","extra_cold_arrows","extra_skele_war",
+                    "extra_skele_mage","grims_extra_skele_mage","extra_skele_archer","extra_bonespears",
+                    "extra_revives","corpseexplosionradius","es_efficiency","eaglehorn_raven","passive_mag_mastery",
+                    "max_curses"})
+                    if (const auto value=knownSelfStat(name,int(*level))) input.stats.insert_or_assign(name,double(*value));
         const auto knownMastery=[&](std::string_view name)->std::optional<int> {
             const auto found=input.stats.find(name);
             return found==input.stats.end()?std::nullopt:std::optional{int(found->second)};

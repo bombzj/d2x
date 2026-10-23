@@ -92,6 +92,12 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
         return decode_native_auth_resource(bytes);
     };
     try {
+        const auto coreDigest = fileDigest(pd2/"ProjectDiablo.dll");
+        if (coreDigest == "9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f")
+            auth.cnCoreBuild = Pd2CoreBuild::Normal20261020;
+        else if (coreDigest == "17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57")
+            auth.cnCoreBuild = Pd2CoreBuild::Normal20261021;
+        else throw std::runtime_error("Unsupported PD2 core counter build");
         uint32_t bhCrc{};
         const auto bh = std::find_if(std::begin(cnFiles), std::end(cnFiles),
             [](const auto &entry) { return entry.first == "BH.dll"; });

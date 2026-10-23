@@ -400,6 +400,8 @@ bool RealmSession::create_town_portal(uint16_t skillId, std::optional<OnlineInte
         !world.rightSkill || onlinePlayerDead(world) ||
         p.portalRequest || (world.combatRequest && world.combatRequest->state == OnlineCombatRequest::State::Pending) ||
         (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending) ||
+        (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 &&
+            (quantity == world.itemSkillQuantities.end() || !quantity->second)) ||
         (quantity != world.itemSkillQuantities.end() ? !quantity->second
             : skill == world.playerSkills.end() || !skill->second)) {
         p.error(OnlineErrorKind::Input, "A server town-portal item skill is unavailable or already pending"); return false;
@@ -481,8 +483,15 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             !onlineItemOwnedBy(host->second, p.view.load.playerUnitId) || !host->second.positionKnown ||
             host->second.mode != 0 || (host->second.page != 1 && host->second.page != 5) ||
             (host->second.flags & (0x40000000u | 0x2000000u)) ||
-            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && host->second.page == 5 && (!world.stashSynchronized ||
+            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 &&
+                (command.target != host->first || !command.targetRevision || command.targetRevision != host->second.revision)) ||
+            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && host->second.page == 5 && (!world.cnStashConfirmed || !world.stashSynchronized ||
                 host->second.stashPage != world.stashPage || host->second.sharedStash != world.sharedStash)) ||
+            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 &&
+                std::any_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
+                    return onlineItemOwnedBy(entry.second, p.view.load.playerUnitId) && entry.second.mode == 0 && entry.second.page == 4 &&
+                        (!entry.second.positionKnown || (entry.second.flags & (0x40000000u | 0x2000000u)));
+                })) ||
             onlineHasCursorItem(world.items, p.view.load.playerUnitId) ||
             std::none_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
                 return onlineItemOwnedBy(entry.second, p.view.load.playerUnitId) && entry.second.mode == 0 && entry.second.page == 4;
@@ -495,6 +504,8 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
         const auto balance = world.playerAttributes.find(command.action == OnlineItemAction::GoldWithdraw ? 15 : 14);
         if (!command.amount || command.amount > INT32_MAX || balance == world.playerAttributes.end() || balance->second < command.amount ||
             onlineHasCursorItem(world.items, p.view.load.playerUnitId) ||
+            (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020 && command.action != OnlineItemAction::GoldDrop &&
+                (!world.cnStashConfirmed || !world.stashSynchronized || world.sharedStash || world.cnMaterialsOpen || world.requestedStashPage)) ||
             (command.action != OnlineItemAction::GoldDrop && world.storage.kind != OnlineStorageKind::Stash)) {
             p.error(OnlineErrorKind::Input, "Gold transfer requires a known balance and the current storage context"); return false;
         }
@@ -511,8 +522,8 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
     }
     if (command.action == OnlineItemAction::StorageMaterials || command.action == OnlineItemAction::MaterialWithdraw ||
         command.action == OnlineItemAction::MaterialDeposit) {
-        if (!p.view.remoteLobbyOnly || world.storage.kind != OnlineStorageKind::Stash ||
-            !world.cnMaterialsAvailable || (command.action != OnlineItemAction::MaterialDeposit &&
+        if (p.compatibility.profile != ClientProfile::Pd2CnNormal20261020 || world.storage.kind != OnlineStorageKind::Stash ||
+            !world.cnMaterialsAvailable || world.requestedStashPage || (command.action != OnlineItemAction::MaterialDeposit &&
                 onlineHasCursorItem(world.items, p.view.load.playerUnitId))) {
             p.error(OnlineErrorKind::Input, "CN material context is unavailable"); return false;
         }
@@ -520,8 +531,9 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
             if (command.amount > 1 || bool(command.amount) == world.cnMaterialsOpen) return false;
         } else if (command.action == OnlineItemAction::MaterialDeposit) {
             const auto source = world.items.find(command.item);
+            const auto key = onlineCnMaterialKey(command.materialCode);
             if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || source == world.items.end() ||
-                !onlineCnMaterialKey(command.materialCode) ||
+                !key || !world.cnMaterialCounts.contains(*key) || world.cnMaterialCounts.at(*key) != command.amount ||
                 (!onlineCursorItem(source->second, p.view.load.playerUnitId) &&
                  (!onlineBackpackItem(source->second, p.view.load.playerUnitId) ||
                   onlineHasCursorItem(world.items, p.view.load.playerUnitId)))) return false;
@@ -530,11 +542,14 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
                 const auto cube = world.items.find(command.target);
                 if (cube == world.items.end() || !command.targetRevision || cube->second.revision != command.targetRevision ||
                     !onlinePd2StoredItem(cube->second, p.view.load.playerUnitId, world.storage.kind) ||
-                    !cube->second.positionKnown) return false;
+                    !cube->second.positionKnown || (cube->second.page == 5 &&
+                        (!world.cnStashConfirmed || !world.stashSynchronized || cube->second.stashPage != world.stashPage ||
+                            cube->second.sharedStash != world.sharedStash))) return false;
             }
             const auto key = onlineCnMaterialKey(command.materialCode);
             if (!world.cnMaterialsOpen || !world.cnMaterialsSynchronized || !key ||
-                !onlineCnMaterialWithdrawalValid(command, world.cnMaterialCounts)) return false;
+                !onlineCnMaterialWithdrawalValid(command, world.cnMaterialCounts) ||
+                (command.materialOperation != OnlineCnMaterialOperation::Upgrade && command.materialItemCode.empty())) return false;
         }
     }
     if (world.playerTrade.active()) {
@@ -824,6 +839,13 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
                 world.itemRequest->beforeGold = before->second;
             if (const auto before = world.playerAttributes.find(15); before != world.playerAttributes.end())
                 world.itemRequest->beforeBankGold = before->second;
+        }
+        if (command.action == OnlineItemAction::MaterialWithdraw && command.materialOperation != OnlineCnMaterialOperation::Upgrade) {
+            const auto key = onlineCnMaterialKey(command.materialCode);
+            if (key) world.itemRequest->materialCounts.emplace(*key, world.cnMaterialCounts.at(*key));
+            for (const auto &[id, current] : world.items)
+                if (current.code == command.materialCode || current.code == command.materialItemCode)
+                    world.itemRequest->materialItems.emplace(id, current.revision);
         }
         if (command.action == OnlineItemAction::MaterialWithdraw && command.materialOperation == OnlineCnMaterialOperation::Upgrade) {
             const auto input = onlineCnMaterialKey(command.materialCode);

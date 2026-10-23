@@ -1,5 +1,6 @@
 #include "remote_ui_clients_impl.hpp"
 #include "content/pd2_stash.hpp"
+#include "content/items/item_appearance.hpp"
 
 namespace d2x {
 ItemInstance RemoteUiClients::Impl::itemInstance(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
@@ -257,7 +258,19 @@ InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, c
             }
             const bool itemEquipped=native.ownerType==0 && native.owner==online.load.playerUnitId && native.mode==1 &&
                 native.body>=1 && native.body<=10 && !(native.flags&0x4100u);
-            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,online.world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode,equippedSets,equipmentKnown,itemEquipped});
+            std::optional<int> ownerMissingHp;
+            if (native.positionKnown && native.mode != 3 && native.mode != 5 &&
+                native.ownerType && native.owner && *native.ownerType <= 1) {
+                if (*native.ownerType == 0 && native.owner == online.load.playerUnitId) {
+                    const auto found = online.world.playerAttributes.find(184);
+                    if (found != online.world.playerAttributes.end() && found->second <= INT32_MAX)
+                        ownerMissingHp = int(found->second);
+                } else if (const auto owner = online.world.units.find({*native.ownerType, *native.owner}); owner != online.world.units.end()) {
+                    const auto found = owner->second.attributes.find(184);
+                    if (found != owner->second.attributes.end()) ownerMissingHp = found->second;
+                }
+            }
+            auto display=describeInventoryItem(data,data.items,item,{characterView.level,characterView.attributes[0],characterView.attributes[1],maximum,online.world.quests.cainStones.value_or(std::array<int,5>{}),characterView.classCode,equippedSets,equipmentKnown,itemEquipped,ownerMissingHp});
             if (!complete) display.tooltip.push_back({"Socket properties are not fully assigned by the server",ItemTextTone::Error});
             std::string groundArt=definition->groundAnimation, inventoryArt=di.artKey;
             if(item.specialRow>=0) {
@@ -267,6 +280,7 @@ InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, c
                     if(item.identified && !record.icon.empty()) inventoryArt=record.icon;
                 }
             }
+            if (auto specialArt = pd2ItemInventoryArt(data, item); !specialArt.empty()) inventoryArt = std::move(specialArt);
             InventoryItemView projection{item.id,item.revision,item.definition,std::move(inventoryArt),std::move(display.name),location,item.quality,item.identified,item.quantity,item.durability,item.charges,std::move(display.tooltip),native.flags,item.sockets,item.runewordRow>=0,std::move(groundArt)};
             if (complete && di.revision == native.revision && definition->maxStack > 1 && !definition->bookCapacity) {
                 InventoryStackView stack;
@@ -298,6 +312,7 @@ InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, c
                         for (const auto &record : records)
                             if (int32_t(record.row) == child.specialRow && !record.icon.empty()) art = record.icon;
                     }
+                    if (auto specialArt = pd2ItemInventoryArt(data, child); !specialArt.empty()) art = std::move(specialArt);
                     projection.socketItems.push_back({std::move(art), inventoryColorTransform(data, data.items, child), child.nativeFlags});
                 }
             if (data.profile == "lod-named-txt-v1" && complete && di.revision == native.revision)

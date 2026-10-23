@@ -229,6 +229,27 @@ void equipment(OnlineView &v, const Packet &p) {
     v.world.equipment[id] = std::move(item);
 }
 void removeItem(OnlineWorldView &world, uint32_t id);
+}
+void invalidateCubeHostPd2(OnlineView &view) {
+    auto &world = view.world;
+    const auto accessible = [&](std::optional<uint32_t> source) {
+        const auto found = source ? world.items.find(*source) : world.items.end();
+        if (found == world.items.end()) return false;
+        const auto &item = found->second;
+        return onlineItemOwnedBy(item,view.load.playerUnitId) && item.positionKnown &&
+            item.mode == 0 && !(item.flags & (0x40000000u | 0x2000000u)) &&
+            (item.page == 1 || (item.page == 5 && world.cnStashConfirmed && world.stashSynchronized &&
+                !world.requestedStashPage && item.stashPage == world.stashPage && item.sharedStash == world.sharedStash));
+    };
+    if ((world.storage.kind == OnlineStorageKind::Cube && !accessible(world.storage.source)) ||
+        (world.storage.requested == OnlineStorageKind::Cube && !accessible(world.storage.requestedSource))) {
+        ++world.interactionGeneration;
+        world.storage = {};
+        if (world.itemRequest && world.itemRequest->state == OnlineItemRequest::State::Pending)
+            world.itemRequest->state = OnlineItemRequest::State::Interrupted;
+    }
+}
+namespace {
 void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     if (v.world.playerTrade.phase == OnlinePlayerTrade::Phase::Open)
         v.world.playerTrade.revision = v.world.revision;
@@ -326,6 +347,7 @@ void itemPacket(OnlineView &v, const Packet &p, bool pd2) {
     if (!v.world.items.contains(item.id) && v.world.items.size() >= 8192)
         throw ProtocolError("Remote item limit exceeded");
     v.world.items[item.id] = std::move(item);
+    if (pd2) invalidateCubeHostPd2(v);
 }
 void removeItem(OnlineWorldView &world, uint32_t id) {
     if (world.itemTargetingSource == id) {world.itemTargetingSource.reset();++world.itemTargetingRevision;}
@@ -350,7 +372,7 @@ void removeRemotePlayerItems(OnlineWorldView &world, uint32_t owner,uint8_t owne
     for (const auto id : items) removeItem(world, id);
     std::erase_if(world.equipment, [&](const auto &entry) { return entry.second.ownerType==ownerType && entry.second.owner == owner; });
 }
-bool applyStoragePacketPd2(OnlineView &v, const Packet &p, OnlineStashLayout layout) {
+bool applyStoragePacketPd2(OnlineView &v, const Packet &p, const OnlineStashLayout &layout) {
     auto &w = v.world;
     if (p.id == 0x9C && !p.body.empty() && p.body[0] >= 0x19) {
         Reader external(p.body);
@@ -457,14 +479,17 @@ bool applyStoragePacketPd2(OnlineView &v, const Packet &p, OnlineStashLayout lay
     return true;
 }
 } // namespace
-void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile, OnlineStashLayout layout) {
+void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::ClientProfile profile, const OnlineStashLayout &layout) {
     auto &w = v.world;
     const auto previousItems = w.itemRevision;
     ++v.revision;
     ++w.revision;
     if (apply_social_packet(v, p) && p.id != 0x5C) return;
     const bool pd2 = profile == protocol::ClientProfile::Pd2CnNormal20261020;
-    if (pd2 && applyStoragePacketPd2(v, p, layout)) return;
+    if (pd2 && applyStoragePacketPd2(v, p, layout)) {
+        invalidateCubeHostPd2(v);
+        return;
+    }
     Reader r(p.body);
     switch (p.id) {
     case 0x47:
@@ -779,16 +804,16 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
         break;
     }
     case 0x22: {
-        const auto type = r.u8(); r.u8();
+        r.u8(); r.u8();
         const auto owner = r.u32();
-        const auto skill = r.u16(), level = uint16_t(r.u8());
-        r.u8(); r.u8(); r.finish();
-        if (type == 0) {
-            auto &entry = unit(w, {0, owner});
-            entry.itemSkillQuantities[skill] = uint8_t(level);
-            if (v.load.playerUnitId == owner)
-                w.itemSkillQuantities[skill] = uint8_t(level);
-        }
+        const auto skill = r.u16(); const auto quantity = r.u8();
+        r.u8(); const auto flags = r.u8(); r.finish();
+        if (flags != 0) break;
+        const auto found = w.units.find({0, owner});
+        if (found == w.units.end()) break;
+        found->second.itemSkillQuantities[skill] = quantity;
+        if (v.load.playerUnitId == owner)
+            w.itemSkillQuantities[skill] = quantity;
         break;
     }
     case 0x3F: {
@@ -1033,6 +1058,7 @@ void apply_world_packet(OnlineView &v, const protocol::Packet &p, protocol::Clie
             w.storage.kind = w.storage.requested; w.storage.source = w.storage.requestedSource;
             w.storage.requested = OnlineStorageKind::None; w.storage.requestedSource.reset();
             w.storage.revision = w.revision;
+            if (pd2) invalidateCubeHostPd2(v);
         } else if (action == 17 && w.storage.kind == OnlineStorageKind::Stash) {
             ++w.interactionGeneration;
             w.storage.kind = OnlineStorageKind::None; w.storage.source.reset(); w.storage.revision = w.revision;

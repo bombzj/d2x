@@ -156,6 +156,8 @@ bool RemoteControl::townPortal() {
     for (uint16_t skill : binding.townPortalSkills) {
         const auto quantity = world.itemSkillQuantities.find(skill);
         const auto level = world.playerSkills.find(skill);
+        if (session_.read().protocolProfile == "pd2-cn-normal-20261020" &&
+            (quantity == world.itemSkillQuantities.end() || !quantity->second)) continue;
         if (quantity != world.itemSkillQuantities.end() ? quantity->second != 0
             : level != world.playerSkills.end() && level->second != 0) {
             if (!session_.create_town_portal(skill)) return reject(session_.read().error

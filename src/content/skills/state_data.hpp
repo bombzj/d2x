@@ -10,6 +10,8 @@ struct CombatStateRecord {
     CombatStateDefinition definition;
     std::string overlay;
     std::string secondaryOverlay;
+    bool restrictSkills = false;
+    bool disguise = false;
 };
 using CombatStateCatalog = std::map<std::string, CombatStateRecord, std::less<>>;
 CombatStateCatalog loadCombatStates(const DataTable &states);

@@ -6,5 +6,6 @@
 namespace d2x::net {
 // Ordered server replica. No local simulation, MPQ, save data, GPU or device input.
 void apply_world_packet(OnlineView &, const protocol::Packet &, protocol::ClientProfile = protocol::ClientProfile::Lod113c,
-                        OnlineStashLayout = {});
+                        const OnlineStashLayout & = {});
+void invalidateCubeHostPd2(OnlineView &);
 } // namespace d2x::net

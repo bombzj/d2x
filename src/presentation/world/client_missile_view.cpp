@@ -71,6 +71,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
         !std::isfinite(start.x) || !std::isfinite(start.y) || !std::isfinite(target.x) || !std::isfinite(target.y)) return false;
     // Stationary 73 sends FirstX/FirstY = 0; these are not an aimed ray.
     if (capabilities->stationary) target = start;
+    const int constructorFrames=(source!=ClientMissileSource::Synchronization && (program.groundThrow || initialization.distanceLimited))?int(std::lround(duration*25.f)):tableFrames;
+    const auto activation = initialization.activationDelay ?
+        std::optional{nativeMissileFrameCount(nativeSubtract(initialization.totalFrames.value_or(constructorFrames),*initialization.activationDelay))} : std::nullopt;
     const auto sources = uint8_t(source);
     const bool reconstructed = (capabilities->pairCreationSources || program.clientSend) && source!=ClientMissileSource::Death;
     if (sources && reconstructed) {
@@ -83,6 +86,7 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
             it->creationSources |= sources;
             if(initialization.totalFrames) it->nativeTotalFrames=nativeMissileFrameCount(*initialization.totalFrames);
             if(initialization.hiddenUntilCurrentFrame) it->hiddenUntilCurrentFrame=initialization.hiddenUntilCurrentFrame;
+            if(activation) it->activateAtCurrentFrame=activation;
             if(initialization.animationRate) it->animationRate=initialization.animationRate;
             if(initialization.impactCount) it->impactCount=initialization.impactCount;
             if(initialization.suppressLight) it->suppressLight=*initialization.suppressLight;
@@ -121,9 +125,9 @@ bool SceneView::launchClientMissile(int id, Vec start, Vec target, int level, fl
     // Retail packet 73 (D2Client RVA AEEE0) constructs the full table range,
     // then calls SetCurrentFrame(packet.frame), leaving TotalFrames untouched.
     // The packet never supplies an animation frame or a callback-age prefix.
-    const int constructorFrames=(source!=ClientMissileSource::Synchronization && (program.groundThrow || initialization.distanceLimited))?int(std::lround(duration*25.f)):tableFrames;
     effect.nativeTotalFrames=nativeMissileFrameCount(initialization.totalFrames.value_or(constructorFrames));
     effect.hiddenUntilCurrentFrame=initialization.hiddenUntilCurrentFrame;
+    effect.activateAtCurrentFrame=activation;
     effect.setCurrentFrame(int(std::lround(duration*25.f)));
     if(source==ClientMissileSource::Synchronization) {
         const auto &visual=assets_.projectileVisuals.at(id);
@@ -774,7 +778,8 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             float fraction = 1.f;
             bool wall = false;
             if(effect.hiddenUntilCurrentFrame && effect.nativeCurrentFrames<=*effect.hiddenUntilCurrentFrame) effect.hiddenUntilCurrentFrame.reset();
-            if (!effect.hiddenUntilCurrentFrame && (program.collision.mask & 0x0005)) {
+            const bool activated = !effect.activateAtCurrentFrame || effect.nativeCurrentFrames <= *effect.activateAtCurrentFrame;
+            if (activated && !effect.hiddenUntilCurrentFrame && (program.collision.mask & 0x0005)) {
                 if (const auto contact = missileTerrainContact(grid, effect.pos, next, program.collision, origin)) {
                     fraction = *contact; wall = true;
                 }
@@ -798,7 +803,7 @@ void SceneView::advanceClientMissiles(float dt, const Grid &grid, Vec origin,
             if ((program.function==6 || program.function==22 || program.function==27) && !wall && missileChangedCell(start,next))
                 emit(program.children[0],{float(int(next.x))+.5f,float(int(next.y))+.5f},{},effect,childAge);
             std::vector<std::pair<float, const ClientMissileTarget *>> contacts;
-            if (!effect.hiddenUntilCurrentFrame && program.collide && program.function != 19)
+            if (activated && !effect.hiddenUntilCurrentFrame && program.collide && program.function != 19)
                 for (const auto &target : targets) {
                     if ((program.holyBolt && !target.undead) || (program.function==7 && ((!effect.guidance && !effect.guidanceSearched) || (effect.guidance && target.id!=effect.guidance))) || target.id == effect.owner || target.hostile == effect.hostile ||
                         std::find(effect.contacts.begin(), effect.contacts.end(), target.id) != effect.contacts.end()) continue;

@@ -53,6 +53,9 @@ add_library(d2x_d2gs_protocol
 target_link_libraries(d2x_d2gs_protocol PUBLIC d2x_core PRIVATE d2x_bncs_legacy d2x_hash)
 add_library(d2x_remote_client src/network/realm_session.cpp src/network/realm_session_sid.cpp
   src/network/realm_session_mcp.cpp src/network/realm_session_game.cpp
+  src/network/realm_session_pd2_state.cpp
+  src/network/realm_session_pd2_stash.cpp
+  src/network/realm_session_pd2_reports.cpp
   src/network/realm_session_social.cpp src/network/realm_session_commands.cpp
   src/network/chat_command.cpp src/client/remote_world.cpp src/client/remote_social.cpp)
 target_link_libraries(d2x_remote_client PUBLIC d2x_client_api d2x_network d2x_d2gs_protocol PRIVATE Threads::Threads)

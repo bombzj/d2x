@@ -234,7 +234,10 @@ SkillCatalog loadSkillCatalog(const DataTable &skills, const DataTable &descript
         if (!skills.value(row, "charclass").empty()) continue;
         auto id = skills.number(row, "Id");
         auto name = skills.value(row, "skill");
-        if (!requestedCommon.contains(normalized(name))) continue;
+        const bool remoteItemSkill = preparation == ContentPreparation::RemoteDisplay &&
+            skills.number(row, "srvdofunc") == 113 && skills.number(row, "scroll") == 1 &&
+            skills.number(row, "InGame") == 1;
+        if (!requestedCommon.contains(normalized(name)) && !remoteItemSkill) continue;
         auto description = descriptionsByKey.find(normalized(skills.value(row, "skilldesc")));
         // A missing description cannot supply a visible node or its icon/layout.
         if (preparation == ContentPreparation::RemoteDisplay && description == descriptionsByKey.end()) continue;

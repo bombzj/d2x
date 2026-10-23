@@ -1,24 +1,7 @@
 #include "realm_session_impl.hpp"
-#include <charconv>
 
 namespace d2x {
 namespace net {
-
-void RealmSession::Impl::send_game_options_pd2() {
-    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || pd2GameOptionsSent ||
-        view.stage != OnlineStage::LoadingGame || !view.load.playerUnitId)
-        return;
-    const auto player = view.world.units.find({0, *view.load.playerUnitId});
-    if (player == view.world.units.end() || !player->second.classId || player->second.name.empty())
-        return;
-    if (!selected || player->second.name != selected->name || player->second.classId != selected->characterClass)
-        throw ProtocolError("Assigned game player differs from the selected Realm character");
-    // Native 0x59 allocates the player; 0x0B assigns GetPlayerUnit's pointer.
-    // BH's 100 ms poll reports on that first non-null pointer. Send once per
-    // connection at the equivalent assignment boundary, before gameplay requests.
-    sent(gs, game_options_pd2_cn(options.lootAllocation));
-    pd2GameOptionsSent = true;
-}
 
 void RealmSession::Impl::send_game_heartbeat(Clock::time_point now) {
     auto &heartbeat = view.gameHeartbeat;
@@ -31,67 +14,6 @@ void RealmSession::Impl::send_game_heartbeat(Clock::time_point now) {
     nextHeartbeat = now + options.heartbeat; changed();
 }
 
-void RealmSession::Impl::service_game_heartbeat_pd2(Clock::time_point now) {
-    // A pong carries no request ID. Missing that reply must not suppress future
-    // keepalives or disconnect a game that is still publishing valid GS packets.
-    auto &heartbeat = view.gameHeartbeat;
-    heartbeat.elapsedMilliseconds = uint64_t(std::chrono::duration_cast<std::chrono::milliseconds>(now - gameStarted).count());
-    const auto silent = std::chrono::duration_cast<std::chrono::milliseconds>(now - lastGameReceive);
-    if (awaitingPong && silent >= options.timeout) {
-        fail(OnlineErrorKind::Timeout, "Game heartbeat timed out: no game packets for " +
-            std::to_string(silent.count()) + " ms; ping/pong " + std::to_string(heartbeat.sent) + "/" +
-            std::to_string(heartbeat.received));
-        return;
-    }
-    if (awaitingPong && now - lastPing >= options.timeout) view.latencyMilliseconds.reset();
-    send_game_heartbeat(now);
-}
-
-void RealmSession::Impl::service_game_reports_pd2(Clock::time_point now) {
-    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || !pd2GameOptionsSent ||
-        (view.stage != OnlineStage::LoadingGame && view.stage != OnlineStage::ProtocolReady) ||
-        !view.load.playerUnitId || view.gameServerNotices.removalAnnouncedMilliseconds) return;
-    if (!view.world.units.contains({0, *view.load.playerUnitId})) return;
-    // mdll1 0x13FB0: strict >1000 ms, with a fresh low-32-bit monotonic tick.
-    // Keep this independent of vanilla 6D/8F and never replay missed periods.
-    if (pd2LastTick == Clock::time_point{} || now - pd2LastTick > std::chrono::milliseconds(1000)) {
-        const auto tick = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
-        sent(gs, game_tick_pd2_cn(tick));
-        pd2LastTick = now;
-        if (pd2PendingTicks.size() == 32) pd2PendingTicks.pop_front();
-        pd2PendingTicks.emplace_back(tick, now);
-        ++view.pd2Reports.ticksSent; view.pd2Reports.lastTick = tick; changed();
-    }
-    // Native BH sleeps 10 seconds between file checksum reports. The app
-    // computes this from the selected SHA-verified BH file during login setup.
-    if (pd2NextBhReport == Clock::time_point{}) pd2NextBhReport = now + std::chrono::seconds(10);
-    if (options.originalClient.cnBhCrc32 && now >= pd2NextBhReport) {
-        sent(gs, game_bh_report_pd2_cn(*options.originalClient.cnBhCrc32));
-        pd2NextBhReport = now + std::chrono::seconds(10);
-        ++view.pd2Reports.bhReportsSent; changed();
-    }
-}
-
-bool RealmSession::Impl::handle_tick_echo_pd2(const Packet &packet) {
-    if (compatibility.profile != ClientProfile::Pd2CnNormal20261020 || packet.id != 0x9D ||
-        packet.body.empty() || packet.body[0] != 0x2C) return false;
-    if (packet.body.size() != 35 || packet.body[1] != 36)
-        throw ProtocolError("Invalid CN tick echo record size");
-    Reader in(packet.body); in.take(23);
-    const auto tick = in.u32(); in.take(8); in.finish(); // Full wire offset 0x18.
-    auto &reports = view.pd2Reports;
-    reports.lastEcho = tick;
-    const auto found = std::find_if(pd2PendingTicks.begin(), pd2PendingTicks.end(),
-        [tick](const auto &pending) { return pending.first == tick; });
-    if (found == pd2PendingTicks.end()) ++reports.unmatchedEchoes;
-    else {
-        reports.roundTripMilliseconds = uint32_t(std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - found->second).count());
-        ++reports.tickEchoes;
-        pd2PendingTicks.erase(found);
-    }
-    changed(); return true;
-}
-
 void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
     auto &current = view.world.combatRequest;
     // Channel mouse-up cannot replace an outstanding learn/select/spend ACK.
@@ -100,146 +22,6 @@ void RealmSession::Impl::record_combat(OnlineCombatRequest request) {
         current = std::move(request);
         combatDeadline = Clock::now() + options.timeout;
     }
-}
-
-bool RealmSession::Impl::handle_stash_pd2(const Packet &packet) {
-    if (!view.remoteLobbyOnly || packet.id != 0x9D || packet.body.empty() || packet.body[0] < 0x18) return false;
-    // mdll1 RVA 0xA650 / 0x1E060: a 36-byte custom record, not an item.
-    Reader data(packet.body);
-    const auto function = data.u8(), length = data.u8();
-    if (function != 0x18 && function != 0x19 && function != 0x1A && function != 0x27 &&
-        function != 0x29 && function != 0x2A) {
-        // Other mdll controls have independent payloads/ownership. In
-        // particular entry function 0x22 is not a selected stash page.
-        ++view.gameProtocol.unconsumed[packet.id];
-        changed(); return true;
-    }
-    if (length != 36 || packet.body.size() != 35)
-        throw ProtocolError("Invalid CN stash control record size");
-    // A650 copies UnitAny+8 here (the native memory-pool pointer), not
-    // UnitAny+0x0C's GUID. The client handler does not dereference it.
-    data.take(13);
-    const auto payload = data.take(20); data.finish();
-    if (!view.load.playerUnitId) throw ProtocolError("CN stash control preceded player assignment");
-    auto &world = view.world;
-    if (function == 0x18) {
-        Reader fields(payload); fields.take(8);
-        const auto index = fields.u32(), flags = fields.u32(), playerFlags = fields.u32(); fields.finish();
-        if (index >= onlineCnStashPageLimit)
-            throw ProtocolError("CN stash page exceeds the fixed module's supported range");
-        const auto page = index + 1;
-        const bool shared = (flags & 1) != 0;
-        // Native bit 3 is an items-only swap: it updates the other cache,
-        // retaining the current selection. No client ACK is sent here.
-        if (flags & 8) {
-            world.stashSynchronized = false;
-            ++view.gameProtocol.unconsumed[packet.id];
-        } else {
-            const bool moved = !world.cnStashConfirmed || world.stashPage != page || world.sharedStash != shared;
-            world.stashPage = page; world.sharedStash = shared;
-            world.cnStashConfirmed = world.stashInitialized = world.stashSynchronized = true;
-            world.cnStashPageFlags = flags; world.cnStashPlayerFlags = playerFlags;
-            if (moved) world.stashPageName.clear();
-            if (auto &request = world.itemRequest; request && request->state == OnlineItemRequest::State::Pending &&
-                request->command.action == OnlineItemAction::StoragePage) {
-                request->state = (request->command.stashNavigation || request->command.page == page) &&
-                    request->command.sharedStash == shared
-                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
-            } else if (request && request->state == OnlineItemRequest::State::Pending &&
-                       request->command.action == OnlineItemAction::StorageIndex) {
-                const auto &command = request->command;
-                const unsigned expected = (command.amount ? 2u : 0u) | (command.amount == 2 ? 4u : 0u);
-                request->state = command.page == page && command.sharedStash == shared && (flags & 6u) == expected
-                    ? OnlineItemRequest::State::Updated : OnlineItemRequest::State::Rejected;
-            } else if (moved && request && request->state == OnlineItemRequest::State::Pending) {
-                request->state = OnlineItemRequest::State::Interrupted;
-            }
-            world.requestedStashPage.reset(); stashPageDeadline = {};
-        }
-        ++world.interactionGeneration; ++world.itemRevision;
-    } else if (function == 0x1A) {
-        // Native page names occupy at most 19 bytes plus NUL.
-        const auto end = std::find(payload.begin(), payload.end(), uint8_t{});
-        if (end == payload.end()) throw ProtocolError("Unterminated CN stash page name");
-        world.stashPageName.assign(payload.begin(), end);
-    } else if (function == 0x29) {
-        // mdll1 0x1E060 sets PlayerData+0x188. Native entry requests the
-        // material map with 3A/3D (0x14277); do it once after this capability.
-        world.cnMaterialsAvailable = true;
-        if (!world.cnMaterialsRequested) {
-            sent(gs, {0x3A, 0x3D, 0}); world.cnMaterialsRequested = true;
-        }
-    } else if (function == 0x19) {
-        Reader fields(payload); fields.take(8);
-        world.cnSharedGold = fields.u32(); // mdll1 1DFD0 reads packet +0x18.
-        // Server 0x1E670 sends this after all 98 absolute counter records.
-        // Function 19 also carries shared gold during other initialization.
-        // Require the complete fixed 98-code response before releasing access.
-        if (world.cnMaterialsRequested && world.cnMaterialCounts.size() == 98)
-            world.cnMaterialsSynchronized = true;
-    } else if (function == 0x27 || function == 0x2A) {
-        const auto end = std::find(payload.begin(), payload.end(), uint8_t{});
-        if (end == payload.end()) throw ProtocolError("Unterminated CN material counter");
-        const std::string text(payload.begin(), end);
-        const auto comma = text.find(',');
-        if (comma == std::string::npos) throw ProtocolError("Invalid CN material counter pair");
-        uint32_t key{}; int64_t amount{};
-        const auto first = std::from_chars(text.data(), text.data() + comma, key);
-        const auto second = std::from_chars(text.data() + comma + 1, text.data() + text.size(), amount);
-        if (first.ec != std::errc{} || first.ptr != text.data() + comma || second.ec != std::errc{} ||
-            second.ptr != text.data() + text.size() || amount < -int64_t(INT32_MAX) || amount > INT32_MAX)
-            throw ProtocolError("Invalid CN material counter number");
-        auto &quantity = world.cnMaterialCounts[key];
-        if (function == 0x2A) {
-            if (amount < 0) throw ProtocolError("Negative CN absolute material counter");
-            quantity = uint32_t(amount);
-        }
-        else {
-            // 0x260C0 sends negative deltas for deposits; 0x1E670 sends
-            // positive deltas for withdrawals. Never reinterpret as unsigned.
-            const auto updated = int64_t(quantity) - amount;
-            if (updated < 0 || updated > INT32_MAX) throw ProtocolError("CN material counter delta exceeds range");
-            quantity = uint32_t(updated);
-            auto &request = world.itemRequest;
-            if (request && request->state == OnlineItemRequest::State::Pending && amount < 0 &&
-                request->command.action == OnlineItemAction::MaterialDeposit &&
-                onlineCnMaterialKey(request->command.materialCode) == key) {
-                const auto source = world.items.find(request->command.item);
-                // Cursor deletion uses action 5 with ONCURSOR mode, which also
-                // occurs during ordinary taking. Only pair it with this native
-                // deposit's authoritative counter credit before removing it.
-                if (source != world.items.end() && source->second.action == 5 &&
-                    source->second.revision > request->command.itemRevision) world.items.erase(source);
-            }
-            if (request && request->state == OnlineItemRequest::State::Pending &&
-                request->command.action == OnlineItemAction::MaterialWithdraw &&
-                request->command.materialOperation == OnlineCnMaterialOperation::Upgrade) {
-                const auto input = onlineCnMaterialKey(request->command.materialCode);
-                const auto output = onlineCnMaterialUpgradeResult(request->command.materialCode);
-                const auto result = output ? onlineCnMaterialKey(*output) : std::nullopt;
-                if (input && result && request->materialCounts.contains(*input) && request->materialCounts.contains(*result) &&
-                    world.cnMaterialCounts.contains(*input) && world.cnMaterialCounts.contains(*result)) {
-                    const auto before = request->materialCounts.at(*input);
-                    const auto converted = std::min(request->command.amount, before) / 3;
-                    if (uint64_t(world.cnMaterialCounts.at(*input)) + 3u * converted == before &&
-                        uint64_t(request->materialCounts.at(*result)) + converted == world.cnMaterialCounts.at(*result))
-                        request->state = OnlineItemRequest::State::Updated;
-                }
-            }
-            if (request && request->state == OnlineItemRequest::State::Pending &&
-                ((request->command.action == OnlineItemAction::MaterialWithdraw && amount > 0) ||
-                 (request->command.action == OnlineItemAction::MaterialDeposit && amount < 0 &&
-                    !world.items.contains(request->command.item))) &&
-                request->command.materialOperation != OnlineCnMaterialOperation::Upgrade &&
-                onlineCnMaterialKey(request->command.materialCode) == key)
-                request->state = OnlineItemRequest::State::Updated;
-        }
-        ++world.itemRevision;
-    } else {
-        // Other CN control functions must never enter item/equipment decoding.
-        ++view.gameProtocol.unconsumed[packet.id];
-    }
-    changed(); return true;
 }
 
 void RealmSession::Impl::handle_game(Packet packet) {
@@ -335,12 +117,12 @@ void RealmSession::Impl::handle_game(Packet packet) {
         awaitingPong = false; heartbeat.pending = 0; changed();
         return;
     }
-    if (view.remoteLobbyOnly && packet.id == 0xAD) {
+    if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0xAD) {
         // Core 0x38FA40 -> 0x2C3FE0 resolves BHSetMonstersRemaining(active, count).
         Reader data(packet.body);
         const auto active = data.u8(); const auto count = data.u32(); data.finish();
-        pd2MonstersRemaining = std::pair{active, count};
-        ++view.gameProtocol.unconsumed[packet.id];
+        view.pd2State.monstersRemaining = std::pair{active, count};
+        ++view.pd2State.revision;
         changed();
         return;
     }
@@ -371,63 +153,14 @@ void RealmSession::Impl::handle_game(Packet packet) {
             }
             ++view.world.interactionGeneration;
             ++view.world.itemRevision;
+            invalidateCubeHostPd2(view);
         }
         data.finish();
         if (packet.id != 0x2D) ++view.gameProtocol.unconsumed[packet.id];
         changed();
         return;
     }
-    if (view.remoteLobbyOnly && packet.id == 0x2E) {
-        if (packet.body.size() != 17 || !view.load.playerUnitId || packet.body[0] > 4)
-            throw ProtocolError("Invalid PD2 local player-data update");
-        size_t index = packet.body[0];
-        if (!index) {
-            view.world.coreStashPage = 1;
-            if (!view.world.cnStashConfirmed && !view.world.requestedStashPage) {
-                view.world.stashPage = 1; view.world.sharedStash = false;
-                view.world.stashInitialized = true;
-                view.world.stashSynchronized = false;
-            }
-            ++view.world.interactionGeneration;
-            ++view.world.itemRevision;
-        }
-        if (index == 4) {
-            // Core RVA 0x38F72C selects one of sixteen extended hotkey records.
-            const auto slot = packet.body[2];
-            if (slot >= 16) throw ProtocolError("Invalid PD2 extended hotkey slot");
-            index += slot;
-        }
-        pd2PlayerUpdates[index] = std::move(packet.body);
-        ++view.gameProtocol.unconsumed[packet.id];
-        changed();
-        return;
-    }
-    if (compatibility.profile == ClientProfile::Pd2CnNormal20261020 && packet.id == 0x83) {
-        // Core 38FA50: five WORDs, one BYTE and a DWORD feed the local
-        // effect-timer list. This is neither a damage result nor an ACK.
-        Reader timer(packet.body);
-        const auto id = timer.u16();
-        for (unsigned field = 0; field < 4; ++field) timer.u16();
-        timer.u8(); timer.u32(); timer.finish();
-        if (!pd2EffectTimers.contains(id) && pd2EffectTimers.size() >= 256)
-            pd2EffectTimers.erase(pd2EffectTimers.begin());
-        pd2EffectTimers[id] = std::move(packet.body);
-        ++view.gameProtocol.unconsumed[packet.id]; // Timer UI is not projected yet.
-        changed();
-        return;
-    }
-    if (view.remoteLobbyOnly && (packet.id == 0x85 || packet.id == 0x88)) {
-        const size_t index = packet.id == 0x85 ? 0 : 1;
-        const size_t expected = index == 0 ? 392 : 386;
-        if (packet.body.size() != expected || !view.load.playerUnitId)
-            throw ProtocolError("Invalid PD2 local player-data snapshot");
-        // Native handlers only replace fixed local PlayerData byte blocks;
-        // their UI semantics remain unavailable, without a response or world mutation.
-        pd2PlayerDataBlocks[index] = std::move(packet.body);
-        ++view.gameProtocol.unconsumed[packet.id];
-        changed();
-        return;
-    }
+    if (handle_player_state_pd2(packet)) return;
     Reader in(packet.body);
     if (packet.id == 0x01) {
         view.load.difficulty = in.u8();
@@ -556,7 +289,8 @@ void RealmSession::Impl::handle_game(Packet packet) {
         // 0x3F completes only the use/preparation request, never Identify.
         related |= packet.id == 0x3F && action == OnlineItemAction::Use &&
             view.world.itemTargetingSource == request->command.item;
-        related |= packet.id == 0x77 && action == OnlineItemAction::CubeOpen && view.world.storage.kind == OnlineStorageKind::Cube;
+        related |= packet.id == 0x77 && action == OnlineItemAction::CubeOpen &&
+            view.world.storage.kind == OnlineStorageKind::Cube && view.world.storage.source == request->command.item;
         related |= packet.id == 0x9C && action == OnlineItemAction::TradeOpen && view.world.shopSource == request->command.npc;
         if ((packet.id == 0x1D || packet.id == 0x1E || packet.id == 0x1F) && !packet.body.empty()) {
             const auto stat = packet.body.front();
@@ -599,8 +333,10 @@ void RealmSession::Impl::handle_game(Packet packet) {
             itemPacket.u8(); BitReader bits(itemPacket.take(itemPacket.remaining()));
             id = bits.read(bits.read(1) ? (bits.read(1) ? 32 : 16) : 8);
         }
-        related |= action!=OnlineItemAction::QuestService && id && ((request->command.itemRevision && *id == request->command.item) ||
+        related |= action!=OnlineItemAction::QuestService && action!=OnlineItemAction::Transmute &&
+            action!=OnlineItemAction::MaterialWithdraw && id && ((request->command.itemRevision && *id == request->command.item) ||
             (request->command.targetRevision && *id == request->command.target));
+        if (action == OnlineItemAction::MaterialWithdraw) related = material_withdrawal_updated_pd2();
         if ((packet.id == 0x9C || packet.id == 0x9D || packet.id == 0x0A || packet.id == 0x42 || packet.id == 0x3E) &&
             action == OnlineItemAction::Transmute) {
             // An unrelated backpack or equipment refresh is not a cube result.

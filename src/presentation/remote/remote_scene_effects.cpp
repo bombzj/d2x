@@ -62,7 +62,8 @@ void RemoteScene::Impl::emitDruidStates(const OnlineView &view,SceneView &shared
             const auto skill=druidStateSkills.find(state);if(skill==druidStateSkills.end()) continue;
             const auto identity=std::pair{key,state};active.insert(identity);
             auto &clock=druidParticles.try_emplace(identity,StateParticles{UINT64_MAX,initialRandom(key.id)}).first->second;
-            if(clock.frame==frame) continue;clock.frame=frame;
+            if(clock.frame==frame) continue;
+            clock.frame=frame;
             const auto row=skillRows.at(skill->second);int rank=1;
             const auto rankStat=monsterText->nativeStats->names.find("modifierlist_level");
             if(rankStat!=monsterText->nativeStats->names.end())
@@ -676,7 +677,8 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 // CN CltDo8 extends the base radius by the observed charge
                 // state's AuraStat1, rather than the actor's cumulative stat.
                 const auto snapshot = combat.states().find(event.source);
-                if (snapshot == combat.states().end() || !snapshot->second.decoded || !initialization.streamRange) {
+                if (snapshot == combat.states().end() || !snapshot->second.decoded ||
+                    !actor.stateSequence || snapshot->second.sequence != actor.stateSequence || !initialization.streamRange) {
                     effectLimitations.insert("PD2 skill radius/state unresolved: " + std::to_string(*event.skill));
                     return;
                 }
@@ -977,14 +979,17 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     {float((*event.missileDestination)[0]) + .5f, float((*event.missileDestination)[1]) + .5f},
                     event.level.value_or(1), 0, float(event.auxiliary) / 25.f, event.source, -1, event.pierce.value_or(0),
                     ClientMissileSource::Synchronization);
-        } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && !event.target && event.point) {
+                } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && !event.target && event.point &&
+                                    !(v.protocolProfile == "pd2-cn-normal-20261020" && event.flags > 0 && event.flags <= 3 &&
+                                        skillRows.contains(*event.skill) && skills.number(skillRows.at(*event.skill),"progressive")==1)) {
             const auto row=skillRows.find(*event.skill);if(row==skillRows.end()) continue;
             const int function=skills.number(row->second,"cltprgfunc1").value_or(0),rank=event.level.value_or(1);
             const Vec point{float(event.point->x)+.5f,float(event.point->y)+.5f};
             if(function==91 || function==92) {
                 for(int index=0;index<2;++index) {
                     const auto child=missileNames.find(skills.value(row->second,index?"cltmissileb":"cltmissilea"));
-                    if(child==missileNames.end()) continue;ClientMissileInitialization init;
+                    if(child==missileNames.end()) continue;
+                    ClientMissileInitialization init;
                     if(function==91 && index) {
                         init.parameters=std::array<int32_t,2>{std::bit_cast<int32_t>(event.flags),0};
                         init.streamRange=skillCalculation(*event.skill,rank,"aurarangecalc",event.source).value_or(1);
@@ -1002,8 +1007,9 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                     launch(child->second,point,point,rank,0,{},event.source,-1,0,ClientMissileSource::Cast,{},0,init);
                 }
             }
-        } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill && event.target) {
-            const auto row=skillRows.find(*event.skill);const auto target=v.world.units.find(*event.target);
+        } else if(event.kind==OnlineCombatEvent::Kind::Skill && event.packet==0xA3 && event.skill &&
+                  (event.target || (v.protocolProfile == "pd2-cn-normal-20261020" && event.flags > 0 && event.flags <= 3))) {
+            const auto row=skillRows.find(*event.skill);const auto target=v.world.units.find(event.target.value_or(event.source));
             if(row!=skillRows.end() && target!=v.world.units.end() && target->second.position && event.flags>0 && event.flags<=3 && skills.number(row->second,"progressive")==1) {
                 const auto at=*target->second.position;const Vec point{float(at.x)+.5f,float(at.y)+.5f};
                 const auto level=std::max(1,int(event.level.value_or(1)));
@@ -1013,16 +1019,61 @@ void RemoteScene::Impl::observeEffects(const OnlineView &v, SceneView &shared, c
                 const auto calculate=[&](std::string_view field,int count) {return skillCalculation(*event.skill,level,field,event.source,count);};
                 for(const auto &step:steps) {
                     const int function=step.function;if(!function) continue;
+                    if (!event.target && function != 107) {
+                        effectLimitations.insert("PD2 progressive target/path unresolved: " + std::to_string(function));
+                        continue;
+                    }
+                    if (v.protocolProfile == "pd2-cn-normal-20261020" &&
+                        ((function == 83 && skills.number(row->second,"cltdofunc")==83) || function == 94 || function == 97 || function == 98 ||
+                         (function >= 104 && function <= 119 && function != 106 && function != 107))) {
+                        effectLimitations.insert("PD2 progressive client program unavailable: " + std::to_string(function));
+                        continue;
+                    }
                     if(function==12 || function==13) {
                         const auto visual=overlayNames.find(skills.value(row->second,"prgoverlay"));
                         if(visual!=overlayNames.end()) overlay(int(visual->second)+step.charge-1,function==12?*event.target:event.source);
                         continue;
                     }
                     const auto name=skills.value(row->second,"cltmissile"+std::string(1,char('a'+step.charge-1)));
-                    const auto missile=missileNames.find(name);if(missile==missileNames.end()) continue;
+                    const auto missile=missileNames.find(name);
+                    if(missile==missileNames.end()) {
+                        if (v.protocolProfile == "pd2-cn-normal-20261020" && (function == 106 || function == 107))
+                            effectLimitations.insert("PD2 progressive missile missing: " + std::to_string(*event.skill));
+                        continue;
+                    }
                     const auto emit=[&](Vec start,Vec end,ClientMissileInitialization initialization={}) {
                         launch(missile->second,start,end,level,0,{},event.source,-1,0,ClientMissileSource::Cast,{},0,initialization);
                     };
+                    if (v.protocolProfile == "pd2-cn-normal-20261020" && function == 106) {
+                        const auto caster = v.world.units.find(event.source);
+                        const auto count = calculate("cltcalc"+std::to_string(step.charge),step.charge);
+                        if (caster == v.world.units.end() || !caster->second.position || !count) {
+                            effectLimitations.insert("PD2 progressive fan inputs unresolved: " + std::to_string(*event.skill));
+                            continue;
+                        }
+                        const auto at = *caster->second.position;
+                        const Vec origin{float(at.x)+.5f,float(at.y)+.5f};
+                        const auto layout = pd2MissileFanLayout(origin,point,*count);
+                        auto destination = layout.first;
+                        ClientMissileInitialization initialization;
+                        initialization.activationDelay = 1;
+                        for (int index = 0; index < std::max(1,*count); ++index) {
+                            emit(origin,destination,initialization);
+                            destination = destination+layout.step;
+                        }
+                        continue;
+                    }
+                    if (v.protocolProfile == "pd2-cn-normal-20261020" && function == 107) {
+                        const auto count = calculate("cltcalc"+std::to_string(step.charge),step.charge);
+                        if (!count || *count < 0) {
+                            effectLimitations.insert("PD2 progressive ring count unresolved: " + std::to_string(*event.skill));
+                            continue;
+                        }
+                        const int rays = *count == 0 || *count > 64 ? 64 : *count;
+                        for (int direction = 0; direction < 64; direction += 64/rays)
+                            emit(point,point+missileRingDirection(direction));
+                        continue;
+                    }
                     auto seed=initialRandom(event.skillArguments?(*event.skillArguments)[0]:0);
                     auto radius=calculate("prgcalc"+std::to_string(step.charge),step.charge);
                     if(!radius || !*radius) radius=calculate("aurarangecalc",step.charge);

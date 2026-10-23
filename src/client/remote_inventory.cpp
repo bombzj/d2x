@@ -1,5 +1,6 @@
 #include "remote_inventory.hpp"
 #include "content/pd2_stash.hpp"
+#include "content/pd2_core_counters.hpp"
 #include "gameplay/items/quality.hpp"
 #include "gameplay/items/equipment_rules.hpp"
 #include "network/protocol/bits.hpp"
@@ -47,6 +48,17 @@ RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfil
     }
     stashLayout_.columns = unsigned(view_.stashColumns);
     stashLayout_.rows = unsigned(view_.stashRows);
+    if (profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020) {
+        auto slots = preparePd2CoreCounterSlots(tables_.at("misc"), archives.read("data/global/excel/misc.bin"));
+        stashLayout_.coreCounterSlotsLegacy = std::move(slots.first);
+        stashLayout_.coreCounterSlotsCurrent = std::move(slots.second);
+        for (const auto &slot : pd2CnMaterialSlots) {
+            const auto key = onlineCnMaterialKey(slot.code);
+            if (!key || !bases_.contains(slot.code))
+                throw std::runtime_error("CN material catalog is missing from the selected MPQ");
+            stashLayout_.materialKeys.push_back(*key);
+        }
+    }
 }
 int RemoteInventory::baseNumber(const OnlineItem &item, std::string_view column) const {
     const auto found = bases_.find(item.code);
@@ -370,7 +382,8 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (unit == world.units.end() || !unit->second.classId) return {};
         const auto &monsters = tables_.at("monstats");
         for (size_t row = 0; row < monsters.rows().size(); ++row)
-            if (monsters.number(row, "hcIdx") == *unit->second.classId) return monsters.value(row, "Id");
+            if (pd2Items ? row == *unit->second.classId : monsters.number(row, "hcIdx") == *unit->second.classId)
+                return monsters.value(row, "Id");
         return {};
     };
     if (command.action >= OnlineItemAction::TradeOpen && command.action <= OnlineItemAction::QuestService) {
@@ -451,8 +464,12 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         } else {
             if (command.materialOperation == OnlineCnMaterialOperation::Cube) {
                 const auto cube = std::find_if(world.items.begin(), world.items.end(), [&](const auto &entry) {
+                    const auto detail = view_.items.find(entry.first);
                     return onlinePd2StoredItem(entry.second, online.load.playerUnitId, world.storage.kind) &&
-                        entry.second.positionKnown && baseNumber(entry.second, "pSpell") == 7;
+                        entry.second.positionKnown && baseNumber(entry.second, "pSpell") == 7 &&
+                        detail != view_.items.end() && detail->second.decoded &&
+                        (entry.second.page != 5 || (world.cnStashConfirmed && world.stashSynchronized &&
+                            entry.second.stashPage == world.stashPage && entry.second.sharedStash == world.sharedStash));
                 });
                 if (cube == world.items.end()) return reject("An accessible owned cube is required before transferring materials into it");
                 command.target = cube->first; command.targetRevision = cube->second.revision;
@@ -464,6 +481,14 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
                 slot == pd2CnMaterialSlots.end() || !bases_.contains(command.materialCode) ||
                 !onlineCnMaterialWithdrawalValid(command, world.cnMaterialCounts))
                 return reject("Material withdrawal has no synchronized native counter or supported quantity");
+            command.materialItemCode = command.materialCode;
+            if (command.materialCode.size() == 3 &&
+                (command.materialCode.starts_with("r0") || command.materialCode.starts_with("r1") ||
+                 command.materialCode.starts_with("r2") || command.materialCode.starts_with("r3") ||
+                 command.materialCode.starts_with("sk") || command.materialCode.starts_with("g")))
+                command.materialItemCode += 's';
+            if (command.materialOperation != OnlineCnMaterialOperation::Upgrade && !bases_.contains(command.materialItemCode))
+                return reject("Material output item is absent from the selected MPQ");
         }
         return send();
     }
@@ -479,13 +504,26 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (command.action == OnlineItemAction::Transmute) {
             if (world.storage.kind != OnlineStorageKind::Cube) return reject("Wait for a server-opened cube");
             const auto host = world.storage.source ? world.items.find(*world.storage.source) : world.items.end();
+            const auto hostData = world.storage.source ? view_.items.find(*world.storage.source) : view_.items.end();
             if (host == world.items.end() || !host->second.positionKnown || baseNumber(host->second, "pSpell") != 7 ||
+                hostData == view_.items.end() || !hostData->second.decoded ||
                 !onlineItemOwnedBy(host->second, online.load.playerUnitId) || host->second.mode != 0 ||
                 (host->second.flags & (0x40000000u | 0x2000000u)) ||
                 (host->second.page != 1 && host->second.page != 5) ||
-                (pd2Items && host->second.page == 5 && (!world.stashSynchronized ||
+                (pd2Items && host->second.page == 5 && (!world.cnStashConfirmed || !world.stashSynchronized ||
                     host->second.stashPage != world.stashPage || host->second.sharedStash != world.sharedStash)))
                 return reject("The server-opened cube is no longer accessible");
+            command.target = host->first; command.targetRevision = host->second.revision;
+            if (pd2Items)
+                for (const auto &[id, ingredient] : world.items) {
+                    if (!onlineItemOwnedBy(ingredient, online.load.playerUnitId) || ingredient.mode != 0 || ingredient.page != 4) continue;
+                    const auto detail = view_.items.find(id);
+                    if (!ingredient.positionKnown || detail == view_.items.end() || !detail->second.decoded ||
+                        (ingredient.flags & (0x40000000u | 0x2000000u)) || detail->second.width < 1 || detail->second.height < 1 ||
+                        int(ingredient.x) + detail->second.width > view_.cubeColumns ||
+                        int(ingredient.y) + detail->second.height > view_.cubeRows)
+                        return reject("Wait for fully assigned cube ingredients before transmuting");
+                }
             if (std::none_of(world.items.begin(), world.items.end(), [&](const auto &entry) {
                 return entry.second.ownerType == 0 && entry.second.owner == online.load.playerUnitId &&
                     entry.second.mode == 0 && entry.second.page == 4;
@@ -609,10 +647,13 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             const auto primary=hirelings.value(*row,"WType1"),secondary=hirelings.value(*row,"WType2");
             const bool weapon=isType(wire,primary) || (!secondary.empty() && isType(wire,secondary));
             const bool shield=hirelings.number(*row,"Act")==3 && isType(wire,"shld");
+            const bool fitsSlot = (command.body == 1 && isType(wire, "helm")) ||
+                (command.body == 3 && isType(wire, "tors")) || (command.body == 4 && weapon) ||
+                (command.body == 5 && shield) || (pd2Items &&
+                    ((command.body == 8 && isType(wire, "belt")) || (command.body == 9 && isType(wire, "boot")) ||
+                        (command.body == 10 && isType(wire, "glov"))));
             if(!decoded.identified || (decoded.maxDurability && *decoded.maxDurability && decoded.durability==0) ||
-                !(isType(wire,"helm") || isType(wire,"tors") || weapon || shield ||
-                    (pd2Items && ((command.body==8 && isType(wire,"belt")) ||
-                        (command.body==9 && isType(wire,"boot")) || (command.body==10 && isType(wire,"glov"))))) ||
+                !fitsSlot || (wire.flags & (0x100u | 0x1000u)) || baseNumber(wire, "quest") ||
                 (hirelings.number(*row,"Act")==3 && weapon && !shield && baseNumber(wire,"2handed"))) return reject("Item is not eligible hireling equipment");
         } else if(view_.cursor || wire.ownerType!=1 || wire.owner!=world.hireling->id || wire.mode!=1 || wire.body!=command.body)
             return reject("Hireling equipment is no longer assigned");
@@ -698,9 +739,16 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
         if (!owned(wire) || !(cursor() || accessible(wire)) || !(target->mode == 1 || accessible(*target)) ||
             wire.code != target->code || !baseNumber(wire, "stackable")) return reject("Stack requires compatible owned stackable items");
         if (pd2Items) {
-            const auto maximum = baseNumber(*target, "maxstack");
+            int64_t maximum = baseNumber(*target, "maxstack");
+            for (const auto &stat : targetData->stats) {
+                const auto row = statRows_.find(stat.id);
+                if (!stat.parameter && row != statRows_.end() &&
+                    tables_.at("itemstatcost").value(row->second, "Stat") == "item_extra_stack")
+                    maximum += stat.value;
+            }
+            maximum = std::min(maximum, int64_t{511});
             if (!onlinePd2StackCompatible(wire, decoded, *target, *targetData) ||
-                maximum < 1 || maximum > 511 || *targetData->quantity >= unsigned(maximum))
+                maximum < 1 || *targetData->quantity >= uint64_t(maximum))
                 return reject("PD2 stacking requires matching ordinary items and a known non-full target");
         }
         break;
@@ -719,7 +767,10 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     }
     case OnlineItemAction::Socket:
         if (!cursor() || !decoded.identified || !isType(wire, "sock") ||
-            !(accessible(*target) || target->mode == 1) || !targetData->identified || targetData->sockets <= targetData->filledSockets)
+            !(accessible(*target) || target->mode == 1) || !targetData->identified ||
+            !(target->flags & 0x800u) || (target->flags & 0x100u) ||
+            (targetData->maxDurability && *targetData->maxDurability && targetData->durability == 0) ||
+            targetData->sockets <= targetData->filledSockets)
             return reject("Socket requires an identified cursor filler and a known empty socket in an owned item");
         break;
     case OnlineItemAction::Identify: {

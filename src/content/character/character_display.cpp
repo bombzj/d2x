@@ -186,6 +186,8 @@ CharacterActionDisplay describeCharacterAction(const CharacterDisplayContext &co
         else result.damage="?";
     } else result=describeAction(context,&entry,input.rank.value_or(0),available,&values);
     if(!description.damageProgram) result.damage.clear();
+    else if(result.damage.empty() && !entry.aura && !entry.spell && entry.basicAction==BasicSkillAction::None)
+        result.damage="?";
     if(!description.attackProgram) result.attackRating.clear();
     else if(result.attackRating.empty()) {
         if(!context.weaponValuesKnown) result.attackRating="?";
