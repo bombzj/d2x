@@ -5,7 +5,7 @@
 namespace d2x {
 ItemQualityRules loadItemQualityRules(const ClassicData &data, const DataTable &ratios,
                                      std::string_view code) {
-    if (data.profile != "lod-named-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && !data.pd2Host)
         throw std::runtime_error("Item quality requires the LoD named table profile");
     const auto *item = data.items.find(code);
     if (!item || !item->base.level)

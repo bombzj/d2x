@@ -279,11 +279,15 @@ DomainResult<> System::equipHireling(const ActorContext &actor, uint32_t bodySlo
         else if(prepared->second.act==3 && definition->equipment.isType("shld") && definition->equipment.fits(EquipmentSlot::LeftHand)) slot=EquipmentSlot::LeftHand;
         else if((definition->equipment.isType(prepared->second.weaponType) || (!prepared->second.weaponType2.empty() && definition->equipment.isType(prepared->second.weaponType2))) &&
             definition->equipment.fits(EquipmentSlot::RightHand) && (prepared->second.act!=3 || !definition->equipment.twoHanded)) slot=EquipmentSlot::RightHand;
+        else if(definition->beltRows) slot=EquipmentSlot::Belt;
+        else if(definition->equipment.isType("boot") && definition->equipment.fits(EquipmentSlot::Feet)) slot=EquipmentSlot::Feet;
+        else if(definition->equipment.isType("glov") && definition->equipment.fits(EquipmentSlot::Gloves)) slot=EquipmentSlot::Gloves;
         else return {DomainStatus::InvalidRequest,{}};
     } else {
-        if(bodySlot!=1 && bodySlot!=3 && bodySlot!=4 && !(bodySlot==5 && prepared->second.act==3)) return {DomainStatus::InvalidRequest,{}};
+        if(bodySlot<1 || bodySlot>10 || (bodySlot==5 && prepared->second.act!=3)) return {DomainStatus::InvalidRequest,{}};
         slot=EquipmentSlot(bodySlot-1);
     }
+    if(!(prepared->second.equipmentSlots & (1u<<unsigned(slot)))) return {DomainStatus::InvalidRequest,{}};
     auto equipped=candidate.inventory.items.end();
     const ContainerLocation destination{containers.hirelingEquipment,{int(slot),0}};
     for(auto item=candidate.inventory.items.begin();item!=candidate.inventory.items.end();++item)

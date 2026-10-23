@@ -64,6 +64,7 @@ struct MonsterSpecialMissile {
     bool killOnHit = true;
 };
 struct ClassicData {
+    bool pd2Host = false;
     std::shared_ptr<const CollisionField> nativeCollisionField;
     std::shared_ptr<const StatRuleCatalog> nativeStats;
     std::shared_ptr<const SkillFormulaCatalog> nativeFormulas;

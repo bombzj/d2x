@@ -204,8 +204,8 @@ void RemoteUiClients::Impl::projectInteractions() {
         questView=projectQuestDisplay(data,questInput);
         shopView={}; shopView.revision=revision; shopView.actor=characterView.actor; shopView.npc=npcView.npc;
         shopView.bankGold=inventoryView.bankGold; shopView.pricesKnown=false;
-        shopView.gridTop = online.remoteLobbyOnly ? 42 : 62;
-        shopView.sellModeAvailable = online.remoteLobbyOnly && !w.shopGamble;
+        shopView.gridTop = online.protocolProfile != "lod113c" ? 42 : 62;
+        shopView.sellModeAvailable = online.protocolProfile != "lod113c" && !w.shopGamble;
         shopView.tabLabels={data.itemStrings.at("strBSArmor"),data.itemStrings.at("strBSWeapons"),
             data.itemStrings.at("strBSWeapons"),data.itemStrings.at("strBSMisc")};
         const auto identity=npcIdentity();

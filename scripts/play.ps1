@@ -2,6 +2,11 @@
     [string]$Mpq='',
     [string]$OnlineConfig='',
     [string]$ClientProfile='',
+    [switch]$Pd2Local,
+    [string]$HostLan='',
+    [string]$Lan='',
+    [ValidateRange(1,65535)][int]$GamePort=4000,
+    [string]$HostSaves='',
     [string]$OnlineCharacter='',
     [string]$OnlinePlay='',
     [string]$OnlineCreateGame='',
@@ -15,7 +20,9 @@
     [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
-if($ClientProfile -and ($Mpq -or $OnlineConfig -or $HostPacketLog)){
+if($Pd2Local -and -not $ClientProfile){throw '-Pd2Local requires -ClientProfile.'}
+if($HostLan -and $Lan){throw 'Choose either -HostLan or -Lan.'}
+if($ClientProfile -and ($Mpq -or $OnlineConfig -or ($HostPacketLog -and -not $Pd2Local))){
     throw '-ClientProfile owns its resources and service selection; a local host is unavailable.'
 }
 if($OnlinePlay -and ($OnlineCharacter -or $OnlineCreateGame -or $OnlineJoinGame)){throw '-OnlinePlay cannot be combined with manual quick-entry options.'}
@@ -25,6 +32,7 @@ if(($OnlineCreateGame -or $OnlineJoinGame) -and -not $OnlineCharacter){throw 'Qu
 if($Mpq){$Mpq=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Mpq)}
 if($OnlineConfig){$OnlineConfig=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OnlineConfig)}
 if($ClientProfile){$ClientProfile=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($ClientProfile)}
+if($HostSaves){$HostSaves=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostSaves)}
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $diagnosticRoot=''
 if($Diagnostic){
@@ -32,7 +40,7 @@ if($Diagnostic){
     $diagnosticRoot=Join-Path $projectRoot "artifacts/diagnostics/$runName"
     New-Item -ItemType Directory -Path $diagnosticRoot -Force | Out-Null
     $GamePacketLog=Join-Path $diagnosticRoot 'client-packets.jsonl'
-    if(-not $ClientProfile){$HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'}
+    if(-not $ClientProfile -or $Pd2Local){$HostPacketLog=Join-Path $diagnosticRoot 'host-packets.jsonl'}
 }
 if($GamePacketLog){$GamePacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($GamePacketLog)}
 if($HostPacketLog){$HostPacketLog=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($HostPacketLog)}
@@ -61,6 +69,11 @@ try{
     $arguments=@()
     if($Hidden){$arguments+='--hidden'}
     if($ClientProfile){$arguments+=@('--client-profile',$ClientProfile)}
+    if($Pd2Local){$arguments+='--pd2-local'}
+    if($HostLan){$arguments+=@('--host-lan',$HostLan)}
+    if($Lan){$arguments+=@('--lan',$Lan)}
+    if($PSBoundParameters.ContainsKey('GamePort')){$arguments+=@('--game-port',"$GamePort")}
+    if($HostSaves){$arguments+=@('--host-saves',$HostSaves)}
     if($OnlineConfig){$arguments+=@('--online-config',$OnlineConfig)}
     if($OnlineCharacter){$arguments+=@('--online-character',$OnlineCharacter)}
     if($OnlinePlay){$arguments+=@('--online-play',$OnlinePlay)}

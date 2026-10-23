@@ -149,7 +149,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
     const auto configPath = std::filesystem::path(options.onlineConfig);
     const auto &pipeName = options.debugPipe;
     if (options.hidden && !pipeName.empty()) SetTargetFPS(60);
-    const bool remoteOnly = options.protocolProfile != net::protocol::ClientProfile::Lod113c;
+    const bool remoteOnly = options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020;
+    const bool pd2Resources = options.protocolProfile != net::protocol::ClientProfile::Lod113c;
     RealmFrontend ui(archives);
     profile.mark("frontend-assets-ready");
     OnlineLoginMemory loginMemory(configPath);
@@ -169,7 +170,8 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
         });
     }
     std::unique_ptr<EmbeddedRealm> embedded;
-    if (!remoteOnly) embedded = std::make_unique<EmbeddedRealm>(archives, options.hostSaves);
+    if (!remoteOnly) embedded = std::make_unique<EmbeddedRealm>(archives, options.hostSaves,
+        options.pd2Local ? ContentPreparation::Pd2TownHost : ContentPreparation::OriginalRules);
     if (!options.hostPacketLog.empty()) {
         auto log = std::make_shared<GamePacketLog>(options.hostPacketLog,"host");
         embedded->observeGamePackets([log](uint64_t connection, hosting::GamePacketDirection direction, std::span<const uint8_t> bytes) {
@@ -800,7 +802,7 @@ void runFrontend(Archives &archives, RenderTexture2D &target, const AppOptions &
             profile.mark("native-world-ready");
             try {
                 scene = std::make_unique<RemoteScene>(archives, town.read().palette.value_or(0), mapDisplay,
-                    remoteOnly ? ContentPreparation::RemoteDisplay : ContentPreparation::OriginalRules);
+                    pd2Resources ? ContentPreparation::RemoteDisplay : ContentPreparation::OriginalRules);
                 profile.mark("scene-assets-ready");
             } catch (const std::exception &e) {
                 sceneError = e.what();

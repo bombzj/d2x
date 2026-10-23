@@ -118,7 +118,8 @@ std::shared_ptr<const server::MonsterRule> prepareNeutralMonsterRule(Archives &a
     return rule;
 }
 void prepareNpcs(Archives &archives, const ClassicData &data, PreparedWorldArea &prepared) {
-    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats")); });
+    const auto catalogSource = archives.prepared<MonsterCatalog>([&] { return MonsterCatalog(archives, data.tables.at("monstats"),
+        data.pd2Host ? MonsterPreparation::TownActors : MonsterPreparation::FullRules); });
     const auto &catalog = *catalogSource; ClassicStrings strings(archives);
     SpeechIndexes speechIndexes;
     for(const auto &[key,value]:strings.entries()) {

@@ -73,6 +73,20 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 启动测量在当次交付中说明程序版本、资源、启动参数及采样条件；临时测量文件可清理，不作为功能或原版一致性的长期依据。
 
+## PD2自有单机与TCP/IP城镇宿主
+
+先显式构建当前EXE，使用`PlayPD2Local.cmd`（等价于`PlayPD2.cmd -Local`）启动。该入口使用与CN客户端相同的固定资源核对，但默认进入本机选角，角色保存在`saves/pd2`；不要求账号登录，不装载原DLL。已有`pd2.local.json`可直接复用；首次独立本地配置写入Git忽略的`pd2-host.local.json`。具体功能和限制见[PD2城镇宿主](../architecture/PD2_COMPATIBILITY.md#自有pd2城镇宿主)，原生PD2存档不可直接导入。
+
+```powershell
+.\PlayPD2Local.cmd -Pd2Directory 'D:\Games\DiabloII-PD2-Copy\pd2'
+.\PlayPD2Local.cmd
+# TCP/IP两端使用相同PD2资源；各自选择独立的本机角色。
+.\PlayPD2Local.cmd -HostLan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-host
+.\PlayPD2Local.cmd -Lan 127.0.0.1 -GamePort 14000 -HostSaves saves/pd2-guest
+```
+
+EXE参数为`--client-profile <file.json> --pd2-local`，可组合`--class`／`--save`／`--load`及`--host-saves`，默认调试管道`d2x-pd2-local`，窗口标题D2X - PD2 Single Player / TCP-IP。多客户端应各用不同`-PipeName`。本地协议不连接CN账号端点，`-OnlineCharacter`、PD2无窗口及独立PvPGN服务仍拒绝。
+
 ## PD2 CN远端账号大厅
 
 `PlayPD2.cmd`使用同一D2X程序和`scripts/play-pd2.ps1`，不会自动构建、安装／更新PD2或加载原DLL。先显式构建包含本功能的EXE；现有旧EXE不因新增脚本而获得兼容。默认普通`Play.cmd`仍为原版。
@@ -89,13 +103,13 @@ EXE 的可选 `--startup-profile <路径.tsv>` 按单调时钟记录从 `runGame
 
 配置只保存`version=1`、`clientProfile=pd2-cn-normal-20261020`、`authentication=pd2-cn`、`originalClientDirectory`、`pd2Directory`、`accountHost/accountPort`、`gamePort`及`gateway`。原目录必须是pd2目录的父目录；相对路径按配置文件目录解析。账号密码在D2X界面输入，沿用每配置路径独立的Windows凭据管理器／Linux受限文件，不能写入启动命令、公开配置或文档。运行中修改配置定义会拒绝后续认证，需重启固定新服务与资源。
 
-EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2 CN。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。房间详情、PD2单机／局域网及无窗口模式关闭；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
+EXE入口为`--client-profile <file.json>`，PD2窗口标题为D2X - PD2 CN。启动核对固定样本SHA-256，按已恢复顺序挂载原包、CN patch及四个PD2包；未知构建或资源不符明确停止。认证只读原MPQ的key／owner资源与pd2目录三份版本文件，不执行目标程序。已支持当前服务的账号登录、Realm、既有角色选择、大厅列表及返回；新账号注册尚未重测。已显示当前角色原图，建房／加入请求已接入，MCP已返回成功；修正游戏端口后已实际显示罗格营地、本人、NPC和HUD，并正常退局返回选角；此阶段仅认证基础入场和城镇显示。CN房间详情及PD2无窗口模式关闭；PD2单机／局域网须使用独立本地入口；建角按原MCP 0x02（可选专家级0x04、天梯0x40）、删角按原MCP 0x0A编码提交，成败以CN服务回复为准。未指定 `--lang` 时该 profile 默认 `chi`，读取CN副本 `Data/local` 的中文表、字形与菜单图，`-Lang eng` 可改回英文。PD2登录自动选择返回的第一个Realm，直接显示角色列表。CN Normal默认gamePort=4001，来自固定BH对D2Net的端口补丁；原版默认4000。若沿用旧pd2.local.json中的4000，需改为4001后重启；不会由更新原客户端自动修改D2X配置。配置可选gameServer整数1–9（默认1）、lootAllocation布尔值（默认true）。CN创建游戏页从CN副本的Data/local/Lng/Chi/PatchString.tbl只读加载GS1–GS9名称及标题，使用原gsselectbuttons按钮；初选采用配置值，同一账号连接内保留本次选择，每次建房提交自己的GS编号，不改写配置。GS不是端口或传输选择；资源虽有CreateGameGS10，已核实的原选择器仅创建九个按钮，因此不开放GS10，旧配置值10须改为1–9。完整限制见[兼容设计](../architecture/PD2_COMPATIBILITY.md#当前代码接入范围)。
 
 默认独立调试管道为`d2x-pd2-debug`，可用`-NoDebugPipe`关闭。大厅支持既有`online-login`、状态／列表别名、选Realm／角色、返回角色／Realm、取消列表、注销、`ui-input`、`screenshot`及`quit`，JSON请求格式沿用[调试指南](DEBUG_PIPE.md)。管道登录不记忆密码，状态仅给公开身份／挑战名称、包ID／计数和数值拒绝码，不保存认证载荷；需要记忆时仍通过UI登录。`-Hidden`建立隐藏的正常渲染窗口，便于沿相同入口自动操作和截图，不是无窗口协议模式。`-Diagnostic`记录程序身份、输出、启动节点及client-packets.jsonl的D2GS逻辑包；不记录SID／MCP原始认证载荷，0x68票据字段脱敏。没有到达GS收发阶段时文件可为空。游戏心跳问题可用`PlayPD2.cmd -Diagnostic`保留程序身份及游戏包记录，再取`online-status`的`gameHeartbeat`计数／时间及截图；只有游戏包完全断流才触发CN心跳超时。原版`Play-Diagnostic.cmd`语义保持原样。
 
 ## 无窗口协议客户端
 
-PD2不支持本节的宿主、TCP/IP传档或无窗口组合。
+PD2本地支持普通窗口／隐藏窗口的单机与TCP/IP，不支持本节的无窗口诊断组合。
 
 现有`d2x.exe --headless <profile.json> --debug-pipe <独立名字>`可运行无窗口房主或一组原生TCP/IP客端，不初始化OpenGL、音频、UI、动画或客户端地图。`mode=host`读取`--mpq`，通过原内存MCP选角／建八人房，包含一个房主角色；`mode=clients`在一个进程中运行1–8个独立RealmSession，不读取MPQ。一个房主加七个客端即八个真实玩家，不增加房间容量或修改玩法规则。该显式诊断入口不替代普通客户端的地图／技能资格校验。
 

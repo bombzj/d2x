@@ -175,7 +175,7 @@ bool appendSelectedItem(const ClassicData &data,const DataTable &ratios,const Tr
         return true;
     }
     if (generation.quality == ItemQuality::Normal &&
-        ((item->family == ItemFamily::Misc && !rules.normalOnly) ||
+        ((item->family == ItemFamily::Misc && !rules.normalOnly && !(data.pd2Host && quiver)) ||
          (item->family != ItemFamily::Misc && !item->equipment.known))) {
         plan.deferred = "Unsupported instance: " + item->code + " requested=" +
                         dropQualityName(requested);

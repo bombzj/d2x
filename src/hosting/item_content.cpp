@@ -102,6 +102,7 @@ ItemInstance prepareItem(const ClassicData &data, const LootDrop &drop, uint64_t
     // and entity allocation deliberately remain in the authority.
     const auto &generation = drop.generation;
     ItemInstance item;
+    if(data.pd2Host) item.nativeFormat=104;
     item.definition = drop.code; item.quantity = definition->bookCapacity?1:drop.quantity; item.level = drop.level;
     item.charges = definition->bookCapacity?drop.quantity:0; item.quality = generation.quality;
     item.identified = item.quality != ItemQuality::Magic && item.quality != ItemQuality::Rare &&

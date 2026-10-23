@@ -7,7 +7,7 @@
 #include <stdexcept>
 #include <set>
 namespace d2x {
-std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const ClassicData &data) {
+std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const ClassicData &data, std::span<const uint8_t> missileRecords) {
     if(!data.skills.descriptions) throw std::runtime_error("Missing prepared native calculation sources");
     const auto &sources=*data.skills.descriptions;
     std::map<std::string,int16_t,std::less<>> eventIds;
@@ -31,13 +31,13 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
         const auto name=elements.value(row,"code");if(name.empty()) continue;
         if(row>UINT8_MAX || !elementIds.emplace(std::string(name),uint8_t(row)).second) throw std::runtime_error("Invalid native element linker identity");
     }
-    const auto copy=[&](const SkillDescriptionSource &source) {
+    const auto copy=[&](const SkillDescriptionSource &source, bool bindElement = true) {
         SkillFormulaRecord record;
         record.id=source.id;record.numbers=source.numbers;record.formulas=source.formulas;record.references=source.references;
         const auto element=source.reference("etype");
         // Missiles.txt uses spaces for some absent element links; these are
         // element zero in the original compiled table, just like empty cells.
-        if(element.find_first_not_of(" \t\r\n")!=std::string_view::npos) {
+        if(bindElement && element.find_first_not_of(" \t\r\n")!=std::string_view::npos) {
             const auto found=elementIds.find(element);
             if(found==elementIds.end()) throw std::runtime_error("Missing native element linker record: "+std::string(element)+
                 " for formula source "+std::to_string(source.id));
@@ -65,13 +65,29 @@ std::shared_ptr<const SkillFormulaCatalog> prepareSkillFormulaCatalog(const Clas
             const auto &overlays=data.tables.at("overlay");
             for(size_t overlay=0;overlay<overlays.rows().size();++overlay)
                 if(overlays.value(overlay,"overlay")==name) {record.procOverlay=int(overlay);break;}
-            if(record.procOverlay<0) throw std::runtime_error("Missing native missile program overlay");
+            if(record.procOverlay<0) {
+                // Current PD2 BIN explicitly compiles four stale TXT names to
+                // FFFF. Accept only that verified native absence, not a guessed art.
+                constexpr size_t stride=0x1A4, offset=0x36;
+                const auto word=[&](size_t at) { return uint16_t(missileRecords[at]|uint16_t(missileRecords[at+1])<<8); };
+                if(missileRecords.size()!=4+missiles.rows().size()*stride ||
+                    (uint32_t(word(0))|uint32_t(word(2))<<16)!=missiles.rows().size() ||
+                    word(4+row*stride+offset)!=UINT16_MAX)
+                    throw std::runtime_error("Missing native missile program overlay: "+std::string(name));
+            }
         }
         if(!result->missileIds.emplace(name,*id).second || !result->missiles.emplace(*id,std::move(record)).second)
             throw std::runtime_error("Duplicate native missile formula identity");
     }
     for(const auto &[id,source]:sources.skills) {
-        auto record=copy(source);
+        const bool prepared = !data.pd2Host || data.skills.find(id);
+        auto record=copy(source,prepared);
+        // Town hosting keeps formula references, but does not install cast
+        // eligibility for retired/monster programs outside its prepared catalog.
+        if(!prepared) {
+            result->skills.emplace(id,std::move(record));
+            continue;
+        }
         const auto &skills=data.tables.at("skills");
         for(size_t row=0;row<skills.rows().size();++row) if(skills.number(row,"Id")==id) {
             std::set<std::string,std::less<>> visited;

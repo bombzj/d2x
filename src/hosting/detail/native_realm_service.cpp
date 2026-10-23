@@ -241,7 +241,8 @@ std::string NativeRealmService::prepareStartup(const std::string &load, const st
     auto &o = *this;
     if (!shared.games.empty() || shared.peers.size() > 1) throw std::runtime_error("Cannot change the save repository while other host sessions exist");
     o.close(); o.initialize();
-    const auto destination = std::filesystem::absolute(!save.empty() ? save : !load.empty() ? load : "saves/quick.d2s").lexically_normal();
+    const auto destination = std::filesystem::absolute(!save.empty() ? std::filesystem::path(save)
+        : !load.empty() ? std::filesystem::path(load) : root / "quick.d2s").lexically_normal();
     o.root = destination.parent_path(); o.store = std::make_unique<CharacterStore>(o.root, *o.content);
     PersistentCharacter character;
     if (!load.empty()) character = loadSave(load, *o.content);

@@ -123,9 +123,11 @@ void preparePd2Authentication(net::protocol::OriginalClientAuth &auth, const std
 }
 void resolveClientSetup(AppOptions &options) {
     if (options.clientProfile.empty()) return;
-    if (!options.headlessProfile.empty() || !options.hostLan.empty() || !options.lan.empty() ||
+    if(options.pd2Local && (!options.headlessProfile.empty() || !options.pack.empty() || !options.onlineCharacter.empty()))
+        throw std::runtime_error("PD2 local hosting uses the Single Player / TCP-IP frontend; remote quick entry, headless profiles and packing are unavailable");
+    if (!options.pd2Local && (!options.headlessProfile.empty() || !options.hostLan.empty() || !options.lan.empty() ||
         !options.load.empty() || !options.save.empty() || !options.characterClass.empty() ||
-        !options.hostPacketLog.empty() || !options.pack.empty())
+        !options.hostPacketLog.empty() || !options.pack.empty()))
         throw std::runtime_error("PD2 CN supports remote Battle.net only");
     options.clientProfileDigest=fileDigest(options.clientProfile);
     std::ifstream input(options.clientProfile);
@@ -143,7 +145,8 @@ void resolveClientSetup(AppOptions &options) {
         !std::filesystem::equivalent(pd2.parent_path(), original))
         throw std::runtime_error("PD2 CN requires a pd2 directory inside the isolated original client copy");
     verifyPd2ClientFiles(pd2);
-    options.protocolProfile = net::protocol::ClientProfile::Pd2CnNormal20261020;
+    options.protocolProfile = options.pd2Local ? net::protocol::ClientProfile::Pd2Local
+        : net::protocol::ClientProfile::Pd2CnNormal20261020;
     options.mpq = original.string();
     options.pd2Directory = pd2.string();
     options.mpqSupplement.clear();

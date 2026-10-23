@@ -71,6 +71,7 @@ int runGame(int argc, char **argv) {
                      "Single Player lists local D2S characters; F11 saves, Ctrl+F11 reloads in town.\n"
                      "--mpq <folder|archive> --online-config <file.json>\n"
                      "--client-profile <file.json>: fixed PD2 CN remote client resources and protocol.\n"
+                     "--pd2-local: with --client-profile, use D2X PD2 town hosting and separate local saves.\n"
                      "--host-lan <IPv4 interface> --host-saves <folder>: shared MCP/D2GS host.\n"
                      "--lan <host IPv4>: connect directly to its native character lobby.\n"
                      "--realm-port <port> --game-port <port>: LAN defaults 6113 / 4000.\n"
@@ -102,6 +103,7 @@ int runGame(int argc, char **argv) {
     Platform platform(options.hidden);
     if(options.protocolProfile == net::protocol::ClientProfile::Pd2CnNormal20261020)
         SetWindowTitle("D2X - PD2 CN");
+    else if(options.pd2Local) SetWindowTitle("D2X - PD2 Single Player / TCP-IP");
     profile.mark("platform-ready");
     RenderTarget target;
     runFrontend(archives, target.handle, options, profile);

@@ -74,7 +74,7 @@ target_link_libraries(d2x_items PUBLIC d2x_core d2x_rules)
 
 add_library(d2x_content
   src/content/pd2_core_counters.cpp
-  src/content/classic_data.cpp src/content/lod_data.cpp src/content/world/world_catalog.cpp
+  src/content/classic_data.cpp src/content/lod_data.cpp src/content/pd2/town_data.cpp src/content/world/world_catalog.cpp
   src/content/monsters/monster_catalog.cpp src/content/skills/description_formula.cpp
   src/content/skills/description_data.cpp src/content/skills/formula_data.cpp
   src/content/skills/description_values.cpp src/content/skills/skill_description.cpp
@@ -178,7 +178,7 @@ add_library(d2x_persistence
   src/persistence/d2s_codec.cpp src/persistence/save_file.cpp src/persistence/d2s_header.cpp
   src/persistence/d2s_fixed_sections.cpp src/persistence/d2s_stats.cpp
   src/persistence/d2s_items.cpp src/persistence/d2s_inventory.cpp src/persistence/d2s_skills.cpp
-  src/persistence/d2s_quests.cpp
+  src/persistence/d2s_quests.cpp src/persistence/pd2_save_profile.cpp
 )
 target_link_libraries(d2x_persistence PUBLIC d2x_gameplay d2x_items d2x_content)
 
@@ -326,7 +326,7 @@ target_link_libraries(d2x_host PUBLIC d2x_server)
 add_library(d2x_game_content
   src/hosting/skill_content.cpp src/hosting/combat_content.cpp
   src/hosting/environment_content.cpp src/hosting/monster_actions_content.cpp
-  src/hosting/game_content.cpp
+    src/hosting/game_content.cpp src/hosting/pd2/town_host.cpp
   src/hosting/character_content.cpp src/hosting/character_creation.cpp
   src/hosting/crafting_content.cpp src/hosting/item_content.cpp src/hosting/object_content.cpp
   src/hosting/npc_content.cpp src/hosting/merchant_content.cpp src/hosting/companion_content.cpp

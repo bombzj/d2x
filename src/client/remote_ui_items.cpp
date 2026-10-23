@@ -87,7 +87,8 @@ std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::observedCombatEquip
     }
 std::optional<CombatDisplayEquipment> RemoteUiClients::Impl::calculateCombatEquipment(OnlineUnitKey key,EquipmentActor actor,
         const std::map<int,int> &ranks,int defense,int rating,int minimum,int maximum) const {
-        if (data.profile != "lod-named-txt-v1") return {};
+        if (data.profile != "lod-named-txt-v1" &&
+            !(actor.hireling && session.read().protocolProfile=="pd2-local")) return {};
         const auto &world=session.read().world;
         const auto unit=world.units.find(key),end=world.units.end();
         const auto observed=combat.states().find(key);
@@ -232,7 +233,7 @@ std::optional<unsigned> RemoteUiClients::Impl::itemQuote(uint32_t id, OnlineItem
             definition->bookCapacity ? std::optional<unsigned>(detail.book) : std::nullopt);
         // Current core RVA 0x2E8140 (old 0x2E6490): cap each repair
         // after quest and equipment discounts. Original quotes retain no cap.
-        return price && online.remoteLobbyOnly && repair ? std::min(*price, 250000u) : price;
+        return price && online.protocolProfile != "lod113c" && repair ? std::min(*price, 250000u) : price;
     }
 InventoryItemView RemoteUiClients::Impl::projectItem(const OnlineItem &native, const OnlineDecodedItem &di, ItemLocation location) const {
             const auto *definition=data.items.find(native.code);

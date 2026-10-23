@@ -24,6 +24,7 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--headless") options.headlessProfile = value();
         else if (arg == "--online-config") { options.onlineConfig = value(); explicitOnlineConfig=true; }
         else if (arg == "--client-profile") options.clientProfile = value();
+        else if (arg == "--pd2-local") options.pd2Local = true;
         else if (arg == "--host-lan") options.hostLan = value();
         else if (arg == "--lan") options.lan = value();
         else if (arg == "--host-saves") { options.hostSaves = value(); explicitHostSaves=true; }
@@ -59,8 +60,11 @@ AppOptions parseOptions(int argc, char **argv) {
         else if (arg == "--help") options.help = true;
         else throw std::runtime_error("Unknown option: " + arg);
     }
-    if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig || explicitHostSaves || explicitPort))
+    if (options.pd2Local && options.clientProfile.empty())
+        throw std::runtime_error("--pd2-local requires --client-profile to bind the PD2 resource build");
+    if (!options.clientProfile.empty() && (explicitMpq || explicitOnlineConfig || (!options.pd2Local && (explicitHostSaves || explicitPort))))
         throw std::runtime_error("--client-profile owns resources and service configuration; do not combine with MPQ, online, host or port overrides");
+    if (options.pd2Local && !explicitHostSaves) options.hostSaves = "saves/pd2";
     if (!options.headlessProfile.empty() && (!options.load.empty() || !options.save.empty() ||
         !options.characterClass.empty() || !options.hostLan.empty() || !options.lan.empty() ||
         !options.onlinePlay.empty() || !options.onlineCharacter.empty() || !options.onlineCreateGame.empty() ||

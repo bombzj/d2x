@@ -74,6 +74,7 @@ PersistentCharacter createCharacter(const ClassicData &content, std::string name
         if (!body.empty() && !bodySlot) throw std::runtime_error("Unknown starter body slot");
         for (int n = 0; n < (body.empty() ? count : 1); ++n) {
             ItemInstance item;
+            if(content.pd2Host) item.nativeFormat=104;
             item.id = EntityId{result.nextEntityId++};
             item.definition = code;
             item.quantity = body.empty() ? 1u : base->maxStack > 1 ? base->maxStack : unsigned(count);

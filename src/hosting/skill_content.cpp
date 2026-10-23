@@ -242,6 +242,7 @@ void prepareSkillRules(server::PreparedRules &rules, const ClassicData &data, co
             spec.minimumDamage=spec.maximumDamage=skillTable.number(row,"MinDam").value_or(0);
             spec.hitShift=skillTable.number(row,"HitShift").value();spec.hitClass=skillTable.number(row,"HitClass").value_or(1);
         } else if(start==3 && action==4) spec.effect=SkillBehavior::Unsummon;
+        else if(data.pd2Host) continue; // Unprepared PD2 programs remain NotImplemented at dispatch.
         else throw std::runtime_error("Unsupported original general skill program");
         prepared->definitions.emplace(id,server::SkillDefinition{std::move(spec),skillTable.number(row,"InTown").value_or(0)!=0,{}});
     }

@@ -806,7 +806,7 @@ bool RealmSession::submit_item(OnlineItemCommand command) {
                 (command.mercenary ? command.body != 0 || !world.pets.contains(world.hireling->id) ||
                     !onlineCursorItem(item->second, p.view.load.playerUnitId) :
                     command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5 &&
-                    !(p.view.remoteLobbyOnly && command.body>=8 && command.body<=10))) return false;
+                    !(p.compatibility.profile!=ClientProfile::Lod113c && command.body>=8 && command.body<=10))) return false;
             out.u8(0x61);out.u16(command.body);break;
         }
         if (command.action == OnlineItemAction::MaterialWithdraw || command.action == OnlineItemAction::MaterialDeposit) {

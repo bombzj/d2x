@@ -8,11 +8,22 @@
     [string]$Lang='',
     [switch]$Diagnostic,
     [switch]$Hidden,
+    [switch]$Local,
+    [string]$HostLan='',
+    [string]$Lan='',
+    [ValidateRange(1,65535)][int]$GamePort=4000,
+    [string]$HostSaves='',
+    [ValidatePattern('^[A-Za-z0-9_-]{1,80}$')][string]$PipeName='',
     [switch]$NoDebugPipe
 )
 $ErrorActionPreference='Stop'
 $projectRoot=[IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
-if(-not $Profile){$Profile=Join-Path $projectRoot 'pd2.local.json'}
+if($Local -and $OnlineCharacter){throw '-Local selects characters from the local Single Player / TCP-IP menu.'}
+if(-not $Local -and ($HostLan -or $Lan -or $HostSaves -or $PSBoundParameters.ContainsKey('GamePort'))){throw 'Local host options require -Local.'}
+if(-not $Profile){
+    $Profile=Join-Path $projectRoot 'pd2.local.json'
+    if($Local -and -not (Test-Path -LiteralPath $Profile)){$Profile=Join-Path $projectRoot 'pd2-host.local.json'}
+}
 $Profile=$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Profile)
 if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
     if(-not $Pd2Directory){$Pd2Directory=$env:D2X_PD2_DIRECTORY}
@@ -21,6 +32,7 @@ if(-not (Test-Path -LiteralPath $Profile -PathType Leaf)){
     if(-not (Test-Path -LiteralPath (Join-Path $Pd2Directory 'ProjectDiablo.dll') -PathType Leaf)){
         throw 'ProjectDiablo.dll was not found in the selected PD2 CN directory.'
     }
+    if($Local -and -not $AccountHost){$AccountHost='127.0.0.1'}
     if(-not $AccountHost){$AccountHost=$env:D2X_PD2_ACCOUNT_HOST}
     if(-not $AccountHost){
         $ipFile=Join-Path $Pd2Directory 'zylpd2.ip'
@@ -46,4 +58,10 @@ if($OnlineCharacter){$parameters.OnlineCharacter=$OnlineCharacter}
 if($Diagnostic){$parameters.Diagnostic=$true}
 if($Hidden){$parameters.Hidden=$true}
 if($NoDebugPipe){$parameters.NoDebugPipe=$true}
+if($Local){$parameters.Pd2Local=$true;$parameters.PipeName='d2x-pd2-local'}
+if($HostLan){$parameters.HostLan=$HostLan}
+if($Lan){$parameters.Lan=$Lan}
+if($HostSaves){$parameters.HostSaves=$HostSaves}
+if($PSBoundParameters.ContainsKey('GamePort')){$parameters.GamePort=$GamePort}
+if($PipeName){$parameters.PipeName=$PipeName}
 & (Join-Path $PSScriptRoot 'play.ps1') @parameters

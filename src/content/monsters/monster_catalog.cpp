@@ -17,7 +17,7 @@ int monsterMovementPercent(const MonsterRecord &record, int difficulty, int perc
     // Cold is another velocity stat, not a multiplier on the AI's boosted speed.
     return std::max(25, percentage + (chilled ? record.coldEffect.at(size_t(difficulty)) : 0));
 }
-MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
+MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats, MonsterPreparation preparation) {
     if (!stats.has("Id") || !stats.has("hcIdx") || !stats.has("MonStatsEx")) {
         diagnostics_.push_back("Population disabled: this MonStats schema needs a version-specific adapter.");
         return;
@@ -229,9 +229,9 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.castMode = extended.number(extra->second, "mSC").value_or(0) != 0;
         m.sequenceMode = extended.number(extra->second, "mSQ").value_or(0) != 0;
         m.baseWeapon = extended.value(extra->second, "BaseW");
-        const int meleeRange = extended.number(extra->second, "MeleeRng").value_or(0);
-        if (meleeRange < 0 || meleeRange > 255)
-            throw std::runtime_error("Unsupported monster MeleeRng: " + m.id);
+        // MonsterTbls compiles MeleeRng as BYTE. Current PD2's 999 in
+        // spiritofbarbs is 231 in monstats2.bin, not a wider melee range.
+        const int meleeRange = uint8_t(extended.number(extra->second, "MeleeRng").value_or(0));
         m.meleeRange = meleeRange == 255 ? (m.baseWeapon == "2ht" ? 2 : 0) : meleeRange;
         for (auto &profile : m.aiProfiles)
             if (profile) profile->meleeRange = m.meleeRange;
@@ -259,7 +259,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
         m.leftHandVariant = firstVariant("LHv");
         for (int index = 0; index < 8; ++index)
             m.specialVariants[size_t(index)] = firstVariant("S" + std::to_string(index + 1) + "v");
-        if (m.castMode || m.sequenceMode) {
+        if (preparation == MonsterPreparation::FullRules && (m.castMode || m.sequenceMode)) {
             m.spells = loadMonsterSpells(archives, stats, row, skills, missiles, sequences);
             m.resurrection = loadMonsterResurrection(stats, row, skills, sequences);
             m.nest = loadMonsterNest(stats, row, skills, sequences);
@@ -330,7 +330,7 @@ MonsterCatalog::MonsterCatalog(Archives &archives, const DataTable &stats) {
                             animations, actor.token, 1, weapon,
                             actor.attack1Projectile ? 2 : 1))
                         hirelingAttacks_.emplace(actor.index, *timing);
-                if (actor.castMode) {
+                if (preparation == MonsterPreparation::FullRules && actor.castMode) {
                     const auto castWeapon = monsterModeWeapon(archives, actor.token, "sc", actor.baseWeapon);
                     actor.hirelingCastTiming = loadMonsterActionTiming(animations, actor.token, "sc", castWeapon, 1);
                     if (!actor.hirelingCastTiming) throw std::runtime_error("Missing original hireling SC event");

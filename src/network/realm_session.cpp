@@ -278,7 +278,7 @@ void RealmSession::connect_realm(std::unique_ptr<IByteTransport> realmTransport,
     std::unique_ptr<IByteTransport> gameTransport, Endpoint endpoint, std::string name, uint16_t gamePort) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
-    if (p.compatibility.profile != ClientProfile::Lod113c) {
+    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) {
         p.snapshotDirty = true;
         p.fail(OnlineErrorKind::Unsupported, "This client profile does not support preauthenticated or embedded Realms");
         return;
@@ -322,7 +322,7 @@ void RealmSession::configure_player_default_skill(uint16_t skill) {
 void RealmSession::connect_tcpip(Endpoint endpoint, Bytes save, std::optional<OnlineCharacter> localIdentity) {
     std::lock_guard lock(impl_->mutex);
     auto &p = *impl_;
-    if (p.compatibility.profile != ClientProfile::Lod113c) {
+    if (p.compatibility.profile == ClientProfile::Pd2CnNormal20261020) {
         erase_secret(save);
         p.snapshotDirty = true;
         p.fail(OnlineErrorKind::Unsupported, "This client profile does not support TCP/IP character transfer");
@@ -358,6 +358,11 @@ void RealmSession::authenticate(LoginOptions options, bool createAccount) {
     std::lock_guard lock(impl_->mutex);
     impl_->snapshotDirty = true;
     auto &p = *impl_;
+    if(p.compatibility.profile == ClientProfile::Pd2Local) {
+        erase_secret(options.password);
+        p.fail(OnlineErrorKind::Unsupported, "PD2 local hosting supports Single Player and TCP/IP; select the CN profile for Battle.net");
+        return;
+    }
     p.shutdown();
     p.directRealm.reset();
     p.mcp.use(std::make_unique<TcpStream>()); p.gs.use(std::make_unique<TcpStream>());

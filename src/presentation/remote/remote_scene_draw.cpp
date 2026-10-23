@@ -32,7 +32,7 @@ RemoteSceneFrame RemoteScene::Impl::draw(const OnlineView &v, const Map &map, co
     combatBinding = &combat;
     playerId = v.load.playerUnitId;
     worldDifficulty=v.load.difficulty.value_or(0);
-    pd2=v.protocolProfile=="pd2-cn-normal-20261020";
+    pd2=v.protocolProfile!="lod113c";
     uiClients=&clients;
     artPalette = binding.palette.value_or(0);
     if(gameGeneration!=v.gameGeneration) pd2VisualSeeds.clear();

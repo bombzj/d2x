@@ -95,6 +95,7 @@ struct MonsterPreset {
     std::string id;
     int nativeClass{-1};
 };
+enum class MonsterPreparation { FullRules, TownActors };
 class MonsterCatalog {
     bool supported_ = false;
     std::map<std::string, MonsterRecord, std::less<>> monsters_;
@@ -118,7 +119,7 @@ class MonsterCatalog {
     std::optional<TowerReward> towerReward_;
 
   public:
-    MonsterCatalog(Archives &archives, const DataTable &monstats);
+    MonsterCatalog(Archives &archives, const DataTable &monstats, MonsterPreparation preparation = MonsterPreparation::FullRules);
     bool supported() const { return supported_; }
     int championChance() const { return championChance_; }
     const auto &countessFirewall() const { return countessFirewall_; }

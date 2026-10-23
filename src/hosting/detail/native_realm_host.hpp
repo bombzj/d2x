@@ -28,6 +28,7 @@ struct HostedGame {
 struct NativeRealmHost {
     Archives &archives;
     std::filesystem::path root;
+    ContentPreparation preparation = ContentPreparation::OriginalRules;
     std::shared_ptr<const ClassicData> content;
     std::shared_ptr<const ItemCatalog> items;
     std::unique_ptr<RealmPortraitCatalog> portraits;
@@ -42,7 +43,8 @@ struct NativeRealmHost {
     std::unique_ptr<AreaPreparation> areaPreparation;
     std::map<std::pair<GameHandle, uint64_t>, uint64_t> areaPreparations;
     std::set<NativeRealmService *> peers;
-    explicit NativeRealmHost(Archives &a, std::filesystem::path directory) : archives(a), root(std::move(directory)) {}
+    explicit NativeRealmHost(Archives &a, std::filesystem::path directory, ContentPreparation mode = ContentPreparation::OriginalRules)
+        : archives(a), root(std::move(directory)), preparation(mode) {}
     void initialize();
     void advance(double seconds);
     void publishEvents(GameHandle);

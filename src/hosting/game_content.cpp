@@ -4,6 +4,7 @@
 #include "environment_content.hpp"
 #include "object_content.hpp"
 #include "npc_content.hpp"
+#include "pd2/town_host.hpp"
 #include "server/character_admission.hpp"
 #include "content/classic_data.hpp"
 #include "content/world/world_catalog.hpp"
@@ -26,6 +27,7 @@ PreparedWorldArea prepareWorldAreaContent(Archives &archives, const ClassicData 
     PreparedWorldArea result;
     const auto worldSource = sharedWorldCatalog(archives, request.difficulty); const auto &world = *worldSource;
     const auto &level = world.level(request.level);
+    if(content.pd2Host) hosting::pd2::validateTownArea(level);
     result.terrain = std::move(terrain);
     auto &area = result.authority;
     area.id = RegionId(request.level); area.waypointIndex=level.waypoint;
@@ -198,7 +200,8 @@ WalkingGameContent prepareWalkingGame(Archives &archives, const ClassicData &con
     result.authority.persistent = server::admitCharacter(std::move(saved));
     result.authority.rules.items = std::move(items);
     prepareCharacterRules(result.authority.rules, content, result.authority.persistent);
-    result.authority.rules.monsterRegions=prepareMonsterRegionRules(archives,content);
+    result.authority.rules.monsterRegions=content.pd2Host ? hosting::pd2::prepareTownRegionRules(archives)
+        : prepareMonsterRegionRules(archives,content);
     auto prepared = prepareWorldArea(archives, content, {result.authority.settings.mapSeed, town.act, town.id, result.authority.settings.difficulty,result.authority.settings.ladderMonsterStats()});
     result.terrain = std::move(prepared.terrain); result.authority.area = std::move(prepared.authority);
     const auto &area = result.authority.area;

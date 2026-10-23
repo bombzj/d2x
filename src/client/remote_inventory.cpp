@@ -26,7 +26,7 @@ RemoteInventory::RemoteInventory(Archives &archives, net::protocol::ClientProfil
         if (auto code = types.value(row, "Code"); !code.empty()) typeRows_.emplace(std::string(code), row);
     for (size_t row = 0; row < stats.rows().size(); ++row)
         if (auto id = stats.number(row, "ID"); id && *id >= 0 &&
-            *id < (profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020 ? 1023 : 511))
+            *id < (profile_ != net::protocol::ClientProfile::Lod113c ? 1023 : 511))
             if (!statRows_.emplace(unsigned(*id), row).second)
                 throw std::runtime_error("Duplicate native item stat ID");
     const auto &inventory = tables_.at("inventory");
@@ -132,7 +132,7 @@ OnlineDecodedItem RemoteInventory::decode(const OnlineItem &wire) const {
             }
             return value;
         };
-        const bool pd2 = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
+        const bool pd2 = profile_ != net::protocol::ClientProfile::Lod113c;
         // Core 0x382E40 selects S12 below format 103, S13 at 103, current
         // Save columns above it. Compact remains the original D2Common reader
         // (RVA 0x2C0C0), using current columns. Outer network version is 96.
@@ -349,6 +349,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
     if (command.action == OnlineItemAction::StorageRename)
         return reject("Stash rename is unavailable on the current CN service; no request was sent");
     const bool pd2Items = profile_ == net::protocol::ClientProfile::Pd2CnNormal20261020;
+    const bool pd2Equipment = profile_ != net::protocol::ClientProfile::Lod113c;
     if (pd2Items && (!onlinePd2ItemAction(command.action) ||
         (command.action == OnlineItemAction::Place && command.page != 0 && command.page != 2 && command.page != 3 && command.page != 4)))
         return reject("This item operation is unavailable for the selected client profile");
@@ -632,7 +633,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             break;
         }
         if(!world.hireling || world.deadHirelingName || (command.body!=1 && command.body!=3 && command.body!=4 && command.body!=5 &&
-            !(pd2Items && command.body>=8 && command.body<=10)))
+            !(pd2Equipment && command.body>=8 && command.body<=10)))
             return reject("No living hireling or invalid equipment slot");
         const auto &hirelings=tables_.at("hireling");
         std::optional<size_t> row;
@@ -644,7 +645,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             const bool shield=hirelings.number(*row,"Act")==3 && isType(wire,"shld");
             const bool fitsSlot = (command.body == 1 && isType(wire, "helm")) ||
                 (command.body == 3 && isType(wire, "tors")) || (command.body == 4 && weapon) ||
-                (command.body == 5 && shield) || (pd2Items &&
+                (command.body == 5 && shield) || (pd2Equipment &&
                     ((command.body == 8 && isType(wire, "belt")) || (command.body == 9 && isType(wire, "boot")) ||
                         (command.body == 10 && isType(wire, "glov"))));
             if(!decoded.identified || (decoded.maxDurability && *decoded.maxDurability && decoded.durability==0) ||
@@ -800,7 +801,7 @@ bool RemoteInventory::submit(net::RealmSession &session, OnlineItemCommand comma
             return reject("Cube item shape or ground pickup range is unavailable");
         break;
     case OnlineItemAction::CubeOpen:
-        if (!accessible(wire) || view_.cursor || (!pd2Items && !isType(wire, "ques")) || baseNumber(wire, "pSpell") != 7)
+        if (!accessible(wire) || view_.cursor || (!pd2Equipment && !isType(wire, "ques")) || baseNumber(wire, "pSpell") != 7)
             return reject("Open cube requires this player's accessible original cube and empty cursor");
         break;
     case OnlineItemAction::Buy:

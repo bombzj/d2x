@@ -5,7 +5,7 @@
 
 namespace d2x {
 void loadMagicAffixData(ClassicData &data) {
-    if (data.profile != "lod-named-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && !data.pd2Host)
         return;
     for (auto name : {"magicprefix", "magicsuffix", "automagic"}) {
         auto found = data.tables.find(name);

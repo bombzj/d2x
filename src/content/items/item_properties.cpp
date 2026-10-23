@@ -12,7 +12,7 @@
 
 namespace d2x {
 void loadPropertyData(ClassicData &data) {
-    if (data.profile != "lod-named-txt-v1" && data.profile != "remote-display-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && data.profile != "remote-display-txt-v1" && !data.pd2Host)
         return;
     auto properties = data.tables.find("properties");
     if (properties != data.tables.end()) {
@@ -244,8 +244,18 @@ std::vector<ResolvedItemStat> resolvePropertyStats(const ClassicData &data,
         program.push_back({op.function,op.stat,number(op.value),number(op.set)!=0});
         if ((op.function == 11 || op.function == 19) && !input.skill) {
             const auto *skill = data.skills.find(parameter);
-            if (!skill) throw std::runtime_error("Unknown item property skill: " + property.parameter);
-            input.skill=PropertySkillLevels{skill->requiredLevel,skill->maximumRank};
+            if (skill) input.skill=PropertySkillLevels{skill->requiredLevel,skill->maximumRank};
+            else if(data.pd2Host) {
+                // Item procs such as proc_SplashDamage are not selectable
+                // player skills. Preserve their real table identity and rank
+                // metadata without inventing an executable combat program.
+                const auto &skills=data.tables.at("skills");
+                for(size_t row=0;row<skills.rows().size();++row) if(skills.number(row,"Id")==parameter) {
+                    input.skill=PropertySkillLevels{skills.number(row,"reqlevel").value_or(0),skills.number(row,"maxlvl").value_or(0)};
+                    break;
+                }
+            }
+            if (!input.skill) throw std::runtime_error("Unknown item property skill: " + property.parameter);
         }
     }
     for (const auto &stat : evaluatePropertyProgram(program,input)) {

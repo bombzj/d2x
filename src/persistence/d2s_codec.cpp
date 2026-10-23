@@ -6,6 +6,7 @@
 #include "gameplay/items/inventory_order.hpp"
 #include "content/world/world_catalog.hpp"
 #include "d2s_skills.hpp"
+#include "pd2_save_profile.hpp"
 #include "d2s_quests.hpp"
 #include "gameplay/quest/acts/act_three_state.hpp"
 #include "gameplay/areas/waypoint.hpp"
@@ -169,11 +170,13 @@ void verifyCharacter(const CharacterSaveData &snapshot, const ClassicData &conte
 CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &content) {
     require(bytes.size() <= maxSaveBytes, "file too large");
     auto header = readD2sHeader(bytes);
+    validatePd2SaveProfile(bytes, content);
     // PlrSave rejects DEAD only in combination with HARDCORE. Softcore may
     // retain this flag after resurrection; its corpse is the JM section.
     require(!(header.flags & 0x40), "ladder character unsupported");
     auto sections = readD2sFixedSections(bytes);
     CharacterSaveData snapshot;
+    snapshot.player.characterClass = classes[header.characterClass];
     initializeD2sInventory(snapshot, content);
     auto &player = snapshot.player;
     player.name = header.name; player.characterClass = classes[header.characterClass]; player.level = header.level;
@@ -272,7 +275,8 @@ CharacterSaveData decodeSave(std::span<const uint8_t> bytes, const ClassicData &
     const unsigned hasIron = bytes[cursor+2]; require(hasIron <= 1, "invalid Iron Golem flag"); cursor += 3;
     if (hasIron) {
         auto encoded = readD2sItem(bytes.subspan(cursor), content); cursor += encoded.bytesRead;
-        CharacterSaveData temporary; initializeD2sInventory(temporary, content);
+        CharacterSaveData temporary; temporary.player.characterClass=player.characterClass;
+        initializeD2sInventory(temporary, content);
         temporary.nextEntityId = snapshot.nextEntityId; temporary.player.level = player.level;
         encoded.item.mode = 4; encoded.item.page = 1;
         importD2sItem(temporary, encoded.item, content, false);
@@ -302,6 +306,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
     if (!player.nativeSaveSections.empty()) {
         require(player.nativeSaveSections.size() == fixedEnd, "invalid native metadata");
         Bytes original(player.nativeSaveSections.begin(), player.nativeSaveSections.end());
+        validatePd2SaveProfile(original,content);
         std::copy_n(original.begin(), d2sHeaderSize, bytes.begin());
         sections = readD2sFixedSections(original);
         header.flags = dword(original, 0x24);
@@ -328,6 +333,7 @@ Bytes encodeSave(const CharacterSaveData &source, const ClassicData &content) {
         sections.introductions[0] = 1; sections.introductions[1] = 0x77; sections.introductions[2] = 52;
         header.hotkeys.fill(UINT32_MAX); header.appearance.fill(0xFF); header.colors.fill(0xFF);
     }
+    writePd2SaveProfile(bytes, content, header.skillCount);
     header.flags = (header.flags & ~4u) | (player.hardcore ? 4u : 0u);
     if (player.hardcore) header.flags = (header.flags & ~8u) | (player.hardcoreDead ? 8u : 0u);
     header.name = player.name; header.characterClass = uint8_t(found - classes.begin());

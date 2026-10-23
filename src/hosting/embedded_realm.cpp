@@ -9,6 +9,7 @@ namespace d2x {
 using namespace net::protocol;
 struct EmbeddedRealm::Impl {
     hosting::NativeRealmHost host;
+    const std::filesystem::path defaultRoot;
     struct MemoryPeer {
         std::shared_ptr<net::MemoryChannel> mcp = std::make_shared<net::MemoryChannel>(), gs = std::make_shared<net::MemoryChannel>();
         uint64_t mcpGeneration{}, gsGeneration{};
@@ -28,7 +29,8 @@ struct EmbeddedRealm::Impl {
         service.store->saveBytes(*service.lease, *returnedSave);
         returnedSave.reset();
     }
-    Impl(Archives &archives, std::filesystem::path root) : host(archives, std::move(root)) { add(); }
+    Impl(Archives &archives, std::filesystem::path root, ContentPreparation preparation)
+        : host(archives, root, preparation), defaultRoot(std::move(root)) { add(); }
     MemoryPeer &add() {
         if (peers.size() >= 64) throw std::runtime_error("Memory host connection capacity exhausted");
         auto peer = std::make_unique<MemoryPeer>(); auto *target = peer.get();
@@ -79,7 +81,8 @@ struct EmbeddedRealm::Impl {
         std::erase_if(peers, [&](const auto &peer) { return peer.get() != primary && peer->retired && !peer->connection->service.binding; });
     }
 };
-EmbeddedRealm::EmbeddedRealm(Archives &archives, std::filesystem::path root) : impl_(std::make_unique<Impl>(archives, std::move(root))) {}
+EmbeddedRealm::EmbeddedRealm(Archives &archives, std::filesystem::path root, ContentPreparation preparation)
+    : impl_(std::make_unique<Impl>(archives, std::move(root), preparation)) {}
 EmbeddedRealm::~EmbeddedRealm() = default;
 void EmbeddedRealm::observePerformance(hosting::PerformanceObserver observer) {
     impl_->host.host.observeSteps(std::move(observer.step));
@@ -91,9 +94,9 @@ std::string EmbeddedRealm::prepareStartup(const std::string &load, const std::st
 EmbeddedRealm::Transports EmbeddedRealm::connect(bool defaultDirectory) {
     auto &o = *impl_; auto &peer = *o.primary; auto &service = peer.connection->service;
     o.saveReturn(); service.close(); peer.disconnect();
-    if (defaultDirectory && !o.lan && o.host.root != std::filesystem::path("saves")) {
+    if (defaultDirectory && !o.lan && o.host.root != o.defaultRoot) {
         if (o.lan || o.host.peers.size() > 1 || !o.host.games.empty()) throw std::runtime_error("Cannot change an active shared save repository");
-        o.host.root = "saves"; service.store.reset();
+        o.host.root = o.defaultRoot; service.store.reset();
     }
     if (defaultDirectory) service.startupFile.clear();
     peer.mcp = std::make_shared<net::MemoryChannel>(); peer.gs = std::make_shared<net::MemoryChannel>();

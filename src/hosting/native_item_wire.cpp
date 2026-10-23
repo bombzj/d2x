@@ -52,9 +52,11 @@ unsigned followers(unsigned id) {
     return id == 17 || id == 48 || id == 50 || id == 52 ? 1 : id == 54 || id == 57 ? 2 : 0;
 }
 void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> &source) {
+    const unsigned width=data.pd2Host?10:9;
+    const unsigned end=(1u<<width)-1;
     std::map<std::pair<unsigned, int32_t>, int64_t> remaining;
     for (const auto &stat : source) {
-        if (stat.id >= 511 || stat.parameter < 0 || !remaining.emplace(std::pair{unsigned(stat.id), stat.parameter}, stat.value).second)
+        if (stat.id >= end || stat.parameter < 0 || !remaining.emplace(std::pair{unsigned(stat.id), stat.parameter}, stat.value).second)
             throw std::runtime_error("Invalid native item property");
     }
     while (!remaining.empty()) {
@@ -62,7 +64,7 @@ void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> 
         unsigned id = key.first;
         if (id == 18 || id == 49 || id == 51 || id == 53 || id == 55 || id == 58) --id;
         else if (id == 56 || id == 59) id -= 2;
-        bits.write(id, 9);
+        bits.write(id, width);
         for (unsigned part = 0; part <= followers(id); ++part) {
             const auto found = remaining.find({id + part, key.second});
             bits.write(uint32_t(key.second), followers(id) ? 0 : format(data, id + part).params);
@@ -70,7 +72,7 @@ void stats(BitWriter &bits, const ClassicData &data, const std::vector<D2sStat> 
             if (found != remaining.end()) remaining.erase(found);
         }
     }
-    bits.write(511, 9);
+    bits.write(end, width);
 }
 Bytes packed(const ClassicData &data, const D2sItem &item) {
     const auto *def = data.items.find(item.code);

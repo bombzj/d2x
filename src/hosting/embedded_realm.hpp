@@ -4,6 +4,7 @@
 #include "performance.hpp"
 #include "administration.hpp"
 #include "server/runtime/diagnostics.hpp"
+#include "content/content_preparation.hpp"
 #include <filesystem>
 
 namespace d2x {
@@ -16,7 +17,7 @@ class EmbeddedRealm {
     std::unique_ptr<Impl> impl_;
   public:
     struct Transports { std::unique_ptr<net::IByteTransport> realm, game; };
-    EmbeddedRealm(Archives &, std::filesystem::path saves);
+    EmbeddedRealm(Archives &, std::filesystem::path saves, ContentPreparation = ContentPreparation::OriginalRules);
     ~EmbeddedRealm();
     Transports connect(bool defaultDirectory = false);
     Transports attach(); // An additional independent memory client, sharing this host.

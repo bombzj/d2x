@@ -31,6 +31,10 @@ int objectMode(std::string_view mode) {
         return mode[1] - '1' + 3;
     return 0;
 }
+int objectNumber(const std::string &value) {
+    // ObjectsTbls compiles empty numeric cells as zero, including reserved rows.
+    return value.empty() ? 0 : std::stoi(value);
+}
 void classify(WorldObject &object, const Table &objectRows) {
     const auto &token = object.appearance.token;
     if (object.appearance.category == "objects") {
@@ -49,10 +53,10 @@ void classify(WorldObject &object, const Table &objectRows) {
             object.name = record->at("Name");
             object.appearance.token = normalize(record->at("Token"));
             object.animationMode = objectMode(object.appearance.mode);
-            object.collisionWidth = std::stoi(record->at("SizeX"));
-            object.collisionHeight = std::stoi(record->at("SizeY"));
-            object.drawOffset = {float(std::stoi(record->at("Xoffset"))),
-                                 float(std::stoi(record->at("Yoffset")))};
+            object.collisionWidth = objectNumber(record->at("SizeX"));
+            object.collisionHeight = objectNumber(record->at("SizeY"));
+            object.drawOffset = {float(objectNumber(record->at("Xoffset"))),
+                                 float(objectNumber(record->at("Yoffset")))};
             object.draw = record->at("Draw") == "1";
             object.drawUnder = record->at("DrawUnder") == "1";
             if (object.collisionWidth < 0 || object.collisionHeight < 0)
@@ -66,14 +70,14 @@ void classify(WorldObject &object, const Table &objectRows) {
             for (size_t index = 0; index < object.animationRules.size(); ++index) {
                 auto &rule = object.animationRules[index];
                 const auto suffix = std::to_string(index);
-                rule.frames = std::max(1, std::stoi(record->at("FrameCnt" + suffix)));
-                rule.start = std::max(0, std::stoi(record->at("Start" + suffix)));
-                rule.fps = float(std::stoi(record->at("FrameDelta" + suffix))) * 25.f / 256.f;
+                rule.frames = std::max(1, objectNumber(record->at("FrameCnt" + suffix)));
+                rule.start = std::max(0, objectNumber(record->at("Start" + suffix)));
+                rule.fps = float(objectNumber(record->at("FrameDelta" + suffix))) * 25.f / 256.f;
                 rule.cycle = record->at("CycleAnim" + suffix) == "1";
                 rule.enabled = record->at("Mode" + suffix) == "1";
                 object.hasCollision[index] = record->at("HasCollision" + suffix) == "1";
                 object.blocksLight[index] = record->at("BlocksLight" + suffix) == "1";
-                object.orderFlags[index] = std::stoi(record->at("OrderFlag" + suffix));
+                object.orderFlags[index] = objectNumber(record->at("OrderFlag" + suffix));
             }
             const auto &operation = record->at("OperateFn");
             object.operateFn = operation.empty() ? 0 : std::stoi(operation);

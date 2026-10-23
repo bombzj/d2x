@@ -77,7 +77,7 @@ if(Test-Path -LiteralPath $pd2Profile){
         }else{$script:unchangedFiles++}
     }
 }
-foreach($name in @('Play.cmd','PlayPD2.cmd','Play-Diagnostic.cmd','README.md','BASELINE.md','LICENSE')){
+foreach($name in @('Play.cmd','PlayPD2.cmd','PlayPD2Local.cmd','Play-Diagnostic.cmd','README.md','BASELINE.md','LICENSE')){
     Copy-ChangedFile (Join-Path $projectRoot $name) (Join-Path $destination $name)
 }
 foreach($name in @('play.ps1','play-pd2.ps1','Send-D2XCommand.ps1')){

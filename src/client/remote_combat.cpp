@@ -60,7 +60,7 @@ RemoteCombat::RemoteCombat(Archives &archives, RemoteTown &scene, net::RealmSess
                 if (id <= UINT16_MAX) innate.insert(uint16_t(id));
         }
     }
-    const bool remoteOnly = session_.read().remoteLobbyOnly;
+    const bool remoteOnly = session_.read().protocolProfile != "lod113c";
     for (const auto &[id, row] : skills_) {
         const bool innate = std::any_of(innateSkills_.begin(), innateSkills_.end(),
             [&](const auto &entry) { return entry.second.contains(id); });

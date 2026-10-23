@@ -137,8 +137,10 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
     const auto discounts=factors(vendor,character.player.quests.at(size_t(result.source.difficulty)),repair,sale);
     const auto quote=[&](const ItemInstance &item) {
         const auto hiddenBase=result.source.stock.offers.contains(item.id)?result.source.stock.offers.at(item.id).displayCode:std::string{};
-        const auto price=request.gamble?itemGamblePrice(data,hiddenBase.empty()?item.definition:hiddenBase,character.player.level,item.nativeFormat,result.source.reducedPrices)
+        auto price=request.gamble?itemGamblePrice(data,hiddenBase.empty()?item.definition:hiddenBase,character.player.level,item.nativeFormat,result.source.reducedPrices)
             :itemTradePrice(data,item,vendor,repair,discounts,sale?0:result.source.reducedPrices,sale,result.source.difficulty);
+        // ProjectDiablo 2E8140 caps each repair after all discounts.
+        if(data.pd2Host && repair && price) price=std::min(*price,250000u);
         if (price && (!repair || *price)) result.prices.emplace(item.id,*price);
     };
     if (request.action==Action::Buy) {
@@ -155,7 +157,8 @@ server::merchant::Prepared prepare(const ClassicData &data,server::merchant::Pre
         const auto *definition=data.items.find(item.definition); if (!definition) continue;
         if (sale && data.tables.at(definition->base.sourceTable).number(definition->base.sourceRow,"quest").value_or(0)) continue;
         if (repair) {
-            const auto price=itemTradePrice(data,item,vendor,true,discounts,result.source.reducedPrices,false,result.source.difficulty);
+            auto price=itemTradePrice(data,item,vendor,true,discounts,result.source.reducedPrices,false,result.source.difficulty);
+            if(data.pd2Host && price) price=std::min(*price,250000u);
             if(!price || !*price) continue;
             auto repaired=item; const bool identified=repaired.identified; repaired.identified=true; freezeCubeItem(data,repaired);
             rechargeItemSkills(repaired);

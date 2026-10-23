@@ -112,9 +112,11 @@ void writeEar(D2sBitWriter &bits, const D2sItem &item) {
     writeName(bits, item.ear->name);
 }
 void readStats(D2sBitReader &bits, const ClassicData &content, D2sItem &item) {
-    for (size_t count = 0; count < 512; ++count) {
-        const auto id = bits.read(9);
-        if (id == 511) return;
+    const unsigned width = content.pd2Host ? 10 : 9;
+    const unsigned end = (1u << width) - 1;
+    for (size_t count = 0; count <= end; ++count) {
+        const auto id = bits.read(width);
+        if (id == end) return;
         for (unsigned next = 0; next <= followers(id); ++next) {
             const auto rule = format(content, id + next);
             const auto parameter = bits.read(rule.params);
@@ -124,9 +126,11 @@ void readStats(D2sBitReader &bits, const ClassicData &content, D2sItem &item) {
     throw std::runtime_error("D2S item stat list exceeds limit");
 }
 void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &item) {
+    const unsigned width = content.pd2Host ? 10 : 9;
+    const unsigned end = (1u << width) - 1;
     std::map<std::pair<unsigned, int32_t>, int64_t> values;
     for (const auto &stat : item.stats) {
-        require(stat.id < 511 && stat.parameter >= 0, "stat identity");
+        require(stat.id < end && stat.parameter >= 0, "stat identity");
         require(values.emplace(std::pair{unsigned(stat.id), stat.parameter}, stat.value).second, "duplicate stat");
     }
     while (!values.empty()) {
@@ -134,7 +138,7 @@ void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &i
         unsigned id = key.first;
         if (id == 18 || id == 49 || id == 51 || id == 53 || id == 55 || id == 58) --id;
         else if (id == 56 || id == 59) id -= 2;
-        bits.write(id, 9);
+        bits.write(id, width);
         for (unsigned next = 0; next <= followers(id); ++next) {
             const auto rule = format(content, id + next);
             auto found = values.find({id + next, key.second});
@@ -143,7 +147,7 @@ void writeStats(D2sBitWriter &bits, const ClassicData &content, const D2sItem &i
             if (found != values.end()) values.erase(found);
         }
     }
-    bits.write(511, 9);
+    bits.write(end, width);
 }
 } // namespace
 D2sItemRead readD2sItem(std::span<const uint8_t> bytes, const ClassicData &content) {

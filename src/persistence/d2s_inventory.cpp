@@ -53,7 +53,11 @@ void initializeD2sInventory(CharacterSaveData &snapshot, const ClassicData &cont
         snapshot.inventory.containers.emplace(id, ContainerState{id, {snapshot.player.id, kind, width, height}});
     };
     add(snapshot.containers.cursor, ContainerKind::Cursor, 1, 1);
-    add(snapshot.containers.backpack, ContainerKind::Backpack, 10, 4);
+    const auto definition = std::find_if(content.characters.begin(), content.characters.end(),
+        [&](const auto &entry) { return entry.name == snapshot.player.characterClass; });
+    require(definition != content.characters.end(), "unknown inventory class");
+    const auto &layout = content.playerInventoryLayouts.at(definition->code).grid;
+    add(snapshot.containers.backpack, ContainerKind::Backpack, layout.columns, layout.rows);
     add(snapshot.containers.belt, ContainerKind::Belt, 4, 1);
     add(snapshot.containers.stash, ContainerKind::Stash, content.stashLayout.columns, content.stashLayout.rows);
     add(snapshot.containers.beltEquipment, ContainerKind::BeltEquipment, 2, 1);
@@ -213,7 +217,7 @@ D2sItem exportD2sItem(const CharacterSaveData &snapshot, const ItemInstance &ite
     output.flags = item.nativeProperties ? item.nativeFlags : (0x00800000u | (item.nativeFlags & 0x4400000u));
     output.flags = (output.flags & ~0x00080110u) | 0x00800000u | (item.identified ? 0x10u : 0u);
     if (definition->maxDurability && !item.durability) output.flags |= 0x100;
-    output.format = item.nativeFormat;
+    output.format = content.pd2Host ? 104 : item.nativeFormat;
     output.hasGraphic = item.nativeHasGraphic;
     output.graphic = item.nativeGraphic;
     output.autoAffix = item.nativeAutoAffix;

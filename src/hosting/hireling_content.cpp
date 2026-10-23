@@ -38,7 +38,8 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
         }
     }
     const auto pending=host.pendingHirelings(game);if(pending.empty()) return;
-    if(!cache.monsters) cache.monsters=std::make_shared<const MonsterCatalog>(archives,data.tables.at("monstats"));
+    if(!cache.monsters) cache.monsters=std::make_shared<const MonsterCatalog>(archives,data.tables.at("monstats"),
+        data.pd2Host ? MonsterPreparation::TownActors : MonsterPreparation::FullRules);
     for(const auto &source:pending) {
         server::companions::PreparedHireling result;result.source=source;
         try {
@@ -51,6 +52,12 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             if(!monster || !monster->walkVelocity) throw std::runtime_error("Missing original Rogue MonStats");
             const auto stats=deriveHirelingStats(*row,source.record.level);
             result.strength=stats.strength;result.dexterity=stats.dexterity;result.weaponType=row->weaponType1;result.weaponType2=row->weaponType2;result.act=row->act;
+            constexpr EquipmentSlot slots[]{EquipmentSlot::Head,EquipmentSlot::Torso,EquipmentSlot::RightHand,
+                EquipmentSlot::LeftHand,EquipmentSlot::Belt,EquipmentSlot::Feet,EquipmentSlot::Gloves};
+            for(size_t index=0;index<std::size(slots);++index) {
+                const auto &box=data.hirelingLayout.slots[index];
+                if(box[0]>=0 && box[2]>box[0] && box[3]>box[1]) result.equipmentSlots|=uint16_t(1u<<unsigned(slots[index]));
+            }
             result.baseExperience=stats.experience;result.nextExperience=stats.nextExperience;
             auto &rule=result.rule;rule.stats=data.nativeStats;rule.formulas=data.nativeFormulas;rule.auraPrograms=data.nativeAuraPrograms;
             rule.noManaRegenState=data.states.at("nomanaregen").definition.id;
@@ -95,6 +102,13 @@ void preparePendingHirelings(GameHost &host,GameHandle game,Archives &archives,c
             const auto recovery=[](AnimationTiming timing,int bonus){timing.speed=effectiveRecoverySpeed(timing.speed,bonus);return monsterAnimationTicks(timing);};
             if(rule.hitRecoveryAnimation) rule.hitRecoveryTicks=recovery(*rule.hitRecoveryAnimation,gear.modifiers.combat.fasterHitRecovery);
             if(rule.blockAnimation) rule.blockTicks=recovery(*rule.blockAnimation,gear.modifiers.combat.fasterBlock);
+            if(data.pd2Host) {
+                // Town-only hosting prepares identity, equipment and lifecycle.
+                // PD2 combat programs require their own implementation before
+                // wilderness admission; do not borrow original skill actions.
+                host.installHireling(game,std::move(result));
+                continue;
+            }
             const auto actionTiming=[&](server::MonsterAttackRule &attack,const MonsterAttackTiming &motion,bool casting) {
                 const int baseRate=motion.speed;
                 const int rate=casting?effectiveCastSpeed(baseRate,gear.modifiers.combat.fasterCast):

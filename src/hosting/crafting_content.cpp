@@ -56,7 +56,10 @@ void cube(const ClassicData &data, Prepared &result) {
     for (const auto &[id,item] : s.character.inventory.items) {
         (void)id; const auto *at = std::get_if<ContainerLocation>(&item.location);
         require(!at || at->container != c.cursor, "Cursor must be empty before transmutation");
-        if (at && at->container == c.cube) inputs.push_back(&item);
+        if (at && at->container == c.cube) {
+            require(!data.pd2Host || item.quantity==1,"PD2 stacked CubeMain consumption is not implemented");
+            inputs.push_back(&item);
+        }
     }
     const CubeRecipe *matched = nullptr; std::vector<const ItemInstance *> ordered;
     for (const auto &recipe : data.cubeRecipes) {
@@ -80,6 +83,7 @@ void cube(const ClassicData &data, Prepared &result) {
         if (match(0,0)) { matched=&recipe; break; }
     }
     require(matched, "No original CubeMain recipe matches these inputs");
+    require(!matched->outputs.empty(),"PD2 CubeMain operation or property program is not implemented");
     const auto &original = *ordered.front(); auto random = s.pending.seed;
     const auto retainedOutputs=std::count_if(matched->outputs.begin(),matched->outputs.end(),[](const auto &out){return out.kind==CubeOutputKind::UseItem && !out.copy;});
     require(retainedOutputs<=1,"Multiple CubeMain outputs cannot retain the same item identity");

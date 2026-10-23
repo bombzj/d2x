@@ -50,7 +50,7 @@ void loadSetItemBonuses(const ClassicData &data, const DataTable &table, size_t 
     }
 }
 void loadSpecialItemData(ClassicData &data) {
-    if (data.profile != "lod-named-txt-v1")
+    if (data.profile != "lod-named-txt-v1" && !data.pd2Host)
         return;
     auto unique = data.tables.find("uniqueitems");
     auto sets = data.tables.find("setitems");
@@ -97,6 +97,7 @@ void loadSpecialItemData(ClassicData &data) {
                 continue;
             auto level = table.number(row, "lvl");
             auto rarity = table.number(row, "rarity");
+            if(data.pd2Host && table.value(row,"rarity").empty()) rarity=0;
             if (level && *level > 99)
                 continue; // Original event-only rows cannot be reached by the current 1–99 item levels.
             if (!level || !rarity || *level < 0 || *rarity < 0 ||

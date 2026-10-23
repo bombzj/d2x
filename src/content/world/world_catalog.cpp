@@ -107,7 +107,9 @@ WorldCatalog::WorldCatalog(Archives &archives, int difficulty) {
                 record.waypoint = number("Waypoint", -1);
                 record.shrineSubstitution = number("SubShrine", -1);
                 record.waypointSubstitution = number("SubWaypoint", -1);
-                record.objectLevel = table.number(row, "MonLvl1");
+                // LevelsTbls compiles this WORD as zero for an empty cell.
+                // A missing column remains unknown; PD2 towns use empty cells.
+                if(table.has("MonLvl1")) record.objectLevel = number("MonLvl1");
                 auto &population = record.population;
                 population.supported = table.has("mon1") && table.has("MonDen(N)");
                 population.types = number("NumMon");

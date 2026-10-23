@@ -80,7 +80,8 @@ void loadCubeData(ClassicData &data) {
         recipe.minimumDifficulty = table.number(row, "min diff").value_or(0);
         recipe.characterClass = table.value(row, "class");
         recipe.operation = table.number(row, "op").value_or(0);
-        if (recipe.operation != 0 && recipe.operation != 28) throw std::runtime_error("Unsupported original cube operation");
+        const bool supportedOperation=recipe.operation==0 || recipe.operation==28;
+        if (!supportedOperation && !data.pd2Host) throw std::runtime_error("Unsupported original cube operation");
         recipe.inputCount = unsigned(table.number(row, "numinputs").value_or(0));
         unsigned count = 0;
         for (int slot = 1; slot <= 7; ++slot) {
@@ -117,10 +118,18 @@ void loadCubeData(ClassicData &data) {
                 else if (token == "eli") input.tier = 3;
                 else throw std::runtime_error("Unknown cube input qualifier: " + token);
             }
-            if (!input.quantity || input.quantity > 48) throw std::runtime_error("Invalid cube quantity");
+            if (!input.quantity || input.quantity > (data.pd2Host?255u:48u)) throw std::runtime_error("Invalid cube quantity");
             count += input.quantity; recipe.inputs.push_back(std::move(input));
         }
-        if (!count || count != recipe.inputCount) throw std::runtime_error("Cube original input count mismatch");
+        if (!count || (!data.pd2Host && count != recipe.inputCount)) throw std::runtime_error("Cube original input count mismatch");
+        if(data.pd2Host) {
+            // Only the verified non-stacked path is executable. Keep custom
+            // input predicates in table order as explicit unsupported matches,
+            // rather than dropping them and falling through to another recipe.
+            recipe.inputCount=count;
+            if(!supportedOperation) {data.cubeRecipes.push_back(std::move(recipe));continue;}
+        }
+        bool supportedProperties=true;
         for (const std::string section : {"", " b", " c"}) {
             const std::string fields = section.empty() ? "" : section.substr(1) + " ";
             auto values = tokens(table.value(row, "output" + section));
@@ -163,7 +172,7 @@ void loadCubeData(ClassicData &data) {
                 for (const auto &operation : found->operations)
                     if (operation.function != 23 && operation.function != 36 && (operation.function < 1 || operation.function > 24 ||
                         operation.function == 18))
-                        throw std::runtime_error("Unsupported cube property function");
+                        {if(data.pd2Host) supportedProperties=false;else throw std::runtime_error("Unsupported cube property function");}
                 output.properties.push_back({{std::string(code), std::string(table.value(row, prefix + " param")),
                     table.number(row, prefix + " min"), table.number(row, prefix + " max"),
                     isDirectPropertyRoll(data, code)}, table.number(row, prefix + " chance").value_or(0)});
@@ -171,6 +180,7 @@ void loadCubeData(ClassicData &data) {
             recipe.outputs.push_back(std::move(output));
         }
         if (recipe.outputs.empty()) throw std::runtime_error("Cube recipe has no original output");
+        if(!supportedProperties) recipe.outputs.clear();
         data.cubeRecipes.push_back(std::move(recipe));
     }
 }

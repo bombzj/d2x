@@ -11,6 +11,12 @@ constexpr ClientCompatibility original{
     ClientProfile::Lod113c, "lod113c", AccountPasswordCase::Preserve,
     RealmPasswordSource::AccountLogonProof, 1024, 0, 0, 0, {}, {},
     lod113c_packet_size, validateClientPacket};
+// D2X hosting uses the existing MCP/D2GS envelopes and TCP/IP save transfer.
+// PD2 resource rules and item payloads are independent of CN service extensions.
+constexpr ClientCompatibility pd2Local{
+    ClientProfile::Pd2Local, "pd2-local", AccountPasswordCase::Preserve,
+    RealmPasswordSource::AccountLogonProof, 1024, 0, 0, 0, {}, {},
+    lod113c_packet_size, validateClientPacket};
 // Core RVA 0x393E00 inserts GS and loot bytes before MCP 03 room strings.
 constexpr ClientCompatibility cnNormal{
     ClientProfile::Pd2CnNormal20261020, "pd2-cn-normal-20261020", AccountPasswordCase::LowerAscii,
@@ -53,6 +59,7 @@ const ClientCompatibility &clientCompatibility(ClientProfile profile) {
     switch (profile) {
     case ClientProfile::Lod113c: return original;
     case ClientProfile::Pd2CnNormal20261020: return cnNormal;
+    case ClientProfile::Pd2Local: return pd2Local;
     }
     throw ProtocolError("Unknown client protocol profile");
 }

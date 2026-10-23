@@ -1,4 +1,5 @@
 #include "content/skills/description_data.hpp"
+#include "content/pd2/town_data.hpp"
 #include "content/skills/formula_data.hpp"
 #include "content/monsters/mode_stat_data.hpp"
 #include "gameplay/skills/spec.hpp"
@@ -45,6 +46,12 @@ namespace d2x {
 std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives, ContentPreparation preparation) {
     if (preparation == ContentPreparation::OriginalRules)
         return archives.prepared<ClassicData>([&] { return loadClassicData(archives); });
+    if (preparation == ContentPreparation::Pd2TownHost) {
+        struct Pd2HostData { std::shared_ptr<const ClassicData> value; };
+        return archives.prepared<Pd2HostData>([&] {
+            return Pd2HostData{std::make_shared<const ClassicData>(loadClassicData(archives, preparation))};
+        })->value;
+    }
     struct RemoteDisplayData { std::shared_ptr<const ClassicData> value; };
     return archives.prepared<RemoteDisplayData>([&] {
         return RemoteDisplayData{std::make_shared<const ClassicData>(loadClassicData(archives, preparation))};
@@ -52,6 +59,7 @@ std::shared_ptr<const ClassicData> sharedClassicData(Archives &archives, Content
 }
 ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) {
     const bool originalRules = preparation == ContentPreparation::OriginalRules;
+    const bool hostRules = preparation != ContentPreparation::RemoteDisplay;
     const ClassicStrings strings(archives);
     std::map<std::string, DataTable, std::less<>> tables;
     for (auto name : {"monumod", "monstats2", "monprop", "monequip", "bodylocs", "montype", "difficultylevels", "misc", "weapons", "armor", "armtype", "belts", "monstats", "charstats", "skills", "experience", "inventory", "levels", "hitclass", "pettype", "objects"})
@@ -250,7 +258,9 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             item.artAvailable = false;
     if (originalRules) loadItemProjectiles(items, tables.at("missiles"), archives);
     ClassicData data{ItemCatalog(std::move(items)), std::move(tables),
-                     originalRules ? "lod-named-txt-v1" : "remote-display-txt-v1"};
+                     originalRules ? "lod-named-txt-v1" : preparation == ContentPreparation::Pd2TownHost
+                         ? "pd2-town-host-v1" : "remote-display-txt-v1"};
+    data.pd2Host=preparation == ContentPreparation::Pd2TownHost;
     {
         const auto bytes=archives.read("data/global/expfield.d2");Reader reader(bytes);reader.skip(2);
         const auto height=reader.u32(),width=reader.u32();
@@ -460,7 +470,8 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             validateSkillDisplayTables(data.tables.at("skills"), data.tables.at("skilldesc"),
                 archives.read("data/global/excel/skills.bin"), archives.read("data/global/excel/skilldesc.bin"));
         data.skills = loadSkillCatalog(data.tables.at("skills"), data.tables.at("skilldesc"),
-                                       data.tables.at("charstats"), data.characters, strings, preparation);
+                                       data.tables.at("charstats"), data.characters, strings,
+                                       preparation == ContentPreparation::Pd2TownHost ? ContentPreparation::RemoteDisplay : preparation);
         data.skills.descriptions = std::make_shared<const SkillDescriptionCatalog>(loadSkillDescriptions(data.tables, strings,
             archives.read("data/global/excel/missiles.bin")));
         if (originalRules) loadSkillAnimations(data.skills, data.tables.at("skills"), data.tables.at("weapons"), data.characters, archives);
@@ -536,9 +547,9 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
     data.questContent = loadQuestContent(archives, data.npcDialogues, data.questStrings);
     {
         loadPropertyData(data);
-        if (originalRules) {
+        if (hostRules) {
             loadSocketData(data, strings);
-            loadCubeData(data);
+            if(originalRules) loadCubeData(data);
             loadItemGrades(data);
             loadSpecialItemData(data);
             auto resolveSpecialArt = [&](SpecialItemRecord &record) {
@@ -559,18 +570,18 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
             }
             prepareEquipmentSetData(data);
             loadMagicAffixData(data);
-            loadLodTreasureData(data);
+            if(originalRules) loadLodTreasureData(data);
         } else {
             loadRemoteItemDisplayData(data, strings);
             loadSocketGemData(data);
         }
         data.nativeStats=prepareNativeStatRules(data);
-        if (originalRules) loadItemConsumables(data);
+        if (hostRules) loadItemConsumables(data);
         if (originalRules) data.nativeFormulas=prepareSkillFormulaCatalog(data);
         if (originalRules) loadAssassinSkills(data, archives);
         if (originalRules) loadDruidSkills(data, archives);
         data.nativeMonsterTypes=loadMonsterTypeCatalog(data.tables.at("monstats"),data.tables.at("montype"),data.tables.at("monstats2"));
-        if (originalRules) {
+        if (hostRules) {
             const auto ratios=loadMonsterModeLevelRatios(data.tables.at("monlvl"));
             const auto lifeRatios=loadMonsterLifeLevelRatios(data.tables.at("monlvl"));
             const auto &monsters=data.tables.at("monstats");
@@ -582,6 +593,7 @@ ClassicData loadClassicData(Archives &archives, ContentPreparation preparation) 
                         throw std::runtime_error("Duplicate native monster life table identity");
                 }
         }
+        if(preparation == ContentPreparation::Pd2TownHost) preparePd2TownData(data, archives);
         return data;
     }
 }
