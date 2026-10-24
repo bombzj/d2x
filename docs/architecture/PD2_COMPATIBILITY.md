@@ -22,7 +22,7 @@
 
 ### 自有技能宿主
 
-当前核心依据为SHA256 `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`的ProjectDiablo.dll及同一副本MPQ。仅静态核对替换表、调用点及回调，不装载DLL。七职业可见节点按当前Skills的起手、执行、状态和飞弹链接准备；被动与协同使用当前公式。参数、飞弹、状态、召唤身份、数量和持续时间取当前表，玩法内核不读取MPQ。
+当前核心依据为SHA256 `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`的ProjectDiablo.dll及同一副本MPQ。仅静态核对替换表、调用点及回调，不装载DLL。七职业可见节点按当前Skills的起手、执行、状态和飞弹链接准备；被动与协同使用当前公式。参数、飞弹、状态、召唤身份、数量和持续时间取当前表，玩法内核不读取MPQ。当前核心的包装器纠正、回调RVA、接触／传播顺序与未认证项见[服务端技能逆向依据](../resources/PD2_CN_DLL_ANALYSIS.md#自有宿主技能的当前核心依据)。
 
 较大差异分在`content/pd2/{skill_data,aura_data,curse_data,summon_data,corpse_data}`、`server/systems/{skills,combat,missiles,effects}/pd2`与`gameplay/effects/pd2`；未替换的程序复用已有原版执行器，小差异在原调用边界按PD2规则分支。当前普通区域及召唤物仍沿公共世界、事务、帧事件和原生存档生命周期。
 

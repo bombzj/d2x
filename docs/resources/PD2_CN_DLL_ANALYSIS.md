@@ -1,10 +1,10 @@
 # PD2 CN Normal 样本：DLL 与位流证据
 
-更新：2026-10-22。目标是[兼容设计](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)固定 SHA-256 的独立副本，配置为 Normal／bnet／TCP。同份核心同时含客户端和D2Game服务端补丁，按执行路径区分；账号大厅章节补充同样本的实际收发与界面证据。据用户转述GM，线上使用本地这批模块，后续以此为工作前提继续追查；尚未逐项比对服务端实际加载清单／配置与摘要，全部消息和持续游戏兼容仍未认证。不能推广到 `.ss`、其他赛季或其他 CN 发布。
+更新：2026-10-24。目标是[兼容设计](../architecture/PD2_COMPATIBILITY.md#已取得的-cn-目标样本)固定 SHA-256 的独立副本，配置为 Normal／bnet／TCP。同份核心同时含客户端和D2Game服务端补丁，按执行路径区分；账号大厅章节补充同样本的实际收发与界面证据。据用户转述GM，线上使用本地这批模块，后续以此为工作前提继续追查；尚未逐项比对服务端实际加载清单／配置与摘要，全部消息和持续游戏兼容仍未认证。不能推广到 `.ss`、其他赛季或其他 CN 发布。
 
 地址统一使用所属模块的 RVA；ProjectDiablo.dll／BH.dll 的静态 ImageBase 均为 `0x10000000`，不能把反编译器里的 VA 直接当 RVA。本文描述恢复出的条件与字段，不分发核心源码。D2MOO 用于理解原调用链；其旧版本函数序号不直接套到实际 1.13c。
 
-**样本版本边界：** 本页既有核心地址及完整函数目录固定于SHA-256 `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`。2026-10-21复查发现隔离目录的Normal核心已更新为`17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`（5,243,904字节）；旧地址不能直接套用。当前登记的版本、周期报告及资源边界见[周期协议](#原客户端抓包确认的周期上报与候选修复)；新样本未宣称完成全量函数语义恢复。
+**样本版本边界：** 本页未另注明版本的历史核心地址及完整函数目录固定于SHA-256 `9c2b4d4627112d7f14ab959e71c56e947b7ceeb6f16424a637364f614d39122f`。2026-10-21复查发现隔离目录的Normal核心已更新为`17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`（5,243,904字节）；旧地址不能直接套用。[自有宿主技能依据](#自有宿主技能的当前核心依据)和城镇计价章节明确使用更新版，客户端程序另列旧／新对照。当前登记的版本、周期报告及资源边界见[周期协议](#原客户端抓包确认的周期上报与候选修复)；新样本未宣称完成全量函数语义恢复。
 
 ## 工具、证据与复核入口
 
@@ -704,6 +704,100 @@ RemoteDisplay独立准备Gems的武器／头盔护甲／盾牌属性元数据，
 Levels.txt的Warp空白必须按native DWORD编译为0，显式-1仍为-1。当前CN的2–7号区域Warp3为空，原版相应单元格为0；目标`leveldefs.bin`有211条、每条156字节，Warp数组偏移0x68，其实际值分别为`[-1,-1,-1,0,1,2,3,-1]`（6号的第三项为10）。此前空白默认-1会把洞口误判为无需warp的相邻野外区域，导致整幕连接失败。544字节的`levels.bin`是另一张运行表，不能将LevelDef结构偏移套到其中。依据为D2MOO `DATATBLS_LoadLevelDefsBin`和同构建二进制。
 
 MonStats名称链接身份来自编译记录顺序，hcIdx不是该表的编译字段。当前`monstats.bin`为1283条、每条424字节：row1198的首WORD ID为1198，而TXT同名fallen1Nakrul的hcIdx为1199；末row1282的BIN ID为1282，TXT hcIdx为1284。预设名称链接改用记录顺序，保留同名首次解析；SuperUniques的hcIdx校验继续保留。不能把TXT hcIdx缺号当成原图或城镇程序缺失，其他新增怪物消费者的ID映射仍需逐项对齐。
+
+## 自有宿主技能的当前核心依据
+
+本节全部核心RVA限定SHA-256 `17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57`。输入为隔离副本`D:/Downloads/Diablo II V1.13C-PD2-Analysis/pd2/ProjectDiablo.dll`及同目录`pd2data.mpq`，原版模块取其配套1.13c副本。只读导入、反编译和核对指令，不在D2X加载DLL或执行Hook。下文的技能／状态／属性数值是这份表的定位信息；资源参数仍从当前MPQ准备，不据本文跨版本写死。
+
+当前代码范围见[自有技能宿主](../architecture/PD2_COMPATIBILITY.md#自有技能宿主)。本节保存原生规则及容易误判的调用关系；程序入口已接入不代表全部数值、随机消费、画面、PvP或多人组合已认证。角色沿[原生PD2存档](../modules/SAVES.md)编码；战斗临时列表、传播定时器、蓄气及触发游标不新增私有存档段。
+
+### 包装器解析与反编译纠正
+
+当前Ghidra工程为忽略目录`reference/pd2-cn-analysis/town-queries/current.gpr`，程序名为`17d5fb1b049d8076226d27295487b49c8b5f2629553c193a01aa1e3d8afaba57-ProjectDiablo.dll`。`core-catalog`完整目录仍是旧SHA，不能从中直接移植函数地址。现有`core-catalog/scripts/AnalyzePd2Paths.java`支持用`stack_arguments`修正包装器栈清理后再导出；`create_unowned`只辅助建立遗漏的函数边界，不证明自动命名正确。
+
+核心解析器RVA `0x3A3B30`的ECX模块号1为D2Common、6为D2Game；Common的EDX为负导出序号，Game为正RVA。当前版本索引为0。复核链为包装器全局指针→初始化构造器→getter→版本表第0项→实际模块函数；查全局指针在代码段的绝对引用时，已核对的构造器CALL位于该引用前8字节，不能统一按前7字节截取。Common序号随版本变化，D2MOO旧序号或包装器自动名称均不足以确定语义。
+
+| 当前核心包装器RVA | 版本表／实际配套模块入口 | 已核对身份与纠正 |
+| --- | --- | --- |
+| `0x39F2B0` | getter `0x310CC0`，表`0x4A8AA4`；D2Game `0xDDDE0` | `SUNITDMG_AllocCombat`，不能当成`FillDamageValues` |
+| `0x3A23C0` | getter `0x308A60`，表`0x4A8B94`；D2Game `0x770E0` | `ApplyCriticalDamage`，不能当成`CalculateTotalDamage` |
+| `0x3A38C0` | getter `0x311A90`，表`0x4A7A1C`；D2Game `0xDA6D0` | 释放匹配的combat节点 |
+| `0x3A0200` | getter `0x311140`，表`0x4A7444`；D2Game `0xDA540` | 参数化Weapon Block概率，最多取32个属性层 |
+| `0x30DE50` | 表`0x4A6BA0`；D2Common ordinal10689／`0x32C10` | `UNITS_SetOverlay`，Charge在Drain后给目标overlay147 |
+| `0x30DE80` | 按调用处及返回结构复核 | `UNITS_GetUsedSkill`，不是路径／速度辅助器 |
+| `0x3337C0` | 表`0x4993F8`；D2Common ordinal10080／`0x7F5E0` | 到坐标的整数距离`max(dx,dy)+min(dx,dy)/2` |
+| `0x309470` | D2Common ordinal10179／`0x4DFD0` | 已用技能Param3（结构偏移0x20），不是路径速度 |
+
+`AllocCombat`在ResultFlags命中`0x8380`或没有SUCCESSFULHIT（1）时，跳过Fill及Calculate但仍分配combat节点；HitFlags含2也跳过Fill。普通分支调用D2Game `0xDD450`填充、`0xDC0B0`计算，之后可能设置WILLDIE（2），最后经`0xDAB90`分配。不能由“分配了combat”推断“又扣了一次生命”。
+
+D2MOO `D2Game/src/UNIT/SUnitDmg.cpp`的`SUNITDMG_ExecuteEvents`在将物理伤害限至目标当前生命之前执行DOMELEEDMG／DAMAGEDINMELEE。Drain内部使用HitFlags加`0x20`的局部伤害副本，原pCombat仍保留原分配数据。原`SKILLITEM_EventFunc20_SkillOnAttackHitKill`在概率非正或有pDamage但缺少`0x20`时拒绝，除此按单位原随机数取百分比；它不要求伤害总量大于零。因此Vengeance零物理接触仍可能触发近战溅射。
+
+另有两处应按指令纠正：`0x37AA30→0x37A9C0`判断区域157／159／166，`0x37AA60→0x37A9F0`只判断166，均不是城镇或移动判断；Bash的memset之后仍显式写伤害头，不能因反编译省略写入而认定标志全零。
+
+### Do163：实际手位、分配伤害与独立防御
+
+主入口RVA `0x3AFEB0`，范围回调`0x303360`，技能ED选择`0x306090`，Smite盾伤`0x3062A0`，分配后结算`0x305A50`，独立防御`0x3037C0`，参数层筛选`0x37F760`。对应代码为`src/server/systems/skills/pd2/splash.cpp`、`src/server/systems/combat/pd2/splash.cpp`与`src/gameplay/items/pd2_parameterized_stat.hpp`。
+
+- 当前隐藏技能358（proc_SplashDamage）Calc3为`max(6-lvl+stat('inc_splash_radius'.accr)/20,0)`；389（Golem Splash）为4，393（Skeleton Splash）为3。Calc3已含无参数属性478，后续只加匹配武器类型的参数层／20，避免计两次。基础物品`code==normcode`时半径再减1；已核对Items结构code／normCode偏移为0x80／0x84。
+- 当前属性359 `item_splashonhit`为damageRelated，`itemevent1=domeleedamage`、func20；layer22913解码为技能358／等级1，概率100。它属于本次所用武器伤害视图，不能只扫描角色根属性，也不能固定取右手。D2X在主接触仍存在时，按`unitStatValues(actor,tick,weapon.item)`注册并同步执行`ItemSkillEvent::MeleeSplash`，让踢击能取原分配伤害。
+- 已用技能只对玩家提供特殊元数据；怪物保持普通技能0语义。`0x306090`只对0、10、96、97、107、126、133、144、147、151、152、232、260、378、380取Calc1；30、106、248、255、265、275取Calc2；其余不附加ED。不能把其他技能表示数量的Calc1当增伤。Concentrate144另外按EType及Calc4转换魔法伤害；当前Berserk152没有同样的EType配置。
+- Smite97的Param5非零时取得或分配3帧state224，写属性478（当前Param5=20）；复用列表不延长旧期限。伤害来自盾牌基础、Holy Shield及允许的加成，HitFlags2／ResultFlags1、hitclass0x65；范围副目标不继承主Smite近战距离或Calc2眩晕。
+- 踢击255／270／275回调先复制原pCombat的0x70字节伤害，再加技能元素和物理掷值；使用完整已分配物理伤害，不能限为主目标剩余生命。原分配HitFlags为0x23，不是Drain局部副本的0x20。分配后毒时长减半，非零至少1帧；击退等字段随副本保留。
+- 范围圆心为主目标，排除主目标。`0x305A50`在分配后执行专用防御，成功且不含uninterruptible54时强制GETHIT（4），再走怪物暴击、事件、伤害、受击／死亡及节点释放。
+- 专用防御先算Weapon Block，适用武器动画类5（2hs）／13（ht2），读取参数化属性348，封顶75；攻击者怪物1112使概率除3，特殊PvP区域使玩家防御概率减半。随后移动目标先掷Evade，失败仍继续Avoid；Do163传入missile=1，不走普通盾牌格挡。玩家成功防御后4帧内不再掷新的防御。
+- `0x37F760`最多读取32层，要求真实当前武器；类型0x72／0x74为2han／1han（TXT物理行号因Expansion行不同）。2han要求另一手为空或同一物品；可双持者的不同另一手影响1han／2han匹配。玩家双持职业为bar／ass，影子原生身份为417／418，不能错位成418／419。
+
+防御／Open Wounds／Crushing Blow使用`pd2UnitEventRandom`，其乘法进位与SHRD移位20的规则不同于普通SEED和CRT；三者不能互换。玩家state233及原生特殊格挡／soft-hit细节、全部PvP组合尚未逐项认证。
+
+### Bash与Charge：额外接触和短期状态
+
+Bash126／Do158为RVA `0x3AF780`，代码在`src/server/systems/{skills,combat}/pd2/bash.cpp`。主接触先清KNOCKBACK（8）再Drain；原主命中成功且目标具有`UNITFLAG_UPGRLIFENHITCLASS=0x8000`，CRT百分比小于50时才分配第二接触。原指令先清零8字节头之后的0x68字节正文，再明确写HitFlags1／ResultFlags8；第二接触没有SUCCESSFULHIT，因此AllocCombat不Fill、不Calculate、不追加生命伤害，仍执行DOMELEEATTACK／ATTACKEDINMELEE和击退。
+
+该门控是单位生命／受击通知位，不能用“发生任何命中”或“已进入受击动画”代替。D2MOO `SUnitDmg.cpp`中玩家非GH通知、怪物soft-hit及与上次发布生命差值有关的分支会置位，GH模式切换的提前返回不经过相同写入；`SUnit.cpp`发布单位时清位。D2X只用当帧锁存及零伤害接触表达此顺序，不保存该位。传输发布时点、全部last-sent百分比和多攻击者交错尚未证明逐位相同。
+
+Charge107的St72／Do180为RVA `0x3B4350`／`0x3B23E0`，对应`src/server/systems/skills/pd2/charge.cpp`。起手以原整数距离存入已用技能Param3；执行时取得3帧state224，将`(Param3/4)*20`写入属性478，随后Param3清零。复用旧列表保留到期时间，零值也必须覆盖，不能只写正数。到达时同帧攻击，使用Calc1增伤、ToHit、击退及hitclass0x70，Drain后给目标overlay147；起手已经过近则退回Attack0。
+
+### Vengeance与Sacrifice：延迟回调的来源
+
+Vengeance111／Do174为RVA `0x3B10E0`，范围回调`0x3043C0`、传播`0x303EA0`，代码在`src/server/systems/skills/pd2/vengeance.cpp`。初接触分支看准确率helper的返回值，不能把所有后续防御失败都算成同一门控。先从装备火／冰／电贡献扣掉状态35+16／43+188／46的光环或强化贡献，再套Calc1／2／3与对应掌握329／331／330；技能EType0的物理基础另掷后按掌握复制到三元素，物理清零。
+
+当前冰时长为ELen80减`15*depth`并钳零；首圈范围7，后续至少2。Calc4决定传播概率，Param5延迟当前4帧，Param6+1保护当前25帧（state86 JustHit）。圆心先写AuraTargetState，接收者伤害后仍存活且无JustHit才写保护；不是施法者当前路径目标且单位随机通过时，登记type7传播。圈后清圆心state107 shatter。延迟触发重新取当前等级和装备，不固定首击快照；D2X定时器标识0x50443256仅属运行态。
+
+Sacrifice96／Do64为RVA `0x3ADAA0`，死亡Hook `0x302930`，回调`0x303C60`，范围`0x303E90→0x304C60`；对应`src/server/systems/effects/pd2/sacrifice.cpp`。主Drain前反伤按当前生命乘Calc2（当前3%）。死亡Hook要求WILLDIE，并检查实际攻击者当前已用技能96，或真实来源飞弹关联技能96；最终归属主人仅参与定时器信用，不可借其已用技能放宽触发。范围伤害携带skill96公式身份也不自动成为“真实飞弹”。
+
+原延迟为总动画帧／动画速度减6，钳3..30，缺省3；D2X用当前规则deathTicks减6表达，改变动画速度后的精确时点尚未认证。过杀量为`max(totalDamage-stat259(previous_hitpoints),0)&0x0fffffff`。先标state223，回调重新取当前技能等级的Calc3范围，缺少时取Param4；尸体生命依据原生生命表的Min／Max平均，伤害为该基础生命的Param5（当前5%）加过杀量的Param6（当前125%），物理伤害。清state223后创建／通知／移除视觉897，按filter8583结算范围；不消费尸体。连爆仍受当时已用技能或真实来源飞弹门控，宠物信用等稀有组合尚待核对。
+
+### Desecrate、召唤和诅咒的数据边界
+
+Desecrate83／Do161为RVA `0x3AFB10`，选池`0x36BE50／0x36BEF0／0x36BFF0`，到期`0x36AF20`；代码为`src/content/pd2/corpse_data.cpp`及`src/server/systems/skills/pd2/corpses.cpp`。普通难度用当前Levels的mon1..25，其余难度用nmon1..25；排除PartyMin／PartyMax为正、Spawn不是-1及原生40项身份排除集。排除初始化RVA `0x190C70`，后备区域初始化`0x190D60`，当前后备为6／66／76／106／132（132池为空）；CRT按后备区域、槽位拒绝采样，不能用均匀合法列表替代消费顺序。
+
+死态怪物创建包装器`0x39F0A0`经表`0x4A710C`解析到D2Game `0x47CF0`，以DD创建、记录主人并修正计数，无经验和掉落。位置为圆心、+2/+2、-2/+2，后续每轴累加`rand%2-2`。碰撞失败保留已生成尸体，全部5具成功才发8条毒云217并支付法力；不能把部分失败当事务回滚。400帧后仍可选的尸体加state104 corpse_nodraw并取消选择，不删除实体。D2X更新实体revision后再准备发布，防止新尸体内部存在而客户端遗漏。
+
+召唤定义、光环和诅咒分别在`src/content/pd2/{summon_data,aura_data,curse_data}.cpp`准备。PetType身份使用原生idx，不能跨Expansion分隔行直接拿TXT行号／Id。当前fenris的TXT虽有inc_splash_radius名称，monprop.bin三难度属性ID均为FFFFFFFF，原生跳过，不能“修复”为猜测的478。骷髅MonProp溅射由单位接触事件执行，发布不覆盖当前攻击动作。
+
+Dark Pact按原列表顺序保留最旧的有限时诅咒，移除其余；按移除前数量结算魔法伤害，无诅咒不伤害。Curse Mastery影响可用槽数，不应靠同一状态ID的简单覆盖代替多槽顺序；对应`src/gameplay/effects/pd2/curse_slots.cpp`及`src/server/systems/effects/pd2/{curses,dark_pact}.cpp`。Iron Golem材料／恢复、复活完整动作、伙伴跨区、全部友军治疗及复杂装备组合仍待覆盖。
+
+### Open Wounds与Crushing Blow
+
+Open Wounds Fn015为RVA `0x346400`，常量表`0x44E310={0,1,125,74}`，state62；属性189是openwounds_stack而非modifierlist_level。持续125帧，最多3层，未满时相加伤害率，满后只刷新全层共用期限。复用状态helper `0x36C020`保留原来源／信用；对应`src/server/systems/combat/pd2/wounds.cpp`，层数与伤害率不写入角色存档。
+
+基础率40，按等级分段增量9／18／27／36／45，再加Deep Wounds乘5。PvP普通／噩梦／地狱分别取8／6／4百分比，并非除以8／6／4；没有state225时，血魔290使Deep Wounds的PvP比例减半；有state225时，该列表贡献的Deep Wounds取普通PvP比例的三分之一，其余部分用普通比例。目标物抗减来源属性425，免疫≥100不按普通穿透处理；负有效物抗减半、PvP封顶50，玩家所属宠物再取四分之一，PvP城镇率为零。MPQ属性代码`Deep-Wounds`的大小写不能导致准备时漏掉`deep_wounds`。当前未实现扩展首领935／936的镜像写入。
+
+Crushing Blow Fn016为RVA `0x3469B0`，对应`src/server/systems/combat/pd2/crushing.cpp`。概率及效率包含当前手位无参数值与`0x37F760`匹配参数层；Smite另外取已用技能Calc3／Calc4。基础除数玩家／佣兵为10，普通怪8；首领／超级金怪不可搜尸时30，可搜尸分支为`(100-HP百分比)*10+70`，再加玩家数减1；远程乘1.5，效率以`1+efficiency/100`修正除数。生命商保持double直到原生CVTTSD2SI截断点，不提前取整；极端溢出及全部首领组合尚未认证。
+
+### Exploding Arrow：命中与延迟出生
+
+Hit63为RVA `0x3A6410`，延迟回调`0x304680`，扇形helper `0x37F3E0`；对应`src/server/systems/missiles/pd2/hit.cpp`，定时器登记与游标由同模块`system.cpp`／`runtime.hpp`持有。命中先创建4个HitSubMissile；HitPar1为正时对子体／受害者调用`0x3063B0`完整MissileCollision，它不是单纯出生helper。当前Fire Arrow／Exploding Arrow飞弹12／41的HitPar1均为空（0），不能据另一个版本强加立即碰撞。
+
+后续扇形公式取飞弹链接的技能：Calc2数量当前至少3，Calc3距离当前10，Param4的一半宽度当前12.5，Calc4为起始延迟，每点再加2帧。每点按原顺序消费3个CRT随机数，用平方根重心、第二权重及平方距离分层，沿源／目标方向的反向三角形插值。延迟回调固定使用技能16，读取当时已分配等级，缺省1，不沿用任意来源技能。
+
+回调的A持久弹体与B／C瞬时弹体分别创建并移除。D2X `prepareNativeBirth`不接受混合transient标志的同批请求，故必须独立提交；`Pd2DelayedSkillMissiles.next`保存已完成位置，背压重试不重复A，碰撞等Unavailable按原生空指针分支继续。不能把拒绝混合批次误判为缺少飞弹程序；B／C完整客户端像素时序仍待核对。
+
+### 复核材料与尚未认证的范围
+
+定点导出在忽略的`reference/pd2-cn-analysis/town-queries/`：`pd2-final-melee-helpers`、`pd2-smite-splash`、`pd2-sacrifice-charge`、`pd2-status-callbacks`、`pd2-corpse-selection`、`pd2-vengeance-helpers`、`pd2-unit-event-helpers`及`pd2-player-helpers`。目录仅辅助复查；以上SHA、模块RVA、MPQ字段及源码入口足以重新定位，不能依赖缓存永久保留，也不能把旧`core-catalog`当当前核心反编译结果。
+
+七职业普通区域的代表性施放、伤害／状态／召唤与原生保存重入已经用于排障，覆盖不等于原版一致性认证。尚未逐项认证全部装备／技能组合、随机流初态、极端数值、所有碰撞与画面、难度、跨区、PvP及双客户端多人。特殊地图／首领、佣兵战斗及职业范围之外的单位程序仍按自身实现边界处理；未知程序继续拒绝。后续发现应先补当前核心证据和负责模块，再修改规则，不能用图标可选、一次扣血或编译通过替代语义依据。
 
 ## 城镇服务与计价的固定样本依据
 
